@@ -104,6 +104,7 @@ from app.api.deps import (
     current_active_user_optional,
     get_async_db,
 )
+from app.api.strict_query import StrictQueryRoute
 from app.core.config import settings
 from app.models.user import User
 from app.schemas.memory import (
@@ -156,7 +157,18 @@ from app.services.memory_vectors import EMBEDDING_MODEL_TAG
 
 logger = structlog.get_logger(__name__)
 
-router = APIRouter()
+#: ``StrictQueryRoute`` (plan
+#: ``2026-09-03-wrong-key-reads-cannot-yield-a-silent-zero``, Phase 4; the
+#: mechanism is qontinui-web#1240's, first adopted by the plan-library router):
+#: a query key no handler on this router declares is a ``422
+#: unknown_query_parameter`` naming the accepted set, not a silently
+#: unfiltered ``200``. The measured occurrence was ``GET /records?kind=feedback``
+#: — the real filter is ``kinds`` — answering EVERY kind with well-formed,
+#: plausible, wrong rows: a confident false positive that suppressed a dedup
+#: write. The accepted set per route is derived from each
+#: handler's signature (``app/api/strict_query.py``), so adding a ``Query(...)``
+#: below needs no registration here.
+router = APIRouter(route_class=StrictQueryRoute)
 
 # --------------------------------------------------------------------------
 # Auth — the memory principal
@@ -727,6 +739,14 @@ async def query_records(
     ``agent``/``session``-scoped rows are only visible when the request
     names those scopes AND supplies the matching ``scope_ref``.
 
+    ``title_prefix`` is an exact, case-sensitive prefix filter on
+    ``title``, ANDed with every arm above. It is the HEAD-RESOLUTION
+    door: a dossier head is titled ``DOSSIER <slug> — <issue>`` while its
+    contributions and deltas must not share that prefix, so
+    ``title_prefix="DOSSIER <slug> —"`` returns the head alone where the
+    bare key ranks it behind its own contributions. ``%`` and ``_`` in
+    the value are literal.
+
     The semantic arm needs a vector, and this endpoint never computes
     one. It runs only when the caller supplies ``query_embedding`` (with
     its ``query_embedding_model``) AND this tenant's corpus is entirely
@@ -791,6 +811,9 @@ async def query_records(
         "scope_ref": payload.scope_ref,
         "min_importance": payload.min_importance,
         "since": payload.since,
+        # Applied inside the shared WHERE fragment, so every arm below
+        # (vector, FTS, link expansion, anchored) honours it.
+        "title_prefix": payload.title_prefix,
     }
     vector_arm: Literal["hybrid", "skipped_no_embedding", "skipped_migrating"]
     vector_hits: list[tuple[UUID, float]]
@@ -1028,7 +1051,9 @@ async def list_records(
         if len(rows) == limit
         else None
     )
-    return ListRecordsResponse(records=records, next_cursor=next_cursor)
+    return ListRecordsResponse(
+        records=records, count=len(records), next_cursor=next_cursor
+    )
 
 
 @router.post("/graph", response_model=MemoryGraphResponse)

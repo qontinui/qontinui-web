@@ -12,6 +12,101 @@ const STYLE_GATE_VIEWPORT = { width: 1280, height: 800 } as const;
 const STYLE_GATE_TEST_MATCH = /style-gate\/style-capture\.spec\.ts/;
 
 /**
+ * Which frontend the suite runs against — `PLAYWRIGHT_WEB_SERVER`.
+ *
+ *   `prod` (the DEFAULT, and what CI runs): a PRODUCTION BUILD. `next start`
+ *     serves the output of a prior `npm run build`, every route precompiled,
+ *     so a route's first hit costs the same ~2 s as every later hit and the
+ *     thing under test is the bundle users get.
+ *   `dev`: the explicit opt-in for local iteration. `next dev` compiles each
+ *     route on its FIRST hit (7-25 s measured), and under a long
+ *     single-worker run that compile competes with each test's own timeout:
+ *     four consecutive changed-specs lane runs on #1265 each failed a
+ *     DIFFERENT test's first `page.goto` before any assertion ran, while the
+ *     4-shard runs — a quarter of the routes per server — passed. Plan
+ *     2026-09-05-web-e2e-runs-against-next-dev-so-a-first-hit-compile-is-a-test-failure.
+ *
+ * Any other value is a config error, never a silent fallback to either mode.
+ */
+const WEB_SERVER_MODE = process.env.PLAYWRIGHT_WEB_SERVER ?? "prod";
+if (WEB_SERVER_MODE !== "prod" && WEB_SERVER_MODE !== "dev") {
+  throw new Error(
+    `PLAYWRIGHT_WEB_SERVER must be "prod" (default) or "dev"; got ${JSON.stringify(WEB_SERVER_MODE)}`
+  );
+}
+
+/**
+ * Per-test and per-navigation bounds, sized PER WEB-SERVER MODE.
+ *
+ * Both were a flat 60 s until Phase 3 of the plan named above, because both
+ * were sized for `next dev`'s on-demand first-hit compile. Under the default
+ * production build nothing compiles at request time, and a 60 s navigation
+ * bound sitting ~92x above the measured maximum cannot tell "slow" from
+ * "hung" — which is the only job a timeout has. The comment on
+ * `navigationTimeout` already asserted that a production-build navigation
+ * exceeding it is a page defect rather than compile latency; at 60 s that
+ * sentence had no teeth.
+ *
+ * Measured across TWO INDEPENDENT full-suite production-build runs — the
+ * workflow_dispatch gate 34042283673 (2026-09-06) and the nightly `main` run
+ * 34082373155 (2026-09-07), 491 passed / 0 failed each — reading per-step
+ * durations out of the shards' own Playwright report artifacts:
+ *
+ *   navigations  ~1040 | median 243-259 ms | p99 404-437 ms | SLOWEST 652 ms
+ *                | none over 2 s | none carrying an error
+ *   tests          982 | median 721-816 ms | p99 12.8-15.6 s | SLOWEST 16.2 s
+ *                | none over 20 s
+ *
+ * NAVIGATION: 15 s, i.e. 23x the slowest of ~1040 measured navigations.
+ *
+ * PER TEST: 45 s, and the binding constraint is NOT the measured maximum.
+ * The suite's slowest tests — every one of the five slowest in both runs is in
+ * `pages/automation-builder-*.spec.ts` — pin their own budget with
+ * `test.setTimeout(60000)` (e.g. automation-builder-core.spec.ts), and
+ * `docs-runner.spec.ts` uses `describe.configure({ timeout: 90_000 })`. A
+ * suite-level pin WINS over this value, so those files are not governed here
+ * at all. The population this bound actually governs finishes under 13 s.
+ *
+ * What sets 45 s is the largest WAIT the budget has to contain, because a test
+ * budget must exceed the waits inside it or the wait's diagnostic is replaced
+ * by a bare "Test timeout exceeded" — the opposite of the point. The tree
+ * holds 30_000 ms waits inside ungoverned hooks:
+ * `navigation-test-generator.spec.ts`'s `beforeEach` is a `goto` plus a
+ * 30_000 ms `waitForSelector`, charged to the test's own slot, and
+ * `annotation-editor.spec.ts`'s helper is a `goto` plus 15_000 ms. 30 s would
+ * have silenced both.
+ *
+ * Be precise about the margin, because the first of those is the tight one:
+ * its NOMINAL worst case is the navigation bound plus the wait, 15_000 +
+ * 30_000 = exactly 45_000 — a tie with zero room, before the test body starts.
+ * It clears because a production-build navigation is ~250 ms (652 ms slowest
+ * of ~1040 measured), not because the sum fits. `dashboard.spec.ts:41` has the
+ * same shape. So the real headroom here is empirical, and if navigation ever
+ * gets slow this bound is the second thing to break. If you tighten it
+ * further, re-check those waits first.
+ *
+ * ALSO RE-SIZED, less obviously: `beforeAll`/`afterAll` and worker-fixture
+ * setup each get their own time slot sized from this same project timeout, so
+ * this cuts those budgets by the same 25%. Every such hook in the tree is
+ * either cheap (`requireRunner()` self-caps at 2 s) or self-pinned, but a new
+ * expensive `beforeAll` now has 45 s rather than 60 s.
+ *
+ * `dev` keeps 60 s unchanged. `next dev` compiles a route on its FIRST hit
+ * (7-25 s measured, and past 60 s under load — see WEB_SERVER_MODE above), and
+ * two lanes still run that way on purpose: `cross-browser-survey.yml` and
+ * `style-gate.yml`. Shrinking their bounds would manufacture exactly the
+ * failures this plan removed.
+ *
+ * NOTE for local runs: these follow PLAYWRIGHT_WEB_SERVER, not what is
+ * actually listening. Driving this config against a hand-started `next dev`
+ * (e.g. with SKIP_WEB_SERVER=1, as tests/e2e/style-gate/README.md documents)
+ * without also setting PLAYWRIGHT_WEB_SERVER=dev gets the production bounds.
+ */
+const IS_PRODUCTION_SERVER = WEB_SERVER_MODE === "prod";
+const TEST_TIMEOUT_MS = IS_PRODUCTION_SERVER ? 45 * 1000 : 60 * 1000;
+const NAVIGATION_TIMEOUT_MS = IS_PRODUCTION_SERVER ? 15 * 1000 : 60 * 1000;
+
+/**
  * Playwright configuration for E2E integration testing
  * See https://playwright.dev/docs/test-configuration
  *
@@ -37,9 +132,11 @@ export default defineConfig({
   // per-project, so auth setup is unaffected.
   testMatch: "**/*.spec.ts",
 
-  // Maximum time one test can run for
-  // Increased for development mode where Next.js compiles pages on-demand
-  timeout: 60 * 1000,
+  // Maximum time one test can run for, and the budget `beforeAll`/`afterAll`
+  // hooks are sized from. Mode-keyed — see TEST_TIMEOUT_MS above for what
+  // actually sizes it (the largest in-tree wait, not the measured maximum),
+  // which spec files pin past it, and why `dev` keeps 60 s.
+  timeout: TEST_TIMEOUT_MS,
 
   // Test execution settings
   fullyParallel: true,
@@ -87,8 +184,12 @@ export default defineConfig({
     // Maximum time each action can take
     actionTimeout: 10 * 1000,
 
-    // Navigation timeout - increased for Next.js dev mode compilation (~23s for dashboard)
-    navigationTimeout: 60 * 1000,
+    // Navigation timeout. Mode-keyed — see NAVIGATION_TIMEOUT_MS above. On the
+    // production build the slowest of ~1040 measured navigations was 652 ms,
+    // so a navigation that exceeds this bound is a page defect, not compile
+    // latency (plan §5) — which is the claim the old flat 60 s could not
+    // support.
+    navigationTimeout: NAVIGATION_TIMEOUT_MS,
   },
 
   // Configure projects for major browsers
@@ -217,16 +318,41 @@ export default defineConfig({
     },
   ],
 
-  // Run your local dev server before starting the tests
-  // Set SKIP_WEB_SERVER=1 to skip when servers are already running
+  // Start the frontend before the tests — a production build by default,
+  // `next dev` under PLAYWRIGHT_WEB_SERVER=dev (see WEB_SERVER_MODE above).
+  // Set SKIP_WEB_SERVER=1 to skip when servers are already running.
   webServer: process.env.SKIP_WEB_SERVER
     ? undefined
-    : {
-        command: "npm run dev",
-        url: "http://localhost:3001",
-        reuseExistingServer: !process.env.CI,
-        timeout: 120 * 1000,
-      },
+    : WEB_SERVER_MODE === "dev"
+      ? {
+          command: "npm run dev",
+          url: "http://localhost:3001",
+          reuseExistingServer: !process.env.CI,
+          // Sized for `next dev`'s startup plus its first compile.
+          timeout: 120 * 1000,
+        }
+      : {
+          // Same port and bind address as `npm run dev`. `next start` needs
+          // a prior `npm run build`; without one it exits with "Could not
+          // find a production build in the '.next' directory", which
+          // Playwright surfaces verbatim — no separate guard needed.
+          //
+          // `next.config.mjs` sets `output: 'standalone'`, so `next start`
+          // logs `"next start" does not work with "output: standalone"
+          // configuration`. That line is a WARNING, not an error: Next
+          // only warns and then serves the ordinary `.next` build anyway
+          // (next/dist/server/next.js — the `output: 'export'` arm beside
+          // it is the one that throws). spec-ci.yml has served this same
+          // build with `next start` since it was written. Do not "fix" the
+          // warning by switching to `.next/standalone/server.js`: that
+          // tree needs `public/` and `.next/static` copied in by hand.
+          command: "npm run start -- --port 3001 --hostname 0.0.0.0",
+          url: "http://localhost:3001",
+          reuseExistingServer: !process.env.CI,
+          // A production server is up in ~2 s (measured; nothing compiles).
+          // 60 s is a loaded-runner ceiling, not an expectation.
+          timeout: 60 * 1000,
+        },
 
   // Global setup/teardown - skip when running against existing servers
   globalSetup: process.env.SKIP_WEB_SERVER

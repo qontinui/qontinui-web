@@ -4,18 +4,24 @@ import { useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
   AlertTriangle,
+  CloudDownload,
   History,
   ListTree,
   NotebookText,
   Pencil,
   Plus,
+  Send,
 } from "lucide-react";
 import { usePromptDocuments } from "../_hooks/usePromptDocuments";
+import { usePromptDocumentPublications } from "../_hooks/usePromptDocumentPublications";
 import { PromptDocumentCreateDialog } from "./PromptDocumentCreateDialog";
 import { PromptDocumentEditorDialog } from "./PromptDocumentEditorDialog";
 import { PromptDocumentHistoryDialog } from "./PromptDocumentHistoryDialog";
+import { PromptDocumentPublishDialog } from "./PromptDocumentPublishDialog";
+import { PromptDocumentUpstreamDialog } from "./PromptDocumentUpstreamDialog";
 import { ClauseManagerDialog } from "./ClauseManagerDialog";
 import { AgentWriteAccessControl } from "./AgentWriteAccessControl";
+import { upstreamBadge } from "../_lib/upstreamStatus";
 import type {
   AgentWriteTier,
   PromptDocument,
@@ -25,6 +31,7 @@ import type {
 import {
   BAND_META,
   isInertSessionBriefing,
+  isPublishableKind,
   KIND_META,
   kindsInBand,
   PROMPT_DOCUMENT_BANDS,
@@ -78,10 +85,21 @@ export function PromptDocumentList() {
     restoreVersion,
   } = usePromptDocuments();
 
+  const {
+    publishing,
+    publishUnavailable,
+    fetchPublication,
+    publish,
+  } = usePromptDocumentPublications();
+
   const [createOpen, setCreateOpen] = useState(false);
   const [editorOpen, setEditorOpen] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [clausesOpen, setClausesOpen] = useState(false);
+  const [publishOpen, setPublishOpen] = useState(false);
+  const [upstreamOpen, setUpstreamOpen] = useState(false);
+  const [publishTarget, setPublishTarget] =
+    useState<PromptDocumentSummary | null>(null);
   const [editing, setEditing] = useState<PromptDocument | null>(null);
   const [loadingBody, setLoadingBody] = useState(false);
 
@@ -117,6 +135,25 @@ export function PromptDocumentList() {
   const openClauses = async (doc: PromptDocumentSummary) => {
     setClausesOpen(true);
     await loadFull(doc);
+  };
+
+  /**
+   * The three-way upstream view needs this tenant's BODY as its "ours" side,
+   * which the list does not carry — same fetch the editor and history views do.
+   */
+  const openUpstream = async (doc: PromptDocumentSummary) => {
+    setUpstreamOpen(true);
+    await loadFull(doc);
+  };
+
+  /**
+   * Publishing needs no body here: coord promotes the document's own current
+   * version, and `expected_version` is the optimistic-concurrency check that
+   * the version shown on this row is still the one coord holds.
+   */
+  const openPublish = (doc: PromptDocumentSummary) => {
+    setPublishTarget(doc);
+    setPublishOpen(true);
   };
 
   /**
@@ -227,6 +264,28 @@ export function PromptDocumentList() {
         </div>
       )}
 
+      {/*
+        Publishing was offered, and coord (or this deployment's proxy) answered
+        that it is not available here. The controls are gone from every row
+        after that answer, so the answer has to be visible somewhere — a
+        control that disappears without a word reads as a bug in the page.
+      */}
+      {publishUnavailable && (
+        <div
+          className="flex items-start gap-2 rounded-lg border border-border bg-muted/50 px-3 py-2.5"
+          data-testid="prompt-documents-publish-unavailable"
+        >
+          <AlertTriangle className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
+          <p className="text-sm text-muted-foreground">
+            {publishUnavailable.refusal === "not_system_tenant"
+              ? "Publishing to the fleet is available only from the system tenant, and coord says this is not it. The Publish controls are hidden for the rest of this visit."
+              : publishUnavailable.refusal === "not_proxied"
+                ? "This deployment does not carry the publish route yet, so the Publish controls are hidden for the rest of this visit. Nothing was published."
+                : publishUnavailable.detail}
+          </p>
+        </div>
+      )}
+
       {(documents.length > 0 || canAssertEmpty) &&
         PROMPT_DOCUMENT_BANDS.map((band) => {
           // Authority order is `PROMPT_DOCUMENT_KINDS`', preserved within the
@@ -306,6 +365,17 @@ export function PromptDocumentList() {
                                 ? () => openClauses(doc)
                                 : undefined
                             }
+                            onUpstream={
+                              doc.update_available === true
+                                ? () => openUpstream(doc)
+                                : undefined
+                            }
+                            onPublish={
+                              isPublishableKind(doc.kind) &&
+                              publishUnavailable === null
+                                ? () => openPublish(doc)
+                                : undefined
+                            }
                           />
                         ))}
                       </div>
@@ -351,6 +421,34 @@ export function PromptDocumentList() {
         onRestoreVersion={handleRestoreVersion}
       />
 
+      <PromptDocumentPublishDialog
+        open={publishOpen}
+        onOpenChange={setPublishOpen}
+        doc={publishTarget}
+        publishing={publishing}
+        onPublish={async (target, releaseNote) => {
+          const res = await publish(
+            target.kind,
+            target.name,
+            target.current_version,
+            releaseNote
+          );
+          // A publication moves `latest_publication_version` for every row of
+          // this `(kind, name)` — including this one — so the list is re-read
+          // rather than left showing the badge state from before the publish.
+          if (res) await reload();
+          return res;
+        }}
+      />
+
+      <PromptDocumentUpstreamDialog
+        open={upstreamOpen}
+        onOpenChange={setUpstreamOpen}
+        doc={editing}
+        loadingBody={loadingBody}
+        fetchPublication={fetchPublication}
+      />
+
       <ClauseManagerDialog
         open={clausesOpen}
         onOpenChange={setClausesOpen}
@@ -377,6 +475,18 @@ interface DocumentRowProps {
   onSetAgentWriteTier: (tier: AgentWriteTier) => Promise<boolean>;
   /** Only set for `policy` documents — opens the structured clause manager. */
   onClauses?: () => void;
+  /**
+   * Set only when coord served `update_available === true` — opens the
+   * three-way upstream view. Absent means there is nothing to decide, not that
+   * the feature is missing.
+   */
+  onUpstream?: () => void;
+  /**
+   * Set for a publishable kind, until coord answers that publishing is not
+   * available in this tenant at all. See `usePromptDocumentPublications` for
+   * why the console offers this rather than pre-gating it.
+   */
+  onPublish?: () => void;
 }
 
 function DocumentRow({
@@ -386,6 +496,8 @@ function DocumentRow({
   onHistory,
   onSetAgentWriteTier,
   onClauses,
+  onUpstream,
+  onPublish,
 }: DocumentRowProps) {
   // A document with a `default_source` has a shipped default the editor can
   // restore; one without is hand-authored with nothing to fall back to.
@@ -409,6 +521,14 @@ function DocumentRow({
    * three live briefings) stays uncluttered.
    */
   const inertBriefing = isInertSessionBriefing(doc.kind, doc.name);
+  /**
+   * The publication-channel badge, read STRAIGHT off the four fields coord
+   * serves — `upstream_publication_version`, `latest_publication_version`,
+   * `local_modified`, `update_available`. Nothing here compares a body; see
+   * `../_lib/upstreamStatus` for why re-deriving `local_modified` in a browser
+   * would invert its degrade polarity and put a tenant's own edits at risk.
+   */
+  const upstream = upstreamBadge(doc);
   return (
     <div
       className="group flex items-center gap-3 rounded-lg border border-border bg-card px-3 py-3"
@@ -437,6 +557,19 @@ function DocumentRow({
           >
             {restorable ? "Restorable" : "Custom"}
           </span>
+          {upstream && (
+            <span
+              className={
+                upstream.tone === "attention"
+                  ? "inline-flex shrink-0 items-center rounded border border-amber-500/40 bg-amber-500/10 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-amber-700 dark:text-amber-400"
+                  : "inline-flex shrink-0 items-center rounded bg-muted px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground"
+              }
+              title={upstream.title}
+              data-testid={`doc-upstream-${upstream.testId}-${doc.kind}-${doc.name}`}
+            >
+              {upstream.label}
+            </span>
+          )}
           {inertBriefing && (
             <span
               className="inline-flex shrink-0 items-center rounded border border-amber-500/40 bg-amber-500/10 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-amber-700 dark:text-amber-400"
@@ -461,6 +594,30 @@ function DocumentRow({
         onSet={onSetAgentWriteTier}
       />
 
+      {onUpstream && (
+        <Button
+          variant="ghost"
+          size="sm"
+          className="h-8 w-8 p-0"
+          onClick={onUpstream}
+          title="Compare against the available publication"
+          data-testid={`doc-upstream-${doc.kind}-${doc.name}`}
+        >
+          <CloudDownload className="size-4" />
+        </Button>
+      )}
+      {onPublish && (
+        <Button
+          variant="ghost"
+          size="sm"
+          className="h-8 w-8 p-0"
+          onClick={onPublish}
+          title="Publish this document to the fleet"
+          data-testid={`doc-publish-${doc.kind}-${doc.name}`}
+        >
+          <Send className="size-4" />
+        </Button>
+      )}
       {onClauses && (
         <Button
           variant="ghost"

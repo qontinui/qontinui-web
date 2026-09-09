@@ -576,6 +576,17 @@ jobs:
         env:
           CI: true
           PLAYWRIGHT_BASE_URL: http://localhost:3001
+          # PINNED to the dev server. playwright.config.ts's `webServer`
+          # DEFAULTS to `prod` since plan
+          # 2026-09-05-web-e2e-runs-against-next-dev-so-a-first-hit-compile-is-a-test-failure
+          # Phase 2 — `npm run start`, which needs a prior `npm run build`.
+          # This survey job runs no build, so without this pin `next start`
+          # would exit with "Could not find a production build in the
+          # '.next' directory" and every matrix entry would red. This is a
+          # nightly survey of browser-engine differences, not a gate on
+          # first-hit latency, so the dev server is still the right server
+          # for it; moving it onto a build is a separate change.
+          PLAYWRIGHT_WEB_SERVER: dev
         run: |
           npx playwright test --project="${{ matrix.browser }}"
 

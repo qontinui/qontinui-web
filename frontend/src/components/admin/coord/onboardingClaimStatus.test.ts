@@ -9,10 +9,7 @@
 
 import { describe, expect, it } from "vitest";
 import { paletteDisagreements } from "@/components/console/attention";
-import {
-  AUTHOR_RED,
-  rowAccentClass,
-} from "@/components/console/statusRow";
+import { AUTHOR_RED, rowAccentClass } from "@/components/console/statusRow";
 import {
   CLAIM_ATTENTION_BY_PHASE,
   CLAIM_AUTHOR_GLYPH_PHASES,
@@ -22,7 +19,13 @@ import {
   type ClaimPhase,
 } from "./onboardingClaimStatus";
 
-const ALL: ClaimPhase[] = ["claiming", "success", "error", "recover"];
+const ALL: ClaimPhase[] = [
+  "claiming",
+  "success",
+  "error",
+  "recover",
+  "handoff",
+];
 
 describe("onboarding claim palette", () => {
   it("agrees with the attention table — red iff author, ✕ iff red", () => {
@@ -75,10 +78,13 @@ describe("onboarding claim palette", () => {
     }
   });
 
-  it("keeps the in-flight phase calm", () => {
+  it("keeps the in-flight phases calm", () => {
     // The mirror clause: a spinner is not an alarm. Painting `claiming` red
-    // would be the exact bug R3 exists to prevent.
-    expect(CLAIM_ATTENTION_BY_PHASE.claiming).toBe("none");
-    expect(/\bbg-red-/.test(CLAIM_PHASE_CLASS.claiming)).toBe(false);
+    // would be the exact bug R3 exists to prevent — and `handoff` is the same
+    // claim, finishing in the runner instead of this tab.
+    for (const p of ["claiming", "handoff"] as const) {
+      expect(CLAIM_ATTENTION_BY_PHASE[p]).toBe("none");
+      expect(/\bbg-red-/.test(CLAIM_PHASE_CLASS[p])).toBe(false);
+    }
   });
 });

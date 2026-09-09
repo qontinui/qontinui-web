@@ -202,6 +202,13 @@ export interface StealSessionRequest {
   machine_id: string;
 }
 
+/**
+ * Take ownership of a session away from the machine currently holding it.
+ *
+ * **Never retried.** See `NON_IDEMPOTENT_POST_NO_RETRY_STATUSES`. Each attempt
+ * records its own coord events, so a retry of an ambiguous 504 writes a second
+ * steal into the session's history for one operator click.
+ */
 export async function stealSession(
   id: string,
   body: StealSessionRequest
@@ -210,6 +217,7 @@ export async function stealSession(
   const res = await httpClient.fetch(url, {
     method: "POST",
     body: JSON.stringify(body),
+    noRetryStatuses: NON_IDEMPOTENT_POST_NO_RETRY_STATUSES,
   });
   if (!res.ok) {
     throw new SessionsApiError(`POST ${url} failed: ${res.status}`, res.status);
@@ -228,6 +236,11 @@ export interface HandoffSessionRequest {
  * `handoff_request` event + publishes the JetStream subject scoped to
  * the target machine. The target runner materializes a child session
  * and closes this one — a one-way move.
+ *
+ * **Never retried.** See `NON_IDEMPOTENT_POST_NO_RETRY_STATUSES`. A retry of
+ * an ambiguous 504 plausibly *succeeds*, so the target runner materializes a
+ * second (and third, and fourth) child session from a single "Continue
+ * elsewhere" click.
  */
 export async function handoffSession(
   id: string,
@@ -237,6 +250,7 @@ export async function handoffSession(
   const res = await httpClient.fetch(url, {
     method: "POST",
     body: JSON.stringify(body),
+    noRetryStatuses: NON_IDEMPOTENT_POST_NO_RETRY_STATUSES,
   });
   if (!res.ok) {
     throw new SessionsApiError(`POST ${url} failed: ${res.status}`, res.status);
@@ -453,32 +467,55 @@ export function parseTenantCreateError(rawBody: string): {
 }
 
 /**
- * Statuses `POST /operations/tenants` must NOT be retried on.
+ * Statuses a **non-idempotent POST** must NOT be retried on.
  *
- * Tenant creation is **not idempotent** — coord's create is a plain INSERT
- * that deliberately rejects a slug collision rather than joining the caller to
- * an existing tenant. So a retry is never a free repeat of the same question.
+ * Shared by every POST in this module whose effect is not a free repeat of the
+ * same question: `createTenant`, `handoffSession` and `stealSession`.
+ * (`closeSession` is a DELETE to a terminal state — genuinely idempotent — and
+ * every other call here is a GET, where retry is the correct behaviour.)
  *
- * The concrete hazard is the 504. The web proxy's coord timeout is 5s
- * (`operations.py` `_COORD_TIMEOUT`) and a timeout maps to `504 timeout
- * waiting for coord`, which is a statement about OUR clock, not about coord's
- * transaction — a slow create that committed at 5.1s answers 504 and is a
- * real project. `HttpClient` retries every `>= 500` up to `maxRetries: 3`, so
- * without this the identical POST is re-issued, hits the unique-violation arm,
- * and tells the operator their own successfully created project "is taken":
- * a false failure that they then act on by picking a different name.
+ * The class of bug: `HttpClient` retries every `429` and every `>= 500` up to
+ * `maxRetries: 3` with the identical body. For a POST that *does something*,
+ * that turns one ambiguous answer into a second side effect. The concrete
+ * hazard is the 504 — the web proxy's coord budget is 5s (`operations.py`
+ * `_COORD_TIMEOUT`) and a timeout maps to `504 timeout waiting for coord`,
+ * which is a statement about OUR clock, not about coord's transaction. From
+ * here "coord was slow" and "coord never got it" are indistinguishable, and
+ * the client resolved that ambiguity by doing it again:
  *
- * The 429 is here for a different reason: it is the per-operator creation cap,
- * a deliberate and persistent answer. Retrying it three times only costs three
- * round-trips to be told the same thing.
+ *   - tenant creation — coord's create is a plain INSERT that deliberately
+ *     rejects a slug collision rather than joining the caller to an existing
+ *     tenant, so a create that committed at 5.1s answers 504 and the retry
+ *     lands on the unique-violation arm: the operator is told their own
+ *     successfully created project "is taken", a false failure they then act
+ *     on by picking a different name;
+ *   - handoff — coord records a durable `handoff_request` event and publishes
+ *     a JetStream subject scoped to the target machine, so the retry
+ *     plausibly *succeeds* and one click yields several child sessions;
+ *   - steal — lower stakes, but every attempt records its own events.
  *
- * The list enumerates 5xx rather than declaring a range because
- * `noRetryStatuses` is a membership test. It covers every 5xx this path can
- * actually produce: 500 (an unhandled web error, or coord's own 500 forwarded
- * verbatim — e.g. a cap-lookup failure), 502 (coord unreachable), 503 (the app
- * unconfigured / an LB with no healthy target) and 504 (the timeout above).
+ * The 429 is here for a different reason: it is a deliberate and persistent
+ * answer (a cap, or a limiter). Retrying it only buys round-trips to be told
+ * the same thing.
+ *
+ * The list ENUMERATES statuses rather than declaring a range because
+ * `noRetryStatuses` is an `Array.includes` membership test, checked against an
+ * unbounded `status >= 500` guard (`http-client.ts`). It covers every status
+ * these paths can actually produce: 500 (an unhandled web error, or coord's
+ * own 500 forwarded verbatim — e.g. a cap-lookup failure), 501, 502 (coord
+ * unreachable), 503 (the app unconfigured / an LB with no healthy target) and
+ * 504 (the timeout above).
+ *
+ * **So it cannot express "all 5xx".** A status nobody enumerated — a `507`
+ * from a storage layer, a `520` from a CDN sitting in front of the proxy —
+ * falls through the membership test and is still retried, with exactly the
+ * same duplicate side effect. An enumeration is only ever as complete as the
+ * last person to think about it, which is the standing argument for inverting
+ * the client default: make retry opt-IN for POSTs rather than opt-out (this
+ * plan's Phase 4). Until that lands, adding a status here is the only fix
+ * available.
  */
-export const TENANT_CREATE_NO_RETRY_STATUSES: number[] = [
+export const NON_IDEMPOTENT_POST_NO_RETRY_STATUSES: number[] = [
   429, 500, 501, 502, 503, 504,
 ];
 
@@ -492,7 +529,7 @@ export const TENANT_CREATE_NO_RETRY_STATUSES: number[] = [
  * transaction, so the membership is readable on the very next
  * `GET /operations/tenants`.
  *
- * **Never retried.** See `TENANT_CREATE_NO_RETRY_STATUSES`.
+ * **Never retried.** See `NON_IDEMPOTENT_POST_NO_RETRY_STATUSES`.
  */
 export async function createTenant(
   body: TenantCreateRequest
@@ -501,7 +538,7 @@ export async function createTenant(
   const res = await httpClient.fetch(url, {
     method: "POST",
     body: JSON.stringify(body),
-    noRetryStatuses: TENANT_CREATE_NO_RETRY_STATUSES,
+    noRetryStatuses: NON_IDEMPOTENT_POST_NO_RETRY_STATUSES,
   });
   if (!res.ok) {
     const raw = await res.text().catch(() => "");

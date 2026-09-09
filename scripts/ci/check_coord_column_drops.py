@@ -14,7 +14,10 @@ THE single home of this gate's logic. Three lanes invoke this one script:
   * ``.pre-commit-config.yaml``, hook ``coord-column-drop-guard`` — the
     shift-left lane, handed the changed revision files as ``--files``.
 
-Plan: ``2026-09-03-coord-column-drop-guard-on-web-migrations`` (Phase 2).
+Plan: ``2026-09-03-coord-column-drop-guard-on-web-migrations`` (Phase 2; the
+repoint onto coord's served route and the per-half reasons are its Phase 2b,
+which implements the peer plan
+``2026-09-06-devops-coord-column-drop-guard-has-no-served-manifest`` Phase 5).
 
 Background: ``pdtier_01`` (web#1102, landed 2026-08-27) dropped
 ``coord.prompt_documents.agent_writable`` while the DEPLOYED coord build still
@@ -29,11 +32,23 @@ What it scans
 Offline, by AST (``ast.parse``) — it never imports ``env.py`` or the revision
 module, which would pull in qontinui-web's whole app. The UPGRADE PATH of each
 changed revision file is the whole module minus the ``downgrade()`` function
-body: module-level constants, ``upgrade()``, and every helper — a helper that
-drops something is reachable from ``upgrade()`` whether or not this scan can
-prove it, so it counts (fail-closed). A module-level template counts even when
-nothing references it. Docstrings (the first string statement of the module,
-a class or a function) are prose and are skipped.
+body AND minus every module-level helper reachable ONLY from it
+(``_downgrade_only_helpers``): module-level constants, ``upgrade()``, and every
+other helper — one that drops something may be reachable from ``upgrade()`` in a
+way this scan cannot prove, so it counts (fail-closed). A module-level template
+counts even when nothing references it. Docstrings (the first string statement
+of the module, a class or a function) are prose and are skipped.
+
+The downgrade-only exclusion is the same rule as the ``downgrade()`` one, not a
+relaxation of it: a DROP that only a downgrade performs does not LAND, and "must
+not land" is this gate's own predicate. Excluding the body while still scanning
+the helper it calls made an ADDITIVE revision — one whose ``downgrade()``
+removes exactly what its ``upgrade()`` added, both generated from a single
+column list, the shape every ``fleet_res_tel_*`` revision uses — report an
+unresolved site. That forced a ``COORD_SCHEMA_DROPS`` declaration, which
+activated the manifest phase against columns no deployed coord can possibly be
+reading. Anything referenced outside the downgrade closure, or reached by
+``getattr`` / ``globals()`` / a string dispatch table, stays scanned.
 
 Collected as DROP/RENAME sites:
 
@@ -71,14 +86,26 @@ What it consults
 ----------------
 Zero ``coord.*`` drops across the changed files — the common case — exits 0
 WITHOUT any network call and prints what it scanned. Only when a drop is found
-does it fetch ``GET <coord-url>/schema/read-surfaces`` (20 s timeout, 3
-tries), the manifest coord serves in two halves: ``deployed`` (compiled into
-the serving binary, with its ``build_sha``) and ``main`` (pushed by coord's CI
-on every land, with its ``sha``). Both halves are unioned; a dropped surface
+does it fetch ``GET <coord-url>/coord/schema/read-surfaces`` (20 s timeout, 3
+tries; unauthenticated, on coord's public base router beside
+``/coord/schema/lifecycle``), the manifest coord serves in two halves:
+``deployed`` (compiled into the serving binary, with its ``build_sha``) and
+``main`` (what coord's ``main`` branch reads, with its ``sha`` — stored by the
+``POST /coord/schema/read-surfaces-snapshot`` ingest that coord's main-push
+workflow fires on every land). Both halves are unioned; a dropped surface
 present in either is a violation naming which sha(s) still read it. A ``*``
 wildcard row means coord reads columns of that table it could not statically
-name (its ``INTENTIONALLY_UNRESOLVED`` waiver), so a drop on that table is
-UNKNOWN — exit 2 naming the waiver, never a pass.
+name (its ``INTENTIONALLY_UNRESOLVED`` waiver); its third field carries
+``<file>: <reason>``, and a drop on that table is UNKNOWN — exit 2 naming the
+file and the reason, never a pass.
+
+Either half may be served as ``null``, and each then carries its own reason
+beside it: ``deployed_unavailable_reason`` (the serving build compiled in no
+40-hex ``BUILD_SHA``, so coord declines to fabricate one) and
+``main_unavailable_reason`` (no snapshot has been ingested — the ingest is
+unshipped, or nothing has landed on coord's main since a fresh store). A null
+half is UNKNOWN and the gate exits 2 quoting that reason verbatim, or saying
+so when none was served. It never treats a null half as "reads nothing".
 
 Exit codes: 0 no coord drop, or every drop is read by no coord; 1 a violation
 (an unresolved site with no declaration, a bad declaration, or a drop coord
@@ -122,17 +149,51 @@ from _gate_lib import (  # noqa: E402
 
 VERSIONS_DIR = "backend/alembic/versions"
 DEFAULT_COORD_URL = "https://coord.qontinui.io"
-MANIFEST_ROUTE = "/schema/read-surfaces"
+#: coord's whole schema-metadata family lives under ``/coord/schema/*`` and the
+#: edge in front of coord answers an unprefixed ``/schema/...`` 401 before the
+#: router ever sees it (measured 2026-09-06 and again 2026-09-07). The route
+#: shipped in coord PR #2010; every earlier build of this guard spelled it
+#: without the prefix and so exited 2 for the wrong reason on every real drop.
+MANIFEST_ROUTE = "/coord/schema/read-surfaces"
+#: The write side of the ``main`` half — bearer-gated, fired by coord's own
+#: main-push workflow. Named here only so the messages below can say where a
+#: null ``main`` comes from; this guard never calls it.
+MAIN_INGEST_ROUTE = "/coord/schema/read-surfaces-snapshot"
 DECLARATION_NAME = "COORD_SCHEMA_DROPS"
+NO_REASON_SERVED = "no reason served"
 FETCH_TIMEOUT_S = 20.0
 FETCH_TRIES = 3
 WHOLE_TABLE = "*"
+
+#: Statuses that mean coord does not SERVE :data:`MANIFEST_ROUTE` at all, as
+#: opposed to serving it and refusing this caller. Measured against controls on
+#: 2026-09-06: coord answers an existing-but-forbidden route (``/coord/fleet/
+#: health``) **403**, and an invented one (``/coord/definitely-not-a-route``)
+#: **401** — so a 401 here is the signature of an UNROUTED path, not of an auth
+#: failure. A 404 is the same statement from a host that routes differently.
+ROUTE_ABSENT_STATUSES = frozenset({401, 404})
 
 Fetcher = Callable[[str], bytes]
 
 
 class ManifestUnavailableError(Exception):
     """The manifest could not be fetched or is not usable. Exit 2, never 1."""
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        http_status: int | None = None,
+        null_half: str | None = None,
+    ) -> None:
+        super().__init__(message)
+        #: The HTTP status the fetch saw, when the failure was an HTTP one.
+        #: ``None`` for a timeout, a DNS failure, or an unusable payload.
+        self.http_status = http_status
+        #: ``"deployed"`` or ``"main"`` when the manifest was fetched and parsed
+        #: but that half was served null/absent — the remediation differs per
+        #: half, so the verdict needs to know which one. ``None`` otherwise.
+        self.null_half = null_half
 
 
 # ---------------------------------------------------------------------------
@@ -510,6 +571,76 @@ def _walk(node: ast.AST, label: str, scan: FileScan) -> None:
         _walk(child, label, scan)
 
 
+def _referenced_names(node: ast.AST) -> set[str]:
+    """Every bare identifier referenced anywhere under ``node``."""
+    return {n.id for n in ast.walk(node) if isinstance(n, ast.Name)}
+
+
+def _downgrade_only_helpers(tree: ast.Module) -> set[str]:
+    """Module-level functions reachable from ``downgrade()`` and NOWHERE else.
+
+    The upgrade path already excludes ``downgrade()``'s own body, because a
+    DROP that only a downgrade performs does not LAND — and not landing is the
+    whole predicate this gate is written against ("a coord.* DROP/RENAME must
+    not land while a coord build that is serving still reads the surface").
+
+    A helper that only ``downgrade()`` calls is downgrade code by exactly that
+    argument, so scanning it re-imports the drop the exclusion just removed.
+    The module docstring justifies scanning every helper on the grounds that
+    one "is reachable from ``upgrade()`` whether or not this scan can prove
+    it" — but that is a REACHABILITY claim, and reachability is precisely what
+    an AST can settle in the common case. This function settles it, and the
+    exclusion then matches the contract the docstring already states.
+
+    Conservative in the one direction that matters. A name referenced anywhere
+    outside the downgrade closure stays on the upgrade path, and a helper
+    reached by any means this pass cannot see (``getattr``, ``globals()``, a
+    string dispatch table) never enters the closure at all, so it is scanned.
+    The failure mode is a helper scanned needlessly, never one skipped that
+    mattered.
+    """
+    functions = {
+        stmt.name: stmt
+        for stmt in tree.body
+        if isinstance(stmt, ast.FunctionDef | ast.AsyncFunctionDef)
+    }
+    downgrade = functions.get("downgrade")
+    if downgrade is None:
+        return set()
+
+    # Fixpoint: what downgrade() calls, then what those call.
+    closure: set[str] = set()
+    frontier = (_referenced_names(downgrade) & set(functions)) - {"downgrade"}
+    while frontier:
+        name = frontier.pop()
+        if name in closure:
+            continue
+        closure.add(name)
+        frontier |= (
+            (_referenced_names(functions[name]) & set(functions))
+            - closure
+            - {"downgrade"}
+        )
+
+    # Everything OUTSIDE downgrade() and outside the closure keeps every name
+    # it mentions on the upgrade path. A closure member's DECORATORS count as
+    # outside: the decorator runs at import time, on the upgrade path.
+    outside: set[str] = set()
+    for stmt in tree.body:
+        is_closure_fn = (
+            isinstance(stmt, ast.FunctionDef | ast.AsyncFunctionDef)
+            and stmt.name in closure
+        )
+        if is_closure_fn:
+            for decorator in stmt.decorator_list:
+                outside |= _referenced_names(decorator)
+            continue
+        if isinstance(stmt, ast.FunctionDef) and stmt.name == "downgrade":
+            continue
+        outside |= _referenced_names(stmt)
+    return closure - outside
+
+
 # ---------------------------------------------------------------------------
 # The COORD_SCHEMA_DROPS declaration
 # ---------------------------------------------------------------------------
@@ -625,9 +756,15 @@ def scan_source(source: str, path: Path) -> FileScan:
     label = repo_relative(path)
     tree = ast.parse(source, filename=str(path))
 
+    downgrade_only = _downgrade_only_helpers(tree)
     for stmt in _body_without_docstring(tree.body):
         if isinstance(stmt, ast.FunctionDef) and stmt.name == "downgrade":
             continue  # the one body that is NOT the upgrade path
+        if (
+            isinstance(stmt, ast.FunctionDef | ast.AsyncFunctionDef)
+            and stmt.name in downgrade_only
+        ):
+            continue  # reachable only from downgrade() — downgrade code too
         _walk(stmt, label, scan)
 
     declaration = _declaration_node(tree)
@@ -664,6 +801,14 @@ def scan_source(source: str, path: Path) -> FileScan:
             "nothing in coord.*, declare the coord drops it DOES perform — there "
             "must be at least one, or restructure the SQL so the table and column "
             "are literals the gate can read."
+        )
+        scan.violations.append(
+            f"  NOTE: a {DECLARATION_NAME} declaration ACTIVATES the manifest check, "
+            f"which needs coord to serve BOTH halves of {MANIFEST_ROUTE}. While "
+            "either half is null (the gate names which, and quotes coord's reason), "
+            "declaring converts this fixable failure into one only coord can fix. "
+            "If your DROP sites are reached only from downgrade(), you need no "
+            "declaration at all — this gate scans the upgrade path only."
         )
     return scan
 
@@ -731,7 +876,8 @@ def fetch_manifest(url: str) -> bytes:
             last = exc
         if attempt < FETCH_TRIES:
             time.sleep(attempt)
-    raise ManifestUnavailableError(f"{url}: {last}")
+    status = last.code if isinstance(last, urllib.error.HTTPError) else None
+    raise ManifestUnavailableError(f"{url}: {last}", http_status=status)
 
 
 @dataclass
@@ -742,18 +888,38 @@ class Manifest:
     main_sha: str
     #: (table, column) -> the labels of the halves that read it
     surfaces: dict[tuple[str, str], list[str]]
-    #: table -> labels of the halves carrying a `*` wildcard row for it
-    wildcards: dict[str, list[str]]
+    #: table -> the `*` wildcard rows for it, as (half label, file, reason).
+    #: ``reason`` is None when the row's source carried no ``: <reason>``.
+    wildcards: dict[str, list[tuple[str, str, str | None]]]
+
+
+def _unavailable_reason(payload: dict, key: str) -> str | None:
+    """coord's own explanation for a null half — ``<key>_unavailable_reason``.
+
+    Read symmetrically for both halves. An empty or non-string value counts as
+    no reason: the guard then says so rather than quoting ``''`` or ``None``.
+    """
+    reason = payload.get(f"{key}_unavailable_reason")
+    if isinstance(reason, str) and reason.strip():
+        return reason.strip()
+    return None
 
 
 def _half(payload: dict, key: str, sha_key: str) -> tuple[str, list]:
     half = payload.get(key)
     if half is None:
-        reason = payload.get("main_unavailable_reason") if key == "main" else None
+        reason = _unavailable_reason(payload, key)
+        # The reason goes LAST and verbatim: coord's text carries its own
+        # punctuation, and nothing of ours should follow it.
         raise ManifestUnavailableError(
-            f"the `{key}` half of the manifest is null"
-            + (f" — coord says: {reason!r}" if reason else "")
-            + ". A missing half is UNKNOWN, not 'reads nothing'."
+            f"the `{key}` half of the manifest is null. A missing half is UNKNOWN, "
+            "not 'reads nothing'. "
+            + (
+                f"coord's `{key}_unavailable_reason`: {reason}"
+                if reason
+                else f"{NO_REASON_SERVED} (no `{key}_unavailable_reason` beside it)."
+            ),
+            null_half=key,
         )
     if not isinstance(half, dict):
         raise ManifestUnavailableError(f"the `{key}` half is not an object: {half!r}")
@@ -786,7 +952,7 @@ def parse_manifest(raw: bytes | str) -> Manifest:
     main_sha, main_rows = _half(payload, "main", "sha")
 
     surfaces: dict[tuple[str, str], list[str]] = {}
-    wildcards: dict[str, list[str]] = {}
+    wildcards: dict[str, list[tuple[str, str, str | None]]] = {}
     for label, rows in (
         (f"deployed build {deployed_sha}", deployed_rows),
         (f"main {main_sha}", main_rows),
@@ -803,7 +969,12 @@ def parse_manifest(raw: bytes | str) -> Manifest:
             table, column, source = row
             table = normalise_table(table)
             if column == WHOLE_TABLE:
-                wildcards.setdefault(table, []).append(f"{label} ({source})")
+                # A wildcard row's source is `<file>: <reason>` (coord's
+                # INTENTIONALLY_UNRESOLVED projection, PR #2010). Keep the
+                # reason apart so the verdict can name it, not just the file.
+                file_part, sep, reason_part = source.partition(": ")
+                reason = reason_part.strip() if sep and reason_part.strip() else None
+                wildcards.setdefault(table, []).append((label, file_part, reason))
             else:
                 surfaces.setdefault((table, column), []).append(f"{label} ({source})")
     return Manifest(deployed_sha, main_sha, surfaces, wildcards)
@@ -824,12 +995,18 @@ Resolution, in order:
   1. Land the coord change that stops reading the surface.
   2. Wait for it to DEPLOY: `curl -s https://coord.qontinui.io/health`
      must report a `build_sha` that is a descendant of that change, AND
-     coord's main manifest must no longer list the surface (coord's CI
-     re-pushes it on every land to main).
+     the `main` half of `GET https://coord.qontinui.io/coord/schema/read-surfaces`
+     must no longer list the surface (coord's main-push workflow stores
+     it through `POST /coord/schema/read-surfaces-snapshot` on every land).
   3. Re-run this check (re-push, or re-run the workflow).
 Or split the drop into a LATER revision and land the rest of this one
 now — an ADD lands before its consumer; a DROP lands after its last
 reader is gone, and "gone" means deployed, not merged.
+Or, when the DROP is the reversal of something this same revision ADDS,
+write the DROP literally inside `downgrade()`, which this gate does not
+scan — a downgrade-only removal never LANDS, so there is nothing for a
+serving coord to lose. A green from that shape is "no upgrade-path drop
+found", not "a drop was checked"; the gate says so in its own output.
 """
 
 
@@ -890,11 +1067,82 @@ def check_drops(
                 )
                 waivers.append(
                     f"{drop.where} removes {target} ({drop.how}), and coord reads columns "
-                    f"of coord.{drop.table} it could not name statically — an "
-                    "INTENTIONALLY_UNRESOLVED waiver in schema_read_contract.rs: "
-                    + "; ".join(wild)
+                    f"of coord.{drop.table} it could not name statically — "
+                    f"{len(wild)} INTENTIONALLY_UNRESOLVED waiver(s) in "
+                    "schema_read_contract.rs, each with coord's own reason:"
                 )
+                for label, file_part, reason in wild:
+                    waivers.append(
+                        f"    {label}: {file_part} — {reason or NO_REASON_SERVED}"
+                    )
     return violations, waivers
+
+
+def _explain_null_half(half: str, manifest_url: str) -> None:
+    """The per-half remediation for a manifest whose ``half`` was served null.
+
+    Both are honest about who can fix it: neither is fixable from inside the
+    web PR, and the gate fails closed on purpose until coord serves the half.
+    """
+    if half == "main":
+        err(
+            f"The `main` half is stored by coord's `POST {MAIN_INGEST_ROUTE}` "
+            "ingest, fired by coord's main-push workflow on every land (plan "
+            "2026-09-03-coord-column-drop-guard-on-web-migrations Phase 1c; peer "
+            "plan 2026-09-06-devops-coord-column-drop-guard-has-no-served-manifest "
+            "Phase 4). Until that ships — or after a coord outage that emptied the "
+            "store — a null `main` is UNKNOWN and this gate fails closed BY DESIGN: "
+            "the `deployed` half alone cannot say what the coord about to deploy "
+            "reads. No edit inside this PR changes it. Re-run once "
+            f"`GET {manifest_url}` serves `main.sha`."
+        )
+    elif half == "deployed":
+        err(
+            "The `deployed` half is compiled into the serving coord binary and "
+            "carries its `build_sha`; coord serves it null rather than fabricate a "
+            "sha when the build compiled in no 40-hex BUILD_SHA (build.rs's "
+            '`"unknown"` fallback — a build made without `--build-arg '
+            "BUILD_GIT_SHA` and without a `.git`). That is a coord DEPLOY defect, "
+            "not a defect in this revision, and no edit inside this PR changes it. "
+            "Re-run once `curl -s https://coord.qontinui.io/health` reports a "
+            "40-hex `build_sha` and the manifest's `deployed` half is populated."
+        )
+
+
+def _explain_unusable_manifest(
+    exc: ManifestUnavailableError, manifest_url: str
+) -> None:
+    """Say why the manifest could not decide, and who can change that.
+
+    ``manifest_url`` is where the manifest was read from — the fetched URL, or
+    the ``--manifest-json`` path — so the re-run advice names the real door.
+    """
+    if exc.http_status in ROUTE_ABSENT_STATUSES:
+        err(
+            f"coord does not SERVE {MANIFEST_ROUTE} (HTTP {exc.http_status}). "
+            "coord answers an UNROUTED path 401 and an existing-but-forbidden one "
+            "403 (measured 2026-09-06), so this is the route being absent, not a "
+            "credential problem: the route shipped in coord PR #2010, so either "
+            "the serving coord build predates it or --coord-url names a host that "
+            "does not route it. There is no manifest for any revision to be "
+            "checked against, so this check currently has NO passing shape for a "
+            "coord.* drop."
+        )
+        err(
+            "THIS IS NOT A DEFECT IN THIS REVISION, AND NO EDIT INSIDE THIS PR "
+            f"CAN FIX IT. In particular do NOT add a {DECLARATION_NAME} "
+            "declaration to try to satisfy this check: a declaration is what "
+            "ACTIVATES this phase, so it turns a fixable exit 1 into this "
+            "unfixable exit 2. Escalate the gate itself — plan "
+            "2026-09-06-devops-coord-column-drop-guard-has-no-served-manifest."
+        )
+        return
+    err(
+        "This revision DROPS a coord.* surface and the gate cannot see what "
+        "coord reads, so it cannot pass. UNKNOWN is not green."
+    )
+    if exc.null_half is not None:
+        _explain_null_half(exc.null_half, manifest_url)
 
 
 def main(argv: list[str] | None = None, *, fetch: Fetcher | None = None) -> int:
@@ -993,6 +1241,13 @@ def main(argv: list[str] | None = None, *, fetch: Fetcher | None = None) -> int:
         note(
             "No coord.* DROP/RENAME in the upgrade path; nothing to check against coord."
         )
+        note(
+            "  NB: this pass says this revision drops nothing in coord.*'s UPGRADE "
+            "path. It is NOT evidence that a drop was checked against coord's read "
+            "contract — it means none was found in the upgrade path; a DROP written "
+            "inside downgrade() (or a helper only downgrade() reaches) is not "
+            "scanned, no manifest was fetched, and none was needed."
+        )
         return 0
 
     # 4. Only now is coord consulted.
@@ -1017,13 +1272,7 @@ def main(argv: list[str] | None = None, *, fetch: Fetcher | None = None) -> int:
         return EXIT_VACUOUS
     except ManifestUnavailableError as exc:
         err(f"coord read-surface manifest unusable ({manifest_label}): {exc}")
-        err(
-            "This revision DROPS a coord.* surface and the gate cannot see what coord "
-            "reads, so it cannot pass. UNKNOWN is not green. If coord does not serve "
-            f"{MANIFEST_ROUTE} yet, the guard's coord half has not deployed; if the "
-            "`main` half is null, coord's CI has not pushed a snapshot since its last "
-            "boot — dispatch coord's ci.yml on main, or wait for its next land."
-        )
+        _explain_unusable_manifest(exc, manifest_label)
         return EXIT_VACUOUS
     note(
         f"manifest: deployed build {manifest.deployed_sha}, main {manifest.main_sha}, "
@@ -1052,7 +1301,9 @@ def main(argv: list[str] | None = None, *, fetch: Fetcher | None = None) -> int:
         err(
             "Resolve the INTENTIONALLY_UNRESOLVED entry in coord's "
             "schema_read_contract.rs (so the extractor can name the columns) and land "
-            "that first, or split the drop out. UNKNOWN is not green."
+            "that first, or split the drop out. The reason beside each waiver above "
+            "is coord's own statement of why the column set is not statically "
+            "resolvable there. UNKNOWN is not green."
         )
         return EXIT_VACUOUS
     note(

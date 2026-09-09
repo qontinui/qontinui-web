@@ -366,7 +366,7 @@ class TestOrganizationComesFromThePrincipal:
         assert resp.status_code == 201, resp.text
         assert resp.json()["artifact"]["organization_id"] == str(org.id)
 
-    async def test_a_forged_org_in_the_body_is_ignored_for_a_device_caller(
+    async def test_a_forged_org_in_the_body_is_refused_for_a_device_caller(
         self, device_client: httpx.AsyncClient, device_owner
     ) -> None:
         """Invariant 1 holds on the device arm too — scope escalation.
@@ -374,15 +374,26 @@ class TestOrganizationComesFromThePrincipal:
         The Cognito arm already has this test; repeating it here is deliberate,
         because the widening added a SECOND way to become a principal and an
         invariant only proven on one arm is not proven.
+
+        Until plan ``2026-09-03-wrong-key-reads-cannot-yield-a-silent-zero``
+        Phase 4 the key was silently DROPPED and the write returned 201 under
+        the device's real organization; now ``extra="forbid"`` refuses it by
+        name. The device arm must refuse identically to the Cognito arm —
+        an invariant that changed shape on one arm only is the same gap this
+        duplicated test exists to close.
         """
-        _user, org = device_owner
+        _user, _org = device_owner
         forged = str(uuid4())
         resp = await device_client.post(
             API_PREFIX, json=_payload(organization_id=forged)
         )
-        assert resp.status_code == 201, resp.text
-        assert resp.json()["artifact"]["organization_id"] != forged
-        assert resp.json()["artifact"]["organization_id"] == str(org.id)
+        assert resp.status_code == 422, resp.text
+        locs = [
+            tuple(err["loc"])
+            for err in resp.json()["detail"]
+            if err["type"] == "extra_forbidden"
+        ]
+        assert locs == [("body", "organization_id")]
 
     async def test_a_device_cannot_read_another_principals_artifacts(
         self, async_db_session: AsyncSession, device_client: httpx.AsyncClient

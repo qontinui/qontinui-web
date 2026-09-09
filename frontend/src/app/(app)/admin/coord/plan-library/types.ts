@@ -34,6 +34,10 @@ export const WORK_ARTIFACT_KINDS = [
   "investigation_report",
   "handoff",
   "plan",
+  // An operator question answered by live measurement. Kept apart from
+  // `investigation_report` (the `/chart` gap verdicts) so the two families
+  // stay separable on the kind filter. `plan_library_04_diagnostic_refutes`.
+  "diagnostic",
 ] as const;
 
 export type WorkArtifactKind = (typeof WORK_ARTIFACT_KINDS)[number];
@@ -45,6 +49,7 @@ export const KIND_LABELS: Record<WorkArtifactKind, string> = {
   investigation_report: "Investigation report",
   handoff: "Handoff",
   plan: "Plan",
+  diagnostic: "Diagnostic",
 };
 
 /** Render an unrecognised kind as itself rather than as blank. */
@@ -66,7 +71,11 @@ export type WorkArtifactRelation =
   | "feeds"
   | "authored_plan"
   | "supersedes"
-  | "depends_on";
+  | "depends_on"
+  /** One-ended: `to_id` is null until someone claims the surfaced work. */
+  | "spawned_followup"
+  /** A measurement that FALSIFIES the target claim. Two-ended. */
+  | "refutes";
 
 export interface WorkArtifactSummary {
   id: string;
@@ -85,6 +94,11 @@ export interface WorkArtifactSummary {
   /** Soft link to a coord work unit. No FK — it MAY dangle. */
   work_unit_slug: string | null;
   repos: string[];
+  /**
+   * Citations to served coord Intent documents (`success_metric/<name>`,
+   * `domain_spec/<name>`). Soft links like `work_unit_slug` — they MAY dangle.
+   */
+  intent_refs: string[];
   authored_at: string | null;
   captured_by: string;
   current_version: number;
@@ -132,6 +146,8 @@ export interface WorkArtifactDetail extends WorkArtifactSummary {
 
 export interface WorkArtifactListResponse {
   items: WorkArtifactSummary[];
+  /** This page's length (`items.length`); `total` is the unpaged total. */
+  count: number;
   total: number;
   offset: number;
   limit: number;
@@ -261,6 +277,8 @@ export interface PlanCandidate {
   title: string;
   status: string;
   repos: string[];
+  /** Empty on a work-unit-only row — there is no artifact row to read it from. */
+  intent_refs: string[];
   source_repo: string | null;
   source_path: string | null;
   work_unit_slug: string | null;
@@ -289,6 +307,8 @@ export interface PlanCandidate {
 
 export interface PlanCandidateResponse {
   items: PlanCandidate[];
+  /** This page's length (`items.length`); `total` is the unpaged total. */
+  count: number;
   total: number;
   offset: number;
   limit: number;

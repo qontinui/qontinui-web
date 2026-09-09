@@ -87,6 +87,27 @@ describe("runnerProxyGet error diagnostics", () => {
     expect(err.lastSeenAt).toBeNull();
   });
 
+  it("keeps an ABSENT ws_connected_at absent, distinct from null", async () => {
+    // The wire→object hop is the one place this distinction can be destroyed,
+    // and both spellings are falsy, so a `?? null` or a `v == null` tidy-up
+    // would silently collapse them. The backend omits these keys when its
+    // coord read failed; reading that as `null` would make the UI announce
+    // "the runner has never registered" every time coord hiccupped.
+    fetchMock.mockResolvedValue(
+      errorResponse(503, {
+        detail: "runner not connected",
+        device_id: "dev-1",
+      })
+    );
+
+    const err = await runnerProxyGet("dev-1", "health").catch((e) => e);
+
+    expect(err.wsConnectedAt).toBeUndefined();
+    expect(err.lastSeenAt).toBeUndefined();
+    // Not merely falsy — the two cases must not compare equal.
+    expect(err.wsConnectedAt).not.toBeNull();
+  });
+
   it("falls back to the X-Request-ID header when the body has no id", async () => {
     fetchMock.mockResolvedValue(
       errorResponse(

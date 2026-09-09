@@ -199,6 +199,99 @@ class TestCandidateSelection:
         _, total = await crud.list_plan_candidates(async_db_session, org_id=org)
         assert total == 1
 
+    @pytest.mark.parametrize(
+        ("status", "terminal"),
+        [
+            # The fleet's convention is a verb followed by a date, a PR
+            # number or a parenthetical; the scanner stores it opaquely.
+            ("SHIPPED 2026-09-02", True),
+            ("SHIPPED_2026_09_02", True),
+            ("shipped (PR #12)", True),
+            ("Shipped", True),
+            ("  Superseded ", True),
+            ("ABANDONED", True),
+            ("SHIPPED", True),
+            # Two-word open states whose FIRST word is in no vocabulary.
+            ("IN PROGRESS", False),
+            ("IN PROGRESS 2026-09-03", False),
+            ("NOT STARTED", False),
+            ("VETTED 2026-09-03", False),
+            ("DRAFT", False),
+            ("MARINATING", False),
+            ("", False),
+            (None, False),
+        ],
+    )
+    async def test_terminal_reading_is_the_first_token(
+        self, status: str | None, terminal: bool
+    ) -> None:
+        """Phase 5 of ``2026-09-03-plan-library-write-door-nonce-authorized-and-body-sync-on-by-default``.
+
+        Whole-string membership read every dated stamp as NOT done, so a
+        landed dependency stayed unmet and a shipped plan stayed a
+        candidate. The reading is the leading normalized word alone.
+        """
+        assert crud.is_terminal_status(status) is terminal
+        expected_token = crud.normalize_status(status).split("_", 1)[0]
+        assert crud.terminal_token(status) == expected_token
+
+    async def test_dated_terminal_stamp_is_not_a_candidate(
+        self, async_db_session: AsyncSession
+    ) -> None:
+        """The SQL twin agrees with the Python reading on the fleet's stamps."""
+        org = uuid4()
+        open_dated = await _plan(
+            async_db_session,
+            org_id=org,
+            slug=_slug("open-dated"),
+            status="IN PROGRESS 2026-09-03",
+        )
+        not_started = await _plan(
+            async_db_session,
+            org_id=org,
+            slug=_slug("not-started"),
+            status="NOT STARTED",
+        )
+        for spelling in ("SHIPPED 2026-09-02", "shipped (PR #12)", "Superseded by x"):
+            await _plan(
+                async_db_session, org_id=org, slug=_slug("done-dated"), status=spelling
+            )
+
+        rows, total = await crud.list_plan_candidates(async_db_session, org_id=org)
+        assert total == 2
+        assert {r.id for r in _artifacts(rows)} == {open_dated.id, not_started.id}
+
+    async def test_unmet_depends_on_reads_a_dated_shipped_stamp_as_met(
+        self, async_db_session: AsyncSession
+    ) -> None:
+        org = uuid4()
+        plan = await _plan(async_db_session, org_id=org, slug=_slug("dependent"))
+        blocker = await _plan(
+            async_db_session,
+            org_id=org,
+            slug=_slug("blocker"),
+            status="IN PROGRESS 2026-09-01",
+        )
+        landed = await _plan(
+            async_db_session,
+            org_id=org,
+            slug=_slug("landed"),
+            status="SHIPPED 2026-09-02",
+        )
+        for target in (blocker, landed):
+            await crud.create_edge(
+                async_db_session,
+                from_artifact=plan,
+                to_artifact=target,
+                relation="depends_on",
+                note=None,
+                created_by="test",
+            )
+
+        deps = await crud.load_depends_on(async_db_session, [plan.id])
+        unmet = [d for d in deps[plan.id] if not crud.is_terminal_status(d.status)]
+        assert [d.id for d in unmet] == [blocker.id]
+
     async def test_ordering_is_oldest_vetted_first_and_stable(
         self, async_db_session: AsyncSession
     ) -> None:

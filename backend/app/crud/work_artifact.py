@@ -14,9 +14,25 @@ bucket consistently instead of seeing everything or nothing.
 Upsert contract
 ---------------
 ``content_sha256`` is ALWAYS computed server-side from ``body``. When it
-matches the stored digest the upsert is a **no-op**: ``current_version`` does
-not move and no version row is appended. When it differs, the head row is
-updated and a snapshot is appended in the SAME transaction.
+matches the stored digest the BODY is a no-op: ``current_version`` does not
+move and no version row is appended — the version log is the body's history
+and nothing else. The head row's metadata (``title``, ``status``, ``repos``,
+``intent_refs``, ``work_unit_slug``, ``authored_at``, ``source_path``,
+``captured_by``) is
+still written when any of it differs, and ``changed`` reports that honestly
+(Phase 5 of ``2026-09-03-plan-library-write-door-nonce-authorized-and-body-sync-on-by-default``:
+an accepted POST used to drop a corrected ``status`` on the floor whenever the
+body was already stored). When the digest differs, the head row is updated and
+a snapshot is appended in the SAME transaction.
+
+Terminal-status contract
+------------------------
+``status`` is opaque free-form text. The single "done" reading is
+:func:`is_terminal_status`: the FIRST token of the normalized status against
+:data:`app.models.work_artifact.TERMINAL_STATUSES`, so the fleet's dated
+stamps (``SHIPPED 2026-09-02``, ``shipped (PR #12)``) read as done while
+``IN PROGRESS`` / ``NOT STARTED`` do not. :func:`_terminal_token_sql` is the
+SQL twin the candidate read uses, and the two MUST stay in step.
 
 Kind-lock contract (``plan_library_02_kind_lock``)
 --------------------------------------------------
@@ -156,9 +172,44 @@ def _normalized_status() -> ColumnElement[str]:
     )
 
 
+def terminal_token(status: str | None) -> str:
+    """The FIRST ``_``-separated token of :func:`normalize_status`.
+
+    The fleet stamps a plan ``Status: SHIPPED 2026-09-02`` — a verb followed
+    by a date, a PR number or a parenthetical — and the runner scanner stores
+    that stamp opaquely (``body_push.rs``
+    ``a_stamped_prompt_keeps_its_opaque_status``). Whole-string membership
+    therefore read EVERY dated stamp as not-done: ``unmet_depends_on`` kept a
+    landed dependency unmet and ``/candidates`` kept listing shipped plans.
+    The terminal reading is the leading word alone; the remainder is
+    provenance, not state. ``""`` for an empty or ``None`` status, which is
+    in no vocabulary and so reads as not-yet-done. Mirrors
+    :func:`_terminal_token_sql`, and the two MUST stay in step.
+    """
+    return normalize_status(status).split("_", 1)[0]
+
+
+def _terminal_token_sql() -> ColumnElement[str]:
+    """The SQL twin of :func:`terminal_token`, over ``WorkArtifact.status``.
+
+    ``split_part(x, '_', 1)`` returns the whole string when there is no
+    ``_`` and ``''`` for ``''`` — the same two edges Python's
+    ``split("_", 1)[0]`` has.
+    """
+    return func.split_part(_normalized_status(), "_", 1)
+
+
 def is_terminal_status(status: str | None) -> bool:
-    """True when this opaque status reads as "done"."""
-    return normalize_status(status) in TERMINAL_STATUSES
+    """True when this opaque status reads as "done".
+
+    ``SHIPPED 2026-09-02``, ``SHIPPED_2026_09_02`` and ``shipped (PR #12)``
+    are all done; ``IN PROGRESS`` and ``NOT STARTED`` are not (``IN`` and
+    ``NOT`` are in no vocabulary). Read via :func:`terminal_token` so the
+    candidate read's SQL arm (:func:`_plan_candidate_filters`) and every
+    Python caller — ``unmet_depends_on``, the work-unit arm of the candidate
+    union — share one reading.
+    """
+    return terminal_token(status) in TERMINAL_STATUSES
 
 
 def compute_content_sha256(body: str) -> str:
@@ -191,6 +242,7 @@ def _apply_filters(
     q: str | None,
     since: datetime | None,
     work_unit_slug: str | None,
+    intent_ref: str | None = None,
 ) -> Select:
     """Apply the shared list/count filters to a statement."""
     stmt = stmt.where(_org_scope(org_id))
@@ -222,6 +274,13 @@ def _apply_filters(
         stmt = stmt.where(WorkArtifact.updated_at >= since)
     if work_unit_slug is not None:
         stmt = stmt.where(WorkArtifact.work_unit_slug == work_unit_slug)
+    if intent_ref is not None:
+        # "Which artifacts bear on this Intent?" — the query the column exists
+        # to serve. Containment (``@>``) so ix_work_artifacts_intent_refs (GIN)
+        # answers it, exactly as the ``repo`` filter above is spelled.
+        stmt = stmt.where(
+            WorkArtifact.intent_refs.op("@>")(cast([intent_ref], ARRAY(Text)))
+        )
     return stmt
 
 
@@ -235,6 +294,7 @@ async def list_artifacts(
     q: str | None = None,
     since: datetime | None = None,
     work_unit_slug: str | None = None,
+    intent_ref: str | None = None,
     offset: int = 0,
     limit: int = 50,
 ) -> tuple[list[WorkArtifact], int]:
@@ -248,6 +308,7 @@ async def list_artifacts(
         q=q,
         since=since,
         work_unit_slug=work_unit_slug,
+        intent_ref=intent_ref,
     )
 
     count_stmt = _apply_filters(
@@ -259,6 +320,7 @@ async def list_artifacts(
         q=q,
         since=since,
         work_unit_slug=work_unit_slug,
+        intent_ref=intent_ref,
     )
     total = int((await db.execute(count_stmt)).scalar_one())
 
@@ -502,6 +564,92 @@ async def list_edges(
     return out
 
 
+@dataclass(frozen=True)
+class _HeadMetadata:
+    """The head row's payload-described metadata — everything a POST says
+    about an artifact OTHER than its body and its identity.
+
+    One value object so the unchanged-digest arm and the full-replace arm of
+    :func:`upsert_artifact` write the SAME fields through the SAME assignment;
+    two hand-written blocks is how the first one silently lost ``status``.
+    ``kind`` / ``kind_locked`` are identity (the kind-lock contract) and
+    ``body`` / ``content_sha256`` / ``current_version`` are content, so none
+    of them belongs here.
+    """
+
+    title: str
+    status: str
+    source_path: str | None
+    work_unit_slug: str | None
+    repos: list[str]
+    intent_refs: list[str]
+    authored_at: datetime | None
+    captured_by: str
+
+
+def _assign_head_metadata(existing: WorkArtifact, metadata: _HeadMetadata) -> bool:
+    """Write ``metadata`` onto the head row; ``True`` when any field moved.
+
+    Fields that already hold the incoming value are not re-assigned, so an
+    identical re-post leaves the row clean — the caller reads the return
+    value, not the session's dirty state, and does not commit for nothing.
+    ``captured_by`` is among them on purpose: it records the door that last
+    ASSERTED this metadata, which is exactly what a metadata-only write is.
+    """
+    moved = False
+    for field, value in (
+        ("title", metadata.title),
+        ("status", metadata.status),
+        ("source_path", metadata.source_path),
+        ("work_unit_slug", metadata.work_unit_slug),
+        ("repos", metadata.repos),
+        ("intent_refs", metadata.intent_refs),
+        ("authored_at", metadata.authored_at),
+        ("captured_by", metadata.captured_by),
+    ):
+        if getattr(existing, field) != value:
+            setattr(existing, field, value)
+            moved = True
+    return moved
+
+
+async def _settle_unchanged_digest(
+    db: AsyncSession,
+    existing: WorkArtifact,
+    *,
+    metadata: _HeadMetadata,
+    kind_is_heuristic: bool,
+) -> tuple[WorkArtifact, bool, bool]:
+    """Finish an upsert whose body already matches the stored digest.
+
+    No version bump and no snapshot — the version log is the body's history.
+    Two things ARE written:
+
+    * the head metadata, when any of it differs (this is the ``changed`` the
+      caller reports, and the ``X-Artifact-Unchanged`` header follows it);
+    * ``kind_locked``, False → True, on an explicit (non-heuristic) write.
+      The lock records that a caller ASSERTED this kind; that assertion is
+      independent of whether the body changed, and dropping it on a re-post
+      would let the very next scan un-stick a correction. It is identity,
+      not content, so it does NOT flip ``changed``.
+
+    ``updated_at`` is stamped explicitly when metadata moved, the same way
+    the full-replace arm stamps it; the column's ``onupdate`` stamps it on
+    a lock-only write as well, because that is still an UPDATE of the row.
+    An identical re-post issues no UPDATE at all and leaves it alone.
+    """
+    metadata_moved = _assign_head_metadata(existing, metadata)
+    if metadata_moved:
+        existing.updated_at = datetime.now(UTC)
+    lock_asserted = not kind_is_heuristic and not existing.kind_locked
+    if lock_asserted:
+        existing.kind_locked = True
+    if metadata_moved or lock_asserted:
+        await db.commit()
+        await db.refresh(existing)
+    return existing, False, metadata_moved
+
+
 async def upsert_artifact(
     db: AsyncSession,
     *,
@@ -521,6 +669,7 @@ async def upsert_artifact(
     change_description: str | None,
     created_by: str | None = None,
     kind_is_heuristic: bool = False,
+    intent_refs: list[str] | None = None,
 ) -> tuple[WorkArtifact, bool, bool]:
     """Insert-or-update by the functional unique key.
 
@@ -528,15 +677,22 @@ async def upsert_artifact(
 
     * A brand-new key inserts the head row AND its version-1 snapshot →
       ``(row, True, True)``.
-    * An existing key whose body hashes to the stored digest is a **no-op**:
-      ``current_version`` is untouched and no snapshot is appended →
-      ``(row, False, False)``. Content metadata is deliberately NOT written on
-      a no-op; the digest is the whole contract. The ONE exception is
-      ``kind_locked`` (see below), which is an assertion about identity rather
-      than content.
+    * An existing key whose body hashes to the stored digest keeps its
+      version log: ``current_version`` is untouched and no snapshot is
+      appended — the log is the BODY's history. The head row's metadata
+      (:func:`_assign_head_metadata`'s fields) is still written when any of
+      it differs, and ``changed`` says whether it did →
+      ``(row, False, changed_metadata)``. A byte-identical re-post is a
+      full no-op → ``(row, False, False)``. ``kind_locked`` (see below) is
+      written on this arm too, but it is an assertion about identity rather
+      than content and does NOT count as ``changed``.
     * An existing key with different content bumps ``current_version``,
       rewrites the head row's metadata and appends a snapshot in the same
       transaction → ``(row, False, True)``.
+
+    Both arms write the metadata through ONE helper so they cannot drift:
+    the incident this repairs was a corrected ``status`` POSTed against an
+    unchanged body and silently dropped (finding 43479836).
 
     ``kind_is_heuristic``
         ``False`` (default) — an operator/agent write. Target resolution is
@@ -582,6 +738,7 @@ async def upsert_artifact(
             source_repo=source_repo,
             work_unit_slug=work_unit_slug,
             repos=list(repos),
+            intent_refs=list(intent_refs or []),
             authored_at=authored_at,
             captured_by=captured_by,
             current_version=1,
@@ -625,32 +782,34 @@ async def upsert_artifact(
 
     assert existing is not None  # narrowed by both branches above
 
+    metadata = _HeadMetadata(
+        title=title,
+        status=status,
+        source_path=source_path,
+        work_unit_slug=work_unit_slug,
+        repos=list(repos),
+        intent_refs=list(intent_refs or []),
+        authored_at=authored_at,
+        captured_by=captured_by,
+    )
+
     if existing.content_sha256 == digest:
-        # 304-equivalent: no version bump, no snapshot, no content write.
-        #
-        # ``kind_locked`` is the ONE field still written here, and only in the
-        # False → True direction on an explicit write. The lock records that a
-        # caller ASSERTED this kind; that assertion is independent of whether
-        # the body happened to change, and dropping it on a re-post would let
-        # the very next scan un-stick a correction.
-        if not kind_is_heuristic and not existing.kind_locked:
-            existing.kind_locked = True
-            await db.commit()
-            await db.refresh(existing)
-        return existing, False, False
+        # The body's 304-equivalent: no version bump, no snapshot. The
+        # metadata and the kind lock are still settled — see the helper.
+        return await _settle_unchanged_digest(
+            db, existing, metadata=metadata, kind_is_heuristic=kind_is_heuristic
+        )
 
     # Content differs, so a version row is about to be appended. Take a row
     # lock and re-read first: two writers that both saw current_version=1
     # would both try to insert version 2 and one would die on
     # uq_work_artifact_versions_doc_version. Under the lock the loser sees
-    # the winner's digest and either no-ops or bumps to 3.
+    # the winner's digest and either settles metadata-only or bumps to 3.
     await db.refresh(existing, with_for_update=True)
     if existing.content_sha256 == digest:
-        if not kind_is_heuristic and not existing.kind_locked:
-            existing.kind_locked = True
-            await db.commit()
-            await db.refresh(existing)
-        return existing, False, False
+        return await _settle_unchanged_digest(
+            db, existing, metadata=metadata, kind_is_heuristic=kind_is_heuristic
+        )
 
     # Whether this write may move ``kind``. Evaluated AFTER the row lock, not
     # before: a concurrent correction that landed while we were resolving is
@@ -673,15 +832,10 @@ async def upsert_artifact(
         existing.kind_locked = True
 
     existing.current_version += 1
-    existing.title = title
-    existing.status = status
+    _assign_head_metadata(existing, metadata)
     existing.body = body
     existing.content_sha256 = digest
-    existing.source_path = source_path
-    existing.work_unit_slug = work_unit_slug
-    existing.repos = list(repos)
-    existing.authored_at = authored_at
-    existing.captured_by = captured_by
+    # The body moved, so the row was touched whether or not the metadata did.
     existing.updated_at = datetime.now(UTC)
 
     db.add(
@@ -1237,10 +1391,11 @@ def _plan_candidate_filters(org_id: UUID | None) -> tuple[ColumnElement[bool], .
     """The document layer's arm of the population, unchanged since Phase 6.
 
     Non-terminal ``kind='plan'`` artifacts in the caller's org scope, reading
-    the OPAQUE ``status`` through the SQL twin of :func:`normalize_status`
-    against :data:`app.models.work_artifact.TERMINAL_STATUSES`. An
-    unrecognised status counts as not-yet-shipped — the library mirrors what
-    the fleet wrote and an unknown word must not silently hide a plan.
+    the OPAQUE ``status`` through the SQL twin of :func:`terminal_token`
+    (its FIRST normalized word, so a dated ``SHIPPED 2026-09-02`` stamp reads
+    as shipped) against :data:`app.models.work_artifact.TERMINAL_STATUSES`.
+    An unrecognised status counts as not-yet-shipped — the library mirrors
+    what the fleet wrote and an unknown word must not silently hide a plan.
 
     Returned as the predicates rather than as a statement because the union
     path selects the SAME rows twice with different column lists (the sort
@@ -1250,7 +1405,7 @@ def _plan_candidate_filters(org_id: UUID | None) -> tuple[ColumnElement[bool], .
     return (
         _org_scope(org_id),
         WorkArtifact.kind == "plan",
-        _normalized_status().not_in(tuple(sorted(TERMINAL_STATUSES))),
+        _terminal_token_sql().not_in(tuple(sorted(TERMINAL_STATUSES))),
     )
 
 
@@ -1389,7 +1544,7 @@ async def list_plan_candidates(
     ("an unavailable coord is UNKNOWN, never empty") true of the population as
     well as of the per-row fields.
 
-    Terminal classification is the SAME on both arms — :func:`normalize_status`
+    Terminal classification is the SAME on both arms — :func:`terminal_token`
     against :data:`app.models.work_artifact.TERMINAL_STATUSES`, in SQL for the
     artifacts and in Python for the work units — so an unrecognised status
     counts as not-yet-terminal on either side. That matters more for coord's

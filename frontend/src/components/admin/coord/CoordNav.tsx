@@ -17,7 +17,8 @@
  *             Agent Skills / History / Lands
  *   Merge ▾   Pull Decisions / Automation Rules / Gate Clearance /
  *             Merge Settings°
- *   Intent ▾  Prompt Documents / Policies / Policy Edit Review
+ *   Intent ▾  Prompt Documents / Policies / Decision Policies /
+ *             Policy Edit Review
  *   Dev Ops ▾ Overview / Trees° / Spawn° / Test Targets° / Migrations° /
  *             Deploys° / Releases° / Git Ops° / Federation° / Memory° /
  *             Onboarding° / Onboarding Status°
@@ -98,6 +99,7 @@ import {
   ScrollText,
   Server,
   ShieldCheck,
+  SlidersHorizontal,
   SquareTerminal,
   Stethoscope,
   UserCog,
@@ -385,6 +387,24 @@ const GROUPS: NavGroup[] = [
         label: "Policies",
         icon: Scale,
         testId: "coord-nav-policies",
+      },
+      {
+        // Sits beside Policies deliberately, and in `Intent ▾` rather than
+        // `Merge ▾`. `/admin/coord/policies` is the READ-ONLY half of exactly
+        // this store — the fleet table of tenants that have graduated a
+        // next-step domain — and this is where those rows are AUTHORED. What a
+        // decision policy carries is a standing guidance frame an agent reads
+        // while deciding what to do next, which is what this group is for; the
+        // fact that one of the five domains is called `pr_fix` does not make it
+        // merge-chain machinery the way a gate does (see the Gate Clearance
+        // note above, which is the same test run the other way).
+        //
+        // Distinct path segment, not `/policies/decision`, so the Policies
+        // item's `startsWith(href + "/")` active-match cannot double-highlight.
+        href: "/admin/coord/decision-policies",
+        label: "Decision Policies",
+        icon: SlidersHorizontal,
+        testId: "coord-nav-decision-policies",
       },
       {
         // Sits beside Prompt Documents deliberately: it reviews edits TO those

@@ -54,7 +54,7 @@ import { getSession } from "./api";
 import { classifyLifecycleError, type LifecycleHalf } from "./sessionKeyResolution";
 import { SessionCardView } from "./SessionCardView";
 import { SessionDetail } from "./SessionDetail";
-import { TranscriptStoresPanel, useTranscriptStores } from "./TranscriptStores";
+import { TranscriptStoresPanel, useTranscriptStores } from "./TranscriptStoresPanel";
 import type { HandoffTarget } from "./HandoffModal";
 import type { SessionCard } from "@/services/agent-sessions-api";
 import type { ArtifactLister, OutputReader } from "./transcriptStores";

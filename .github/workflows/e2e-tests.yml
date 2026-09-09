@@ -287,6 +287,7 @@ jobs:
     outputs:
       files: ${{ steps.detect.outputs.files }}
       any: ${{ steps.detect.outputs.any }}
+      groups: ${{ steps.detect.outputs.groups }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v5
@@ -332,23 +333,36 @@ jobs:
             --github-output "$GITHUB_OUTPUT"
 
   frontend-e2e-changed-specs:
-    name: Frontend E2E Tests (changed specs)
+    name: Frontend E2E Tests (changed specs, group ${{ matrix.group.index }})
     needs: changed-specs
-    # Skipped -- not run-and-green -- when nothing under tests/e2e changed,
-    # so a docs-only PR never stands the stack up. `changed-specs` itself is
-    # the green check on such a PR, and its log says "no spec files changed".
+    # Runs ONLY when the PR changed at least one spec file, and fans out over
+    # groups of at most MAX_FILES_PER_GROUP files, each on its own Playwright
+    # stack.
+    #
+    # THE ORIGINAL REASON FOR THAT CAP IS RETIRED. It was introduced because a
+    # single job running every changed spec (23 files on web#1265, 2026-09-05)
+    # degraded the `next dev` server late in the run. This lane runs a
+    # PRODUCTION build now (web#1279), so nothing compiles at request time and
+    # that failure mode cannot occur here — do not cite it as a live
+    # constraint. Nor is a group "the same per-server load a shard carries":
+    # measured, a shard carries roughly twice this cap.
+    #
+    # The cap was re-evaluated in Phase 3 of this plan (slug on its own line so
+    # it stays greppable):
+    # 2026-09-05-web-e2e-runs-against-next-dev-so-a-first-hit-compile-is-a-test-failure
+    # and deliberately left where it is. The measurements, and the reason the
+    # number stays, live with the constant in
+    # scripts/ci/list_changed_e2e_specs.py — one place, so the two cannot
+    # drift. Do not restate the value here.
     if: needs.changed-specs.outputs.any == 'true'
+    strategy:
+      fail-fast: false
+      matrix:
+        group: ${{ fromJson(needs.changed-specs.outputs.groups) }}
     uses: ./.github/workflows/e2e-playwright-stack.yml
     with:
-      spec_files: ${{ needs.changed-specs.outputs.files }}
-      artifact_suffix: changed-specs
-
-  # The cross-browser-survey job lives in its own workflow file
-  # (.github/workflows/cross-browser-survey.yml) so it isn't subject
-  # to this workflow's `cancel-in-progress:` expression above — the
-  # slowest matrix entry (Mobile Chrome) takes ~30min and was being
-  # cancelled mid-run by every push to main. See that file for
-  # details.
+      spec_files: ${{ matrix.group.files }}
+      artifact_suffix: changed-specs-${{ matrix.group.index }}
 
   test-summary:
     name: Test Summary

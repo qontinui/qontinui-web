@@ -12,7 +12,7 @@ export {
   TranscriptStoresPanel,
   useTranscriptStores,
   type TranscriptStoresState,
-} from "./TranscriptStores";
+} from "./TranscriptStoresPanel";
 export { TenantSwitcher } from "./TenantSwitcher";
 export { ConflictRow, deriveAlternateBranches } from "./ConflictRow";
 export { StealModal, getDashboardMachineId } from "./StealModal";
