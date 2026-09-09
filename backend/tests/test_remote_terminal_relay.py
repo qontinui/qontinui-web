@@ -1986,8 +1986,14 @@ def _resync(claims: dict[str, Any], **overrides: Any) -> dict[str, Any]:
         "grant_jti": claims["jti"],
         "remote": {"source_device_id": SOURCE_DEVICE, "grant_jti": claims["jti"]},
         "data": "cmVzeW5j",
+        # The resync ships the WHOLE ring, so the emitter sets both offsets from
+        # the same `get_scrollback_buffer()` value — unlike the attach reply,
+        # which ships a bounded tail and so reports a `ring_start_offset` BELOW
+        # its `start_offset`. Kept equal here because this fixture is the only
+        # description of the wire shape in this repo, and a divergence in it
+        # would be read as the contract.
         "start_offset": 100,
-        "ring_start_offset": 40,
+        "ring_start_offset": 100,
         "total_bytes_produced": 106,
         "request_id": None,
     }
@@ -2024,7 +2030,7 @@ async def test_flow_resume_resync_reaches_the_source(
             "terminal_id": "t1",
             "data": "cmVzeW5j",
             "start_offset": 100,
-            "ring_start_offset": 40,
+            "ring_start_offset": 100,
             "total_bytes_produced": 106,
         }
     ]
@@ -2045,6 +2051,12 @@ async def test_flow_resume_resync_naming_a_foreign_grant_is_ignored(
     A resync marked with a grant this socket does not hold is another source's
     withheld output; delivering it under OUR jti would splice a stranger's bytes
     into this pane. Same rule the remote-marked ``error`` route already applies.
+
+    A REGRESSION GUARD, not evidence: on the unfixed relay both frames are
+    refused for the trivial reason that correlate-or-drop refused EVERYTHING, so
+    this passes either way and says nothing about the arm it names. Its siblings
+    below — the cross-target and unbound-grant cases — DO fail without their
+    fixes, and those are the ones that pin this arm's scoping.
     """
     ws = _FakeWS()
     manager = _manager()
@@ -2204,4 +2216,111 @@ async def test_attach_buffer_request_omits_bounds_it_was_not_given(
     frame = manager.send_terminal.await_args.args[1]
     assert "from_offset" not in frame
     assert "to_offset" not in frame
+    await relay.release_source(ws)
+
+
+@pytest.mark.asyncio
+async def test_resync_on_another_targets_channel_is_not_routed_by_grant_alone(
+    relay: RemoteTerminalRelay,
+) -> None:
+    """One socket, two targets, and the same terminal id on both.
+
+    Terminal ids are per-DEVICE, so two machines both calling a pane `t1` is
+    ordinary rather than unlikely. Resolving a marked frame by `grant_jti` alone
+    therefore is not merely loose — it hands a frame that arrived on target B's
+    channel to the attachment on target A, whose terminal check then PASSES
+    because both are `t1`, and the source splices B's scrollback into A's pane.
+
+    The terminal route always filtered on the channel (`by_terminal`); the grant
+    route did not, and that asymmetry is what this pins.
+    """
+    ws = _FakeWS()
+    manager = _manager()
+    other_target = str(uuid4())
+    claims_a = await _attached(relay, ws, manager, terminal_id="t1", request_id="ra")
+    claims_b = _claims(
+        attach={
+            "target_device_id": other_target,
+            "target_session_id": TARGET_SESSION,
+            "terminal_id": None,
+        }
+    )
+    await _attach(relay, ws, manager, claims_b, request_id="rb")
+    session = relay._sessions[id(ws)]
+    minted_b = _forwarded_attach(manager)["request_id"]
+    assert (
+        await relay.route_target_frame(
+            session,
+            other_target,
+            {
+                "type": "terminal_attached",
+                "request_id": minted_b,
+                "terminal_id": "t1",
+                "data": "",
+                "start_offset": 0,
+                "total_bytes_produced": 0,
+            },
+        )
+        is True
+    )
+    before = len(ws.sent)
+
+    # B's channel, A's grant, a terminal id both of them hold.
+    routed = await relay.route_target_frame(
+        session, other_target, _resync(claims_a, data="Yi1zZWNyZXQ=")
+    )
+
+    assert routed is False
+    assert ws.sent[before:] == []
+    # The same rule on the error route, which shares the resolver.
+    assert (
+        await relay.route_target_frame(
+            session,
+            other_target,
+            {
+                "type": "error",
+                "terminal_id": "t1",
+                "grant_jti": claims_a["jti"],
+                "code": "boom",
+                "message": "b's refusal",
+            },
+        )
+        is False
+    )
+    assert ws.sent[before:] == []
+    await relay.release_source(ws)
+
+
+@pytest.mark.asyncio
+async def test_resync_for_a_grant_the_target_has_not_bound_is_refused(
+    relay: RemoteTerminalRelay,
+) -> None:
+    """A registered-but-UNBOUND grant has `terminal_id is None`.
+
+    So a marked frame naming that grant and no terminal cleared the guard on
+    `None == None` and was forwarded with `terminal_id: None`. The correlated
+    arm can never reach this — `pending_buffer` is written only after
+    `_authorize(require_bound=True)` — so it is surface the unsolicited arm
+    added, and the guard has to test boundness rather than equality.
+    """
+    ws = _FakeWS()
+    manager = _manager()
+    claims = _claims()
+    await _attach(relay, ws, manager, claims)  # no terminal_attached: unbound
+    session = relay._sessions[id(ws)]
+    assert session.grants[claims["jti"]].attached is False
+    before = len(ws.sent)
+
+    for frame in (
+        {
+            "type": "terminal_buffer_response",
+            "grant_jti": claims["jti"],
+            "remote": {"grant_jti": claims["jti"]},
+            "data": "aGk=",
+        },
+        _resync(claims, terminal_id=None),
+    ):
+        assert await relay.route_target_frame(session, TARGET_DEVICE, frame) is False
+
+    assert ws.sent[before:] == []
     await relay.release_source(ws)
