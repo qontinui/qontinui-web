@@ -256,15 +256,70 @@ describe("deriveContinuationStatus — dispatch and its staleness", () => {
     expect(s.status.reason).not.toMatch(/offline|dead|down/i);
   });
 
-  it("refuses to judge a dispatch whose time it cannot read", () => {
+  it("refuses to judge a dispatch whose time it cannot read, with nothing else to go on", () => {
     // Both readings above rest entirely on the age test. An unparseable stamp
     // used to fall through to the CALM one — a positive claim ("waiting for a
-    // runner to claim it") whose only evidence is an unreadable string.
+    // runner to claim it") whose only evidence is an unreadable string. This
+    // arm is reached ONLY when no deferral offers an alternative reading.
     const s = derive({ continuation_dispatched_at: "not a timestamp" });
     expect(s.status.kind).toBe("unknown");
     expect(s.status.attention).toBe("waiting");
     expect(s.status.label).toBe("dispatch time unreadable");
     expect(s.status.reason).toContain("not a timestamp");
+    expect(s.status.reason).toContain("no deferral was recorded either");
+  });
+
+  it("keeps a known-stuck count red when the DISPATCH time is the unreadable one", () => {
+    // The mirror of the deferral-time case, and it must answer the same way:
+    // the count test depends on neither timestamp, and the two corruption
+    // cases have identical reachability. Hoisting the dispatch read above the
+    // deferral branch had re-opened this hole one column over — the row read
+    // `unknown` / waiting and fell out of the needs-attention count and filter.
+    const s = derive({
+      continuation_dispatched_at: "not a timestamp",
+      continuation_deferred_at: minsAgo(30),
+      continuation_deferred_reason: "thread_pressure:critical:540_over_400",
+      continuation_deferred_count: 58,
+    });
+    expect(s.status.kind).toBe("deferral_stuck");
+    expect(s.status.attention).toBe("author");
+    expect(s.deferralRendered).toBe(true);
+    // It names the test it could not run rather than implying it ran.
+    expect(s.status.reason).toContain(
+      "no readable dispatch time, so whether this deferral belongs to the dispatch now in flight could not be checked"
+    );
+  });
+
+  it("answers both unreadable-timestamp cases the same way when the count is stuck", () => {
+    const kindOf = (over: Partial<ContinuationStatusInput>) =>
+      derive({
+        continuation_dispatched_at: minsAgo(10_000),
+        continuation_deferred_at: minsAgo(30),
+        continuation_deferred_reason: "at_cap:4",
+        continuation_deferred_count: 58,
+        ...over,
+      }).status;
+    const badDispatch = kindOf({ continuation_dispatched_at: "nope" });
+    const badDeferral = kindOf({ continuation_deferred_at: "nope" });
+    expect(badDispatch.kind).toBe("deferral_stuck");
+    expect(badDeferral.kind).toBe("deferral_stuck");
+    expect(badDispatch.attention).toBe(badDeferral.attention);
+  });
+
+  it("still reads a fresh deferral when only the dispatch time is corrupt", () => {
+    // Currency is undecidable, but the deferral's own age is not: coord only
+    // stamps a deferral on a dispatched, unconsumed row, so a stamp 30 minutes
+    // old is evidence a runner was pulling this 30 minutes ago whatever the
+    // dispatch column says.
+    const s = derive({
+      continuation_dispatched_at: "not a timestamp",
+      continuation_deferred_at: minsAgo(30),
+      continuation_deferred_reason: "at_cap:4",
+      continuation_deferred_count: 2,
+    });
+    expect(s.status.kind).toBe("deferred");
+    expect(s.status.attention).toBe("waiting");
+    expect(s.status.reason).toContain("could not be checked");
   });
 });
 
