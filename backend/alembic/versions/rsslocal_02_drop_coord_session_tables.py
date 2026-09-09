@@ -196,14 +196,26 @@ One cross-repo consequence, named here rather than left for CI to discover:
 declares all four tables (lines 4923, 4955, 5787, 5897) and
 ``idx_session_touched_files_lower_path_prefix`` (line 24025). Its
 ``.github/workflows/schema-pg-sql-fresh.yml`` job ``schema-fresh-verify``
-checks ``qontinui-web`` out at ``main``, runs ``alembic upgrade head``,
-``pg_dump``s the result, diffs it against that checked-in file and ``exit 1``s
-on any difference — so landing this revision adds drift to **another repo's**
-gate. The companion fix is a regen in ``qontinui-runner``,
+checks the ``qontinui-web`` sibling out — preferring a branch of the **same
+name** as the runner PR's own and falling back to ``main`` only when no such
+branch exists there (for this revision, ``main``) — then runs ``alembic upgrade
+head``, ``pg_dump``s the result, diffs it against that checked-in file and
+``exit 1``s on any difference. So landing this revision adds drift to **another
+repo's** gate.
+
+That drift is **latent, not immediate**. ``schema-fresh-verify`` is gated by the
+same workflow's ``detect`` job, which enables it only when the **runner** pull
+request itself touches ``src-tauri/queries/`` or
+``src-tauri/schema.pg.sql.generated`` (diffed against the merge base); every
+other runner PR satisfies the required ``schema-fresh`` shim trivially. So
+nothing goes red the moment this lands — it surfaces on the next
+qontinui-runner PR that touches those paths, or on a manual
+``workflow_dispatch``, which bypasses ``detect`` and always verifies. The
+companion fix is a regen in ``qontinui-runner``,
 ``bash src-tauri/scripts/regenerate_schema_pg_sql.sh``; it is named, not
-opened, because it belongs to that repo. Mitigating: that workflow's own
-comment says the drift signal "has been red since at least 2026-05-06", so this
-adds to an existing red rather than breaking a green one.
+opened, because it belongs to that repo. Mitigating either way: that workflow's
+own comment says the drift signal "has been red since at least 2026-05-06", so
+this adds to an existing red rather than breaking a green one.
 
 Do not copy ``ud03_drop_remap_table``'s posture as precedent: its docstring
 claims "OPERATOR-RUN: This revision lives at the END of the chain but is NOT
