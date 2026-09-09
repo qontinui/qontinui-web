@@ -58,12 +58,21 @@ Without a database (always runs, including on a box with no Postgres):
 4b. **Both free-form columns document exactly the vocabulary they should.**
     With no CHECK and no DEFAULT, the ``--`` comment block above each
     declaration is the only machine-readable statement of what may be stored,
-    so the test reads THAT block and compares the set of quoted values —
-    ``created_via`` names exactly ``'checkout_guard_observed'``,
-    ``terminal_outcome`` exactly its two variants plus the ``'merged'``
-    ``pr_state`` literal its landed predicate reads. Scanning the whole DDL
-    instead would only prove "the right value is present and one particular
-    wrong one is absent", which a THIRD value would sail past.
+    so the test reads the VOCABULARY LINE of that block — its first quoting
+    line — and compares the quoted values as a set: ``created_via`` names
+    exactly ``'checkout_guard_observed'``, ``terminal_outcome`` exactly its two
+    variants.
+
+    Two weaker readings were tried and rejected, each for a defect it admits.
+    Scanning the whole DDL only proves "the right value is present and one
+    particular wrong one is absent", which a THIRD value sails past. Scanning
+    the whole comment BLOCK is worse than it looks: it must then admit
+    ``'merged'``, which occurs legitimately in the ``pr_state='merged'``
+    predicate sentence — and that admission lets ``terminal_outcome = 'merged'``
+    into the vocabulary line, the merged-vs-closed split itself, one prefix
+    shorter than the ``pr_merged`` the whole-DDL ban catches. It also couples
+    the assertion to explanatory prose, so a reword that changes no vocabulary
+    reddens it.
 
 With a database (skipped when none is reachable — see the warning below):
 
@@ -452,7 +461,21 @@ def _quoted_values_documented_for(column: str) -> set[str]:
             break
         block.append(line)
     assert block, f"{column} carries no comment block stating its vocabulary"
-    return set(re.findall(r"'([^']+)'", "\n".join(block)))
+
+    # `block` was built bottom-up; the vocabulary is stated on the FIRST line of
+    # the block reading top-down that quotes anything. Only that line is
+    # compared. Taking the whole block instead would (a) admit a value promoted
+    # into the vocabulary line as long as it ALSO appears in the prose below —
+    # and `'merged'` does, in the `pr_state='merged'` predicate sentence, so
+    # `terminal_outcome = 'merged'` (the merged-vs-closed split itself, one
+    # prefix shorter than the banned `pr_merged`) would slip through — and (b)
+    # couple the assertion to explanatory prose, reddening on a reword that
+    # changes no vocabulary at all.
+    for line in reversed(block):
+        quoted = re.findall(r"'([^']+)'", line)
+        if quoted:
+            return set(quoted)
+    raise AssertionError(f"{column}'s comment block quotes no value at all")
 
 
 def test_created_via_documents_exactly_one_value() -> None:
@@ -466,11 +489,19 @@ def test_created_via_documents_exactly_one_value() -> None:
 
 
 def test_terminal_outcome_documents_exactly_the_two_variants() -> None:
-    """The same read applied to the column D3 is actually about."""
+    """The same read applied to the column D3 is actually about.
+
+    ``'merged'`` is deliberately NOT admitted. It appears legitimately in the
+    prose below the vocabulary line — ``pr_state='merged'``, half of the landed
+    predicate — but a ``terminal_outcome`` OF ``merged`` is the merged-vs-closed
+    split itself, the same defect as ``pr_merged`` and one prefix shorter, which
+    is why the whole-DDL substring ban in the next test cannot express it.
+    Reading only the vocabulary line is what separates the two.
+    """
     values = _quoted_values_documented_for("terminal_outcome")
-    assert values == {_TERMINAL_LANDED, _TERMINAL_CLOSED_UNMERGED, "merged"}, (
-        "terminal_outcome's comment must name its two variants plus the "
-        "pr_state literal 'merged' the landed predicate reads; found "
+    assert values == {_TERMINAL_LANDED, _TERMINAL_CLOSED_UNMERGED}, (
+        "terminal_outcome's vocabulary line must name exactly "
+        f"{{{_TERMINAL_LANDED!r}, {_TERMINAL_CLOSED_UNMERGED!r}}}; found "
         f"{values}. A merged-vs-closed split mislabels every coord "
         "fast-forward land as an abandoned branch (D3)."
     )
