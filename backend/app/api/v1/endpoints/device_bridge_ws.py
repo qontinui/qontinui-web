@@ -45,9 +45,24 @@ Consequences worth stating outright
   runner's ``GET http://127.0.0.1:9876/web-integration/status``, not the
   phone. See ``knowledge-base/qontinui-specific/mobile-app.md``. Every such
   503 emits a ``runner_proxy_relay_not_connected`` structured log carrying
-  ``device_id``/``user_id``/``path``/``request_id``/``last_seen_at``, and
-  the same ``request_id`` is echoed in the response body — grep the log for
-  the id the client shows.
+  ``device_id``/``user_id``/``path``/``request_id``/``ws_connected_at``/
+  ``last_seen_at``, and the same ``request_id`` is echoed in the response
+  body — grep the log for the id the client shows. That id is the one
+  ``RequestIDMiddleware`` bound for the whole request (and returned in the
+  ``X-Request-ID`` header), so the grep also finds every other line the
+  request emitted, not just this one.
+* The neighbouring **404** ("device not found or not owned by caller") logs
+  ``runner_proxy_relay_device_not_owned`` and carries the same
+  ``request_id``, so the relay has no silent arm left.
+* ``ws_connected_at`` vs ``last_seen_at`` in that body are **two different
+  clocks** and are named separately on purpose — see
+  ``_relay_device_liveness``. ``ws_connected_at`` is the one that separates
+  "never registered" from "flapping right now".
+* Those two keys are **absent, not null, when coord could not be read**.
+  ``null`` means the column is NULL — the runner has never registered — so
+  it is a claim a failed lookup is not entitled to make. Absent is the wire
+  spelling of "unknown"; the adjacent
+  ``runner_proxy_relay_liveness_lookup_failed`` line names why.
 * A coord-side fault is **not** a 503 from here: ``coord_device`` maps a
   coord 5xx to ``502 upstream_error`` precisely so the two cannot be
   confused (503 is reserved for ``ws_session_id IS NULL``).
@@ -61,7 +76,7 @@ import re
 import time
 import uuid
 from datetime import UTC, datetime
-from typing import Annotated
+from typing import Annotated, NamedTuple
 from uuid import UUID, uuid4
 
 import httpx
@@ -871,37 +886,119 @@ def _resolve_relay_timeout_s(request: Request) -> float:
     return ms / 1000.0
 
 
-async def _relay_device_last_seen_at(
+def _relay_request_id(request: Request) -> str:
+    """The correlation id for this HTTP request.
+
+    ``RequestIDMiddleware`` (``app/middleware/request_id.py``, registered in
+    ``main.py``) already owns a per-request id: it honours an inbound
+    ``X-Request-ID``, binds it into the structlog contextvars every line of
+    the request inherits, stashes it on ``request.state.request_id``, and
+    echoes it back in the ``X-Request-ID`` response header.
+
+    Minting a *fresh* ``uuid4()`` here instead — as the relay's 503 arm first
+    did — breaks the very workflow the id exists for. The value in the body
+    would disagree with the ``X-Request-ID`` header on the same response, and
+    passing it as an explicit ``request_id=`` log kwarg *overrides* the
+    contextvar of the same name, so the one line naming the failure could no
+    longer be joined to ``request_started``/``request_completed`` for that
+    request. Grepping the id the client shows would return exactly one line
+    and nothing around it.
+
+    The fallback matters and is reached two ways: a ``Request`` built directly
+    in a unit test has no ``state`` attribute at all, and a real one that
+    somehow bypassed the middleware has a ``state`` with no ``request_id``.
+    Both must yield a usable id rather than an ``AttributeError`` — this runs
+    on an error path, where raising would replace a correct 404/503 with a
+    500.
+    """
+    state = getattr(request, "state", None)
+    request_id = getattr(state, "request_id", None)
+    return request_id if isinstance(request_id, str) and request_id else str(uuid4())
+
+
+class _DeviceLiveness(NamedTuple):
+    """The two liveness clocks, plus whether we actually learned them.
+
+    ``known`` is the field that keeps ``None`` from meaning two things at
+    once. A ``ws_connected_at`` of ``None`` is a real, useful fact — the
+    column is NULL, so the runner has *never* held a WS session — but the
+    coord read that sources it can also simply fail, and that yields ``None``
+    for a completely different reason. Collapsing the two would make the 503
+    body assert "never registered" whenever coord hiccupped, which is a
+    confident wrong answer in place of an honest unknown.
+    """
+
+    known: bool
+    ws_connected_at: str | None
+    last_seen_at: str | None
+
+
+async def _relay_device_liveness(
     request: Request,
     device_uuid: UUID,
     user_id: str,
-) -> str | None:
-    """Best-effort ``coord.devices.last_seen_at`` for the not-connected 503.
+) -> _DeviceLiveness:
+    """Best-effort liveness clocks for the not-connected 503.
 
     Coord's ``GET /coord/devices/:id/routing`` deliberately returns only
-    ``{device_id, ws_session_id}``, so the timestamp comes from the full-row
+    ``{device_id, ws_session_id}``, so the timestamps come from the full-row
     read (``GET /coord/devices/:id/owned``) instead. That read runs ONLY on
-    the 503 path, never on a healthy relay dispatch.
+    the 503 path, never on a healthy relay dispatch, and ONE read sources
+    both fields.
 
-    **This function never raises.** A coord fault while decorating a 503
-    must not convert a genuine "runner not connected" into a 502/504 — the
-    503 is already the correct answer and the timestamp is a nicety. Any
-    failure yields ``None``, which the client renders as an unknown
-    last-seen rather than a wrong one.
+    **Two clocks, deliberately both named.** ``ws_session_id`` has more than
+    one writer: a fresh registration sets it, and the heartbeat heal
+    (``devices_ws.py`` → ``device_crud.claim_ws_session``) can re-claim a
+    session without one. "Last registered" and "last healed" are therefore
+    different clocks, and the 503's whole purpose — telling "never
+    registered" apart from "flapping right now" — turns on which is read.
+
+    * ``ws_connected_at`` is the timestamp of the *current* WS claim however
+      it was obtained: both non-NULL writers set it alongside
+      ``ws_session_id``, and ``claim_ws_session`` deliberately copies it from
+      the connection row rather than stamping ``utc_now()``. This is the
+      flapping signal.
+    * ``last_seen_at`` is the general device heartbeat — a different fact,
+      and the one the 503 body already shipped with.
+
+    Returning both under their own names is what keeps either from being the
+    ambiguous "last seen" whose meaning shifts by code path — which is the
+    defect this 503 exists to diagnose, and one worth not reproducing in the
+    diagnosis.
+
+    **This function never raises.** A coord fault while decorating a 503 must
+    not convert a genuine "runner not connected" into a 502/504 — the 503 is
+    already the correct answer and the timestamps are a nicety. Any failure
+    yields ``known=False``, and the caller then OMITS both fields from the
+    body rather than sending ``null`` — because ``null`` is already spoken
+    for. It means the column is NULL, i.e. "never registered", which is
+    exactly the strong claim a failed lookup has no basis to make. Absent is
+    the wire spelling of "unknown"; ``null`` is the wire spelling of "never".
+    The unknown case is named on its own line,
+    ``runner_proxy_relay_liveness_lookup_failed``, which carries the same
+    request id via the middleware's contextvar.
     """
     try:
         owned = await coord_device.get_owned_device(request, device_uuid, user_id)
     except Exception:
         logger.info(
-            "runner_proxy_relay_last_seen_lookup_failed",
+            "runner_proxy_relay_liveness_lookup_failed",
             device_id=str(device_uuid),
             exc_info=True,
         )
-        return None
-    value = owned.get("last_seen_at")
+        return _DeviceLiveness(known=False, ws_connected_at=None, last_seen_at=None)
+
     # coord serialises the row with ``to_jsonb``, so a timestamptz arrives as
     # an ISO-8601 string. Anything else is not a timestamp we can promise.
-    return value if isinstance(value, str) else None
+    def _iso(key: str) -> str | None:
+        value = owned.get(key)
+        return value if isinstance(value, str) else None
+
+    return _DeviceLiveness(
+        known=True,
+        ws_connected_at=_iso("ws_connected_at"),
+        last_seen_at=_iso("last_seen_at"),
+    )
 
 
 async def _runner_proxy_relay(
@@ -965,9 +1062,28 @@ async def _runner_proxy_relay(
         )
 
     if row is None:
+        # The relay's OTHER silent arm. Like the 503 below it returned with no
+        # log line at all, so a caller relaying against a device this user does
+        # not own — a stale device id on the phone, a re-paired runner — was
+        # indistinguishable server-side from a device that was never asked for.
+        # Logged at ``warning`` alongside the 503 so one grep finds both.
+        request_id = _relay_request_id(request)
+        logger.warning(
+            "runner_proxy_relay_device_not_owned",
+            device_id=str(device_uuid),
+            user_id=str(user_id),
+            path=path,
+            method=request.method,
+            request_id=request_id,
+        )
         return JSONResponse(
             status_code=404,
-            content={"detail": "device not found or not owned by caller"},
+            # Additive, exactly as on the 503: ``detail`` keeps its prior value.
+            content={
+                "detail": "device not found or not owned by caller",
+                "device_id": str(device_uuid),
+                "request_id": request_id,
+            },
         )
     if row.get("ws_session_id") is None:  # ws_session_id IS NULL
         # This is the relay's single most common failure AND, historically,
@@ -979,8 +1095,38 @@ async def _runner_proxy_relay(
         #
         # The extra fields are ADDITIVE and optional — ``detail`` keeps its
         # exact prior value so an older mobile build is unaffected.
-        request_id = str(uuid4())
-        last_seen_at = await _relay_device_last_seen_at(request, device_uuid, user_id)
+        request_id = _relay_request_id(request)
+        liveness = await _relay_device_liveness(request, device_uuid, user_id)
+        # Built ONCE and spread into both the body and the log line, so the two
+        # surfaces cannot drift about what was known.
+        #
+        # Present only when the coord read actually answered. A failed lookup
+        # leaves both keys off entirely rather than sending ``null``, because
+        # ``null`` already carries a strong meaning here — the column is NULL,
+        # so the runner has never registered — and a lookup that failed has no
+        # basis for that claim. See ``_DeviceLiveness``. On the log surface the
+        # stakes are the same: a ``ws_connected_at=None`` kwarg would make one
+        # query return the never-registered rows and the coord-outage rows
+        # together, which is the collapse this whole change removes.
+        liveness_fields: dict[str, object] = (
+            {
+                # The claim clock — how long ago the runner last held a WS
+                # session. This is what separates "never registered"
+                # (``null``) from "flapping right now" (seconds ago).
+                "ws_connected_at": liveness.ws_connected_at,
+                # The heartbeat clock. A different fact; see
+                # ``_relay_device_liveness``.
+                "last_seen_at": liveness.last_seen_at,
+            }
+            if liveness.known
+            else {}
+        )
+        content: dict[str, object] = {
+            "detail": "runner not connected",
+            "device_id": str(device_uuid),
+            "request_id": request_id,
+            **liveness_fields,
+        }
         logger.warning(
             "runner_proxy_relay_not_connected",
             device_id=str(device_uuid),
@@ -988,17 +1134,12 @@ async def _runner_proxy_relay(
             path=path,
             method=request.method,
             request_id=request_id,
-            last_seen_at=last_seen_at,
+            # Names which population a row is in without the absence of the
+            # two clocks having to be noticed.
+            liveness_known=liveness.known,
+            **liveness_fields,
         )
-        return JSONResponse(
-            status_code=503,
-            content={
-                "detail": "runner not connected",
-                "device_id": str(device_uuid),
-                "last_seen_at": last_seen_at,
-                "request_id": request_id,
-            },
-        )
+        return JSONResponse(status_code=503, content=content)
 
     # 2. Validate path with the existing SSRF guard.
     try:

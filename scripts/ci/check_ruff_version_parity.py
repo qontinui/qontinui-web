@@ -9,6 +9,13 @@ THE single home of this gate's logic. Three lanes invoke this one script:
   * ``.pre-commit-config.yaml``, hook ``ruff-version-parity`` — catches it
     before the push, since editing either side is what creates the drift.
 
+THREE, and ``backend/tests/test_ruff_version_parity_gate.py`` asserts it. A
+fourth lane landed once — ``a208240e2``, a step in ``backend-ci.yml`` — while
+this list and the two other enumerations (``.pre-commit-config.yaml``'s hook
+comment, ``ruff-version-parity.yml``'s header) went on saying three, and
+nothing failed. Add a lane here and in those, or the test does fail: a roster
+nobody checks rots exactly the way the ruff pin below does.
+
 WHY THIS GATE EXISTS. ``505f5738`` added the ``ruff-format`` pre-commit hook so
 that formatting is enforced locally and not only by ``backend-ci.yml``'s
 ``ruff format --check .``. Its own commit message names the residual it did not

@@ -78,10 +78,27 @@ Use that variable, **not** ``DATABASE_URL``: ``conftest.py`` overwrites
 ``QONTINUI_TEST_PG``, so setting ``DATABASE_URL`` on the command line is
 silently discarded and every database-backed test below skips against 5432 —
 which looks exactly like a green run in the summary line.
+
+**Under CI that warning is enforced rather than repeated.** Everything above
+except the two static guards hangs off one fixture, so an unreachable database
+silently reduces this module to two string-greps while ``Run Tests`` stays
+green — six skips are invisible in a suite this size, and by the cross-repo
+note there is nothing else to notice. ``backend-ci.yml`` *promises* a Postgres
+(``services: postgres``), so where that promise was made an unreachable one is
+a defect: ``_admin_url`` fails instead of skipping when ``GITHUB_ACTIONS`` is
+set, and skips as before on a dev box, where no promise was made. That replaces
+the hand-pasted PASSED lists that #1061 and #1124 each put in their PR bodies to
+show the module had not skipped.
+
+``test_the_contract_still_holds_at_head`` carries the same kind of guard for
+the same kind of reason: it asserts that head is not this revision, because its
+only claim is about what lands AFTER the revision, and a head that coincided
+with it would leave the test green, duplicated and silent.
 """
 
 from __future__ import annotations
 
+import os
 import re
 import uuid
 from collections.abc import Iterator
@@ -436,12 +453,66 @@ def _event_rows(engine: Engine, execution_id: str) -> list[tuple]:
         ]
 
 
+def _ci_promises_a_database() -> bool:
+    """True where a Postgres is GUARANTEED, so an unreachable one is a defect.
+
+    ``GITHUB_ACTIONS`` rather than the broader ``CI``: the promise is made by
+    one specific thing, ``backend-ci.yml``'s ``services: postgres`` block, and
+    that block exists only there. The runner-as-CI-node lane (``.qontinui/
+    ci.toml``) does not run pytest at all — its own header records "Run tests
+    with coverage" as a step it cannot express precisely because it needs that
+    services block — so no other lane is in scope, and naming the narrower
+    variable keeps it that way if one ever is.
+    """
+    return os.environ.get("GITHUB_ACTIONS") == "true"
+
+
 @pytest.fixture(scope="module")
 def _admin_url() -> str:
+    """The test Postgres — skipped locally, but REQUIRED under CI.
+
+    The module docstring says three times that a skip proves nothing. This is
+    what stops that from being advice. Every assertion below except the two
+    static guards hangs off this fixture, so an unreachable database silently
+    reduces the module — "the only place the web side of the contract is
+    checked at all" — to two string-greps over the revision source. It does
+    that while ``Run Tests`` stays GREEN: six skips are invisible in a suite
+    this size, and the consumer that would notice the missing column is in
+    another repository.
+
+    That is not hypothetical bookkeeping. The credentials this URL is built
+    from are drift-prone enough that the repo runs a whole workflow to watch
+    them (``db-credential-drift.yml``), and any of a changed ``DATABASE_URL``,
+    an edited ``services:`` block or a conftest change to how the DSN is
+    derived lands here as a skip rather than a failure.
+
+    So the honest predicate is not "is a database reachable" but "was one
+    promised". Where it was, an unreachable one is a defect and says so. Where
+    it was not — a dev box with nothing on 5432 — skipping is still right,
+    and the message still names the URL and the override.
+
+    Both this PR's parent (#1061) and its follow-up (#1124) had to paste the
+    PASSED lines into the PR body by hand to show the module had not skipped.
+    That is the check this fixture now performs.
+    """
     url = admin_database_url()
-    if not can_connect(url):
-        pytest.skip(f"no test Postgres reachable at {url}")
-    return url
+    if can_connect(url):
+        return url
+    if _ci_promises_a_database():
+        pytest.fail(
+            f"no test Postgres reachable at {url}, but GITHUB_ACTIONS is set. "
+            f"backend-ci.yml provisions one as a `services: postgres` container "
+            f"and conftest.py points DATABASE_URL at it, so this is a broken "
+            f"CI database, not a reason to skip. Skipping here would leave the "
+            f"wf_resume_fingerprint_01 contract UNCHECKED behind a green run — "
+            f"nothing else in this repo asserts it, and the consumer lives in "
+            f"qontinui-runner."
+        )
+    pytest.skip(
+        f"no test Postgres reachable at {url} — point QONTINUI_TEST_PG at one "
+        f"(e.g. QONTINUI_TEST_PG=localhost:5433) to actually run these. NOTE: "
+        f"this skip asserts NOTHING about the contract."
+    )
 
 
 @pytest.fixture(scope="module")
@@ -852,6 +923,33 @@ def test_the_contract_still_holds_at_head(_at_head: Engine) -> None:
     engine = _at_head
     execution_id = f"exec-{uuid.uuid4().hex[:12]}"
     exec_null = f"exec-{uuid.uuid4().hex[:12]}"
+
+    # This test earns its third chain replay only while head is strictly AFTER
+    # wf_resume_fingerprint_01. If the two ever coincide, every assertion below
+    # still passes — as an exact duplicate of the ``_upgraded`` tests — and the
+    # module goes on reporting coverage of a claim it has stopped checking.
+    # Same silent degradation as a skipped database, so it gets the same
+    # treatment: asserted, not assumed.
+    #
+    # It was assumed until now. #1124, which added this test, recorded the
+    # non-vacuity in its COMMIT MESSAGE ("head resolves to a single head,
+    # session_repo_01_session_artifacts, which is genuinely past the revision")
+    # — true when checked by hand, and head has since moved to coordtouch_01,
+    # which is precisely why a hand-checked fact about head does not stay
+    # checked.
+    #
+    # With _assert_column_present below, this is the whole argument: the column
+    # is here, so the walk passed THROUGH the revision; the stamped version is
+    # something else, so it did not STOP there.
+    with engine.connect() as conn:
+        stamped = conn.execute(text("SELECT version_num FROM alembic_version")).scalar()
+    assert stamped != _REVISION_ID, (
+        f"head IS {_REVISION_ID}, so this test walks exactly as far as the "
+        f"tests above and asserts nothing they do not. Its entire claim is "
+        f"that the contract survives the revisions landing AFTER this one. "
+        f"Re-establish that gap, or delete this test and the third chain "
+        f"replay it costs."
+    )
 
     # Decision 3 — nullable text, no default, on both journals.
     _assert_column_present(engine)

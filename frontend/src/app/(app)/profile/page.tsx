@@ -14,33 +14,13 @@ import { ActivityFeed } from "@/components/profile/activity-feed";
 import { Button } from "@/components/ui/button";
 import { Crown, Shield, ArrowLeft, Cable } from "lucide-react";
 import { toast } from "sonner";
-import { useSlotComponent } from "@/lib/extension-slots";
-import type { SubscriptionBadgeProps } from "@/lib/cloud-component-slots";
+import { SubscriptionBadgeSlot } from "@/components/cloud-slots/SubscriptionBadgeSlot";
 import type {
   StorageUsage,
   ActivityLog,
   ProfileUpdateData,
 } from "@/services/profile-service";
 import type { User } from "@/types/auth-types";
-
-/**
- * Renders cloud-control's subscription-tier badge if registered, or nothing
- * in OSS-only mode.
- *
- * `useSlotComponent` subscribes rather than reading once, so a registration
- * that lands after this page has mounted still causes the badge to appear.
- * That used to be the common case: the package was loaded by a
- * fire-and-forget `import(CLOUD_CONTROL_PKG)` in the root layout, which in
- * fact never loaded it at all. It is now a static import in
- * `components/cloud-extensions-boot.tsx`, so in the composed build the slot
- * is filled before hydration — but the subscription is still required,
- * because the boot module lives in the client graph and a server render sees
- * empty slots either way. See `lib/extension-slots.ts`.
- */
-function SubscriptionBadgeSlot() {
-  const Slot = useSlotComponent<SubscriptionBadgeProps>("subscriptionBadge");
-  return Slot ? <Slot /> : null;
-}
 
 export default function ProfilePage() {
   const { user, updateUser } = useAuth();

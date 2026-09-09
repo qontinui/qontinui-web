@@ -21,10 +21,10 @@
  * `status` and `time` are ReactNode SLOTS rather than typed data, deliberately:
  * each surface renders its own `<StatusBadge status palette={…}>` from
  * `./statusRow`, so the row primitive never needs to know a surface's kind
- * union or own a palette. `accent` is the class string from
- * `rowAccentClass(status)` — R4 lives in that function, and passing its result
- * keeps the row body neutral, which is what keeps 40 rows readable when 6 are
- * red.
+ * union or own a palette. R4's accent is NOT a slot, though — the row takes an
+ * `attention` and derives the border from it (see that prop's doc for why it
+ * is one prop and not two), which keeps the row body neutral and is what keeps
+ * 40 rows readable when 6 are red.
  *
  * The whole line is ONE `<button>`: R5's "clicking the row expands it" has to
  * be reachable by keyboard, and a div with an onClick is not.
@@ -33,6 +33,8 @@
 import type { ReactNode } from "react";
 import { Badge } from "@/components/ui/badge";
 import { ChevronDown, ChevronRight } from "lucide-react";
+import type { Attention } from "./attention";
+import { rowAccentClass } from "./statusRow";
 
 export interface RecordRowProps {
   /** Mono identity chip: `repo#123`, a worktree name, a drive letter. */
@@ -49,8 +51,28 @@ export interface RecordRowProps {
   reason?: string;
   /** The timestamp element, e.g. `<RowTime at verb />`. */
   time?: ReactNode;
-  /** `rowAccentClass(status)` — R4's 2px left border, or "" for none. */
-  accent?: string;
+  /**
+   * Who must act on this row — R4's left-edge accent AND its machine-readable
+   * twin, from one prop.
+   *
+   * **It replaced a separate `accent: string`, and that is the point.** The
+   * colour is the operator's channel; `data-attention` is the same fact in a
+   * channel a stylesheet rule, a spec selector or a `/visual-audit` assertion
+   * can address. Two props meant every caller wrote the fact twice —
+   * `accent={rowAccentClass(status)} attention={status.attention}` — and both
+   * ways of getting that wrong are SILENT: pass the accent and forget the
+   * attribute and Phase 4's `[data-attention="author"]` rule selects nothing
+   * and reports PASS; derive them from different statuses and the rule passes
+   * while the DOM misreports which rows need action. Deriving the class here
+   * makes both unrepresentable, which is what `rowAccentProps` does for the
+   * plain elements that are not `<RecordRow>`s.
+   *
+   * Optional, and ABSENT rather than `"none"` when the caller omits it: "this
+   * row is calm" and "this surface does not classify rows" are different
+   * claims, and an audit that cannot tell them apart reads the second as the
+   * first.
+   */
+  attention?: Attention;
   expanded: boolean;
   onToggle: () => void;
   /**
@@ -73,7 +95,7 @@ export function RecordRow({
   status,
   reason,
   time,
-  accent,
+  attention,
   expanded,
   onToggle,
   children,
@@ -88,9 +110,19 @@ export function RecordRow({
       <button
         type="button"
         onClick={onToggle}
+        // `data-console-row` marks THE row line — the element that owns the
+        // padding, the font size and the accent — so a style rule keyed on
+        // `[data-console-row]` selects the thing §5's density budget is about
+        // rather than the wrapper around it. `text-sm` is added here to make
+        // the row's own font size explicit rather than inherited: it is what
+        // the label already renders at, and every other child sets its own
+        // size, so this is visually inert and turns an inherited value into a
+        // stated one.
+        data-console-row=""
+        data-attention={attention}
         className={[
-          "w-full flex items-center gap-3 px-3 py-2 border border-border rounded-md bg-card/30 hover:bg-accent/60 transition-colors text-left",
-          accent ?? "",
+          "w-full flex items-center gap-3 px-3 py-2 text-sm border border-border rounded-md bg-card/30 hover:bg-accent/60 transition-colors text-left",
+          attention ? rowAccentClass({ attention }) : "",
           expanded ? "rounded-b-none bg-accent/60" : "",
         ]
           .filter(Boolean)

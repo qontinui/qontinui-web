@@ -122,6 +122,202 @@ interface AuditStatusResponse {
   error?: string;
 }
 
+// --- Accept: coord now registers + provisions the repo ----------------------
+//
+// Accept no longer only UPSERTs the profile row. It asserts the repo is in
+// `coord.tenant_repos`, UPSERTs `coord.tenant_repo_profiles` under a tombstone
+// guard, then REGISTERS the repo into `coord.canonical_repos` and provisions
+// it (bare git init, mirror clone, synchronous reconcile) so that
+// `POST /agents/allocate` stops answering `409 repo_not_registered`.
+
+// Whether agent worktree allocation actually works for this repo now. THREE
+// states, deliberately not two: the synchronous reconcile can fail while
+// leaving a legitimate registry row behind, and collapsing that into
+// "enabled" would make this wizard claim allocation works when the next
+// allocate call still 409s. `pending_first_reconcile` is that honest middle.
+type WorktreeAllocation =
+  | "enabled"
+  | "blocked_no_remote"
+  | "pending_first_reconcile";
+
+const WORKTREE_ALLOCATION_VALUES: readonly string[] = [
+  "enabled",
+  "blocked_no_remote",
+  "pending_first_reconcile",
+];
+
+// Per-step provisioning outcomes, e.g.
+// {registry: "inserted", bare_init: "created", hook: "refreshed",
+//  mirror_seed: "seeded", reconcile: "ok"}. Values are human-readable; a
+// failed step reads "failed: <reason>". Keys are open-ended (coord may add
+// steps), so this is a plain string map rather than a closed shape.
+type ProvisioningSteps = Record<string, string>;
+
+interface AcceptResponse {
+  repo: string;
+  profile_version?: number;
+  profile_source?: string;
+  updated_at?: string;
+  // Both optional: an older coord returns the pre-parity envelope with
+  // neither, which renders as UNKNOWN rather than as success.
+  provisioning?: ProvisioningSteps;
+  worktree_allocation?: string;
+}
+
+// Coord's machine-readable refusal contract for this route.
+interface CoordErrorBody {
+  error: string;
+  repo?: string;
+  hint?: string;
+}
+
+// One accept failure, already decoded. `code` is null when the body was not
+// coord's typed contract (a non-JSON body, a plain-prose FastAPI detail, or a
+// transport error) — in that case `message` carries the raw text.
+interface AcceptFailure {
+  status: number | null;
+  code: string | null;
+  message: string;
+  hint: string | null;
+}
+
+// What each typed refusal MEANS to the operator, and what to do about it.
+// Coord's own `hint` is rendered underneath when it supplies one; this copy is
+// what the wizard guarantees even when it does not.
+const ACCEPT_ERROR_COPY: Record<string, string> = {
+  repo_not_in_tenant:
+    "This repo has no enrollment for your tenant, so there is nothing to accept a profile for. Run the audit for it first — that is what enrolls it.",
+  repo_has_no_remote:
+    "No GitHub remote was supplied. Fill in the clone URL below and accept again. Coord will not invent one: a synthesized remote for a repo with no GitHub presence registers a row that can never sync, which is the silent-inert-row failure this step exists to prevent.",
+  repo_registered_to_another_tenant:
+    "Another tenant already holds this repo slug in the canonical registry, which is unique on the slug alone. Coord does not disclose which tenant. If the repo is genuinely yours, an operator has to release the existing registration before you can accept here.",
+  repo_unenrolled:
+    "This repo carries an un-enrollment tombstone, which suppresses it. Re-enroll the repo before accepting a profile for it.",
+};
+
+/**
+ * True for this web backend's OWN generic error code, false for a coord code.
+ *
+ * `app/middleware/error_handler.py` replaces FastAPI's default handler for
+ * every response: when `HTTPException.detail` is a dict carrying an `error`
+ * key it SPLICES that dict into the top level of the envelope (so coord's
+ * `error` / `repo` / `hint` land as siblings of `timestamp` and `path`), and
+ * otherwise it fills `error` from its own status→code table — BAD_REQUEST,
+ * FORBIDDEN, CONFLICT, VALIDATION_ERROR, BAD_GATEWAY, … — and puts the raw
+ * body in `message`.
+ *
+ * The two are told apart by case, which is a convention both sides hold to:
+ * the backend's `ErrorCode` enum values are SCREAMING_SNAKE_CASE, coord's
+ * typed refusals are lower_snake_case. Testing the shape rather than a fixed
+ * list means a code added to either table still classifies correctly.
+ */
+function isWebEnvelopeErrorCode(code: string): boolean {
+  return /^[A-Z][A-Z0-9_]*$/.test(code);
+}
+
+/**
+ * Coord's typed error body out of whatever envelope reached the browser.
+ *
+ * Four shapes are in play and all four must decode:
+ *   - `{"error": …, "hint": …, "timestamp": …, "path": …}` — PRODUCTION: the
+ *     custom handler spliced coord's object into the envelope's top level;
+ *   - `{"detail": {"error": …}}`   — a bare FastAPI app (the backend tests)
+ *     with the proxy passing coord's object through (`structured_errors=True`);
+ *   - `{"detail": "{\"error\": …}"}` — an older backend that stringified the
+ *     coord body into `HTTPException.detail`;
+ *   - `{"error": …}`               — coord's body verbatim, no envelope.
+ *
+ * Returns null for anything that is not coord's contract — prose, an HTML
+ * error page, an empty body, or an envelope whose `error` is the backend's own
+ * generic code. The caller then shows the raw text instead of inventing a
+ * refusal that coord never made. Never throws.
+ */
+function parseCoordError(raw: string): CoordErrorBody | null {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return null;
+  }
+  return unwrapCoordError(parsed);
+}
+
+function unwrapCoordError(value: unknown): CoordErrorBody | null {
+  if (typeof value === "string") {
+    // A stringified body (older backend). One re-parse, then the same rules.
+    return parseCoordError(value);
+  }
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const obj = value as Record<string, unknown>;
+  if (typeof obj.error === "string" && !isWebEnvelopeErrorCode(obj.error)) {
+    return {
+      error: obj.error,
+      repo: typeof obj.repo === "string" ? obj.repo : undefined,
+      hint: typeof obj.hint === "string" ? obj.hint : undefined,
+    };
+  }
+  if ("detail" in obj) return unwrapCoordError(obj.detail);
+  return null;
+}
+
+/**
+ * The most useful raw text for a body that is NOT coord's typed contract.
+ *
+ * Prefers the envelope's `message` — which is where the custom handler puts
+ * coord's verbatim body when it could not splice it — over dumping the whole
+ * envelope with its `timestamp` and `path` noise. Falls back to the raw text.
+ */
+function fallbackErrorText(raw: string): string {
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+      const obj = parsed as Record<string, unknown>;
+      if (typeof obj.message === "string" && obj.message) return obj.message;
+      if (typeof obj.detail === "string" && obj.detail) return obj.detail;
+    }
+  } catch {
+    // Not JSON — the raw text is all there is.
+  }
+  return raw;
+}
+
+/** One accept failure, decoded from coord's answer. Never throws. */
+function decodeAcceptFailure(status: number, raw: string): AcceptFailure {
+  const coord = parseCoordError(raw);
+  if (coord) {
+    return {
+      status,
+      code: coord.error,
+      message:
+        ACCEPT_ERROR_COPY[coord.error] ??
+        `Coord refused the accept: ${coord.error}.`,
+      hint: coord.hint ?? null,
+    };
+  }
+  const text = fallbackErrorText(raw);
+  return {
+    status,
+    code: null,
+    message: `HTTP ${status}${text ? `: ${text}` : ""}`,
+    hint: null,
+  };
+}
+
+/**
+ * The conventional GitHub clone URL for an `owner/name` slug.
+ *
+ * This is a PRE-FILL only. The operator may correct it (a self-hosted or
+ * renamed remote) or clear it entirely — and clearing it must send nothing, so
+ * coord's `repo_has_no_remote` refusal can fire instead of the wizard quietly
+ * registering a remote nobody vouched for. Returns "" for a slug that is not
+ * `owner/name`, rather than guessing.
+ */
+function defaultGithubRemote(repo: string): string {
+  const parts = repo.trim().split("/");
+  if (parts.length !== 2 || !parts[0] || !parts[1]) return "";
+  return `https://github.com/${parts[0]}/${parts[1]}.git`;
+}
+
 // ----------------------------------------------------------------------------
 // Step 1 — Pair a device
 // ----------------------------------------------------------------------------
@@ -359,7 +555,7 @@ function escalateString(e: string | EscalatePathEntry): string {
   return e.path;
 }
 
-function AuditStep({ ready }: AuditStepProps) {
+export function AuditStep({ ready }: AuditStepProps) {
   const [repo, setRepo] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -372,6 +568,18 @@ function AuditStep({ ready }: AuditStepProps) {
   const [auditAgentId, setAuditAgentId] = useState<string | null>(null);
   const [acceptBusy, setAcceptBusy] = useState(false);
   const [accepted, setAccepted] = useState(false);
+  // The remote coord will mirror-clone. Pre-filled from the slug when the
+  // audit lands (see the effect below); an EMPTY value sends no
+  // `github_remote` at all, which is what lets coord refuse with
+  // `repo_has_no_remote` rather than the wizard synthesizing one.
+  const [githubRemote, setGithubRemote] = useState("");
+  // The accept response, kept so the success screen can report what actually
+  // got provisioned instead of a bare "saved".
+  const [acceptResult, setAcceptResult] = useState<AcceptResponse | null>(null);
+  // Accept failures are decoded, not dumped — see `parseCoordError`.
+  const [acceptFailure, setAcceptFailure] = useState<AcceptFailure | null>(
+    null
+  );
 
   const runAudit = useCallback(async () => {
     if (!repo.trim()) {
@@ -414,8 +622,14 @@ function AuditStep({ ready }: AuditStepProps) {
       // Defensive: if a synchronous 200 with a profile ever comes back (legacy
       // coord), use it directly — not the primary path.
       if (res.status === 200 && data.starter_profile) {
-        setAuditResult(data as AuditResponse);
+        const landed = data as AuditResponse;
+        setAuditResult(landed);
         setEditedProfile(data.starter_profile);
+        // Pre-fill in the SAME commit as auditResult/editedProfile (not a
+        // separate `useEffect` keyed on auditResult) — see the note above
+        // `defaultGithubRemote`'s two call sites for why a second commit is
+        // a race, not just an extra render.
+        setGithubRemote(defaultGithubRemote(landed.repo));
         return;
       }
       // Primary path: 202 {agent_id, repo, status:"running"}. Store the
@@ -466,6 +680,9 @@ function AuditStep({ ready }: AuditStepProps) {
             audit_confidence: data.audit_confidence ?? null,
           });
           setEditedProfile(data.starter_profile);
+          // Pre-fill in the SAME commit as auditResult/editedProfile — see
+          // the note at `defaultGithubRemote`'s call sites.
+          setGithubRemote(defaultGithubRemote(repo));
           setAuditAgentId(null);
           setBusy(false);
         } else if (data.status === "failed") {
@@ -502,33 +719,67 @@ function AuditStep({ ready }: AuditStepProps) {
     };
   }, [auditAgentId, auditResult, repo]);
 
+  // NOTE: the remote used to be pre-filled by a separate `useEffect` keyed on
+  // `auditResult`. That effect ran a full render-commit AFTER the one that
+  // set `auditResult`/`editedProfile` (and therefore after
+  // `starter-profile-cards` mounted), so a test (or a fast operator) that
+  // read `github-remote-input` right after the profile cards appeared could
+  // observe it still empty — a genuine two-commit race, not a mock/module
+  // leak. It reproduced in ~20% of fully ISOLATED runs of this file's own
+  // test suite (no other test file involved), which lines up with the
+  // ~23% false-red rate observed on the "Frontend CI" workflow. Setting
+  // `githubRemote` inline at both `setAuditResult` call sites (above, and in
+  // the poll effect below) folds the prefill into the SAME commit and
+  // removes the race outright, while preserving the original semantics: it
+  // still only overwrites the field at the moment a NEW auditResult lands
+  // (including via "Discard & retry", which resets auditResult to null so a
+  // subsequent audit re-triggers this same inline prefill), so an operator's
+  // in-between edit is still never clobbered.
+
   const acceptProfile = useCallback(async () => {
     if (!auditResult || !editedProfile) return;
     setAcceptBusy(true);
     setError(null);
+    setAcceptFailure(null);
     try {
+      // `github_remote` is sent ONLY when the operator left a value in the
+      // field. Coord requires it on this path and will not synthesize
+      // `https://github.com/<slug>.git` itself, so an emptied field must
+      // reach coord empty and draw the `repo_has_no_remote` refusal — the
+      // wizard silently re-synthesizing what the operator just deleted is
+      // exactly the lie this phase removes.
+      const remote = githubRemote.trim();
+      const body: {
+        repo: string;
+        profile: StarterProfile;
+        github_remote?: string;
+      } = { repo: auditResult.repo, profile: editedProfile };
+      if (remote) body.github_remote = remote;
+
       const res = await httpClient.fetch(
         `${OPERATIONS_API}/pr-merge/onboarding/accept`,
-        {
-          method: "POST",
-          body: JSON.stringify({
-            repo: auditResult.repo,
-            profile: editedProfile,
-          }),
-        }
+        { method: "POST", body: JSON.stringify(body) }
       );
       if (!res.ok) {
-        const text = await res.text();
-        throw new Error(`HTTP ${res.status}: ${text}`);
+        const text = await res.text().catch(() => "");
+        setAcceptFailure(decodeAcceptFailure(res.status, text));
+        return;
       }
+      const data = (await res.json()) as AcceptResponse;
+      setAcceptResult(data);
       setAccepted(true);
     } catch (err) {
       log.warn("accept failed", err);
-      setError(err instanceof Error ? err.message : String(err));
+      setAcceptFailure({
+        status: null,
+        code: null,
+        message: err instanceof Error ? err.message : String(err),
+        hint: null,
+      });
     } finally {
       setAcceptBusy(false);
     }
-  }, [auditResult, editedProfile]);
+  }, [auditResult, editedProfile, githubRemote]);
 
   const removeEscalatePath = useCallback(
     (idx: number) => {
@@ -562,12 +813,17 @@ function AuditStep({ ready }: AuditStepProps) {
 
   if (accepted) {
     return (
-      <div className="space-y-2">
+      <div className="space-y-3" data-testid="accept-result">
         <p className="text-sm flex items-center gap-1">
           <CheckCircle2 className="h-3 w-3 text-green-400" />
           Profile saved for{" "}
           <code className="font-mono">{auditResult?.repo}</code>.
         </p>
+        <WorktreeAllocationNotice
+          value={acceptResult?.worktree_allocation}
+          remote={githubRemote.trim()}
+        />
+        <ProvisioningDisclosure steps={acceptResult?.provisioning} />
         <p className="text-xs text-muted-foreground">
           The orchestrator now uses this profile when evaluating PRs in that
           repo. Use the &ldquo;Merge Orchestrator → Settings&rdquo; page to edit
@@ -750,10 +1006,57 @@ function AuditStep({ ready }: AuditStepProps) {
         </div>
       )}
 
+      <div className="border border-border rounded-md p-3 space-y-2">
+        <h5 className="text-xs font-semibold uppercase tracking-wide">
+          GitHub remote
+        </h5>
+        <p className="text-[11px] text-muted-foreground">
+          Accepting also registers this repo for agent worktree allocation,
+          which needs a remote to mirror-clone. Pre-filled from the slug —
+          correct it for a renamed or self-hosted remote. Clear it and coord
+          will refuse rather than register a repo it cannot clone.
+        </p>
+        <Input
+          id="github-remote-input"
+          aria-label="GitHub remote"
+          data-testid="github-remote-input"
+          value={githubRemote}
+          onChange={(e) => setGithubRemote(e.target.value)}
+          placeholder="https://github.com/owner/name.git"
+          className="font-mono text-xs"
+        />
+      </div>
+
       {error && (
         <p className="text-xs text-red-300 flex items-center gap-1">
           <AlertTriangle className="h-3 w-3" /> {error}
         </p>
+      )}
+      {acceptFailure && (
+        <div
+          className="border border-red-500/40 bg-red-500/10 rounded-md p-3 space-y-1"
+          data-testid="accept-failure"
+          data-accept-error={acceptFailure.code ?? "unknown"}
+        >
+          <p className="text-xs text-red-200 flex items-start gap-1">
+            <AlertTriangle className="h-3 w-3 mt-0.5 shrink-0" />
+            <span>{acceptFailure.message}</span>
+          </p>
+          {acceptFailure.hint && (
+            <p
+              className="text-[11px] text-red-200/80 pl-4"
+              data-testid="accept-failure-hint"
+            >
+              {acceptFailure.hint}
+            </p>
+          )}
+          {acceptFailure.code && (
+            <p className="text-[10px] text-red-200/60 pl-4 font-mono">
+              {acceptFailure.status !== null ? `${acceptFailure.status} ` : ""}
+              {acceptFailure.code}
+            </p>
+          )}
+        </div>
       )}
       <div className="flex gap-2">
         <Button onClick={acceptProfile} disabled={acceptBusy} size="sm">
@@ -765,6 +1068,8 @@ function AuditStep({ ready }: AuditStepProps) {
           onClick={() => {
             setAuditResult(null);
             setEditedProfile(null);
+            setAcceptFailure(null);
+            setAcceptResult(null);
           }}
           size="sm"
         >
@@ -772,6 +1077,128 @@ function AuditStep({ ready }: AuditStepProps) {
         </Button>
       </div>
     </div>
+  );
+}
+
+/**
+ * Agent worktree allocation, in the THREE states coord distinguishes.
+ *
+ * `pending_first_reconcile` is not a decoration: coord's provisioning does a
+ * synchronous reconcile that can fail while still leaving a legitimate
+ * `coord.canonical_repos` row, and in that state `POST /agents/allocate` can
+ * still answer 409 for a while. Reporting it as "enabled" would be the wizard
+ * lying. An absent or unrecognized value (older coord) is reported as UNKNOWN
+ * for the same reason — never silently as success.
+ */
+function WorktreeAllocationNotice({
+  value,
+  remote,
+}: {
+  value?: string;
+  remote: string;
+}) {
+  const known =
+    value !== undefined && WORKTREE_ALLOCATION_VALUES.includes(value)
+      ? (value as WorktreeAllocation)
+      : null;
+
+  let tint = "border-border bg-muted/40 text-muted-foreground";
+  let icon = <Info className="h-3 w-3 mt-0.5 shrink-0" />;
+  let headline = "Agent worktree allocation: unknown";
+  let detail =
+    "This coord did not report an allocation state — it predates repo registration on accept. Check the repo in the canonical registry before relying on agent worktrees.";
+
+  if (known === "enabled") {
+    tint = "border-green-500/40 bg-green-500/10 text-green-200";
+    icon = <CheckCircle2 className="h-3 w-3 mt-0.5 shrink-0" />;
+    headline = "Agent worktree allocation: enabled";
+    detail =
+      "The repo is registered and reconciled. Agents can allocate worktrees against it now.";
+  } else if (known === "blocked_no_remote") {
+    tint = "border-red-500/40 bg-red-500/10 text-red-200";
+    icon = <AlertTriangle className="h-3 w-3 mt-0.5 shrink-0" />;
+    headline = "Agent worktree allocation: blocked (no remote)";
+    detail = remote
+      ? "Coord could not use the remote you supplied, so there is nothing to mirror-clone. Fix the clone URL and accept again — the profile itself is already saved."
+      : "No GitHub remote was recorded, so there is nothing to mirror-clone. Re-run accept with the repo's clone URL filled in — the profile itself is already saved.";
+  } else if (known === "pending_first_reconcile") {
+    tint = "border-amber-500/40 bg-amber-500/10 text-amber-200";
+    icon = <Loader2 className="h-3 w-3 mt-0.5 shrink-0" />;
+    headline = "Agent worktree allocation: pending first reconcile";
+    detail =
+      "The repo is registered, but its first reconcile has not completed. Allocation may still answer 409 for a short while — check the provisioning steps below, and retry the allocation rather than re-running accept.";
+  }
+
+  return (
+    <div
+      className={`border rounded-md p-3 ${tint}`}
+      data-testid="worktree-allocation"
+      data-worktree-allocation={known ?? "unknown"}
+    >
+      <p className="text-xs flex items-start gap-1">
+        {icon}
+        <span>
+          <span className="font-semibold">{headline}</span>
+          <br />
+          <span className="opacity-90">{detail}</span>
+        </span>
+      </p>
+    </div>
+  );
+}
+
+/**
+ * The per-step provisioning outcomes, collapsed.
+ *
+ * Unobtrusive by design — the point is that a failed `mirror_seed` or
+ * `reconcile` is diagnosable from the browser instead of from coord's logs.
+ * A step whose value starts with "failed" is tinted so it is findable without
+ * reading every row.
+ */
+function ProvisioningDisclosure({ steps }: { steps?: ProvisioningSteps }) {
+  const entries = Object.entries(steps ?? {});
+  if (entries.length === 0) return null;
+  const failedCount = entries.filter(([, v]) =>
+    v.toLowerCase().startsWith("failed")
+  ).length;
+
+  return (
+    <details
+      className="border border-border rounded-md p-3"
+      data-testid="provisioning-steps"
+      open={failedCount > 0}
+    >
+      <summary className="text-xs cursor-pointer select-none">
+        Provisioning steps
+        <Badge
+          variant={failedCount > 0 ? "destructive" : "outline"}
+          className="font-mono text-[10px] ml-2"
+        >
+          {failedCount > 0 ? `${failedCount} failed` : `${entries.length} ok`}
+        </Badge>
+      </summary>
+      <dl className="mt-2 space-y-1">
+        {entries.map(([step, outcome]) => {
+          const failed = outcome.toLowerCase().startsWith("failed");
+          return (
+            <div
+              key={step}
+              className="flex items-baseline gap-2 text-[11px]"
+              data-provisioning-step={step}
+            >
+              <dt className="font-mono w-28 shrink-0 text-muted-foreground">
+                {step}
+              </dt>
+              <dd
+                className={`font-mono ${failed ? "text-red-300" : "text-muted-foreground"}`}
+              >
+                {outcome}
+              </dd>
+            </div>
+          );
+        })}
+      </dl>
+    </details>
   );
 }
 

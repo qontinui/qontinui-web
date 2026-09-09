@@ -54,7 +54,11 @@ from sqlalchemy.pool import NullPool
 
 from app.api.deps import get_async_db
 from app.api.v1.endpoints.memory import MemoryPrincipal, get_memory_tenant, router
-from app.schemas.memory import MAX_QUERY_LIMIT, RECENT_TITLES_SAMPLE
+from app.schemas.memory import (
+    DEFAULT_QUERY_LIMIT,
+    MAX_QUERY_LIMIT,
+    RECENT_TITLES_SAMPLE,
+)
 from app.services import memory_store as store
 from app.services.memory_vectors import EMBEDDING_DIM, EMBEDDING_MODEL_TAG
 from tests.conftest import TEST_DATABASE_URL
@@ -1003,6 +1007,157 @@ class TestHybridQuery:
             },
         )
         assert len(with_ref.json()["hits"]) == 1
+
+
+# One dossier slug, three rows that all match the FTS key: the HEAD plus a
+# contribution and a delta whose titles deliberately do NOT carry the
+# head's ``DOSSIER <slug> —`` prefix. This is the shape
+# ``title_prefix`` exists for (plan
+# ``2026-09-02-steering-layers-unreadable-without-a-credential`` Phase 2):
+# FTS on the bare key finds all three and cannot tell the head apart.
+_DOSSIER_HEAD_TITLE = "DOSSIER x-slug — head"
+_DOSSIER_HEAD_PREFIX = "DOSSIER x-slug —"
+_DOSSIER_ROWS: list[tuple[str, str]] = [
+    (_DOSSIER_HEAD_TITLE, "dossier x-slug head statement of the issue"),
+    ("DOSSIER-CONTRIB x-slug — c1", "dossier x-slug contribution one"),
+    ("DELTA on dossier x-slug", "dossier x-slug delta since last read"),
+]
+_DOSSIER_QUERY = "dossier x-slug"
+
+
+class TestTitlePrefix:
+    """``title_prefix`` narrows EVERY arm to titles starting with it."""
+
+    def _seed(self, mc: MemoryClient) -> None:
+        resp = mc.client.post(
+            "/api/v1/memory/records",
+            json={
+                "records": [
+                    _record(content, title=title, kind="mental_model")
+                    for title, content in _DOSSIER_ROWS
+                ]
+            },
+        )
+        assert resp.status_code == 200, resp.text
+        assert resp.json()["deduped_count"] == 0
+
+    def _query(self, mc: MemoryClient, **extra: Any) -> dict[str, Any]:
+        resp = mc.client.post(
+            "/api/v1/memory/query",
+            json={"query_text": _DOSSIER_QUERY, **extra},
+        )
+        assert resp.status_code == 200, resp.text
+        body: dict[str, Any] = resp.json()
+        return body
+
+    def test_omitted_prefix_returns_all_three(self, mc: MemoryClient) -> None:
+        self._seed(mc)
+        titles = {h["title"] for h in self._query(mc)["hits"]}
+        assert titles == {title for title, _content in _DOSSIER_ROWS}
+
+    def test_prefix_returns_only_the_head_fts_only(self, mc: MemoryClient) -> None:
+        self._seed(mc)
+        body = self._query(mc, title_prefix=_DOSSIER_HEAD_PREFIX)
+        assert body["vector_arm"] == "skipped_no_embedding"
+        assert [h["title"] for h in body["hits"]] == [_DOSSIER_HEAD_TITLE]
+
+    def test_prefix_filters_the_vector_arm_too(self, mc: MemoryClient) -> None:
+        # With a query vector the semantic arm runs, and under the
+        # hashing stub it returns EVERY row by cosine order (no floor).
+        # If the filter lived only beside the tsquery, the two
+        # non-head rows would still arrive through this arm and the
+        # RRF fuse would surface them. They must not.
+        self._seed(mc)
+        body = self._query(
+            mc,
+            title_prefix=_DOSSIER_HEAD_PREFIX,
+            query_embedding=_client_vector(_DOSSIER_QUERY),
+            query_embedding_model=EMBEDDING_MODEL_TAG,
+        )
+        assert body["vector_arm"] == "hybrid"
+        assert [h["title"] for h in body["hits"]] == [_DOSSIER_HEAD_TITLE]
+        assert body["hits"][0]["vector_rank"] == 1
+        assert body["hits"][0]["fts_rank"] == 1
+
+    def test_prefix_filters_the_link_arm_too(
+        self, mc: MemoryClient, db: AsyncEngine
+    ) -> None:
+        # Link the head to the contribution, then expand: the neighbour
+        # matches the FTS key and is one hop from the seed, so without
+        # the filter on the graph arm it would come back with link_rank.
+        self._seed(mc)
+        ids = {
+            str(title): memory_id
+            for title, memory_id in asyncio.run(_dossier_ids(db, mc.tenant_id))
+        }
+        asyncio.run(
+            _link(
+                db,
+                mc.tenant_id,
+                ids[_DOSSIER_HEAD_TITLE],
+                ids["DOSSIER-CONTRIB x-slug — c1"],
+            )
+        )
+        body = self._query(mc, title_prefix=_DOSSIER_HEAD_PREFIX, link_expansion=True)
+        assert body["link_arm"] == "expanded"
+        assert [h["title"] for h in body["hits"]] == [_DOSSIER_HEAD_TITLE]
+
+    def test_percent_in_prefix_is_literal_not_a_wildcard(
+        self, mc: MemoryClient
+    ) -> None:
+        # ``DOSSIER%`` would match all "DOSSIER…" titles under a raw LIKE
+        # (the head AND the contribution). Escaped, it matches nothing.
+        self._seed(mc)
+        assert self._query(mc, title_prefix="DOSSIER%")["hits"] == []
+        # ``_`` is LIKE's single-character wildcard; ``DOSSIER_x-slug``
+        # would otherwise match the head through its space.
+        assert self._query(mc, title_prefix="DOSSIER_x-slug")["hits"] == []
+        # And a literal ``%`` in a real title IS matched by a literal
+        # ``%`` in the prefix.
+        mc.client.post(
+            "/api/v1/memory/records",
+            json={
+                "records": [
+                    _record(
+                        "dossier x-slug percent-titled row",
+                        title="100% dossier x-slug",
+                    )
+                ]
+            },
+        )
+        hits = self._query(mc, title_prefix="100% dossier")["hits"]
+        assert [h["title"] for h in hits] == ["100% dossier x-slug"]
+
+    def test_prefix_is_case_sensitive(self, mc: MemoryClient) -> None:
+        self._seed(mc)
+        assert self._query(mc, title_prefix="dossier x-slug —")["hits"] == []
+
+    def test_prefix_is_a_prefix_not_a_substring(self, mc: MemoryClient) -> None:
+        self._seed(mc)
+        assert self._query(mc, title_prefix="x-slug —")["hits"] == []
+
+
+async def _dossier_ids(engine: AsyncEngine, tenant_id: UUID) -> list[tuple[str, str]]:
+    async with engine.connect() as conn:
+        rows = await conn.execute(
+            text(
+                "SELECT title, memory_id FROM coord.memory_records WHERE tenant_id = :t"
+            ),
+            {"t": tenant_id},
+        )
+        return [(str(r.title), str(r.memory_id)) for r in rows]
+
+
+async def _link(engine: AsyncEngine, tenant_id: UUID, src: str, dst: str) -> None:
+    async with engine.begin() as conn:
+        await conn.execute(
+            text(
+                "INSERT INTO coord.memory_links "
+                "(tenant_id, source_id, target_id, relation) "
+                "VALUES (:t, CAST(:s AS uuid), CAST(:d AS uuid), 'related')"
+            ),
+            {"t": tenant_id, "s": src, "d": dst},
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -5102,3 +5257,318 @@ class TestAnchorUnionRespectsTheCap:
         )
         assert resp.status_code == 200, resp.text
         assert len(_anchors_of(mc, memory_id)) <= MAX_ANCHORS_PER_RECORD
+
+
+# ---------------------------------------------------------------------------
+# A self-describing zero — plan
+# 2026-08-31-memory-search-zero-hit-is-not-self-describing, Phase 2.
+#
+# ``hits: []`` used to be the identical answer for an empty corpus, a
+# mistyped filter, a wrong tenant and a retrieval that landed in the
+# anchored arm. These cover the three fields (plus the 422) that make the
+# four distinguishable in ONE call.
+# ---------------------------------------------------------------------------
+
+
+class TestQueryZeroIsSelfDescribing:
+    def test_unrecognized_request_key_is_422_naming_the_field(
+        self, mc: MemoryClient
+    ) -> None:
+        """``extra="forbid"``: the misspelling is rejected, not absorbed."""
+        resp = mc.client.post(
+            "/api/v1/memory/query",
+            # The singular of a real field — the exact class of typo that
+            # used to run a WIDER query and answer with an empty list.
+            json={"query_text": "anything", "scope": "tenant"},
+        )
+        assert resp.status_code == 422, resp.text
+        detail = resp.json()["detail"]
+        offending = {d["loc"][-1] for d in detail}
+        assert "scope" in offending, detail
+        assert any(d["type"] == "extra_forbidden" for d in detail), detail
+
+    def test_a_field_this_build_does_not_have_is_also_422(
+        self, mc: MemoryClient
+    ) -> None:
+        resp = mc.client.post(
+            "/api/v1/memory/query",
+            json={"query_text": "anything", "semantic_only": True},
+        )
+        assert resp.status_code == 422, resp.text
+        assert "semantic_only" in {d["loc"][-1] for d in resp.json()["detail"]}
+
+    def test_every_valid_field_still_round_trips(self, mc: MemoryClient) -> None:
+        """Negative control: forbidding extras must not reject the contract."""
+        resp = mc.client.post(
+            "/api/v1/memory/query",
+            json={
+                "query_text": "kitchen sink",
+                "query_embedding": _client_vector("kitchen sink"),
+                "query_embedding_model": EMBEDDING_MODEL_TAG,
+                "kinds": ["fact"],
+                "scopes": ["tenant"],
+                "scope_ref": None,
+                "since": "2020-01-01T00:00:00Z",
+                "as_of": "2999-01-01T00:00:00Z",
+                "min_importance": 0.1,
+                "limit": 7,
+                "link_expansion": True,
+                "anchored_to": [{"repo": "qontinui-web", "path_glob": "backend/*"}],
+            },
+        )
+        assert resp.status_code == 200, resp.text
+
+    def test_no_match_reports_a_non_zero_live_row_count(self, mc: MemoryClient) -> None:
+        """The whole point: zero hits against a corpus that HAS rows."""
+        for content in (
+            "the aardwolf termite fact",
+            "the basilisk lizard fact",
+            "the caracal ear fact",
+        ):
+            _write_one(mc, content)
+
+        resp = mc.client.post(
+            "/api/v1/memory/query",
+            json={"query_text": "zzzznothinglexicallymatching"},
+        )
+        assert resp.status_code == 200, resp.text
+        body = resp.json()
+        assert body["hits"] == []
+        # "You matched none of 3" — not "there is nothing here".
+        assert body["live_row_count"] == 3
+
+    def test_an_actually_empty_corpus_reports_zero(self, mc: MemoryClient) -> None:
+        """The other diagnosis, and it must NOT look like the one above."""
+        body = mc.client.post(
+            "/api/v1/memory/query", json={"query_text": "anything at all"}
+        ).json()
+        assert body["hits"] == []
+        assert body["live_row_count"] == 0
+
+    def test_live_row_count_is_tenant_scoped(
+        self, mc: MemoryClient, db: AsyncEngine
+    ) -> None:
+        """A wrong-tenant query is a THIRD diagnosis the denominator shows."""
+        foreign = MemoryClient(db)
+        for content in ("another tenant's first fact", "another tenant's second fact"):
+            _write_one(foreign, content)
+        _write_one(mc, "my own solitary fact")
+
+        mine = mc.client.post(
+            "/api/v1/memory/query", json={"query_text": "zzzznothinglexicallymatching"}
+        ).json()
+        theirs = foreign.client.post(
+            "/api/v1/memory/query", json={"query_text": "zzzznothinglexicallymatching"}
+        ).json()
+        assert mine["live_row_count"] == 1
+        assert theirs["live_row_count"] == 2
+
+    def test_live_row_count_excludes_dead_rows(
+        self, mc: MemoryClient, db: AsyncEngine
+    ) -> None:
+        """It is the RETRIEVAL-live predicate, so it can never over-promise."""
+        keep = _write_one(mc, "the surviving quokka fact")
+        doomed = _write_one(mc, "the doomed dodo fact")
+        expired = _write_one(mc, "the expired mayfly fact")
+
+        assert (
+            mc.client.delete(f"/api/v1/memory/records/{doomed}").status_code == 204
+        ), doomed
+        _exec(
+            db,
+            [
+                "UPDATE coord.memory_records SET valid_until = now() "
+                "WHERE memory_id = CAST(:m AS uuid)"
+            ],
+            m=expired,
+        )
+
+        body = mc.client.post(
+            "/api/v1/memory/query", json={"query_text": "surviving quokka"}
+        ).json()
+        assert [h["memory_id"] for h in body["hits"]] == [keep]
+        assert body["live_row_count"] == 1
+
+    def test_live_row_count_agrees_with_the_stats_facet(self, mc: MemoryClient) -> None:
+        """One definition of "live", two publishers — they must not drift."""
+        for content in ("alpha fact", "beta fact", "gamma fact", "delta fact"):
+            _write_one(mc, content)
+        query_side = mc.client.post(
+            "/api/v1/memory/query", json={"query_text": "alpha"}
+        ).json()["live_row_count"]
+        stats_side = mc.client.get("/api/v1/memory/stats").json()["facets"][
+            "live_row_count"
+        ]
+        assert query_side == stats_side == 4
+
+
+class TestQueryEcho:
+    def test_echo_shows_resolved_defaults_the_caller_never_sent(
+        self, mc: MemoryClient
+    ) -> None:
+        """A parameter the caller omitted comes back with its RESOLVED value."""
+        body = mc.client.post(
+            "/api/v1/memory/query", json={"query_text": "minimal request"}
+        ).json()
+        echo = body["query_echo"]
+        assert echo["query_text"] == "minimal request"
+        # Never sent — the endpoint's default scope pair, made visible.
+        assert echo["scopes"] == ["tenant", "runner"]
+        assert echo["limit"] == DEFAULT_QUERY_LIMIT
+        assert echo["link_expansion"] is False
+        assert echo["kinds"] is None
+        assert echo["scope_ref"] is None
+        assert echo["min_importance"] is None
+        assert echo["since"] is None
+        # No caller-named instant: echoing a synthesized "now" would
+        # report a filter that never ran.
+        assert echo["as_of"] is None
+        assert echo["anchored_to_count"] == 0
+
+    def test_echo_is_of_resolved_values_not_raw_input(self, mc: MemoryClient) -> None:
+        """An empty ``kinds``/``scopes`` list is NOT what the query ran with."""
+        body = mc.client.post(
+            "/api/v1/memory/query",
+            json={"query_text": "empty filters", "kinds": [], "scopes": []},
+        ).json()
+        echo = body["query_echo"]
+        # `[]` collapses to "no kind filter" in the filter builder; the
+        # echo reports what filtered, not what was typed.
+        assert echo["kinds"] is None
+        assert echo["scopes"] == ["tenant", "runner"]
+
+    def test_echo_reflects_what_the_caller_did_send(self, mc: MemoryClient) -> None:
+        body = mc.client.post(
+            "/api/v1/memory/query",
+            json={
+                "query_text": "explicit request",
+                "kinds": ["fact", "rule"],
+                "scopes": ["agent"],
+                "scope_ref": "agent-42",
+                "limit": 3,
+                "link_expansion": True,
+                "min_importance": 0.25,
+                "since": "2021-02-03T04:05:06Z",
+                "as_of": "2022-03-04T05:06:07Z",
+            },
+        ).json()
+        echo = body["query_echo"]
+        assert echo["kinds"] == ["fact", "rule"]
+        assert echo["scopes"] == ["agent"]
+        assert echo["scope_ref"] == "agent-42"
+        assert echo["limit"] == 3
+        assert echo["link_expansion"] is True
+        assert echo["min_importance"] == 0.25
+        assert echo["since"].startswith("2021-02-03T04:05:06")
+        assert echo["as_of"].startswith("2022-03-04T05:06:07")
+
+    def test_echo_makes_a_self_inflicted_zero_readable(self, mc: MemoryClient) -> None:
+        """A well-formed request whose own filter excluded everything."""
+        _write_one(mc, "the visible ocelot fact", importance=0.2)
+        body = mc.client.post(
+            "/api/v1/memory/query",
+            json={"query_text": "visible ocelot", "min_importance": 0.9},
+        ).json()
+        assert body["hits"] == []
+        # Non-zero corpus + the offending filter, in the same payload.
+        assert body["live_row_count"] == 1
+        assert body["query_echo"]["min_importance"] == 0.9
+
+    def test_echo_counts_anchored_clauses(self, mc: MemoryClient) -> None:
+        body = mc.client.post(
+            "/api/v1/memory/query",
+            json={
+                "query_text": "anything",
+                "anchored_to": [
+                    {"repo": "qontinui-web", "path_glob": "backend/**"},
+                    {"repo": "qontinui-coord", "path_glob": "src/*.rs"},
+                ],
+            },
+        ).json()
+        assert body["query_echo"]["anchored_to_count"] == 2
+
+
+class TestAnchoredHitCount:
+    def test_empty_hits_beside_populated_anchored_hits_counts_them(
+        self, mc: MemoryClient, anchored_recall_on: None
+    ) -> None:
+        """The FOURTH diagnosis: zero ``hits`` on a response that retrieved."""
+        store_fact = _write_one(mc, "the store anchored fact", anchors=[_STORE_BLOB])
+        body = mc.client.post(
+            "/api/v1/memory/query",
+            json={
+                "query_text": "zzzznothinglexicallymatching",
+                "anchored_to": [
+                    {"repo": "qontinui-web", "path_glob": "backend/app/services/*"}
+                ],
+            },
+        ).json()
+        assert body["hits"] == []
+        assert body["anchored_arm"] == "ran"
+        assert [h["memory_id"] for h in body["anchored_hits"]] == [store_fact]
+        # A caller reading `hits` alone cannot now read zero off this.
+        assert body["anchored_hit_count"] == 1
+
+    def test_count_tracks_the_list(
+        self, mc: MemoryClient, anchored_recall_on: None
+    ) -> None:
+        for content in ("first anchored fact", "second anchored fact"):
+            _write_one(mc, content, anchors=[_STORE_BLOB])
+        body = mc.client.post(
+            "/api/v1/memory/query",
+            json={
+                "query_text": "zzzznothinglexicallymatching",
+                "anchored_to": [
+                    {"repo": "qontinui-web", "path_glob": "backend/app/services/*"}
+                ],
+            },
+        ).json()
+        assert body["anchored_hit_count"] == len(body["anchored_hits"]) == 2
+
+    def test_zero_when_the_arm_never_ran(self, mc: MemoryClient) -> None:
+        body = mc.client.post(
+            "/api/v1/memory/query", json={"query_text": "anything"}
+        ).json()
+        assert body["anchored_arm"] == "not_requested"
+        assert body["anchored_hit_count"] == 0
+
+
+class TestSelfDescribingFieldsAreRequired:
+    """Un-defaulted, so an old backend fails loudly instead of reading 0."""
+
+    def test_the_three_fields_have_no_defaults(self) -> None:
+        from app.schemas.memory import MemoryQueryResponse
+
+        for name in ("query_echo", "live_row_count", "anchored_hit_count"):
+            field = MemoryQueryResponse.model_fields[name]
+            assert field.is_required(), (
+                f"{name} must stay REQUIRED: an optional field is absent on "
+                "an old backend, which reproduces exactly the ambiguity this "
+                "change removes — and reproduces it invisibly."
+            )
+
+    def test_the_arms_are_unchanged(self, mc: MemoryClient) -> None:
+        """C: no ranking/arm/key change rides along with the new fields."""
+        _write_one(mc, "the unchanged armadillo fact")
+        fts_only = mc.client.post(
+            "/api/v1/memory/query", json={"query_text": "unchanged armadillo"}
+        ).json()
+        assert fts_only["vector_arm"] == "skipped_no_embedding"
+        assert fts_only["link_arm"] == "skipped_disabled"
+        assert [h["memory_id"] for h in fts_only["hits"]]
+
+        hybrid = mc.client.post(
+            "/api/v1/memory/query",
+            json={
+                "query_text": "unchanged armadillo",
+                "query_embedding": _client_vector("the unchanged armadillo fact"),
+                "query_embedding_model": EMBEDDING_MODEL_TAG,
+                "link_expansion": True,
+            },
+        ).json()
+        assert hybrid["vector_arm"] == "hybrid"
+        assert hybrid["link_arm"] == "expanded"
+        # `hits` keeps its name and its meaning.
+        assert [h["memory_id"] for h in hybrid["hits"]] == [
+            h["memory_id"] for h in fts_only["hits"]
+        ]

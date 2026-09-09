@@ -39,6 +39,14 @@ name: pre-commit ruff pin == the ruff CI runs
 # backend-ci.yml's `lint` job, which would otherwise be its natural home: that
 # workflow's other jobs stand up Postgres, Redis and a Docker build, and the
 # change that motivated this gate touches `.pre-commit-config.yaml` alone.
+#
+# That sentence was briefly false. `a208240e2` added exactly such a step, and
+# it was WEAKER than this workflow rather than a spare copy: backend-ci.yml is
+# path-filtered and its filter lists neither `.pre-commit-config.yaml` nor the
+# repo-root `poetry.lock`, so the step could not run on the drift it existed to
+# catch. backend/tests/test_ruff_version_parity_gate.py now pins the roster at
+# these three lanes, so a fourth fails a test instead of falsifying this
+# paragraph in silence.
 
 on:
   pull_request:

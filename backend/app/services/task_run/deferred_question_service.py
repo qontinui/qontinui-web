@@ -18,6 +18,8 @@ from app.services.task_run.schemas import (
     DeferredQuestionBatch,
     DeferredQuestionResponse,
     DeferredQuestionUpdate,
+    FleetDeferredQuestionListResponse,
+    FleetDeferredQuestionResponse,
 )
 
 logger = structlog.get_logger(__name__)
@@ -125,6 +127,36 @@ class DeferredQuestionService:
             db, task_run_id, status_filter=status_filter
         )
         return [model_to_deferred_question_response(q) for q in questions]
+
+    async def list_pending_for_user(
+        self,
+        db: AsyncSession,
+        user_id: UUID,
+        status_filter: str = "pending",
+        limit: int = 200,
+    ) -> FleetDeferredQuestionListResponse:
+        """Deferred questions awaiting review across the user's whole fleet.
+
+        Mobile previously answered this by polling each runner's own
+        ``/hitl/pending`` over the LAN, so the review queue emptied whenever
+        the phone was off-network and lost every question on a machine that
+        happened to be down. The rows are already synced here; this reads them
+        back in one tenant-scoped query.
+        """
+        rows = await self.question_repo.get_pending_for_user(
+            db, user_id, status_filter=status_filter, limit=limit
+        )
+        questions = [
+            FleetDeferredQuestionResponse(
+                **model_to_deferred_question_response(q).model_dump(),
+                task_run_name=task_name,
+                runner_id=runner_id,
+            )
+            for q, task_name, runner_id in rows
+        ]
+        return FleetDeferredQuestionListResponse(
+            questions=questions, total=len(questions)
+        )
 
     async def review_deferred_question(
         self,

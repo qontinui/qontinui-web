@@ -36,7 +36,6 @@ import {
   RecordRow,
   RowTime,
   StatusBadge,
-  rowAccentClass,
 } from "@/components/console";
 import {
   RELEASE_STATUS_PALETTE,
@@ -121,7 +120,7 @@ export function ReleaseRow({
       rowKey={`${releaseIdentity(entry)}-${entry.observed_at ?? ""}`}
       expanded={expanded}
       onToggle={onToggle}
-      accent={rowAccentClass(status)}
+      attention={status.attention}
       identity={
         <span data-testid="coord-release-expand-btn">
           {releaseIdentity(entry)}

@@ -28,7 +28,13 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { render, screen, waitFor, within } from "@testing-library/react";
+import {
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 
 const httpGet = vi.fn();
 const httpFetch = vi.fn();
@@ -59,6 +65,30 @@ vi.mock("@/components/operations/useSymbolClaimsStream", () => ({
     error: null,
     refetch: vi.fn(),
   }),
+}));
+
+// The severity badges navigate (`HealthBadge` carries `onClick`, not `href`),
+// so the page holds a router. Only `useRouter` is stubbed — nothing else in
+// this tree reads `next/navigation`, and `routerPush` is referenced lazily,
+// inside the returned function, so the hoisted factory never touches its TDZ.
+const routerPush = vi.fn();
+vi.mock("next/navigation", () => ({
+  useRouter: () => ({ push: (...args: unknown[]) => routerPush(...args) }),
+}));
+
+// The per-row Drain lever is admin-gated (`CoordAdminOnly` -> `useAuth`), and
+// this page mounts no `AuthProvider`. Stubbed to an admin so the control that
+// Phase 4b adds is the one under test; the non-admin arm is asserted in
+// `components/operations/DeviceDrainControl.test.tsx`.
+const authState = { isCoordAdmin: true };
+vi.mock("@/contexts/auth-context", () => ({
+  useAuth: () => ({ isCoordAdmin: authState.isCoordAdmin }),
+}));
+
+// Toasts are a drain write's only other output; nothing here asserts on them,
+// but sonner's real module mounts a portal this page has no business holding.
+vi.mock("sonner", () => ({
+  toast: Object.assign(vi.fn(), { success: vi.fn(), error: vi.fn() }),
 }));
 
 import CoordDevOpsPage from "./page";
@@ -150,6 +180,18 @@ interface Fixture {
   samples: unknown[];
   /** The devenv machine roster backing the Phase 2 CI-capacity join. */
   machines?: ReturnType<typeof devenvMachine>[];
+  /**
+   * The rest of the `/fleet/health` body beside `devices` — coord's alert
+   * severity rollup (`alerts`, `alerts_scrape_up`) and `pageout`. Spread
+   * verbatim, so a fixture can serve a coord that predates any of them.
+   */
+  healthExtras?: Record<string, unknown>;
+  /**
+   * What `GET /operations/fleet/drain` answers with. `undefined` means the
+   * route is NOT served — the shape of a coord that predates the plan's Phase
+   * 4a read route, which every row must render as UNKNOWN rather than calm.
+   */
+  drain?: unknown;
 }
 
 function mockRoutes(fixture: Fixture) {
@@ -159,12 +201,33 @@ function mockRoutes(fixture: Fixture) {
       return Promise.resolve({ latest: fixture.samples, history: [] });
     }
     if (u.includes("fleet/health")) {
-      return Promise.resolve({ devices: fixture.devices });
+      return Promise.resolve({
+        devices: fixture.devices,
+        ...(fixture.healthExtras ?? {}),
+      });
     }
     return Promise.reject(new Error(`unexpected GET ${u}`));
   });
   httpFetch.mockImplementation((url: unknown) => {
     const u = String(url);
+    if (u.includes("/fleet/drain")) {
+      if (fixture.drain === undefined) {
+        // A coord that serves no drain read. NOT an empty drain map — the
+        // console must say UNKNOWN, which is what makes the deploy window
+        // safe.
+        return Promise.resolve({
+          ok: false,
+          status: 404,
+          text: () => Promise.resolve("not found"),
+          json: () => Promise.resolve({}),
+        });
+      }
+      return Promise.resolve({
+        ok: true,
+        status: 200,
+        json: () => Promise.resolve(fixture.drain),
+      });
+    }
     const json = u.includes("/devenv/machines")
       ? (fixture.machines ?? [])
       : u.includes("/fleet/tasks")
@@ -193,6 +256,7 @@ describe("/admin/coord/devops", () => {
   beforeEach(() => {
     httpGet.mockReset();
     httpFetch.mockReset();
+    routerPush.mockReset();
     window.localStorage.clear();
   });
 
@@ -868,7 +932,18 @@ describe("/admin/coord/devops — CI capacity", () => {
     // NOT a disabled toggle: that reads as "CI is off on this machine", which
     // is a claim about the machine where the truth is a gap in the join.
     expect(within(ghost).queryByRole("switch")).toBeNull();
-    expect(ghost.querySelector("[disabled]")).toBeNull();
+    // Card-wide, MINUS the drain block. Phase 4b of
+    // `2026-09-01-device-drain-does-not-reach-agent-session-spawning` renders a
+    // DISABLED drain button with a stated reason when the row's drain state
+    // could not be read — that is a rule the plan requires and
+    // `DeviceDrainControl.test.tsx` asserts, and it is about the READ rather
+    // than about the machine. The rule THIS test guards is narrower and
+    // unchanged: nothing in the CI-capacity area may render as a dead toggle,
+    // because a dead toggle there IS a claim about the machine.
+    const deadControls = Array.from(ghost.querySelectorAll("[disabled]")).filter(
+      (el) => el.closest('[data-testid="device-drain"]') === null
+    );
+    expect(deadControls).toEqual([]);
     // ...and the linked machine on the same page is unaffected.
     expect(
       document
@@ -972,5 +1047,466 @@ describe("/admin/coord/devops — CI capacity", () => {
     expect(
       httpFetch.mock.calls.filter((c) => String(c[0]).includes("/ci-node"))
     ).toHaveLength(0);
+  });
+});
+// ---------------------------------------------------------------------------
+// The alert severity rollup — plan
+// `2026-08-31-devops-surface-renders-no-alert-signal` Phase 4.
+// ---------------------------------------------------------------------------
+
+/**
+ * The defect this block guards is not a missing feature; it is a number coord
+ * had been publishing on THIS page's own poll for months, discarded by a hook
+ * type that declared only `devices`. The steward who read `by_state:
+ * {healthy: 8}` — device liveness — concluded the fleet was fine while 170+
+ * unresolved criticals stood.
+ *
+ * So the assertions are about what the page is allowed to SAY:
+ *
+ *  1. A measured rollup renders as numbers.
+ *  2. A rollup coord says it could not read renders UNKNOWN — never `0`.
+ *  3. No rollup at all renders UNKNOWN — never `0`. (Absence is not zero.)
+ *  4. Counts with no `alerts_scrape_up` flag are MEASURED, not unknown: that
+ *     is today's coord, and this page ships ahead of coord's half by design.
+ *  5. `pageout.sink_configured: false` is a recorded operator decision, so it
+ *     gets one muted line — and absence of the field gets nothing at all.
+ */
+describe("/admin/coord/devops — the alert severity rollup", () => {
+  beforeEach(() => {
+    httpGet.mockReset();
+    httpFetch.mockReset();
+    routerPush.mockReset();
+    window.localStorage.clear();
+  });
+
+  /** One healthy machine, so nothing in the LIVENESS half explains a badge. */
+  function healthyFleet(healthExtras?: Record<string, unknown>) {
+    mockRoutes({
+      devices: [coordDevice("d-1", "msi", "healthy")],
+      runners: [runner("msi")],
+      samples: [hostSample("d-1", "ok")],
+      healthExtras,
+    });
+  }
+
+  it("renders the severity counts coord already serves", async () => {
+    healthyFleet({
+      alerts: { critical: 170, warning: 2302, info: 55 },
+      alerts_scrape_up: true,
+    });
+
+    render(<CoordDevOpsPage />);
+
+    const strip = await screen.findByTestId("coord-devops-health-strip");
+    await waitFor(() =>
+      expect(
+        within(strip).getByTestId("coord-devops-critical-badge")
+      ).toHaveTextContent("critical 170")
+    );
+    expect(
+      within(strip).getByTestId("coord-devops-warning-badge")
+    ).toHaveTextContent("warning 2302");
+    expect(
+      within(strip).getByTestId("coord-devops-info-badge")
+    ).toHaveTextContent("info 55");
+    // The liveness badge is still there and still says liveness: the two
+    // rollups sit side by side precisely because they answer different
+    // questions, and conflating them is the bug.
+    expect(
+      within(strip).getByTestId("coord-devops-machines-badge")
+    ).toHaveTextContent("machines 1");
+    expect(
+      within(strip).queryByTestId("coord-devops-alerts-unknown-badge")
+    ).toBeNull();
+  });
+
+  it("renders UNKNOWN, not 0, when coord says the rollup did not run", async () => {
+    // `alerts_scrape_up: false` is coord admitting its query failed. The zeros
+    // beside it are the shape of a failure, not a count of alerts.
+    healthyFleet({
+      alerts: { critical: 0, warning: 0, info: 0 },
+      alerts_scrape_up: false,
+    });
+
+    render(<CoordDevOpsPage />);
+
+    const strip = await screen.findByTestId("coord-devops-health-strip");
+    await waitFor(() =>
+      expect(
+        within(strip).getByTestId("coord-devops-alerts-unknown-badge")
+      ).toHaveTextContent("alerts unknown")
+    );
+    expect(
+      within(strip).queryByTestId("coord-devops-critical-badge")
+    ).toBeNull();
+    expect(
+      within(strip).queryByTestId("coord-devops-warning-badge")
+    ).toBeNull();
+    expect(within(strip).queryByTestId("coord-devops-info-badge")).toBeNull();
+    // The literal failure mode this guards: a `?? 0` puts these on screen.
+    expect(strip).not.toHaveTextContent("critical 0");
+    expect(strip).not.toHaveTextContent("warning 0");
+    expect(strip).not.toHaveTextContent("info 0");
+  });
+
+  it("renders UNKNOWN, not 0, when coord serves no rollup at all", async () => {
+    // No `alerts` key: a coord that does not publish it, or a read that never
+    // landed. Either way the page knows nothing, and must say so.
+    healthyFleet();
+
+    render(<CoordDevOpsPage />);
+
+    const strip = await screen.findByTestId("coord-devops-health-strip");
+    await waitFor(() =>
+      expect(
+        within(strip).getByTestId("coord-devops-alerts-unknown-badge")
+      ).toHaveTextContent("alerts unknown")
+    );
+    expect(strip).not.toHaveTextContent("critical 0");
+  });
+
+  it("treats counts with no `alerts_scrape_up` flag as MEASURED, not unknown", async () => {
+    // Today's coord: it serves the rollup and not the flag, because the flag
+    // is the coord half of this plan and lands later. Reading the absent flag
+    // as a failure would dash a real number across the whole pre-deploy
+    // window — the window this page is REQUIRED to render correctly in.
+    healthyFleet({ alerts: { critical: 3364, warning: 13723, info: 283 } });
+
+    render(<CoordDevOpsPage />);
+
+    const strip = await screen.findByTestId("coord-devops-health-strip");
+    await waitFor(() =>
+      expect(
+        within(strip).getByTestId("coord-devops-critical-badge")
+      ).toHaveTextContent("critical 3364")
+    );
+    expect(
+      within(strip).queryByTestId("coord-devops-alerts-unknown-badge")
+    ).toBeNull();
+  });
+
+  it("keeps a MEASURED zero out of the red tone, and still renders it", async () => {
+    // A genuine all-clear is a real measurement and must stay on screen — a
+    // hidden badge is indistinguishable from a page that cannot count. But
+    // red says "somebody must act", and nobody must act on zero.
+    healthyFleet({
+      alerts: { critical: 0, warning: 0, info: 0 },
+      alerts_scrape_up: true,
+    });
+
+    render(<CoordDevOpsPage />);
+
+    const strip = await screen.findByTestId("coord-devops-health-strip");
+    await waitFor(() =>
+      expect(
+        within(strip).getByTestId("coord-devops-critical-badge")
+      ).toHaveTextContent("critical 0")
+    );
+    expect(
+      within(strip).getByTestId("coord-devops-critical-badge").className
+    ).not.toMatch(/red/);
+  });
+
+  it("navigates the badge to the alerts list with NO query string", async () => {
+    // `/admin/coord/alerts` hydrates no filter from the URL, so a
+    // `?severity=critical` badge would land on an unfiltered page under a
+    // control that claimed to filter.
+    healthyFleet({
+      alerts: { critical: 12, warning: 3, info: 0 },
+      alerts_scrape_up: true,
+    });
+
+    render(<CoordDevOpsPage />);
+
+    const badge = await screen.findByTestId("coord-devops-critical-badge");
+    fireEvent.click(badge);
+    expect(routerPush).toHaveBeenCalledWith("/admin/coord/alerts");
+    expect(String(routerPush.mock.calls[0][0])).not.toContain("?");
+  });
+
+  it("says nothing about the pageout sink when coord says nothing", async () => {
+    // Absence is UNKNOWN. The page has no posture to report, so it reports no
+    // posture — it neither guesses "configured" nor warns.
+    healthyFleet({
+      alerts: { critical: 1, warning: 0, info: 0 },
+      alerts_scrape_up: true,
+    });
+
+    render(<CoordDevOpsPage />);
+
+    await screen.findByTestId("coord-devops-health-strip");
+    expect(screen.queryByTestId("coord-devops-pageout-note")).toBeNull();
+  });
+
+  it("states an unconfigured pageout sink as a decision, not an alarm", async () => {
+    // Confirmed with the operator 2026-08-05 across three shipped plans:
+    // in-app is the delivery surface and no Slack/email sink is wanted. One
+    // muted line, no warning colour, no icon — an alarm on an intended state
+    // is how a strip loses its credibility.
+    healthyFleet({
+      alerts: { critical: 1, warning: 0, info: 0 },
+      alerts_scrape_up: true,
+      pageout: { sink_configured: false },
+    });
+
+    render(<CoordDevOpsPage />);
+
+    const note = await screen.findByTestId("coord-devops-pageout-note");
+    expect(note).toHaveTextContent("in-app only");
+    expect(note).toHaveTextContent("by decision");
+    expect(note.className).toContain("text-muted-foreground");
+    expect(note.className).not.toMatch(/red|amber|yellow/);
+    expect(
+      within(note).getByTestId("coord-devops-pageout-alerts-link")
+    ).toHaveAttribute("href", "/admin/coord/alerts");
+  });
+
+  it("says nothing about the sink when it IS configured", async () => {
+    healthyFleet({
+      alerts: { critical: 1, warning: 0, info: 0 },
+      alerts_scrape_up: true,
+      pageout: { sink_configured: true },
+    });
+
+    render(<CoordDevOpsPage />);
+
+    await screen.findByTestId("coord-devops-health-strip");
+    expect(screen.queryByTestId("coord-devops-pageout-note")).toBeNull();
+  });
+
+  it("adds NO read: the rollup rides the fleet-health poll already made", async () => {
+    healthyFleet({
+      alerts: { critical: 1, warning: 0, info: 0 },
+      alerts_scrape_up: true,
+    });
+
+    render(<CoordDevOpsPage />);
+
+    await screen.findByTestId("coord-devops-critical-badge");
+    expect(
+      httpGet.mock.calls.filter((c) => String(c[0]).includes("fleet/health"))
+    ).toHaveLength(1);
+    expect(
+      httpGet.mock.calls.filter((c) => String(c[0]).includes("/alerts"))
+    ).toHaveLength(0);
+    expect(
+      httpFetch.mock.calls.filter((c) => String(c[0]).includes("/alerts"))
+    ).toHaveLength(0);
+  });
+});
+
+/**
+ * The Drain / Undrain lever — plan
+ * `2026-09-01-device-drain-does-not-reach-agent-session-spawning` Phase 4b.
+ *
+ * These assert the WIRING the phase is about, end to end through the page: the
+ * drain read reaching every row, the coord device id being the key each row
+ * acts on, and every failure of that read rendering UNKNOWN rather than a calm
+ * "not drained". The control's own behaviour is asserted in
+ * `components/operations/DeviceDrainControl.test.tsx`.
+ */
+describe("/admin/coord/devops — machine drain", () => {
+  beforeEach(() => {
+    httpGet.mockReset();
+    httpFetch.mockReset();
+    routerPush.mockReset();
+    authState.isCoordAdmin = true;
+    window.localStorage.clear();
+  });
+
+  const DEVICE = "11111111-2222-3333-4444-555555555555";
+  const CI_DEVICE = "99999999-8888-7777-6666-555555555555";
+
+  /** A drain map as coord's `GET /coord/fleet/drain` serves it. */
+  function drainMap(deviceId: string, until: string) {
+    return {
+      drained: {
+        [deviceId]: {
+          until,
+          reason: "rebuilding the runner",
+          drained_by: "jspinak@gmail.com",
+          drained_at: "2026-08-31T10:00:00Z",
+        },
+      },
+    };
+  }
+
+  function drainBlock(hostname: string): HTMLElement {
+    const card = document.querySelector(
+      `[data-hostname="${hostname}"]`
+    ) as HTMLElement;
+    expect(card).not.toBeNull();
+    const block = card.querySelector(
+      '[data-testid="device-drain"]'
+    ) as HTMLElement;
+    expect(block).not.toBeNull();
+    return block;
+  }
+
+  it("labels each row with the coord device id it will actually drain", async () => {
+    // The plan's Risks section: `spaceship` and `gh-runner-spaceship-wsl` are
+    // SEPARATE coord registrations of one box, and draining the wrong one gets
+    // no effect and no error. Two rows, two ids, each named on its own row.
+    mockRoutes({
+      devices: [
+        coordDevice(DEVICE, "spaceship", "healthy"),
+        coordDevice(CI_DEVICE, "gh-runner-spaceship-wsl", "healthy"),
+      ],
+      runners: [runner("spaceship")],
+      samples: [],
+      drain: { drained: {} },
+    });
+
+    render(<CoordDevOpsPage />);
+
+    await waitFor(() =>
+      expect(
+        document.querySelector('[data-hostname="spaceship"]')
+      ).not.toBeNull()
+    );
+    const workstation = within(drainBlock("spaceship")).getByTestId(
+      "device-drain-target"
+    );
+    const ciRunner = within(drainBlock("gh-runner-spaceship-wsl")).getByTestId(
+      "device-drain-target"
+    );
+    expect(workstation).toHaveAttribute("data-device-id", DEVICE);
+    expect(ciRunner).toHaveAttribute("data-device-id", CI_DEVICE);
+    // The identity is coord's, spelled out in full on the row rather than
+    // abbreviated — it is the field that tells the two registrations apart.
+    expect(workstation.textContent).toContain(DEVICE);
+    expect(ciRunner.textContent).toContain("gh-runner-spaceship-wsl");
+  });
+
+  it("renders a drained row with until, by and reason", async () => {
+    mockRoutes({
+      devices: [coordDevice(DEVICE, "spaceship", "healthy")],
+      runners: [runner("spaceship")],
+      samples: [],
+      // Far enough out that the assertion cannot race the clock.
+      drain: drainMap(DEVICE, "2099-01-01T00:00:00Z"),
+    });
+
+    render(<CoordDevOpsPage />);
+
+    await waitFor(() =>
+      expect(drainBlock("spaceship")).toHaveAttribute(
+        "data-device-drain",
+        "drained"
+      )
+    );
+    const block = drainBlock("spaceship");
+    expect(block.textContent).toContain("Drained until");
+    expect(block.textContent).toContain("jspinak@gmail.com");
+    expect(block.textContent).toContain("rebuilding the runner");
+    // …and the lever offered is the release, not a second drain.
+    expect(
+      within(block).getByTestId("device-drain-undrain")
+    ).toBeInTheDocument();
+  });
+
+  it("renders UNKNOWN — never 'not drained' — when coord serves no drain read", async () => {
+    // The deploy window: this console is ahead of coord's Phase 4a route, so
+    // the read 404s. `[policy: unknown-must-not-render-as-a-default]`.
+    mockRoutes({
+      devices: [coordDevice(DEVICE, "spaceship", "healthy")],
+      runners: [runner("spaceship")],
+      samples: [],
+      drain: undefined,
+    });
+
+    render(<CoordDevOpsPage />);
+
+    await waitFor(() =>
+      expect(drainBlock("spaceship")).toHaveAttribute(
+        "data-device-drain",
+        "unknown"
+      )
+    );
+    const block = drainBlock("spaceship");
+    expect(block.textContent).toContain("Drain state unknown");
+    expect(block.textContent).not.toContain("Not drained");
+    // A control that cannot read the state does not offer to change it.
+    expect(within(block).getByTestId("device-drain-open")).toBeDisabled();
+    expect(
+      within(block).getByTestId("device-drain-disabled-reason").textContent
+    ).toContain("404");
+  });
+
+  it("disables the lever, with a reason, on a row coord names no device for", async () => {
+    // A host that reached the list through the runner inventory alone. The
+    // drain map is keyed by device UUID and this row has none, so there is
+    // nothing it could drain — and an enabled control here would be silently
+    // inert, which is the failure the plan's keying note exists to prevent.
+    mockRoutes({
+      devices: [],
+      runners: [runner("orphan")],
+      samples: [],
+      drain: { drained: {} },
+    });
+
+    render(<CoordDevOpsPage />);
+
+    await waitFor(() =>
+      expect(document.querySelector('[data-hostname="orphan"]')).not.toBeNull()
+    );
+    const block = drainBlock("orphan");
+    expect(block).toHaveAttribute("data-device-drain", "no_device");
+    expect(within(block).getByTestId("device-drain-open")).toBeDisabled();
+    expect(
+      within(block).getByTestId("device-drain-disabled-reason").textContent
+    ).toContain("no device row for this host");
+    // Nothing claims a target it cannot act on.
+    expect(
+      within(block).queryByTestId("device-drain-target")
+    ).not.toBeInTheDocument();
+  });
+
+  it("reads the drain map ONCE for the whole list, never once per row", async () => {
+    mockRoutes({
+      devices: [
+        coordDevice(DEVICE, "spaceship", "healthy"),
+        coordDevice("22222222-2222-3333-4444-555555555555", "msi", "healthy"),
+        coordDevice("33333333-2222-3333-4444-555555555555", "ghost", "healthy"),
+      ],
+      runners: [runner("spaceship"), runner("msi")],
+      samples: [],
+      drain: { drained: {} },
+    });
+
+    render(<CoordDevOpsPage />);
+
+    await waitFor(() =>
+      expect(document.querySelector('[data-hostname="ghost"]')).not.toBeNull()
+    );
+    expect(
+      httpFetch.mock.calls.filter((c) => String(c[0]).includes("/fleet/drain"))
+    ).toHaveLength(1);
+  });
+
+  it("keeps the drain state readable for a non-admin, who gets no lever", async () => {
+    // Hiding a mutation control must never hide the FACT that a machine is out
+    // of the fleet — that fact is why an idle-looking row is idle.
+    authState.isCoordAdmin = false;
+    mockRoutes({
+      devices: [coordDevice(DEVICE, "spaceship", "healthy")],
+      runners: [runner("spaceship")],
+      samples: [],
+      drain: drainMap(DEVICE, "2099-01-01T00:00:00Z"),
+    });
+
+    render(<CoordDevOpsPage />);
+
+    await waitFor(() =>
+      expect(drainBlock("spaceship")).toHaveAttribute(
+        "data-device-drain",
+        "drained"
+      )
+    );
+    const block = drainBlock("spaceship");
+    expect(block.textContent).toContain("Drained until");
+    expect(
+      within(block).queryByTestId("device-drain-undrain")
+    ).not.toBeInTheDocument();
   });
 });

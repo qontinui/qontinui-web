@@ -35,7 +35,6 @@ import {
   RecordRow,
   RowTime,
   StatusBadge,
-  rowAccentClass,
 } from "@/components/console";
 import {
   MEMORY_STATUS_PALETTE,
@@ -75,7 +74,7 @@ export function MemoryRow({
       rowKey={memory.name}
       expanded={expanded}
       onToggle={onToggle}
-      accent={rowAccentClass(status)}
+      attention={status.attention}
       identity={
         <span title="version head — memories are event-sourced, so this is the latest version number, not a count">
           {memoryIdentity(memory)}

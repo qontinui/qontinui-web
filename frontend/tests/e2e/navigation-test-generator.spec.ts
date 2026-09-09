@@ -16,6 +16,9 @@ const PAGE_URL = `/automation-builder/navigation-tests?project=${TEST_PROJECT_ID
 // Run tests serially to avoid parallel timeout issues
 test.describe.configure({ mode: "serial" });
 
+/** Replaces the old `waitForTimeout(1000)` before the captured-request read. */
+const REQUEST_TIMEOUT = 5000;
+
 test.describe("Navigation Test Generator", () => {
   test.beforeEach(async ({ page }) => {
     // Navigate to navigation tests page with project ID
@@ -142,8 +145,11 @@ test.describe("Navigation Test Generator", () => {
     await expect(startButton).toBeEnabled({ timeout: 10000 });
     await startButton.click();
 
-    // Wait for the request to be made
-    await page.waitForTimeout(1000);
+    // Wait for the request to be made — the route handler above sets
+    // `capturedRequest`, so poll that instead of the clock.
+    await expect
+      .poll(() => capturedRequest, { timeout: REQUEST_TIMEOUT })
+      .not.toBeNull();
 
     // Verify the request format
     expect(capturedRequest).not.toBeNull();

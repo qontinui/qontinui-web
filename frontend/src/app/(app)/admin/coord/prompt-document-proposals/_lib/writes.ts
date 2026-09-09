@@ -35,6 +35,38 @@ export function isLoosening(
 }
 
 /**
+ * A verdict ARRIVED for this write — `true` or `false`, as opposed to absent.
+ *
+ * The counterpart to `isLoosening`, and a different question: that one asks
+ * which way coord classified a write, this one asks whether coord classified it
+ * at all. Mirrors the backend's `_has_verdict` (`operations.py`), which is
+ * likewise spelled `is True or is False` rather than as a membership test —
+ * a served `null` is forwarded verbatim by the proxy and is explicitly NOT a
+ * verdict.
+ */
+export function hasLooseningVerdict(
+  write: Pick<PromptDocumentWrite, "loosening">
+): boolean {
+  return write.loosening === true || write.loosening === false;
+}
+
+/**
+ * How many rows coord actually classified — the denominator of any sentence
+ * this page makes about direction.
+ *
+ * A page-scoped sentence still has to say WHICH writes it is scoped to. "None
+ * of the writes on this page is a widening" names every row; the licence to say
+ * it only covers the classified ones, and during a partial classifier rollout
+ * those are two different sets. See `_limited_caveat`, which draws its own
+ * corpus-scoped sentence from the same count.
+ */
+export function countLooseningVerdicts(
+  writes: ReadonlyArray<Pick<PromptDocumentWrite, "loosening">>
+): number {
+  return writes.reduce((n, w) => n + (hasLooseningVerdict(w) ? 1 : 0), 0);
+}
+
+/**
  * True when at least one row carries the field at all — the discriminator
  * between "coord classified these and none was a loosening" and "coord never
  * classified them".
@@ -42,25 +74,41 @@ export function isLoosening(
  * Deliberately not `writes.some(isLoosening)`: a feed of ordinary writes from a
  * classifier-aware coord and a feed from a coord that has never heard of the
  * flag look identical if you only ask "is anything flagged".
+ *
+ * Derived from `countLooseningVerdicts` rather than spelling the predicate a
+ * second time: the count and the boolean answer the same question, and a page
+ * that says "none of the N classified writes" off one predicate while deciding
+ * whether to speak at all off another can only disagree with itself.
  */
 export function looseningClassificationPresent(
   writes: ReadonlyArray<Pick<PromptDocumentWrite, "loosening">>
 ): boolean {
-  return writes.some(
-    (w) => w.loosening === true || w.loosening === false
-  );
+  return countLooseningVerdicts(writes) > 0;
 }
 
 /**
  * Loosenings first, everything else after, **newest-first order preserved
  * inside each group**.
  *
- * A stable partition rather than a comparator: the backend already returns the
- * feed sorted by `created_at` descending, and re-sorting on a timestamp here
- * would silently re-derive an ordering the server owns — including for rows
- * whose `created_at` is unparseable, which a date comparator would shuffle to
- * an arbitrary place. Partitioning touches only the axis this function is
- * about.
+ * A stable partition rather than a comparator: the ordering by `created_at`
+ * descending is the SERVER's, and re-deriving it on a timestamp here would
+ * shuffle rows whose `created_at` is unparseable into an arbitrary place.
+ * Partitioning touches only the axis this function is about.
+ *
+ * **The backend now partitions too.** This used to say the feed arrives "sorted
+ * by `created_at` descending", which stopped being true: `operations.py`
+ * `_promote_flagged` lifts classified loosenings above the recency order BEFORE
+ * the page slice, so a loosening older than the newest `limit` writes is not
+ * dropped server-side. What arrives is therefore already loosenings-first, and
+ * this partition is idempotent over it — including over the component's
+ * filtered subset, since `Array.prototype.filter` preserves relative order.
+ *
+ * The ONE reason it still earns its place: a qontinui-web deploy predating that
+ * change serves an unpromoted feed, and this keeps the page correct on it. The
+ * two predicates are deliberately the same rule (`isLoosening`'s `=== true`,
+ * `_is_flagged`'s `is True`) — two languages and two files with no shared
+ * source, so that agreement is a convention each side documents, not something
+ * either can enforce on the other.
  */
 export function sortWritesForFeed<T extends Pick<PromptDocumentWrite, "loosening">>(
   writes: ReadonlyArray<T>

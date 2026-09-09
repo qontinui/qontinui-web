@@ -275,6 +275,140 @@ export interface ResourceSampleRow {
    * of magnitude with nothing else in the row saying so.
    */
   saturation_source?: string | null;
+  /**
+   * OS thread count of the **publishing process** (the runner) — process
+   * scoped, not the lane-wide kernel figure. The direct proxy for how close
+   * that process is to exhausting tokio's blocking-thread pool (default
+   * ceiling 512), which is the resource that wedged the primary runner on
+   * 2026-08-29 at 540 threads while every memory, commit and disk figure on
+   * this row read healthy *and accurate*.
+   *
+   * Optional on the wire, like `floor`/`headroom`: absent from any coord that
+   * predates alembic `lasac_01`, and from any device whose runner build
+   * predates the publisher. **Absent and `null` both mean UNKNOWN and render
+   * as an em dash — never `0`**, which on this axis does not under-report but
+   * inverts: a live process cannot have zero threads, and zero reads as
+   * maximally idle on the one column built to catch a saturated one.
+   */
+  thread_count?: number | null;
+  /**
+   * Live terminal sessions on the device at sample time — the EXPLANATORY
+   * half carried beside `thread_count`, never a trip condition of its own. A
+   * machine can carry N sessions comfortably or N sessions each leaking a
+   * stuck spawn; only the thread count separates those, and only the pair
+   * answers "was this a lot of work, or a leak?".
+   *
+   * Same absence rule as `thread_count`: `null`/absent is UNKNOWN, never `0`.
+   */
+  active_terminal_sessions?: number | null;
+  /**
+   * SERVER-computed grade of `thread_count` against `thread_ceiling` — the
+   * graded twin of the raw count, and the only honest way to colour it.
+   *
+   * Deliberately its OWN field and deliberately NOT folded into `headroom`.
+   * `headroom` means "a guard is acting on this" — `HEADROOM_MEANING.breach`
+   * tells the operator work is being refused and builds fail here. Nothing
+   * enforces the thread ceiling on the coord side: this axis is observability,
+   * and the throttle that acts on it is runner-local and invisible from here.
+   * Folding it in would have announced a refusal that is not happening, which
+   * is the §C3 disagreement in mirror form — so the grade travels beside
+   * `headroom`, never inside it.
+   *
+   * Absent from any coord that predates it, and absent is UNKNOWN, never `ok`.
+   */
+  thread_headroom?: Headroom | null;
+  // -------------------------------------------------------------------------
+  // The socket census — plan
+  // `2026-08-31-devops-runner-9876-accept-path-starved-by-close-wait-sockets`,
+  // stored by alembic revision `fleet_res_tel_05_socket_census`.
+  //
+  // REPORTING ONLY, and that is a constraint rather than a stage. Unlike
+  // `pressure` and `saturation`, this lane carries NO server-computed ratio,
+  // NO floor and NO verdict, and it must never gate dispatch or fold into
+  // `headroom` — so there is deliberately no `classifySocketCensus` helper and
+  // no strip column beside the Saturation cell. Adding one would be inventing
+  // a threshold in TypeScript, which is the §C1 defect this module's header
+  // exists to forbid.
+  //
+  // Optional on the wire for the same reason as the saturation counts: a coord
+  // that predates the census sends no such key at all, and "the publisher has
+  // no probe" and "coord never mentioned it" are different facts. Until both
+  // the coord reader and the runner publisher ship, every one of these is
+  // `undefined` on every row.
+  // -------------------------------------------------------------------------
+  /**
+   * The listener port the socket census on this row was taken on — `9876`
+   * (primary runner), `9877` / `9878` (secondaries).
+   *
+   * Every `sock_*` count below is scoped to THIS port and means nothing
+   * without it, which is why it is a field rather than a constant: this fleet
+   * runs several runners per box, and the whole 2026-08-31 diagnosis was that
+   * ONE listener was starved while its two neighbours accepted normally.
+   *
+   * `null` with non-null counts is malformed — counts with no subject — and a
+   * reader must treat that combination as unmeasured rather than guess a port.
+   */
+  sock_probe_port?: number | null;
+  /**
+   * `CLOSE_WAIT` sockets whose **local** port is `sock_probe_port` — so
+   * SERVER-side: the listener's own process owns the descriptor and never
+   * dropped it after the peer sent FIN.
+   *
+   * This is the starvation signal, and it read **148** on the runner's `:9876`
+   * on 2026-08-31 against a known-zero baseline while `:9875` and `:3001` on
+   * the same host connected normally.
+   *
+   * **`null` is unknown, never zero — and here a zero is a real reading.** A
+   * measured `0` is the healthy baseline the incident's growth figure was
+   * taken against; `null` means no probe ran (no `ss`, no `netstat`, or a
+   * publisher predating the census). Rendering `null` as `0` would paint every
+   * un-probed machine with the exact all-clear this dimension exists to
+   * disprove.
+   */
+  sock_close_wait_local?: number | null;
+  /**
+   * `CLOSE_WAIT` sockets whose **remote** port is `sock_probe_port` — so
+   * CLIENT-side: some probe process on the same box owns the descriptor, not
+   * the listener.
+   *
+   * Split from `sock_close_wait_local` rather than summed with it because the
+   * two indict different processes while a single total reads identically for
+   * both — a client-side leak does not starve the listener's accept path at
+   * all. The split is what makes a loopback census legible, since a probe
+   * running on the listener's own host sees BOTH ends of every `127.0.0.1`
+   * connection. **Never add this into the `*_local` figures.**
+   */
+  sock_close_wait_remote?: number | null;
+  /**
+   * `ESTABLISHED` sockets whose local port is `sock_probe_port`. A control,
+   * not a symptom: the denominator that makes a raw `CLOSE_WAIT` count a
+   * statement about the LISTENER rather than about traffic volume.
+   */
+  sock_established_local?: number | null;
+  /**
+   * `TIME_WAIT` sockets whose local port is `sock_probe_port`. The second
+   * control: `TIME_WAIT` is the normal terminal state of a connection the
+   * server closed, so a high `CLOSE_WAIT` beside a near-zero `TIME_WAIT` is
+   * the 2026-08-31 signature, while a high `CLOSE_WAIT` beside a high
+   * `TIME_WAIT` is ordinary churn.
+   */
+  sock_time_wait_local?: number | null;
+  /**
+   * WHICH instrument produced the counts — `"ss"` | `"netstat"` |
+   * `"unavailable"`, or null.
+   *
+   * The same class of field as `saturation_source`, for the same reason: `ss`
+   * reads the kernel's sockets over netlink `sock_diag` while Windows
+   * `netstat` is a different implementation with different truncation
+   * behaviour under load, so a publisher that falls back emits numbers on a
+   * different footing with nothing else in the row saying so.
+   *
+   * `"unavailable"` is a MEASUREMENT and not an absence — the publisher ran
+   * and neither instrument was reachable — so a row may carry it with all four
+   * counts null, and that is strictly more informative than a row that says
+   * nothing at all.
+   */
+  sock_source?: string | null;
   source: string;
   /** SERVER-computed. `null` = the lane has no pressure opinion. */
   pressure: LanePressure | null;
@@ -728,6 +862,25 @@ export function rowHeadroom(
 }
 
 /**
+ * The THREAD axis's own grade, read with exactly the same discipline as
+ * [`rowHeadroom`]: an absent field (a coord that predates it) and an
+ * unrecognised word (a coord ahead of this build) both read `unknown`, never
+ * `ok`. A client that reads silence as "fine" is the false-safe §C3 forbids.
+ *
+ * Kept separate from `rowHeadroom` rather than parameterised over the key,
+ * because the two answer different questions — one is "is a guard refusing
+ * work", the other is "how close is that process to the ceiling nothing
+ * enforces" — and a shared accessor would invite folding them back together.
+ */
+export function threadHeadroom(
+  row: Pick<ResourceSampleRow, "thread_headroom"> | null | undefined
+): Headroom {
+  const h = row?.thread_headroom;
+  if (typeof h !== "string" || !HEADROOM_VALUES.has(h)) return "unknown";
+  return h as Headroom;
+}
+
+/**
  * Why a row reads `unknown`, for the operator-facing explanation.
  *
  * The three cases have different fixes and must not share one sentence:
@@ -930,11 +1083,20 @@ export function formatAge(secs: number | null | undefined): string {
  * WSL headroom that can ACTUALLY be spent, given the host lane on the same
  * machine.
  *
- * `.wslconfig` sets `pageReporting=true`, so WSL returns idle pages to
- * Windows and `memory=<N>GB` is a *ceiling*, not a reservation. The lanes are
- * coupled: real WSL headroom is `min(ceiling − used, host_free)`. A WSL row
- * reading "9 GB free" beside a host at 900 MB free commit — the literal
- * 2026-08-02 state — is showing memory that cannot be spent.
+ * WSL returns idle pages to Windows, so `memory=<N>GB` in `.wslconfig` is a
+ * *ceiling*, not a reservation. The lanes are coupled: real WSL headroom is
+ * `min(ceiling − used, host_free)`. A WSL row reading "9 GB free" beside a host
+ * at 900 MB free commit — the literal 2026-08-02 state — is showing memory that
+ * cannot be spent.
+ *
+ * Do NOT re-attribute the reclaim above to a `.wslconfig` `pageReporting=true`
+ * key. That attribution was measured false: WSL 2.7.12.0 does not recognise the
+ * key at all, and neither fleet box sets it. What IS still presumed rather than
+ * measured is that reclaim is on by *default* on these builds — the coupled
+ * figure this function returns depends on it, so treat it as an assumption this
+ * surface rests on, not as something the code below establishes.
+ * `qontinui-claude-config/knowledge-base/qontinui-specific/machine-resources.md`
+ * §2 carries both measurements.
  *
  * Returns `null` when either side is missing: a coupled figure derived from
  * one half is not a coupled figure, and guessing the other half would be the

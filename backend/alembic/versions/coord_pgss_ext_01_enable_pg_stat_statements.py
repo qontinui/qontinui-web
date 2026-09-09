@@ -61,9 +61,16 @@ erroring when it was not preloaded. Only *reading the view* fails there, with
 extension is therefore substrate-independent; only its usefulness is not.
 
 Three further workflows (``e2e-tests.yml``, ``cross-browser-survey.yml``,
-``style-gate.yml``) run the chain on ``pgvector/pgvector:pg15``, so that image
-was checked too rather than assumed from the pg16 result: it also reports
-``pg_stat_statements`` 1.10 available, and ``CREATE EXTENSION`` succeeds.
+``style-gate.yml``) ran the chain on ``pgvector/pgvector:pg15`` when this
+revision was written, so that image was checked too rather than assumed from
+the pg16 result: it also reports ``pg_stat_statements`` 1.10 available, and
+``CREATE EXTENSION`` succeeds. Those three were moved to
+``pgvector/pgvector:pg16`` on 2026-08-30 to match production (RDS
+``qontinui-staging``, engine 16.13), so every workflow that runs this chain is
+now on the substrate the paragraph above measured. The pg15 result is kept
+because it is a measurement that was actually taken, and because it is what
+makes the extension's availability substrate-independent rather than a fact
+about one image.
 
 Blast radius, stated because it is wider than a one-line diff suggests: this
 revision is the parent of ``coord_alerts_dropmachineidx_01``, so a

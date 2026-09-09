@@ -37,7 +37,9 @@ import {
   deviceStateBadgeVariant,
 } from "./FleetHealthSummary";
 import { CiCapacityDisclosure } from "./CiCapacityDisclosure";
+import { DeviceDrainControl } from "./DeviceDrainControl";
 import type { CiCapacityJoin } from "./ciCapacity";
+import type { DeviceDrainState, DrainTarget } from "./fleetDrain";
 import type { MachineGroup, MachineVolumes, VolumeReading } from "./types";
 
 interface MachineCardProps {
@@ -60,6 +62,26 @@ interface MachineCardProps {
    * that never looked would be one.
    */
   ciCapacity?: CiCapacityJoin;
+  /**
+   * What a drain on this row would act on, resolved by `resolveDrainTarget`
+   * from coord's device join — plan
+   * `2026-09-01-device-drain-does-not-reach-agent-session-spawning` Phase 4b.
+   *
+   * Present ONLY on a list built with coord's device read (the Dev Ops
+   * Overview mount). `undefined` means this list was built without it, so the
+   * card renders no drain block at all: an absence of the READ is not a fact
+   * about the machine, and a "no coord device to drain" notice on a page that
+   * never looked would be one. Same posture as `ciCapacity`.
+   */
+  drainTarget?: DrainTarget;
+  /**
+   * What coord says about that device's drain right now. Required whenever
+   * `drainTarget` is given — the two are one join and rendering the target
+   * without the state would be a control with no state beside it.
+   */
+  drainState?: DeviceDrainState;
+  /** Forced re-read of the drain map after a successful drain/undrain. */
+  onDrainActed?: () => void;
 }
 
 function OsIcon({ os }: { os: string }) {
@@ -336,6 +358,9 @@ export function MachineCard({
   machine,
   onRenamed,
   ciCapacity,
+  drainTarget,
+  drainState,
+  onDrainActed,
 }: MachineCardProps) {
   const { hostname, displayName, runners, claudeSessions } = machine;
 
@@ -733,6 +758,23 @@ export function MachineCard({
             </h4>
             <CiRunnerBadge ciRunner={machine.ciRunner} />
           </div>
+        )}
+
+        {/* Drain — whether coord is sending this machine ANY new work, and
+            the lever that changes it. Deliberately ABOVE the CI-capacity
+            disclosure and never inside one: CI capacity is a knob about one
+            kind of work, whereas a drain is the machine's participation in the
+            fleet at all — CI, builds, agent-session spawns and continuations —
+            and it is the fact that explains an idle-looking row. Both halves
+            are required together: a target with no state beside it would be a
+            control with nothing to read. */}
+        {drainTarget && drainState && (
+          <DeviceDrainControl
+            target={drainTarget}
+            drain={drainState}
+            rowHostname={hostname}
+            onActed={onDrainActed}
+          />
         )}
 
         {/* CI capacity — how much CI this machine is ALLOWED to take, next to

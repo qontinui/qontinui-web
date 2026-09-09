@@ -77,12 +77,11 @@ def _normalize_command(raw: str) -> str | None:
     serves the previous artifact.
 
     ``project.apps`` has TWO independent writers: this backend, and the runner's
-    own ``PATCH /apps/:app_id``. On ``main`` today the runner side does NOT
-    normalize — it applies ``COALESCE($n, column)``, which stores ``""`` and
-    ``"   "`` verbatim and cannot clear a command at all. A companion runner
-    change adds the matching ``normalize_command``; until it lands, this
-    endpoint is the only normalized door, and the runner's engine-side blank
-    check is what protects rows written through the other one.
+    own ``PATCH /apps/:app_id``. The runner side normalizes too now
+    (``pg/apps.rs::normalize_command``), so both writers agree on the same
+    blank-means-clear contract. The runner's engine-side blank check
+    (``fleet.rs::execute_build_and_restart``) remains as belt-and-braces for
+    rows written before that normalization landed.
     """
     return raw.strip() or None
 

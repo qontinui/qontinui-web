@@ -89,6 +89,28 @@
  *     off a count the strip was simultaneously labelling frozen — a stale
  *     number in front of an IRREVERSIBLE action.
  *
+ *   **And the sweep that counted those four consumers re-spelled the
+ *   predicate twice while fixing them** — the follow-up audit's finding, and
+ *   the same shape one level in:
+ *
+ *   - the tooltip's staleness guard was `readFailed`, which is three of the
+ *     FOUR ways coord's scalars stop being quotable. Under
+ *     `migrationPending` — reachable after any good read, since the strip's
+ *     own arm for it renders both badges `–` — it promised "Marks ALL 137
+ *     unread… cannot be undone" about a number the page was simultaneously
+ *     calling unknown. The strip is the surface that decides this, so it now
+ *     publishes the answer as `health.readIsCurrent` and the tooltip asks
+ *     rather than re-derives. The same state also left the button LIVE in
+ *     front of a POST that can only 503, which this page swallows as the quiet
+ *     degrade — a button that silently does nothing;
+ *   - `pagingFailed` was split out of `readFailed` so a failed page would not
+ *     stale the strip, and then folded straight back into one boolean at the
+ *     `?ref=` banner. A failed "Load more" therefore reported "the feed above
+ *     failed to load" about a feed the strip was painting green, and withheld
+ *     the one remedy that applies — retrying the button. It is its own arm,
+ *     ranked below the head failure, because when both are true the head is
+ *     the bigger truth.
+ *
  *   **And one flag was the wrong grain.** `loaded` is page-lifetime, so a
  *   success under one filter licensed an empty-state claim about a DIFFERENT
  *   filter whose read had failed — the same bug, one state over. The list is
@@ -123,7 +145,12 @@ import {
 } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { CheckCheck, Filter, RefreshCw } from "lucide-react";
-import { HealthStrip, RecordList, readIsUnknown } from "@/components/console";
+import {
+  HealthStrip,
+  RecordList,
+  createReadSequence,
+  readIsUnknown,
+} from "@/components/console";
 import { NotificationRow } from "@/components/admin/coord/NotificationRow";
 import { deriveNotificationsHealth } from "@/components/admin/coord/notificationsHealth";
 import {
@@ -136,6 +163,7 @@ import {
   humanKind,
   isContractError,
   isMigrationPending,
+  isUnread,
   kindOptions,
   linkedRefNotice,
   matchesNotificationRef,
@@ -229,6 +257,22 @@ export default function CoordNotificationsPage() {
    * failed.
    */
   const [pagingFailed, setPagingFailed] = useState(false);
+  /**
+   * The most recent SUCCESSFUL head read carried no `unread_count`, while an
+   * earlier one did — so the scalars on screen are frozen even though nothing
+   * failed.
+   *
+   * `applyEnvelope` below treats an absent scalar as UNKNOWN and leaves the
+   * previous value standing, which is right; what was missing is anyone SAYING
+   * so. `readFailed` is false (the read landed) and `loaded` is true, so the
+   * strip took the green arm and reported a number from an earlier read as
+   * current, and the mark-all tooltip promised it.
+   *
+   * Found from the other end: the nav badge polls this same route on its own
+   * timer and had the identical hole, so it was fixed there first — leaving the
+   * page, briefly, the LESS careful of two surfaces reading one scalar.
+   */
+  const [scalarStale, setScalarStale] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
   const [migrationPending, setMigrationPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -273,18 +317,85 @@ export default function CoordNotificationsPage() {
    */
   const queryGenRef = useRef(0);
 
-  const applyEnvelope = useCallback((body: NotificationsResponse) => {
-    // Scalars, never `notifications.length`. Absence is UNKNOWN, so the
-    // previous value stands rather than silently reading zero.
-    if (typeof body.total === "number") setTotal(body.total);
-    if (typeof body.unread_count === "number")
-      setUnreadCount(body.unread_count);
-  }, []);
+  /**
+   * Whether `unread_count` on screen came from the most recent read that could
+   * have carried it — as a SEQUENCE, through the console's shared module rather
+   * than a boolean this page spells for itself.
+   *
+   * Three writers touch that scalar and none of them ordered: the head read,
+   * `loadMore`, and `markRead`'s POST response. A flag was enough while only
+   * one of them wrote it; it stopped being enough the moment the POST started
+   * clearing it, because a POST that hangs past a head read can then land and
+   * report "current" about a number the newer read declined to confirm.
+   * `createReadSequence` is the same arithmetic `CoordNav`'s badges run — R6's
+   * own "import the predicate, do not re-spell it", applied to the module this
+   * page's audit produced.
+   *
+   * A ref, because a settling read has to see its own writes in the same tick.
+   *
+   * This page reads `isStale()` and never `hasDelivered()` — `unreadCount ===
+   * null` is the same question here, and provably so: `setUnreadCount` runs iff
+   * `settle(…) && carried`, which is exactly when the module advances
+   * `delivered`. Stated rather than left to be rediscovered, because two
+   * spellings of one fact is what this module exists to stop.
+   */
+  const scalarSeqRef = useRef<ReturnType<typeof createReadSequence> | null>(
+    null
+  );
+  if (scalarSeqRef.current === null) {
+    scalarSeqRef.current = createReadSequence();
+  }
+
+  /**
+   * `fromHead` is not cosmetic. `applyEnvelope` now writes a staleness VERDICT
+   * as well as values, and only the head read is entitled to one.
+   *
+   * `pagingFailed` exists in this file precisely because "a failed Load more
+   * must not paint the head counts stale, since the 10s poller is still
+   * refreshing them" — and writing `scalarStale` from a paging response
+   * reintroduced that coupling through the other door: a cursor page answering
+   * without the scalar flipped a green strip to "These counts stopped
+   * updating" and dropped the figure from the mark-all tooltip, as a direct
+   * result of the operator's own click, self-healing only on the next tick.
+   * Values are still applied from either path — they are server scalars for
+   * the same query — but the verdict follows the read the strip is derived
+   * from.
+   */
+  const applyEnvelope = useCallback(
+    (body: NotificationsResponse, seq: number, fromHead: boolean) => {
+      const sequence = scalarSeqRef.current!;
+      // Scalars, never `notifications.length`. Absence is UNKNOWN, so the
+      // previous value stands rather than silently reading zero — and, since
+      // standing silently is what made the strip quote a frozen number as
+      // current, absence now also says so.
+      if (typeof body.total === "number") setTotal(body.total);
+      const carried = typeof body.unread_count === "number";
+      // `counts: fromHead` is the whole of the paging fix. A cursor page can
+      // still DELIVER the scalar, but its silence says nothing — `pagingFailed`
+      // exists in this file precisely because "a failed Load more must not
+      // paint the head counts stale, since the 10s poller is still refreshing
+      // them", and letting a page's silence stale them brought that coupling
+      // back through the other door.
+      if (sequence.settle(seq, carried, fromHead) && carried) {
+        setUnreadCount(body.unread_count!);
+      }
+      // The first read to answer WITHOUT the scalar is not a read that stopped
+      // carrying it: `isStale()` stays false until something has been
+      // delivered, so that state keeps its own arm and its own sentence ("The
+      // unread count did not come back") instead of being told it is a number
+      // that has gone out of date.
+      setScalarStale(sequence.isStale());
+    },
+    []
+  );
 
   /** Fetch the head page. `merge` keeps already-loaded later pages. */
   const fetchHead = useCallback(
     async (merge: boolean) => {
       const gen = queryGenRef.current;
+      // Taken BEFORE the request goes out, so the ticket orders reads by when
+      // they were issued rather than by when they happened to come back.
+      const scalarSeq = scalarSeqRef.current!.issue();
       try {
         const body = await httpClient.get<NotificationsResponse>(
           `${API}/notifications?${buildQuery({ kind, unreadOnly })}`,
@@ -298,8 +409,19 @@ export default function CoordNotificationsPage() {
           return [...page, ...prev.filter((n) => !seen.has(n.notification_id))];
         });
         setVocabulary((prev) => mergeKindVocabulary(prev, page));
-        if (!merge) setNextCursor(body.next_cursor ?? null);
-        applyEnvelope(body);
+        if (!merge) {
+          // A head read that does not merge THROWS THE WALK AWAY and starts a
+          // new one, so the old walk's failure goes with it. The filter effect
+          // already resets this before calling us; Refresh calls the same
+          // function and did not, so a failed "Load more" survived a Refresh
+          // that had discarded the very pages it was talking about — and if the
+          // new head answered with no cursor, the banner pointed at a "Load
+          // more" button that is no longer rendered. Reset beside the cursor it
+          // belongs to, so the two callers of this path cannot disagree again.
+          setNextCursor(body.next_cursor ?? null);
+          setPagingFailed(false);
+        }
+        applyEnvelope(body, scalarSeq, true);
         setMigrationPending(false);
         setLoaded(true);
         // This query has now answered — the list may speak for it.
@@ -337,6 +459,7 @@ export default function CoordNotificationsPage() {
     const cursor = nextCursor;
     if (!cursor) return;
     const gen = queryGenRef.current;
+    const scalarSeq = scalarSeqRef.current!.issue();
     setLoadingMore(true);
     try {
       const body = await httpClient.get<NotificationsResponse>(
@@ -354,7 +477,7 @@ export default function CoordNotificationsPage() {
       // otherwise a fully-deduped page leaves an enabled button that does
       // nothing when clicked.
       setNextCursor(page.length === 0 ? null : (body.next_cursor ?? null));
-      applyEnvelope(body);
+      applyEnvelope(body, scalarSeq, false);
       setError(null);
       setPagingFailed(false);
     } catch (e) {
@@ -396,6 +519,7 @@ export default function CoordNotificationsPage() {
   const markRead = useCallback(
     async (selection: MarkReadSelection, bulk = false) => {
       const gen = queryGenRef.current;
+      const scalarSeq = scalarSeqRef.current!.issue();
       const ids = selectionIds(selection);
       setMarking(bulk || ids === null ? "all" : (ids[0] ?? "all"));
       try {
@@ -412,14 +536,33 @@ export default function CoordNotificationsPage() {
         const target = ids === null ? null : new Set(ids);
         setRows((prev) =>
           prev.map((n) =>
-            n.read_at || (target && !target.has(n.notification_id))
+            !isUnread(n) || (target && !target.has(n.notification_id))
               ? n
               : { ...n, read_at: now }
           )
         );
-        if (typeof body?.unread_count === "number") {
-          setUnreadCount(body.unread_count);
+        // The mark-read door is a DELIVERY of this scalar — coord computed it
+        // for this principal just now — and the bookkeeping has to say so. It
+        // was left out when `applyEnvelope` became the sole author of the
+        // verdict, and a later "have we ever seen one?" gate then made the
+        // omission PERMANENT in one direction: against a feed that never
+        // carries the scalar, a mark-all wrote a real `0` into state while the
+        // gate stayed shut, so nothing could ever stale it again and the strip
+        // settled into a green "you have seen everything coord recorded" over a
+        // number the FEED has never delivered.
+        //
+        // `counts: false` is what keeps it a delivery WITHOUT making it a read:
+        // this is a write's response, so it can carry the scalar as a courtesy,
+        // but its silence says nothing about the feed and must never stale the
+        // strip. And going through the sequence at all is what stops the
+        // reverse — a POST that hangs past a newer head read landing afterwards
+        // and reporting "current" about a number that read declined to confirm.
+        const scalarCarried = typeof body?.unread_count === "number";
+        const sequence = scalarSeqRef.current!;
+        if (sequence.settle(scalarSeq, scalarCarried, false) && scalarCarried) {
+          setUnreadCount(body.unread_count!);
         }
+        setScalarStale(sequence.isStale());
         setError(null);
         // `unread_only` view: marked rows no longer match the filter.
         if (unreadOnly) fetchHead(false);
@@ -474,6 +617,23 @@ export default function CoordNotificationsPage() {
     setExpanded(linkedMatch);
   }, [linkedMatch]);
 
+  const health = deriveNotificationsHealth({
+    unreadCount,
+    total,
+    loaded,
+    migrationPending,
+    // `readFailed`, not `error !== null && !loaded`. The old expression could
+    // only ever describe a FIRST read that failed, so the far more common
+    // state — a good first load followed by polls that stopped succeeding —
+    // fell through to the green arm and reported frozen counts as current.
+    // It also folded in mark-read failures, which say nothing about whether
+    // the counts are fresh.
+    failed: readFailed,
+    // ...and the third way they stop being current, which neither of the two
+    // above can express: a read that LANDED carrying no scalar.
+    scalarStale,
+  });
+
   /**
    * Mark-read-in-bulk, and what it will actually do.
    *
@@ -487,34 +647,109 @@ export default function CoordNotificationsPage() {
    * BEFORE the click rather than the toast saying so after.
    */
   const filterActive = kind !== "any" || unreadOnly;
+  /**
+   * Through the module's `isUnread`, not a fourth `!n.read_at`.
+   *
+   * The same R6 rule the rest of this page was just fixed for, applied to the
+   * predicate that decides which rows the FILTERED arm irreversibly marks.
+   * `notificationStatus.ts` exports the one spelling of "unread" and
+   * `NotificationRow` imports it to decide how a row renders; this page had
+   * three hand-rolled copies deciding what a click destroys, so the row and
+   * the button could have disagreed about the same row. That the current
+   * spellings happen to match is not the property worth having — "unread ⇔
+   * no `read_at` for this principal" is coord's contract, and it belongs in
+   * one place for the same reason `readIsUnknown` does.
+   */
   const loadedUnreadIds = useMemo(
-    () => rows.filter((n) => !n.read_at).map((n) => n.notification_id),
+    () => rows.filter(isUnread).map((n) => n.notification_id),
     [rows]
   );
   /**
    * The number the tooltip is allowed to promise — the FOURTH consumer of that
    * failed poll, and the one where being confidently wrong costs the most.
    *
-   * Unfiltered, this is coord's `unread_count`, and `readFailed` means it is
-   * whatever an earlier read left behind. The strip is already labelling it
-   * frozen; a tooltip one element away saying "Marks ALL 137 unread
-   * notifications… This cannot be undone" spends that stale number in front of
-   * an IRREVERSIBLE action. So when the count is stale the tooltip drops the
-   * figure and keeps the warning — the unfiltered arm marks every unread row
-   * for this principal regardless of what the number says, which is exactly
-   * why the number must not be the reassuring part.
+   * Unfiltered, this is coord's `unread_count`, which is only ever as good as
+   * the read that delivered it. The strip is the surface that decides that, so
+   * the guard is `health.readIsCurrent` rather than a second spelling here:
+   * the first cut wrote `readFailed`, which covers the stale arm and misses
+   * `migrationPending` — where the strip renders both badges as `–` and the
+   * tooltip, one element away, still promised "Marks ALL 137 unread
+   * notifications… This cannot be undone". A stale number is bad in front of an
+   * IRREVERSIBLE action; a number the page is simultaneously calling unknown is
+   * worse. So whenever the counts are not current the tooltip drops the figure
+   * and keeps the warning — the unfiltered arm marks every unread row for this
+   * principal regardless of what the number says, which is exactly why the
+   * number must not be the reassuring part.
    *
    * The filtered arm is unaffected: it counts LOADED rows, which are not a
    * coord scalar and cannot go stale behind our back.
    */
   const markAllCount = filterActive
     ? loadedUnreadIds.length
-    : readFailed
-      ? null
-      : unreadCount;
-  const markAllDisabled = filterActive
-    ? loadedUnreadIds.length === 0
-    : !((unreadCount ?? 0) > 0 || rows.some((n) => !n.read_at));
+    : health.readIsCurrent
+      ? unreadCount
+      : null;
+  /**
+   * Under `migrationPending` there is no table to mark, so the POST is a
+   * guaranteed 503 that this page swallows as the quiet degrade — a button that
+   * silently does nothing, which is the outcome `isContractError` exists to
+   * avoid one arm over. Disabled outright rather than left live off a count
+   * from before the table went away. The Refresh button deliberately stays
+   * enabled: it is the recovery path, not a write.
+   *
+   * `migrationPending` and NOT `health.readIsCurrent`, one line under a fix for
+   * re-spelling — because they answer different questions and only one of them
+   * is this button's. `readIsCurrent` is false on a failed poll too, and a
+   * stale count is no reason to refuse the write: the unfiltered arm marks
+   * every unread row regardless of any number, so it still does the right thing
+   * against a feed that has stopped answering. What stops it here is that the
+   * STORE cannot be written, which is a fact about coord's deployment rather
+   * than about the freshness of a read.
+   */
+  /**
+   * The unfiltered arm, and the one `?? 0` this page had left standing.
+   *
+   * `!((unreadCount ?? 0) > 0 || rows.some(unread))` reads a MISSING count as
+   * zero, which is the fabrication `notificationsHealth.tsx` exists to stop —
+   * made here in an affordance instead of in words. After a first read that
+   * failed, `unreadCount` is `null` and `rows` is `[]`, so the strip says
+   * "Could not read the feed", the list says "whether anything is waiting for
+   * you is unknown, not none", and between them the button greyed itself out:
+   * a third surface answering the same question, and the only one answering it
+   * confidently, wrongly, and without a sentence anyone could argue with.
+   *
+   * The disable now needs a REASON the page actually holds, which is exactly
+   * the standard the `migrationPending` line above was argued to: *the STORE
+   * cannot be written*. Not knowing the count is not such a reason — the
+   * unfiltered arm sends `{all: true}` and coord marks every unread row for
+   * this principal regardless of any number we hold, so an unknown count
+   * costs the request nothing. If there is genuinely nothing unread the POST
+   * is a no-op that answers `marked: 0`; if the feed is merely unreadable it
+   * does the work the operator asked for. Neither outcome is the silent
+   * nothing a disabled button promises.
+   *
+   * So: disabled only on an AFFIRMATIVE zero — coord's scalar actually said
+   * `0`, THE READ THAT DELIVERED IT IS CURRENT, and no loaded row contradicts
+   * it. Every other state keeps the button live, which is the same direction
+   * §2's reasoning already took ("a stale count is no reason to refuse the
+   * write").
+   *
+   * `health.readIsCurrent` is that middle term and it is not optional. Without
+   * it this predicate reads a RETAINED zero as knowledge: `applyEnvelope` keeps
+   * the previous scalar when a poll fails, so a feed that answered `0` and then
+   * went dark leaves a frozen `0` in state while new events arrive — and the
+   * button greys out under a strip headlined "These counts stopped updating"
+   * whose detail line says, in words, "what has arrived since the last good
+   * read is UNKNOWN". That is the same defect one state over, and re-deriving
+   * "may I quote this scalar?" from the raw value is exactly what R6's fourth
+   * rule forbids: the strip owns that verdict and publishes it, two
+   * declarations above, where `markAllCount` already consults it.
+   */
+  const knownNothingUnread =
+    health.readIsCurrent && unreadCount === 0 && !rows.some(isUnread);
+  const markAllDisabled =
+    migrationPending ||
+    (filterActive ? loadedUnreadIds.length === 0 : knownNothingUnread);
   const markAllLabel = filterActive
     ? `Mark ${loadedUnreadIds.length} shown read`
     : "Mark all read";
@@ -547,20 +782,6 @@ export default function CoordNotificationsPage() {
    * described; see its declaration.
    */
   const feedUnknown = readIsUnknown(queryLoaded, readFailed);
-
-  const health = deriveNotificationsHealth({
-    unreadCount,
-    total,
-    loaded,
-    migrationPending,
-    // `readFailed`, not `error !== null && !loaded`. The old expression could
-    // only ever describe a FIRST read that failed, so the far more common
-    // state — a good first load followed by polls that stopped succeeding —
-    // fell through to the green arm and reported frozen counts as current.
-    // It also folded in mark-read failures, which say nothing about whether
-    // the counts are fresh.
-    failed: readFailed,
-  });
 
   return (
     <div
@@ -652,11 +873,19 @@ export default function CoordNotificationsPage() {
             // Not `error`. This arm says "the feed above failed to load", and
             // `error` is the page's ONE error line — mark-read writes to it
             // too, so a rejected POST made the banner blame a feed that had
-            // loaded perfectly well. But the question here is wider than the
-            // strip's: the banner's fallback tells the operator to "load
-            // more", so a failed PAGE is a failed look even though it leaves
-            // the head counts fresh.
-            error: readFailed || pagingFailed,
+            // loaded perfectly well.
+            error: readFailed,
+            // The paging arm needs this to keep the filter clause it would
+            // otherwise drop — see `linkedRefNotice`. Deliberately the SAME
+            // `filterActive` that scopes mark-all, so "a filter is on" means
+            // one thing on this page.
+            filterActive,
+            // …and NOT folded into the line above, for the same reason the
+            // strip keeps them apart. `readFailed || pagingFailed` made a
+            // failed "Load more" report "the feed above failed to load" about a
+            // feed the strip was simultaneously painting green — the two states
+            // want different sentences and different remedies.
+            pagingFailed,
             migrationPending,
           })}
         </p>

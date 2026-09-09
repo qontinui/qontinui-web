@@ -36,20 +36,57 @@
  * `COORD_SSO_DEFAULT_TENANT` (coord deployment config) and `slug_is_group_mapped`
  * is a DB read inside the create transaction. So a preview may say *what the id
  * would be*, never *that you can have it*.
+ *
+ * ## The sentences below are ALSO the server's
+ *
+ * Because the preview has no veto, a name it dislikes can still be submitted —
+ * that is the design, not an oversight. Coord then rejects it as
+ * `400 {"error":"invalid_name","reason":<TenantNameError::reason()>}`, and
+ * `projectCreateErrorMessage` renders that `reason` through
+ * [`projectSlugProblemMessage`] as well. One rejection, one sentence: typing
+ * `ab` and submitting `ab` must not produce two different explanations of the
+ * same answer. That shared use is what [`isProjectSlugReason`] exists for, and
+ * it does **not** give the mirror authority — coord still decides.
  */
 
 /**
  * `TenantNameError::reason()` verbatim — the discriminator coord puts on the
  * wire beside `invalid_name`, so a preview rejection and the server rejection
  * that follows it can be recognised as the same answer.
+ *
+ * A runtime array rather than a bare union, because the union alone can only
+ * be used at compile time and the values also arrive **off the wire**:
+ * `projectCreateErrorMessage` narrows coord's `reason` with
+ * `isProjectSlugReason` before rendering it. Deriving the type from the array
+ * is what stops the two from drifting apart.
  */
-export type ProjectSlugReason =
-  | "empty"
-  | "display_name_too_long"
-  | "no_slug_characters"
-  | "too_short"
-  | "too_long"
-  | "must_start_with_letter_or_digit";
+export const PROJECT_SLUG_REASONS = [
+  "empty",
+  "display_name_too_long",
+  "no_slug_characters",
+  "too_short",
+  "too_long",
+  "must_start_with_letter_or_digit",
+] as const;
+
+export type ProjectSlugReason = (typeof PROJECT_SLUG_REASONS)[number];
+
+/**
+ * Is this string one of coord's reasons?
+ *
+ * Coord owns the list, so an unrecognised value is not an error here — it is a
+ * reason added coord-side after this shipped. Callers fall through to showing
+ * it verbatim rather than flattening it, exactly as the `reserved_name` arm of
+ * `projectCreateErrorMessage` already does for its own discriminator.
+ */
+export function isProjectSlugReason(
+  value: unknown
+): value is ProjectSlugReason {
+  return (
+    typeof value === "string" &&
+    (PROJECT_SLUG_REASONS as readonly string[]).includes(value)
+  );
+}
 
 export type ProjectSlugResult =
   | { ok: true; slug: string }
@@ -124,7 +161,14 @@ export function slugifyProjectName(displayName: string): ProjectSlugResult {
  * treatment NOT to copy. Each sentence below says what to do next instead.
  *
  * `empty` has no sentence: an untouched field is not an error, and the submit
- * button is already disabled there.
+ * button is already disabled there. `null` therefore means "say nothing here",
+ * and the server path reads it the same way — an `invalid_name`/`empty` from
+ * coord (which submit being disabled makes unreachable anyway) falls through to
+ * the generic sentence rather than rendering a blank error box.
+ *
+ * Used by BOTH the live preview and `projectCreateErrorMessage`'s
+ * `invalid_name` arm, so coord's rejection of a name reads as the same answer
+ * the preview already gave for it.
  */
 export function projectSlugProblemMessage(
   reason: ProjectSlugReason

@@ -744,8 +744,46 @@ export type CoordHealthJoin =
   | {
       matched: true;
       device_id: string;
-      /** Coord `DeviceState`, serde-lowercase. Absent => `unknown`. */
+      /**
+       * Coord `DeviceState`, serde-lowercase: `healthy` | `degraded` |
+       * `stale` | `partitioned` | `abandoned`, plus `unknown` where coord's
+       * stored string did not parse. Absent => `unknown`, never healthy.
+       *
+       * `stale` is the derived overlay (the heartbeat is fine, the resource
+       * sampler has gone quiet) and is graded by `deviceStateBadgeVariant`,
+       * which owns the badge mapping for all of them — do not band this
+       * string here.
+       *
+       * **This join carries the VERDICT only.** Coord also serves
+       * `heartbeat_state`, the persisted ladder state under the overlay, and
+       * `FleetHealthDevice` now reads it — but `buildMachineGroups` drops it
+       * on the way into `MachineGroup`, so `MachineCard` renders `stale` and
+       * `partitioned` as the same bare badge. That is a real gap and it is
+       * NOT closed here: threading the field through means editing
+       * `fleetResources.ts`, which open PR #1149 is rewriting. Do it once
+       * #1149 lands.
+       */
       state?: string;
+      /**
+       * Coord's OWN hostname for this device, carried verbatim.
+       *
+       * Added by plan
+       * `2026-09-01-device-drain-does-not-reach-agent-session-spawning` Phase
+       * 4b, and not a duplicate of `MachineGroup.hostname` even though the
+       * join is made on that string. The card renders
+       * `displayName ?? hostname` — an operator-settable ALIAS — and a drain
+       * is an action on a coord device that the operator must be able to
+       * identify before clicking. `spaceship` and `gh-runner-spaceship-wsl`
+       * are separate coord registrations of one physical box, so the coord
+       * identity is exactly the field that distinguishes what a control will
+       * act on from what the row is called.
+       *
+       * Absent when coord's device row carries no hostname (it falls back to
+       * keying the group on the device id). The device id is then the only
+       * identity there is, and the drain control says so rather than
+       * inventing one.
+       */
+      hostname?: string;
     }
   | { matched: false };
 

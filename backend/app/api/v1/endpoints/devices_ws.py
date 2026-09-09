@@ -23,6 +23,11 @@ Inbound messages handled (unchanged from the legacy endpoint):
   - ``phase_completed`` / ``ui_error`` / ``recent_crash`` /
     ``dispatch_ack`` / ``command_response`` / ``chat_response`` /
     ``terminal_response`` — relayed to subscribed frontends/mobiles.
+  - ``remote_terminal_*`` — the device is the SOURCE of a remote-terminal
+                       attach (D6); brokered by
+                       ``services.runner.remote_terminal_relay``.
+  - ``terminal_attached`` — the device is the TARGET answering one; routed
+                       to the attached source only, never to mobiles.
 
 Outbound messages (sent by other components via the manager):
   - ``connected``    — handshake ack with the resolved ``device_id``.
@@ -43,6 +48,7 @@ from fastapi import APIRouter, WebSocket, WebSocketDisconnect, status
 from qontinui_schemas.common import utc_now
 
 from app.config.redis_config import get_redis
+from app.core.config import coord_device_setting_name
 from app.crud import device_connection as device_connection_crud
 from app.crud import device_crud
 from app.db.session import AsyncSessionLocal
@@ -52,7 +58,9 @@ from app.services.coord_jwks import (
     CoordTokenInvalidError,
     coord_jwks_client,
     describe_token_rejection,
+    identity_mismatch_remedy_fields,
 )
+from app.services.runner import remote_terminal_relay
 from app.services.runner_websocket_manager import get_runner_websocket_manager
 from app.websockets.safe_send import (
     BENIGN_SEND_EXCEPTIONS,
@@ -106,15 +114,24 @@ async def websocket_device_unified_endpoint(websocket: WebSocket) -> None:
         # that reason is deliberately vague, so THIS log line is the whole
         # diagnostic surface. Name the coord URL we actually dialled and the
         # concrete exception class of the underlying transport fault: a
-        # ConnectTimeout to the wrong COORD_DEVICE_URL and a ReadTimeout from
-        # a genuinely slow coord are different incidents with different fixes,
+        # ConnectTimeout to the wrong device coord and a ReadTimeout from a
+        # genuinely slow coord are different incidents with different fixes,
         # and `error=str(exc)` alone has repeatedly failed to separate them.
+        #
+        # Name the SETTING too, derived rather than written out. This comment
+        # used to say "the wrong COORD_DEVICE_URL", which is true on a split
+        # box and false everywhere else — on a single-coord deployment the URL
+        # dialled comes from COORD_URL and COORD_DEVICE_URL is unset, so a
+        # reader sent to it would find nothing to correct. That is the same
+        # drift the identity alarm below was repaired for; a hard-coded
+        # setting name is right for one configuration only.
         logger.error(
             "devices_ws_jwks_unavailable",
             error=str(exc),
             failure=type(exc).__name__,
             cause=type(exc.__cause__).__name__ if exc.__cause__ else None,
             coord_url=coord_jwks_client.coord_url,
+            coord_url_setting=coord_device_setting_name(),
         )
         # 1011 = internal error / service overload.
         await reject(
@@ -153,9 +170,9 @@ async def websocket_device_unified_endpoint(websocket: WebSocket) -> None:
                 served_kids=exc.served_kids,
                 note=(
                     "runner presented a token minted by a different coord "
-                    "than COORD_URL points at; check which coord this "
-                    "backend verifies against"
+                    "than this backend verifies against"
                 ),
+                **identity_mismatch_remedy_fields(),
             )
         await reject(websocket, message)
         return
@@ -471,6 +488,49 @@ async def _route_device_message(
         await _handle_heartbeat(msg, device_id, manager, connection_pk, websocket)
         return
 
+    # Remote-terminal origination door (plan 2026-08-31-remote-session-tabs-
+    # in-runner-terminal, Phase 3b / D6). This device is the SOURCE: it
+    # presents a coord-minted attach grant and the relay — after verifying it
+    # against the same JWKS that admitted this socket — forwards to the TARGET
+    # device with a ``remote`` block. Refusals are typed ``error`` frames and
+    # forward nothing. Every other frame on this socket is untouched.
+    # The relay answers every failure it knows about as a typed ``error``
+    # on this socket; this guard is for the ones it does not, because an
+    # exception here would end the loop above and tear the SOURCE device's
+    # whole socket down over one remote frame.
+    if remote_terminal_relay.is_source_frame(msg_type):
+        try:
+            await remote_terminal_relay.handle_source_frame(
+                msg, device_id, manager, websocket
+            )
+        except Exception as e:
+            logger.error(
+                "devices_ws_remote_terminal_source_frame_failed",
+                device_id=str(device_id),
+                msg_type=msg_type,
+                error=str(e),
+                error_type=type(e).__name__,
+            )
+        return
+
+    # This device is a TARGET answering a remote attach: ``terminal_attached``
+    # (new with D6) and refusals correlated by ``remote`` / ``grant_jti``
+    # rather than ``request_id``. Only the remote path consumes these, so they
+    # ride a remote-only channel and the mobile watchers below see exactly the
+    # frames they saw before.
+    if remote_terminal_relay.is_remote_only_target_frame(msg):
+        try:
+            await remote_terminal_relay.publish_target_frame(device_id, msg)
+        except Exception as e:
+            logger.error(
+                "devices_ws_remote_terminal_publish_failed",
+                device_id=str(device_id),
+                msg_type=msg_type,
+                error=str(e),
+                error_type=type(e).__name__,
+            )
+        return
+
     if msg_type in {
         "phase_completed",
         "ui_error",
@@ -674,6 +734,22 @@ async def _cleanup(
     the same "is it still ours?" predicate, from one identity check.
     """
     still_ours = websocket is None or manager.get_websocket(device_id) is websocket
+
+    # Remote-terminal attachments this socket originated (SOURCE role) are
+    # keyed on the socket object, so this is per-connection by construction:
+    # detach on every target, drop the Redis registry rows, cancel the return-
+    # route listeners (each holds a pooled pubsub connection — the same leak
+    # class the unregister below guards). A socket that never attached is a
+    # no-op here.
+    if websocket is not None:
+        try:
+            await remote_terminal_relay.release_source(websocket)
+        except Exception as e:
+            logger.error(
+                "devices_ws_remote_terminal_release_failed",
+                device_id=str(device_id) if device_id else None,
+                error=str(e),
+            )
 
     if still_ours:
         try:

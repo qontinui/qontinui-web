@@ -34,6 +34,7 @@ from app.services.task_run import (
     DeferredQuestionBatch,
     DeferredQuestionResponse,
     DeferredQuestionUpdate,
+    FleetDeferredQuestionListResponse,
     StepProgressResponse,
     TaskRunAutomationCreate,
     TaskRunAutomationResponse,
@@ -167,6 +168,41 @@ async def get_findings_summary(
 ) -> dict:
     """Get aggregated findings summary across all task runs."""
     return await service.get_findings_summary(db, current_user.id)
+
+
+@router.get(
+    "/deferred-questions/pending",
+    response_model=FleetDeferredQuestionListResponse,
+    summary="Fleet-wide deferred-question queue",
+    description=(
+        "Deferred questions awaiting review across EVERY task run the caller "
+        "owns, newest last. The fleet-wide counterpart to "
+        "`/task-runs/{task_run_id}/deferred-questions`."
+    ),
+)
+async def list_pending_deferred_questions(
+    db: AsyncSession = Depends(get_async_db),
+    current_user: User = Depends(current_active_user),
+    service: TaskRunService = Depends(get_task_run_service),
+    status_filter: str = Query(
+        "pending",
+        alias="status",
+        description="Review status to filter on. Pass an empty string for all.",
+    ),
+    limit: int = Query(200, ge=1, le=500, description="Maximum questions to return"),
+) -> FleetDeferredQuestionListResponse:
+    """List the caller's pending deferred questions across all task runs.
+
+    DECLARATION ORDER MATTERS: this literal path must stay above the
+    ``/{task_run_id}`` routes below, or FastAPI matches it as a task-run id
+    and answers 422. Same reason ``/findings-summary`` sits where it does.
+
+    Scoped to the caller by joining through ``project.task_runs``
+    (``created_by_user_id``) — the questions table carries no owner of its own.
+    """
+    return await service.list_pending_questions_for_user(
+        db, current_user.id, status_filter=status_filter, limit=limit
+    )
 
 
 @router.get(

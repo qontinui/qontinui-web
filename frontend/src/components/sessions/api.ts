@@ -16,6 +16,7 @@
 
 import { httpClient } from "@/services/service-factory";
 import { OPERATIONS_API } from "../operations/utils";
+import type { ConsolidatedSessionsResponse } from "./sessionConsoleStatus";
 import type {
   AgentStatusResponse,
   LineageResponse,
@@ -69,6 +70,60 @@ export async function listSessions(
     throw new SessionsApiError(`GET ${url} failed: ${res.status}`, res.status);
   }
   return (await res.json()) as SessionListResponse;
+}
+
+/**
+ * Filters for {@link listConsolidatedSessions} — the param vocabulary the three
+ * redirected routes bring with them (plan §3's redirect table).
+ */
+export interface ListConsolidatedSessionsOptions {
+  /** coord device uuid. `/environments/sessions?device=` maps here 1:1. */
+  device?: string;
+  /** Free text. The agent half is searched coord-side; the lifecycle half web-side. */
+  q?: string;
+  /** coord's own agent-session lifecycle vocabulary. */
+  status?: "live" | "stale" | "closed";
+  /** Tenant breadth. Same axis as {@link ListSessionsOptions.tenantScope}. */
+  tenantScope?: ListSessionsTenantScope;
+  signal?: AbortSignal;
+}
+
+/**
+ * The consolidated list — `GET /operations/sessions?shape=consolidated`.
+ *
+ * Plan `2026-08-26-sessions-console-consolidation` D1: ONE list read, joined
+ * backend-side across `coord.sessions` and `coord.agent_sessions`, with a
+ * first-class `row_class` discriminant per row.
+ *
+ * There is no session-state `scope` here and that is deliberate: the
+ * consolidated shape always reads `scope=all` (the `agent_only` class is a set
+ * difference and is only sound over the complete lifecycle set), and `status`
+ * is the narrowing the caller actually wants.
+ */
+export async function listConsolidatedSessions(
+  opts: ListConsolidatedSessionsOptions = {}
+): Promise<ConsolidatedSessionsResponse> {
+  const params = new URLSearchParams({ shape: "consolidated" });
+  if (opts.device) params.set("device", opts.device);
+  if (opts.q) params.set("q", opts.q);
+  if (opts.status) params.set("status", opts.status);
+  if (opts.tenantScope) params.set("tenant_scope", opts.tenantScope);
+
+  const url = `${OPERATIONS_API}/sessions?${params.toString()}`;
+  const res = await httpClient.fetch(url, { signal: opts.signal });
+  if (!res.ok) {
+    // `<verb> <url> failed: <status> - <body>` — the shape `httpClient` itself
+    // formats, and the ONE shape `console/readFailure.ts::isNotFoundError`
+    // can recover a status from. The older helpers in this file stop at the
+    // status, so a 404 through them is indistinguishable from a dead socket;
+    // this path does not inherit that.
+    const body = await res.text().catch(() => "");
+    throw new SessionsApiError(
+      `GET ${url} failed: ${res.status} - ${body}`,
+      res.status
+    );
+  }
+  return (await res.json()) as ConsolidatedSessionsResponse;
 }
 
 export async function getSession(
@@ -147,6 +202,13 @@ export interface StealSessionRequest {
   machine_id: string;
 }
 
+/**
+ * Take ownership of a session away from the machine currently holding it.
+ *
+ * **Never retried.** See `NON_IDEMPOTENT_POST_NO_RETRY_STATUSES`. Each attempt
+ * records its own coord events, so a retry of an ambiguous 504 writes a second
+ * steal into the session's history for one operator click.
+ */
 export async function stealSession(
   id: string,
   body: StealSessionRequest
@@ -155,6 +217,7 @@ export async function stealSession(
   const res = await httpClient.fetch(url, {
     method: "POST",
     body: JSON.stringify(body),
+    noRetryStatuses: NON_IDEMPOTENT_POST_NO_RETRY_STATUSES,
   });
   if (!res.ok) {
     throw new SessionsApiError(`POST ${url} failed: ${res.status}`, res.status);
@@ -173,6 +236,11 @@ export interface HandoffSessionRequest {
  * `handoff_request` event + publishes the JetStream subject scoped to
  * the target machine. The target runner materializes a child session
  * and closes this one — a one-way move.
+ *
+ * **Never retried.** See `NON_IDEMPOTENT_POST_NO_RETRY_STATUSES`. A retry of
+ * an ambiguous 504 plausibly *succeeds*, so the target runner materializes a
+ * second (and third, and fourth) child session from a single "Continue
+ * elsewhere" click.
  */
 export async function handoffSession(
   id: string,
@@ -182,6 +250,7 @@ export async function handoffSession(
   const res = await httpClient.fetch(url, {
     method: "POST",
     body: JSON.stringify(body),
+    noRetryStatuses: NON_IDEMPOTENT_POST_NO_RETRY_STATUSES,
   });
   if (!res.ok) {
     throw new SessionsApiError(`POST ${url} failed: ${res.status}`, res.status);
@@ -273,18 +342,60 @@ export async function listTenants(
  * when coord answered something we cannot parse; `detail` is always the
  * most specific human-readable text we could recover, so an unrecognized
  * failure is surfaced verbatim rather than as "something went wrong".
+ *
+ * `cap`/`created`/`slug` are coord's STRUCTURED operands (see
+ * `TenantCreateErrorFields`). Each is `undefined` when coord did not send it
+ * or sent a value of the wrong type, so every renderer must have a sentence
+ * that works without them — they enrich a message, they never gate one.
  */
 export class TenantCreateError extends Error {
   status: number;
   code: string | null;
   detail: string;
-  constructor(status: number, code: string | null, detail: string) {
+  /** Coord's per-operator creation cap (`tenant_cap_reached`). */
+  cap?: number;
+  /** How many projects the operator has created (`tenant_cap_reached`). */
+  created?: number;
+  /** The derived slug coord rejected (`slug_taken` / `reserved_name`). */
+  slug?: string;
+  constructor(
+    status: number,
+    code: string | null,
+    detail: string,
+    fields: TenantCreateErrorFields = {}
+  ) {
     super(detail || `POST tenants failed: ${status}`);
     this.status = status;
     this.code = code;
     this.detail = detail;
+    this.cap = fields.cap;
+    this.created = fields.created;
+    this.slug = fields.slug;
     this.name = "TenantCreateError";
   }
+}
+
+/**
+ * The structured operands coord puts NEXT TO its error token.
+ *
+ * Coord's bodies are not `{error, message}` pairs — they carry the numbers and
+ * ids the message is about:
+ *
+ *     {"error":"tenant_cap_reached","cap":5,"created":5}
+ *     {"error":"slug_taken","slug":"my-pizzeria"}
+ *     {"error":"reserved_name","reason":"group_mapped","slug":"acme"}
+ *
+ * `parseTenantCreateError` used to read only `error`/`code` and
+ * `message`/`detail`/`reason` and threw the rest away, so the cap message
+ * could only say "you've reached the limit" — never *what* the limit is, which
+ * is the one fact that makes it actionable. Every field is optional and
+ * type-checked at the parse boundary: coord owns these bodies, so a missing or
+ * renamed field must degrade the sentence, not break the dialog.
+ */
+export interface TenantCreateErrorFields {
+  cap?: number;
+  created?: number;
+  slug?: string;
 }
 
 /**
@@ -298,11 +409,15 @@ export class TenantCreateError extends Error {
  * Every layer is optional: a plain-text body, a non-JSON coord answer, or a
  * FastAPI 422 validation list all degrade to "no code, here is the text".
  * Exported for unit tests — the parsing, not the copy, is where this breaks.
+ *
+ * Alongside the code and the text it returns coord's structured operands
+ * (`TenantCreateErrorFields`) when they are present AND of the right type, so
+ * the cap message can name the cap and the collision message can name the id.
  */
 export function parseTenantCreateError(rawBody: string): {
   code: string | null;
   detail: string;
-} {
+} & TenantCreateErrorFields {
   let detail: unknown = rawBody;
   try {
     const outer: unknown = JSON.parse(rawBody);
@@ -321,6 +436,7 @@ export function parseTenantCreateError(rawBody: string): {
 
   let code: string | null = null;
   let text = detail;
+  const fields: TenantCreateErrorFields = {};
   try {
     const inner: unknown = JSON.parse(detail);
     if (inner && typeof inner === "object") {
@@ -330,12 +446,78 @@ export function parseTenantCreateError(rawBody: string): {
       const rawMessage = obj.message ?? obj.detail ?? obj.reason;
       if (typeof rawMessage === "string") text = rawMessage;
       else if (code) text = code;
+      // The structured operands. Type-checked one at a time and dropped
+      // individually — coord sending `cap` but not `created` (or a future
+      // coord sending a string where a number was) must cost the numbers in
+      // one sentence, never the whole parse.
+      if (typeof obj.cap === "number" && Number.isFinite(obj.cap)) {
+        fields.cap = obj.cap;
+      }
+      if (typeof obj.created === "number" && Number.isFinite(obj.created)) {
+        fields.created = obj.created;
+      }
+      if (typeof obj.slug === "string" && obj.slug !== "") {
+        fields.slug = obj.slug;
+      }
     }
   } catch {
     // coord answered plain text — `text` is already it.
   }
-  return { code, detail: text };
+  return { code, detail: text, ...fields };
 }
+
+/**
+ * Statuses a **non-idempotent POST** must NOT be retried on.
+ *
+ * Shared by every POST in this module whose effect is not a free repeat of the
+ * same question: `createTenant`, `handoffSession` and `stealSession`.
+ * (`closeSession` is a DELETE to a terminal state — genuinely idempotent — and
+ * every other call here is a GET, where retry is the correct behaviour.)
+ *
+ * The class of bug: `HttpClient` retries every `429` and every `>= 500` up to
+ * `maxRetries: 3` with the identical body. For a POST that *does something*,
+ * that turns one ambiguous answer into a second side effect. The concrete
+ * hazard is the 504 — the web proxy's coord budget is 5s (`operations.py`
+ * `_COORD_TIMEOUT`) and a timeout maps to `504 timeout waiting for coord`,
+ * which is a statement about OUR clock, not about coord's transaction. From
+ * here "coord was slow" and "coord never got it" are indistinguishable, and
+ * the client resolved that ambiguity by doing it again:
+ *
+ *   - tenant creation — coord's create is a plain INSERT that deliberately
+ *     rejects a slug collision rather than joining the caller to an existing
+ *     tenant, so a create that committed at 5.1s answers 504 and the retry
+ *     lands on the unique-violation arm: the operator is told their own
+ *     successfully created project "is taken", a false failure they then act
+ *     on by picking a different name;
+ *   - handoff — coord records a durable `handoff_request` event and publishes
+ *     a JetStream subject scoped to the target machine, so the retry
+ *     plausibly *succeeds* and one click yields several child sessions;
+ *   - steal — lower stakes, but every attempt records its own events.
+ *
+ * The 429 is here for a different reason: it is a deliberate and persistent
+ * answer (a cap, or a limiter). Retrying it only buys round-trips to be told
+ * the same thing.
+ *
+ * The list ENUMERATES statuses rather than declaring a range because
+ * `noRetryStatuses` is an `Array.includes` membership test, checked against an
+ * unbounded `status >= 500` guard (`http-client.ts`). It covers every status
+ * these paths can actually produce: 500 (an unhandled web error, or coord's
+ * own 500 forwarded verbatim — e.g. a cap-lookup failure), 501, 502 (coord
+ * unreachable), 503 (the app unconfigured / an LB with no healthy target) and
+ * 504 (the timeout above).
+ *
+ * **So it cannot express "all 5xx".** A status nobody enumerated — a `507`
+ * from a storage layer, a `520` from a CDN sitting in front of the proxy —
+ * falls through the membership test and is still retried, with exactly the
+ * same duplicate side effect. An enumeration is only ever as complete as the
+ * last person to think about it, which is the standing argument for inverting
+ * the client default: make retry opt-IN for POSTs rather than opt-out (this
+ * plan's Phase 4). Until that lands, adding a status here is the only fix
+ * available.
+ */
+export const NON_IDEMPOTENT_POST_NO_RETRY_STATUSES: number[] = [
+  429, 500, 501, 502, 503, 504,
+];
 
 /**
  * Create a new tenant ("Project") owned by the calling operator.
@@ -346,6 +528,8 @@ export function parseTenantCreateError(rawBody: string): {
  * tenant, seeds its policy row and grants the caller `admin` in it in ONE
  * transaction, so the membership is readable on the very next
  * `GET /operations/tenants`.
+ *
+ * **Never retried.** See `NON_IDEMPOTENT_POST_NO_RETRY_STATUSES`.
  */
 export async function createTenant(
   body: TenantCreateRequest
@@ -354,11 +538,12 @@ export async function createTenant(
   const res = await httpClient.fetch(url, {
     method: "POST",
     body: JSON.stringify(body),
+    noRetryStatuses: NON_IDEMPOTENT_POST_NO_RETRY_STATUSES,
   });
   if (!res.ok) {
     const raw = await res.text().catch(() => "");
-    const { code, detail } = parseTenantCreateError(raw);
-    throw new TenantCreateError(res.status, code, detail);
+    const { code, detail, ...fields } = parseTenantCreateError(raw);
+    throw new TenantCreateError(res.status, code, detail, fields);
   }
   return (await res.json()) as TenantCreateResponse;
 }

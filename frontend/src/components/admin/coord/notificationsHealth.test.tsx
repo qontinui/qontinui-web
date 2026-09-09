@@ -57,6 +57,11 @@ function input(
     loaded: true,
     migrationPending: false,
     failed: false,
+    // Spelled out rather than left to the `Partial` spread: TypeScript accepts
+    // the omission (a spread of a Partial widens the result), so an unstated
+    // field would sit here as `undefined` and pass every test by being falsy —
+    // a baseline nobody chose.
+    scalarStale: false,
     ...over,
   };
 }
@@ -270,6 +275,60 @@ describe("which unknown wins when several are true at once", () => {
 });
 
 describe("the strip's contract with the page", () => {
+  it("will not call counts current when the feed stopped carrying them", () => {
+    // The THIRD way a scalar goes uncurrent, and the one this module shipped
+    // blind to. `failed` covers a read that did not land; the `unreadCount ==
+    // null` arm covers a scalar that never arrived. Neither covers the pair in
+    // between — a read that SUCCEEDED and brought no scalar while an earlier
+    // one did — which `page.tsx` produces on its own, and which left the strip
+    // painting green over a frozen number.
+    const health = deriveNotificationsHealth(
+      input({ unreadCount: 7, total: 900, scalarStale: true })
+    );
+    expect(health.level).toBe("amber");
+    expect(health.headline).toBe("These counts stopped updating");
+    // Its own sentence, not the failed read's: nothing here is failing, and
+    // "the feed could not be re-read" would send an operator after an outage
+    // that is not happening.
+    expect(health.detail).toContain("the counts are no longer being refreshed");
+    // Deliberately NOT "the feed no longer carries them": the scalar can also
+    // have been delivered by the mark-read door, in which case the feed never
+    // carried it at all and that phrasing presupposes a delivery that never
+    // happened.
+    expect(health.detail).not.toContain("the feed is answering");
+    expect(health.detail).not.toContain("could not be re-read");
+    // The number is real, so it is still shown — and not quotable elsewhere.
+    expect(health.readIsCurrent).toBe(false);
+    expect(badgesOf(health)).toEqual({ unread: "7 unread", total: "900 total" });
+  });
+
+  it("keeps the first scalar-less read CURRENT, which is what the name promises", () => {
+    // The arm the `scalarStale` audit nearly deleted by shadowing, and the one
+    // the `countsAreCurrent` -> `readIsCurrent` rename is argued from: a read
+    // can be perfectly current and still carry a null scalar. If this returns
+    // false, the published justification for the rename stops being true and
+    // the sentence an operator sees changes to one presupposing an earlier
+    // good read.
+    const health = deriveNotificationsHealth(
+      input({ unreadCount: null, total: 900 })
+    );
+    expect(health.readIsCurrent).toBe(true);
+    expect(health.headline).toBe("The unread count did not come back");
+    // One missing scalar does not make the other unknown.
+    expect(badgesOf(health)).toEqual({ unread: "– unread", total: "900 total" });
+  });
+
+  it("ranks a FAILED read above a scalar-less one when both are true", () => {
+    // Both are "the counts are frozen", and they want different sentences and
+    // different remedies. A read that did not land is the bigger truth: the
+    // feed being down subsumes the field being absent from an answer it never
+    // gave.
+    const health = deriveNotificationsHealth(
+      input({ unreadCount: 7, total: 900, failed: true, scalarStale: true })
+    );
+    expect(health.detail).toContain("could not be re-read");
+  });
+
   it("emits BOTH frozen testids in every branch, unknown ones included", () => {
     // D4a: these two ids moved off the deleted `<CardTitle>` badges onto the
     // strip. A branch that omits one answers "there is no such count", which is
@@ -278,6 +337,11 @@ describe("the strip's contract with the page", () => {
       input({ migrationPending: true, loaded: false }),
       input({ failed: true, loaded: false }),
       input({ failed: true, loaded: true, unreadCount: 137, total: 900 }),
+      input({ scalarStale: true, loaded: true, unreadCount: 137, total: 900 }),
+      // The combination that shipped the wrong sentence: reachable only if a
+      // writer raises the flag on a FIRST scalar-less read, which is what the
+      // page briefly did.
+      input({ scalarStale: true, loaded: true, unreadCount: null, total: 900 }),
       input({ loaded: false, unreadCount: null, total: null }),
       input({ loaded: true, unreadCount: null, total: null }),
       input({ unreadCount: 137, total: 900 }),
@@ -315,5 +379,70 @@ describe("the strip's contract with the page", () => {
       "data-health-level",
       "green"
     );
+  });
+
+  /**
+   * `readIsCurrent` — the strip publishing what it already decided.
+   *
+   * The strip is the surface that decides whether coord's scalars may be quoted
+   * as fact: it is what dashes the badges and what says "these counts stopped
+   * updating". Other surfaces used to re-derive that with their own boolean —
+   * the mark-all tooltip spelled it `!readFailed`, which is three of the four
+   * ways a count can be unquotable — so the answer is published on the health
+   * object instead. Pinned here as a truth table because the failure mode is a
+   * consumer and the strip disagreeing while both look right.
+   */
+  describe("readIsCurrent", () => {
+    it("is false in every arm where the badges are a dash", () => {
+      // The three unknowns: no table, nothing ever read, and nothing read YET.
+      expect(
+        deriveNotificationsHealth(input({ migrationPending: true }))
+          .readIsCurrent
+      ).toBe(false);
+      expect(
+        deriveNotificationsHealth(input({ loaded: false, failed: true }))
+          .readIsCurrent
+      ).toBe(false);
+      expect(
+        deriveNotificationsHealth(input({ loaded: false })).readIsCurrent
+      ).toBe(false);
+    });
+
+    it("is false for counts that are REAL but frozen", () => {
+      // The stale arm renders coord's actual numbers — and still must not let
+      // anything else spend them as current. Shown is not the same as quotable.
+      const h = deriveNotificationsHealth(
+        input({ unreadCount: 137, total: 900, failed: true })
+      );
+      expect(h.headline).toMatch(/stopped updating/i);
+      expect(h.readIsCurrent).toBe(false);
+    });
+
+    it("stays false while the table is absent even after a good read", () => {
+      // The arm the first cut missed. `migrationPending` after a successful
+      // load leaves a real `unreadCount` standing with `failed` FALSE, so a
+      // guard spelled `!failed` says "current" about a count the strip is
+      // rendering as `–` two elements away.
+      const h = deriveNotificationsHealth(
+        input({ unreadCount: 137, total: 900, migrationPending: true })
+      );
+      expect(h.headline).toMatch(/not available yet/i);
+      expect(badgesOf(h)).toEqual({ unread: "– unread", total: "– total" });
+      expect(h.readIsCurrent).toBe(false);
+    });
+
+    it("is true once coord has answered, including without an unread count", () => {
+      expect(
+        deriveNotificationsHealth(input({ unreadCount: 137, total: 900 }))
+          .readIsCurrent
+      ).toBe(true);
+      // A gap in the ENVELOPE is not a failure of the read: the count is
+      // `null`, which already stops a consumer quoting it, and blaming the read
+      // for it would report an outage that did not happen.
+      expect(
+        deriveNotificationsHealth(input({ unreadCount: null, total: 900 }))
+          .readIsCurrent
+      ).toBe(true);
+    });
   });
 });

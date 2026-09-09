@@ -22,12 +22,12 @@ What is asserted
    fails this, which is what discriminates a real create from a no-op.
 4. **The revision applies with an empty ``shared_preload_libraries``** — the
    claim the migration's docstring rests on, and the one that refutes the
-   "needs a reboot" belief three prior plans recorded. CI's images
-   (``pgvector/pgvector`` ``pg16`` and ``pg15``) have an empty one, so this is
-   the path normally exercised. The substrate is *read* rather than assumed;
-   should it ever gain the preload, the test takes a strictly stronger branch
-   and emits a warning saying the claim went untested, rather than quietly
-   greening.
+   "needs a reboot" belief three prior plans recorded. CI's image
+   (``pgvector/pgvector:pg16``, on every workflow that runs this chain since
+   2026-08-30) has an empty one, so this is the path normally exercised. The
+   substrate is *read* rather than assumed; should it ever gain the preload,
+   the test takes a strictly stronger branch and emits a warning saying the
+   claim went untested, rather than quietly greening.
 5. **Sensitivity — reading the view fails only for the preload reason.** Where
    the module is not preloaded, ``SELECT * FROM pg_stat_statements`` must raise
    ``pg_stat_statements must be loaded via shared_preload_libraries``, NOT
@@ -183,7 +183,7 @@ def test_coord_pgss_ext_01_creates_and_reverses_the_extension() -> None:
             warnings.warn(
                 f"{_EXT_NAME} is preloaded on this substrate ({preload!r}), so "
                 "the not-preloaded path this revision's docstring rests on was "
-                "NOT exercised. CI (pgvector/pgvector:pg16 and :pg15) has an "
+                "NOT exercised. CI (pgvector/pgvector:pg16) has an "
                 "empty shared_preload_libraries; if that changed, re-verify "
                 "the migration's substrate claim by hand.",
                 stacklevel=2,

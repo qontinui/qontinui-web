@@ -28,14 +28,70 @@ import {
   ShieldCheck,
 } from "lucide-react";
 import Link from "next/link";
-import type { Runner } from "@qontinui/shared-types";
+import type { RegisteredDevice } from "@/types/runner";
 import { runnerService } from "@/services/service-factory";
 import { useDeleteRunner, runnerKeys } from "@/hooks/useRunners";
 import { useRealtimeConnections } from "@/hooks/useRealtimeConnections";
 import { formatRelativeTime } from "@/utils/formatDuration";
 import { RunnerStatusBadge } from "@/components/server-runners/RunnerStatusBadge";
+import { describeTenantBindings } from "./tenantBindings";
 
 const REGISTERED_REFETCH_MS = 30000;
+
+const MUTED_CHIP_CLASS = "border-text-muted/50 text-text-muted";
+
+/**
+ * The tenants a device is paired to, one chip per binding. The binding set
+ * is tri-state and each state gets its own chip — UNKNOWN is never rendered
+ * as "none", and neither is ever rendered as nothing.
+ */
+function TenantBindingChips({
+  bindings,
+}: {
+  bindings: RegisteredDevice["tenant_bindings"];
+}) {
+  const summary = describeTenantBindings(bindings);
+  return (
+    <div
+      className="mt-4 flex flex-wrap items-center gap-2"
+      data-testid="tenant-bindings"
+      data-bindings-kind={summary.kind}
+    >
+      <span className="text-sm text-text-muted">Tenants</span>
+      {summary.kind === "unknown" && (
+        <Badge
+          variant="outline"
+          className={MUTED_CHIP_CLASS}
+          title="Coord did not report this device's tenant bindings"
+          data-testid="tenant-bindings-unknown"
+        >
+          bindings unknown
+        </Badge>
+      )}
+      {summary.kind === "none" && (
+        <Badge
+          variant="outline"
+          className={MUTED_CHIP_CLASS}
+          title="Coord reports zero tenant bindings for this device"
+          data-testid="tenant-bindings-none"
+        >
+          no tenant bindings
+        </Badge>
+      )}
+      {summary.chips.map((chip) => (
+        <Badge
+          key={chip.key}
+          variant="outline"
+          className="border-brand-primary/50 text-brand-primary font-mono"
+          title={chip.title}
+          data-testid="tenant-binding-chip"
+        >
+          {chip.label}
+        </Badge>
+      ))}
+    </div>
+  );
+}
 
 interface RegisteredDevicesListProps {
   showOnlyOnline: boolean;
@@ -50,7 +106,7 @@ export function RegisteredDevicesList({
     error,
     refetch,
     isRefetching,
-  } = useQuery<Runner[], Error>({
+  } = useQuery<RegisteredDevice[], Error>({
     queryKey: [...runnerKeys.all, "registered"],
     queryFn: () => runnerService.getRunners(),
     refetchInterval: (query) => (query.state.error ? false : REGISTERED_REFETCH_MS),
@@ -273,6 +329,8 @@ export function RegisteredDevicesList({
                       </div>
                     )}
                   </div>
+
+                  <TenantBindingChips bindings={device.tenant_bindings} />
 
                   <div className="mt-4 text-xs text-text-muted">
                     Last seen:{" "}

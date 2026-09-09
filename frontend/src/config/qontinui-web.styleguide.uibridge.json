@@ -23,7 +23,11 @@
       "semantic-success": "#4DB89D",
       "semantic-warning": "#E5A853",
       "semantic-error": "#E5534B",
-      "semantic-info": "#4A90D9"
+      "semantic-info": "#4A90D9",
+      "attention-accent": "oklch(63.7% 0.237 25.331 / 0.8)",
+      "waiting-accent": "oklch(76.9% 0.188 70.08 / 0.8)",
+      "attention-border": "oklch(63.7% 0.237 25.331 / 0.35)",
+      "waiting-border": "oklch(76.9% 0.188 70.08 / 0.3)"
     },
     "typography": {
       "fontFamilies": {

@@ -665,6 +665,399 @@ class TestAdminDescriptiveFieldsDegradeRatherThanCrashOrInvent:
         assert row["trigger_condition"] == "before opening a PR"
 
 
+class TestAllowedDispositionsReportsWhatItRefused:
+    """The one descriptive field whose drift was invisible.
+
+    Every other descriptive field on this route reaches
+    ``_degraded_descriptive_fields`` and gets named in a per-row warning. This
+    one was filtered inline instead, so its render was correct and silent —
+    measured against the route before this commit, a string, an object and
+    ``null`` all rendered as ``[]`` and ``["block", 42]`` became ``["block"]``,
+    four different off-contract shapes and not one log line between them.
+
+    An emptied option list is indistinguishable on the page from an agent for
+    which coord declares no dispositions, which is the "a column is empty for
+    everyone and nobody notices" shape one severity down — the same reason the
+    scalars are reported.
+    """
+
+    @pytest.mark.parametrize(
+        "value,expected_type",
+        [
+            ("block,degrade", "str"),
+            ({"first": "block"}, "dict"),
+            (7, "int"),
+            (True, "bool"),
+        ],
+    )
+    def test_a_non_list_degrades_to_empty_and_says_so(self, value, expected_type):
+        payload = {
+            "agents": [_registry_row(allowed_dispositions=value)],
+            "prefs": [],
+        }
+        app = _build_app()
+        with (
+            patch(f"{MODULE}._coord_request", new=AsyncMock(return_value=payload)),
+            patch(f"{MODULE}.logger.warning") as mock_warning,
+        ):
+            resp = TestClient(app, raise_server_exceptions=False).get(
+                "/api/v1/agent-registry/admin/registry"
+            )
+
+        assert resp.status_code == 200, "a descriptive field must not 500 the page"
+        assert resp.json()["agents"][0]["allowed_dispositions"] == []
+        assert mock_warning.called, (
+            "rendering no options at all is a claim about what coord declares; "
+            "making it silently is how the drift survives"
+        )
+        logged = str(mock_warning.call_args)
+        assert "allowed_dispositions" in logged
+        assert expected_type in logged, "the log must name the type that arrived"
+
+    def test_dropped_entries_are_counted_and_their_types_named(self):
+        """The render was already right; only the silence was wrong."""
+        payload = {
+            "agents": [
+                _registry_row(allowed_dispositions=["block", {"x": 1}, 7, "degrade"])
+            ],
+            "prefs": [],
+        }
+        app = _build_app()
+        with (
+            patch(f"{MODULE}._coord_request", new=AsyncMock(return_value=payload)),
+            patch(f"{MODULE}.logger.warning") as mock_warning,
+        ):
+            resp = TestClient(app).get("/api/v1/agent-registry/admin/registry")
+
+        assert resp.json()["agents"][0]["allowed_dispositions"] == ["block", "degrade"]
+        logged = str(mock_warning.call_args)
+        assert "allowed_dispositions" in logged
+        assert "2 of 4" in logged, "say how many options the admin is not seeing"
+        assert "dict" in logged and "int" in logged
+
+    def test_the_note_joins_the_scalar_log_line_rather_than_opening_a_second(self):
+        """One row, one warning.
+
+        Two log lines about the same row is how a log comes to disagree with
+        itself about that row — the defect ``_descriptive_is_usable`` was made
+        a single shared predicate to prevent, in its reporting half.
+        """
+        payload = {
+            "agents": [_registry_row(model=42, allowed_dispositions="block")],
+            "prefs": [],
+        }
+        app = _build_app()
+        with (
+            patch(f"{MODULE}._coord_request", new=AsyncMock(return_value=payload)),
+            patch(f"{MODULE}.logger.warning") as mock_warning,
+        ):
+            TestClient(app).get("/api/v1/agent-registry/admin/registry")
+
+        assert mock_warning.call_count == 1
+        degraded = mock_warning.call_args.kwargs["degraded"]
+        assert any("model" in note for note in degraded)
+        assert any("allowed_dispositions" in note for note in degraded)
+
+    @pytest.mark.parametrize("value", [None, ["block", "degrade"]])
+    def test_a_contract_abiding_value_logs_nothing(self, value):
+        """The companion. Warning unconditionally would otherwise pass.
+
+        ``null`` is not reported for the same reason the scalars are not: that
+        is the permissiveness working as designed, not drift.
+        """
+        payload = {
+            "agents": [_registry_row(allowed_dispositions=value)],
+            "prefs": [],
+        }
+        app = _build_app()
+        with (
+            patch(f"{MODULE}._coord_request", new=AsyncMock(return_value=payload)),
+            patch(f"{MODULE}.logger.warning") as mock_warning,
+        ):
+            resp = TestClient(app).get("/api/v1/agent-registry/admin/registry")
+
+        assert resp.json()["agents"][0]["allowed_dispositions"] == (value or [])
+        assert not mock_warning.called
+
+
+class TestNoPrefRowIsSilentlyUncounted:
+    """``pref_count`` is the page's claim, so it must not be quietly short.
+
+    The registry rows on this route 502 when ``agent_name`` is unusable, and
+    ``_admin_registry_rows`` 502s on a non-object PREF row. The pref loop in
+    between checked shape and not identity — ``if isinstance(name, str) and
+    name:`` — so a pref row coord could not name simply vanished from the
+    counts.
+
+    Vanishing is not cosmetic here. ``pref_count`` is what the page states as
+    "changing the default does not reach N members", and it also drives the
+    amber attention rail, the "Overridden" filter count and the health strip.
+    Measured against the route before this commit, one readable pref row beside
+    three unnameable ones reported ``pref_count=1`` — an admin reading that
+    believes a change misses one member when it misses four.
+
+    Nor can it be repaired by counting the row anyway: with no name there is no
+    agent to count it against, so what is unverifiable is every count on the
+    page, not one of them.
+    """
+
+    @pytest.mark.parametrize("agent_name", [None, "", 42, ["code-reviewer"], {}])
+    def test_an_unattributable_pref_row_is_a_502(self, agent_name):
+        payload = {
+            "agents": [_registry_row()],
+            "prefs": [_pref(agent_name=agent_name)],
+        }
+        app = _build_app()
+        with patch(f"{MODULE}._coord_request", new=AsyncMock(return_value=payload)):
+            resp = TestClient(app, raise_server_exceptions=False).get(
+                "/api/v1/agent-registry/admin/registry"
+            )
+
+        assert resp.status_code == 502
+        detail = str(resp.json()["detail"])
+        assert "agent_name" in detail
+        assert "index 0" in detail, "name the row, as the registry-row 502 does"
+
+    def test_the_index_reported_is_the_offending_row(self):
+        payload = {
+            "agents": [_registry_row()],
+            "prefs": [_pref(), _pref(), _pref(agent_name=None)],
+        }
+        app = _build_app()
+        with patch(f"{MODULE}._coord_request", new=AsyncMock(return_value=payload)):
+            resp = TestClient(app, raise_server_exceptions=False).get(
+                "/api/v1/agent-registry/admin/registry"
+            )
+
+        assert "index 2" in str(resp.json()["detail"])
+
+    def test_readable_pref_rows_still_count(self):
+        """The companion: 502-ing on every pref row would otherwise pass."""
+        payload = {
+            "agents": [_registry_row(default_enabled=False)],
+            "prefs": [_pref(enabled=True), _pref(enabled=False)],
+        }
+        app = _build_app()
+        with patch(f"{MODULE}._coord_request", new=AsyncMock(return_value=payload)):
+            resp = TestClient(app).get("/api/v1/agent-registry/admin/registry")
+
+        assert resp.status_code == 200
+        (row,) = resp.json()["agents"]
+        assert row["pref_count"] == 2
+        assert row["pref_differs_from_default_count"] == 1
+
+    def test_a_pref_row_for_an_unknown_agent_is_still_not_an_error(self):
+        """A NAMEABLE row is attributable even if no registry row matches.
+
+        Coord could serve a pref for an agent whose registry row this tenant
+        does not have. That row is counted against nothing and reported
+        nowhere, which is correct — the defect above is a row that cannot be
+        named, not one that names an agent this page does not show.
+        """
+        payload = {
+            "agents": [_registry_row(agent_name="code-reviewer")],
+            "prefs": [_pref(agent_name="a-retired-agent")],
+        }
+        app = _build_app()
+        with patch(f"{MODULE}._coord_request", new=AsyncMock(return_value=payload)):
+            resp = TestClient(app).get("/api/v1/agent-registry/admin/registry")
+
+        assert resp.status_code == 200
+        assert resp.json()["agents"][0]["pref_count"] == 0
+
+    def test_an_unreadable_enabled_is_logged_and_still_not_a_disagreement(self):
+        """The render was right and decided in silence.
+
+        Not counting an unreadable ``enabled`` as contradicting the default is
+        the honest reading and stays — a pref coord could not serve is unknown,
+        never a fabricated disagreement. But "N of M contradict the default" is
+        weaker evidence when some of the M could not be read, and nothing said
+        so to whoever is asking why a number looks low.
+        """
+        payload = {
+            "agents": [_registry_row(default_enabled=False)],
+            "prefs": [
+                _pref(enabled=True),
+                _pref(enabled="true"),
+                _pref(enabled=1),
+                {"user_id": str(uuid4()), "agent_name": "code-reviewer"},
+            ],
+        }
+        app = _build_app()
+        with (
+            patch(f"{MODULE}._coord_request", new=AsyncMock(return_value=payload)),
+            patch(f"{MODULE}.logger.warning") as mock_warning,
+        ):
+            resp = TestClient(app).get("/api/v1/agent-registry/admin/registry")
+
+        (row,) = resp.json()["agents"]
+        assert row["pref_count"] == 4
+        assert row["pref_differs_from_default_count"] == 1
+        assert mock_warning.called
+        kwargs = mock_warning.call_args.kwargs
+        assert kwargs["unreadable"] == 3
+        assert kwargs["pref_count"] == 4
+
+    def test_fully_readable_pref_rows_log_nothing(self):
+        """The companion, so warning unconditionally does not pass."""
+        payload = {
+            "agents": [_registry_row(default_enabled=False)],
+            "prefs": [_pref(enabled=True), _pref(enabled=False)],
+        }
+        app = _build_app()
+        with (
+            patch(f"{MODULE}._coord_request", new=AsyncMock(return_value=payload)),
+            patch(f"{MODULE}.logger.warning") as mock_warning,
+        ):
+            TestClient(app).get("/api/v1/agent-registry/admin/registry")
+
+        assert not mock_warning.called
+
+    def test_a_pref_for_an_unregistered_agent_is_logged_not_dropped_in_silence(
+        self,
+    ):
+        """The third way a pref row fails this page, and it had no treatment.
+
+        A row with no usable ``agent_name`` is a 502 above; one whose
+        ``enabled`` cannot be read warns and still renders. A row that names an
+        agent the registry does not list was neither -- it simply never reached
+        a count, exactly as the unattributable rows used to.
+
+        It takes the middle treatment rather than the refusal, and the
+        difference is real: the orphan's name IS known, it just matches no row,
+        so every number on the page stays exactly correct and a 502 would be
+        far too loud. What is wrong is the SILENCE -- a member holds a stored
+        preference for an agent that appears nowhere on a page whose whole job
+        is the tenant-wide consent picture.
+
+        Representable because nothing enforces the join:
+        ``coord.agent_user_prefs`` carries no foreign key to
+        ``coord.agent_registry`` (its PK is ``(tenant_id, user_id,
+        agent_name)``, ``agent_registry_01``) and coord's ``list_prefs``
+        selects every pref row for the tenant unjoined. Coord validates the
+        agent on the WRITE path (``unknown_agent``, 404), so the pref-write
+        door does not create one.
+
+        How REACHABLE it is beyond that is deliberately not claimed. A route
+        census over both hosts enumerated ten ``agent-registry`` routes with no
+        DELETE among them, but returned ``routes=UNKNOWN`` — a source it could
+        not read completely — and an UNKNOWN census settles nothing. This
+        assertion does not rest on it: the guard is defensive against a row set
+        the route cannot reconcile, which is the standing every other guard in
+        this module has, and none of those argues its shape is reachable today
+        either.
+        """
+        payload = {
+            "agents": [_registry_row(default_enabled=False)],
+            "prefs": [
+                _pref(enabled=True),
+                _pref(agent_name="retired-agent", enabled=True),
+                _pref(agent_name="retired-agent", enabled=False),
+                _pref(agent_name="renamed-agent", enabled=True),
+            ],
+        }
+        app = _build_app()
+        with (
+            patch(f"{MODULE}._coord_request", new=AsyncMock(return_value=payload)),
+            patch(f"{MODULE}.logger.warning") as mock_warning,
+        ):
+            resp = TestClient(app).get("/api/v1/agent-registry/admin/registry")
+
+        # The render stands, and stands unchanged: the served agent's counts
+        # are its own rows only, never the orphans'.
+        (row,) = resp.json()["agents"]
+        assert row["agent_name"] == "code-reviewer"
+        assert row["pref_count"] == 1
+
+        (call,) = [
+            c
+            for c in mock_warning.call_args_list
+            if c.args
+            and c.args[0] == "agent_registry_admin_prefs_for_unregistered_agents"
+        ]
+        assert call.kwargs["agent_names"] == ["renamed-agent", "retired-agent"], (
+            "name every orphaned agent, sorted, so two reads of the same "
+            "registry produce a diffable log line"
+        )
+        assert call.kwargs["agent_name_count"] == 2
+        assert call.kwargs["agent_names_truncated"] is False
+        assert call.kwargs["pref_rows"] == 3, "count the ROWS, not the names"
+        assert call.kwargs["registry_rows"] == 1
+
+    def test_the_orphan_name_list_is_capped_and_says_so(self):
+        """A cap reported as a total reads as a complete list.
+
+        ``agent_name`` is an arbitrary string arriving from coord in arbitrary
+        quantity — the guards on this route refuse an unusable one but never
+        bound how many usable ones there are — so the names are capped. The
+        counts beside them are over the WHOLE set, and a truncation flag says
+        the list is a slice, which is what keeps this from being the
+        "presented the cap as the whole" shape.
+        """
+        from app.api.v1.endpoints.agent_registry import _ORPHAN_NAMES_LOGGED
+
+        orphans = [f"retired-{i:03d}" for i in range(_ORPHAN_NAMES_LOGGED + 5)]
+        payload = {
+            "agents": [_registry_row(default_enabled=False)],
+            "prefs": [_pref(enabled=True)]
+            + [_pref(agent_name=n, enabled=True) for n in orphans],
+        }
+        app = _build_app()
+        with (
+            patch(f"{MODULE}._coord_request", new=AsyncMock(return_value=payload)),
+            patch(f"{MODULE}.logger.warning") as mock_warning,
+        ):
+            resp = TestClient(app).get("/api/v1/agent-registry/admin/registry")
+
+        assert resp.status_code == 200, "a capped log is not a refusal"
+        (call,) = [
+            c
+            for c in mock_warning.call_args_list
+            if c.args
+            and c.args[0] == "agent_registry_admin_prefs_for_unregistered_agents"
+        ]
+        assert len(call.kwargs["agent_names"]) == _ORPHAN_NAMES_LOGGED
+        assert call.kwargs["agent_names"] == sorted(orphans)[:_ORPHAN_NAMES_LOGGED]
+        assert call.kwargs["agent_names_truncated"] is True
+        assert call.kwargs["agent_name_count"] == len(orphans), (
+            "the count is over every orphan, not over the shown slice — "
+            "otherwise the cap and the total are the same number and the "
+            "truncation is invisible"
+        )
+        assert call.kwargs["pref_rows"] == len(orphans)
+
+    def test_prefs_that_all_match_a_registry_row_log_no_orphans(self):
+        """The companion, so warning unconditionally does not pass here either.
+
+        Two agents, prefs against both: nothing is orphaned, so the orphan
+        warning must be absent even though the route is otherwise identical.
+        """
+        payload = {
+            "agents": [
+                _registry_row(default_enabled=False),
+                _registry_row(agent_name="debugging-specialist", default_enabled=True),
+            ],
+            "prefs": [
+                _pref(enabled=True),
+                _pref(agent_name="debugging-specialist", enabled=True),
+            ],
+        }
+        app = _build_app()
+        with (
+            patch(f"{MODULE}._coord_request", new=AsyncMock(return_value=payload)),
+            patch(f"{MODULE}.logger.warning") as mock_warning,
+        ):
+            resp = TestClient(app).get("/api/v1/agent-registry/admin/registry")
+
+        assert resp.status_code == 200
+        assert not [
+            c
+            for c in mock_warning.call_args_list
+            if c.args
+            and c.args[0] == "agent_registry_admin_prefs_for_unregistered_agents"
+        ]
+
+
 class TestTheAdminContractKeepsTheAuthzFieldsRequired:
     """The admin model's stated invariant, finally pinned.
 
@@ -716,22 +1109,155 @@ class TestTheAdminContractKeepsTheAuthzFieldsRequired:
         assert set(_ADMIN_AUTHZ_FIELD_TYPES) <= required
         assert "agent_name" in required
 
-    def test_the_two_field_maps_do_not_overlap(self):
-        """A field is strict or permissive, never both.
+    def test_a_routes_field_maps_are_pairwise_disjoint(self):
+        """A field is read under exactly ONE rule, never two.
 
-        The two maps are the whole contract for a route; a name appearing in
-        both would mean the row 502s AND degrades on the same field, and which
-        one wins would be an ordering accident rather than a decision.
+        The maps are the whole contract for a route; a name appearing in two of
+        them means the row is read under both, and which one wins is an
+        ordering accident rather than a decision.
+
+        This assertion used to be spelled over TWO maps per route, because
+        there were two. :data:`_ADMIN_STRING_LISTS` made the admin route's
+        third, and adding it to the exhaustiveness assertion below without
+        adding it here left the older invariant covering two thirds of the maps
+        it exists to hold -- the same "the map is not wired to the rule" shape
+        as the field it was introduced for.
+
+        The gap is constructible, and it lands on exactly what
+        :func:`_string_list` was written to prevent. Put
+        ``allowed_dispositions`` in :data:`_ADMIN_DESCRIPTIVE` as well and both
+        readers run against one field: for ``["block", 42]``,
+        :func:`_degraded_descriptive_fields` reports ``expected str, got list``
+        while :func:`_string_list` reports ``dropped 1 of 2 entries`` -- two
+        contradictory notes about one field, on the ONE log line the whole
+        function was shaped to keep them from disagreeing on.
+
+        Two behavioural tests DO go red on that mutation, so it was not
+        invisible -- but both fail as a bare ``assert not True`` about a mock
+        being called, from tests named for pref rows and for a contract-abiding
+        value. Neither names the cause, and the assertion whose job is to say
+        "this field is read under two rules at once" was the one staying green.
+        The exhaustiveness assertion cannot see it either: it UNIONS the maps,
+        so a name in two of them is indistinguishable from a name in one.
+
+        Written over ``combinations`` rather than as a hand-listed pair per
+        route, so a fourth map is caught by being named in the tuple, not by
+        someone remembering to add a third ``&``.
         """
+        from itertools import combinations
+
         from app.api.v1.endpoints.agent_registry import (
             _ADMIN_AUTHZ_FIELD_TYPES,
             _ADMIN_DESCRIPTIVE,
+            _ADMIN_STRING_LISTS,
             _AUTHZ_FIELD_TYPES,
             _EFFECTIVE_DESCRIPTIVE,
         )
 
-        assert not set(_AUTHZ_FIELD_TYPES) & set(_EFFECTIVE_DESCRIPTIVE)
-        assert not set(_ADMIN_AUTHZ_FIELD_TYPES) & set(_ADMIN_DESCRIPTIVE)
+        for route, maps in [
+            (
+                "effective",
+                {
+                    "_AUTHZ_FIELD_TYPES": set(_AUTHZ_FIELD_TYPES),
+                    "_EFFECTIVE_DESCRIPTIVE": set(_EFFECTIVE_DESCRIPTIVE),
+                },
+            ),
+            (
+                "admin",
+                {
+                    "_ADMIN_AUTHZ_FIELD_TYPES": set(_ADMIN_AUTHZ_FIELD_TYPES),
+                    "_ADMIN_DESCRIPTIVE": set(_ADMIN_DESCRIPTIVE),
+                    "_ADMIN_STRING_LISTS": set(_ADMIN_STRING_LISTS),
+                },
+            ),
+        ]:
+            for (a_name, a), (b_name, b) in combinations(maps.items(), 2):
+                assert not a & b, (
+                    f"the {route} route reads {sorted(a & b)} under two rules "
+                    f"at once ({a_name} and {b_name}); which one wins is an "
+                    "ordering accident, and both report on the same field, so "
+                    "one row's log line contradicts itself"
+                )
+
+    def test_every_response_field_is_classified_by_some_map(self):
+        """Non-overlap was pinned; EXHAUSTIVENESS was not — and that is the gap.
+
+        "One rule, two field maps" makes adding a name to a map the whole cost
+        of getting a new field right. Nothing made adding the NAME compulsory,
+        so a field could be declared on the response model and reach neither
+        map — read by hand at the call site, under whatever rule that call site
+        happened to spell out, which is precisely the per-route hand-rolling
+        the maps exist to end.
+
+        That was not hypothetical. ``allowed_dispositions`` was in neither map:
+        it was filtered inline, and so was the one descriptive field on either
+        route whose drift logged nothing at all. This assertion fails on the
+        code as it stood, and is what keeps the third such field from repeating
+        it.
+
+        The two counts are named explicitly rather than waived by a rule,
+        because they are the only fields on either model that coord does not
+        send at all — they are aggregates :func:`_render_admin_rows` derives —
+        and a rule broad enough to excuse them would excuse a real field too.
+
+        They belong to the ADMIN model alone, so the waiver is carried PER
+        MODEL. It used to be one set unioned into the admin model's classified
+        names and then subtracted from the second assertion for BOTH — which
+        quietly exempted those two names from the map-side check on the
+        EFFECTIVE route, where they are not fields at all. Put ``pref_count``
+        in :data:`_EFFECTIVE_DESCRIPTIVE` and nothing fired: assertion 1 saw it
+        classified, assertion 2 subtracted it. The route would then have warned
+        ``pref_count (expected ...)`` on every row of the settings page
+        forever — a permanent degradation notice about a field coord never
+        had, which is the log-disagrees-with-reality defect this whole family
+        of assertions exists for.
+
+        Subtracting the waiver from assertion 2 bought nothing even on the
+        model that owns it: those names ARE declared there, so they never
+        appear in ``classified - declared``. It only ever opened the hole.
+        """
+        from app.api.v1.endpoints.agent_registry import (
+            _ADMIN_AUTHZ_FIELD_TYPES,
+            _ADMIN_DESCRIPTIVE,
+            _ADMIN_STRING_LISTS,
+            _AUTHZ_FIELD_TYPES,
+            _EFFECTIVE_DESCRIPTIVE,
+            AdminAgentRegistryRow,
+            AgentRegistryEntry,
+        )
+
+        #: Derived web-side from coord's `prefs` list; coord serves no such
+        #: aggregate, so no read-contract map can carry them. Admin-only.
+        admin_derived = {"pref_count", "pref_differs_from_default_count"}
+
+        for label, model, classified in [
+            (
+                "AgentRegistryEntry",
+                AgentRegistryEntry,
+                set(_AUTHZ_FIELD_TYPES) | set(_EFFECTIVE_DESCRIPTIVE) | {"agent_name"},
+            ),
+            (
+                "AdminAgentRegistryRow",
+                AdminAgentRegistryRow,
+                set(_ADMIN_AUTHZ_FIELD_TYPES)
+                | set(_ADMIN_DESCRIPTIVE)
+                | set(_ADMIN_STRING_LISTS)
+                | {"agent_name"}
+                | admin_derived,
+            ),
+        ]:
+            declared = set(model.model_fields)
+            assert not declared - classified, (
+                f"{label} declares {sorted(declared - classified)}, which no "
+                "field map classifies as authorization, descriptive or "
+                "derived — so it is read by hand under whatever rule its call "
+                "site spells out, which is the drift the maps exist to end"
+            )
+            assert not classified - declared, (
+                f"a field map names {sorted(classified - declared)}, "
+                f"which {label} does not declare — the map and the published "
+                "contract have drifted apart"
+            )
 
 
 class TestTheTenantDefaultWrite:

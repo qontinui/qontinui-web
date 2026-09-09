@@ -31,6 +31,7 @@ from sqlalchemy import text
 from sqlalchemy.engine import Engine
 from sqlalchemy.exc import IntegrityError
 
+from app.models.work_artifact import SEARCH_TSVECTOR_SQL, WorkArtifact
 from tests._alembic_harness import (
     admin_database_url,
     backend_root,
@@ -107,6 +108,74 @@ def test_status_carries_no_check_in_the_ddl() -> None:
         "ck_work_artifact_edges_relation",
     }, names
     assert "status" not in " ".join(names)
+
+
+def test_the_search_index_expression_is_the_module_constant_verbatim() -> None:
+    """The index body and the ``?q=`` predicate must be the SAME string.
+
+    PostgreSQL matches an expression index by the parsed expression, so a
+    predicate that merely *resembles* the indexed expression yields a
+    perfectly healthy-looking index that is never used. Spelling it once and
+    reusing the constant is the only way that stays true under edits.
+
+    This is a regression test with a real history: the model used to inline a
+    second, table-qualified copy of the expression here while
+    ``SEARCH_TSVECTOR_SQL`` carried an unqualified one. Nothing caught it,
+    because PostgreSQL normalizes the qualification away and the two parse
+    trees agreed anyway — so the constant that exists to prevent
+    index-predicate drift was not actually the thing the index used.
+    """
+    index = next(
+        i
+        for i in WorkArtifact.__table__.indexes
+        if i.name == "ix_work_artifacts_search"
+    )
+    assert index.dialect_options["postgresql"]["using"] == "gin"
+
+    expressions = [str(e) for e in index.expressions]
+    assert expressions == [SEARCH_TSVECTOR_SQL]
+
+    # The predicate crud.work_artifact builds must embed the constant byte for
+    # byte, not a lookalike.
+    predicate = text(f"{SEARCH_TSVECTOR_SQL} @@ plainto_tsquery('english', :q)")
+    assert str(predicate).startswith(SEARCH_TSVECTOR_SQL)
+
+
+def test_the_search_constant_is_unqualified_and_covers_title_and_body() -> None:
+    """Unqualified is not cosmetic — it is what the deployed index holds.
+
+    A table-qualified spelling also *works* (PostgreSQL accepts it in
+    ``CREATE INDEX`` and then discards the qualification), which is precisely
+    why the old drift was invisible. Pinning the unqualified form keeps the
+    constant equal to what ``pg_get_indexdef`` reports.
+    """
+    assert SEARCH_TSVECTOR_SQL.startswith("to_tsvector('english', ")
+    assert "work_artifacts." not in SEARCH_TSVECTOR_SQL
+    for column in ("title", "body"):
+        assert f"coalesce({column}, '')" in SEARCH_TSVECTOR_SQL
+
+
+def _normalized_sql(sql: str) -> str:
+    """Collapse formatting so a re-wrapped DDL still compares equal.
+
+    Runs of whitespace become one space, and the padding a formatter leaves
+    just inside parentheses is dropped. Deliberately narrow: it never touches
+    the space *inside* the ``' '`` separator literal, which is load-bearing.
+    """
+    collapsed = re.sub(r"\s+", " ", sql).strip()
+    return re.sub(r"\(\s+", "(", re.sub(r"\s+\)", ")", collapsed))
+
+
+def test_the_migration_ddl_spells_the_same_search_expression() -> None:
+    """Model constant vs migration DDL — one drifting is the whole trap.
+
+    The migration writes its ``CREATE INDEX`` as wrapped literal SQL rather
+    than importing the constant (a migration must not follow the model as the
+    model evolves), so this compares them modulo whitespace instead of byte
+    for byte.
+    """
+    source = _revision_source()
+    assert _normalized_sql(SEARCH_TSVECTOR_SQL) in _normalized_sql(source)
 
 
 # ---------------------------------------------------------------------------

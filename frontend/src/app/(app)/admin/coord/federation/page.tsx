@@ -42,7 +42,7 @@ import {
   RecordDetail,
   StatCluster,
   StatusBadge,
-  rowAccentClass,
+  rowAccentProps,
   type Stat,
 } from "@/components/console";
 import {
@@ -372,7 +372,10 @@ export default function CoordFederationPage() {
                       data-expanded={isExpanded ? "true" : "false"}
                       // R4 — the accent is a left border on the row; the row
                       // body stays neutral so 40 rows read when 6 are red.
-                      className={`cursor-pointer border-b border-border transition-colors hover:bg-muted/30 ${rowAccentClass(status)}`}
+                      {...rowAccentProps(
+                        status,
+                        "cursor-pointer border-b border-border transition-colors hover:bg-muted/30"
+                      )}
                       onClick={() => toggleExpand(r.id)}
                     >
                       <td className="whitespace-nowrap px-4 py-2">

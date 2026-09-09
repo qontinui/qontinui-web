@@ -57,12 +57,19 @@ class _FakeRequest:
         headers: dict[str, str] | None = None,
         query: str = "",
         body: bytes = b"",
+        request_id: str | None = None,
     ) -> None:
         self.method = method
         self.headers = headers or {}
         self.cookies: dict[str, str] = {}
         self.url = _FakeURL(query)
         self._body = body
+        # ``RequestIDMiddleware`` stashes the per-request correlation id here.
+        # Left unset by default so the no-middleware fallback stays covered;
+        # pass ``request_id`` to model a request that went through it.
+        self.state = SimpleNamespace()
+        if request_id is not None:
+            self.state.request_id = request_id
 
     async def body(self) -> bytes:
         return self._body
@@ -294,7 +301,7 @@ async def test_relay_runner_not_connected_when_ws_session_null_maps_503(monkeypa
 
 
 def _install_owned_device(monkeypatch, row, *, raises: Exception | None = None) -> None:
-    """Patch the full-row coord read the 503 branch uses for ``last_seen_at``."""
+    """Patch the full-row coord read the 503 branch uses for its liveness clocks."""
 
     async def _fake_get_owned_device(request, device_id, user_id):
         if raises is not None:
@@ -349,14 +356,18 @@ async def test_relay_not_connected_503_body_carries_device_id_and_last_seen(
     """W-A + W-B: the not-connected 503 is observable and self-describing.
 
     W-A — a structured ``runner_proxy_relay_not_connected`` line naming the
-    device. W-B — ``device_id`` + ``last_seen_at`` in the body so the client
-    can render "last seen N min ago" instead of a bare failure string.
+    device. W-B — ``device_id`` plus BOTH liveness clocks in the body so the
+    client can render "last seen N min ago" instead of a bare failure string.
     ``detail`` is unchanged, so an older mobile build is unaffected.
     """
     _install_device_lookup(monkeypatch, {"device_id": DEVICE_ID, "ws_session_id": None})
     _install_owned_device(
         monkeypatch,
-        {"device_id": DEVICE_ID, "last_seen_at": "2026-08-27T09:15:00+00:00"},
+        {
+            "device_id": DEVICE_ID,
+            "ws_connected_at": "2026-08-27T09:20:00+00:00",
+            "last_seen_at": "2026-08-27T09:15:00+00:00",
+        },
     )
     _install_manager(monkeypatch, dispatch=AsyncMock())
     rec = _RecordingLogger()
@@ -372,6 +383,10 @@ async def test_relay_not_connected_503_body_carries_device_id_and_last_seen(
     # Additive only — the pre-existing key keeps its exact value.
     assert body["detail"] == "runner not connected"
     assert body["device_id"] == DEVICE_ID
+    # Two clocks, each under its own name. Distinct values here on purpose:
+    # a single "last seen" would have to pick one and silently mean the other
+    # half the time, which is the ambiguity this body exists to remove.
+    assert body["ws_connected_at"] == "2026-08-27T09:20:00+00:00"
     assert body["last_seen_at"] == "2026-08-27T09:15:00+00:00"
     assert isinstance(body["request_id"], str) and body["request_id"]
 
@@ -381,17 +396,112 @@ async def test_relay_not_connected_503_body_carries_device_id_and_last_seen(
     assert logged["device_id"] == DEVICE_ID
     assert logged["user_id"] == USER_ID
     assert logged["path"] == "usage"
+    assert logged["ws_connected_at"] == "2026-08-27T09:20:00+00:00"
     assert logged["last_seen_at"] == "2026-08-27T09:15:00+00:00"
     # The body's request_id is greppable in the log.
     assert logged["request_id"] == body["request_id"]
 
 
 @pytest.mark.asyncio
-async def test_relay_not_connected_503_survives_last_seen_lookup_failure(monkeypatch):
+async def test_relay_503_request_id_is_the_middleware_request_id(monkeypatch):
+    """The echoed id is the request's OWN id, not a fresh one.
+
+    ``RequestIDMiddleware`` binds ``request_id`` into the structlog
+    contextvars for every line of the request and returns it as
+    ``X-Request-ID``. Minting a fresh ``uuid4()`` here would put a different
+    value in the body than in that header, and — because an explicit log
+    kwarg overrides the contextvar of the same name — would make this line
+    the ONLY one carrying it, so grepping the id the client shows would find
+    nothing else about the request. Which is the opposite of the point.
+    """
+    _install_device_lookup(monkeypatch, {"device_id": DEVICE_ID, "ws_session_id": None})
+    _install_owned_device(monkeypatch, {"device_id": DEVICE_ID})
+    _install_manager(monkeypatch, dispatch=AsyncMock())
+    rec = _RecordingLogger()
+    monkeypatch.setattr(device_bridge_ws, "logger", rec, raising=True)
+
+    request = _FakeRequest(
+        headers={"X-Qontinui-Device-Id": DEVICE_ID},
+        request_id="req-from-middleware",
+    )
+    response = await device_bridge_ws.runner_proxy(
+        request, "usage", user=SimpleNamespace(id=USER_ID)
+    )
+
+    assert response.status_code == 503
+    assert _body(response)["request_id"] == "req-from-middleware"
+    assert rec.kw_for("runner_proxy_relay_not_connected")["request_id"] == (
+        "req-from-middleware"
+    )
+
+
+@pytest.mark.asyncio
+async def test_relay_503_request_id_falls_back_without_middleware(monkeypatch):
+    """No middleware-set id still yields a non-empty one, never a 500.
+
+    This runs on an error path, so reading the id must not be able to raise.
+    """
+    _install_device_lookup(monkeypatch, {"device_id": DEVICE_ID, "ws_session_id": None})
+    _install_owned_device(monkeypatch, {"device_id": DEVICE_ID})
+    _install_manager(monkeypatch, dispatch=AsyncMock())
+
+    request = _FakeRequest(headers={"X-Qontinui-Device-Id": DEVICE_ID})
+    response = await device_bridge_ws.runner_proxy(
+        request, "usage", user=SimpleNamespace(id=USER_ID)
+    )
+
+    assert response.status_code == 503
+    assert _body(response)["request_id"]
+
+
+@pytest.mark.asyncio
+async def test_relay_404_device_not_owned_is_logged(monkeypatch):
+    """W-A's second arm: the 404 is no longer silent either.
+
+    The plan folded this into W-A rather than leaving one silent arm beside
+    the newly-observable 503 — a stale device id on the phone and a device
+    that was never asked for looked identical server-side.
+    """
+    _install_device_lookup(monkeypatch, None)
+    _install_manager(monkeypatch, dispatch=AsyncMock())
+    rec = _RecordingLogger()
+    monkeypatch.setattr(device_bridge_ws, "logger", rec, raising=True)
+
+    request = _FakeRequest(
+        headers={"X-Qontinui-Device-Id": DEVICE_ID},
+        request_id="req-404",
+    )
+    response = await device_bridge_ws.runner_proxy(
+        request, "usage", user=SimpleNamespace(id=USER_ID)
+    )
+
+    assert response.status_code == 404
+    body = _body(response)
+    # ``detail`` unchanged; the rest is additive.
+    assert body["detail"] == "device not found or not owned by caller"
+    assert body["device_id"] == DEVICE_ID
+    assert body["request_id"] == "req-404"
+
+    logged = rec.kw_for("runner_proxy_relay_device_not_owned")
+    assert logged["device_id"] == DEVICE_ID
+    assert logged["user_id"] == USER_ID
+    assert logged["path"] == "usage"
+    assert logged["request_id"] == "req-404"
+
+
+@pytest.mark.asyncio
+async def test_relay_not_connected_503_survives_liveness_lookup_failure(monkeypatch):
     """A coord fault while decorating the 503 must not change the status.
 
-    The 503 is already the right answer; the timestamp is a nicety, so a
-    failed full-row read yields ``last_seen_at: null``, never a 502/504.
+    The 503 is already the right answer; the timestamps are a nicety, so a
+    failed full-row read still returns 503, never a 502/504.
+
+    It must also not report the clocks as ``null``. ``null`` is already
+    spoken for on this body — it means the column is NULL, i.e. the runner
+    has NEVER registered — and a lookup that failed has established no such
+    thing. The keys are therefore OMITTED, which is the wire spelling of
+    "unknown". Both are falsy, so this is precisely the distinction a
+    consumer loses if the two are allowed to collapse.
     """
     from fastapi import HTTPException
 
@@ -410,7 +520,118 @@ async def test_relay_not_connected_503_survives_last_seen_lookup_failure(monkeyp
     body = _body(response)
     assert body["detail"] == "runner not connected"
     assert body["device_id"] == DEVICE_ID
-    assert body["last_seen_at"] is None
+    # Absent, NOT null — see the docstring.
+    assert "ws_connected_at" not in body
+    assert "last_seen_at" not in body
+    # The request id is still there: it is what joins this response to the
+    # ``runner_proxy_relay_liveness_lookup_failed`` line naming the fault.
+    assert body["request_id"]
+
+
+@pytest.mark.asyncio
+async def test_relay_503_absent_and_null_clocks_are_different_answers(monkeypatch):
+    """The two unknown-looking cases must be distinguishable on the wire.
+
+    A successful read of a row whose ``ws_connected_at`` is NULL is a real
+    fact — never registered — and is sent as ``null``. A read that failed
+    knows nothing and omits the key. This test holds both shapes side by side
+    so a future change cannot quietly make them identical again.
+    """
+    from fastapi import HTTPException
+
+    _install_manager(monkeypatch, dispatch=AsyncMock())
+    _install_device_lookup(monkeypatch, {"device_id": DEVICE_ID, "ws_session_id": None})
+    request = _FakeRequest(headers={"X-Qontinui-Device-Id": DEVICE_ID})
+
+    # Read succeeded, column is NULL -> an assertion of "never registered".
+    _install_owned_device(
+        monkeypatch, {"device_id": DEVICE_ID, "ws_connected_at": None}
+    )
+    known = _body(
+        await device_bridge_ws.runner_proxy(
+            request, "usage", user=SimpleNamespace(id=USER_ID)
+        )
+    )
+
+    # Read failed -> no assertion at all.
+    _install_owned_device(
+        monkeypatch, None, raises=HTTPException(status_code=502, detail="down")
+    )
+    unknown = _body(
+        await device_bridge_ws.runner_proxy(
+            request, "usage", user=SimpleNamespace(id=USER_ID)
+        )
+    )
+
+    assert "ws_connected_at" in known and known["ws_connected_at"] is None
+    assert "ws_connected_at" not in unknown
+
+
+@pytest.mark.asyncio
+async def test_relay_503_log_line_matches_the_body_about_what_was_known(monkeypatch):
+    """The log surface must not re-introduce the ambiguity the body removed.
+
+    The log is what an operator greps. If the failed-lookup case logged
+    ``ws_connected_at=None``, a query for this event with a null clock would
+    return the never-registered population and the coord-outage population
+    together — exactly the collapse the body now avoids. ``liveness_known``
+    is present either way so a row says which population it is in.
+    """
+    from fastapi import HTTPException
+
+    _install_device_lookup(monkeypatch, {"device_id": DEVICE_ID, "ws_session_id": None})
+    _install_owned_device(
+        monkeypatch, None, raises=HTTPException(status_code=502, detail="down")
+    )
+    _install_manager(monkeypatch, dispatch=AsyncMock())
+    rec = _RecordingLogger()
+    monkeypatch.setattr(device_bridge_ws, "logger", rec, raising=True)
+
+    request = _FakeRequest(headers={"X-Qontinui-Device-Id": DEVICE_ID})
+    response = await device_bridge_ws.runner_proxy(
+        request, "usage", user=SimpleNamespace(id=USER_ID)
+    )
+
+    body = _body(response)
+    logged = rec.kw_for("runner_proxy_relay_not_connected")
+
+    assert logged["liveness_known"] is False
+    assert "ws_connected_at" not in logged
+    assert "last_seen_at" not in logged
+    # The two surfaces agree about what was known.
+    assert ("ws_connected_at" in logged) == ("ws_connected_at" in body)
+    # And the id still joins this line to the one naming the fault.
+    assert logged["request_id"] == body["request_id"]
+
+
+@pytest.mark.asyncio
+async def test_relay_503_ws_connected_at_null_means_never_registered(monkeypatch):
+    """A row with no ``ws_connected_at`` reports ``null``, not a wrong time.
+
+    "Never registered" and "flapping right now" are the two cases the 503
+    body exists to separate, and ``ws_connected_at`` is the field that
+    separates them: absent here, recent in the flapping case. A heartbeat
+    that is present anyway must not be borrowed to fill it in.
+    """
+    _install_device_lookup(monkeypatch, {"device_id": DEVICE_ID, "ws_session_id": None})
+    _install_owned_device(
+        monkeypatch,
+        {
+            "device_id": DEVICE_ID,
+            "ws_connected_at": None,
+            "last_seen_at": "2026-08-27T09:15:00+00:00",
+        },
+    )
+    _install_manager(monkeypatch, dispatch=AsyncMock())
+
+    request = _FakeRequest(headers={"X-Qontinui-Device-Id": DEVICE_ID})
+    response = await device_bridge_ws.runner_proxy(
+        request, "usage", user=SimpleNamespace(id=USER_ID)
+    )
+
+    body = _body(response)
+    assert body["ws_connected_at"] is None
+    assert body["last_seen_at"] == "2026-08-27T09:15:00+00:00"
 
 
 @pytest.mark.asyncio

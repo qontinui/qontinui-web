@@ -34,10 +34,31 @@ against a ``/proc/sys/kernel/threads-max`` of **192,146** — 99.3%, pinned
 across two samples 40 s apart (the signature of having *hit* the cap rather
 than still climbing), while every sibling container sat at ≤ 68.
 
-``ResourceSampleRow`` (``qontinui-coord/crates/coord/src/device_resource_samples.rs:1711``)
-carries CPU, load, memory, commit, swap, disk, build slots, queue depth and CI
-job counts — and **no thread, PID, handle or fd column anywhere**. Both
-spellings of ``lane_pressure()`` score ``host`` on commit and ``wsl`` /
+``ResourceSampleRow`` (``qontinui-coord/crates/coord/src/device_resource_samples.rs``,
+``pub struct ResourceSampleRow``) carried CPU, load, memory, commit, swap,
+disk, build slots, queue depth and CI job counts — and **no thread, PID, handle
+or fd column anywhere**.
+
+.. note::
+
+   Two corrections to the sentence above, both made by **this very revision**
+   and left visible rather than rewritten, because the diagnosis is only
+   legible in the past tense (2026-09-01, while authoring
+   ``fleet_res_tel_05_socket_census``):
+
+   1. **"no thread, PID, handle or fd column anywhere" is no longer true.**
+      It was true when written and this revision is what falsified it: the
+      struct now carries ``threads_max`` / ``threads_used`` / ``pids_max`` /
+      ``pids_used`` / ``saturation_source``, which are exactly the five columns
+      added below. Read the claim as the state of the world the revision was
+      written *against*, not as a description of the code today.
+   2. **The line citation was stale.** It read ``:1711``; the struct is now at
+      ``:2059``. Line numbers in another repo drift with every edit to the file
+      above them, so this now cites the ``pub struct`` declaration by name
+      instead — grep for that rather than trusting any number, here or
+      elsewhere.
+
+Both spellings of ``lane_pressure()`` score ``host`` on commit and ``wsl`` /
 ``container`` on swap — commit and swap instrument both. (Memory enters this
 table elsewhere, as a BYTE FLOOR in ``headroom_against``, which the source
 itself calls "a DIFFERENT AXIS from swap"; ``mem_available_bytes`` is not a
@@ -342,6 +363,14 @@ def upgrade() -> None:
             'one. That is a judgement, not a default.'
         """
     )
+    # The `''` below are SQL's escaped apostrophe and must stay BARE. They were
+    # written `\'\'` at first: inert in a non-raw triple-quoted string, so the
+    # SQL Postgres receives is identical either way and nothing at runtime could
+    # tell the two apart. But the backslashes are not inert to a reader of this
+    # FILE, and `_alembic_harness.comment_body_from_source` — which recovers a
+    # comment body from source so a test need not hold a second copy of it — is
+    # exactly such a reader. It strips SQL string literals and asserts the
+    # remainder is blank; a stray backslash survives that strip and aborts it.
     op.execute(
         """
         COMMENT ON COLUMN coord.device_resource_samples.saturation_source IS
@@ -353,10 +382,10 @@ def upgrade() -> None:
             'exists is stated at process_health.rs:158-160: cgroup '
             'counts tasks (THREADS) and proc counts thread-group LEADERS, and '
             'they are different quantities. A publisher reading the PROMETHEUS '
-            'exposition rather than the JSON must map its literal \'\'none\'\' label '
+            'exposition rather than the JSON must map its literal ''none'' label '
             'back to NULL (process_health.rs:445 renders '
-            'pids_source.unwrap_or(\'\'none\'\') because the metric has no null) - '
-            'writing \'\'none\'\' here would record an unmeasured row as having a '
+            'pids_source.unwrap_or(''none'') because the metric has no null) - '
+            'writing ''none'' here would record an unmeasured row as having a '
             'known-but-unrecognised instrument. Without this column a publisher '
             'that probes the cgroup, fails, and falls back to /proc silently '
             'changes what the number means, and a saturation ratio would divide '

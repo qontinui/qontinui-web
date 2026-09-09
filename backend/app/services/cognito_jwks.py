@@ -111,7 +111,23 @@ class CognitoJWKSClient:
         self._jwks_url = jwks_url or f"{self._issuer}/.well-known/jwks.json"
         self._http_timeout_s = http_timeout_s
         self._jwks: dict[str, Any] | None = None
-        self._forced_at: float = 0.0
+        # A ``time.monotonic`` reading (see ``_get_jwks``), where ``None``
+        # means "never forced" — NOT "forced at zero".
+        #
+        # A ``0.0`` sentinel is only safe against a WALL-CLOCK stamp, where
+        # ``now - 0.0`` is ~1.8e9 and so outside every window. ``monotonic``'s
+        # origin is arbitrary and on both Linux and Windows sits near host
+        # boot, so ``now - 0.0`` is legitimately a small number: the first kid
+        # miss arriving within ``_FORCED_REFRESH_COOLDOWN_S`` of boot read as
+        # "already refetched recently" and skipped the one forced re-fetch that
+        # recovers from a Cognito key rotation. The ``self._jwks is not None``
+        # guard does not cover it: the cold fetch populates the cache without
+        # ever touching this stamp.
+        #
+        # The sibling ``coord_jwks`` client corrected the same sentinel when it
+        # moved to ``monotonic``; this door was already on ``monotonic`` and so
+        # had carried the defect the whole time.
+        self._forced_at: float | None = None
         self._lock = asyncio.Lock()
 
     @property
@@ -179,7 +195,10 @@ class CognitoJWKSClient:
 
             if force_refresh and self._jwks is not None:
                 now = time.monotonic()
-                if (now - self._forced_at) < _FORCED_REFRESH_COOLDOWN_S:
+                if (
+                    self._forced_at is not None
+                    and (now - self._forced_at) < _FORCED_REFRESH_COOLDOWN_S
+                ):
                     # Already refetched recently — serve the cache and let
                     # the caller's kid lookup fail as it would have.
                     return self._jwks

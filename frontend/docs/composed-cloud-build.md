@@ -233,11 +233,26 @@ CI covers them in both shapes.
    OSS case needs the second one — its specifiers are static so the bundler can
    see them, which rules out deriving them from `SHIMS`.
 
-**Land cloud-control first.** `composed-cloud-build` checks out cloud-control's
-default branch, so a qontinui-web PR cannot be validated against an unlanded
-cloud-control change, and the two repos have a fixed landing order: the route
-lands in cloud-control, then the shim lands here. The reverse turns this repo's
-CI red for a change made in the other one — see *A gap worth naming* below.
+**Land cloud-control first — and the reason changed in August 2026, so read
+it rather than assuming.** It is no longer about blame: cloud-control's own
+`composed-typecheck` job now reds the PR that adds the route (see *Both jobs
+point at the other's main* below). It is about which half of the pair CAN land
+alone.
+
+Both jobs check out the other repo's default branch, so a route addition is red
+on **both** sides until one of them lands. Only one can:
+
+* The cloud-control route lands alone. Its `composed-typecheck` is red — a
+  declared adaptation pair, which that job's own header tells you not to "fix"
+  by deleting the step — but nothing in cloud-control's tree is inconsistent
+  with itself.
+* The qontinui-web shim **cannot** land alone. `mounts every host page that
+  imports @cloud` runs in the OSS shape too, so a `page.tsx` re-exporting
+  through `@cloud` with no `SHIMS` row fails this repo's ordinary frontend CI,
+  with no cloud-control checkout anywhere in sight.
+
+So the ordering is still load-bearing, for that reason. Landing them the other
+way round wedges the shim PR against a gate the other repo cannot unblock.
 
 Skip 2 or 4 and the composed CI job fails; skip 3 and the OSS build fails to
 resolve the specifier. Both are build-time facts, which is the point — a
@@ -267,28 +282,41 @@ filename matters — a page added as `routes/foo.tsx` is invisible to the guard.
 A route that should exist but not be mounted goes in `UNMOUNTED`, with a
 reason.
 
-### A gap worth naming: the cross-repo guard fires in the wrong repo
+### Both jobs point at the other's `main` (and that is the fix, not the gap)
 
-`composed-cloud-build` is the only thing that type-checks cloud-control's
-frontend or checks the route inventory — that package has no tsconfig, no
-frontend build, and its own `ci.yml` runs Python gates plus an import check
-under an explicit *"every gate here runs standalone — no sibling checkout"*
-constraint. So the guard lives here, and it reads cloud-control's **default
-branch**.
+Until 2026-08-19 this section described a real defect: `composed-cloud-build`
+was the *only* thing that type-checked cloud-control's frontend or checked the
+route inventory, and it read cloud-control's **default branch**. A cloud-control
+PR that added, renamed or removed a `routes/<path>/page.tsx` went green there,
+landed, and then turned **qontinui-web's `main`** red on its next run. The repo
+that made the change never saw the failure; the repo that did nothing got the
+red.
 
-The consequence: a cloud-control PR that adds, renames or removes a
-`routes/<path>/page.tsx` goes green in cloud-control, lands, and then turns
-**qontinui-web's `main`** red on its next run. The repo that made the change
-never sees the failure, and the repo that did nothing gets the red.
+**That is fixed.** cloud-control's `.github/workflows/ci.yml` now carries
+`composed-typecheck`, which checks out qontinui-web's default branch, installs
+the overlay from **that PR's head**, and runs `npm run type-check` and
+`npm test` — the same guard, on the PR that causes the drift. Its
+`Unit tests (composed)` step sets `QONTINUI_COMPOSED_BUILD=1`, so a silently
+failed overlay fails the job instead of skipping every composed case and
+reporting green.
 
-That is why *Adding a route* says to land cloud-control first — the ordering is
-a workaround for this, not a preference. The real fix is a `repository_dispatch`
-from cloud-control into qontinui-web, or a cloud-control job that checks out
-qontinui-web and runs the same guard (the way `backend-ci.yml` already handles
-the backend half of this composition; the "no sibling checkout" rule is about
-the local CI-node lane, so a GitHub-hosted job can carve out). Until then, treat
-a red `mirrors cloud-control's route modules exactly` on main as *someone landed
-a cloud-control route change*, not as a regression here.
+What remains is not a gap but a **symmetric coupling**, and it is intended:
+
+| job | checks out | red until |
+|---|---|---|
+| qontinui-web `composed-cloud-build` | cloud-control `main` + this web PR | the cloud-control route lands |
+| cloud-control `composed-typecheck` | qontinui-web `main` + this cc PR | the qontinui-web shim lands |
+
+Neither job pins a SHA, deliberately — a pin would make each gate go stale
+silently, and drift against the other repo's `main` is the thing they exist to
+report. The consequence is that a route addition is red on both sides at once
+until one lands, which is why *Adding a route* still says to land cloud-control
+first: see the reasoning there for why that is the only arm that can move.
+
+A red `mirrors cloud-control's route modules exactly` now names the repo that
+owns the drift and the direction of the fix in its own failure text. On
+qontinui-web's `main` it still means *someone landed a cloud-control route
+change* — that window is narrower than it was, not closed.
 
 ### Adding a sidebar entry
 

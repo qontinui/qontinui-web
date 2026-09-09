@@ -121,6 +121,13 @@ def test_rejection_handlers_log_url_and_exception_class() -> None:
     Source-level pin: the runner sees only the vague close reason / 503
     detail, so losing these fields from the log silently restores the
     undiagnosable state without failing anything else.
+
+    ``coord_url_setting`` is pinned here for the same reason it is pinned on
+    the identity alarm: TWO settings can produce the URL logged beside it and
+    they are not interchangeable, so the URL alone leaves the reader guessing
+    which knob to turn. It must be DERIVED — a literal ``"COORD_URL"`` or
+    ``"COORD_DEVICE_URL"`` in the handler is right for one deployment only,
+    which is the drift this pin exists to catch.
     """
     import inspect
 
@@ -129,9 +136,15 @@ def test_rejection_handlers_log_url_and_exception_class() -> None:
 
     for func in (devices_ws.websocket_device_unified_endpoint, deps._verify_device_jwt):
         source = inspect.getsource(func)
-        # Narrow to the JWKS-unavailable handler.
+        # Narrow to the JWKS-unavailable handler. The bound is the START of
+        # the NEXT `except` clause, not a byte count: a fixed window silently
+        # shrinks the region being asserted on as the handler's comments grow,
+        # so a `logger.error` pushed past it reads as a MISSING field. That is
+        # a false failure in the same test whose job is to catch a real one.
         idx = source.index("except CoordJWKSUnavailableError")
-        handler = source[idx : idx + 1200]
+        rest = source[idx + 1 :]
+        nxt = rest.find("\n    except ")
+        handler = rest[:nxt] if nxt != -1 else rest
         assert "coord_url=coord_jwks_client.coord_url" in handler, (
             f"{func.__name__} must log the coord URL it dialled."
         )
@@ -140,4 +153,8 @@ def test_rejection_handlers_log_url_and_exception_class() -> None:
         )
         assert "cause=" in handler, (
             f"{func.__name__} must log the chained transport cause."
+        )
+        assert "coord_url_setting=coord_device_setting_name()" in handler, (
+            f"{func.__name__} must name the SETTING that produced the URL, "
+            f"derived from the configuration in force."
         )

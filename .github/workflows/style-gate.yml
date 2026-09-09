@@ -10,8 +10,11 @@ name: Style Gate (shadow)
 # rust-vision-core crate) per route in BOTH of its gating modes and reports the
 # findings in the job summary:
 #
-#   * `analyze` — runs all 5 page-wide analyzers (layout, elements, typography,
-#     color) with NO element ids and NO specs required. This is the broad,
+#   * `analyze` — runs the 4 page-wide analyzers (layout, elements, typography,
+#     color) with NO element ids and NO specs required. The crate has five, but
+#     `--analyzer all` resolves to these four: `dynamic` needs two frames, which
+#     this bin does not accept, so `parse_analyzer` REJECTS it with a usage
+#     error rather than including it. This is the broad,
 #     day-one signal: it works the moment a snapshot+frame exist. Invoked with
 #     `--analyzer all --fail-on critical`, so it exits 2 iff a finding is at/above
 #     CRITICAL (and 0 otherwise — without --fail-on the bin always exits 0, so the
@@ -62,7 +65,9 @@ name: Style Gate (shadow)
 # CAPTURE STACK: the capture step reuses the existing e2e harness's
 # `globalSetup` (frontend/tests/e2e/global-setup.ts), which boots a LOCAL Python
 # backend (uvicorn) against an ephemeral postgres, seeds it, then Playwright's
-# webServer boots `npm run dev`. So this job provisions the SAME full stack as
+# webServer boots `npm run dev` (pinned via PLAYWRIGHT_WEB_SERVER=dev at the
+# capture step — the config's default is now a production build). So this job
+# provisions the SAME full stack as
 # the Frontend E2E job in e2e-tests.yml (postgres service + sibling clones +
 # python/pip + migrations + dev user). The pinned analyzer schemas checkout
 # (path: qontinui-schemas, in-workspace) and the backend's schemas sibling clone
@@ -100,7 +105,7 @@ jobs:
     # postgresql://test_user:test_password@localhost:5432/test_db.
     services:
       postgres:
-        image: pgvector/pgvector:pg15
+        image: pgvector/pgvector:pg16
         env:
           POSTGRES_USER: test_user
           POSTGRES_PASSWORD: test_password
@@ -116,7 +121,8 @@ jobs:
     env:
       # The capture reuses the e2e harness's global-setup.ts, which boots a
       # LOCAL uvicorn backend on :8000 against the ephemeral postgres service
-      # above and then Playwright's webServer boots `npm run dev` on :3001.
+      # above and then Playwright's webServer boots `npm run dev` on :3001
+      # (pinned via PLAYWRIGHT_WEB_SERVER=dev at the capture step).
       # So the capture renders against the SAME local stack the Frontend E2E job
       # in e2e-tests.yml uses — not prod.
       #
@@ -805,7 +811,8 @@ jobs:
           curl -fsS http://127.0.0.1:8770/.well-known/jwks.json > /dev/null
 
       # Run the Phase 1 capture. The config's `webServer` boots `npm run dev` on
-      # :3001 and `global-setup.ts` boots the LOCAL uvicorn backend (inheriting
+      # :3001 (PLAYWRIGHT_WEB_SERVER=dev below; the config's own default is a
+      # production build) and `global-setup.ts` boots the LOCAL uvicorn backend (inheriting
       # the job-level COGNITO_* env so it trusts the run-local issuer). The
       # `setup` project (auth.setup.ts) seeds the hermetic QONTINUI_TEST_ID_TOKEN
       # minted above as the access_token cookie and probes /users/me (which
@@ -823,6 +830,19 @@ jobs:
         env:
           CI: "true"
           PLAYWRIGHT_BASE_URL: http://localhost:3001
+          # PINNED to the dev server. playwright.config.ts's `webServer`
+          # DEFAULTS to `prod` since plan
+          # 2026-09-05-web-e2e-runs-against-next-dev-so-a-first-hit-compile-is-a-test-failure
+          # Phase 2 — `npm run start`, which needs a prior `npm run build`.
+          # This job runs no build (the E2E stack workflow does), so without
+          # this pin `next start` would exit with "Could not find a
+          # production build in the '.next' directory" and every route would
+          # capture as INFRA-ERROR. Phase 2 deliberately changes ONE lane;
+          # moving the style gate onto a production build is its own change,
+          # with its own baseline re-capture (a prod build renders different
+          # class hashes and no dev overlay, so every committed baseline
+          # would have to be re-taken).
+          PLAYWRIGHT_WEB_SERVER: dev
         run: |
           npx playwright test --project=style-gate
 

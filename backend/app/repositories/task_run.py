@@ -672,6 +672,43 @@ class DeferredQuestionRepository:
         return list(result.scalars().all())
 
     @staticmethod
+    async def get_pending_for_user(
+        db: AsyncSession,
+        user_id: UUID,
+        status_filter: str = "pending",
+        limit: int = 200,
+    ) -> list[tuple[DeferredQuestion, str | None, str | None]]:
+        """Deferred questions across EVERY task run the user owns.
+
+        The per-task-run read answers "what is pending on this run"; a reviewer
+        holding a phone needs "what is waiting for me anywhere", which no
+        existing query answers. Runners already sync these rows here
+        (``POST /task-runs/{id}/deferred-questions``) explicitly to enable
+        cross-computer viewing — this is the read that was missing.
+
+        Scoped by joining to ``project.task_runs`` and filtering on
+        ``created_by_user_id``: the questions table has no owner column of its
+        own, so ownership can only come from the parent run. An INNER join is
+        the point — an orphaned question with no reachable parent is not
+        attributable to anyone and must not leak into a fleet list.
+
+        Returns ``(question, task_name, runner_id)`` triples so the caller can
+        say which run and which machine raised each one.
+        """
+        query = (
+            select(DeferredQuestion, TaskRun.task_name, TaskRun.runner_id)
+            .join(TaskRun, DeferredQuestion.task_run_id == TaskRun.id)
+            .where(TaskRun.created_by_user_id == user_id)
+        )
+        if status_filter:
+            query = query.where(DeferredQuestion.status == status_filter)
+        # Oldest first: a review queue is worked front to back, and the same
+        # ordering the per-run read uses.
+        query = query.order_by(DeferredQuestion.created_at.asc()).limit(limit)
+        result = await db.execute(query)
+        return [(q, name, runner) for q, name, runner in result.all()]
+
+    @staticmethod
     async def get_question_by_id(
         db: AsyncSession,
         question_id: UUID,

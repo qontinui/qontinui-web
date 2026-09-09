@@ -13,11 +13,25 @@
  * Auth model: superuser-gated like every /admin/* page. Non-superusers
  * redirect to /build/workflows or /dashboard, so the tests tolerate
  * both shapes per admin-coord-questions.spec.ts.
+ *
+ * No fixed sleeps. Every wait here is an auto-waiting assertion on the state
+ * the test then checks, or a bounded `waitFor(...).catch(() => null)` in
+ * front of a read the test already tolerated — never a `waitForTimeout(N)`
+ * followed by a non-waiting read, which asserts on wall-clock. Timeouts are
+ * the replaced sleep × 3, floor 5 s.
+ * Plan: 2026-09-05-web-e2e-fixed-sleeps-red-main-one-test-at-a-time.
  */
 
 import { test, expect } from "../fixtures";
 
 const SPAWN_PATH = "/admin/coord/spawn";
+
+/** Replaces the old `waitForTimeout(2000)` before the coord-heading read. */
+const HEADING_TIMEOUT = 6000;
+
+/** The `<h1>` every /admin/coord/* page renders for a superuser. */
+const coordHeading = (page: import("@playwright/test").Page) =>
+  page.getByRole("heading", { name: "Coord operator console", exact: true });
 
 function wasRedirected(url: string): boolean {
   return (
@@ -56,7 +70,11 @@ test.describe("Admin - Coord spawn-from-plan", () => {
             {
               device_id: "00000000-0000-0000-0000-deadbeefcafe",
               hostname: "test-host",
-              status: "healthy",
+              // `state`, not `status`: `status` is not a key coord's
+              // `DeviceHealthSnapshot` has ever served, so the old fixture
+              // left the picker's state rendering unexercised end-to-end.
+              state: "healthy",
+              heartbeat_state: "healthy",
             },
           ],
         }),
@@ -65,7 +83,11 @@ test.describe("Admin - Coord spawn-from-plan", () => {
 
     await page.goto(SPAWN_PATH);
     await page.waitForLoadState("domcontentloaded");
-    await page.waitForTimeout(2000);
+
+    // Bounded wait for the heading, tolerated if absent (non-admin redirect).
+    await coordHeading(page)
+      .waitFor({ state: "visible", timeout: HEADING_TIMEOUT })
+      .catch(() => null);
 
     const pageContent = await page.content();
     expect(pageContent).not.toContain("Internal Server Error");
@@ -130,7 +152,11 @@ test.describe("Admin - Coord spawn-from-plan", () => {
             {
               device_id: "00000000-0000-0000-0000-deadbeefcafe",
               hostname: "test-host",
-              status: "healthy",
+              // `state`, not `status`: `status` is not a key coord's
+              // `DeviceHealthSnapshot` has ever served, so the old fixture
+              // left the picker's state rendering unexercised end-to-end.
+              state: "healthy",
+              heartbeat_state: "healthy",
             },
           ],
         }),
@@ -159,7 +185,11 @@ test.describe("Admin - Coord spawn-from-plan", () => {
 
     await page.goto(SPAWN_PATH);
     await page.waitForLoadState("domcontentloaded");
-    await page.waitForTimeout(2000);
+
+    // Bounded wait for the heading, tolerated if absent (non-admin redirect).
+    await coordHeading(page)
+      .waitFor({ state: "visible", timeout: HEADING_TIMEOUT })
+      .catch(() => null);
 
     const hasCoordHeading =
       (await page
@@ -174,9 +204,7 @@ test.describe("Admin - Coord spawn-from-plan", () => {
     // dropdown selection; repos requires at least one checkbox; intent
     // + initial-prompt are free-text.
     await page.getByTestId("coord-spawn-device-select").click();
-    await page
-      .getByRole("option", { name: /test-host/ })
-      .click();
+    await page.getByRole("option", { name: /test-host/ }).click();
 
     await page.getByTestId("coord-spawn-repo-qontinui-web").click();
     await page.getByTestId("coord-spawn-intent").fill("test spawn from e2e");

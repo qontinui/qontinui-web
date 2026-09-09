@@ -12,9 +12,10 @@ Why CI does not already cover this
 
 ``migration-reversal.yml`` walks upgrade → downgrade → upgrade on any PR
 touching ``backend/alembic/versions/**``, so reversibility is covered and this
-file does not exist for it. What that job cannot see is that every property
-below is a **silent-wrong-answer**: each one applies cleanly and then hands the
-roll gate a wrong verdict rather than raising.
+file does not exist for it. What that job cannot see is that these properties
+are **silent-wrong-answers**: they apply cleanly and then hand the roll gate a
+wrong verdict rather than raising. (Item 6 is the single exception — held for
+fidelity to coord rather than for a failure reachable today, and it says so.)
 
 And the consumer is in a different repository. ``coord.replica_presence`` is
 read and written only by ``qontinui-coord``
@@ -25,8 +26,8 @@ model, no query, no fixture — would notice if a later revision renamed a
 column, widened a type, or handed ``dedicated_pool`` a default. The only place
 that contract can be pinned on the authoring side is here.
 
-What is asserted, and why each one is unsafe-if-wrong
-====================================================
+What is asserted, and why almost every one is unsafe-if-wrong
+============================================================
 
 1. **``dedicated_pool`` has no default, and an INSERT omitting it fails.**
    The revision's own comment calls this load-bearing: ``false`` means the row
@@ -89,10 +90,24 @@ What is asserted, and why each one is unsafe-if-wrong
    guard on the transcribed projection rather than on the upsert this item
    covers.
 
-6. **The upsert can DEMOTE ``dedicated_pool`` to false.** A replica whose
-   dedicated lease pool fails mid-life must be able to overwrite its own
-   earlier trustworthy row, or the consumer keeps reading a stale ``true`` and
-   treats an untrustworthy signal as evidence of life.
+6. **The upsert's UPDATE arm re-reads ``dedicated_pool`` from ``EXCLUDED``.**
+   The flag is half of ``PresenceRow::proves_alive``
+   (``dedicated_pool && age_secs <= fresh_within``), and it is the half a
+   fresh heartbeat cannot vouch for: a row written from the degraded shared
+   pool keeps ticking, so freshness alone would read it as alive.
+
+   Scope that honestly, because this file used to overstate it. A live
+   DEMOTION — the same row flipping ``true`` → ``false`` — is **not reachable
+   today**: ``lease_pg_is_dedicated`` is decided once in ``spawn_election``
+   and handed to the loop as a fixed bool (``leader.rs``), and ``replica_id``
+   is a per-boot ``Uuid::new_v4()``, so the conflict arm only ever re-writes
+   one process's own unchanging flag. The arm is therefore DEFENSIVE rather
+   than load-bearing, and it is pinned anyway for the reason the whole
+   transcription block exists — fidelity to what coord ships — plus the one
+   that matters more: the day either of those two facts changes is precisely
+   the day nobody thinks to re-derive this. Held both ways — behaviourally by
+   step 5, and from the ``DO UPDATE`` arm's source, where no database is
+   needed.
 
 7. **The index is on ``heartbeat_at``.** Advisory, not a correctness
    dependency (the sweep works, slower, without it) — but an index that exists
@@ -483,9 +498,12 @@ def test_replpres_01_creates_the_contract_coord_actually_consumes() -> None:
         # ----------------------------------------------------------------
         # 5. Second tick, this time reporting a DEGRADED pool. The row must
         #    be updated, not appended; heartbeat_at advances; boot_at is
-        #    untouched (uptime stays truthful); and the trustworthy flag can
-        #    be demoted, or a replica that degrades mid-life keeps reading
-        #    as alive-and-trustworthy forever.
+        #    untouched (uptime stays truthful); and the trustworthy flag
+        #    follows the incoming row rather than the stored one.
+        #
+        #    That last one is a property of the STATEMENT, not a replay of
+        #    production — module item 6 says why coord cannot deliver a changed
+        #    flag to an existing row today, and why it is pinned regardless.
         # ----------------------------------------------------------------
         _upsert(engine, replica, False)
         assert _row_count(engine) == 1, (
@@ -501,7 +519,8 @@ def test_replpres_01_creates_the_contract_coord_actually_consumes() -> None:
             "and re-seating it would report every replica as just-booted"
         )
         assert dedicated is False, (
-            "EXCLUDED.dedicated_pool must be able to demote a trustworthy row"
+            "the UPDATE arm must take dedicated_pool from EXCLUDED, so a "
+            "changed flag reaches an existing row rather than being dropped"
         )
 
         # ----------------------------------------------------------------
@@ -698,13 +717,39 @@ def test_replpres_01_creates_the_contract_coord_actually_consumes() -> None:
 # `_COORD_LOAD` shipped a column short in #1039 and was restored in #1059, and
 # neither the drift nor the repair could red without a database.
 #
-# What they do NOT reach, so the DB-less arm is not over-trusted: the
-# DIRECTION and UNIT of the reader's subtractions (`EXTRACT(EPOCH FROM
-# (heartbeat_at - now()))`, or `EXTRACT(MINUTE FROM ...)`, satisfy every
-# assertion here) and the SIDE of the prune's interval (`now() +
-# make_interval(...)` likewise). Those stay owned by the walk — steps 6 and 8
-# respectively — which is a real gap on a machine with no Postgres, not a
-# closed one.
+# #1138 shipped those three and named what they did not reach: the FIELD and
+# DIRECTION of the reader's subtractions, and the SIDE of the prune's interval.
+# All three are closed here, along with the prune's interval unit KEYWORD, the
+# upsert's INSERT and DO UPDATE arms, and the target table of the prune and the
+# upsert — the reader's table was already pinned by #1138. Every one of them
+# was a mutation that satisfied every assertion in this section while changing
+# what coord does, and they fall into three classes, which is worth keeping
+# straight rather than flattening into one alarm:
+#
+# * FAIL OPEN — the reader's FIELD and DIRECTION. Both end in a departed
+#   replica proving itself ALIVE, the false verdict this table exists to
+#   prevent. These are the dangerous ones.
+# * FAIL SILENT-BUT-CONSERVATIVE — the dropped `::float8` cast, and both prune
+#   mutations. A failed decode or an over-eager sweep reads as no-evidence, so
+#   the fifth conjunct goes inert; a unit keyword other than `secs` stops the
+#   sweep running at all. Wrong, but never a false ALIVE.
+# * DEFENSIVE — the upsert's DO UPDATE arm re-reading `dedicated_pool`. Not
+#   reachable in production today at all; see module item 6 for why it is
+#   pinned anyway.
+#
+# What they still do NOT reach, so the DB-less arm is not over-trusted:
+#
+# * whether the statements RUN. Syntax, the table's existence, its catalog
+#   shape, and every behavioural property — the DO UPDATE arm actually taking
+#   EXCLUDED's value, `now()` being stable across one statement — stay owned by
+#   the walk. A DB-less run still grades strictly less than CI does.
+# * the prune's and the upsert's bind PARAMETERS. `:secs`, `:replica_id` and
+#   `:dedicated_pool` are named here but nothing checks what the call sites
+#   pass, so a caller binding the wrong number is graded only by the walk.
+# * coord's side of the transcription. Nothing in this repo can see
+#   `PRESENCE_UPSERT_SQL` or `load_replica_presence`, so coord editing its own
+#   statement reds nothing here. That direction is owned by re-grepping coord,
+#   which is why the block above insists the copies stay spelled verbatim.
 # ---------------------------------------------------------------------------
 
 
@@ -811,12 +856,27 @@ def test_replpres_01_reader_transcription_keeps_coords_projection() -> None:
     an ``f64``. That exact drift shipped once already (#1039, repaired in
     #1059).
 
-    Everything here is asserted from the transcription's TEXT, against
-    ``_COORD_READER_PROJECTION`` stated separately above, so nothing in it
-    grades the statement against itself. Three of the four properties are
-    pinned in the walk as well (step 6 unpacks four names, step 7 catches an
-    EXTRACT swap, and a wrong table errors outright); the fourth is pinned
-    nowhere else at all:
+    Everything here is asserted from the transcription's TEXT — the width,
+    order and source columns against ``_COORD_READER_PROJECTION`` stated
+    separately above, so nothing in it grades the statement against itself;
+    the rest against the shape coord actually ships. Three properties are
+    pinned CHEAPLY in the walk as well (step 6 unpacks four names, step 7
+    catches an EXTRACT swap, and a wrong table errors outright). The other
+    three are why this test must never skip — and only one of them is
+    unreachable to the walk:
+
+    * the ``::float8`` casts, which the walk catches for the ASYMMETRIC edit
+      only and misses entirely for the symmetric one — measured, below;
+    * the extracted FIELD and the subtraction's DIRECTION, which the walk DOES
+      catch (step 7 reds on either, step 6 on a negative age) — but the walk
+      alone, so both went ungraded wherever no Postgres is reachable. #1138
+      left them there on exactly that reasoning.
+
+    Read the DIRECTIONS separately, because they are not the same danger. The
+    FIELD and DIRECTION mutations fail OPEN — they end in a departed replica
+    proving itself alive. The dropped cast fails SILENT but conservative: the
+    decode fails, the row is skipped, and the replica reads as UNKNOWN. Both
+    are worth a guard; only the first two are worth alarm.
 
     **The ``::float8`` casts.** ``EXTRACT`` returns ``numeric``, and coord
     reads both derived columns with ``try_get::<_, f64>``. Drop a cast and the
@@ -833,6 +893,22 @@ def test_replpres_01_reader_transcription_keeps_coords_projection() -> None:
     ``pytest.approx`` exactly like the ``float``s every assertion expects: the
     whole walk passes green against a projection coord cannot decode at all.
     Verified by mutation on the pre-change file, with a real Postgres.
+
+    **The extracted FIELD, and the subtraction's DIRECTION.** Both are the
+    residual gaps #1138 named in the section header above rather than closed,
+    on the grounds that the walk owns them. It does — but only the walk, and
+    both mutations are silent and fail OPEN, which is the worse direction:
+
+    * ``EXTRACT(MINUTE FROM (now() - heartbeat_at))`` returns the interval's
+      minute COMPONENT, 0–59. A replica quiet for three hours reports an age of
+      0, and ``proves_alive`` is ``dedicated_pool && age_secs <= fresh_within``
+      — so it reads ALIVE.
+    * ``EXTRACT(EPOCH FROM (heartbeat_at - now()))`` returns a NEGATIVE age,
+      and every negative number satisfies that same ``<=``. A replica gone for
+      a week proves itself alive forever.
+
+    Either one is precisely the false verdict ``coord.replica_presence`` was
+    added to prevent, arriving with nothing raised anywhere.
     """
     expressions, table = _parse_flat_select(_COORD_LOAD.text)
 
@@ -868,11 +944,51 @@ def test_replpres_01_reader_transcription_keeps_coords_projection() -> None:
             f"Got {sorted(referenced)} in {expression!r}"
         )
 
+        assert re.search(r"EXTRACT\s*\(\s*EPOCH\s+FROM\b", expression, re.IGNORECASE), (
+            f"{name} must EXTRACT the EPOCH — the interval's TOTAL seconds. "
+            "Every other field returns a COMPONENT instead: EXTRACT(MINUTE "
+            "FROM ...) on a 3-hour interval is 0, not 10800. coord grades "
+            "this with `age_secs <= fresh_within` (PresenceRow::proves_alive), "
+            "so a replica quiet for hours would report a single-digit age and "
+            f"prove itself ALIVE. Got {expression!r}"
+        )
+
+        assert re.search(
+            rf"now\(\)\s*-\s*{re.escape(source_column)}\b", expression, re.IGNORECASE
+        ), (
+            f"{name} must subtract {source_column} FROM now(), in that order — "
+            "an age, not a countdown. Reversed the value is NEGATIVE, and "
+            "coord's liveness predicate is `age_secs <= fresh_within`, which "
+            "EVERY negative number satisfies: a replica that stopped ticking "
+            "days ago would prove itself alive forever, which is the exact "
+            f"false verdict this table exists to prevent. Got {expression!r}"
+        )
+
         assert "::float8" in expression, (
             f"{name} must keep its ::float8 cast. EXTRACT returns numeric, "
             "coord decodes with try_get::<_, f64>, and a failed decode there "
             "drops the whole row — which reads as no evidence for that "
             f"replica, never as a loud error. Got {expression!r}"
+        )
+
+        # The four checks above name one consequence each, which is what makes
+        # a failure here readable. What none of them can see is ARITHMETIC
+        # WRAPPED AROUND the fragment they matched: both
+        # `(EXTRACT(EPOCH FROM (now() - heartbeat_at)) / 60)::float8` and
+        # `(-1 * EXTRACT(EPOCH FROM (now() - heartbeat_at)))::float8` satisfy
+        # all four while re-introducing exactly the unit and sign errors the
+        # first two exist to stop — and both fail OPEN. So the shape is pinned
+        # whole, built from `_COORD_READER_PROJECTION` rather than from the
+        # statement, and the fragment checks stay for their messages.
+        assert (
+            expression
+            == f"EXTRACT(EPOCH FROM (now() - {source_column}))::float8 AS {name}"
+        ), (
+            f"{name} must be spelled exactly as coord spells it — the checks "
+            "above match FRAGMENTS, so arithmetic wrapped around one of them "
+            "(a `/ 60`, a `-1 *`) passes every other assertion here while "
+            "rescaling or inverting the value coord grades. Got "
+            f"{expression!r}"
         )
 
 
@@ -891,12 +1007,77 @@ def test_replpres_01_prune_transcription_reaps_on_last_tick() -> None:
     the fixture's only old row was old on both axes and the two predicates
     were indistinguishable. This guard holds the same property with no
     database at all.
+
+    Two further properties of the same statement, both left to the walk by
+    #1138 and closed here because a DB-less run graded neither:
+
+    * the cutoff's SIDE — ``now() +`` puts it in the future, so the predicate
+      matches every row and the sweep empties presence on every pass;
+    * the interval's unit KEYWORD — ``secs`` is the only ``double precision``
+      parameter ``make_interval`` takes, so ``mins =>`` does not rescale the
+      window, it makes coord's ``f64`` bind unserialisable and the DELETE
+      errors into ``prune_presence``'s swallowed debug arm. The sweep then
+      never runs at all.
+
+    Unlike almost everything else in this file, neither fails OPEN: an
+    over-eager sweep leaves replicas reading as no-evidence, and a sweep that
+    never runs only lets the table grow. The prune is the one statement here
+    whose failures are conservative, and saying so plainly is worth more than
+    borrowing the alarm the reader's guards have earned.
+
+    The target table is pinned too, for the same reason the reader's guard
+    pins its own. Under Postgres a wrong table raises ``UndefinedTable`` and
+    step 8 dies loudly; with no database nothing looked at it at all.
     """
     flat = " ".join(_COORD_PRUNE.text.split())
+
+    assert re.search(
+        r"DELETE\s+FROM\s+coord\.replica_presence\b", flat, re.IGNORECASE
+    ), (
+        "the transcribed sweep must delete from the table this revision "
+        "creates. Aimed elsewhere it raises UndefinedTable under Postgres — "
+        "loud, but only where one is reachable — and goes entirely unread "
+        f"without. Got {flat!r}"
+    )
 
     assert re.search(r"WHERE\s+heartbeat_at\s*<", flat, re.IGNORECASE), (
         "the retention sweep must compare heartbeat_at — the column the "
         f"index exists on and the one that means 'last tick'. Got {flat!r}"
+    )
+
+    # The cutoff's SIDE. `now() + make_interval(...)` puts it in the FUTURE, so
+    # `heartbeat_at < cutoff` matches every row in the table and the sweep
+    # empties presence on each pass. Every replica then has no row, which the
+    # consumer reads as no evidence — the fifth conjunct goes inert and the
+    # gate silently reverts to the four-conjunct behaviour this table exists to
+    # end. #1138 named this gap and left it to the walk; step 8 does red on it
+    # (`deleted` would be 3), but only where a Postgres is reachable.
+    assert re.search(r"now\(\)\s*-\s*make_interval\s*\(", flat, re.IGNORECASE), (
+        "the cutoff must be now() MINUS the retention interval. Adding it puts "
+        "the cutoff in the future, `heartbeat_at < cutoff` then matches every "
+        "row, and the sweep wipes the whole table on every pass — after which "
+        f"every replica reads as no-evidence → UNKNOWN. Got {flat!r}"
+    )
+
+    # The interval's unit KEYWORD. `secs` is the only `double precision`
+    # parameter `make_interval` has — every other one (`mins`, `hours`, `days`,
+    # …) is `integer`. coord binds `&PRESENCE_RETENTION_SECS`, an f64, so
+    # `mins => $1` does not rescale the window: it fails to serialise, the
+    # statement errors, and `prune_presence` swallows it into its debug-log
+    # arm. Measured against pg16 — `make_interval(mins => 7200.0)` is
+    # `function make_interval(mins => numeric) does not exist`.
+    #
+    # So the sweep stops running ENTIRELY and silently, which is the same
+    # outcome the docstring names (retention stops bounding the table) by a
+    # different route than "wrong window". A rescale would need the bound value
+    # to become an integer first.
+    assert re.search(r"make_interval\s*\(\s*secs\s*=>", flat, re.IGNORECASE), (
+        "the retention window must be built with `secs =>` — the only "
+        "double-precision parameter make_interval has. coord binds "
+        f"PRESENCE_RETENTION_SECS ({_PRESENCE_RETENTION_SECS}, an f64) into "
+        "it, so any other unit keyword is an integer parameter the bind "
+        "cannot serialise: the DELETE errors, prune_presence swallows it at "
+        f"debug, and the sweep silently never runs. Got {flat!r}"
     )
     # IGNORECASE on both arms: unquoted identifiers are case-insensitive in
     # SQL, so a case-sensitive negative check here would fail OPEN — `WHERE
@@ -911,8 +1092,9 @@ def test_replpres_01_prune_transcription_reaps_on_last_tick() -> None:
 def test_replpres_01_upsert_transcription_never_reseats_boot_at() -> None:
     """``_COORD_UPSERT``'s conflict target, and what its UPDATE arm may touch.
 
-    Two properties, both silent-wrong-answer, both otherwise pinned only from
-    inside the Postgres-gated walk:
+    Four properties, all otherwise pinned only from inside the Postgres-gated
+    walk. Three are silent-wrong-answer; the fourth is defensive — read the
+    fourth bullet before treating them alike:
 
     **The conflict target is ``replica_id``.** It must match the primary key
     or PostgreSQL raises ``InvalidColumnReference`` — which coord *swallows*
@@ -926,11 +1108,51 @@ def test_replpres_01_upsert_transcription_never_reseats_boot_at() -> None:
     report every replica as just-booted, forever, without ever erroring.
     Step 5's ``second_boot == first_boot`` owns that behaviourally.
 
-    Only the arm AFTER ``DO UPDATE`` is examined, because ``boot_at``
-    legitimately appears in the INSERT column list above it — a guard over the
-    whole statement would be unable to tell the two apart.
+    **The UPDATE arm re-reads ``dedicated_pool`` from ``EXCLUDED``.** #1138
+    guarded this arm's two siblings and not this one. Pinned for FIDELITY, not
+    for a live failure mode — module item 6 (which this change corrects) has
+    the reasoning. Step 5's ``dedicated is False`` owns it behaviourally.
+
+    **The INSERT arm seeds both timestamps from ONE ``now()``.** coord's own
+    doc comment calls this load-bearing: it is what makes
+    ``uptime_secs >= age_secs`` *structural*, and therefore what lets the
+    drill-down read their difference as "how long this replica went on
+    ticking". Seeding ``boot_at`` from anything else fabricates uptime without
+    erroring. Step 4's ``first_hb == first_boot`` owns it behaviourally.
+
+    The ``boot_at`` and ``dedicated_pool`` rules above are checked against the
+    arm AFTER ``DO UPDATE`` only, because both columns legitimately appear in
+    the INSERT column list — a guard over the whole statement could not tell
+    the two apart.
     """
     flat = " ".join(_COORD_UPSERT.text.split())
+
+    assert re.search(
+        r"INSERT\s+INTO\s+coord\.replica_presence\b", flat, re.IGNORECASE
+    ), (
+        "the transcribed upsert must write to the table this revision "
+        "creates. Aimed elsewhere it raises UndefinedTable under Postgres — "
+        "loud, but only where one is reachable — and goes entirely unread "
+        f"without. Got {flat!r}"
+    )
+
+    # The INSERT arm. Both timestamps must come from ONE `now()`: that is what
+    # makes `uptime_secs >= age_secs` structural (coord's own doc comment on
+    # PRESENCE_UPSERT_SQL), and it is the premise step 4 checks by asserting
+    # the two columns come back EQUAL. Seeding `boot_at` from anything else
+    # fabricates uptime silently.
+    assert re.search(
+        r"\(\s*replica_id\s*,\s*heartbeat_at\s*,\s*boot_at\s*,\s*dedicated_pool\s*\)\s*"
+        r"VALUES\s*\(\s*:replica_id\s*,\s*now\(\)\s*,\s*now\(\)\s*,\s*:dedicated_pool\s*\)",
+        flat,
+        re.IGNORECASE,
+    ), (
+        "the INSERT arm must name the four columns in coord's order and seed "
+        "heartbeat_at and boot_at from the SAME now(). Any other seed for "
+        "boot_at makes uptime_secs >= age_secs non-structural, so coord's "
+        "drill-down renders a difference that never happened — and nothing "
+        f"raises. Got {flat!r}"
+    )
 
     assert re.search(r"ON\s+CONFLICT\s*\(\s*replica_id\s*\)", flat, re.IGNORECASE), (
         "the upsert's conflict target must be replica_id, the primary key. "
@@ -954,4 +1176,34 @@ def test_replpres_01_upsert_transcription_never_reseats_boot_at() -> None:
         "the DO UPDATE arm must not write boot_at: re-seating it reports "
         "every replica as just-booted forever, and coord's drill-down renders "
         f"that as uptime. Got {update_arm!r}"
+    )
+
+    # The third property of this arm, and the one #1138 guarded neither way.
+    # Deliberately NOT justified by a live demote: module item 6 explains why
+    # that is unreachable while `lease_pg_is_dedicated` is fixed at spawn and
+    # `replica_id` is per-boot. What this pins is that the copy still says what
+    # coord says, so the arm cannot be quietly dropped as dead weight in the
+    # window before either of those facts changes.
+    assert re.search(
+        r"dedicated_pool\s*=\s*EXCLUDED\.dedicated_pool\b", update_arm, re.IGNORECASE
+    ), (
+        "the DO UPDATE arm must re-read dedicated_pool from EXCLUDED, as "
+        "coord's PRESENCE_UPSERT_SQL does. It is defensive today (see module "
+        "item 6), but it is the only thing that would carry a changed flag "
+        "onto an existing row, and dedicated_pool is the half of proves_alive "
+        f"a fresh heartbeat cannot vouch for. Got {update_arm!r}"
+    )
+
+    # Same fragment-vs-shape hole the reader's anchored check closes: each
+    # assertion above matches a FRAGMENT, so an arm reading
+    # `dedicated_pool = EXCLUDED.dedicated_pool AND
+    #  coord.replica_presence.dedicated_pool` — a never-promote arm — satisfies
+    # every one of them. Pinned whole, and last, so the checks above keep
+    # naming their own consequence.
+    assert update_arm.strip() == (
+        "SET heartbeat_at = now(), dedicated_pool = EXCLUDED.dedicated_pool"
+    ), (
+        "the DO UPDATE arm must be exactly what coord ships — the checks above "
+        "match fragments, so extra conjuncts or assignments wrapped around one "
+        f"of them pass while changing what the arm writes. Got {update_arm!r}"
     )

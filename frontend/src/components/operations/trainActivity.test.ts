@@ -2,14 +2,21 @@ import { describe, it, expect } from "vitest";
 import {
   buildRepoTrainRows,
   buildTrainSummary,
+  deriveRepoChurn,
   effectiveMergeStatus,
   fallbackMergeStatus,
+  formatChurnValue,
   formatDuration,
   perRepoCapHint,
   slotScopeNote,
 } from "./trainActivity";
 import { redactSecrets } from "./mergeTypes";
-import type { PrRow, ProposalDetail, TrainHealth } from "./mergeTypes";
+import type {
+  MergeEconomics,
+  PrRow,
+  ProposalDetail,
+  TrainHealth,
+} from "./mergeTypes";
 
 // A fixed clock so every age assertion is exact rather than flaky.
 const NOW = Date.parse("2026-07-25T12:00:00.000Z");
@@ -1799,5 +1806,183 @@ describe("buildTrainSummary", () => {
     const s = buildTrainSummary({ last_merged_at: ago(30) }, rows, NOW);
     expect(s.activeRepoCount).toBe(2);
     expect(s.inFlightCount).toBe(2);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Candidate-CI churn on the Train tab (plan
+// 2026-07-27-coord-green-candidates-discarded-always-zero, F3). Per-repo
+// readings come from coord's `/pr-merge/economics` row for the repo, resolved
+// through the SAME key normalizer the severity model uses; the fleet totals on
+// the summary are the SAME reading the health strip renders. null is UNKNOWN
+// — `—` on the surface — and never 0.
+// ---------------------------------------------------------------------------
+describe("candidate-CI churn — per-repo rows", () => {
+  const WEB = "qontinui/web";
+  const CORE = "qontinui/core";
+
+  const measured: MergeEconomics = {
+    green_candidates_discarded: 15,
+    base_mismatch_discards: 13,
+    candidate_ci_minutes_per_land: 47.4,
+    green_candidates_discarded_basis: "green candidates discarded in 24h",
+    base_mismatch_discards_basis: "base moved under the candidate",
+    coverage_note: "24h window",
+  };
+  const unknown: MergeEconomics = {
+    green_candidates_discarded: null,
+    base_mismatch_discards: null,
+    candidate_ci_minutes_per_land: null,
+    coverage_note: "no candidate CI observed in window",
+  };
+
+  it("measured: carries the three values and coord's basis per value", () => {
+    const [row] = buildRepoTrainRows([], [pr({ repo: WEB })], null, NOW, {
+      [WEB]: measured,
+    });
+    expect(row.churn.greenDiscarded).toEqual({
+      value: 15,
+      note: "green candidates discarded in 24h",
+    });
+    expect(row.churn.baseMoveDiscards).toEqual({
+      value: 13,
+      note: "base moved under the candidate",
+    });
+    // The ratio has no per-field basis on the wire; the coverage note is its.
+    expect(row.churn.ciMinutesPerLand).toEqual({
+      value: 47.4,
+      note: "24h window",
+    });
+  });
+
+  it("resolves a short-name row against coord's owner/name key", () => {
+    // coord keys by `owner/name`; a row source carrying the short name must
+    // still find its economics — through `economicsFor`, not a second spelling.
+    const [row] = buildRepoTrainRows([], [pr({ repo: WEB })], null, NOW, {
+      web: measured,
+    });
+    expect(row.churn.greenDiscarded.value).toBe(15);
+  });
+
+  it("partially unknown: null values stay null with the coverage note, measured ones stay measured", () => {
+    const rows = buildRepoTrainRows(
+      [],
+      [pr({ repo: WEB, pr_number: 1 }), pr({ repo: CORE, pr_number: 2 })],
+      null,
+      NOW,
+      { [WEB]: measured, [CORE]: unknown }
+    );
+    const core = rows.find((r) => r.repo === CORE)!;
+    const web = rows.find((r) => r.repo === WEB)!;
+    expect(core.churn.greenDiscarded).toEqual({
+      value: null,
+      note: "no candidate CI observed in window",
+    });
+    expect(core.churn.greenDiscarded.value).not.toBe(0);
+    expect(core.churn.baseMoveDiscards.value).toBeNull();
+    expect(core.churn.ciMinutesPerLand.value).toBeNull();
+    expect(web.churn.greenDiscarded.value).toBe(15);
+  });
+
+  it("all unknown / no economics row: every reading is null and says why", () => {
+    for (const econ of [{}, undefined]) {
+      const [row] = buildRepoTrainRows(
+        [],
+        [pr({ repo: WEB })],
+        null,
+        NOW,
+        econ
+      );
+      for (const reading of [
+        row.churn.greenDiscarded,
+        row.churn.baseMoveDiscards,
+        row.churn.ciMinutesPerLand,
+      ]) {
+        expect(reading.value).toBeNull();
+        expect(reading.note).toBe(
+          "coord served no merge economics for this repo"
+        );
+      }
+    }
+  });
+
+  it("deriveRepoChurn: a measured 0 is 0, a non-finite value is unknown", () => {
+    const zero = deriveRepoChurn({ green_candidates_discarded: 0 });
+    expect(zero.greenDiscarded.value).toBe(0);
+    expect(zero.greenDiscarded.note).toBeNull();
+    const nan = deriveRepoChurn({
+      green_candidates_discarded: Number.NaN,
+      coverage_note: "  ",
+    });
+    expect(nan.greenDiscarded.value).toBeNull();
+    // A blank coverage note is no note.
+    expect(nan.greenDiscarded.note).toBeNull();
+  });
+
+  it("formatChurnValue: — for unknown, whole for a count, one decimal for a rate", () => {
+    expect(formatChurnValue(null)).toBe("—");
+    expect(formatChurnValue(0)).toBe("0");
+    expect(formatChurnValue(15)).toBe("15");
+    expect(formatChurnValue(47.4)).toBe("47.4");
+    expect(formatChurnValue(47.44)).toBe("47.4");
+  });
+});
+
+describe("candidate-CI churn — fleet totals on the summary", () => {
+  const WEB = "qontinui/web";
+  const CORE = "qontinui/core";
+  const RUNNER = "qontinui/runner";
+
+  it("measured everywhere: sums with no unknowns", () => {
+    const s = buildTrainSummary(null, [], NOW, {
+      [WEB]: { green_candidates_discarded: 15, base_mismatch_discards: 13 },
+      [CORE]: { green_candidates_discarded: 3, base_mismatch_discards: 1 },
+    });
+    expect(s.churn.greenDiscarded).toBe(18);
+    expect(s.churn.greenDiscardedUnknownRepos).toBe(0);
+    expect(s.churn.baseMoveDiscards).toBe(14);
+    expect(s.churn.baseMoveDiscardsUnknownRepos).toBe(0);
+  });
+
+  it("partially unknown: sums the measured repos and counts the rest", () => {
+    const s = buildTrainSummary(null, [], NOW, {
+      [WEB]: { green_candidates_discarded: 15, base_mismatch_discards: 13 },
+      [RUNNER]: { green_candidates_discarded: null, base_mismatch_discards: 2 },
+    });
+    expect(s.churn.greenDiscarded).toBe(15);
+    expect(s.churn.greenDiscardedUnknownRepos).toBe(1);
+    // The two counters are independent: RUNNER measured base-move discards.
+    expect(s.churn.baseMoveDiscards).toBe(15);
+    expect(s.churn.baseMoveDiscardsUnknownRepos).toBe(0);
+  });
+
+  it("all unknown, or no economics at all: null totals — never 0", () => {
+    const allNull = buildTrainSummary(null, [], NOW, {
+      [WEB]: { green_candidates_discarded: null },
+      [CORE]: {},
+    });
+    expect(allNull.churn.greenDiscarded).toBeNull();
+    expect(allNull.churn.greenDiscardedUnknownRepos).toBe(2);
+    expect(allNull.churn.baseMoveDiscards).toBeNull();
+
+    const none = buildTrainSummary(null, [], NOW);
+    expect(none.churn.greenDiscarded).toBeNull();
+    expect(none.churn.greenDiscarded).not.toBe(0);
+    expect(none.churn.greenDiscardedUnknownRepos).toBe(0);
+  });
+
+  it("counts repos from the economics map, not from the train rows", () => {
+    // A repo with measured churn but no train signal (nothing in flight, no
+    // open PR) has no row — its discards must still be in the fleet total.
+    const rows = buildRepoTrainRows([], [pr({ repo: WEB })], null, NOW, {
+      [WEB]: { green_candidates_discarded: 1 },
+      [CORE]: { green_candidates_discarded: 9 },
+    });
+    expect(rows.map((r) => r.repo)).toEqual([WEB]);
+    const s = buildTrainSummary(null, rows, NOW, {
+      [WEB]: { green_candidates_discarded: 1 },
+      [CORE]: { green_candidates_discarded: 9 },
+    });
+    expect(s.churn.greenDiscarded).toBe(10);
   });
 });

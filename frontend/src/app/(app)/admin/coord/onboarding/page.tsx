@@ -31,11 +31,23 @@
  * verdict rather than re-auditing.
  */
 
+import { useSearchParams } from "next/navigation";
 import { ConnectGitHubOrg } from "@/components/operations/ConnectGitHubOrg";
 import { ConnectInstalledOrg } from "@/components/operations/ConnectInstalledOrg";
 import { MergeOrchestrationOnboarding } from "@/components/operations/MergeOrchestrationOnboarding";
+import { isValidLogin } from "@/lib/onboarding-connect-state";
 
 export default function OnboardingPage() {
+  const searchParams = useSearchParams();
+  // `?connect=<org>` is the onboarding-status recover card's hand-off (plan
+  // `2026-09-05-tenant-onboarding-friction-and-multi-tenant-device-visibility`
+  // P4): coord named the org for a stateless App install, so prefill it here
+  // and let the pre-check fire — the operator's only action is the authorize
+  // click. Validated with the SAME predicate the connect state applies; an
+  // invalid value is dropped, never rendered.
+  const connectRaw = searchParams?.get("connect")?.trim() ?? null;
+  const defaultOrg = isValidLogin(connectRaw) ? connectRaw : undefined;
+
   return (
     <div className="p-3 sm:p-6 space-y-6" data-testid="coord-onboarding-page">
       <ConnectGitHubOrg />
@@ -44,7 +56,7 @@ export default function OnboardingPage() {
         issues no Setup-URL code on a re-visit, so the install CTA above can
         never complete a claim for it. Renders only when coord has OAuth creds.
       */}
-      <ConnectInstalledOrg flow="connect" />
+      <ConnectInstalledOrg flow="connect" defaultOrg={defaultOrg} />
       <MergeOrchestrationOnboarding />
     </div>
   );

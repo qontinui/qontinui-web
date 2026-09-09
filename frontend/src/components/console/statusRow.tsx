@@ -209,6 +209,37 @@ export function rowAccentClass(status: Pick<RowStatus, "attention">): string {
 }
 
 /**
+ * R4's accent as ELEMENT PROPS — the border class AND the machine-readable
+ * attention, from one call.
+ *
+ * The colour is the operator's channel; `data-attention` is the same fact in a
+ * channel a stylesheet rule, a Spec-CI selector or a `/visual-audit` assertion
+ * can address. Plan
+ * `2026-08-16-coord-console-ui-unification-pipeline-style.md` Phase 4 step 1
+ * writes style rules that select `[data-attention="author"]`, and a rule with a
+ * live evaluator and a dead selector reports PASS — so the attribute has to
+ * exist before the rule does, which is what this function is for.
+ *
+ * **Returning both together is the point.** `rowAccentClass` stays exported and
+ * is still correct on its own, but a caller that spreads this cannot paint the
+ * accent while forgetting the attribute, or derive the two from different
+ * statuses. That is the same "true by construction rather than by assertion"
+ * move `claimBannerBorder` made for the claim banner.
+ *
+ * `extra` is merged in front of the accent so the caller's own classes and R4's
+ * border arrive as one `className` and nothing has to re-join them.
+ */
+export function rowAccentProps(
+  status: Pick<RowStatus, "attention">,
+  extra?: string
+): { className: string; "data-attention": Attention } {
+  return {
+    className: [extra, rowAccentClass(status)].filter(Boolean).join(" "),
+    "data-attention": status.attention,
+  };
+}
+
+/**
  * The status badge.
  *
  * It carries its own reason as a `title`, so the "why is this row like this?"

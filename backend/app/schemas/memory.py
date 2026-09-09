@@ -301,7 +301,15 @@ class MemoryRecordIn(BaseModel):
     anchor MERGES the anchor onto the existing live row (see
     ``memory_store.insert_record``'s ON CONFLICT clause), which is the
     only supported way to anchor an existing record.
+
+    **Unknown keys are REJECTED (422), not ignored** — the same rule
+    :class:`MemoryQueryRequest` carries. The measured occurrence was a
+    ``supersedes`` key written INSIDE a record (the real door is
+    ``POST /records/{id}/supersede``): pydantic's default dropped it and
+    the write "succeeded" while dropping the field that was its whole point.
     """
+
+    model_config = ConfigDict(extra="forbid")
 
     title: str = Field(min_length=1, max_length=512)
     content: str = Field(min_length=1)
@@ -342,7 +350,13 @@ class MemoryRecordIn(BaseModel):
 
 
 class WriteRecordsRequest(BaseModel):
-    """``POST /memory/records`` body — a batch of at most 100 records."""
+    """``POST /memory/records`` body — a batch of at most 100 records.
+
+    Unknown top-level keys are a 422 (``extra="forbid"``), like every
+    other request body on this router — see :class:`MemoryRecordIn`.
+    """
+
+    model_config = ConfigDict(extra="forbid")
 
     records: list[MemoryRecordIn] = Field(
         min_length=1, max_length=MAX_RECORDS_PER_REQUEST
@@ -379,7 +393,20 @@ class MemoryQueryRequest(BaseModel):
     384-dim model would pass that check while living in a different
     space, and the server has no other way to tell which space an
     incoming query is in.
+
+    **Unknown keys are REJECTED (422), not ignored.** Pydantic's default
+    is ``extra="ignore"``, which made a misspelled or invented filter
+    (``scope`` for ``scopes``, ``kind`` for ``kinds``, a parameter this
+    build does not have) vanish server-side: the query then ran WIDER
+    than the caller asked and answered ``hits: []`` for a reason the
+    caller could not see. That empty list was the single most misread
+    signal on this endpoint — sessions filed fleet-infra findings
+    against it (finding ``f425dc15``, retracted by ``a69e5881`` the same
+    day). A 422 naming the offending field is the only answer that tells
+    the caller the call was wrong rather than the corpus empty.
     """
+
+    model_config = ConfigDict(extra="forbid")
 
     query_text: str = Field(min_length=1, max_length=8192)
     query_embedding: list[float] | None = None
@@ -392,6 +419,28 @@ class MemoryQueryRequest(BaseModel):
     since: datetime | None = None
     as_of: datetime | None = None
     min_importance: float | None = Field(default=None, ge=0.0, le=1.0)
+    # Exact, case-sensitive prefix match on ``title``, ANDed with EVERY
+    # retrieval arm (FTS, vector, link expansion, anchored) so a hit can
+    # never arrive from an arm that skipped the filter. It exists for HEAD
+    # RESOLUTION: a dossier head is titled ``DOSSIER <slug> — <issue>``
+    # and its contributions/deltas MUST NOT share that prefix
+    # (``DOSSIER-CONTRIB <slug> — …`` / ``DOSSIER-DELTA <slug> — …``), so
+    # ``title_prefix="DOSSIER <slug> —"`` returns the head alone where FTS
+    # on the bare key ranks it behind its own contributions (measured at
+    # rank 4 of 4) and can page it out under the 50-hit cap. ``%`` and
+    # ``_`` in the value are literal characters, never wildcards. An
+    # empty prefix is rejected rather than silently meaning "no filter".
+    title_prefix: str | None = Field(
+        default=None,
+        min_length=1,
+        max_length=200,
+        description=(
+            "Exact case-sensitive prefix match on `title`, ANDed with the "
+            "FTS/vector/link arms. For resolving a dossier HEAD "
+            "(`DOSSIER <slug> —`); contributions and deltas must not share "
+            "the prefix. `%` and `_` are literal, not wildcards."
+        ),
+    )
     limit: int = Field(default=DEFAULT_QUERY_LIMIT, ge=1, le=MAX_QUERY_LIMIT)
     link_expansion: bool = Field(
         default=False,
@@ -469,6 +518,46 @@ class MemoryQueryHit(BaseModel):
     cosine_similarity: float | None = None
 
 
+class MemoryQueryEcho(BaseModel):
+    """The parameters the query ACTUALLY ran with (``query_echo``).
+
+    Not a copy of the request body — the SERVER-SIDE RESOLVED values, so
+    that anything the request did not say becomes visible. ``scopes``
+    left unset resolves to the endpoint's default pair; ``limit`` and
+    ``link_expansion`` resolve to their schema defaults; an empty
+    ``kinds`` list collapses to ``null`` (no kind filter) exactly as the
+    filter builder sees it. A caller comparing this against what it
+    believes it sent can see, in the SAME response as the hits, that its
+    query was narrower or wider than it intended.
+
+    That is the half an unrecognized-key 422 cannot cover. A key spelled
+    right and VALUED wrong — a ``scope_ref`` that names no session, a
+    ``since`` far in the future, a ``min_importance`` above every row —
+    is a perfectly well-formed request that legitimately matches
+    nothing, and the echo is what lets the caller see which of its own
+    filters did that.
+    """
+
+    query_text: str
+    kinds: list[str] | None
+    scopes: list[str]
+    scope_ref: str | None
+    limit: int
+    link_expansion: bool
+    min_importance: float | None
+    since: datetime | None
+    # Left ``null`` when the caller named no instant: validity is then
+    # evaluated against the row's own transaction-stamped timestamps
+    # rather than a clock read on this host, and echoing a synthesized
+    # "now" here would report a filter that never ran
+    # (``memory_store._EFFECTIVE_NOW_SQL``).
+    as_of: datetime | None
+    # How many proactive-recall clauses were accepted. Zero is the
+    # honest echo of "no ``anchored_to`` was sent"; the arm's own outcome
+    # is ``anchored_arm``.
+    anchored_to_count: int
+
+
 class MemoryQueryResponse(BaseModel):
     """``POST /memory/query`` result.
 
@@ -502,6 +591,24 @@ class MemoryQueryResponse(BaseModel):
     * ``skipped_no_seeds`` — the arm was requested, but the vector+FTS
       fuse returned nothing to expand FROM. One-hop expansion is
       seeded by the other arms' heads; with no head there is no hop.
+
+    ``query_echo``, ``live_row_count`` and ``anchored_hit_count`` are
+    REQUIRED and un-defaulted for **exactly the same reason**, and the
+    reason is worth stating rather than inheriting: an empty ``hits``
+    was the same six bytes for a query that was mis-spelled, a corpus
+    that was empty, a backend that was serving a different tenant, and a
+    retrieval that landed in ``anchored_hits`` instead. Those are four
+    different diagnoses, and a caller could not tell them apart in one
+    call.
+
+    Giving any of the three a DEFAULT would defeat the fix invisibly. An
+    optional field is absent on an old backend and present on a new one,
+    so a caller reading it would silently fall back to the same
+    ambiguity this change removes — and would do so without ever
+    learning which backend it was talking to. Un-defaulted means an old
+    payload fails validation loudly, at the boundary, naming the missing
+    field; that is a diagnosable outage rather than a silent regression
+    to zero information.
     """
 
     hits: list[MemoryQueryHit]
@@ -522,6 +629,34 @@ class MemoryQueryResponse(BaseModel):
     #   cost).
     anchored_arm: Literal["ran", "not_requested", "skipped_disabled"] = "not_requested"
     anchored_hits: list[MemoryQueryHit] = Field(default_factory=list)
+    # REQUIRED and un-defaulted, same contract as the arms above: it is
+    # the COUNT that makes ``hits: []`` beside a populated
+    # ``anchored_hits`` readable without parsing the second list. A
+    # caller that reads ``hits`` alone — which every pre-Phase-5 caller
+    # does — sees zero and concludes "nothing was retrieved" while the
+    # response is in fact carrying records.
+    anchored_hit_count: int
+    # REQUIRED and un-defaulted: the denominator that turns an empty
+    # ``hits`` into a sentence. With it, zero reads "the corpus holds N
+    # live rows and your query matched none of them"; N == 0 reads "there
+    # is nothing to match". Those are different diagnoses and, without
+    # this field, an identical response.
+    #
+    # It is the TENANT-WIDE retrieval-live count
+    # (``memory_store.live_row_count``, the same
+    # ``_RETRIEVAL_LIVE_PREDICATE`` the ``/memory/stats`` facets
+    # aggregate counts on, so the two can never disagree about what
+    # "live" means). It is deliberately NOT narrowed by this request's
+    # kinds/scopes/scope_ref/since/as_of: a denominator that moved with
+    # the filters could itself read 0 for a mistyped filter, which is the
+    # ambiguity this field exists to remove. Scope narrowing is
+    # ``query_echo``'s job.
+    live_row_count: int
+    # REQUIRED and un-defaulted for the reason stated at the top of this
+    # docstring, applied to the request side: the parameters the query
+    # actually consumed, resolved server-side. See
+    # :class:`MemoryQueryEcho`.
+    query_echo: MemoryQueryEcho
 
 
 class SupersedeRequest(BaseModel):
@@ -554,7 +689,13 @@ class SupersedeRequest(BaseModel):
     successor starts at the column default ``none`` and is re-resolved on
     the next tick. Inheriting a verdict would assert a check that never
     ran against this row.
+
+    Unknown keys are a 422 (``extra="forbid"``): a misspelled field on a
+    supersede would otherwise be silently dropped and the successor would
+    INHERIT the value the caller meant to replace.
     """
+
+    model_config = ConfigDict(extra="forbid")
 
     title: str = Field(min_length=1, max_length=512)
     content: str = Field(min_length=1)
@@ -766,7 +907,14 @@ class MemoryStatsResponse(BaseModel):
 
 
 class MemoryGraphRequest(BaseModel):
-    """``POST /memory/graph`` body — bounded outbound traversal."""
+    """``POST /memory/graph`` body — bounded outbound traversal.
+
+    Unknown keys are a 422 (``extra="forbid"``): ``relation`` for
+    ``relation_filter`` would otherwise traverse UNFILTERED and answer
+    a wider graph than the caller asked for.
+    """
+
+    model_config = ConfigDict(extra="forbid")
 
     root_memory_id: UUID
     depth: int = Field(default=DEFAULT_GRAPH_DEPTH, ge=1, le=MAX_GRAPH_DEPTH)
@@ -850,9 +998,18 @@ class MemoryRecordOut(BaseModel):
 
 
 class ListRecordsResponse(BaseModel):
-    """``GET /memory/records`` — one keyset page, newest-first-stable."""
+    """``GET /memory/records`` — one keyset page, newest-first-stable.
+
+    ``count`` is ``len(records)`` for THIS page — the one envelope key a
+    reader checks before trusting an empty ``records`` (plan
+    ``2026-09-03-wrong-key-reads-cannot-yield-a-silent-zero``, D4). It is
+    required and un-defaulted, like ``live_row_count`` on the query
+    response: a build that forgets to set it fails to construct the
+    response rather than shipping a ``0`` that reads as "empty corpus".
+    """
 
     records: list[MemoryRecordOut]
+    count: int
     # Opaque keyset cursor for the next (older) page; None on the last page.
     next_cursor: str | None
 

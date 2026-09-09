@@ -1,6 +1,7 @@
 import Image from "next/image";
 import { cn } from "@/lib/utils";
 import { useSlotComponent } from "@/lib/extension-slots";
+import { ErrorBoundary } from "@/components/error-boundary";
 import type {
   OrganizationSwitcherProps,
   SwitcherOrganization,
@@ -34,6 +35,15 @@ export function SidebarHeader({
   // subscribes to the registry, so a `registerCloudExtensions` call that
   // lands after this header first renders re-renders it; a bare per-render
   // read would only resolve if something else happened to re-render us.
+  //
+  // Rendered behind an ErrorBoundary below for the reason spelled out on
+  // `CreateOrganizationDialogSlot` in `../UnifiedSidebar.tsx`: a slot
+  // component is foreign code the host cannot typecheck against its own
+  // provider tree, so it can throw for reasons the host never sees. This
+  // site carries the largest blast radius of the four — the sidebar is on
+  // every authenticated page, so an unguarded throw here reaches the root
+  // boundary in `app/layout.tsx` and white-screens all of them, which is
+  // the shape of the 2026-08-26 outage.
   const OrganizationSwitcher =
     useSlotComponent<OrganizationSwitcherProps>("organizationSwitcher");
 
@@ -81,20 +91,27 @@ export function SidebarHeader({
       </div>
 
       {!isCollapsed && OrganizationSwitcher && (
-        <div className="px-2 py-1.5 border-b border-border-subtle">
-          {mounted ? (
-            <OrganizationSwitcher
-              organizations={switcherOrganizations}
-              currentOrganization={switcherCurrentOrg}
-              onOrganizationChange={onOrganizationChange}
-              onCreateOrganization={onCreateOrganization}
-              loading={loading}
-              className="bg-surface-raised/50 border-border-default hover:bg-surface-raised hover:border-border-default"
-            />
-          ) : (
-            <div className="h-8 w-full rounded-md bg-surface-raised/50 border border-border-default animate-pulse" />
-          )}
-        </div>
+        // The boundary wraps the WRAPPER, not just the switcher: a throw
+        // then leaves no empty bordered container, which is the same shape
+        // the OSS-only build renders. The fallback must be a truthy node —
+        // `ErrorBoundary` tests `if (this.props.fallback)`, so `null` falls
+        // through to its full-page error card.
+        <ErrorBoundary fallback={<></>}>
+          <div className="px-2 py-1.5 border-b border-border-subtle">
+            {mounted ? (
+              <OrganizationSwitcher
+                organizations={switcherOrganizations}
+                currentOrganization={switcherCurrentOrg}
+                onOrganizationChange={onOrganizationChange}
+                onCreateOrganization={onCreateOrganization}
+                loading={loading}
+                className="bg-surface-raised/50 border-border-default hover:bg-surface-raised hover:border-border-default"
+              />
+            ) : (
+              <div className="h-8 w-full rounded-md bg-surface-raised/50 border border-border-default animate-pulse" />
+            )}
+          </div>
+        </ErrorBoundary>
       )}
     </>
   );

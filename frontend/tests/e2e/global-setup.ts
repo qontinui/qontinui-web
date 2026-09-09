@@ -72,9 +72,11 @@ async function globalSetup(_config: FullConfig) {
         VERIFICATION_SECRET_KEY:
           "test-verification-secret-key-min-32-chars-required",
         ALGORITHM: "HS256",
-        // The Playwright webServer runs `npm run dev` which binds the
-        // frontend to :3001 (see playwright.config.ts `webServer.url` and
-        // PLAYWRIGHT_BASE_URL). Backend CORS must allow that exact origin
+        // The Playwright webServer binds the frontend to :3001 on BOTH
+        // arms — `npm run start` (the default, a production build) and
+        // `npm run dev` under PLAYWRIGHT_WEB_SERVER=dev; see
+        // playwright.config.ts `webServer.url` and PLAYWRIGHT_BASE_URL.
+        // Backend CORS must allow that exact origin
         // — with `credentials: "include"` the browser refuses to read the
         // response unless `Access-Control-Allow-Origin` matches the
         // requesting origin character-for-character.

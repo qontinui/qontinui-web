@@ -53,16 +53,12 @@ const LOCAL_EXTRA_SETTINGS: NavigationItem[] = [
     color: "#FFD700",
     platforms: ["web"],
   },
-  {
-    id: "settings-agent-commands",
-    label: "Agent Commands",
-    icon: "Terminal",
-    description:
-      "Customize the command procedures the runner provisions into new sessions (account override → embedded default)",
-    route: "/settings/agent-commands",
-    color: "#FFD700",
-    platforms: ["web"],
-  },
+  // NOTE: `settings-agent-commands` used to sit here. The corpus it edited
+  // gained a fleet-default layer that an account-scoped settings page cannot
+  // express, so the editor moved to `/admin/coord/agent-commands` (plan
+  // `2026-08-20-fleet-served-agent-skills.md`, Phase 3) and the old route is a
+  // permanent redirect in `next.config.mjs`. Do not re-add an entry here: a
+  // second editor over one corpus is what the move exists to prevent.
 ];
 
 function getSettingsNavItems(): {

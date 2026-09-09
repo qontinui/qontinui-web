@@ -278,6 +278,37 @@ class DeferredQuestionResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
+class FleetDeferredQuestionResponse(DeferredQuestionResponse):
+    """A deferred question plus the task-run context needed to act on it.
+
+    The per-task-run list route already answers "what is pending on THIS run".
+    The fleet-wide question — "what is waiting for me anywhere" — needs to name
+    which run and which machine raised it, or a reviewer holding a list of bare
+    questions cannot tell two runs apart.
+
+    ``runner_id`` is the runner instance identifier recorded on the task run;
+    it is nullable because a task run synced before the column was populated
+    genuinely does not know, and inventing a machine name would be worse than
+    saying so.
+    """
+
+    task_run_name: str | None = None
+    runner_id: str | None = None
+
+
+class FleetDeferredQuestionListResponse(BaseModel):
+    """Envelope for the fleet-wide deferred-question read.
+
+    Deliberately an envelope rather than a bare list: an empty ``questions``
+    array is then unambiguously "nothing is pending", distinguishable from a
+    transport failure at the client. Same reason
+    ``GET /task-runs/running`` carries its ``scope``.
+    """
+
+    questions: list[FleetDeferredQuestionResponse]
+    total: int
+
+
 class TaskRunAutomationResponse(BaseModel):
     """Response for a task run automation record."""
 

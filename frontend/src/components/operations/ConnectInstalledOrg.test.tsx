@@ -250,3 +250,237 @@ describe("<ConnectInstalledOrg> authorize CTA", () => {
     expect(assign).not.toHaveBeenCalled();
   });
 });
+
+/**
+ * P1 of plan `2026-09-05-tenant-onboarding-friction-and-multi-tenant-device-visibility`:
+ * the typed org is pre-checked against coord's keyed pending-installation
+ * read, and the four verdicts render inline. The pre-check informs the click
+ * and never gates it; UNKNOWN is never rendered as "not installed".
+ */
+describe("<ConnectInstalledOrg> pending-installation pre-check", () => {
+  const RECEIVED = "2026-09-05T10:11:12Z";
+
+  function stubWithPending(body: unknown, status = 200) {
+    fetchMock.mockImplementation((url: string) => {
+      const u = String(url);
+      if (u.includes("/onboarding/pending-installation")) {
+        return Promise.resolve(jsonResponse(body, status));
+      }
+      if (u.includes("/onboarding/connect-state")) {
+        return Promise.resolve(jsonResponse({ connect_state: TOKEN }));
+      }
+      return Promise.resolve(jsonResponse(APP_CONFIG));
+    });
+  }
+
+  function pendingCalls() {
+    return fetchMock.mock.calls.filter((c) =>
+      String(c[0]).includes("/onboarding/pending-installation")
+    );
+  }
+
+  it("checks the typed org on blur with account_login and renders the pending verdict", async () => {
+    stubWithPending({
+      pending: true,
+      installation_id: 42,
+      account_login: "acme-org",
+      account_type: "Organization",
+      repo_count: 3,
+      received_at: RECEIVED,
+      claimed_at: null,
+    });
+    render(<ConnectInstalledOrg flow="connect" />);
+
+    const input = await screen.findByTestId("connect-installed-org-login");
+    await userEvent.type(input, "acme-org");
+    await userEvent.tab();
+
+    const verdict = await screen.findByTestId(
+      "connect-installed-org-precheck",
+      {},
+      { timeout: 3000 }
+    );
+    await waitFor(() => expect(verdict).toHaveAttribute("data-kind", "pending"));
+    expect(verdict).toHaveTextContent(/coord saw the App installed on acme-org \(3 repos\)/);
+    expect(verdict).toHaveTextContent(/not connected to a tenant yet\. Connect it\./);
+    const url = new URL(String(pendingCalls()[0][0]), "https://x.test");
+    expect(url.searchParams.get("account_login")).toBe("acme-org");
+    expect(url.searchParams.has("installation_id")).toBe(false);
+    // The authorize click is NOT gated on the verdict.
+    expect(
+      screen.getByTestId("connect-installed-org-authorize")
+    ).toBeEnabled();
+  });
+
+  it("checks immediately on Enter", async () => {
+    stubWithPending({
+      pending: false,
+      installation_id: 42,
+      account_login: "acme-org",
+      account_type: "Organization",
+      repo_count: 3,
+      received_at: RECEIVED,
+      claimed_at: "2026-09-05T12:00:00Z",
+    });
+    render(<ConnectInstalledOrg flow="connect" />);
+
+    const input = await screen.findByTestId("connect-installed-org-login");
+    await userEvent.type(input, "acme-org{Enter}");
+
+    const verdict = await screen.findByTestId("connect-installed-org-precheck");
+    await waitFor(() => expect(verdict).toHaveAttribute("data-kind", "claimed"));
+    expect(verdict).toHaveTextContent(/acme-org was already connected on/);
+  });
+
+  it("renders the unseen verdict with the install CTA", async () => {
+    stubWithPending({
+      pending: false,
+      installation_id: null,
+      account_login: null,
+      account_type: null,
+      repo_count: null,
+      received_at: null,
+      claimed_at: null,
+    });
+    render(<ConnectInstalledOrg flow="connect" />);
+
+    await userEvent.type(
+      await screen.findByTestId("connect-installed-org-login"),
+      "acme-org{Enter}"
+    );
+
+    const verdict = await screen.findByTestId("connect-installed-org-precheck");
+    await waitFor(() => expect(verdict).toHaveAttribute("data-kind", "unseen"));
+    expect(verdict).toHaveTextContent(
+      "coord has not seen an install for acme-org; install the App first."
+    );
+    expect(
+      screen.getByTestId("connect-installed-org-precheck-install")
+    ).toBeInTheDocument();
+  });
+
+  it("renders pending: null as UNKNOWN — never as not-installed", async () => {
+    stubWithPending({
+      pending: null,
+      installation_id: null,
+      account_login: null,
+      account_type: null,
+      repo_count: null,
+      received_at: null,
+      claimed_at: null,
+      reason: "pending_installations_table_absent",
+    });
+    render(<ConnectInstalledOrg flow="connect" />);
+
+    await userEvent.type(
+      await screen.findByTestId("connect-installed-org-login"),
+      "acme-org{Enter}"
+    );
+
+    const verdict = await screen.findByTestId("connect-installed-org-precheck");
+    await waitFor(() => expect(verdict).toHaveAttribute("data-kind", "unknown"));
+    expect(verdict).toHaveTextContent(/couldn't check with coord/);
+    expect(verdict).not.toHaveTextContent(/not seen|install the App/);
+    expect(
+      screen.queryByTestId("connect-installed-org-precheck-install")
+    ).toBeNull();
+  });
+
+  it("folds a failed proxy call into UNKNOWN and still lets the operator authorize", async () => {
+    stubWithPending({ detail: "coord is not reachable" }, 502);
+    render(<ConnectInstalledOrg flow="connect" />);
+
+    await userEvent.type(
+      await screen.findByTestId("connect-installed-org-login"),
+      "acme-org{Enter}"
+    );
+
+    const verdict = await screen.findByTestId("connect-installed-org-precheck");
+    await waitFor(() => expect(verdict).toHaveAttribute("data-kind", "unknown"));
+    expect(verdict).toHaveTextContent(/HTTP 502/);
+
+    await userEvent.click(
+      screen.getByTestId("connect-installed-org-authorize")
+    );
+    await waitFor(() => expect(assign).toHaveBeenCalledTimes(1));
+  });
+
+  it("does not check an invalid login, and does not re-check the same login twice", async () => {
+    stubWithPending({
+      pending: true,
+      installation_id: 42,
+      account_login: "acme-org",
+      account_type: "Organization",
+      repo_count: 1,
+      received_at: RECEIVED,
+      claimed_at: null,
+    });
+    render(<ConnectInstalledOrg flow="connect" />);
+
+    const input = await screen.findByTestId("connect-installed-org-login");
+    await userEvent.type(input, "-bad-{Enter}");
+    expect(pendingCalls()).toHaveLength(0);
+    expect(screen.queryByTestId("connect-installed-org-precheck")).toBeNull();
+
+    await userEvent.clear(input);
+    await userEvent.type(input, "acme-org{Enter}");
+    await screen.findByTestId("connect-installed-org-precheck");
+    await userEvent.type(input, "{Enter}");
+    await userEvent.tab();
+    expect(pendingCalls()).toHaveLength(1);
+  });
+
+  it("drops a stale verdict as soon as the field names a different org", async () => {
+    stubWithPending({
+      pending: true,
+      installation_id: 42,
+      account_login: "acme-org",
+      account_type: "Organization",
+      repo_count: 1,
+      received_at: RECEIVED,
+      claimed_at: null,
+    });
+    render(<ConnectInstalledOrg flow="connect" />);
+
+    const input = await screen.findByTestId("connect-installed-org-login");
+    await userEvent.type(input, "acme-org{Enter}");
+    await screen.findByTestId("connect-installed-org-precheck");
+
+    await userEvent.type(input, "2");
+    expect(screen.queryByTestId("connect-installed-org-precheck")).toBeNull();
+  });
+
+  it("prefills from defaultOrg and checks on mount (the ?connect= hand-off)", async () => {
+    stubWithPending({
+      pending: true,
+      installation_id: 42,
+      account_login: "portofino-pizzeria",
+      account_type: "Organization",
+      repo_count: 2,
+      received_at: RECEIVED,
+      claimed_at: null,
+    });
+    render(<ConnectInstalledOrg flow="connect" defaultOrg="portofino-pizzeria" />);
+
+    const input = await screen.findByTestId("connect-installed-org-login");
+    expect(input).toHaveValue("portofino-pizzeria");
+    const verdict = await screen.findByTestId("connect-installed-org-precheck");
+    await waitFor(() => expect(verdict).toHaveAttribute("data-kind", "pending"));
+    expect(verdict).toHaveTextContent(/portofino-pizzeria \(2 repos\)/);
+    const url = new URL(String(pendingCalls()[0][0]), "https://x.test");
+    expect(url.searchParams.get("account_login")).toBe("portofino-pizzeria");
+    // The only remaining action is the click — it is live.
+    expect(
+      screen.getByTestId("connect-installed-org-authorize")
+    ).toBeEnabled();
+  });
+
+  it("ignores a defaultOrg that is not a valid login", async () => {
+    stubWithPending({ pending: true });
+    render(<ConnectInstalledOrg flow="connect" defaultOrg="not a login!" />);
+
+    const input = await screen.findByTestId("connect-installed-org-login");
+    expect(input).toHaveValue("");
+    expect(pendingCalls()).toHaveLength(0);
+  });
+});

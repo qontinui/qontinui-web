@@ -16,8 +16,7 @@ import { AdvancedAutomationProvider } from "@/contexts/advanced-automation-conte
 import { AppInitializer } from "@/components/offline/AppInitializer";
 import { CloudProviders } from "@/components/CloudProviders";
 import { TooltipProvider } from "@/components/ui/tooltip";
-import { useSlotComponent } from "@/lib/extension-slots";
-import type { BetaBannerProps } from "@/lib/cloud-component-slots";
+import { BetaBannerSlot } from "@/components/cloud-slots/BetaBannerSlot";
 import { useAuth } from "@/contexts/auth-context";
 import { MentionRealtimeSubscriber } from "@/app/(app)/strategy/_components/MentionRealtimeSubscriber";
 import { HelperRedirectGate } from "@/components/helper-portal/HelperRedirectGate";
@@ -137,25 +136,6 @@ function AppAuthGate({ children }: { children: React.ReactNode }) {
       {children}
     </>
   );
-}
-
-/**
- * Renders cloud-control's beta banner if registered, or nothing in OSS-only
- * mode.
- *
- * `useSlotComponent` subscribes rather than reading once, so a registration
- * that lands after this shell has mounted still causes the banner to appear.
- * That used to be the common case: the package was loaded by a fire-and-forget
- * `import(CLOUD_CONTROL_PKG)` in the root layout, which in fact never loaded
- * it at all. It is now a static import in
- * `components/cloud-extensions-boot.tsx`, so in the composed build the slot is
- * filled before hydration — but the subscription is still required, because
- * the boot module lives in the client graph and a server render sees empty
- * slots either way. See `lib/extension-slots.ts`.
- */
-function BetaBannerSlot() {
-  const Slot = useSlotComponent<BetaBannerProps>("betaBanner");
-  return Slot ? <Slot /> : null;
 }
 
 function AppLayoutContent({ children }: { children: React.ReactNode }) {

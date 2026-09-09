@@ -13,6 +13,7 @@ import {
   surveyDisagreement,
   toSurveyItem,
   toSurveyStatus,
+  walkShortfallCauses,
   type DiskSurvey,
 } from "./diskSurvey";
 
@@ -1119,6 +1120,242 @@ describe("scan stats", () => {
     });
     expect(underSized.scan?.truncated).toBe(false);
     expect(underSized.bytesIncomplete).toBe(true);
+  });
+
+  it("reads ALL FIVE shortfall counters, not the three it used to", () => {
+    // `entry_errors` and `reparse_dirs_skipped` are folded into the runner's
+    // `incomplete()`, so they raise `bytes_incomplete` and route an empty walk
+    // into the incomplete panel on every build that reports them. Leaving them
+    // unparsed meant that panel had no name for a shortfall the payload named.
+    const scan = parseScanStats({
+      dirs_visited: 4_102,
+      truncated: false,
+      read_errors: [],
+      read_errors_total: 0,
+      entry_errors: 6,
+      reparse_dirs_skipped: 3,
+      depth_limited_dirs: 118,
+    });
+    expect(scan?.entryErrors).toBe(6);
+    expect(scan?.reparseDirsSkipped).toBe(3);
+    expect(scan?.depthLimitedDirs).toBe(118);
+  });
+
+  it("keeps an ABSENT shortfall counter null, distinct from a reported 0", () => {
+    // A build too old to report the field has told us nothing; a build that
+    // reports `0` has told us the shortfall did not happen. Collapsing them
+    // would let this page assert a clean walk on a payload that never claimed
+    // one.
+    const old = parseScanStats({ dirs_visited: 5, truncated: false });
+    expect(old?.entryErrors).toBeNull();
+    expect(old?.reparseDirsSkipped).toBeNull();
+    expect(old?.depthLimitedDirs).toBeNull();
+
+    const current = parseScanStats({
+      dirs_visited: 5,
+      truncated: false,
+      entry_errors: 0,
+      reparse_dirs_skipped: 0,
+      depth_limited_dirs: 0,
+    });
+    expect(current?.entryErrors).toBe(0);
+    expect(current?.reparseDirsSkipped).toBe(0);
+    expect(current?.depthLimitedDirs).toBe(0);
+  });
+});
+
+describe("walkShortfallCauses names what the payload carries — no more, no less", () => {
+  const scanWith = (over: Record<string, unknown>) =>
+    parseScanStats({ ...COMPLETE_SCAN, ...over });
+
+  it("names NOTHING when the payload names nothing", () => {
+    // The fallback the caller renders ("for a reason it did not name") is only
+    // honest if this returns empty rather than guessing.
+    expect(walkShortfallCauses(null)).toEqual([]);
+    expect(walkShortfallCauses(scanWith({}))).toEqual([]);
+  });
+
+  it("names an entry-error shortfall, which no other counter carries", () => {
+    // A directory that OPENS and then errors mid-listing is absent from
+    // `read_errors` entirely, so `readErrorsSeen` is 0 and the old two-way
+    // clause fell through to a fallback that blamed a truncated walk.
+    const causes = walkShortfallCauses(scanWith({ entry_errors: 6 }));
+    expect(causes).toHaveLength(1);
+    expect(causes[0]).toMatch(/6 directories errored part-way through listing/);
+  });
+
+  it("names skipped junctions, which are neither an item nor an error", () => {
+    // The reachable shape: a `paths.workspace_root` whose children are all
+    // junctions returns `items: []` with no read errors at all.
+    const causes = walkShortfallCauses(scanWith({ reparse_dirs_skipped: 1 }));
+    expect(causes).toEqual([
+      "1 junction was not followed, so whatever it points at is unmeasured",
+    ]);
+    expect(
+      walkShortfallCauses(scanWith({ reparse_dirs_skipped: 4 }))[0]
+    ).toMatch(/4 junctions were not followed, so whatever they point at/);
+  });
+
+  it("names EVERY cause present, not just the first one that matched", () => {
+    // These are not alternatives — one pass can hit the ceiling, fail reads and
+    // skip junctions. Reporting only the highest-priority cause drops the rest,
+    // which understates the shortfall exactly as inventing one overstates it.
+    const causes = walkShortfallCauses(
+      scanWith({
+        dirs_visited: 200_000,
+        truncated: true,
+        read_errors: [{ path: "D:/x", error: "denied" }],
+        read_errors_total: 4_137,
+        entry_errors: 6,
+        reparse_dirs_skipped: 3,
+        depth_limited_dirs: 118,
+      })
+    );
+    // The separator is whatever `toLocaleString` picks for the test runner's
+    // locale, so these match it loosely — as the truncated-walk assertion in
+    // `DiskSection.test.tsx` already does.
+    expect(causes).toHaveLength(5);
+    const joined = causes.join("; ");
+    expect(joined).toMatch(/visit ceiling after 200[,.\s]?000 directories/);
+    expect(joined).toMatch(/4[,.\s]?137 directories could not be read/);
+    expect(joined).toMatch(/6 directories errored part-way/);
+    expect(joined).toMatch(/3 junctions were not followed/);
+    expect(joined).toMatch(/depth bound, leaving 118 directories/);
+  });
+
+  it("counts read failures from the UNCAPPED total, never the sample", () => {
+    // Same rule as `readErrorsSeen`: the 100-entry cap must not turn thousands
+    // of failures into a flat "100 directories" on the panel built to make
+    // under-reports visible.
+    const causes = walkShortfallCauses(
+      scanWith({
+        read_errors: Array.from({ length: 100 }, (_, i) => ({
+          path: `D:/x${i}`,
+          error: "denied",
+        })),
+        read_errors_total: 4_137,
+      })
+    );
+    expect(causes[0]).toMatch(/4[,.\s]?137 directories could not be read/);
+  });
+
+  it("treats a null counter as UNKNOWN and names no cause for it", () => {
+    // A build too old to report `entry_errors` has not told us there WERE any.
+    const causes = walkShortfallCauses(
+      parseScanStats({ dirs_visited: 5, truncated: false })
+    );
+    expect(causes).toEqual([]);
+  });
+
+  it("says 'directory' and 'junction' in the singular — pronouns included", () => {
+    // Anchoring only the leading noun let "1 directory ... so the walk saw less
+    // than THEY hold" through, so each singular arm is asserted end to end.
+    expect(walkShortfallCauses(scanWith({ entry_errors: 1 }))[0]).toBe(
+      "1 directory errored part-way through listing, so the walk saw less " +
+        "than it holds"
+    );
+    expect(walkShortfallCauses(scanWith({ entry_errors: 2 }))[0]).toBe(
+      "2 directories errored part-way through listing, so the walk saw less " +
+        "than they hold"
+    );
+    expect(walkShortfallCauses(scanWith({ depth_limited_dirs: 1 }))[0]).toMatch(
+      /leaving 1 directory it never descended into/
+    );
+  });
+});
+
+describe("the DEPTH BOUND is a shortfall no other field carries", () => {
+  // The runner keeps `depth_limited_dirs` out of BOTH `truncated` and
+  // `bytes_incomplete` on purpose: the bound bites on any deep tree, so folding
+  // it in would pin `bytes_incomplete` permanently true. The consequence is
+  // that every machine-readable completeness field reads clean in the one state
+  // where "nothing to reclaim" is most tempting and most wrong, and only
+  // `census_note` — rendered directly above that sentence — says otherwise.
+  const DEPTH_BOUND_EMPTY_WALK = {
+    items: [],
+    census_status: "fresh",
+    summary: { reclaimable_bytes: 0, report_only_bytes: 0, by_class: [] },
+    scan: {
+      dirs_visited: 4_102,
+      truncated: false,
+      read_errors: [],
+      read_errors_total: 0,
+      entry_errors: 0,
+      reparse_dirs_skipped: 0,
+      depth_limited_dirs: 118,
+      roots_with_unknown_bytes: 0,
+      roots_with_partial_bytes: 0,
+    },
+  };
+
+  it("refuses 'nothing to reclaim' while the bound was bitten", () => {
+    const survey = surveyOf(DEPTH_BOUND_EMPTY_WALK);
+    // Every OTHER clause of the predicate is satisfied — which is the point.
+    expect(survey.bytesIncomplete).toBe(false);
+    expect(survey.scan?.truncated).toBe(false);
+    expect(survey.scan?.hasTruncatedField).toBe(true);
+    expect(survey.summaryReclaimableBytes).toBe(0);
+    expect(readErrorsSeen(survey.scan)).toBe(0);
+    expect(canClaimNothingToReclaim(survey)).toBe(false);
+  });
+
+  it("NON-VACUOUS: the identical payload at depth_limited_dirs 0 IS a measured zero", () => {
+    // Without this the test above would pass for a predicate that had simply
+    // stopped saying yes to anything.
+    const survey = surveyOf({
+      ...DEPTH_BOUND_EMPTY_WALK,
+      scan: { ...DEPTH_BOUND_EMPTY_WALK.scan, depth_limited_dirs: 0 },
+    });
+    expect(canClaimNothingToReclaim(survey)).toBe(true);
+  });
+
+  it("refuses on ANY named shortfall, not just the one the runner derives a flag from", () => {
+    // `bytesIncomplete` is DERIVED, and a payload can contradict it. This
+    // predicate's whole argument is that a derived flag is not the counter, so
+    // it must not read four of the five through one: `scan` reporting 4,137
+    // unreadable directories under `bytes_incomplete: false` is not a measured
+    // zero, whatever the summary says. A conforming runner folds all four into
+    // the flag — which is exactly why trusting it here was invisible.
+    const survey = surveyOf({
+      ...DEPTH_BOUND_EMPTY_WALK,
+      scan: {
+        ...DEPTH_BOUND_EMPTY_WALK.scan,
+        depth_limited_dirs: 0,
+        read_errors: [{ path: "D:/locked", error: "denied" }],
+        read_errors_total: 4_137,
+      },
+    });
+    expect(survey.bytesIncomplete).toBe(false);
+    expect(canClaimNothingToReclaim(survey)).toBe(false);
+
+    // Same for the two counters no derived flag on this page carries alone.
+    for (const over of [{ entry_errors: 6 }, { reparse_dirs_skipped: 3 }]) {
+      const s = surveyOf({
+        ...DEPTH_BOUND_EMPTY_WALK,
+        scan: {
+          ...DEPTH_BOUND_EMPTY_WALK.scan,
+          depth_limited_dirs: 0,
+          ...over,
+        },
+      });
+      expect(s.bytesIncomplete).toBe(false);
+      expect(canClaimNothingToReclaim(s)).toBe(false);
+    }
+  });
+
+  it("an ABSENT count is UNKNOWN, and does not by itself refuse the sentence", () => {
+    // A runner build predating the field has not reported a bitten bound. That
+    // absence is already covered by `hasTruncatedField` and the rest; turning
+    // it into a refusal here would make the page unable to say "nothing to
+    // reclaim" against any older runner at all.
+    const { depth_limited_dirs: _omitted, ...scanWithoutTheField } =
+      DEPTH_BOUND_EMPTY_WALK.scan;
+    const survey = surveyOf({
+      ...DEPTH_BOUND_EMPTY_WALK,
+      scan: scanWithoutTheField,
+    });
+    expect(survey.scan?.depthLimitedDirs).toBeNull();
+    expect(canClaimNothingToReclaim(survey)).toBe(true);
   });
 });
 

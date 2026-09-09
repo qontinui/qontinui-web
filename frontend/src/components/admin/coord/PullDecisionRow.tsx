@@ -37,7 +37,6 @@ import {
   RecordRow,
   RowTime,
   StatusBadge,
-  rowAccentClass,
 } from "@/components/console";
 import {
   PULL_STATUS_PALETTE,
@@ -70,7 +69,7 @@ export function PullDecisionRow({
       rowKey={row.resolution_id}
       expanded={expanded}
       onToggle={onToggle}
-      accent={rowAccentClass(status)}
+      attention={status.attention}
       identity={<span title={row.repo ?? "no repo recorded"}>{pullIdentity(row.repo)}</span>}
       label={
         <span title={row.rationale ?? undefined}>
