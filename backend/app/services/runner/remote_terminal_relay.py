@@ -103,6 +103,12 @@ SOURCE_FRAME_TYPES: frozenset[str] = frozenset(
         "remote_terminal_resize",
         "remote_terminal_buffer",
         "remote_terminal_detach",
+        # Phase 5 backpressure. The SOURCE's `EmissionGate` closes over the
+        # wire, not just locally: without this the frame is refused as an
+        # unknown source type and the target never learns to withhold output,
+        # so the second hop's buffer grows unbounded under exactly the load
+        # that produces backpressure.
+        "remote_terminal_flow",
     }
 )
 
@@ -438,6 +444,19 @@ class RemoteTerminalRelay:
                 )
                 if not await self._forward(session, msg, att, "terminal_buffer", extra):
                     session.pending_buffer.pop(minted, None)
+        elif msg_type == "remote_terminal_flow":
+            # Retyped to `terminal_flow`, the spelling the target's handler is
+            # named for. The target accepts either, so this translation is
+            # belt-and-braces on the SPELLING — but it is load-bearing on
+            # ADMISSION: the frame reaches the target only because this arm
+            # exists. Gated exactly like `terminal_input` (`require_bound`
+            # default): a flow frame for a terminal this grant does not hold
+            # must not pause someone else's pane.
+            att = await self._authorize(session, msg)
+            if att is not None:
+                await self._forward(
+                    session, msg, att, "terminal_flow", {"paused": msg.get("paused")}
+                )
         elif msg_type == "remote_terminal_detach":
             # Admitted on the grant alone: a source may give up an attach the
             # target never answered, and stranding that grant until expiry
@@ -632,6 +651,15 @@ class RemoteTerminalRelay:
             "remote": remote,
             "timestamp": utc_now().isoformat(),
         }
+        # A REATTACH carries `have_offset`: the absolute offset of the last byte
+        # the source still holds. Dropping it here is not cosmetic — the target
+        # reads its absence as "this source has nothing", ships the whole 64 KiB
+        # ring tail, and the source then sees a gap where none existed and
+        # writes a DATA-LOSS marker into the pane. Forwarded only when present,
+        # so a first attach still takes the tail arm deliberately rather than by
+        # omission.
+        if msg.get("have_offset") is not None:
+            frame["have_offset"] = msg.get("have_offset")
         sent = await session.manager.send_terminal(target_device_id, frame)
         if not sent:
             await self._drop_attachment(session, att)
