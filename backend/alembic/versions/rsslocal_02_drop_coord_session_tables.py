@@ -1,7 +1,7 @@
 """rsslocal 02 — drop four vestigial coord session-state tables
 
 Revision ID: rsslocal_02_drop_coord_tables
-Revises: cciobs_01
+Revises: ptbe_01_primary_tree_branch_events
 Create Date: 2026-09-08
 
 Phase 2 of plan
@@ -39,8 +39,14 @@ Verified against ``qontinui-coord`` ``origin/main`` before authoring:
 * ``process_sessions``, ``process_session_output`` and
   ``session_file_snapshots`` — **zero** occurrences of any kind anywhere under
   ``crates/coord/src``. No SELECT, no INSERT, no route, no model, no comment.
-* ``session_touched_files`` — six occurrences, **all of them comments** in
-  ``dirty_state.rs``. No executable reference.
+* ``session_touched_files`` — 11 occurrences, **all of them comments** in
+  ``dirty_state.rs``, and in no other file. No executable reference. An earlier
+  draft of this paragraph said six; the count moved but the finding did not.
+  coord PR #2021 ("dirty_state supersedes the COORD table, not the runner's
+  ``project.*`` one", merge ``eaeb38e0``) added ``//!`` lines correcting exactly
+  that distinction — so the growth is more comment, not new usage. Re-verified
+  against ``qontinui-coord`` ``origin/main`` 2026-09-09: still zero executable
+  references, all 11 inside ``//!``/``///`` doc comments in one file.
 
 Verified in this repository (``qontinui-web``):
 
@@ -122,7 +128,7 @@ recreated indexes has an ancestor creator, not three of them
 ``consolidation_phase1_14_workflows_flows_cross`` lines 289-290 and 307;
 ``consolidation_phase1_20_tail_specialty`` and
 ``consolidation_phase2_v_30_productivity_knowledge`` for the two ``idx_sfs_*``;
-``projdash_01_session_touched_files_prefix_idx`` for the expression index). And
+``projdash_01_stf_prefix_idx`` for the expression index). And
 the tolerance can never actually fire: each index is created immediately after
 an unconditional ``op.create_table`` of its own table in this same
 ``downgrade()``, so an index can only pre-exist if its table did — in which case
@@ -162,13 +168,26 @@ because it invites reliance on a control that is not there.
 ``scripts/ci/check_coord_column_drops.py`` resolves all four drop sites cleanly
 (no ``COORD_SCHEMA_DROPS`` declaration needed) and coord's ``deployed`` manifest
 names none of the four tables — but the gate still exits **2 (UNKNOWN, not a
-violation)** because coord serves ``main: null``: Phases 3 and 4 of plan
-``2026-09-06-devops-coord-column-drop-guard-has-no-served-manifest`` (the
-``coord.schema_read_surfaces`` table and the
-``POST /coord/schema/read-surfaces-snapshot`` ingest) are unshipped, so no coord
-build has ever stored a ``main`` half. This is a standing fleet-wide condition
-on every ``coord.*`` drop, not a defect in this revision, and **no edit inside
-this file changes it** — the gate says so itself. Coord finding
+violation)** because coord serves ``main: null``.
+
+Of plan ``2026-09-06-devops-coord-column-drop-guard-has-no-served-manifest``,
+**Phase 3 has since shipped**: the ``coord.schema_read_surfaces`` table exists.
+Its revision ``schrs_01_coord_schema_read_surfaces`` is on ``qontinui-web``
+``origin/main`` — after this revision's re-parent it is an ancestor of this one
+— and the table reads ``existence: present``, 5 columns, in production
+``qontinui_db``. What remains unshipped is **Phase 4, the
+``POST /coord/schema/read-surfaces-snapshot`` ingest**: the table is there but
+nothing writes it, so no coord build has yet stored a ``main`` half.
+
+The conclusion is unchanged. A live probe of
+``GET https://coord.qontinui.io/coord/schema/read-surfaces`` on 2026-09-09
+(deployed build ``bfdd3f98133c9876d02bc7817c32f1d7b8061754``, built
+``2026-09-09T16:29:11Z``) still returns ``main: null``, so the gate still exits
+2/UNKNOWN and this PR still cannot go green; that build's ``deployed`` manifest
+carries 5034 read-surface entries across 181 tables and names **none** of the
+four tables this revision drops. This is a standing fleet-wide condition on
+every ``coord.*`` drop, not a defect in this revision, and **no edit inside this
+file changes it** — the gate says so itself. Coord finding
 ``4400726c-56bd-4345-8969-df84ad6b9f63``.
 """
 
@@ -181,7 +200,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "rsslocal_02_drop_coord_tables"
-down_revision: str | Sequence[str] | None = "cciobs_01"
+down_revision: str | Sequence[str] | None = "ptbe_01_primary_tree_branch_events"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
