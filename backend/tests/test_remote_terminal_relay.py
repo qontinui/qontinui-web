@@ -1814,3 +1814,150 @@ async def test_remote_only_target_frame_predicate() -> None:
     # A generic error stays dropped, exactly as before.
     assert rtr.is_remote_only_target_frame({"type": "error", "message": "x"}) is False
     assert rtr.is_remote_only_target_frame({"type": "terminal_output"}) is False
+
+
+# ---------------------------------------------------------------------------
+# Phase 5 backpressure + reattach offset — the two translations the runner side
+# documented as OWED by the relay and covered only defensively on its end.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_flow_frame_is_admitted_and_retyped_to_terminal_flow(
+    relay: RemoteTerminalRelay,
+) -> None:
+    """A source's `remote_terminal_flow` must REACH the target as `terminal_flow`.
+
+    Fails on the unfixed relay for the reason that matters: the frame was not in
+    `SOURCE_FRAME_TYPES` at all, so it was refused as an unknown source type and
+    the target never learned to withhold output. Backpressure existed on the
+    source's `EmissionGate` and stopped at the wire.
+    """
+    ws = _FakeWS()
+    manager = _manager()
+    claims = await _attached(relay, ws, manager, terminal_id="t1")
+    manager.send_terminal.reset_mock()
+
+    await _send(
+        relay,
+        ws,
+        manager,
+        {
+            "type": "remote_terminal_flow",
+            "grant_jti": claims["jti"],
+            "terminal_id": "t1",
+            "paused": True,
+        },
+    )
+
+    assert manager.send_terminal.await_count == 1
+    frame = manager.send_terminal.await_args_list[0].args[1]
+    assert frame["type"] == "terminal_flow"
+    assert frame["terminal_id"] == "t1"
+    assert frame["paused"] is True
+    # The target refuses a flow frame carrying no remote block
+    # (`remote_block_required`), so the block is not optional here.
+    assert frame["remote"]["grant_jti"] == claims["jti"]
+    assert frame["remote"]["source_device_id"] == SOURCE_DEVICE
+
+
+@pytest.mark.asyncio
+async def test_flow_resume_is_forwarded_verbatim(relay: RemoteTerminalRelay) -> None:
+    """`paused: false` must travel too — a resume that never lands is a pane
+    silenced forever, which is strictly worse than no backpressure at all."""
+    ws = _FakeWS()
+    manager = _manager()
+    claims = await _attached(relay, ws, manager, terminal_id="t1")
+    manager.send_terminal.reset_mock()
+
+    await _send(
+        relay,
+        ws,
+        manager,
+        {
+            "type": "remote_terminal_flow",
+            "grant_jti": claims["jti"],
+            "terminal_id": "t1",
+            "paused": False,
+        },
+    )
+
+    frame = manager.send_terminal.await_args_list[0].args[1]
+    assert frame["type"] == "terminal_flow"
+    assert frame["paused"] is False
+
+
+@pytest.mark.asyncio
+async def test_flow_for_a_terminal_this_grant_does_not_hold_is_refused(
+    relay: RemoteTerminalRelay,
+) -> None:
+    """Gated exactly like `terminal_input`. Without this, one attachment could
+    pause a pane belonging to another."""
+    ws = _FakeWS()
+    manager = _manager()
+    claims = await _attached(relay, ws, manager, terminal_id="t1")
+    manager.send_terminal.reset_mock()
+
+    await _send(
+        relay,
+        ws,
+        manager,
+        {
+            "type": "remote_terminal_flow",
+            "grant_jti": claims["jti"],
+            "terminal_id": "t-other",
+            "paused": True,
+        },
+    )
+
+    assert manager.send_terminal.await_count == 0
+
+
+@pytest.mark.asyncio
+async def test_reattach_preserves_have_offset(relay: RemoteTerminalRelay) -> None:
+    """`have_offset` must survive the `remote_terminal_attach` -> `terminal_attach`
+    retype.
+
+    Fails on the unfixed relay, which never named the field. The target reads its
+    absence as "this source holds nothing", ships the whole ring tail, and the
+    source then sees a gap where none existed and writes a DATA-LOSS marker into
+    a pane that lost nothing.
+    """
+    ws = _FakeWS()
+    manager = _manager()
+    claims = _claims()
+    with _verify(claims):
+        await relay.handle_source_frame(
+            {
+                "type": "remote_terminal_attach",
+                "request_id": "req-reattach",
+                "grant": "opaque.jwt.here",
+                "cols": 120,
+                "rows": 40,
+                "have_offset": 4096,
+            },
+            SOURCE_DEVICE,
+            manager,
+            ws,
+        )
+
+    assert ws.of_type("error") == [], ws.sent
+    frame = _forwarded_attach(manager)
+    assert frame["have_offset"] == 4096
+
+
+@pytest.mark.asyncio
+async def test_first_attach_omits_have_offset_rather_than_sending_null(
+    relay: RemoteTerminalRelay,
+) -> None:
+    """A FIRST attach genuinely has nothing, and must take the tail arm
+    deliberately — by the field's absence, not by a null the target would have to
+    special-case."""
+    ws = _FakeWS()
+    manager = _manager()
+    claims = _claims()
+    await _attach(relay, ws, manager, claims)
+
+    assert ws.of_type("error") == [], ws.sent
+    frame = _forwarded_attach(manager)
+    assert "have_offset" not in frame
