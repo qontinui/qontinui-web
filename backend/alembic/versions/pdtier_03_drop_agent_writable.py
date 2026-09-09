@@ -112,31 +112,70 @@ from collections.abc import Sequence
 from alembic import op
 
 revision: str = "pdtier_03"
-# `fleet_res_tel_05_socket_census` is an UNLANDED sibling (qontinui-web #1216),
-# NOT a chain head - the one thing about this line a later reader must not
-# mistake for the usual "the single head at authoring time".
+# `oplog_age_idx_01` is an UNLANDED sibling (qontinui-web #1272), NOT a chain
+# head - the one thing about this line a later reader must not mistake for the
+# usual "the single head at authoring time".
 #
-# It used to be exactly that. `coordtouch_01` was the head measured on
-# 2026-08-31, and by 2026-09-05 it was four revisions stale. On 2026-09-05 at
-# 16:05Z `main` landed `coord_agent_questions_audience_backfill`, forking SIX
-# open PRs that carried a revision. Alembic's single-head invariant is a TOTAL
-# ORDER, so re-pointing all six at the live head does not fix it - they re-fork
-# the instant the first lands. They were chained in a stated landing order:
+# It has been re-pointed twice. `coordtouch_01` was the head measured on
+# 2026-08-31; on 2026-09-05T15:02:53Z `main` landed
+# `coord_agent_questions_audience_backfill` (commit `f8a1fe821`), forking six
+# open PRs, and this
+# revision was chained behind qontinui-web #1216
+# (`fleet_res_tel_05_socket_census`). #1216 has since LANDED - and that did not
+# help, because `main` moved three further revisions past it to
+# `remote_attach_01`. A parent that has landed but is no longer the head forks
+# the chain exactly as a never-landed one does.
 #
-#   #1210 -> #1218 -> #989 -> #1269 -> #1216 -> #1180 (this PR)
+# Alembic's single-head invariant is a TOTAL ORDER, so only ONE open PR can be
+# the head-child; re-pointing all five at `main`'s live head re-forks them the
+# instant the first lands. They are chained in one stated landing order:
 #
-# This PR is LAST because it is a DRAFT and cannot land, so nothing may wait on
-# it. Until the five ahead of it land, `alembic-heads-pr` here is RED BY
-# CONSTRUCTION - the parent named exists in no tree yet - and it goes green on
-# its own, with no further edit, as they land. That red is the safety property:
-# it is what stops an out-of-order land leaving `main` with a dangling
+#   remote_attach_01 (main)
+#     -> ptbe_01_primary_tree_branch_events   (#1218)
+#     -> devenv_09_auto_enrollment            (#989)
+#     -> devenv_10_unique_active_coord_device (#989)
+#     -> policy_rules_tombstone_01            (#1269)
+#     -> oplog_age_idx_01                     (#1272)
+#     -> pdtier_03                            (#1180 - this PR)
+#
+# This PR is LAST, and the reason has CHANGED. It used to be "because it is a
+# DRAFT and cannot land". It is no longer a draft - measured 2026-09-09,
+# `isDraft: false` - so that reason is retired, and two others put it here
+# instead, both about THIS revision rather than about its readiness.
+#
+# It is the only revision in the set that drops a COLUMN, and the only one that
+# can `RAISE EXCEPTION` and abort mid-upgrade (`_RECONCILE_AND_DROP`, on Class C
+# rows) - so at the tail a refusal halts nothing but itself, whereas mid-chain
+# it would halt every revision behind it. (`devenv_10` also drops something - a
+# now-redundant index - but that is reversible and loses no data, so it is not
+# the same class.) And it is the only one gated on a DEPLOY precondition (its
+# last reader must be gone from the deployed coord build, see the docstring),
+# which must be re-verified against whatever coord is live when it lands; last
+# position gives that the longest runway without holding four peers' PRs.
+#
+# Separately, and NOT fixed by this re-point: `coord-column-drop-guard` is red
+# on its own terms here - `scripts/ci/check_coord_column_drops.py` cannot
+# statically resolve the templated `ALTER TABLE {table}` below and wants a
+# module-level `COORD_SCHEMA_DROPS` declaration. That is an independent defect,
+# not a fork symptom, and it is deliberately left to this PR's author.
+#
+# Until #1272 lands the parent named exists in no tree, so alembic cannot build
+# its revision map here at all (`KeyError: 'oplog_age_idx_01'`). That reds MORE
+# than the head counter, and for THIS PR the extra reds are new: before this
+# re-point the parent was on `main`, so only the head COUNT was wrong. Now
+# `alembic-heads-pr`, Spec CI's `Run database migrations` (`alembic upgrade
+# heads`) and the `_needs_pg` harness tests go red TOGETHER, BY CONSTRUCTION,
+# and go green together, with no further edit, as the four ahead of it land.
+# (`migration-reversal.yml` is unaffected: it detects the unresolvable-parent
+# shape and skips-and-passes.) That red is the safety property: it is
+# what stops an out-of-order land leaving `main` with a dangling
 # `down_revision`. Do NOT "fix" it by re-pointing at the live head; that
-# dissolves the chain and restores the six-way fork.
+# dissolves the chain and restores the five-way fork.
 #
 # A re-point here is THREE edits, not one: this assignment, this comment, and
 # `_PARENT_REVISION_ID` in `backend/tests/test_pdtier_03_drop_agent_writable_migration.py`,
 # whose first test asserts the two agree.
-down_revision: str | Sequence[str] | None = "fleet_res_tel_05_socket_census"
+down_revision: str | Sequence[str] | None = "oplog_age_idx_01"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
