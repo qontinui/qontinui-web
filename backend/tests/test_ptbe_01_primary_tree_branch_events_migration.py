@@ -437,14 +437,23 @@ def test_the_upgrade_path_writes_no_check_constraint() -> None:
 
 
 def _quoted_values_documented_for(column: str) -> set[str]:
-    """The SQL-quoted values named in the ``--`` comment block above ``column``.
+    """The SQL-quoted values on ``column``'s VOCABULARY LINE.
 
     The column carries no CHECK and no DEFAULT, so its permitted vocabulary is
-    stated in exactly one machine-readable place: the comment the revision
-    writes immediately above the declaration. Reading the block rather than the
-    whole DDL is what lets this assert "exactly one", instead of the weaker
-    "the expected one is present and one particular wrong one is not" — which
-    would pass unchanged if some THIRD value were introduced.
+    stated in exactly one machine-readable place: the ``--`` comment block the
+    revision writes immediately above the declaration. Within that block only
+    the vocabulary line — the first line, reading top-down, that quotes
+    anything — is returned; the explanatory lines under it are prose.
+
+    Reading a line rather than the whole DDL is what lets a caller assert
+    "exactly these", instead of the weaker "the expected one is present and one
+    particular wrong one is not", which a THIRD value passes unchanged. Reading
+    a line rather than the whole BLOCK is what keeps that assertion honest — see
+    the comment at the return site for the value that forced the distinction.
+
+    A reorder that puts a prose line first does not slip through: the caller
+    compares by set equality, and no prose line in either block yields the
+    expected set.
     """
     tree = _module_tree()
     sql = "\n".join(_sql_literals(_function(tree, "upgrade"), tree))
