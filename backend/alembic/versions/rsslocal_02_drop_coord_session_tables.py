@@ -55,11 +55,34 @@ Verified in this repository (``qontinui-web``):
 * ``backend/app/api/v1/endpoints/runner_logs.py``,
   ``backend/app/db/runner_db.py`` and
   ``backend/app/models/runner_process_log.py`` DO name ``process_sessions`` and
-  ``process_session_output`` — but they are a read-only proxy onto the
-  **RUNNER's** database (``RUNNER_DATABASE_URL``, connected with
-  ``search_path = runner, public``), never onto ``coord``. Their SQL is
-  deliberately unqualified so it resolves inside the runner's own schema. This
-  revision does not touch that database and those endpoints are unaffected.
+  ``process_session_output`` — but they can never resolve to the ``coord.*``
+  ones. The reason is the **search_path, not the connection URL**, and the
+  distinction matters: ``backend/app/db/runner_db.py:38`` is
+  ``url = os.getenv("RUNNER_DATABASE_URL") or str(settings.DATABASE_URL)``, so
+  with that env var unset the proxy points at the **canonical** database — the
+  very one hosting ``coord.*``. An earlier draft argued safety from the URL and
+  was wrong on that point. What actually holds is that every connection is set
+  up with ``SET search_path TO runner, public`` (``runner_db.py:55`` and
+  ``:60``, re-applied on each acquire after ``RESET ALL``), and that path never
+  contains ``coord``. Their SQL is deliberately unqualified, so it resolves in
+  ``runner`` or fails — never in ``coord``. Dropping these ``coord.*`` tables
+  leaves those endpoints unaffected.
+
+Verified against ``qontinui-runner`` ``origin/main`` (``f5b403ad``) — the party
+that actually wrote these tables:
+
+* ``REHOMED_MACHINE_LOCAL_TABLES``
+  (``src-tauri/src/database/pg/mod.rs:285``) is a 12-element array and contains
+  all four.
+* **Zero** ``coord.``-qualified references to any of the four in executable code
+  anywhere in that repo (``.rs`` / ``.ts`` / ``.tsx`` / ``.py`` / ``.sh`` /
+  ``.sql``). Every textual hit is inert: the generated dump
+  ``src-tauri/schema.pg.sql.generated``, ``atlas/exclude.txt``, and two
+  UI-Bridge spec JSON files under ``specs/pages/terminal/``.
+* ``src-tauri/src/database/pg/mod.rs:1525``
+  ``rehomed_modules_issue_no_coord_qualified_sql`` is a live regression test
+  pinning that — no re-homed module may issue ``coord.``-qualified SQL against a
+  re-homed table again.
 
 ## What this reverses
 
@@ -101,8 +124,20 @@ now()``; and both create the same two indexes, ``idx_sfs_session`` and
 ``idx_sfs_session_file``. So ``downgrade()`` restores that single shape, which
 is simultaneously what batch 20 built and what v_30's ``IF NOT EXISTS`` would
 have found already present. A later downgrade past v_30 then runs its
-``DROP TABLE IF EXISTS ... CASCADE`` against exactly the table it expects, and
-one past batch 20 runs its ``drop_table`` against the same.
+``DROP TABLE IF EXISTS ... CASCADE`` against exactly the table it expects — and
+one continuing past batch 20 would hit
+``consolidation_phase1_20_tail_specialty.py:1668``, a bare
+``op.drop_table("session_file_snapshots", schema="coord")`` carrying **no
+``if_exists``**, against a table v_30 has already dropped, and raise.
+
+That is a **pre-existing chain hazard, not introduced by this revision**. An
+earlier draft of this paragraph claimed batch 20 "runs its ``drop_table``
+against the same" table; it cannot. Recomputing ancestry over the full
+546-revision DAG (multi-parent aware — the chain carries 23 merge revisions)
+shows ``consolidation_phase1_20_tail_specialty`` IS an ancestor of
+``consolidation_phase2_v_30_productivity_knowledge``, so on any downgrade v_30
+runs first and takes the table with it, with or without this revision. It bites
+only a full downgrade to before batch 20, which no deploy path performs.
 
 ## Idempotence
 
@@ -156,6 +191,20 @@ So the sequence on merge is: land → postdeploy → four tables and every row i
 them gone. Confirming zero rows in production is therefore a step to take
 **before MERGING**, not before applying. **It has not been done.**
 
+One cross-repo consequence, named here rather than left for CI to discover:
+``qontinui-runner`` checks in ``src-tauri/schema.pg.sql.generated``, which
+declares all four tables (lines 4923, 4955, 5787, 5897) and
+``idx_session_touched_files_lower_path_prefix`` (line 24025). Its
+``.github/workflows/schema-pg-sql-fresh.yml`` job ``schema-fresh-verify``
+checks ``qontinui-web`` out at ``main``, runs ``alembic upgrade head``,
+``pg_dump``s the result, diffs it against that checked-in file and ``exit 1``s
+on any difference — so landing this revision adds drift to **another repo's**
+gate. The companion fix is a regen in ``qontinui-runner``,
+``bash src-tauri/scripts/regenerate_schema_pg_sql.sh``; it is named, not
+opened, because it belongs to that repo. Mitigating: that workflow's own
+comment says the drift signal "has been red since at least 2026-05-06", so this
+adds to an existing red rather than breaking a green one.
+
 Do not copy ``ud03_drop_remap_table``'s posture as precedent: its docstring
 claims "OPERATOR-RUN: This revision lives at the END of the chain but is NOT
 automatically applied", and **nothing enforces that** — it has no runtime guard
@@ -172,10 +221,11 @@ violation)** because coord serves ``main: null``.
 
 Of plan ``2026-09-06-devops-coord-column-drop-guard-has-no-served-manifest``,
 **Phase 3 has since shipped**: the ``coord.schema_read_surfaces`` table exists.
-Its revision ``schrs_01_coord_schema_read_surfaces`` is on ``qontinui-web``
-``origin/main`` — after this revision's re-parent it is an ancestor of this one
-— and the table reads ``existence: present``, 5 columns, in production
-``qontinui_db``. What remains unshipped is **Phase 4, the
+Its revision — id ``schrs_01``, file ``schrs_01_coord_schema_read_surfaces.py``;
+the id is the short one, as with ``projdash_01_stf_prefix_idx`` above — is on
+``qontinui-web`` ``origin/main``, and after this revision's re-parent it is an
+ancestor of this one. The table reads ``existence: present``, 5 columns, in
+production ``qontinui_db``. What remains unshipped is **Phase 4, the
 ``POST /coord/schema/read-surfaces-snapshot`` ingest**: the table is there but
 nothing writes it, so no coord build has yet stored a ``main`` half.
 
