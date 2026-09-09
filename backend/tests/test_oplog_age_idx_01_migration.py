@@ -90,7 +90,20 @@ from tests._alembic_harness import (
 )
 
 _REVISION_ID = "oplog_age_idx_01"
-_PARENT_REVISION_ID = "coord_agent_questions_audience_backfill"
+# MUST equal the revision's own `down_revision`. It is
+# `policy_rules_tombstone_01` -- qontinui-web #1269, an UNLANDED sibling rather
+# than a chain head. A 2026-09-05 land forked six open PRs off one parent and
+# `main` has moved on again since; they are CHAINED to serialise them rather
+# than all re-pointed at the head. The block above `down_revision` in the
+# revision itself carries the order and the reasoning. It was
+# `coord_agent_questions_audience_backfill` until 2026-09-09.
+#
+# Consequence: until #1269 lands, this revision's parent exists in no tree, so
+# alembic cannot build its revision map and the harness tests below are RED BY
+# CONSTRUCTION -- along with `alembic-heads-pr` and Spec CI's
+# `Run database migrations`. They clear together, with no further edit, as the
+# revisions ahead land.
+_PARENT_REVISION_ID = "policy_rules_tombstone_01"
 
 # ``(new index, table, age column, the composite that already existed)``.
 #

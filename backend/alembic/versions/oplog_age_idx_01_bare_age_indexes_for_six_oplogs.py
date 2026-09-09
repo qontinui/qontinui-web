@@ -91,7 +91,7 @@ re-run. ``tests/test_oplog_age_idx_01_migration.py`` asserts ``indisvalid`` for
 this reason rather than mere existence.
 
 Revision ID: oplog_age_idx_01
-Revises: coord_agent_questions_audience_backfill
+Revises: policy_rules_tombstone_01
 Create Date: 2026-09-05
 
 """
@@ -102,7 +102,57 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "oplog_age_idx_01"
-down_revision: str | None = "coord_agent_questions_audience_backfill"
+# `policy_rules_tombstone_01` is an UNLANDED sibling (qontinui-web #1269), NOT
+# a chain head -- the one thing about this line a later reader must not mistake
+# for the usual "the single head at authoring time".
+#
+# It WAS that head-of-the-day: `coord_agent_questions_audience_backfill`, landed
+# 2026-09-05T15:02:53Z (commit `f8a1fe821`). By 2026-09-09 `main` had moved ten
+# revisions past it to
+# `remote_attach_01`, and this revision forked the chain again -- a parent that
+# has landed but is no longer the head forks exactly as a never-landed one does.
+#
+# Alembic's single-head invariant is a TOTAL ORDER, so only ONE open PR can be
+# the head-child; re-pointing every forked PR at `main`'s live head re-forks
+# them the instant the first one lands. The five open PRs (six revisions --
+# #989 carries two) are chained in one stated landing order instead:
+#
+#   remote_attach_01 (main)
+#     -> ptbe_01_primary_tree_branch_events   (#1218)
+#     -> devenv_09_auto_enrollment            (#989)
+#     -> devenv_10_unique_active_coord_device (#989)
+#     -> policy_rules_tombstone_01            (#1269)
+#     -> oplog_age_idx_01                     (#1272 -- this revision)
+#     -> pdtier_03                            (#1180)
+#
+# This revision sits second-from-last because it is purely ADDITIVE and fully
+# reversible (six `CREATE INDEX CONCURRENTLY IF NOT EXISTS`, dropping nothing),
+# and because `pdtier_03` behind it is the only revision in the set that drops a
+# COLUMN and the only one that can `RAISE EXCEPTION` and abort mid-upgrade, so
+# it goes last where a refusal halts nothing but itself. (`devenv_10` also drops
+# something -- a now-redundant index -- but that is reversible and loses no
+# data.) The order is also right for the transaction shape: this revision's
+# `autocommit_block()` commits before `pdtier_03` runs, so a Class C `RAISE`
+# behind it leaves these six indexes committed -- benign, since they are
+# `IF NOT EXISTS` and reversible.
+#
+# Until #1269 lands the parent named above exists in no tree, so alembic cannot
+# build its revision map here at all (`KeyError: 'policy_rules_tombstone_01'`).
+# That reds MORE than the head counter, and for THIS PR the extra reds are new:
+# before this re-point the parent was on `main`, so only the head COUNT was
+# wrong. Now `alembic-heads-pr`, Spec CI's `Run database migrations`
+# (`alembic upgrade heads`) and the `_needs_pg` harness tests below all go red
+# TOGETHER, BY CONSTRUCTION. They go green on their own, with no further edit,
+# once the four ahead of it land. (`migration-reversal.yml` is unaffected: it
+# detects the unresolvable-parent shape and skips-and-passes.) That red is the safety property -- it is what stops an
+# out-of-order land leaving `main` with a dangling `down_revision`. Do NOT "fix"
+# it by re-pointing at the live head; that dissolves the chain and restores the
+# five-way fork.
+#
+# A re-point here is THREE edits, not one: this assignment, the `Revises:` line
+# in the docstring above, and `_PARENT_REVISION_ID` in
+# `backend/tests/test_oplog_age_idx_01_migration.py`.
+down_revision: str | None = "policy_rules_tombstone_01"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
