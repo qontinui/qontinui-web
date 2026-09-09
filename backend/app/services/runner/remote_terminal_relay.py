@@ -1319,6 +1319,16 @@ class RemoteTerminalRelay:
         familiar its ``terminal_id`` looks. Only an unnamed frame falls back to
         the terminal route.
 
+        BOTH arms are scoped to the channel the frame arrived on. One socket may
+        hold grants on SEVERAL targets, and this session subscribes to each
+        target's channel separately — so without the ``target_device_id`` check
+        a frame on target B's channel naming a grant held on target A resolves
+        to A, and (terminal ids being per-device, so a collision on ``t1`` is
+        ordinary rather than unlikely) passes the caller's terminal check too.
+        The source would then splice B's scrollback into A's pane. The terminal
+        arm has always filtered on it — ``_SourceSession.by_terminal`` — and the
+        grant arm did not; that asymmetry is the bug, not the check.
+
         The caller decides that the frame is remote-marked at all
         (``_is_remote_marked``) — a frame the target did not mark rides the
         channel the mobile watchers share and is never ours.
@@ -1331,9 +1341,12 @@ class RemoteTerminalRelay:
             return await self._bound_attachment(
                 session, target_device_id, frame.get("terminal_id")
             )
-        if isinstance(jti_hint, str):
-            return session.grants.get(jti_hint)
-        return None
+        if not isinstance(jti_hint, str):
+            return None
+        att = session.grants.get(jti_hint)
+        if att is None or att.target_device_id != target_device_id:
+            return None
+        return att
 
     async def _route_buffer_response(
         self, session: _SourceSession, target_device_id: str, frame: dict[str, Any]
@@ -1374,6 +1387,15 @@ class RemoteTerminalRelay:
             att = await self._attachment_by_remote_mark(
                 session, target_device_id, frame
             )
+            # Only a grant the TARGET has bound. ``session.grants`` carries
+            # registered-but-unbound grants too, and an unbound one has
+            # ``terminal_id is None`` — which the equality guard below would
+            # CLEAR against a frame naming no terminal, on `None == None`. The
+            # correlated arm cannot reach that state, because its pending entry
+            # is written only after `_authorize(require_bound=True)`; this is
+            # the unsolicited arm's equivalent of that same requirement.
+            if att is not None and not att.attached:
+                att = None
         else:
             return False
         if att is None:
@@ -1401,10 +1423,17 @@ class RemoteTerminalRelay:
             "ring_start_offset": frame.get("ring_start_offset"),
             "total_bytes_produced": frame.get("total_bytes_produced"),
         }
-        # Only for an RPC we correlated. An unsolicited resync carries none, and
-        # that absence is load-bearing: a ``history:`` id would resolve the
-        # source's waiter instead of splicing the bytes into the pane.
-        if correlated is not None:
+        # Echo the SOURCE's request id only for an RPC we correlated — the same
+        # rule ``_route_target_error`` applies, and for the same reason: an id we
+        # did not mint belongs to some other watcher.
+        #
+        # The peer's actual predicate is `rid.starts_with("history:")`, NOT
+        # presence: absent, null and any non-`history:` string all splice. So
+        # omitting the id is sufficient but not necessary, and the guarantee this
+        # relies on is only that we never put a `history:` id on an unsolicited
+        # frame. Stated because the stronger reading invites a later
+        # "simplification" toward the weaker one.
+        if correlated is not None and source_request_id is not None:
             payload["request_id"] = source_request_id
         await self._send_to_source(session, payload)
         return True
