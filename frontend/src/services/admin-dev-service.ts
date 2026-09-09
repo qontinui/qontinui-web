@@ -239,8 +239,10 @@ export interface GateCounts {
 }
 
 /** Server-side verdict filter values for `getOverview`. Mirrors coord's
- *  `GateVerdict` vocabulary (kept in sync with the union in
- *  `components/operations/types.ts`). */
+ *  `GateVerdict` enum (`crates/coord/src/gates.rs`), which is the only thing
+ *  left to keep this in step with — the second copy this used to name, in
+ *  `components/operations/types.ts`, went out with the dead `GateRow` it
+ *  served. Check the Rust enum, not another TypeScript union. */
 export type GateVerdict =
   | "open"
   | "cleared"

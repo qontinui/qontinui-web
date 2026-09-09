@@ -49,11 +49,13 @@
  * it must not read as failure — we have no claim either way, so it takes the
  * ignorance floor (`UNKNOWN_AMBER`), never green and never red.
  *
- * ## The two escalations, and where their numbers come from
+ * ## The three escalations, and where their numbers come from
  *
- * Both mirror `prPipeline`'s `blocked` → `blocked-stale` move: a WAITING state
- * is a promise that something else will clear the row, and once the premise of
- * that promise is demonstrably false the row goes red.
+ * All three mirror `prPipeline`'s `blocked` → `blocked-stale` move: a WAITING
+ * state is a promise that something else will clear the row, and once the
+ * premise of that promise is demonstrably false the row goes red. Every waiting
+ * reading whose premise is CHECKABLE gets checked — a promise nobody audits is
+ * the same defect as a failure nobody renders.
  *
  * - `dispatched` → `dispatch_stalled` at {@link DISPATCH_STALE_MS} (15
  *   minutes, the window the retired `summarizeContinuationLifecycle` used).
@@ -64,10 +66,22 @@
  *   (`should_post_deferred_stamp`, `agent_runtime.rs`), so a count of N is a
  *   FLOOR on N hours of refusal, and 24 is a full day of a machine saying no.
  *   Past that the retry loop is demonstrably not getting there.
+ * - `deferred` → `deferral_abandoned` at {@link DEFERRAL_SILENT_MS}, on the AGE
+ *   of the last deferral rather than on its count. The count answers "how hard
+ *   is this being refused"; it cannot answer "is anyone still asking". Without
+ *   this arm a row dispatched 16 minutes ago and never acked read red while one
+ *   dispatched six days ago, deferred twice six days ago and pulled by nobody
+ *   since read calm amber over a reason string promising it was still
+ *   "re-deliverable" — and nothing contradicted that until coord's 7-day TTL
+ *   sweep.
  *
- * Neither number is a liveness claim: nothing here probes a device. The panel
- * reports the stamps coord holds and the operator judges — the same discipline
- * `gateStatus`'s `stale` reading takes.
+ * Silence wins over count when both fire: "nothing is pulling this any more" is
+ * the fact that changes what the operator does, and a 58-count row gone quiet
+ * needs a different fix from a 58-count row still being actively refused.
+ *
+ * None of the three is a liveness claim: nothing here probes a device. Each
+ * reads a stamp coord holds against a cadence the producer documents, and the
+ * operator judges — the same discipline `gateStatus`'s `stale` reading takes.
  */
 
 import type { Attention } from "@/components/console/attention";
@@ -106,6 +120,38 @@ export const DISPATCH_STALE_MS = 15 * 60 * 1_000;
  */
 export const DEFERRAL_STUCK_COUNT = 24;
 
+/**
+ * A deferred, unconsumed continuation whose LAST deferral is older than this
+ * reads as `deferral_abandoned` (red) instead of `deferred` (amber) — however
+ * few times it was pushed back.
+ *
+ * Amber's promise on a deferred row is *"a runner is still pulling this and
+ * will retry"*, and that promise has a measurable heartbeat. The runner's
+ * backstop re-lists a deferred row every ~300s
+ * (`CONTINUATION_BACKSTOP_POLL_SECS_DEFAULT`) and stamps a deferral at most
+ * once an hour per gate (`CONTINUATION_DEFERRED_STAMP_INTERVAL =
+ * Duration::from_secs(3600)`, qontinui-runner `agent_runtime.rs`). So while
+ * ANY runner is still pulling the row, `continuation_deferred_at` refreshes at
+ * least hourly. A `deferred_at` much older than that means nothing is pulling
+ * it any more — which is `dispatch_stalled`'s condition with a reason attached,
+ * and amber is then asserting a premise that is false.
+ *
+ * **Three hours = three stamp intervals.** The post is best-effort (the runner
+ * swallows any non-2xx or transport error), so ONE missed hour is plausibly a
+ * transient coord blip and must not turn a healthy row red. Three consecutive
+ * misses is not: a row still being pulled had three opportunities to refresh
+ * this stamp and took none. It is deliberately far tighter than coord's own
+ * `ttl_7d_elapsed` sweep, which is what used to be the only thing that ever
+ * contradicted the amber.
+ *
+ * Longer than {@link DISPATCH_STALE_MS} on purpose. That window asks "has any
+ * runner EVER acked this?", where 15 minutes of total silence is already
+ * damning. This one asks "has the runner that WAS acking stopped?", and the
+ * honest bar for declaring a demonstrated puller gone is the loss of a signal
+ * whose cadence we know.
+ */
+export const DEFERRAL_SILENT_MS = 3 * 60 * 60 * 1_000;
+
 // ---------------------------------------------------------------------------
 // The vocabulary
 // ---------------------------------------------------------------------------
@@ -123,6 +169,7 @@ export type ContinuationKind =
   | "dispatch_stalled"
   | "deferred"
   | "deferral_stuck"
+  | "deferral_abandoned"
   | "spawned"
   | "work_completed"
   | "work_abandoned"
@@ -144,15 +191,16 @@ export type ContinuationKind =
  * | `dispatched` | `none` | coord emitted it and a runner has not yet acked. In flight; nobody is blocked. |
  * | `dispatch_stalled` | `author` | Emitted, unconsumed past {@link DISPATCH_STALE_MS}, and NO deferral explains it. Nothing retries it into existence; a human decides. |
  * | `deferred` | `waiting` | A runner saw it and pushed back with a stated reason (thread pressure, a cap, a duplicate anchor). The row stays pending and re-deliverable — this is exactly amber's promise. |
- * | `deferral_stuck` | `author` | Pushed back {@link DEFERRAL_STUCK_COUNT}+ times. The promise amber makes is demonstrably not being kept. |
+ * | `deferral_stuck` | `author` | Pushed back {@link DEFERRAL_STUCK_COUNT}+ times and still being pushed back. The promise amber makes is demonstrably not being kept. |
+ * | `deferral_abandoned` | `author` | Deferred, unconsumed, and the last deferral is older than {@link DEFERRAL_SILENT_MS}. Amber's premise on a deferred row is that a runner is still pulling it, and that has a known heartbeat; past three stamp intervals nothing is pulling it any more. Same condition as `dispatch_stalled`, with a reason attached. |
  * | `spawned` | `waiting` | A process started; the work outcome was **never reported**. Not success — see the module header. The session may still supersede it, which is what makes this amber rather than red. |
  * | `work_completed` | `none` | The continuation session reported it finished the work. The ONLY success reading in this vocabulary. |
  * | `work_abandoned` | `author` | The session reported it gave up. The work the gate existed for did not happen. |
  * | `work_unreported` | `waiting` | The runner's PTY-exit fallback: the session ended without reporting. A statement of ignorance about a terminal process — R3's ignorance floor, never green and never red. |
  * | `spawn_failed` | `author` | The runner consumed it and no session opened. The 21-row population this plan exists for; it was reading as "consumed". |
  * | `consumed_silent` | `waiting` | Consumed, outcome never claimed. Worse than a recorded `spawn_failed` — but we hold no claim either way, so it takes the ignorance floor rather than borrowing red. |
- * | `cancelled` | `none` | Somebody withdrew it. A CHOICE, terminal, costs nobody anything — the same reading `gateStatus` gives `withdrawn`. |
- * | `expired` | `author` | coord's stall watcher gave up on it: it will never dispatch. Nothing re-arms it on its own. |
+ * | `cancelled` | `none` | Somebody withdrew it, and coord had NOT already expired it. A CHOICE, terminal, costs nobody anything — the same reading `gateStatus` gives `withdrawn`. |
+ * | `expired` | `author` | coord's stall watcher gave up on it: it will never dispatch. Nothing re-arms it on its own. Beats `cancelled` when both stamps are present. |
  * | `unknown` | `waiting` | An outcome string this build has no reading for. R3's ignorance floor. |
  *
  * Note `dispatched` is `none` while `spawned` is `waiting`, which looks
@@ -171,6 +219,7 @@ export const CONTINUATION_ATTENTION_BY_KIND: Record<
   dispatch_stalled: "author",
   deferred: "waiting",
   deferral_stuck: "author",
+  deferral_abandoned: "author",
   spawned: "waiting",
   work_completed: "none",
   work_abandoned: "author",
@@ -197,6 +246,7 @@ export const CONTINUATION_KIND_CLASS: Record<ContinuationKind, string> = {
   dispatch_stalled: AUTHOR_RED,
   deferred: WAITING_AMBER,
   deferral_stuck: AUTHOR_RED,
+  deferral_abandoned: AUTHOR_RED,
   spawned: UNKNOWN_AMBER,
   work_completed: DONE_GREEN,
   work_abandoned: AUTHOR_RED,
@@ -369,10 +419,18 @@ function readDeferral(g: ContinuationStatusInput): ContinuationDeferral | null {
   // still means a deferral happened — the count column is the thing that can be
   // missing, not the event.
   const stamped = Boolean(g.continuation_deferred_at || g.continuation_deferred_reason);
+  // The ONLY gate on "is there a deferral at all". Everything below reports
+  // what coord recorded; nothing below re-decides existence.
   if (!stamped && count <= 0) return null;
   return {
     count,
-    countKnown: countKnown && count > 0,
+    // `countKnown` answers "did coord send a usable number", and nothing else.
+    // It used to be `countKnown && count > 0`, which sent a genuine
+    // `deferred_count: 0` arriving beside a stamped `deferred_at` down the
+    // same branch as "no count came with it" and rendered `deferred ×?` — the
+    // null/zero collapse this module refuses everywhere else. A real zero is a
+    // measurement; the early return above is what handles its absence.
+    countKnown,
     reason: humanizeDeferralReason(g.continuation_deferred_reason),
     rawReason: g.continuation_deferred_reason?.trim() || null,
     at: g.continuation_deferred_at ?? null,
@@ -406,8 +464,10 @@ function status(
  *
  * Precedence is **terminal-first, then explained-before-unexplained**:
  *
- * 1. `cancelled` / `expired` — somebody or coord ended it; nothing after that
- *    stamp can be the current state.
+ * 1. `expired`, then `cancelled` — coord or somebody ended it; nothing after
+ *    that stamp can be the current state. Expiry outranks cancellation because
+ *    coord accepts a cancel on an already-expired row, and the expiry is the
+ *    one of the two it raised an alert for.
  * 2. the consumed OUTCOME, on its marker word.
  * 3. consumed with no outcome → `consumed_silent`.
  * 4. dispatched and unconsumed → a DEFERRAL if one was stamped (it explains the
@@ -446,7 +506,41 @@ export function deriveContinuationStatus(
     rawOutcome,
   });
 
-  // 1 — terminal by somebody's decision.
+  // 1 — terminal, EXPIRY FIRST.
+  //
+  // The two are not mutually exclusive on the wire. coord's cancel writer
+  // (`gates.rs`) guards only on `continuation_consumed_at IS NULL` and
+  // `continuation_cancelled_at IS NULL` — it has no `continuation_expired_at
+  // IS NULL` clause — so a cancel landing on an already-expired row is
+  // accepted and both stamps sit on it.
+  //
+  // Expiry therefore wins. coord stamps `continuation_expired_at` only after
+  // its stall watcher has given up and raised a durable alert; a later
+  // cancellation adds a fact but retracts nothing, and ordering `cancelled`
+  // first turned an alerted `ttl_7d_elapsed` red row into a calm grey
+  // `cancelled` with attention `none` — a downgrade of the loudest thing coord
+  // had to say about the row. The cancellation is not dropped: it is named in
+  // the reason and carried verbatim in the panel's `raw` slot.
+  //
+  // `GateActions` separately stops OFFERING the cancel on an expired row, so
+  // the console no longer invites the transition. That guard and this ordering
+  // close different holes — one stops the console proposing it, the other
+  // stops any other door's cancel from erasing the expiry here.
+  if (g.continuation_expired_at) {
+    const why = g.continuation_expired_reason?.trim();
+    const alsoCancelled = g.continuation_cancelled_at
+      ? " (a cancellation was recorded afterwards, which does not undo the expiry)"
+      : "";
+    return wrap(
+      status(
+        "expired",
+        "expired",
+        why
+          ? `coord expired this continuation (${why}) — it will never dispatch${alsoCancelled}`
+          : `coord expired this continuation — it will never dispatch${alsoCancelled}`
+      )
+    );
+  }
   if (g.continuation_cancelled_at) {
     const why = g.continuation_cancel_reason?.trim();
     return wrap(
@@ -456,18 +550,6 @@ export function deriveContinuationStatus(
         why
           ? `the continuation was cancelled — ${why}`
           : "the continuation was cancelled before it ran; no reason was recorded"
-      )
-    );
-  }
-  if (g.continuation_expired_at) {
-    const why = g.continuation_expired_reason?.trim();
-    return wrap(
-      status(
-        "expired",
-        "expired",
-        why
-          ? `coord expired this continuation (${why}) — it will never dispatch`
-          : "coord expired this continuation — it will never dispatch"
       )
     );
   }
@@ -542,21 +624,61 @@ export function deriveContinuationStatus(
   if (g.continuation_dispatched_at) {
     if (deferral) {
       const why = deferral.reason ? ` — last time: ${deferral.reason}` : "";
+      const times = deferral.countKnown
+        ? `${deferral.count} time${deferral.count === 1 ? "" : "s"}`
+        : "an unrecorded number of times";
+      // The AGE test first. Amber on a deferred row promises a runner is still
+      // pulling it, and that promise has a heartbeat we can check; the count
+      // cannot answer whether anyone is still asking. When the stamp is
+      // unreadable the test cannot run at all, and asserting the promise
+      // anyway is exactly the ignorance-rendered-as-calm this module refuses.
+      const deferredMs = deferral.at
+        ? new Date(deferral.at).getTime()
+        : Number.NaN;
+      if (Number.isNaN(deferredMs)) {
+        return wrap(
+          status(
+            "unknown",
+            "deferral time unreadable",
+            `coord recorded ${times} deferred${why}, but no readable time for the last one — whether any runner is still pulling this cannot be established`
+          )
+        );
+      }
+      if (now - deferredMs >= DEFERRAL_SILENT_MS) {
+        return wrap(
+          status(
+            "deferral_abandoned",
+            `${deferralLabel(deferral)} — nothing pulling`,
+            `pushed back ${times}, and the last deferral is older than the runner's hourly stamp allows for a row anything is still pulling; it is not being retried${why}`
+          )
+        );
+      }
       return wrap(
         status(
           deferral.stuck ? "deferral_stuck" : "deferred",
           deferralLabel(deferral),
           deferral.stuck
-            ? `a runner has pushed this dispatch back ${deferral.countKnown ? `${deferral.count} times` : "repeatedly"}; the retry loop is not getting to it${why}`
-            : `a runner saw this continuation and pushed it back; it stays pending and re-deliverable${why}`
+            ? `a runner has pushed this dispatch back ${times} and is still doing so; the retry loop is not getting to it${why}`
+            : `a runner saw this continuation and pushed it back; it is still being re-listed, so it stays pending and re-deliverable${why}`
         )
       );
     }
     const dispatchedMs = new Date(g.continuation_dispatched_at).getTime();
-    const stalled =
-      !Number.isNaN(dispatchedMs) && now - dispatchedMs >= DISPATCH_STALE_MS;
+    if (Number.isNaN(dispatchedMs)) {
+      // Inherited verbatim from the deleted summarizer, which fell through to
+      // a calm "waiting for a runner to claim it" — a positive claim about a
+      // row whose only evidence is an unparseable string. The age test is the
+      // whole basis of both readings below, so without it neither is available.
+      return wrap(
+        status(
+          "unknown",
+          "dispatch time unreadable",
+          `coord recorded the dispatch time as "${g.continuation_dispatched_at}", which this build cannot read — how long this has been out is unknown`
+        )
+      );
+    }
     return wrap(
-      stalled
+      now - dispatchedMs >= DISPATCH_STALE_MS
         ? status(
             "dispatch_stalled",
             "not picked up",
