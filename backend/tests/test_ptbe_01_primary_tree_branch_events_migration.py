@@ -55,6 +55,16 @@ Without a database (always runs, including on a box with no Postgres):
    same posture for ``created_via``. A CHECK is the one addition that reads as
    tightening and is in fact the defect (see 9 below).
 
+4b. **Both free-form columns document exactly the vocabulary they should.**
+    With no CHECK and no DEFAULT, the ``--`` comment block above each
+    declaration is the only machine-readable statement of what may be stored,
+    so the test reads THAT block and compares the set of quoted values —
+    ``created_via`` names exactly ``'checkout_guard_observed'``,
+    ``terminal_outcome`` exactly its two variants plus the ``'merged'``
+    ``pr_state`` literal its landed predicate reads. Scanning the whole DDL
+    instead would only prove "the right value is present and one particular
+    wrong one is absent", which a THIRD value would sail past.
+
 With a database (skipped when none is reachable — see the warning below):
 
 5. **All eleven columns land with the declared type, nullability and default.**
@@ -339,12 +349,6 @@ def test_upgrade_is_three_op_execute_calls_and_every_object_is_coord_qualified()
             re.I,
         ), f"{index} must be created ON {_SCHEMA}.{_TABLE}"
 
-    # Nothing in the upgrade path may name a bare (unqualified) relation.
-    for match in re.finditer(r"\b(?:CREATE\s+TABLE|ON)\s+(\w+)\s*\(", sql, re.I):
-        assert match.group(1) != _TABLE, (
-            f"unqualified reference to {_TABLE!r} in the upgrade path: {match.group(0)!r}"
-        )
-
 
 # ---------------------------------------------------------------------------
 # 3. the only DROP lives inside downgrade()
@@ -423,16 +427,52 @@ def test_the_upgrade_path_writes_no_check_constraint() -> None:
     )
 
 
-def test_created_via_ships_exactly_one_value() -> None:
+def _quoted_values_documented_for(column: str) -> set[str]:
+    """The SQL-quoted values named in the ``--`` comment block above ``column``.
+
+    The column carries no CHECK and no DEFAULT, so its permitted vocabulary is
+    stated in exactly one machine-readable place: the comment the revision
+    writes immediately above the declaration. Reading the block rather than the
+    whole DDL is what lets this assert "exactly one", instead of the weaker
+    "the expected one is present and one particular wrong one is not" — which
+    would pass unchanged if some THIRD value were introduced.
+    """
     tree = _module_tree()
     sql = "\n".join(_sql_literals(_function(tree, "upgrade"), tree))
-    assert _CREATED_VIA in sql, (
-        f"the revision no longer names {_CREATED_VIA!r}, the only value Phase 3 writes"
+    lines = sql.split("\n")
+    declaration = [
+        i for i, line in enumerate(lines) if re.match(rf"\s*{column}\s+\w", line)
+    ]
+    assert len(declaration) == 1, (
+        f"expected exactly one {column} declaration line, found {len(declaration)}"
     )
-    assert "manual_report" not in sql, (
-        "`manual_report` has no writer in any phase of this plan; a value with "
-        "no writer is the agent_worktrees.work_unit_id failure. Add it in the "
-        "same PR as the door that emits it, or not at all."
+    block: list[str] = []
+    for line in reversed(lines[: declaration[0]]):
+        if not line.strip().startswith("--"):
+            break
+        block.append(line)
+    assert block, f"{column} carries no comment block stating its vocabulary"
+    return set(re.findall(r"'([^']+)'", "\n".join(block)))
+
+
+def test_created_via_documents_exactly_one_value() -> None:
+    values = _quoted_values_documented_for("created_via")
+    assert values == {_CREATED_VIA}, (
+        f"created_via must name exactly {{{_CREATED_VIA!r}}}; found {values}. "
+        "A second value needs its writer in the same PR — a value with no "
+        "writer is the agent_worktrees.work_unit_id failure, a column that sat "
+        "in the schema from 2026-06-26 with nothing writing it."
+    )
+
+
+def test_terminal_outcome_documents_exactly_the_two_variants() -> None:
+    """The same read applied to the column D3 is actually about."""
+    values = _quoted_values_documented_for("terminal_outcome")
+    assert values == {_TERMINAL_LANDED, _TERMINAL_CLOSED_UNMERGED, "merged"}, (
+        "terminal_outcome's comment must name its two variants plus the "
+        "pr_state literal 'merged' the landed predicate reads; found "
+        f"{values}. A merged-vs-closed split mislabels every coord "
+        "fast-forward land as an abandoned branch (D3)."
     )
 
 
@@ -798,11 +838,21 @@ def test_up_down_up_leaves_no_residue_and_spares_neighbours() -> None:
                 text(
                     """
                     INSERT INTO coord.primary_trees
-                        (device_id, repo, branch, head_sha, dirty)
-                    VALUES (:device_id, 'qontinui-web', 'main', :head_sha, false)
+                        (tenant_id, device_id, repo, branch, head_sha, dirty)
+                    VALUES (:tenant_id, :device_id, 'qontinui-web', 'main',
+                            :head_sha, false)
                     """
                 ),
-                {"device_id": device_id, "head_sha": "0" * 40},
+                # tenant_id is NOT NULL here too — nullable when
+                # `coord_tenant_scope_columns` added it, locked by
+                # `coord_tenant_id_not_null` (primary_trees is in its
+                # _LOCKED_TABLES), and no revision ever gave it a DEFAULT. Both
+                # are ancestors of this one.
+                {
+                    "tenant_id": tenant_id,
+                    "device_id": device_id,
+                    "head_sha": "0" * 40,
+                },
             )
 
         run_alembic(backend_root(), db_url, "downgrade", _parent_revision_id())
