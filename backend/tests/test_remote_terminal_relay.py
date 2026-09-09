@@ -847,6 +847,7 @@ async def test_terminal_attached_binds_terminal_and_answers_source(
             "terminal_id": "t1",
             "buffer": "cmluZw==",
             "start_offset": 0,
+            "ring_start_offset": None,
             "total_bytes_produced": 4,
         }
     ]
@@ -1443,6 +1444,7 @@ async def test_buffer_roundtrip_is_correlated_by_minted_request_id(
             "terminal_id": "t1",
             "data": "YWJj",
             "start_offset": 10,
+            "ring_start_offset": None,
             "total_bytes_produced": 13,
         }
     ]
@@ -1961,3 +1963,245 @@ async def test_first_attach_omits_have_offset_rather_than_sending_null(
     assert ws.of_type("error") == [], ws.sent
     frame = _forwarded_attach(manager)
     assert "have_offset" not in frame
+
+
+# ---------------------------------------------------------------------------
+# Phase 5, the other half — what the relay must carry BACK once the flow frame
+# and the reattach offset reach the target at all. Admitting the pause without
+# routing the resume's resync loses exactly the output the pause withheld.
+# ---------------------------------------------------------------------------
+
+
+def _resync(claims: dict[str, Any], **overrides: Any) -> dict[str, Any]:
+    """The ring the target volunteers after a flow RESUME that skipped frames.
+
+    Shaped from the runner's own emitter (``handle_terminal_flow``,
+    ``FlowTransition::Resumed { skipped: true }``): marked with the grant and
+    a ``remote`` echo, and correlated by NOTHING — ``terminal_flow`` is
+    fire-and-forget, so ``request_id`` echoes back null.
+    """
+    frame: dict[str, Any] = {
+        "type": "terminal_buffer_response",
+        "terminal_id": "t1",
+        "grant_jti": claims["jti"],
+        "remote": {"source_device_id": SOURCE_DEVICE, "grant_jti": claims["jti"]},
+        "data": "cmVzeW5j",
+        "start_offset": 100,
+        "ring_start_offset": 40,
+        "total_bytes_produced": 106,
+        "request_id": None,
+    }
+    frame.update(overrides)
+    return frame
+
+
+@pytest.mark.asyncio
+async def test_flow_resume_resync_reaches_the_source(
+    relay: RemoteTerminalRelay,
+) -> None:
+    """The resume's ring must reach the source, correlated by GRANT not by id.
+
+    Fails on the unfixed relay: ``terminal_buffer_response`` was
+    correlate-or-drop against ``pending_buffer``, and this frame answers a
+    ``terminal_flow`` the relay sent with no request id at all. So the bytes the
+    target withheld while paused were discarded at the relay — the one failure
+    backpressure exists to prevent, reachable only because #1294 admitted the
+    flow frame that closes the target's gate in the first place.
+    """
+    ws = _FakeWS()
+    manager = _manager()
+    claims = await _attached(relay, ws, manager, terminal_id="t1")
+    session = relay._sessions[id(ws)]
+    before = len(ws.sent)
+
+    routed = await relay.route_target_frame(session, TARGET_DEVICE, _resync(claims))
+
+    assert routed is True
+    assert ws.sent[before:] == [
+        {
+            "type": "remote_terminal_buffer",
+            "grant_jti": claims["jti"],
+            "terminal_id": "t1",
+            "data": "cmVzeW5j",
+            "start_offset": 100,
+            "ring_start_offset": 40,
+            "total_bytes_produced": 106,
+        }
+    ]
+    # No request_id, and that absence is the routing instruction: the source
+    # splices an uncorrelated ring from its own offset, and resolves a
+    # `history:` waiter only for one it asked for.
+    assert "request_id" not in ws.sent[before]
+    assert session.pending_buffer == {}
+    await relay.release_source(ws)
+
+
+@pytest.mark.asyncio
+async def test_flow_resume_resync_naming_a_foreign_grant_is_ignored(
+    relay: RemoteTerminalRelay,
+) -> None:
+    """Every source listening to this target sees every frame on its channel.
+
+    A resync marked with a grant this socket does not hold is another source's
+    withheld output; delivering it under OUR jti would splice a stranger's bytes
+    into this pane. Same rule the remote-marked ``error`` route already applies.
+    """
+    ws = _FakeWS()
+    manager = _manager()
+    claims = await _attached(relay, ws, manager, terminal_id="t1")
+    session = relay._sessions[id(ws)]
+    before = len(ws.sent)
+
+    for frame in (
+        _resync(claims, grant_jti="not-ours", remote={"grant_jti": "not-ours"}),
+        # Marked with our grant but naming a terminal it does not hold: a target
+        # defect, and splicing it would corrupt the pane that IS ours.
+        _resync(claims, terminal_id="t-other"),
+    ):
+        assert await relay.route_target_frame(session, TARGET_DEVICE, frame) is False
+
+    assert ws.sent[before:] == []
+    await relay.release_source(ws)
+
+
+@pytest.mark.asyncio
+async def test_unmarked_buffer_response_is_left_to_the_mobile_path(
+    relay: RemoteTerminalRelay,
+) -> None:
+    """The mobile watchers share this channel and their replies carry no mark.
+
+    The runner adds ``grant_jti`` / ``remote`` to a ``terminal_buffer_response``
+    only for a remote request, so an unmarked one belongs to the operator-web
+    path. It passed before this change and must keep passing: the point of the
+    new arm is that it does not widen what the relay claims.
+    """
+    ws = _FakeWS()
+    manager = _manager()
+    await _attached(relay, ws, manager, terminal_id="t1")
+    session = relay._sessions[id(ws)]
+    before = len(ws.sent)
+
+    routed = await relay.route_target_frame(
+        session,
+        TARGET_DEVICE,
+        {
+            "type": "terminal_buffer_response",
+            "terminal_id": "t1",
+            "data": "bW9iaWxl",
+            "request_id": "a-mobile-watchers-own-id",
+        },
+    )
+
+    assert routed is False
+    assert ws.sent[before:] == []
+    await relay.release_source(ws)
+
+
+@pytest.mark.asyncio
+async def test_ring_start_offset_survives_the_attach_reply(
+    relay: RemoteTerminalRelay,
+) -> None:
+    """``ring_start_offset`` is the source's ``history_start``.
+
+    Fails on the unfixed relay, which copied a known field set and did not name
+    this one. The attach reply ships only a bounded TAIL, and this says where the
+    ring actually begins — so without it ``RemotePaneIo::history_range()``
+    returns ``None`` for every pane and the operator can never fetch the earlier
+    output the target still holds. Not a degraded lazy scrollback: an absent one,
+    with nothing in either log to say so.
+    """
+    ws = _FakeWS()
+    manager = _manager()
+    claims = _claims()
+    await _attach(relay, ws, manager, claims)
+    session = relay._sessions[id(ws)]
+    minted = _forwarded_attach(manager)["request_id"]
+
+    routed = await relay.route_target_frame(
+        session,
+        TARGET_DEVICE,
+        {
+            "type": "terminal_attached",
+            "request_id": minted,
+            "terminal_id": "t1",
+            "data": "dGFpbA==",
+            "start_offset": 900,
+            "ring_start_offset": 40,
+            "total_bytes_produced": 904,
+        },
+    )
+
+    assert routed is True
+    attached = ws.of_type("remote_terminal_attached")[0]
+    assert (attached["start_offset"], attached["ring_start_offset"]) == (900, 40)
+    await relay.release_source(ws)
+
+
+@pytest.mark.asyncio
+async def test_history_request_forwards_both_ends_of_the_range(
+    relay: RemoteTerminalRelay,
+) -> None:
+    """Lazy scrollback asks for a HALF-OPEN ``[from, to)`` and the target reads
+    both ends.
+
+    Fails on the unfixed relay, which forwarded only the lower bound — turning a
+    request for the window above the attach seed into "everything from `from` to
+    the end of the ring", which is the whole ring the tail arm existed to avoid
+    shipping.
+    """
+    ws = _FakeWS()
+    manager = _manager()
+    claims = await _attached(relay, ws, manager, terminal_id="t1")
+    manager.send_terminal.reset_mock()
+
+    await _send(
+        relay,
+        ws,
+        manager,
+        {
+            "type": "remote_terminal_buffer",
+            "request_id": "history:1",
+            "grant_jti": claims["jti"],
+            "terminal_id": "t1",
+            "from_offset": 40,
+            "to_offset": 900,
+        },
+    )
+
+    frame = manager.send_terminal.await_args.args[1]
+    assert frame["type"] == "terminal_buffer"
+    assert (frame["from_offset"], frame["to_offset"]) == (40, 900)
+    await relay.release_source(ws)
+
+
+@pytest.mark.asyncio
+async def test_attach_buffer_request_omits_bounds_it_was_not_given(
+    relay: RemoteTerminalRelay,
+) -> None:
+    """A whole-ring request must send neither bound rather than two nulls.
+
+    The target branches on presence (``data.get("to_offset")``), and a null
+    would be indistinguishable from an omission only by luck of that spelling.
+    Passes either way — a guard on the new loop, not evidence for it.
+    """
+    ws = _FakeWS()
+    manager = _manager()
+    claims = await _attached(relay, ws, manager, terminal_id="t1")
+    manager.send_terminal.reset_mock()
+
+    await _send(
+        relay,
+        ws,
+        manager,
+        {
+            "type": "remote_terminal_buffer",
+            "request_id": "buf-whole",
+            "grant_jti": claims["jti"],
+            "terminal_id": "t1",
+        },
+    )
+
+    frame = manager.send_terminal.await_args.args[1]
+    assert "from_offset" not in frame
+    assert "to_offset" not in frame
+    await relay.release_source(ws)

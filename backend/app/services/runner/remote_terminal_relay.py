@@ -46,11 +46,13 @@ The source socket's replica subscribes to the target's existing
 remote-only ``runner:remote_terminal_response:{target_device_id}`` channel
 (``terminal_attached``, and refusals correlated by ``remote`` rather than
 ``request_id``). Frames are matched to this socket's attachments by
-``terminal_id`` (streaming frames) or by a ``request_id`` this module MINTED
-(RPC replies) — the source's own ``request_id`` is never put on the wire to
-the target, because every watcher of the target shares that channel and two
-sources choosing equal ids would otherwise cross-bind. Anything else on the
-channel is ignored. The Redis registry —
+``terminal_id`` (streaming frames), by a ``request_id`` this module MINTED
+(RPC replies), or — for a target frame the target itself marked with the
+grant, such as the unsolicited ring it sends when a flow RESUME had withheld
+output — by that ``grant_jti``. The source's own ``request_id`` is never put
+on the wire to the target, because every watcher of the target shares that
+channel and two sources choosing equal ids would otherwise cross-bind.
+Anything else on the channel is ignored. The Redis registry —
 ``remote_attach:claim:{grant_jti}`` → ``source_device_id`` (the atomic
 single-use claim), ``remote_attach:grant:{grant_jti}`` → the full attachment
 record, and ``remote_attach:{target_device_id}:{terminal_id}`` →
@@ -434,8 +436,14 @@ class RemoteTerminalRelay:
                 minted = uuid4().hex
                 source_request_id = msg.get("request_id")
                 extra: dict[str, Any] = {"request_id": minted}
-                if msg.get("from_offset") is not None:
-                    extra["from_offset"] = msg.get("from_offset")
+                # Phase 5 lazy scrollback asks for an absolute HALF-OPEN range,
+                # and the target reads both ends (`handle_terminal_buffer`).
+                # Forwarding only the lower bound turns `[from, to)` into
+                # `[from, end-of-ring)`: the operator asks for the window above
+                # the attach seed and is answered with the whole ring.
+                for bound in ("from_offset", "to_offset"):
+                    if msg.get(bound) is not None:
+                        extra[bound] = msg.get(bound)
                 # Register BEFORE forwarding: the reply can race back on the
                 # listener before ``send_terminal`` returns.
                 session.pending_buffer[minted] = (
@@ -1246,6 +1254,13 @@ class RemoteTerminalRelay:
                     "terminal_id": terminal_id,
                     "buffer": frame.get("buffer", frame.get("data")),
                     "start_offset": frame.get("start_offset"),
+                    # Where the target's ring actually BEGINS, which is below
+                    # `start_offset` whenever the attach shipped only the
+                    # bounded tail. It is the source's `history_start`, and
+                    # `RemotePaneIo::history_range()` returns None without it —
+                    # so dropping it does not degrade lazy scrollback, it
+                    # switches the feature off with nothing to say so.
+                    "ring_start_offset": frame.get("ring_start_offset"),
                     "total_bytes_produced": frame.get("total_bytes_produced"),
                 },
             )
@@ -1287,47 +1302,112 @@ class RemoteTerminalRelay:
             return True
 
         if frame_type == "terminal_buffer_response":
-            wire_request_id = frame.get("request_id")
-            correlated = (
-                session.pending_buffer.pop(wire_request_id, None)
-                if isinstance(wire_request_id, str)
-                else None
-            )
-            if correlated is None:
-                return False
-            source_request_id, jti = correlated
-            att = session.grants.get(jti)
-            if att is None:
-                return False
-            if frame.get("terminal_id") != att.terminal_id:
-                # Our own minted id answered for a terminal this grant does
-                # not hold: a target defect, never something to hand over.
-                logger.warning(
-                    "remote_terminal_buffer_terminal_mismatch",
-                    source_device_id=session.device_id,
-                    grant_jti=att.grant_jti,
-                    expected_terminal_id=att.terminal_id,
-                    terminal_id=frame.get("terminal_id"),
-                )
-                return False
-            await self._send_to_source(
-                session,
-                {
-                    "type": "remote_terminal_buffer",
-                    "request_id": source_request_id,
-                    "grant_jti": att.grant_jti,
-                    "terminal_id": att.terminal_id,
-                    "data": frame.get("data"),
-                    "start_offset": frame.get("start_offset"),
-                    "total_bytes_produced": frame.get("total_bytes_produced"),
-                },
-            )
-            return True
+            return await self._route_buffer_response(session, target_device_id, frame)
 
         if frame_type == "error":
             return await self._route_target_error(session, target_device_id, frame)
 
         return False
+
+    async def _attachment_by_remote_mark(
+        self, session: _SourceSession, target_device_id: str, frame: dict[str, Any]
+    ) -> _Attachment | None:
+        """The attachment a remote-MARKED target frame belongs to, if it is ours.
+
+        A frame that NAMES a grant is routed by that grant alone: one naming a
+        grant this socket does not hold belongs to some other source, however
+        familiar its ``terminal_id`` looks. Only an unnamed frame falls back to
+        the terminal route.
+
+        The caller decides that the frame is remote-marked at all
+        (``_is_remote_marked``) — a frame the target did not mark rides the
+        channel the mobile watchers share and is never ours.
+        """
+        remote = frame.get("remote")
+        jti_hint = (
+            remote.get("grant_jti") if isinstance(remote, dict) else None
+        ) or frame.get("grant_jti")
+        if jti_hint is None:
+            return await self._bound_attachment(
+                session, target_device_id, frame.get("terminal_id")
+            )
+        if isinstance(jti_hint, str):
+            return session.grants.get(jti_hint)
+        return None
+
+    async def _route_buffer_response(
+        self, session: _SourceSession, target_device_id: str, frame: dict[str, Any]
+    ) -> bool:
+        """Route a target ``terminal_buffer_response``. Two shapes arrive here.
+
+        SOLICITED — the answer to a ``remote_terminal_buffer`` this module
+        forwarded. It carries the ``request_id`` we MINTED, so it correlates in
+        ``pending_buffer``, and the SOURCE's own request id is echoed back: the
+        source resolves its ``history:`` waiter and deliberately does not
+        splice, because its stream is already past that range.
+
+        UNSOLICITED — the target's resync after a flow RESUME that had withheld
+        frames (``handle_terminal_flow``, ``FlowTransition::Resumed { skipped:
+        true }``, which answers with the ring). ``terminal_flow`` is
+        fire-and-forget and carries no request id, so that reply echoes
+        ``request_id: null`` and correlates with nothing. Correlate-or-drop
+        therefore discarded precisely the output the pause had withheld — the
+        one failure backpressure exists to prevent — from the moment the flow
+        frame was first admitted. It is routed instead by the grant the target
+        marked it with, and forwarded WITHOUT a request id, which is what makes
+        the source splice it from its own offset rather than resolve a waiter.
+
+        A frame carrying neither our minted id nor a remote mark belongs to the
+        mobile watcher path that shares this channel, and is not ours.
+        """
+        wire_request_id = frame.get("request_id")
+        correlated = (
+            session.pending_buffer.pop(wire_request_id, None)
+            if isinstance(wire_request_id, str)
+            else None
+        )
+        source_request_id: str | None = None
+        if correlated is not None:
+            source_request_id, jti = correlated
+            att: _Attachment | None = session.grants.get(jti)
+        elif _is_remote_marked(frame):
+            att = await self._attachment_by_remote_mark(
+                session, target_device_id, frame
+            )
+        else:
+            return False
+        if att is None:
+            return False
+        if frame.get("terminal_id") != att.terminal_id:
+            # A reply for a terminal this grant does not hold: our own minted
+            # id answered off-terminal, or a resync marked with our grant named
+            # someone else's pane. A target defect either way, never something
+            # to hand over.
+            logger.warning(
+                "remote_terminal_buffer_terminal_mismatch",
+                source_device_id=session.device_id,
+                grant_jti=att.grant_jti,
+                expected_terminal_id=att.terminal_id,
+                terminal_id=frame.get("terminal_id"),
+                correlated=correlated is not None,
+            )
+            return False
+        payload: dict[str, Any] = {
+            "type": "remote_terminal_buffer",
+            "grant_jti": att.grant_jti,
+            "terminal_id": att.terminal_id,
+            "data": frame.get("data"),
+            "start_offset": frame.get("start_offset"),
+            "ring_start_offset": frame.get("ring_start_offset"),
+            "total_bytes_produced": frame.get("total_bytes_produced"),
+        }
+        # Only for an RPC we correlated. An unsolicited resync carries none, and
+        # that absence is load-bearing: a ``history:`` id would resolve the
+        # source's waiter instead of splicing the bytes into the pane.
+        if correlated is not None:
+            payload["request_id"] = source_request_id
+        await self._send_to_source(session, payload)
+        return True
 
     async def _route_target_error(
         self, session: _SourceSession, target_device_id: str, frame: dict[str, Any]
@@ -1347,20 +1427,10 @@ class RemoteTerminalRelay:
         if att is None and _is_remote_marked(frame):
             # Only a frame the target marked as a remote refusal may fall
             # back to the terminal route; a mobile watcher's own
-            # request-correlated error is never handed to the source. And a
-            # frame that NAMES a grant is routed by that grant alone: one
-            # naming a grant this socket does not hold belongs to some other
-            # source, however familiar its terminal_id looks.
-            remote = frame.get("remote")
-            jti_hint = (
-                remote.get("grant_jti") if isinstance(remote, dict) else None
-            ) or frame.get("grant_jti")
-            if jti_hint is None:
-                att = await self._bound_attachment(
-                    session, target_device_id, frame.get("terminal_id")
-                )
-            elif isinstance(jti_hint, str):
-                att = session.grants.get(jti_hint)
+            # request-correlated error is never handed to the source.
+            att = await self._attachment_by_remote_mark(
+                session, target_device_id, frame
+            )
         if att is None:
             return False
         payload: dict[str, Any] = {
