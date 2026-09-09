@@ -1,0 +1,132 @@
+# coord column-drop guard: a `coord.*` DROP/RENAME in an alembic revision must
+# not land while a coord build that is serving — or is on coord's main and
+# about to be — still reads that surface.
+#
+# Background: pdtier_01 (web#1102, 2026-08-27) dropped
+# coord.prompt_documents.agent_writable while the DEPLOYED coord build still
+# read it, and every agent policy write in the fleet failed closed within
+# minutes. Nothing on the web side knew what coord reads; nothing on the coord
+# side saw the web PR. Plan 2026-09-03-coord-column-drop-guard-on-web-migrations
+# closes that from the web side: coord publishes its read contract at
+# GET https://coord.qontinui.io/schema/read-surfaces (its deployed build's
+# manifest plus the one its CI pushed from main), and this check fails a
+# revision whose drop is still named there.
+#
+# THE GATE LOGIC LIVES IN `scripts/ci/check_coord_column_drops.py`, not here.
+# Three lanes invoke that one script (the shape .qontinui/ci.toml's header
+# calls preferred — one copy of the logic, so the lanes cannot drift):
+#
+#   * this workflow, job `coord-column-drop-guard`
+#   * .qontinui/ci.toml, step `coord-column-drop-guard`
+#   * .pre-commit-config.yaml, hook `coord-column-drop-guard` (shift-left)
+#
+# The job deliberately has NO `name:` key: with it absent the job id IS the
+# status-check context (`coord-column-drop-guard`), exactly like
+# `alembic-heads-pr` in alembic-graph-pr.yml. Adding a `name:` would silently
+# change the string the `web-protect-main` ruleset registers (Phase 3 of the
+# plan makes this check REQUIRED, only after this workflow has posted the
+# context on main at least once — a required context that has never posted
+# blocks every PR).
+#
+# The common case costs no network call: the script exits 0 after an offline
+# AST scan when the changed revisions drop nothing in coord.*. Only a real
+# coord.* DROP/RENAME fetches the manifest, and an unavailable manifest is
+# exit 2 (UNKNOWN), never a pass.
+
+name: coord column-drop guard
+
+on:
+  pull_request:
+    branches: [main, develop]
+    # NOTE: deliberately NO `paths:` filter — the same rationale as
+    # alembic-graph-pr.yml, quoted: "This check is wired into branch
+    # protection as a REQUIRED status (strict mode). A required check that is
+    # skipped by a paths filter leaves every non-alembic PR stuck on
+    # 'Expected — waiting for status' and unable to merge. So the job runs on
+    # EVERY PR; the head count is a cheap offline scan that passes trivially
+    # when main is single-headed (the normal state) and only fails on a real
+    # fork." Here the cheap offline scan is the AST pass over the changed
+    # revision files, which is empty on a non-alembic PR and passes honestly.
+  push:
+    branches:
+      # Post-land companion on main. Phase 3 can only require a context that
+      # has already posted on main, so this lane exists to post it; it diffs
+      # what the push carried against the push event's `before` sha (see the
+      # base-selection step), so it is a real check of what landed rather
+      # than a vacuous exit 0.
+      - main
+      # merge-candidate/** refs are pushed by coord's autonomous merge
+      # scheduler (plan 2026-06-06-coord-ci-runner-autonomous-green-merge,
+      # Phase 4). A required merge gate must run on candidate refs (which
+      # arrive as pushes, not PRs) or the candidate proposal hangs in
+      # awaiting-ci. Same no-paths-filter rationale as the pull_request
+      # trigger. Validation-only; no deploy.
+      - 'merge-candidate/**'
+      - 'merge-candidate-spec/**'
+      - 'merge-candidate-batch/**'
+
+permissions:
+  contents: read
+
+jobs:
+  coord-column-drop-guard:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          # The gate diffs `<base>...HEAD` (three-dot: from the merge base),
+          # so it needs the base ref AND enough history to find that merge
+          # base. A depth-1 checkout has neither; `fetch-depth: 0` is the
+          # simplest correct answer and the revision set is small.
+          fetch-depth: 0
+
+      - name: Choose the base to diff against
+        id: base
+        # The gate is a pure function of (base, HEAD); this step only picks the
+        # base per event, and every pick is a ref the checkout above holds:
+        #   pull_request  -> the PR's own base branch (main OR develop), so a
+        #                    develop-targeted PR is not diffed against main.
+        #   push to main  -> the push event's `before` sha, so EVERY commit the
+        #                    push carried is scanned (coord's ff-lands push a
+        #                    rebased branch of N commits at once; `HEAD~1` would
+        #                    see only the last). A `before` of all zeros (branch
+        #                    created) or one the checkout cannot resolve (a
+        #                    force-push over a rewritten commit) falls back to
+        #                    HEAD~1 rather than failing the lane.
+        #   candidate ref -> origin/main: the candidate is main plus the PR, so
+        #                    the three-dot diff from their merge base is exactly
+        #                    the PR's revisions.
+        run: |
+          set -euo pipefail
+          case "${{ github.event_name }}" in
+            pull_request)
+              base="origin/${{ github.base_ref }}" ;;
+            push)
+              if [ "${{ github.ref }}" = "refs/heads/main" ]; then
+                before="${{ github.event.before }}"
+                if [ -n "$before" ] \
+                   && [ "$before" != "0000000000000000000000000000000000000000" ] \
+                   && git cat-file -e "${before}^{commit}" 2>/dev/null; then
+                  base="$before"
+                else
+                  base="HEAD~1"
+                fi
+              else
+                base="origin/main"
+              fi ;;
+            *)
+              echo "::error::unexpected event ${{ github.event_name }}"; exit 2 ;;
+          esac
+          echo "base=$base" >> "$GITHUB_OUTPUT"
+          echo "diffing ${base}...HEAD"
+
+      - name: Check coord.* drops against coord's read contract
+        # Exits 1 when a changed revision drops a coord.* surface that a
+        # deployed or main coord still reads (naming the surface, the sha(s)
+        # and the remedy), or when it composes its DROP through placeholders
+        # and declares no COORD_SCHEMA_DROPS; 2 when the gate could not decide
+        # (git error, manifest half missing/null/empty, or a wildcard waiver on
+        # the dropped table). Neither is a pass. The common case — no coord.*
+        # drop in the diff — exits 0 offline.
+        run: python scripts/ci/check_coord_column_drops.py --base-ref "${{ steps.base.outputs.base }}"

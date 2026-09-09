@@ -19,8 +19,14 @@
  *     (rows: `{from_status?, to_status, transitioned_at, by_actor?, reason?}`)
  *   - Transition button — POST /api/v1/operations/plans/{slug}/transition
  *
- * Work-units have no markdown body / current_phase / shipped_at, so those
- * plan-only surfaces are dropped.
+ * Work-units have no markdown body, so the plan-only body surfaces are
+ * dropped. They DO carry `current_phase`, a derived `first_shipped_at` (the
+ * first transition into `shipped` — there is no `shipped_at`; a field by that
+ * name sat on `CoordPlanRow` for months with nothing serving it) and a
+ * nullable slug-derived `authored_at` (plan
+ * `2026-09-02-coord-work-units-carry-no-authoring-date`). The meta strip
+ * shows `authored` beside `updated`, and says "not recorded" when coord has
+ * no authoring date rather than substituting the ingest date.
  *
  * ## Console style (Phase 3 Wave 3)
  *
@@ -114,7 +120,16 @@ interface CoordWorkUnit {
    * thrown the input away.
    */
   current_phase?: string | null;
+  /**
+   * coord `work_units.authored_at` — slug-derived authoring date, NULL when
+   * not recorded (an undated slug, or a coord predating the column). Never
+   * stood in for by `created_at`, which is the ingest time.
+   */
+  authored_at?: string | null;
+  /** coord `work_units.updated_at` — the scanner's last touch, not a plan event. */
   updated_at?: string | null;
+  /** coord `work_units.first_shipped_at` — derived first `shipped` transition. */
+  first_shipped_at?: string | null;
 }
 
 // coord `GET /coord/work-units/{slug}` envelope.
@@ -330,8 +345,34 @@ export default function CoordPlanDetailPage() {
                 status={derivePlanStatus(plan)}
                 palette={PLAN_STATUS_PALETTE}
               />
+              {/* Each time is prefixed with its own word because three sit on
+                  one line and a bare "3d ago" would not say which. An absent
+                  authoring date is stated, not filled from `created_at`. */}
+              <span data-testid="coord-plan-authored">
+                <RowTime
+                  at={plan.authored_at}
+                  verb="Authored"
+                  prefix="authored "
+                  absent={{
+                    label: "authored not recorded",
+                    title:
+                      "coord holds no authoring date for this work unit — its slug carries no YYYY-MM-DD prefix, or coord predates the column.",
+                  }}
+                />
+              </span>
+              {plan.first_shipped_at && (
+                <RowTime
+                  at={plan.first_shipped_at}
+                  verb="Shipped"
+                  prefix="shipped "
+                />
+              )}
               {plan.updated_at && (
-                <RowTime at={plan.updated_at} verb="Updated" />
+                <RowTime
+                  at={plan.updated_at}
+                  verb="Updated"
+                  prefix="updated "
+                />
               )}
             </div>
             <div className="font-mono text-[10px] text-muted-foreground/60 break-all">

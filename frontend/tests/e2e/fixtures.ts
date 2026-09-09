@@ -17,6 +17,12 @@
 import { test as base, Page, expect as baseExpect } from "@playwright/test";
 import { TEST_USER } from "./test-credentials";
 
+/**
+ * Replaces the old `waitForTimeout(2000)` "wait for auth state to settle"
+ * (plan 2026-09-05-web-e2e-fixed-sleeps-red-main-one-test-at-a-time).
+ */
+const AUTH_SETTLE_TIMEOUT = 6000;
+
 // Define custom fixture types
 type IntegrationTestFixtures = {
   authenticatedPage: Page;
@@ -106,10 +112,9 @@ export const test = base.extend<IntegrationTestFixtures>({
           "[Playwright] Not authenticated (no storageState), performing manual login"
         );
         await performManualLogin(page);
-      } else {
-        // Wait a bit for auth state to settle
-        await page.waitForTimeout(2000);
       }
+      // Otherwise the auth state is still settling — the assertion below
+      // auto-waits for it.
     }
 
     // Verify we're logged in
@@ -160,8 +165,15 @@ export async function loginUser(page: Page): Promise<void> {
   if (signInVisible) {
     await performManualLogin(page);
   } else {
-    // Wait a bit for auth state to settle, then check again
-    await page.waitForTimeout(2000);
+    // The auth state is still settling: it lands on the signed-in user or
+    // on the Sign In button. Bounded wait for either, tolerated, then the
+    // same check as before.
+    await page
+      .getByText(TEST_USER.email)
+      .or(page.getByRole("button", { name: /sign in/i }))
+      .first()
+      .waitFor({ state: "visible", timeout: AUTH_SETTLE_TIMEOUT })
+      .catch(() => null);
     const stillNeedsLogin = await page
       .getByRole("button", { name: /sign in/i })
       .isVisible()
@@ -188,18 +200,11 @@ export async function waitForAutoLogin(
   console.warn(
     "[Playwright] waitForAutoLogin is deprecated - storageState handles authentication now"
   );
-  const startTime = Date.now();
-
-  while (Date.now() - startTime < timeout) {
-    const userEmailVisible = await page
-      .getByText(TEST_USER.email)
-      .isVisible()
-      .catch(() => false);
-    if (userEmailVisible) {
-      return true;
-    }
-    await page.waitForTimeout(200);
-  }
-
-  return false;
+  // Same contract as the old 200 ms poll loop — true once the user's email
+  // is visible within `timeout`, false otherwise — as one bounded wait.
+  return page
+    .getByText(TEST_USER.email)
+    .waitFor({ state: "visible", timeout })
+    .then(() => true)
+    .catch(() => false);
 }

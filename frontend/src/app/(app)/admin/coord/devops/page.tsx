@@ -46,12 +46,23 @@
  * have stopped sending it work, and that is only true while both consumers
  * read one definition of the number AND the verdict.
  *
- * It opens exactly TWO POLLS: `/fleet/health` here, and
+ * It opens THREE POLLS: `/fleet/health` here at 10 s,
  * `/fleet/resource-samples` inside `FleetResourcesSection`, which passes the
- * same rows to both the strip and the CI panel. Two polls of one route would
- * be two chances to disagree about what the fleet looks like right now.
+ * same rows to both the strip and the CI panel, and `/fleet/drain` here at
+ * 30 s. Two polls of ONE route would be two chances to disagree about what the
+ * fleet looks like right now; three polls of three routes is one read per
+ * fact, which is the shape this page is built on.
  *
- * The third read is `/devenv/machines`, read ONCE (`useDevenvMachines`) and
+ * The drain poll is the newest (plan
+ * `2026-09-01-device-drain-does-not-reach-agent-session-spawning` Phase 4b)
+ * and is the one read here that is NOT a telemetry cadence — a drain changes
+ * on an operator action. It polls anyway, and slowly, because a drain also
+ * **expires by itself**: coord evaluates `until` on read and runs no sweeper,
+ * so a machine re-enters the fleet with nothing writing anything anywhere. A
+ * once-only read would leave "Drained until 14:03" on screen at 15:00, which
+ * is a false claim rather than a stale one.
+ *
+ * The fourth read is `/devenv/machines`, read ONCE (`useDevenvMachines`) and
  * not polled: it carries the CI-capacity JOIN, and the roster it indexes
  * changes on an operator's enrolment, not on a telemetry cadence. It carries
  * no CI-node configuration — each disclosure's own `CiNodeConfigPanel` reads
@@ -69,6 +80,7 @@ import type { HealthBadge } from "@/components/console";
 import { FleetOverview, FleetResourcesSection } from "@/components/operations";
 import { summarizeFleetLiveness } from "@/components/operations/fleetLiveness";
 import { useDevenvMachines } from "@/components/operations/useDevenvMachines";
+import { useFleetDrain } from "@/components/operations/useFleetDrain";
 import { useFleetHealth } from "@/components/operations/useFleetHealth";
 import type { FleetHealthDevice } from "@/components/operations/useFleetHealth";
 
@@ -94,6 +106,11 @@ export default function CoordDevOpsPage() {
   // never a fetch per machine row. It carries no CI-node configuration of its
   // own: that is `CiNodeConfigPanel`'s, inside the disclosure.
   const ciMachines = useDevenvMachines();
+  // Which machines coord is holding out of the fleet. Owned here for the same
+  // reason the two reads above are: one read for the whole list, so no two
+  // rows can disagree about what is drained. Its `refresh` is handed down so a
+  // drain or undrain is visible immediately rather than on the next tick.
+  const drain = useFleetDrain();
   const devices = fleet.data?.devices ?? EMPTY_DEVICES;
 
   // R1: derived from data already on the page, never a second fetch. The
@@ -320,8 +337,10 @@ export default function CoordDevOpsPage() {
           a coord device with no runner inventory gets a row whose runner-side
           facts read `unknown`, rather than vanishing or rendering as zero.
           4. CI capacity rides on each row as a collapsed disclosure, resolved
-          from `ciMachines` — one read, no per-row fetch. */}
-      <FleetOverview health={fleet} ciMachines={ciMachines} />
+          from `ciMachines` — one read, no per-row fetch. Each row also carries
+          its drain state and the Drain/Undrain lever, resolved from `drain` —
+          the one read, again, never one per card. */}
+      <FleetOverview health={fleet} ciMachines={ciMachines} drain={drain} />
 
       {/* 2. Resources and 3. CI occupancy, over the section's own single
           poll of /fleet/resource-samples. `devices` is the spine: a machine

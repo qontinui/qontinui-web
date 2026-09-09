@@ -478,7 +478,11 @@ describe("claim params are stripped on every exit", () => {
 
     render(<OnboardingStatusPage />);
 
-    await waitFor(() => expect(screen.getByTestId("coord-onboarding-status-page")).toBeInTheDocument());
+    await waitFor(() =>
+      expect(
+        screen.getByTestId("coord-onboarding-status-page")
+      ).toBeInTheDocument()
+    );
     expect(window.history.replaceState).not.toHaveBeenCalled();
   });
 });
@@ -540,5 +544,312 @@ describe("recovery card re-mint", () => {
       await screen.findByTestId("onboarding-claim-recover-install")
     );
     await waitFor(() => expect(mintBody()).toEqual({ flow: "connect" }));
+  });
+});
+
+/**
+ * P4 of plan `2026-09-05-tenant-onboarding-friction-and-multi-tenant-device-visibility`:
+ * the stateless arrival's `installation_id` is looked up through the keyed
+ * pending-installation proxy instead of discarded. The claim is still NOT
+ * made (that is the fail-closed contract above); only the recover card's copy
+ * and link change, and only on the two arms where coord actually knows.
+ */
+describe("recover card looks up the stateless arrival's installation", () => {
+  const RECEIVED = "2026-09-05T10:11:12Z";
+
+  function pendingCalls() {
+    return fetchMock.mock.calls.filter((c) =>
+      String(c[0]).includes("/onboarding/pending-installation")
+    );
+  }
+
+  function stubPending(body: unknown, status = 200) {
+    fetchMock.mockImplementation((url: string) =>
+      Promise.resolve(
+        String(url).includes("/onboarding/pending-installation")
+          ? jsonResponse(body, status)
+          : jsonResponse({ connect_state: TOKEN })
+      )
+    );
+  }
+
+  it("asks coord by installation_id and, on pending, names the org and hands it to ?connect=", async () => {
+    stubPending({
+      pending: true,
+      installation_id: 9999,
+      account_login: "portofino-pizzeria",
+      account_type: "Organization",
+      repo_count: 3,
+      received_at: RECEIVED,
+      claimed_at: null,
+    });
+    mockSearchParams = new URLSearchParams({
+      code: "gho_code",
+      installation_id: "9999",
+    });
+
+    render(<OnboardingStatusPage />);
+
+    await screen.findByTestId("onboarding-claim-recover");
+    const msg = screen.getByTestId("onboarding-claim-recover-message");
+    await waitFor(() =>
+      expect(msg).toHaveTextContent(
+        /GitHub installed the App on portofino-pizzeria \(3 repos\) at .*, but the connect didn't start from Qontinui, so it isn't connected to a tenant yet\. Start the connect again below\./
+      )
+    );
+    const url = new URL(String(pendingCalls()[0][0]), "https://x.test");
+    expect(url.searchParams.get("installation_id")).toBe("9999");
+    expect(url.searchParams.has("account_login")).toBe(false);
+
+    const link = screen.getByTestId("onboarding-claim-recover-link");
+    expect(link).toHaveAttribute(
+      "href",
+      "/admin/coord/onboarding?connect=portofino-pizzeria"
+    );
+    expect(link).toHaveTextContent("authorize portofino-pizzeria here instead");
+    // Still fails closed: no claim, and the install CTA is still there.
+    expect(
+      fetchMock.mock.calls.filter((c) =>
+        String(c[0]).includes("/onboarding/claim")
+      )
+    ).toHaveLength(0);
+    expect(
+      screen.getByTestId("onboarding-claim-recover-install")
+    ).toBeInTheDocument();
+  });
+
+  it("says the org is already connected on a claimed row, linking to the bare status page", async () => {
+    stubPending({
+      pending: false,
+      installation_id: 9999,
+      account_login: "portofino-pizzeria",
+      account_type: "Organization",
+      repo_count: 3,
+      received_at: RECEIVED,
+      claimed_at: "2026-09-05T12:00:00Z",
+    });
+    mockSearchParams = new URLSearchParams({
+      code: "gho_code",
+      installation_id: "9999",
+    });
+
+    render(<OnboardingStatusPage />);
+
+    const msg = await screen.findByTestId("onboarding-claim-recover-message");
+    await waitFor(() =>
+      expect(msg).toHaveTextContent(
+        /portofino-pizzeria was already connected on .* — nothing more to do here\./
+      )
+    );
+    expect(screen.getByTestId("onboarding-claim-recover-link")).toHaveAttribute(
+      "href",
+      "/admin/coord/onboarding-status"
+    );
+  });
+
+  it("keeps today's copy when coord has no row, saying so", async () => {
+    stubPending({
+      pending: false,
+      installation_id: null,
+      account_login: null,
+      account_type: null,
+      repo_count: null,
+      received_at: null,
+      claimed_at: null,
+    });
+    mockSearchParams = new URLSearchParams({
+      code: "gho_code",
+      installation_id: "9999",
+    });
+
+    render(<OnboardingStatusPage />);
+
+    const msg = await screen.findByTestId("onboarding-claim-recover-message");
+    await waitFor(() =>
+      expect(msg).toHaveTextContent(
+        /coord has not seen this installation yet\./
+      )
+    );
+    expect(msg).toHaveTextContent(/This connect didn't start from Qontinui/);
+    expect(screen.getByTestId("onboarding-claim-recover-link")).toHaveAttribute(
+      "href",
+      "/admin/coord/onboarding"
+    );
+  });
+
+  it("keeps today's copy on pending: null — and never claims the installation does not exist", async () => {
+    stubPending({
+      pending: null,
+      installation_id: null,
+      account_login: null,
+      account_type: null,
+      repo_count: null,
+      received_at: null,
+      claimed_at: null,
+      reason: "pending_installations_table_absent",
+    });
+    mockSearchParams = new URLSearchParams({
+      code: "gho_code",
+      installation_id: "9999",
+    });
+
+    render(<OnboardingStatusPage />);
+
+    const msg = await screen.findByTestId("onboarding-claim-recover-message");
+    await waitFor(() =>
+      expect(msg).toHaveTextContent(
+        /couldn't check this installation with coord/
+      )
+    );
+    expect(msg).not.toHaveTextContent(/has not seen|does not exist/);
+  });
+
+  it("folds a failed proxy call into the couldn't-check arm", async () => {
+    stubPending({ detail: "coord is not reachable" }, 502);
+    mockSearchParams = new URLSearchParams({
+      code: "gho_code",
+      installation_id: "9999",
+    });
+
+    render(<OnboardingStatusPage />);
+
+    const msg = await screen.findByTestId("onboarding-claim-recover-message");
+    await waitFor(() =>
+      expect(msg).toHaveTextContent(
+        /couldn't check this installation with coord/
+      )
+    );
+  });
+
+  it("does not look anything up on the nonce-mismatch recover (no id to trust)", async () => {
+    // The nonce arm is a crafted-or-cleared-session signal; its recover card
+    // is unchanged and makes no pending call.
+    stubPending({ pending: true });
+    sessionStorage.setItem(
+      "qontinui.onboarding_connect_nonce",
+      "a-different-one"
+    );
+    mockSearchParams = new URLSearchParams({
+      code: "gho_code",
+      installation_id: "4242",
+      state: `connect~~${NONCE}~${TOKEN}`,
+    });
+
+    render(<OnboardingStatusPage />);
+
+    await screen.findByTestId("onboarding-claim-recover");
+    expect(pendingCalls()).toHaveLength(0);
+  });
+});
+
+describe("P2 runner-native hand-off", () => {
+  // Slot 5 of `state`: the runner's own return nonce, hex by construction.
+  const RUNNER_STATE = "0123456789abcdef0123456789abcdef";
+
+  function runnerCloneArrival(runnerState: string) {
+    sessionStorage.setItem("qontinui.onboarding_connect_nonce", NONCE);
+    mockSearchParams = new URLSearchParams({
+      code: "gho_code",
+      installation_id: "4242",
+      state: `runner-clone~~${NONCE}~${TOKEN}~${runnerState}`,
+    });
+    fetchMock.mockResolvedValue(
+      jsonResponse({
+        ok: true,
+        account_login: "acme",
+        installation_id: 4242,
+        tenant_id: "t-1",
+      })
+    );
+  }
+
+  it("hands the code to the runner instead of spending it in the browser", async () => {
+    runnerCloneArrival(RUNNER_STATE);
+
+    render(<OnboardingStatusPage />);
+
+    await screen.findByTestId("onboarding-claim-handoff");
+    // The OAuth code is single-use: EITHER the runner claims it or the browser
+    // does, never both. No claim POST may have gone out from here.
+    expect(
+      fetchMock.mock.calls.some((c) =>
+        String(c[0]).includes("/onboarding/claim")
+      )
+    ).toBe(false);
+    const link = new URL(
+      screen.getByTestId("onboarding-claim-handoff-open").getAttribute("href")!
+    );
+    expect(link.protocol).toBe("qontinui:");
+    expect(link.host).toBe("github-connected");
+    expect(link.searchParams.get("code")).toBe("gho_code");
+    expect(link.searchParams.get("state")).toBe(RUNNER_STATE);
+    expect(link.searchParams.get("installation_id")).toBe("4242");
+    // The page navigated to the same link (same-tab; the OS opens the runner).
+    expect(window.location.href).toBe(link.toString());
+    // The doctor watches enrolment, and a bind-only hand-off enrols nothing.
+    expect(screen.queryByTestId("onboarding-claim-claiming")).toBeNull();
+  });
+
+  it("carries the login target on the authorize path (no installation_id)", async () => {
+    sessionStorage.setItem("qontinui.onboarding_connect_nonce", NONCE);
+    mockSearchParams = new URLSearchParams({
+      code: "gho_code",
+      state: `runner-clone~acme~${NONCE}~${TOKEN}~${RUNNER_STATE}`,
+    });
+
+    render(<OnboardingStatusPage />);
+
+    await screen.findByTestId("onboarding-claim-handoff");
+    const link = new URL(
+      screen.getByTestId("onboarding-claim-handoff-open").getAttribute("href")!
+    );
+    expect(link.searchParams.get("account_login")).toBe("acme");
+    expect(link.searchParams.has("installation_id")).toBe(false);
+  });
+
+  it("spends the code in the browser only on the explicit fallback", async () => {
+    runnerCloneArrival(RUNNER_STATE);
+
+    render(<OnboardingStatusPage />);
+
+    await userEvent.click(
+      await screen.findByTestId("onboarding-claim-handoff-fallback")
+    );
+
+    await screen.findByTestId("onboarding-claim-success");
+    const body = claimBody();
+    expect(body.code).toBe("gho_code");
+    expect(body.installation_id).toBe(4242);
+    // The fallback is the pre-P2 browser claim, unchanged: still tenant-bound
+    // through the connect_state token, still bind-only for the clone picker.
+    expect(body.connect_state).toBe(TOKEN);
+    expect(body.bind_only).toBe(true);
+  });
+
+  it("never routes a non-runner flow to a runner, even with a runnerState", async () => {
+    // Review gap 4a: the hand-off is gated on the `runner-clone` flow marker,
+    // not on slot 5 being present. A crafted `connect~…~<hex>` state falls
+    // through to the ordinary browser claim.
+    sessionStorage.setItem("qontinui.onboarding_connect_nonce", NONCE);
+    mockSearchParams = new URLSearchParams({
+      code: "gho_code",
+      installation_id: "4242",
+      state: `connect~~${NONCE}~${TOKEN}~${RUNNER_STATE}`,
+    });
+    fetchMock.mockResolvedValue(
+      jsonResponse({
+        ok: true,
+        account_login: "acme",
+        installation_id: 4242,
+        tenant_id: "t-1",
+      })
+    );
+
+    render(<OnboardingStatusPage />);
+
+    await screen.findByTestId("onboarding-claim-success");
+    expect(screen.queryByTestId("onboarding-claim-handoff")).toBeNull();
+    expect(window.location.href).toBe("https://qontinui.io/");
+    expect(claimBody().bind_only).toBeUndefined();
   });
 });

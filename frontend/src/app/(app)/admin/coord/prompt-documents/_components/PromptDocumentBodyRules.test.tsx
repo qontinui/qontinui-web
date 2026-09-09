@@ -71,7 +71,10 @@ function renderEditor(kind: PromptDocumentKind) {
 }
 
 /** Replace the body textarea's contents wholesale. */
-async function typeBody(user: ReturnType<typeof userEvent.setup>, text: string) {
+async function typeBody(
+  user: ReturnType<typeof userEvent.setup>,
+  text: string
+) {
   const field = screen.getByTestId("doc-body");
   await user.clear(field);
   await user.paste(text);
@@ -413,17 +416,27 @@ describe("AgentWriteAccessControl — the two protected families", () => {
       agent_writable: null,
       agent_write_effective: false,
       agent_write_source: "default",
-      agent_write_builtin_default: false,
+      agent_write_builtin_default_tier: "deny",
     };
   }
 
+  /**
+   * Open the tier menu and pick `allow` — the choice that overrides coord's
+   * compile-time protection and so raises the confirmation.
+   *
+   * `pointerEventsCheck: 0` because Radix opens the menu on a pointer sequence
+   * jsdom does not fully model; the gates console's dropdown tests do the same.
+   */
   async function openConfirm(kind: PromptDocumentKind) {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ pointerEventsCheck: 0 });
     const onSet = vi.fn().mockResolvedValue(true);
     const doc = protectedDoc(kind);
     render(<AgentWriteAccessControl doc={doc} saving={false} onSet={onSet} />);
     await user.click(
       screen.getByTestId(`doc-access-toggle-${doc.kind}-${doc.name}`)
+    );
+    await user.click(
+      await screen.findByTestId(`doc-access-tier-${doc.kind}-${doc.name}-allow`)
     );
     return { onSet };
   }
@@ -447,7 +460,9 @@ describe("AgentWriteAccessControl — the two protected families", () => {
 
   it("keys the badge's reason on the kind too", () => {
     const doc = protectedDoc("session_briefing");
-    render(<AgentWriteAccessControl doc={doc} saving={false} onSet={vi.fn()} />);
+    render(
+      <AgentWriteAccessControl doc={doc} saving={false} onSet={vi.fn()} />
+    );
     expect(
       screen.getByTestId(`doc-access-${doc.kind}-${doc.name}`)
     ).toHaveAttribute(
@@ -463,17 +478,22 @@ describe("AgentWriteAccessControl — the two protected families", () => {
    * protection.
    */
   it("does not confirm for a briefing coord does not protect", async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ pointerEventsCheck: 0 });
     const onSet = vi.fn().mockResolvedValue(true);
     const doc = protectedDoc("session_briefing");
     doc.name = "my-own-briefing";
-    doc.agent_write_builtin_default = true;
+    doc.agent_write_builtin_default_tier = "allow";
     render(<AgentWriteAccessControl doc={doc} saving={false} onSet={onSet} />);
 
     await user.click(
       screen.getByTestId(`doc-access-toggle-${doc.kind}-${doc.name}`)
     );
+    await user.click(
+      await screen.findByTestId(`doc-access-tier-${doc.kind}-${doc.name}-allow`)
+    );
     expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
-    expect(onSet).toHaveBeenCalledWith(true);
+    // The tier, not the boolean: the write that reaches coord is
+    // `agent_write_tier`, so a boolean here would be the old defect.
+    expect(onSet).toHaveBeenCalledWith("allow");
   });
 });

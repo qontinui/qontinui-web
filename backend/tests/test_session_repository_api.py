@@ -223,6 +223,57 @@ class TestUpsertValidation:
         assert payload.tenant_source == "derived_sole_binding"
 
 
+class TestSessionKeyFilters:
+    """The FORWARD half of the session <-> archive round trip.
+
+    Plan ``2026-08-26-sessions-console-consolidation`` Phase 2: the reverse
+    direction (archive row -> ``/sessions/{coord_session_id}``) already
+    shipped; a session surface had no way to find its own permanent
+    transcript. These are no-database tests on purpose — they assert the
+    PREDICATE is emitted, which is the part a refactor drops silently.
+    """
+
+    def test_the_claude_session_id_filter_reaches_the_sql(self) -> None:
+        stmt = crud._apply_filters(
+            __import__("sqlalchemy").select(SessionArtifact),
+            org_id=None,
+            claude_session_id="abc-123",
+        )
+        sql = str(stmt.compile(compile_kwargs={"literal_binds": False}))
+        assert "claude_session_id" in sql
+
+    def test_the_coord_session_id_filter_reaches_the_sql(self) -> None:
+        stmt = crud._apply_filters(
+            __import__("sqlalchemy").select(SessionArtifact),
+            org_id=None,
+            coord_session_id=uuid4(),
+        )
+        sql = str(stmt.compile(compile_kwargs={"literal_binds": False}))
+        assert "coord_session_id" in sql
+
+    def test_neither_filter_narrows_when_it_is_not_supplied(self) -> None:
+        """Absence is not a filter. A `None` must not become `IS NULL` —
+        that would turn "I did not ask by session id" into "only rows with no
+        session id", which is the same absence-is-not-zero mistake the
+        consolidated console exists to avoid, spelled in SQL."""
+        sql = str(
+            crud._apply_filters(
+                __import__("sqlalchemy").select(SessionArtifact), org_id=None
+            ).compile(compile_kwargs={"literal_binds": False})
+        )
+        assert "claude_session_id IS NULL" not in sql
+        assert "coord_session_id IS NULL" not in sql
+
+    def test_the_route_declares_both_id_spaces(self) -> None:
+        """Both spaces, because the console resolves either one (D4). A
+        surface that could only look up by the coord id would find nothing
+        for an ``agent_only`` session, which has no coord.sessions row at
+        all."""
+        params = __import__("inspect").signature(api.list_sessions).parameters
+        assert "claude_session_id" in params
+        assert "coord_session_id" in params
+
+
 class TestSearchPredicateMatchesTheIndex:
     """The documented index-usability trap, asserted rather than trusted."""
 
@@ -380,6 +431,41 @@ class TestFilters:
         )
         assert total == 1
         assert rows[0].tenant_source == "ambiguous"
+
+    async def test_a_session_id_filter_finds_the_archive_row(
+        self, async_db_session: AsyncSession
+    ) -> None:
+        """session -> archive, by the id space the console actually holds."""
+        sid = _sid()
+        coord_id = uuid4()
+        await _make(
+            async_db_session,
+            claude_session_id=sid,
+            coord_session_id=coord_id,
+            repo="r-round-trip",
+        )
+        await _make(async_db_session, repo="r-round-trip")
+
+        by_claude, total_claude = await crud.list_artifacts(
+            async_db_session, org_id=None, claude_session_id=sid
+        )
+        assert total_claude == 1 and by_claude[0].claude_session_id == sid
+
+        by_coord, total_coord = await crud.list_artifacts(
+            async_db_session, org_id=None, coord_session_id=coord_id
+        )
+        assert total_coord == 1 and by_coord[0].coord_session_id == coord_id
+
+    async def test_an_unarchived_session_returns_an_EMPTY_LIST_not_an_error(
+        self, async_db_session: AsyncSession
+    ) -> None:
+        """The caller renders this as an em dash, never as "no transcript":
+        the archive holding no row for an id is not evidence the session had
+        no transcript (plan D2)."""
+        _rows, total = await crud.list_artifacts(
+            async_db_session, org_id=None, claude_session_id=_sid("never-archived")
+        )
+        assert total == 0
 
     async def test_secret_finding_filters_select_but_never_hide(
         self, async_db_session: AsyncSession

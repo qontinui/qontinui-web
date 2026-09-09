@@ -114,6 +114,17 @@ exclude = [
     "migrations",
 ]
 
+[tool.ruff.format]
+# VENDORED, and kept byte-identical to its source of truth in qontinui-dev-notes
+# (`scripts/plan_status_classifier.py`). D7 of plan
+# `2026-09-03-plan-status-three-way-reconciler-surface` makes the copy DETECTABLE
+# rather than shared: `app/services/plan_status/__init__.py` pins its sha256 and
+# the test suite asserts it. Reformatting it here would break that pin on every
+# re-vendor and make a cross-repo `diff` unreadable — so the FORMATTER skips it.
+# `ruff check` deliberately does NOT: lint findings are real defects wherever the
+# code came from, and the file passes them today.
+exclude = ["app/services/plan_status/classifier.py"]
+
 [tool.ruff.lint]
 select = [
     "E",   # pycodestyle errors

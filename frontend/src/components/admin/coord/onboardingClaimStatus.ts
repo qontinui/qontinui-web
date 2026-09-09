@@ -1,5 +1,5 @@
 /**
- * onboardingClaimStatus — the four states of the GitHub-App claim on
+ * onboardingClaimStatus — the five states of the GitHub-App claim on
  * `/admin/coord/onboarding-status`, and R3's audited severity table for them.
  *
  * Plan `2026-08-16-coord-console-ui-unification-pipeline-style.md` Phase 3
@@ -27,8 +27,13 @@ import {
   rowAccentClass,
 } from "@/components/console/statusRow";
 
-/** The four states the claim callback can be in. Mirrors the page's own union. */
-export type ClaimPhase = "claiming" | "success" | "error" | "recover";
+/** The five states the claim callback can be in. Mirrors the page's own union. */
+export type ClaimPhase =
+  | "claiming"
+  | "success"
+  | "error"
+  | "recover"
+  | "handoff";
 
 /**
  * The audited kind → attention table. TOTAL over {@link ClaimPhase}, one row
@@ -40,6 +45,7 @@ export type ClaimPhase = "claiming" | "success" | "error" | "recover";
  * | `success` | `none` | Done. The account is bound and the repos are enrolling; the checklist below reports the rest. |
  * | `error` | `author` | The claim failed and NOTHING retries it. The operator has to read the message and act — that is the definition of `author`. |
  * | `recover` | `author` | **Corrected here.** The callback arrived with no usable `connect_state`, so the connect must be STARTED AGAIN by a human. It was rendered muted, beside a muted refresh icon, which reads as "in progress" — the one thing it is not. Nothing self-clears it, so amber would be a false promise (R3, "amber's contract is self-clearing") and calm would understate a dead end. |
+ * | `handoff` | `none` | The P2 runner-native return: the OAuth code went BACK to the desktop runner over `qontinui://github-connected`, and the runner claims with its own bearer. Nobody is blocked on the happy path — it is `claiming`, finishing in another process — so it takes the same calm in-flight band. The banner carries the "open the runner" link and the browser fallback for the case this page cannot observe (the deep link did not open anything); painting that possibility amber would promise something clears it, and nothing here does. |
  *
  * Neither `author` phase is the R3 ignorance floor: we know exactly what state
  * the claim is in in both cases, so `UNKNOWN_AMBER` does not apply.
@@ -49,6 +55,7 @@ export const CLAIM_ATTENTION_BY_PHASE: Record<ClaimPhase, Attention> = {
   success: "none",
   error: "author",
   recover: "author",
+  handoff: "none",
 };
 
 export const CLAIM_PHASE_CLASS: Record<ClaimPhase, string> = {
@@ -59,6 +66,8 @@ export const CLAIM_PHASE_CLASS: Record<ClaimPhase, string> = {
   success: "bg-green-500/15 text-green-200 border-green-500/30",
   error: AUTHOR_RED,
   recover: AUTHOR_RED,
+  // The same in-flight band as `claiming`: the claim is running, in the runner.
+  handoff: CI_YELLOW,
 };
 
 /** Red ⇔ the colourblind-safe `✕`: exactly the `author` phases, derived. */
@@ -79,6 +88,7 @@ const LABEL_BY_PHASE: Record<ClaimPhase, string> = {
   success: "connected",
   error: "connect failed",
   recover: "connect incomplete",
+  handoff: "finishing in runner",
 };
 
 /**

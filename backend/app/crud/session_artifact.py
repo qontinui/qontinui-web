@@ -159,6 +159,8 @@ def _apply_filters(
     body_source: str | None = None,
     machine_id: str | None = None,
     work_unit_slug: str | None = None,
+    claude_session_id: str | None = None,
+    coord_session_id: UUID | None = None,
     has_secret_findings: bool | None = None,
     secret_finding_kind: str | None = None,
     detector_ran: bool | None = None,
@@ -193,6 +195,28 @@ def _apply_filters(
         stmt = stmt.where(SessionArtifact.machine_id == machine_id)
     if work_unit_slug is not None:
         stmt = stmt.where(SessionArtifact.work_unit_slug == work_unit_slug)
+    if claude_session_id is not None:
+        # The FORWARD half of the session <-> archive round trip
+        # (`2026-08-26-sessions-console-consolidation` Phase 2, D-both-stores).
+        # The reverse direction — archive row -> `/sessions/{coord_session_id}`
+        # — already shipped; this is what lets a session surface find its own
+        # permanent transcript.
+        #
+        # Indexed: `claude_session_id` is the LEADING column of
+        # `uq_session_artifacts_identity`, so this is the cheap arm and the one
+        # a caller should prefer. It is not unique on its own — one Claude
+        # session archived under two account homes is two rows — so this is a
+        # LIST filter, never a by-identity lookup (`get_by_identity` is that,
+        # and it needs the account label too).
+        stmt = stmt.where(SessionArtifact.claude_session_id == claude_session_id)
+    if coord_session_id is not None:
+        # The other id space. `coord_session_id` carries NO index today, so
+        # this is a scan — stated rather than discovered later, exactly as the
+        # `secret_finding_kind` arm below states its own. It is also a SOFT
+        # link coord garbage-collects underneath us (see the column's comment
+        # in `models/session_artifact.py`), so a miss here means "this archive
+        # row never recorded a coord id", never "no such session".
+        stmt = stmt.where(SessionArtifact.coord_session_id == coord_session_id)
     if has_secret_findings is not None:
         # An AUDIT filter. It selects rows; it never hides them from a caller
         # who did not ask, and it never masks a body (plan §4 Phase 1).
@@ -253,6 +277,8 @@ async def list_artifacts(
     body_source: str | None = None,
     machine_id: str | None = None,
     work_unit_slug: str | None = None,
+    claude_session_id: str | None = None,
+    coord_session_id: UUID | None = None,
     has_secret_findings: bool | None = None,
     secret_finding_kind: str | None = None,
     detector_ran: bool | None = None,
@@ -273,6 +299,8 @@ async def list_artifacts(
         "body_source": body_source,
         "machine_id": machine_id,
         "work_unit_slug": work_unit_slug,
+        "claude_session_id": claude_session_id,
+        "coord_session_id": coord_session_id,
         "has_secret_findings": has_secret_findings,
         "secret_finding_kind": secret_finding_kind,
         "detector_ran": detector_ran,

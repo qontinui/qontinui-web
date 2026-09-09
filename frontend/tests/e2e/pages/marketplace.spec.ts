@@ -13,9 +13,25 @@
  *
  * The marketplace heading is "Marketplace" (the prior "Community Code Marketplace"
  * label was renamed; the URL slug remains).
+ *
+ * No fixed sleeps. Every wait here is an auto-waiting assertion on the state
+ * the test then checks, or a bounded `waitFor(...).catch(() => null)` in
+ * front of a read the test already tolerated — never a `waitForTimeout(N)`
+ * followed by a non-waiting read, which asserts on wall-clock. Timeouts are
+ * the replaced sleep × 3, floor 5 s.
+ * Plan: 2026-09-05-web-e2e-fixed-sleeps-red-main-one-test-at-a-time.
  */
 
 import { test, expect } from "../fixtures";
+
+/** Replaces the old `waitForTimeout(2000)` after a page navigation. */
+const PAGE_SETTLE_TIMEOUT = 6000;
+/** Replaces the old `waitForTimeout(3000)` before a page-data presence read. */
+const PAGE_DATA_TIMEOUT = 9000;
+/** Replaces the old `waitForTimeout(5000)` before the not-found read. */
+const NOT_FOUND_TIMEOUT = 15000;
+/** Replaces the old `waitForTimeout(1000)` after a tab click. */
+const TAB_SWITCH_TIMEOUT = 5000;
 
 // Seeded test project UUID from PR-G's backend/tests/utils/seed_test_project.py.
 // Inlined per PR-H1 scope; PR-F adds a shared test-project.ts on a separate branch.
@@ -68,8 +84,14 @@ test.describe("Marketplace Page", () => {
     await page.goto(`/marketplace${TEST_PROJECT_QS}`);
     await page.waitForLoadState("domcontentloaded");
 
-    // Wait for packages to load
-    await page.waitForTimeout(3000);
+    // Wait for packages to load: bounded wait for the empty state or the
+    // card grid, tolerated — the reads below keep their shape.
+    await page
+      .getByText("No packages found")
+      .or(page.locator('[class*="grid"]'))
+      .first()
+      .waitFor({ state: "visible", timeout: PAGE_DATA_TIMEOUT })
+      .catch(() => null);
 
     await page.screenshot({
       path: "test-results/pages-marketplace-packages.png",
@@ -100,15 +122,22 @@ test.describe("Marketplace Page", () => {
     await page.goto(`/marketplace${TEST_PROJECT_QS}`);
     await page.waitForLoadState("domcontentloaded");
 
-    // Wait for initial load
-    await page.waitForTimeout(2000);
+    // Wait for initial load: the tab the test clicks next (the click would
+    // fail on its absence anyway, so this is not a tightening).
+    await expect(page.getByRole("tab", { name: /Popular/i })).toBeVisible({
+      timeout: PAGE_SETTLE_TIMEOUT,
+    });
 
     // Click on Popular tab — scope to the tablist so we don't pick up the
     // "Most Popular" select option in the search bar (and so the click is
     // routed to the Radix tab trigger directly, avoiding the html-pointer
     // intercept seen with getByText().first()).
     await page.getByRole("tab", { name: /Popular/i }).click();
-    await page.waitForTimeout(1000);
+    // The click selects the tab — the state it produces, tolerated.
+    await page
+      .getByRole("tab", { name: /Popular/i, selected: true })
+      .waitFor({ state: "visible", timeout: TAB_SWITCH_TIMEOUT })
+      .catch(() => null);
 
     await page.screenshot({
       path: "test-results/pages-marketplace-popular.png",
@@ -117,7 +146,11 @@ test.describe("Marketplace Page", () => {
 
     // Click on Installed tab
     await page.getByRole("tab", { name: /Installed/i }).click();
-    await page.waitForTimeout(1000);
+    // The click selects the tab — the state it produces, tolerated.
+    await page
+      .getByRole("tab", { name: /Installed/i, selected: true })
+      .waitFor({ state: "visible", timeout: TAB_SWITCH_TIMEOUT })
+      .catch(() => null);
 
     await page.screenshot({
       path: "test-results/pages-marketplace-installed.png",
@@ -145,8 +178,15 @@ test.describe("Package Detail Page", () => {
     const pageContent = await page.content();
     expect(pageContent).not.toContain("Internal Server Error");
 
-    // Wait for loading to finish and error to appear
-    await page.waitForTimeout(5000);
+    // Wait for loading to finish and error to appear: bounded wait for any
+    // of the three outcomes, tolerated — the reads below keep their shape.
+    await page
+      .getByText("Package not found")
+      .or(page.getByText("Loading package details"))
+      .or(page.getByText("Back to Marketplace"))
+      .first()
+      .waitFor({ state: "visible", timeout: NOT_FOUND_TIMEOUT })
+      .catch(() => null);
 
     // Should show "Package not found" or loading state
     const hasNotFound = await page
@@ -259,9 +299,8 @@ test.describe("Publish Package Page", () => {
     // Click Code tab — use the tab role so we don't match incidental "Code"
     // text and so the Radix trigger receives the click directly.
     await page.getByRole("tab", { name: "Code", exact: true }).click();
-    await page.waitForTimeout(1000);
 
-    // Should show Package Code section
+    // Should show Package Code section (auto-waits)
     await expect(page.getByText("Package Code")).toBeVisible({
       timeout: 10000,
     });
@@ -273,18 +312,16 @@ test.describe("Publish Package Page", () => {
 
     // Click README tab
     await page.getByRole("tab", { name: "README", exact: true }).click();
-    await page.waitForTimeout(1000);
 
-    // Should show README section with markdown support
+    // Should show README section with markdown support (auto-waits)
     await expect(page.getByText("README (Markdown)").first()).toBeVisible({
       timeout: 10000,
     });
 
     // Click Preview tab
     await page.getByRole("tab", { name: /Preview/i }).click();
-    await page.waitForTimeout(1000);
 
-    // Should show Package Preview section
+    // Should show Package Preview section (auto-waits)
     await expect(page.getByText("Package Preview")).toBeVisible({
       timeout: 10000,
     });

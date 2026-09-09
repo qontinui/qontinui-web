@@ -17,11 +17,31 @@ import {
 import type { UnitFiles } from "@/lib/api/agent-text-units";
 import type { WritableLayer } from "../types";
 
+/**
+ * The body a reset RESTORES — the next layer down, as text the operator can
+ * read before deleting anything. `label` is that layer's name as the rest of
+ * the console names it ("the fleet default (v3)", "published by runner
+ * v0.4.12"), so the preview and the sentence around it agree.
+ */
+export interface RestorePreview {
+  label: string;
+  files: UnitFiles;
+  /** The file to open in the preview — the unit's entrypoint. */
+  entrypoint: string;
+}
+
 interface ResetToDefaultDialogProps {
   unitName: string;
   layer: WritableLayer;
   /** What applies once this layer's row is gone — named, not guessed. */
   fallsBackTo: string;
+  /**
+   * The text a session receives after the reset, or `null` when the console
+   * holds no copy of it — a fleet-layer delete with nothing published, or an
+   * account whose runner never published. `null` renders the honest
+   * "cannot be previewed" arm; it is never rendered as an empty preview.
+   */
+  restores: RestorePreview | null;
   /** The stored files, offered for copying before they are destroyed. */
   currentFiles: UnitFiles;
   versionCount: number;
@@ -62,6 +82,7 @@ export function ResetToDefaultDialog({
   unitName,
   layer,
   fallsBackTo,
+  restores,
   currentFiles,
   versionCount,
   busy,
@@ -70,6 +91,10 @@ export function ResetToDefaultDialog({
   const [copied, setCopied] = useState(false);
   const fileCount = Object.keys(currentFiles).length;
   const layerNoun = layer === "fleet" ? "fleet default" : "account override";
+  const restorePaths = restores ? Object.keys(restores.files).sort() : [];
+  const restoreBody = restores
+    ? (restores.files[restores.entrypoint] ?? restores.files[restorePaths[0] ?? ""] ?? "")
+    : "";
 
   const copyFiles = async () => {
     try {
@@ -132,6 +157,44 @@ export function ResetToDefaultDialog({
                 What makes this reversible is your own copy: recreate the unit
                 and paste the files back. Copy them now if you might want them.
               </p>
+              {restores ? (
+                <div className="space-y-1" data-testid="unit-delete-preview">
+                  <p>
+                    What sessions receive instead —{" "}
+                    <span className="font-medium text-foreground">
+                      {restores.label}
+                    </span>
+                    , {restorePaths.length} file
+                    {restorePaths.length === 1 ? "" : "s"} (
+                    <span className="font-mono text-xs">
+                      {restorePaths.join(", ")}
+                    </span>
+                    ). Showing{" "}
+                    <span className="font-mono text-xs">
+                      {restores.entrypoint in restores.files
+                        ? restores.entrypoint
+                        : (restorePaths[0] ?? "")}
+                    </span>
+                    :
+                  </p>
+                  <pre
+                    className="max-h-48 overflow-auto whitespace-pre-wrap break-words rounded-md border border-border bg-muted/30 p-2 font-mono text-xs"
+                    data-testid="unit-delete-preview-body"
+                  >
+                    {restoreBody}
+                  </pre>
+                </div>
+              ) : (
+                <p
+                  className="italic text-muted-foreground"
+                  data-testid="unit-delete-preview-unavailable"
+                >
+                  The text sessions receive afterwards cannot be previewed here:
+                  no runner has published its embedded copy of {unitName} to
+                  this account, so this app holds no copy of it. The runner
+                  still resolves its own embedded text regardless.
+                </p>
+              )}
             </div>
           </AlertDialogDescription>
         </AlertDialogHeader>

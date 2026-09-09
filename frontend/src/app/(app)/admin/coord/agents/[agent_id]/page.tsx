@@ -13,8 +13,15 @@
  *
  * Filters: level (multi-select), event (contains), since (relative time
  * picker). Auto-scrolls to latest when new rows land. Cross-links to
- * `/admin/agent-sessions/{session_id}` once the per-agent rows surface
- * an `agent_session_id` (the lineage UNION arm shipped in Wave 1).
+ * `/sessions/{session_id}` once the per-agent rows surface an
+ * `agent_session_id` (the lineage UNION arm shipped in Wave 1).
+ *
+ * That link pointed at `/admin/agent-sessions/{session_id}` until
+ * `2026-08-26-sessions-console-consolidation` Phase 3. **The route never
+ * existed** — the directory held a single `page.tsx` and no `[session_id]`
+ * child — so every click was a 404 for as long as the button shipped. The
+ * consolidated detail view at `/sessions/[key]` is the page it always wanted,
+ * and it resolves the same id space.
  *
  * ## Console style (Phase 3 Wave 3)
  *
@@ -271,7 +278,7 @@ export default function CoordAgentLogPage() {
             data-testid="coord-agent-log-session-link"
           >
             <Link
-              href={`/admin/agent-sessions/${encodeURIComponent(sessionId)}`}
+              href={`/sessions/${encodeURIComponent(sessionId)}`}
             >
               <Users className="h-3 w-3 mr-1" />
               Session

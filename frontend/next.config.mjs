@@ -229,6 +229,55 @@ const nextConfig = {
         destination: '/admin/coord/pipeline',
         permanent: true,
       },
+      // Plan 2026-08-26-sessions-console-consolidation Phase 3: the six
+      // session surfaces collapse onto `/sessions`. These four 308s are the
+      // ONLY compatibility this phase ships — the retired pages are deleted,
+      // not shimmed (`operating-rules` delete-over-deprecate).
+      //
+      // ⚠️ None of them may match `/sessions/repository*`. `redirects()` is
+      // matched BEFORE the filesystem (see the `/admin` note below, which is
+      // that failure already shipped once), and `/sessions/repository` +
+      // `/sessions/repository/[id]` are the permanent transcript corpus —
+      // a live surface, kept and linked, not consolidated away. Every source
+      // here is rooted at `/admin/agent-sessions` or `/environments/sessions`,
+      // so none of them can reach it. `sessions-routes.test.tsx` scans this
+      // block and fails on any source that could.
+      //
+      // `?live=true` was the old dashboard's only spelling of that filter
+      // (`AgentSessionsDashboard.tsx` set it verbatim), so it maps onto the
+      // console's `?status=live` tab. Next passes every OTHER query param
+      // through untouched, which is how `?user_id=` and `?since=` survive.
+      {
+        source: '/admin/agent-sessions',
+        has: [{ type: 'query', key: 'live', value: 'true' }],
+        destination: '/sessions?status=live',
+        permanent: true,
+      },
+      {
+        source: '/admin/agent-sessions',
+        destination: '/sessions',
+        permanent: true,
+      },
+      // Closes the 404 that ships on main today:
+      // `/admin/coord/agents/[agent_id]` rendered a "Session" button to
+      // `/admin/agent-sessions/{id}`, a route that never existed.
+      {
+        source: '/admin/agent-sessions/:id',
+        destination: '/sessions/:id',
+        permanent: true,
+      },
+      // `?device=` is preserved VERBATIM — `environments/machines/page.tsx`
+      // builds exactly this deep link and `/sessions` reads the same spelling.
+      {
+        source: '/environments/sessions',
+        destination: '/sessions',
+        permanent: true,
+      },
+      {
+        source: '/environments/sessions/:key',
+        destination: '/sessions/:key',
+        permanent: true,
+      },
       // NOTE: `/admin` -> `/admin/architecture` used to live here. A
       // `redirects()` entry is matched before the filesystem, so it shadowed
       // any page mounted at `/admin` — including cloud-control's admin
