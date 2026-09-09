@@ -31,6 +31,7 @@ import {
   CONTINUATION_KIND_CLASS,
   CONTINUATION_STATUS_PALETTE,
   CONTINUATION_UNKNOWN_OUTCOME_KINDS,
+  DEFERRAL_SILENT_MS,
   DEFERRAL_STUCK_COUNT,
   DISPATCH_STALE_MS,
   deriveContinuationStatus,
@@ -83,8 +84,9 @@ describe("continuation palette", () => {
     expect([...CONTINUATION_AUTHOR_GLYPH_KINDS].sort()).toEqual(
       [...authors].sort()
     );
-    // The five states where nothing retries and a human decides.
+    // The six states where nothing retries and a human decides.
     expect([...CONTINUATION_AUTHOR_GLYPH_KINDS].sort()).toEqual([
+      "deferral_abandoned",
       "deferral_stuck",
       "dispatch_stalled",
       "expired",
@@ -106,9 +108,10 @@ describe("continuation palette", () => {
     }
   });
 
-  it("keeps deferred amber and deferral_stuck red — the escalation, in colour", () => {
+  it("keeps deferred amber and both deferral escalations red", () => {
     expect(CONTINUATION_KIND_CLASS.deferred).toBe(WAITING_AMBER);
     expect(CONTINUATION_KIND_CLASS.deferral_stuck).toBe(AUTHOR_RED);
+    expect(CONTINUATION_KIND_CLASS.deferral_abandoned).toBe(AUTHOR_RED);
   });
 });
 
@@ -252,6 +255,17 @@ describe("deriveContinuationStatus — dispatch and its staleness", () => {
     const s = derive({ continuation_dispatched_at: minsAgo(600) });
     expect(s.status.reason).not.toMatch(/offline|dead|down/i);
   });
+
+  it("refuses to judge a dispatch whose time it cannot read", () => {
+    // Both readings above rest entirely on the age test. An unparseable stamp
+    // used to fall through to the CALM one — a positive claim ("waiting for a
+    // runner to claim it") whose only evidence is an unreadable string.
+    const s = derive({ continuation_dispatched_at: "not a timestamp" });
+    expect(s.status.kind).toBe("unknown");
+    expect(s.status.attention).toBe("waiting");
+    expect(s.status.label).toBe("dispatch time unreadable");
+    expect(s.status.reason).toContain("not a timestamp");
+  });
 });
 
 describe("deriveContinuationStatus — deferral pressure", () => {
@@ -286,6 +300,84 @@ describe("deriveContinuationStatus — deferral pressure", () => {
       }).status.kind;
     expect(at(DEFERRAL_STUCK_COUNT - 1)).toBe("deferred");
     expect(at(DEFERRAL_STUCK_COUNT)).toBe("deferral_stuck");
+  });
+
+  // --- the SILENCE arm ------------------------------------------------------
+  //
+  // The asymmetry this closes: a row dispatched 16 minutes ago with no
+  // deferral read red `dispatch_stalled`, while one dispatched days ago and
+  // deferred twice days ago read calm amber over a reason string promising it
+  // was still "re-deliverable". The runner re-lists a deferred row every ~300s
+  // and stamps at most hourly, so a `deferred_at` past three stamp intervals
+  // means nothing is pulling it — `dispatch_stalled`'s condition, with a
+  // reason attached.
+
+  it("escalates a QUIET deferral to red however few times it was pushed back", () => {
+    const s = derive({
+      continuation_dispatched_at: minsAgo(6 * 24 * 60),
+      continuation_deferred_at: minsAgo(6 * 24 * 60),
+      continuation_deferred_reason: "at_cap:4",
+      continuation_deferred_count: 2,
+    });
+    expect(s.status.kind).toBe("deferral_abandoned");
+    expect(s.status.attention).toBe("author");
+    expect(s.status.label).toContain("deferred ×2");
+    expect(s.status.label).toContain("nothing pulling");
+    // The reason it was refused is KEPT — the escalation adds a fact, it does
+    // not replace the one coord recorded.
+    expect(s.status.reason).toContain("continuation cap of 4");
+    // ...and it no longer promises the row is coming back.
+    expect(s.status.reason).not.toContain("re-deliverable");
+  });
+
+  it("escalates exactly at DEFERRAL_SILENT_MS", () => {
+    const at = (ms: number) =>
+      derive({
+        continuation_dispatched_at: minsAgo(10_000),
+        continuation_deferred_at: new Date(NOW - ms).toISOString(),
+        continuation_deferred_reason: "at_cap:4",
+        continuation_deferred_count: 2,
+      }).status.kind;
+    expect(at(DEFERRAL_SILENT_MS - 1_000)).toBe("deferred");
+    expect(at(DEFERRAL_SILENT_MS)).toBe("deferral_abandoned");
+  });
+
+  it("lets silence beat the count when both fire", () => {
+    // 58 deferrals AND quiet for days: "nothing is pulling this" is the fact
+    // that changes what the operator does, and it needs a different fix from a
+    // row still being actively refused.
+    const s = derive({
+      continuation_dispatched_at: minsAgo(10_000),
+      continuation_deferred_at: minsAgo(10_000),
+      continuation_deferred_reason: "thread_pressure:critical:540_over_400",
+      continuation_deferred_count: 58,
+    });
+    expect(s.status.kind).toBe("deferral_abandoned");
+  });
+
+  it("still reads a FRESH high-count deferral as actively refused, not abandoned", () => {
+    const s = derive({
+      continuation_dispatched_at: minsAgo(10_000),
+      continuation_deferred_at: minsAgo(10),
+      continuation_deferred_reason: "thread_pressure:critical:540_over_400",
+      continuation_deferred_count: 58,
+    });
+    expect(s.status.kind).toBe("deferral_stuck");
+    expect(s.status.reason).toContain("still doing so");
+  });
+
+  it("refuses to judge a deferral whose time it cannot read", () => {
+    // The silence test is the whole basis of the amber reading here, so
+    // without a readable stamp neither amber nor red is available.
+    const s = derive({
+      continuation_dispatched_at: minsAgo(10_000),
+      continuation_deferred_at: "not a timestamp",
+      continuation_deferred_reason: "at_cap:4",
+      continuation_deferred_count: 2,
+    });
+    expect(s.status.kind).toBe("unknown");
+    expect(s.status.attention).toBe("waiting");
+    expect(s.status.reason).toContain("cannot be established");
   });
 
   it("prefers the stated deferral over an unexplained stall", () => {
@@ -332,6 +424,22 @@ describe("deriveContinuationStatus — deferral pressure", () => {
     });
     expect(s.deferral).toBeNull();
   });
+
+  it("reports a genuine zero count as a MEASUREMENT, not as a missing one", () => {
+    // A stamped deferral carrying `deferred_count: 0` is a real reading of a
+    // real column. It used to render `deferred ×?` — the same rendering as "no
+    // count came with it" — which is the null/zero collapse this module
+    // refuses everywhere else.
+    const s = derive({
+      continuation_dispatched_at: minsAgo(60),
+      continuation_deferred_at: minsAgo(30),
+      continuation_deferred_reason: "at_cap:4",
+      continuation_deferred_count: 0,
+    });
+    expect(s.deferral?.countKnown).toBe(true);
+    expect(s.deferral?.count).toBe(0);
+    expect(s.status.label).toBe("deferred ×0");
+  });
 });
 
 describe("deriveContinuationStatus — terminal by decision", () => {
@@ -346,6 +454,23 @@ describe("deriveContinuationStatus — terminal by decision", () => {
     expect(s.status.kind).toBe("cancelled");
     expect(s.status.attention).toBe("none");
     expect(s.status.reason).toContain("taken over by hand");
+  });
+
+  it("keeps EXPIRY when a cancel lands on an already-expired row", () => {
+    // coord's cancel writer guards only on consumed/cancelled being NULL, so
+    // this row shape is reachable. Ordering `cancelled` first turned an
+    // alerted `ttl_7d_elapsed` into a calm grey badge with attention `none`.
+    const s = derive({
+      continuation_dispatched_at: minsAgo(20_000),
+      continuation_expired_at: minsAgo(100),
+      continuation_expired_reason: "ttl_7d_elapsed",
+      continuation_cancelled_at: minsAgo(10),
+      continuation_cancel_reason: "tidying up",
+    });
+    expect(s.status.kind).toBe("expired");
+    expect(s.status.attention).toBe("author");
+    // The cancellation is named, not dropped.
+    expect(s.status.reason).toContain("cancellation was recorded afterwards");
   });
 
   it("reads expiry as somebody's move — nothing re-arms it", () => {
