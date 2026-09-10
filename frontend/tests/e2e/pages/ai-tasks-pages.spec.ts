@@ -227,8 +227,9 @@ test.describe("AI Tasks - Detail Page", () => {
     // /sessions), so a bare button-text locator matched the sidebar rather
     // than a tab. The `isVisible()` gate below is a non-waiting snapshot, so
     // whether the sidebar item had rendered by then decided the outcome —
-    // passed in ~1 s when it had not, failed at the 10 s timeout demanding a
-    // Findings tab the error state never renders when it had. The Radix
+    // passed in ~1 s when it had not, failed at the assertion timeout
+    // demanding a Findings tab the error state never renders when it had. The
+    // Radix
     // TabsTrigger renders role="tab" with an accessible name of
     // "Sessions (N)" / "Findings (N)", which no nav button can match.
     const sessionsTab = page.getByRole("tab", { name: /^Sessions\b/ });
