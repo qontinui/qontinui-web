@@ -15,11 +15,13 @@
 
 import noUnwrappedDestructiveHandler from "./no-unwrapped-destructive-handler.mjs";
 import noUnredactedSensitiveInput from "./no-unredacted-sensitive-input.mjs";
+import noFatRecordCard from "./no-fat-record-card.mjs";
 
 const qontinuiWebPlugin = {
   rules: {
     "no-unwrapped-destructive-handler": noUnwrappedDestructiveHandler,
     "no-unredacted-sensitive-input": noUnredactedSensitiveInput,
+    "no-fat-record-card": noFatRecordCard,
   },
 };
 
