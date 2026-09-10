@@ -189,7 +189,28 @@ with no human in the loop**, on three paths:
 
 So the sequence on merge is: land → postdeploy → four tables and every row in
 them gone. Confirming zero rows in production is therefore a step to take
-**before MERGING**, not before applying. **It has not been done.**
+**before MERGING**, not before applying.
+
+**DONE 2026-09-10 — all four tables are EMPTY in production.** Counts read
+``0 / 0 / 0 / 0`` at ``2026-09-10 10:28:02Z`` against ``current_database()
+= qontinui_db``, ``inet_server_addr() = 10.20.134.200``, port ``5432``, user
+``qontinui_user`` — the same database identity coord's own live-catalog read
+reported for these four tables on 2026-09-08. That host is not reachable from a
+developer box; the read was taken from inside the VPC via ECS Exec on the
+running web task, in a session with ``default_transaction_read_only = on``, so
+no credential was extracted and nothing was written. Full evidence, including
+the database-identity row, is a comment on the pull request.
+
+⚠️ **Read what that does and does not establish.** Zero rows is *consistent
+with* this revision's premise — no reader and no writer anywhere in
+``crates/coord/src`` — but does not independently prove it: a writer that has
+simply never fired is indistinguishable from a writer that does not exist. The
+static evidence remains the load-bearing half of the argument; this count
+confirms only that live data does not contradict it, and it is point-in-time
+rather than a standing guarantee.
+
+**It does not by itself license merging** — the CI section below is a separate
+condition and is still unmet.
 
 One cross-repo consequence, named here rather than left for CI to discover:
 ``qontinui-runner`` checks in ``src-tauri/schema.pg.sql.generated``, which
@@ -251,6 +272,10 @@ four tables this revision drops. This is a standing fleet-wide condition on
 every ``coord.*`` drop, not a defect in this revision, and **no edit inside this
 file changes it** — the gate says so itself. Coord finding
 ``4400726c-56bd-4345-8969-df84ad6b9f63``.
+Re-probed 2026-09-10: still ``main: null``, now on a NEWER deployed build
+(``1ba87a06e8dad361dc1f4cf0cd485e14f75ca8f1``, 5044 read-surface entries), which
+is what makes this a standing condition rather than a transient one — it
+survived a coord redeploy unchanged.
 """
 
 from collections.abc import Sequence
