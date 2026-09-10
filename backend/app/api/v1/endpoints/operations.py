@@ -5017,9 +5017,11 @@ async def get_memory_entry(
 # Submit. Coord owns claim acquisition + agent allocation + first-tick
 # prompt delivery; this surface is a thin proxy.
 #
-# Sibling of ``POST /agents/allocate``. Both mint a coord agent and pin
-# device state, and both are admin-gated on
-# ``require_coord_tenant_admin``. This comment used to say allocate
+# Sibling of ``POST /agents/allocate``. Both are admin-gated on
+# ``require_coord_tenant_admin`` — pinned for allocate by
+# ``test_operations_tenant_gate.py::TestAdminGateStillEnforced``, which
+# asserts a 403 ``not_coord_tenant_admin`` for a non-admin caller. This
+# comment used to say allocate
 # "stays user-auth (legacy demo entrypoint)" — wrong on both counts now:
 # the allocate proxy carries the same admin dependency (see its handler),
 # and its original caller, the `/demo-control` page, was deleted when the
