@@ -221,7 +221,17 @@ test.describe("AI Tasks - Detail Page", () => {
     // Tolerance preserved: the Sessions tab or any fallback, and the
     // Findings tab is required only once the Sessions tab rendered (the
     // original AND arm).
-    const sessionsTab = page.locator('button:has-text("Sessions")');
+    //
+    // Both tabs are located by ROLE, not `button:has-text(...)`: the app
+    // sidebar carries a "Sessions" nav button (SYSTEM group, route
+    // /sessions), so a bare button-text locator matched the sidebar rather
+    // than a tab. The `isVisible()` gate below is a non-waiting snapshot, so
+    // whether the sidebar item had rendered by then decided the outcome —
+    // passed in ~1 s when it had not, failed at the 10 s timeout demanding a
+    // Findings tab the error state never renders when it had. The Radix
+    // TabsTrigger renders role="tab" with an accessible name of
+    // "Sessions (N)" / "Findings (N)", which no nav button can match.
+    const sessionsTab = page.getByRole("tab", { name: /^Sessions\b/ });
     await expect(
       sessionsTab
         .or(page.locator("text=Task not found"))
@@ -233,7 +243,7 @@ test.describe("AI Tasks - Detail Page", () => {
     ).toBeVisible({ timeout: PAGE_DATA_TIMEOUT });
     if (await sessionsTab.first().isVisible()) {
       await expect(
-        page.locator('button:has-text("Findings")').first()
+        page.getByRole("tab", { name: /^Findings\b/ }).first()
       ).toBeVisible({ timeout: PAGE_DATA_TIMEOUT });
     }
   });
