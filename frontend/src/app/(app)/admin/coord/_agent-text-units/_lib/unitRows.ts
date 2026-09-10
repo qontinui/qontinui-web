@@ -19,6 +19,7 @@ import type {
   AgentTextUnit,
   AgentTextUnitDefault,
 } from "@/lib/api/agent-text-units";
+import { AUTHOR_RED, INERT } from "@/components/console";
 import {
   entrypointFor,
   isCopySourceName,
@@ -76,12 +77,12 @@ export const ATTENTION_BY_KIND: Record<UnitStatusKind, Attention> = {
   "embedded-only": "none",
 };
 
-/** Someone must act now. Nothing else on this surface may mint a red. */
-const AUTHOR_RED = "bg-red-500/15 text-red-200 border-red-500/35";
+// `AUTHOR_RED` (someone must act now) and `INERT` are imported from the
+// console's single palette home rather than re-spelled here: a hand-typed copy
+// is how a tint drifts, and `consoleSurfaces.test.ts` refuses one.
 /** Calm in-flight hues — nobody is blocked. */
 const ACCOUNT_BLUE = "bg-blue-500/15 text-blue-200 border-blue-500/30";
 const FLEET_EMERALD = "bg-emerald-500/15 text-emerald-200 border-emerald-500/30";
-const INERT = "bg-muted text-muted-foreground border-border";
 
 /** Keyed off `ATTENTION_BY_KIND`, asserted by the agreement test. */
 export const STATUS_BADGE_CLASS: Record<UnitStatusKind, string> = {

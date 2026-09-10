@@ -117,7 +117,11 @@ export function ReleaseRow({
       // the row IS the expand affordance now, and the authored testid names
       // the thing that expands the release (D4a).
       data-testid="coord-release-card"
-      rowKey={`${releaseIdentity(entry)}-${entry.observed_at ?? ""}`}
+      // No `rowKey`: the list publishes the key it opens this row on. The
+      // expression that used to be here ran `releaseIdentity`, whose third leg
+      // is `published_tag` (then `"—"`), where the page's `itemKey` falls to
+      // the literal `"rel"` — so a release carrying only a `published_tag`
+      // emitted a `data-row-key` no expansion state ever held.
       expanded={expanded}
       onToggle={onToggle}
       attention={status.attention}

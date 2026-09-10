@@ -62,6 +62,25 @@ const eslintConfig = [
     },
   },
   {
+    // Phase 4 step 3 of
+    // plans/2026-08-16-coord-console-ui-unification-pipeline-style.md — the
+    // one mechanical rule that stops Family B (a bordered, padded card per
+    // record) from growing back into the coord console after Phase 3 migrated
+    // 29 routes off it. The rule keys on the RENDERED SHAPE, not on `<Card>`:
+    // the instance that motivated it was a raw <div> that never mentioned
+    // Card.
+    //
+    // The SCOPE lives in the rule, which short-circuits on any filename
+    // outside `admin/coord/**`. So this entry being repo-wide buys nothing —
+    // move a console file out of that tree and the guard goes with it. It
+    // carries no `files:` glob only so the scope has ONE definition rather
+    // than two that can drift apart; widening coverage means editing `SCOPE`
+    // in `no-fat-record-card.mjs`, not this block.
+    rules: {
+      "@qontinui-web/no-fat-record-card": "error",
+    },
+  },
+  {
     // API clients under `src/lib/api/` must go through `httpClient` (see
     // `@/services/service-factory`), never a bare `fetch`. A bare fetch sends
     // no `Authorization: Bearer` header, so in prod (Cognito bearer auth) the
