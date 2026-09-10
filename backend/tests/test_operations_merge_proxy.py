@@ -215,8 +215,11 @@ class TestPostAgentsAllocate:
     which are SUPERSEDED. The endpoint is retained on its own merits:
     coord's `/agents/allocate` is the fleet's worktree-allocation path and
     this is the admin-gated proxy in front of it. It now has no in-repo
-    caller, so these tests are its only regression guard — do not read the
-    absent caller as evidence the route is dead.
+    caller. Its regression guards are these tests, which pin the proxy
+    behaviour, and ``test_operations_tenant_gate.py``'s
+    ``TestAdminGateStillEnforced``, which POSTs this same route and pins the
+    403 for a non-admin. Do not read the absent in-repo caller as evidence
+    the route is dead.
     """
 
     _ALLOCATE_PAYLOAD = {
