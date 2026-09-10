@@ -5017,9 +5017,15 @@ async def get_memory_entry(
 # Submit. Coord owns claim acquisition + agent allocation + first-tick
 # prompt delivery; this surface is a thin proxy.
 #
-# Sibling of ``POST /agents/allocate`` (Wave 0 demo-control path). The
-# spawn route is admin-gated because it mints a coord agent and pins
-# device state; allocate stays user-auth (legacy demo entrypoint).
+# Sibling of ``POST /agents/allocate``. Both mint a coord agent and pin
+# device state, and both are admin-gated on
+# ``require_coord_tenant_admin``. This comment used to say allocate
+# "stays user-auth (legacy demo entrypoint)" — wrong on both counts now:
+# the allocate proxy carries the same admin dependency (see its handler),
+# and its original caller, the `/demo-control` page, was deleted when the
+# three `2026-05-18-coordination-layer-demos-feature-*` plans it
+# dispatched against went SUPERSEDED. Allocate is a generic proxy over an
+# opaque caller-supplied ``intent``, with no in-repo caller left.
 #
 # Wire shape (request) — dictated by coord's ``SpawnRequest``, which axum
 # extracts with strict serde, so a mismatch is a hard 422 before any
