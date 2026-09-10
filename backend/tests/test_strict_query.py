@@ -281,7 +281,9 @@ class TestPlanLibraryRefusesUnknownKeys:
     @pytest.mark.parametrize(
         ("suffix", "unknown"),
         [
-            ("", "slug"),
+            # ``slug`` is an ACCEPTED list key now (the exact own-slug filter);
+            # ``stem`` is the plausible wrong spelling for the same identifier.
+            ("", "stem"),
             ("", "work_unit_slig"),
             ("/candidates", "work_unit_slug"),
             ("/export", "artifact_status"),
