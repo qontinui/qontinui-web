@@ -10,7 +10,7 @@ a mocked ``httpx.AsyncClient``, so no live coord is needed.
 
 The behaviours that matter here, and why:
 
-* ``decided_by`` is stamped from the SESSION and the client body is reduced to
+* ``decided_by`` is NEVER forwarded (coord derives it) and the client body is reduced to
   ``decision_note`` alone — a browser must not be able to choose who a decision
   is attributed to, nor smuggle ``status``/``tenant_id`` past the proxy;
 * the LIST route degrades to an explicit ``unavailable`` note while coord's
@@ -199,9 +199,15 @@ class TestListProposals:
 
 class TestDecideProposal:
     @pytest.mark.parametrize("action", ["approve", "reject"])
-    def test_decided_by_is_session_identity_and_body_is_reduced(
+    def test_decided_by_is_never_forwarded_and_body_is_reduced(
         self, auth_client: TestClient, action: str
     ):
+        """``decided_by`` is coord's to derive, and coord REFUSES it as an
+        unknown field — ``400 invalid body: unknown field `decided_by`,
+        expected `decision_note```. Forwarding it, even honestly stamped from
+        the session, broke approve AND reject from the console until
+        2026-09-10. The forgery attempt in the request body must still be
+        dropped; it is simply not replaced with anything."""
         with _patch_httpx() as MockClient:
             instance = AsyncMock()
             instance.post.return_value = _mock_response(
@@ -222,10 +228,8 @@ class TestDecideProposal:
 
         assert resp.status_code == 200
         forwarded = instance.post.call_args.kwargs["json"]
-        assert forwarded == {
-            "decision_note": "Agreed after review.",
-            "decided_by": TEST_USER_EMAIL,
-        }
+        assert forwarded == {"decision_note": "Agreed after review."}
+        assert "decided_by" not in forwarded
         assert instance.post.call_args.args[0].endswith(f"/{action}")
 
     def test_missing_body_is_allowed(self, auth_client: TestClient):
@@ -237,10 +241,7 @@ class TestDecideProposal:
             resp = auth_client.post(f"{PROPOSALS}/{_proposal()['id']}/reject")
 
         assert resp.status_code == 200
-        assert instance.post.call_args.kwargs["json"] == {
-            "decision_note": None,
-            "decided_by": TEST_USER_EMAIL,
-        }
+        assert instance.post.call_args.kwargs["json"] == {"decision_note": None}
 
     def test_coord_404_does_not_degrade(self, auth_client: TestClient):
         """A decision that silently no-ops would be worse than an error."""

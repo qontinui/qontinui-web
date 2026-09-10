@@ -9508,18 +9508,25 @@ async def approve_prompt_document_proposal(
     """Approve a pending proposal — coord applies the edit and returns the new
     document version. Tenant-admin only.
 
-    Only ``decision_note`` is taken from the client; ``decided_by`` is stamped
-    from the authenticated session. Coord's 4xx (already decided, stale
-    ``base_version``, unknown id) passes through verbatim — including the 404 you
-    get before coord's Phase 5 deploy, which must stay visible rather than
-    silently no-op.
+    Only ``decision_note`` is forwarded. ``decided_by`` is NOT sent: coord owns
+    it and derives it server-side from the operator identity on the forwarded
+    bearer (``policy_proposals::decide`` → ``format!("operator:{}", ctx.email)``),
+    refusing the request outright when no operator resolves. Coord's
+    ``DecisionRequest`` rejects unknown fields, so sending ``decided_by`` — even
+    the honest session value — is a hard ``400 invalid body: unknown field
+    `decided_by`, expected `decision_note```. That is exactly what this route
+    did until 2026-09-10, which broke approve AND reject from the console.
+
+    A client-supplied ``decided_by`` is still dropped rather than passed on; the
+    forgery it would attempt is refused by coord one layer further in.
+
+    Coord's 4xx (already decided, stale ``base_version``, unknown id) passes
+    through verbatim — including the 404 you get before coord's Phase 5 deploy,
+    which must stay visible rather than silently no-op.
     """
     return await _proxy_coord_post(
         f"{_COORD_PROPOSALS_PATH}/{quote(proposal_id, safe='')}/approve",
-        {
-            "decision_note": (body or {}).get("decision_note"),
-            "decided_by": _editor_identity(current_user),
-        },
+        {"decision_note": (body or {}).get("decision_note")},
         tenant_id=tenant_id,
     )
 
@@ -9533,15 +9540,13 @@ async def reject_prompt_document_proposal(
 ) -> Any:
     """Reject a pending proposal — the edit is never applied. Tenant-admin only.
 
-    Same body reduction and server-side ``decided_by`` stamp as
-    :func:`approve_prompt_document_proposal`.
+    Same body reduction as :func:`approve_prompt_document_proposal`, and the
+    same reason ``decided_by`` is not forwarded: coord derives the decider from
+    the operator identity and rejects a caller-supplied one as an unknown field.
     """
     return await _proxy_coord_post(
         f"{_COORD_PROPOSALS_PATH}/{quote(proposal_id, safe='')}/reject",
-        {
-            "decision_note": (body or {}).get("decision_note"),
-            "decided_by": _editor_identity(current_user),
-        },
+        {"decision_note": (body or {}).get("decision_note")},
         tenant_id=tenant_id,
     )
 
