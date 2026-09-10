@@ -84008,7 +84008,7 @@
     },
     "/api/v1/operations/coord/prompt-document-proposals/{proposal_id}/approve": {
       "post": {
-        "description": "Approve a pending proposal \u2014 coord applies the edit and returns the new\ndocument version. Tenant-admin only.\n\nOnly ``decision_note`` is taken from the client; ``decided_by`` is stamped\nfrom the authenticated session. Coord's 4xx (already decided, stale\n``base_version``, unknown id) passes through verbatim \u2014 including the 404 you\nget before coord's Phase 5 deploy, which must stay visible rather than\nsilently no-op.",
+        "description": "Approve a pending proposal \u2014 coord applies the edit and returns the new\ndocument version. Tenant-admin only.\n\nOnly ``decision_note`` is forwarded. ``decided_by`` is NOT sent: coord owns\nit and derives it server-side from the operator identity on the forwarded\nbearer (``policy_proposals::decide`` \u2192 ``format!(\"operator:{}\", ctx.email)``),\nrefusing the request outright when no operator resolves. Coord's\n``DecisionRequest`` rejects unknown fields, so sending ``decided_by`` \u2014 even\nthe honest session value \u2014 is a hard ``400 invalid body: unknown field\n`decided_by`, expected `decision_note```. That is exactly what this route\ndid until 2026-09-10, which broke approve AND reject from the console.\n\nA client-supplied ``decided_by`` is still dropped rather than passed on; the\nforgery it would attempt is refused by coord one layer further in.\n\nCoord's 4xx (already decided, stale ``base_version``, unknown id) passes\nthrough verbatim \u2014 including the 404 you get before coord's Phase 5 deploy,\nwhich must stay visible rather than silently no-op.",
         "operationId": "api_v1_operations_coord_prompt_document_proposals_proposal_id_approve_post",
         "parameters": [
           {
@@ -84074,7 +84074,7 @@
     },
     "/api/v1/operations/coord/prompt-document-proposals/{proposal_id}/reject": {
       "post": {
-        "description": "Reject a pending proposal \u2014 the edit is never applied. Tenant-admin only.\n\nSame body reduction and server-side ``decided_by`` stamp as\n:func:`approve_prompt_document_proposal`.",
+        "description": "Reject a pending proposal \u2014 the edit is never applied. Tenant-admin only.\n\nSame body reduction as :func:`approve_prompt_document_proposal`, and the\nsame reason ``decided_by`` is not forwarded: coord derives the decider from\nthe operator identity and rejects a caller-supplied one as an unknown field.",
         "operationId": "api_v1_operations_coord_prompt_document_proposals_proposal_id_reject_post",
         "parameters": [
           {
