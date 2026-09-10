@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { History, Loader2, RotateCcw } from "lucide-react";
+import { WAITING_AMBER } from "@/components/console";
 import type { AgentTextUnitVersion } from "@/lib/api/agent-text-units";
 import { VersionDiff } from "./VersionDiff";
 import { diffFileSets } from "../_lib/unitRows";
@@ -268,7 +269,7 @@ export function VersionHistory({
                         )}
                         {version.restored_from !== null && (
                           <span
-                            className="rounded-md border border-amber-500/30 bg-amber-500/15 px-1.5 py-0.5 text-[11px] text-amber-200"
+                            className={`rounded-md border px-1.5 py-0.5 text-[11px] ${WAITING_AMBER}`}
                             title={`This version's files were copied from v${version.restored_from} by a revert.`}
                           >
                             Restored from v{version.restored_from}
