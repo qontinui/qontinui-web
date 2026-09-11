@@ -77,6 +77,7 @@ from __future__ import annotations
 import asyncio
 import inspect
 import json
+import re
 import time
 from dataclasses import dataclass, field
 from typing import Any
@@ -168,6 +169,82 @@ CODE_GRANT_WRONG_KIND = "grant_wrong_kind"
 # the per-target pubsub listener died on its own: the attachment is dropped
 # rather than left registered with no return route.
 CODE_LISTENER_LOST = "listener_lost"
+
+# ---------------------------------------------------------------------------
+# The TARGET's own closed set of refusal codes.
+# ---------------------------------------------------------------------------
+# ``_route_target_error`` rebuilds the payload rather than forwarding it, but
+# ``code`` was taken straight off the target's frame — so a target could emit
+# any of the RELAY's codes above and the source would read them as the relay's
+# own verdict. Two are directly exploitable: ``attach_grant_expired`` makes the
+# source discard live grants and re-mint in a loop, and ``listener_lost`` makes
+# it believe the relay lost its route to the device.
+#
+# The mirror of ``mcp::remote_terminal::{AttachRefusal, CreateRefusal}::code``
+# in qontinui-runner plus ``backend_relay``'s own pre-dispatch refusal. A code
+# outside it is not dropped — a refusal the source cannot name is a worse
+# outcome than one it can — but is NAMESPACED into ``target_<code>``, which by
+# construction cannot collide with anything the relay says itself.
+#
+# ``attach_grant_unknown`` / ``attach_grant_expired`` are in BOTH vocabularies
+# and stay pass-through: the source's handling of them is identical either way
+# (the grant is gone), so nothing is gained by making them distinguishable and
+# a working feature would be lost.
+TARGET_ERROR_CODES = frozenset(
+    {
+        # AttachRefusal
+        "attach_grant_unknown",
+        "attach_grant_expired",
+        "attach_terminal_mismatch",
+        "remote_attach_disabled",
+        "session_not_local",
+        # CreateRefusal
+        "remote_create_disabled",
+        "remote_create_grant_required",
+        "remote_create_grant_unknown",
+        "remote_create_grant_expired",
+        "remote_create_no_target_directory",
+        "remote_create_working_dir_not_allowed",
+        "remote_create_intent_repo_not_allowed",
+        "remote_create_source_user_not_allowed",
+        # backend_relay's pre-dispatch refusal
+        "remote_type_not_admitted",
+    }
+)
+
+# Longest target-supplied ``code`` / ``message`` forwarded to the source. The
+# allowlist two lines up caps its members implicitly; these two fields did not,
+# which made a diagnostic into a transfer channel.
+TARGET_CODE_MAX = 64
+TARGET_MESSAGE_MAX = 512
+
+
+def namespace_target_code(raw: Any) -> str:
+    """The ``code`` a target refusal may present to the source.
+
+    In ``TARGET_ERROR_CODES`` -> itself. Anything else -> ``target_<slug>``,
+    with the slug reduced to ``[a-z0-9_]`` and capped, so a target can neither
+    spell a relay code nor smuggle structure through the field. Unusable input
+    (not a string, empty, nothing left after the reduction) -> ``target_error``.
+    """
+    if not isinstance(raw, str):
+        return "target_error"
+    code = raw.strip()
+    if code in TARGET_ERROR_CODES:
+        return code
+    slug = re.sub(r"[^a-z0-9_]+", "_", code.lower()).strip("_")[:TARGET_CODE_MAX]
+    return f"target_{slug}" if slug else "target_error"
+
+
+def _is_uuid(value: Any) -> bool:
+    """True when ``value`` is a string spelling a UUID."""
+    if not isinstance(value, str):
+        return False
+    try:
+        UUID(value.strip())
+    except (ValueError, AttributeError, TypeError):
+        return False
+    return True
 
 
 async def _maybe_await(result: Any) -> Any:
@@ -1144,9 +1221,25 @@ class RemoteTerminalRelay:
         return True
 
     async def _release_registry(self, att: _Attachment) -> None:
-        """Delete the attachment's keys; the terminal key only while ours."""
+        """Delete the attachment's keys; the terminal key only while ours.
+
+        **A CREATE's claim key is NOT deleted.** ``SET NX EXAT`` made it expire
+        with the grant, so leaving it is what "one grant, one spawn" means for
+        the 15 minutes the grant lives. Deleting it here freed the jti the
+        instant the create completed, and the only barriers left were a
+        PROCESS-LOCAL tombstone on the target and coord's ``consumed_at`` —
+        which a single detached no-retry POST sets. A coord blip during that
+        POST plus a target restart inside the TTL let the source replay the
+        identical frame into a second PTY, repeatably, once per restart.
+
+        Attach keeps the delete: re-presenting an attach grant is the documented
+        reattach path, not a replay.
+        """
         redis = await self._get_redis()
-        await redis.delete(claim_key(att.grant_jti), grant_key(att.grant_jti))
+        if att.kind == KIND_CREATE:
+            await redis.delete(grant_key(att.grant_jti))
+        else:
+            await redis.delete(claim_key(att.grant_jti), grant_key(att.grant_jti))
         if att.terminal_id is not None:
             await _eval(
                 redis,
@@ -1569,6 +1662,28 @@ class RemoteTerminalRelay:
             att = session.grants.get(jti)
             if att is None:
                 return False
+            # The reply must come from the device the GRANT names.
+            #
+            # ``pending_create`` is keyed by request id alone, not by target, so
+            # a ``terminal_created`` arriving on device C's channel under a
+            # request id minted for device B correlated to B's attachment and
+            # was answered as B's. The source then labels the tab B and mints an
+            # attach grant against whatever session id the frame carried. One
+            # socket routinely holds grants on several targets — that is what
+            # ``_attachment_by_remote_mark`` already checks for, for the same
+            # reason.
+            if att.target_device_id != target_device_id:
+                logger.warning(
+                    "remote_terminal_created_wrong_target",
+                    grant_jti=att.grant_jti,
+                    granted_target=att.target_device_id,
+                    frame_target=target_device_id,
+                )
+                # Put the correlation back: this frame was not the answer, and
+                # the real target may still reply.
+                if isinstance(wire_request_id, str):
+                    session.pending_create[wire_request_id] = correlated
+                return False
             terminal = frame.get("terminal")
             terminal_id = (
                 terminal.get("id")
@@ -1587,6 +1702,20 @@ class RemoteTerminalRelay:
             coord_session_id = frame.get("coord_session_id")
             if coord_session_id is None and isinstance(terminal, dict):
                 coord_session_id = terminal.get("coordSessionId")
+            # A UUID or nothing. The source turns this straight into
+            # ``POST /coord/sessions/{id}/attach-grants``, so an unparseable or
+            # non-string value must read as "created but not addressable"
+            # (which the source already reports) rather than travel on as an id.
+            # The type check is cheap; what it forecloses is the field becoming
+            # a free-text channel into a coord URL path.
+            if not _is_uuid(coord_session_id):
+                if coord_session_id is not None:
+                    logger.warning(
+                        "remote_terminal_created_bad_session_id",
+                        grant_jti=att.grant_jti,
+                        target_device_id=target_device_id,
+                    )
+                coord_session_id = None
             await self._send_to_source(
                 session,
                 {
@@ -1812,11 +1941,17 @@ class RemoteTerminalRelay:
             )
         if att is None:
             return False
+        message = frame.get("message")
+        if not isinstance(message, str) or not message.strip():
+            message = "target refused the remote frame"
         payload: dict[str, Any] = {
             "type": "remote_terminal_error",
             "grant_jti": att.grant_jti,
-            "code": frame.get("code") or "target_error",
-            "message": frame.get("message") or "target refused the remote frame",
+            # NAMESPACED, not forwarded: ``code`` is target-supplied and the
+            # relay has its own vocabulary on this same field. See
+            # ``namespace_target_code``.
+            "code": namespace_target_code(frame.get("code")),
+            "message": message[:TARGET_MESSAGE_MAX],
         }
         # Echo the SOURCE's request id only for an RPC we correlated; a
         # request id we did not mint belongs to some other watcher.
