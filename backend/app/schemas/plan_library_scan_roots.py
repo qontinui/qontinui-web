@@ -186,10 +186,18 @@ class ScanRootRow(BaseModel):
     """One device's stored reading, with the read route's VERDICT on top.
 
     ``state`` / ``detail`` are the verdict a reader should key on, not the
-    stored values: ``unknown`` with an ``observation_stale:`` detail once the
-    device has not reported within ``fresh_within_secs`` (by ``received_at``),
-    and ``unknown`` with a ``ref_stale:`` detail for a fresh ``measured``
-    floor reading that is 0 behind.
+    stored values. ``state`` is ``unknown`` with:
+
+    * an ``observation_stale:`` detail once the device has not reported within
+      ``fresh_within_secs`` (by ``received_at``);
+    * a ``reading_superseded:`` detail when the device's latest report was
+      observed before the stored reading (a clock step-back or a
+      late-delivered report), so the stored reading may not be what it reports
+      now (``last_report_applied: false``);
+    * a ``ref_stale:`` detail for a ``measured`` floor reading that is 0
+      behind.
+
+    Precedence: ``observation_stale`` > ``reading_superseded`` > ``ref_stale``.
     What the device actually sent is in ``reported_state`` /
     ``reported_detail``. The counts and ``ref_age_secs`` are served as reported
     whatever the verdict — a reader keying on ``state`` does not trust them
@@ -229,8 +237,9 @@ class ScanRootRow(BaseModel):
     #: reported. The ONLY stamp liveness is judged from.
     received_at: IsoDatetime
     #: Whether the device's latest report was applied. ``False``: its latest
-    #: report was observed before the stored reading, so the stored reading is
-    #: not what it says now and ``state`` is ``unknown`` / ``reading_superseded``.
+    #: report was observed before the stored reading, so the stored reading may
+    #: not be what it says now and ``state`` is ``unknown`` /
+    #: ``reading_superseded``.
     last_report_applied: bool
     #: The ``observed_at`` of the device's latest report, applied or not.
     last_report_observed_at: IsoDatetime

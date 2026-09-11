@@ -150,20 +150,22 @@ def observed_skew_secs(row: PlanScanRootObservation) -> int:
 def superseded_detail(row: PlanScanRootObservation) -> str | None:
     """The ``reading_superseded:`` verdict when the latest report was declined.
 
-    A declined report was observed BEFORE the stored reading — the runner's
-    clock stepped back, or a stale retry arrived last. Either way the stored
-    reading is not what the device says now, so serving it as current (the
-    defect this closes) would present a contradicted number as the truth. N is
-    ``observed_at - last_report_observed_at``: how far the latest report's
-    clock was behind the stored reading's, fixed per report.
+    A declined report was observed BEFORE the stored reading. This server
+    cannot tell why — the runner's clock stepped back, or a report was
+    delivered late — so the detail names both and asserts neither. Either way
+    the stored reading may not be what the device says now, so serving it as
+    current (the defect this closes) could present a contradicted number as
+    the truth. N is ``observed_at - last_report_observed_at``: how far before
+    the stored reading the latest report was observed, fixed per report.
     """
     if row.last_report_applied:
         return None
-    stepped_back = int((row.observed_at - row.last_report_observed_at).total_seconds())
+    earlier_by = int((row.observed_at - row.last_report_observed_at).total_seconds())
     return (
-        "reading_superseded: the device's latest report was observed before the "
-        f"stored reading (its clock stepped back ~{stepped_back} s), so the "
-        "stored reading is not what it reports now"
+        "reading_superseded: the device's latest report was observed "
+        f"~{earlier_by} s before the stored reading (a clock step-back or a "
+        "late-delivered report), so the stored reading may not be what it "
+        "reports now"
     )
 
 
@@ -313,10 +315,13 @@ async def list_scan_roots(
 
     Same credentials as the plan-library list (an operator session or a device
     token). Each row carries its age and a ``state`` VERDICT that is
-    ``unknown`` once the device has not reported within ``fresh_within_secs``
-    (by ``received_at``) or its reading is 0 behind a stale ref, with the
-    device's own values in ``reported_state`` /
-    ``reported_detail``; an organization with no rows answers
+    ``unknown`` when the device has not reported within ``fresh_within_secs``
+    (by ``received_at``; ``observation_stale:``), when its latest report was
+    observed before the stored reading (``reading_superseded:``), or when its
+    reading is 0 behind a stale ref (``ref_stale:``) — in that order of
+    precedence: ``observation_stale`` > ``reading_superseded`` >
+    ``ref_stale``. The device's own values stay in ``reported_state`` /
+    ``reported_detail``. An organization with no rows answers
     ``state: "unknown"``, never an empty "all current".
     """
     org_id = await _resolve_org_id(db, current_user)
