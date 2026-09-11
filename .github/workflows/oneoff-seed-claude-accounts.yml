@@ -53,7 +53,7 @@ jobs:
           # Build the containerOverrides purely from env vars (never interpolated
           # into a shell/JSON string directly) so an email containing quotes or
           # shell metacharacters cannot break the command or escape the JSON.
-          OVERRIDES=$(python3 -c "import json, os; command = ['-m', 'scripts.seed_claude_accounts', '--email', os.environ['SEED_EMAIL']] + (['--dry-run'] if os.environ.get('SEED_DRY_RUN') == 'true' else []); print(json.dumps({'containerOverrides': [{'name': os.environ['ECS_CONTAINER'], 'command': command}]}))")
+          OVERRIDES=$(python3 -c "import json, os; command = ['python', '-m', 'scripts.seed_claude_accounts', '--email', os.environ['SEED_EMAIL']] + (['--dry-run'] if os.environ.get('SEED_DRY_RUN') == 'true' else []); print(json.dumps({'containerOverrides': [{'name': os.environ['ECS_CONTAINER'], 'command': command}]}))")
           echo "overrides: $OVERRIDES"
 
           TASK_ARN=$(aws ecs run-task \
