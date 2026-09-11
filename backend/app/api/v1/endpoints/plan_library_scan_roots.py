@@ -30,10 +30,18 @@ Invariants
    readings land in the organization its artifacts land in.
 3. **Silence is UNKNOWN, never "current".** An organization with no rows reads
    top-level ``state: "unknown"``; a row whose reading is older than
-   :data:`FRESH_WITHIN_SECS` reads ``effective_state: "unknown"`` with an
-   ``observation_stale:`` detail. A device that stopped reporting has
-   established nothing about now, and a reader that defaulted its last number
-   would be trusting a feeder that may since have drifted arbitrarily far.
+   :data:`FRESH_WITHIN_SECS` reads ``state: "unknown"`` with an
+   ``observation_stale:`` detail (what the device sent stays in
+   ``reported_state`` / ``reported_detail``). A device that stopped reporting
+   has established nothing about now, and a reader that defaulted its last
+   number would be trusting a feeder that may since have drifted arbitrarily
+   far.
+3a. **A 0/0 floor is UNKNOWN, never "in step".** A fresh ``measured`` reading
+   whose counts are floors (ref stale or of unknown age) and are both zero
+   reads ``state: "unknown"`` with a ``ref_stale:`` detail: zero commits behind
+   a ref that may itself be days old is a lower bound of nothing. A floor with
+   non-zero counts stays ``measured`` — "at least 254 behind" is a true and
+   useful claim, and ``counts_are_floors`` says it is a lower bound.
 4. **Report-only.** Nothing here gates a corpus read or a write; it is a
    diagnostic beside the corpus, not a condition on it.
 
@@ -61,7 +69,9 @@ from app.api.deps import (
     get_reporting_device,
 )
 from app.api.strict_query import StrictQueryRoute
-from app.api.v1.endpoints.plan_library import _resolve_org_id
+from app.api.v1.endpoints.plan_library import (  # private; not promoted: that means editing plan_library.py, which PR #1267 is rewriting
+    _resolve_org_id,
+)
 from app.crud import plan_scan_root as crud
 from app.models.plan_scan_root import PlanScanRootObservation
 from app.models.user import User
@@ -91,6 +101,12 @@ NO_OBSERVATION_DETAIL = (
     "whose build predates the report, or whose body sync is off, sends none."
 )
 
+#: ``detail`` for a fresh ``measured`` reading that is a 0/0 floor.
+REF_STALE_ZERO_FLOOR_DETAIL = (
+    "ref_stale: 0/0 counts against a ref that is stale or of unknown age are "
+    "a lower bound, not agreement"
+)
+
 
 def observation_age_secs(row: PlanScanRootObservation, *, now: datetime) -> int:
     """Seconds since the reading, measured from the OLDER of its two stamps.
@@ -105,23 +121,46 @@ def observation_age_secs(row: PlanScanRootObservation, *, now: datetime) -> int:
     return max(0, int((now - reference).total_seconds()))
 
 
+def is_zero_floor(row: PlanScanRootObservation) -> bool:
+    """A ``measured`` 0/0 whose counts are lower bounds — no claim at all."""
+    return (
+        row.state == "measured"
+        and row.counts_are_floors
+        and row.behind == 0
+        and row.ahead == 0
+    )
+
+
 def render_row(row: PlanScanRootObservation, *, now: datetime) -> ScanRootRow:
-    """One stored reading, with the freshness verdict the read route owes."""
+    """One stored reading, with the verdict the read route owes on top.
+
+    Staleness is judged first: a reading past the window says nothing about now
+    whatever it contained. Then the 0/0-floor rule. Otherwise the verdict is
+    what the device reported.
+    """
     age = observation_age_secs(row, now=now)
     fresh = age <= FRESH_WITHIN_SECS
-    if fresh:
-        effective_state = row.state
-        effective_detail = row.detail
-    else:
-        effective_state = "unknown"
-        effective_detail = (
+    state: str
+    detail: str | None
+    if not fresh:
+        state = "unknown"
+        detail = (
             f"observation_stale: last reading is {age} s old, past the "
             f"{FRESH_WITHIN_SECS} s freshness window; it reported "
             f"state '{row.state}', which says nothing about now"
         )
+    elif is_zero_floor(row):
+        state = "unknown"
+        detail = REF_STALE_ZERO_FLOOR_DETAIL
+    else:
+        state = row.state
+        detail = row.detail
     return ScanRootRow(
         device_id=row.device_id,
-        state=row.state,  # type: ignore[arg-type]  # CHECK-constrained TEXT
+        state=state,  # type: ignore[arg-type]  # CHECK-constrained TEXT
+        detail=detail,
+        reported_state=row.state,  # type: ignore[arg-type]
+        reported_detail=row.detail,
         plans_dir=row.plans_dir,
         repo_root=row.repo_root,
         source_repo=row.source_repo,
@@ -132,13 +171,10 @@ def render_row(row: PlanScanRootObservation, *, now: datetime) -> ScanRootRow:
         ahead=row.ahead,
         ref_age_secs=row.ref_age_secs,
         counts_are_floors=row.counts_are_floors,
-        detail=row.detail,
         observed_at=row.observed_at,
         received_at=row.received_at,
         observation_age_secs=age,
         observation_fresh=fresh,
-        effective_state=effective_state,  # type: ignore[arg-type]
-        effective_detail=effective_detail,
     )
 
 
@@ -162,15 +198,19 @@ async def report_scan_root(
     db: AsyncSession = Depends(get_async_db),
     device: DeviceTokenContext = Depends(get_reporting_device),
 ) -> ScanRootReportResponse:
-    """Store the reporting device's latest reading, replacing its previous one.
+    """Store the reporting device's latest reading, replacing an older one.
 
     One row per ``(organization, device)``. ``device_id`` is the verified
     token's claim; the organization is the device's paired operator's personal
     organization — the same scope its artifact upserts land in. ``201`` on the
     device's first report, ``200`` on every later one.
+
+    A report observed EARLIER than the stored reading (a late or retried
+    delivery) is ignored: ``200`` with ``applied: false`` and the stored,
+    newer row.
     """
     org_id = await _resolve_org_id(db, device.user)
-    row, created = await crud.upsert_observation(
+    row, created, applied = await crud.upsert_observation(
         db,
         org_id=org_id,
         device_id=device.device_id,
@@ -182,6 +222,7 @@ async def report_scan_root(
         "plan_library.scan_root_reported",
         device_id=str(row.device_id),
         created=created,
+        applied=applied,
         state=row.state,
         behind=row.behind,
         ahead=row.ahead,
@@ -189,7 +230,9 @@ async def report_scan_root(
         counts_are_floors=row.counts_are_floors,
     )
     return ScanRootReportResponse(
-        created=created, row=render_row(row, now=datetime.now(UTC))
+        created=created,
+        applied=applied,
+        row=render_row(row, now=datetime.now(UTC)),
     )
 
 
@@ -205,10 +248,11 @@ async def list_scan_roots(
     """The caller's organization's readings, one per reporting device.
 
     Same credentials as the plan-library list (an operator session or a device
-    token). Each row carries its age and an ``effective_state`` that is
-    ``unknown`` once the reading is older than ``fresh_within_secs``; an
-    organization with no rows answers ``state: "unknown"``, never an empty
-    "all current".
+    token). Each row carries its age and a ``state`` VERDICT that is
+    ``unknown`` once the reading is older than ``fresh_within_secs`` or is a
+    0/0 floor, with the device's own values in ``reported_state`` /
+    ``reported_detail``; an organization with no rows answers
+    ``state: "unknown"``, never an empty "all current".
     """
     org_id = await _resolve_org_id(db, current_user)
     observations = await crud.list_observations(db, org_id=org_id)

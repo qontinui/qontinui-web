@@ -13,16 +13,23 @@ What is asserted here
 3. **Only a device may write.** An operator session is a 403 naming why —
    including one that also forwards a device bearer — and anonymous is a 401.
 4. **Staleness reads UNKNOWN.** A just-written reading is fresh; one older than
-   2700 s reads ``effective_state: "unknown"`` with an ``observation_stale:``
-   detail, judged from the OLDER of the two timestamps. An organization with
-   no readings answers top-level ``state: "unknown"``, never an empty "all
-   current".
+   2700 s reads ``state: "unknown"`` with an ``observation_stale:`` detail
+   (what was sent stays in ``reported_state`` / ``reported_detail``), judged
+   from the OLDER of the two timestamps. An organization with no readings
+   answers top-level ``state: "unknown"``, never an empty "all current".
+4a. **A 0/0 floor reads UNKNOWN.** A fresh ``measured`` reading whose counts
+   are floors and both zero reads ``state: "unknown"`` with a ``ref_stale:``
+   detail; a floor with non-zero counts stays ``measured``.
+4b. **Out-of-order reports are ignored.** A report observed earlier than the
+   stored one answers ``applied: false`` and changes nothing.
 5. **Route order.** Through the real ``api_router``, ``GET
    /api/v1/plan-library/scan-roots`` reaches this handler and is not swallowed
    by ``plan_library``'s ``GET /{artifact_id}``.
-6. **Validation.** Bad ``state``, negative or oversized counts, a ``measured``
-   reading without counts, counts on an unmeasured state, an unexplained
-   ``unknown`` and a naive ``observed_at`` are all 422s.
+6. **Validation.** Bad ``state``, negative, oversized or non-strict counts, a
+   non-strict ``counts_are_floors``, a ``measured`` reading without counts,
+   counts / ref age / floors on an unmeasured state, a ``measured`` reading of
+   unknown ref age that does not claim floors, an unexplained ``unknown`` and a
+   naive ``observed_at`` are all 422s — each for the reason named.
 
 Layering matches ``tests/test_plan_library_device_auth.py``: ``httpx`` +
 ``ASGITransport`` so handlers share the test's asyncio loop and session, the
@@ -168,6 +175,20 @@ def stub_device_jwt(monkeypatch, owner):
 @pytest_asyncio.fixture()
 async def app_no_cognito(async_db_session: AsyncSession, stub_device_jwt):
     return _build_app(db_session=async_db_session, cognito_user=None)
+
+
+def _unmeasured(state: str, **overrides: Any) -> dict[str, Any]:
+    """A valid non-``measured`` reading: no counts, no ref age, no floors."""
+    body = _reading(
+        state=state,
+        behind=None,
+        ahead=None,
+        ref_age_secs=None,
+        counts_are_floors=False,
+        detail="the plans dir is not inside a git work tree",
+    )
+    body.update(overrides)
+    return body
 
 
 def _client(app: FastAPI, token: str | None = None) -> httpx.AsyncClient:
@@ -393,9 +414,7 @@ class TestReadFreshness:
         self, app_no_cognito: FastAPI
     ) -> None:
         async with _client(app_no_cognito, TOKEN_A) as client:
-            await client.post(
-                SCAN_ROOTS, json=_reading(behind=254, counts_are_floors=True)
-            )
+            await client.post(SCAN_ROOTS, json=_reading(behind=254))
             resp = await client.get(SCAN_ROOTS)
 
         assert resp.status_code == 200, resp.text
@@ -407,21 +426,25 @@ class TestReadFreshness:
         [row] = body["rows"]
         assert row["observation_fresh"] is True
         assert 0 <= row["observation_age_secs"] < 60
-        assert row["state"] == row["effective_state"] == "measured"
-        assert row["effective_detail"] is None
+        assert row["state"] == row["reported_state"] == "measured"
+        assert row["detail"] is None and row["reported_detail"] is None
+        assert "effective_state" not in row
         # Every reported field round-trips.
         assert row["behind"] == 254
-        assert row["counts_are_floors"] is True
+        assert row["counts_are_floors"] is False
         assert row["source_repo"] == "qontinui-dev-notes/plans"
         assert row["ref_age_secs"] == 220
 
     async def test_a_reading_older_than_the_window_reads_unknown(
         self, app_no_cognito: FastAPI, async_db_session: AsyncSession
     ) -> None:
-        """The stale rule. Mutation-proved at authoring: replacing
-        ``fresh = age <= FRESH_WITHIN_SECS`` in ``render_row`` with
-        ``fresh = True`` fails this test and the two older-stamp tests below;
-        taking ``max`` instead of ``min`` of the two stamps fails those two."""
+        """The stale rule: ``state`` / ``detail`` ARE the verdict.
+
+        Mutation-proved: replacing ``fresh = age <= FRESH_WITHIN_SECS`` in
+        ``render_row`` with ``fresh = True`` fails this test, the two
+        older-stamp tests below and ``test_staleness_outranks_the_floor_verdict``;
+        taking ``max`` instead of ``min`` of the two stamps fails the two
+        older-stamp tests."""
         async with _client(app_no_cognito, TOKEN_A) as client:
             await client.post(SCAN_ROOTS, json=_reading(behind=0, ahead=0))
             stale = timedelta(seconds=FRESH_WITHIN_SECS + 60)
@@ -436,13 +459,14 @@ class TestReadFreshness:
         [row] = body["rows"]
         assert row["observation_fresh"] is False
         assert row["observation_age_secs"] >= FRESH_WITHIN_SECS + 60
-        # The reading is preserved verbatim; only the VERDICT degrades. A
-        # stale "0 behind" must not read as "in step".
-        assert row["state"] == "measured"
+        # A reader keying on ``state`` sees the verdict — a stale "0 behind"
+        # must not read as "in step" — while what was sent is still served.
+        assert row["state"] == "unknown"
+        assert row["detail"].startswith("observation_stale:")
+        assert "measured" in row["detail"]
+        assert row["reported_state"] == "measured"
+        assert row["reported_detail"] is None
         assert row["behind"] == 0
-        assert row["effective_state"] == "unknown"
-        assert row["effective_detail"].startswith("observation_stale:")
-        assert "measured" in row["effective_detail"]
 
     async def test_a_reading_inside_the_window_is_still_fresh(
         self, app_no_cognito: FastAPI, async_db_session: AsyncSession
@@ -458,7 +482,7 @@ class TestReadFreshness:
             resp = await client.get(SCAN_ROOTS)
         [row] = resp.json()["rows"]
         assert row["observation_fresh"] is True
-        assert row["effective_state"] == "measured"
+        assert row["state"] == "measured"
 
     async def test_an_old_observation_is_stale_even_if_recently_received(
         self, app_no_cognito: FastAPI, async_db_session: AsyncSession
@@ -476,7 +500,7 @@ class TestReadFreshness:
             resp = await client.get(SCAN_ROOTS)
         [row] = resp.json()["rows"]
         assert row["observation_fresh"] is False
-        assert row["effective_state"] == "unknown"
+        assert row["state"] == "unknown"
 
     async def test_a_runner_clock_ahead_cannot_make_a_quiet_device_fresh(
         self, app_no_cognito: FastAPI, async_db_session: AsyncSession
@@ -494,7 +518,18 @@ class TestReadFreshness:
             resp = await client.get(SCAN_ROOTS)
         [row] = resp.json()["rows"]
         assert row["observation_fresh"] is False
-        assert row["effective_state"] == "unknown"
+        assert row["state"] == "unknown"
+
+    async def test_a_fresh_unmeasured_state_reads_as_reported(
+        self, app_no_cognito: FastAPI
+    ) -> None:
+        async with _client(app_no_cognito, TOKEN_A) as client:
+            await client.post(SCAN_ROOTS, json=_unmeasured("not_a_git_work_tree"))
+            resp = await client.get(SCAN_ROOTS)
+        [row] = resp.json()["rows"]
+        assert row["state"] == row["reported_state"] == "not_a_git_work_tree"
+        assert row["detail"] == row["reported_detail"]
+        assert "not inside a git work tree" in row["detail"]
 
     async def test_an_unreported_org_reads_unknown_not_all_current(
         self, app_no_cognito: FastAPI
@@ -529,6 +564,149 @@ class TestReadFreshness:
         async with _client(app_no_cognito, TOKEN_A) as client:
             resp = await client.get(SCAN_ROOTS, params={"device_id": str(DEVICE_A)})
         assert resp.status_code == 422, resp.text
+
+
+class TestFloorRule:
+    async def test_a_fresh_zero_floor_reads_unknown_ref_stale(
+        self, app_no_cognito: FastAPI
+    ) -> None:
+        """0/0 against a ref that is stale or of unknown age is a lower bound of
+        nothing — it must not read as "in step".
+
+        Mutation-proved: making ``is_zero_floor`` return ``False`` fails this
+        test (and only this one)."""
+        from app.api.v1.endpoints.plan_library_scan_roots import (
+            REF_STALE_ZERO_FLOOR_DETAIL,
+        )
+
+        async with _client(app_no_cognito, TOKEN_A) as client:
+            posted = await client.post(
+                SCAN_ROOTS,
+                json=_reading(
+                    behind=0, ahead=0, ref_age_secs=None, counts_are_floors=True
+                ),
+            )
+            resp = await client.get(SCAN_ROOTS)
+        assert posted.status_code == 201, posted.text
+        [row] = resp.json()["rows"]
+        assert row["observation_fresh"] is True
+        assert row["state"] == "unknown"
+        assert row["detail"] == REF_STALE_ZERO_FLOOR_DETAIL
+        assert row["detail"].startswith("ref_stale: 0/0 counts")
+        assert row["reported_state"] == "measured"
+        assert (row["behind"], row["ahead"]) == (0, 0)
+        assert row["counts_are_floors"] is True
+        # The POST's own echo carries the same verdict.
+        assert posted.json()["row"]["state"] == "unknown"
+
+    async def test_a_floor_with_nonzero_counts_stays_measured(
+        self, app_no_cognito: FastAPI
+    ) -> None:
+        """ "At least 254 behind" is a true claim; ``counts_are_floors`` says it
+        is a lower bound. Only 0/0 is degraded."""
+        async with _client(app_no_cognito, TOKEN_A) as client:
+            await client.post(
+                SCAN_ROOTS,
+                json=_reading(
+                    behind=254, ahead=0, ref_age_secs=30_000, counts_are_floors=True
+                ),
+            )
+            behind_only = (await client.get(SCAN_ROOTS)).json()["rows"][0]
+            await client.post(
+                SCAN_ROOTS,
+                json=_reading(
+                    behind=0, ahead=11, ref_age_secs=None, counts_are_floors=True
+                ),
+            )
+            ahead_only = (await client.get(SCAN_ROOTS)).json()["rows"][0]
+        assert behind_only["state"] == "measured"
+        assert behind_only["counts_are_floors"] is True
+        assert behind_only["behind"] == 254
+        assert ahead_only["state"] == "measured"
+        assert ahead_only["ahead"] == 11
+
+    async def test_an_exact_zero_zero_is_in_step(self, app_no_cognito: FastAPI) -> None:
+        """Not a floor → 0/0 IS agreement, and reads ``measured``."""
+        async with _client(app_no_cognito, TOKEN_A) as client:
+            await client.post(
+                SCAN_ROOTS, json=_reading(behind=0, ahead=0, counts_are_floors=False)
+            )
+            [row] = (await client.get(SCAN_ROOTS)).json()["rows"]
+        assert row["state"] == "measured"
+        assert row["detail"] is None
+
+    async def test_staleness_outranks_the_floor_verdict(
+        self, app_no_cognito: FastAPI, async_db_session: AsyncSession
+    ) -> None:
+        async with _client(app_no_cognito, TOKEN_A) as client:
+            await client.post(
+                SCAN_ROOTS,
+                json=_reading(
+                    behind=0, ahead=0, ref_age_secs=None, counts_are_floors=True
+                ),
+            )
+            stale = timedelta(seconds=FRESH_WITHIN_SECS + 1)
+            await _age_row(
+                async_db_session, DEVICE_A, observed_ago=stale, received_ago=stale
+            )
+            [row] = (await client.get(SCAN_ROOTS)).json()["rows"]
+        assert row["state"] == "unknown"
+        assert row["detail"].startswith("observation_stale:")
+
+
+class TestOutOfOrder:
+    async def test_an_older_report_does_not_replace_a_newer_one(
+        self, app_no_cognito: FastAPI, async_db_session: AsyncSession
+    ) -> None:
+        """A late delivery (a retry that lost a race) is ignored: 200,
+        ``applied: false``, and the stored newer reading is what comes back.
+
+        Mutation-proved: dropping the ``where=`` guard from
+        ``upsert_statement`` fails this test."""
+        newer = datetime.now(UTC)
+        older = newer - timedelta(minutes=10)
+        async with _client(app_no_cognito, TOKEN_A) as client:
+            first = await client.post(
+                SCAN_ROOTS, json=_reading(behind=3, observed_at=newer.isoformat())
+            )
+            late = await client.post(
+                SCAN_ROOTS, json=_reading(behind=254, observed_at=older.isoformat())
+            )
+        assert first.status_code == 201, first.text
+        assert first.json()["applied"] is True
+        assert late.status_code == 200, late.text
+        assert late.json()["applied"] is False
+        assert late.json()["created"] is False
+        assert late.json()["row"]["behind"] == 3
+
+        [row] = await _rows_for(async_db_session, DEVICE_A)
+        assert row.behind == 3
+        assert row.observed_at == newer
+        # Ignored, so it did not count as a receipt either.
+        assert row.received_at == _received_at(first)
+
+    async def test_an_equal_observed_at_applies_as_a_heartbeat(
+        self, app_no_cognito: FastAPI, async_db_session: AsyncSession
+    ) -> None:
+        """A runner re-posting the same reading is applied, so ``received_at``
+        moves and the row does not age out while the device is alive."""
+        observed = datetime.now(UTC).isoformat()
+        async with _client(app_no_cognito, TOKEN_A) as client:
+            first = await client.post(SCAN_ROOTS, json=_reading(observed_at=observed))
+            again = await client.post(SCAN_ROOTS, json=_reading(observed_at=observed))
+        assert again.status_code == 200, again.text
+        assert again.json()["applied"] is True
+        assert _received_at(again) >= _received_at(first)
+
+    async def test_a_newer_report_applies(self, app_no_cognito: FastAPI) -> None:
+        older = datetime.now(UTC) - timedelta(minutes=10)
+        async with _client(app_no_cognito, TOKEN_A) as client:
+            await client.post(
+                SCAN_ROOTS, json=_reading(behind=254, observed_at=older.isoformat())
+            )
+            newer = await client.post(SCAN_ROOTS, json=_reading(behind=3))
+        assert newer.json()["applied"] is True
+        assert newer.json()["row"]["behind"] == 3
 
 
 # ===========================================================================
@@ -581,53 +759,69 @@ class TestRouteOrder:
 
 class TestValidation:
     @pytest.mark.parametrize(
-        ("overrides", "why"),
+        ("body", "match"),
         [
-            ({"state": "exact"}, "state outside the four-value vocabulary"),
-            ({"behind": -1}, "negative behind"),
-            ({"ahead": -3}, "negative ahead"),
-            ({"ref_age_secs": -1}, "negative ref age"),
-            ({"behind": 2**63}, "behind past the BIGINT ceiling"),
-            ({"behind": None}, "measured without behind"),
-            ({"ahead": None}, "measured without ahead"),
+            (_reading(state="exact"), "literal_error|Input should be"),
+            (_reading(behind=-1), "greater than or equal"),
+            (_reading(ahead=-3), "greater than or equal"),
+            (_reading(ref_age_secs=-1), "greater than or equal"),
+            (_reading(behind=2**63), "less than or equal"),
+            # Strict types: no coercion of a bool or a numeric string.
+            (_reading(behind=True), "valid integer"),
+            (_reading(ahead="12"), "valid integer"),
+            (_reading(ref_age_secs=12.0), "valid integer"),
+            (_reading(counts_are_floors="false"), "valid boolean"),
+            (_reading(counts_are_floors=1), "valid boolean"),
+            (_reading(counts_are_floors=None), "valid boolean"),
+            # A measured reading must carry both counts.
+            (_reading(behind=None), "missing: behind"),
+            (_reading(ahead=None), "missing: ahead"),
+            # The floor rule: unknown ref age means the counts are floors.
             (
-                {"state": "unknown", "detail": "no origin/HEAD", "behind": 5},
-                "a count on an unmeasured state",
+                _reading(ref_age_secs=None, counts_are_floors=False),
+                "must report counts_are_floors: true",
+            ),
+            # Unmeasured states carry no counts, no ref age and no floors.
+            (
+                _unmeasured("unknown", behind=5),
+                "only a 'measured' reading carries counts",
             ),
             (
-                {"state": "unknown", "behind": None, "ahead": None},
-                "unexplained unknown",
+                _unmeasured("unknown", ref_age_secs=60),
+                "only a 'measured' reading carries a ref age or floors",
             ),
             (
-                {
-                    "state": "not_a_git_work_tree",
-                    "behind": None,
-                    "ahead": None,
-                    "detail": "   ",
-                },
-                "blank detail on not_a_git_work_tree",
+                _unmeasured("not_scanning", counts_are_floors=True),
+                "only a 'measured' reading carries a ref age or floors",
             ),
-            ({"observed_at": "2026-09-11T12:00:00"}, "naive observed_at"),
-            ({"counts_are_floors": None}, "counts_are_floors missing"),
+            # An unknown must say why.
+            (_unmeasured("unknown", detail=None), "must carry a non-empty 'detail'"),
+            (
+                _unmeasured("not_a_git_work_tree", detail="   "),
+                "must carry a non-empty 'detail'",
+            ),
+            (_reading(observed_at="2026-09-11T12:00:00"), "timezone"),
         ],
     )
-    def test_the_schema_rejects(self, overrides: dict[str, Any], why: str) -> None:
-        with pytest.raises(ValidationError):
-            ScanRootReport.model_validate(_reading(**overrides))
+    def test_the_schema_rejects_for_the_named_reason(
+        self, body: dict[str, Any], match: str
+    ) -> None:
+        with pytest.raises(ValidationError, match=match):
+            ScanRootReport.model_validate(body)
 
-    def test_each_valid_state_is_accepted(self) -> None:
+    def test_each_valid_shape_is_accepted(self) -> None:
         ScanRootReport.model_validate(_reading())
+        # Measured with unknown ref age, claiming floors.
         ScanRootReport.model_validate(
-            _reading(state="unknown", behind=None, ahead=None, detail="no origin/HEAD")
+            _reading(ref_age_secs=None, counts_are_floors=True)
         )
+        # Measured with an old ref, claiming floors (the 6 h threshold is the
+        # runner's to apply, not re-judged here).
         ScanRootReport.model_validate(
-            _reading(
-                state="not_a_git_work_tree",
-                behind=None,
-                ahead=None,
-                detail="plain directory",
-            )
+            _reading(ref_age_secs=30_000, counts_are_floors=True)
         )
+        ScanRootReport.model_validate(_unmeasured("unknown", detail="no origin/HEAD"))
+        ScanRootReport.model_validate(_unmeasured("not_a_git_work_tree"))
         ScanRootReport.model_validate(
             {
                 "state": "not_scanning",
@@ -640,8 +834,17 @@ class TestValidation:
         self, app_no_cognito: FastAPI, async_db_session: AsyncSession
     ) -> None:
         async with _client(app_no_cognito, TOKEN_A) as client:
-            bad_state = await client.post(SCAN_ROOTS, json=_reading(state="stale"))
-            negative = await client.post(SCAN_ROOTS, json=_reading(behind=-5))
-        assert bad_state.status_code == 422, bad_state.text
-        assert negative.status_code == 422, negative.text
+            responses = [
+                await client.post(SCAN_ROOTS, json=body)
+                for body in (
+                    _reading(state="stale"),
+                    _reading(behind=-5),
+                    _reading(behind=True),
+                    _reading(ahead="12"),
+                    _reading(ref_age_secs=None, counts_are_floors=False),
+                    _unmeasured("unknown", ref_age_secs=60),
+                )
+            ]
+        for resp in responses:
+            assert resp.status_code == 422, resp.text
         assert await _rows_for(async_db_session, DEVICE_A) == []
