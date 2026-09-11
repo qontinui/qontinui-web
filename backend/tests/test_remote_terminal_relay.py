@@ -2803,6 +2803,196 @@ async def test_a_coord_session_id_that_is_not_a_uuid_is_dropped(
     assert ws.of_type("remote_terminal_created")[0]["coord_session_id"] is None
 
 
+async def test_an_attached_on_another_targets_channel_is_not_the_answer(
+    relay: RemoteTerminalRelay,
+) -> None:
+    """Review round 2, finding 4 — ``terminal_created``'s sibling.
+
+    ``pending_attach`` is keyed by request id ALONE, on the same per-session
+    dict and the same socket that ``terminal_created`` was fixed on in round 1.
+    One socket routinely holds listeners for several targets, so the binding
+    check belongs on both arms or on neither.
+
+    Minted ids are ``uuid4().hex`` and only ever reach the device they were
+    minted for, so a sibling target cannot guess one — this is defence-in-depth
+    symmetry rather than a reachable hole, and it is applied because
+    "unguessable" is a property of the id generator while this is a property of
+    the router.
+    """
+    ws = _FakeWS()
+    manager = _manager()
+    await _attach(relay, ws, manager, _claims(), request_id="ra")
+    minted = _forwarded_attach(manager)["request_id"]
+    session = relay._sessions[id(ws)]
+    other_device = str(uuid4())
+
+    routed = await relay.route_target_frame(
+        session,
+        other_device,
+        {
+            "type": "terminal_attached",
+            "request_id": minted,
+            "terminal_id": "t-elsewhere",
+            "data": "",
+            "start_offset": 0,
+            "total_bytes_produced": 0,
+        },
+    )
+
+    assert routed is False
+    assert ws.of_type("remote_terminal_attached") == []
+    assert minted in session.pending_attach, "the real target may still answer"
+
+    # …and the device the grant names still lands.
+    routed = await relay.route_target_frame(
+        session,
+        TARGET_DEVICE,
+        {
+            "type": "terminal_attached",
+            "request_id": minted,
+            "terminal_id": "t1",
+            "data": "",
+            "start_offset": 0,
+            "total_bytes_produced": 0,
+        },
+    )
+    assert routed is True
+    assert ws.of_type("remote_terminal_attached")[0]["terminal_id"] == "t1"
+    await relay.release_source(ws)
+
+
+async def test_a_target_error_on_another_targets_channel_is_not_the_answer(
+    relay: RemoteTerminalRelay,
+) -> None:
+    """Review round 2, finding 4 — ``_route_target_error``'s three pops.
+
+    ``pending_attach`` / ``pending_create`` / ``pending_buffer`` were all popped
+    on the minted id alone, so an ``error`` arriving on another target's
+    channel resolved the source's waiter — and, for the attach and create arms,
+    dropped the grant on the socket as a "failed attach". All three now go
+    through ``_pop_correlated``.
+    """
+    other_device = str(uuid4())
+
+    # --- pending_attach -------------------------------------------------
+    ws = _FakeWS()
+    manager = _manager()
+    await _attach(relay, ws, manager, _claims(), request_id="ra")
+    minted = _forwarded_attach(manager)["request_id"]
+    session = relay._sessions[id(ws)]
+
+    assert (
+        await relay.route_target_frame(
+            session,
+            other_device,
+            {
+                "type": "error",
+                "request_id": minted,
+                "code": "boom",
+                "message": "not mine",
+            },
+        )
+        is False
+    )
+    assert ws.of_type("remote_terminal_error") == []
+    assert minted in session.pending_attach, "the grant must not be dropped"
+    await relay.release_source(ws)
+
+    # --- pending_create -------------------------------------------------
+    ws = _FakeWS()
+    manager = _manager()
+    await _create(relay, ws, manager, _create_claims())
+    minted = _forwarded_create(manager)["request_id"]
+    session = relay._sessions[id(ws)]
+
+    assert (
+        await relay.route_target_frame(
+            session,
+            other_device,
+            {
+                "type": "error",
+                "request_id": minted,
+                "code": "boom",
+                "message": "not mine",
+            },
+        )
+        is False
+    )
+    assert ws.of_type("remote_terminal_error") == []
+    assert minted in session.pending_create
+    await relay.release_source(ws)
+
+    # --- pending_buffer -------------------------------------------------
+    ws = _FakeWS()
+    manager = _manager()
+    claims = await _attached(relay, ws, manager, terminal_id="t1")
+    session = relay._sessions[id(ws)]
+    manager.send_terminal.reset_mock()
+    await _send(
+        relay,
+        ws,
+        manager,
+        {
+            "type": "remote_terminal_buffer",
+            "request_id": "buf-1",
+            "grant_jti": claims["jti"],
+            "terminal_id": "t1",
+            "from_offset": 0,
+        },
+    )
+    minted = manager.send_terminal.await_args.args[1]["request_id"]
+
+    assert (
+        await relay.route_target_frame(
+            session,
+            other_device,
+            {
+                "type": "error",
+                "request_id": minted,
+                "code": "boom",
+                "message": "not mine",
+            },
+        )
+        is False
+    )
+    assert ws.of_type("remote_terminal_error") == []
+    assert minted in session.pending_buffer
+
+    # The same rule on the buffer RESPONSE route, which shares the resolver.
+    assert (
+        await relay.route_target_frame(
+            session,
+            other_device,
+            {
+                "type": "terminal_buffer_response",
+                "request_id": minted,
+                "terminal_id": "t1",
+                "data": "YWJj",
+            },
+        )
+        is False
+    )
+    assert ws.of_type("remote_terminal_buffer") == []
+    assert minted in session.pending_buffer
+
+    # …and the device the grant names still gets its answer.
+    routed = await relay.route_target_frame(
+        session,
+        TARGET_DEVICE,
+        {
+            "type": "terminal_buffer_response",
+            "request_id": minted,
+            "terminal_id": "t1",
+            "data": "YWJj",
+            "start_offset": 0,
+            "total_bytes_produced": 3,
+        },
+    )
+    assert routed is True
+    assert ws.of_type("remote_terminal_buffer")[0]["data"] == "YWJj"
+    await relay.release_source(ws)
+
+
 async def test_a_target_may_not_spell_a_relay_code() -> None:
     """Review finding 8.
 
@@ -2834,7 +3024,7 @@ async def test_a_target_may_not_spell_a_relay_code() -> None:
     for code in relay_only:
         assert code not in rtr.TARGET_ERROR_CODES, code
         namespaced = rtr.namespace_target_code(code)
-        assert namespaced == f"target_{code}", code
+        assert namespaced == f"{rtr.TARGET_CODE_PREFIX}{code}", code
         assert namespaced not in relay_only
 
     # The target's own closed set passes through untouched.
@@ -2843,11 +3033,68 @@ async def test_a_target_may_not_spell_a_relay_code() -> None:
 
     # Unusable input is a code, not a crash and not a blank.
     for junk in [None, 7, "", "   ", "!!!", {"code": "x"}]:
-        assert rtr.namespace_target_code(junk) == "target_error", junk
+        assert rtr.namespace_target_code(junk) == rtr.TARGET_CODE_FALLBACK, junk
 
     # Structure cannot be smuggled through the field, and it is capped.
-    assert rtr.namespace_target_code('a"b\nc') == "target_a_b_c"
-    assert len(rtr.namespace_target_code("x" * 5000)) == len("target_") + 64
+    assert rtr.namespace_target_code('a"b\nc') == f"{rtr.TARGET_CODE_PREFIX}a_b_c"
+    assert (
+        len(rtr.namespace_target_code("x" * 5000)) == len(rtr.TARGET_CODE_PREFIX) + 64
+    )
+
+
+async def test_no_target_input_can_produce_a_relay_code() -> None:
+    """Review round 2, finding 3 — the assertion the test above lacked.
+
+    The old test asserted every relay code maps to ``target_<code>``. It never
+    asserted the REVERSE: that no target input *produces* a relay code. It
+    could not have, because one did — ``CODE_TARGET_NOT_CONNECTED`` is
+    ``target_not_connected``, so a connected target answering ``not_connected``
+    forged the relay's own "the target is not connected" verdict under the old
+    ``target_`` prefix, and the docstring's claim that collision was impossible
+    "by construction" was false.
+
+    The property, stated exactly: the NAMESPACING branch never yields a relay
+    code. The pass-through branch may — ``attach_grant_unknown`` /
+    ``attach_grant_expired`` are in both vocabularies on purpose — so the
+    documented intersection is the only permitted overlap.
+    """
+    # The collision itself, in every spelling that reduces to the same slug.
+    for forgery in [
+        "not_connected",
+        "Not Connected",
+        "not-connected",
+        "  NOT CONNECTED  ",
+    ]:
+        assert rtr.namespace_target_code(forgery) != rtr.CODE_TARGET_NOT_CONNECTED, (
+            forgery
+        )
+        assert rtr.namespace_target_code(forgery) not in rtr.RELAY_ERROR_CODES, forgery
+
+    # The general property, swept over every relay code and a battery of
+    # manglings a target could send in the hope of landing on one.
+    def manglings(code: str) -> list[str]:
+        out = [code, code.upper(), code.replace("_", "-"), f"  {code}  ", f"{code}!"]
+        prefix = rtr.TARGET_CODE_PREFIX
+        if code.startswith(prefix):
+            out.append(code[len(prefix) :])
+        # Every proper suffix, so a code whose tail follows the prefix is
+        # caught however the prefix is later spelled.
+        out.extend(code[i:] for i in range(1, len(code)))
+        return out
+
+    for code in rtr.RELAY_ERROR_CODES:
+        for candidate in manglings(code):
+            produced = rtr.namespace_target_code(candidate)
+            if produced in rtr.RELAY_ERROR_CODES:
+                assert candidate.strip() in rtr.TARGET_ERROR_CODES, (
+                    f"target input {candidate!r} produced relay code {produced!r} "
+                    "outside the documented shared vocabulary"
+                )
+
+    # …and the standing invariant the import-time guard enforces.
+    assert rtr._prefix_is_disjoint_from_relay_codes()
+    assert not any(c.startswith(rtr.TARGET_CODE_PREFIX) for c in rtr.RELAY_ERROR_CODES)
+    assert rtr.TARGET_CODE_FALLBACK not in rtr.RELAY_ERROR_CODES
 
 
 async def test_a_target_error_is_namespaced_and_its_message_capped(
@@ -2873,7 +3120,7 @@ async def test_a_target_error_is_namespaced_and_its_message_capped(
         },
     )
     err = ws.of_type("remote_terminal_error")[0]
-    assert err["code"] == f"target_{rtr.CODE_LISTENER_LOST}"
+    assert err["code"] == f"{rtr.TARGET_CODE_PREFIX}{rtr.CODE_LISTENER_LOST}"
     assert len(err["message"]) == rtr.TARGET_MESSAGE_MAX
 
 
