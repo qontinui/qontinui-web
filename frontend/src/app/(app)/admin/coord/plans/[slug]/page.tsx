@@ -85,6 +85,14 @@ import {
   derivePlanStatus,
   describePlanStatus,
 } from "@/components/admin/coord/planStatus";
+import {
+  describeBodyProvenance,
+  describeHasBody,
+  showsBodySignal,
+  type BodyProvenance,
+  type BodyUnknownReason,
+  type HasBody,
+} from "@/components/admin/coord/planBodySignal";
 import { httpClient } from "@/services/service-factory";
 import {
   CoordAdminOnly,
@@ -130,6 +138,16 @@ interface CoordWorkUnit {
   updated_at?: string | null;
   /** coord `work_units.first_shipped_at` — derived first `shipped` transition. */
   first_shipped_at?: string | null;
+  /**
+   * Does this work unit have a plan document? Derived server-side by
+   * `operations.py` `get_coord_plan` — the SAME helper the list route uses,
+   * over a one-row page, so this surface cannot disagree with the row the
+   * operator clicked to reach it. Plan
+   * `2026-09-02-bodyless-work-units-are-listed-and-spawnable-as-plans`.
+   */
+  body_provenance?: BodyProvenance;
+  has_body?: HasBody;
+  body_unknown_reason?: BodyUnknownReason | null;
 }
 
 // coord `GET /coord/work-units/{slug}` envelope.
@@ -375,6 +393,34 @@ export default function CoordPlanDetailPage() {
                 />
               )}
             </div>
+            {/* The document signals, as SENTENCES rather than chips. This
+                page has the room the row does not, and the whole caveat —
+                what the signal can and cannot prove — is the part an operator
+                deciding whether to spawn a session actually needs. Suppressed
+                on a terminal unit for the same reason the row suppresses it:
+                a shipped work unit that never had a document is not a defect.
+                The fields are on the wire either way. */}
+            {showsBodySignal(plan) &&
+              [
+                describeHasBody(plan.has_body, plan.body_unknown_reason),
+                describeBodyProvenance(plan.body_provenance),
+              ].map(
+                (m) =>
+                  m && (
+                    <p
+                      key={m.testId}
+                      className="text-xs text-muted-foreground"
+                      data-testid={`${m.testId}-detail`}
+                    >
+                      <span
+                        className={`mr-1.5 rounded border px-1.5 py-0.5 text-[10px] leading-none ${m.className}`}
+                      >
+                        {m.label}
+                      </span>
+                      {m.title}
+                    </p>
+                  )
+              )}
             <div className="font-mono text-[10px] text-muted-foreground/60 break-all">
               work_unit slug: {plan.slug}
               {plan.status ? ` · coord status: ${plan.status}` : ""}
