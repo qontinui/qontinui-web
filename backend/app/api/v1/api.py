@@ -36,6 +36,7 @@ from app.api.v1.endpoints import (
     batch_import,
     capture,
     chat_sessions,
+    claude_accounts,
     clipboard,
     co_pilot_activity,
     code_execution,
@@ -194,6 +195,11 @@ api_router.include_router(collaboration_ws.router, tags=["collaboration-websocke
 api_router.include_router(conflicts.router, tags=["conflicts"])
 api_router.include_router(
     notifications.router, prefix="/notifications", tags=["notifications"]
+)
+# Per-user Claude account roster — device-JWT GET for runners, human CRUD
+# under /mine. See app/models/claude_account.py.
+api_router.include_router(
+    claude_accounts.router, prefix="/claude-accounts", tags=["claude-accounts"]
 )
 api_router.include_router(
     state_discovery.router, prefix="/state-discovery", tags=["state-discovery"]
