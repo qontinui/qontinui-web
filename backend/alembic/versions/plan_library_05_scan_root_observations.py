@@ -1,7 +1,7 @@
 """agent.plan_scan_root_observations — each device's latest plan-scan-source reading
 
 Revision ID: plan_library_05_scan_root_observations
-Revises: devenv_10_unique_active_coord_device
+Revises: claude_acct_01
 Create Date: 2026-09-11
 
 Revised Phase 2 (web half) of
@@ -68,7 +68,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "plan_library_05_scan_root_observations"
-down_revision: str | Sequence[str] | None = "devenv_10_unique_active_coord_device"
+down_revision: str | Sequence[str] | None = "claude_acct_01"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
