@@ -47,6 +47,12 @@ every report.
   rather than the user-facing error.
 * The counts are BIGINT because the runner's fields are ``u64``.
 
+The latest report's verdict IS stored: ``last_report_applied`` and
+``last_report_observed_at``. A report observed before the stored reading does
+not replace it (``observed_at`` orders readings) but marks the row, so the read
+route serves ``reading_superseded`` instead of presenting a reading the device
+has since contradicted as current.
+
 Staleness is NOT stored. A device not heard from within the read route's
 freshness window (45 min — three 15-min runner heartbeats, judged from
 ``received_at``, this server's clock) is rendered ``unknown`` at read time;
@@ -116,6 +122,11 @@ def upgrade() -> None:
             -- This server's clock: when the device's latest report arrived
             -- (every report, applied or not). Liveness is judged from this.
             received_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
+            -- The latest report's own verdict: applied, or declined because it
+            -- was observed before the stored reading (read as
+            -- reading_superseded). And that report's observed_at.
+            last_report_applied     BOOLEAN NOT NULL DEFAULT true,
+            last_report_observed_at TIMESTAMPTZ NOT NULL,
             created_at        TIMESTAMPTZ NOT NULL DEFAULT now(),
             CONSTRAINT ck_plan_scan_root_observations_counts_nonnegative CHECK (
                 (behind IS NULL OR behind >= 0)

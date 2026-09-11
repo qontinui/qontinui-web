@@ -135,6 +135,24 @@ class PlanScanRootObservation(Base):
         server_default=text("now()"),
     )
 
+    #: Whether the device's LATEST report was applied. ``False`` means its
+    #: latest report was observed before the stored reading (clock stepped
+    #: back, or a stale retry arrived last): the stored reading is not what the
+    #: device says now, and the read route renders ``reading_superseded``.
+    last_report_applied: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=True,
+        server_default=text("true"),
+    )
+
+    #: The ``observed_at`` of the device's latest report, applied or not. Equal
+    #: to ``observed_at`` while ``last_report_applied``; otherwise earlier, by
+    #: how far the device's clock stepped back.
+    last_report_observed_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
+
     #: When this device first reported for this organization.
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),

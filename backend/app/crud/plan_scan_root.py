@@ -19,10 +19,20 @@ Two clocks, two jobs:
   are replaced only when the incoming reading was observed at or after the
   stored one (``excluded.observed_at >= observed_at``, per column, in one
   ``CASE``). A report delivered late — a retry that lost a race with a newer
-  one — must not replace the newer reading; it is reported as
-  ``applied=False``. Equal timestamps apply, so a heartbeat re-post counts.
-  The write route refuses an ``observed_at`` more than 300 s in the future, so
-  a skewed runner clock cannot plant a reading every later report loses to.
+  one, or a runner whose clock stepped back — must not replace the newer
+  reading; it is reported as ``applied=False``. Equal timestamps apply, so a
+  heartbeat re-post counts. The write route refuses an ``observed_at`` more
+  than 300 s in the future, so a skewed runner clock cannot plant a reading
+  every later report loses to.
+* The SAME statement records the latest report's own verdict:
+  ``last_report_applied`` (was it applied?) and ``last_report_observed_at``
+  (its ``observed_at``, applied or not). A declined report means the stored
+  reading is no longer what the device says NOW — its clock stepped back, or
+  a stale retry arrived last — so the read route renders the row
+  ``unknown`` / ``reading_superseded`` until a newer report applies again.
+  Keeping the stored reading AND serving it as current was the defect: a
+  device that went from 0/0 to 254 behind across a clock step kept reading
+  "in step".
 * ``received_at`` (this server's clock) records LIVENESS and is stamped on
   EVERY report, applied or not: a device whose report was declined as out of
   order still demonstrably reported, and the read route judges freshness from
@@ -80,12 +90,11 @@ def upsert_statement(
     device_id: UUID,
     fields: dict[str, Any],
     received_at: datetime,
-) -> ReturningInsert[tuple[UUID, bool, datetime]]:
-    """The single-statement upsert, returning ``(id, inserted, observed_at)``.
+) -> ReturningInsert[tuple[UUID, bool, bool]]:
+    """The single-statement upsert, returning ``(id, inserted, applied)``.
 
-    Always returns exactly one row. The returned ``observed_at`` is the STORED
-    one after the statement, so the reading was applied iff it equals the
-    incoming ``observed_at`` (the ``CASE`` keeps the stored reading otherwise).
+    Always returns exactly one row. ``applied`` is the row's
+    ``last_report_applied`` after the statement — this report's own verdict.
 
     Separate from :func:`upsert_observation` so the migration test can run the
     EXACT statement against the alembic-built table: the ``ON CONFLICT``
@@ -107,6 +116,9 @@ def upsert_statement(
         # Written on INSERT only — absent from ``set_`` below — so it keeps the
         # first report's stamp, and equals that report's ``received_at``.
         "created_at": received_at,
+        # A first report is trivially applied.
+        "last_report_applied": True,
+        "last_report_observed_at": reported["observed_at"],
     }
     insert_stmt = pg_insert(PlanScanRootObservation).values(**values)
     table = PlanScanRootObservation.__table__
@@ -131,13 +143,17 @@ def upsert_statement(
             },
             # Liveness: stamped whether or not the reading was applied.
             "received_at": insert_stmt.excluded.received_at,
+            # This report's own verdict, so the read route can tell a stored
+            # reading the device has since contradicted from a current one.
+            "last_report_applied": incoming_is_newer,
+            "last_report_observed_at": insert_stmt.excluded.last_report_observed_at,
         },
     ).returning(
         PlanScanRootObservation.id,
         # ``xmax = 0`` holds only for a freshly inserted tuple: the standard
         # PostgreSQL tell for which arm of an upsert ran.
         literal_column("(xmax = 0)").label("inserted"),
-        PlanScanRootObservation.observed_at,
+        PlanScanRootObservation.last_report_applied,
     )
 
 
@@ -153,7 +169,8 @@ async def upsert_observation(
     Returns ``(row, created, applied)``. ``created`` is ``True`` on the
     device's first report for this organization. ``applied`` is ``False`` when
     the stored reading was observed LATER than this one: the reading is kept,
-    only ``received_at`` moves, and ``row`` is the stored, newer reading. See
+    ``received_at`` moves, the row is marked ``last_report_applied = false``
+    (read as ``reading_superseded``), and ``row`` is the stored reading. See
     :func:`upsert_statement` for what is written.
     """
     stmt = upsert_statement(
@@ -163,14 +180,13 @@ async def upsert_observation(
         received_at=datetime.now(UTC),
     )
     result = await db.execute(stmt)
-    row_id, inserted, stored_observed_at = result.one()
+    row_id, inserted, applied = result.one()
     await db.commit()
 
     row = await db.get(PlanScanRootObservation, row_id, populate_existing=True)
     if row is None:  # pragma: no cover — the statement above just wrote it
         raise RuntimeError(f"scan-root observation {row_id} vanished after upsert")
-    applied = stored_observed_at == fields.get("observed_at")
-    return row, bool(inserted), applied
+    return row, bool(inserted), bool(applied)
 
 
 async def list_observations(
