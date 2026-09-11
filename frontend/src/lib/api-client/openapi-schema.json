@@ -8210,6 +8210,160 @@
         "title": "ClaimJobsResponse",
         "type": "object"
       },
+      "ClaudeAccountEntry": {
+        "description": "One roster entry, as written by a human (no id/timestamps).",
+        "properties": {
+          "account_key": {
+            "description": "e.g. \"gmail\", \"hotmail\"",
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "Account Key",
+            "type": "string"
+          },
+          "dir_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Overrides the derived local directory name (default \".claude-<account_key>\")",
+            "title": "Dir Name"
+          },
+          "email": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Login address; null means unverified, not absent",
+            "title": "Email"
+          },
+          "shortcut": {
+            "description": "e.g. \"clg\" (informational)",
+            "maxLength": 20,
+            "minLength": 1,
+            "title": "Shortcut",
+            "type": "string"
+          }
+        },
+        "required": [
+          "account_key",
+          "shortcut"
+        ],
+        "title": "ClaudeAccountEntry",
+        "type": "object"
+      },
+      "ClaudeAccountEntryResponse": {
+        "description": "One roster entry as returned by the API.",
+        "properties": {
+          "account_key": {
+            "description": "e.g. \"gmail\", \"hotmail\"",
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "Account Key",
+            "type": "string"
+          },
+          "created_at": {
+            "title": "Created At",
+            "type": "string"
+          },
+          "dir_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Overrides the derived local directory name (default \".claude-<account_key>\")",
+            "title": "Dir Name"
+          },
+          "email": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Login address; null means unverified, not absent",
+            "title": "Email"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "shortcut": {
+            "description": "e.g. \"clg\" (informational)",
+            "maxLength": 20,
+            "minLength": 1,
+            "title": "Shortcut",
+            "type": "string"
+          },
+          "updated_at": {
+            "title": "Updated At",
+            "type": "string"
+          },
+          "user_id": {
+            "format": "uuid",
+            "title": "User Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "account_key",
+          "shortcut",
+          "id",
+          "user_id",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "ClaudeAccountEntryResponse",
+        "type": "object"
+      },
+      "ClaudeAccountRosterResponse": {
+        "description": "The full roster for one user.",
+        "properties": {
+          "accounts": {
+            "items": {
+              "$ref": "#/components/schemas/ClaudeAccountEntryResponse"
+            },
+            "title": "Accounts",
+            "type": "array"
+          }
+        },
+        "required": [
+          "accounts"
+        ],
+        "title": "ClaudeAccountRosterResponse",
+        "type": "object"
+      },
+      "ClaudeAccountRosterUpdate": {
+        "description": "Replace the full roster \u2014 the whole list is the unit, matching the\ndeclarative-roster semantics of qontinui-claude-config/accounts.json.",
+        "properties": {
+          "accounts": {
+            "items": {
+              "$ref": "#/components/schemas/ClaudeAccountEntry"
+            },
+            "title": "Accounts",
+            "type": "array"
+          }
+        },
+        "required": [
+          "accounts"
+        ],
+        "title": "ClaudeAccountRosterUpdate",
+        "type": "object"
+      },
       "ClaudeSessionInfo": {
         "description": "Info about a single Claude Code session.",
         "properties": {
@@ -63791,6 +63945,105 @@
         "summary": "List Chat Sessions",
         "tags": [
           "chat-sessions"
+        ]
+      }
+    },
+    "/api/v1/claude-accounts": {
+      "get": {
+        "description": "Return the caller device's owning user's Claude account roster.\n\nThis is the endpoint runners fetch from \u2014 device-JWT authenticated\n(`get_authenticated_device`), same as every other runner-facing surface.",
+        "operationId": "api_v1_claude_accounts_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ClaudeAccountRosterResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Get Claude Account Roster",
+        "tags": [
+          "claude-accounts"
+        ]
+      }
+    },
+    "/api/v1/claude-accounts/mine": {
+      "get": {
+        "description": "Return the current human user's own Claude account roster.",
+        "operationId": "api_v1_claude_accounts_mine_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ClaudeAccountRosterResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Get My Claude Account Roster",
+        "tags": [
+          "claude-accounts"
+        ]
+      },
+      "put": {
+        "description": "Replace the current user's full roster.\n\nThe whole list is the unit (matches accounts.json's declarative-roster\nsemantics) \u2014 this deletes every existing row for the user and re-inserts\nthe given list, rather than diffing individual entries.",
+        "operationId": "api_v1_claude_accounts_mine_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ClaudeAccountRosterUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ClaudeAccountRosterResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Replace My Claude Account Roster",
+        "tags": [
+          "claude-accounts"
         ]
       }
     },
