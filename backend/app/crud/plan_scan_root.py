@@ -11,15 +11,23 @@ personal organization reads and writes the NULL bucket consistently.
 Upsert contract: ONE row per ``(organization, device)``, overwritten by each
 report in a single ``INSERT ... ON CONFLICT DO UPDATE`` — two concurrent
 reports from one device cannot race a select-then-insert into an
-IntegrityError. ``received_at`` is stamped with this server's clock on every
-APPLIED write; ``created_at`` keeps the first report's.
+IntegrityError. ``created_at`` keeps the first report's stamp.
 
-Out-of-order guard: the update arm runs only when the incoming reading was
-observed at or after the stored one (``excluded.observed_at >=
-observed_at``). A report delivered late — a retry that lost a race with a
-newer one — must not replace the newer reading, so it is ignored and reported
-as ``applied=False``. Equal timestamps DO apply, so a runner re-posting the
-same reading as a heartbeat refreshes ``received_at``.
+Two clocks, two jobs:
+
+* ``observed_at`` (the runner's clock) ORDERS readings. The reported columns
+  are replaced only when the incoming reading was observed at or after the
+  stored one (``excluded.observed_at >= observed_at``, per column, in one
+  ``CASE``). A report delivered late — a retry that lost a race with a newer
+  one — must not replace the newer reading; it is reported as
+  ``applied=False``. Equal timestamps apply, so a heartbeat re-post counts.
+  The write route refuses an ``observed_at`` more than 300 s in the future, so
+  a skewed runner clock cannot plant a reading every later report loses to.
+* ``received_at`` (this server's clock) records LIVENESS and is stamped on
+  EVERY report, applied or not: a device whose report was declined as out of
+  order still demonstrably reported, and the read route judges freshness from
+  ``received_at`` alone. Stamping only applied writes let a single future-dated
+  report freeze the row and age a live device out to ``unknown``.
 
 Not done here: pruning. A decommissioned device's row persists and simply
 reads ``unknown`` (``observation_stale``) forever; removing it is a follow-up.
@@ -31,7 +39,7 @@ from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import ColumnElement, func, literal_column, select
+from sqlalchemy import ColumnElement, case, func, literal_column, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.sql.dml import ReturningInsert
@@ -72,9 +80,12 @@ def upsert_statement(
     device_id: UUID,
     fields: dict[str, Any],
     received_at: datetime,
-) -> ReturningInsert[tuple[UUID, bool]]:
-    """The single-statement upsert, returning ``(id, inserted)`` — or NO row
-    when the out-of-order guard declined the update.
+) -> ReturningInsert[tuple[UUID, bool, datetime]]:
+    """The single-statement upsert, returning ``(id, inserted, observed_at)``.
+
+    Always returns exactly one row. The returned ``observed_at`` is the STORED
+    one after the statement, so the reading was applied iff it equals the
+    incoming ``observed_at`` (the ``CASE`` keeps the stored reading otherwise).
 
     Separate from :func:`upsert_observation` so the migration test can run the
     EXACT statement against the alembic-built table: the ``ON CONFLICT``
@@ -98,6 +109,11 @@ def upsert_statement(
         "created_at": received_at,
     }
     insert_stmt = pg_insert(PlanScanRootObservation).values(**values)
+    table = PlanScanRootObservation.__table__
+    # The out-of-order guard. Evaluated against the OLD row for every column
+    # (Postgres computes all SET expressions from the pre-update tuple), so
+    # ``observed_at`` itself can be one of the guarded columns.
+    incoming_is_newer = insert_stmt.excluded.observed_at >= table.c.observed_at
     return insert_stmt.on_conflict_do_update(
         # Must be the identity index's exact expressions for Postgres to infer
         # it — the NULL-collapsed organization, then the device.
@@ -106,18 +122,22 @@ def upsert_statement(
             PlanScanRootObservation.device_id,
         ],
         set_={
-            name: insert_stmt.excluded[name]
-            for name in (*REPORTED_COLUMNS, "received_at")
+            **{
+                name: case(
+                    (incoming_is_newer, insert_stmt.excluded[name]),
+                    else_=table.c[name],
+                )
+                for name in REPORTED_COLUMNS
+            },
+            # Liveness: stamped whether or not the reading was applied.
+            "received_at": insert_stmt.excluded.received_at,
         },
-        # The out-of-order guard: never let an older reading replace a newer
-        # one. When this is false Postgres updates nothing and RETURNING
-        # yields no row.
-        where=(insert_stmt.excluded.observed_at >= PlanScanRootObservation.observed_at),
     ).returning(
         PlanScanRootObservation.id,
         # ``xmax = 0`` holds only for a freshly inserted tuple: the standard
         # PostgreSQL tell for which arm of an upsert ran.
         literal_column("(xmax = 0)").label("inserted"),
+        PlanScanRootObservation.observed_at,
     )
 
 
@@ -132,8 +152,8 @@ async def upsert_observation(
 
     Returns ``(row, created, applied)``. ``created`` is ``True`` on the
     device's first report for this organization. ``applied`` is ``False`` when
-    the stored reading was observed LATER than this one, in which case nothing
-    was written and ``row`` is the stored, newer reading. See
+    the stored reading was observed LATER than this one: the reading is kept,
+    only ``received_at`` moves, and ``row`` is the stored, newer reading. See
     :func:`upsert_statement` for what is written.
     """
     stmt = upsert_statement(
@@ -143,34 +163,14 @@ async def upsert_observation(
         received_at=datetime.now(UTC),
     )
     result = await db.execute(stmt)
-    written = result.one_or_none()
+    row_id, inserted, stored_observed_at = result.one()
     await db.commit()
 
-    if written is None:
-        stored = await get_observation(db, org_id=org_id, device_id=device_id)
-        if stored is None:  # pragma: no cover — a conflict implies a row
-            raise RuntimeError(
-                f"scan-root upsert for device {device_id} conflicted with no row"
-            )
-        return stored, False, False
-
-    row_id, inserted = written
     row = await db.get(PlanScanRootObservation, row_id, populate_existing=True)
     if row is None:  # pragma: no cover — the statement above just wrote it
         raise RuntimeError(f"scan-root observation {row_id} vanished after upsert")
-    return row, bool(inserted), True
-
-
-async def get_observation(
-    db: AsyncSession, *, org_id: UUID | None, device_id: UUID
-) -> PlanScanRootObservation | None:
-    """The stored reading for one ``(organization, device)``, if any."""
-    result = await db.execute(
-        select(PlanScanRootObservation)
-        .where(_org_scope(org_id), PlanScanRootObservation.device_id == device_id)
-        .execution_options(populate_existing=True)
-    )
-    return result.scalar_one_or_none()
+    applied = stored_observed_at == fields.get("observed_at")
+    return row, bool(inserted), applied
 
 
 async def list_observations(

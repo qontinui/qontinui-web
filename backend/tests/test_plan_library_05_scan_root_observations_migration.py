@@ -129,21 +129,31 @@ def _reading(**overrides: object) -> dict[str, object]:
 
 
 def _upsert(
-    engine: Engine, *, org_id: uuid.UUID | None, device_id: uuid.UUID, **fields: object
-) -> bool | None:
-    """Run the crud's own statement; return whether it INSERTED, or ``None``
-    when the out-of-order guard declined the update (no RETURNING row)."""
+    engine: Engine,
+    *,
+    org_id: uuid.UUID | None,
+    device_id: uuid.UUID,
+    received_at: datetime | None = None,
+    **fields: object,
+) -> bool:
+    """Run the crud's own statement; return whether it INSERTED."""
     stmt = upsert_statement(
         org_id=org_id,
         device_id=device_id,
         fields=_reading(**fields),
-        received_at=datetime.now(UTC),
+        received_at=received_at or datetime.now(UTC),
     )
     with engine.begin() as conn:
-        written = conn.execute(stmt).one_or_none()
-    if written is None:
-        return None
-    return bool(written[1])
+        _row_id, inserted, _stored_observed_at = conn.execute(stmt).one()
+    return bool(inserted)
+
+
+def _received_at(engine: Engine, device_id: uuid.UUID) -> datetime:
+    with engine.connect() as conn:
+        return conn.execute(
+            text(f"SELECT received_at FROM agent.{_TABLE} WHERE device_id = :d"),
+            {"d": device_id},
+        ).scalar_one()
 
 
 def _rows(engine: Engine, device_id: uuid.UUID) -> list[tuple[object, ...]]:
@@ -221,13 +231,20 @@ def test_upgrade_upsert_downgrade_upgrade_round_trip() -> None:
         assert _rows(engine, device) == [(org, 3, "measured")]
 
         # The out-of-order guard holds on the migrated table too: an OLDER
-        # reading is declined and the newer one survives.
+        # reading is declined and the newer one survives — but the report
+        # still stamps received_at (liveness is this server's clock).
+        contact = datetime.now(UTC) + timedelta(seconds=30)
         late = datetime.now(UTC) - timedelta(hours=1)
-        assert (
-            _upsert(engine, org_id=org, device_id=device, behind=999, observed_at=late)
-            is None
+        _upsert(
+            engine,
+            org_id=org,
+            device_id=device,
+            behind=999,
+            observed_at=late,
+            received_at=contact,
         )
         assert _rows(engine, device) == [(org, 3, "measured")]
+        assert _received_at(engine, device) == contact
 
         # The NULL bucket is one row per device too — the reason the index is
         # NULL-collapsing rather than a plain UNIQUE (NULL <> NULL).

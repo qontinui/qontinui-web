@@ -36,10 +36,21 @@ Validation rules, and why each is a 422 rather than a stored value:
   ``detail``). The runner's own type guarantees it ("an unexplained UNKNOWN is
   the same dead end as the silence this type replaces"), so a report without
   one is malformed rather than merely terse.
-* **``observed_at`` must carry a timezone**: a naive timestamp's age cannot be
-  computed without guessing the runner's zone.
+* **``observed_at`` must carry a timezone**: a naive timestamp cannot be
+  ordered against another without guessing the runner's zone.
+* **``observed_at`` may not be more than** :data:`MAX_FUTURE_SKEW_SECS` **ahead
+  of this server's clock.** ``observed_at`` is the upsert's ordering key (an
+  older reading never replaces a newer one), so one far-future report would
+  otherwise outrank every honest report after it and freeze the row. The
+  bound is the runner's clock skew we tolerate; past it the runner's clock is
+  wrong and the report says so in a 422 rather than being stored.
+
+Clocks: this server's clock is the only one trusted for LIVENESS. Freshness is
+judged from ``received_at`` alone; ``observed_at`` only orders readings and is
+shown beside ``observed_skew_secs`` so a skewed runner clock is visible.
 """
 
+from datetime import UTC, datetime
 from typing import Literal, Self
 from uuid import UUID
 
@@ -50,6 +61,7 @@ from pydantic import (
     Field,
     StrictBool,
     StrictInt,
+    field_validator,
     model_validator,
 )
 
@@ -63,6 +75,11 @@ _BIGINT_MAX = 2**63 - 1
 
 #: Git object ids are 40 (SHA-1) or 64 (SHA-256) hex characters.
 _SHA_MAX = 64
+
+#: How far ahead of this server's clock ``observed_at`` may be. Five minutes
+#: absorbs ordinary NTP drift; anything more is a broken runner clock, and
+#: storing it would let that reading outrank every honest report after it.
+MAX_FUTURE_SKEW_SECS = 300
 
 
 class ScanRootReport(BaseModel):
@@ -96,8 +113,23 @@ class ScanRootReport(BaseModel):
     counts_are_floors: StrictBool
     #: One line naming why the state is what it is.
     detail: str | None = Field(None, max_length=4096)
-    #: When the runner took the reading (RFC 3339, with an offset).
+    #: When the runner took the reading (RFC 3339, with an offset). The
+    #: ordering key between reports; never used to judge liveness.
     observed_at: AwareDatetime
+
+    @field_validator("observed_at")
+    @classmethod
+    def _not_from_the_future(cls, value: datetime) -> datetime:
+        ahead = (value - datetime.now(UTC)).total_seconds()
+        if ahead > MAX_FUTURE_SKEW_SECS:
+            raise ValueError(
+                f"observed_at is {int(ahead)} s ahead of this server's clock "
+                f"(the limit is {MAX_FUTURE_SKEW_SECS} s). The reporting "
+                "runner's clock is skewed; fix its time sync. A future-dated "
+                "reading is refused because it would outrank every honest "
+                "report after it."
+            )
+        return value
 
     @model_validator(mode="after")
     def _state_is_coherent(self) -> Self:
@@ -155,8 +187,9 @@ class ScanRootRow(BaseModel):
 
     ``state`` / ``detail`` are the verdict a reader should key on, not the
     stored values: ``unknown`` with an ``observation_stale:`` detail once the
-    reading is older than ``fresh_within_secs``, and ``unknown`` with a
-    ``ref_stale:`` detail for a fresh ``measured`` reading that is a 0/0 floor.
+    device has not reported within ``fresh_within_secs`` (by ``received_at``),
+    and ``unknown`` with a ``ref_stale:`` detail for a fresh ``measured``
+    floor reading that is 0 behind.
     What the device actually sent is in ``reported_state`` /
     ``reported_detail``. The counts and ``ref_age_secs`` are served as reported
     whatever the verdict — a reader keying on ``state`` does not trust them
@@ -165,8 +198,8 @@ class ScanRootRow(BaseModel):
 
     #: The verified device token's ``device_id`` claim — never a body field.
     device_id: UUID
-    #: The VERDICT: ``reported_state`` when the reading is fresh and not a 0/0
-    #: floor, otherwise ``"unknown"``.
+    #: The VERDICT: ``reported_state`` when the device is fresh and the reading
+    #: is not a 0-behind floor, otherwise ``"unknown"``.
     state: ScanRootState
     #: Why ``state`` is what it is: ``reported_detail`` when the verdict is the
     #: reported state, otherwise an ``observation_stale: ...`` or
@@ -186,13 +219,21 @@ class ScanRootRow(BaseModel):
     ahead: int | None
     ref_age_secs: int | None
     counts_are_floors: bool
-    #: The runner's clock.
+    #: The runner's clock, when it took the stored reading. Orders readings;
+    #: never used to judge liveness.
     observed_at: IsoDatetime
-    #: This server's clock, at the latest report.
+    #: This server's clock, at the device's latest report — including a report
+    #: that was declined as out of order, since the device demonstrably
+    #: reported. The ONLY stamp liveness is judged from.
     received_at: IsoDatetime
-    #: Seconds from the OLDER of ``observed_at`` / ``received_at`` to now, never
-    #: negative. The older one, so neither a runner clock running ahead nor a
-    #: re-posted old reading can make a reading look fresher than it is.
+    #: ``received_at - observed_at`` in seconds. Near zero for a healthy
+    #: runner. Large and positive: the runner's clock is behind this server's,
+    #: or the stored reading is older than the device's last contact (a newer
+    #: report was delivered before an older one). Negative: the runner's clock
+    #: is ahead (bounded by the write-side limit of 300 s).
+    observed_skew_secs: int
+    #: Seconds since this server last heard from the device
+    #: (``now - received_at``), never negative.
     observation_age_secs: int
     #: ``observation_age_secs <= fresh_within_secs``.
     observation_fresh: bool

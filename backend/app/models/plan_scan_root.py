@@ -7,10 +7,12 @@ migration's docstring for why the table exists and why its key is what it is.
 One row per ``(organization, device)``: the LATEST reading that device's runner
 made of the directory its plan-library body sync scans — how far that git work
 tree is from its default branch, and how fresh the ref it measured against is.
-Each report overwrites the row. There is no history: the question this row
-answers is "what does the corpus's feeder on device D look like now", and a
-reading older than the freshness window is rendered ``unknown`` by the read
-route rather than kept around as a series.
+Each report newer than the stored one (by ``observed_at``) overwrites the
+reading, and EVERY report stamps ``received_at``. There is no history: the
+question this row answers is "what does the corpus's feeder on device D look
+like now", and a device not heard from within the freshness window (by
+``received_at``, this server's clock) is rendered ``unknown`` by the read route
+rather than kept around as a series.
 
 The fields are the runner's ``ScanDivergence``
 (``qontinui-runner/src-tauri/src/plan_workunit_adapter/trigger.rs``) plus
@@ -123,8 +125,9 @@ class PlanScanRootObservation(Base):
         DateTime(timezone=True), nullable=False
     )
 
-    #: When THIS server stored the latest report (our clock). Set on every
-    #: write, so it is also the row's "updated at".
+    #: When THIS server received the device's latest report (our clock) —
+    #: stamped on every report, including one declined as out of order. The
+    #: only stamp liveness is judged from.
     received_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,
