@@ -1575,6 +1575,18 @@ class RemoteTerminalRelay:
                 if isinstance(terminal, dict)
                 else frame.get("terminal_id")
             )
+            # `coord_session_id` is FIRST-CLASS here, not smuggled inside
+            # `terminal`. The source needs it to mint the session-addressed
+            # attach grant that drives what it just created, and the only
+            # zero-relay-change route was an undeclared key on `terminal` — a
+            # schema-typed object this relay forwards verbatim today. That
+            # works right up until something validates `terminal`, at which
+            # point create-then-attach breaks SILENTLY. Reading it from either
+            # place keeps the older target working while the field is the
+            # declared contract.
+            coord_session_id = frame.get("coord_session_id")
+            if coord_session_id is None and isinstance(terminal, dict):
+                coord_session_id = terminal.get("coordSessionId")
             await self._send_to_source(
                 session,
                 {
@@ -1583,6 +1595,11 @@ class RemoteTerminalRelay:
                     "grant_jti": att.grant_jti,
                     "terminal_id": terminal_id,
                     "terminal": terminal,
+                    # Absent stays ABSENT, never guessed: a create that landed
+                    # with no coord row is "created but not addressable", and
+                    # the source says exactly that rather than inventing an id
+                    # to attach to.
+                    "coord_session_id": coord_session_id,
                 },
             )
             # Spent. A create grant bought one spawn; driving what it spawned
@@ -1808,6 +1825,25 @@ class RemoteTerminalRelay:
         terminal_id = att.terminal_id or frame.get("terminal_id")
         if isinstance(terminal_id, str):
             payload["terminal_id"] = terminal_id
+        # Forward the target's REMEDY fields. This payload is rebuilt rather
+        # than forwarded, so anything not named here is dropped — and the
+        # fields the target puts on a create refusal are precisely the ones
+        # that make it actionable: which working-dir KEYS it offers, and which
+        # intent repos. Without them the source can say "refused" but never
+        # "here is what you may ask for instead", which is the difference
+        # between an error and a remedy.
+        #
+        # A bounded allowlist, not a blanket merge: the target controls this
+        # frame, so forwarding it wholesale would let it set `code`,
+        # `grant_jti` or `request_id` on a payload the source trusts for
+        # routing. Each entry is a list of short strings and is length-capped,
+        # because a refusal is a diagnostic, not a transfer channel.
+        for key in ("allowed_working_dir_keys", "allowed_intent_repos"):
+            value = frame.get(key)
+            if isinstance(value, list):
+                safe = [v for v in value if isinstance(v, str) and len(v) <= 256]
+                if safe:
+                    payload[key] = safe[:64]
         await self._send_to_source(session, payload)
         if failed_attach:
             # The target refused the attach itself: nothing is bound, so the
