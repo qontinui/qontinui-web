@@ -27,8 +27,9 @@ Two clocks, two jobs:
 * The SAME statement records the latest report's own verdict:
   ``last_report_applied`` (was it applied?) and ``last_report_observed_at``
   (its ``observed_at``, applied or not). A declined report means the stored
-  reading is no longer what the device says NOW — its clock stepped back, or
-  a stale retry arrived last — so the read route renders the row
+  reading may no longer be what the device says NOW — its clock stepped back,
+  or a report was delivered late; this server cannot tell which — so the read
+  route renders the row
   ``unknown`` / ``reading_superseded`` until a newer report applies again.
   Keeping the stored reading AND serving it as current was the defect: a
   device that went from 0/0 to 254 behind across a clock step kept reading

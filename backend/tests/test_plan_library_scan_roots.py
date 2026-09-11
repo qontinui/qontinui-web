@@ -781,9 +781,9 @@ class TestReadingSuperseded:
         assert row["last_report_applied"] is False
         assert row["state"] == "unknown"
         assert row["detail"] == (
-            "reading_superseded: the device's latest report was observed before "
-            "the stored reading (its clock stepped back ~21600 s), so the stored "
-            "reading is not what it reports now"
+            "reading_superseded: the device's latest report was observed ~21600 s "
+            "before the stored reading (a clock step-back or a late-delivered "
+            "report), so the stored reading may not be what it reports now"
         )
         # The stored reading is still served, flagged, for a reader who wants it.
         assert row["reported_state"] == "measured"
@@ -949,7 +949,7 @@ class TestClockSkew:
         # latest report of 254 behind, so it must not read "in step".
         assert row["state"] == "unknown"
         assert row["detail"].startswith("reading_superseded:")
-        stepped = int(row["detail"].split("stepped back ~")[1].split(" s)")[0])
+        stepped = int(row["detail"].split("observed ~")[1].split(" s before")[0])
         assert 200 <= stepped <= 250
         assert row["last_report_applied"] is False
         assert row["reported_state"] == "measured"

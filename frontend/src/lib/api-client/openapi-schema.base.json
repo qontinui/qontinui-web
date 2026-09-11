@@ -38060,7 +38060,7 @@
         "type": "object"
       },
       "ScanRootRow": {
-        "description": "One device's stored reading, with the read route's VERDICT on top.\n\n``state`` / ``detail`` are the verdict a reader should key on, not the\nstored values: ``unknown`` with an ``observation_stale:`` detail once the\ndevice has not reported within ``fresh_within_secs`` (by ``received_at``),\nand ``unknown`` with a ``ref_stale:`` detail for a fresh ``measured``\nfloor reading that is 0 behind.\nWhat the device actually sent is in ``reported_state`` /\n``reported_detail``. The counts and ``ref_age_secs`` are served as reported\nwhatever the verdict \u2014 a reader keying on ``state`` does not trust them\nwhen it is ``unknown``.",
+        "description": "One device's stored reading, with the read route's VERDICT on top.\n\n``state`` / ``detail`` are the verdict a reader should key on, not the\nstored values. ``state`` is ``unknown`` with:\n\n* an ``observation_stale:`` detail once the device has not reported within\n  ``fresh_within_secs`` (by ``received_at``);\n* a ``reading_superseded:`` detail when the device's latest report was\n  observed before the stored reading (a clock step-back or a\n  late-delivered report), so the stored reading may not be what it reports\n  now (``last_report_applied: false``);\n* a ``ref_stale:`` detail for a ``measured`` floor reading that is 0\n  behind.\n\nPrecedence: ``observation_stale`` > ``reading_superseded`` > ``ref_stale``.\nWhat the device actually sent is in ``reported_state`` /\n``reported_detail``. The counts and ``ref_age_secs`` are served as reported\nwhatever the verdict \u2014 a reader keying on ``state`` does not trust them\nwhen it is ``unknown``.",
         "properties": {
           "ahead": {
             "anyOf": [
@@ -92151,7 +92151,7 @@
     },
     "/api/v1/plan-library/scan-roots": {
       "get": {
-        "description": "The caller's organization's readings, one per reporting device.\n\nSame credentials as the plan-library list (an operator session or a device\ntoken). Each row carries its age and a ``state`` VERDICT that is\n``unknown`` once the device has not reported within ``fresh_within_secs``\n(by ``received_at``) or its reading is 0 behind a stale ref, with the\ndevice's own values in ``reported_state`` /\n``reported_detail``; an organization with no rows answers\n``state: \"unknown\"``, never an empty \"all current\".",
+        "description": "The caller's organization's readings, one per reporting device.\n\nSame credentials as the plan-library list (an operator session or a device\ntoken). Each row carries its age and a ``state`` VERDICT that is\n``unknown`` when the device has not reported within ``fresh_within_secs``\n(by ``received_at``; ``observation_stale:``), when its latest report was\nobserved before the stored reading (``reading_superseded:``), or when its\nreading is 0 behind a stale ref (``ref_stale:``) \u2014 in that order of\nprecedence: ``observation_stale`` > ``reading_superseded`` >\n``ref_stale``. The device's own values stay in ``reported_state`` /\n``reported_detail``. An organization with no rows answers\n``state: \"unknown\"``, never an empty \"all current\".",
         "operationId": "api_v1_plan_library_scan_roots_get",
         "responses": {
           "200": {
