@@ -198,12 +198,14 @@ class ScanRootRow(BaseModel):
 
     #: The verified device token's ``device_id`` claim — never a body field.
     device_id: UUID
-    #: The VERDICT: ``reported_state`` when the device is fresh and the reading
-    #: is not a 0-behind floor, otherwise ``"unknown"``.
+    #: The VERDICT: ``reported_state`` when the device is fresh, its latest
+    #: report was applied, and the reading is not a 0-behind floor; otherwise
+    #: ``"unknown"``.
     state: ScanRootState
     #: Why ``state`` is what it is: ``reported_detail`` when the verdict is the
-    #: reported state, otherwise an ``observation_stale: ...`` or
-    #: ``ref_stale: ...`` line.
+    #: reported state, otherwise an ``observation_stale: ...``,
+    #: ``reading_superseded: ...`` or ``ref_stale: ...`` line (in that order of
+    #: precedence).
     detail: str | None
     #: The state the device reported, verbatim.
     reported_state: ScanRootState
@@ -226,6 +228,12 @@ class ScanRootRow(BaseModel):
     #: that was declined as out of order, since the device demonstrably
     #: reported. The ONLY stamp liveness is judged from.
     received_at: IsoDatetime
+    #: Whether the device's latest report was applied. ``False``: its latest
+    #: report was observed before the stored reading, so the stored reading is
+    #: not what it says now and ``state`` is ``unknown`` / ``reading_superseded``.
+    last_report_applied: bool
+    #: The ``observed_at`` of the device's latest report, applied or not.
+    last_report_observed_at: IsoDatetime
     #: ``received_at - observed_at`` in seconds. Near zero for a healthy
     #: runner. Large and positive: the runner's clock is behind this server's,
     #: or the stored reading is older than the device's last contact (a newer
@@ -262,8 +270,11 @@ class ScanRootReportResponse(BaseModel):
 
     #: ``True`` on this device's first report for the organization.
     created: bool
-    #: ``False`` when the report was IGNORED because the stored reading was
-    #: observed later (an out-of-order delivery); ``row`` is then the newer
-    #: stored reading, unchanged.
+    #: ``False`` when the report was observed EARLIER than the stored reading
+    #: (a late delivery, or a runner clock that stepped back). Its reading was
+    #: not stored, but the report still refreshed ``received_at`` (the device
+    #: demonstrably reported) and marked the row ``last_report_applied: false``,
+    #: so ``row`` reads ``state: "unknown"`` / ``reading_superseded`` until a
+    #: newer report applies.
     applied: bool
     row: ScanRootRow

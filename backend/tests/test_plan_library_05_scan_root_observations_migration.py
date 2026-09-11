@@ -245,6 +245,31 @@ def test_upgrade_upsert_downgrade_upgrade_round_trip() -> None:
         )
         assert _rows(engine, device) == [(org, 3, "measured")]
         assert _received_at(engine, device) == contact
+        # ... and records that the latest report was declined, and when.
+        with engine.connect() as conn:
+            applied, last_observed = conn.execute(
+                text(
+                    f"SELECT last_report_applied, last_report_observed_at "
+                    f"FROM agent.{_TABLE} WHERE device_id = :d"
+                ),
+                {"d": device},
+            ).one()
+        assert applied is False
+        assert last_observed == late
+        # A newer report applies again and clears the flag.
+        _upsert(engine, org_id=org, device_id=device, behind=4)
+        assert _rows(engine, device) == [(org, 4, "measured")]
+        with engine.connect() as conn:
+            assert (
+                conn.execute(
+                    text(
+                        f"SELECT last_report_applied FROM agent.{_TABLE} "
+                        "WHERE device_id = :d"
+                    ),
+                    {"d": device},
+                ).scalar_one()
+                is True
+            )
 
         # The NULL bucket is one row per device too — the reason the index is
         # NULL-collapsing rather than a plain UNIQUE (NULL <> NULL).
