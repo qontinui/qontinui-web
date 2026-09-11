@@ -45,7 +45,7 @@ from tests._alembic_harness import (
 )
 
 _REVISION_ID = "plan_library_05_scan_root_observations"
-_PARENT_REVISION_ID = "devenv_10_unique_active_coord_device"
+_PARENT_REVISION_ID = "claude_acct_01"
 _REVISION_FILENAME = "plan_library_05_scan_root_observations.py"
 _TABLE = "plan_scan_root_observations"
 
