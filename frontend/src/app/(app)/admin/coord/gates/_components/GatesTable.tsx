@@ -4,19 +4,39 @@
  * GatesTable — one row per gate.
  *
  * Columns: Title · Measures · Progress (bar + current/target text) ·
- * Expected finish (eta, confidence-aware) · Verdict (colored) · Age ·
- * Last evaluated (+ stale badge) · Mute/Snooze badges.
+ * Expected finish (eta, confidence-aware) · Verdict (colored) ·
+ * Continuation (colored) · Age · Last evaluated (+ stale badge) ·
+ * Mute/Snooze badges.
  *
- * Controls: filter by verdict, filter by progress basis (kind), sort by
- * age / fraction / eta.
+ * Controls: filter by verdict, by progress basis (kind) and by continuation
+ * state, sort by age / fraction / eta.
  *
  * ## Console style (Phase 3 Wave 4) — D2, on a shadcn `<Table>`
  *
  * Plan `2026-08-16-coord-console-ui-unification-pipeline-style.md` keeps the
- * table: nine columns of gate state are a legitimate dense form and the
+ * table: ten columns of gate state are a legitimate dense form and the
  * column comparison is the job this page exists for. `GatesTable` had **zero**
  * tooltips and its only per-record affordance was the Actions column, so the
  * gap D2 fills here is simply *absent detail*.
+ *
+ * ## The Continuation column (plan
+ * `2026-09-09-continuation-dispatch-fails-silently-three-times-in-four`)
+ *
+ * coord has recorded the whole continuation lifecycle on this very row for
+ * months and this table rendered none of it, so a gate whose continuation
+ * failed to spawn was indistinguishable from one whose work finished, and a
+ * dispatch pushed back 58 times was indistinguishable from one pushed back
+ * once. The derivation is `../continuationStatus.ts` (R8, R3-audited); this
+ * file only composes it:
+ *
+ * | surface | shows |
+ * |---|---|
+ * | Continuation column | the derived badge, plus a muted "after N deferrals" chip once the row has moved past them |
+ * | count cluster above the table | needs-attention / outcome-unknown / ever-deferred, each one click to the matching filter |
+ * | Continuation filter | the three groups, plus every state present in the page |
+ * | `<RecordDetail>` `problems` | the failure or the unknown, in words, with the runner's own detail string |
+ * | `<RecordDetail>` `history` | the dispatched/deferred/consumed/cancelled/expired stamps |
+ * | `<RecordDetail>` `raw` | coord's verbatim outcome, deferral reason and counts |
  *
  * **What moved off the row and into the expansion** — this is the density
  * work, and it is what took a row from ~4 stacked lines to ~2:
@@ -52,6 +72,8 @@ import type {
   ProgressBasis,
 } from "@/services/admin-dev-service";
 import { summarizeClearanceProvenance } from "@/components/operations/utils";
+import { summarizeContinuation } from "@/components/operations/gatesPredicate";
+import type { ContinuationSpawn } from "@/components/operations/types";
 import type { CoordPolicyRow } from "../../_shared/coordPolicies";
 import {
   clearanceBandIndex,
@@ -62,10 +84,19 @@ import { ShadowReapEvidence } from "./ShadowReap";
 import { GateActions } from "./GateActions";
 import {
   RecordDetail,
+  StatCluster,
   StatusBadge,
   rowAccentProps,
+  type Stat,
 } from "@/components/console";
 import { deriveGateStatus, GATE_STATUS_PALETTE } from "../gateStatus";
+import {
+  CONTINUATION_STATUS_PALETTE,
+  CONTINUATION_UNKNOWN_OUTCOME_KINDS,
+  deriveContinuationStatus,
+  type ContinuationKind,
+  type ContinuationStatus,
+} from "../continuationStatus";
 
 // ---- formatting helpers --------------------------------------------------
 
@@ -269,11 +300,191 @@ function ClearanceProvenanceLine({
   );
 }
 
+// ---- continuation cell ---------------------------------------------------
+
+/**
+ * The Continuation column — what actually happened to the session this gate
+ * was supposed to start.
+ *
+ * It is a COLUMN and not a chip in the Flags cell on purpose. Both failure
+ * modes plan
+ * `2026-09-09-continuation-dispatch-fails-silently-three-times-in-four`
+ * describes were recorded by coord and read by nobody, and the second-order
+ * version of that mistake is rendering them somewhere the eye does not go.
+ *
+ * `null` (the gate has no continuation at all) renders an explicit *none*
+ * rather than a blank cell: "nothing is attached" and "we did not look" must
+ * not share a rendering.
+ */
+function ContinuationCell({ status }: { status: ContinuationStatus | null }) {
+  if (!status) {
+    return (
+      <span
+        className="text-xs italic text-muted-foreground/60"
+        title="No continuation is attached to this gate — clearing it spawns nothing."
+        data-testid="gates-continuation-none"
+      >
+        none
+      </span>
+    );
+  }
+  const { deferral } = status;
+  // When the badge IS the deferral, its label already carries the count; this
+  // chip is for a continuation that was pushed back and then moved on — "it
+  // eventually ran, after 58 refusals" is the pressure signal that otherwise
+  // vanishes the moment the state advances.
+  //
+  // The predicate is the derivation's own `deferralRendered` flag, NOT a list
+  // of kinds. A hand-maintained `kind !== "deferred" && kind !== …` list is
+  // what let `deferral_abandoned` ship rendering the deferral twice, with a
+  // "pushed back BEFORE this state" tooltip contradicting the badge it sat
+  // under; and no list keyed on kind could have been complete anyway, because
+  // one of the deferral readings is `unknown`, a kind three unrelated branches
+  // also produce.
+  const historic = deferral && !status.deferralRendered;
+  return (
+    <div
+      className="flex flex-col items-start gap-1"
+      data-testid="gates-continuation"
+      data-continuation-kind={status.status.kind}
+    >
+      <StatusBadge status={status.status} palette={CONTINUATION_STATUS_PALETTE} />
+      {historic && deferral && (
+        <span
+          // Muted, deliberately: a deferral the row has already moved past is
+          // EVIDENCE, not a call to action, and R3 does not spend amber on
+          // history.
+          className="text-[11px] text-muted-foreground/70 tabular-nums"
+          title={
+            deferral.reason
+              ? `Dispatch was pushed back before this state; last reason: ${deferral.reason}`
+              : "Dispatch was pushed back before reaching this state"
+          }
+          data-testid="gates-continuation-deferral-chip"
+        >
+          after {deferral.countKnown ? deferral.count : "?"} deferral
+          {deferral.countKnown && deferral.count === 1 ? "" : "s"}
+        </span>
+      )}
+    </div>
+  );
+}
+
+/**
+ * R5 `problems`: the continuation half of "what went wrong here", rendered only
+ * when the derived status says somebody must act or that we cannot tell.
+ *
+ * A `work_completed` / `armed` / `dispatched` continuation is not a problem and
+ * contributes nothing here — the timeline in `history` still records it.
+ */
+function ContinuationProblem({ status }: { status: ContinuationStatus | null }) {
+  if (!status || status.status.attention === "none") return null;
+  const { status: s, deferral, outcomeDetail } = status;
+  const tone = s.attention === "author" ? "text-red-200" : "text-amber-200";
+  return (
+    <div className="space-y-1" data-testid="gates-continuation-problem">
+      <p className={`text-xs ${tone}`}>
+        Continuation {s.label}
+        {s.reason ? ` — ${s.reason}` : ""}
+      </p>
+      {outcomeDetail && (
+        <p className="text-[11px] break-words text-muted-foreground">
+          Reported detail: “{outcomeDetail}”
+        </p>
+      )}
+      {deferral && (
+        <p className="text-[11px] text-muted-foreground">
+          Dispatch pushed back{" "}
+          {deferral.countKnown
+            ? `${deferral.count} time${deferral.count === 1 ? "" : "s"}`
+            : "an unrecorded number of times"}
+          {deferral.reason ? `; last time ${deferral.reason}` : ""}
+          {deferral.at ? ` (last ${formatRelative(deferral.at)})` : ""}.
+          {deferral.countKnown
+            ? " The runner stamps at most one deferral an hour per gate, so that count is a floor on how many hours it has been refused."
+            : " coord recorded a deferral but no count, so how many times is unknown."}
+        </p>
+      )}
+    </div>
+  );
+}
+
+/** R5 `history`: the continuation's stamps, in the order coord wrote them. */
+function ContinuationTimeline({ gate }: { gate: GateOverviewRow }) {
+  const stamps: [string, string | null][] = [
+    ["dispatched", gate.continuation_dispatched_at],
+    ["last deferred", gate.continuation_deferred_at],
+    ["consumed", gate.continuation_consumed_at],
+    ["cancelled", gate.continuation_cancelled_at],
+    ["expired", gate.continuation_expired_at],
+  ];
+  const present = stamps.filter((s): s is [string, string] => Boolean(s[1]));
+  if (present.length === 0) return null;
+  return (
+    <p
+      className="text-[11px] text-muted-foreground/70"
+      data-testid="gates-continuation-timeline"
+    >
+      Continuation:{" "}
+      {present.map(([label, at], i) => (
+        <span key={label} title={formatAbsolute(at)}>
+          {i > 0 ? " · " : ""}
+          {label} {formatRelative(at)}
+        </span>
+      ))}
+    </p>
+  );
+}
+
 // ---- table ---------------------------------------------------------------
 
 type SortKey = "age" | "fraction" | "eta";
 
 const ALL = "__all__";
+
+/**
+ * The Continuation filter's three DERIVED groups, alongside the per-kind
+ * options. Each is the answer to a question an operator actually arrives with,
+ * and each is one click from the count cluster above the table.
+ *
+ * - `attention` — every `author` kind: a spawn that failed, a dispatch nobody
+ *   picked up, an expired or abandoned continuation, a wedged deferral.
+ * - `unknown` — {@link CONTINUATION_UNKNOWN_OUTCOME_KINDS}: the rows where
+ *   whether the work happened is genuinely not known.
+ * - `deferred` — every row that was EVER pushed back, whatever state it is in
+ *   now.
+ * - `none` — gates carrying no continuation at all.
+ */
+const CONTINUATION_GROUPS = {
+  attention: "Needs attention",
+  unknown: "Outcome unknown",
+  deferred: "Ever deferred",
+  none: "No continuation",
+} as const;
+
+type ContinuationGroup = keyof typeof CONTINUATION_GROUPS;
+
+function matchesContinuationFilter(
+  filter: string,
+  status: ContinuationStatus | null
+): boolean {
+  switch (filter) {
+    case ALL:
+      return true;
+    case "attention":
+      return status?.status.attention === "author";
+    case "unknown":
+      return status
+        ? CONTINUATION_UNKNOWN_OUTCOME_KINDS.has(status.status.kind)
+        : false;
+    case "deferred":
+      return status?.deferral != null;
+    case "none":
+      return status === null;
+    default:
+      return status?.status.kind === (filter as ContinuationKind);
+  }
+}
 
 export function GatesTable({
   gates,
@@ -298,6 +509,7 @@ export function GatesTable({
   const [openGate, setOpenGate] = useState<string | null>(null);
   const [verdictFilter, setVerdictFilter] = useState<string>(ALL);
   const [basisFilter, setBasisFilter] = useState<string>(ALL);
+  const [continuationFilter, setContinuationFilter] = useState<string>(ALL);
   const [sortKey, setSortKey] = useState<SortKey>("age");
 
   // Deep link: `/admin/coord/gates?gate=<id>` arrives with the search box
@@ -320,10 +532,91 @@ export function GatesTable({
     [clearanceRules]
   );
 
+  /**
+   * `gate_id -> continuation status`, derived ONCE per fetched page.
+   *
+   * The clock is captured inside the memo rather than read per row so every
+   * badge in one render agrees about whether a dispatch has crossed the
+   * 15-minute stale line — two rows dispatched in the same second must not
+   * disagree because one was formatted a millisecond later. It recomputes on
+   * every poll, which is what advances the ages.
+   */
+  const continuationByGate = useMemo(() => {
+    const now = Date.now();
+    return new Map<string, ContinuationStatus | null>(
+      gates.map((g) => [g.gate_id, deriveContinuationStatus(g, now)])
+    );
+  }, [gates]);
+
   const verdictOptions = useMemo(
     () => Array.from(new Set(gates.map((g) => g.verdict))).sort(),
     [gates]
   );
+
+  /** The continuation kinds actually present, so the filter offers no dead options. */
+  const continuationKindOptions = useMemo(() => {
+    const kinds = new Set<ContinuationKind>();
+    for (const status of continuationByGate.values()) {
+      if (status) kinds.add(status.status.kind);
+    }
+    return Array.from(kinds).sort();
+  }, [continuationByGate]);
+
+  /**
+   * R1's opening, scoped to the continuation question and derived from the
+   * rows already on this page — never a second fetch.
+   *
+   * It counts THIS PAGE, and says so, because `/admin-dev/overview` returns an
+   * OPEN-first capped page: a page-derived total presented as a tenant total is
+   * the undercount `SummaryCards` documents and refuses to make.
+   */
+  const continuationStats = useMemo((): Stat[] => {
+    let attention = 0;
+    let unknown = 0;
+    let deferred = 0;
+    for (const status of continuationByGate.values()) {
+      if (!status) continue;
+      if (status.status.attention === "author") attention += 1;
+      if (CONTINUATION_UNKNOWN_OUTCOME_KINDS.has(status.status.kind))
+        unknown += 1;
+      if (status.deferral) deferred += 1;
+    }
+    if (attention === 0 && unknown === 0 && deferred === 0) return [];
+    return [
+      {
+        key: "continuation-attention",
+        label: "continuations needing attention ",
+        value: attention,
+        tone: attention > 0 ? "attention" : "muted",
+        title:
+          "Spawn failures, abandoned work, expired continuations, dispatches nobody picked up, and deferrals the retry loop is not getting through. Click to filter.",
+        onClick: () => setContinuationFilter("attention"),
+        "data-testid": "continuation-attention-value",
+      },
+      {
+        key: "continuation-unknown",
+        label: "outcome unknown ",
+        value: unknown,
+        // Amber's ignorance reading, not its waiting one: these rows are not
+        // waiting on anything nameable, we simply do not know what happened.
+        tone: unknown > 0 ? "warning" : "muted",
+        title:
+          "A process started or was claimed and nothing ever reported whether the work happened. Not success and not failure. Click to filter.",
+        onClick: () => setContinuationFilter("unknown"),
+        "data-testid": "continuation-unknown-value",
+      },
+      {
+        key: "continuation-deferred",
+        label: "ever deferred ",
+        value: deferred,
+        tone: deferred > 0 ? "warning" : "muted",
+        title:
+          "Gates whose continuation dispatch a runner pushed back at least once, whatever state it reached afterwards. Click to filter.",
+        onClick: () => setContinuationFilter("deferred"),
+        "data-testid": "continuation-deferred-value",
+      },
+    ];
+  }, [continuationByGate]);
   const basisOptions = useMemo(
     () => Array.from(new Set(gates.map((g) => g.progress.basis))).sort(),
     [gates]
@@ -350,6 +643,13 @@ export function GatesTable({
           g.phase_name,
           g.measures,
           g.verdict,
+          // The continuation's recorded outcome and deferral reason, verbatim:
+          // pasting `spawn_failed` or `thread_pressure` finds the rows that
+          // carry it, which is how an operator gets from an incident to the
+          // gates it happened on.
+          g.continuation_consumed_outcome,
+          g.continuation_deferred_reason,
+          g.continuation_expired_reason,
         ];
         return haystacks.some(
           (h) => h != null && h.toLowerCase().includes(q)
@@ -361,6 +661,13 @@ export function GatesTable({
       r = r.filter((g) => g.verdict === verdictFilter);
     if (basisFilter !== ALL)
       r = r.filter((g) => g.progress.basis === (basisFilter as ProgressBasis));
+    if (continuationFilter !== ALL)
+      r = r.filter((g) =>
+        matchesContinuationFilter(
+          continuationFilter,
+          continuationByGate.get(g.gate_id) ?? null
+        )
+      );
 
     const sorted = [...r];
     sorted.sort((a, b) => {
@@ -376,7 +683,15 @@ export function GatesTable({
       return ea - eb;
     });
     return sorted;
-  }, [gates, search, verdictFilter, basisFilter, sortKey]);
+  }, [
+    gates,
+    search,
+    verdictFilter,
+    basisFilter,
+    continuationFilter,
+    continuationByGate,
+    sortKey,
+  ]);
 
   return (
     <div className="space-y-3" data-testid="gates-table">
@@ -428,6 +743,39 @@ export function GatesTable({
         </label>
 
         <label className="flex flex-col gap-1 text-xs text-muted-foreground">
+          Continuation
+          <select
+            className="h-8 rounded-md border border-input bg-background px-2 text-sm text-foreground"
+            value={continuationFilter}
+            onChange={(e) => setContinuationFilter(e.target.value)}
+            data-testid="gates-filter-continuation"
+          >
+            <option value={ALL}>All</option>
+            <optgroup label="Groups">
+              {(
+                Object.entries(CONTINUATION_GROUPS) as [
+                  ContinuationGroup,
+                  string,
+                ][]
+              ).map(([value, label]) => (
+                <option key={value} value={value}>
+                  {label}
+                </option>
+              ))}
+            </optgroup>
+            {continuationKindOptions.length > 0 && (
+              <optgroup label="State">
+                {continuationKindOptions.map((k) => (
+                  <option key={k} value={k}>
+                    {k}
+                  </option>
+                ))}
+              </optgroup>
+            )}
+          </select>
+        </label>
+
+        <label className="flex flex-col gap-1 text-xs text-muted-foreground">
           Sort by
           <select
             className="h-8 rounded-md border border-input bg-background px-2 text-sm text-foreground"
@@ -446,6 +794,23 @@ export function GatesTable({
         </div>
       </div>
 
+      {/* R1, scoped: the continuation signal, derived from the rows already
+          fetched, and rendered ONLY when there is something to say — a strip of
+          three zeroes is clutter, and this page already opens with
+          `<SummaryCards>`. Each count sets the Continuation filter. */}
+      {continuationStats.length > 0 && (
+        <div
+          className="flex flex-wrap items-center gap-2"
+          data-testid="gates-continuation-summary"
+        >
+          <StatCluster stats={continuationStats} />
+          <span className="text-[11px] text-muted-foreground/70">
+            across the {gates.length} gates on this page — the overview is
+            open-first and capped, so this is not a tenant total
+          </span>
+        </div>
+      )}
+
       <div className="overflow-x-auto rounded-md border border-border">
         <Table>
           <TableHeader>
@@ -455,6 +820,7 @@ export function GatesTable({
               <TableHead>Progress</TableHead>
               <TableHead>Expected finish</TableHead>
               <TableHead>Verdict</TableHead>
+              <TableHead>Continuation</TableHead>
               <TableHead>Age</TableHead>
               <TableHead>Last evaluated</TableHead>
               <TableHead>Flags</TableHead>
@@ -465,7 +831,7 @@ export function GatesTable({
             {rows.length === 0 ? (
               <TableRow>
                 <TableCell
-                  colSpan={9}
+                  colSpan={10}
                   className="text-center text-sm text-muted-foreground italic py-6"
                 >
                   No gates match the current filters.
@@ -475,6 +841,7 @@ export function GatesTable({
               rows.map((g) => {
                 const expanded = openGate === g.gate_id;
                 const status = deriveGateStatus(g);
+                const continuation = continuationByGate.get(g.gate_id) ?? null;
                 const Chevron = expanded ? ChevronDown : ChevronRight;
                 return (
                   <Fragment key={g.gate_id}>
@@ -530,6 +897,9 @@ export function GatesTable({
                           status={status}
                           palette={GATE_STATUS_PALETTE}
                         />
+                      </TableCell>
+                      <TableCell>
+                        <ContinuationCell status={continuation} />
                       </TableCell>
                       <TableCell className="whitespace-nowrap text-sm tabular-nums">
                         {formatAge(g.age_secs)}
@@ -588,8 +958,12 @@ export function GatesTable({
                         data-testid="gates-table-row-detail"
                         className="hover:bg-transparent"
                       >
-                        <TableCell colSpan={9} className="p-0">
-                          <GateDetail gate={g} bandIndex={bandIndex} />
+                        <TableCell colSpan={10} className="p-0">
+                          <GateDetail
+                            gate={g}
+                            bandIndex={bandIndex}
+                            continuation={continuation}
+                          />
                         </TableCell>
                       </TableRow>
                     )}
@@ -615,14 +989,39 @@ export function GatesTable({
 function GateDetail({
   gate,
   bandIndex,
+  continuation,
 }: {
   gate: GateOverviewRow;
   bandIndex: ReadonlyMap<string, ClearanceRuleBand> | null;
+  /** The row's derived continuation status, hoisted so the collapsed cell and
+   *  this panel can never disagree about the same gate. `null` = no
+   *  continuation is attached. */
+  continuation: ContinuationStatus | null;
 }) {
   const status = deriveGateStatus(gate);
   const anchorId =
     gate.plan_slug ?? gate.work_unit_slug ?? gate.work_unit_id ?? null;
   const computedAt = gate.progress.computed_at ?? null;
+  // The register-time INTENT — "clearing this opens a terminal on <device>" —
+  // is only worth saying while it is still a prediction. Once anything has
+  // dispatched, been cancelled or expired, what actually happened (the
+  // `problems`/`history` slots below) is the answer, and repeating the
+  // intention beside it invites reading the plan as the outcome.
+  const intent =
+    !gate.continuation_dispatched_at &&
+    !gate.continuation_cancelled_at &&
+    !gate.continuation_expired_at
+      ? summarizeContinuation(
+          // `GateOverviewRow` types the payload as opaque JSON (coord returns
+          // it verbatim); `summarizeContinuation` reads two optional string
+          // fields off it and tolerates every other shape, so the narrowing is
+          // safe and no runtime claim rides on it.
+          gate.continuation_spawn as ContinuationSpawn | null
+        )
+      : null;
+  const hasShadowReap = Boolean(gate.shadow_reap_signal);
+  const hasContinuationProblem =
+    continuation != null && continuation.status.attention !== "none";
   return (
     <RecordDetail
       className="rounded-none border-x-0 border-b-0"
@@ -641,9 +1040,31 @@ function GateDetail({
               {gate.phase_name ? ` · ${gate.phase_name}` : ""}
             </p>
           )}
+          {intent && (
+            <p
+              className="text-xs text-muted-foreground/80"
+              data-testid="gates-continuation-intent"
+            >
+              {intent}
+            </p>
+          )}
         </div>
       }
-      problems={<ShadowReapEvidence gate={gate} />}
+      problems={
+        // Wrapped ONLY when at least one child renders. `<RecordDetail>`
+        // promises an absent slot leaves no gap, and it enforces that for
+        // `raw` alone — an always-present wrapper here would draw a 12px gap
+        // at the head of every panel whose gate is neither would-reaped nor
+        // carrying a continuation problem, which is most of them.
+        hasShadowReap || hasContinuationProblem ? (
+          <div className="space-y-2">
+            {hasShadowReap && <ShadowReapEvidence gate={gate} />}
+            {hasContinuationProblem && (
+              <ContinuationProblem status={continuation} />
+            )}
+          </div>
+        ) : null
+      }
       history={
         <div className="space-y-1">
           {computedAt && (
@@ -656,6 +1077,7 @@ function GateDetail({
               {gate.stale ? " — coord's sweep is overdue on this gate." : "."}
             </p>
           )}
+          <ContinuationTimeline gate={gate} />
           <ClearanceProvenanceLine gate={gate} bandIndex={bandIndex} />
         </div>
       }
@@ -667,6 +1089,26 @@ function GateDetail({
           {gate.resource_key ? `:${gate.resource_key}` : ""}
           {gate.plan_id ? ` · plan_id: ${gate.plan_id}` : ""}
           {gate.work_unit_id ? ` · work_unit_id: ${gate.work_unit_id}` : ""}
+          {continuation ? ` · continuation: ${continuation.status.kind}` : ""}
+          {gate.continuation_action
+            ? ` · action: ${gate.continuation_action}`
+            : ""}
+          {continuation?.rawOutcome
+            ? ` · consumed_outcome: ${continuation.rawOutcome}`
+            : ""}
+          {continuation?.deferral
+            ? ` · deferred_count: ${
+                continuation.deferral.countKnown
+                  ? continuation.deferral.count
+                  : "unknown"
+              }`
+            : ""}
+          {continuation?.deferral?.rawReason
+            ? ` · deferred_reason: ${continuation.deferral.rawReason}`
+            : ""}
+          {gate.continuation_expired_reason
+            ? ` · expired_reason: ${gate.continuation_expired_reason}`
+            : ""}
         </div>
       }
     />

@@ -40,6 +40,7 @@ import {
   pressureLabel,
   rowHeadroom,
   safeRatio,
+  threadHeadroom,
   summarizeFleetAdmission,
   EXPIRED_AFTER_SECS,
   STALE_AFTER_SECS,
@@ -270,6 +271,47 @@ describe("§C3 — the row's colour is the SERVER's verdict, not a client band",
       headroom: "quarantined" as unknown as ResourceSampleRow["headroom"],
     });
     expect(rowHeadroom(future)).toBe("unknown");
+  });
+
+  it("keeps the THREAD grade out of headroom, and reads it from its own field", () => {
+    // The whole point of the split. Nothing on the coord side enforces the
+    // thread ceiling — the throttle that acts on it is runner-local — so a
+    // breaching thread count must NOT reach `headroom`, whose published
+    // meaning is "a guard is refusing work right now, so builds fail here".
+    // Announcing a refusal that is not happening is the §C3 disagreement in
+    // mirror form.
+    const threadBreach = sample({
+      headroom: "ok",
+      thread_count: 412,
+      active_terminal_sessions: 37,
+      thread_headroom: "breach",
+    });
+    expect(rowHeadroom(threadBreach)).toBe("ok");
+    expect(headroomTone("fresh", rowHeadroom(threadBreach))).toBe("ok");
+    // …while the thread axis still grades, and still earns colour of its own.
+    expect(threadHeadroom(threadBreach)).toBe("breach");
+    expect(headroomTone("fresh", threadHeadroom(threadBreach))).toBe(
+      "critical"
+    );
+  });
+
+  it("treats an absent or unrecognized thread grade as unknown, not as ok", () => {
+    // Same discipline as `rowHeadroom`, in both directions: a coord that
+    // predates the field, and a coord ahead of this build. A publisher that
+    // reports no thread count at all is the common case for a while — every
+    // runner whose build predates the publisher change — and silence there is
+    // UNKNOWN, never health.
+    expect(threadHeadroom(preFloorSample())).toBe("unknown");
+    expect(threadHeadroom(sample({ thread_headroom: null }))).toBe("unknown");
+    expect(threadHeadroom(null)).toBe("unknown");
+    expect(
+      threadHeadroom(
+        sample({
+          thread_headroom:
+            "throttled" as unknown as ResourceSampleRow["thread_headroom"],
+        })
+      )
+    ).toBe("unknown");
   });
 });
 

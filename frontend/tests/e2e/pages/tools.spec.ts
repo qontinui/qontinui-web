@@ -100,19 +100,24 @@ const PAGE_READY_TIMEOUT_MS = 15_000;
 /**
  * Per-test budget for the shell-gated tests below.
  *
- * The default 60s cannot hold BOTH a dev-mode navigation and a full shell wait:
- * playwright.config.ts allows navigationTimeout 60s precisely because Next
- * compiles on demand (~23s for the dashboard). If `goto` eats 30s+, a 45s shell
- * wait gets truncated by the test deadline and the failure surfaces as a bare
- * test-level timeout — losing the diagnostic message that is the point of the
- * wait. Reserve navigation budget and wait budget separately so the assertion
- * always gets to speak. Same reasoning as captures-recordings.spec.ts's
- * POLLED_TEST_TIMEOUT_MS, scaled to the larger bound used here.
+ * The default budget cannot hold BOTH a slow navigation and a full shell wait.
+ * If `goto` eats most of its own bound, a 45s shell wait gets truncated by the
+ * test deadline and the failure surfaces as a bare test-level timeout — losing
+ * the diagnostic message that is the point of the wait. Reserve navigation
+ * budget and wait budget separately so the assertion always gets to speak.
+ * Same reasoning as captures-recordings.spec.ts's POLLED_TEST_TIMEOUT_MS,
+ * scaled to the larger bound used here.
  *
- * 150s, not 120s: navigation (60s) + shell (45s) + page (15s) is already 120s
- * exactly, which would reserve the two budgets to the millisecond and leave
- * nothing for fixture setup, the fullPage screenshot and `page.content()`. The
- * margin is only ever consumed on a run that is already failing.
+ * 150s is sized against the WORST arm, which is `dev`. playwright.config.ts's
+ * bounds are mode-keyed since Phase 3 of plan 2026-09-05-web-e2e-runs-against-
+ * next-dev-…: `dev` still allows navigationTimeout 60s because Next compiles on
+ * demand (~23s for the dashboard), while the production build the gating E2E
+ * lane uses allows 15s (style-gate is a gate too, and it pins dev). On the dev arm navigation (60s) + shell (45s) + page (15s)
+ * is already 120s exactly, which would reserve the two budgets to the
+ * millisecond and leave nothing for fixture setup, the fullPage screenshot and
+ * `page.content()`. On prod the same sum is 75s, so the margin is larger there;
+ * this constant keeps the dev-arm sizing so one number covers both. The margin
+ * is only ever consumed on a run that is already failing.
  */
 const SHELL_GATED_TEST_TIMEOUT_MS = 150_000;
 

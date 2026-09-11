@@ -6,6 +6,13 @@
  * - /testing/runs (all test runs list)
  * - /testing/runs/[id] (individual run detail)
  * - /testing/deficiencies (deficiency tracking)
+ *
+ * No fixed sleeps. Every wait here is an auto-waiting assertion on the state
+ * the test then checks, or a bounded `waitFor(...).catch(() => null)` in
+ * front of a read the test already tolerated — never a `waitForTimeout(N)`
+ * followed by a non-waiting read, which asserts on wall-clock. Timeouts are
+ * the replaced sleep × 3, floor 5 s.
+ * Plan: 2026-09-05-web-e2e-fixed-sleeps-red-main-one-test-at-a-time.
  */
 
 import { test, expect } from "../fixtures";
@@ -18,6 +25,24 @@ import { TEST_PROJECT_ID } from "../test-project";
 const TESTING_URL = `/testing?project=${TEST_PROJECT_ID}`;
 const TESTING_RUNS_URL = `/testing/runs?project=${TEST_PROJECT_ID}`;
 const TESTING_DEFICIENCIES_URL = `/testing/deficiencies?project=${TEST_PROJECT_ID}`;
+
+/** Replaces the old `waitForTimeout(500)` after a view-selector click. */
+const VIEW_SWITCH_TIMEOUT = 5000;
+
+/**
+ * The view selector is a row of plain buttons; the selected one carries
+ * `bg-primary` (page.tsx). Bounded wait for that, tolerated — the test only
+ * asserts that switching does not error.
+ */
+async function waitForSelectedView(
+  page: import("@playwright/test").Page,
+  key: string
+): Promise<void> {
+  await page
+    .locator(`[data-testid="testing-page-${key}-tab"].bg-primary`)
+    .waitFor({ state: "visible", timeout: VIEW_SWITCH_TIMEOUT })
+    .catch(() => null);
+}
 
 test.describe("Testing Dashboard - Main Page", () => {
   test("should load without errors and display heading", async ({ page }) => {
@@ -87,15 +112,15 @@ test.describe("Testing Dashboard - Main Page", () => {
     // Click Coverage Trends tab — with a project selected the chart
     // mounts (it may fetch data, but that's not what we're asserting).
     await page.locator('[data-testid="testing-page-trends-tab"]').click();
-    await page.waitForTimeout(500);
+    await waitForSelectedView(page, "trends");
 
     // Click Reliability tab
     await page.locator('[data-testid="testing-page-reliability-tab"]').click();
-    await page.waitForTimeout(500);
+    await waitForSelectedView(page, "reliability");
 
     // Click back to Test Runs tab
     await page.locator('[data-testid="testing-page-overview-tab"]').click();
-    await page.waitForTimeout(500);
+    await waitForSelectedView(page, "overview");
   });
 });
 

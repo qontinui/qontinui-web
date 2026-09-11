@@ -3,7 +3,9 @@
 /**
  * One archived session in the repository list.
  *
- * Why this is not `components/sessions/SessionCard`: that card renders a LIVE
+ * Why this is not the live-session row: the console's `RecordRow` (and the
+ * 394-line `components/sessions/SessionCard` it replaced, deleted by
+ * `2026-08-26-sessions-console-consolidation` Phase 3) renders a LIVE
  * `coord.sessions` row and is built out of fields an archived row does not
  * have — `device_id` → hostname, heartbeat health, claims count, agent
  * blocked/correlation status, coord lineage. Reusing it here would mean

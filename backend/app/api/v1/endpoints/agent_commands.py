@@ -39,6 +39,7 @@ from pydantic import BaseModel, ConfigDict
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import current_active_user, get_async_db
+from app.api.v1.endpoints.agent_text_units import defaults_router
 from app.models.agent_text_unit import KIND_COMMAND, entrypoint_path
 from app.models.user import User
 from app.services.agent_text_unit_service import (
@@ -58,6 +59,14 @@ from app.services.permissions.organization_access import (
 )
 
 router = APIRouter()
+
+# The embedded-layer routes (`PUT|GET /defaults`) are inherited from the real
+# API verbatim — ONE include, no translation, no second implementation. They
+# speak the shared `AgentTextUnitDefault` wire, not this alias's legacy `body`
+# shape: a runner old enough to need this alias never publishes, so there is
+# nothing to translate for it. Included FIRST so `/defaults` precedes the
+# `/{name}` routes below, which would otherwise swallow it.
+router.include_router(defaults_router)
 
 
 def get_service() -> AgentTextUnitService:

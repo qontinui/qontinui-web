@@ -57,6 +57,13 @@ function gate(overrides: Partial<GateOverviewRow> = {}): GateOverviewRow {
     continuation_cancelled_at: null,
     continuation_cancelled_by: null,
     continuation_cancel_reason: null,
+    continuation_deferred_at: null,
+    continuation_deferred_reason: null,
+    continuation_deferred_count: 0,
+    continuation_expired_at: null,
+    continuation_expired_reason: null,
+    continuation_action: null,
+    continuation_will_dispatch: null,
     title: "A gate",
     measures: "some measure",
     progress: {
@@ -105,7 +112,8 @@ describe("GatesTable search + gate-id", () => {
    * Phase 3 Wave 4 (D2/R5): the clearance-provenance sub-line, the work
    * anchor, the shadow-reap evidence and the progress-freshness line all moved
    * OFF the collapsed row and into the `<tr><td colSpan={9}>` `<RecordDetail>`
-   * that a click expands. Their testids are unchanged (D4a) — what changed is
+   * that a click expands (`colSpan={10}` since the Continuation column landed).
+   * Their testids are unchanged (D4a) — what changed is
    * that reaching them costs the same click an operator now makes. Clicking
    * the row is the affordance under test everywhere below.
    */
@@ -363,5 +371,335 @@ describe("GatesTable search + gate-id", () => {
     expect(writeText).toHaveBeenCalledWith(
       "2aeadf7c-1111-2222-3333-444455556666",
     );
+  });
+});
+
+/**
+ * The Continuation column (plan
+ * `2026-09-09-continuation-dispatch-fails-silently-three-times-in-four`).
+ *
+ * The property under test is DISCRIMINATION, not decoration: the three
+ * readings an operator has to be able to tell apart on sight — a continuation
+ * that failed to spawn, one that started and never reported, and one that has
+ * no recorded outcome at all — must not render the same, and none of them may
+ * render as success.
+ */
+describe("GatesTable — continuation column", () => {
+  const SPAWN_FAILED = gate({
+    gate_id: "f0000000-0000-0000-0000-00000000000f",
+    title: "Failed to spawn",
+    continuation_spawn: { target_device_id: "abcdef1234567890" },
+    continuation_dispatched_at: new Date(Date.now() - 3_600_000).toISOString(),
+    continuation_consumed_at: new Date(Date.now() - 3_500_000).toISOString(),
+    continuation_consumed_outcome:
+      "spawn_failed: no Tauri AppHandle (runner has no webview runtime) — cannot open a visible terminal",
+  });
+  const SPAWNED = gate({
+    gate_id: "50000000-0000-0000-0000-000000000005",
+    title: "Spawned, never reported",
+    continuation_spawn: { target_device_id: "abcdef1234567890" },
+    continuation_dispatched_at: new Date(Date.now() - 3_600_000).toISOString(),
+    continuation_consumed_at: new Date(Date.now() - 3_500_000).toISOString(),
+    continuation_consumed_outcome: "spawned",
+  });
+  const SILENT = gate({
+    gate_id: "60000000-0000-0000-0000-000000000006",
+    title: "Consumed in silence",
+    continuation_spawn: { target_device_id: "abcdef1234567890" },
+    continuation_dispatched_at: new Date(Date.now() - 3_600_000).toISOString(),
+    continuation_consumed_at: new Date(Date.now() - 3_500_000).toISOString(),
+    continuation_consumed_outcome: null,
+  });
+  const DEFERRED_58 = gate({
+    gate_id: "70000000-0000-0000-0000-000000000007",
+    title: "Deferred fifty-eight times",
+    continuation_spawn: { target_device_id: "abcdef1234567890" },
+    continuation_dispatched_at: new Date(Date.now() - 86_400_000).toISOString(),
+    continuation_deferred_at: new Date(Date.now() - 600_000).toISOString(),
+    continuation_deferred_reason: "thread_pressure:critical:540_over_400",
+    continuation_deferred_count: 58,
+  });
+  const DEFERRED_ONCE = gate({
+    gate_id: "80000000-0000-0000-0000-000000000008",
+    title: "Deferred once",
+    continuation_spawn: { target_device_id: "abcdef1234567890" },
+    continuation_dispatched_at: new Date(Date.now() - 3_600_000).toISOString(),
+    continuation_deferred_at: new Date(Date.now() - 600_000).toISOString(),
+    continuation_deferred_reason: "thread_pressure:warn:300_over_256",
+    continuation_deferred_count: 1,
+  });
+
+  function kinds(): string[] {
+    return screen
+      .getAllByTestId("gates-continuation")
+      .map((el) => el.getAttribute("data-continuation-kind") ?? "");
+  }
+
+  it("renders a spawn_failed row differently from a spawned one and a silent one", () => {
+    render(
+      <GatesTable gates={[SPAWN_FAILED, SPAWNED, SILENT]} onActed={() => {}} />,
+    );
+    expect(kinds()).toEqual(["spawn_failed", "spawned", "consumed_silent"]);
+    // ...and none of the three is the success reading.
+    expect(kinds()).not.toContain("work_completed");
+  });
+
+  it("marks the spawn failure red with the ✕, and the two unknowns amber without it", () => {
+    render(
+      <GatesTable gates={[SPAWN_FAILED, SPAWNED, SILENT]} onActed={() => {}} />,
+    );
+    const badges = screen
+      .getAllByTestId("gates-continuation")
+      .map((el) => el.querySelector("[data-status-kind]") as HTMLElement);
+    expect(badges[0].className).toMatch(/bg-red-/);
+    expect(badges[0].textContent).toContain("✕");
+    expect(badges[1].className).toMatch(/bg-amber-/);
+    expect(badges[1].textContent).not.toContain("✓");
+    expect(badges[2].className).toMatch(/bg-amber-/);
+    expect(badges[2].textContent).not.toContain("✓");
+  });
+
+  it("says none — never a blank cell — when no continuation is attached", () => {
+    render(<GatesTable gates={[gate()]} onActed={() => {}} />);
+    expect(screen.getByTestId("gates-continuation-none").textContent).toBe(
+      "none",
+    );
+    expect(screen.queryByTestId("gates-continuation")).toBeNull();
+  });
+
+  it("distinguishes 58 deferrals from 1, and escalates only the former", () => {
+    render(
+      <GatesTable gates={[DEFERRED_58, DEFERRED_ONCE]} onActed={() => {}} />,
+    );
+    expect(kinds()).toEqual(["deferral_stuck", "deferred"]);
+    const labels = screen
+      .getAllByTestId("gates-continuation")
+      .map((el) => el.textContent ?? "");
+    expect(labels[0]).toContain("deferred ×58");
+    expect(labels[1]).toContain("deferred ×1");
+  });
+
+  it("keeps showing the deferrals a completed continuation survived", () => {
+    render(
+      <GatesTable
+        gates={[
+          gate({
+            title: "Ran, eventually",
+            continuation_spawn: { target_device_id: "abcdef1234567890" },
+            continuation_dispatched_at: new Date(
+              Date.now() - 86_400_000,
+            ).toISOString(),
+            continuation_deferred_at: new Date(
+              Date.now() - 40_000_000,
+            ).toISOString(),
+            continuation_deferred_reason: "at_cap:4",
+            continuation_deferred_count: 12,
+            continuation_consumed_at: new Date(
+              Date.now() - 30_000_000,
+            ).toISOString(),
+            continuation_consumed_outcome: "work_completed",
+          }),
+        ]}
+        onActed={() => {}}
+      />,
+    );
+    expect(kinds()).toEqual(["work_completed"]);
+    expect(
+      screen.getByTestId("gates-continuation-deferral-chip").textContent,
+    ).toBe("after 12 deferrals");
+  });
+
+  it("renders a deferral-derived row ONCE, never as badge plus history chip", () => {
+    // Every arm of the deferral branch, including the `unknown` one whose kind
+    // three unrelated branches also produce. A hand-maintained kind exclusion
+    // list shipped `deferral_abandoned` saying "deferred ×2 — nothing pulling"
+    // in the badge and "after 2 deferrals" in a chip below it, under a tooltip
+    // reading "pushed back BEFORE this state" — about the state itself.
+    const dispatched = new Date(Date.now() - 20_000_000).toISOString();
+    const armed: Array<[string, Partial<GateOverviewRow>]> = [
+      ["deferred", { continuation_deferred_count: 2 }],
+      ["deferral_stuck", { continuation_deferred_count: 58 }],
+      [
+        "deferral_abandoned",
+        {
+          continuation_deferred_at: new Date(
+            Date.now() - 20_000_000,
+          ).toISOString(),
+          continuation_deferred_count: 2,
+        },
+      ],
+      [
+        "unknown",
+        {
+          continuation_deferred_at: "not a timestamp",
+          continuation_deferred_count: 2,
+        },
+      ],
+    ];
+    for (const [expected, over] of armed) {
+      const { unmount } = render(
+        <GatesTable
+          gates={[
+            gate({
+              continuation_spawn: { target_device_id: "abcdef1234567890" },
+              continuation_dispatched_at: dispatched,
+              continuation_deferred_at: new Date(
+                Date.now() - 600_000,
+              ).toISOString(),
+              continuation_deferred_reason: "at_cap:4",
+              ...over,
+            }),
+          ]}
+          onActed={() => {}}
+        />,
+      );
+      expect(kinds()).toEqual([expected]);
+      expect(
+        screen.queryByTestId("gates-continuation-deferral-chip"),
+      ).toBeNull();
+      unmount();
+    }
+  });
+
+  it("keeps the history chip on a RE-DISPATCHED row, where it is the true reading", () => {
+    // coord re-stamps `dispatched_at` and never clears the deferral columns,
+    // so this shape is a designed path. The badge is about the new dispatch;
+    // the chip is about the old cycle. Both belong.
+    render(
+      <GatesTable
+        gates={[
+          gate({
+            continuation_spawn: { target_device_id: "abcdef1234567890" },
+            continuation_dispatched_at: new Date(Date.now() - 3_000).toISOString(),
+            continuation_deferred_at: new Date(
+              Date.now() - 240_000_000,
+            ).toISOString(),
+            continuation_deferred_reason: "at_cap:4",
+            continuation_deferred_count: 3,
+          }),
+        ]}
+        onActed={() => {}}
+      />,
+    );
+    expect(kinds()).toEqual(["dispatched"]);
+    expect(
+      screen.getByTestId("gates-continuation-deferral-chip").textContent,
+    ).toBe("after 3 deferrals");
+  });
+
+  it("counts the attention/unknown/deferred populations above the table", () => {
+    render(
+      <GatesTable
+        gates={[SPAWN_FAILED, SPAWNED, SILENT, DEFERRED_58, DEFERRED_ONCE]}
+        onActed={() => {}}
+      />,
+    );
+    // spawn_failed + deferral_stuck are the author kinds here.
+    expect(screen.getByTestId("continuation-attention-value").textContent).toBe(
+      "continuations needing attention 2",
+    );
+    // spawned + consumed_silent.
+    expect(screen.getByTestId("continuation-unknown-value").textContent).toBe(
+      "outcome unknown 2",
+    );
+    expect(screen.getByTestId("continuation-deferred-value").textContent).toBe(
+      "ever deferred 2",
+    );
+  });
+
+  it("renders no count cluster when the page has nothing to say", () => {
+    render(<GatesTable gates={[gate()]} onActed={() => {}} />);
+    expect(screen.queryByTestId("gates-continuation-summary")).toBeNull();
+  });
+
+  it("filters to the rows that need attention", async () => {
+    const user = userEvent.setup();
+    render(
+      <GatesTable
+        gates={[SPAWN_FAILED, SPAWNED, SILENT, DEFERRED_ONCE]}
+        onActed={() => {}}
+      />,
+    );
+    await user.selectOptions(
+      screen.getByTestId("gates-filter-continuation"),
+      "attention",
+    );
+    expect(kinds()).toEqual(["spawn_failed"]);
+  });
+
+  it("filters to every row that was ever deferred, whatever state it reached", async () => {
+    const user = userEvent.setup();
+    render(
+      <GatesTable
+        gates={[SPAWN_FAILED, DEFERRED_58, DEFERRED_ONCE]}
+        onActed={() => {}}
+      />,
+    );
+    await user.selectOptions(
+      screen.getByTestId("gates-filter-continuation"),
+      "deferred",
+    );
+    expect(kinds()).toEqual(["deferral_stuck", "deferred"]);
+  });
+
+  it("finds a gate by pasting the outcome coord recorded", async () => {
+    const user = userEvent.setup();
+    render(
+      <GatesTable gates={[SPAWN_FAILED, SPAWNED, SILENT]} onActed={() => {}} />,
+    );
+    await user.type(screen.getByTestId("gates-search"), "no Tauri AppHandle");
+    expect(screen.getAllByTestId("gates-table-row")).toHaveLength(1);
+    expect(kinds()).toEqual(["spawn_failed"]);
+  });
+
+  it("spells out the failure and the deferral pressure in the expansion", async () => {
+    const user = userEvent.setup();
+    render(<GatesTable gates={[DEFERRED_58]} onActed={() => {}} />);
+    await user.click(screen.getAllByTestId("gates-table-row")[0]);
+    const problem = screen.getByTestId("gates-continuation-problem").textContent;
+    expect(problem).toContain("deferred ×58");
+    expect(problem).toContain("out of OS threads (critical)");
+    expect(problem).toContain("540 observed against a limit of 400");
+    expect(problem).toContain("Dispatch pushed back 58 times");
+    // The timeline reports the stamps rather than inventing a liveness claim.
+    expect(
+      screen.getByTestId("gates-continuation-timeline").textContent,
+    ).toContain("last deferred");
+  });
+
+  it("carries coord's verbatim outcome into the raw slot", async () => {
+    const user = userEvent.setup();
+    render(<GatesTable gates={[SPAWN_FAILED]} onActed={() => {}} />);
+    await user.click(screen.getAllByTestId("gates-table-row")[0]);
+    const raw = screen.getByTestId("gates-row-detail").textContent ?? "";
+    expect(raw).toContain("consumed_outcome: spawn_failed: no Tauri AppHandle");
+  });
+
+  it("states the spawn INTENT only while it is still a prediction", async () => {
+    const user = userEvent.setup();
+    render(
+      <GatesTable
+        gates={[
+          gate({
+            continuation_spawn: {
+              target_device_id: "abcdef1234567890",
+              initial_prompt: "carry on",
+            },
+          }),
+        ]}
+        onActed={() => {}}
+      />,
+    );
+    await user.click(screen.getAllByTestId("gates-table-row")[0]);
+    expect(
+      screen.getByTestId("gates-continuation-intent").textContent,
+    ).toContain("Clearing opens a visible terminal session on abcdef12");
+  });
+
+  it("drops the intent line once the continuation has actually dispatched", async () => {
+    const user = userEvent.setup();
+    render(<GatesTable gates={[SPAWN_FAILED]} onActed={() => {}} />);
+    await user.click(screen.getAllByTestId("gates-table-row")[0]);
+    expect(screen.queryByTestId("gates-continuation-intent")).toBeNull();
   });
 });

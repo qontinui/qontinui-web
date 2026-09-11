@@ -8,14 +8,26 @@ A unit is ``(kind, name)`` plus a ``files`` map of *relative path → text*. A
 for why the unique key is a partial-index pair rather than a three-column
 ``UNIQUE``.
 
-Two layers live in one table and this service addresses them by the
-``organization_id`` it is handed:
+Three layers live in one table and this service addresses them by the
+``organization_id`` it is handed plus the ``published_by_version`` discriminator:
 
 * ``organization_id is None`` — the **fleet default** layer. Fleet-wide, so the
   API gates writes to it on superuser; reads are open to any member (that is
   what "fleet default" means).
-* ``organization_id is not None`` — that **account's override**. Every query is
-  filtered by it, so one account can never read or write another's row.
+* ``organization_id is not None`` and ``published_by_version IS NULL`` — that
+  **account's override**. Every query is filtered by it, so one account can
+  never read or write another's row.
+* ``organization_id is not None`` and ``published_by_version IS NOT NULL`` —
+  the **embedded default** the account's runner published
+  (``publish_defaults`` / ``get_defaults``). Org-scoped like an override, but
+  a DISPLAY baseline rather than a provisioning input: the list projections
+  the runner reads never fold it in, and the layer-addressed CRUD above never
+  sees it. ``get_unit`` alone falls through to it, as the last rung of the
+  resolved read, and reports ``source="embedded"`` when it does.
+
+Every layer-addressed query carries ``_stored_layer`` — the predicate that
+excludes the embedded rows. An override lookup that forgot it would find the
+published default of the same name and edit THAT.
 
 Version semantics mirror ``version_history_service.py`` unchanged from the
 agent-command original: every write APPENDS a version with
@@ -50,8 +62,13 @@ from datetime import UTC, datetime
 from enum import StrEnum
 from uuid import UUID
 
+from packaging.version import InvalidVersion, Version
 from pydantic import BaseModel, ConfigDict, Field
-from sqlalchemy import Select, func, select
+from qontinui_schemas.generated.per_type.agent_text_unit_default import (
+    AgentTextUnitDefault,
+    AgentTextUnitKind,
+)
+from sqlalchemy import ColumnElement, Select, and_, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased
 
@@ -109,6 +126,17 @@ MAX_SOURCE_PATH_BYTES = 1024
 #: the pagination the client already agreed to.
 MAX_NAMES_PER_QUERY = 500
 
+#: Bounds on ONE publish of the embedded layer (`publish_defaults`). The
+#: per-file and per-unit caps above still apply to every unit in the roster;
+#: these bound the roster itself, which the per-unit caps alone do not. Sized
+#: against the measurement in the plan's Risk 3: the seven embedded commands
+#: total ~323 KB, and the whole shipped corpus — commands, skills AND agents,
+#: should the other two bundles ever be published — is 87 units / 1.92 MB. Both
+#: bounds leave that headroom so publishing skills later is adding a source,
+#: not re-negotiating the endpoint.
+MAX_PUBLISH_UNITS = 512
+MAX_PUBLISH_BYTES = 8 * 1024 * 1024
+
 _NAME_RE = re.compile(r"^_?[a-z0-9][a-z0-9-]*$")
 _KIND_RE = re.compile(r"^[a-z][a-z0-9_]*$")
 _DRIVE_LETTER_RE = re.compile(r"^[A-Za-z]:")
@@ -117,6 +145,28 @@ _COMMIT_RE = re.compile(r"^[0-9a-f]{40}$")
 
 class AgentTextUnitValidationError(ValueError):
     """A write was refused at the corpus boundary."""
+
+
+class AgentTextUnitDefaultsRejected(AgentTextUnitValidationError):
+    """A publish of the embedded layer was refused, with a TYPED reason.
+
+    ``reason`` is a stable token a client can branch on
+    (``checksum_mismatch``, ``version_mismatch``, ``invalid_unit``, …) and
+    ``unit`` names the ``kind/name`` it applies to when there is one. This is
+    the malformed-publish arm; the *older-than-stored* case is deliberately not
+    an error — an old device is not a fault — and is answered as a normal
+    ``accepted: false`` by ``publish_defaults`` instead.
+    """
+
+    def __init__(self, reason: str, message: str, unit: str | None = None) -> None:
+        super().__init__(message)
+        self.reason = reason
+        self.unit = unit
+        self.message = message
+
+    def detail(self) -> dict[str, str | None]:
+        """The response body shape the API returns for this refusal."""
+        return {"reason": self.reason, "unit": self.unit, "message": self.message}
 
 
 # =============================================================================
@@ -484,8 +534,10 @@ class AgentTextUnitResponse(BaseModel):
     is_shared: bool = False
     is_invocable: bool = True
     current_version: int
-    #: Which layer this row came from — ``"user"`` (account override) or
-    #: ``"fleet"`` (the ``organization_id IS NULL`` default).
+    #: Which layer this row came from — ``"user"`` (account override),
+    #: ``"fleet"`` (the ``organization_id IS NULL`` default) or ``"embedded"``
+    #: (the runner-published default; only ``get_unit`` ever serves one, as the
+    #: last rung of a resolved read).
     #:
     #: ⚠️ **Unrelated to ``source_path`` / ``source_commit`` below despite the
     #: shared prefix.** This is the resolution LAYER; those two are the config
@@ -694,8 +746,150 @@ class AgentTextUnitVersionListResponse(BaseModel):
 
 
 # =============================================================================
+# The embedded layer's wire (Phase 4b of
+# `2026-08-31-runner-publishes-embedded-command-defaults`)
+# =============================================================================
+#
+# The unit itself is the GENERATED binding `AgentTextUnitDefault` from
+# `qontinui_schemas`, not a hand-written Pydantic twin. That is the whole point
+# of the shared type: the runner serializes the Rust `AgentTextUnitDefault` and
+# this side deserializes the Python binding generated from the same schema, so
+# the two cannot drift silently. Only the ENVELOPES around it are declared here.
+
+
+class AgentTextUnitDefaultsPublishRequest(BaseModel):
+    """``PUT /defaults`` — the COMPLETE embedded roster of one runner build.
+
+    Complete, because the publish is a full-set replace (Design decision 3): a
+    name absent from ``units`` is deleted from the account's embedded layer. A
+    partial roster is therefore not an incremental update, it is a deletion.
+    """
+
+    #: The publishing runner's version. Every unit's own
+    #: ``published_by_version`` must equal it — one roster, one build.
+    runner_version: str
+    units: list[AgentTextUnitDefault]
+
+
+class AgentTextUnitDefaultsPublishResponse(BaseModel):
+    """What ``PUT /defaults`` decided.
+
+    ``accepted: false`` with ``rejected_reason="older_than_stored"`` is a normal
+    ``200``: an org whose devices run different builds sends older publishes
+    all the time, and an old device is not a fault. ``stored_version`` then
+    names the build whose roster stands. Malformed publishes are ``422``s with a
+    typed reason (``AgentTextUnitDefaultsRejected``), not this shape.
+    """
+
+    accepted: bool
+    rejected_reason: str | None = None
+    #: The version whose roster the account holds after this call — the
+    #: publisher's own on accept, the incumbent's on ``older_than_stored``.
+    stored_version: str | None = None
+    #: Units written by THIS call. Zero when nothing was.
+    count: int
+
+
+class AgentTextUnitDefaultsResponse(BaseModel):
+    """``GET /defaults`` — the account's baseline.
+
+    Empty ``units`` with ``published_by_version: null`` means NO baseline: a
+    web-only account, an org whose devices never ran a publishing build, or a
+    runner that held no token. The frontend renders that as its honest
+    "unavailable" state (Design decision 7) — it must never be turned into an
+    empty or fabricated default side.
+    """
+
+    units: list[AgentTextUnitDefault]
+    #: The newest build among the stored rows — after a full-set replace they
+    #: all agree, but it is computed rather than assumed.
+    published_by_version: str | None = None
+    #: RFC 3339, the latest ``published_at`` among the rows.
+    published_at: str | None = None
+
+
+# =============================================================================
 # Helpers
 # =============================================================================
+
+
+def _layer_source(unit: AgentTextUnit) -> str:
+    """The resolution LAYER a row belongs to, for the response's ``source``."""
+    if unit.published_by_version is not None:
+        return "embedded"
+    return "user" if unit.organization_id is not None else "fleet"
+
+
+def _stored_layer(organization_id: UUID | None) -> ColumnElement[bool]:
+    """Predicate for the fleet or override layer — NEVER the embedded one.
+
+    Every layer-addressed query goes through this. The embedded rows share the
+    table and, for an account, share the ``organization_id``; only
+    ``published_by_version`` tells them apart.
+    """
+    org = (
+        AgentTextUnit.organization_id.is_(None)
+        if organization_id is None
+        else AgentTextUnit.organization_id == organization_id
+    )
+    return and_(org, AgentTextUnit.published_by_version.is_(None))
+
+
+def _embedded_layer(organization_id: UUID) -> ColumnElement[bool]:
+    """Predicate for one account's runner-published embedded rows."""
+    return and_(
+        AgentTextUnit.organization_id == organization_id,
+        AgentTextUnit.published_by_version.is_not(None),
+    )
+
+
+def _rfc3339(moment: datetime) -> str:
+    """The wire convention the schemas module documents for timestamps."""
+    return moment.astimezone(UTC).isoformat(timespec="seconds").replace("+00:00", "Z")
+
+
+def _parse_version(text: str, *, reason: str) -> Version:
+    """``packaging.version.Version`` or a typed refusal — never a string compare."""
+    try:
+        return Version(text)
+    except InvalidVersion as exc:
+        raise AgentTextUnitDefaultsRejected(
+            reason, f"Not a parseable version: {text!r}"
+        ) from exc
+
+
+def _parse_published_at(text: str, unit_label: str) -> datetime:
+    try:
+        moment = datetime.fromisoformat(text.replace("Z", "+00:00"))
+    except ValueError as exc:
+        raise AgentTextUnitDefaultsRejected(
+            "invalid_published_at",
+            f"published_at is not an RFC 3339 timestamp: {text!r}",
+            unit_label,
+        ) from exc
+    if moment.tzinfo is None:
+        raise AgentTextUnitDefaultsRejected(
+            "invalid_published_at",
+            f"published_at must carry a UTC offset: {text!r}",
+            unit_label,
+        )
+    return moment
+
+
+def _embedded_to_default(unit: AgentTextUnit) -> AgentTextUnitDefault:
+    """Project one stored embedded row back onto the generated wire type."""
+    files = dict(unit.files or {})
+    assert unit.published_by_version is not None and unit.published_at is not None
+    return AgentTextUnitDefault(
+        kind=AgentTextUnitKind(unit.kind),
+        name=unit.name,
+        files=files,
+        # The stored column is the same canonical digest; recompute only when a
+        # row somehow lacks one, so the wire never carries a NULL checksum.
+        checksum=unit.checksum or compute_files_checksum(files),
+        published_by_version=unit.published_by_version,
+        published_at=_rfc3339(unit.published_at),
+    )
 
 
 def _unit_to_response(unit: AgentTextUnit) -> AgentTextUnitResponse:
@@ -713,7 +907,7 @@ def _unit_to_response(unit: AgentTextUnit) -> AgentTextUnitResponse:
         is_shared=unit.is_shared if unit.is_shared is not None else False,
         is_invocable=unit.is_invocable if unit.is_invocable is not None else True,
         current_version=unit.current_version or 1,
-        source="user" if unit.organization_id is not None else "fleet",
+        source=_layer_source(unit),
         source_path=unit.source_path,
         source_commit=unit.source_commit,
         created_at=unit.created_at,
@@ -741,7 +935,7 @@ def _unit_to_metadata(unit: AgentTextUnit) -> AgentTextUnitMetadata:
         is_shared=unit.is_shared if unit.is_shared is not None else False,
         is_invocable=unit.is_invocable if unit.is_invocable is not None else True,
         current_version=unit.current_version or 1,
-        source="user" if unit.organization_id is not None else "fleet",
+        source=_layer_source(unit),
         source_path=unit.source_path,
         source_commit=unit.source_commit,
         created_at=unit.created_at,
@@ -796,6 +990,14 @@ class AgentTextUnitService:
         Every filter is applied to each arm of the union before it is combined,
         not to the combined subquery: an ``EXISTS``-shadowed fleet row must be
         filtered by the same predicate as the override that shadows it.
+
+        **The embedded layer is never part of either projection**, and that is
+        a property, not an omission. The runner reads the resolved view on the
+        spawn critical path and provisions whatever it returns; the published
+        default is the runner's OWN embedded copy, and folding it in would put
+        the network back on the out-of-the-box path the plan's Risk 5 declares
+        non-negotiable (and pay the ~323 KB roster on every fetch). It is a
+        display baseline, served by ``get_defaults``.
         """
 
         def narrow(
@@ -810,14 +1012,10 @@ class AgentTextUnitService:
             return query
 
         if organization_id is None:
-            query = narrow(
-                select(AgentTextUnit).where(AgentTextUnit.organization_id.is_(None))
-            )
+            query = narrow(select(AgentTextUnit).where(_stored_layer(None)))
             entity: type[AgentTextUnit] = AgentTextUnit
         else:
-            account_q = select(AgentTextUnit).where(
-                AgentTextUnit.organization_id == organization_id
-            )
+            account_q = select(AgentTextUnit).where(_stored_layer(organization_id))
             if not include_fleet_defaults:
                 query = narrow(account_q)
                 entity = AgentTextUnit
@@ -827,13 +1025,16 @@ class AgentTextUnitService:
                     select(override.id)
                     .where(
                         override.organization_id == organization_id,
+                        # A published default of the same name does NOT shadow
+                        # a fleet default — only a real override does.
+                        override.published_by_version.is_(None),
                         override.kind == AgentTextUnit.kind,
                         override.name == AgentTextUnit.name,
                     )
                     .exists()
                 )
                 fleet_q = select(AgentTextUnit).where(
-                    AgentTextUnit.organization_id.is_(None),
+                    _stored_layer(None),
                     ~shadowed,
                 )
                 combined = narrow(account_q).union_all(narrow(fleet_q)).subquery()
@@ -964,10 +1165,19 @@ class AgentTextUnitService:
         name: str,
         include_fleet_defaults: bool = True,
     ) -> AgentTextUnitResponse:
-        """Get one unit, resolving ``account override → fleet default``."""
+        """Get one unit, resolving ``account override → fleet default →
+        embedded default``.
+
+        The embedded rung is the one place outside ``get_defaults`` that serves
+        a published default, and the response says so (``source="embedded"``).
+        It is a single-unit DISPLAY read; the list projections deliberately do
+        not fall through the same way — see ``_resolved_query``.
+        """
         unit = await self._load_unit(db, organization_id, kind, name)
         if unit is None and include_fleet_defaults and organization_id is not None:
             unit = await self._load_unit(db, None, kind, name)
+        if unit is None and include_fleet_defaults and organization_id is not None:
+            unit = await self._load_embedded(db, organization_id, kind, name)
         if not unit:
             raise ValueError(f"Agent text unit not found: {kind}/{name}")
         return _unit_to_response(unit)
@@ -1231,8 +1441,9 @@ class AgentTextUnitService:
         """Delete this layer's row so the next layer down applies again.
 
         For an account that means the fleet default — or, absent one, the
-        runner's embedded default. There is no row for an embedded default, so
-        this can never delete one. The version chain goes with it via the FK's
+        runner's embedded default. ``_load_unit`` addresses stored layers only,
+        so this can never delete a published default: the baseline survives the
+        reset it previews. The version chain goes with the row via the FK's
         ``ON DELETE CASCADE``.
         """
         unit = await self._load_unit(db, organization_id, kind, name)
@@ -1483,24 +1694,239 @@ class AgentTextUnitService:
         kind: str,
         name: str,
     ) -> AgentTextUnit | None:
-        """Load one unit from EXACTLY the layer named.
+        """Load one unit from EXACTLY the stored layer named.
 
         Never falls back: a caller that is about to revert or delete must act
-        on the account's own row, not on a fleet default it merely reads.
+        on the account's own row, not on a fleet default it merely reads — and
+        never on the published default of the same name, which
+        ``_stored_layer`` excludes.
         """
-        layer = (
-            AgentTextUnit.organization_id.is_(None)
-            if organization_id is None
-            else AgentTextUnit.organization_id == organization_id
-        )
         result = await db.execute(
             select(AgentTextUnit).where(
-                layer,
+                _stored_layer(organization_id),
                 AgentTextUnit.kind == kind,
                 AgentTextUnit.name == name,
             )
         )
         return result.scalar_one_or_none()
+
+    async def _load_embedded(
+        self,
+        db: AsyncSession,
+        organization_id: UUID,
+        kind: str,
+        name: str,
+    ) -> AgentTextUnit | None:
+        """Load one account's published default for ``(kind, name)``."""
+        result = await db.execute(
+            select(AgentTextUnit).where(
+                _embedded_layer(organization_id),
+                AgentTextUnit.kind == kind,
+                AgentTextUnit.name == name,
+            )
+        )
+        return result.scalar_one_or_none()
+
+    async def _embedded_rows(
+        self, db: AsyncSession, organization_id: UUID
+    ) -> list[AgentTextUnit]:
+        """Every published default one account holds, in ``(kind, name)`` order."""
+        result = await db.execute(
+            select(AgentTextUnit)
+            .where(_embedded_layer(organization_id))
+            .order_by(AgentTextUnit.kind.asc(), AgentTextUnit.name.asc())
+        )
+        return list(result.scalars().all())
+
+    # -------------------------------------------------------------------
+    # The embedded layer (Phase 4 of
+    # `2026-08-31-runner-publishes-embedded-command-defaults`)
+    # -------------------------------------------------------------------
+
+    async def get_defaults(
+        self, db: AsyncSession, organization_id: UUID
+    ) -> AgentTextUnitDefaultsResponse:
+        """The account's baseline — every default its runner(s) published.
+
+        Empty with ``published_by_version: None`` when nothing was ever
+        published. That is a real state (a web-only account, no publishing
+        build, no token), and the frontend renders it as "unavailable" rather
+        than as an empty default; this method never fabricates a row.
+        """
+        rows = await self._embedded_rows(db, organization_id)
+        if not rows:
+            return AgentTextUnitDefaultsResponse(units=[])
+        units = [_embedded_to_default(row) for row in rows]
+        newest = max(units, key=lambda u: Version(u.published_by_version))
+        latest_at = max(
+            row.published_at for row in rows if row.published_at is not None
+        )
+        return AgentTextUnitDefaultsResponse(
+            units=units,
+            published_by_version=newest.published_by_version,
+            published_at=_rfc3339(latest_at),
+        )
+
+    async def publish_defaults(
+        self,
+        db: AsyncSession,
+        organization_id: UUID,
+        runner_version: str,
+        units: Sequence[AgentTextUnitDefault],
+    ) -> AgentTextUnitDefaultsPublishResponse:
+        """Replace the account's embedded layer with ONE runner build's roster.
+
+        Semantics, each traceable to a design decision of the plan:
+
+        * **Per-org, never fleet-wide** (decision 2). ``organization_id`` is
+          the caller's resolved org; nothing here can write the
+          ``organization_id IS NULL`` layer.
+        * **Full-set replace** (decision 3). ``units`` is the whole roster; a
+          ``(kind, name)`` the account holds that is absent from it is deleted.
+          A default row that outlives its bundle entry is exactly the stale
+          baseline the plan exists to remove.
+        * **Server-side checksum** (decision 8). Every unit's ``checksum`` is
+          recomputed with the canonical files-map digest and a mismatch is
+          refused as ``checksum_mismatch``. A client-asserted digest is not
+          evidence, and a default digested with the wrong function would never
+          compare equal to its override — an always-drifted baseline, worse
+          than no baseline.
+        * **Monotonic guard, compared as VERSIONS** (decision 4). A publish
+          older than the stored ``published_by_version`` answers a normal
+          ``accepted: false`` / ``older_than_stored``; an old device is not a
+          fault. ``packaging.version.Version`` on both sides — ``"0.10.0"`` is
+          older than ``"0.9.0"`` as strings, which would invert the guard
+          exactly when it matters, silently. **Equal versions: last writer
+          wins.** The guard is a mitigation, not a fix: a genuine downgrade
+          still wins and the tie-break is last-writer, and the UI must not
+          describe the baseline as authoritative.
+
+        Every unit is validated with the SAME rules an override must satisfy
+        (name, kind, paths, the 1 MiB per-file cap, the entrypoint) — a
+        baseline that could not be stored as a unit is not one anything can be
+        diffed against. Malformed input raises ``AgentTextUnitDefaultsRejected``
+        before anything is written; the whole replace is one transaction.
+
+        Embedded rows carry NO version chain: a published default is content
+        plus provenance, not a corpus row with an edit history (the shared
+        type's own docs). ``current_version`` stays at its default.
+        """
+        incoming = _parse_version(runner_version, reason="invalid_runner_version")
+        if len(units) > MAX_PUBLISH_UNITS:
+            raise AgentTextUnitDefaultsRejected(
+                "too_many_units",
+                f"Roster carries {len(units)} units (> {MAX_PUBLISH_UNITS})",
+            )
+
+        # ---- validate the whole roster before writing any of it -------------
+        seen: set[tuple[str, str]] = set()
+        parsed: list[tuple[AgentTextUnitDefault, str, dict[str, str], datetime]] = []
+        total_bytes = 0
+        for unit in units:
+            kind = unit.kind.root
+            label = f"{kind}/{unit.name}"
+            try:
+                validate_kind(kind)
+                validate_unit_name(unit.name)
+                validate_files(kind, unit.name, unit.files)
+            except AgentTextUnitValidationError as exc:
+                raise AgentTextUnitDefaultsRejected(
+                    "invalid_unit", str(exc), label
+                ) from exc
+            if (kind, unit.name) in seen:
+                raise AgentTextUnitDefaultsRejected(
+                    "duplicate_unit", f"Duplicate unit in the roster: {label}", label
+                )
+            seen.add((kind, unit.name))
+            if unit.published_by_version != runner_version:
+                raise AgentTextUnitDefaultsRejected(
+                    "version_mismatch",
+                    f"{label} says published_by_version="
+                    f"{unit.published_by_version!r} but the roster is "
+                    f"runner_version={runner_version!r}; one roster, one build",
+                    label,
+                )
+            files = dict(unit.files)
+            checksum = compute_files_checksum(files)
+            if unit.checksum != checksum:
+                raise AgentTextUnitDefaultsRejected(
+                    "checksum_mismatch",
+                    f"{label} carries checksum {unit.checksum!r} but its files "
+                    f"digest to {checksum!r} under agent-text-unit-files/v1",
+                    label,
+                )
+            published_at = _parse_published_at(unit.published_at, label)
+            total_bytes += sum(len(v.encode("utf-8")) for v in files.values())
+            parsed.append((unit, checksum, files, published_at))
+
+        if total_bytes > MAX_PUBLISH_BYTES:
+            raise AgentTextUnitDefaultsRejected(
+                "payload_too_large",
+                f"Roster totals {total_bytes} bytes (> {MAX_PUBLISH_BYTES})",
+            )
+
+        # ---- the monotonic guard, against what the account already holds ----
+        existing = await self._embedded_rows(db, organization_id)
+        stored_versions = [
+            Version(row.published_by_version)
+            for row in existing
+            if row.published_by_version is not None
+        ]
+        if stored_versions:
+            stored = max(stored_versions)
+            if incoming < stored:
+                return AgentTextUnitDefaultsPublishResponse(
+                    accepted=False,
+                    rejected_reason="older_than_stored",
+                    stored_version=str(stored),
+                    count=0,
+                )
+            # incoming >= stored. Equal: LAST WRITER WINS — two devices on the
+            # same build carry the same bodies, and when they do not (a dirty
+            # local build) there is no principled tie-break, so the newest
+            # publish stands and the response says which version that is.
+
+        # ---- full-set replace ------------------------------------------------
+        by_key = {(row.kind, row.name): row for row in existing}
+        roster_keys = {(unit.kind.root, unit.name) for unit, _, _, _ in parsed}
+        for key, row in by_key.items():
+            if key not in roster_keys:
+                await db.delete(row)
+
+        for unit, checksum, files, published_at in parsed:
+            kind = unit.kind.root
+            current = by_key.get((kind, unit.name))
+            # The corpus's own rule: an underscore-prefixed unit is a copy-source
+            # spec and the DB CHECK refuses to mark it invocable.
+            is_invocable = not unit.name.startswith("_")
+            if current is None:
+                db.add(
+                    AgentTextUnit(
+                        organization_id=organization_id,
+                        kind=kind,
+                        name=unit.name,
+                        files=files,
+                        checksum=checksum,
+                        is_invocable=is_invocable,
+                        published_by_version=runner_version,
+                        published_at=published_at,
+                    )
+                )
+                continue
+            current.files = files
+            current.checksum = checksum
+            current.is_invocable = is_invocable
+            current.published_by_version = runner_version
+            current.published_at = published_at
+            current.updated_at = datetime.now(UTC)
+
+        await db.commit()
+        return AgentTextUnitDefaultsPublishResponse(
+            accepted=True,
+            rejected_reason=None,
+            stored_version=runner_version,
+            count=len(parsed),
+        )
 
     async def _next_version_number(
         self,
@@ -1553,9 +1979,16 @@ __all__ = [
     "MAX_FILE_BYTES",
     "MAX_PATH_BYTES",
     "MAX_PATH_SEGMENTS",
+    "MAX_PUBLISH_BYTES",
+    "MAX_PUBLISH_UNITS",
     "MAX_SOURCE_PATH_BYTES",
     "MAX_UNIT_BYTES",
     "AgentTextUnitCreate",
+    "AgentTextUnitDefault",
+    "AgentTextUnitDefaultsPublishRequest",
+    "AgentTextUnitDefaultsPublishResponse",
+    "AgentTextUnitDefaultsRejected",
+    "AgentTextUnitDefaultsResponse",
     "AgentTextUnitImportItem",
     "AgentTextUnitImportReport",
     "AgentTextUnitImportResult",

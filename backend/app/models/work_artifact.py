@@ -38,7 +38,7 @@ from app.db.base import Base
 #: to key on the exact same expression the index enforces.
 NIL_ORGANIZATION_ID = UUID("00000000-0000-0000-0000-000000000000")
 
-#: The six artifact families the library tracks. Enforced in Postgres by
+#: The seven artifact families the library tracks. Enforced in Postgres by
 #: ``ck_work_artifacts_kind``; mirrored here so the API can 422 a bad kind
 #: instead of letting it become an IntegrityError 500.
 WORK_ARTIFACT_KINDS: tuple[str, ...] = (
@@ -48,6 +48,12 @@ WORK_ARTIFACT_KINDS: tuple[str, ...] = (
     "investigation_report",
     "handoff",
     "plan",
+    #: An operator question answered by live MEASUREMENT — typically "the
+    #: obvious action is inert, and here is the mechanism". Distinct from
+    #: ``investigation_report`` (``/chart``'s gap verdicts) so the two families
+    #: stay separable on the one structured filter the API offers. Added by
+    #: ``plan_library_04_diagnostic_refutes``.
+    "diagnostic",
 )
 
 #: How the row got here. Enforced by ``ck_work_artifacts_captured_by``.
@@ -65,6 +71,11 @@ WORK_ARTIFACT_RELATIONS: tuple[str, ...] = (
     "supersedes",
     "depends_on",
     "spawned_followup",
+    #: A measurement that FALSIFIES the target claim. Two-ended — the refuted
+    #: artifact must exist — and deliberately not ``supersedes``, which means
+    #: "a newer version of the same thing". Added by
+    #: ``plan_library_04_diagnostic_refutes``.
+    "refutes",
 )
 
 #: The relation for work a plan SURFACED but deliberately did not do —
@@ -121,12 +132,17 @@ SEARCH_TSVECTOR_SQL = (
 
 _IDENTITY_ORG_EXPR = f"coalesce(organization_id, '{NIL_ORGANIZATION_ID}'::uuid)"
 
-#: Statuses that mean "this artifact is done" — normalized (uppercased, every
-#: run of non-alphanumerics collapsed to ``_``, edges trimmed). ``status`` is
-#: OPAQUE free-form text by design, so this is a *reading* of it, not a
-#: vocabulary: nothing rejects an unlisted status, it simply counts as
-#: not-yet-shipped. Used by the candidate read (which lists UNSHIPPED plans)
-#: and by ``unmet_depends_on`` (a dependency in one of these states is met).
+#: Statuses that mean "this artifact is done" — compared against the FIRST
+#: token of the normalized status (uppercased, every run of non-alphanumerics
+#: collapsed to ``_``, edges trimmed, then the leading ``_``-separated word:
+#: ``crud.work_artifact.terminal_token``). The fleet stamps plans
+#: ``SHIPPED 2026-09-02`` and the scanner stores that opaquely, so the
+#: leading word is the state and the rest is provenance. ``status`` is OPAQUE
+#: free-form text by design, so this is a *reading* of it, not a vocabulary:
+#: nothing rejects an unlisted status, it simply counts as not-yet-shipped
+#: (``IN PROGRESS`` → ``IN``, ``NOT STARTED`` → ``NOT``, neither listed).
+#: Used by the candidate read (which lists UNSHIPPED plans) and by
+#: ``unmet_depends_on`` (a dependency in one of these states is met).
 TERMINAL_STATUSES: frozenset[str] = frozenset(
     {
         "SHIPPED",
@@ -184,6 +200,7 @@ class WorkArtifact(Base):
         Index("ix_work_artifacts_work_unit_slug", "work_unit_slug"),
         Index("ix_work_artifacts_kind_slug", "kind", "slug"),
         Index("ix_work_artifacts_repos", "repos", postgresql_using="gin"),
+        Index("ix_work_artifacts_intent_refs", "intent_refs", postgresql_using="gin"),
         # The body is SEARCH_TSVECTOR_SQL itself, never a copy of it — a
         # second spelling here is exactly the drift the constant exists to
         # prevent, and it stayed invisible for as long as it existed because
@@ -267,6 +284,20 @@ class WorkArtifact(Base):
     work_unit_slug: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     repos: Mapped[list[str]] = mapped_column(
+        ARRAY(Text),
+        nullable=False,
+        server_default=text("'{}'"),
+        default=list,
+    )
+
+    # Citations to the served coord Intent this artifact bears on
+    # (``success_metric/<name>``, ``domain_spec/<name>``). A column rather than
+    # an edge because those documents live in coord's deployment, not in
+    # ``agent.*``; FK-less for the same reason ``work_unit_slug`` is, and it
+    # MAY DANGLE. ``TEXT[]`` not JSONB: the query it serves is containment
+    # (``@>``), which ``ix_work_artifacts_intent_refs`` answers directly. See
+    # ``plan_library_04_diagnostic_refutes``.
+    intent_refs: Mapped[list[str]] = mapped_column(
         ARRAY(Text),
         nullable=False,
         server_default=text("'{}'"),

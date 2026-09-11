@@ -20,6 +20,7 @@
 import { useMemo, useState } from "react";
 import { Loader2, RefreshCw } from "lucide-react";
 import { useAuth } from "@/contexts/auth-context";
+import { BaselineDiff } from "./BaselineDiff";
 import { UnitEditor } from "./UnitEditor";
 import { UnitList } from "./UnitList";
 import { VersionHistory } from "./VersionHistory";
@@ -33,6 +34,7 @@ import {
   type UnitFilterId,
 } from "../_lib/unitRows";
 import {
+  LAYER_LABEL,
   UNIT_KIND_CONFIGS,
   validateUnitName,
   type UnitKind,
@@ -63,6 +65,8 @@ export function AgentTextUnitsConsole({ kind }: { kind: UnitKind }) {
     loadError,
     truncated,
     retryLoad,
+    baseline,
+    baselineError,
     selected,
     selectUnit,
     clearSelection,
@@ -78,6 +82,7 @@ export function AgentTextUnitsConsole({ kind }: { kind: UnitKind }) {
     renameFile,
     deleteFile,
     seedFromOtherLayer,
+    seedFromBaseline,
     changeDescription,
     setChangeDescription,
     isDirty,
@@ -307,6 +312,11 @@ export function AgentTextUnitsConsole({ kind }: { kind: UnitKind }) {
             onRenameFile={renameFile}
             onDeleteFile={deleteFile}
             onSeedFromOtherLayer={seedFromOtherLayer}
+            onSeedFromBaseline={
+              selected.embedded && !(editLayer === "fleet" && !canWriteFleet)
+                ? seedFromBaseline
+                : null
+            }
             changeDescription={changeDescription}
             onChangeDescriptionChange={setChangeDescription}
             isDirty={isDirty}
@@ -329,6 +339,19 @@ export function AgentTextUnitsConsole({ kind }: { kind: UnitKind }) {
               reverting={busyAction === "revert"}
               readOnly={editLayer === "fleet" && !canWriteFleet}
               onRevert={(versionNumber) => void revertToVersion(versionNumber)}
+            />
+          )}
+
+          {editing && (
+            <BaselineDiff
+              unitName={selected.name}
+              singular={config.singular}
+              baseline={selected.embedded}
+              rosterVersion={baseline?.published_by_version ?? null}
+              baselineError={baselineError}
+              currentLabel={`${LAYER_LABEL[editLayer].toLowerCase()} v${editing.current_version}`}
+              currentFiles={editing.files}
+              currentChecksum={editing.checksum}
             />
           )}
         </>

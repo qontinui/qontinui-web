@@ -61,7 +61,11 @@ MARKER_WORKFLOWS = [
     "backend-ci.yml",
     "backend-coverage-producer.yml",
     "cross-browser-survey.yml",
-    "e2e-tests.yml",
+    # The Playwright stack that e2e-tests.yml's `frontend-tests` shards and its
+    # `frontend-e2e-changed-specs` PR lane both call. The marker moved here
+    # with the job (plan 2026-09-05-web-e2e-fixed-sleeps-red-main-one-test-
+    # at-a-time, Phase 2.5); e2e-tests.yml itself now carries none.
+    "e2e-playwright-stack.yml",
     "migration-reversal.yml",
     "spec-ci.yml",
     "style-gate.yml",
@@ -189,17 +193,61 @@ def _assert_job_stamps_its_start_first(workflow: str, job_id: str, job: dict) ->
     )
 
 
+def _triggers(doc: dict) -> dict:
+    """The `on:` block. PyYAML (YAML 1.1) parses the bare key `on` as True."""
+    triggers = doc.get("on", doc.get(True))
+    return triggers if isinstance(triggers, dict) else {}
+
+
+def _callers(workflow: str) -> list[tuple[str, dict]]:
+    """Every (caller workflow, caller job) that `uses:` this local workflow.
+
+    A `workflow_call` workflow is a job body without a trigger of its own;
+    the concurrency (and the event) that govern it are the CALLER's. Same
+    `*.y*ml` glob as the carrier census, for the same reason.
+    """
+    target = f"./.github/workflows/{workflow}"
+    found = []
+    for path in sorted(WORKFLOWS.glob("*.y*ml")):
+        if path.name == workflow:
+            continue
+        doc = yaml.safe_load(path.read_text(encoding="utf-8"))
+        for job in (doc.get("jobs") or {}).values():
+            if isinstance(job, dict) and str(job.get("uses", "")) == target:
+                found.append((path.name, job))
+    return found
+
+
 def _cancel_in_progress(workflow: str, job: dict):
     """Resolve the `cancel-in-progress` that actually governs this job.
 
     A job-level `concurrency:` block overrides the workflow-level one. Returns
     the bool, or None when no block applies -- and the string itself when it is
     an unevaluated `${{ }}` expression, which is neither.
+
+    A `workflow_call` workflow with no block of its own runs under its
+    CALLER's concurrency, so the value is resolved through the callers (the
+    caller job's block, else the caller workflow's). Callers that disagree
+    are reported as a synthetic expression: no static prose can be true of
+    every run then, exactly as for a `${{ }}` value, so the note must claim
+    neither. A called workflow that nobody calls resolves like any other
+    workflow with no block.
     """
     doc = yaml.safe_load((WORKFLOWS / workflow).read_text(encoding="utf-8"))
     conc = job.get("concurrency")
     if conc is None:
         conc = doc.get("concurrency")
+    if conc is None and "workflow_call" in _triggers(doc):
+        seen = []
+        for caller_name, caller_job in _callers(workflow):
+            value = _cancel_in_progress(caller_name, caller_job)
+            if value not in seen:
+                seen.append(value)
+        if len(seen) == 1:
+            return seen[0]
+        if len(seen) > 1:
+            return f"<callers disagree: {seen!r}>"
+        return None
     if not isinstance(conc, dict):
         return None
     return conc.get("cancel-in-progress")
@@ -1101,3 +1149,91 @@ def test_the_budget_arms_cite_the_budget_plan_not_the_apt_plan(tmp_path):
     )
     assert "2026-08-27-web-backend-coverage-producer-timeout" in out
     assert "2026-08-19-ci-apt-hang" not in out
+
+
+# ---------------------------------------------------------------------------
+# The guard's own trigger — a path-scoped gate does not guard a file it never
+# runs on.
+# ---------------------------------------------------------------------------
+
+BACKEND_CI = WORKFLOWS / "backend-ci.yml"
+
+
+def _backend_ci_paths(workflow: dict, trigger: str) -> list[str]:
+    """The ``paths:`` filter of one backend-ci trigger, failing closed.
+
+    Mirrors ``tests/test_coord_down_envelope_contract.py::_ci_paths``, which
+    closes the identical hole for the files THAT guard reads. Duplicated rather
+    than imported: a test module importing a helper out of a sibling test
+    module couples two guards' lifetimes for four lines.
+    """
+    # PyYAML (YAML 1.1) parses the bare key `on` as the boolean True.
+    triggers = workflow.get("on", workflow.get(True))
+    assert isinstance(triggers, dict), (
+        f"Could not read the `on:` block of {BACKEND_CI}. This guard cannot "
+        "verify its own trigger, so it fails rather than passing vacuously."
+    )
+    block = triggers.get(trigger)
+    assert isinstance(block, dict), (
+        f"backend-ci.yml has no `on.{trigger}` mapping. If the trigger was "
+        "restructured, retarget this guard — do not delete it."
+    )
+    paths = block.get("paths")
+    assert isinstance(paths, list) and paths, (
+        f"`on.{trigger}.paths` is missing or empty in {BACKEND_CI}. An "
+        "unfiltered trigger would actually be safe here, but it is far more "
+        "likely the filter moved; assert loudly instead of guessing."
+    )
+    return [str(entry) for entry in paths]
+
+
+def test_backend_ci_triggers_on_every_workflow_this_module_reads():
+    """Every marker workflow must be able to run the guard that asserts on it.
+
+    This module reads the workflow FILES and asserts things about them, so it
+    is only a gate on the changes that trigger it. For most of this module's
+    life only `backend-ci.yml` was in backend-ci's `paths:` filter, which meant
+    an edit to any of the other seven markers ran no Backend CI at all.
+
+    That is the hole `62ffe43ee` fell through. It changed `e2e-tests.yml`'s
+    `cancel-in-progress` to an expression and left four prose copies of the old
+    fixed value behind; its own PR triggered no Backend CI, so
+    `test_every_external_cancel_note_matches_its_workflow_concurrency` first
+    failed AFTER the merge — on `main`, and on every unrelated PR opened behind
+    it, where it reads as someone else's diff being broken.
+
+    Both triggers are checked: a filter added to one and forgotten on the other
+    is exactly the asymmetry that makes a gate look armed while half of it is
+    not.
+    """
+    if not BACKEND_CI.is_file():
+        pytest.fail(
+            f"Workflow not found: {BACKEND_CI}. This guard asserts on workflow "
+            "files and can only fire if backend-ci is triggered by them; a "
+            "missing workflow fails rather than passes."
+        )
+    workflow = yaml.safe_load(BACKEND_CI.read_text(encoding="utf-8"))
+    assert isinstance(workflow, dict), f"{BACKEND_CI} did not parse as a mapping."
+
+    # A `workflow_call` carrier's cancel note is checked against the
+    # concurrency of the workflows that CALL it (`_cancel_in_progress`), so
+    # an edit to a caller can drift the note just as an edit to the carrier
+    # can; the callers are read by this module and belong in the filter too.
+    read_by_this_module = list(MARKER_WORKFLOWS + TRIPWIRE_WORKFLOWS)
+    for name in MARKER_WORKFLOWS:
+        for caller_name, _ in _callers(name):
+            if caller_name not in read_by_this_module:
+                read_by_this_module.append(caller_name)
+
+    for trigger in ("pull_request", "push"):
+        filters = _backend_ci_paths(workflow, trigger)
+        for name in read_by_this_module:
+            relative = f".github/workflows/{name}"
+            assert relative in filters, (
+                f"`{relative}` is asserted on by this module but is not in "
+                f"backend-ci.yml's `on.{trigger}.paths`. A commit touching only "
+                "that workflow would not run this guard, so a budget or a "
+                "cancel note could drift out of agreement with its own job and "
+                "reach `main` unchallenged. Add it to BOTH the pull_request "
+                "and push filters."
+            )

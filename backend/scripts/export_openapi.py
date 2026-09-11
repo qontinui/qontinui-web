@@ -39,6 +39,44 @@ The two variants need separate *processes* (the app is built at import time;
 one process cannot re-import it with different env), so CI runs the script
 twice.
 
+.. warning::
+
+   **Regenerating WITHOUT ``qontinui-cloud-control`` installed silently DELETES
+   every extension route from the extended snapshot, and the diff looks like
+   ordinary churn rather than a failure.**
+
+   ``qontinui-cloud-control`` is a path dependency that is **NOT in
+   ``poetry.lock``** — CI clones the sibling and ``pip install -e``s it in a
+   separate step (``.github/workflows/backend-ci.yml``, "Install
+   qontinui-cloud-control into poetry venv"). So a ``poetry install`` alone, or
+   any hand-built venv seeded from ``poetry.lock``, produces an app WITHOUT the
+   extension routes. This script then happily writes that reduced surface to
+   ``openapi-schema.json`` — the *extended* path — and the result is a large,
+   plausible-looking, entirely wrong diff.
+
+   Measured 2026-09-03: the extended snapshot went 802 paths -> 774 (the same
+   count as ``--base``), as a 713-insertion / 2473-deletion diff that removed
+   every cloud route. Nothing failed; the drift check is a ``git diff``, and a
+   confidently-wrong snapshot passes it just as well as a correct one. The
+   damage surfaces later, in coord's Ξ_RouteServing observer, which reads these
+   files as the declared-route source of truth.
+
+   **The tell, and the check to run before committing:** the extended snapshot
+   must have MORE paths than the base one. If they are equal, cloud-control was
+   missing.
+
+   .. code-block:: bash
+
+      python -c "import json;e=json.load(open('frontend/src/lib/api-client/openapi-schema.json'));b=json.load(open('frontend/src/lib/api-client/openapi-schema.base.json'));print(len(e['paths']),len(b['paths']));assert len(e['paths'])>len(b['paths']),'cloud-control was NOT installed - the extended snapshot is missing its extension routes'"
+
+   To regenerate correctly outside CI, install the sibling first::
+
+      pip install -e ../../qontinui-cloud-control
+
+   A purely additive change to these files (N insertions, 0 deletions) is the
+   normal shape when you are only ADDING a route. Deletions you did not intend
+   are the signature of this trap.
+
 Usage::
 
     python backend/scripts/export_openapi.py          # extended (env-dependent)

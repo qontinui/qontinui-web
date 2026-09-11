@@ -490,11 +490,18 @@ async def test_relay_404_device_not_owned_is_logged(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_relay_not_connected_503_survives_last_seen_lookup_failure(monkeypatch):
+async def test_relay_not_connected_503_survives_liveness_lookup_failure(monkeypatch):
     """A coord fault while decorating the 503 must not change the status.
 
     The 503 is already the right answer; the timestamps are a nicety, so a
-    failed full-row read yields both clocks ``null``, never a 502/504.
+    failed full-row read still returns 503, never a 502/504.
+
+    It must also not report the clocks as ``null``. ``null`` is already
+    spoken for on this body — it means the column is NULL, i.e. the runner
+    has NEVER registered — and a lookup that failed has established no such
+    thing. The keys are therefore OMITTED, which is the wire spelling of
+    "unknown". Both are falsy, so this is precisely the distinction a
+    consumer loses if the two are allowed to collapse.
     """
     from fastapi import HTTPException
 
@@ -513,8 +520,88 @@ async def test_relay_not_connected_503_survives_last_seen_lookup_failure(monkeyp
     body = _body(response)
     assert body["detail"] == "runner not connected"
     assert body["device_id"] == DEVICE_ID
-    assert body["ws_connected_at"] is None
-    assert body["last_seen_at"] is None
+    # Absent, NOT null — see the docstring.
+    assert "ws_connected_at" not in body
+    assert "last_seen_at" not in body
+    # The request id is still there: it is what joins this response to the
+    # ``runner_proxy_relay_liveness_lookup_failed`` line naming the fault.
+    assert body["request_id"]
+
+
+@pytest.mark.asyncio
+async def test_relay_503_absent_and_null_clocks_are_different_answers(monkeypatch):
+    """The two unknown-looking cases must be distinguishable on the wire.
+
+    A successful read of a row whose ``ws_connected_at`` is NULL is a real
+    fact — never registered — and is sent as ``null``. A read that failed
+    knows nothing and omits the key. This test holds both shapes side by side
+    so a future change cannot quietly make them identical again.
+    """
+    from fastapi import HTTPException
+
+    _install_manager(monkeypatch, dispatch=AsyncMock())
+    _install_device_lookup(monkeypatch, {"device_id": DEVICE_ID, "ws_session_id": None})
+    request = _FakeRequest(headers={"X-Qontinui-Device-Id": DEVICE_ID})
+
+    # Read succeeded, column is NULL -> an assertion of "never registered".
+    _install_owned_device(
+        monkeypatch, {"device_id": DEVICE_ID, "ws_connected_at": None}
+    )
+    known = _body(
+        await device_bridge_ws.runner_proxy(
+            request, "usage", user=SimpleNamespace(id=USER_ID)
+        )
+    )
+
+    # Read failed -> no assertion at all.
+    _install_owned_device(
+        monkeypatch, None, raises=HTTPException(status_code=502, detail="down")
+    )
+    unknown = _body(
+        await device_bridge_ws.runner_proxy(
+            request, "usage", user=SimpleNamespace(id=USER_ID)
+        )
+    )
+
+    assert "ws_connected_at" in known and known["ws_connected_at"] is None
+    assert "ws_connected_at" not in unknown
+
+
+@pytest.mark.asyncio
+async def test_relay_503_log_line_matches_the_body_about_what_was_known(monkeypatch):
+    """The log surface must not re-introduce the ambiguity the body removed.
+
+    The log is what an operator greps. If the failed-lookup case logged
+    ``ws_connected_at=None``, a query for this event with a null clock would
+    return the never-registered population and the coord-outage population
+    together — exactly the collapse the body now avoids. ``liveness_known``
+    is present either way so a row says which population it is in.
+    """
+    from fastapi import HTTPException
+
+    _install_device_lookup(monkeypatch, {"device_id": DEVICE_ID, "ws_session_id": None})
+    _install_owned_device(
+        monkeypatch, None, raises=HTTPException(status_code=502, detail="down")
+    )
+    _install_manager(monkeypatch, dispatch=AsyncMock())
+    rec = _RecordingLogger()
+    monkeypatch.setattr(device_bridge_ws, "logger", rec, raising=True)
+
+    request = _FakeRequest(headers={"X-Qontinui-Device-Id": DEVICE_ID})
+    response = await device_bridge_ws.runner_proxy(
+        request, "usage", user=SimpleNamespace(id=USER_ID)
+    )
+
+    body = _body(response)
+    logged = rec.kw_for("runner_proxy_relay_not_connected")
+
+    assert logged["liveness_known"] is False
+    assert "ws_connected_at" not in logged
+    assert "last_seen_at" not in logged
+    # The two surfaces agree about what was known.
+    assert ("ws_connected_at" in logged) == ("ws_connected_at" in body)
+    # And the id still joins this line to the one naming the fault.
+    assert logged["request_id"] == body["request_id"]
 
 
 @pytest.mark.asyncio

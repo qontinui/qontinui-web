@@ -1029,6 +1029,51 @@ _FACET_AGE_DAYS_SQL = (
 )
 
 
+async def live_row_count(session: AsyncSession, tenant_id: UUID) -> int:
+    """Count ``tenant_id``'s RETRIEVAL-LIVE rows — the query denominator.
+
+    The same number :func:`facets` publishes as
+    ``MemoryContentFacets.live_row_count``, and deliberately the same
+    SQL predicate: both count on :data:`_RETRIEVAL_LIVE_PREDICATE`, so
+    ``POST /memory/query``'s denominator and ``GET /memory/stats``'
+    cannot drift into two different notions of "live". Liveness is
+    defined in exactly one place; this is a second CALLER of it, not a
+    second definition.
+
+    It exists as its own function rather than as a ``facets`` call
+    because ``/memory/query`` needs the denominator and nothing else:
+    the facets statement also computes two grouped tallies, four
+    percentiles and a title sample, all of which the query response
+    discards. One ``count(*)`` on the same indexes is the whole cost.
+
+    **Tenant-wide, and NOT narrowed by any request's filters.** It takes
+    no ``kinds``/``scopes``/``scope_ref``/``since``/``as_of``, because
+    :data:`_RETRIEVAL_LIVE_PREDICATE` takes none — a denominator that
+    moved with the caller's filters could itself read 0 for a mistyped
+    filter, which is precisely the ambiguity the field exists to remove.
+    As with every aggregate over this constant, the count is
+    retrieval-live MODULO ``scope_ref`` narrowing (see the constant's
+    own note), so it is an UPPER bound on what a narrow-scoped query
+    could have matched — which is the direction that keeps "the corpus
+    holds N rows and you matched none" true.
+    """
+    return int(
+        (
+            await session.execute(
+                text(
+                    f"""
+                    SELECT count(*)
+                    FROM coord.memory_records r
+                    WHERE r.tenant_id = :tenant_id
+                      AND {_RETRIEVAL_LIVE_PREDICATE}
+                    """
+                ),
+                {"tenant_id": tenant_id},
+            )
+        ).scalar_one()
+    )
+
+
 def _validity_filters(
     *,
     kinds: list[str] | None,
@@ -1036,14 +1081,23 @@ def _validity_filters(
     scope_ref: str | None,
     min_importance: float | None,
     since: datetime | None,
+    title_prefix: str | None = None,
 ) -> tuple[str, dict[str, Any]]:
-    """Shared WHERE fragment + params for both retrieval arms.
+    """Shared WHERE fragment + params for EVERY retrieval arm.
 
     Tenant binding, tombstone/validity filtering (against ``:as_of`` when
     the caller named an instant, otherwise transaction-consistently — see
     :data:`_EFFECTIVE_NOW_SQL`), the scope rule (``agent``/``session``
     rows require the matching ``scope_ref``), and the optional
-    kind/importance/recency filters.
+    kind/importance/recency/title-prefix filters.
+
+    ``title_prefix`` lives HERE, not beside the tsquery in the FTS arm,
+    so the vector, link-expansion and anchored arms apply it too: every
+    arm feeds the same RRF fuse, and a filter on one arm alone would let
+    a non-matching row arrive through another. It is a literal,
+    case-sensitive prefix — ``%``, ``_`` and the backslash in the value
+    are escaped before they reach ``LIKE`` (see :func:`_like_prefix`), so a
+    caller can never widen the match with a wildcard.
     """
     clauses = [
         "r.tenant_id = :tenant_id",
@@ -1063,7 +1117,34 @@ def _validity_filters(
     if since is not None:
         clauses.append("r.created_at >= :since")
         params["since"] = since
+    if title_prefix is not None:
+        clauses.append(f"r.title LIKE :title_prefix_like ESCAPE '{_LIKE_ESCAPE}'")
+        params["title_prefix_like"] = _like_prefix(title_prefix)
     return " AND ".join(clauses), params
+
+
+# The LIKE escape character. Spelled once so the ``ESCAPE`` clause and the
+# escaper below cannot disagree. A backslash inside a Postgres string
+# literal is a plain character under ``standard_conforming_strings`` (on
+# by default since 9.1, and never turned off here).
+_LIKE_ESCAPE = "\\"
+
+
+def _like_prefix(prefix: str) -> str:
+    """``prefix`` as a LIKE pattern matching titles that START with it.
+
+    Every LIKE metacharacter in the caller's text — ``%``, ``_`` and the
+    escape character itself — is escaped so the value is matched
+    literally; only the trailing ``%`` this function appends is a
+    wildcard. The value is still bound as a parameter, never
+    interpolated, so escaping here is about match WIDTH, not injection.
+    """
+    escaped = (
+        prefix.replace(_LIKE_ESCAPE, _LIKE_ESCAPE * 2)
+        .replace("%", _LIKE_ESCAPE + "%")
+        .replace("_", _LIKE_ESCAPE + "_")
+    )
+    return escaped + "%"
 
 
 # Asks "is every tag in this tenant's scorable corpus the deployed one?"
@@ -1177,6 +1258,7 @@ async def vector_search(
     scope_ref: str | None,
     min_importance: float | None,
     since: datetime | None,
+    title_prefix: str | None = None,
     arm_limit: int = ARM_LIMIT,
 ) -> list[tuple[UUID, float]]:
     """Semantic arm: HNSW cosine top-N as ``(memory_id, similarity)``.
@@ -1212,6 +1294,7 @@ async def vector_search(
         scope_ref=scope_ref,
         min_importance=min_importance,
         since=since,
+        title_prefix=title_prefix,
     )
     stmt = text(
         f"""
@@ -1258,6 +1341,7 @@ async def fts_search(
     scope_ref: str | None,
     min_importance: float | None,
     since: datetime | None,
+    title_prefix: str | None = None,
     arm_limit: int = ARM_LIMIT,
 ) -> list[UUID]:
     """Lexical arm: websearch FTS top-N ids, ``ts_rank_cd``-ordered.
@@ -1282,6 +1366,7 @@ async def fts_search(
         scope_ref=scope_ref,
         min_importance=min_importance,
         since=since,
+        title_prefix=title_prefix,
     )
     stmt = text(
         f"""
@@ -1519,6 +1604,7 @@ async def anchored_search(
     min_importance: float | None,
     since: datetime | None,
     limit: int,
+    title_prefix: str | None = None,
 ) -> list[UUID]:
     """Anchor-keyed proactive recall (plan §3.4 / Phase 5).
 
@@ -1554,6 +1640,7 @@ async def anchored_search(
         scope_ref=scope_ref,
         min_importance=min_importance,
         since=since,
+        title_prefix=title_prefix,
     )
     containment: list[str] = []
     element_match: list[str] = []
@@ -1984,6 +2071,7 @@ async def link_expansion(
     scope_ref: str | None,
     min_importance: float | None,
     since: datetime | None,
+    title_prefix: str | None = None,
     arm_limit: int = ARM_LIMIT,
 ) -> list[UUID]:
     """Graph arm: one-hop neighbours of ``seed_ids``, best-first ids.
@@ -2083,6 +2171,7 @@ async def link_expansion(
         scope_ref=scope_ref,
         min_importance=min_importance,
         since=since,
+        title_prefix=title_prefix,
     )
     stmt = text(
         f"""

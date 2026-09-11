@@ -35,6 +35,12 @@
 import { test as setup, type BrowserContext, type Page } from "@playwright/test";
 import { STORAGE_STATE_PATH } from "./auth.constants";
 
+/**
+ * Replaces the old `waitForTimeout(1000)` after the authenticated reload
+ * (plan 2026-09-05-web-e2e-fixed-sleeps-red-main-one-test-at-a-time).
+ */
+const HYDRATE_TIMEOUT = 5000;
+
 // Cognito CI app client — see `frontend/tests/spec-ci/run-spec-ci.ts`. The id
 // is a public app-client id (USER_PASSWORD_AUTH, no secret), not a secret.
 const COGNITO_CI_CLIENT_ID =
@@ -53,6 +59,13 @@ async function mintCognitoIdToken(
   try {
     const resp = await fetch(`https://cognito-idp.${COGNITO_REGION}.amazonaws.com/`, {
       method: "POST",
+      // Bound the call. A bare fetch has NO timeout (undici defaults to 300 s),
+      // and this runs inside the `setup` project's own test budget — which every
+      // browser project depends on, so an unbounded hang here does not fail one
+      // test, it skips the suite. Bounded, not eliminated: on this lane the
+      // serial worst case is 15 s here + ~40 s below = 55 s, still over the 45 s
+      // production budget. CI takes the storage-state lane, not this one.
+      signal: AbortSignal.timeout(15_000),
       headers: {
         "Content-Type": "application/x-amz-json-1.1",
         "X-Amz-Target": "AWSCognitoIdentityProviderService.InitiateAuth",
@@ -114,7 +127,14 @@ async function seedAndVerifyToken(
   // goes through the Next /api proxy). `/api/v1/auth/users/me` JIT-provisions
   // the user on first call in the hermetic lane, so this probe both verifies
   // AND triggers provisioning.
-  const probe = await context.request.get(`${origin}/api/v1/auth/users/me`);
+  // Explicit timeout. APIRequestContext defaults to 30 s, which used to sit
+  // comfortably inside a 60 s test budget and no longer does: the
+  // production-build budget is 45 s (playwright.config.ts TEST_TIMEOUT_MS). An
+  // inherited 30 s would leave this probe's own diagnostic competing with the
+  // test deadline instead of reporting the failure.
+  const probe = await context.request.get(`${origin}/api/v1/auth/users/me`, {
+    timeout: 10_000,
+  });
   if (!probe.ok()) {
     console.warn(
       `[Auth Setup] ${lane} token rejected by probe ` +
@@ -148,9 +168,18 @@ async function seedAndVerifyToken(
       // localStorage unavailable — best effort.
     }
   });
+  // The reload hydrates authenticated: checkAuth's `getCurrentUser()` round-
+  // trip (GET /api/v1/auth/users/me) is what the state used to be given a
+  // fixed second for. Register the wait before the reload so it cannot be
+  // missed; tolerated, since the probe above already verified the token.
+  const meRoundTrip = page
+    .waitForResponse((r) => r.url().includes("/api/v1/auth/users/me"), {
+      timeout: HYDRATE_TIMEOUT,
+    })
+    .catch(() => null);
   await page.reload();
   await page.waitForLoadState("domcontentloaded");
-  await page.waitForTimeout(1000);
+  await meRoundTrip;
 
   await page.context().storageState({ path: STORAGE_STATE_PATH });
   console.log(
@@ -223,9 +252,15 @@ setup("authenticate", async ({ page, context }) => {
   await page.addInitScript(() => {
     window.localStorage.setItem("is_authenticated", "true");
   });
+  // Same hydration round-trip as `seedAndVerifyToken`, tolerated.
+  const meRoundTrip = page
+    .waitForResponse((r) => r.url().includes("/api/v1/auth/users/me"), {
+      timeout: HYDRATE_TIMEOUT,
+    })
+    .catch(() => null);
   await page.reload();
   await page.waitForLoadState("domcontentloaded");
-  await page.waitForTimeout(1000);
+  await meRoundTrip;
 
   await page.context().storageState({ path: STORAGE_STATE_PATH });
   console.log(

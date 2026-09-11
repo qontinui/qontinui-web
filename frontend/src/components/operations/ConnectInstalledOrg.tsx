@@ -24,12 +24,25 @@
  * tracks the real authority check.
  *
  * The org is typed rather than picked from a list: coord exposes no
- * installed-but-unbound listing today, and the `code` is single-use so a
- * pick-then-claim flow would need a second authorize round-trip. Typing is
- * honest (the user knows their org) and costs no safety — the gate is coord's.
+ * installed-but-unbound LISTING (the pending table has no tenant column, so a
+ * list would leak every other prospective tenant's org), and the `code` is
+ * single-use so a pick-then-claim flow would need a second authorize
+ * round-trip. Typing is honest (the user knows their org) and costs no safety —
+ * the gate is coord's.
+ *
+ * What it is no longer is BLIND. Since plan
+ * `2026-09-05-tenant-onboarding-friction-and-multi-tenant-device-visibility`
+ * (P1) the typed org is pre-checked against coord's KEYED pending-installation
+ * read on blur / Enter (debounced) and the answer renders inline — "coord saw
+ * the App installed on <org> (N repos) at <when>", "already connected on
+ * <when>", "coord has not seen an install; install the App first", or
+ * "couldn't check" (UNKNOWN, never rendered as not-installed). The submit path
+ * is untouched: the pre-check informs the click, it does not gate it. `defaultOrg`
+ * (P4) prefills the field from the recover card's `?connect=<org>` hand-off
+ * and fires the check on mount, so the operator's only action is the click.
  */
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Github, ExternalLink, Loader2 } from "lucide-react";
 import {
   Card,
@@ -42,6 +55,7 @@ import { Input } from "@/components/ui/input";
 import { buttonVariants } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { useResetOnBackNavigation } from "@/hooks/useResetOnBackNavigation";
+import { InstallGitHubAppButton } from "@/components/operations/InstallGitHubAppButton";
 import { OPERATIONS_API } from "@/components/operations/utils";
 import { httpClient } from "@/services/service-factory";
 import {
@@ -52,6 +66,12 @@ import {
   mintConnectState,
   type ConnectFlow,
 } from "@/lib/onboarding-connect-state";
+import {
+  describePendingInstallation,
+  describePendingInstallationFailure,
+  fetchPendingInstallation,
+  type PendingInstallationVerdict,
+} from "@/lib/onboarding-pending";
 
 /** Coord's app-config envelope (`GET /coord/onboarding/github-app`). */
 interface GithubAppConfig {
@@ -60,9 +80,31 @@ interface GithubAppConfig {
   oauth_configured: boolean;
 }
 
+/**
+ * Blur → check debounce. A blur/focus flutter (tabbing through the form, a
+ * click that lands on the button) must not spend a coord round-trip per
+ * event; Enter and the mount-time `defaultOrg` check bypass it.
+ */
+const PRECHECK_DEBOUNCE_MS = 300;
+
+/**
+ * Text colour per verdict, R3 of `docs/console-ui-style-guide.md`: calm for
+ * every state we KNOW (the ask — connect, install — is stated in the words),
+ * amber for the one we do not (`unknown` — coord could not answer, and a
+ * later check may). Nothing here is red: nothing is broken, and nothing
+ * blocks the click.
+ */
+const PRECHECK_CLASS: Record<PendingInstallationVerdict["kind"], string> = {
+  pending: "text-foreground",
+  claimed: "text-muted-foreground",
+  unseen: "text-muted-foreground",
+  unknown: "text-amber-600 dark:text-amber-400",
+};
+
 export function ConnectInstalledOrg({
   flow,
   runnerState = null,
+  defaultOrg,
 }: {
   /**
    * `runner-clone` claims bind-only (no enrollment / bootstrap PRs).
@@ -80,12 +122,79 @@ export function ConnectInstalledOrg({
    * Omitted on browser-only entry points.
    */
   runnerState?: string | null;
+  /**
+   * Prefill for the org field (P4): the recover card on
+   * `/admin/coord/onboarding-status` hands the org coord named for a stateless
+   * arrival through `?connect=<org>`. Only a login `isValidLogin` accepts is
+   * honoured — anything else leaves the field empty — and a valid one fires
+   * the pre-check on mount.
+   */
+  defaultOrg?: string;
 }) {
   const [config, setConfig] = useState<GithubAppConfig | null>(null);
   const [loading, setLoading] = useState(true);
-  const [login, setLogin] = useState("");
+  const [login, setLogin] = useState(() => {
+    const initial = defaultOrg?.trim() ?? null;
+    return isValidLogin(initial) ? initial : "";
+  });
   const [minting, setMinting] = useState(false);
   const [mintError, setMintError] = useState<string | null>(null);
+  const [precheck, setPrecheck] = useState<PendingInstallationVerdict | null>(
+    null
+  );
+  const [prechecking, setPrechecking] = useState(false);
+  // The login the LAST check was issued for, so a blur that changed nothing
+  // does not re-ask, and a stale answer cannot land on a newer login: each
+  // response is compared against this before it is rendered.
+  const precheckForRef = useRef<string | null>(null);
+  const precheckTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const cancelPendingPrecheck = useCallback(() => {
+    if (precheckTimerRef.current !== null) {
+      clearTimeout(precheckTimerRef.current);
+      precheckTimerRef.current = null;
+    }
+  }, []);
+
+  /**
+   * Ask coord what it knows about `target`. Never throws and never gates the
+   * submit: a failed check is the UNKNOWN verdict, rendered as such.
+   */
+  const runPrecheck = useCallback(async (target: string) => {
+    precheckForRef.current = target;
+    setPrechecking(true);
+    let verdict: PendingInstallationVerdict;
+    try {
+      const resp = await fetchPendingInstallation({ account_login: target });
+      verdict = describePendingInstallation(resp, target);
+    } catch (e) {
+      verdict = describePendingInstallationFailure(e);
+    }
+    // A later check superseded this one while it was in flight.
+    if (precheckForRef.current !== target) return;
+    setPrecheck(verdict);
+    setPrechecking(false);
+  }, []);
+
+  /** Debounced entry point for blur; `immediate` for Enter and mount. */
+  const schedulePrecheck = useCallback(
+    (target: string, immediate: boolean) => {
+      cancelPendingPrecheck();
+      if (!isValidLogin(target)) return;
+      if (target === precheckForRef.current) return;
+      if (immediate) {
+        void runPrecheck(target);
+        return;
+      }
+      precheckTimerRef.current = setTimeout(() => {
+        precheckTimerRef.current = null;
+        void runPrecheck(target);
+      }, PRECHECK_DEBOUNCE_MS);
+    },
+    [cancelPendingPrecheck, runPrecheck]
+  );
+
+  useEffect(() => cancelPendingPrecheck, [cancelPendingPrecheck]);
 
   useEffect(() => {
     let cancelled = false;
@@ -122,6 +231,37 @@ export function ConnectInstalledOrg({
   // silently turn a valid authorize callback into a doctor-page fall-through.
   const valid = isValidLogin(trimmed);
   const clientId = config?.client_id ?? null;
+
+  // P4 hand-off: a prefilled, valid org is checked as soon as the card is
+  // actually shown (config loaded, OAuth configured). `precheckForRef` makes a
+  // re-run of this effect a no-op.
+  // Read through a ref rather than a dep: this is the prefill check, not a
+  // keystroke one (blur and Enter own those), and it must not fire for a
+  // `defaultOrg` the operator has already typed over while config loaded.
+  const loginRef = useRef(login);
+  useEffect(() => {
+    if (loading || !config?.oauth_configured) return;
+    const initial = defaultOrg?.trim() ?? null;
+    if (!isValidLogin(initial) || loginRef.current.trim() !== initial) return;
+    schedulePrecheck(initial, true);
+  }, [loading, config?.oauth_configured, defaultOrg, schedulePrecheck]);
+
+  const onLoginChange = useCallback(
+    (value: string) => {
+      loginRef.current = value;
+      setLogin(value);
+      // The rendered verdict describes the org it was asked about; once the
+      // field names a different one it is stale, so drop it (and let the next
+      // blur/Enter ask again for whatever is there then).
+      if (value.trim() !== precheckForRef.current) {
+        cancelPendingPrecheck();
+        precheckForRef.current = null;
+        setPrecheck(null);
+        setPrechecking(false);
+      }
+    },
+    [cancelPendingPrecheck]
+  );
 
   /**
    * Mint the connect state, then navigate. This has to happen on CLICK, not
@@ -184,13 +324,62 @@ export function ConnectInstalledOrg({
       <CardContent className="space-y-3">
         <Input
           value={login}
-          onChange={(e) => setLogin(e.target.value)}
+          onChange={(e) => onLoginChange(e.target.value)}
+          onBlur={() => schedulePrecheck(trimmed, false)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") {
+              e.preventDefault();
+              schedulePrecheck(trimmed, true);
+            }
+          }}
           placeholder="your-org"
           aria-label="GitHub organization login"
           data-testid="connect-installed-org-login"
           spellCheck={false}
           autoCapitalize="none"
         />
+        {/*
+          The pre-check's answer. `role="status"` so a screen reader hears it
+          when it lands; `data-kind` carries the verdict for tests and styling.
+          It informs the click below, it never disables it: coord's claim gate
+          is the authority, and an UNKNOWN here must not block a connect that
+          would succeed.
+        */}
+        {prechecking && !precheck && (
+          <p
+            className="flex items-center gap-2 text-xs text-muted-foreground"
+            role="status"
+            data-testid="connect-installed-org-precheck"
+            data-kind="checking"
+          >
+            <Loader2 className="h-3 w-3 animate-spin" />
+            Checking with coord…
+          </p>
+        )}
+        {precheck && (
+          <p
+            className={cn("text-xs", PRECHECK_CLASS[precheck.kind])}
+            role="status"
+            data-testid="connect-installed-org-precheck"
+            data-kind={precheck.kind}
+          >
+            {precheck.message}
+          </p>
+        )}
+        {/*
+          The unseen arm's remedy is the install, not the authorize: the SAME
+          CTA the card above this one offers, so the operator does not have
+          to scroll back up to find it. It mints on click only, so rendering
+          it here costs nothing until it is used.
+        */}
+        {precheck?.kind === "unseen" && (
+          <InstallGitHubAppButton
+            flow={flow}
+            runnerState={runnerState}
+            variant="secondary"
+            testId="connect-installed-org-precheck-install"
+          />
+        )}
         {/*
           A button that navigates rather than a bare <a href>: the URL can only
           be built AFTER the connect-state mint resolves. The browser still lands

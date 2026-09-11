@@ -15,7 +15,10 @@
  * a rule that disagrees is a bug in this file, not a second policy.
  */
 
-import type { AgentTextUnit } from "@/lib/api/agent-text-units";
+import type {
+  AgentTextUnit,
+  AgentTextUnitDefault,
+} from "@/lib/api/agent-text-units";
 
 // =============================================================================
 // Kinds
@@ -150,9 +153,13 @@ export function entrypointFor(kind: string, name: string): string {
 /**
  * Which layer a spawned session's copy of a unit actually resolves from.
  *
- * `"embedded"` is an ABSENCE, not a stored record: no row exists at either
+ * `"embedded"` is the absence of an EDITABLE row: nothing is stored at either
  * stored layer, so the runner falls through to the copy compiled into its
- * binary. qontinui-web holds no copy of that text and never claims to.
+ * binary. It is not necessarily the absence of TEXT — when a runner has
+ * published its roster to this account, `UnitRow.embedded` carries that copy
+ * as a display baseline (labelled by the runner version that published it,
+ * never as "the default"). When no runner has, qontinui-web holds no copy and
+ * says so rather than inventing one.
  */
 export type UnitLayer = "account" | "fleet" | "embedded";
 
@@ -188,6 +195,16 @@ export interface UnitRow {
   fleet: AgentTextUnit | null;
   /** The row that actually wins: `account ?? fleet ?? null`. */
   resolved: AgentTextUnit | null;
+  /**
+   * The runner-published embedded default for this name, or `null`.
+   *
+   * A DISPLAY baseline, not a third editable layer: it is what the diff view
+   * puts on the left and what the reset dialog previews. `null` is UNKNOWN-or-
+   * absent — no runner has published to this account, the roster it published
+   * does not carry this name, or the read failed — and every consumer keeps
+   * an honest "unavailable" arm for it rather than treating it as empty text.
+   */
+  embedded: AgentTextUnitDefault | null;
   /** True when an account override hides a STORED fleet default. */
   shadowsFleet: boolean;
   /**

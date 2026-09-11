@@ -91,7 +91,8 @@ export function selectionIds(selection: MarkReadSelection): string[] | null {
 }
 
 /**
- * `httpClient` options every call to these two routes must pass.
+ * `httpClient` options the three notification POLLERS must pass. The
+ * `mark-read` POST takes NOTIFICATIONS_MARK_READ_OPTIONS below instead.
  *
  * `HttpClient` retries any 5xx with exponential backoff. Coord's
  * `503 schema_migration_pending` is not a transient fault — it is the
@@ -99,37 +100,69 @@ export function selectionIds(selection: MarkReadSelection): string[] | null {
  * and the coord PR deploying, which the plan sequences as *days*.
  *
  * Measured, not estimated (`http-client.test.ts`, "retries a 5xx by default"):
- * the default policy costs **5 requests and ~15s** of wall clock, because the
- * first request happens before `executeWithRetry` is even entered and that
- * helper runs the request once more before its own attempt counter applies.
- * The page's 10s poller would therefore overlap its own retry chain twice
- * over, and the nav badge would multiply the whole thing by every open console
- * tab — all to re-learn an answer that will not change for days.
+ * the default policy costs **5 requests and 7s** (1s + 2s + 4s) of wall clock,
+ * because the first request happens before `executeWithRetry` is even entered
+ * and that helper runs the request once more before its own attempt counter
+ * applies. The page's 10s poller would therefore overlap its own retry chain,
+ * and the nav badge would multiply the whole thing by every open console tab
+ * — all to re-learn an answer that will not change for days.
  *
- * Scoped per-request rather than by lowering `maxRetries`: that option
- * reassigns the client's SHARED `retryStrategy` and would silently disable
- * retries for every other caller in the app.
+ * The three POLLERS below are GETs, so the method-aware rule
+ * (`isRetryableStatus`) leaves their 5xx retry ON — the opt-out is still
+ * needed. Scoped per-request via `noRetryStatuses` rather than
+ * `maxRetries: 0`, which would also suppress the 429 arm this poller wants
+ * kept.
  */
 export const NOTIFICATIONS_REQUEST_OPTIONS: { noRetryStatuses: number[] } = {
   noRetryStatuses: [503],
 };
 
 /**
- * Deliberately NOT `/g`: a global regex carries `lastIndex` across `.test()`
- * calls, so alternating calls on the same instance return alternating answers.
- * The global form below is a separate instance used only with `.replace()`,
- * which resets `lastIndex` itself.
+ * For the `mark-read` POST, which is NOT a poller and NOT a GET.
+ *
+ * What the method rule does NOT cover is the `429` arm, which stays on for
+ * every method — and this call is behind a user-clicked button, so retrying a
+ * deliberate cap would hang it for ~3 minutes (no `Retry-After` defaults to
+ * 60s, up to four attempts) to re-learn an answer that will not change.
+ * `[429]` is the documented idiom for making a capped call fail fast
+ * (`HttpOptions.noRetryStatuses`).
+ *
+ * `503` is kept beside it even though the method rule ALREADY suppresses this
+ * POST's 5xx retry, so it changes no retry behaviour. It is here for the warn:
+ * `HttpClient.buildRetryPredicate` warns once per request for a 5xx the METHOD
+ * rule suppressed, and deliberately stays quiet for one the CALLER opted out
+ * of. Drop `503` and every operator click prints "pass idempotent: true if
+ * this endpoint is safe to re-issue" for the whole days-long
+ * `503 schema_migration_pending` window — misleading advice on a route whose
+ * 503 is deliberate, and noise on the one surface this file exists to keep
+ * quiet. It also keeps the opt-out correct if anyone later adds
+ * `idempotent: true` here, which would otherwise silently re-enable the very
+ * 503 retry this file argues against.
  */
-const UUID_RE = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i;
-const UUID_RE_GLOBAL = new RegExp(UUID_RE.source, "gi");
+export const NOTIFICATIONS_MARK_READ_OPTIONS: { noRetryStatuses: number[] } = {
+  noRetryStatuses: [429, 503],
+};
+
+/**
+ * One instance, `/g`, and used ONLY with `.replace()` — which resets
+ * `lastIndex` itself, so the stateful-regex trap does not arise here.
+ *
+ * There was a second, non-global instance beside it, for a `containsUuid`
+ * predicate no caller ever had. That is the module's own design working:
+ * nothing needs to ASK whether a string carries a UUID, because everything
+ * bound for the default view goes through `scrubUuids` unconditionally — a
+ * check is the "remember to do this" step the header says this module refuses
+ * to have. `alertStatus.ts` keeps its own `containsUuid`, live and called, for
+ * the surface that genuinely branches on the answer. If a caller here ever
+ * needs the predicate back, note the trap the deleted instance existed to
+ * dodge: a `/g` regex carries `lastIndex` across `.test()` calls, so
+ * alternating calls on one instance return alternating answers.
+ */
+const UUID_RE =
+  /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi;
 
 /** Stand-in for an elided UUID. Keeps the surrounding sentence readable. */
 const ELISION = "…";
-
-/** True when the string carries a UUID anywhere inside it. */
-export function containsUuid(value: string | null | undefined): boolean {
-  return typeof value === "string" && UUID_RE.test(value);
-}
 
 /**
  * Elide every UUID in a string that is bound for the DEFAULT view.
@@ -142,7 +175,7 @@ export function containsUuid(value: string | null | undefined): boolean {
  * Do not call this on expanded-panel strings — see the module header.
  */
 export function scrubUuids(value: string): string {
-  return value.replace(UUID_RE_GLOBAL, ELISION);
+  return value.replace(UUID_RE, ELISION);
 }
 
 /**

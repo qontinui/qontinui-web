@@ -18,7 +18,7 @@
  * browser stays same-origin.
  */
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import {
   ArrowLeft,
@@ -69,6 +69,10 @@ import {
   registeredRepoSlugs,
 } from "./api";
 import { LineageTimeline } from "./LineageTimeline";
+import {
+  isRevalidatingEvent,
+  useCoalescedRevalidator,
+} from "./liveRevalidation";
 import { classifyHeartbeat } from "./types";
 import { StealModal, getDashboardMachineId } from "./StealModal";
 import { HandoffModal, type HandoffTarget } from "./HandoffModal";
@@ -183,27 +187,61 @@ export function SessionDetail({
     return () => ctrl.abort();
   }, [sessionId]);
 
+  /**
+   * The coordination reads. `Promise.allSettled` keeps a rejected read's
+   * previous value rather than clearing it, which is what makes this safe to
+   * re-issue: a refresh that does not land leaves what we already hold.
+   */
+  const readCoordination = useCallback(
+    (signal: AbortSignal, refresh: boolean) => {
+      if (!refresh) setCoordLoading(true);
+      return Promise.allSettled([
+        getSessionClaims(sessionId, signal),
+        getSessionAgentStatus(sessionId, signal),
+        getSessionLineage(sessionId, signal),
+      ]).then(([claimsResult, statusResult, lineageResult]) => {
+        if (signal.aborted) return;
+        if (claimsResult.status === "fulfilled") {
+          setClaims(claimsResult.value.claims ?? []);
+        }
+        if (statusResult.status === "fulfilled") {
+          setAgentStatuses(statusResult.value.agents ?? []);
+        }
+        if (lineageResult.status === "fulfilled") {
+          setLineageActions(lineageResult.value.actions ?? []);
+        }
+        setCoordLoading(false);
+      });
+    },
+    [sessionId]
+  );
+
   useEffect(() => {
     const ctrl = new AbortController();
-    setCoordLoading(true);
-    Promise.allSettled([
-      getSessionClaims(sessionId, ctrl.signal),
-      getSessionAgentStatus(sessionId, ctrl.signal),
-      getSessionLineage(sessionId, ctrl.signal),
-    ]).then(([claimsResult, statusResult, lineageResult]) => {
-      if (claimsResult.status === "fulfilled") {
-        setClaims(claimsResult.value.claims ?? []);
-      }
-      if (statusResult.status === "fulfilled") {
-        setAgentStatuses(statusResult.value.agents ?? []);
-      }
-      if (lineageResult.status === "fulfilled") {
-        setLineageActions(lineageResult.value.actions ?? []);
-      }
-      setCoordLoading(false);
-    });
+    void readCoordination(ctrl.signal, false);
     return () => ctrl.abort();
-  }, [sessionId]);
+  }, [readCoordination]);
+
+  // Phase 4: this view does not poll. It re-reads the coordination half when
+  // the SSE subscription below — the one already open for the events timeline
+  // — reports something happened on this session. Coalesced, and driven off
+  // that ONE stream rather than a second connection to the same endpoint.
+  const revalidateInflight = useRef<AbortController | null>(null);
+  const { trigger: revalidateCoordination, cancel: cancelRevalidation } =
+    useCoalescedRevalidator(() => {
+      revalidateInflight.current?.abort();
+      const ctrl = new AbortController();
+      revalidateInflight.current = ctrl;
+      void readCoordination(ctrl.signal, true);
+    });
+
+  useEffect(
+    () => () => {
+      revalidateInflight.current?.abort();
+      revalidateInflight.current = null;
+    },
+    []
+  );
 
   useEffect(() => {
     if (!session?.repo) return;
@@ -228,13 +266,21 @@ export function SessionDetail({
           next.sort((a, b) => b.seq - a.seq);
           return next.slice(0, 200);
         });
+        // Same frame, second consumer: claims / agent status / lineage are not
+        // carried on this stream, so an event that can change them is the cue
+        // to re-read them. `isRevalidatingEvent` drops the heartbeat, which
+        // would otherwise make this a 15s poll in all but name.
+        if (isRevalidatingEvent(row)) revalidateCoordination();
       },
       onError: (err) => {
         setStreamError(err instanceof Error ? err.message : String(err));
       },
     });
-    return cleanup;
-  }, [sessionId]);
+    return () => {
+      cancelRevalidation();
+      cleanup();
+    };
+  }, [sessionId, revalidateCoordination, cancelRevalidation]);
 
   const onClose = useCallback(async () => {
     if (!session) return;

@@ -210,6 +210,111 @@ def test_device_row_to_wire_maps_fields():
     assert wire.createdAt == "2026-05-29T08:00:00+00:00"
 
 
+# ---- tenant_bindings tri-state passthrough (P5 of the multi-tenant device
+# visibility plan): ``null`` is UNKNOWN, ``[]`` is a measured zero, and a
+# populated list is the binding set. None of the three may collapse into
+# another on the way through the web backend.
+
+TENANT_A = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
+TENANT_B = "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"
+
+
+def test_device_row_to_wire_tenant_bindings_null_stays_unknown():
+    wire = devices_ep._device_row_to_wire(_coord_row(tenant_bindings=None))
+    assert wire.tenant_bindings is None
+    assert wire.model_dump(mode="json")["tenant_bindings"] is None
+
+
+def test_device_row_to_wire_tenant_bindings_absent_key_is_unknown():
+    row = _coord_row()
+    assert "tenant_bindings" not in row
+    wire = devices_ep._device_row_to_wire(row)
+    assert wire.tenant_bindings is None
+
+
+def test_device_row_to_wire_tenant_bindings_empty_stays_zero():
+    wire = devices_ep._device_row_to_wire(_coord_row(tenant_bindings=[]))
+    assert wire.tenant_bindings == []
+    assert wire.model_dump(mode="json")["tenant_bindings"] == []
+
+
+def test_device_row_to_wire_tenant_bindings_populated_passes_through():
+    wire = devices_ep._device_row_to_wire(
+        _coord_row(
+            tenant_bindings=[
+                {
+                    "tenant_id": TENANT_A,
+                    "tenant_slug": "acme",
+                    "last_active_at": "2026-09-05T08:00:00+00:00",
+                },
+                {"tenant_id": TENANT_B, "tenant_slug": None, "last_active_at": None},
+            ]
+        )
+    )
+    assert wire.model_dump(mode="json")["tenant_bindings"] == [
+        {
+            "tenant_id": TENANT_A,
+            "tenant_slug": "acme",
+            "last_active_at": "2026-09-05T08:00:00+00:00",
+        },
+        {"tenant_id": TENANT_B, "tenant_slug": None, "last_active_at": None},
+    ]
+
+
+def test_device_row_to_wire_tenant_bindings_malformed_is_unknown_not_zero():
+    # A non-list value violates the contract; report UNKNOWN, never an
+    # empty set.
+    wire = devices_ep._device_row_to_wire(_coord_row(tenant_bindings="nope"))
+    assert wire.tenant_bindings is None
+
+
+def test_device_row_to_wire_tenant_bindings_drops_elements_without_tenant_id():
+    wire = devices_ep._device_row_to_wire(
+        _coord_row(
+            tenant_bindings=[
+                "junk",
+                {"tenant_slug": "orphan"},
+                {"tenant_id": TENANT_A},
+            ]
+        )
+    )
+    assert [b.tenant_id for b in wire.tenant_bindings or []] == [TENANT_A]
+
+
+@pytest.mark.asyncio
+async def test_list_devices_endpoint_preserves_tenant_bindings_tri_state(monkeypatch):
+    _patch_httpx(
+        monkeypatch,
+        lambda url, hdr: httpx.Response(
+            200,
+            json={
+                "devices": [
+                    _coord_row(device_id="1" * 32, tenant_bindings=None),
+                    _coord_row(device_id="2" * 32, tenant_bindings=[]),
+                    _coord_row(
+                        device_id="3" * 32,
+                        tenant_bindings=[
+                            {"tenant_id": TENANT_A, "tenant_slug": "acme"}
+                        ],
+                    ),
+                ],
+                "count": 3,
+            },
+        ),
+    )
+    wire = await devices_ep.list_devices_endpoint(
+        request=_FakeRequest(),
+        current_user=SimpleNamespace(id=USER_ID),
+        status_filter=None,
+    )
+    dumped = [w.model_dump(mode="json")["tenant_bindings"] for w in wire]
+    assert dumped == [
+        None,
+        [],
+        [{"tenant_id": TENANT_A, "tenant_slug": "acme", "last_active_at": None}],
+    ]
+
+
 def test_derive_status_from_row_ws_session_wins():
     wire = devices_ep._device_row_to_wire(
         _coord_row(ws_session_id=99, derived_status="offline")

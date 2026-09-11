@@ -22,11 +22,14 @@ Three invariants, all from
 
 from __future__ import annotations
 
+import ast
 import asyncio
 import inspect
+import textwrap
 import time
 from types import SimpleNamespace
 
+import httpx
 import pytest
 
 from app.api.v1.endpoints import device_bridge_ws
@@ -110,7 +113,9 @@ async def test_runner_proxy_concurrent_calls_do_not_serialize(monkeypatch):
     class _SlowResponse:
         status_code = 200
         content = b"ok"
-        headers: dict[str, str] = {}
+        # A real ``httpx.Headers``, not a dict: the handler reads
+        # ``multi_items()``, which only the real type provides.
+        headers = httpx.Headers()
 
     class _SlowAsyncClient:
         def __init__(self, *a, **kw) -> None:
@@ -226,7 +231,7 @@ async def test_runner_proxy_passes_runner_error_status_through(monkeypatch):
     class _NotFoundResponse:
         status_code = 404
         content = b'{"detail":"nope"}'
-        headers = {"content-type": "application/json"}
+        headers = httpx.Headers({"content-type": "application/json"})
 
     class _NotFoundClient:
         def __init__(self, *a, **kw) -> None:
@@ -276,11 +281,13 @@ async def test_runner_proxy_strips_content_encoding(monkeypatch):
     class _GzipResponse:
         status_code = 200
         content = b"plain-decoded-body"
-        headers = {
-            "content-type": "text/plain",
-            "content-encoding": "gzip",
-            "transfer-encoding": "chunked",
-        }
+        headers = httpx.Headers(
+            {
+                "content-type": "text/plain",
+                "content-encoding": "gzip",
+                "transfer-encoding": "chunked",
+            }
+        )
 
     class _GzipClient:
         def __init__(self, *a, **kw) -> None:
@@ -338,32 +345,60 @@ def test_relay_has_exactly_one_503_emitter() -> None:
 
 
 def test_relay_503_is_the_ws_session_id_branch() -> None:
-    """The one 503 is guarded by the ``ws_session_id`` read, not anything else."""
-    source = inspect.getsource(device_bridge_ws._runner_proxy_relay)
-    lines = source.splitlines()
+    """The one 503 is guarded by the ``ws_session_id`` read, not anything else.
 
-    emitters = [i for i, line in enumerate(lines) if "status_code=503" in line]
+    Read the AST rather than the text. Two earlier spellings of this check
+    were both too weak, and each failed the same way — by approximating
+    "governs" with something cheaper:
+
+    * a fixed line-distance lookback, which broke the moment the branch grew
+      a body (the W-A structured log, the W-B clock decoration);
+    * "the nearest preceding ``if``", which broke on the first conditional
+      *inside* the branch (``if liveness.known:``) — a line that precedes
+      the emitter without governing it. Indentation fixes that one, but still
+      cannot see ``else:``/``try:``/``for``, so moving the emitter into the
+      ``else:`` of this very guard — its exact negation, the inversion this
+      test exists to catch — would have PASSED.
+
+    The AST knows the difference between a node's ``body`` and its
+    ``orelse``, so ask it.
+    """
+    source = textwrap.dedent(inspect.getsource(device_bridge_ws._runner_proxy_relay))
+    tree = ast.parse(source)
+
+    def emits_503(node: ast.AST) -> bool:
+        return any(
+            isinstance(k, ast.keyword)
+            and k.arg == "status_code"
+            and isinstance(k.value, ast.Constant)
+            and k.value.value == 503
+            for sub in ast.walk(node)
+            if isinstance(sub, ast.Call)
+            for k in sub.keywords
+        )
+
+    emitters = [n for n in ast.walk(tree) if isinstance(n, ast.Return) and emits_503(n)]
     assert len(emitters) == 1, (
         f"the relay must have exactly ONE 503 emitter; found {len(emitters)}"
     )
-    idx = emitters[0]
+    emitter = emitters[0]
 
-    # Walk back to the nearest CONDITIONAL; it must be the ws_session_id read.
-    # A fixed line-distance lookback was the earlier spelling of this check and
-    # it broke the moment the branch grew a body (the W-A structured log + the
-    # W-B ``last_seen_at`` decoration) — the invariant is which guard governs
-    # the emitter, not how many lines away it sits.
-    guard = next(
-        (
-            lines[i]
-            for i in range(idx - 1, -1, -1)
-            if lines[i].strip().startswith(("if ", "elif "))
-        ),
-        None,
-    )
-    assert guard is not None and 'row.get("ws_session_id") is None' in guard, (
+    # The governing ``If`` is the innermost one holding the emitter in its
+    # TRUE branch. ``orelse`` is deliberately not searched: an emitter in the
+    # negation of the ws_session_id test is the defect, not a pass.
+    governing = [
+        node
+        for node in ast.walk(tree)
+        if isinstance(node, ast.If)
+        and any(emitter in ast.walk(stmt) for stmt in node.body)
+    ]
+    assert governing, "the 503 is not inside the true branch of any conditional"
+
+    innermost = max(governing, key=lambda n: n.test.col_offset)
+    guard = ast.unparse(innermost.test)
+    assert guard == "row.get('ws_session_id') is None", (
         "the relay's only 503 must be the ws_session_id IS NULL branch; "
-        f"nearest governing conditional was:\n{guard}"
+        f"the innermost conditional containing it was: {guard}"
     )
 
 
@@ -479,3 +514,158 @@ def test_module_docstring_names_both_mechanisms() -> None:
     assert "devices_ws.py" in doc
     assert "runner-proxy" in doc.lower()
     assert "Redis" in doc
+
+
+# ---------------------------------------------------------------------------
+# W1 residue — two things the urllib -> httpx swap left half-done
+# ---------------------------------------------------------------------------
+
+
+def test_httpx_merges_its_own_accept_encoding_default() -> None:
+    """The premise of the next test, pinned against the real httpx.
+
+    Dropping ``accept-encoding`` from the forwarded header dict does NOT make
+    the request go out without one: httpx merges its client defaults into
+    whatever ``headers=`` it is handed. If a future httpx stops doing that,
+    this fails and the ``identity`` override below becomes redundant rather
+    than load-bearing — which is worth being told about explicitly.
+    """
+    built = httpx.Client().build_request(
+        "GET", "http://127.0.0.1:9876/x", headers={"x-test": "1"}
+    )
+
+    assert built.headers["accept-encoding"] == "gzip, deflate", (
+        "httpx no longer merges a default accept-encoding; re-read "
+        "_LOCAL_PROXY_EXCLUDED_REQUEST_HEADERS's comment."
+    )
+
+
+@pytest.mark.asyncio
+async def test_runner_proxy_negotiates_identity_encoding(monkeypatch):
+    """The loopback hop actually ASKS for an uncompressed body.
+
+    ``accept-encoding`` is in the excluded-request set, and the comment there
+    used to claim that alone made the runner reply uncompressed. It does not —
+    httpx merges its own ``gzip, deflate`` default back in (pinned above), so
+    the runner was still being invited to compress a loopback response that
+    httpx would then spend CPU decoding. The handler now SETS ``identity``.
+    """
+
+    async def _fake_active_port(*, bearer, user_id):
+        return 9876
+
+    monkeypatch.setattr(
+        device_bridge_ws.coord_device,
+        "get_active_routing_port",
+        _fake_active_port,
+        raising=True,
+    )
+
+    seen: dict[str, str] = {}
+
+    class _EchoResponse:
+        status_code = 200
+        content = b"ok"
+        headers = httpx.Headers()
+
+    class _CapturingClient:
+        def __init__(self, *a, **kw) -> None:
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *a):
+            return False
+
+        async def request(self, method, url, **kw):
+            seen.update({k.lower(): v for k, v in (kw.get("headers") or {}).items()})
+            return _EchoResponse()
+
+    monkeypatch.setattr(
+        device_bridge_ws.httpx, "AsyncClient", _CapturingClient, raising=True
+    )
+
+    await device_bridge_ws.runner_proxy(
+        _FakeRequest(headers={"Accept-Encoding": "gzip, br"}),
+        "status",
+        user=SimpleNamespace(id=USER_ID),
+    )
+
+    assert seen.get("accept-encoding") == "identity", (
+        "the caller's accept-encoding must be replaced with identity, not "
+        f"merely dropped — sent: {seen.get('accept-encoding')!r}"
+    )
+
+
+@pytest.mark.asyncio
+async def test_runner_proxy_preserves_repeated_set_cookie(monkeypatch):
+    """Two ``Set-Cookie`` headers survive as two headers.
+
+    ``httpx.Headers.items()`` emits each name once, joining repeats with
+    ", ". That is lossless for RFC 7230 comma-list headers but NOT for
+    ``Set-Cookie``, whose value may itself contain a comma
+    (``Expires=Wed, 09 Jun 2027 ...``). Collapsed, the two cookies below reach
+    the caller as one unparseable header and at least one cookie is silently
+    lost — so the handler must build the response from ``raw_headers``.
+    """
+
+    async def _fake_active_port(*, bearer, user_id):
+        return 9876
+
+    monkeypatch.setattr(
+        device_bridge_ws.coord_device,
+        "get_active_routing_port",
+        _fake_active_port,
+        raising=True,
+    )
+
+    class _CookieResponse:
+        status_code = 200
+        content = b"ok"
+        headers = httpx.Headers(
+            [
+                (b"set-cookie", b"a=1; Expires=Wed, 09 Jun 2027 10:18:14 GMT"),
+                (b"set-cookie", b"b=2; Path=/"),
+                (b"content-type", b"text/plain"),
+                (b"content-length", b"999"),
+            ]
+        )
+
+    class _CookieClient:
+        def __init__(self, *a, **kw) -> None:
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *a):
+            return False
+
+        async def request(self, method, url, **kw):
+            return _CookieResponse()
+
+    monkeypatch.setattr(
+        device_bridge_ws.httpx, "AsyncClient", _CookieClient, raising=True
+    )
+
+    resp = await device_bridge_ws.runner_proxy(
+        _FakeRequest(), "status", user=SimpleNamespace(id=USER_ID)
+    )
+
+    cookies = [
+        v.decode("latin-1")
+        for k, v in resp.raw_headers
+        if k.decode("latin-1").lower() == "set-cookie"
+    ]
+
+    assert cookies == [
+        "a=1; Expires=Wed, 09 Jun 2027 10:18:14 GMT",
+        "b=2; Path=/",
+    ], f"repeated Set-Cookie was collapsed: {cookies!r}"
+
+    assert resp.status_code == 200
+    assert resp.headers["content-type"] == "text/plain"
+    # The runner's own content-length described the pre-decode body; Starlette
+    # recomputes it from the bytes actually being sent.
+    assert resp.headers["content-length"] == str(len(b"ok"))

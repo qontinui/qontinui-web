@@ -19,6 +19,9 @@ checks the tables actually landed in ``agent`` rather than in ``public``.
 
 from __future__ import annotations
 
+import io
+import json
+import zipfile
 from datetime import UTC, datetime, timedelta
 from unittest.mock import AsyncMock, patch
 from uuid import UUID, uuid4
@@ -27,10 +30,12 @@ import httpx
 import pytest
 import pytest_asyncio
 from fastapi import FastAPI, HTTPException
+from fastapi.routing import APIRoute
 from sqlalchemy import select, text
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.strict_query import StrictQueryRoute, accepted_query_keys
 from app.crud import work_artifact as crud
 from app.models.work_artifact import WorkArtifact, WorkArtifactVersion
 
@@ -56,6 +61,7 @@ async def _upsert(
     source_repo: str | None = None,
     work_unit_slug: str | None = None,
     repos: list[str] | None = None,
+    intent_refs: list[str] | None = None,
     change_description: str | None = None,
 ) -> tuple[WorkArtifact, bool, bool]:
     return await crud.upsert_artifact(
@@ -71,6 +77,7 @@ async def _upsert(
         source_repo=source_repo,
         work_unit_slug=work_unit_slug,
         repos=repos or [],
+        intent_refs=intent_refs or [],
         authored_at=None,
         captured_by="agent",
         change_description=change_description,
@@ -148,11 +155,43 @@ class TestUpsertContract:
         assert versions[0].body == "# hello"
         assert versions[0].content_sha256 == row.content_sha256
 
-    async def test_unchanged_sha_is_a_noop(
+    async def test_identical_repost_is_a_noop(
         self, async_db_session: AsyncSession
     ) -> None:
         """The 304-equivalent: no version bump, no appended snapshot."""
         slug = _slug("noop")
+        first, _, _ = await _upsert(
+            async_db_session, org_id=None, slug=slug, body="stable body"
+        )
+        assert first.current_version == 1
+        touched = first.updated_at
+
+        second, created, changed = await _upsert(
+            async_db_session, org_id=None, slug=slug, body="stable body"
+        )
+
+        assert created is False
+        assert changed is False
+        assert second.id == first.id
+        assert second.current_version == 1
+        assert second.updated_at == touched, "a no-op must not touch the row"
+
+        versions = await crud.list_versions(async_db_session, first.id)
+        assert len(versions) == 1, "a no-op must not append a version row"
+
+    async def test_unchanged_sha_still_stores_the_metadata(
+        self, async_db_session: AsyncSession
+    ) -> None:
+        """Same body, corrected metadata: stored, reported, NOT versioned.
+
+        Phase 5 of ``2026-09-03-plan-library-write-door-nonce-authorized-and-body-sync-on-by-default``.
+        The version log is the BODY's history, so ``current_version`` stays
+        put and no snapshot is appended — but a ``status`` correction POSTed
+        against an already-stored body used to be dropped on the floor while
+        the response said ``changed=false``, which was true of the body and
+        false of the request (finding 43479836).
+        """
+        slug = _slug("meta")
         first, _, _ = await _upsert(
             async_db_session, org_id=None, slug=slug, body="stable body"
         )
@@ -163,18 +202,17 @@ class TestUpsertContract:
             org_id=None,
             slug=slug,
             body="stable body",
-            # Metadata differs — the digest does not, so nothing moves.
+            # Metadata differs — the digest does not.
             title="A DIFFERENT title",
-            status="SHIPPED",
+            status="SHIPPED 2026-09-05",
         )
 
         assert created is False
-        assert changed is False
+        assert changed is True, "the request moved the row; say so"
         assert second.id == first.id
-        assert second.current_version == 1
-
-        versions = await crud.list_versions(async_db_session, first.id)
-        assert len(versions) == 1, "a no-op must not append a version row"
+        assert second.title == "A DIFFERENT title"
+        assert second.status == "SHIPPED 2026-09-05"
+        assert second.current_version == 1, "metadata is not a version"
 
         count = (
             (
@@ -187,7 +225,7 @@ class TestUpsertContract:
             .scalars()
             .all()
         )
-        assert len(count) == 1
+        assert len(count) == 1, "metadata must not append a version row"
 
     async def test_changed_sha_bumps_version_and_appends(
         self, async_db_session: AsyncSession
@@ -418,6 +456,69 @@ class TestFilters:
         assert total_web == 1
         assert total_runner == 1
         assert total_none == 0
+
+    async def test_intent_ref_filter_is_exact_containment(
+        self, async_db_session: AsyncSession
+    ) -> None:
+        """``?intent_ref=`` returns exactly the rows whose ``intent_refs``
+        contain it — zero, one and many, enumerated.
+
+        Plan ``2026-09-06-work-artifacts-kinds-and-edges-cannot-express-a-refutation``:
+        the query the GIN index exists to serve. Containment, not prefix —
+        ``success_metric/dev`` must NOT match ``success_metric/development-speed``.
+        """
+        org = uuid4()
+        shared = "success_metric/development-speed"
+        only_on_one = "domain_spec/merge-train"
+        await _upsert(
+            async_db_session,
+            org_id=org,
+            kind="diagnostic",
+            slug=_slug("diag-a"),
+            body="pr_fix is inert",
+            intent_refs=[shared, only_on_one],
+        )
+        await _upsert(
+            async_db_session,
+            org_id=org,
+            kind="diagnostic",
+            slug=_slug("diag-b"),
+            body="red_main_fix is inert",
+            intent_refs=[shared],
+        )
+        await _upsert(
+            async_db_session,
+            org_id=org,
+            slug=_slug("plain-plan"),
+            body="cites nothing",
+        )
+
+        rows_many, total_many = await crud.list_artifacts(
+            async_db_session, org_id=org, intent_ref=shared
+        )
+        assert total_many == 2
+        assert all(shared in r.intent_refs for r in rows_many)
+
+        rows_one, total_one = await crud.list_artifacts(
+            async_db_session, org_id=org, intent_ref=only_on_one
+        )
+        assert total_one == 1
+        assert rows_one[0].intent_refs == [shared, only_on_one]
+
+        _, total_zero = await crud.list_artifacts(
+            async_db_session, org_id=org, intent_ref="success_metric/nothing-cites-me"
+        )
+        assert total_zero == 0
+
+        # Exact member, not a prefix.
+        _, total_prefix = await crud.list_artifacts(
+            async_db_session, org_id=org, intent_ref="success_metric/dev"
+        )
+        assert total_prefix == 0
+
+        # Unfiltered, all three are there — the filter is what narrowed it.
+        _, total_all = await crud.list_artifacts(async_db_session, org_id=org)
+        assert total_all == 3
 
     async def test_since_filter(self, async_db_session: AsyncSession) -> None:
         org = uuid4()
@@ -685,14 +786,26 @@ class TestHttpSurface:
         detail2 = await client.get(f"{API_PREFIX}/{artifact_id}")
         assert len(detail2.json()["versions"]) == 2
 
-    async def test_organization_id_in_the_body_is_ignored(
+    async def test_organization_id_in_the_body_is_refused(
         self, client: httpx.AsyncClient
     ) -> None:
-        """A caller-supplied org must never reach the row (scope escalation)."""
+        """A caller-supplied org must never reach the row (scope escalation).
+
+        Until plan ``2026-09-03-wrong-key-reads-cannot-yield-a-silent-zero``
+        Phase 4 the key was silently DROPPED and the write returned 201 under
+        the caller's real organization; now ``extra="forbid"`` refuses it by
+        name, so a caller that thought it was writing into another
+        organization learns that it was not, instead of reading a 201.
+        """
         forged = str(uuid4())
         resp = await client.post(API_PREFIX, json=_payload(organization_id=forged))
-        assert resp.status_code == 201, resp.text
-        assert resp.json()["artifact"]["organization_id"] != forged
+        assert resp.status_code == 422, resp.text
+        locs = [
+            tuple(err["loc"])
+            for err in resp.json()["detail"]
+            if err["type"] == "extra_forbidden"
+        ]
+        assert locs == [("body", "organization_id")]
 
     async def test_unknown_status_is_stored_not_rejected(
         self, client: httpx.AsyncClient
@@ -735,6 +848,82 @@ class TestHttpSurface:
         listed = await client.get(API_PREFIX, params={"work_unit_slug": dangling})
         assert listed.status_code == 200
         assert listed.json()["total"] == 1
+        assert listed.json()["count"] == len(listed.json()["items"]) == 1
+
+    async def test_list_page_count_is_the_page_length_not_the_total(
+        self, client: httpx.AsyncClient
+    ) -> None:
+        """``count`` is ``len(items)`` for THIS page (plan
+        ``2026-09-03-wrong-key-reads-cannot-yield-a-silent-zero`` D4);
+        ``total`` stays the unpaged total. A bounded page must say how long
+        it is, and an empty page must say ``0``."""
+        stem = _slug("count")
+        for n in range(3):
+            resp = await client.post(
+                API_PREFIX, json=_payload(slug=f"{stem}-{n}", work_unit_slug=stem)
+            )
+            assert resp.status_code == 201, resp.text
+
+        page = await client.get(
+            API_PREFIX, params={"work_unit_slug": stem, "limit": "2"}
+        )
+        assert page.status_code == 200, page.text
+        body = page.json()
+        assert body["count"] == len(body["items"]) == 2
+        assert body["total"] == 3
+
+        rest = await client.get(
+            API_PREFIX, params={"work_unit_slug": stem, "limit": "2", "offset": "2"}
+        )
+        assert rest.json()["count"] == len(rest.json()["items"]) == 1
+        assert rest.json()["total"] == 3
+
+        empty = await client.get(
+            API_PREFIX, params={"work_unit_slug": f"{stem}-absent"}
+        )
+        assert empty.status_code == 200, empty.text
+        assert empty.json()["count"] == 0
+        assert empty.json()["items"] == []
+
+    @pytest.mark.parametrize(
+        ("method", "path", "body", "extra"),
+        [
+            ("POST", "", _payload(), "organisation_id"),
+            ("POST", "", _payload(), "work_unit_slig"),
+            ("PATCH", "/{id}/kind", {"kind": "plan"}, "kind_locked"),
+            (
+                "POST",
+                "/{id}/edges",
+                {"to_id": str(uuid4()), "relation": "feeds"},
+                "notes",
+            ),
+            ("PATCH", "/edges/{id}", {"to_id": str(uuid4())}, "from_id"),
+        ],
+    )
+    async def test_every_write_body_refuses_an_unknown_key(
+        self,
+        client: httpx.AsyncClient,
+        method: str,
+        path: str,
+        body: dict,
+        extra: str,
+    ) -> None:
+        """Every request model carries ``extra="forbid"``: an unknown body
+        key is a 422 whose ``loc`` names the key, never a field that is
+        silently dropped on the way into the row. ``{id}`` is a random UUID
+        because the refusal must happen BEFORE any lookup."""
+        resp = await client.request(
+            method,
+            f"{API_PREFIX}{path.replace('{id}', str(uuid4()))}",
+            json={**body, extra: "anything"},
+        )
+        assert resp.status_code == 422, resp.text
+        locs = [
+            tuple(err["loc"])
+            for err in resp.json()["detail"]
+            if err["type"] == "extra_forbidden"
+        ]
+        assert locs == [("body", extra)]
 
     async def test_edges_both_directions_over_http(
         self, client: httpx.AsyncClient
@@ -858,6 +1047,93 @@ class TestHttpSurface:
         resp = await client.get(f"{API_PREFIX}/{uuid4()}")
         assert resp.status_code == 404
 
+    async def test_diagnostic_kind_and_intent_refs_round_trip(
+        self, client: httpx.AsyncClient
+    ) -> None:
+        """A ``diagnostic`` upsert is a 201 and ``intent_refs`` echoes back.
+
+        Plan ``2026-09-06-work-artifacts-kinds-and-edges-cannot-express-a-refutation``.
+        Before ``plan_library_04_diagnostic_refutes`` the kind was a 422 at the
+        ``Literal`` and a CHECK violation beneath it, and there was no column
+        to put the citation in.
+        """
+        ref = "success_metric/development-speed"
+        created = await client.post(
+            API_PREFIX,
+            json=_payload(
+                kind="diagnostic",
+                title="pr_fix / red_main_fix are inert",
+                body="25,253 consults, 0 dispatched",
+                intent_refs=[ref, "domain_spec/merge-train"],
+            ),
+        )
+        assert created.status_code == 201, created.text
+        artifact = created.json()["artifact"]
+        assert artifact["kind"] == "diagnostic"
+        assert artifact["intent_refs"] == [ref, "domain_spec/merge-train"]
+        # An explicit (non-heuristic) write locks the kind, as for every kind.
+        assert artifact["kind_locked"] is True
+
+        detail = await client.get(f"{API_PREFIX}/{artifact['id']}")
+        assert detail.status_code == 200, detail.text
+        assert detail.json()["kind"] == "diagnostic"
+        assert detail.json()["intent_refs"] == [ref, "domain_spec/merge-train"]
+
+        listed = await client.get(API_PREFIX, params={"intent_ref": ref})
+        assert listed.status_code == 200, listed.text
+        assert [i["id"] for i in listed.json()["items"]] == [artifact["id"]]
+        assert listed.json()["items"][0]["intent_refs"] == [
+            ref,
+            "domain_spec/merge-train",
+        ]
+
+        none = await client.get(
+            API_PREFIX, params={"intent_ref": "success_metric/uncited"}
+        )
+        assert none.status_code == 200, none.text
+        assert none.json()["total"] == 0
+
+    async def test_intent_refs_are_metadata_and_move_without_a_version(
+        self, client: httpx.AsyncClient
+    ) -> None:
+        """Correcting the citation on an unchanged body is stored, not versioned.
+
+        ``intent_refs`` rides in the same metadata tuple as ``repos``: a
+        re-post with the same body and a different citation answers
+        ``changed=true`` with ``current_version`` untouched, and a byte-identical
+        re-post (same citation) is the full no-op.
+        """
+        payload = _payload(
+            kind="diagnostic", body="stable body", intent_refs=["success_metric/a"]
+        )
+        first = await client.post(API_PREFIX, json=payload)
+        assert first.status_code == 201, first.text
+        artifact_id = first.json()["artifact"]["id"]
+
+        corrected = await client.post(
+            API_PREFIX, json={**payload, "intent_refs": ["success_metric/b"]}
+        )
+        # 200, not 201: the row already existed and was updated in place.
+        assert corrected.status_code == 200, corrected.text
+        assert corrected.json()["changed"] is True
+        assert corrected.json()["artifact"]["id"] == artifact_id
+        assert corrected.json()["artifact"]["intent_refs"] == ["success_metric/b"]
+        assert corrected.json()["artifact"]["current_version"] == 1
+
+        same = await client.post(
+            API_PREFIX, json={**payload, "intent_refs": ["success_metric/b"]}
+        )
+        assert same.status_code == 200, same.text
+        assert same.json()["changed"] is False
+        assert same.headers.get("x-artifact-unchanged") == "true"
+
+        moved_to_b = await client.get(
+            API_PREFIX, params={"intent_ref": "success_metric/b"}
+        )
+        assert [i["id"] for i in moved_to_b.json()["items"]] == [artifact_id]
+        left_a = await client.get(API_PREFIX, params={"intent_ref": "success_metric/a"})
+        assert left_a.json()["total"] == 0
+
     async def test_list_filters_over_http(self, client: httpx.AsyncClient) -> None:
         await client.post(
             API_PREFIX,
@@ -878,6 +1154,208 @@ class TestHttpSurface:
 
         by_q = await client.get(API_PREFIX, params={"q": "transfer"})
         assert by_q.json()["total"] >= 1
+
+
+class TestWorkUnitSlugIsExact:
+    """``work_unit_slug=`` is exact equality, pinned over HTTP.
+
+    Phase 4 of ``2026-09-03-coord-agent-doors-honour-or-refuse-every-parameter``.
+    The dossier (``agent-door-filters-silently-ignored``) recorded an absurd
+    stem returning ONE row on 2026-08-28. That did not reproduce on the
+    deployed build (``total: 0`` on 2026-09-03), and ``crud/work_artifact.py``
+    filters ``WorkArtifact.work_unit_slug == work_unit_slug`` — but a live
+    zero on a frozen corpus is only *consistent with* exactness. This is the
+    proof: two artifacts whose stems share a prefix (``abc`` / ``abc-longer``),
+    and the shorter one must select exactly one row on every route that takes
+    the filter (the list and ``/export`` — ``/candidates`` does not implement
+    it, which the strict-query contract now says out loud with a 422 instead
+    of returning an unfiltered page; see ``tests/test_strict_query.py``).
+    """
+
+    @staticmethod
+    async def _two_prefixed_stems(db: AsyncSession) -> tuple[str, str]:
+        """Two plans on stems ``<abc>`` and ``<abc>-longer``.
+
+        Returns ``(short_stem, short_slug)`` — the stem a test filters on and
+        the artifact slug that filter must select alone. The longer stem's
+        artifact exists only to be the row a prefix or LIKE match would also
+        return.
+        """
+        short_stem = _slug("abc")
+        short_slug = _slug("exact-short")
+        await _upsert(
+            db,
+            org_id=None,
+            slug=short_slug,
+            body="# the short stem",
+            work_unit_slug=short_stem,
+        )
+        await _upsert(
+            db,
+            org_id=None,
+            slug=_slug("exact-long"),
+            body="# the longer stem",
+            work_unit_slug=f"{short_stem}-longer",
+        )
+        return short_stem, short_slug
+
+    async def test_list_selects_only_the_exact_stem(
+        self, async_db_session: AsyncSession, client: httpx.AsyncClient
+    ) -> None:
+        short_stem, short_slug = await self._two_prefixed_stems(async_db_session)
+
+        resp = await client.get(
+            API_PREFIX, params={"kind": "plan", "work_unit_slug": short_stem}
+        )
+        assert resp.status_code == 200, resp.text
+        body = resp.json()
+        assert body["total"] == 1
+        assert [i["slug"] for i in body["items"]] == [short_slug]
+        assert body["items"][0]["work_unit_slug"] == short_stem
+
+    async def test_list_absurd_stem_is_zero_rows(
+        self, async_db_session: AsyncSession, client: httpx.AsyncClient
+    ) -> None:
+        await self._two_prefixed_stems(async_db_session)
+
+        resp = await client.get(
+            API_PREFIX,
+            params={
+                "kind": "plan",
+                "work_unit_slug": f"absurd-stem-that-cannot-exist-{uuid4().hex}",
+            },
+        )
+        assert resp.status_code == 200, resp.text
+        assert resp.json() == {
+            "items": [],
+            "count": 0,
+            "total": 0,
+            "offset": 0,
+            "limit": 50,
+        }
+
+    async def test_export_manifest_selects_only_the_exact_stem(
+        self, async_db_session: AsyncSession, client: httpx.AsyncClient
+    ) -> None:
+        short_stem, short_slug = await self._two_prefixed_stems(async_db_session)
+
+        resp = await client.get(
+            f"{API_PREFIX}/export",
+            params={"kind": "plan", "work_unit_slug": short_stem},
+        )
+        assert resp.status_code == 200, resp.text
+        assert resp.headers["x-export-artifact-count"] == "1"
+        manifest = json.loads(
+            zipfile.ZipFile(io.BytesIO(resp.content)).read("manifest.json")
+        )
+        assert [a["slug"] for a in manifest["artifacts"]] == [short_slug]
+        assert manifest["truncated"] is False
+
+    async def test_export_absurd_stem_is_an_empty_manifest(
+        self, async_db_session: AsyncSession, client: httpx.AsyncClient
+    ) -> None:
+        await self._two_prefixed_stems(async_db_session)
+
+        resp = await client.get(
+            f"{API_PREFIX}/export",
+            params={
+                "kind": "plan",
+                "work_unit_slug": f"absurd-stem-that-cannot-exist-{uuid4().hex}",
+            },
+        )
+        assert resp.status_code == 200, resp.text
+        assert resp.headers["x-export-artifact-count"] == "0"
+        manifest = json.loads(
+            zipfile.ZipFile(io.BytesIO(resp.content)).read("manifest.json")
+        )
+        assert manifest["artifacts"] == []
+        assert manifest["truncated"] is False
+
+
+class TestStrictQueryKeepsEveryDeclaredKey:
+    """The strict route class refuses UNKNOWN keys only — never a declared one.
+
+    The refusal half (422, body shape, alias handling) is DB-free and lives in
+    ``tests/test_strict_query.py``. This half needs the handlers to actually
+    run, so it is here with the real database: every GET route on the router
+    is called with EVERY query key its own dependant declares, and must not
+    422. The keys are read from the mounted route, not retyped, so declaring
+    a new ``Query(...)`` on a handler without exercising it here fails this
+    test rather than silently narrowing coverage.
+    """
+
+    @staticmethod
+    def _get_routes(app: FastAPI) -> dict[str, APIRoute]:
+        routes: dict[str, APIRoute] = {}
+        for route in app.routes:
+            if isinstance(route, APIRoute) and "GET" in route.methods:
+                assert isinstance(route, StrictQueryRoute), route.path
+                routes[route.path] = route
+        return routes
+
+    async def test_every_declared_key_is_still_accepted(
+        self, async_db_session: AsyncSession, api_user
+    ) -> None:
+        app = _build_app(db_session=async_db_session, user=api_user)
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            await self._exercise_every_route(app, client)
+
+    async def _exercise_every_route(
+        self, app: FastAPI, client: httpx.AsyncClient
+    ) -> None:
+        created = await client.post(API_PREFIX, json=_payload(body="strict keys"))
+        assert created.status_code == 201, created.text
+        artifact_id = created.json()["artifact"]["id"]
+
+        # Real values for every declared key, per route. ``since`` is a
+        # datetime, the ints have bounds, ``include_coord`` is a bool — a
+        # single generic value would 422 on TYPE, not on the key.
+        since = (datetime.now(UTC) - timedelta(days=1)).isoformat()
+        corpus_filter = {
+            "kind": "plan",
+            "status": "VETTED",
+            "repo": "qontinui-web",
+            "q": "strict",
+            "since": since,
+            "work_unit_slug": "any-stem",
+        }
+        sent: dict[str, dict[str, str]] = {
+            f"{API_PREFIX}": {
+                **corpus_filter,
+                "intent_ref": "success_metric/development-speed",
+                "offset": "0",
+                "limit": "5",
+            },
+            f"{API_PREFIX}/divergent": {"kind": "plan"},
+            f"{API_PREFIX}/capture-health": {},
+            f"{API_PREFIX}/export": {**corpus_filter, "limit": "5"},
+            f"{API_PREFIX}/candidates": {
+                "offset": "0",
+                "limit": "5",
+                "include_coord": "false",
+            },
+            f"{API_PREFIX}/reconciliation": {
+                "offset": "0",
+                "limit": "5",
+                "include_coord": "false",
+            },
+            f"{API_PREFIX}/followups": {"offset": "0", "limit": "5"},
+            f"{API_PREFIX}/{{artifact_id}}": {"include_coord": "false"},
+            f"{API_PREFIX}/{{artifact_id}}/export": {"version_number": "1"},
+        }
+
+        routes = self._get_routes(app)
+        assert set(routes) == set(sent), "a GET route was added; exercise it here"
+        for path, route in routes.items():
+            params = sent[path]
+            declared = accepted_query_keys(route.dependant)
+            assert set(params) == set(declared), (path, declared)
+            resp = await client.get(
+                path.replace("{artifact_id}", artifact_id), params=params
+            )
+            assert resp.status_code == 200, (path, resp.status_code, resp.text)
 
 
 class TestOrgScopeFailsClosed:

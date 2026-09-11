@@ -34,10 +34,31 @@ against a ``/proc/sys/kernel/threads-max`` of **192,146** — 99.3%, pinned
 across two samples 40 s apart (the signature of having *hit* the cap rather
 than still climbing), while every sibling container sat at ≤ 68.
 
-``ResourceSampleRow`` (``qontinui-coord/crates/coord/src/device_resource_samples.rs:1711``)
-carries CPU, load, memory, commit, swap, disk, build slots, queue depth and CI
-job counts — and **no thread, PID, handle or fd column anywhere**. Both
-spellings of ``lane_pressure()`` score ``host`` on commit and ``wsl`` /
+``ResourceSampleRow`` (``qontinui-coord/crates/coord/src/device_resource_samples.rs``,
+``pub struct ResourceSampleRow``) carried CPU, load, memory, commit, swap,
+disk, build slots, queue depth and CI job counts — and **no thread, PID, handle
+or fd column anywhere**.
+
+.. note::
+
+   Two corrections to the sentence above, both made by **this very revision**
+   and left visible rather than rewritten, because the diagnosis is only
+   legible in the past tense (2026-09-01, while authoring
+   ``fleet_res_tel_05_socket_census``):
+
+   1. **"no thread, PID, handle or fd column anywhere" is no longer true.**
+      It was true when written and this revision is what falsified it: the
+      struct now carries ``threads_max`` / ``threads_used`` / ``pids_max`` /
+      ``pids_used`` / ``saturation_source``, which are exactly the five columns
+      added below. Read the claim as the state of the world the revision was
+      written *against*, not as a description of the code today.
+   2. **The line citation was stale.** It read ``:1711``; the struct is now at
+      ``:2059``. Line numbers in another repo drift with every edit to the file
+      above them, so this now cites the ``pub struct`` declaration by name
+      instead — grep for that rather than trusting any number, here or
+      elsewhere.
+
+Both spellings of ``lane_pressure()`` score ``host`` on commit and ``wsl`` /
 ``container`` on swap — commit and swap instrument both. (Memory enters this
 table elsewhere, as a BYTE FLOOR in ``headroom_against``, which the source
 itself calls "a DIFFERENT AXIS from swap"; ``mem_available_bytes`` is not a

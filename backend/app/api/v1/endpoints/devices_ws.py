@@ -23,6 +23,11 @@ Inbound messages handled (unchanged from the legacy endpoint):
   - ``phase_completed`` / ``ui_error`` / ``recent_crash`` /
     ``dispatch_ack`` / ``command_response`` / ``chat_response`` /
     ``terminal_response`` — relayed to subscribed frontends/mobiles.
+  - ``remote_terminal_*`` — the device is the SOURCE of a remote-terminal
+                       attach (D6); brokered by
+                       ``services.runner.remote_terminal_relay``.
+  - ``terminal_attached`` — the device is the TARGET answering one; routed
+                       to the attached source only, never to mobiles.
 
 Outbound messages (sent by other components via the manager):
   - ``connected``    — handshake ack with the resolved ``device_id``.
@@ -46,13 +51,17 @@ from app.config.redis_config import get_redis
 from app.crud import device_connection as device_connection_crud
 from app.crud import device_crud
 from app.db.session import AsyncSessionLocal
+from app.services import devenv_auto_enroll
 from app.services.coord_jwks import (
     CoordJWKSUnavailableError,
     CoordTokenForeignIssuerError,
     CoordTokenInvalidError,
     coord_jwks_client,
     describe_token_rejection,
+    identity_mismatch_remedy_fields,
+    jwks_failure_log_fields,
 )
+from app.services.runner import remote_terminal_relay
 from app.services.runner_websocket_manager import get_runner_websocket_manager
 from app.websockets.safe_send import (
     BENIGN_SEND_EXCEPTIONS,
@@ -106,16 +115,19 @@ async def websocket_device_unified_endpoint(websocket: WebSocket) -> None:
         # that reason is deliberately vague, so THIS log line is the whole
         # diagnostic surface. Name the coord URL we actually dialled and the
         # concrete exception class of the underlying transport fault: a
-        # ConnectTimeout to the wrong COORD_DEVICE_URL and a ReadTimeout from
-        # a genuinely slow coord are different incidents with different fixes,
+        # ConnectTimeout to the wrong device coord and a ReadTimeout from a
+        # genuinely slow coord are different incidents with different fixes,
         # and `error=str(exc)` alone has repeatedly failed to separate them.
-        logger.error(
-            "devices_ws_jwks_unavailable",
-            error=str(exc),
-            failure=type(exc).__name__,
-            cause=type(exc.__cause__).__name__ if exc.__cause__ else None,
-            coord_url=coord_jwks_client.coord_url,
-        )
+        #
+        # Name the SETTING too, derived rather than written out. This comment
+        # used to say "the wrong COORD_DEVICE_URL", which is true on a split
+        # box and false everywhere else — on a single-coord deployment the URL
+        # dialled comes from COORD_URL and COORD_DEVICE_URL is unset, so a
+        # reader sent to it would find nothing to correct. That is the same
+        # drift the identity alarm below was repaired for; a hard-coded
+        # setting name is right for one configuration only. The shared field
+        # set carries it (``coord_url_setting``).
+        logger.error("devices_ws_jwks_unavailable", **jwks_failure_log_fields(exc))
         # 1011 = internal error / service overload.
         await reject(
             websocket,
@@ -153,9 +165,9 @@ async def websocket_device_unified_endpoint(websocket: WebSocket) -> None:
                 served_kids=exc.served_kids,
                 note=(
                     "runner presented a token minted by a different coord "
-                    "than COORD_URL points at; check which coord this "
-                    "backend verifies against"
+                    "than this backend verifies against"
                 ),
+                **identity_mismatch_remedy_fields(),
             )
         await reject(websocket, message)
         return
@@ -209,6 +221,23 @@ async def websocket_device_unified_endpoint(websocket: WebSocket) -> None:
     os_name = info_msg.get("os")
     os_version = info_msg.get("os_version") or info_msg.get("osVersion")
     capabilities = info_msg.get("capabilities") or []
+
+    # Client-asserted devenv block (plan 2026-08-05, decision 2):
+    # ``{enrolled, machine_id, environment_id, instance_role}``. Parsed here and
+    # handed, unmodified, to the auto-enrollment engine below — which is the
+    # only reader, and which decides what (if anything) a hint may cause.
+    #
+    # The asymmetry this block lives under, stated once so it is not
+    # re-litigated at the call site: a client hint may freely SUPPRESS
+    # enrollment on its own behalf (``instance_role: "secondary"``, a local
+    # kill switch), but may NEVER name the machine row, the environment or the
+    # owner — those come from the verified JWT claims and the server's own
+    # tables. It is kept as a plain dict rather than being unpacked into
+    # trusted locals precisely so no later code can mistake it for a fact.
+    raw_devenv_hint = info_msg.get("devenv")
+    devenv_hint: dict[str, Any] | None = (
+        raw_devenv_hint if isinstance(raw_devenv_hint, dict) else None
+    )
 
     client_ip = websocket.client.host if websocket.client else None
 
@@ -407,6 +436,23 @@ async def websocket_device_unified_endpoint(websocket: WebSocket) -> None:
             name=name,
         )
 
+        # ----------------------------------------------------------------
+        # Auto-enrollment decision engine (plan 2026-08-05, Phase 4).
+        #
+        # Scheduled AFTER the ``connected`` ack is on the wire and never
+        # awaited: the handshake must not wait on a DB round trip, and the
+        # engine's own wrapper swallows every failure. Deliberately NOT the
+        # rollback-and-close posture of the Redis block above — a device that
+        # could not be auto-enrolled has lost a convenience; a device whose
+        # socket was dropped has lost its connection to the fleet.
+        #
+        # It is flagged off by default (``DEVENV_AUTO_ENROLL_ENABLED``), in
+        # which case this costs one attribute read inside the task.
+        # ----------------------------------------------------------------
+        devenv_auto_enroll.schedule_auto_enroll(
+            device_id, user_id, devenv_hint, manager
+        )
+
         while True:
             try:
                 data = await asyncio.wait_for(websocket.receive_json(), timeout=120.0)
@@ -471,6 +517,49 @@ async def _route_device_message(
         await _handle_heartbeat(msg, device_id, manager, connection_pk, websocket)
         return
 
+    # Remote-terminal origination door (plan 2026-08-31-remote-session-tabs-
+    # in-runner-terminal, Phase 3b / D6). This device is the SOURCE: it
+    # presents a coord-minted attach grant and the relay — after verifying it
+    # against the same JWKS that admitted this socket — forwards to the TARGET
+    # device with a ``remote`` block. Refusals are typed ``error`` frames and
+    # forward nothing. Every other frame on this socket is untouched.
+    # The relay answers every failure it knows about as a typed ``error``
+    # on this socket; this guard is for the ones it does not, because an
+    # exception here would end the loop above and tear the SOURCE device's
+    # whole socket down over one remote frame.
+    if remote_terminal_relay.is_source_frame(msg_type):
+        try:
+            await remote_terminal_relay.handle_source_frame(
+                msg, device_id, manager, websocket
+            )
+        except Exception as e:
+            logger.error(
+                "devices_ws_remote_terminal_source_frame_failed",
+                device_id=str(device_id),
+                msg_type=msg_type,
+                error=str(e),
+                error_type=type(e).__name__,
+            )
+        return
+
+    # This device is a TARGET answering a remote attach: ``terminal_attached``
+    # (new with D6) and refusals correlated by ``remote`` / ``grant_jti``
+    # rather than ``request_id``. Only the remote path consumes these, so they
+    # ride a remote-only channel and the mobile watchers below see exactly the
+    # frames they saw before.
+    if remote_terminal_relay.is_remote_only_target_frame(msg):
+        try:
+            await remote_terminal_relay.publish_target_frame(device_id, msg)
+        except Exception as e:
+            logger.error(
+                "devices_ws_remote_terminal_publish_failed",
+                device_id=str(device_id),
+                msg_type=msg_type,
+                error=str(e),
+                error_type=type(e).__name__,
+            )
+        return
+
     if msg_type in {
         "phase_completed",
         "ui_error",
@@ -523,6 +612,32 @@ async def _route_device_message(
         "terminal_buffer_response",
     } or (msg_type == "error" and msg.get("request_id") is not None):
         await manager.send_terminal_response_to_mobiles(device_id, msg)
+        return
+
+    # Reply to a ``devenv_enroll`` directive sent down this socket
+    # (``runner_websocket_manager.send_devenv_enroll``). The runner's
+    # ``mcp/backend_relay.rs::handle_relay_command`` produces it and the relay
+    # writes it straight back here.
+    #
+    # This arm MUST stay above the fall-through below. That fall-through is a
+    # closed set: an unrecognised type is logged at DEBUG and discarded, which
+    # is the exact failure the terminal-RPC comment above records shipping
+    # once already. For devenv enrollment the consequence is worse than a
+    # dropped log line — the ack is the ONLY evidence that an enroll directive
+    # reached the box, so without this arm an auto-enrollment feature whose
+    # entire purpose is to stop failures from being silent would itself fail
+    # silently. Logged at INFO, not DEBUG, for the same reason.
+    if msg_type == "devenv_enroll_ack":
+        ok = msg.get("ok")
+        logger.info(
+            "devices_ws_devenv_enroll_ack",
+            device_id=str(device_id),
+            machine_id=msg.get("machine_id"),
+            ok=ok,
+            # Only present on the failure arm; the runner never panics the
+            # relay, it reports the reason instead.
+            reason=msg.get("reason") if ok is not True else None,
+        )
         return
 
     logger.debug(
@@ -674,6 +789,22 @@ async def _cleanup(
     the same "is it still ours?" predicate, from one identity check.
     """
     still_ours = websocket is None or manager.get_websocket(device_id) is websocket
+
+    # Remote-terminal attachments this socket originated (SOURCE role) are
+    # keyed on the socket object, so this is per-connection by construction:
+    # detach on every target, drop the Redis registry rows, cancel the return-
+    # route listeners (each holds a pooled pubsub connection — the same leak
+    # class the unregister below guards). A socket that never attached is a
+    # no-op here.
+    if websocket is not None:
+        try:
+            await remote_terminal_relay.release_source(websocket)
+        except Exception as e:
+            logger.error(
+                "devices_ws_remote_terminal_release_failed",
+                device_id=str(device_id) if device_id else None,
+                error=str(e),
+            )
 
     if still_ours:
         try:

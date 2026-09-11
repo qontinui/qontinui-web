@@ -128,6 +128,7 @@ import {
   SATURATION_REPORT_MEANING,
   saturationSourceLabel,
   STALE_AFTER_SECS,
+  threadHeadroom,
 } from "./fleetResources";
 import type {
   FleetDeviceRef,
@@ -149,6 +150,21 @@ const TONE_DOT: Record<RowTone, string> = {
   warn: "bg-yellow-500",
   critical: "bg-red-500",
   unknown: "bg-muted-foreground/50",
+};
+
+/**
+ * Tone for a NUMBER rendered inline, used by the threads cell.
+ *
+ * `ok` is deliberately not green: the row stripe already carries the admission
+ * verdict, and a green number here would read as a second all-clear for an
+ * axis no guard enforces. An ordinary reading gets ordinary type; only warn
+ * and breach earn colour.
+ */
+const TONE_NUMBER: Record<RowTone, string> = {
+  ok: "",
+  warn: "text-yellow-600 dark:text-yellow-500",
+  critical: "text-red-600 dark:text-red-500",
+  unknown: "text-muted-foreground",
 };
 
 // There is deliberately no tone map for the PRESSURE text any more. Colouring
@@ -1475,6 +1491,32 @@ export function FleetResourceStrip({
                   <th className="py-1 pr-3 font-medium">Disk</th>
                   <th className="py-1 pr-3 font-medium">Build slots</th>
                   <th className="py-1 pr-3 font-medium">CI jobs</th>
+                  <th className="py-1 pr-3 font-medium">
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <span className="underline decoration-dotted">
+                          Threads / sessions
+                        </span>
+                      </TooltipTrigger>
+                      <TooltipContent className="max-w-[22rem] text-[11px]">
+                        The publishing <strong>process&apos;s</strong> OS thread
+                        count, and the terminal sessions live on it — a
+                        different axis from every other column here, and the
+                        only one that is instrumentally independent of memory.
+                        On 2026-08-29 the primary runner wedged at 540 threads
+                        against tokio&apos;s 512-slot blocking pool while
+                        memory, commit and disk all read healthy and accurate.
+                        Threads is the signal; sessions only explain it — the
+                        same count can be ordinary work or a leak, and only the
+                        pair says which. An em dash means <em>not reported</em>,
+                        which on the threads half is never the same as zero: a
+                        live process cannot have zero threads, so a zero there
+                        would read as maximally idle on the one column built to
+                        catch a saturated one. A zero on the sessions half is a
+                        real reading — an idle runner — and prints as 0.
+                      </TooltipContent>
+                    </Tooltip>
+                  </th>
                   <th className="py-1 pr-3 font-medium">Memory (per lane)</th>
                   <th className="py-1 pr-3 font-medium">Sample</th>
                 </tr>
@@ -1617,6 +1659,54 @@ export function FleetResourceStrip({
                           ) : (
                             <span className="text-muted-foreground">
                               not reported
+                            </span>
+                          )}
+                        </td>
+                        {/*
+                          Threads / sessions. Rendered as two plain integers
+                          rather than a ratio, because neither has a ceiling
+                          ON THIS ROW to divide by: the blocking pool's 512 is
+                          a runtime default the process can be configured away
+                          from, and there is no session cap in the sample at
+                          all. Printing `540/512` would assert a ceiling this
+                          row never measured — the same mistake the module
+                          header forbids for memory, in the other direction.
+
+                          `??` and not `||`: a real 0 must print as 0, and
+                          only null/undefined becomes the dash. That matters
+                          most for the sessions half, where 0 is a legitimate
+                          reading (an idle runner) and the thread count beside
+                          it is what says whether idle is true.
+                        */}
+                        <td className="py-1.5 pr-3 tabular-nums text-[11px]">
+                          {s ? (
+                            <Aged freshness={row.freshness}>
+                              {s.thread_count == null ? (
+                                <span className="text-muted-foreground">—</span>
+                              ) : (
+                                <span
+                                  className={
+                                    TONE_NUMBER[
+                                      headroomTone(
+                                        row.freshness,
+                                        threadHeadroom(s)
+                                      )
+                                    ]
+                                  }
+                                >
+                                  {s.thread_count}
+                                </span>
+                              )}
+                              <span className="text-muted-foreground">
+                                {" / "}
+                              </span>
+                              {s.active_terminal_sessions ?? (
+                                <span className="text-muted-foreground">—</span>
+                              )}
+                            </Aged>
+                          ) : (
+                            <span className="text-muted-foreground">
+                              unknown
                             </span>
                           )}
                         </td>

@@ -30,6 +30,10 @@ if os.environ.get("QONTINUI_DISABLE_CLOUD_EXTENSIONS") != "1":
         pass
 
 from app.api.v1.api import api_router
+from app.api.v1.endpoints.plan_library import (
+    ARTIFACT_EXPORT_HEADERS,
+    CORPUS_EXPORT_HEADERS,
+)
 from app.api.v1.endpoints.session_repository import EXPORT_PROVENANCE_HEADERS
 from app.config.logging_config import configure_logging, get_logger
 from app.core.config import settings
@@ -203,10 +207,10 @@ logger.info("gzip_middleware_enabled", minimum_size=1024, compresslevel=6)
 
 # Response headers a browser client is allowed to READ.
 #
-# Only six response headers are CORS-safelisted (Cache-Control,
-# Content-Language, Content-Length, Content-Type, Expires, Last-Modified,
-# Pragma); every other one is invisible to `fetch` on a cross-origin response
-# unless it is listed here. The frontend runs cross-origin whenever
+# Exactly seven response headers are CORS-safelisted — Cache-Control,
+# Content-Language, Content-Length, Content-Type, Expires, Last-Modified and
+# Pragma — and every other one is invisible to `fetch` on a cross-origin
+# response unless it is listed here. The frontend runs cross-origin whenever
 # NEXT_PUBLIC_API_URL names the API host — `ApiConfig.IS_REMOTE_BACKEND`, the
 # deployed shape — so an unlisted header is not "missing in some edge case",
 # it is missing in production while still present in local same-origin dev.
@@ -214,19 +218,42 @@ logger.info("gzip_middleware_enabled", minimum_size=1024, compresslevel=6)
 # It fails SILENTLY: `response.headers.get(name)` returns None, which is the
 # same answer as "the server never sent it". Nothing logs, nothing 500s, and
 # the client's fallback path runs as if the server had been less honest than
-# it was. Add a header here in the same change that starts emitting it.
-CORS_EXPOSE_HEADERS: list[str] = [
-    "X-Total-Count",
-    "X-RateLimit-Limit",
-    "X-RateLimit-Remaining",
-    "X-RateLimit-Reset",
-    "X-Request-ID",
-    # The session-repository export's provenance set. `X-Content-Sha256` is
-    # also what `/api/v1/plan-library/{id}/export` returns its digest in, so
-    # that route's documented contract is readable from a browser for the
-    # first time too.
-    *EXPORT_PROVENANCE_HEADERS,
-]
+# it was. Add a header here in the same change that starts emitting it —
+# `tests/test_cors_expose_headers_cover_emitted.py` now enforces that rather
+# than leaving it to whoever reads this comment.
+#
+# `X-Content-Sha256` is spelled by two of the spliced tuples — both routes
+# really do send it — so the list is de-duplicated on the way out rather than
+# handing Starlette a repeated name.
+CORS_EXPOSE_HEADERS: list[str] = list(
+    dict.fromkeys(
+        [
+            "X-Total-Count",
+            # slowapi injects the rate-limit trio itself (`Limiter(headers_enabled=True)`
+            # in `middleware/rate_limit.py`), which is why no route in `app/` spells
+            # them.
+            "X-RateLimit-Limit",
+            "X-RateLimit-Remaining",
+            "X-RateLimit-Reset",
+            "X-Request-ID",
+            # Emitted by `rate_limit_exceeded_handler` on every 429. It is the standard
+            # backoff signal and the browser is the caller that gets throttled, so
+            # withholding it leaves a client able to see THAT it was limited and not
+            # for how long.
+            "Retry-After",
+            # The session-repository export's provenance set.
+            *EXPORT_PROVENANCE_HEADERS,
+            # The plan-library exports' provenance sets. `X-Content-Sha256` overlaps
+            # the tuple above by name; the other three say WHICH artifact and WHICH
+            # VERSION that digest is over, and without them a reader gets a digest it
+            # cannot attribute. `CORPUS_EXPORT_HEADERS` carries `X-Export-Truncated`,
+            # which is emitted on both branches precisely so its absence means
+            # nothing — a rule CORS silently breaks when the header is unpublished.
+            *ARTIFACT_EXPORT_HEADERS,
+            *CORPUS_EXPORT_HEADERS,
+        ]
+    )
+)
 
 # CORS middleware must be added LAST so it executes FIRST (middleware order is reversed)
 cors_origin_regex = settings.BACKEND_CORS_ORIGIN_REGEX or None
@@ -317,6 +344,14 @@ async def startup_event():
         project=settings.PROJECT_NAME,
         boot_side_effects_skipped=skip_side_effects,
     )
+
+    # Announce a device-identity split before anything depends on it. Pure
+    # logging (no network, no shared rows), so it runs even when boot side
+    # effects are skipped: the whole point is that this configuration is
+    # otherwise only discovered at the first token rejection.
+    from app.services.coord_jwks import warn_if_device_coord_split
+
+    warn_if_device_coord_split()
 
     # Suppress the benign Windows-Proactor ConnectionResetError raised when a
     # WS client force-RSTs us (Python bug #39010 lineage). No-op on non-Windows

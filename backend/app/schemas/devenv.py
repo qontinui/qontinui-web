@@ -195,6 +195,10 @@ class MachineResponse(BaseORMSchema):
     enrolled: bool = False
     last_seen_at: IsoDatetime | None = None
     revoked: bool = False
+    # How the row came to exist: ``manual`` | ``dispatched`` | ``auto``.
+    # ``None`` means UNKNOWN (the row predates the column) and must be rendered
+    # as such — never defaulted to ``manual``, which would invent provenance.
+    enrollment_origin: str | None = None
     created_at: IsoDatetime
     updated_at: IsoDatetime
 
@@ -212,6 +216,7 @@ class MachineResponse(BaseORMSchema):
             enrolled=machine.enrolled_at is not None,
             last_seen_at=machine.last_seen_at,
             revoked=machine.revoked_at is not None,
+            enrollment_origin=machine.enrollment_origin,
             created_at=machine.created_at,
             updated_at=machine.updated_at,
         )
@@ -243,6 +248,7 @@ class MachineCreatedResponse(MachineResponse):
             enrolled=machine.enrolled_at is not None,
             last_seen_at=machine.last_seen_at,
             revoked=machine.revoked_at is not None,
+            enrollment_origin=machine.enrollment_origin,
             created_at=machine.created_at,
             updated_at=machine.updated_at,
             enrollment_code=machine.enrollment_code,
@@ -308,6 +314,72 @@ class ReposApplyDispatchResponse(BaseSchema):
     dispatched: bool
     confirm: bool
     detail: str | None = None
+
+
+# ---------------------------------------------------------------------------
+# Auto-enrollment policy (plan 2026-08-05, Phase 5)
+#
+# The owner-facing view of ``devenv.auto_enroll_policy``, which is what makes
+# the connect-time engine visible and reversible. Two questions, one row:
+# may new boxes of this owner enroll themselves, and which environment do they
+# join.
+#
+# The response deliberately carries more than the two stored columns. The
+# engine's most interesting outcome is a NO-OP — "more than one environment and
+# no stated target" makes it skip every new box, silently, forever. A surface
+# that showed only ``enabled`` and ``target_environment_id`` would render that
+# state as a perfectly healthy "on", which is the same invisible hole the whole
+# plan exists to close. So the server also reports what it would actually
+# resolve (``effective_environment_id``) and how many environments the owner
+# has, and the UI is expected to say so out loud.
+# ---------------------------------------------------------------------------
+
+
+class AutoEnrollPolicyUpdate(BaseSchema):
+    """Set the owner's auto-enrollment policy.
+
+    Both fields are required on a PUT — this is a whole-row write, not a patch,
+    so a client can never half-state a policy and leave the other half at a
+    value it never saw. ``target_environment_id: null`` clears the target.
+    """
+
+    enabled: bool
+    target_environment_id: UUID | None = None
+
+
+class AutoEnrollPolicyResponse(BaseSchema):
+    """The owner's auto-enrollment policy, plus what it actually resolves to.
+
+    ``configured`` is False when NO row exists. That is not the same as
+    disabled: an absent row reads as ``enabled=True`` (the column default), so
+    the flag exists to let the UI distinguish "the owner chose this" from "the
+    owner has never visited this surface and is getting the default".
+
+    ``effective_environment_id`` is the environment a new box would actually
+    join right now, computed by the same precedence the engine uses: a target
+    the owner really owns, else their single environment, else NULL. NULL with
+    ``environment_count > 1`` is the ambiguous state — the engine will skip
+    every new machine and log, and the UI must name that rather than showing a
+    healthy-looking "on".
+
+    ``globally_enabled`` is the DEPLOYMENT's ``DEVENV_AUTO_ENROLL_ENABLED``
+    flag, and it dominates every other field here. It ships **false** and is
+    turned on tenant by tenant, so for the whole rollout window the engine
+    answers ``disabled_globally`` before it reads a single row — while
+    ``enabled`` (the owner's own setting) still says true, because it does. A
+    response that reported only the owner's half would let the panel render a
+    healthy "on" over an engine that does nothing at all, on day one, for
+    everybody. It is exposed for exactly that reason and for no other: the
+    owner cannot change it and there is no route that would let them.
+    """
+
+    enabled: bool
+    globally_enabled: bool
+    target_environment_id: UUID | None = None
+    configured: bool
+    effective_environment_id: UUID | None = None
+    environment_count: int
+    updated_at: IsoDatetime | None = None
 
 
 # ---------------------------------------------------------------------------

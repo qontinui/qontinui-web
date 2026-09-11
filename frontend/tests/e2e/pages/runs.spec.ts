@@ -21,9 +21,25 @@
  *
  * None of these routes wrap in <RequireProject>, so no `?project=` query
  * param is needed for navigation.
+ *
+ * No fixed sleeps. Every wait here is an auto-waiting `.or()` assertion on
+ * the states the test tolerated (data / empty / loading / runner-offline),
+ * with an AND-group's remaining members asserted only once its first member
+ * rendered — never a `waitForTimeout(N)` followed by a non-waiting `count()`
+ * read, which asserts on wall-clock. Timeouts are the replaced sleep × 3.
+ * Plan: 2026-09-05-web-e2e-fixed-sleeps-red-main-one-test-at-a-time.
  */
 
 import { test, expect } from "../fixtures";
+
+/** Replaces the old `waitForTimeout(3000)` before a page-data presence read. */
+const PAGE_DATA_TIMEOUT = 9000;
+
+/** The two spellings of the runner-offline copy the pages use. */
+const runnerOffline = (page: import("@playwright/test").Page) =>
+  page
+    .locator("text=Runner Offline")
+    .or(page.locator("text=Runner is offline"));
 
 test.describe("Run History - /runs", () => {
   test("should load without errors and display page structure", async ({
@@ -72,9 +88,6 @@ test.describe("Run History - /runs", () => {
     await page.goto("/runs");
     await page.waitForLoadState("domcontentloaded");
 
-    // Wait for loading to finish
-    await page.waitForTimeout(3000);
-
     // Source of truth: page.tsx renders one of:
     //  - a <table> with the runs (when data present)
     //  - "No runs found" empty state (when query returns [])
@@ -82,18 +95,16 @@ test.describe("Run History - /runs", () => {
     //  - <RunnerPartialState> banner ("Runner offline ...") when isRunnerOffline
     // The legacy "Task Runs" heading was removed when the page was simplified
     // to a single table view — the table has no card title now.
-    const hasRunsTable = (await page.locator("table").count()) > 0;
-    const hasEmptyState =
-      (await page.locator("text=No runs found").count()) > 0;
-    const hasLoadingRuns =
-      (await page.locator("text=Loading runs").count()) > 0;
     // `text=` is case-insensitive, so this matches "Runner offline" too.
-    const hasRunnerOffline =
-      (await page.locator("text=Runner offline").count()) > 0;
-
-    expect(
-      hasRunsTable || hasEmptyState || hasLoadingRuns || hasRunnerOffline
-    ).toBeTruthy();
+    // Tolerance preserved: any of the four.
+    await expect(
+      page
+        .locator("table")
+        .or(page.locator("text=No runs found"))
+        .or(page.locator("text=Loading runs"))
+        .or(page.locator("text=Runner offline"))
+        .first()
+    ).toBeVisible({ timeout: PAGE_DATA_TIMEOUT });
   });
 });
 
@@ -124,7 +135,6 @@ test.describe("Active Runs - /runs/active", () => {
   }) => {
     await page.goto("/runs/active");
     await page.waitForLoadState("domcontentloaded");
-    await page.waitForTimeout(3000);
 
     // The page renders one of:
     //  - the dashboard layout for the selected run (when runs exist)
@@ -133,22 +143,16 @@ test.describe("Active Runs - /runs/active", () => {
     //  - the loading spinner
     // The "Active Dashboard" h1 itself contains the substring "active",
     // so we use a more specific check for the empty/offline branches.
-    const hasNoActiveRuns =
-      (await page.locator("text=No Active Runs").count()) > 0;
-    const hasRunCompleted =
-      (await page.locator("text=Run Completed").count()) > 0;
-    const hasRunnerNotConnected =
-      (await page.locator("text=Runner not connected").count()) > 0;
     // When runs are active, the TabBar renders a "dashboard" tab.
-    const hasDashboardTab =
-      (await page.getByRole("tab", { name: /dashboard/i }).count()) > 0;
-
-    expect(
-      hasNoActiveRuns ||
-        hasRunCompleted ||
-        hasRunnerNotConnected ||
-        hasDashboardTab
-    ).toBeTruthy();
+    // Tolerance preserved: any of the four.
+    await expect(
+      page
+        .locator("text=No Active Runs")
+        .or(page.locator("text=Run Completed"))
+        .or(page.locator("text=Runner not connected"))
+        .or(page.getByRole("tab", { name: /dashboard/i }))
+        .first()
+    ).toBeVisible({ timeout: PAGE_DATA_TIMEOUT });
   });
 });
 
@@ -186,30 +190,20 @@ test.describe("Findings - /runs/findings", () => {
   }) => {
     await page.goto("/runs/findings");
     await page.waitForLoadState("domcontentloaded");
-    await page.waitForTimeout(3000);
 
-    // Check for severity levels (Critical/High/Medium/Low), empty state, or runner offline
-    const hasCritical = (await page.locator("text=Critical").count()) > 0;
-    const hasHigh = (await page.locator("text=High").count()) > 0;
-    const hasMedium = (await page.locator("text=Medium").count()) > 0;
-    const hasLow = (await page.locator("text=Low").count()) > 0;
-    const hasNoFindings =
-      (await page.locator("text=No Findings Yet").count()) > 0;
-    const hasLoading =
-      (await page.locator("text=Loading findings").count()) > 0;
-    const hasRunnerOffline =
-      (await page.locator("text=Runner Offline").count()) > 0 ||
-      (await page.locator("text=Runner is offline").count()) > 0;
-
-    expect(
-      hasCritical ||
-        hasHigh ||
-        hasMedium ||
-        hasLow ||
-        hasNoFindings ||
-        hasLoading ||
-        hasRunnerOffline
-    ).toBeTruthy();
+    // Check for severity levels (Critical/High/Medium/Low), empty state, or
+    // runner offline. Tolerance preserved: any of the seven.
+    await expect(
+      page
+        .locator("text=Critical")
+        .or(page.locator("text=High"))
+        .or(page.locator("text=Medium"))
+        .or(page.locator("text=Low"))
+        .or(page.locator("text=No Findings Yet"))
+        .or(page.locator("text=Loading findings"))
+        .or(runnerOffline(page))
+        .first()
+    ).toBeVisible({ timeout: PAGE_DATA_TIMEOUT });
   });
 
   test("should display category filtering when findings exist", async ({
@@ -217,25 +211,24 @@ test.describe("Findings - /runs/findings", () => {
   }) => {
     await page.goto("/runs/findings");
     await page.waitForLoadState("domcontentloaded");
-    await page.waitForTimeout(3000);
 
-    // If findings exist, severity and category filter dropdowns should be visible
-    const hasSeverityFilter =
-      (await page.locator("text=All Severities").count()) > 0;
-    const hasCategoryFilter =
-      (await page.locator("text=All Categories").count()) > 0;
-    const hasNoFindings =
-      (await page.locator("text=No Findings Yet").count()) > 0;
-    const hasRunnerOffline =
-      (await page.locator("text=Runner Offline").count()) > 0 ||
-      (await page.locator("text=Runner is offline").count()) > 0;
-
-    // Filters show when there are findings; otherwise empty/offline state
-    expect(
-      (hasSeverityFilter && hasCategoryFilter) ||
-        hasNoFindings ||
-        hasRunnerOffline
-    ).toBeTruthy();
+    // If findings exist, severity and category filter dropdowns should be
+    // visible. Filters show when there are findings; otherwise empty/offline
+    // state. Tolerance preserved: the severity filter or either fallback,
+    // and the category filter is required only once the severity filter
+    // rendered (the original AND arm).
+    const severityFilter = page.locator("text=All Severities");
+    await expect(
+      severityFilter
+        .or(page.locator("text=No Findings Yet"))
+        .or(runnerOffline(page))
+        .first()
+    ).toBeVisible({ timeout: PAGE_DATA_TIMEOUT });
+    if (await severityFilter.first().isVisible()) {
+      await expect(page.locator("text=All Categories").first()).toBeVisible({
+        timeout: PAGE_DATA_TIMEOUT,
+      });
+    }
   });
 });
 
@@ -265,34 +258,20 @@ test.describe("Learning Insights - /runs/learning", () => {
   }) => {
     await page.goto("/runs/learning");
     await page.waitForLoadState("domcontentloaded");
-    await page.waitForTimeout(3000);
 
-    // Check for insight sections or empty/offline state
-    const hasIterationTrend =
-      (await page.locator("text=Iteration Trend").count()) > 0;
-    const hasPatternDetection =
-      (await page.locator("text=Pattern Detection").count()) > 0;
-    const hasTopCategories =
-      (await page.locator("text=Top Finding Categories").count()) > 0;
-    const hasPhaseDistribution =
-      (await page.locator("text=Phase Distribution").count()) > 0;
-    const hasNoData =
-      (await page.locator("text=No Data for Analysis").count()) > 0;
-    const hasLoading =
-      (await page.locator("text=Analyzing patterns").count()) > 0;
-    const hasRunnerOffline =
-      (await page.locator("text=Runner Offline").count()) > 0 ||
-      (await page.locator("text=Runner is offline").count()) > 0;
-
-    expect(
-      hasIterationTrend ||
-        hasPatternDetection ||
-        hasTopCategories ||
-        hasPhaseDistribution ||
-        hasNoData ||
-        hasLoading ||
-        hasRunnerOffline
-    ).toBeTruthy();
+    // Check for insight sections or empty/offline state. Tolerance
+    // preserved: any of the seven.
+    await expect(
+      page
+        .locator("text=Iteration Trend")
+        .or(page.locator("text=Pattern Detection"))
+        .or(page.locator("text=Top Finding Categories"))
+        .or(page.locator("text=Phase Distribution"))
+        .or(page.locator("text=No Data for Analysis"))
+        .or(page.locator("text=Analyzing patterns"))
+        .or(runnerOffline(page))
+        .first()
+    ).toBeVisible({ timeout: PAGE_DATA_TIMEOUT });
   });
 });
 
@@ -320,54 +299,51 @@ test.describe("Statistics - /runs/statistics", () => {
   test("should display key metrics or empty state", async ({ page }) => {
     await page.goto("/runs/statistics");
     await page.waitForLoadState("domcontentloaded");
-    await page.waitForTimeout(3000);
 
-    // Check for key metrics cards or empty/offline state
-    const hasTotalRuns = (await page.locator("text=Total Runs").count()) > 0;
-    const hasSuccessRate =
-      (await page.locator("text=Success Rate").count()) > 0;
-    const hasAvgDuration =
-      (await page.locator("text=Avg Duration").count()) > 0;
-    const hasNoData =
-      (await page.locator("text=No Data Available").count()) > 0;
-    const hasLoading =
-      (await page.locator("text=Computing statistics").count()) > 0;
-    const hasRunnerOffline =
-      (await page.locator("text=Runner Offline").count()) > 0 ||
-      (await page.locator("text=Runner is offline").count()) > 0;
-
-    expect(
-      (hasTotalRuns && hasSuccessRate && hasAvgDuration) ||
-        hasNoData ||
-        hasLoading ||
-        hasRunnerOffline
-    ).toBeTruthy();
+    // Check for key metrics cards or empty/offline state. Tolerance
+    // preserved: the first metric card or any fallback, and the other two
+    // cards are required only once the first rendered (the original AND arm).
+    const totalRuns = page.locator("text=Total Runs");
+    await expect(
+      totalRuns
+        .or(page.locator("text=No Data Available"))
+        .or(page.locator("text=Computing statistics"))
+        .or(runnerOffline(page))
+        .first()
+    ).toBeVisible({ timeout: PAGE_DATA_TIMEOUT });
+    if (await totalRuns.first().isVisible()) {
+      await expect(page.locator("text=Success Rate").first()).toBeVisible({
+        timeout: PAGE_DATA_TIMEOUT,
+      });
+      await expect(page.locator("text=Avg Duration").first()).toBeVisible({
+        timeout: PAGE_DATA_TIMEOUT,
+      });
+    }
   });
 
   test("should display status breakdown when data exists", async ({ page }) => {
     await page.goto("/runs/statistics");
     await page.waitForLoadState("domcontentloaded");
-    await page.waitForTimeout(3000);
 
-    // Check for status breakdown section
-    const hasStatusBreakdown =
-      (await page.locator("text=Status Breakdown").count()) > 0;
-    const hasCompleted = (await page.locator("text=Completed").count()) > 0;
-    const hasFailed = (await page.locator("text=Failed").count()) > 0;
-    const hasNoData =
-      (await page.locator("text=No Data Available").count()) > 0;
-    const hasLoading =
-      (await page.locator("text=Computing statistics").count()) > 0;
-    const hasRunnerOffline =
-      (await page.locator("text=Runner Offline").count()) > 0 ||
-      (await page.locator("text=Runner is offline").count()) > 0;
-
-    expect(
-      (hasStatusBreakdown && hasCompleted && hasFailed) ||
-        hasNoData ||
-        hasLoading ||
-        hasRunnerOffline
-    ).toBeTruthy();
+    // Check for status breakdown section. Tolerance preserved: the section
+    // heading or any fallback, and its Completed / Failed rows are required
+    // only once the heading rendered (the original AND arm).
+    const statusBreakdown = page.locator("text=Status Breakdown");
+    await expect(
+      statusBreakdown
+        .or(page.locator("text=No Data Available"))
+        .or(page.locator("text=Computing statistics"))
+        .or(runnerOffline(page))
+        .first()
+    ).toBeVisible({ timeout: PAGE_DATA_TIMEOUT });
+    if (await statusBreakdown.first().isVisible()) {
+      await expect(page.locator("text=Completed").first()).toBeVisible({
+        timeout: PAGE_DATA_TIMEOUT,
+      });
+      await expect(page.locator("text=Failed").first()).toBeVisible({
+        timeout: PAGE_DATA_TIMEOUT,
+      });
+    }
   });
 
   test("should display duration extremes when data exists", async ({
@@ -375,28 +351,19 @@ test.describe("Statistics - /runs/statistics", () => {
   }) => {
     await page.goto("/runs/statistics");
     await page.waitForLoadState("domcontentloaded");
-    await page.waitForTimeout(3000);
 
-    // Check for longest/shortest run cards
-    const hasLongestRun = (await page.locator("text=Longest Run").count()) > 0;
-    const hasShortestRun =
-      (await page.locator("text=Shortest Run").count()) > 0;
-    const hasNoData =
-      (await page.locator("text=No Data Available").count()) > 0;
-    const hasLoading =
-      (await page.locator("text=Computing statistics").count()) > 0;
-    const hasRunnerOffline =
-      (await page.locator("text=Runner Offline").count()) > 0 ||
-      (await page.locator("text=Runner is offline").count()) > 0;
-
-    // Duration extremes only show when there are finished runs with duration data
-    expect(
-      hasLongestRun ||
-        hasShortestRun ||
-        hasNoData ||
-        hasLoading ||
-        hasRunnerOffline
-    ).toBeTruthy();
+    // Check for longest/shortest run cards. Duration extremes only show when
+    // there are finished runs with duration data. Tolerance preserved: any
+    // of the five.
+    await expect(
+      page
+        .locator("text=Longest Run")
+        .or(page.locator("text=Shortest Run"))
+        .or(page.locator("text=No Data Available"))
+        .or(page.locator("text=Computing statistics"))
+        .or(runnerOffline(page))
+        .first()
+    ).toBeVisible({ timeout: PAGE_DATA_TIMEOUT });
   });
 });
 
@@ -426,25 +393,17 @@ test.describe("Checkpoints - /runs/checkpoints", () => {
   }) => {
     await page.goto("/runs/checkpoints");
     await page.waitForLoadState("domcontentloaded");
-    await page.waitForTimeout(3000);
 
-    // Check for runs list panel, empty state, or runner offline
-    const hasRunsList = (await page.locator("text=Runs (").count()) > 0;
-    const hasSelectRunPrompt =
-      (await page.locator("text=Select a Run").count()) > 0;
-    const hasNoRuns =
-      (await page.locator("text=No Runs Available").count()) > 0;
-    const hasLoading = (await page.locator("text=Loading runs").count()) > 0;
-    const hasRunnerOffline =
-      (await page.locator("text=Runner Offline").count()) > 0 ||
-      (await page.locator("text=Runner is offline").count()) > 0;
-
-    expect(
-      hasRunsList ||
-        hasSelectRunPrompt ||
-        hasNoRuns ||
-        hasLoading ||
-        hasRunnerOffline
-    ).toBeTruthy();
+    // Check for runs list panel, empty state, or runner offline. Tolerance
+    // preserved: any of the five.
+    await expect(
+      page
+        .locator("text=Runs (")
+        .or(page.locator("text=Select a Run"))
+        .or(page.locator("text=No Runs Available"))
+        .or(page.locator("text=Loading runs"))
+        .or(runnerOffline(page))
+        .first()
+    ).toBeVisible({ timeout: PAGE_DATA_TIMEOUT });
   });
 });

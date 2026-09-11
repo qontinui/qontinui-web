@@ -18,6 +18,7 @@ import {
   AUTHOR_GLYPH_KINDS,
   STATUS_BADGE_CLASS,
   UNIT_FILTERS,
+  baselineLabel,
   buildUnitRows,
   countByStatus,
   deriveCorpusHealth,
@@ -152,6 +153,67 @@ describe("buildUnitRows", () => {
 // -----------------------------------------------------------------------------
 // The palette contract (console style guide §4.2)
 // -----------------------------------------------------------------------------
+
+describe("buildUnitRows — the published baseline", () => {
+  const shipped = (name: string, version = "0.4.12") => ({
+    kind: KIND_COMMAND,
+    name,
+    files: { [`${name}.md`]: `# ${name} shipped` },
+    checksum: `sha256-shipped-${name}`,
+    published_by_version: version,
+    published_at: "2026-09-05T08:00:00Z",
+  });
+
+  it("lists a published name with no stored row as embedded, carrying its copy", () => {
+    const rows = buildUnitRows(COMMAND, [], [], [shipped("gate")]);
+    const gate = rows.find((r) => r.name === "gate");
+    expect(gate).toBeDefined();
+    expect(gate?.layer).toBe("embedded");
+    expect(gate?.resolved).toBeNull();
+    expect(gate?.embedded?.files).toEqual({ "gate.md": "# gate shipped" });
+    expect(statusOf(gate!).reason).toContain("published by runner v0.4.12");
+  });
+
+  it("never changes which layer a row resolves from", () => {
+    const rows = buildUnitRows(
+      COMMAND,
+      [unit({ name: "vet-plan" })],
+      [],
+      [shipped("vet-plan")]
+    );
+    const row = rows.find((r) => r.name === "vet-plan")!;
+    expect(row.layer).toBe("account");
+    expect(row.embedded?.published_by_version).toBe("0.4.12");
+  });
+
+  it("ignores published units of another kind", () => {
+    const rows = buildUnitRows(COMMAND, [], [], [{ ...shipped("x"), kind: KIND_SKILL }]);
+    expect(rows.some((r) => r.name === "x")).toBe(false);
+  });
+
+  it("says qontinui-web holds no copy when nothing was published", () => {
+    const rows = buildUnitRows(COMMAND, [], [], []);
+    for (const row of rows) {
+      expect(row.embedded).toBeNull();
+      expect(statusOf(row).reason).toMatch(/No runner has published/);
+    }
+  });
+
+  it("matches a query against a published file path when nothing is stored", () => {
+    const [row] = buildUnitRows(COMMAND, [], [], [shipped("gate")]).filter(
+      (r) => r.name === "gate"
+    );
+    expect(matchesQuery(row!, "gate.md")).toBe(true);
+  });
+});
+
+describe("baselineLabel", () => {
+  it("names the publishing runner version, never 'the default'", () => {
+    expect(baselineLabel("0.4.12")).toBe("published by runner v0.4.12");
+    expect(baselineLabel("v0.4.12")).toBe("published by runner v0.4.12");
+    expect(baselineLabel("0.4.12")).not.toMatch(/default/);
+  });
+});
 
 describe("ATTENTION_BY_KIND — the colour/attention contract", () => {
   it("keys the badge palette off attention — red only for author-action", () => {

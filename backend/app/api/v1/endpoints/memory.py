@@ -104,6 +104,7 @@ from app.api.deps import (
     current_active_user_optional,
     get_async_db,
 )
+from app.api.strict_query import StrictQueryRoute
 from app.core.config import settings
 from app.models.user import User
 from app.schemas.memory import (
@@ -127,6 +128,7 @@ from app.schemas.memory import (
     MemoryJobOut,
     MemoryKind,
     MemoryLinkOut,
+    MemoryQueryEcho,
     MemoryQueryHit,
     MemoryQueryRequest,
     MemoryQueryResponse,
@@ -148,6 +150,7 @@ from app.services.coord_jwks import (
     CoordTokenNotYetValidError,
     coord_jwks_client,
     describe_token_rejection,
+    jwks_failure_log_fields,
 )
 from app.services.memory_redaction import log_redactions, redact_text
 from app.services.memory_retrieval import rrf_fuse
@@ -155,7 +158,18 @@ from app.services.memory_vectors import EMBEDDING_MODEL_TAG
 
 logger = structlog.get_logger(__name__)
 
-router = APIRouter()
+#: ``StrictQueryRoute`` (plan
+#: ``2026-09-03-wrong-key-reads-cannot-yield-a-silent-zero``, Phase 4; the
+#: mechanism is qontinui-web#1240's, first adopted by the plan-library router):
+#: a query key no handler on this router declares is a ``422
+#: unknown_query_parameter`` naming the accepted set, not a silently
+#: unfiltered ``200``. The measured occurrence was ``GET /records?kind=feedback``
+#: — the real filter is ``kinds`` — answering EVERY kind with well-formed,
+#: plausible, wrong rows: a confident false positive that suppressed a dedup
+#: write. The accepted set per route is derived from each
+#: handler's signature (``app/api/strict_query.py``), so adding a ``Query(...)``
+#: below needs no registration here.
+router = APIRouter(route_class=StrictQueryRoute)
 
 # --------------------------------------------------------------------------
 # Auth — the memory principal
@@ -264,7 +278,11 @@ async def get_memory_tenant(
         try:
             claims = await coord_jwks_client.verify_token(credentials.credentials)
         except CoordJWKSUnavailableError as exc:
-            logger.error("memory_auth_jwks_unavailable", error=str(exc))
+            # Same diagnosability rule as the WS handshake in devices_ws.py
+            # and the device-token dependency in deps.py: the 503 detail
+            # below is deliberately vague, so this line is the whole
+            # diagnostic surface.
+            logger.error("memory_auth_jwks_unavailable", **jwks_failure_log_fields(exc))
             raise HTTPException(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
                 detail="Memory authentication temporarily unavailable.",
@@ -726,6 +744,14 @@ async def query_records(
     ``agent``/``session``-scoped rows are only visible when the request
     names those scopes AND supplies the matching ``scope_ref``.
 
+    ``title_prefix`` is an exact, case-sensitive prefix filter on
+    ``title``, ANDed with every arm above. It is the HEAD-RESOLUTION
+    door: a dossier head is titled ``DOSSIER <slug> — <issue>`` while its
+    contributions and deltas must not share that prefix, so
+    ``title_prefix="DOSSIER <slug> —"`` returns the head alone where the
+    bare key ranks it behind its own contributions. ``%`` and ``_`` in
+    the value are literal.
+
     The semantic arm needs a vector, and this endpoint never computes
     one. It runs only when the caller supplies ``query_embedding`` (with
     its ``query_embedding_model``) AND this tenant's corpus is entirely
@@ -750,6 +776,25 @@ async def query_records(
     ``hits``. It is gated on ``MEMORY_ANCHORED_RECALL_ENABLED``, which is
     OFF by default; ``anchored_arm`` always says which of ran /
     not_requested / skipped_disabled happened.
+
+    **A zero here is self-describing.** ``hits: []`` used to be the same
+    answer for an empty corpus, a mistyped filter, a wrong tenant and a
+    retrieval that landed in the anchored arm, so three more REQUIRED
+    fields ride on every response:
+
+    * ``live_row_count`` — the tenant's retrieval-live row total,
+      counted in this same request on the predicate ``/memory/stats``
+      uses. Zero hits against a non-zero count is "your query matched
+      none of N"; against zero it is "there is nothing to match".
+    * ``query_echo`` — the RESOLVED parameters the arms actually ran
+      with, so a defaulted ``scopes``, an ignored-because-absent
+      ``scope_ref`` or a ``limit`` the caller never set is visible in the
+      answer itself.
+    * ``anchored_hit_count`` — so a caller reading only ``hits`` cannot
+      read zero off a response that did retrieve records.
+
+    The request body is ``extra="forbid"``: an unrecognized key is a 422
+    naming the field rather than a silently wider query.
     """
     # Left as ``None`` when the caller names no instant, so validity is
     # evaluated against the row's OWN transaction-stamped timestamps
@@ -771,6 +816,9 @@ async def query_records(
         "scope_ref": payload.scope_ref,
         "min_importance": payload.min_importance,
         "since": payload.since,
+        # Applied inside the shared WHERE fragment, so every arm below
+        # (vector, FTS, link expansion, anchored) honours it.
+        "title_prefix": payload.title_prefix,
     }
     vector_arm: Literal["hybrid", "skipped_no_embedding", "skipped_migrating"]
     vector_hits: list[tuple[UUID, float]]
@@ -897,12 +945,43 @@ async def query_records(
         principal.tenant_id,
         [h.memory_id for h in hits] + [h.memory_id for h in anchored_hits],
     )
+
+    # The denominator, computed HERE rather than left to a second call
+    # against /memory/stats: one round trip, and no window in which the
+    # corpus moves between the count and the hits it is meant to
+    # explain. Same predicate as the facets aggregate — see
+    # ``store.live_row_count``.
+    live_rows = await store.live_row_count(db, principal.tenant_id)
+
     return MemoryQueryResponse(
         hits=hits,
         vector_arm=vector_arm,
         link_arm=link_arm,
         anchored_arm=anchored_arm,
         anchored_hits=anchored_hits,
+        anchored_hit_count=len(anchored_hits),
+        live_row_count=live_rows,
+        # The RESOLVED values. ``kinds``/``scopes``/``as_of`` are the
+        # local bindings the arms actually ran on (they are what went
+        # into ``filter_kwargs`` above), NOT ``payload.kinds`` /
+        # ``payload.scopes`` / ``payload.as_of`` — those are the raw
+        # body, and echoing them back would re-report what the caller
+        # already knows while hiding every default the server applied,
+        # which is the whole point of the field. The remainder are
+        # pydantic-defaulted on ``payload`` itself, so the payload
+        # attribute IS the resolved value there.
+        query_echo=MemoryQueryEcho(
+            query_text=payload.query_text,
+            kinds=kinds,
+            scopes=scopes,
+            scope_ref=payload.scope_ref,
+            limit=payload.limit,
+            link_expansion=payload.link_expansion,
+            min_importance=payload.min_importance,
+            since=payload.since,
+            as_of=as_of,
+            anchored_to_count=len(payload.anchored_to or []),
+        ),
     )
 
 
@@ -977,7 +1056,9 @@ async def list_records(
         if len(rows) == limit
         else None
     )
-    return ListRecordsResponse(records=records, next_cursor=next_cursor)
+    return ListRecordsResponse(
+        records=records, count=len(records), next_cursor=next_cursor
+    )
 
 
 @router.post("/graph", response_model=MemoryGraphResponse)

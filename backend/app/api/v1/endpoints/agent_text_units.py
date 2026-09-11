@@ -18,8 +18,14 @@ Two layers resolve here, ``account override → fleet default``:
   because one write there changes every account that has not overridden the
   unit.
 
-There is still no row for the runner's *embedded* default, so ``DELETE`` only
-ever removes a stored layer and lets the next one down apply.
+The runner's *embedded* default has a row too, since plan
+``2026-08-31-runner-publishes-embedded-command-defaults``: ``PUT /defaults`` is
+the runner publishing its whole embedded roster to the caller's org, and
+``GET /defaults`` is the account's baseline. It is a THIRD layer, org-scoped
+like an override and never the fleet one, and it is a **display** baseline —
+the list projections below never fold it in, so ``DELETE`` still only removes a
+stored layer and lets the next one down apply. Both routes live on
+``defaults_router`` so the ``/agent-commands`` alias can include them verbatim.
 
 Two list projections, one query
 -------------------------------
@@ -48,6 +54,10 @@ from app.models.user import User
 from app.services.agent_text_unit_service import (
     MAX_NAMES_PER_QUERY,
     AgentTextUnitCreate,
+    AgentTextUnitDefaultsPublishRequest,
+    AgentTextUnitDefaultsPublishResponse,
+    AgentTextUnitDefaultsRejected,
+    AgentTextUnitDefaultsResponse,
     AgentTextUnitIndexResponse,
     AgentTextUnitListResponse,
     AgentTextUnitResponse,
@@ -180,6 +190,97 @@ class UnitListFilters:
         self.names = names
         self.offset = offset
         self.limit = limit
+
+
+# =============================================================================
+# The embedded layer — Phase 4b of
+# `2026-08-31-runner-publishes-embedded-command-defaults`
+# =============================================================================
+#
+# A sub-router rather than two more decorators on `router`, so the legacy
+# `/agent-commands` alias can inherit both routes with ONE `include_router`
+# and no second implementation. Included into `router` BELOW, before
+# `GET /{name}` is declared — `/defaults` would otherwise be swallowed as a unit
+# named `defaults`, the same trap `/index` documents.
+
+defaults_router = APIRouter()
+
+
+async def _resolve_account(
+    db: AsyncSession,
+    user: User,
+    organization_id: UUID | None,
+    *,
+    write: bool,
+) -> UUID:
+    """The embedded layer is ALWAYS an account's — never the fleet layer.
+
+    Same org resolution and membership check as every other route here
+    (`resolve_layer` with the fleet arm closed), because the runner publishes
+    with the operator's own user bearer and the org is assigned from that
+    credential, not from the body. A `fleet_default` switch is deliberately not
+    offered: an `organization_id IS NULL` publish is the any-signed-in-user-
+    rewrites-every-tenant hole Design decision 2 exists to close.
+    """
+    layer = await resolve_layer(
+        db, user, organization_id, fleet_default=False, write=write
+    )
+    # `fleet_default=False` never resolves to the fleet layer; the narrowing is
+    # for the type, not a branch.
+    assert layer is not None
+    return layer
+
+
+@defaults_router.put(
+    "/defaults",
+    response_model=AgentTextUnitDefaultsPublishResponse,
+    summary="Publish a runner build's whole embedded roster to this account",
+)
+async def publish_agent_text_unit_defaults(
+    data: AgentTextUnitDefaultsPublishRequest,
+    organization_id: UUID | None = Query(None),
+    db: AsyncSession = Depends(get_async_db),
+    current_user: User = Depends(current_active_user),
+    service: AgentTextUnitService = Depends(get_service),
+) -> AgentTextUnitDefaultsPublishResponse:
+    """Full-set replace of the account's embedded layer.
+
+    `units` is the COMPLETE roster of one runner build (its `runner_version`);
+    names absent from it are deleted. Every checksum is recomputed server-side
+    and a mismatch is a `422` with `detail.reason == "checksum_mismatch"`; so is
+    any unit whose `published_by_version` is not `runner_version`, or that fails
+    the rules an override must satisfy. A publish OLDER than the stored version
+    is a normal `200 {accepted: false, rejected_reason: "older_than_stored"}` —
+    an old device is not a fault. Equal versions: last writer wins.
+    """
+    org = await _resolve_account(db, current_user, organization_id, write=True)
+    try:
+        return await service.publish_defaults(db, org, data.runner_version, data.units)
+    except AgentTextUnitDefaultsRejected as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=exc.detail()
+        ) from exc
+
+
+@defaults_router.get(
+    "/defaults",
+    response_model=AgentTextUnitDefaultsResponse,
+    summary="This account's baseline — the embedded defaults its runner published",
+)
+async def get_agent_text_unit_defaults(
+    organization_id: UUID | None = Query(None),
+    db: AsyncSession = Depends(get_async_db),
+    current_user: User = Depends(current_active_user),
+    service: AgentTextUnitService = Depends(get_service),
+) -> AgentTextUnitDefaultsResponse:
+    """Empty `units` with `published_by_version: null` means NO baseline has
+    been published for this account — render that as unavailable, never as an
+    empty default."""
+    org = await _resolve_account(db, current_user, organization_id, write=False)
+    return await service.get_defaults(db, org)
+
+
+router.include_router(defaults_router)
 
 
 @router.get(
