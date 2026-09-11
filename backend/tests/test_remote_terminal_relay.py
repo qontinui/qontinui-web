@@ -2582,6 +2582,93 @@ async def test_terminal_created_routes_back_and_spends_the_grant(
     assert redis.empty()
 
 
+async def test_created_carries_coord_session_id_as_a_first_class_field(
+    relay: RemoteTerminalRelay, redis: _FakeRedis
+) -> None:
+    """The source needs the coord session id to mint the ATTACH grant that
+    drives what it just created, and the attach mint is session-addressed.
+
+    It rides as a declared top-level field. The only zero-relay-change route
+    was an undeclared key on ``terminal`` -- an object this relay forwards
+    verbatim today, so it works right up until something validates that
+    object, at which point create-then-attach breaks SILENTLY.
+    """
+    ws = _FakeWS()
+    manager = _manager()
+    claims = _create_claims()
+    await _create(relay, ws, manager, claims)
+    minted = _forwarded_create(manager)["request_id"]
+    session = relay._sessions[id(ws)]
+
+    routed = await relay.route_target_frame(
+        session,
+        TARGET_DEVICE,
+        {
+            "type": "terminal_created",
+            "request_id": minted,
+            "coord_session_id": "sess-abc",
+            "terminal": {"id": "t-new", "title": "headless"},
+        },
+    )
+
+    assert routed is True
+    created = ws.of_type("remote_terminal_created")[0]
+    assert created["coord_session_id"] == "sess-abc"
+
+
+async def test_created_still_reads_coord_session_id_from_the_terminal_object(
+    relay: RemoteTerminalRelay,
+) -> None:
+    """A target that predates the declared field put it inside ``terminal``.
+
+    Reading either place keeps that target working while the top-level field
+    is the contract.
+    """
+    ws = _FakeWS()
+    manager = _manager()
+    await _create(relay, ws, manager, _create_claims())
+    minted = _forwarded_create(manager)["request_id"]
+    session = relay._sessions[id(ws)]
+
+    await relay.route_target_frame(
+        session,
+        TARGET_DEVICE,
+        {
+            "type": "terminal_created",
+            "request_id": minted,
+            "terminal": {"id": "t-new", "coordSessionId": "sess-legacy"},
+        },
+    )
+    assert ws.of_type("remote_terminal_created")[0]["coord_session_id"] == "sess-legacy"
+
+
+async def test_a_created_with_no_coord_session_stays_absent_not_guessed(
+    relay: RemoteTerminalRelay,
+) -> None:
+    """ "Created but not addressable" is the honest report.
+
+    Inventing an id here would send the source off to mint an attach grant for
+    a session that does not exist.
+    """
+    ws = _FakeWS()
+    manager = _manager()
+    await _create(relay, ws, manager, _create_claims())
+    minted = _forwarded_create(manager)["request_id"]
+    session = relay._sessions[id(ws)]
+
+    await relay.route_target_frame(
+        session,
+        TARGET_DEVICE,
+        {
+            "type": "terminal_created",
+            "request_id": minted,
+            "terminal": {"id": "t-new"},
+        },
+    )
+    created = ws.of_type("remote_terminal_created")[0]
+    assert created["coord_session_id"] is None
+
+
 async def test_a_terminal_created_we_did_not_mint_is_not_ours(
     relay: RemoteTerminalRelay,
 ) -> None:
@@ -2634,6 +2721,82 @@ async def test_a_refused_create_reaches_the_source_and_drops_the_grant(
     assert errors[0]["request_id"] == "req-create-1"
     assert session.grants == {}
     assert redis.empty()
+
+
+async def test_a_refusal_forwards_the_targets_remedy_fields(
+    relay: RemoteTerminalRelay,
+) -> None:
+    """A refusal that cannot say what IS allowed is an error, not a remedy.
+
+    This payload is REBUILT rather than forwarded, so anything not explicitly
+    named is dropped -- and the two fields the target puts on a create refusal
+    are exactly the ones that let the source say "here is what you may ask for
+    instead" rather than only "refused".
+    """
+    ws = _FakeWS()
+    manager = _manager()
+    claims = _create_claims()
+    await _create(relay, ws, manager, claims)
+    minted = _forwarded_create(manager)["request_id"]
+    session = relay._sessions[id(ws)]
+
+    await relay.route_target_frame(
+        session,
+        TARGET_DEVICE,
+        {
+            "type": "error",
+            "request_id": minted,
+            "code": "remote_create_working_dir_not_allowed",
+            "message": "not one this device offers",
+            "allowed_working_dir_keys": ["workspace_root", "scratch"],
+            "allowed_intent_repos": ["qontinui-web"],
+            "remote": {"grant_jti": claims["jti"]},
+        },
+    )
+
+    err = ws.of_type("remote_terminal_error")[0]
+    assert err["allowed_working_dir_keys"] == ["workspace_root", "scratch"]
+    assert err["allowed_intent_repos"] == ["qontinui-web"]
+
+
+async def test_a_refusal_cannot_smuggle_routing_fields_through_the_remedy(
+    relay: RemoteTerminalRelay,
+) -> None:
+    """The TARGET controls this frame, so the forward is a bounded allowlist.
+
+    A blanket merge would let it set ``code``, ``grant_jti`` or ``request_id``
+    on a payload the source trusts for routing. Non-list values, non-string
+    members and over-long members are dropped rather than trusted.
+    """
+    ws = _FakeWS()
+    manager = _manager()
+    claims = _create_claims()
+    await _create(relay, ws, manager, claims)
+    minted = _forwarded_create(manager)["request_id"]
+    session = relay._sessions[id(ws)]
+
+    await relay.route_target_frame(
+        session,
+        TARGET_DEVICE,
+        {
+            "type": "error",
+            "request_id": minted,
+            "code": "remote_create_working_dir_not_allowed",
+            "message": "no",
+            "grant_jti": "not-the-real-grant",
+            "allowed_working_dir_keys": "not-a-list",
+            "allowed_intent_repos": [{"nested": "object"}, "x" * 300, "ok"],
+            "remote": {"grant_jti": claims["jti"]},
+        },
+    )
+
+    err = ws.of_type("remote_terminal_error")[0]
+    # Routing fields come from the relay's own state, never the target's frame.
+    assert err["grant_jti"] == claims["jti"]
+    # A non-list is dropped entirely rather than coerced.
+    assert "allowed_working_dir_keys" not in err
+    # Only the well-formed member survives.
+    assert err["allowed_intent_repos"] == ["ok"]
 
 
 async def test_a_create_grant_is_single_use(relay: RemoteTerminalRelay) -> None:
