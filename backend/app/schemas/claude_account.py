@@ -24,7 +24,7 @@ class ClaudeAccountEntry(BaseSchema):
     )
     dir_name: str | None = Field(
         None,
-        description='Overrides the derived local directory name '
+        description="Overrides the derived local directory name "
         '(default ".claude-<account_key>")',
     )
 

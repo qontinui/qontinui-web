@@ -38,9 +38,7 @@ logger = structlog.get_logger(__name__)
 router = APIRouter()
 
 
-async def _load_roster(
-    db: AsyncSession, user_id: Any
-) -> list[ClaudeAccountProfile]:
+async def _load_roster(db: AsyncSession, user_id: Any) -> list[ClaudeAccountProfile]:
     result = await db.execute(
         select(ClaudeAccountProfile)
         .where(ClaudeAccountProfile.user_id == user_id)

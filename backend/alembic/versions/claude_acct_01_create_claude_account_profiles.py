@@ -1,7 +1,7 @@
 """create auth.claude_account_profiles
 
 Revision ID: claude_acct_01
-Revises: ptbe_01_primary_tree_branch_events
+Revises: devenv_10_unique_active_coord_device
 Create Date: 2026-09-11
 
 Server-side roster of a user's Claude Code accounts (gmail, hotmail, ...),
@@ -18,7 +18,7 @@ from alembic import op
 
 # revision identifiers
 revision = "claude_acct_01"
-down_revision = "ptbe_01_primary_tree_branch_events"
+down_revision = "devenv_10_unique_active_coord_device"
 branch_labels = None
 depends_on = None
 
