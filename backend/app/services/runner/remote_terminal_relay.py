@@ -183,8 +183,8 @@ CODE_LISTENER_LOST = "listener_lost"
 # The mirror of ``mcp::remote_terminal::{AttachRefusal, CreateRefusal}::code``
 # in qontinui-runner plus ``backend_relay``'s own pre-dispatch refusal. A code
 # outside it is not dropped — a refusal the source cannot name is a worse
-# outcome than one it can — but is NAMESPACED into ``target_<code>``, which by
-# construction cannot collide with anything the relay says itself.
+# outcome than one it can — but is NAMESPACED with
+# ``TARGET_CODE_PREFIX``, which no relay code shares.
 #
 # ``attach_grant_unknown`` / ``attach_grant_expired`` are in BOTH vocabularies
 # and stay pass-through: the source's handling of them is identical either way
@@ -212,28 +212,107 @@ TARGET_ERROR_CODES = frozenset(
     }
 )
 
+# ---------------------------------------------------------------------------
+# The RELAY's own closed set of refusal codes.
+# ---------------------------------------------------------------------------
+# Enumerated so the namespacing below can be CHECKED against it rather than
+# asserted about. ``TARGET_ERROR_CODES`` and this set deliberately intersect
+# (``attach_grant_unknown`` / ``attach_grant_expired``): the source's handling
+# is identical either way, so those stay pass-through. Every OTHER relay code
+# must be unreachable from target input, which is the property
+# ``namespace_target_code`` owns.
+RELAY_ERROR_CODES = frozenset(
+    {
+        CODE_GRANT_INVALID,
+        CODE_GRANT_EXPIRED,
+        CODE_GRANT_WRONG_SOURCE,
+        CODE_NOT_REGISTERED,
+        CODE_VERIFIER_UNAVAILABLE,
+        CODE_REGISTRY_UNAVAILABLE,
+        CODE_GRANT_CONSUMED,
+        CODE_TERMINAL_BUSY,
+        CODE_TARGET_NOT_CONNECTED,
+        CODE_CREATE_GRANT_INVALID,
+        CODE_CREATE_GRANT_EXPIRED,
+        CODE_CREATE_GRANT_WRONG_SOURCE,
+        CODE_GRANT_WRONG_KIND,
+        CODE_LISTENER_LOST,
+        # Minted inside ``route_target_frame`` rather than as a module
+        # constant, but it is the relay speaking all the same.
+        "attach_terminal_missing",
+    }
+)
+
+# The prefix a target-supplied code is namespaced under.
+#
+# It used to be ``target_``, and the docstring claimed collision was impossible
+# "by construction" — which was false: ``CODE_TARGET_NOT_CONNECTED`` IS
+# ``target_not_connected``, so a connected target answering ``not_connected``
+# (or ``Not Connected``, or ``not-connected``, or ``  NOT CONNECTED  ``, all of
+# which reduce to the same slug) forged the relay's own "the target is not
+# connected" verdict. Nothing branches on that code today, which is why this
+# was a 🟠 and not a 🔴 — but a prefix chosen so the claim is TRUE costs
+# nothing (review round 2, finding 3).
+#
+# ``_prefix_is_disjoint_from_relay_codes`` below is the standing check, and
+# ``namespace_target_code`` re-checks its own output, so a relay code added
+# later that happens to start with this prefix cannot be reached by accident.
+TARGET_CODE_PREFIX = "target_said_"
+
 # Longest target-supplied ``code`` / ``message`` forwarded to the source. The
-# allowlist two lines up caps its members implicitly; these two fields did not,
+# allowlist above caps its members implicitly; these two fields did not,
 # which made a diagnostic into a transfer channel.
 TARGET_CODE_MAX = 64
 TARGET_MESSAGE_MAX = 512
+
+# What an unusable ``code`` becomes. Namespaced like everything else, so the
+# fallback cannot collide either.
+TARGET_CODE_FALLBACK = f"{TARGET_CODE_PREFIX}unknown"
+
+
+def _prefix_is_disjoint_from_relay_codes() -> bool:
+    """True when no relay code could be spelled by the namespacing branch.
+
+    Checked at import (below) rather than only in a test: the two vocabularies
+    live in one module and a new ``CODE_*`` is exactly the edit that would
+    reintroduce the collision.
+    """
+    return not any(code.startswith(TARGET_CODE_PREFIX) for code in RELAY_ERROR_CODES)
+
+
+if not _prefix_is_disjoint_from_relay_codes():  # pragma: no cover - import guard
+    raise RuntimeError(
+        "TARGET_CODE_PREFIX collides with a relay refusal code; pick a prefix "
+        "outside the relay's own vocabulary"
+    )
 
 
 def namespace_target_code(raw: Any) -> str:
     """The ``code`` a target refusal may present to the source.
 
-    In ``TARGET_ERROR_CODES`` -> itself. Anything else -> ``target_<slug>``,
-    with the slug reduced to ``[a-z0-9_]`` and capped, so a target can neither
-    spell a relay code nor smuggle structure through the field. Unusable input
-    (not a string, empty, nothing left after the reduction) -> ``target_error``.
+    In ``TARGET_ERROR_CODES`` -> itself. Anything else ->
+    ``TARGET_CODE_PREFIX + <slug>``, with the slug reduced to ``[a-z0-9_]`` and
+    capped, so a target can neither spell a relay code nor smuggle structure
+    through the field. Unusable input (not a string, empty, nothing left after
+    the reduction) -> ``TARGET_CODE_FALLBACK``.
+
+    The namespaced branch is re-checked against ``RELAY_ERROR_CODES`` before it
+    is returned. That is belt-and-braces over the import-time prefix check, and
+    it is cheap: the invariant this function exists to hold is stated once, in
+    the place that would have to break it.
     """
     if not isinstance(raw, str):
-        return "target_error"
+        return TARGET_CODE_FALLBACK
     code = raw.strip()
     if code in TARGET_ERROR_CODES:
         return code
     slug = re.sub(r"[^a-z0-9_]+", "_", code.lower()).strip("_")[:TARGET_CODE_MAX]
-    return f"target_{slug}" if slug else "target_error"
+    if not slug:
+        return TARGET_CODE_FALLBACK
+    namespaced = f"{TARGET_CODE_PREFIX}{slug}"
+    if namespaced in RELAY_ERROR_CODES:  # pragma: no cover - prefix check forecloses it
+        return TARGET_CODE_FALLBACK
+    return namespaced
 
 
 def _is_uuid(value: Any) -> bool:
@@ -1527,6 +1606,60 @@ class RemoteTerminalRelay:
                 error=str(exc),
             )
 
+    def _pop_correlated(
+        self,
+        session: _SourceSession,
+        pending: dict[str, _Pending],
+        wire_request_id: Any,
+        target_device_id: str,
+        *,
+        what: str,
+    ) -> tuple[_Pending, _Attachment | None] | None:
+        """Pop one minted-request-id correlation AND bind it to the answerer.
+
+        Every ``pending_*`` dict is keyed by request id ALONE, while one socket
+        routinely holds grants on several targets — so a frame arriving on
+        device C's channel under an id minted for device B correlated to B's
+        attachment and was answered as B's. ``terminal_created`` grew this
+        check in round 1 (review finding 3); its siblings — ``terminal_attached``
+        and ``_route_target_error``'s three pops — did not, on the same dicts and
+        the same socket (review round 2, finding 4).
+
+        Minted ids are ``uuid4().hex`` and are only ever sent to the device they
+        were minted for, so a sibling target cannot guess one: this is
+        defence-in-depth symmetry rather than a reachable hole. It is applied
+        anyway, because "unguessable" is a property of the id generator and this
+        is a property of the router, and the two should not be coupled.
+
+        On a mismatch the correlation is put BACK — the frame was not the
+        answer, and the device the grant actually names may still reply.
+
+        Three outcomes, kept distinct because the callers treat them
+        differently: ``None`` is "not ours" (never correlated, or correlated to
+        another device and restored); ``(correlated, None)`` is "ours, but the
+        grant is no longer on this socket" — consumed, exactly as before;
+        ``(correlated, att)`` is the answer.
+        """
+        if not isinstance(wire_request_id, str):
+            return None
+        correlated = pending.pop(wire_request_id, None)
+        if correlated is None:
+            return None
+        att = session.grants.get(correlated[1])
+        if att is None:
+            return correlated, None
+        if att.target_device_id != target_device_id:
+            logger.warning(
+                "remote_terminal_reply_wrong_target",
+                what=what,
+                grant_jti=att.grant_jti,
+                granted_target=att.target_device_id,
+                frame_target=target_device_id,
+            )
+            pending[wire_request_id] = correlated
+            return None
+        return correlated, att
+
     async def _bound_attachment(
         self, session: _SourceSession, target_device_id: str, terminal_id: Any
     ) -> _Attachment | None:
@@ -1554,18 +1687,19 @@ class RemoteTerminalRelay:
         frame_type = frame.get("type")
 
         if frame_type == "terminal_attached":
-            wire_request_id = frame.get("request_id")
-            correlated = (
-                session.pending_attach.pop(wire_request_id, None)
-                if isinstance(wire_request_id, str)
-                else None
+            # Correlated by the MINTED id and bound to the device the grant
+            # names — see ``_pop_correlated``.
+            popped = self._pop_correlated(
+                session,
+                session.pending_attach,
+                frame.get("request_id"),
+                target_device_id,
+                what="terminal_attached",
             )
-            if correlated is None:
+            if popped is None or popped[1] is None:
                 return False
-            source_request_id, jti = correlated
-            att = session.grants.get(jti)
-            if att is None:
-                return False
+            correlated, att = popped[0], popped[1]
+            source_request_id, _jti = correlated
             terminal_id = frame.get("terminal_id")
             if not isinstance(terminal_id, str) or not terminal_id:
                 await self._send_to_source(
@@ -1648,42 +1782,23 @@ class RemoteTerminalRelay:
             return True
 
         if frame_type == "terminal_created":
-            wire_request_id = frame.get("request_id")
-            correlated = (
-                session.pending_create.pop(wire_request_id, None)
-                if isinstance(wire_request_id, str)
-                else None
+            # Correlated by the MINTED id and bound to the device the grant
+            # names. Both halves live in ``_pop_correlated``: an uncorrelated
+            # frame is not ours (the mobile path shares this channel and creates
+            # terminals on it too), and one from the wrong device is not the
+            # answer — the source would otherwise label the tab B and mint an
+            # attach grant against whatever session id C's frame carried.
+            popped = self._pop_correlated(
+                session,
+                session.pending_create,
+                frame.get("request_id"),
+                target_device_id,
+                what="terminal_created",
             )
-            if correlated is None:
-                # Not ours: the mobile path shares this channel and creates
-                # terminals on it too.
+            if popped is None or popped[1] is None:
                 return False
-            source_request_id, jti = correlated
-            att = session.grants.get(jti)
-            if att is None:
-                return False
-            # The reply must come from the device the GRANT names.
-            #
-            # ``pending_create`` is keyed by request id alone, not by target, so
-            # a ``terminal_created`` arriving on device C's channel under a
-            # request id minted for device B correlated to B's attachment and
-            # was answered as B's. The source then labels the tab B and mints an
-            # attach grant against whatever session id the frame carried. One
-            # socket routinely holds grants on several targets — that is what
-            # ``_attachment_by_remote_mark`` already checks for, for the same
-            # reason.
-            if att.target_device_id != target_device_id:
-                logger.warning(
-                    "remote_terminal_created_wrong_target",
-                    grant_jti=att.grant_jti,
-                    granted_target=att.target_device_id,
-                    frame_target=target_device_id,
-                )
-                # Put the correlation back: this frame was not the answer, and
-                # the real target may still reply.
-                if isinstance(wire_request_id, str):
-                    session.pending_create[wire_request_id] = correlated
-                return False
+            correlated, att = popped[0], popped[1]
+            source_request_id, _jti = correlated
             terminal = frame.get("terminal")
             terminal_id = (
                 terminal.get("id")
@@ -1845,16 +1960,19 @@ class RemoteTerminalRelay:
         A frame carrying neither our minted id nor a remote mark belongs to the
         mobile watcher path that shares this channel, and is not ours.
         """
-        wire_request_id = frame.get("request_id")
-        correlated = (
-            session.pending_buffer.pop(wire_request_id, None)
-            if isinstance(wire_request_id, str)
-            else None
+        popped = self._pop_correlated(
+            session,
+            session.pending_buffer,
+            frame.get("request_id"),
+            target_device_id,
+            what="terminal_buffer_response",
         )
+        correlated = popped[0] if popped is not None else None
         source_request_id: str | None = None
-        if correlated is not None:
-            source_request_id, jti = correlated
-            att: _Attachment | None = session.grants.get(jti)
+        att: _Attachment | None
+        if popped is not None:
+            source_request_id, _jti = popped[0]
+            att = popped[1]
         elif _is_remote_marked(frame):
             att = await self._attachment_by_remote_mark(
                 session, target_device_id, frame
@@ -1917,21 +2035,29 @@ class RemoteTerminalRelay:
         att: _Attachment | None = None
         correlated: _Pending | None = None
         failed_attach = False
-        if isinstance(wire_request_id, str):
-            correlated = session.pending_attach.pop(wire_request_id, None)
-            if correlated is not None:
-                failed_attach = True
-            else:
-                correlated = session.pending_create.pop(wire_request_id, None)
-                if correlated is not None:
-                    # A refused create leaves nothing registered either — the
-                    # target spawned no PTY, so the grant on this socket is
-                    # garbage for the same reason a refused attach's is.
-                    failed_attach = True
-                else:
-                    correlated = session.pending_buffer.pop(wire_request_id, None)
-            if correlated is not None:
-                att = session.grants.get(correlated[1])
+        # All three pops go through ``_pop_correlated``, so an error arriving on
+        # one target's channel under an id minted for another is not the answer
+        # — the same rule ``terminal_created`` and ``terminal_attached`` apply,
+        # on the same per-session dicts (review round 2, finding 4).
+        for pending, is_failed_attach in (
+            (session.pending_attach, True),
+            # A refused create leaves nothing registered either — the target
+            # spawned no PTY, so the grant on this socket is garbage for the
+            # same reason a refused attach's is.
+            (session.pending_create, True),
+            (session.pending_buffer, False),
+        ):
+            popped = self._pop_correlated(
+                session,
+                pending,
+                wire_request_id,
+                target_device_id,
+                what="error",
+            )
+            if popped is not None:
+                correlated, att = popped
+                failed_attach = is_failed_attach
+                break
         if att is None and _is_remote_marked(frame):
             # Only a frame the target marked as a remote refusal may fall
             # back to the terminal route; a mobile watcher's own
