@@ -23,9 +23,12 @@ What is asserted here
    floor reading with ``behind == 0`` reads ``state: "unknown"`` with a
    ``ref_stale:`` detail whatever ``ahead`` is; a floor with a non-zero
    ``behind`` stays ``measured``.
-4b. **Out-of-order reports keep the newer reading but still count as
-   contact.** A report observed earlier than the stored one answers
-   ``applied: false``, leaves the reading alone, and refreshes ``received_at``.
+4b. **Out-of-order reports keep the newer reading, still count as contact,
+   and mark it superseded.** A report observed earlier than the stored one
+   answers ``applied: false``, leaves the reading alone, refreshes
+   ``received_at``, and the row reads ``state: "unknown"`` /
+   ``reading_superseded`` until a newer report applies again — a reading the
+   device has since contradicted is never served as current.
 4c. **A future-dated report is a 422**, so one skewed report cannot pin the
    row (the reviewer's wedge probe, kept as a regression test).
 5. **Route order.** Through the real ``api_router``, ``GET
@@ -711,6 +714,13 @@ class TestOutOfOrder:
         # Declined as a READING, but it was contact: liveness moved.
         assert row.received_at == _received_at(late)
         assert _received_at(late) > _received_at(first)
+        # ...and the stored reading is flagged, not served as current.
+        assert row.last_report_applied is False
+        assert row.last_report_observed_at == older
+        echoed = late.json()["row"]
+        assert echoed["last_report_applied"] is False
+        assert echoed["state"] == "unknown"
+        assert echoed["detail"].startswith("reading_superseded:")
 
     async def test_an_equal_observed_at_applies_as_a_heartbeat(
         self, app_no_cognito: FastAPI, async_db_session: AsyncSession
@@ -734,6 +744,121 @@ class TestOutOfOrder:
             newer = await client.post(SCAN_ROOTS, json=_reading(behind=3))
         assert newer.json()["applied"] is True
         assert newer.json()["row"]["behind"] == 3
+        assert newer.json()["row"]["last_report_applied"] is True
+
+
+class TestReadingSuperseded:
+    """A device's latest report contradicts the stored reading → UNKNOWN.
+
+    The third review's must-fix: a declined report refreshed liveness but left
+    the device's OLD reading served as ``measured`` and fresh — stored 0/0,
+    device now 254 behind, GET still said "in step"."""
+
+    async def test_a_six_hour_clock_step_back_reads_superseded(
+        self, app_no_cognito: FastAPI
+    ) -> None:
+        """Mutation-proved: making ``superseded_detail`` return ``None``, or
+        making the upsert always write ``last_report_applied = true``, fails
+        this test, the precedence test, the flipped wedge regression and
+        ``test_an_older_report_does_not_replace_a_newer_one``."""
+        stored_at = datetime.now(UTC)
+        stepped_back = stored_at - timedelta(hours=6)
+        async with _client(app_no_cognito, TOKEN_A) as client:
+            await client.post(
+                SCAN_ROOTS,
+                json=_reading(behind=0, ahead=0, observed_at=stored_at.isoformat()),
+            )
+            declined = await client.post(
+                SCAN_ROOTS,
+                json=_reading(behind=254, observed_at=stepped_back.isoformat()),
+            )
+            [row] = (await client.get(SCAN_ROOTS)).json()["rows"]
+
+        assert declined.status_code == 200, declined.text
+        assert declined.json()["applied"] is False
+        # Fresh — the device DID report — but not current.
+        assert row["observation_fresh"] is True
+        assert row["last_report_applied"] is False
+        assert row["state"] == "unknown"
+        assert row["detail"] == (
+            "reading_superseded: the device's latest report was observed before "
+            "the stored reading (its clock stepped back ~21600 s), so the stored "
+            "reading is not what it reports now"
+        )
+        # The stored reading is still served, flagged, for a reader who wants it.
+        assert row["reported_state"] == "measured"
+        assert (row["behind"], row["ahead"]) == (0, 0)
+        assert datetime.fromisoformat(row["last_report_observed_at"]) == stepped_back
+
+    async def test_the_next_newer_report_clears_it(
+        self, app_no_cognito: FastAPI
+    ) -> None:
+        """Once the device's clock catches up, its next report applies and the
+        row is current again."""
+        stored_at = datetime.now(UTC) - timedelta(minutes=1)
+        async with _client(app_no_cognito, TOKEN_A) as client:
+            await client.post(
+                SCAN_ROOTS, json=_reading(behind=0, observed_at=stored_at.isoformat())
+            )
+            await client.post(
+                SCAN_ROOTS,
+                json=_reading(
+                    behind=254,
+                    observed_at=(stored_at - timedelta(hours=6)).isoformat(),
+                ),
+            )
+            caught_up = await client.post(
+                SCAN_ROOTS,
+                json=_reading(behind=254, observed_at=datetime.now(UTC).isoformat()),
+            )
+            [row] = (await client.get(SCAN_ROOTS)).json()["rows"]
+
+        assert caught_up.json()["applied"] is True
+        assert row["last_report_applied"] is True
+        assert row["state"] == "measured"
+        assert row["detail"] is None
+        assert row["behind"] == 254
+        assert row["last_report_observed_at"] == row["observed_at"]
+
+    async def test_precedence_stale_then_superseded_then_floor(
+        self, app_no_cognito: FastAPI, async_db_session: AsyncSession
+    ) -> None:
+        """``observation_stale`` > ``reading_superseded`` > ``ref_stale``."""
+        stored_at = datetime.now(UTC)
+        async with _client(app_no_cognito, TOKEN_A) as client:
+            # A 0-behind floor (would read ref_stale) ...
+            await client.post(
+                SCAN_ROOTS,
+                json=_reading(
+                    behind=0,
+                    ahead=0,
+                    ref_age_secs=None,
+                    counts_are_floors=True,
+                    observed_at=stored_at.isoformat(),
+                ),
+            )
+            # ... superseded by a declined report: superseded wins over floor.
+            await client.post(
+                SCAN_ROOTS,
+                json=_reading(
+                    behind=5,
+                    observed_at=(stored_at - timedelta(minutes=5)).isoformat(),
+                ),
+            )
+            [row] = (await client.get(SCAN_ROOTS)).json()["rows"]
+            assert row["detail"].startswith("reading_superseded:")
+
+            # Then the device goes quiet: stale wins over superseded.
+            stale = timedelta(seconds=FRESH_WITHIN_SECS + 60)
+            await async_db_session.execute(
+                update(PlanScanRootObservation)
+                .where(PlanScanRootObservation.device_id == DEVICE_A)
+                .values(received_at=datetime.now(UTC) - stale)
+            )
+            await async_db_session.commit()
+            [row] = (await client.get(SCAN_ROOTS)).json()["rows"]
+        assert row["state"] == "unknown"
+        assert row["detail"].startswith("observation_stale:")
 
 
 class TestClockSkew:
@@ -776,7 +901,9 @@ class TestClockSkew:
         posting device read ``unknown`` with the honest reading discarded.
         Now: the far-future report is refused outright, and even a skewed
         report INSIDE the bound cannot age the device out — the declined
-        honest reports still count as contact."""
+        honest reports still count as contact. And (third review) the stored
+        +250 s reading is NOT served as current while the device's own latest
+        report contradicts it: the row reads ``reading_superseded``."""
         now = datetime.now(UTC)
         async with _client(app_no_cognito, TOKEN_A) as client:
             # 1. The probe's own opening move is refused, so nothing is pinned.
@@ -816,8 +943,16 @@ class TestClockSkew:
         assert honest.status_code == 200, honest.text
         assert honest.json()["applied"] is False
         [row] = listing.json()["rows"]
+        # Alive (the honest report was contact) ...
         assert row["observation_fresh"] is True
-        assert row["state"] == "measured"
+        # ... but the stored 0-behind reading is contradicted by the device's
+        # latest report of 254 behind, so it must not read "in step".
+        assert row["state"] == "unknown"
+        assert row["detail"].startswith("reading_superseded:")
+        stepped = int(row["detail"].split("stepped back ~")[1].split(" s)")[0])
+        assert 200 <= stepped <= 250
+        assert row["last_report_applied"] is False
+        assert row["reported_state"] == "measured"
         assert row["behind"] == 0
 
 

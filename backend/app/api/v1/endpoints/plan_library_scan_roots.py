@@ -49,6 +49,12 @@ Invariants
    refused more than 300 s in the future, and is shown beside
    ``observed_skew_secs`` so a skewed runner clock is visible rather than
    silently aging a live device out or pinning its row.
+3c. **A contradicted reading is UNKNOWN, never current.** When the device's
+   latest report was observed before the stored reading (its clock stepped
+   back, or a stale retry arrived last), the stored reading is kept but the
+   row reads ``state: "unknown"`` with a ``reading_superseded:`` detail until a
+   newer report applies. Precedence: ``observation_stale`` >
+   ``reading_superseded`` > ``ref_stale``.
 4. **Report-only.** Nothing here gates a corpus read or a write; it is a
    diagnostic beside the corpus, not a condition on it.
 
@@ -141,6 +147,26 @@ def observed_skew_secs(row: PlanScanRootObservation) -> int:
     return int((row.received_at - row.observed_at).total_seconds())
 
 
+def superseded_detail(row: PlanScanRootObservation) -> str | None:
+    """The ``reading_superseded:`` verdict when the latest report was declined.
+
+    A declined report was observed BEFORE the stored reading — the runner's
+    clock stepped back, or a stale retry arrived last. Either way the stored
+    reading is not what the device says now, so serving it as current (the
+    defect this closes) would present a contradicted number as the truth. N is
+    ``observed_at - last_report_observed_at``: how far the latest report's
+    clock was behind the stored reading's, fixed per report.
+    """
+    if row.last_report_applied:
+        return None
+    stepped_back = int((row.observed_at - row.last_report_observed_at).total_seconds())
+    return (
+        "reading_superseded: the device's latest report was observed before the "
+        f"stored reading (its clock stepped back ~{stepped_back} s), so the "
+        "stored reading is not what it reports now"
+    )
+
+
 def zero_behind_floor_detail(row: PlanScanRootObservation) -> str | None:
     """The ``ref_stale:`` verdict for a ``measured`` floor that is 0 behind.
 
@@ -160,12 +186,14 @@ def zero_behind_floor_detail(row: PlanScanRootObservation) -> str | None:
 def render_row(row: PlanScanRootObservation, *, now: datetime) -> ScanRootRow:
     """One stored reading, with the verdict the read route owes on top.
 
-    Staleness is judged first: a device this server has not heard from within
-    the window says nothing about now, whatever it last sent. Then the
-    zero-behind-floor rule. Otherwise the verdict is what the device reported.
+    Precedence: ``observation_stale`` (a device this server has not heard from
+    within the window says nothing about now) > ``reading_superseded`` (the
+    device's latest report contradicts the stored reading) > ``ref_stale`` (a
+    0-behind floor). Otherwise the verdict is what the device reported.
     """
     age = observation_age_secs(row, now=now)
     fresh = age <= FRESH_WITHIN_SECS
+    superseded = superseded_detail(row)
     floor_detail = zero_behind_floor_detail(row)
     state: str
     detail: str | None
@@ -176,6 +204,9 @@ def render_row(row: PlanScanRootObservation, *, now: datetime) -> ScanRootRow:
             f"{FRESH_WITHIN_SECS} s freshness window; it reported "
             f"state '{row.state}', which says nothing about now"
         )
+    elif superseded is not None:
+        state = "unknown"
+        detail = superseded
     elif floor_detail is not None:
         state = "unknown"
         detail = floor_detail
@@ -200,6 +231,8 @@ def render_row(row: PlanScanRootObservation, *, now: datetime) -> ScanRootRow:
         counts_are_floors=row.counts_are_floors,
         observed_at=row.observed_at,
         received_at=row.received_at,
+        last_report_applied=row.last_report_applied,
+        last_report_observed_at=row.last_report_observed_at,
         observed_skew_secs=observed_skew_secs(row),
         observation_age_secs=age,
         observation_fresh=fresh,
@@ -234,10 +267,11 @@ async def report_scan_root(
     device's first report, ``200`` on every later one.
 
     A report observed EARLIER than the stored reading (a late or retried
-    delivery) does not replace it: ``200`` with ``applied: false`` and the
-    stored, newer row — but it still refreshes ``received_at``, because the
-    device demonstrably reported. A report whose ``observed_at`` is more than
-    300 s ahead of this server's clock is a 422.
+    delivery, or a runner clock that stepped back) does not replace it:
+    ``200`` with ``applied: false`` and the stored row — but it still refreshes
+    ``received_at``, because the device demonstrably reported, and marks the
+    row ``reading_superseded`` until a newer report applies. A report whose
+    ``observed_at`` is more than 300 s ahead of this server's clock is a 422.
     """
     org_id = await _resolve_org_id(db, device.user)
     row, created, applied = await crud.upsert_observation(

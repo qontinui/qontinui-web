@@ -38126,6 +38126,14 @@
             ],
             "title": "Head Sha"
           },
+          "last_report_applied": {
+            "title": "Last Report Applied",
+            "type": "boolean"
+          },
+          "last_report_observed_at": {
+            "title": "Last Report Observed At",
+            "type": "string"
+          },
           "observation_age_secs": {
             "title": "Observation Age Secs",
             "type": "integer"
@@ -38251,6 +38259,8 @@
           "counts_are_floors",
           "observed_at",
           "received_at",
+          "last_report_applied",
+          "last_report_observed_at",
           "observed_skew_secs",
           "observation_age_secs",
           "observation_fresh"
@@ -92169,7 +92179,7 @@
         ]
       },
       "post": {
-        "description": "Store the reporting device's latest reading, replacing an older one.\n\nOne row per ``(organization, device)``. ``device_id`` is the verified\ntoken's claim; the organization is the device's paired operator's personal\norganization \u2014 the same scope its artifact upserts land in. ``201`` on the\ndevice's first report, ``200`` on every later one.\n\nA report observed EARLIER than the stored reading (a late or retried\ndelivery) does not replace it: ``200`` with ``applied: false`` and the\nstored, newer row \u2014 but it still refreshes ``received_at``, because the\ndevice demonstrably reported. A report whose ``observed_at`` is more than\n300 s ahead of this server's clock is a 422.",
+        "description": "Store the reporting device's latest reading, replacing an older one.\n\nOne row per ``(organization, device)``. ``device_id`` is the verified\ntoken's claim; the organization is the device's paired operator's personal\norganization \u2014 the same scope its artifact upserts land in. ``201`` on the\ndevice's first report, ``200`` on every later one.\n\nA report observed EARLIER than the stored reading (a late or retried\ndelivery, or a runner clock that stepped back) does not replace it:\n``200`` with ``applied: false`` and the stored row \u2014 but it still refreshes\n``received_at``, because the device demonstrably reported, and marks the\nrow ``reading_superseded`` until a newer report applies. A report whose\n``observed_at`` is more than 300 s ahead of this server's clock is a 422.",
         "operationId": "api_v1_plan_library_scan_roots_post",
         "requestBody": {
           "content": {
