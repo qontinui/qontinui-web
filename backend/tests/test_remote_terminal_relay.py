@@ -60,6 +60,9 @@ pytestmark = pytest.mark.asyncio
 
 SOURCE_DEVICE = str(uuid4())
 TARGET_DEVICE = str(uuid4())
+# The coord session a target reports for a terminal it just created. A UUID,
+# because the source turns it straight into `POST /coord/sessions/{id}/attach-grants`.
+SESSION_OF_NEW_TERMINAL = str(uuid4())
 TARGET_SESSION = str(uuid4())
 
 
@@ -2340,6 +2343,27 @@ async def test_resync_for_a_grant_the_target_has_not_bound_is_refused(
 # ---------------------------------------------------------------------------
 
 
+def _assert_only_the_create_claim_survives(
+    redis: _FakeRedis, claims: dict[str, Any]
+) -> None:
+    """A finished CREATE leaves its single-use claim behind — and nothing else.
+
+    Review finding 4. ``_drop_attachment`` is shared with attach, where
+    re-presenting a grant is the legitimate reattach path, so it deleted
+    ``claim_key`` for a create too — freeing the jti for the rest of its
+    15-minute life. The barriers left were a PROCESS-LOCAL tombstone on the
+    target and coord's ``consumed_at``, set by a detached single-attempt POST:
+    a coord blip during it plus a target restart inside the TTL let the source
+    replay the identical frame into a second PTY, once per restart.
+
+    The claim was written ``SET NX EXAT``, so leaving it IS the single-use
+    window — it cannot outlive the grant it guards.
+    """
+    assert redis.hashes == {}, redis.hashes
+    assert set(redis.strings) == {rtr.claim_key(claims["jti"])}, redis.strings
+    assert redis.expiry[rtr.claim_key(claims["jti"])] == claims["exp"]
+
+
 def _create_claims(**overrides: Any) -> dict[str, Any]:
     """A CREATE grant: a target DEVICE and, deliberately, no session at all."""
     claims: dict[str, Any] = {
@@ -2579,7 +2603,7 @@ async def test_terminal_created_routes_back_and_spends_the_grant(
     # Spent: driving the new terminal needs an ATTACH grant, which coord mints
     # against the target's own attach preference.
     assert session.grants == {}
-    assert redis.empty()
+    _assert_only_the_create_claim_survives(redis, claims)
 
 
 async def test_created_carries_coord_session_id_as_a_first_class_field(
@@ -2606,14 +2630,14 @@ async def test_created_carries_coord_session_id_as_a_first_class_field(
         {
             "type": "terminal_created",
             "request_id": minted,
-            "coord_session_id": "sess-abc",
+            "coord_session_id": SESSION_OF_NEW_TERMINAL,
             "terminal": {"id": "t-new", "title": "headless"},
         },
     )
 
     assert routed is True
     created = ws.of_type("remote_terminal_created")[0]
-    assert created["coord_session_id"] == "sess-abc"
+    assert created["coord_session_id"] == SESSION_OF_NEW_TERMINAL
 
 
 async def test_created_still_reads_coord_session_id_from_the_terminal_object(
@@ -2636,10 +2660,13 @@ async def test_created_still_reads_coord_session_id_from_the_terminal_object(
         {
             "type": "terminal_created",
             "request_id": minted,
-            "terminal": {"id": "t-new", "coordSessionId": "sess-legacy"},
+            "terminal": {"id": "t-new", "coordSessionId": SESSION_OF_NEW_TERMINAL},
         },
     )
-    assert ws.of_type("remote_terminal_created")[0]["coord_session_id"] == "sess-legacy"
+    assert (
+        ws.of_type("remote_terminal_created")[0]["coord_session_id"]
+        == SESSION_OF_NEW_TERMINAL
+    )
 
 
 async def test_a_created_with_no_coord_session_stays_absent_not_guessed(
@@ -2691,6 +2718,165 @@ async def test_a_terminal_created_we_did_not_mint_is_not_ours(
     assert ws.of_type("remote_terminal_created") == []
 
 
+async def test_a_created_on_another_targets_channel_is_not_the_answer(
+    relay: RemoteTerminalRelay,
+) -> None:
+    """Review finding 3, relay half.
+
+    ``pending_create`` is keyed by request id ALONE. Without the target check a
+    ``terminal_created`` arriving on device C's channel under a request id
+    minted for device B correlated to B's attachment and was answered as B's —
+    so the source minted an attach grant against whatever ``coord_session_id``
+    that frame carried, labelled the tab B, and typed into a session on C. One
+    socket routinely holds grants on several targets.
+
+    The correlation is also put BACK: this frame was not the answer, and the
+    device the grant actually names may still reply.
+    """
+    ws = _FakeWS()
+    manager = _manager()
+    await _create(relay, ws, manager, _create_claims())
+    minted = _forwarded_create(manager)["request_id"]
+    session = relay._sessions[id(ws)]
+    other_device = str(uuid4())
+
+    routed = await relay.route_target_frame(
+        session,
+        other_device,
+        {
+            "type": "terminal_created",
+            "request_id": minted,
+            "coord_session_id": SESSION_OF_NEW_TERMINAL,
+            "terminal": {"id": "t-elsewhere"},
+        },
+    )
+
+    assert routed is False
+    assert ws.of_type("remote_terminal_created") == []
+    assert minted in session.pending_create, "the real target may still answer"
+
+    # …and the real target's reply still lands.
+    routed = await relay.route_target_frame(
+        session,
+        TARGET_DEVICE,
+        {
+            "type": "terminal_created",
+            "request_id": minted,
+            "coord_session_id": SESSION_OF_NEW_TERMINAL,
+            "terminal": {"id": "t-new"},
+        },
+    )
+    assert routed is True
+    assert ws.of_type("remote_terminal_created")[0]["terminal_id"] == "t-new"
+
+
+@pytest.mark.parametrize(
+    "reported",
+    ["sess-abc", "", "   ", 7, None, {"id": str(uuid4())}, str(uuid4()) + "x"],
+)
+async def test_a_coord_session_id_that_is_not_a_uuid_is_dropped(
+    relay: RemoteTerminalRelay, reported: Any
+) -> None:
+    """Review finding 3, relay half.
+
+    The source turns this field straight into
+    ``POST /coord/sessions/{id}/attach-grants``. Anything that is not a session
+    uuid is "created but not addressable" — which the source already reports —
+    rather than a value that travels on into a coord URL path.
+    """
+    ws = _FakeWS()
+    manager = _manager()
+    await _create(relay, ws, manager, _create_claims())
+    minted = _forwarded_create(manager)["request_id"]
+    session = relay._sessions[id(ws)]
+
+    await relay.route_target_frame(
+        session,
+        TARGET_DEVICE,
+        {
+            "type": "terminal_created",
+            "request_id": minted,
+            "coord_session_id": reported,
+            "terminal": {"id": "t-new"},
+        },
+    )
+    assert ws.of_type("remote_terminal_created")[0]["coord_session_id"] is None
+
+
+async def test_a_target_may_not_spell_a_relay_code() -> None:
+    """Review finding 8.
+
+    ``code`` on a ``remote_terminal_error`` was taken straight off the target's
+    frame, so a target could emit the RELAY's own verdicts. Two are directly
+    exploitable: ``attach_grant_expired`` makes the source discard live grants
+    and re-mint in a loop, and ``listener_lost`` makes it believe the relay lost
+    its route to the device.
+
+    ``attach_grant_unknown`` / ``attach_grant_expired`` are in BOTH vocabularies
+    and stay pass-through on purpose — the source's handling is identical either
+    way — so the codes pinned here are the relay-ONLY ones.
+    """
+    relay_only = [
+        rtr.CODE_GRANT_INVALID,
+        rtr.CODE_GRANT_WRONG_SOURCE,
+        rtr.CODE_GRANT_CONSUMED,
+        rtr.CODE_NOT_REGISTERED,
+        rtr.CODE_VERIFIER_UNAVAILABLE,
+        rtr.CODE_REGISTRY_UNAVAILABLE,
+        rtr.CODE_TERMINAL_BUSY,
+        rtr.CODE_TARGET_NOT_CONNECTED,
+        rtr.CODE_CREATE_GRANT_INVALID,
+        rtr.CODE_CREATE_GRANT_EXPIRED,
+        rtr.CODE_CREATE_GRANT_WRONG_SOURCE,
+        rtr.CODE_GRANT_WRONG_KIND,
+        rtr.CODE_LISTENER_LOST,
+    ]
+    for code in relay_only:
+        assert code not in rtr.TARGET_ERROR_CODES, code
+        namespaced = rtr.namespace_target_code(code)
+        assert namespaced == f"target_{code}", code
+        assert namespaced not in relay_only
+
+    # The target's own closed set passes through untouched.
+    for code in rtr.TARGET_ERROR_CODES:
+        assert rtr.namespace_target_code(code) == code, code
+
+    # Unusable input is a code, not a crash and not a blank.
+    for junk in [None, 7, "", "   ", "!!!", {"code": "x"}]:
+        assert rtr.namespace_target_code(junk) == "target_error", junk
+
+    # Structure cannot be smuggled through the field, and it is capped.
+    assert rtr.namespace_target_code('a"b\nc') == "target_a_b_c"
+    assert len(rtr.namespace_target_code("x" * 5000)) == len("target_") + 64
+
+
+async def test_a_target_error_is_namespaced_and_its_message_capped(
+    relay: RemoteTerminalRelay,
+) -> None:
+    """Review finding 8, end to end through ``_route_target_error``."""
+    ws = _FakeWS()
+    manager = _manager()
+    claims = _create_claims()
+    await _create(relay, ws, manager, claims)
+    minted = _forwarded_create(manager)["request_id"]
+    session = relay._sessions[id(ws)]
+
+    await relay.route_target_frame(
+        session,
+        TARGET_DEVICE,
+        {
+            "type": "error",
+            "request_id": minted,
+            "code": rtr.CODE_LISTENER_LOST,
+            "message": "A" * 10_000,
+            "remote": {"grant_jti": claims["jti"]},
+        },
+    )
+    err = ws.of_type("remote_terminal_error")[0]
+    assert err["code"] == f"target_{rtr.CODE_LISTENER_LOST}"
+    assert len(err["message"]) == rtr.TARGET_MESSAGE_MAX
+
+
 async def test_a_refused_create_reaches_the_source_and_drops_the_grant(
     relay: RemoteTerminalRelay, redis: _FakeRedis
 ) -> None:
@@ -2720,7 +2906,10 @@ async def test_a_refused_create_reaches_the_source_and_drops_the_grant(
     assert errors[0]["code"] == "remote_create_working_dir_not_allowed"
     assert errors[0]["request_id"] == "req-create-1"
     assert session.grants == {}
-    assert redis.empty()
+    # Even a REFUSED create keeps its claim: a create grant buys one
+    # presentation, and coord's single-use ledger is what a retry re-mints
+    # against. Freeing it here would be the replay window finding 4 names.
+    _assert_only_the_create_claim_survives(redis, claims)
 
 
 async def test_a_refusal_forwards_the_targets_remedy_fields(
@@ -2856,7 +3045,7 @@ async def test_a_create_grant_may_still_be_detached(
 
     assert ws.of_type("error") == [], ws.sent
     assert session.grants == {}
-    assert redis.empty()
+    _assert_only_the_create_claim_survives(redis, claims)
     # No `terminal_detach` is sent: the target bound no terminal under a create
     # grant, and admits no such frame under one.
     manager.send_terminal.assert_not_called()
