@@ -112,12 +112,30 @@ SOURCE_FRAME_TYPES: frozenset[str] = frozenset(
         # so the second hop's buffer grows unbounded under exactly the load
         # that produces backpressure.
         "remote_terminal_flow",
+        # Remote CREATE (plan
+        # `2026-09-11-headless-runner-parity-from-a-headed-runner`). Forwarded
+        # as `terminal_create`, and admitted under a CREATE grant only — a
+        # different `sub_type`, a different device preference on the target,
+        # and no session of its own. See `_handle_create`.
+        "remote_terminal_create",
     }
 )
 
 # The grant's ``sub_type`` claim. A device JWT reads ``device`` here; a grant
 # is a capability token and is never accepted as one.
 ATTACH_GRANT_SUB_TYPE = "attach_grant"
+# The CREATE grant's ``sub_type``. A separate capability from the attach grant,
+# addressed by DEVICE rather than by session (``coord.SubType::CreateGrant``,
+# minted at ``POST /coord/devices/{device_id}/create-grants``): it names a
+# target device and NO session, because the session it is about does not exist
+# yet. The two are never interchangeable — ``_handle_create`` refuses an attach
+# grant and ``_authorize`` refuses a create grant, so neither can be spent on
+# the other's frames.
+CREATE_GRANT_SUB_TYPE = "create_grant"
+
+# Which capability an attachment on this socket holds.
+KIND_ATTACH = "attach"
+KIND_CREATE = "create"
 
 # Typed refusal codes answered to the source (wire contract §4).
 CODE_GRANT_INVALID = "attach_grant_invalid"
@@ -136,6 +154,16 @@ CODE_REGISTRY_UNAVAILABLE = "attach_registry_unavailable"
 CODE_GRANT_CONSUMED = "attach_grant_consumed"
 CODE_TERMINAL_BUSY = "attach_terminal_busy"
 CODE_TARGET_NOT_CONNECTED = "target_not_connected"
+# Remote-create refusals. Spelled separately from the attach ones rather than
+# reused: a source reading ``attach_grant_invalid`` after asking for a CREATE
+# would go looking for the wrong token.
+CODE_CREATE_GRANT_INVALID = "create_grant_invalid"
+CODE_CREATE_GRANT_EXPIRED = "create_grant_expired"
+CODE_CREATE_GRANT_WRONG_SOURCE = "create_grant_wrong_source"
+# A grant presented for frames of the other kind: a create grant driving a PTY,
+# or an attach grant asking for a spawn. The capability, not the token, is what
+# is wrong.
+CODE_GRANT_WRONG_KIND = "grant_wrong_kind"
 # Sent as a ``remote_terminal_error`` (not a refusal of a source frame) when
 # the per-target pubsub listener died on its own: the attachment is dropped
 # rather than left registered with no return route.
@@ -220,6 +248,32 @@ def remote_response_channel(target_device_id: str) -> str:
     return f"runner:remote_terminal_response:{target_device_id}"
 
 
+def create_target_device_id(claims: dict[str, Any]) -> str | None:
+    """The device a CREATE grant authorises a spawn on; ``None`` when unusable.
+
+    The create claims carry a target DEVICE and no session at all — the
+    session a create is about does not exist until the target answers — so
+    there is deliberately nothing here corresponding to the attach grant's
+    ``target_session_id``.
+
+    Read from ``create.target_device_id`` (symmetric with the attach grant's
+    ``attach`` block) and, failing that, from a top-level ``target_device_id``.
+    Both spellings are the coord-signed token's own; accepting either costs no
+    authority and keeps a claims-layout choice on coord's side from silently
+    refusing every create.
+    """
+    block = claims.get("create")
+    raw = (
+        block.get("target_device_id")
+        if isinstance(block, dict)
+        else claims.get("target_device_id")
+    )
+    try:
+        return str(UUID(str(raw)))
+    except (ValueError, TypeError):
+        return None
+
+
 def is_source_frame(msg_type: Any) -> bool:
     """True when ``msg_type`` is a source-side ``remote_terminal_*`` frame."""
     return isinstance(msg_type, str) and msg_type in SOURCE_FRAME_TYPES
@@ -252,9 +306,18 @@ class _Attachment:
     grant_jti: str
     source_device_id: str
     target_device_id: str
-    target_session_id: str
+    # The session the grant is ABOUT. ``None`` for a create grant, whose whole
+    # point is that the session does not exist yet — which is why this is not
+    # merely optional in the schema sense: the relay used to parse it as a
+    # REQUIRED UUID, so a session-less grant died at the parse rather than
+    # being understood.
+    target_session_id: str | None
     exp: int
     request_id: str | None
+    # ``attach`` or ``create``; see KIND_ATTACH / KIND_CREATE. A create
+    # attachment never binds a terminal and never admits a session-scoped
+    # frame.
+    kind: str = KIND_ATTACH
     # The terminal the GRANT names — a claim coord wrote, forwarded to the
     # target as a hint. It binds nothing here.
     requested_terminal_id: str | None = None
@@ -267,10 +330,17 @@ class _Attachment:
         return (now if now is not None else time.time()) >= self.exp
 
     def remote_block(self) -> dict[str, Any]:
-        return {
+        block: dict[str, Any] = {
             "source_device_id": self.source_device_id,
             "grant_jti": self.grant_jti,
         }
+        # Stamped only for a create grant, so the attach wire stays
+        # byte-identical to what shipped. The target reads an absent ``kind``
+        # as ``attach`` — the narrower capability — so the asymmetry fails
+        # closed in the direction it should.
+        if self.kind == KIND_CREATE:
+            block["kind"] = KIND_CREATE
+        return block
 
 
 # ``pending_*`` entries: the MINTED request_id on the wire to the target maps
@@ -288,6 +358,7 @@ class _SourceSession:
     grants: dict[str, _Attachment] = field(default_factory=dict)
     pending_attach: dict[str, _Pending] = field(default_factory=dict)
     pending_buffer: dict[str, _Pending] = field(default_factory=dict)
+    pending_create: dict[str, _Pending] = field(default_factory=dict)
     listeners: dict[str, tuple[Any, asyncio.Task[None]]] = field(default_factory=dict)
     send_lock: asyncio.Lock = field(default_factory=asyncio.Lock)
 
@@ -415,6 +486,8 @@ class RemoteTerminalRelay:
 
         if msg_type == "remote_terminal_attach":
             await self._handle_attach(session, msg)
+        elif msg_type == "remote_terminal_create":
+            await self._handle_create(session, msg)
         elif msg_type == "remote_terminal_input":
             att = await self._authorize(session, msg)
             if att is not None:
@@ -470,35 +543,51 @@ class RemoteTerminalRelay:
             # Admitted on the grant alone: a source may give up an attach the
             # target never answered, and stranding that grant until expiry
             # would be the only alternative.
-            att = await self._authorize(session, msg, require_bound=False)
+            att = await self._authorize(
+                session, msg, require_bound=False, require_attach_kind=False
+            )
             if att is not None:
                 await self._detach_target(session, att, att.terminal_id)
                 await self._drop_attachment(session, att)
 
-    async def _handle_attach(
-        self, session: _SourceSession, msg: dict[str, Any]
-    ) -> None:
+    async def _verify_grant(
+        self,
+        session: _SourceSession,
+        msg: dict[str, Any],
+        *,
+        sub_type: str,
+        kind_noun: str,
+        code_invalid: str,
+        code_expired: str,
+        code_wrong_source: str,
+    ) -> tuple[dict[str, Any], str, str, int] | None:
+        """Verify the capability token on a source frame; ``None`` when refused.
+
+        Everything an attach grant and a create grant are checked for
+        identically: the SAME JWKS verifier that admitted this socket, the
+        declared ``sub_type``, the source device (taken from the authenticated
+        socket, never from a body field), expiry, and a usable ``jti``. Shared
+        rather than copied because the create door is exactly the kind of
+        second caller that silently grows a weaker check than the first.
+
+        Returns ``(claims, jti, socket_source, exp)``.
+        """
         request_id = msg.get("request_id")
         grant = msg.get("grant")
         if not isinstance(grant, str) or not grant:
             await self._refuse(
-                session, CODE_GRANT_INVALID, "grant missing", request_id=request_id
+                session, code_invalid, "grant missing", request_id=request_id
             )
-            return
+            return None
 
-        # Same verifier, same JWKS, as the device token on this very socket.
         try:
             claims = await coord_jwks_client.verify_token(grant)
         except CoordTokenExpiredError as exc:
-            await self._refuse(
-                session, CODE_GRANT_EXPIRED, str(exc), request_id=request_id
-            )
-            return
+            await self._refuse(session, code_expired, str(exc), request_id=request_id)
+            return None
         except CoordTokenInvalidError as exc:
-            await self._refuse(
-                session, CODE_GRANT_INVALID, str(exc), request_id=request_id
-            )
-            return
+            await self._refuse(session, code_invalid, str(exc), request_id=request_id)
+            return None
         except CoordJWKSUnavailableError as exc:
             # Same shared field set as every other terminating JWKS handler
             # (URL dialled, the SETTING that produced it, exception class and
@@ -515,16 +604,16 @@ class RemoteTerminalRelay:
                 "grant verifier temporarily unavailable",
                 request_id=request_id,
             )
-            return
+            return None
 
-        if claims.get("sub_type") != ATTACH_GRANT_SUB_TYPE:
+        if claims.get("sub_type") != sub_type:
             await self._refuse(
                 session,
-                CODE_GRANT_INVALID,
-                "token is not an attach grant",
+                code_invalid,
+                f"token is not {kind_noun}",
                 request_id=request_id,
             )
-            return
+            return None
 
         # The grant is bound to the SOURCE device coord minted it for, and the
         # source is whoever authenticated THIS socket — never a body field.
@@ -534,34 +623,58 @@ class RemoteTerminalRelay:
         except (ValueError, TypeError):
             await self._refuse(
                 session,
-                CODE_GRANT_INVALID,
+                code_invalid,
                 "grant device_id malformed",
                 request_id=request_id,
             )
-            return
+            return None
         if grant_source != socket_source:
             await self._refuse(
                 session,
-                CODE_GRANT_WRONG_SOURCE,
+                code_wrong_source,
                 "grant was minted for a different source device",
                 request_id=request_id,
             )
-            return
+            return None
 
         exp = claims.get("exp")
         if not isinstance(exp, int | float) or exp <= time.time():
             await self._refuse(
-                session, CODE_GRANT_EXPIRED, "grant expired", request_id=request_id
+                session, code_expired, "grant expired", request_id=request_id
             )
-            return
+            return None
 
         jti = claims.get("jti")
+        if not isinstance(jti, str) or not jti:
+            await self._refuse(
+                session, code_invalid, "grant missing jti", request_id=request_id
+            )
+            return None
+        return claims, jti, socket_source, int(exp)
+
+    async def _handle_attach(
+        self, session: _SourceSession, msg: dict[str, Any]
+    ) -> None:
+        request_id = msg.get("request_id")
+        verified = await self._verify_grant(
+            session,
+            msg,
+            sub_type=ATTACH_GRANT_SUB_TYPE,
+            kind_noun="an attach grant",
+            code_invalid=CODE_GRANT_INVALID,
+            code_expired=CODE_GRANT_EXPIRED,
+            code_wrong_source=CODE_GRANT_WRONG_SOURCE,
+        )
+        if verified is None:
+            return
+        claims, jti, socket_source, exp = verified
+
         attach = claims.get("attach")
-        if not isinstance(jti, str) or not jti or not isinstance(attach, dict):
+        if not isinstance(attach, dict):
             await self._refuse(
                 session,
                 CODE_GRANT_INVALID,
-                "grant missing jti or attach claims",
+                "grant missing attach claims",
                 request_id=request_id,
             )
             return
@@ -693,18 +806,163 @@ class RemoteTerminalRelay:
             forwarded_request_id=minted,
         )
 
+    async def _handle_create(
+        self, session: _SourceSession, msg: dict[str, Any]
+    ) -> None:
+        """Forward a remote ``terminal_create`` under a coord-minted CREATE grant.
+
+        What this door does NOT decide is where the terminal lands. The frame's
+        ``working_dir`` / ``working_dir_key`` / ``intent_repo`` are carried
+        through verbatim as a PREFERENCE and the TARGET answers them from its
+        own configuration, refusing anything outside it. Stripping them here
+        would look safer and be worse: the policy would then live in two places
+        and the source would be told its value was honoured when it was
+        dropped. One enforcement point, and it is the machine that owns the
+        PTY.
+        """
+        request_id = msg.get("request_id")
+        verified = await self._verify_grant(
+            session,
+            msg,
+            sub_type=CREATE_GRANT_SUB_TYPE,
+            kind_noun="a create grant",
+            code_invalid=CODE_CREATE_GRANT_INVALID,
+            code_expired=CODE_CREATE_GRANT_EXPIRED,
+            code_wrong_source=CODE_CREATE_GRANT_WRONG_SOURCE,
+        )
+        if verified is None:
+            return
+        claims, jti, socket_source, exp = verified
+
+        target_device_id = create_target_device_id(claims)
+        if target_device_id is None:
+            await self._refuse(
+                session,
+                CODE_CREATE_GRANT_INVALID,
+                "grant names no usable target device",
+                request_id=request_id,
+                grant_jti=jti,
+            )
+            return
+
+        if jti in session.grants:
+            await self._refuse(
+                session,
+                CODE_GRANT_CONSUMED,
+                "grant already presented on this socket",
+                request_id=request_id,
+                grant_jti=jti,
+            )
+            return
+
+        att = _Attachment(
+            grant_jti=jti,
+            source_device_id=socket_source,
+            target_device_id=target_device_id,
+            # A create grant is about a session that does not exist yet.
+            target_session_id=None,
+            exp=exp,
+            request_id=request_id if isinstance(request_id, str) else None,
+            kind=KIND_CREATE,
+        )
+        minted = uuid4().hex
+
+        claimed = False
+        try:
+            claimed = await self._claim_grant(att)
+            if claimed:
+                await self._write_grant_record(att)
+                session.grants[jti] = att
+                session.pending_create[minted] = (att.request_id, jti)
+                await self._ensure_listener(session, target_device_id)
+        except Exception as exc:  # noqa: BLE001 - registry failure is a typed refusal
+            logger.error(
+                "remote_terminal_registry_unavailable",
+                source_device_id=session.device_id,
+                grant_jti=jti,
+                error=str(exc),
+                error_type=type(exc).__name__,
+            )
+            if claimed:
+                await self._drop_attachment(session, att)
+            await self._refuse(
+                session,
+                CODE_REGISTRY_UNAVAILABLE,
+                "attachment registry temporarily unavailable",
+                request_id=request_id,
+                grant_jti=jti,
+            )
+            return
+        if not claimed:
+            await self._refuse(
+                session,
+                CODE_GRANT_CONSUMED,
+                "grant is already held by a live attachment",
+                request_id=request_id,
+                grant_jti=jti,
+            )
+            return
+
+        frame: dict[str, Any] = {
+            "type": "terminal_create",
+            "request_id": minted,
+            "remote": att.remote_block(),
+            "timestamp": utc_now().isoformat(),
+        }
+        # The caller's PREFERENCES, forwarded only when present so the target
+        # can tell "no preference" (take your default) from "this one" (a
+        # value it must recognise or refuse).
+        for key in (
+            "title",
+            "cols",
+            "rows",
+            "working_dir_key",
+            "working_dir",
+            "intent_repo",
+        ):
+            if msg.get(key) is not None:
+                frame[key] = msg.get(key)
+
+        sent = await session.manager.send_terminal(target_device_id, frame)
+        if not sent:
+            await self._drop_attachment(session, att)
+            await self._refuse(
+                session,
+                CODE_TARGET_NOT_CONNECTED,
+                "target device is not connected",
+                request_id=request_id,
+                grant_jti=jti,
+            )
+            return
+        logger.info(
+            "remote_terminal_create_forwarded",
+            source_device_id=session.device_id,
+            target_device_id=target_device_id,
+            grant_jti=jti,
+            request_id=request_id,
+            forwarded_request_id=minted,
+        )
+
     async def _authorize(
         self,
         session: _SourceSession,
         msg: dict[str, Any],
         *,
         require_bound: bool = True,
+        require_attach_kind: bool = True,
     ) -> _Attachment | None:
         """Admit a post-attach frame only for a registered, live grant.
 
         With ``require_bound`` (the default) the TARGET must also have
         answered ``terminal_attached`` and the frame must name that terminal;
         a grant that merely NAMES a terminal admits nothing.
+
+        ``require_attach_kind`` (the default) additionally refuses a CREATE
+        grant. Only ``remote_terminal_detach`` clears it, and for a reason that
+        is not a session operation at all: giving up a registration is how a
+        source releases the Redis claim and the per-target listener a create it
+        no longer wants is holding. Refusing that would leave an abandoned
+        create pinned until the grant expired.
         """
         request_id = msg.get("request_id")
         grant_jti = msg.get("grant_jti")
@@ -717,6 +975,21 @@ class RemoteTerminalRelay:
                 "no attachment registered for this grant on this socket",
                 request_id=request_id,
                 grant_jti=grant_jti if isinstance(grant_jti, str) else None,
+                terminal_id=terminal_id,
+            )
+            return None
+        if require_attach_kind and att.kind != KIND_ATTACH:
+            # A create grant holds no session and no terminal: it bought one
+            # spawn and nothing else. Refused HERE rather than falling through
+            # to the ``attached`` check below, so the answer names the reason
+            # (wrong capability) instead of the symptom (nothing bound).
+            await self._refuse(
+                session,
+                CODE_GRANT_WRONG_KIND,
+                "a create grant does not attach to a terminal — mint an attach "
+                "grant for the session it created",
+                request_id=request_id,
+                grant_jti=att.grant_jti,
                 terminal_id=terminal_id,
             )
             return None
@@ -785,6 +1058,12 @@ class RemoteTerminalRelay:
         self, session: _SourceSession, att: _Attachment, terminal_id: str | None
     ) -> None:
         """Tell the PTY owner to unbind the grant. Best effort: it may be gone."""
+        if att.kind != KIND_ATTACH:
+            # A create grant never bound a terminal, and the target admits
+            # exactly one frame type under it — so a detach sent here would be
+            # refused as an unadmitted type and answered as an error, which is
+            # noise on the teardown path rather than cleanup.
+            return
         try:
             await session.manager.send_terminal(
                 att.target_device_id,
@@ -826,7 +1105,8 @@ class RemoteTerminalRelay:
         record: dict[str, str] = {
             "source_device_id": att.source_device_id,
             "target_device_id": att.target_device_id,
-            "target_session_id": att.target_session_id,
+            "target_session_id": att.target_session_id or "",
+            "kind": att.kind,
             "exp": str(att.exp),
             "request_id": att.request_id or "",
             "requested_terminal_id": att.requested_terminal_id or "",
@@ -877,7 +1157,11 @@ class RemoteTerminalRelay:
 
     async def _drop_attachment(self, session: _SourceSession, att: _Attachment) -> None:
         session.grants.pop(att.grant_jti, None)
-        for pending in (session.pending_attach, session.pending_buffer):
+        for pending in (
+            session.pending_attach,
+            session.pending_buffer,
+            session.pending_create,
+        ):
             for rid in [r for r, (_, j) in pending.items() if j == att.grant_jti]:
                 pending.pop(rid, None)
         try:
@@ -1270,6 +1554,44 @@ class RemoteTerminalRelay:
             )
             return True
 
+        if frame_type == "terminal_created":
+            wire_request_id = frame.get("request_id")
+            correlated = (
+                session.pending_create.pop(wire_request_id, None)
+                if isinstance(wire_request_id, str)
+                else None
+            )
+            if correlated is None:
+                # Not ours: the mobile path shares this channel and creates
+                # terminals on it too.
+                return False
+            source_request_id, jti = correlated
+            att = session.grants.get(jti)
+            if att is None:
+                return False
+            terminal = frame.get("terminal")
+            terminal_id = (
+                terminal.get("id")
+                if isinstance(terminal, dict)
+                else frame.get("terminal_id")
+            )
+            await self._send_to_source(
+                session,
+                {
+                    "type": "remote_terminal_created",
+                    "request_id": source_request_id,
+                    "grant_jti": att.grant_jti,
+                    "terminal_id": terminal_id,
+                    "terminal": terminal,
+                },
+            )
+            # Spent. A create grant bought one spawn; driving what it spawned
+            # needs an attach grant for the new session, which coord mints
+            # against the target's own attach preference. Dropping it here is
+            # what makes that non-optional rather than a convention.
+            await self._drop_attachment(session, att)
+            return True
+
         if frame_type == "terminal_output":
             att = await self._bound_attachment(
                 session, target_device_id, frame.get("terminal_id")
@@ -1454,7 +1776,14 @@ class RemoteTerminalRelay:
             if correlated is not None:
                 failed_attach = True
             else:
-                correlated = session.pending_buffer.pop(wire_request_id, None)
+                correlated = session.pending_create.pop(wire_request_id, None)
+                if correlated is not None:
+                    # A refused create leaves nothing registered either — the
+                    # target spawned no PTY, so the grant on this socket is
+                    # garbage for the same reason a refused attach's is.
+                    failed_attach = True
+                else:
+                    correlated = session.pending_buffer.pop(wire_request_id, None)
             if correlated is not None:
                 att = session.grants.get(correlated[1])
         if att is None and _is_remote_marked(frame):
