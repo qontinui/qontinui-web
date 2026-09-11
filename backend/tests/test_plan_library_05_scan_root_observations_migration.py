@@ -27,7 +27,7 @@ from __future__ import annotations
 
 import re
 import uuid
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 import pytest
 from sqlalchemy import text
@@ -130,8 +130,9 @@ def _reading(**overrides: object) -> dict[str, object]:
 
 def _upsert(
     engine: Engine, *, org_id: uuid.UUID | None, device_id: uuid.UUID, **fields: object
-) -> bool:
-    """Run the crud's own statement; return whether it INSERTED."""
+) -> bool | None:
+    """Run the crud's own statement; return whether it INSERTED, or ``None``
+    when the out-of-order guard declined the update (no RETURNING row)."""
     stmt = upsert_statement(
         org_id=org_id,
         device_id=device_id,
@@ -139,8 +140,10 @@ def _upsert(
         received_at=datetime.now(UTC),
     )
     with engine.begin() as conn:
-        _row_id, inserted = conn.execute(stmt).one()
-    return bool(inserted)
+        written = conn.execute(stmt).one_or_none()
+    if written is None:
+        return None
+    return bool(written[1])
 
 
 def _rows(engine: Engine, device_id: uuid.UUID) -> list[tuple[object, ...]]:
@@ -215,6 +218,15 @@ def test_upgrade_upsert_downgrade_upgrade_round_trip() -> None:
         device = uuid.uuid4()
         assert _upsert(engine, org_id=org, device_id=device, behind=254) is True
         assert _upsert(engine, org_id=org, device_id=device, behind=3) is False
+        assert _rows(engine, device) == [(org, 3, "measured")]
+
+        # The out-of-order guard holds on the migrated table too: an OLDER
+        # reading is declined and the newer one survives.
+        late = datetime.now(UTC) - timedelta(hours=1)
+        assert (
+            _upsert(engine, org_id=org, device_id=device, behind=999, observed_at=late)
+            is None
+        )
         assert _rows(engine, device) == [(org, 3, "measured")]
 
         # The NULL bucket is one row per device too — the reason the index is
