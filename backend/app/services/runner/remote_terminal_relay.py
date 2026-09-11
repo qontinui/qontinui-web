@@ -169,6 +169,10 @@ CODE_GRANT_WRONG_KIND = "grant_wrong_kind"
 # the per-target pubsub listener died on its own: the attachment is dropped
 # rather than left registered with no return route.
 CODE_LISTENER_LOST = "listener_lost"
+# Too many scrollback RPCs outstanding on this socket at once. See
+# ``PENDING_BUFFER_MAX``: the source may retry once the target answers or the
+# TTL sweeps the backlog.
+CODE_BUFFER_BACKLOG = "buffer_backlog"
 
 # ---------------------------------------------------------------------------
 # The TARGET's own closed set of refusal codes.
@@ -176,9 +180,9 @@ CODE_LISTENER_LOST = "listener_lost"
 # ``_route_target_error`` rebuilds the payload rather than forwarding it, but
 # ``code`` was taken straight off the target's frame — so a target could emit
 # any of the RELAY's codes above and the source would read them as the relay's
-# own verdict. Two are directly exploitable: ``attach_grant_expired`` makes the
-# source discard live grants and re-mint in a loop, and ``listener_lost`` makes
-# it believe the relay lost its route to the device.
+# own verdict. ``listener_lost`` is the clearest example: it makes the source
+# believe the RELAY lost its route to the device, which is a claim only the
+# relay is in a position to make.
 #
 # The mirror of ``mcp::remote_terminal::{AttachRefusal, CreateRefusal}::code``
 # in qontinui-runner plus ``backend_relay``'s own pre-dispatch refusal. A code
@@ -187,9 +191,27 @@ CODE_LISTENER_LOST = "listener_lost"
 # ``TARGET_CODE_PREFIX``, which no relay code shares.
 #
 # ``attach_grant_unknown`` / ``attach_grant_expired`` are in BOTH vocabularies
-# and stay pass-through: the source's handling of them is identical either way
-# (the grant is gone), so nothing is gained by making them distinguishable and
-# a working feature would be lost.
+# and stay pass-through. State the trade honestly, because two earlier drafts
+# of this comment contradicted each other on it (review round 4, item 4):
+#
+# * What pass-through COSTS. The source cannot distinguish "the relay's
+#   verifier rejected your grant" from "the counterparty you attached to claims
+#   your grant is gone" — the code is the same on both. Both codes are in
+#   qontinui-runner's ``FATAL_REMOTE_ERROR_CODES``
+#   (``mcp::remote_terminal``), so the source CLOSES the pane on the target's
+#   say-so, and will do it again on the next attach. That is a repeatable
+#   pane-level denial of service.
+# * Why it is nonetheless defensible. The party doing it is the target this
+#   source deliberately attached to, it can already end the pane by refusing
+#   the attach outright or by killing the PTY, and it gains no capability it
+#   did not have: no grant is issued, no grant is re-minted (there is no
+#   auto-remint path — an earlier draft claiming the source "discards live
+#   grants and re-mints in a loop" was simply wrong), nothing is read. It is a
+#   nuisance against yourself, not a privilege gain.
+#
+# Namespacing them instead would cost the working feature: the source would
+# stop recognising a genuinely dead grant and hold a pane open against a
+# target that has nothing left to route to it.
 TARGET_ERROR_CODES = frozenset(
     {
         # AttachRefusal
@@ -215,32 +237,46 @@ TARGET_ERROR_CODES = frozenset(
 # ---------------------------------------------------------------------------
 # The RELAY's own closed set of refusal codes.
 # ---------------------------------------------------------------------------
-# Enumerated so the namespacing below can be CHECKED against it rather than
-# asserted about. ``TARGET_ERROR_CODES`` and this set deliberately intersect
+# DERIVED, not transcribed. It used to be a hand-written literal list, and a
+# hand-written list is the defect it exists to prevent: a ``CODE_*`` constant
+# added without a matching line would be invisible to BOTH
+# ``_prefix_is_disjoint_from_relay_codes`` and ``namespace_target_code``'s
+# re-check, so a target could spell the new relay code and the source would
+# read it as the relay's own verdict (review round 4, item 3).
+#
+# Two sources, because there are genuinely two:
+#
+# * every ``CODE_*`` module constant, swept out of the module namespace — the
+#   sweep runs at import, after the constants above and before anything reads
+#   the set, so a new constant joins with no second edit;
+# * ``_INLINE_RELAY_ERROR_CODES``, the codes minted as a literal at the point
+#   of use rather than as a constant. That set is still hand-written — a
+#   string literal inside a function body cannot be swept out of the module
+#   namespace — but it is now the ONLY hand-written half, and
+#   ``test_relay_error_codes_covers_every_inline_code_literal`` scans this
+#   module's source for ``"code": "<literal>"`` and fails on any that is not
+#   here. The two must agree.
+#
+# ``TARGET_ERROR_CODES`` and this set deliberately intersect
 # (``attach_grant_unknown`` / ``attach_grant_expired``): the source's handling
 # is identical either way, so those stay pass-through. Every OTHER relay code
 # must be unreachable from target input, which is the property
 # ``namespace_target_code`` owns.
-RELAY_ERROR_CODES = frozenset(
+_INLINE_RELAY_ERROR_CODES = frozenset(
     {
-        CODE_GRANT_INVALID,
-        CODE_GRANT_EXPIRED,
-        CODE_GRANT_WRONG_SOURCE,
-        CODE_NOT_REGISTERED,
-        CODE_VERIFIER_UNAVAILABLE,
-        CODE_REGISTRY_UNAVAILABLE,
-        CODE_GRANT_CONSUMED,
-        CODE_TERMINAL_BUSY,
-        CODE_TARGET_NOT_CONNECTED,
-        CODE_CREATE_GRANT_INVALID,
-        CODE_CREATE_GRANT_EXPIRED,
-        CODE_CREATE_GRANT_WRONG_SOURCE,
-        CODE_GRANT_WRONG_KIND,
-        CODE_LISTENER_LOST,
         # Minted inside ``route_target_frame`` rather than as a module
         # constant, but it is the relay speaking all the same.
         "attach_terminal_missing",
     }
+)
+
+RELAY_ERROR_CODES = frozenset(
+    {
+        value
+        for name, value in list(globals().items())
+        if name.startswith("CODE_") and isinstance(value, str)
+    }
+    | _INLINE_RELAY_ERROR_CODES
 )
 
 # The prefix a target-supplied code is namespaced under.
@@ -503,6 +539,34 @@ class _Attachment:
 # back to (the source's own request_id, grant_jti).
 _Pending = tuple[str | None, str]
 
+# How long an unanswered ``terminal_buffer`` RPC stays correlatable, and how
+# many may be outstanding on one socket at once.
+#
+# ``pending_attach`` and ``pending_create`` are self-limiting — one entry per
+# grant, and a grant is claimed once — but ``pending_buffer`` is not: every
+# ``remote_terminal_buffer`` frame mints a fresh id and inserts, and an entry
+# leaves only on a matching reply or on ``_drop_attachment``. So a target that
+# simply DROPS ``terminal_buffer`` frames (answering nothing, refusing nothing)
+# grew the dict for the grant's whole life, renewed on every reattach —
+# unbounded memory in a shared backend replica, driven by one authenticated
+# device (review round 4, item 5).
+#
+# Two bounds rather than one, because they answer different failures:
+#
+# * the TTL is what SELF-HEALS. A reply that has not come in this long is not
+#   coming; dropping the correlation costs the source one timed-out history
+#   request and nothing else.
+# * the cap is the hard ceiling, enforced after the TTL sweep, and it REFUSES
+#   the new frame rather than evicting an old one. Eviction would be worse than
+#   the leak: the target marks a solicited ``terminal_buffer_response`` with
+#   ``grant_jti``/``remote`` (``backend_relay::handle_terminal_buffer``), so a
+#   reply whose correlation had been evicted falls into
+#   ``_route_buffer_response``'s UNSOLICITED arm and is forwarded with no
+#   request id — which makes the source splice stale scrollback into a live
+#   pane instead of resolving a waiter.
+PENDING_BUFFER_TTL_SECONDS = 60.0
+PENDING_BUFFER_MAX = 32
+
 
 @dataclass
 class _SourceSession:
@@ -515,8 +579,34 @@ class _SourceSession:
     pending_attach: dict[str, _Pending] = field(default_factory=dict)
     pending_buffer: dict[str, _Pending] = field(default_factory=dict)
     pending_create: dict[str, _Pending] = field(default_factory=dict)
+    # ``pending_buffer`` only: the ``time.monotonic()`` deadline each entry
+    # stops being correlatable at. Kept beside the dict rather than inside
+    # ``_Pending`` because ``_pop_correlated`` is generic over all three
+    # pendings and the other two need no clock. ``sweep_pending_buffer`` is the
+    # single place both are mutated together, and it treats a MISSING deadline
+    # as already expired — so a desync fails closed (drop the correlation)
+    # rather than open (keep it forever, the leak being fixed).
+    pending_buffer_deadline: dict[str, float] = field(default_factory=dict)
     listeners: dict[str, tuple[Any, asyncio.Task[None]]] = field(default_factory=dict)
     send_lock: asyncio.Lock = field(default_factory=asyncio.Lock)
+
+    def sweep_pending_buffer(self, now: float) -> list[str]:
+        """Drop scrollback RPCs the target never answered. Returns their ids."""
+        dropped = [
+            rid
+            for rid in list(self.pending_buffer)
+            if now >= self.pending_buffer_deadline.get(rid, 0.0)
+        ]
+        for rid in dropped:
+            self.pending_buffer.pop(rid, None)
+            self.pending_buffer_deadline.pop(rid, None)
+        # A deadline whose entry was popped elsewhere (a reply, or
+        # ``_drop_attachment``) is a leftover; this is the only reader, so it
+        # is also the only place that can shed them.
+        for rid in list(self.pending_buffer_deadline):
+            if rid not in self.pending_buffer:
+                self.pending_buffer_deadline.pop(rid, None)
+        return dropped
 
     def by_terminal(
         self, target_device_id: str, terminal_id: Any
@@ -674,14 +764,42 @@ class RemoteTerminalRelay:
                 for bound in ("from_offset", "to_offset"):
                     if msg.get(bound) is not None:
                         extra[bound] = msg.get(bound)
+                # Bound the correlation table before adding to it. This is the
+                # ONLY insertion point, so sweeping here is sufficient to keep
+                # it bounded: nothing else grows it. See
+                # ``PENDING_BUFFER_TTL_SECONDS`` / ``PENDING_BUFFER_MAX``.
+                now = time.monotonic()
+                swept = session.sweep_pending_buffer(now)
+                if swept:
+                    logger.info(
+                        "remote_terminal_buffer_rpc_timed_out",
+                        source_device_id=session.device_id,
+                        grant_jti=att.grant_jti,
+                        dropped=len(swept),
+                    )
+                if len(session.pending_buffer) >= PENDING_BUFFER_MAX:
+                    await self._refuse(
+                        session,
+                        CODE_BUFFER_BACKLOG,
+                        "too many scrollback requests are still unanswered on "
+                        "this connection",
+                        request_id=source_request_id,
+                        grant_jti=att.grant_jti,
+                        terminal_id=att.terminal_id,
+                    )
+                    return
                 # Register BEFORE forwarding: the reply can race back on the
                 # listener before ``send_terminal`` returns.
                 session.pending_buffer[minted] = (
                     source_request_id if isinstance(source_request_id, str) else None,
                     att.grant_jti,
                 )
+                session.pending_buffer_deadline[minted] = (
+                    now + PENDING_BUFFER_TTL_SECONDS
+                )
                 if not await self._forward(session, msg, att, "terminal_buffer", extra):
                     session.pending_buffer.pop(minted, None)
+                    session.pending_buffer_deadline.pop(minted, None)
         elif msg_type == "remote_terminal_flow":
             # Retyped to `terminal_flow`, the spelling the target's handler is
             # named for. The target accepts either, so this translation is
@@ -2058,13 +2176,28 @@ class RemoteTerminalRelay:
                 correlated, att = popped
                 failed_attach = is_failed_attach
                 break
-        if att is None and _is_remote_marked(frame):
-            # Only a frame the target marked as a remote refusal may fall
-            # back to the terminal route; a mobile watcher's own
-            # request-correlated error is never handed to the source.
-            att = await self._attachment_by_remote_mark(
-                session, target_device_id, frame
-            )
+        if att is None:
+            # ``_pop_correlated`` has THREE outcomes and this is the third:
+            # ``(correlated, None)`` — the id was ours, but the grant it names
+            # is no longer on this socket (``_evict`` pops ``session.grants``
+            # before its awaits while ``pending_attach`` is still live). The
+            # correlation is spent and resolved nothing, so it must not be
+            # carried into the fallback below, which re-resolves ``att`` from a
+            # TARGET-SUPPLIED ``grant_jti``. Leaving it set applied a dead
+            # correlation's verdict to a DIFFERENT live attachment: the source's
+            # waiter was resolved with someone else's error, and — because the
+            # attach and create arms set ``failed_attach`` — the unrelated
+            # attachment was torn down and its Redis rows released, killing a
+            # working pane (review round 4, item 2).
+            correlated = None
+            failed_attach = False
+            if _is_remote_marked(frame):
+                # Only a frame the target marked as a remote refusal may fall
+                # back to the terminal route; a mobile watcher's own
+                # request-correlated error is never handed to the source.
+                att = await self._attachment_by_remote_mark(
+                    session, target_device_id, frame
+                )
         if att is None:
             return False
         message = frame.get("message")
