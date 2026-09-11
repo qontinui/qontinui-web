@@ -12,16 +12,22 @@ What is asserted here
    a body ``device_id`` (or ``organization_id``) is a 422 and writes nothing.
 3. **Only a device may write.** An operator session is a 403 naming why —
    including one that also forwards a device bearer — and anonymous is a 401.
-4. **Staleness reads UNKNOWN.** A just-written reading is fresh; one older than
-   2700 s reads ``state: "unknown"`` with an ``observation_stale:`` detail
-   (what was sent stays in ``reported_state`` / ``reported_detail``), judged
-   from the OLDER of the two timestamps. An organization with no readings
-   answers top-level ``state: "unknown"``, never an empty "all current".
-4a. **A 0/0 floor reads UNKNOWN.** A fresh ``measured`` reading whose counts
-   are floors and both zero reads ``state: "unknown"`` with a ``ref_stale:``
-   detail; a floor with non-zero counts stays ``measured``.
-4b. **Out-of-order reports are ignored.** A report observed earlier than the
-   stored one answers ``applied: false`` and changes nothing.
+4. **Staleness reads UNKNOWN, on THIS server's clock.** A device not heard
+   from for more than 2700 s — by ``received_at`` only — reads
+   ``state: "unknown"`` with an ``observation_stale:`` detail (what was sent
+   stays in ``reported_state`` / ``reported_detail``). A runner clock that is
+   50 min behind does not age a live device out; ``observed_skew_secs`` shows
+   the skew instead. An organization with no readings answers top-level
+   ``state: "unknown"``, never an empty "all current".
+4a. **"0 behind" against a stale ref reads UNKNOWN.** A fresh ``measured``
+   floor reading with ``behind == 0`` reads ``state: "unknown"`` with a
+   ``ref_stale:`` detail whatever ``ahead`` is; a floor with a non-zero
+   ``behind`` stays ``measured``.
+4b. **Out-of-order reports keep the newer reading but still count as
+   contact.** A report observed earlier than the stored one answers
+   ``applied: false``, leaves the reading alone, and refreshes ``received_at``.
+4c. **A future-dated report is a 422**, so one skewed report cannot pin the
+   row (the reviewer's wedge probe, kept as a regression test).
 5. **Route order.** Through the real ``api_router``, ``GET
    /api/v1/plan-library/scan-roots`` reaches this handler and is not swallowed
    by ``plan_library``'s ``GET /{artifact_id}``.
@@ -53,7 +59,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.v1.endpoints.plan_library_scan_roots import FRESH_WITHIN_SECS
 from app.models.plan_scan_root import PlanScanRootObservation
-from app.schemas.plan_library_scan_roots import ScanRootReport
+from app.schemas.plan_library_scan_roots import MAX_FUTURE_SKEW_SECS, ScanRootReport
 
 API_PREFIX = "/api/v1/plan-library"
 SCAN_ROOTS = f"{API_PREFIX}/scan-roots"
@@ -441,10 +447,9 @@ class TestReadFreshness:
         """The stale rule: ``state`` / ``detail`` ARE the verdict.
 
         Mutation-proved: replacing ``fresh = age <= FRESH_WITHIN_SECS`` in
-        ``render_row`` with ``fresh = True`` fails this test, the two
-        older-stamp tests below and ``test_staleness_outranks_the_floor_verdict``;
-        taking ``max`` instead of ``min`` of the two stamps fails the two
-        older-stamp tests."""
+        ``render_row`` with ``fresh = True`` fails this test,
+        ``test_freshness_ignores_a_current_observed_at_on_a_silent_device`` and
+        ``test_staleness_outranks_the_floor_verdict``."""
         async with _client(app_no_cognito, TOKEN_A) as client:
             await client.post(SCAN_ROOTS, json=_reading(behind=0, ahead=0))
             stale = timedelta(seconds=FRESH_WITHIN_SECS + 60)
@@ -484,41 +489,42 @@ class TestReadFreshness:
         assert row["observation_fresh"] is True
         assert row["state"] == "measured"
 
-    async def test_an_old_observation_is_stale_even_if_recently_received(
-        self, app_no_cognito: FastAPI, async_db_session: AsyncSession
+    async def test_a_live_device_with_a_clock_50_min_behind_stays_fresh(
+        self, app_no_cognito: FastAPI
     ) -> None:
-        """Age is taken from the OLDER stamp: an old reading re-posted just now
-        says nothing more about now than it did when it was taken."""
+        """Liveness is this server's clock: a runner whose clock is 50 minutes
+        slow, reporting right now, is fresh — and the skew is visible."""
+        behind_clock = datetime.now(UTC) - timedelta(minutes=50)
         async with _client(app_no_cognito, TOKEN_A) as client:
-            await client.post(SCAN_ROOTS, json=_reading())
-            await _age_row(
-                async_db_session,
-                DEVICE_A,
-                observed_ago=timedelta(hours=3),
-                received_ago=timedelta(seconds=5),
+            posted = await client.post(
+                SCAN_ROOTS, json=_reading(observed_at=behind_clock.isoformat())
             )
             resp = await client.get(SCAN_ROOTS)
+        assert posted.status_code == 201, posted.text
         [row] = resp.json()["rows"]
-        assert row["observation_fresh"] is False
-        assert row["state"] == "unknown"
+        assert row["observation_fresh"] is True
+        assert row["state"] == "measured"
+        assert 0 <= row["observation_age_secs"] < 60
+        assert 50 * 60 <= row["observed_skew_secs"] < 50 * 60 + 60
 
-    async def test_a_runner_clock_ahead_cannot_make_a_quiet_device_fresh(
+    async def test_freshness_ignores_a_current_observed_at_on_a_silent_device(
         self, app_no_cognito: FastAPI, async_db_session: AsyncSession
     ) -> None:
-        """A future ``observed_at`` (runner clock ahead) must not rescue a row
-        this server has not heard from in hours."""
+        """The mirror case: a current-looking ``observed_at`` cannot keep a
+        device fresh that this server has not heard from in two hours."""
         async with _client(app_no_cognito, TOKEN_A) as client:
             await client.post(SCAN_ROOTS, json=_reading())
             await _age_row(
                 async_db_session,
                 DEVICE_A,
-                observed_ago=timedelta(hours=-1),
+                observed_ago=timedelta(seconds=0),
                 received_ago=timedelta(hours=2),
             )
             resp = await client.get(SCAN_ROOTS)
         [row] = resp.json()["rows"]
         assert row["observation_fresh"] is False
         assert row["state"] == "unknown"
+        assert row["observed_skew_secs"] < -7000
 
     async def test_a_fresh_unmeasured_state_reads_as_reported(
         self, app_no_cognito: FastAPI
@@ -573,8 +579,8 @@ class TestFloorRule:
         """0/0 against a ref that is stale or of unknown age is a lower bound of
         nothing — it must not read as "in step".
 
-        Mutation-proved: making ``is_zero_floor`` return ``False`` fails this
-        test (and only this one)."""
+        Mutation-proved: making ``zero_behind_floor_detail`` return ``None``
+        fails this test and the ahead > 0 one below."""
         from app.api.v1.endpoints.plan_library_scan_roots import (
             REF_STALE_ZERO_FLOOR_DETAIL,
         )
@@ -599,31 +605,49 @@ class TestFloorRule:
         # The POST's own echo carries the same verdict.
         assert posted.json()["row"]["state"] == "unknown"
 
-    async def test_a_floor_with_nonzero_counts_stays_measured(
+    async def test_a_zero_behind_floor_with_commits_ahead_reads_unknown(
         self, app_no_cognito: FastAPI
     ) -> None:
-        """ "At least 254 behind" is a true claim; ``counts_are_floors`` says it
-        is a lower bound. Only 0/0 is degraded."""
+        """The rule keys on ``behind == 0``, not on 0/0: "0 behind" against a
+        stale ref establishes nothing whatever ``ahead`` is — and ``ahead`` is
+        as of that same ref, which the detail says."""
+        from app.api.v1.endpoints.plan_library_scan_roots import (
+            ref_stale_zero_behind_detail,
+        )
+
         async with _client(app_no_cognito, TOKEN_A) as client:
-            await client.post(
-                SCAN_ROOTS,
-                json=_reading(
-                    behind=254, ahead=0, ref_age_secs=30_000, counts_are_floors=True
-                ),
-            )
-            behind_only = (await client.get(SCAN_ROOTS)).json()["rows"][0]
             await client.post(
                 SCAN_ROOTS,
                 json=_reading(
                     behind=0, ahead=11, ref_age_secs=None, counts_are_floors=True
                 ),
             )
-            ahead_only = (await client.get(SCAN_ROOTS)).json()["rows"][0]
-        assert behind_only["state"] == "measured"
-        assert behind_only["counts_are_floors"] is True
-        assert behind_only["behind"] == 254
-        assert ahead_only["state"] == "measured"
-        assert ahead_only["ahead"] == 11
+            [row] = (await client.get(SCAN_ROOTS)).json()["rows"]
+        assert row["state"] == "unknown"
+        assert row["detail"] == ref_stale_zero_behind_detail(11)
+        assert row["detail"] == (
+            "ref_stale: 0 behind against a ref that is stale or of unknown age "
+            "is a lower bound, not agreement (ahead 11 is also as of that ref)"
+        )
+        assert row["reported_state"] == "measured"
+        assert row["ahead"] == 11
+
+    async def test_a_floor_with_commits_behind_stays_measured(
+        self, app_no_cognito: FastAPI
+    ) -> None:
+        """ "At least 254 behind" is a true claim; ``counts_are_floors`` says it
+        is a lower bound. Only a floor of 0 behind is degraded."""
+        async with _client(app_no_cognito, TOKEN_A) as client:
+            await client.post(
+                SCAN_ROOTS,
+                json=_reading(
+                    behind=254, ahead=3, ref_age_secs=30_000, counts_are_floors=True
+                ),
+            )
+            [row] = (await client.get(SCAN_ROOTS)).json()["rows"]
+        assert row["state"] == "measured"
+        assert row["counts_are_floors"] is True
+        assert (row["behind"], row["ahead"]) == (254, 3)
 
     async def test_an_exact_zero_zero_is_in_step(self, app_no_cognito: FastAPI) -> None:
         """Not a floor → 0/0 IS agreement, and reads ``measured``."""
@@ -658,11 +682,13 @@ class TestOutOfOrder:
     async def test_an_older_report_does_not_replace_a_newer_one(
         self, app_no_cognito: FastAPI, async_db_session: AsyncSession
     ) -> None:
-        """A late delivery (a retry that lost a race) is ignored: 200,
-        ``applied: false``, and the stored newer reading is what comes back.
+        """A late delivery (a retry that lost a race) does not replace the
+        newer reading: 200, ``applied: false``, the stored reading comes back —
+        and ``received_at`` still moves, because the device DID report.
 
-        Mutation-proved: dropping the ``where=`` guard from
-        ``upsert_statement`` fails this test."""
+        Mutation-proved: making the ``CASE`` always take the incoming value
+        fails this test; making ``received_at`` keep the stored value on a
+        declined report fails it and the wedge regression below."""
         newer = datetime.now(UTC)
         older = newer - timedelta(minutes=10)
         async with _client(app_no_cognito, TOKEN_A) as client:
@@ -682,8 +708,9 @@ class TestOutOfOrder:
         [row] = await _rows_for(async_db_session, DEVICE_A)
         assert row.behind == 3
         assert row.observed_at == newer
-        # Ignored, so it did not count as a receipt either.
-        assert row.received_at == _received_at(first)
+        # Declined as a READING, but it was contact: liveness moved.
+        assert row.received_at == _received_at(late)
+        assert _received_at(late) > _received_at(first)
 
     async def test_an_equal_observed_at_applies_as_a_heartbeat(
         self, app_no_cognito: FastAPI, async_db_session: AsyncSession
@@ -707,6 +734,91 @@ class TestOutOfOrder:
             newer = await client.post(SCAN_ROOTS, json=_reading(behind=3))
         assert newer.json()["applied"] is True
         assert newer.json()["row"]["behind"] == 3
+
+
+class TestClockSkew:
+    async def test_a_future_dated_report_is_422_and_writes_nothing(
+        self, app_no_cognito: FastAPI, async_db_session: AsyncSession
+    ) -> None:
+        """Mutation-proved: removing the ``MAX_FUTURE_SKEW_SECS`` check from
+        ``ScanRootReport`` fails this test and the wedge regression below."""
+        ahead = datetime.now(UTC) + timedelta(seconds=MAX_FUTURE_SKEW_SECS + 120)
+        async with _client(app_no_cognito, TOKEN_A) as client:
+            resp = await client.post(
+                SCAN_ROOTS, json=_reading(observed_at=ahead.isoformat())
+            )
+        assert resp.status_code == 422, resp.text
+        [err] = resp.json()["detail"]
+        assert err["loc"][-1] == "observed_at"
+        assert "ahead of this server's clock" in err["msg"]
+        assert f"limit is {MAX_FUTURE_SKEW_SECS} s" in err["msg"]
+        assert await _rows_for(async_db_session, DEVICE_A) == []
+
+    async def test_ordinary_drift_inside_the_bound_is_accepted(
+        self, app_no_cognito: FastAPI
+    ) -> None:
+        ahead = datetime.now(UTC) + timedelta(seconds=MAX_FUTURE_SKEW_SECS - 60)
+        async with _client(app_no_cognito, TOKEN_A) as client:
+            resp = await client.post(
+                SCAN_ROOTS, json=_reading(observed_at=ahead.isoformat())
+            )
+        assert resp.status_code == 201, resp.text
+        assert resp.json()["row"]["observed_skew_secs"] < 0
+
+    async def test_a_skewed_report_cannot_wedge_a_live_device(
+        self, app_no_cognito: FastAPI, async_db_session: AsyncSession
+    ) -> None:
+        """Regression for the second review's wedge probe.
+
+        Before the fix: one report dated a year ahead was stored; every honest
+        report after it lost the ``observed_at >=`` guard, a declined report
+        did not refresh ``received_at``, and 50 minutes later the live,
+        posting device read ``unknown`` with the honest reading discarded.
+        Now: the far-future report is refused outright, and even a skewed
+        report INSIDE the bound cannot age the device out — the declined
+        honest reports still count as contact."""
+        now = datetime.now(UTC)
+        async with _client(app_no_cognito, TOKEN_A) as client:
+            # 1. The probe's own opening move is refused, so nothing is pinned.
+            far_future = await client.post(
+                SCAN_ROOTS,
+                json=_reading(
+                    behind=0, observed_at=(now + timedelta(days=365)).isoformat()
+                ),
+            )
+            assert far_future.status_code == 422, far_future.text
+            assert await _rows_for(async_db_session, DEVICE_A) == []
+
+            # 2. The worst a skewed clock can now plant: +250 s.
+            skewed = await client.post(
+                SCAN_ROOTS,
+                json=_reading(
+                    behind=0, observed_at=(now + timedelta(seconds=250)).isoformat()
+                ),
+            )
+            assert skewed.status_code == 201, skewed.text
+            # Simulate 50 minutes since that receipt.
+            await async_db_session.execute(
+                update(PlanScanRootObservation)
+                .where(PlanScanRootObservation.device_id == DEVICE_A)
+                .values(received_at=now - timedelta(minutes=50))
+            )
+            await async_db_session.commit()
+
+            # 3. The live device posts an honest current reading. It loses the
+            #    ordering to the +250 s one, but it is contact.
+            honest = await client.post(
+                SCAN_ROOTS,
+                json=_reading(behind=254, observed_at=datetime.now(UTC).isoformat()),
+            )
+            listing = await client.get(SCAN_ROOTS)
+
+        assert honest.status_code == 200, honest.text
+        assert honest.json()["applied"] is False
+        [row] = listing.json()["rows"]
+        assert row["observation_fresh"] is True
+        assert row["state"] == "measured"
+        assert row["behind"] == 0
 
 
 # ===========================================================================
