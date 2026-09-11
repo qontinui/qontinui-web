@@ -2997,14 +2997,18 @@ async def test_a_target_may_not_spell_a_relay_code() -> None:
     """Review finding 8.
 
     ``code`` on a ``remote_terminal_error`` was taken straight off the target's
-    frame, so a target could emit the RELAY's own verdicts. Two are directly
-    exploitable: ``attach_grant_expired`` makes the source discard live grants
-    and re-mint in a loop, and ``listener_lost`` makes it believe the relay lost
-    its route to the device.
+    frame, so a target could emit the RELAY's own verdicts — ``listener_lost``
+    most plainly, a claim only the relay is in a position to make.
 
     ``attach_grant_unknown`` / ``attach_grant_expired`` are in BOTH vocabularies
-    and stay pass-through on purpose — the source's handling is identical either
-    way — so the codes pinned here are the relay-ONLY ones.
+    and stay pass-through on purpose, so the codes pinned here are the
+    relay-ONLY ones. The trade that carve-out makes is stated at
+    ``TARGET_ERROR_CODES``: a target can close the source's pane repeatably by
+    claiming the grant is gone, which is a pane-level DoS by the party you
+    chose to attach to and not a privilege gain. An earlier draft of this
+    docstring called it "discard live grants and re-mint in a loop"; there is
+    no auto-remint path, and that claim was simply wrong (review round 4,
+    item 4).
     """
     relay_only = [
         rtr.CODE_GRANT_INVALID,
@@ -3042,12 +3046,18 @@ async def test_a_target_may_not_spell_a_relay_code() -> None:
     )
 
 
-async def test_no_target_input_can_produce_a_relay_code() -> None:
+async def test_the_namespacing_branch_never_produces_a_relay_code() -> None:
     """Review round 2, finding 3 — the assertion the test above lacked.
 
+    Named for what it actually checks (review round 4, item 4). It used to be
+    ``test_no_target_input_can_produce_a_relay_code``, which its own sweep
+    contradicts three paragraphs down: a candidate in ``TARGET_ERROR_CODES`` is
+    EXCUSED, because those two codes pass through by design. The property is
+    about the namespacing branch, not about target input in general.
+
     The old test asserted every relay code maps to ``target_<code>``. It never
-    asserted the REVERSE: that no target input *produces* a relay code. It
-    could not have, because one did — ``CODE_TARGET_NOT_CONNECTED`` is
+    asserted the REVERSE: that the namespacing branch cannot *produce* a relay
+    code. It could not have, because one did — ``CODE_TARGET_NOT_CONNECTED`` is
     ``target_not_connected``, so a connected target answering ``not_connected``
     forged the relay's own "the target is not connected" verdict under the old
     ``target_`` prefix, and the docstring's claim that collision was impossible
@@ -3296,3 +3306,203 @@ async def test_a_create_grant_may_still_be_detached(
     # No `terminal_detach` is sent: the target bound no terminal under a create
     # grant, and admits no such frame under one.
     manager.send_terminal.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# Review round 4
+# ---------------------------------------------------------------------------
+
+
+async def test_a_dead_correlations_teardown_is_not_applied_to_a_live_attachment(
+    relay: RemoteTerminalRelay, redis: _FakeRedis
+) -> None:
+    """Review round 4, item 2 — ``_pop_correlated``'s third outcome.
+
+    ``_pop_correlated`` returns ``(correlated, None)`` for "this correlation is
+    ours, but the grant is no longer on this socket". ``_route_target_error``
+    broke out of its loop on that with ``correlated`` set and
+    ``failed_attach = True`` — and then fell straight into the
+    ``_is_remote_marked`` fallback, which re-resolves ``att`` from a
+    TARGET-SUPPLIED ``grant_jti``. Every downstream use of ``correlated`` and
+    ``failed_attach`` was then applied to that unrelated attachment.
+
+    The reachable shape, reproduced here: one socket holds G2 (attached, bound
+    to ``t1``) and G1 (attach still pending under minted id ``m1``). G1 enters
+    ``_evict``, which claims the grant out of ``session.grants`` BEFORE its
+    first await while ``pending_attach[m1]`` is still live. A per-target
+    listener then processes ``{"type": "error", "request_id": m1,
+    "grant_jti": <G2>}``. G1's waiter was resolved by an error naming G2, and
+    G2's live bound attachment was torn down as a failed attach — the
+    operator's working pane dies and its Redis rows are released.
+    """
+    ws = _FakeWS()
+    manager = _manager()
+
+    # G2: attached and bound to `t1`.
+    g2 = await _attached(relay, ws, manager, terminal_id="t1")
+    session = relay._sessions[id(ws)]
+    assert g2["jti"] in session.grants
+    assert session.by_terminal(TARGET_DEVICE, "t1") is not None
+
+    # G1: a second grant on the same socket and target; attach still pending.
+    g1 = _claims()
+    await _attach(relay, ws, manager, g1, request_id="req-attach-2")
+    assert ws.of_type("error") == [], ws.sent
+    minted = _forwarded_attach(manager)["request_id"]
+    assert minted in session.pending_attach
+
+    # G1 is mid-`_evict`: the grant is gone from `session.grants`, its pending
+    # entry is not.
+    session.grants.pop(g1["jti"])
+    ws.sent.clear()
+    redis_rows_before = {k: dict(v) for k, v in redis.hashes.items()}
+
+    routed = await relay.route_target_frame(
+        session,
+        TARGET_DEVICE,
+        {
+            "type": "error",
+            "request_id": minted,
+            "grant_jti": g2["jti"],
+            "code": "boom",
+            "message": "this is about G2, not G1",
+        },
+    )
+
+    # G2 survives. This is the whole point: a correlation that resolved nothing
+    # may not tear down an attachment it never named.
+    assert g2["jti"] in session.grants, (
+        "a dead correlation's teardown was applied to a live attachment"
+    )
+    assert session.by_terminal(TARGET_DEVICE, "t1") is not None
+    assert redis.hashes == redis_rows_before, "G2's registry rows were released"
+
+    # The frame IS remote-marked for G2, so forwarding it to the source as an
+    # unsolicited error for G2 is correct — but WITHOUT G1's request id, which
+    # would resolve the wrong waiter.
+    assert routed is True
+    errors = ws.of_type("remote_terminal_error")
+    assert len(errors) == 1, ws.sent
+    assert errors[0]["grant_jti"] == g2["jti"]
+    assert "request_id" not in errors[0], (
+        "G1's minted correlation must not echo a request id onto G2's error"
+    )
+    await relay.release_source(ws)
+
+
+async def test_relay_error_codes_is_derived_and_covers_every_inline_literal() -> None:
+    """Review round 4, item 3 — the list that must not be hand-maintained.
+
+    ``RELAY_ERROR_CODES`` used to be a literal transcription of the ``CODE_*``
+    constants plus one inline string. The next ``CODE_*`` added without a
+    matching line would be invisible to both
+    ``_prefix_is_disjoint_from_relay_codes`` and ``namespace_target_code``'s
+    re-check, re-introducing exactly the collision round 2 closed.
+
+    Two halves, checked against their two real sources: the constants are swept
+    out of the module namespace, and every ``"code": "<literal>"`` in the
+    module's own source must appear in the set.
+    """
+    import ast
+    import inspect
+
+    # Half one: the sweep agrees with the module's actual CODE_* constants.
+    constants = {
+        value
+        for name, value in vars(rtr).items()
+        if name.startswith("CODE_") and isinstance(value, str)
+    }
+    assert constants, "no CODE_* constants found — the sweep is broken, not the set"
+    assert constants <= rtr.RELAY_ERROR_CODES
+    assert rtr.RELAY_ERROR_CODES == constants | rtr._INLINE_RELAY_ERROR_CODES
+
+    # Half two: no inline literal escapes the set. This is the mechanical
+    # tripwire — mint a code as a bare string in a payload anywhere in the
+    # module without declaring it and this fails.
+    #
+    # Walked as an AST, not grepped. A regex over the source also matches the
+    # module's own PROSE about this pattern — a first cut did exactly that and
+    # failed on a docstring, which is a test failing for a reason unrelated to
+    # what it claims. The AST sees dict literals and not comments.
+    literals: set[str] = set()
+    for node in ast.walk(ast.parse(inspect.getsource(rtr))):
+        if not isinstance(node, ast.Dict):
+            continue
+        for key, value in zip(node.keys, node.values, strict=False):
+            if (
+                isinstance(key, ast.Constant)
+                and key.value == "code"
+                and isinstance(value, ast.Constant)
+                and isinstance(value.value, str)
+            ):
+                literals.add(value.value)
+    assert literals, "the AST scan found no inline code literals — it is broken"
+    escaped = literals - rtr.RELAY_ERROR_CODES
+    assert not escaped, (
+        f"inline code literal(s) {sorted(escaped)} are not in RELAY_ERROR_CODES — "
+        "add them to _INLINE_RELAY_ERROR_CODES or mint them as a CODE_* constant"
+    )
+    # …and the declared inline set is not carrying entries nothing mints.
+    assert rtr._INLINE_RELAY_ERROR_CODES <= literals, (
+        "_INLINE_RELAY_ERROR_CODES declares a code no literal in the module mints"
+    )
+
+
+async def test_pending_buffer_is_capped_and_expires(
+    relay: RemoteTerminalRelay,
+) -> None:
+    """Review round 4, item 5 — ``pending_buffer`` was unbounded.
+
+    Every ``remote_terminal_buffer`` mints a fresh id and inserts; entries leave
+    only on a matching reply or ``_drop_attachment``. A target that simply DROPS
+    ``terminal_buffer`` frames therefore grew the dict for the grant's whole
+    life (~15 min), renewed on every reattach — memory growth in a shared
+    backend replica driven by one authenticated device.
+    """
+    ws = _FakeWS()
+    manager = _manager()
+    claims = await _attached(relay, ws, manager, terminal_id="t1")
+    session = relay._sessions[id(ws)]
+
+    async def ask(request_id: str) -> None:
+        await _send(
+            relay,
+            ws,
+            manager,
+            {
+                "type": "remote_terminal_buffer",
+                "request_id": request_id,
+                "grant_jti": claims["jti"],
+                "terminal_id": "t1",
+                "from_offset": 0,
+            },
+        )
+
+    # A target that answers nothing cannot grow the dict past the cap…
+    for i in range(rtr.PENDING_BUFFER_MAX * 3):
+        await ask(f"buf-{i}")
+    assert len(session.pending_buffer) == rtr.PENDING_BUFFER_MAX
+    assert len(session.pending_buffer_deadline) == rtr.PENDING_BUFFER_MAX
+
+    # …and past it the frame is REFUSED rather than an older correlation
+    # evicted: an evicted one's late reply would splice stale scrollback into
+    # a live pane through the unsolicited arm.
+    refusals = [
+        f for f in ws.of_type("error") if f.get("code") == rtr.CODE_BUFFER_BACKLOG
+    ]
+    assert refusals, ws.sent
+    assert refusals[0]["request_id"] == f"buf-{rtr.PENDING_BUFFER_MAX}"
+    assert refusals[0]["grant_jti"] == claims["jti"]
+
+    # The TTL is what self-heals: age every outstanding entry past it and the
+    # next request is served again.
+    for rid in session.pending_buffer_deadline:
+        session.pending_buffer_deadline[rid] = time.monotonic() - 1
+    ws.sent.clear()
+    await ask("buf-after-ttl")
+    assert ws.of_type("error") == [], ws.sent
+    assert len(session.pending_buffer) == 1
+    assert list(session.pending_buffer.values())[0][0] == "buf-after-ttl"
+    # The parallel deadline map never outlives its entries.
+    assert set(session.pending_buffer_deadline) == set(session.pending_buffer)
+    await relay.release_source(ws)
