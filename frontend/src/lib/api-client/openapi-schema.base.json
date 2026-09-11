@@ -37828,6 +37828,426 @@
         "title": "SavedApiRequestUpdate",
         "type": "object"
       },
+      "ScanRootListResponse": {
+        "description": "Every device's latest reading for the caller's organization.",
+        "properties": {
+          "count": {
+            "title": "Count",
+            "type": "integer"
+          },
+          "detail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Detail"
+          },
+          "fresh_count": {
+            "title": "Fresh Count",
+            "type": "integer"
+          },
+          "fresh_within_secs": {
+            "title": "Fresh Within Secs",
+            "type": "integer"
+          },
+          "rows": {
+            "items": {
+              "$ref": "#/components/schemas/ScanRootRow"
+            },
+            "title": "Rows",
+            "type": "array"
+          },
+          "state": {
+            "enum": [
+              "reported",
+              "unknown"
+            ],
+            "title": "State",
+            "type": "string"
+          }
+        },
+        "required": [
+          "state",
+          "detail",
+          "fresh_within_secs",
+          "count",
+          "fresh_count",
+          "rows"
+        ],
+        "title": "ScanRootListResponse",
+        "type": "object"
+      },
+      "ScanRootReport": {
+        "additionalProperties": false,
+        "description": "One device's reading of the directory its plan-library body sync scans.",
+        "properties": {
+          "ahead": {
+            "anyOf": [
+              {
+                "maximum": 9.223372036854776e+18,
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ahead"
+          },
+          "behind": {
+            "anyOf": [
+              {
+                "maximum": 9.223372036854776e+18,
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Behind"
+          },
+          "counts_are_floors": {
+            "title": "Counts Are Floors",
+            "type": "boolean"
+          },
+          "default_ref": {
+            "anyOf": [
+              {
+                "maxLength": 255,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default Ref"
+          },
+          "detail": {
+            "anyOf": [
+              {
+                "maxLength": 4096,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Detail"
+          },
+          "head_sha": {
+            "anyOf": [
+              {
+                "maxLength": 64,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Head Sha"
+          },
+          "observed_at": {
+            "format": "date-time",
+            "title": "Observed At",
+            "type": "string"
+          },
+          "plans_dir": {
+            "anyOf": [
+              {
+                "maxLength": 4096,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Plans Dir"
+          },
+          "ref_age_secs": {
+            "anyOf": [
+              {
+                "maximum": 9.223372036854776e+18,
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ref Age Secs"
+          },
+          "ref_sha": {
+            "anyOf": [
+              {
+                "maxLength": 64,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ref Sha"
+          },
+          "repo_root": {
+            "anyOf": [
+              {
+                "maxLength": 4096,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Repo Root"
+          },
+          "source_repo": {
+            "anyOf": [
+              {
+                "maxLength": 255,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Repo"
+          },
+          "state": {
+            "enum": [
+              "measured",
+              "not_scanning",
+              "not_a_git_work_tree",
+              "unknown"
+            ],
+            "title": "State",
+            "type": "string"
+          }
+        },
+        "required": [
+          "state",
+          "counts_are_floors",
+          "observed_at"
+        ],
+        "title": "ScanRootReport",
+        "type": "object"
+      },
+      "ScanRootReportResponse": {
+        "description": "The stored row after a report.",
+        "properties": {
+          "created": {
+            "title": "Created",
+            "type": "boolean"
+          },
+          "row": {
+            "$ref": "#/components/schemas/ScanRootRow"
+          }
+        },
+        "required": [
+          "created",
+          "row"
+        ],
+        "title": "ScanRootReportResponse",
+        "type": "object"
+      },
+      "ScanRootRow": {
+        "description": "One device's stored reading, plus how the read route judges its age.",
+        "properties": {
+          "ahead": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ahead"
+          },
+          "behind": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Behind"
+          },
+          "counts_are_floors": {
+            "title": "Counts Are Floors",
+            "type": "boolean"
+          },
+          "default_ref": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default Ref"
+          },
+          "detail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Detail"
+          },
+          "device_id": {
+            "format": "uuid",
+            "title": "Device Id",
+            "type": "string"
+          },
+          "effective_detail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Effective Detail"
+          },
+          "effective_state": {
+            "enum": [
+              "measured",
+              "not_scanning",
+              "not_a_git_work_tree",
+              "unknown"
+            ],
+            "title": "Effective State",
+            "type": "string"
+          },
+          "head_sha": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Head Sha"
+          },
+          "observation_age_secs": {
+            "title": "Observation Age Secs",
+            "type": "integer"
+          },
+          "observation_fresh": {
+            "title": "Observation Fresh",
+            "type": "boolean"
+          },
+          "observed_at": {
+            "title": "Observed At",
+            "type": "string"
+          },
+          "plans_dir": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Plans Dir"
+          },
+          "received_at": {
+            "title": "Received At",
+            "type": "string"
+          },
+          "ref_age_secs": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ref Age Secs"
+          },
+          "ref_sha": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ref Sha"
+          },
+          "repo_root": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Repo Root"
+          },
+          "source_repo": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Repo"
+          },
+          "state": {
+            "enum": [
+              "measured",
+              "not_scanning",
+              "not_a_git_work_tree",
+              "unknown"
+            ],
+            "title": "State",
+            "type": "string"
+          }
+        },
+        "required": [
+          "device_id",
+          "state",
+          "plans_dir",
+          "repo_root",
+          "source_repo",
+          "default_ref",
+          "ref_sha",
+          "head_sha",
+          "behind",
+          "ahead",
+          "ref_age_secs",
+          "counts_are_floors",
+          "detail",
+          "observed_at",
+          "received_at",
+          "observation_age_secs",
+          "observation_fresh",
+          "effective_state",
+          "effective_detail"
+        ],
+        "title": "ScanRootRow",
+        "type": "object"
+      },
       "ScheduledWorkflowRunCreate": {
         "description": "POST body: create a new scheduled run for ``workflow_id``.",
         "properties": {
@@ -91704,6 +92124,97 @@
           }
         ],
         "summary": "Does each plan's record agree with reality? (three-way reconciliation)",
+        "tags": [
+          "plan-library"
+        ]
+      }
+    },
+    "/api/v1/plan-library/scan-roots": {
+      "get": {
+        "description": "The caller's organization's readings, one per reporting device.\n\nSame credentials as the plan-library list (an operator session or a device\ntoken). Each row carries its age and an ``effective_state`` that is\n``unknown`` once the reading is older than ``fresh_within_secs``; an\norganization with no rows answers ``state: \"unknown\"``, never an empty\n\"all current\".",
+        "operationId": "api_v1_plan_library_scan_roots_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScanRootListResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          },
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Every device's latest plan-scan-source reading, judged for age",
+        "tags": [
+          "plan-library"
+        ]
+      },
+      "post": {
+        "description": "Store the reporting device's latest reading, replacing its previous one.\n\nOne row per ``(organization, device)``. ``device_id`` is the verified\ntoken's claim; the organization is the device's paired operator's personal\norganization \u2014 the same scope its artifact upserts land in. ``201`` on the\ndevice's first report, ``200`` on every later one.",
+        "operationId": "api_v1_plan_library_scan_roots_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ScanRootReport"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScanRootReportResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScanRootReportResponse"
+                }
+              }
+            },
+            "description": "The device's first reading for this organization."
+          },
+          "403": {
+            "description": "The caller is an operator session, not a device."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          },
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "A device reports its latest plan-scan-source reading (upsert)",
         "tags": [
           "plan-library"
         ]
