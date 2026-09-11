@@ -29,19 +29,26 @@ Invariants
    uses, imported rather than copied so the two cannot drift — so a device's
    readings land in the organization its artifacts land in.
 3. **Silence is UNKNOWN, never "current".** An organization with no rows reads
-   top-level ``state: "unknown"``; a row whose reading is older than
+   top-level ``state: "unknown"``; a row this server has not heard from within
    :data:`FRESH_WITHIN_SECS` reads ``state: "unknown"`` with an
    ``observation_stale:`` detail (what the device sent stays in
    ``reported_state`` / ``reported_detail``). A device that stopped reporting
    has established nothing about now, and a reader that defaulted its last
    number would be trusting a feeder that may since have drifted arbitrarily
    far.
-3a. **A 0/0 floor is UNKNOWN, never "in step".** A fresh ``measured`` reading
-   whose counts are floors (ref stale or of unknown age) and are both zero
-   reads ``state: "unknown"`` with a ``ref_stale:`` detail: zero commits behind
-   a ref that may itself be days old is a lower bound of nothing. A floor with
-   non-zero counts stays ``measured`` — "at least 254 behind" is a true and
-   useful claim, and ``counts_are_floors`` says it is a lower bound.
+3a. **"0 behind" against a stale ref is UNKNOWN, never "in step".** A fresh
+   ``measured`` reading whose counts are floors (ref stale or of unknown age)
+   and whose ``behind`` is 0 reads ``state: "unknown"`` with a ``ref_stale:``
+   detail, whatever ``ahead`` is: zero commits behind a ref that may itself be
+   days old is a lower bound of nothing. A floor with a non-zero ``behind``
+   stays ``measured`` — "at least 254 behind" is a true and useful claim, and
+   ``counts_are_floors`` says it is a lower bound.
+3b. **Liveness is judged on THIS server's clock.** Freshness reads
+   ``received_at`` only, and every report — even one declined as out of order
+   — stamps it. ``observed_at`` (the runner's clock) only orders readings, is
+   refused more than 300 s in the future, and is shown beside
+   ``observed_skew_secs`` so a skewed runner clock is visible rather than
+   silently aging a live device out or pinning its row.
 4. **Report-only.** Nothing here gates a corpus read or a write; it is a
    diagnostic beside the corpus, not a condition on it.
 
@@ -88,7 +95,8 @@ logger = structlog.get_logger(__name__)
 #: own router — neither route takes any, so any key is refused.
 router = APIRouter(route_class=StrictQueryRoute)
 
-#: A reading older than this is rendered ``unknown``: three 15-minute runner
+#: A device not heard from for longer than this (by ``received_at``, this
+#: server's clock) is rendered ``unknown``: three 15-minute runner
 #: heartbeats. The runner re-posts an unchanged reading at least every 15 min,
 #: so one missed heartbeat is jitter and three is a feeder that went quiet.
 FRESH_WITHIN_SECS = 2700
@@ -101,57 +109,76 @@ NO_OBSERVATION_DETAIL = (
     "whose build predates the report, or whose body sync is off, sends none."
 )
 
-#: ``detail`` for a fresh ``measured`` reading that is a 0/0 floor.
+#: ``detail`` for a fresh ``measured`` floor reading 0 behind and 0 ahead.
 REF_STALE_ZERO_FLOOR_DETAIL = (
     "ref_stale: 0/0 counts against a ref that is stale or of unknown age are "
     "a lower bound, not agreement"
 )
 
 
-def observation_age_secs(row: PlanScanRootObservation, *, now: datetime) -> int:
-    """Seconds since the reading, measured from the OLDER of its two stamps.
-
-    ``observed_at`` is the runner's clock and ``received_at`` ours. Taking the
-    older one means a runner clock running ahead cannot make a reading look
-    fresher than its arrival, and a re-posted old reading cannot look fresher
-    than when it was taken. Clamped at zero: a reading from the future is not
-    negatively old.
-    """
-    reference = min(row.observed_at, row.received_at)
-    return max(0, int((now - reference).total_seconds()))
-
-
-def is_zero_floor(row: PlanScanRootObservation) -> bool:
-    """A ``measured`` 0/0 whose counts are lower bounds — no claim at all."""
+def ref_stale_zero_behind_detail(ahead: int) -> str:
+    """``detail`` for a fresh ``measured`` floor reading 0 behind, N > 0 ahead."""
     return (
-        row.state == "measured"
-        and row.counts_are_floors
-        and row.behind == 0
-        and row.ahead == 0
+        "ref_stale: 0 behind against a ref that is stale or of unknown age is a "
+        f"lower bound, not agreement (ahead {ahead} is also as of that ref)"
     )
+
+
+def observation_age_secs(row: PlanScanRootObservation, *, now: datetime) -> int:
+    """Seconds since this server last heard from the device, never negative.
+
+    Judged from ``received_at`` ONLY — this server's clock, the one clock we
+    can trust. ``observed_at`` is the runner's and orders readings, but a
+    runner clock running behind would age a live device out, and one running
+    ahead would keep a silent one fresh, so it has no say in liveness. A skew
+    is surfaced as ``observed_skew_secs`` instead.
+    """
+    return max(0, int((now - row.received_at).total_seconds()))
+
+
+def observed_skew_secs(row: PlanScanRootObservation) -> int:
+    """``received_at - observed_at``, in whole seconds (may be negative)."""
+    return int((row.received_at - row.observed_at).total_seconds())
+
+
+def zero_behind_floor_detail(row: PlanScanRootObservation) -> str | None:
+    """The ``ref_stale:`` verdict for a ``measured`` floor that is 0 behind.
+
+    "0 behind" against a ref that is stale or of unknown age establishes
+    nothing — the ref may have moved on since — whatever ``ahead`` says, and
+    ``ahead`` is as of that same ref. ``None`` when the rule does not apply:
+    not ``measured``, not a floor, or a non-zero ``behind`` (a floor of "at
+    least N behind" is a true claim and stays ``measured``).
+    """
+    if not (row.state == "measured" and row.counts_are_floors and row.behind == 0):
+        return None
+    if not row.ahead:
+        return REF_STALE_ZERO_FLOOR_DETAIL
+    return ref_stale_zero_behind_detail(row.ahead)
 
 
 def render_row(row: PlanScanRootObservation, *, now: datetime) -> ScanRootRow:
     """One stored reading, with the verdict the read route owes on top.
 
-    Staleness is judged first: a reading past the window says nothing about now
-    whatever it contained. Then the 0/0-floor rule. Otherwise the verdict is
-    what the device reported.
+    Staleness is judged first: a device this server has not heard from within
+    the window says nothing about now, whatever it last sent. Then the
+    zero-behind-floor rule. Otherwise the verdict is what the device reported.
     """
     age = observation_age_secs(row, now=now)
     fresh = age <= FRESH_WITHIN_SECS
+    floor_detail = zero_behind_floor_detail(row)
     state: str
     detail: str | None
     if not fresh:
         state = "unknown"
         detail = (
-            f"observation_stale: last reading is {age} s old, past the "
+            f"observation_stale: last report received {age} s ago, past the "
             f"{FRESH_WITHIN_SECS} s freshness window; it reported "
             f"state '{row.state}', which says nothing about now"
         )
-    elif is_zero_floor(row):
+    elif floor_detail is not None:
         state = "unknown"
-        detail = REF_STALE_ZERO_FLOOR_DETAIL
+        detail = floor_detail
     else:
         state = row.state
         detail = row.detail
@@ -173,6 +200,7 @@ def render_row(row: PlanScanRootObservation, *, now: datetime) -> ScanRootRow:
         counts_are_floors=row.counts_are_floors,
         observed_at=row.observed_at,
         received_at=row.received_at,
+        observed_skew_secs=observed_skew_secs(row),
         observation_age_secs=age,
         observation_fresh=fresh,
     )
@@ -206,8 +234,10 @@ async def report_scan_root(
     device's first report, ``200`` on every later one.
 
     A report observed EARLIER than the stored reading (a late or retried
-    delivery) is ignored: ``200`` with ``applied: false`` and the stored,
-    newer row.
+    delivery) does not replace it: ``200`` with ``applied: false`` and the
+    stored, newer row — but it still refreshes ``received_at``, because the
+    device demonstrably reported. A report whose ``observed_at`` is more than
+    300 s ahead of this server's clock is a 422.
     """
     org_id = await _resolve_org_id(db, device.user)
     row, created, applied = await crud.upsert_observation(
@@ -249,8 +279,9 @@ async def list_scan_roots(
 
     Same credentials as the plan-library list (an operator session or a device
     token). Each row carries its age and a ``state`` VERDICT that is
-    ``unknown`` once the reading is older than ``fresh_within_secs`` or is a
-    0/0 floor, with the device's own values in ``reported_state`` /
+    ``unknown`` once the device has not reported within ``fresh_within_secs``
+    (by ``received_at``) or its reading is 0 behind a stale ref, with the
+    device's own values in ``reported_state`` /
     ``reported_detail``; an organization with no rows answers
     ``state: "unknown"``, never an empty "all current".
     """

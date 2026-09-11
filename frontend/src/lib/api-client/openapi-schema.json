@@ -38829,7 +38829,7 @@
         "type": "object"
       },
       "ScanRootRow": {
-        "description": "One device's stored reading, with the read route's VERDICT on top.\n\n``state`` / ``detail`` are the verdict a reader should key on, not the\nstored values: ``unknown`` with an ``observation_stale:`` detail once the\nreading is older than ``fresh_within_secs``, and ``unknown`` with a\n``ref_stale:`` detail for a fresh ``measured`` reading that is a 0/0 floor.\nWhat the device actually sent is in ``reported_state`` /\n``reported_detail``. The counts and ``ref_age_secs`` are served as reported\nwhatever the verdict \u2014 a reader keying on ``state`` does not trust them\nwhen it is ``unknown``.",
+        "description": "One device's stored reading, with the read route's VERDICT on top.\n\n``state`` / ``detail`` are the verdict a reader should key on, not the\nstored values: ``unknown`` with an ``observation_stale:`` detail once the\ndevice has not reported within ``fresh_within_secs`` (by ``received_at``),\nand ``unknown`` with a ``ref_stale:`` detail for a fresh ``measured``\nfloor reading that is 0 behind.\nWhat the device actually sent is in ``reported_state`` /\n``reported_detail``. The counts and ``ref_age_secs`` are served as reported\nwhatever the verdict \u2014 a reader keying on ``state`` does not trust them\nwhen it is ``unknown``.",
         "properties": {
           "ahead": {
             "anyOf": [
@@ -38906,6 +38906,10 @@
           "observed_at": {
             "title": "Observed At",
             "type": "string"
+          },
+          "observed_skew_secs": {
+            "title": "Observed Skew Secs",
+            "type": "integer"
           },
           "plans_dir": {
             "anyOf": [
@@ -39016,6 +39020,7 @@
           "counts_are_floors",
           "observed_at",
           "received_at",
+          "observed_skew_secs",
           "observation_age_secs",
           "observation_fresh"
         ],
@@ -94425,7 +94430,7 @@
     },
     "/api/v1/plan-library/scan-roots": {
       "get": {
-        "description": "The caller's organization's readings, one per reporting device.\n\nSame credentials as the plan-library list (an operator session or a device\ntoken). Each row carries its age and a ``state`` VERDICT that is\n``unknown`` once the reading is older than ``fresh_within_secs`` or is a\n0/0 floor, with the device's own values in ``reported_state`` /\n``reported_detail``; an organization with no rows answers\n``state: \"unknown\"``, never an empty \"all current\".",
+        "description": "The caller's organization's readings, one per reporting device.\n\nSame credentials as the plan-library list (an operator session or a device\ntoken). Each row carries its age and a ``state`` VERDICT that is\n``unknown`` once the device has not reported within ``fresh_within_secs``\n(by ``received_at``) or its reading is 0 behind a stale ref, with the\ndevice's own values in ``reported_state`` /\n``reported_detail``; an organization with no rows answers\n``state: \"unknown\"``, never an empty \"all current\".",
         "operationId": "api_v1_plan_library_scan_roots_get",
         "responses": {
           "200": {
@@ -94453,7 +94458,7 @@
         ]
       },
       "post": {
-        "description": "Store the reporting device's latest reading, replacing an older one.\n\nOne row per ``(organization, device)``. ``device_id`` is the verified\ntoken's claim; the organization is the device's paired operator's personal\norganization \u2014 the same scope its artifact upserts land in. ``201`` on the\ndevice's first report, ``200`` on every later one.\n\nA report observed EARLIER than the stored reading (a late or retried\ndelivery) is ignored: ``200`` with ``applied: false`` and the stored,\nnewer row.",
+        "description": "Store the reporting device's latest reading, replacing an older one.\n\nOne row per ``(organization, device)``. ``device_id`` is the verified\ntoken's claim; the organization is the device's paired operator's personal\norganization \u2014 the same scope its artifact upserts land in. ``201`` on the\ndevice's first report, ``200`` on every later one.\n\nA report observed EARLIER than the stored reading (a late or retried\ndelivery) does not replace it: ``200`` with ``applied: false`` and the\nstored, newer row \u2014 but it still refreshes ``received_at``, because the\ndevice demonstrably reported. A report whose ``observed_at`` is more than\n300 s ahead of this server's clock is a 422.",
         "operationId": "api_v1_plan_library_scan_roots_post",
         "requestBody": {
           "content": {

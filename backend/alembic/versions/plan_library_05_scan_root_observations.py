@@ -47,8 +47,9 @@ every report.
   rather than the user-facing error.
 * The counts are BIGINT because the runner's fields are ``u64``.
 
-Staleness is NOT stored. A reading older than the read route's freshness window
-(45 min — three 15-min runner heartbeats) is rendered ``unknown`` at read time;
+Staleness is NOT stored. A device not heard from within the read route's
+freshness window (45 min — three 15-min runner heartbeats, judged from
+``received_at``, this server's clock) is rendered ``unknown`` at read time;
 nothing here expires or deletes a row.
 
 Downgrade
@@ -112,7 +113,8 @@ def upgrade() -> None:
             detail            TEXT,
             -- The runner's clock: when the reading was taken.
             observed_at       TIMESTAMPTZ NOT NULL,
-            -- This server's clock: when the latest report was stored.
+            -- This server's clock: when the device's latest report arrived
+            -- (every report, applied or not). Liveness is judged from this.
             received_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
             created_at        TIMESTAMPTZ NOT NULL DEFAULT now(),
             CONSTRAINT ck_plan_scan_root_observations_counts_nonnegative CHECK (
@@ -139,7 +141,5 @@ def upgrade() -> None:
 
 def downgrade() -> None:
     """Drop the store. Every runner re-posts its reading within a heartbeat."""
-    op.execute(
-        "DROP INDEX IF EXISTS agent.uq_plan_scan_root_observations_identity"
-    )
+    op.execute("DROP INDEX IF EXISTS agent.uq_plan_scan_root_observations_identity")
     op.execute("DROP TABLE IF EXISTS agent.plan_scan_root_observations")
