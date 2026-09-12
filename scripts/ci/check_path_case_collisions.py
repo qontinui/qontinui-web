@@ -86,8 +86,8 @@ from _gate_lib import (  # noqa: E402
 )
 
 #: Extensions TypeScript's and Node's resolvers try for a bare ``./stem``
-#: import, in the order `tsc` probes them (`moduleResolution: bundler` /
-#: `node16`). The ORDER is why #1282 happened — `.ts` is probed before `.tsx`,
+#: import, roughly in the order `tsc` probes them (`moduleResolution: bundler`
+#: / `node16`). The ORDER is why #1282 happened — `.ts` is probed before `.tsx`,
 #: so the lowercase `.ts` module shadowed the PascalCase `.tsx` component. Only
 #: the SET matters to this gate; the order is recorded for the reader.
 MODULE_EXTENSIONS: tuple[str, ...] = (
@@ -183,7 +183,7 @@ def module_stem_collisions(tracked: list[str]) -> list[list[str]]:
         by_folded[stem.lower()][stem].add(path)
         # `dir/index.ts` also answers `import "./dir"`.
         parent, _, base = path.rpartition("/")
-        if parent and base in INDEX_BASENAMES:
+        if parent and base.lower() in INDEX_BASENAMES:
             by_folded[parent.lower()][parent].add(parent + "/")
 
     groups: list[list[str]] = []
@@ -224,7 +224,9 @@ def _outside(stems: list[list[str]], paths: list[list[str]]) -> list[list[str]]:
     and ``foo`` collide as paths; renaming the directory fixes both, so
     reporting the stems as well would send the reader after a second defect
     that is not there. Likewise ``a/Foo.ts`` vs ``a/foo.ts`` is one finding,
-    not one under each heading.
+    not one under each heading — and a stem group that merely OVERLAPS a path
+    group (``a/foo.tsx`` joining that pair) is dropped too, because the path
+    rename is what fixes it.
     """
     roots = [group[0].lower() + "/" for group in paths]
     as_paths = [set(group) for group in paths]
@@ -232,7 +234,7 @@ def _outside(stems: list[list[str]], paths: list[list[str]]) -> list[list[str]]:
         group
         for group in stems
         if not any(group[0].lower().startswith(root) for root in roots)
-        and not any(set(group) <= members for members in as_paths)
+        and not any(set(group) & members for members in as_paths)
     ]
 
 
