@@ -50,7 +50,7 @@ from jwt.exceptions import (
     PyJWTError,
 )
 
-from app.core.config import settings
+from app.core.config import cognito_issuer_setting_name, settings
 
 logger = structlog.get_logger(__name__)
 
@@ -139,31 +139,56 @@ class CognitoJWKSClient:
     def issuer(self) -> str:
         return self._issuer
 
+    @property
+    def jwks_url(self) -> str:
+        """The JWKS URL this client actually dials.
+
+        Exposed for the same reason ``CoordJWKSClient.coord_url`` is: a
+        handler logging a fetch failure needs the URL that was dialled
+        without re-deriving it from settings — a re-derivation can disagree
+        with the value in force, and then the log names a URL nobody called.
+        """
+        return self._jwks_url
+
     async def _fetch_jwks(self) -> dict[str, Any]:
-        """Fetch the pool JWKS over HTTP. Raises on any failure."""
+        """Fetch the pool JWKS over HTTP. Raises on any failure.
+
+        Every raise names the URL dialled AND, for a transport fault, the
+        underlying exception's concrete class — the same rule
+        ``CoordJWKSClient._fetch_jwks`` follows, for the same reason:
+        ``httpx.HTTPError`` covers ``ConnectTimeout``, ``ReadTimeout``,
+        ``ConnectError``, ``ProxyError``… — states with completely different
+        remedies that ``str(exc)`` frequently renders as the empty string.
+        This door carried the pre-fix shape (``f"...: {exc}"``, no URL) after
+        the coord door was repaired; it is a hand-copy, and it drifted.
+        """
+        url = self._jwks_url
         try:
             async with httpx.AsyncClient(timeout=self._http_timeout_s) as c:
-                resp = await c.get(self._jwks_url)
+                resp = await c.get(url)
         except httpx.HTTPError as exc:
             raise CognitoJWKSUnavailableError(
-                f"Cognito JWKS fetch failed (transport): {exc}"
+                f"Cognito JWKS fetch failed (transport): url={url} "
+                f"timeout_s={self._http_timeout_s} "
+                f"error_class={type(exc).__name__} error={exc}"
             ) from exc
 
         if resp.status_code != 200:
             raise CognitoJWKSUnavailableError(
-                f"Cognito JWKS fetch failed: HTTP {resp.status_code} {resp.text[:200]}"
+                f"Cognito JWKS fetch failed: url={url} "
+                f"HTTP {resp.status_code} {resp.text[:200]}"
             )
 
         try:
             body = resp.json()
         except ValueError as exc:
             raise CognitoJWKSUnavailableError(
-                f"Cognito JWKS response not JSON: {resp.text[:200]}"
+                f"Cognito JWKS response not JSON: url={url} {resp.text[:200]}"
             ) from exc
 
         if not isinstance(body, dict) or "keys" not in body:
             raise CognitoJWKSUnavailableError(
-                f"Cognito JWKS missing 'keys' field: {body!r}"
+                f"Cognito JWKS missing 'keys' field: url={url} {body!r}"
             )
 
         return body
@@ -334,3 +359,34 @@ def _build_default_client() -> CognitoJWKSClient:
 # Process-wide singleton — wired at import time. Re-created lazily only
 # in tests via the constructor.
 cognito_jwks_client = _build_default_client()
+
+
+def cognito_jwks_failure_log_fields(exc: CognitoJWKSUnavailableError) -> dict[str, Any]:
+    """The structured fields every terminating Cognito-JWKS-unavailable handler logs.
+
+    The Cognito twin of ``coord_jwks.jwks_failure_log_fields``, and kept
+    beside its client for the same reason that one is: each handler answers
+    its caller with a deliberately vague message — ``"Identity verification
+    temporarily unavailable."`` on the identity-link route, ``"Cognito JWKS
+    temporarily unavailable"`` on the bearer dependency — so the *log line*
+    is the whole diagnostic surface, and ``str(exc)`` alone cannot separate a
+    wrong issuer (a config fix) from an unreachable Cognito (an outage).
+
+    ``jwks_url`` names the URL the process-wide :data:`cognito_jwks_client`
+    resolved at construction — the client both handlers verify against, so
+    it is the URL that was actually dialled.
+
+    ``issuer_setting`` names the SETTING that produced it, DERIVED via
+    :func:`cognito_issuer_setting_name` rather than written out: an explicit
+    ``COGNITO_ISSUER`` and a derived ``COGNITO_REGION`` +
+    ``COGNITO_USER_POOL_ID`` both produce the issuer and they are not
+    interchangeable, so the URL alone leaves the reader guessing which knob
+    to turn.
+    """
+    return {
+        "error": str(exc),
+        "failure": type(exc).__name__,
+        "cause": type(exc.__cause__).__name__ if exc.__cause__ else None,
+        "jwks_url": cognito_jwks_client.jwks_url,
+        "issuer_setting": cognito_issuer_setting_name(),
+    }

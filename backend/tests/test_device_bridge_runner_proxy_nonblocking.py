@@ -31,6 +31,7 @@ from types import SimpleNamespace
 
 import httpx
 import pytest
+from starlette.datastructures import Headers
 
 from app.api.v1.endpoints import device_bridge_ws
 
@@ -48,8 +49,10 @@ class _FakeURL:
 
 
 class _FakeRequest:
-    def __init__(self, *, headers: dict[str, str] | None = None) -> None:
+    def __init__(self, *, headers: dict[str, str] | Headers | None = None) -> None:
         self.method = "GET"
+        # A dict for the common case; a real Starlette ``Headers`` when a test
+        # needs a REPEATED name, which a dict cannot carry.
         self.headers = headers or {}
         self.cookies: dict[str, str] = {}
         self.url = _FakeURL()
@@ -539,6 +542,22 @@ def test_httpx_merges_its_own_accept_encoding_default() -> None:
         "_LOCAL_PROXY_EXCLUDED_REQUEST_HEADERS's comment."
     )
 
+    # And the other half the handler relies on, for the PAIR-SEQUENCE form it
+    # now sends: an explicit pair overrides the merged default rather than
+    # sitting beside it, and repeated names survive the merge. The handler's
+    # own tests stub the client, so this is the only place the real merge
+    # runs.
+    as_pairs = httpx.Client().build_request(
+        "GET",
+        "http://127.0.0.1:9876/x",
+        headers=[("x-repeat", "a"), ("x-repeat", "b"), ("accept-encoding", "identity")],
+    )
+    assert as_pairs.headers.get_list("accept-encoding") == ["identity"], (
+        "httpx's merge no longer lets an explicit pair replace its default; the "
+        "forced identity pair would then ride BESIDE gzip, deflate."
+    )
+    assert as_pairs.headers.get_list("x-repeat") == ["a", "b"]
+
 
 @pytest.mark.asyncio
 async def test_runner_proxy_negotiates_identity_encoding(monkeypatch):
@@ -579,7 +598,11 @@ async def test_runner_proxy_negotiates_identity_encoding(monkeypatch):
             return False
 
         async def request(self, method, url, **kw):
-            seen.update({k.lower(): v for k, v in (kw.get("headers") or {}).items()})
+            # ``httpx.Headers`` accepts whatever shape the handler hands
+            # ``headers=`` — a dict or a pair sequence — the way httpx does.
+            seen.update(
+                {k.lower(): v for k, v in httpx.Headers(kw.get("headers")).items()}
+            )
             return _EchoResponse()
 
     monkeypatch.setattr(
@@ -669,3 +692,76 @@ async def test_runner_proxy_preserves_repeated_set_cookie(monkeypatch):
     # The runner's own content-length described the pre-decode body; Starlette
     # recomputes it from the bytes actually being sent.
     assert resp.headers["content-length"] == str(len(b"ok"))
+
+
+@pytest.mark.asyncio
+async def test_runner_proxy_forwards_repeated_request_headers(monkeypatch):
+    """Two request headers of one name reach the runner as two.
+
+    The request-side twin of the ``Set-Cookie`` case above. Starlette's
+    ``Headers.items()`` yields every raw pair, repeats included; the handler
+    used to pour them into a dict, which keeps only the LAST value of a
+    repeated name. httpx accepts a pair sequence and sends each pair, so the
+    lossless form is available for free — the same point the response side
+    made with ``multi_items()``.
+    """
+
+    async def _fake_active_port(*, bearer, user_id):
+        return 9876
+
+    monkeypatch.setattr(
+        device_bridge_ws.coord_device,
+        "get_active_routing_port",
+        _fake_active_port,
+        raising=True,
+    )
+
+    sent: list[tuple[str, str]] = []
+
+    class _EchoResponse:
+        status_code = 200
+        content = b"ok"
+        headers = httpx.Headers()
+
+    class _CapturingClient:
+        def __init__(self, *a, **kw) -> None:
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *a):
+            return False
+
+        async def request(self, method, url, **kw):
+            sent.extend(
+                (k.lower(), v)
+                for k, v in httpx.Headers(kw.get("headers")).multi_items()
+            )
+            return _EchoResponse()
+
+    monkeypatch.setattr(
+        device_bridge_ws.httpx, "AsyncClient", _CapturingClient, raising=True
+    )
+
+    await device_bridge_ws.runner_proxy(
+        _FakeRequest(
+            headers=Headers(
+                raw=[
+                    (b"x-repeat", b"first"),
+                    (b"x-repeat", b"second"),
+                    (b"x-once", b"1"),
+                ]
+            )
+        ),
+        "status",
+        user=SimpleNamespace(id=USER_ID),
+    )
+
+    repeated = [v for k, v in sent if k == "x-repeat"]
+    assert repeated == ["first", "second"], (
+        f"a repeated request header was collapsed on the way to the runner: {repeated!r}"
+    )
+    assert [v for k, v in sent if k == "x-once"] == ["1"]
+    # The forced identity negotiation still rides along with the pair list.
+    assert [v for k, v in sent if k == "accept-encoding"] == ["identity"]
