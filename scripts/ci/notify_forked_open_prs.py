@@ -89,6 +89,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from _alembic_graph import (  # noqa: E402
     VERSIONS_DIR,
+    duplicate_groups,
     plan_remediation,
     read_dir_sources,
     safe_id,
@@ -232,6 +233,14 @@ def simulate(
         if entry.get("status") == "removed":
             sources.pop(path, None)
             continue
+        # A RENAME must drop the old path, or `main`'s copy survives alongside
+        # the PR's new one and the two declare the same revision id — a
+        # duplicate the PR did not introduce, in a tree that does not exist.
+        # The PR gate never sees it (the real checkout has only the new file),
+        # so this simulation was the only place it could appear.
+        previous = entry.get("previous_filename")
+        if previous:
+            sources.pop(REPO_ROOT / previous, None)
         sources[path] = blob_at(repo, entry["filename"], head_sha, token)
     return sources
 
@@ -564,14 +573,15 @@ def main() -> int:
         # Keyed by revision id, so a duplicate silently dropped a node and
         # `landed` below would be missing an id every simulated PR is compared
         # against. Advising off that is worse than not advising.
+        main_groups = duplicate_groups(main_scan)
         err(
-            f"{VERSIONS_DIR}/ declares {len(main_scan.duplicates)} DUPLICATE "
+            f"{VERSIONS_DIR}/ declares {len(main_groups)} DUPLICATE "
             f"revision id(s) — {main_scan.parsed_count} file(s) parsed a revision "
             f"but only {len(main_scan.revisions)} survived, so the head "
             "computation is not a verdict:"
         )
-        for rev, first, second in main_scan.duplicates:
-            err(f"  - {rev}: {first} and {second}")
+        for rev, files in main_groups.items():
+            err(f"  - {rev}: {', '.join(str(p) for p in files)}")
         err("Skipping the open-PR sweep rather than advising off a collapsed graph.")
         return EXIT_VACUOUS
     if len(main_scan.heads) != 1:
@@ -668,7 +678,7 @@ def main() -> int:
             # tree. `count_alembic_heads.py` exits 2 on exactly this, and its
             # head count is meaningless, so the fork text would be wrong.
             # Report and leave the PR's notice alone.
-            dupes = ", ".join(rev for rev, _, _ in scan.duplicates)
+            dupes = ", ".join(duplicate_groups(scan))
             failures.append(
                 f"#{number}: simulated tree has DUPLICATE revision id(s) "
                 f"({dupes}) — the head count is not a verdict; left untouched"
