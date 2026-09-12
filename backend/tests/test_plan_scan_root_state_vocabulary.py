@@ -49,6 +49,12 @@ The runner is the fifth copy (``ScanDivergenceState`` in
 ``qontinui-runner/src-tauri/src/plan_workunit_adapter/trigger.rs``) and is out
 of this repo's reach. The runner side pins it from there, in
 ``every_scan_root_report_state_satisfies_the_web_contract``.
+
+The operator console holds a sixth (``SCAN_ROOT_STATES`` in
+``frontend/src/app/(app)/admin/coord/plan-library/types.ts``), across a language
+seam this suite does not parse. ``types.wire.test.ts`` beside it pins that copy
+against the committed OpenAPI snapshots, which backend CI regenerates from this
+app's schema and refuses to let drift.
 """
 
 from __future__ import annotations

@@ -53,9 +53,10 @@ from app.models.work_artifact import NIL_ORGANIZATION_ID
 #: only surface as a 500 on the first device to report it.
 #:
 #: The operator console's copy (``SCAN_ROOT_STATES`` in the frontend's
-#: ``admin/coord/plan-library/types.ts``) is across a repo seam no test here
-#: can reach. ``types.wire.test.ts`` beside it pins it against the committed
-#: OpenAPI snapshots, which backend CI regenerates from this app's schema.
+#: ``admin/coord/plan-library/types.ts``) is across a language seam this suite
+#: does not parse. ``types.wire.test.ts`` beside it pins it against the
+#: committed OpenAPI snapshots, which backend CI regenerates from this app's
+#: schema.
 SCAN_ROOT_STATES: tuple[str, ...] = (
     "measured",
     "not_scanning",
