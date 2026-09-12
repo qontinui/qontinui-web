@@ -1,4 +1,4 @@
-"""The scan-root ``state`` vocabulary exists in four places. Pin them together.
+"""The backend's four copies of the scan-root ``state`` vocabulary, pinned together.
 
 Post-merge follow-up to qontinui-web#1310
 (``2026-09-11-the-plan-corpus-scan-root-does-not-report-its-own-drift``).
