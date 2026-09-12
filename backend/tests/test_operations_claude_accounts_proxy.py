@@ -112,6 +112,26 @@ def _account(device_id: str, label: str, **overrides):
     return row
 
 
+def _prepaid(device_id: str, provider: str, **overrides):
+    """A coord `prepaid` row. Money is micros — see alembic
+    ``coord_prepaid_balances_01``; ``None`` means NOT REPORTED, never zero."""
+    row = {
+        "device_id": device_id,
+        "provider": provider,
+        "label": provider.title(),
+        "currency": "USD",
+        "balance_micros": 19280000,
+        "granted_micros": 5000000,
+        "topped_up_micros": 14280000,
+        "is_available": True,
+        "error": None,
+        "stale": False,
+        "updated_at": "2026-09-12T18:00:00Z",
+    }
+    row.update(overrides)
+    return row
+
+
 class TestGetClaudeAccounts:
     def test_returns_roster_and_calls_coord_usage_path(self, client: TestClient):
         coord_payload = {
@@ -304,3 +324,187 @@ class TestGetClaudeAccounts:
         assert resp.status_code == 403
         assert resp.json()["detail"] == "tenant_not_resolved"
         instance.get.assert_not_called()
+
+
+class TestPrepaidBalancesOnTheSameFeed:
+    """`prepaid` rides the claude-accounts feed — plan
+    ``2026-09-12-prepaid-balance-is-a-fleet-fact-with-no-ingest``.
+
+    It is a DIFFERENT object family from ``accounts`` (keyed by provider, money
+    instead of a utilization fraction) stored in its own
+    ``coord.prepaid_balances``, so it gets its own key and its own provisioning
+    flag. The first test here exists because the key was dropped from the
+    return dict once already: every field was computed and then not returned,
+    and nothing failed — ruff stayed quiet because the name was still "used",
+    and no test looked.
+    """
+
+    def test_prepaid_rows_actually_reach_the_caller(self, client: TestClient):
+        coord_payload = {
+            "accounts": [_account(_DEVICE_A, ".claude-gmail")],
+            "prepaid": [_prepaid(_DEVICE_A, "deepseek")],
+            "table_provisioned": True,
+            "columns_provisioned": True,
+            "prepaid_table_provisioned": True,
+        }
+        with _patch_httpx() as MockClient:
+            instance = AsyncMock()
+            instance.get.return_value = _mock_response(json_data=coord_payload)
+            _configure_mock_client(MockClient, instance)
+
+            body = client.get(f"{API_PREFIX}/claude-accounts").json()
+
+        assert "prepaid" in body, "the prepaid key must be RETURNED, not just computed"
+        assert [r["provider"] for r in body["prepaid"]] == ["deepseek"]
+        assert body["prepaid"][0]["balance_micros"] == 19280000
+        assert body["prepaid_table_provisioned"] is True
+        # The two families stay separate — a prepaid row must never appear as
+        # a Claude account, which is the whole reason it is not two columns on
+        # coord.claude_account_usage.
+        assert [a["account_label"] for a in body["accounts"]] == [".claude-gmail"]
+
+    def test_device_id_filter_applied_to_prepaid_too(self, client: TestClient):
+        coord_payload = {
+            "accounts": [_account(_DEVICE_A, ".claude-gmail")],
+            "prepaid": [
+                _prepaid(_DEVICE_A, "deepseek"),
+                _prepaid(_DEVICE_B, "otherprovider"),
+            ],
+            "table_provisioned": True,
+            "columns_provisioned": True,
+            "prepaid_table_provisioned": True,
+        }
+        with _patch_httpx() as MockClient:
+            instance = AsyncMock()
+            instance.get.return_value = _mock_response(json_data=coord_payload)
+            _configure_mock_client(MockClient, instance)
+
+            body = client.get(
+                f"{API_PREFIX}/claude-accounts", params={"device_id": _DEVICE_A}
+            ).json()
+
+        assert [r["provider"] for r in body["prepaid"]] == ["deepseek"]
+
+    def test_unprovisioned_prepaid_table_is_unknown_not_no_providers(
+        self, client: TestClient
+    ):
+        # alembic coord_prepaid_balances_01 unapplied: the usage half is still
+        # real and must be served; the prepaid half is UNKNOWN.
+        coord_payload = {
+            "accounts": [_account(_DEVICE_A, ".claude-gmail")],
+            "prepaid": [],
+            "table_provisioned": True,
+            "columns_provisioned": True,
+            "prepaid_table_provisioned": False,
+        }
+        with _patch_httpx() as MockClient:
+            instance = AsyncMock()
+            instance.get.return_value = _mock_response(json_data=coord_payload)
+            _configure_mock_client(MockClient, instance)
+
+            body = client.get(f"{API_PREFIX}/claude-accounts").json()
+
+        assert body["prepaid_table_provisioned"] is False
+        assert body["prepaid"] == []
+        assert len(body["accounts"]) == 1
+
+    def test_absent_prepaid_flag_is_null_never_defaulted(self, client: TestClient):
+        # A coord build predating the prepaid half entirely. We observed
+        # nothing, so we assert nothing — same rule as table_provisioned.
+        with _patch_httpx() as MockClient:
+            instance = AsyncMock()
+            instance.get.return_value = _mock_response(
+                json_data={"accounts": [_account(_DEVICE_A, ".claude-gmail")]}
+            )
+            _configure_mock_client(MockClient, instance)
+
+            body = client.get(f"{API_PREFIX}/claude-accounts").json()
+
+        assert body["prepaid_table_provisioned"] is None
+        assert body["prepaid"] == []
+
+    def test_a_real_zero_balance_survives_as_zero(self, client: TestClient):
+        # 0 micros means OUT OF CREDIT and must reach the operator as 0. The
+        # table exists to keep this distinguishable from "not reported"; the
+        # proxy must not collapse either into the other.
+        coord_payload = {
+            "accounts": [],
+            "prepaid": [
+                _prepaid(
+                    _DEVICE_A,
+                    "brokeprovider",
+                    balance_micros=0,
+                    granted_micros=0,
+                    topped_up_micros=0,
+                    is_available=False,
+                ),
+                _prepaid(
+                    _DEVICE_A,
+                    "unreported",
+                    balance_micros=None,
+                    granted_micros=None,
+                    topped_up_micros=None,
+                    currency=None,
+                    is_available=None,
+                    error="HTTP 401 Unauthorized",
+                ),
+            ],
+            "table_provisioned": True,
+            "columns_provisioned": True,
+            "prepaid_table_provisioned": True,
+        }
+        with _patch_httpx() as MockClient:
+            instance = AsyncMock()
+            instance.get.return_value = _mock_response(json_data=coord_payload)
+            _configure_mock_client(MockClient, instance)
+
+            body = client.get(f"{API_PREFIX}/claude-accounts").json()
+
+        by_provider = {r["provider"]: r for r in body["prepaid"]}
+        assert by_provider["brokeprovider"]["balance_micros"] == 0
+        assert by_provider["brokeprovider"]["error"] is None
+        assert by_provider["unreported"]["balance_micros"] is None
+        assert by_provider["unreported"]["error"] == "HTTP 401 Unauthorized"
+
+    def test_malformed_prepaid_is_tolerated_like_accounts(self, client: TestClient):
+        # Coord's half is unwritten at this revision, so be liberal: a null or
+        # a non-list must not 500 the whole roster. NOTE the residual hazard —
+        # this collapses null to [], which is indistinguishable from "no
+        # provider configured" when the flag says True. The coord wire contract
+        # must pin [] rather than null; tracked in the plan.
+        for bad in (None, {"not": "a list"}, "nonsense", 7):
+            coord_payload = {
+                "accounts": [_account(_DEVICE_A, ".claude-gmail")],
+                "prepaid": bad,
+                "table_provisioned": True,
+                "prepaid_table_provisioned": True,
+            }
+            with _patch_httpx() as MockClient:
+                instance = AsyncMock()
+                instance.get.return_value = _mock_response(json_data=coord_payload)
+                _configure_mock_client(MockClient, instance)
+
+                resp = client.get(f"{API_PREFIX}/claude-accounts")
+
+            assert resp.status_code == 200, f"prepaid={bad!r} must not fail the roster"
+            assert resp.json()["prepaid"] == []
+
+    def test_prepaid_rows_that_are_not_dicts_are_dropped_when_filtering(
+        self, client: TestClient
+    ):
+        coord_payload = {
+            "accounts": [],
+            "prepaid": [_prepaid(_DEVICE_A, "deepseek"), "garbage", None],
+            "table_provisioned": True,
+            "prepaid_table_provisioned": True,
+        }
+        with _patch_httpx() as MockClient:
+            instance = AsyncMock()
+            instance.get.return_value = _mock_response(json_data=coord_payload)
+            _configure_mock_client(MockClient, instance)
+
+            body = client.get(
+                f"{API_PREFIX}/claude-accounts", params={"device_id": _DEVICE_A}
+            ).json()
+
+        assert [r["provider"] for r in body["prepaid"]] == ["deepseek"]
