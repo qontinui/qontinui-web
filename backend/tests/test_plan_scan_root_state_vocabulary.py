@@ -1,10 +1,10 @@
-"""The backend's four copies of the scan-root ``state`` vocabulary, pinned together.
+"""The scan-root ``state`` vocabulary exists in four places. Pin them together.
 
 Post-merge follow-up to qontinui-web#1310
 (``2026-09-11-the-plan-corpus-scan-root-does-not-report-its-own-drift``).
 
 ``measured | not_scanning | not_a_git_work_tree | unknown`` is written out four
-times in this backend, and until this module nothing connected any two of them:
+times, and until this module nothing connected any two of them:
 
 1. ``app.models.plan_scan_root.SCAN_ROOT_STATES`` — which #1310 defined and
    then never read, from anywhere. Its own docstring said it was "enforced in
@@ -49,12 +49,6 @@ The runner is the fifth copy (``ScanDivergenceState`` in
 ``qontinui-runner/src-tauri/src/plan_workunit_adapter/trigger.rs``) and is out
 of this repo's reach. The runner side pins it from there, in
 ``every_scan_root_report_state_satisfies_the_web_contract``.
-
-The operator console holds a sixth (``SCAN_ROOT_STATES`` in
-``frontend/src/app/(app)/admin/coord/plan-library/types.ts``), across a language
-seam this suite does not parse. ``types.wire.test.ts`` beside it pins that copy
-against the committed OpenAPI snapshots, which backend CI regenerates from this
-app's schema and refuses to let drift.
 """
 
 from __future__ import annotations
