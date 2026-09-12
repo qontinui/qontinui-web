@@ -532,11 +532,20 @@ jobs:
       # SAME assignment from the SAME collected set, so no shard waits on
       # another and there is no fan-out stage to serialize behind. ~30 s.
       #
-      # `--no-cov` matters. pytest.ini's addopts carry `--cov=app` plus three
-      # report formats, so a collection WITHOUT this flag writes a ~0% coverage
-      # report and a `.coverage` file that the real run below would then have to
-      # overwrite -- and if the real run ever failed early, the empty report is
-      # what would be uploaded.
+      # `-o addopts=` is LOAD-BEARING and the reason is measured, not theoretical.
+      # pytest.ini's addopts carry `-v`, which CANCELS the `-q` below back to
+      # verbosity 0 -- and at verbosity 0 `--collect-only` prints the indented
+      # `<Module ...>` / `<Function ...>` TREE, not node ids. On the first CI run
+      # of this change that produced 5157 output lines and ZERO node ids, and the
+      # splitter refused (exit 2) rather than emitting an empty selection.
+      # Emptying addopts is stable against the ini's verbosity changing; `-q -q`
+      # also works today and would silently break the day a second `-v` is added.
+      # backend/tests/test_pytest_shard_split.py pins this flag for that reason.
+      #
+      # Emptying addopts also drops `--cov=app` and its three report formats, so
+      # the collection cannot leave a ~0% coverage report for the real run to
+      # overwrite. `--no-cov` stays as belt-and-braces if a future addopts change
+      # re-adds coverage by another route.
       - name: Collect the test suite
         env:
           DATABASE_URL: postgresql://qontinui_user:qontinui_dev_password@localhost:5432/qontinui_test
@@ -547,8 +556,28 @@ jobs:
           SECRET_KEY: test-secret-key-for-testing-only-minimum-32-characters-long
           ENVIRONMENT: development
         run: |
-          poetry run pytest tests/ --collect-only -q --no-cov > collected-nodeids.txt
-          echo "collected $(wc -l < collected-nodeids.txt) output lines"
+          # pytest writes collection ERRORS to stdout, and stdout is redirected
+          # into the file -- so a failed collection would otherwise show as a
+          # dead step with no reason in the log. Print what it said. This is the
+          # same misattribution class the marker step below exists to prevent.
+          if ! poetry run pytest tests/ --collect-only -q -o addopts= --no-cov > collected-nodeids.txt; then
+            echo "::error title=pytest collection failed::The collection command exited non-zero; its own output follows."
+            cat collected-nodeids.txt
+            exit 1
+          fi
+          nodeids=$(grep -cE '^[^[:space:]]+\.py(::|$)' collected-nodeids.txt || true)
+          echo "collected $(wc -l < collected-nodeids.txt) output lines, ${nodeids} parseable node ids"
+          # A FLOOR, deliberately not a target. ZERO is the verbosity trap above.
+          # A non-zero but small count is worse, because it is the ONE shape the
+          # splitter cannot detect: a truncated collection shards perfectly
+          # happily, and six green shards would then cover a fraction of the
+          # suite. At ~4100 collected tests, under 500 is truncation, not a
+          # smaller suite.
+          if [ "${nodeids}" -lt 500 ]; then
+            echo "::error title=Collection is empty or truncated::pytest --collect-only produced $(wc -l < collected-nodeids.txt) lines and only ${nodeids} parseable node ids, below the floor of 500 for a ~4100-test suite. ZERO means the verbosity trap: node ids print only at NEGATIVE verbosity, and pytest.ini's addopts (-v) cancel the -q here unless '-o addopts=' is present. A low-but-non-zero count means the collection was TRUNCATED - do not shard it. Last lines of the collection output follow."
+            tail -20 collected-nodeids.txt
+            exit 1
+          fi
 
       # The split is a pure function of the collected set (see the script's
       # docstring): complete, disjoint and order-independent, so the six shards
@@ -672,8 +701,14 @@ jobs:
         uses: codecov/codecov-action@v4
         with:
           files: ./backend/coverage.xml
+          # One flag, six partial uploads: Codecov merges uploads per commit, so
+          # the flag stays `backend` and the union is the suite's coverage. The
+          # NAME is shard-scoped so the six uploads are distinguishable in
+          # Codecov's own UI rather than six rows called the same thing.
+          # `fail_ci_if_error: false` (below, unchanged) is why a merge surprise
+          # here cannot red the lane -- confirm the delta on the first run.
           flags: backend
-          name: backend-coverage
+          name: backend-coverage-shard-${{ matrix.shard }}
           fail_ci_if_error: false
 
       - name: Upload coverage artifacts
