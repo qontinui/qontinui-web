@@ -13,11 +13,12 @@
  *
  *  - `policies::resolver::fetch_policies_by_domain` — the candidate set and its
  *    order: `enabled = true`, unexpired, tenant band ∪ system band, ordered
- *    `scope_band ASC, priority ASC, created_at ASC`. Gates carry no repo, so
- *    the resolver queries with `repo: None` and a repo-scoped WORKSPACE row can
- *    never match (coord's create route rejects new ones with a 400, but rows
- *    written before that guard can still exist). System rows are matched
- *    repo-agnostically and are unaffected.
+ *    `scope_band ASC, priority ASC, created_at ASC, policy_id ASC`. Gates carry
+ *    no repo, so the resolver queries with `repo: None` and a repo-scoped
+ *    WORKSPACE row can never match (coord's create route rejects new ones with a
+ *    400, but rows written before that guard can still exist) — nor can one
+ *    whose repo is the empty string. System rows are matched repo-agnostically
+ *    and are unaffected.
  *  - `gates_authority::pick_rule` — first row whose `payload.gate_class`
  *    equals the gate's class **exactly** and whose `payload.authority` parses;
  *    a row with a missing/mismatched class or an unparseable authority is
@@ -123,15 +124,15 @@ export function ruleBand(row: CoordPolicyRow): RuleBand {
  * ELSE 2                                                          -- System
  * ```
  *
- * A gate carries no repo, so the resolver binds `$3 = repo.unwrap_or("")` —
- * which means the Repo band is reachable by exactly one degenerate row, a
- * tenant row whose `repo` is the empty string. It outranks every other tenant
- * row regardless of priority, so rank it where coord ranks it rather than
- * folding it in with the tenant band.
+ * A gate carries no repo, and coord binds `$3` as a NULLABLE param (NULL for a
+ * gate, qontinui-coord#2061), so `repo = $3` is never true and the Repo band is
+ * unreachable for a gate: every candidate is a tenant-wide row or a system
+ * row. (Before #2061 coord bound `$3 = ''`, which put a tenant row with an
+ * empty-string `repo` in the Repo band above every other tenant row; that row
+ * is now INERT — see `inertReason`.)
  */
 function bandRank(row: CoordPolicyRow): number {
-  if (row.built_in) return 2;
-  return row.repo === "" ? 0 : 1;
+  return row.built_in ? 2 : 1;
 }
 
 /**
@@ -177,6 +178,7 @@ export function rawGateClass(payload: unknown): string | null {
 export type InertReason =
   | "disabled"
   | "repo-scoped"
+  | "empty-repo"
   | "expired"
   | "no-class"
   | "unknown-authority";
@@ -185,6 +187,8 @@ export const INERT_EXPLANATIONS: Record<InertReason, string> = {
   disabled: "Disabled — coord only resolves enabled rules.",
   "repo-scoped":
     "Scoped to a repo. Gates carry no repo, so a repo-scoped workspace rule can never match.",
+  "empty-repo":
+    "Its repo is set to an empty string instead of being left unset. Coord only matches workspace rules with no repo, so this rule can never match. Delete it and create it again — rules created here are always workspace-wide.",
   expired: "Expired — coord only resolves unexpired rules.",
   "no-class": "No `payload.gate_class` — coord skips rules it cannot key.",
   "unknown-authority":
@@ -204,10 +208,11 @@ export function inertReason(
   // "System rows are matched repo-agnostically (a system default applies to
   // every repo)" — resolver.rs. So a repo-scoped SYSTEM row is a live
   // candidate and must NOT be reported inert; only a workspace row is killed
-  // by its repo. (`$3` is `repo.unwrap_or("")` for a gate, so the degenerate
-  // empty string also survives — see `bandRank`.)
-  if (!row.built_in && row.repo !== null && row.repo !== "")
-    return "repo-scoped";
+  // by its repo. `$3` is NULL for a gate (a nullable bind since
+  // qontinui-coord#2061), so an EMPTY-string repo is killed too — it is
+  // neither `repo IS NULL` nor equal to anything.
+  if (!row.built_in && row.repo !== null)
+    return row.repo === "" ? "empty-repo" : "repo-scoped";
   if (row.expires_at !== null) {
     const t = new Date(row.expires_at).getTime();
     if (!Number.isNaN(t) && t <= now) return "expired";
@@ -228,8 +233,9 @@ export interface ResolutionCandidate {
 
 /**
  * The candidate set in coord's own precedence order:
- * `scope_band ASC, priority ASC, created_at ASC`, with every inert row dropped.
- * A tenant row therefore beats a system row REGARDLESS of numeric priority.
+ * `scope_band ASC, priority ASC, created_at ASC, policy_id ASC`, with every
+ * inert row dropped. A tenant row therefore beats a system row REGARDLESS of
+ * numeric priority.
  */
 export function resolutionCandidates(
   rows: readonly CoordPolicyRow[],
@@ -252,11 +258,9 @@ export function resolutionCandidates(
       if (band !== 0) return band;
       const prio = a.row.priority - b.row.priority;
       if (prio !== 0) return prio;
-      return a.row.created_at < b.row.created_at
-        ? -1
-        : a.row.created_at > b.row.created_at
-          ? 1
-          : 0;
+      if (a.row.created_at !== b.row.created_at)
+        return a.row.created_at < b.row.created_at ? -1 : 1;
+      return a.row.policy_id.localeCompare(b.row.policy_id);
     });
 }
 
