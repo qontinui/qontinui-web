@@ -98,6 +98,8 @@ MODULE_EXTENSIONS: tuple[str, ...] = (
     ".jsx",
     ".mts",
     ".cts",
+    ".d.mts",
+    ".d.cts",
     ".mjs",
     ".cjs",
 )
@@ -107,13 +109,15 @@ INDEX_BASENAMES: frozenset[str] = frozenset(f"index{ext}" for ext in MODULE_EXTE
 
 
 def _git(args: list[str]) -> subprocess.CompletedProcess[str]:
+    # `surrogateescape`, not `replace`: two DISTINCT undecodable names must not
+    # both become U+FFFD… and then falsely collide with each other.
     return subprocess.run(
         ["git", *args],
         cwd=REPO_ROOT,
         capture_output=True,
         text=True,
         encoding="utf-8",
-        errors="replace",
+        errors="surrogateescape",
         check=False,
     )
 
@@ -121,13 +125,21 @@ def _git(args: list[str]) -> subprocess.CompletedProcess[str]:
 def _module_stem(path: str) -> str | None:
     """``path`` with its module extension removed, or ``None`` if it has none.
 
-    ``.d.ts`` is stripped as a unit so ``foo.d.ts`` and ``foo.ts`` share the
-    stem ``foo`` (they do resolve to the same specifier), rather than yielding
-    the spurious stem ``foo.d``. Longest extension first for that reason.
+    ``.d.ts`` (and ``.d.mts`` / ``.d.cts``) is stripped as a unit so
+    ``foo.d.ts`` and ``foo.ts`` share the stem ``foo`` (they do resolve to the
+    same specifier), rather than yielding the spurious stem ``foo.d``. Longest
+    extension first for that reason. The extension is matched
+    case-insensitively — a probe for ``Foo.ts`` hits ``foo.TS`` on the same
+    filesystems this gate models — and a bare ``.ts`` with no basename is a
+    dotfile, not a module.
     """
+    folded = path.lower()
     for ext in sorted(MODULE_EXTENSIONS, key=len, reverse=True):
-        if path.endswith(ext) and len(path) > len(ext):
-            return path[: -len(ext)]
+        if folded.endswith(ext):
+            stem = path[: -len(ext)]
+            if stem and not stem.endswith("/"):
+                return stem
+            return None
     return None
 
 
@@ -182,23 +194,27 @@ def module_stem_collisions(tracked: list[str]) -> list[list[str]]:
 
 
 def _shallowest_only(groups: list[list[str]]) -> list[list[str]]:
-    """Drop groups nested under another colliding group's folded root.
+    """Drop groups whose collision is entirely explained by a colliding ancestor.
 
     A colliding directory makes every prefix beneath it collide too
     (``Foo/x.ts`` vs ``foo/x.ts`` fold together only because ``Foo``/``foo``
-    did). The shallowest is the one a rename actually fixes.
+    did), and renaming the directory fixes all of those at once — so they are
+    not reported. A nested group whose members STILL differ below the ancestor
+    (``Foo/Bar/…`` vs ``Foo/bar/…``) is a second defect the directory rename
+    leaves behind, and is kept.
     """
     folded_roots = {group[0].lower() for group in groups}
-    rooted = [
-        group
-        for group in groups
-        if not any(
-            group[0].lower().startswith(root + "/")
-            for root in folded_roots
-            if root != group[0].lower()
-        )
-    ]
-    return sorted(rooted)
+
+    def explained_by_ancestor(group: list[str]) -> bool:
+        folded = group[0].lower()
+        for root in folded_roots:
+            if root != folded and folded.startswith(root + "/"):
+                tails = {member[len(root) + 1 :] for member in group}
+                if len(tails) == 1:
+                    return True
+        return False
+
+    return sorted(group for group in groups if not explained_by_ancestor(group))
 
 
 def _outside(stems: list[list[str]], paths: list[list[str]]) -> list[list[str]]:
@@ -207,13 +223,16 @@ def _outside(stems: list[list[str]], paths: list[list[str]]) -> list[list[str]]:
     ``Foo/x.ts`` vs ``foo/X.ts`` is a stem collision only because ``Foo``
     and ``foo`` collide as paths; renaming the directory fixes both, so
     reporting the stems as well would send the reader after a second defect
-    that is not there.
+    that is not there. Likewise ``a/Foo.ts`` vs ``a/foo.ts`` is one finding,
+    not one under each heading.
     """
     roots = [group[0].lower() + "/" for group in paths]
+    as_paths = [set(group) for group in paths]
     return [
         group
         for group in stems
         if not any(group[0].lower().startswith(root) for root in roots)
+        and not any(set(group) <= members for members in as_paths)
     ]
 
 
@@ -238,7 +257,13 @@ collision both files are on disk and only `tsc` on such a box objects
 def main() -> int:
     # Non-vacuity: an empty index would make the collision scan trivially
     # clean. Prove the index has content before believing a no-match result.
-    listing = _git(["ls-files", "--cached"])
+    # `-z`: without it git C-quotes any path holding a byte >= 0x80, a quote,
+    # a backslash or a control character (`core.quotePath`), and the gate would
+    # then fold the LITERAL octal-escaped string (`"\303\204rger.ts"`) so
+    # `Ärger.ts`/`ärger.ts` would pass, a directory collision under a quoted
+    # name would pass (its first prefix becomes `"Foo`), and the verdict would
+    # depend on a developer's git config. NUL-delimited output is never quoted.
+    listing = _git(["ls-files", "--cached", "-z"])
     if listing.returncode != 0:
         err(
             f"`git ls-files` failed (exit {listing.returncode}): "
@@ -246,7 +271,7 @@ def main() -> int:
         )
         err("The scan did not run, so this is NOT a clean result.")
         return EXIT_VACUOUS
-    tracked = [ln for ln in listing.stdout.splitlines() if ln.strip()]
+    tracked = [path for path in listing.stdout.split("\0") if path.strip()]
     require_nonempty(len(tracked), "tracked files", "the git index")
 
     paths = path_collisions(tracked)
