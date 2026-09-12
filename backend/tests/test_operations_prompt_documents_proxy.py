@@ -739,3 +739,156 @@ class TestPromptDocumentKindTiers:
         assert instance.delete.call_args.args[0].endswith(
             "/coord/prompt-document-kind-tiers/domain_spec"
         )
+
+
+# ---------------------------------------------------------------------------
+# The MODIFIED-tenant decisions (plan 2026-09-04-cross-tenant-policy-publishing
+# D4 + Phase 7): upstream-adopt, upstream-keep, upstream-merge (GET + POST)
+# ---------------------------------------------------------------------------
+#
+# What has to hold at this layer, and why:
+#
+# * each path reaches coord as the SAME segment under the document address —
+#   these are per-document decisions, not sibling collections;
+# * the body is forwarded VERBATIM: `publication_version`, `expected_version`
+#   and the merge's per-clause `resolutions` are the operator's, and this proxy
+#   adds none (coord stamps the actor from its own OperatorContext);
+# * coord's typed 409s (`document_moved`, `unresolved_conflicts`,
+#   `already_reviewed`) and its 503 `schema_migration_pending` pass through
+#   rather than becoming a 500 — the dialog branches on the code.
+
+
+class TestUpstreamDecisions:
+    def test_adopt_forwards_the_reviewed_publication(self, auth_client: TestClient):
+        with _patch_httpx() as MockClient:
+            instance = AsyncMock()
+            instance.post.return_value = _mock_response(
+                json_data={
+                    "adopted": True,
+                    "from_version": 3,
+                    "to_version": 4,
+                    "publication_version": 9,
+                }
+            )
+            _configure_mock_client(MockClient, instance)
+
+            resp = auth_client.post(
+                f"{API_PREFIX}/coord/prompt-documents/policy/coordination/upstream-adopt",
+                json={"publication_version": 9, "expected_version": 3},
+            )
+
+        assert resp.status_code == 200
+        assert resp.json()["to_version"] == 4
+        assert instance.post.call_args.args[0].endswith(
+            "/coord/prompt-documents/policy/coordination/upstream-adopt"
+        )
+        assert instance.post.call_args.kwargs["json"] == {
+            "publication_version": 9,
+            "expected_version": 3,
+        }
+
+    def test_keep_forwards_verbatim_and_already_reviewed_passes_through(
+        self, auth_client: TestClient
+    ):
+        with _patch_httpx() as MockClient:
+            instance = AsyncMock()
+            instance.post.return_value = _mock_response(
+                status_code=409,
+                text='{"error":"already_reviewed","tracked_publication_version":9}',
+            )
+            _configure_mock_client(MockClient, instance)
+
+            resp = auth_client.post(
+                f"{API_PREFIX}/coord/prompt-documents/policy/coordination/upstream-keep",
+                json={"publication_version": 9},
+            )
+
+        assert resp.status_code == 409
+        assert "already_reviewed" in str(resp.json())
+        assert instance.post.call_args.args[0].endswith(
+            "/coord/prompt-documents/policy/coordination/upstream-keep"
+        )
+        assert instance.post.call_args.kwargs["json"] == {"publication_version": 9}
+
+    def test_merge_preview_forwards_the_version_filter(self, auth_client: TestClient):
+        with _patch_httpx() as MockClient:
+            instance = AsyncMock()
+            instance.get.return_value = _mock_response(
+                json_data={"mode": "clauses", "entries": [], "conflicts": []}
+            )
+            _configure_mock_client(MockClient, instance)
+
+            resp = auth_client.get(
+                f"{API_PREFIX}/coord/prompt-documents/policy/coordination/upstream-merge"
+                "?publication_version=9"
+            )
+
+        assert resp.status_code == 200
+        assert resp.json()["mode"] == "clauses"
+        assert instance.get.call_args.args[0].endswith(
+            "/coord/prompt-documents/policy/coordination/upstream-merge"
+        )
+        assert instance.get.call_args.kwargs["params"] == {"publication_version": 9}
+
+    def test_merge_preview_without_a_version_sends_no_params(
+        self, auth_client: TestClient
+    ):
+        """Absent means "the latest" on coord's side; sending an empty filter
+        would be a different request shape for the same question."""
+        with _patch_httpx() as MockClient:
+            instance = AsyncMock()
+            instance.get.return_value = _mock_response(
+                json_data={"mode": "whole_body", "fallback": {"reason": "x"}}
+            )
+            _configure_mock_client(MockClient, instance)
+
+            resp = auth_client.get(
+                f"{API_PREFIX}/coord/prompt-documents/policy/coordination/upstream-merge"
+            )
+
+        assert resp.status_code == 200
+        assert instance.get.call_args.kwargs["params"] is None
+
+    def test_merge_apply_forwards_resolutions_and_unresolved_passes_through(
+        self, auth_client: TestClient
+    ):
+        with _patch_httpx() as MockClient:
+            instance = AsyncMock()
+            instance.post.return_value = _mock_response(
+                status_code=409,
+                text='{"error":"unresolved_conflicts","unresolved":["scope"]}',
+            )
+            _configure_mock_client(MockClient, instance)
+
+            resp = auth_client.post(
+                f"{API_PREFIX}/coord/prompt-documents/policy/coordination/upstream-merge",
+                json={
+                    "publication_version": 9,
+                    "expected_version": 3,
+                    "resolutions": {"tempo": "upstream"},
+                },
+            )
+
+        assert resp.status_code == 409
+        assert "unresolved_conflicts" in str(resp.json())
+        assert instance.post.call_args.kwargs["json"] == {
+            "publication_version": 9,
+            "expected_version": 3,
+            "resolutions": {"tempo": "upstream"},
+        }
+
+    def test_schema_pending_503_passes_through(self, auth_client: TestClient):
+        """A decision coord cannot record must not look like one it took."""
+        with _patch_httpx() as MockClient:
+            instance = AsyncMock()
+            instance.post.return_value = _mock_response(
+                status_code=503, text='{"error":"schema_migration_pending"}'
+            )
+            _configure_mock_client(MockClient, instance)
+
+            resp = auth_client.post(
+                f"{API_PREFIX}/coord/prompt-documents/policy/coordination/upstream-adopt",
+                json={"publication_version": 9},
+            )
+
+        assert resp.status_code == 503

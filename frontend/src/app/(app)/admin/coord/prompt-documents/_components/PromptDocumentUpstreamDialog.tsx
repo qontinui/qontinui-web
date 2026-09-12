@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -13,7 +13,9 @@ import { cn } from "@/lib/utils";
 import {
   AlertTriangle,
   ArrowDownToLine,
+  ArrowLeft,
   CloudDownload,
+  GitMerge,
   Hand,
 } from "lucide-react";
 import {
@@ -22,7 +24,15 @@ import {
   DiffTable,
   diffLines,
 } from "@/components/console";
-import type { Publication, PromptDocument, PromptDocumentKind } from "../types";
+import { PromptDocumentClauseMergePanel } from "./PromptDocumentClauseMergePanel";
+import { canApplyMerge } from "../_lib/clauseMerge";
+import type {
+  ClauseConflictChoice,
+  ClauseMergePreview,
+  Publication,
+  PromptDocument,
+  PromptDocumentKind,
+} from "../types";
 
 /**
  * Which pair of the three-way the diff pane is showing.
@@ -80,9 +90,33 @@ interface PromptDocumentUpstreamDialogProps {
     doc: PromptDocument,
     publication: Publication
   ) => Promise<boolean>;
-  /** True while either decision is in flight. */
+  /**
+   * The clause-grained merge PREVIEW for a `policy` document (Phase 7). Read
+   * only. Paired with `onMergeClauses`; the `Merge clauses` control is offered
+   * only when BOTH are wired and the document is `kind === "policy"` — for any
+   * other kind coord has no clause decomposition to merge over, and the
+   * control would be a `400` behind a button.
+   */
+  fetchMergePreview?: (
+    kind: PromptDocumentKind,
+    name: string,
+    publicationVersion: number
+  ) => Promise<ClauseMergePreview | null>;
+  /**
+   * Land a reviewed clause-grained merge with the operator's per-conflict
+   * choices. Same fail-closed absence as the two decisions above.
+   */
+  onMergeClauses?: (
+    doc: PromptDocument,
+    publication: Publication,
+    resolutions: Record<string, ClauseConflictChoice>
+  ) => Promise<boolean>;
+  /** True while any decision is in flight. */
   saving?: boolean;
 }
+
+/** Which surface the dialog is showing: the three-way comparison, or the clause merge. */
+type DialogView = "compare" | "merge";
 
 /**
  * The upstream-update decision surface: a three-way view of one document
@@ -125,14 +159,24 @@ interface PromptDocumentUpstreamDialogProps {
  * disabled and says what is missing, and the operator is not offered a button
  * that would half-do the thing it names.
  *
- * ## Why there is no `Merge clauses` button
+ * ## The third decision — `Merge clauses` — is a second VIEW, not a third button
  *
- * The plan lists a third action for `kind = "policy"` — a clause-grained
- * three-way merge — and parks it in Phase 7. It is deliberately absent rather
- * than present-and-disabled: the two actions above are already disabled
- * wherever their props are unwired, and a third permanently-dead control beside
- * them stops reading as "not yet" and starts reading as a broken dialog. It
- * belongs here when it can do something, in the phase that builds it.
+ * Phase 7 added the clause-grained merge for `kind = "policy"`: clauses present
+ * upstream and unchanged here take the upstream text, clauses this tenant added
+ * stay, and clauses changed on both sides are a per-clause CHOICE coord refuses
+ * to default. That needs a surface of its own — one row per clause with the
+ * choice controls — so the control swaps this dialog from the comparison to
+ * [`PromptDocumentClauseMergePanel`] rather than adding a fourth button to the
+ * footer. It is offered only for a `policy` document with both merge props
+ * wired: a non-policy kind has no clause decomposition to merge over, and
+ * coord answers `400` rather than inventing one. The apply control appears in
+ * the merge view and is withheld until every conflict has a choice — the
+ * `409 unresolved_conflicts` coord would answer otherwise is a backstop, not
+ * the normal path.
+ *
+ * When coord says the pair does not decompose into clauses (`mode:
+ * "whole_body"`), the panel relays coord's reason and points back at Adopt /
+ * Keep-mine, which remain the honest whole-body decisions.
  */
 export function PromptDocumentUpstreamDialog({
   open,
@@ -142,12 +186,22 @@ export function PromptDocumentUpstreamDialog({
   fetchPublication,
   onAdoptUpstream,
   onKeepMine,
+  fetchMergePreview,
+  onMergeClauses,
   saving = false,
 }: PromptDocumentUpstreamDialogProps) {
   const [incoming, setIncoming] = useState<Publication | null>(null);
   const [base, setBase] = useState<Publication | null>(null);
   const [loadingPublications, setLoadingPublications] = useState(false);
   const [pane, setPane] = useState<ThreeWayPane>("upstream_change");
+  const [view, setView] = useState<DialogView>("compare");
+  const [mergePreview, setMergePreview] = useState<ClauseMergePreview | null>(
+    null
+  );
+  const [loadingMerge, setLoadingMerge] = useState(false);
+  const [resolutions, setResolutions] = useState<
+    Record<string, ClauseConflictChoice>
+  >({});
 
   const tracked = doc?.upstream_publication_version ?? null;
   const latest = doc?.latest_publication_version ?? null;
@@ -192,10 +246,40 @@ export function PromptDocumentUpstreamDialog({
 
   // A document change resets the pane: "what upstream changed" is the question
   // an operator opens this for, and carrying a pane over from the last document
-  // would answer a different one.
+  // would answer a different one. The merge view resets with it — a plan and
+  // its half-made choices belong to ONE document and one publication.
   useEffect(() => {
     setPane("upstream_change");
+    setView("compare");
+    setMergePreview(null);
+    setResolutions({});
   }, [open, doc]);
+
+  /**
+   * Fetch the clause plan for the publication on screen and switch to the
+   * merge view. A preview that could not be read leaves the dialog on the
+   * comparison with the hook's toast — UNKNOWN, not "nothing to merge".
+   */
+  const openMerge = useCallback(async () => {
+    if (!doc || !incoming || !fetchMergePreview) return;
+    setLoadingMerge(true);
+    const plan = await fetchMergePreview(
+      doc.kind,
+      doc.name,
+      incoming.publication_version
+    );
+    setLoadingMerge(false);
+    if (!plan) return;
+    setMergePreview(plan);
+    setResolutions({});
+    setView("merge");
+  }, [doc, incoming, fetchMergePreview]);
+
+  const resolve = useCallback(
+    (clause: string, choice: ClauseConflictChoice) =>
+      setResolutions((prev) => ({ ...prev, [clause]: choice })),
+    []
+  );
 
   const ours = doc?.body ?? "";
 
@@ -243,6 +327,24 @@ export function PromptDocumentUpstreamDialog({
     incoming != null &&
     !saving &&
     !loadingBody;
+  // The clause merge is a `policy`-only door, and only when both halves are
+  // wired: a preview with no apply behind it would be a plan nobody can land.
+  const mergeOffered =
+    doc?.kind === "policy" &&
+    fetchMergePreview != null &&
+    onMergeClauses != null;
+  const canOpenMerge =
+    mergeOffered &&
+    incoming != null &&
+    !saving &&
+    !loadingBody &&
+    !loadingMerge;
+  const canApply =
+    mergeOffered &&
+    doc != null &&
+    incoming != null &&
+    !saving &&
+    canApplyMerge(mergePreview, resolutions);
 
   const label = doc ? (doc.description ?? doc.name) : "";
 
@@ -283,94 +385,107 @@ export function PromptDocumentUpstreamDialog({
           </div>
         ) : null}
 
-        {/* Pane selector — the three comparisons of the three-way view. */}
-        <div
-          className="flex shrink-0 flex-wrap gap-1"
-          role="tablist"
-          aria-label="Three-way comparison"
-        >
-          {panes.map((p) => {
-            const unavailable = p.id !== "adopt_effect" && base === null;
-            return (
-              <button
-                key={p.id}
-                type="button"
-                role="tab"
-                aria-selected={pane === p.id}
-                disabled={unavailable}
-                onClick={() => setPane(p.id)}
-                data-testid={`upstream-pane-${p.id}`}
-                className={cn(
-                  "rounded-md border px-2.5 py-1.5 text-left text-xs transition-colors",
-                  pane === p.id
-                    ? "border-primary bg-primary/5"
-                    : "border-border hover:bg-muted/50",
-                  unavailable && "cursor-not-allowed opacity-50"
-                )}
-              >
-                <span className="block font-medium">{p.label}</span>
-                <span className="block text-muted-foreground">{p.caption}</span>
-              </button>
-            );
-          })}
-        </div>
-
-        <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-md border border-border">
-          {loadingBody || loadingPublications ? (
-            <p className="py-12 text-center text-sm text-muted-foreground">
-              Loading the comparison…
-            </p>
-          ) : !incoming ? (
-            <p
-              className="py-12 text-center text-sm text-muted-foreground"
-              data-testid="upstream-no-publication"
+        {view === "merge" && mergePreview ? (
+          <PromptDocumentClauseMergePanel
+            preview={mergePreview}
+            resolutions={resolutions}
+            onResolve={resolve}
+            saving={saving}
+          />
+        ) : (
+          <>
+            {/* Pane selector — the three comparisons of the three-way view. */}
+            <div
+              className="flex shrink-0 flex-wrap gap-1"
+              role="tablist"
+              aria-label="Three-way comparison"
             >
-              No publication could be read for this document. That is unknown,
-              not &ldquo;nothing published&rdquo; — the channel may be
-              unreachable from here.
-            </p>
-          ) : diff === null ? (
-            <p
-              className="py-12 text-center text-sm text-muted-foreground"
-              data-testid="upstream-no-base"
-            >
-              This document tracks no publication, so there is no base to
-              compare against. It was written here, or seeded before any
-              publication for it existed — either way, what it would have
-              diverged FROM is unknown rather than identical. &ldquo;What
-              adopting would change&rdquo; is still exact.
-            </p>
-          ) : (
-            <>
-              <div className="flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-border bg-muted/40 px-3 py-2 text-xs">
-                <span className="font-medium">
-                  {panes.find((p) => p.id === pane)?.caption}
-                </span>
-                {diff.stats.identical ? (
-                  <span className="text-muted-foreground">
-                    Identical — these two are the same text.
-                  </span>
-                ) : (
-                  <>
-                    <span className={DIFF_ADDED_COUNT_CLASS}>
-                      +{diff.stats.added}
-                    </span>
-                    <span className={DIFF_REMOVED_COUNT_CLASS}>
-                      −{diff.stats.removed}
-                    </span>
-                    {diff.stats.truncated && (
-                      <span className="text-muted-foreground">
-                        Document too large for a line-by-line diff — showing a
-                        full replacement.
-                      </span>
+              {panes.map((p) => {
+                const unavailable = p.id !== "adopt_effect" && base === null;
+                return (
+                  <button
+                    key={p.id}
+                    type="button"
+                    role="tab"
+                    aria-selected={pane === p.id}
+                    disabled={unavailable}
+                    onClick={() => setPane(p.id)}
+                    data-testid={`upstream-pane-${p.id}`}
+                    className={cn(
+                      "rounded-md border px-2.5 py-1.5 text-left text-xs transition-colors",
+                      pane === p.id
+                        ? "border-primary bg-primary/5"
+                        : "border-border hover:bg-muted/50",
+                      unavailable && "cursor-not-allowed opacity-50"
                     )}
-                  </>
-                )}
-              </div>
-              <DiffTable lines={diff.lines} data-testid="upstream-diff" />
-            </>
-          )}
-        </div>
+                  >
+                    <span className="block font-medium">{p.label}</span>
+                    <span className="block text-muted-foreground">
+                      {p.caption}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+
+            <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-md border border-border">
+              {loadingBody || loadingPublications ? (
+                <p className="py-12 text-center text-sm text-muted-foreground">
+                  Loading the comparison…
+                </p>
+              ) : !incoming ? (
+                <p
+                  className="py-12 text-center text-sm text-muted-foreground"
+                  data-testid="upstream-no-publication"
+                >
+                  No publication could be read for this document. That is
+                  unknown, not &ldquo;nothing published&rdquo; — the channel may
+                  be unreachable from here.
+                </p>
+              ) : diff === null ? (
+                <p
+                  className="py-12 text-center text-sm text-muted-foreground"
+                  data-testid="upstream-no-base"
+                >
+                  This document tracks no publication, so there is no base to
+                  compare against. It was written here, or seeded before any
+                  publication for it existed — either way, what it would have
+                  diverged FROM is unknown rather than identical. &ldquo;What
+                  adopting would change&rdquo; is still exact.
+                </p>
+              ) : (
+                <>
+                  <div className="flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-border bg-muted/40 px-3 py-2 text-xs">
+                    <span className="font-medium">
+                      {panes.find((p) => p.id === pane)?.caption}
+                    </span>
+                    {diff.stats.identical ? (
+                      <span className="text-muted-foreground">
+                        Identical — these two are the same text.
+                      </span>
+                    ) : (
+                      <>
+                        <span className={DIFF_ADDED_COUNT_CLASS}>
+                          +{diff.stats.added}
+                        </span>
+                        <span className={DIFF_REMOVED_COUNT_CLASS}>
+                          −{diff.stats.removed}
+                        </span>
+                        {diff.stats.truncated && (
+                          <span className="text-muted-foreground">
+                            Document too large for a line-by-line diff — showing
+                            a full replacement.
+                          </span>
+                        )}
+                      </>
+                    )}
+                  </div>
+                  <DiffTable lines={diff.lines} data-testid="upstream-diff" />
+                </>
+              )}
+            </div>
+          </>
+        )}
 
         {/*
           The decisions are wired by props. When they are absent this says so
@@ -389,54 +504,109 @@ export function PromptDocumentUpstreamDialog({
               version this document tracks — adopting replaces the body and
               advances it, keeping yours advances it and leaves the body alone —
               and an ordinary edit cannot do either: it moves the body and
-              leaves the tracking where it was, which would clear no badge.
-              Until coord serves those two operations, comparing here and
+              leaves the tracking where it was, which would clear no badge. This
+              page has not wired those two operations, so comparing here and
               editing in the editor is the honest path.
             </p>
           </div>
         )}
 
-        <div className="flex shrink-0 flex-wrap items-center justify-end gap-2 pt-2">
-          <Button
-            variant="outline"
-            className="mr-auto gap-1.5"
-            disabled={!canDecide}
-            title={
-              decisionsWired
-                ? "Record that you reviewed this publication and are keeping your own wording. Your body is not touched; the badge clears."
-                : "Not available yet — see the note above."
-            }
-            onClick={() => {
-              if (doc && incoming && onKeepMine) void onKeepMine(doc, incoming);
-            }}
-            data-testid="upstream-keep-mine"
-          >
-            <Hand className="size-4" />
-            Keep mine
-          </Button>
-          <Button variant="outline" onClick={() => onOpenChange(false)}>
-            Close
-          </Button>
-          <Button
-            className="gap-1.5"
-            disabled={!canDecide}
-            title={
-              decisionsWired
-                ? "Replace this document's body with the publication. Your current wording stays in version history and is restorable in one click."
-                : "Not available yet — see the note above."
-            }
-            onClick={() => {
-              if (doc && incoming && onAdoptUpstream)
-                void onAdoptUpstream(doc, incoming);
-            }}
-            data-testid="upstream-adopt"
-          >
-            <ArrowDownToLine className="size-4" />
-            {incoming
-              ? `Adopt v${incoming.publication_version}`
-              : "Adopt upstream"}
-          </Button>
-        </div>
+        {view === "merge" ? (
+          <div className="flex shrink-0 flex-wrap items-center justify-end gap-2 pt-2">
+            <Button
+              variant="outline"
+              className="mr-auto gap-1.5"
+              disabled={saving}
+              onClick={() => setView("compare")}
+              data-testid="upstream-merge-back"
+            >
+              <ArrowLeft className="size-4" />
+              Back to comparison
+            </Button>
+            <Button variant="outline" onClick={() => onOpenChange(false)}>
+              Close
+            </Button>
+            <Button
+              className="gap-1.5"
+              disabled={!canApply}
+              title={
+                canApply
+                  ? "Land the merged clause set as one new version. Your current wording stays in version history."
+                  : mergePreview?.mode === "whole_body"
+                    ? "This pair does not decompose into clauses — use Adopt or Keep mine."
+                    : mergePreview?.mode === "clauses" && mergePreview.noop
+                      ? "Nothing to merge — every clause is already identical."
+                      : "Choose a side for every conflicted clause first."
+              }
+              onClick={() => {
+                if (doc && incoming && onMergeClauses)
+                  void onMergeClauses(doc, incoming, resolutions);
+              }}
+              data-testid="upstream-merge-apply"
+            >
+              <GitMerge className="size-4" />
+              {incoming
+                ? `Merge v${incoming.publication_version}`
+                : "Merge clauses"}
+            </Button>
+          </div>
+        ) : (
+          <div className="flex shrink-0 flex-wrap items-center justify-end gap-2 pt-2">
+            <Button
+              variant="outline"
+              className="mr-auto gap-1.5"
+              disabled={!canDecide}
+              title={
+                decisionsWired
+                  ? "Record that you reviewed this publication and are keeping your own wording. Your body is not touched; the badge clears."
+                  : "Not available yet — see the note above."
+              }
+              onClick={() => {
+                if (doc && incoming && onKeepMine)
+                  void onKeepMine(doc, incoming);
+              }}
+              data-testid="upstream-keep-mine"
+            >
+              <Hand className="size-4" />
+              Keep mine
+            </Button>
+            {mergeOffered && (
+              <Button
+                variant="outline"
+                className="gap-1.5"
+                disabled={!canOpenMerge}
+                title="Merge the publication clause by clause: clauses you never touched take the upstream text, clauses you added stay, and anything changed on both sides is your call, per clause."
+                onClick={() => void openMerge()}
+                data-testid="upstream-merge-clauses"
+              >
+                <GitMerge className="size-4" />
+                {loadingMerge ? "Planning the merge…" : "Merge clauses"}
+              </Button>
+            )}
+            <Button variant="outline" onClick={() => onOpenChange(false)}>
+              Close
+            </Button>
+            <Button
+              className="gap-1.5"
+              disabled={!canDecide}
+              title={
+                decisionsWired
+                  ? "Replace this document's body with the publication. Your current wording stays in version history and is restorable in one click."
+                  : "Not available yet — see the note above."
+              }
+              onClick={() => {
+                if (doc && incoming && onAdoptUpstream)
+                  void onAdoptUpstream(doc, incoming);
+              }}
+              data-testid="upstream-adopt"
+            >
+              <ArrowDownToLine className="size-4" />
+              {incoming
+                ? `Adopt v${incoming.publication_version}`
+                : "Adopt upstream"}
+            </Button>
+          </div>
+        )}
       </DialogContent>
     </Dialog>
   );

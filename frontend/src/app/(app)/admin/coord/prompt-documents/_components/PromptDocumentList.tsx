@@ -24,6 +24,8 @@ import { AgentWriteAccessControl } from "./AgentWriteAccessControl";
 import { upstreamBadge } from "../_lib/upstreamStatus";
 import type {
   AgentWriteTier,
+  ClauseConflictChoice,
+  Publication,
   PromptDocument,
   PromptDocumentKind,
   PromptDocumentSummary,
@@ -90,6 +92,11 @@ export function PromptDocumentList() {
     publishUnavailable,
     fetchPublication,
     publish,
+    deciding,
+    adoptUpstream,
+    keepMine,
+    fetchMergePreview,
+    applyMerge,
   } = usePromptDocumentPublications();
 
   const [createOpen, setCreateOpen] = useState(false);
@@ -144,6 +151,64 @@ export function PromptDocumentList() {
   const openUpstream = async (doc: PromptDocumentSummary) => {
     setUpstreamOpen(true);
     await loadFull(doc);
+  };
+
+  /**
+   * The three decisions the upstream dialog offers (plan
+   * `2026-09-04-cross-tenant-policy-publishing` D4 / Phase 7). Each carries
+   * the open document's `current_version` as the concurrency check, and on
+   * success re-reads the list — every one of them moves the tracked version,
+   * so the badge state on the row is stale the moment coord answers — and
+   * closes the dialog, because the comparison it was showing no longer
+   * describes the document.
+   */
+  const afterDecision = async () => {
+    setUpstreamOpen(false);
+    await reload();
+  };
+
+  const handleAdoptUpstream = async (
+    doc: PromptDocument,
+    publication: Publication
+  ): Promise<boolean> => {
+    const res = await adoptUpstream(
+      doc.kind,
+      doc.name,
+      publication.publication_version,
+      doc.current_version
+    );
+    if (res) await afterDecision();
+    return res != null;
+  };
+
+  const handleKeepMine = async (
+    doc: PromptDocument,
+    publication: Publication
+  ): Promise<boolean> => {
+    const res = await keepMine(
+      doc.kind,
+      doc.name,
+      publication.publication_version,
+      doc.current_version
+    );
+    if (res) await afterDecision();
+    return res != null;
+  };
+
+  const handleMergeClauses = async (
+    doc: PromptDocument,
+    publication: Publication,
+    resolutions: Record<string, ClauseConflictChoice>
+  ): Promise<boolean> => {
+    const res = await applyMerge(
+      doc.kind,
+      doc.name,
+      publication.publication_version,
+      doc.current_version,
+      resolutions
+    );
+    if (res) await afterDecision();
+    return res != null;
   };
 
   /**
@@ -447,6 +512,11 @@ export function PromptDocumentList() {
         doc={editing}
         loadingBody={loadingBody}
         fetchPublication={fetchPublication}
+        onAdoptUpstream={handleAdoptUpstream}
+        onKeepMine={handleKeepMine}
+        fetchMergePreview={fetchMergePreview}
+        onMergeClauses={handleMergeClauses}
+        saving={deciding}
       />
 
       <ClauseManagerDialog
