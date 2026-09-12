@@ -10063,17 +10063,18 @@ def validated_group_name(
     ``cognito_admin.invalid_group_name_reason`` is the single definition of
     Cognito's ``groupName`` constraint (it landed with the create route,
     which validates its *body* field with it). Lifting it to a dependency
-    applies the same rule to the four routes that take the name in the
-    PATH — until now a malformed name there travelled all the way to AWS,
-    came back ``InvalidParameterException``, and was reported as **502**:
-    the endpoint telling the operator that AWS is broken when the only
-    thing wrong was a space in what they typed.
+    applies the same rule to every route that takes the name in the PATH
+    (four when it landed; the blast-radius preview made it five) — until
+    then a malformed name there travelled all the way to AWS, came back
+    ``InvalidParameterException``, and was reported as **502**: the endpoint
+    telling the operator that AWS is broken when the only thing wrong was a
+    space in what they typed.
 
-    A dependency rather than a call at the top of each handler so a fifth
+    A dependency rather than a call at the top of each handler so another
     route cannot be added past it, and so the check runs before the
-    handler's own work — the delete route in particular reads coord's
-    mapping table first, and there is no point spending that round-trip on
-    a name Cognito could never have held.
+    handler's own work — the delete route and its blast-radius preview in
+    particular read coord first, and there is no point spending that
+    round-trip on a name Cognito could never have held.
 
     **It must be declared AFTER ``current_user`` in every signature.**
     FastAPI solves dependencies in signature order, so declaring it first
@@ -10085,7 +10086,7 @@ def validated_group_name(
     rediscover per route. ``test_the_validator_does_not_run_before_the_admin_gate``
     pins it.
 
-    ``create_cognito_group`` is NOT one of these four: its name arrives in
+    ``create_cognito_group`` is NOT one of these: its name arrives in
     ``_CreateGroupBody``, and ``cognito_admin.create_group`` already runs
     the same check on it. Re-validating there would be a second, drifting
     copy of one rule.
@@ -10479,6 +10480,14 @@ async def create_cognito_group(
 # ⚠️ If you ever need more detail than the verdict carries, add it to the
 # blast-radius route. Do NOT reach back to the mappings list: it is scoped, and
 # it will lie to you exactly as convincingly as it did before.
+#
+# The dashboard's confirmation dialog reads the SAME verdict, through
+# ``GET /coord/cognito/groups/{group_name}/blast-radius`` below, which runs
+# ``_coord_group_blast_radius`` and nothing else. It used to derive its
+# preview from the mappings list and so under-reported exactly as the guards
+# once did — the preview said "no coord tenant mappings reference this group"
+# and the delete then 409'd. One reader for both is what keeps the preview and
+# the refusal from disagreeing.
 #
 # NOT an immediate sweep. Deleting the Cognito group does NOT trip coord's
 # 300s ``reconcile_home_tenant_drift``: that sweep reads ``claimed_groups``
@@ -11204,6 +11213,61 @@ async def delete_cognito_group(
         },
     )
     return {"ok": True}
+
+
+@router.get("/coord/cognito/groups/{group_name}/blast-radius")
+async def get_cognito_group_blast_radius(
+    request: Request,
+    # ``current_user`` FIRST, for the same signature-order reason as the
+    # delete (see :func:`validated_group_name`).
+    current_user: UserModel = Depends(require_admin),
+    group_name: str = Depends(validated_group_name),
+) -> dict[str, Any]:
+    """What deleting this group would take down — the DELETE's own verdict,
+    read ahead of time so the confirmation dialog shows it BEFORE the click.
+
+    Superuser-gated like the delete it previews. Read-only, so no audit row
+    and no rate limit, matching the sibling ``…/users`` read.
+
+    This exists because the dashboard's pre-delete preview used to be derived
+    from coord's tenant-scoped mappings LIST — the same read the guards
+    themselves were derived from until 2026-08-28, and wrong in the same way
+    (see the module comment above :data:`HOME_GROUP_SUFFIX`). After the guards
+    moved to the pool-wide verdict the backend could see MORE than the dialog:
+    the dialog said "no coord tenant mappings reference this group" and the
+    delete then 409'd. Nothing was destroyed, but a preview that contradicts
+    the guard it previews is one an operator learns to ignore. The dialog now
+    reads THIS route, which is the SAME reader the delete runs
+    (:func:`_coord_group_blast_radius`), so the two cannot disagree except by
+    the state changing between the read and the click — and the delete still
+    re-runs the check itself.
+
+    Same fail-closed contract as the delete: a coord failure is a **502**
+    ``mapping_check_unavailable`` / ``mapping_check_unreadable``, never a
+    zeroed verdict. The caller renders that as UNKNOWN. The response is the
+    parsed verdict with the same partial disclosure the 409 details carry —
+    own-tenant slugs named (sorted, deduplicated, via :func:`_display_slugs`),
+    every other tenant an integer — plus the two totals, so nothing here
+    can be read as "the list is the whole blast radius".
+    """
+    capture_caller_bearer(request)
+    # The reader's log events keep their ``cognito_group_delete_*`` names --
+    # they are the delete's, and renaming them per caller would split what a
+    # log reader greps for. This line, emitted BEFORE the read, is what says
+    # the failure that may follow belongs to a preview and not to a delete.
+    logger.info("cognito_group_blast_radius_preview", group_name=group_name)
+    radius = await _coord_group_blast_radius(group_name)
+    return {
+        "group_name": group_name,
+        "mapped_total": radius.mapped_total,
+        # PARTIAL BY DESIGN — `mapped_total` beside it is the honest size.
+        "mapped_own_tenant": list(_display_slugs(radius.mapped_own_tenant_slugs)),
+        "mapped_other_tenant_rows": radius.mapped_other_tenant_rows,
+        "mapped_unmaterialized_rows": radius.mapped_unmaterialized_rows,
+        "strands_total": radius.strands_total,
+        "strands_own_tenant": list(_display_slugs(radius.strands_own_tenant)),
+        "strands_other_tenant_count": radius.strands_other_tenant_count,
+    }
 
 
 @router.get("/coord/cognito/groups/{group_name}/users")

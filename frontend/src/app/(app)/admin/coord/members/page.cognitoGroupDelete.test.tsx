@@ -29,11 +29,25 @@
  * 6. **An unreadable TENANT-MAPPING table is UNKNOWN, never "none".** Same
  *    class as 5, other half of the blast radius, and the one that shipped
  *    broken: the effect's `catch` collapsed the failure to `[]`, and
- *    `mappings.length === 0` is what prints "no tenant mappings" on the row
- *    and "No coord tenant mappings reference this group." in the dialog. The
- *    four `unknown / not yet landed` tests below go red the moment a failed,
- *    in-flight or since-invalidated read is allowed to render as an empty one
- *    again.
+ *    `mappings.length === 0` is what prints "no mappings in your tenant" on
+ *    the row. The `unknown / not yet landed` tests below go red the moment a
+ *    failed, in-flight or since-invalidated read is allowed to render as an
+ *    empty one again.
+ * 7. **The confirmation shows the delete's OWN verdict, pool-wide.** Post-merge
+ *    follow-up to qontinui-web#1114 (plan
+ *    `2026-08-28-pool-wide-blast-radius-read-for-group-delete`, open question
+ *    2). The dialog used to derive its preview from the section's
+ *    `group-tenant-roles` read — coord's TENANT-SCOPED list — and so said
+ *    "No coord tenant mappings reference this group" about a group mapped
+ *    into another tenant, which the backend then 409'd. It now reads
+ *    `GET /coord/cognito/groups/{name}/blast-radius`, the same verdict the
+ *    guards run on, ONCE per open. The `pool-wide verdict` block pins: the
+ *    route and the moment it is read; the "none" sentence appearing only on a
+ *    zero verdict coord actually returned; a mapped or stranding verdict
+ *    naming what it may name, counting the rest, and DISABLING the confirm
+ *    (a guaranteed 409 is the `-home` rule again); a failed or malformed
+ *    read rendering as unknown with the confirm left ENABLED, because the
+ *    backend is the guard and refuses on its own.
  *
  * **Every test opens the "Cognito Groups" panel first.** Wave 4
  * (`feat(console): bring /members onto the console primitives`) folded all four
@@ -109,10 +123,22 @@ interface RouteState {
   mappingsMode: "ok" | "error" | "pending" | "malformed";
   usersByGroup: Record<string, Array<Record<string, unknown>> | "error">;
   deleteResponse: { status: number; body: unknown };
+  /**
+   * How `GET /coord/cognito/groups/{name}/blast-radius` answers — the
+   * dialog's ONE read of the delete's own verdict. A verdict object is served
+   * as a 200; the three no-answer modes mirror `mappingsMode`'s, because the
+   * arm most likely to be wrong is again the one with no answer.
+   */
+  blastRadius:
+    | { mode: "ok"; body: Record<string, unknown> }
+    | { mode: "error"; status: number; body: unknown }
+    | { mode: "pending" }
+    | { mode: "malformed" };
 }
 
 let state: RouteState;
 const deleteCalls: string[] = [];
+const blastRadiusCalls: string[] = [];
 
 function jsonResponse(status: number, body: unknown): Response {
   return {
@@ -141,6 +167,20 @@ function installRouter() {
       }
       if (path.endsWith("/coord/cognito/groups")) {
         return jsonResponse(200, { groups: state.groups });
+      }
+      const radius = path.match(
+        /\/coord\/cognito\/groups\/([^/]+)\/blast-radius$/
+      );
+      if (radius) {
+        blastRadiusCalls.push(decodeURIComponent(radius[1]));
+        const br = state.blastRadius;
+        if (br.mode === "error") return jsonResponse(br.status, br.body);
+        if (br.mode === "pending") return new Promise<Response>(() => {});
+        // 200, `res.ok`, and not a verdict.
+        if (br.mode === "malformed") {
+          return jsonResponse(200, { unexpected: "shape" });
+        }
+        return jsonResponse(200, br.body);
       }
       const users = path.match(
         /\/coord\/cognito\/groups\/([^/]+)\/users(\?|$)/
@@ -200,6 +240,46 @@ function mapping(group_id: string, tenant_slug: string, role: string) {
   };
 }
 
+/**
+ * The backend's blast-radius body, as the `ok` router state. Zero everywhere unless told otherwise —
+ * "deleting this group breaks nothing", the only verdict the confirm is
+ * enabled on. `mapped_total` defaults to the SUM of the three buckets, the
+ * invariant the backend itself enforces.
+ */
+function verdict(
+  overrides: Partial<{
+    group_name: string;
+    mapped_own_tenant: string[];
+    mapped_other_tenant_rows: number;
+    mapped_unmaterialized_rows: number;
+    mapped_total: number;
+    strands_own_tenant: string[];
+    strands_other_tenant_count: number;
+    strands_total: number;
+  }> = {}
+): { mode: "ok"; body: Record<string, unknown> } {
+  const own = overrides.mapped_own_tenant ?? [];
+  const other = overrides.mapped_other_tenant_rows ?? 0;
+  const unmaterialized = overrides.mapped_unmaterialized_rows ?? 0;
+  const strandsOwn = overrides.strands_own_tenant ?? [];
+  const strandsOther = overrides.strands_other_tenant_count ?? 0;
+  return {
+    mode: "ok",
+    body: {
+      group_name: overrides.group_name ?? "acme-devs",
+      mapped_total:
+        overrides.mapped_total ?? own.length + other + unmaterialized,
+      mapped_own_tenant: own,
+      mapped_other_tenant_rows: other,
+      mapped_unmaterialized_rows: unmaterialized,
+      strands_total:
+        overrides.strands_total ?? strandsOwn.length + strandsOther,
+      strands_own_tenant: strandsOwn,
+      strands_other_tenant_count: strandsOther,
+    },
+  };
+}
+
 function user(username: string) {
   return {
     username,
@@ -229,12 +309,18 @@ describe("/admin/coord/members — Cognito group delete", () => {
     vi.clearAllMocks();
     window.localStorage.clear();
     deleteCalls.length = 0;
+    blastRadiusCalls.length = 0;
     state = {
       groups: [group("acme-devs")],
       mappings: [mapping("acme-devs", "acme", "operator")],
       mappingsMode: "ok",
       usersByGroup: { "acme-devs": [user("ann"), user("bob")] },
       deleteResponse: { status: 200, body: { ok: true } },
+      // The section's list above says `acme` maps this group; the verdict
+      // says nothing does. The two are DIFFERENT reads and the tests below
+      // that reach the confirm need the confirm enabled, which only the
+      // verdict decides. Tests about the verdict set it explicitly.
+      blastRadius: verdict(),
     };
     installRouter();
   });
@@ -287,7 +373,7 @@ describe("/admin/coord/members — Cognito group delete", () => {
   // telling the operator there is nothing to break.
   // ---------------------------------------------------------------------
 
-  it("reports an unreadable tenant-mapping read as unknown, never as 'no tenant mappings'", async () => {
+  it("reports an unreadable tenant-mapping read as unknown, never as 'no mappings in your tenant'", async () => {
     state.mappingsMode = "error";
     const user_ = userEvent.setup();
     render(<MembersPage />);
@@ -303,11 +389,25 @@ describe("/admin/coord/members — Cognito group delete", () => {
     expect(
       within(blast).queryByTestId("cognito-group-unmapped-acme-devs")
     ).toBeNull();
-    expect(blast.textContent ?? "").not.toMatch(/no tenant mappings/i);
+    expect(blast.textContent ?? "").not.toMatch(/no mappings in your tenant/i);
   });
 
-  it("does not claim an empty blast radius in the confirmation when the mapping read failed", async () => {
-    state.mappingsMode = "error";
+  it("does not claim an empty blast radius in the confirmation when the verdict read failed", async () => {
+    // Item 7: the dialog's bullet is the VERDICT read, not the section's
+    // list. A failed list read leaves the dialog able to answer (below, the
+    // `pool-wide verdict` block); a failed verdict read is what this pins.
+    state.blastRadius = {
+      mode: "error",
+      status: 502,
+      body: {
+        detail: {
+          error: "mapping_check_unavailable",
+          coord_status: 404,
+          message:
+            "Refused: coord could not tell us what deleting this group would break.",
+        },
+      },
+    };
     const user_ = userEvent.setup();
     render(<MembersPage />);
     await openGroupsPanel(user_);
@@ -361,10 +461,10 @@ describe("/admin/coord/members — Cognito group delete", () => {
     expect(
       within(blast).queryByTestId("cognito-group-unmapped-acme-devs")
     ).toBeNull();
-    expect(blast.textContent ?? "").not.toMatch(/no tenant mappings/i);
+    expect(blast.textContent ?? "").not.toMatch(/no mappings in your tenant/i);
   });
 
-  it("treats a 200 with a malformed body as unknown, never as 'no mappings'", async () => {
+  it("treats a 200 with a malformed body as unknown, never as 'no mappings in your tenant'", async () => {
     // The status-only trap: `res.ok` is true, so a check that stops at the
     // status calls this a successful read. What the body actually carries is
     // no answer at all — and a `?? []` fallback would render that as the
@@ -383,17 +483,18 @@ describe("/admin/coord/members — Cognito group delete", () => {
     expect(
       within(blast).queryByTestId("cognito-group-unmapped-acme-devs")
     ).toBeNull();
-    expect(blast.textContent ?? "").not.toMatch(/no tenant mappings/i);
+    expect(blast.textContent ?? "").not.toMatch(/no mappings in your tenant/i);
 
-    // …and the confirmation must not claim an empty blast radius either.
+    // …and the confirmation is NOT derived from that list any more: it reads
+    // the pool-wide verdict itself, so a malformed list read leaves it able
+    // to answer from a read that did land.
     await user_.click(
       await screen.findByTestId("cognito-delete-group-acme-devs")
     );
-    const dialog = await screen.findByTestId(
-      "cognito-delete-confirm-acme-devs"
-    );
-    expect(dialog.textContent ?? "").not.toMatch(
-      /No coord tenant mappings reference this group/i
+    await waitFor(() =>
+      expect(
+        screen.getByTestId("cognito-delete-confirm-mappings-acme-devs")
+      ).toHaveTextContent(/No coord tenant mappings reference this group/i)
     );
   });
 
@@ -436,7 +537,7 @@ describe("/admin/coord/members — Cognito group delete", () => {
     expect(
       within(blast).queryByTestId("cognito-group-mapping-acme-devs-acme-operator")
     ).toBeNull();
-    expect(blast.textContent ?? "").not.toMatch(/no tenant mappings/i);
+    expect(blast.textContent ?? "").not.toMatch(/no mappings in your tenant/i);
   });
 
   it("spends no member probes on a panel nobody opened", async () => {
@@ -513,6 +614,7 @@ describe("/admin/coord/members — Cognito group delete", () => {
   });
 
   it("shows the mapped tenants inside the confirmation too", async () => {
+    state.blastRadius = verdict({ mapped_own_tenant: ["acme"] });
     const user_ = userEvent.setup();
     render(<MembersPage />);
     await openGroupsPanel(user_);
@@ -523,7 +625,7 @@ describe("/admin/coord/members — Cognito group delete", () => {
     const blast = await screen.findByTestId(
       "cognito-delete-confirm-acme-devs-blast-radius"
     );
-    expect(blast).toHaveTextContent("acme");
+    await waitFor(() => expect(blast).toHaveTextContent("acme"));
     await waitFor(() => expect(blast).toHaveTextContent("2 members"));
   });
 
@@ -561,6 +663,333 @@ describe("/admin/coord/members — Cognito group delete", () => {
     expect(message).toContain("remove the mapping first");
     expect(message).not.toContain("[object Object]");
     expect(message).not.toContain('{"detail"');
+  });
+
+  // ---------------------------------------------------------------------
+  // Item 7 — the confirmation reads the delete's OWN verdict, pool-wide.
+  // ---------------------------------------------------------------------
+
+  describe("pool-wide verdict in the confirmation", () => {
+    async function openConfirm(
+      user_: ReturnType<typeof userEvent.setup>
+    ): Promise<HTMLElement> {
+      await openGroupsPanel(user_);
+      await user_.click(
+        await screen.findByTestId("cognito-delete-group-acme-devs")
+      );
+      return screen.findByTestId("cognito-delete-confirm-acme-devs");
+    }
+
+    it("reads the blast-radius route for THIS group when the dialog opens, and not before", async () => {
+      const user_ = userEvent.setup();
+      render(<MembersPage />);
+      await openGroupsPanel(user_);
+      // The row is up, the section's list has landed, and the verdict has
+      // not been asked for: it is per-group and only the dialog needs it.
+      await screen.findByTestId("cognito-group-mapping-acme-devs-acme-operator");
+      expect(blastRadiusCalls).toEqual([]);
+
+      await user_.click(
+        await screen.findByTestId("cognito-delete-group-acme-devs")
+      );
+      await waitFor(() => expect(blastRadiusCalls).toEqual(["acme-devs"]));
+    });
+
+    it("says 'none' only when coord's pool-wide verdict is zero — and says it is pool-wide", async () => {
+      // The section's list says `acme` maps this group (the default state);
+      // the verdict says nothing does. The dialog must follow the VERDICT:
+      // that is the whole point of reading it.
+      state.blastRadius = verdict();
+      const user_ = userEvent.setup();
+      render(<MembersPage />);
+      await openConfirm(user_);
+
+      const bullet = await screen.findByTestId(
+        "cognito-delete-confirm-mappings-acme-devs"
+      );
+      await waitFor(() =>
+        expect(bullet).toHaveTextContent(
+          /No coord tenant mappings reference this group/i
+        )
+      );
+      // The old sentence was the same words about a tenant-scoped read. The
+      // qualifier is what makes it TRUE now, so it is asserted, not implied.
+      expect(bullet).toHaveTextContent(/pool-wide/i);
+      expect(
+        screen.queryByTestId("cognito-delete-confirm-strands-acme-devs")
+      ).toBeNull();
+
+      // …and the confirm is reachable: a verdict that breaks nothing must
+      // not become a blanket denial.
+      await user_.type(
+        screen.getByTestId("cognito-delete-confirm-acme-devs-phrase-input"),
+        "acme-devs"
+      );
+      expect(
+        screen.getByTestId("cognito-delete-confirm-acme-devs-confirm")
+      ).toBeEnabled();
+    });
+
+    it("a mapping in ANOTHER tenant is reported and disables the confirm, even though the section's list shows none", async () => {
+      // THE regression this follow-up exists for. On the section's list
+      // (tenant-scoped) this group maps nowhere; the pool-wide verdict says
+      // one row in a tenant the caller does not administer. Before: "No
+      // coord tenant mappings reference this group." beside an enabled
+      // confirm, then a 409.
+      state.mappings = [];
+      state.blastRadius = verdict({ mapped_other_tenant_rows: 1 });
+      const user_ = userEvent.setup();
+      render(<MembersPage />);
+      await openConfirm(user_);
+
+      const bullet = await screen.findByTestId(
+        "cognito-delete-confirm-mappings-acme-devs"
+      );
+      await waitFor(() =>
+        expect(bullet).toHaveTextContent(
+          /1 mapping in tenants you do not administer/i
+        )
+      );
+      expect(bullet).toHaveTextContent(/1 mapping in all/i);
+      expect(bullet).not.toHaveTextContent(
+        /No coord tenant mappings reference this group/i
+      );
+      // Nothing of the caller's is listed, so "the ones in your tenant,
+      // above" would point at nothing; the tail names who CAN clear it.
+      expect(bullet).toHaveTextContent(
+        /by an administrator of the tenants they are in/i
+      );
+      expect(bullet).not.toHaveTextContent(/above/i);
+
+      await user_.type(
+        screen.getByTestId("cognito-delete-confirm-acme-devs-phrase-input"),
+        "acme-devs"
+      );
+      // Typing the name is not enough: the backend is certain to 409 and the
+      // dialog knows it, so the confirm is gated the way the `-home` one is.
+      expect(
+        screen.getByTestId("cognito-delete-confirm-acme-devs-confirm")
+      ).toBeDisabled();
+      expect(deleteCalls).toEqual([]);
+    });
+
+    it("names what it may name and COUNTS the rest, with the honest total beside it", async () => {
+      state.blastRadius = verdict({
+        mapped_own_tenant: ["acme", "beta-corp"],
+        mapped_other_tenant_rows: 2,
+        mapped_unmaterialized_rows: 1,
+      });
+      const user_ = userEvent.setup();
+      render(<MembersPage />);
+      await openConfirm(user_);
+
+      const bullet = await screen.findByTestId(
+        "cognito-delete-confirm-mappings-acme-devs"
+      );
+      await waitFor(() => expect(bullet).toHaveTextContent("acme, beta-corp"));
+      expect(bullet).toHaveTextContent(/the ones in your tenant, above/i);
+      expect(bullet).toHaveTextContent(
+        /2 further mappings in tenants you do not administer/i
+      );
+      expect(bullet).toHaveTextContent(
+        /1 mapping into tenants that do not exist yet/i
+      );
+      // 2 named + 2 + 1: the total is the ROW count, not the names.
+      expect(bullet).toHaveTextContent(/5 mappings in all/i);
+    });
+
+    it("a stranding verdict gets its own amber bullet and disables the confirm — there is no override", async () => {
+      state.blastRadius = verdict({
+        mapped_own_tenant: ["acme"],
+        strands_own_tenant: ["acme"],
+        strands_other_tenant_count: 2,
+      });
+      const user_ = userEvent.setup();
+      render(<MembersPage />);
+      await openConfirm(user_);
+
+      const strands = await screen.findByTestId(
+        "cognito-delete-confirm-strands-acme-devs"
+      );
+      expect(strands).toHaveTextContent(/only thing conferring admin on/i);
+      expect(strands).toHaveTextContent(/acme/);
+      expect(strands).toHaveTextContent(
+        /2 further tenants you do not administer/i
+      );
+      expect(strands).toHaveTextContent(/3 tenants in all/i);
+      expect(strands).toHaveTextContent(/no override/i);
+
+      await user_.type(
+        screen.getByTestId("cognito-delete-confirm-acme-devs-phrase-input"),
+        "acme-devs"
+      );
+      expect(
+        screen.getByTestId("cognito-delete-confirm-acme-devs-confirm")
+      ).toBeDisabled();
+    });
+
+    it("a stranding verdict alone (nothing mapped in the caller's view) still disables", async () => {
+      // Guard 3 can fire for a tenant the caller cannot see at all. The
+      // mapping bullet then reads mapped-elsewhere and the strand bullet
+      // carries the no-override reason; neither is "none".
+      state.mappings = [];
+      state.blastRadius = verdict({
+        mapped_other_tenant_rows: 1,
+        strands_other_tenant_count: 1,
+      });
+      const user_ = userEvent.setup();
+      render(<MembersPage />);
+      await openConfirm(user_);
+
+      const strands = await screen.findByTestId(
+        "cognito-delete-confirm-strands-acme-devs"
+      );
+      expect(strands).toHaveTextContent(/1 tenant you do not administer/i);
+      await user_.type(
+        screen.getByTestId("cognito-delete-confirm-acme-devs-phrase-input"),
+        "acme-devs"
+      );
+      expect(
+        screen.getByTestId("cognito-delete-confirm-acme-devs-confirm")
+      ).toBeDisabled();
+    });
+
+    it("renders the backend's own 502 sentence as unknown and leaves the confirm ENABLED", async () => {
+      // Unknown is not a refusal the dialog may impose: the backend re-runs
+      // the read and refuses on its own. Disabling here would make a coord
+      // blip a dead end while implying the dashboard is the guard.
+      state.blastRadius = {
+        mode: "error",
+        status: 502,
+        body: {
+          detail: {
+            error: "mapping_check_unavailable",
+            coord_status: 404,
+            message: "Refused: coord has not yet deployed the blast-radius read.",
+          },
+        },
+      };
+      const user_ = userEvent.setup();
+      render(<MembersPage />);
+      await openConfirm(user_);
+
+      const bullet = await screen.findByTestId(
+        "cognito-delete-confirm-mappings-acme-devs"
+      );
+      await waitFor(() => expect(bullet).toHaveTextContent(/could not be read/i));
+      expect(bullet).toHaveTextContent(/unknown/i);
+      // The CAUSE — code + coord's status — and NOT the delete's refusal
+      // prose: "Nothing was deleted" is about a click nobody made yet.
+      expect(bullet).toHaveTextContent(
+        /mapping_check_unavailable, coord answered 404/
+      );
+      expect(bullet).not.toHaveTextContent(/not yet deployed the blast-radius read/i);
+      expect(bullet).not.toHaveTextContent(/Nothing was deleted/i);
+      expect(bullet).toHaveTextContent(/server-side/i);
+      expect(bullet).not.toHaveTextContent(/No coord tenant mappings/i);
+
+      await user_.type(
+        screen.getByTestId("cognito-delete-confirm-acme-devs-phrase-input"),
+        "acme-devs"
+      );
+      expect(
+        screen.getByTestId("cognito-delete-confirm-acme-devs-confirm")
+      ).toBeEnabled();
+    });
+
+    it("renders an UNREADABLE verdict's reason, and does not claim coord never answered", async () => {
+      // `mapping_check_unreadable` carries NO `coord_status` — coord did
+      // answer, with a body that is not the verdict — and a `reason`. The
+      // absent key must not be read as `null` ("never completed an answer"):
+      // that would send the operator to check transport when the thing to
+      // check is coord's body, or a proxy in front of it.
+      state.blastRadius = {
+        mode: "error",
+        status: 502,
+        body: {
+          detail: {
+            error: "mapping_check_unreadable",
+            reason: "the body carries no mapped_total",
+            message: "Refused: coord's answer could not be read. Nothing was deleted.",
+          },
+        },
+      };
+      const user_ = userEvent.setup();
+      render(<MembersPage />);
+      await openConfirm(user_);
+
+      const bullet = await screen.findByTestId(
+        "cognito-delete-confirm-mappings-acme-devs"
+      );
+      await waitFor(() => expect(bullet).toHaveTextContent(/could not be read/i));
+      expect(bullet).toHaveTextContent(
+        /mapping_check_unreadable: the body carries no mapped_total/
+      );
+      expect(bullet).not.toHaveTextContent(/never completed/i);
+      expect(bullet).not.toHaveTextContent(/Nothing was deleted/i);
+    });
+
+    it("treats a 200 that is not a verdict as unknown, never as 'none'", async () => {
+      // The status-only trap again: `res.ok`, and no counts. `?? 0` on a
+      // missing `mapped_total` would print the all-clear this whole change
+      // exists to stop fabricating.
+      state.blastRadius = { mode: "malformed" };
+      const user_ = userEvent.setup();
+      render(<MembersPage />);
+      await openConfirm(user_);
+
+      const bullet = await screen.findByTestId(
+        "cognito-delete-confirm-mappings-acme-devs"
+      );
+      await waitFor(() => expect(bullet).toHaveTextContent(/could not be read/i));
+      expect(bullet).toHaveTextContent(/unknown/i);
+      expect(bullet).not.toHaveTextContent(/No coord tenant mappings/i);
+    });
+
+    it("says it is still reading until the verdict lands", async () => {
+      state.blastRadius = { mode: "pending" };
+      const user_ = userEvent.setup();
+      render(<MembersPage />);
+      await openConfirm(user_);
+
+      const bullet = await screen.findByTestId(
+        "cognito-delete-confirm-mappings-acme-devs"
+      );
+      expect(bullet).toHaveTextContent(/reading coord/i);
+      expect(bullet).not.toHaveTextContent(/No coord tenant mappings/i);
+      expect(bullet).not.toHaveTextContent(/could not be read/i);
+    });
+
+    it("re-reads on every open, so a mapping removed in between is not shown as still refusing", async () => {
+      state.blastRadius = verdict({ mapped_own_tenant: ["acme"] });
+      const user_ = userEvent.setup();
+      render(<MembersPage />);
+      await openConfirm(user_);
+      await waitFor(() =>
+        expect(
+          screen.getByTestId("cognito-delete-confirm-mappings-acme-devs")
+        ).toHaveTextContent(/Mapped to/i)
+      );
+      await user_.click(
+        screen.getByTestId("cognito-delete-confirm-acme-devs-cancel")
+      );
+      await waitFor(() =>
+        expect(
+          screen.queryByTestId("cognito-delete-confirm-acme-devs")
+        ).toBeNull()
+      );
+
+      // The operator removed the mapping elsewhere; coord's verdict is now
+      // zero. Re-opening must ask again rather than replay the old refusal.
+      state.blastRadius = verdict();
+      await user_.click(screen.getByTestId("cognito-delete-group-acme-devs"));
+      await waitFor(() =>
+        expect(
+          screen.getByTestId("cognito-delete-confirm-mappings-acme-devs")
+        ).toHaveTextContent(/No coord tenant mappings reference this group/i)
+      );
+      expect(blastRadiusCalls).toEqual(["acme-devs", "acme-devs"]);
+    });
   });
 
   describe("a <slug>-home group", () => {
