@@ -1715,6 +1715,38 @@ interface BlastRadiusVerdict {
 }
 
 /**
+ * A short cause for a failed blast-radius PREVIEW read.
+ *
+ * The backend's 502 detail is structured (`{error, coord_status, message}`)
+ * and its `message` is the delete's own refusal sentence. For a preview the
+ * useful part is the code and coord's status — "mapping_check_unavailable,
+ * coord answered 404" tells an operator the route is not deployed yet; the
+ * message's "Nothing was deleted" tells them about a click they never made.
+ * Anything not in that shape falls back to `backendErrorMessage`.
+ */
+async function blastRadiusReadCause(res: Response): Promise<string> {
+  const text = await res.text();
+  try {
+    const detail = (JSON.parse(text) as { detail?: unknown })?.detail;
+    if (detail && typeof detail === "object") {
+      const { error, coord_status } = detail as {
+        error?: unknown;
+        coord_status?: unknown;
+      };
+      if (typeof error === "string" && error) {
+        return typeof coord_status === "number"
+          ? `${error}, coord answered ${coord_status}`
+          : `${error}, coord never completed an answer`;
+      }
+    }
+  } catch {
+    // Not JSON — fall through to the generic reader, which returns the raw
+    // body when it is a plain-text gateway sentence.
+  }
+  return messageFromErrorBody(text, res.status);
+}
+
+/**
  * The dialog's read of the verdict. `idle` while the dialog is closed;
  * `error` is UNKNOWN — a failed, refused or unreadable read — and is never
  * rendered as "breaks nothing".
@@ -1773,8 +1805,12 @@ function parseBlastRadiusVerdict(body: unknown): BlastRadiusVerdict | null {
   };
 }
 
+function pluralNoun(n: number, noun: string): string {
+  return `${noun}${n === 1 ? "" : "s"}`;
+}
+
 function plural(n: number, noun: string): string {
-  return `${n} ${noun}${n === 1 ? "" : "s"}`;
+  return `${n} ${pluralNoun(n, noun)}`;
 }
 
 /**
@@ -1797,8 +1833,8 @@ function renderAffected(
     const more = named.length ? "further " : "";
     parts.push(
       unit === "mapping"
-        ? `${other} ${more}mapping${other === 1 ? "" : "s"} in tenants you do not administer`
-        : `${other} ${more}tenant${other === 1 ? "" : "s"} you do not administer`
+        ? `${other} ${more}${pluralNoun(other, "mapping")} in tenants you do not administer`
+        : `${other} ${more}${pluralNoun(other, "tenant")} you do not administer`
     );
   }
   if (unmaterialized) {
@@ -1825,7 +1861,12 @@ function renderAffected(
  * gateway or proxy error IS the sentence, so that one is returned as-is.
  */
 async function backendErrorMessage(res: Response): Promise<string> {
-  const text = await res.text();
+  return messageFromErrorBody(await res.text(), res.status);
+}
+
+/** The body-level half of {@link backendErrorMessage}, for callers that
+ * have already consumed `res.text()`. */
+function messageFromErrorBody(text: string, status: number): string {
   try {
     const parsed = JSON.parse(text) as { detail?: unknown };
     const detail = parsed?.detail;
@@ -1839,12 +1880,12 @@ async function backendErrorMessage(res: Response): Promise<string> {
     // or a brace-blob where the operator expects a reason, which is the same
     // defect as `[object Object]` one shape along. The status is at least true,
     // and it is what these call sites showed before they were routed here.
-    return `HTTP ${res.status}`;
+    return `HTTP ${status}`;
   } catch {
     // Not JSON — a plain-text gateway or proxy body IS the message, so fall
     // through to the raw body rather than discarding it for the status.
   }
-  return text.trim() || `HTTP ${res.status}`;
+  return text.trim() || `HTTP ${status}`;
 }
 
 /**
@@ -1933,7 +1974,9 @@ function CognitoGroupItem({
   // verdict would show them the refusal they just cleared.
   useEffect(() => {
     if (!confirmOpen) {
-      setBlastRadius({ state: "idle" });
+      // Functional so a row that is already idle (every row, at mount) does
+      // not re-render over a fresh-but-equal object.
+      setBlastRadius((prev) => (prev.state === "idle" ? prev : { state: "idle" }));
       return;
     }
     let cancelled = false;
@@ -1947,8 +1990,11 @@ function CognitoGroupItem({
         );
         // A 502 here is the backend's own `mapping_check_unavailable` /
         // `mapping_check_unreadable` — coord could not say, so neither can
-        // we. Its sentence is the one to show.
-        if (!res.ok) throw new Error(await backendErrorMessage(res));
+        // we. Render the CAUSE (`error` + coord's status), not the detail's
+        // `message`: that prose is the DELETE's refusal ("Refused … Nothing
+        // was deleted …"), written for the moment after a click, and in a
+        // preview nothing was attempted.
+        if (!res.ok) throw new Error(await blastRadiusReadCause(res));
         const verdict = parseBlastRadiusVerdict(await res.json());
         if (verdict === null) {
           throw new Error("the blast-radius body is not a verdict");
@@ -2293,7 +2339,11 @@ function CognitoGroupItem({
               in coord&apos;s group → tenant → role table (
               {plural(blastRadius.verdict.mapped_total, "mapping")} in all).
               The backend will refuse this delete until those mappings are
-              removed — the ones in your tenant, above.
+              removed
+              {blastRadius.verdict.mapped_own_tenant.length
+                ? " — the ones in your tenant, above"
+                : " — by an administrator of the tenants they are in"}
+              .
             </li>
           )}
           {blastRadius.state === "ok" &&
