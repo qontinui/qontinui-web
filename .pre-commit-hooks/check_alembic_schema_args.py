@@ -38,7 +38,10 @@ drop_constraint, create_unique_constraint, create_check_constraint,
 rename_table, batch_alter_table.
 
 Raw SQL inside ``op.execute("…")``: also gated, with a regex-based
-audit of CREATE / ALTER / DROP / REFERENCES / INDEX-ON statements.
+audit of CREATE TABLE / ALTER TABLE / DROP TABLE / REFERENCES / INDEX-ON
+/ DROP INDEX statements. DROP INDEX audits every name in its
+comma-separated list: an index name carries no schema of its own, so an
+unqualified one resolves against search_path.
 Closes the f9d3e8a4c1b6 / add_arq_job_id_to_training_jobs class of
 bugs (2026-05-07 incident: an unqualified ``CREATE TABLE
 regression_suites`` and ``op.add_column("training_jobs", …)`` without
@@ -186,7 +189,45 @@ _DDL_PATTERNS = [
             re.IGNORECASE,
         ),
     ),
+    # DROP INDEX [CONCURRENTLY] [IF EXISTS] <name> [, <name> …] [CASCADE | RESTRICT]
+    #
+    # The only pattern whose ``ident`` group can hold a comma-separated LIST:
+    # PostgreSQL drops several indexes in one statement, and every name in the
+    # list is resolved against search_path independently, so every one must be
+    # qualified. ``_check_raw_sql`` splits the group with ``_split_ident_list``.
+    # A trailing ``CASCADE`` / ``RESTRICT`` is not preceded by a comma, so the
+    # list stops before it and it is never captured as a name.
+    #
+    # Without this entry an unqualified ``DROP INDEX idx_foo`` passed the gate
+    # (found by the independent reviewer of qontinui-web#1326): unlike CREATE
+    # INDEX, whose ``ON <table>`` identifier is audited, a DROP INDEX names only
+    # the index, so nothing else in the statement carried a schema.
+    (
+        "DROP INDEX",
+        re.compile(
+            r"\bDROP\s+INDEX\s+(?:CONCURRENTLY\s+)?(?:IF\s+EXISTS\s+)?(?P<ident>"
+            + _IDENT
+            + r"(?:\s*\.\s*"
+            + _IDENT
+            + r")?(?:\s*,\s*"
+            + _IDENT
+            + r"(?:\s*\.\s*"
+            + _IDENT
+            + r")?)*)",
+            re.IGNORECASE,
+        ),
+    ),
 ]
+
+# One possibly-qualified identifier, used to split a captured ``ident`` group
+# that may hold a comma-separated list (DROP INDEX). A single identifier
+# splits to itself, so every pattern goes through the same loop.
+_ONE_IDENT = re.compile(_IDENT + r"(?:\s*\.\s*" + _IDENT + r")?")
+
+
+def _split_ident_list(group: str) -> list[str]:
+    """Split a captured identifier group into its individual identifiers."""
+    return [m.group(0) for m in _ONE_IDENT.finditer(group)]
 
 
 def _strip_sql_comments(sql: str) -> str:
@@ -236,37 +277,39 @@ def _check_raw_sql(call: ast.Call) -> list[tuple[int, str]]:
     seen: set[tuple[int, str, str]] = set()
     for label, pattern in _DDL_PATTERNS:
         for m in pattern.finditer(body):
-            ident = m.group("ident")
-            schema = _ident_schema(ident)
-            if schema is None:
-                bare = ident.strip().strip('"')
-                if bare in RAW_SQL_UNQUALIFIED_OK:
-                    continue
-                key = (call.lineno, label, ident.strip())
-                if key in seen:
-                    continue
-                seen.add(key)
-                violations.append(
-                    (
-                        call.lineno,
-                        f"op.execute(...) raw SQL: {label} references unqualified "
-                        f"identifier {ident.strip()!r}; schema-qualify it (one of: "
-                        f"{sorted(RAW_SQL_ALLOWED_SCHEMAS)})",
+            # A DROP INDEX group may name several indexes; every other
+            # pattern's group splits to exactly one identifier.
+            for ident in _split_ident_list(m.group("ident")):
+                schema = _ident_schema(ident)
+                if schema is None:
+                    bare = ident.strip().strip('"')
+                    if bare in RAW_SQL_UNQUALIFIED_OK:
+                        continue
+                    key = (call.lineno, label, ident.strip())
+                    if key in seen:
+                        continue
+                    seen.add(key)
+                    violations.append(
+                        (
+                            call.lineno,
+                            f"op.execute(...) raw SQL: {label} references unqualified "
+                            f"identifier {ident.strip()!r}; schema-qualify it (one of: "
+                            f"{sorted(RAW_SQL_ALLOWED_SCHEMAS)})",
+                        )
                     )
-                )
-            elif schema not in RAW_SQL_ALLOWED_SCHEMAS:
-                key = (call.lineno, label, ident.strip())
-                if key in seen:
-                    continue
-                seen.add(key)
-                violations.append(
-                    (
-                        call.lineno,
-                        f"op.execute(...) raw SQL: {label} references "
-                        f"{ident.strip()!r} in schema {schema!r} — not in allowed "
-                        f"set {sorted(RAW_SQL_ALLOWED_SCHEMAS)}",
+                elif schema not in RAW_SQL_ALLOWED_SCHEMAS:
+                    key = (call.lineno, label, ident.strip())
+                    if key in seen:
+                        continue
+                    seen.add(key)
+                    violations.append(
+                        (
+                            call.lineno,
+                            f"op.execute(...) raw SQL: {label} references "
+                            f"{ident.strip()!r} in schema {schema!r} — not in allowed "
+                            f"set {sorted(RAW_SQL_ALLOWED_SCHEMAS)}",
+                        )
                     )
-                )
     return violations
 
 
