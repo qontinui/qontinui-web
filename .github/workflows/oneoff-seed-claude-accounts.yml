@@ -11,9 +11,13 @@ on:
   workflow_dispatch:
     inputs:
       email:
-        description: "Login email of the user to seed (auth.users.email)"
+        description: "Login email of the user to seed (auth.users.email). Leave empty if using device_id instead."
         type: string
-        required: true
+        required: false
+      device_id:
+        description: "device_id of one of the user's already-paired runners (coord.devices.device_id), resolves the owning user via that pairing. Leave empty if using email instead."
+        type: string
+        required: false
       dry_run:
         description: "Log what would change, write nothing"
         type: boolean
@@ -42,9 +46,21 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ env.AWS_REGION }}
 
+      - name: Validate exactly one of email/device_id was given
+        run: |
+          if [ -z "${{ inputs.email }}" ] && [ -z "${{ inputs.device_id }}" ]; then
+            echo "::error::give either email or device_id"
+            exit 1
+          fi
+          if [ -n "${{ inputs.email }}" ] && [ -n "${{ inputs.device_id }}" ]; then
+            echo "::error::give only one of email / device_id, not both"
+            exit 1
+          fi
+
       - name: Run the seed task
         env:
           SEED_EMAIL: ${{ inputs.email }}
+          SEED_DEVICE_ID: ${{ inputs.device_id }}
           SEED_DRY_RUN: ${{ inputs.dry_run }}
         run: |
           set -uo pipefail
@@ -53,7 +69,7 @@ jobs:
           # Build the containerOverrides purely from env vars (never interpolated
           # into a shell/JSON string directly) so an email containing quotes or
           # shell metacharacters cannot break the command or escape the JSON.
-          OVERRIDES=$(python3 -c "import json, os; command = ['python', '-m', 'scripts.seed_claude_accounts', '--email', os.environ['SEED_EMAIL']] + (['--dry-run'] if os.environ.get('SEED_DRY_RUN') == 'true' else []); print(json.dumps({'containerOverrides': [{'name': os.environ['ECS_CONTAINER'], 'command': command}]}))")
+          OVERRIDES=$(python3 -c "import json, os; target = ['--email', os.environ['SEED_EMAIL']] if os.environ.get('SEED_EMAIL') else ['--device-id', os.environ['SEED_DEVICE_ID']]; command = ['python', '-m', 'scripts.seed_claude_accounts'] + target + (['--dry-run'] if os.environ.get('SEED_DRY_RUN') == 'true' else []); print(json.dumps({'containerOverrides': [{'name': os.environ['ECS_CONTAINER'], 'command': command}]}))")
           echo "overrides: $OVERRIDES"
 
           TASK_ARN=$(aws ecs run-task \
