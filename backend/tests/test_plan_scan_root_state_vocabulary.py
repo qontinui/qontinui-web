@@ -303,7 +303,7 @@ VERDICT_PREFIXES = ("observation_stale:", "reading_superseded:", "ref_stale:")
 
 def test_the_ref_stale_prefix_is_what_the_route_actually_emits() -> None:
     """The frontend's tense rule depends on this string. Pin it here."""
-    from app.api.v1.endpoints.plan_library_scan_roots import (
+    from app.services.plan_scan_root_health import (
         REF_STALE_ZERO_FLOOR_DETAIL,
         ref_stale_zero_behind_detail,
     )
@@ -321,7 +321,7 @@ def test_every_verdict_detail_names_its_rule_with_a_known_prefix() -> None:
     regression. So each emitted detail is checked to start with one of the
     three the panel knows.
     """
-    from app.api.v1.endpoints.plan_library_scan_roots import (
+    from app.services.plan_scan_root_health import (
         NO_OBSERVATION_DETAIL,
         REF_STALE_ZERO_FLOOR_DETAIL,
         ref_stale_zero_behind_detail,
@@ -365,15 +365,15 @@ def _row(**overrides: object) -> PlanScanRootObservation:
 
 def test_the_other_two_verdicts_also_name_their_rule_with_a_known_prefix() -> None:
     """``observation_stale:`` and ``reading_superseded:`` are built inline in
-    the route rather than as constants, so they are pinned by RENDERING a row
-    that triggers each rule — which needs no database.
+    ``render_row`` rather than as constants, so they are pinned by RENDERING a
+    row that triggers each rule — which needs no database.
 
     Together with the two ``ref_stale`` constants above, that is every verdict
     detail the route can emit, each checked to carry a prefix the panel knows.
     A reason that lost its prefix would silently demote every affected row to
     the frontend's hedged arm.
     """
-    from app.api.v1.endpoints.plan_library_scan_roots import (
+    from app.services.plan_scan_root_health import (
         FRESH_WITHIN_SECS,
         render_row,
     )
