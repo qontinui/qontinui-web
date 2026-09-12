@@ -85,6 +85,7 @@ from app.api.v1.endpoints import (
     pair_codes,
     phase_results,
     plan_library,
+    plan_library_scan_roots,
     project_files,
     project_images,
     project_screenshots,
@@ -230,6 +231,16 @@ api_router.include_router(operations.router, prefix="/operations", tags=["operat
 # Plan & Prompt Library — versioned store for plans, prompts, investigation
 # reports and handoffs (agent.work_artifacts). Phase 1 of
 # ``2026-08-10-plan-and-prompt-library-in-web``.
+#
+# ⚠️ ORDER IS LOAD-BEARING: the scan-roots router MUST be included before
+# ``plan_library.router``. That router declares ``GET /{artifact_id}`` under
+# the same prefix, and FastAPI does not fall through on a failed path-param
+# conversion, so ``GET /plan-library/scan-roots`` would otherwise be matched by
+# ``/{artifact_id}`` and answered 422. Pinned by
+# ``tests/test_plan_library_scan_roots.py``.
+api_router.include_router(
+    plan_library_scan_roots.router, prefix="/plan-library", tags=["plan-library"]
+)
 api_router.include_router(
     plan_library.router, prefix="/plan-library", tags=["plan-library"]
 )
