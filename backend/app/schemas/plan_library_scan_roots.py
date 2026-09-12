@@ -256,8 +256,61 @@ class ScanRootRow(BaseModel):
     observation_fresh: bool
 
 
+#: A roll-up's verdict: ``measured`` when at least one of its devices has a
+#: ``measured`` VERDICT, otherwise ``unknown``.
+ScanRootRollupState = Literal["measured", "unknown"]
+
+
+class ScanRootSourceRollup(BaseModel):
+    """Every device feeding ONE scan source, folded to the corpus's question.
+
+    Any feeder can add a plan to the corpus, so how far behind the corpus is
+    is bounded by its LEAST-behind current feeder: ``min_behind``. It is drawn
+    only from rows whose ``state`` VERDICT is ``measured`` — a device that went
+    quiet, was contradicted, or reported a 0-behind floor contributes no
+    number, so a stale feeder's old low reading cannot understate the gap.
+
+    The roll-up still names EVERY feeder, because a lagging device is not
+    harmless just because a current one exists: it can write an older body
+    over a newer head. ``lagging_device_ids`` are the measured devices
+    reporting more commits behind than ``min_behind``; ``unmeasured_device_ids``
+    are the rest, whose rows say why.
+    """
+
+    #: The artifact upsert's ``source_repo`` form, as the devices reported it.
+    #: ``null`` groups the readings that named none.
+    source_repo: str | None
+    #: ``unknown`` when no device here has a ``measured`` verdict.
+    state: ScanRootRollupState
+    #: A ``no_measured_reading:`` line when ``unknown``; null when ``measured``.
+    detail: str | None
+    #: Every device whose stored reading names this ``source_repo``.
+    device_count: int
+    #: How many of them have a ``measured`` verdict.
+    measured_count: int
+    #: The fewest commits behind among the ``measured`` verdicts. ``null`` when
+    #: ``unknown`` — NOT 0: no current feeder established any distance.
+    min_behind: int | None
+    #: ``True`` when every device reporting ``min_behind`` counted against a
+    #: stale or unaged ref, so the minimum is itself a LOWER BOUND ("at least
+    #: N"). ``null`` exactly when ``min_behind`` is.
+    min_behind_is_floor: bool | None
+    #: The ``measured`` devices reporting exactly ``min_behind``.
+    least_behind_device_ids: list[UUID]
+    #: The ``measured`` devices reporting more than ``min_behind`` (for a floor
+    #: row: at least that many).
+    lagging_device_ids: list[UUID]
+    #: Devices whose verdict is anything but ``measured``.
+    unmeasured_device_ids: list[UUID]
+
+
 class ScanRootListResponse(BaseModel):
-    """Every device's latest reading for the caller's organization."""
+    """Every device's latest reading for the caller's organization.
+
+    Served by ``GET /plan-library/scan-roots`` and, identically, as
+    ``corpus_health.scan_roots`` on every plan-library list page and on
+    ``/candidates`` — one builder renders all three.
+    """
 
     #: ``"reported"`` when at least one device has a row; ``"unknown"`` when
     #: none has — an empty list is NOT "every feeder is current".
@@ -272,6 +325,10 @@ class ScanRootListResponse(BaseModel):
     #: ``fresh_count == 0`` means every feeder has gone quiet.
     fresh_count: int
     rows: list[ScanRootRow]
+    #: One roll-up per distinct ``source_repo`` over ``rows`` — named sources
+    #: in order, then the ``null`` group. Empty exactly when ``rows`` is, and
+    #: then ``state`` is ``unknown``: an empty roll-up is not "no drift".
+    by_source_repo: list[ScanRootSourceRollup]
 
 
 class ScanRootReportResponse(BaseModel):

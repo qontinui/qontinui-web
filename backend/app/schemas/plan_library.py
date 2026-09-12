@@ -36,6 +36,7 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.schemas.base import BaseORMSchema, IsoDatetime
+from app.schemas.plan_library_scan_roots import ScanRootListResponse
 
 WorkArtifactKind = Literal[
     "investigation_prompt",
@@ -520,6 +521,14 @@ class CorpusHealth(BaseModel):
     #: epoch. Last TOUCHED, not last captured (see ``CaptureDoorHealth``).
     newest_updated_at: IsoDatetime | None = None
     capture: CaptureHealthResponse
+    #: How far the directories FEEDING this corpus are from their default
+    #: branch, one judged reading per reporting device plus a per-source
+    #: roll-up — ``GET /plan-library/scan-roots``, from the same builder
+    #: (plan ``2026-09-11-the-plan-corpus-scan-root-does-not-report-its-own-drift``).
+    #: ``plan_count`` says what the corpus holds; this says whether its feeders
+    #: are current. ``state: "unknown"`` with no rows means no device has
+    #: reported — never "every feeder is current".
+    scan_roots: ScanRootListResponse
 
 
 class WorkArtifactListResponse(BaseModel):
@@ -715,6 +724,11 @@ class PlanCandidateResponse(BaseModel):
     #: Unpaged count of open follow-ups, so a truncated ``open_followups``
     #: never reads as the whole queue.
     open_followup_total: int = 0
+    #: The same block every ``GET /plan-library`` page carries, so a consumer
+    #: ranking these candidates learns in the same read whether the corpus
+    #: they came from is complete and whether its feeders are current. Covers
+    #: the WHOLE corpus, not this page.
+    corpus_health: CorpusHealth
 
 
 # ───────── three-way status reconciliation (Phase 4) ─────────

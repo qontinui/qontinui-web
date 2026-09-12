@@ -124,6 +124,9 @@ function listed(
     count: rows.length,
     fresh_count: rows.filter((r) => r.observation_fresh).length,
     rows,
+    // The panel does not read the roll-up; an empty one keeps the fixture a
+    // complete wire value without asserting anything about it.
+    by_source_repo: [],
     ...overrides,
   };
 }

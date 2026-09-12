@@ -150,6 +150,7 @@ from app.api.v1.endpoints.operations import (
     capture_caller_bearer,
     get_tenant_id,
 )
+from app.crud import plan_scan_root as scan_root_crud
 from app.crud import work_artifact as crud
 from app.models.user import User
 from app.models.work_artifact import (
@@ -198,6 +199,7 @@ from app.schemas.plan_library import (
 )
 from app.services import plan_status
 from app.services.permissions import resolve_personal_organization
+from app.services.plan_scan_root_health import scan_roots_health
 
 logger = structlog.get_logger(__name__)
 
@@ -2223,8 +2225,11 @@ async def list_work_artifacts(
     ``items: []`` is never the whole answer: ``plan_count: 0`` beside it says
     "the corpus holds no plans", which is a different sentence from "no such
     plan". Its ``capture`` block is ``/capture-health``'s census from the
-    same query, so the two reads cannot disagree. One extra aggregate query
-    per list call; the list is paged and small.
+    same query, so the two reads cannot disagree, and its ``scan_roots``
+    block is ``GET /plan-library/scan-roots`` rendered by the same builder:
+    how far behind its default branch each device's scan source is, so a page
+    drawn from a stale corpus can say so. Two extra queries per list call —
+    one aggregate, one over a table of one row per device.
 
     ``slug`` is a QUERY key, not a path segment: this adds no route, so the
     literal-before-pattern ordering below (``/divergent``, ``/capture-health``
@@ -2246,14 +2251,13 @@ async def list_work_artifacts(
         limit=limit,
     )
     items = [_summary(r) for r in rows]
-    census = await crud.capture_health(db, org_id=org_id)
     return WorkArtifactListResponse(
         items=items,
         count=len(items),
         total=total,
         offset=offset,
         limit=limit,
-        corpus_health=_corpus_health(census),
+        corpus_health=await _load_corpus_health(db, org_id=org_id),
     )
 
 
@@ -2302,13 +2306,23 @@ def _capture_health_response(
     )
 
 
-def _corpus_health(census: Sequence[crud.CaptureDoorCensus]) -> CorpusHealth:
+async def _load_corpus_health(db: AsyncSession, *, org_id: UUID | None) -> CorpusHealth:
+    """The ``corpus_health`` block for ``org_id`` — list pages and ``/candidates``.
+
+    One function so the two routes that carry the block cannot drift: the
+    capture census is ``/capture-health``'s, and ``scan_roots`` is
+    ``GET /plan-library/scan-roots``'s, each through that route's own builder.
+    UNFILTERED by any page query, org-scoped like the page.
+    """
+    census = await crud.capture_health(db, org_id=org_id)
+    observations = await scan_root_crud.list_observations(db, org_id=org_id)
     artifact_count, plan_count, newest = crud.corpus_totals(census)
     return CorpusHealth(
         artifact_count=artifact_count,
         plan_count=plan_count,
         newest_updated_at=newest,
         capture=_capture_health_response(census),
+        scan_roots=scan_roots_health(observations, now=datetime.now(UTC)),
     )
 
 
@@ -3231,6 +3245,12 @@ async def list_plan_candidates(
     not an artifact and has no id to be a candidate with; folding it into
     ``items`` would mean inventing one. ``items`` is unchanged.
 
+    ``corpus_health`` is the block every list page carries — the corpus's
+    counts, capture census, and each feeding device's scan-source drift — so
+    a consumer ranking these candidates can see, in the same read, whether
+    the corpus they were drawn from is stale. Report-only: a stale corpus is
+    still the best available answer, and nothing here refuses to serve it.
+
     Two principals reach this route (module docstring, invariant 7) and the
     coord half is fetched with whichever bearer they presented, so the coord
     reads follow the credential to the door tier that accepts it — the
@@ -3386,6 +3406,7 @@ async def list_plan_candidates(
             _open_followup(edge, origin, now) for edge, origin in followup_rows
         ],
         open_followup_total=followup_total,
+        corpus_health=await _load_corpus_health(db, org_id=org_id),
     )
 
 

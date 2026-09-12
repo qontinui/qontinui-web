@@ -157,6 +157,12 @@ export interface CorpusHealth {
   newest_updated_at: string | null;
   /** The `/capture-health` census from the same query — the two never disagree. */
   capture: CaptureHealthResponse;
+  /**
+   * `GET /plan-library/scan-roots`, from the same builder: how far each
+   * feeding device's scan source is from its default branch. `state:
+   * "unknown"` with no rows is "no device has reported", never "current".
+   */
+  scan_roots: ScanRootListResponse;
 }
 
 export interface WorkArtifactListResponse {
@@ -334,6 +340,8 @@ export interface PlanCandidateResponse {
   coord_available: boolean;
   work_unit_population_state: WorkUnitPopulationState;
   work_unit_population_reason: string | null;
+  /** The whole corpus's health — the same block every list page carries. */
+  corpus_health: CorpusHealth;
 }
 
 // ───────────────────────────── fleet policy ─────────────────────────────
@@ -465,6 +473,43 @@ export interface ScanRootListResponse {
   /** `count > 0` with `fresh_count === 0` means every feeder has gone quiet. */
   fresh_count: number;
   rows: ScanRootRow[];
+  /** One roll-up per distinct `source_repo`; empty exactly when `rows` is. */
+  by_source_repo: ScanRootSourceRollup[];
+}
+
+/**
+ * A roll-up's verdict. `unknown` = no device feeding this source has a
+ * `measured` verdict, so no distance is established — `min_behind` is `null`,
+ * never `0`.
+ */
+export const SCAN_ROOT_ROLLUP_STATES = ["measured", "unknown"] as const;
+
+export type ScanRootRollupState = (typeof SCAN_ROOT_ROLLUP_STATES)[number];
+
+/**
+ * Every device feeding ONE scan source, folded to the corpus's question: how
+ * far behind is its least-behind CURRENT feeder?
+ *
+ * `min_behind` is drawn only from rows whose VERDICT (`state`) is `measured`,
+ * so a silent, contradicted or 0-behind-floor device contributes no number.
+ * `min_behind_is_floor: true` means every device at that minimum counted
+ * against a stale ref — the minimum is itself "at least N". The id lists still
+ * name every feeder: a lagging device can write an older body over a newer
+ * head even while a current one exists.
+ */
+export interface ScanRootSourceRollup {
+  source_repo: string | null;
+  state: ScanRootRollupState;
+  detail: string | null;
+  device_count: number;
+  measured_count: number;
+  /** `null` is NOT ESTABLISHED. Never render it as `0`. */
+  min_behind: number | null;
+  /** `null` exactly when `min_behind` is. */
+  min_behind_is_floor: boolean | null;
+  least_behind_device_ids: string[];
+  lagging_device_ids: string[];
+  unmeasured_device_ids: string[];
 }
 
 /**
@@ -548,6 +593,21 @@ export const SCAN_ROOT_LIST_NULLABLE: WireNullability<ScanRootListResponse> = {
   count: false,
   fresh_count: false,
   rows: false,
+  by_source_repo: false,
+};
+
+/** `ScanRootSourceRollup`'s nullability, as a value. See [`WireNullability`]. */
+export const SCAN_ROOT_ROLLUP_NULLABLE: WireNullability<ScanRootSourceRollup> = {
+  source_repo: true,
+  state: false,
+  detail: true,
+  device_count: false,
+  measured_count: false,
+  min_behind: true,
+  min_behind_is_floor: true,
+  least_behind_device_ids: false,
+  lagging_device_ids: false,
+  unmeasured_device_ids: false,
 };
 
 /** `true` exactly when `A` and `B` are the same type, not merely assignable. */
@@ -572,4 +632,5 @@ export type ScanRootVocabulariesPinned = [
   Expect<Equal<ScanRootRow["state"], ScanRootState>>,
   Expect<Equal<ScanRootRow["reported_state"], ScanRootState>>,
   Expect<Equal<ScanRootListResponse["state"], ScanRootListState>>,
+  Expect<Equal<ScanRootSourceRollup["state"], ScanRootRollupState>>,
 ];
