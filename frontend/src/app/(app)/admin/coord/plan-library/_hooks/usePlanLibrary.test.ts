@@ -451,6 +451,69 @@ describe("useCaptureHealth — a failed read is not a corpus of zero", () => {
   });
 });
 
+describe("useCaptureHealth — a wired reload must not blank, and must not invert", () => {
+  const census = {
+    total: 1,
+    doors: [
+      {
+        captured_by: "runner_scan",
+        count: 1,
+        known: true,
+        first_at: null,
+        last_touched_at: null,
+      },
+    ],
+  };
+
+  it("keeps the doors a successful load produced when a reload fails", async () => {
+    getMock.mockResolvedValueOnce(census);
+
+    const { result } = renderHook(() => useCaptureHealth());
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
+    getMock.mockRejectedValueOnce(new Error("backend down"));
+    await act(async () => {
+      await result.current.reload();
+    });
+
+    // The panel's error copy promises "the counts below are the last ones read
+    // and may be stale" — blanking `data` would make that a lie about nothing.
+    expect(result.current.data).toEqual(census);
+    expect(result.current.error).toContain("backend down");
+  });
+
+  it("a late response never overwrites a newer one", async () => {
+    const fresh = { ...census, total: 2 };
+    let failSlow: (e: unknown) => void = () => {};
+    getMock
+      .mockImplementationOnce(
+        () =>
+          new Promise((_resolve, reject) => {
+            failSlow = reject;
+          })
+      )
+      .mockResolvedValueOnce(fresh);
+
+    const { result } = renderHook(() => useCaptureHealth());
+    // The second read starts and lands while the first is still out.
+    await act(async () => {
+      void result.current.reload();
+    });
+    await waitFor(() => expect(result.current.data).toEqual(fresh));
+
+    await act(async () => {
+      failSlow(new Error("backend down"));
+      await Promise.resolve();
+    });
+
+    // Without the request-id guard the superseded read's FAILURE lands last
+    // and paints "may be stale" over counts that were just refreshed.
+    expect(result.current.data).toEqual(fresh);
+    expect(result.current.error).toBeNull();
+    expect(result.current.loading).toBe(false);
+  });
+});
+
 describe("useScanRoots", () => {
   it("reads the scan-roots door and preserves the UNKNOWN no-rows shape", async () => {
     getMock.mockResolvedValue({
@@ -568,5 +631,134 @@ describe("useScanRoots — a failed reload must not blank, and must not invert",
     const { result } = renderHook(() => useScanRoots());
     expect(result.current.fetchedAt).toBeNull();
     expect(result.current.data).toBeNull();
+  });
+});
+
+// Overlapping reads, pinned on both hooks because both run the same
+// `useRetainedRead`. Three of these are orderings a newest-id guard gets WRONG
+// (a superseded success after a newer failure, `loading` while the newest read
+// is out, and whose failure the banner names). The fourth — a superseded
+// success after a newer one — a newest-id guard gets right, and it is here to
+// catch the opposite mistake: a hook that applies whatever lands last.
+describe.each([
+  ["useCaptureHealth", () => useCaptureHealth(), { total: 1, doors: [] }],
+  [
+    "useScanRoots",
+    () => useScanRoots(),
+    {
+      state: "reported",
+      detail: null,
+      fresh_within_secs: 2700,
+      count: 1,
+      fresh_count: 1,
+      rows: [],
+    },
+  ],
+] as const)("%s — overlapping reads", (_name, useHook, payload) => {
+  function pending() {
+    let release: (value: unknown) => void = () => {};
+    getMock.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          release = resolve;
+        })
+    );
+    return (value: unknown) => release(value);
+  }
+
+  it("keeps a superseded read's SUCCESS when the newer read failed", async () => {
+    const releaseSlow = pending();
+    getMock.mockRejectedValueOnce(new Error("backend down"));
+
+    const { result } = renderHook(() => useHook());
+    await act(async () => {
+      await result.current.reload();
+    });
+    // The newer read failed and nothing has landed yet: unknown, not empty.
+    expect(result.current.data).toBeNull();
+    expect(result.current.error).toContain("backend down");
+
+    await act(async () => {
+      releaseSlow(payload);
+    });
+    // Real data arrived, so it is shown — a newest-id guard discards it and
+    // keeps claiming nothing could be read. The error STAYS: the read that
+    // failed was issued after the one that delivered, so these may be stale.
+    await waitFor(() => expect(result.current.data).toEqual(payload));
+    expect(result.current.error).toContain("backend down");
+  });
+
+  it("drops a superseded read's success that lands after a newer one", async () => {
+    const releaseSlow = pending();
+    const fresh = { ...payload, fresh: true };
+    getMock.mockResolvedValueOnce(fresh);
+
+    const { result } = renderHook(() => useHook());
+    await act(async () => {
+      await result.current.reload();
+    });
+    await waitFor(() => expect(result.current.data).toEqual(fresh));
+
+    await act(async () => {
+      releaseSlow(payload);
+      // A macrotask, so the straggler has settled all the way through the
+      // hook before the negative is asserted — not merely a microtask that
+      // happens to be queued ahead of it today.
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+    expect(result.current.data).toEqual(fresh);
+    expect(result.current.error).toBeNull();
+  });
+
+  it("names the NEWEST failure, not an older one that lands after it", async () => {
+    let failSlow: (e: unknown) => void = () => {};
+    getMock.mockImplementationOnce(
+      () =>
+        new Promise((_resolve, reject) => {
+          failSlow = reject;
+        })
+    );
+    getMock.mockRejectedValueOnce(new Error("newer read: 503"));
+
+    const { result } = renderHook(() => useHook());
+    await act(async () => {
+      await result.current.reload();
+    });
+    expect(result.current.error).toContain("newer read: 503");
+
+    await act(async () => {
+      failSlow(new Error("older read: timeout"));
+      // A macrotask, so the straggler's rejection has run all the way through
+      // the hook's catch before anything is asserted. Nothing observable
+      // changes when it lands correctly, so there is nothing to `waitFor`.
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+    // The banner explains why what is on screen is not current; the reason is
+    // the most recent attempt's, and a straggler must not rewrite it.
+    expect(result.current.error).toContain("newer read: 503");
+    expect(result.current.error).not.toContain("older read");
+  });
+
+  it("keeps `loading` true while the NEWEST read is still out", async () => {
+    const releaseOld = pending();
+    const releaseNew = pending();
+
+    const { result } = renderHook(() => useHook());
+    await act(async () => {
+      void result.current.reload();
+    });
+
+    await act(async () => {
+      releaseOld(payload);
+    });
+    await waitFor(() => expect(result.current.data).toEqual(payload));
+    // The older read settling must not re-enable Refresh: the newer one is
+    // still in flight, and a second click would stack a third read on it.
+    expect(result.current.loading).toBe(true);
+
+    await act(async () => {
+      releaseNew(payload);
+    });
+    await waitFor(() => expect(result.current.loading).toBe(false));
   });
 });
