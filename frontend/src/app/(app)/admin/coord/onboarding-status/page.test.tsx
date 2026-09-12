@@ -784,6 +784,10 @@ describe("P2 runner-native hand-off", () => {
     expect(link.searchParams.get("code")).toBe("gho_code");
     expect(link.searchParams.get("state")).toBe(RUNNER_STATE);
     expect(link.searchParams.get("installation_id")).toBe("4242");
+    // The coord-minted token rides along: production coord refuses a stateless
+    // claim (`COORD_REQUIRE_CONNECT_STATE`), and the runner has no token of its
+    // own — this is the same one the browser fallback would spend.
+    expect(link.searchParams.get("connect_state")).toBe(TOKEN);
     // The page navigated to the same link (same-tab; the OS opens the runner).
     expect(window.location.href).toBe(link.toString());
     // The doctor watches enrolment, and a bind-only hand-off enrols nothing.
@@ -805,6 +809,7 @@ describe("P2 runner-native hand-off", () => {
     );
     expect(link.searchParams.get("account_login")).toBe("acme");
     expect(link.searchParams.has("installation_id")).toBe(false);
+    expect(link.searchParams.get("connect_state")).toBe(TOKEN);
   });
 
   it("spends the code in the browser only on the explicit fallback", async () => {
