@@ -582,21 +582,43 @@ jobs:
           # grows, and it makes the invariant the honest one: every `test_*.py`
           # pytest would collect must actually appear in the collection.
           expected_files=$(find tests -name 'test_*.py' -type f | wc -l)
-          # THREE QUARTERS of the on-disk count, and the fraction is measured,
-          # not chosen for comfort. An EXACT floor is wrong: conftest.py sets
-          # `collect_ignore` (today `["integration"]`, 5 of 231 test files), so
-          # requiring every `test_*.py` to appear would red a perfectly correct
-          # collection. Duplicating that ignore list here is exactly the drift
-          # this design removed one commit ago, so the floor tolerates it by
-          # ratio instead: 3/4 of 231 is 173, while a collection truncated to the
-          # 32 files that used to clear a 500-node-id floor fails hard. The trade
-          # is stated plainly -- this catches GROSS truncation, not a 10% one.
+          # VALIDATE the derived value before trusting it. A pipeline takes its
+          # exit status from the LAST command, so `find … | wc -l` reports `wc`'s
+          # success even when `find` failed (missing or renamed `tests/`, wrong
+          # cwd): `expected_files` is then 0, the floor computes to 0, and the
+          # tripwire disarms itself while the log still prints a plausible
+          # number. Measured. This is the same fail-open class as the bash
+          # numeric test this design already deleted, so it gets the same
+          # treatment the tripwire step next door gives JOB_START_EPOCH: an
+          # implausible value is UNKNOWN and stops the job, never a silent pass.
+          if [ -z "${expected_files}" ] || [ "${expected_files}" -lt 100 ]; then
+            echo "::error title=Truncation floor UNKNOWN::find reported '${expected_files}' test files under tests/, which cannot be right for this suite (226 collectable of 231 on disk today). The floor was NOT applied and the collection was NOT checked, so this job stops rather than sharding an unverified collection."
+            exit 1
+          fi
+          # TWO floors, because one is not enough and the reason is measured.
+          #
+          # FILES: three quarters of the on-disk count. An EXACT floor is wrong -
+          # conftest.py sets `collect_ignore` (today `["integration"]`, 5 of 231
+          # test files), so requiring every `test_*.py` to appear reds a
+          # perfectly correct collection. Duplicating that ignore list here is
+          # the drift this design removed, so the floor absorbs it by ratio.
+          #
+          # NODE IDS: the file floor alone is materially loose, and by a number -
+          # dropping the 53 heaviest collectable files keeps 173 of 231 files and
+          # PASSES a 3/4 file floor while losing 2263 of 3601 test functions, 62%
+          # of the suite. A conftest import error under one heavy subtree is
+          # exactly that shape: most files present, most tests gone. At ~4141
+          # node ids over 231 files the suite averages ~18 per file, so a floor
+          # of 10x the file count (2310 today) sits well under a healthy
+          # collection and far above that 62% shape.
           min_files=$(( expected_files * 3 / 4 ))
-          echo "test files on disk: ${expected_files}; truncation floor: ${min_files}"
+          min_nodeids=$(( expected_files * 10 ))
+          echo "test files on disk: ${expected_files}; floors: ${min_files} files, ${min_nodeids} node ids"
           if ! python ../scripts/ci/split_pytest_shards.py \
               --nodeids collected-nodeids.txt \
               --count-only \
-              --min-files "${min_files}"; then
+              --min-files "${min_files}" \
+              --min-nodeids "${min_nodeids}"; then
             echo "Last lines of the collection output, for context:"
             tail -20 collected-nodeids.txt
             exit 1
@@ -606,6 +628,13 @@ jobs:
       # docstring): complete, disjoint and order-independent, so the six shards
       # partition the suite exactly. backend/tests/test_pytest_shard_split.py
       # pins those properties AND pins `--shards` against the matrix length.
+      #
+      # This step passes no floors on purpose: the collect step above already
+      # gated the collection and exits 1 on a bad one, so a second copy of the
+      # floors here would be the duplication this design keeps removing. The
+      # splitter enforces them on the selection path too (there is a test for
+      # that), which matters for any OTHER caller - not for this workflow, where
+      # the selection is only reached after the gate passed.
       - name: Select this shard's test files
         run: |
           python ../scripts/ci/split_pytest_shards.py \
