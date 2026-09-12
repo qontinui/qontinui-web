@@ -3,8 +3,8 @@
  * `paletteDisagreements` cannot make (§4.2 clause 4: it proves the hue matches
  * the DECLARED attention, never that the declared attention was right).
  *
- * The judgement here is the split of `inertReason`'s five answers into a
- * CHOICE band and a DEFECT band. The list painted all five with one amber
+ * The judgement here is the split of `inertReason`'s six answers into a
+ * CHOICE band and a DEFECT band. The list painted all six with one amber
  * "inactive" badge.
  */
 
@@ -94,15 +94,20 @@ describe("the CHOICE / DEFECT split the palette audit cannot make", () => {
     expect(gone.attention).toBe("none");
   });
 
-  it("files the three DEFECTS as author-action", () => {
+  it("files the four DEFECTS as author-action", () => {
     // A workspace rule scoped to a repo can never match: gates carry no repo.
     expect(
       deriveClearanceRuleStatus(rule({ repo: "qontinui/qontinui-web" })).kind
     ).toBe("misconfigured");
+    // An EMPTY-string repo is neither tenant-wide nor a repo: it matches nothing.
+    expect(deriveClearanceRuleStatus(rule({ repo: "" })).kind).toBe(
+      "misconfigured"
+    );
     // No `gate_class` — coord cannot key it.
     expect(
-      deriveClearanceRuleStatus(rule({ payload: { authority: "operator_only" } }))
-        .kind
+      deriveClearanceRuleStatus(
+        rule({ payload: { authority: "operator_only" } })
+      ).kind
     ).toBe("misconfigured");
     // An authority outside coord's closed set — the resolver skips the rule.
     expect(
@@ -128,9 +133,8 @@ describe("the CHOICE / DEFECT split the palette audit cannot make", () => {
 
   it("does not treat a FUTURE expiry as expired", () => {
     expect(
-      deriveClearanceRuleStatus(
-        rule({ expires_at: "2999-01-01T00:00:00Z" })
-      ).kind
+      deriveClearanceRuleStatus(rule({ expires_at: "2999-01-01T00:00:00Z" }))
+        .kind
     ).toBe("active");
   });
 });

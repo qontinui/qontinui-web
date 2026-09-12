@@ -50,7 +50,7 @@ export type ClearanceRuleKind =
  * | `active` | `none` | The rule is a live candidate in coord's resolution. Nothing is owed. |
  * | `disabled` | `none` | `enabled = false` is a state the operator CHOSE. An off switch that is off is not a defect, and painting it loud spends the vocabulary on a working feature. The row says "disabled" in words. |
  * | `expired` | `none` | Same: the expiry that lapsed is the one the operator set. A rule doing exactly what it was told to do at the time it was told to do it. |
- * | `misconfigured` | `author` | `repo-scoped`, `no-class` or `unknown-authority` — the operator wrote a rule that coord's resolver **can never match**. Nothing clears it but a human, and meanwhile the class is silently decided by some other band: the operator believes a rule is governing that is not. That is the definition of `author`. |
+ * | `misconfigured` | `author` | `repo-scoped`, `empty-repo`, `no-class` or `unknown-authority` — the operator wrote a rule that coord's resolver **can never match**. Nothing clears it but a human, and meanwhile the class is silently decided by some other band: the operator believes a rule is governing that is not. That is the definition of `author`. |
  *
  * None of these is the R3 ignorance floor. `unknown-authority` looks like a
  * candidate and is not: we are not failing to understand coord's vocabulary,
