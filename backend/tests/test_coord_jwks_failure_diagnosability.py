@@ -125,29 +125,54 @@ def test_client_exposes_the_resolved_coord_url() -> None:
     assert client.coord_url == "https://coord.example.test"
 
 
-def _terminating_jwks_handlers() -> list[tuple[str, str]]:
-    """Every ``except CoordJWKSUnavailableError`` handler that ENDS the error.
+# The two JWKS doors this backend verifies tokens against, each with its own
+# unavailable-error class and its own shared log-field helper. One walk, both
+# doors: the Cognito client is a hand-copy of the coord one, and it carried
+# the pre-fix shape (``error=str(exc)`` alone, a raise naming no URL) for as
+# long as this guard knew only the coord class. A third door added tomorrow
+# is one more row here, not a third copy of the walk.
+_JWKS_DOORS = [
+    pytest.param("CoordJWKSUnavailableError", "jwks_failure_log_fields", 4, id="coord"),
+    pytest.param(
+        "CognitoJWKSUnavailableError",
+        "cognito_jwks_failure_log_fields",
+        2,
+        id="cognito",
+    ),
+]
+
+
+def _terminating_jwks_handlers(error_class: str) -> list[tuple[str, str]]:
+    """Every ``except <error_class>`` handler that ENDS the error.
 
     Discovered by walking ``app/`` rather than enumerated, because an
-    enumerated list is what let one of the three handlers ship without the
+    enumerated list is what let one of the coord handlers ship without the
     fields (``memory.py``'s, which kept ``error=str(exc)`` alone while the
     other two were fixed). A handler added tomorrow is caught by this walk.
 
     A bare ``raise`` handler is a pass-through, not a reporting site — the
     outer handler owns the log line — so it is excluded.
+
+    Shapes this walk does NOT see, none present today: a catch through an
+    attribute (``except cognito_jwks.CognitoJWKSUnavailableError`` is an
+    ``ast.Attribute``, not an ``ast.Name``), an aliased import (``import …
+    as X``), and a handler that ends the error through a base class
+    (``except RuntimeError`` around ``verify_token``). Any of those would
+    pass here silently; grep for the class before trusting a green run
+    after adding a handler in one of those spellings.
     """
     app_root = pathlib.Path(__file__).resolve().parents[1] / "app"
     found: list[tuple[str, str]] = []
 
     for py in sorted(app_root.rglob("*.py")):
         source = py.read_text(encoding="utf-8")
-        if "CoordJWKSUnavailableError" not in source:
+        if error_class not in source:
             continue
         for node in ast.walk(ast.parse(source)):
             if not isinstance(node, ast.ExceptHandler) or node.type is None:
                 continue
             caught = {n.id for n in ast.walk(node.type) if isinstance(n, ast.Name)}
-            if "CoordJWKSUnavailableError" not in caught:
+            if error_class not in caught:
                 continue
             # A pass-through re-raise reports nothing; the caller does.
             if all(
@@ -160,28 +185,32 @@ def _terminating_jwks_handlers() -> list[tuple[str, str]]:
     return found
 
 
-def test_every_terminating_jwks_handler_logs_the_diagnostic_fields() -> None:
-    """Every reporting handler routes its log through the shared field set.
+@pytest.mark.parametrize(("error_class", "helper", "known_count"), _JWKS_DOORS)
+def test_every_terminating_jwks_handler_logs_the_diagnostic_fields(
+    error_class: str, helper: str, known_count: int
+) -> None:
+    """Every reporting handler routes its log through its door's field set.
 
     Source-level pin: the caller sees only the vague close reason / 503
     detail, so a handler that logs ``error=str(exc)`` alone silently
     restores the undiagnosable state without failing anything else. That is
-    not hypothetical — it is the state ``memory.py`` was left in.
+    not hypothetical — it is the state ``memory.py`` was left in on the
+    coord door, and the state BOTH Cognito handlers were left in for as long
+    as this walk knew only the coord class.
     """
-    handlers = _terminating_jwks_handlers()
+    handlers = _terminating_jwks_handlers(error_class)
 
     # A walk that finds nothing must fail rather than pass vacuously.
-    assert len(handlers) >= 3, (
-        f"expected at least the three known reporting handlers, found "
-        f"{[where for where, _ in handlers]}"
+    assert len(handlers) >= known_count, (
+        f"expected at least the {known_count} known reporting handlers for "
+        f"{error_class}, found {[where for where, _ in handlers]}"
     )
 
     for where, body in handlers:
-        assert "jwks_failure_log_fields(exc)" in body, (
-            f"{where}: the JWKS-unavailable handler must log "
-            f"**jwks_failure_log_fields(exc) — logging str(exc) alone cannot "
-            f"separate a wrong COORD_DEVICE_URL from an unreachable "
-            f"coord.\n{body}"
+        assert f"{helper}(exc)" in body, (
+            f"{where}: the {error_class} handler must log **{helper}(exc) — "
+            f"logging str(exc) alone cannot separate a wrong URL setting from "
+            f"an unreachable upstream.\n{body}"
         )
 
 
