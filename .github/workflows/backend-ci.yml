@@ -211,17 +211,57 @@ jobs:
         run: poetry run mypy app/ --ignore-missing-imports
 
   test:
-    name: Run Tests
+    name: Run Tests (shard ${{ matrix.shard }}/6)
     runs-on: ubuntu-latest
+    # SHARDED SIX WAYS (plan
+    # 2026-09-12-web-gating-run-tests-fills-its-budget-so-the-suite-is-sharded).
+    #
+    # Why: this job's wall time was O(total tests) with a fixed ceiling, and the
+    # suite grows ~600 tests/week. Measured on main's nightly runs 09-01..09-12,
+    # from pytest's own summary line: 3186 tests / 61.0 min -> 4129 tests /
+    # 74.9 min, worst 4067 / 85.5 min, against a 90-minute budget. Runner speed
+    # spreads ~1.6x over the same suite (53.0 min on 09-09 vs 85.5 min on
+    # 09-11), so a slow runner was cancelling green PRs at the budget with ZERO
+    # failing steps. Raising the ceiling to 120 would have bought ~19 days at
+    # +1.6 min/day; sharding makes wall time O(total/N) with N a one-token
+    # change, so the growth is absorbed instead of postponed.
+    #
+    # Why ACROSS JOBS and not `pytest-xdist -n 6` in one job -- xdist IS already
+    # a dev dependency, so this is a choice, not a missing tool. conftest.py
+    # builds a SESSION-scoped engine (`test_engine`, conftest.py:225-226) that
+    # runs `create_all` at session start (:304) and `drop_all` at session END
+    # (:308) against ONE hardcoded database name (:40-43; only host:port is
+    # overridable, via QONTINUI_TEST_PG). Six xdist workers are six processes
+    # sharing that database, so the first worker to finish drops the tables out
+    # from under the other five. Matrix shards get their OWN service containers,
+    # so inside a shard the suite runs exactly as it always did -- same process
+    # model, same DSN, same create_all/drop_all -- and nothing about test
+    # semantics changes. The cost is ~25% more runner minutes (N*(4.0 setup +
+    # 75/N) = 4N+75, i.e. ~99 min at N=6 against ~79 today) for ~4.5x less wall
+    # time; that trade is the point.
+    strategy:
+      # fail-fast OFF, and it is load-bearing rather than a preference: a
+      # sibling shard's failure must never CANCEL the others. A cancelled shard
+      # concludes `cancelled` with zero failing steps -- which is precisely the
+      # conclusion the budget marker below exists to explain -- so fail-fast
+      # would manufacture the exact misleading signal this change removes, on
+      # code that is fine.
+      fail-fast: false
+      matrix:
+        # Kept in lockstep with the `--shards` value the select step passes;
+        # backend/tests/test_pytest_shard_split.py asserts they are equal,
+        # because a 5-entry matrix against `--shards 6` silently never runs a
+        # sixth of the suite and every job still reports green.
+        shard: [1, 2, 3, 4, 5, 6]
     # This job holds an apt-dependent step and, until now, declared no
     # job-level bound at all -- so its ceiling was GitHub's DEFAULT 360
     # minutes, a number this repo never chose. Plan Phase 1 asks for a cap on
     # every job that has none; it landed on e2e-tests.yml's three jobs and
     # missed this one and migration-reversal.yml's `reverse`.
     #
-    # What the cap buys: a bound this repo CHOSE, and a worst case of 90 min
-    # rather than 6 h of hosted-runner time. `JOB_TIMEOUT_MINUTES` below now
-    # names a declared value instead of documenting an inherited default.
+    # What the cap buys: a bound this repo CHOSE, and a worst case of 45 min
+    # per shard rather than 6 h of hosted-runner time. `JOB_TIMEOUT_MINUTES`
+    # below names a declared value instead of documenting an inherited default.
     #
     # What it does NOT buy, stated because the obvious reading is wrong: it
     # does not meaningfully re-arm the marker's arm 2. That arm needs the apt
@@ -233,16 +273,23 @@ jobs:
     # `timeout-minutes` expiry is the plan's Gate part 2, still UNMET, and the
     # marker is built correct under either semantics precisely because nobody
     # has observed it. Claiming one here would be inventing the answer that
-    # gate exists to obtain.) Either way arm 2 needs the ~8 steps BEFORE apt to
-    # consume ~80 of the 90 minutes, on a job whose measured max is 56.9.
+    # gate exists to obtain.) Either way arm 2 needs the steps BEFORE apt to
+    # consume nearly the whole budget, which measurement does not support.
     # Bounding the burn is the reason for the cap.
     #
-    # Measured: 40 consecutive green runs of this job -- p50 43.4 min,
-    # p90 46.4 min, max 56.9 min. 90 min is ~1.6x the worst observed success
-    # and ~1.9x p90, which keeps the plan's own "sized too tight becomes a new
-    # flake source" risk well clear. NOTE for whoever revisits: this job also
-    # runs on `schedule:`, where cache warmth can differ from the sampled runs.
-    timeout-minutes: 90
+    # SIZED FOR ONE SHARD, from measurement rather than inherited from the
+    # unsharded job. Expected per-shard wall time is ~4.0 min of fixed setup
+    # (job start 07:25:06 -> pytest start 07:29:04 on the 09-12 nightly) plus
+    # 85.5/6 = ~14.3 min of suite at the worst measured suite time: ~18.3 min.
+    # 45 is ~2.5x that, which absorbs the measured 1.6x runner-speed spread
+    # with room left. The soft budget below (30) is the creep alarm, and it is
+    # deliberately close enough to fire while two thirds of the hard budget is
+    # still in hand. Growth is ~1.6 min/day of suite time, i.e. ~0.27 min/day
+    # per shard, so this ceiling is months away rather than weeks -- and when it
+    # does approach, the matrix length is the lever, not this number.
+    # NOTE for whoever revisits: this job also runs on `schedule:`, where cache
+    # warmth can differ from the sampled runs.
+    timeout-minutes: 45
     defaults:
       run:
         working-directory: ./backend
@@ -412,7 +459,10 @@ jobs:
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: openapi-schema-ci-generated
+          # Shard-scoped: upload-artifact rejects a duplicate name within one
+          # run, and this job is now a 6-way matrix, so a fixed name would fail
+          # the upload on any drift run where more than one shard reaches it.
+          name: openapi-schema-ci-generated-shard-${{ matrix.shard }}
           path: |
             frontend/src/lib/api-client/openapi-schema.json
             frontend/src/lib/api-client/openapi-schema.base.json
@@ -477,6 +527,122 @@ jobs:
             -c "CREATE SCHEMA IF NOT EXISTS web;" \
             -c "CREATE EXTENSION IF NOT EXISTS vector;"
 
+      # Collection is the shard split's ONLY input, and it is deliberately run
+      # per shard rather than once in an upstream job: every shard computes the
+      # SAME assignment from the SAME collected set, so no shard waits on
+      # another and there is no fan-out stage to serialize behind. ~30 s.
+      #
+      # `-o addopts=` is LOAD-BEARING and the reason is measured, not theoretical.
+      # pytest.ini's addopts carry `-v`, which CANCELS the `-q` below back to
+      # verbosity 0 -- and at verbosity 0 `--collect-only` prints the indented
+      # `<Module ...>` / `<Function ...>` TREE, not node ids. On the first CI run
+      # of this change that produced 5157 output lines and ZERO node ids, and the
+      # splitter refused (exit 2) rather than emitting an empty selection.
+      # Emptying addopts is stable against the ini's verbosity changing; `-q -q`
+      # also works today and would silently break the day a second `-v` is added.
+      # backend/tests/test_pytest_shard_split.py pins this flag for that reason.
+      #
+      # Emptying addopts also drops `--cov=app` and its three report formats, so
+      # the collection cannot leave a ~0% coverage report for the real run to
+      # overwrite. `--no-cov` stays as belt-and-braces if a future addopts change
+      # re-adds coverage by another route.
+      - name: Collect the test suite
+        env:
+          DATABASE_URL: postgresql://qontinui_user:qontinui_dev_password@localhost:5432/qontinui_test
+          REDIS_HOST: localhost
+          REDIS_PORT: 6379
+          REDIS_ENABLED: true
+          TESTING: 1
+          SECRET_KEY: test-secret-key-for-testing-only-minimum-32-characters-long
+          ENVIRONMENT: development
+        run: |
+          # pytest writes collection ERRORS to stdout, and stdout is redirected
+          # into the file -- so a failed collection would otherwise show as a
+          # dead step with no reason in the log. Print what it said. This is the
+          # same misattribution class the marker step below exists to prevent.
+          if ! poetry run pytest tests/ --collect-only -q -o addopts= --no-cov > collected-nodeids.txt; then
+            echo "::error title=pytest collection failed::The collection command exited non-zero; its own output follows."
+            cat collected-nodeids.txt
+            exit 1
+          fi
+          echo "collection produced $(wc -l < collected-nodeids.txt) output lines"
+          # The emptiness AND truncation checks both live in the splitter, which
+          # already parses node ids. A second copy of that rule here was a real
+          # defect, not a hypothetical one: it accepted characters the splitter
+          # rejects and over-counted, and `$(grep -c … || true)` fed an EMPTY
+          # string into a numeric test, which fails OPEN without tripping `-e`.
+          # A tripwire that fails open is not a tripwire, so there is now exactly
+          # one parser and the comparison happens in Python.
+          #
+          # The floor is the on-disk FILE COUNT, not a constant. A hardcoded
+          # node-id floor is decoration: measured on this tree, 32 of 231 test
+          # files already clear 500 node ids, so a collection truncated to a
+          # seventh of the suite would pass it and six green shards would cover
+          # ~14% of the tests. Deriving it means it cannot go stale as the suite
+          # grows, and it makes the invariant the honest one: every `test_*.py`
+          # pytest would collect must actually appear in the collection.
+          expected_files=$(find tests -name 'test_*.py' -type f | wc -l)
+          # VALIDATE the derived value before trusting it. A pipeline takes its
+          # exit status from the LAST command, so `find … | wc -l` reports `wc`'s
+          # success even when `find` failed (missing or renamed `tests/`, wrong
+          # cwd): `expected_files` is then 0, the floor computes to 0, and the
+          # tripwire disarms itself while the log still prints a plausible
+          # number. Measured. This is the same fail-open class as the bash
+          # numeric test this design already deleted, so it gets the same
+          # treatment the tripwire step next door gives JOB_START_EPOCH: an
+          # implausible value is UNKNOWN and stops the job, never a silent pass.
+          if [ -z "${expected_files}" ] || [ "${expected_files}" -lt 100 ]; then
+            echo "::error title=Truncation floor UNKNOWN::find reported '${expected_files}' test files under tests/, which cannot be right for this suite (226 collectable of 231 on disk today). The floor was NOT applied and the collection was NOT checked, so this job stops rather than sharding an unverified collection."
+            exit 1
+          fi
+          # TWO floors, because one is not enough and the reason is measured.
+          #
+          # FILES: three quarters of the on-disk count. An EXACT floor is wrong -
+          # conftest.py sets `collect_ignore` (today `["integration"]`, 5 of 231
+          # test files), so requiring every `test_*.py` to appear reds a
+          # perfectly correct collection. Duplicating that ignore list here is
+          # the drift this design removed, so the floor absorbs it by ratio.
+          #
+          # NODE IDS: the file floor alone is materially loose, and by a number -
+          # dropping the 53 heaviest collectable files keeps 173 of 231 files and
+          # PASSES a 3/4 file floor while losing 2263 of 3601 test functions, 62%
+          # of the suite. A conftest import error under one heavy subtree is
+          # exactly that shape: most files present, most tests gone. At ~4141
+          # node ids over 231 files the suite averages ~18 per file, so a floor
+          # of 10x the file count (2310 today) sits well under a healthy
+          # collection and far above that 62% shape.
+          min_files=$(( expected_files * 3 / 4 ))
+          min_nodeids=$(( expected_files * 10 ))
+          echo "test files on disk: ${expected_files}; floors: ${min_files} files, ${min_nodeids} node ids"
+          if ! python ../scripts/ci/split_pytest_shards.py \
+              --nodeids collected-nodeids.txt \
+              --count-only \
+              --min-files "${min_files}" \
+              --min-nodeids "${min_nodeids}"; then
+            echo "Last lines of the collection output, for context:"
+            tail -20 collected-nodeids.txt
+            exit 1
+          fi
+
+      # The split is a pure function of the collected set (see the script's
+      # docstring): complete, disjoint and order-independent, so the six shards
+      # partition the suite exactly. backend/tests/test_pytest_shard_split.py
+      # pins those properties AND pins `--shards` against the matrix length.
+      #
+      # This step passes no floors on purpose: the collect step above already
+      # gated the collection and exits 1 on a bad one, so a second copy of the
+      # floors here would be the duplication this design keeps removing. The
+      # splitter enforces them on the selection path too (there is a test for
+      # that), which matters for any OTHER caller - not for this workflow, where
+      # the selection is only reached after the gate passed.
+      - name: Select this shard's test files
+        run: |
+          python ../scripts/ci/split_pytest_shards.py \
+            --nodeids collected-nodeids.txt \
+            --shards 6 \
+            --shard ${{ matrix.shard }} \
+            --out shard-files.txt
+
       - name: Run tests with coverage
         env:
           # conftest.py overrides this anyway, but keep aligned with the
@@ -489,7 +655,20 @@ jobs:
           SECRET_KEY: test-secret-key-for-testing-only-minimum-32-characters-long
           ENVIRONMENT: development
         run: |
-          poetry run pytest tests/ -v \
+          # An EXPLICIT file list, never a directory. Handing pytest a bare
+          # directory here would make every shard run the entire suite, which is
+          # the one failure mode of sharding that still reports green -- so the
+          # empty case is a hard error rather than a fallback. The splitter
+          # already refuses to emit an empty list; this is the second guard,
+          # because the consequence is a silently multiplied bill or a silently
+          # narrowed gate.
+          mapfile -t SHARD_FILES < shard-files.txt
+          if [ "${#SHARD_FILES[@]}" -eq 0 ]; then
+            echo "::error::shard-files.txt is empty; refusing to invoke pytest without an explicit file list."
+            exit 1
+          fi
+          echo "shard ${{ matrix.shard }}/6 runs ${#SHARD_FILES[@]} test files"
+          poetry run pytest "${SHARD_FILES[@]}" -v \
             --cov=app \
             --cov-context=test \
             --cov-report=xml \
@@ -503,7 +682,11 @@ jobs:
       # the same flags + service stack, then exports). It was moved out so a main
       # push no longer re-runs this entire gating workflow just to feed coord.
       # The pytest invocation above keeps --cov-context=test / --junitxml: those
-      # flags are harmless on PRs and keep the two suites byte-identical.
+      # flags are harmless on PRs, and they keep this lane's FLAGS identical to
+      # the producer's. The suites themselves are no longer identical and cannot
+      # be: since the 2026-09-12 shard split this job runs one shard's file list
+      # while the producer still runs the whole suite. Flag parity is what the
+      # per-test coverage export needs; suite parity was never the requirement.
 
       # Budget-creep tripwire, the same one the coverage producer carries and
       # for the same reason -- see the long rationale at its site in
@@ -511,20 +694,26 @@ jobs:
       # BYTE-IDENTICAL to that one (a test pins it); everything site-specific is
       # in `env:` above it.
       #
-      # This job is the reason it matters most. It runs the byte-identical
-      # pytest invocation on the byte-identical 90-minute budget, but it is the
+      # This job is the reason it matters most. It runs the same pytest
+      # invocation as the producer -- over ONE SHARD's file list rather than the
+      # whole suite, which is the one deliberate difference -- and it is the
       # GATING lane: where creep on the producer costs a coverage export and a
       # red baseline, creep here blocks every PR. The producer's budget was set
       # below this suite's own median and nobody noticed for days; the whole
-      # point of a soft budget is to be told while a third of the hard one is
+      # point of a soft budget is to be told while most of the hard one is
       # still in hand.
       - name: Warn if the job is approaching its budget
         if: success()
         env:
-          # Comfortably above the 56.9-min worst observed run of this suite,
-          # and 30 min below the job budget.
-          SOFT_BUDGET_MINUTES: '60'
-          JOB_TIMEOUT_MINUTES: '90'
+          # Per SHARD, not per suite. Expected shard wall time is ~18.3 min
+          # (~4.0 min setup + 85.5/6 at the worst measured suite time), so 30 is
+          # ~1.6x expected and 15 min below the 45-minute job budget. It will
+          # fire on a genuinely slow runner, and that is the intended
+          # sensitivity: this is a warning on a PASSING run, and the alternative
+          # -- a soft budget set so high it only speaks once the lane is already
+          # timing out -- is the late signal this step exists to replace.
+          SOFT_BUDGET_MINUTES: '30'
+          JOB_TIMEOUT_MINUTES: '45'
           # The only per-site text in an otherwise byte-identical body. Keeping
           # the prose in `env` is what lets the two carriers share one script:
           # the marker next door is carried by eight copies precisely because
@@ -568,15 +757,26 @@ jobs:
         uses: codecov/codecov-action@v4
         with:
           files: ./backend/coverage.xml
+          # One flag, six partial uploads: Codecov merges uploads per commit, so
+          # the flag stays `backend` and the union is the suite's coverage. The
+          # NAME is shard-scoped so the six uploads are distinguishable in
+          # Codecov's own UI rather than six rows called the same thing.
+          # `fail_ci_if_error: false` (below, unchanged) is why a merge surprise
+          # here cannot red the lane -- confirm the delta on the first run.
           flags: backend
-          name: backend-coverage
+          name: backend-coverage-shard-${{ matrix.shard }}
           fail_ci_if_error: false
 
       - name: Upload coverage artifacts
         if: always()
         uses: actions/upload-artifact@v5
         with:
-          name: coverage-report
+          # Shard-scoped, for the same reason as the OpenAPI artifact above:
+          # upload-artifact rejects a duplicate name within a run, and six
+          # shards would otherwise all claim `coverage-report`. Nothing consumes
+          # this name (e2e-tests.yml's `backend-coverage-report` is a different
+          # artifact), so the rename breaks no downstream reader.
+          name: coverage-report-shard-${{ matrix.shard }}
           path: ./backend/htmlcov/
           retention-days: 30
 
@@ -629,8 +829,8 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           JOB_STATUS: ${{ job.status }}
-          # declared at this job's `timeout-minutes`.
-          JOB_TIMEOUT_MINUTES: '90'
+          # declared at this job's `timeout-minutes` -- now the PER-SHARD budget.
+          JOB_TIMEOUT_MINUTES: '45'
           EXTERNAL_CANCEL_NOTE: >-
             this workflow declares NO `concurrency:` block, so GitHub never auto-supersedes it - an external cancel here came from a human or from coord's merge train reaping a merge-candidate/* ref
           # `<step name>|<outcome>|<conclusion>` per apt-dependent step in this
@@ -991,6 +1191,49 @@ jobs:
         run: |
           poetry run pip install safety
           poetry run safety check --json || true
+
+  # The `Run Tests` check name, preserved across the shard split.
+  #
+  # The suite's work now runs as `Run Tests (shard N/6)`, six separate check
+  # runs. This job keeps the ORIGINAL context name on every head, because the
+  # name is load-bearing independently of the work: coord waits on every check
+  # run it has observed on a head, and anything keyed on this specific context
+  # -- a future required-check entry in the `web-protect-main` ruleset, a human
+  # reading the PR, a saved query -- would silently lose its subject if the
+  # name simply vanished when the job became a matrix. Moving the work while
+  # keeping the name costs one ~20-second job.
+  test-gate:
+    name: Run Tests
+    needs: [test]
+    # `always()` is required, not defensive. Without it a failed or cancelled
+    # shard SKIPS this job, and a skipped check is not a red check -- the
+    # aggregate would go MISSING at exactly the moment it needs to say no.
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Assert every shard succeeded
+        env:
+          # For a matrix job this is the aggregate: `success` only when every
+          # shard succeeded.
+          SHARDS_RESULT: ${{ needs.test.result }}
+        run: |
+          echo "Run Tests shard matrix result: ${SHARDS_RESULT}"
+          case "${SHARDS_RESULT}" in
+            success)
+              echo "All six Run Tests shards passed."
+              ;;
+            skipped)
+              # A skipped matrix with a green aggregate would be a vacuous
+              # green: the gate would report success having tested nothing.
+              echo "::error title=Run Tests did not run::The shard matrix was SKIPPED, so no backend test ran. This is reported as a FAILURE rather than a pass, because a gate that tested nothing must never read green."
+              exit 1
+              ;;
+            *)
+              echo "::error title=A Run Tests shard did not pass::The shard matrix concluded '${SHARDS_RESULT}'. Open the 'Run Tests (shard N/6)' checks to see which shard, and read its own budget/cancel marker before assuming a test regression - a shard cancelled at its job budget concludes 'cancelled' with zero failing steps."
+              exit 1
+              ;;
+          esac
 
   build-test:
     name: Test Docker Build
