@@ -30,7 +30,8 @@
  *    `credential_dark: { dark, reason? } | null`, with a body-level
  *    `credential_dark_scrape_up` saying whether the join RAN
  *    (`fleet_health.rs`, `DeviceCredentialDark`). `null` per device is coord's
- *    own UNKNOWN, deliberately not `{dark:false}`.
+ *    own UNKNOWN, deliberately not `{dark:false}` — **and `{dark:false}` is
+ *    not a health measurement either**; see below.
  * 3. **This frontend discarded both**, because `FleetHealthDevice` declared
  *    neither field — the same way the alert rollup stayed invisible for months.
  *    Phase 5 declares them and renders them.
@@ -51,6 +52,28 @@
  * `attention: "waiting"`, painted {@link UNKNOWN_AMBER}, never calm and never
  * `live` (style guide §4.1, "amber also covers *we do not know*"; served policy
  * `verification-and-evidence` `silent-empty-is-unknown`).
+ *
+ * ### The way that rule was first got wrong, and what now holds it
+ *
+ * The first cut of this module read coord's `{dark: false}` as a measured
+ * `live`. It is not one. `join_credential_dark` (`fleet_health.rs`) iterates
+ * the device **roster** and stamps `dark: false` on every device the dark scan
+ * did not NAME — and that scan is a single predicate,
+ * `details #>> '{coord_credential,ok}' = 'false'`. A device is therefore
+ * stamped `dark: false` when it published `ok: true`, when it published no
+ * `coord_credential` key at all, when its `ok` is non-boolean, and when it has
+ * no `coord.device_status` row whatsoever. Three of those four are the
+ * incident's own population, and rendering them `credential live` on an
+ * {@link INERT} badge was worse than the blank row it replaced: a blank row
+ * makes no claim, and that badge made an affirmative one.
+ *
+ * So **coord's join can only ever conclude `dark`**. The affirmative half of
+ * the question is answered one hop earlier, by the presence of the runner's
+ * own `details.coord_credential` bag on the device-status row
+ * ({@link CoordCredentialInput.reported}) — the same bag coord's SQL reads,
+ * which reaches this frontend in full rather than as a boolean. Present and
+ * affirmative ⇒ `live`; absent, unparseable, or carrying a non-boolean `ok`
+ * ⇒ `unknown`, whatever coord's roster stamp says.
  */
 
 import type { AttentionMap } from "@/components/console/attention";
@@ -70,14 +93,24 @@ import {
  * two shapes that carry it (`FleetHealthDevice`, `CoordHealthJoin`) so the
  * wire contract has exactly one spelling.
  *
- * `dark: false` means the scan ran and this device was not in its result set —
- * a MEASUREMENT. The absence of the whole object is the other thing entirely;
- * see {@link resolveCoordCredential}.
+ * **Only the `true` arm carries information.** See {@link DeviceCredentialDark.dark}
+ * and the module header: `dark: false` is "the scan did not name this device",
+ * which is not the same claim as "this device is fine", and
+ * {@link resolveCoordCredential} must never let the two render alike.
  */
 export interface DeviceCredentialDark {
   /**
    * `true` = the runner published `coord_credential.ok == false` on its last
-   * status heartbeat: it holds no usable coord device JWT.
+   * status heartbeat: it holds no usable coord device JWT. A MEASUREMENT, and
+   * the one this object is good for.
+   *
+   * `false` = coord's roster stamp for "the dark scan ran and did not select
+   * this device" (`join_credential_dark`, `fleet_health.rs`). The scan's
+   * predicate is `details #>> '{coord_credential,ok}' = 'false'` and nothing
+   * else, so this arm pools four unlike populations: published `ok: true`;
+   * published no `coord_credential` at all; published a non-boolean `ok`; has
+   * no `coord.device_status` row. **It is therefore NOT a health
+   * measurement** and never resolves to `live` on its own.
    */
   dark: boolean;
   /** The runner's own short reason, verbatim. Absent when it published none. */
@@ -187,8 +220,12 @@ export interface CoordCredentialStatus extends RowStatus<CoordCredentialPosture>
   /**
    * ISO-8601 the posture has held since, when the reporter published one.
    *
-   * `undefined` on every device today: no producer writes it yet (see the
-   * module header). It is read rather than derived on purpose — a `since` this
+   * An ISO-8601 STRING on the wire, per the contract on
+   * {@link CoordCredentialInput.reported} — never unix seconds. `undefined`
+   * until a runner carrying that contract heartbeats; today's shipped runners
+   * publish `{ ok, reason? }` and no `since` at all.
+   *
+   * It is read rather than derived on purpose — a `since` this
    * surface computed from its own first sighting would be a claim about the
    * console's uptime dressed as a claim about the machine.
    */
@@ -213,10 +250,37 @@ export interface CoordCredentialInput {
    * heartbeat (`DeviceStatus.details`), which reaches this frontend already —
    * `details` is an open JSON object and the runner writes this key into it.
    *
+   * **This key's PRESENCE is the discriminator this module turns on**: it is
+   * the only thing on the wire that separates a device that published
+   * `ok: true` from one that published nothing, which coord's roster stamp
+   * pools into a single `dark: false` (module header). Absent / non-object /
+   * non-boolean `ok` ⇒ `unknown`, never `live`.
+   *
    * Read as `unknown` and narrowed here because the runner, not this repo,
-   * owns its shape: today `{ ok, reason? }`, and after the plan's Phase 1
-   * `{ posture, since, tenant_id, exp, … }`. Anything unrecognised falls
-   * through to the coord join rather than being guessed at.
+   * owns its shape. The agreed cross-repo contract, which the sibling
+   * `qontinui-runner` PR implements:
+   *
+   * ```json
+   * {
+   *   "ok": true,
+   *   "reason": null,
+   *   "posture": "live",
+   *   "since": "2026-09-12T03:54:26Z",
+   *   "tenant_id": "…",
+   *   "exp": 1789000000
+   * }
+   * ```
+   *
+   * `posture` (not `state`) is the kind; `since` is an ISO-8601 **string**,
+   * not unix seconds; `ok` is `false` for every posture that is not
+   * `live`/`expiring`, which is what keeps coord's existing dark scan
+   * selecting those devices. `tenant_id` and `exp` are carried for the
+   * operator's benefit on the producing side and are not read here — this
+   * module renders a posture, not a credential's contents. Today's shipped
+   * runners publish the `{ ok, reason? }` prefix of that shape, which rung 3
+   * of {@link resolveCoordCredential} still reads exactly.
+   * `coordCredentialStatus.test.ts` pins the whole shape so a drift on either
+   * side fails here rather than on the console.
    */
   reported?: unknown;
 }
@@ -254,7 +318,7 @@ const POSTURE_REASON: Record<CoordCredentialPosture, string> = {
     "Every automatic refresh rung has failed. This runner cannot heal itself — it needs a person.",
   dark: "This runner reported that it holds no usable coord device JWT.",
   unknown:
-    "No coord-credential verdict for this device. UNKNOWN, not healthy: coord ran no join, this coord predates the field, or the runner has never reported one.",
+    "No coord-credential verdict for this device. UNKNOWN, not healthy: its runner has never published one, this coord predates the field, or coord ran no join. Coord's dark scan not naming a device is not a measurement that its credential is fine.",
 };
 
 /**
@@ -265,12 +329,18 @@ const POSTURE_REASON: Record<CoordCredentialPosture, string> = {
  * 1. A real `posture` string in the runner's heartbeat bag (Phase 1's shape).
  *    It is the only source that can carry `since`, and the only one that can
  *    distinguish `expired` from `unrefreshable`.
- * 2. Coord's `credential_dark` join. Boolean, but it is the page's own spine
- *    read and it is what exists today.
- * 3. A bare `ok` boolean in the heartbeat bag — the same fact as (2) without
- *    coord's join, for a row whose device-status stream arrived and whose
- *    fleet-health join did not.
- * 4. **UNKNOWN.** Nothing measured this.
+ * 2. Coord's `credential_dark` join, **`dark: true` only**. That arm is a
+ *    measurement: coord's scan selected this device because its own report
+ *    said `ok: false`. It outranks rung 3's boolean so a device that has gone
+ *    dark cannot be talked back out of it by a staler bag.
+ * 3. A boolean `ok` in the heartbeat bag. **This is the only rung that can
+ *    conclude `live`**, because it is the only one that distinguishes
+ *    "published `ok: true`" from "published nothing" — see the module header.
+ * 4. **UNKNOWN.** Nothing measured this. Reached by every device coord
+ *    stamped `dark: false` whose runner published no usable
+ *    `coord_credential` bag, which before this rung existed was the fleet
+ *    console's own version of the incident: an unmeasured machine wearing a
+ *    calm `credential live` badge.
  */
 export function resolveCoordCredential(
   input: CoordCredentialInput
@@ -286,19 +356,20 @@ export function resolveCoordCredential(
     return status(kind, reportedReason ?? POSTURE_REASON[kind], since, true);
   }
 
-  // 2 — coord's join.
+  // 2 — coord's join, affirmative arm only. `dark: false` is deliberately
+  // NOT handled here: it is a roster stamp, not a verdict, and falling
+  // through to rung 3 is what keeps an unmeasured device out of `live`.
   const dark = input.credentialDark;
-  if (dark && typeof dark.dark === "boolean") {
-    const kind: CoordCredentialPosture = dark.dark ? "dark" : "live";
+  if (dark?.dark === true) {
     return status(
-      kind,
-      asString(dark.reason) ?? reportedReason ?? POSTURE_REASON[kind],
+      "dark",
+      asString(dark.reason) ?? reportedReason ?? POSTURE_REASON.dark,
       since,
       true
     );
   }
 
-  // 3 — the runner's boolean, unjoined.
+  // 3 — the runner's own boolean, straight off the heartbeat bag.
   if (reported && typeof reported.ok === "boolean") {
     const kind: CoordCredentialPosture = reported.ok ? "live" : "dark";
     return status(kind, reportedReason ?? POSTURE_REASON[kind], since, true);
@@ -339,7 +410,12 @@ export interface CoordCredentialRollup {
   total: number;
   /** Devices whose posture demands a person (`expired`/`absent`/…/`dark`). */
   needsAction: number;
-  /** Devices with a measured, healthy-or-self-clearing posture. */
+  /**
+   * Devices with a measured, healthy-or-self-clearing posture.
+   *
+   * Structurally 0 for the coord-join-only caller below; a device is only
+   * counted here when something affirmatively measured it.
+   */
   ok: number;
   /** Devices nothing measured. Never counted as `ok`. */
   unknown: number;
@@ -356,9 +432,20 @@ export interface CoordCredentialRollup {
 
 /**
  * Roll a device list up for the strip. Takes the RAW fleet-health rows: the
- * strip has no access to the device-status stream (that join happens per card),
- * so this is deliberately the coord-join-only view and will report `unknown`
- * for a device whose only verdict rode the heartbeat bag.
+ * strip has no access to the device-status stream (that hook lives inside
+ * `FleetOverview`, and a second subscription here would break R1), so this is
+ * deliberately the coord-join-only view.
+ *
+ * **Consequence, stated rather than hidden: `ok` is 0 for every fleet.**
+ * Coord's join can only conclude `dark` (see the module header), so from these
+ * rows alone every device that is not dark is `unknown` — including the ones
+ * whose runners are publishing `ok: true` perfectly well, whose report the
+ * per-card resolver can see and this one cannot. The strip therefore reports
+ * a large `credential unknown N` until either the strip gains the bag or coord
+ * serves a positive verdict, and that is the honest reading: `needsAction` is
+ * exact, `unknown` is "this view did not measure it", and neither is a claim
+ * of health. Counting those devices as `ok` is precisely the defect this
+ * module was corrected for.
  */
 export function summarizeCoordCredentials(
   devices: ReadonlyArray<{ credential_dark?: DeviceCredentialDark | null }>,

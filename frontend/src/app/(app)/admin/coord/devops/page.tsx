@@ -238,8 +238,18 @@ export default function CoordDevOpsPage() {
    *   `alerts unknown` badge above follows and the rule this whole plan is
    *   about (`[policy: silent-empty-is-unknown]`).
    *
-   * A fleet whose devices are all measured-and-fine renders neither badge, so
-   * the strip stays quiet when there is nothing to say.
+   * **Expect `credential unknown` to count most of the fleet, and read it as
+   * the honest number it is.** This strip sees the fleet-health rows only —
+   * the runner's own `coord_credential` bag rides the device-status stream,
+   * which is subscribed one level down in `FleetOverview` and is what the
+   * per-machine badge resolves against. Coord's join alone can conclude
+   * `dark` and nothing else: its `dark: false` is a roster stamp for "the
+   * scan did not name this device", which pools the healthy with the
+   * never-reported. So `credential dark N` is exact, and every other device
+   * is unmeasured *by this view*. Counting them as healthy instead is what an
+   * earlier cut of `coordCredentialStatus` did, and it put a calm
+   * `credential live` badge on precisely the machines the plan was written
+   * about.
    */
   const credentials = useMemo(
     () =>
@@ -268,7 +278,7 @@ export default function CoordDevOpsPage() {
         title:
           credentials.scrapeUp === false
             ? "Coord could not read the per-device credential join on this poll. This is not 'their credentials are fine' — it is no measurement."
-            : "These machines carry no coord-credential verdict: this coord served none, or their runners have never reported one. UNKNOWN, not healthy.",
+            : "These machines carry no coord-credential verdict on this read. Coord's join only names machines that reported a DEAD credential, so a machine missing from it may be fine or may have reported nothing at all — this strip cannot tell, and each machine's own row below can. UNKNOWN, not healthy.",
         "data-testid": "coord-devops-credential-unknown-badge",
       });
     }
