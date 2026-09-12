@@ -170,6 +170,23 @@ def scan_sources(sources: dict[Path, str]) -> Scan:
     )
 
 
+def duplicate_groups(scan: Scan) -> dict[str, list[Path]]:
+    """``{revision id: [every file declaring it]}`` for the duplicated ids.
+
+    :attr:`Scan.duplicates` records one entry per OVERWRITE, so three files
+    sharing an id produce two pairwise entries — ``(b1, b2)`` and ``(b2, b3)``
+    — which read as two independent collisions and leave the first file out of
+    the second pair. Callers reporting to a human want one entry per id naming
+    every file, and the count of distinct ids rather than of overwrites.
+    """
+    groups: dict[str, list[Path]] = {}
+    for rev, first, second in scan.duplicates:
+        files = groups.setdefault(rev, [first])
+        if second not in files:
+            files.append(second)
+    return groups
+
+
 def read_dir_sources(versions_dir: Path) -> dict[Path, str]:
     """``{path: text}`` for every ``*.py`` directly in ``versions_dir``.
 

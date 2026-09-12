@@ -69,6 +69,7 @@ from _alembic_graph import (  # noqa: E402
     VERSIONS_DIR,
     Remediation,
     Scan,
+    duplicate_groups,
     plan_remediation,
     revisions_at_ref,
     scan_dir,
@@ -299,7 +300,7 @@ def report(scan: Scan, versions_label: str) -> None:
         note(f"HEAD={head}")
     note(
         f"(scanned {scan.file_count} revision file(s), "
-        f"parsed {len(scan.revisions)} revision(s) in {versions_label})"
+        f"parsed {scan.parsed_count} revision(s) in {versions_label})"
     )
 
 
@@ -311,7 +312,9 @@ def main() -> int:
         help=(
             "Print the head count and diagnostics but exit 0 on a multi-head "
             "chain. For the post-merge informational workflow, which must reach "
-            "its comment step. A scan that proved nothing still exits 2."
+            "its comment step. A scan that proved nothing still exits 2 — and so "
+            "does a duplicate revision id, which makes the head count no verdict "
+            "at all rather than a verdict worth reporting past."
         ),
     )
     parser.add_argument(
@@ -362,15 +365,19 @@ def main() -> int:
     # (`__init__.py`) makes `file_count` exceed the revision count with nothing
     # wrong, so that comparison would fire on a healthy tree.
     if scan.duplicates:
+        # Grouped per id, not per overwrite: three files sharing an id record
+        # two pairwise collisions, which would print as two unrelated pairs
+        # with the first file missing from the second.
+        groups = duplicate_groups(scan)
         err(
-            f"{len(scan.duplicates)} DUPLICATE revision id(s) under {label}: "
+            f"{len(groups)} DUPLICATE revision id(s) under {label}: "
             f"{scan.parsed_count} file(s) parsed a revision but only "
             f"{len(scan.revisions)} distinct id(s) survived the scan."
         )
-        for rev, first, second in scan.duplicates:
-            err(f"  - {rev} is declared by BOTH:")
-            err(f"      {_where(rev, first)}")
-            err(f"      {_where(rev, second)}")
+        for rev, files in groups.items():
+            err(f"  - {rev} is declared by {len(files)} files:")
+            for path in files:
+                err(f"      {_where(rev, path)}")
         print(DUPLICATE_REMEDY, file=sys.stderr)
         print(WHY_BLOCKING, file=sys.stderr)
         # NOT downgraded by --report-only: unlike a fork, this says the head

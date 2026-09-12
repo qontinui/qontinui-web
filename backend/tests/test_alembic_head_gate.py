@@ -58,6 +58,7 @@ sys.path.insert(0, str(SCRIPTS_CI))
 
 import notify_forked_open_prs as notifier  # noqa: E402
 from _alembic_graph import (  # noqa: E402
+    duplicate_groups,
     fork_root,
     plan_remediation,
     safe_id,
@@ -164,11 +165,16 @@ def test_an_unparseable_file_is_not_a_duplicate() -> None:
     assert scan.duplicates == ()
 
 
-def test_a_duplicate_can_hide_a_fork_entirely() -> None:
-    """The dangerous shape: the collapse does not merely lose a node, it can
-    turn a genuine two-head tree into a one-head report. ``c`` and the second
-    ``b`` both claim ``b``'s id; the survivor's parent is whichever file was
-    read last, so the head set stops describing the tree on disk."""
+def test_a_duplicate_makes_the_head_set_stop_describing_the_tree() -> None:
+    """The collapse does not merely lose a node — it makes the head set wrong.
+
+    Two files declare ``b``: one with parent ``a``, one as a root
+    (``down_revision = None``). On disk that is two roots; the surviving node
+    keeps whichever parent was read last. ``a`` is still not reported as a
+    head, because ``parents`` retains the ``a`` edge contributed by the file
+    that was overwritten — so the reported head set describes neither the tree
+    on disk nor the tree in the graph.
+    """
     sources = {
         **_tree(("a", None), ("b", "a")),
         Path("b_dup.py"): _revision("b", None),
@@ -176,6 +182,58 @@ def test_a_duplicate_can_hide_a_fork_entirely() -> None:
     scan = scan_sources(sources)
     assert len(scan.revisions) == 2
     assert scan.duplicates != ()
+    assert scan.heads == ("b",)
+
+
+def test_duplicate_groups_collapses_a_triple_into_one_entry() -> None:
+    """``Scan.duplicates`` records one entry per OVERWRITE, so three files
+    sharing an id give two pairwise entries that read as two unrelated
+    collisions. ``duplicate_groups`` is what the human-facing messages use, so
+    the count is of distinct ids and every file appears once."""
+    sources = {
+        **_tree(("a", None), ("b", "a")),
+        Path("b2.py"): _revision("b", "a"),
+        Path("b3.py"): _revision("b", "a"),
+    }
+    scan = scan_sources(sources)
+    assert len(scan.duplicates) == 2  # pairwise: (b,b2) and (b2,b3)
+    groups = duplicate_groups(scan)
+    assert list(groups) == ["b"]  # but ONE duplicated id
+    assert [p.name for p in groups["b"]] == ["b.py", "b2.py", "b3.py"]
+
+
+def test_simulate_drops_a_renamed_files_old_path() -> None:
+    """A PR that RENAMES a revision file while keeping its id is not a duplicate.
+
+    GitHub reports a rename as one entry carrying ``previous_filename``. If the
+    simulation overlays the new path without removing the old one, ``main``'s
+    copy survives beside it, both declare the same revision id, and the sweep
+    would report a duplicate against a tree that does not exist anywhere. The
+    PR gate cannot see this (the real checkout has only the new file), so the
+    simulated tree is the only place it could appear.
+    """
+    versions = notifier.REPO_ROOT / "backend/alembic/versions"
+    main_sources = {
+        versions / "a.py": _revision("a", None),
+        versions / "b_old.py": _revision("b", "a"),
+    }
+    touched = [
+        {
+            "filename": "backend/alembic/versions/b_new.py",
+            "status": "renamed",
+            "previous_filename": "backend/alembic/versions/b_old.py",
+        }
+    ]
+    original = notifier.blob_at
+    notifier.blob_at = lambda repo, path, ref, token: _revision("b", "a")
+    try:
+        sources = notifier.simulate(
+            main_sources, "o/r", {"head": {"sha": "deadbeef"}}, touched, "t"
+        )
+    finally:
+        notifier.blob_at = original
+    assert sorted(p.name for p in sources) == ["a.py", "b_new.py"]
+    assert scan_sources(sources).duplicates == ()
 
 
 # ---------------------------------------------------------------------------
@@ -417,6 +475,19 @@ def test_report_only_does_not_downgrade_a_duplicate_revision_id(
     result = _run(_write_duplicate(tmp_path), "--baseline-ref", "", "--report-only")
     assert result.returncode == 2, result.stdout + result.stderr
     assert "DUPLICATE revision id" in result.stderr
+
+
+def test_gate_names_every_file_when_three_share_one_id(tmp_path: Path) -> None:
+    """One duplicated id, not two collisions, and all three files listed."""
+    versions = _write(tmp_path / "v", ("a", None), ("b", "a"))
+    for extra in ("b2.py", "b3.py"):
+        (versions / extra).write_text(_revision("b", "a"), encoding="utf-8")
+    result = _run(versions, "--baseline-ref", "")
+    assert result.returncode == 2, result.stdout + result.stderr
+    assert "1 DUPLICATE revision id(s)" in result.stderr
+    assert "declared by 3 files" in result.stderr
+    for name in ("b.py", "b2.py", "b3.py"):
+        assert name in result.stderr
 
 
 def test_the_duplicate_that_made_this_gate_green_now_fails(tmp_path: Path) -> None:
