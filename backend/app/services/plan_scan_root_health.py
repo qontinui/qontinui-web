@@ -35,6 +35,18 @@ first three from the reader's side):
    distance is at least what it reported, so the true minimum is at least the
    reported minimum — and equals it only when a device reporting exactly that
    number measured against a fresh ref.
+6. **A device is named least-behind or lagging only when the readings PROVE
+   it.** Floors make reported numbers incomparable: a device reporting "at
+   least 5" may really be 100 behind, so it is not thereby ahead of a device
+   reporting exactly 9. The exact readings give the one usable bound — the
+   least-behind feeder is at most ``min(exact behind)`` away — and a device
+   reporting more than that bound is provably lagging. Everything the
+   readings cannot place goes to ``lag_unknown_device_ids``, so the four id
+   lists partition the feeders and none of them overclaims.
+7. **A failed read is UNKNOWN, never "no drift".** The block rides on reads
+   whose purpose is the corpus, not the drift report, so a scan-root read
+   failure there is served as :func:`scan_roots_read_failed` rather than
+   failing the page — and never as an empty, agreeable list.
 """
 
 from __future__ import annotations
@@ -86,6 +98,27 @@ def no_measured_reading_detail(device_count: int) -> str:
         "this scan source has a reading that supports a claim about now (each "
         "row's state and detail say why), so how far behind the corpus's "
         "least-behind feeder is is not established — not 0"
+    )
+
+
+def scan_roots_read_failed(error: BaseException) -> ScanRootListResponse:
+    """The block when the readings could not be READ — UNKNOWN, with no rows.
+
+    Names only the error's class: its message can carry SQL and parameters,
+    which have no business on a corpus page.
+    """
+    return ScanRootListResponse(
+        state="unknown",
+        detail=(
+            f"read_failed: the plan-scan-source readings could not be read "
+            f"({type(error).__name__}), so whether the corpus's feeders are "
+            "current is not established. The empty list is not 'no drift'."
+        ),
+        fresh_within_secs=FRESH_WITHIN_SECS,
+        count=0,
+        fresh_count=0,
+        rows=[],
+        by_source_repo=[],
     )
 
 
@@ -213,13 +246,17 @@ def rollup_source(
     Only a row whose VERDICT is ``measured`` contributes a number (invariant
     4): the verdict already folds in staleness, supersession and the 0-behind
     floor, so reading ``reported_state`` here would let exactly the rows the
-    verdict disowns set the minimum. Every other row is listed in
-    ``unmeasured_device_ids`` rather than dropped — the roll-up names every
-    feeder, because a lagging or silent one can still write (and regress) the
-    corpus.
+    verdict disowns set the minimum. Every row lands in exactly one of the four
+    id lists (invariant 6) — the roll-up names every feeder, because a lagging
+    or silent one can still write (and regress) the corpus.
     """
-    measured = [r for r in rows if r.state == "measured" and r.behind is not None]
-    unmeasured = [r for r in rows if r not in measured]
+    measured: list[tuple[ScanRootRow, int]] = []
+    unmeasured: list[ScanRootRow] = []
+    for row in rows:
+        if row.state == "measured" and row.behind is not None:
+            measured.append((row, row.behind))
+        else:
+            unmeasured.append(row)
     if not measured:
         return ScanRootSourceRollup(
             source_repo=source_repo,
@@ -231,10 +268,29 @@ def rollup_source(
             min_behind_is_floor=None,
             least_behind_device_ids=[],
             lagging_device_ids=[],
+            lag_unknown_device_ids=[],
             unmeasured_device_ids=_device_ids(unmeasured),
         )
-    min_behind = min(r.behind for r in measured if r.behind is not None)
-    at_min = [r for r in measured if r.behind == min_behind]
+    min_behind = min(behind for _, behind in measured)
+    # An exact reading is one device's TRUE distance, so the least-behind
+    # feeder is at most this far behind. Floors bound nothing from above.
+    ceiling = min(
+        (behind for row, behind in measured if not row.counts_are_floors),
+        default=None,
+    )
+    # Invariant 5: the minimum is exact only when an exact reading reaches it.
+    min_behind_is_floor = ceiling is None or ceiling > min_behind
+    least = [
+        row
+        for row, behind in measured
+        if not min_behind_is_floor
+        and not row.counts_are_floors
+        and behind == min_behind
+    ]
+    lagging = [
+        row for row, behind in measured if ceiling is not None and behind > ceiling
+    ]
+    placed = {row.device_id for row in (*least, *lagging)}
     return ScanRootSourceRollup(
         source_repo=source_repo,
         state="measured",
@@ -242,11 +298,11 @@ def rollup_source(
         device_count=len(rows),
         measured_count=len(measured),
         min_behind=min_behind,
-        # Invariant 5: exact only when SOME device at the minimum is exact.
-        min_behind_is_floor=all(r.counts_are_floors for r in at_min),
-        least_behind_device_ids=_device_ids(at_min),
-        lagging_device_ids=_device_ids(
-            [r for r in measured if r.behind is not None and r.behind > min_behind]
+        min_behind_is_floor=min_behind_is_floor,
+        least_behind_device_ids=_device_ids(least),
+        lagging_device_ids=_device_ids(lagging),
+        lag_unknown_device_ids=_device_ids(
+            [row for row, _ in measured if row.device_id not in placed]
         ),
         unmeasured_device_ids=_device_ids(unmeasured),
     )

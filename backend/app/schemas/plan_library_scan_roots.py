@@ -272,9 +272,9 @@ class ScanRootSourceRollup(BaseModel):
 
     The roll-up still names EVERY feeder, because a lagging device is not
     harmless just because a current one exists: it can write an older body
-    over a newer head. ``lagging_device_ids`` are the measured devices
-    reporting more commits behind than ``min_behind``; ``unmeasured_device_ids``
-    are the rest, whose rows say why.
+    over a newer head. The four id lists PARTITION the devices, and a device is
+    placed as least-behind or lagging only when the readings prove it — floor
+    counts are lower bounds, so "at least 5" is not thereby ahead of exactly 9.
     """
 
     #: The artifact upsert's ``source_repo`` form, as the devices reported it.
@@ -295,11 +295,19 @@ class ScanRootSourceRollup(BaseModel):
     #: stale or unaged ref, so the minimum is itself a LOWER BOUND ("at least
     #: N"). ``null`` exactly when ``min_behind`` is.
     min_behind_is_floor: bool | None
-    #: The ``measured`` devices reporting exactly ``min_behind``.
+    #: Devices PROVEN least behind: an exact reading of ``min_behind`` when
+    #: that minimum is exact. Empty whenever ``min_behind_is_floor`` is true —
+    #: then no device is established as the least behind.
     least_behind_device_ids: list[UUID]
-    #: The ``measured`` devices reporting more than ``min_behind`` (for a floor
-    #: row: at least that many).
+    #: Devices PROVEN lagging: they report (at least) more commits behind than
+    #: the smallest EXACT reading, so some feeder is certainly ahead of them.
+    #: Empty when no reading is exact — nothing then bounds the least-behind
+    #: feeder from above.
     lagging_device_ids: list[UUID]
+    #: ``measured`` devices the readings cannot place — a floor tied with or
+    #: below the smallest exact reading, or an exact reading when a floor
+    #: undercuts it. Each may be least behind or lagging; neither is known.
+    lag_unknown_device_ids: list[UUID]
     #: Devices whose verdict is anything but ``measured``.
     unmeasured_device_ids: list[UUID]
 
