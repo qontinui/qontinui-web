@@ -6,6 +6,7 @@ import { httpClient } from "@/services/service-factory";
 import type {
   CaptureHealthResponse,
   DivergentResponse,
+  ScanRootListResponse,
   WorkArtifactDetail,
   WorkArtifactKind,
   WorkArtifactListResponse,
@@ -296,6 +297,46 @@ export function useCaptureHealth() {
       setError(null);
     } catch (err) {
       setError(message(err, "Failed to load capture health"));
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  return { data, loading, error, reload: load };
+}
+
+/**
+ * Every reporting device's latest reading of the tree its body sync scans.
+ *
+ * Deliberately the same shape as [`useCaptureHealth`] — one read, no
+ * polling — because the two panels answer halves of one question ("where is
+ * the corpus coming from" / "how current is what it was read from") and an
+ * operator refreshes the page to re-ask either.
+ *
+ * On failure `data` is left at whatever was last read and `error` is set, so
+ * the panel can say the rows may be stale rather than blanking them. The
+ * absent case is NOT modelled as an empty list here: the route answers
+ * `state: "unknown"` with rows `[]` for an organization no device has reported
+ * for, and that distinction is the point of the route.
+ */
+export function useScanRoots() {
+  const [data, setData] = useState<ScanRootListResponse | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    try {
+      setLoading(true);
+      setData(
+        await httpClient.get<ScanRootListResponse>(`${API}/scan-roots`)
+      );
+      setError(null);
+    } catch (err) {
+      setError(message(err, "Failed to load scan sources"));
     } finally {
       setLoading(false);
     }
