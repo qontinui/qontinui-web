@@ -10086,7 +10086,7 @@ def validated_group_name(
     rediscover per route. ``test_the_validator_does_not_run_before_the_admin_gate``
     pins it.
 
-    ``create_cognito_group`` is NOT one of these four: its name arrives in
+    ``create_cognito_group`` is NOT one of these: its name arrives in
     ``_CreateGroupBody``, and ``cognito_admin.create_group`` already runs
     the same check on it. Re-validating there would be a second, drifting
     copy of one rule.
@@ -11251,6 +11251,11 @@ async def get_cognito_group_blast_radius(
     can be read as "the list is the whole blast radius".
     """
     capture_caller_bearer(request)
+    # The reader's log events keep their ``cognito_group_delete_*`` names --
+    # they are the delete's, and renaming them per caller would split what a
+    # log reader greps for. This line, emitted BEFORE the read, is what says
+    # the failure that may follow belongs to a preview and not to a delete.
+    logger.info("cognito_group_blast_radius_preview", group_name=group_name)
     radius = await _coord_group_blast_radius(group_name)
     return {
         "group_name": group_name,

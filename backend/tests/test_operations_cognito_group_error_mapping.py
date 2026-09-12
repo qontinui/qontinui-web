@@ -260,6 +260,7 @@ class TestMalformedPathGroupNameIs400:
 
         for method, path in (
             ("DELETE", f"{_GROUPS_URL}/{_BAD_NAME}"),
+            ("GET", f"{_GROUPS_URL}/{_BAD_NAME}/blast-radius"),
             ("GET", f"{_GROUPS_URL}/{_BAD_NAME}/users"),
             ("POST", f"{_GROUPS_URL}/{_BAD_NAME}/users"),
             ("DELETE", f"{_GROUPS_URL}/{_BAD_NAME}/users"),
