@@ -125,7 +125,7 @@ may land before or after the coord change and neither breaks. Landing it
 first is what makes the coord change fast on arrival.
 
 Revision ID: coord_test_results_idx_01
-Revises: claude_acct_01
+Revises: plan_library_05_scan_root_observations
 Create Date: 2026-09-12
 
 """
@@ -138,7 +138,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "coord_test_results_idx_01"
-down_revision: str | None = "claude_acct_01"
+down_revision: str | None = "plan_library_05_scan_root_observations"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
