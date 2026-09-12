@@ -60,10 +60,7 @@ export interface ClearanceRuleEditorDialogProps {
    *  Typed by reference, not by a copy of the shape: `GateClearanceUpdate`
    *  carries the ⚠️ on why it has no `enabled`, and a hand-duplicated literal
    *  here would hide that from the one place a field gets added. */
-  onPatch: (
-    policyId: string,
-    body: GateClearanceUpdate
-  ) => Promise<boolean>;
+  onPatch: (policyId: string, body: GateClearanceUpdate) => Promise<boolean>;
   /** Class or authority changed: replace the row (create → delete; there is no
    *  disable step, and `useGateClearanceRules.replaceRule` says why). */
   onReplace: (
@@ -169,7 +166,10 @@ export function ClearanceRuleEditorDialog({
       policy_id: rule?.policy_id ?? "__draft__",
       built_in: false,
       enabled: true,
-      repo: null,
+      // A payload change REPLACES the row (created without a repo); any other
+      // edit is a PATCH that keeps the row's repo — so preview it with that
+      // repo, or an inert repo-scoped / empty-repo rule would preview as live.
+      repo: payloadChanged ? null : (rule?.repo ?? null),
       expires_at: null,
       priority: priorityValid ? priorityNum : 100,
       decision_domain: "gate_clearance",

@@ -9,9 +9,10 @@
  * halves cannot disagree about what was asked.
  *
  * `repo === ""` is not a pedantic case: coord matches `repo` exactly, and a
- * tenant row with an empty `repo` is ranked in its OWN band, above every other
- * tenant row, by the clearance resolver this console mirrors
- * (`gateClearance.ts` `bandRank`). A truthiness check would silently turn that
+ * tenant row with an empty `repo` is a distinct, INERT row — neither
+ * tenant-wide nor repo-scoped, so no gate consult resolves it
+ * (`gateClearance.ts` `inertReason`, "empty-repo"). Listing exactly those rows
+ * is how an operator finds them. A truthiness check would silently turn that
  * narrow query into a wide one.
  *
  * There is deliberately NO test for listing the disabled arm, because there is
