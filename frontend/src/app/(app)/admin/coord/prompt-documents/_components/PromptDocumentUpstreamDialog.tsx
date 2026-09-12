@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -202,6 +202,11 @@ export function PromptDocumentUpstreamDialog({
   const [resolutions, setResolutions] = useState<
     Record<string, ClauseConflictChoice>
   >({});
+  // Bumped by every reset, so a merge-preview fetch that resolves after the
+  // dialog moved on to another document (or was closed and reopened) is
+  // dropped rather than landed: a plan for policy A must never render — or
+  // carry its half-made choices — over policy B.
+  const mergeEpoch = useRef(0);
 
   const tracked = doc?.upstream_publication_version ?? null;
   const latest = doc?.latest_publication_version ?? null;
@@ -249,10 +254,12 @@ export function PromptDocumentUpstreamDialog({
   // would answer a different one. The merge view resets with it — a plan and
   // its half-made choices belong to ONE document and one publication.
   useEffect(() => {
+    mergeEpoch.current += 1;
     setPane("upstream_change");
     setView("compare");
     setMergePreview(null);
     setResolutions({});
+    setLoadingMerge(false);
   }, [open, doc]);
 
   /**
@@ -262,12 +269,16 @@ export function PromptDocumentUpstreamDialog({
    */
   const openMerge = useCallback(async () => {
     if (!doc || !incoming || !fetchMergePreview) return;
+    const epoch = mergeEpoch.current;
     setLoadingMerge(true);
     const plan = await fetchMergePreview(
       doc.kind,
       doc.name,
       incoming.publication_version
     );
+    // The dialog reset while this was in flight — the answer belongs to a
+    // document that is no longer on screen.
+    if (epoch !== mergeEpoch.current) return;
     setLoadingMerge(false);
     if (!plan) return;
     setMergePreview(plan);

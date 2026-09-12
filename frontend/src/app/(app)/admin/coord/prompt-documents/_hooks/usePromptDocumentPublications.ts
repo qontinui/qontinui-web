@@ -83,9 +83,11 @@ export function classifyPublishError(text: string): PublishRefusal {
  * way as [`classifyPublishError`] and with the same caveat: this CHOOSES AN
  * EXPLANATION, it never decides whether something is allowed.
  *
- * `document_moved` and `unresolved_conflicts` are the two the dialog acts on
- * (re-read, or point at the clauses still needing a choice); the rest render
- * coord's own sentence.
+ * Every refusal is toasted in coord's own words. `document_moved` is
+ * additionally ACTED on by the caller: the decision was made against a
+ * `current_version` that is no longer current, and retrying with the same
+ * number would 409 forever — so the list re-reads the document, which puts the
+ * live version in front of the operator. The rest need nothing further.
  */
 export type UpstreamDecisionRefusal =
   | "document_moved"
@@ -115,6 +117,15 @@ export function classifyUpstreamDecisionError(
   if (/failed: 404\b/.test(text)) return "not_proxied";
   return "unknown";
 }
+
+/**
+ * What one decision call came back with. A refusal carries its classification
+ * so the caller can act on the one that has a remedy (`document_moved` →
+ * re-read) without re-parsing coord's sentence itself.
+ */
+export type UpstreamDecisionOutcome<T> =
+  | { ok: true; value: T }
+  | { ok: false; refusal: UpstreamDecisionRefusal; detail: string };
 
 /**
  * Coord's cross-tenant publication channel, from the operator console.
@@ -256,10 +267,36 @@ export function usePromptDocumentPublications() {
   // dialog already holds. Each write carries `expected_version` — the
   // `current_version` the operator was looking at — so a body that moved
   // underneath the decision is a `document_moved` refusal rather than a
-  // silent overwrite. On a refusal the toast carries coord's own sentence;
-  // the caller gets `null` and decides whether to re-read.
+  // silent overwrite. On a refusal the toast carries coord's own sentence and
+  // the outcome carries its classification, so the caller can re-read on
+  // `document_moved`.
 
   const [deciding, setDeciding] = useState(false);
+
+  /** The shared write shape: post, toast, classify. */
+  const decide = async <T>(
+    url: string,
+    body: unknown,
+    onSuccess: (value: T) => string,
+    fallback: string
+  ): Promise<UpstreamDecisionOutcome<T>> => {
+    try {
+      setDeciding(true);
+      const value = await httpClient.post<T>(url, body);
+      toast.success(onSuccess(value));
+      return { ok: true, value };
+    } catch (err) {
+      const detail = message(err, fallback);
+      toast.error(detail);
+      return {
+        ok: false,
+        refusal: classifyUpstreamDecisionError(detail),
+        detail,
+      };
+    } finally {
+      setDeciding(false);
+    }
+  };
 
   /** `Adopt upstream`: replace the body with the publication and advance the tracked version. */
   const adoptUpstream = useCallback(
@@ -268,27 +305,17 @@ export function usePromptDocumentPublications() {
       name: string,
       publicationVersion: number,
       expectedVersion: number
-    ): Promise<UpstreamDecisionResponse | null> => {
-      try {
-        setDeciding(true);
-        const result = await httpClient.post<UpstreamDecisionResponse>(
-          documentPath(kind, name, "upstream-adopt"),
-          {
-            publication_version: publicationVersion,
-            expected_version: expectedVersion,
-          }
-        );
-        toast.success(
-          `Adopted publication v${result.publication_version} as ${kind}/${name} v${result.to_version}`
-        );
-        return result;
-      } catch (err) {
-        toast.error(message(err, "Failed to adopt the publication"));
-        return null;
-      } finally {
-        setDeciding(false);
-      }
-    },
+    ): Promise<UpstreamDecisionOutcome<UpstreamDecisionResponse>> =>
+      decide<UpstreamDecisionResponse>(
+        documentPath(kind, name, "upstream-adopt"),
+        {
+          publication_version: publicationVersion,
+          expected_version: expectedVersion,
+        },
+        (r) =>
+          `Adopted publication v${r.publication_version} as ${kind}/${name} v${r.to_version}`,
+        "Failed to adopt the publication"
+      ),
     []
   );
 
@@ -302,27 +329,17 @@ export function usePromptDocumentPublications() {
       name: string,
       publicationVersion: number,
       expectedVersion: number
-    ): Promise<UpstreamDecisionResponse | null> => {
-      try {
-        setDeciding(true);
-        const result = await httpClient.post<UpstreamDecisionResponse>(
-          documentPath(kind, name, "upstream-keep"),
-          {
-            publication_version: publicationVersion,
-            expected_version: expectedVersion,
-          }
-        );
-        toast.success(
-          `Kept your ${kind}/${name}; publication v${result.publication_version} recorded as reviewed`
-        );
-        return result;
-      } catch (err) {
-        toast.error(message(err, "Failed to record the decision"));
-        return null;
-      } finally {
-        setDeciding(false);
-      }
-    },
+    ): Promise<UpstreamDecisionOutcome<UpstreamDecisionResponse>> =>
+      decide<UpstreamDecisionResponse>(
+        documentPath(kind, name, "upstream-keep"),
+        {
+          publication_version: publicationVersion,
+          expected_version: expectedVersion,
+        },
+        (r) =>
+          `Kept your ${kind}/${name}; publication v${r.publication_version} recorded as reviewed`,
+        "Failed to record the decision"
+      ),
     []
   );
 
@@ -364,28 +381,18 @@ export function usePromptDocumentPublications() {
       publicationVersion: number,
       expectedVersion: number,
       resolutions: Record<string, ClauseConflictChoice>
-    ): Promise<ClauseMergeApplyResponse | null> => {
-      try {
-        setDeciding(true);
-        const result = await httpClient.post<ClauseMergeApplyResponse>(
-          documentPath(kind, name, "upstream-merge"),
-          {
-            publication_version: publicationVersion,
-            expected_version: expectedVersion,
-            resolutions,
-          }
-        );
-        toast.success(
-          `Merged publication v${result.publication_version} into ${kind}/${name} clause by clause (v${result.to_version}, ${result.clauses} clauses)`
-        );
-        return result;
-      } catch (err) {
-        toast.error(message(err, "Failed to merge the publication"));
-        return null;
-      } finally {
-        setDeciding(false);
-      }
-    },
+    ): Promise<UpstreamDecisionOutcome<ClauseMergeApplyResponse>> =>
+      decide<ClauseMergeApplyResponse>(
+        documentPath(kind, name, "upstream-merge"),
+        {
+          publication_version: publicationVersion,
+          expected_version: expectedVersion,
+          resolutions,
+        },
+        (r) =>
+          `Merged publication v${r.publication_version} into ${kind}/${name} clause by clause (v${r.to_version}, ${r.clauses} clauses)`,
+        "Failed to merge the publication"
+      ),
     []
   );
 

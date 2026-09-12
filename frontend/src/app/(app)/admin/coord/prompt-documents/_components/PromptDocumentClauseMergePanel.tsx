@@ -13,6 +13,7 @@ import {
   canApplyMerge,
   clauseText,
   mergeSummary,
+  resolutionFor,
   resultingSide,
   unresolvedConflicts,
 } from "../_lib/clauseMerge";
@@ -173,7 +174,7 @@ export function PromptDocumentClauseMergePanel({
           <li key={entry.clause}>
             <ClauseMergeRow
               entry={entry}
-              choice={resolutions[entry.clause]}
+              choice={resolutionFor(resolutions, entry.clause)}
               onResolve={onResolve}
               disabled={saving}
             />

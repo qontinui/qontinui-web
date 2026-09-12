@@ -3,6 +3,7 @@ import {
   canApplyMerge,
   clauseText,
   mergeSummary,
+  resolutionFor,
   resultingSide,
   unresolvedConflicts,
 } from "./clauseMerge";
@@ -144,6 +145,17 @@ describe("the apply gate", () => {
     expect(canApplyMerge(p, { b: "local" })).toBe(false);
     expect(unresolvedConflicts(p, { b: "local", c: "upstream" })).toEqual([]);
     expect(canApplyMerge(p, { b: "local", c: "upstream" })).toBe(true);
+  });
+
+  it("does not read a prototype property as a choice", () => {
+    // `constructor` is a legal clause name. An index read on `{}` finds
+    // `Object.prototype.constructor` and would count the conflict as resolved
+    // with no radio checked.
+    const p = preview([entry("constructor", "conflict", { local, upstream })]);
+    expect(resolutionFor({}, "constructor")).toBeUndefined();
+    expect(unresolvedConflicts(p, {})).toEqual(["constructor"]);
+    expect(canApplyMerge(p, {})).toBe(false);
+    expect(canApplyMerge(p, { constructor: "local" })).toBe(true);
   });
 
   it("withholds apply for a no-op plan and for the whole-body fallback", () => {

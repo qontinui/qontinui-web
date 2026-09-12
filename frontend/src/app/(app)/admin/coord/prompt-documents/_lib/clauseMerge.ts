@@ -75,13 +75,32 @@ export function resultingSide(
   }
 }
 
+/**
+ * The operator's choice for `clause`, or `undefined` when none was made.
+ *
+ * An OWN-property read, not an index: `resolutions` is a plain object keyed
+ * on clause NAMES, and a clause may legally be called `constructor` or
+ * `toString` — an index read would find the prototype's function and report
+ * a choice nobody made.
+ */
+export function resolutionFor(
+  resolutions: Record<string, ClauseConflictChoice>,
+  clause: string
+): ClauseConflictChoice | undefined {
+  return Object.prototype.hasOwnProperty.call(resolutions, clause)
+    ? resolutions[clause]
+    : undefined;
+}
+
 /** The conflicted clause names the operator has not chosen a side for yet. */
 export function unresolvedConflicts(
   preview: ClauseMergePreview,
   resolutions: Record<string, ClauseConflictChoice>
 ): string[] {
   if (preview.mode !== "clauses") return [];
-  return preview.conflicts.filter((name) => resolutions[name] === undefined);
+  return preview.conflicts.filter(
+    (name) => resolutionFor(resolutions, name) === undefined
+  );
 }
 
 export interface MergeSummary {
