@@ -274,43 +274,41 @@ def _check_raw_sql(call: ast.Call) -> list[tuple[int, str]]:
 
     body = _strip_sql_comments(sql)
     violations: list[tuple[int, str]] = []
-    seen: set[tuple[int, str, str]] = set()
+    seen: set[tuple[str, str]] = set()
     for label, pattern in _DDL_PATTERNS:
         for m in pattern.finditer(body):
             # A DROP INDEX group may name several indexes; every other
             # pattern's group splits to exactly one identifier.
             for ident in _split_ident_list(m.group("ident")):
-                schema = _ident_schema(ident)
-                if schema is None:
-                    bare = ident.strip().strip('"')
-                    if bare in RAW_SQL_UNQUALIFIED_OK:
-                        continue
-                    key = (call.lineno, label, ident.strip())
-                    if key in seen:
-                        continue
+                key = (label, ident.strip())
+                if key in seen:
+                    continue
+                message = _ident_violation(label, ident)
+                if message is not None:
                     seen.add(key)
-                    violations.append(
-                        (
-                            call.lineno,
-                            f"op.execute(...) raw SQL: {label} references unqualified "
-                            f"identifier {ident.strip()!r}; schema-qualify it (one of: "
-                            f"{sorted(RAW_SQL_ALLOWED_SCHEMAS)})",
-                        )
-                    )
-                elif schema not in RAW_SQL_ALLOWED_SCHEMAS:
-                    key = (call.lineno, label, ident.strip())
-                    if key in seen:
-                        continue
-                    seen.add(key)
-                    violations.append(
-                        (
-                            call.lineno,
-                            f"op.execute(...) raw SQL: {label} references "
-                            f"{ident.strip()!r} in schema {schema!r} — not in allowed "
-                            f"set {sorted(RAW_SQL_ALLOWED_SCHEMAS)}",
-                        )
-                    )
+                    violations.append((call.lineno, message))
     return violations
+
+
+def _ident_violation(label: str, ident: str) -> str | None:
+    """Return the violation message for one audited identifier, or None."""
+    name = ident.strip()
+    schema = _ident_schema(ident)
+    if schema is None:
+        if name.strip('"') in RAW_SQL_UNQUALIFIED_OK:
+            return None
+        return (
+            f"op.execute(...) raw SQL: {label} references unqualified "
+            f"identifier {name!r}; schema-qualify it (one of: "
+            f"{sorted(RAW_SQL_ALLOWED_SCHEMAS)})"
+        )
+    if schema not in RAW_SQL_ALLOWED_SCHEMAS:
+        return (
+            f"op.execute(...) raw SQL: {label} references "
+            f"{name!r} in schema {schema!r} — not in allowed "
+            f"set {sorted(RAW_SQL_ALLOWED_SCHEMAS)}"
+        )
+    return None
 
 
 def _is_op_execute_call(call: ast.Call) -> bool:

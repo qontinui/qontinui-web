@@ -233,10 +233,26 @@ def test_drop_index_pr_1326_mutation_flags():
         'DROP INDEX IF EXISTS "coord"."idx_foo"',
         "DROP INDEX coord.idx_foo CASCADE",
         "DROP INDEX IF EXISTS coord.idx_a, project.idx_b RESTRICT",
+        "DROP INDEX IF EXISTS coord.idx_a,\n    project.idx_b",
+        # A quoted name may contain a comma. The split must not break it
+        # apart, which a naive `group.split(",")` would.
+        'DROP INDEX IF EXISTS "coord"."a,b"',
     ],
 )
 def test_drop_index_qualified_passes(sql):
     assert _audit(sql) == []
+
+
+def test_drop_index_list_across_a_line_break_flags_the_unqualified_name():
+    violations = _audit("DROP INDEX IF EXISTS coord.idx_a,\n    idx_b")
+    assert len(violations) == 1
+    assert "'idx_b'" in violations[0][1]
+
+
+def test_drop_index_quoted_unqualified_name_with_comma_flags_whole_name():
+    violations = _audit('DROP INDEX "idx,foo"')
+    assert len(violations) == 1
+    assert "'\"idx,foo\"'" in violations[0][1]
 
 
 def test_drop_index_list_flags_only_the_unqualified_name():
