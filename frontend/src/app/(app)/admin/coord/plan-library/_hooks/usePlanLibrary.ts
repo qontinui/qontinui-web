@@ -328,17 +328,32 @@ export function useScanRoots() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  // Monotonic id of the newest request, for the same reason [`usePlanLibrary`]
+  // carries one: `http-client.ts` overwrites the caller's AbortController
+  // signal, so two in-flight reads cannot be cancelled and BOTH will write.
+  // The inversion that matters is on the error state — a late failure paints
+  // "the readings below are the last ones read and may be stale" over rows
+  // that are in fact fresh, and a late success clears a banner that was
+  // telling the truth. Nothing calls `reload` today; the guard is here so the
+  // first caller that wires a refresh button does not inherit that.
+  const requestId = useRef(0);
+
   const load = useCallback(async () => {
+    const id = ++requestId.current;
+    const mine = () => requestId.current === id;
     try {
       setLoading(true);
-      setData(
-        await httpClient.get<ScanRootListResponse>(`${API}/scan-roots`)
+      const next = await httpClient.get<ScanRootListResponse>(
+        `${API}/scan-roots`
       );
+      if (!mine()) return;
+      setData(next);
       setError(null);
     } catch (err) {
+      if (!mine()) return;
       setError(message(err, "Failed to load scan sources"));
     } finally {
-      setLoading(false);
+      if (mine()) setLoading(false);
     }
   }, []);
 
