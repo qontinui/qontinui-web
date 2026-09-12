@@ -43,6 +43,7 @@ from app.services.cognito_jwks import (
     CognitoJWKSUnavailableError,
     CognitoTokenInvalidError,
     cognito_jwks_client,
+    cognito_jwks_failure_log_fields,
 )
 
 logger = structlog.get_logger(__name__)
@@ -295,7 +296,12 @@ async def link_identity(
     try:
         claims = await cognito_jwks_client.verify_token(body.id_token)
     except CognitoJWKSUnavailableError as exc:
-        logger.error("identities_link_jwks_unavailable", error=str(exc))
+        # The 503 detail below is deliberately vague, so this line is the
+        # whole diagnostic surface — the shared field set names the JWKS URL
+        # dialled, the setting that produced it, and the transport class.
+        logger.error(
+            "identities_link_jwks_unavailable", **cognito_jwks_failure_log_fields(exc)
+        )
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Identity verification temporarily unavailable.",

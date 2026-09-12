@@ -69,6 +69,7 @@ async def verify_cognito_token_and_resolve_user(
         CognitoJWKSUnavailableError,
         CognitoTokenInvalidError,
         cognito_jwks_client,
+        cognito_jwks_failure_log_fields,
     )
     from app.services.cognito_provision import (
         CognitoClaimError,
@@ -85,8 +86,12 @@ async def verify_cognito_token_and_resolve_user(
         claims: dict[str, Any] = await cognito_jwks_client.verify_token(token)
     except CognitoJWKSUnavailableError as exc:
         # JWKS unreachable (e.g. cold start) — fail closed, never trust an
-        # unverified token. Logged loud for ops.
-        logger.error("cognito_jwks_unavailable", error=str(exc))
+        # unverified token. Logged loud for ops, through the shared field set:
+        # the caller sees only "temporarily unavailable", so this line has to
+        # name the JWKS URL dialled, the setting that produced it, and the
+        # transport class — ``error=str(exc)`` alone cannot separate a wrong
+        # issuer from an unreachable Cognito.
+        logger.error("cognito_jwks_unavailable", **cognito_jwks_failure_log_fields(exc))
         raise CognitoAuthError("Cognito JWKS temporarily unavailable") from exc
     except CognitoTokenInvalidError as exc:
         logger.warning("cognito_token_invalid", error=str(exc))
