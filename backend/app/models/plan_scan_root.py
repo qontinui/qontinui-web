@@ -51,6 +51,11 @@ from app.models.work_artifact import NIL_ORGANIZATION_ID
 #: own CHECK, which is history and must never be rewritten) against it. Adding
 #: a fifth state without updating those is a silent drift that Postgres would
 #: only surface as a 500 on the first device to report it.
+#:
+#: The operator console's copy (``SCAN_ROOT_STATES`` in the frontend's
+#: ``admin/coord/plan-library/types.ts``) is across a repo seam no test here
+#: can reach. ``types.wire.test.ts`` beside it pins it against the committed
+#: OpenAPI snapshots, which backend CI regenerates from this app's schema.
 SCAN_ROOT_STATES: tuple[str, ...] = (
     "measured",
     "not_scanning",
