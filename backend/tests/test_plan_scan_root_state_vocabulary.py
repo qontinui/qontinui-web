@@ -4,7 +4,7 @@ Post-merge follow-up to qontinui-web#1310
 (``2026-09-11-the-plan-corpus-scan-root-does-not-report-its-own-drift``).
 
 ``measured | not_scanning | not_a_git_work_tree | unknown`` is written out four
-times, and until this module nothing connected any two of them:
+times in this backend, and until this module nothing connected any two of them:
 
 1. ``app.models.plan_scan_root.SCAN_ROOT_STATES`` — which #1310 defined and
    then never read, from anywhere. Its own docstring said it was "enforced in
