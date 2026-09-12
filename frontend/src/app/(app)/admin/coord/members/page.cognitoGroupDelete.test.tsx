@@ -130,7 +130,7 @@ interface RouteState {
    * arm most likely to be wrong is again the one with no answer.
    */
   blastRadius:
-    | Record<string, unknown>
+    | { mode: "ok"; body: Record<string, unknown> }
     | { mode: "error"; status: number; body: unknown }
     | { mode: "pending" }
     | { mode: "malformed" };
@@ -174,13 +174,13 @@ function installRouter() {
       if (radius) {
         blastRadiusCalls.push(decodeURIComponent(radius[1]));
         const br = state.blastRadius;
-        if ("mode" in br) {
-          if (br.mode === "error") return jsonResponse(br.status, br.body);
-          if (br.mode === "pending") return new Promise<Response>(() => {});
-          // 200, `res.ok`, and not a verdict.
+        if (br.mode === "error") return jsonResponse(br.status, br.body);
+        if (br.mode === "pending") return new Promise<Response>(() => {});
+        // 200, `res.ok`, and not a verdict.
+        if (br.mode === "malformed") {
           return jsonResponse(200, { unexpected: "shape" });
         }
-        return jsonResponse(200, br);
+        return jsonResponse(200, br.body);
       }
       const users = path.match(
         /\/coord\/cognito\/groups\/([^/]+)\/users(\?|$)/
@@ -241,7 +241,7 @@ function mapping(group_id: string, tenant_slug: string, role: string) {
 }
 
 /**
- * The backend's blast-radius body. Zero everywhere unless told otherwise —
+ * The backend's blast-radius body, as the `ok` router state. Zero everywhere unless told otherwise —
  * "deleting this group breaks nothing", the only verdict the confirm is
  * enabled on. `mapped_total` defaults to the SUM of the three buckets, the
  * invariant the backend itself enforces.
@@ -257,21 +257,26 @@ function verdict(
     strands_other_tenant_count: number;
     strands_total: number;
   }> = {}
-): Record<string, unknown> {
+): { mode: "ok"; body: Record<string, unknown> } {
   const own = overrides.mapped_own_tenant ?? [];
   const other = overrides.mapped_other_tenant_rows ?? 0;
   const unmaterialized = overrides.mapped_unmaterialized_rows ?? 0;
   const strandsOwn = overrides.strands_own_tenant ?? [];
   const strandsOther = overrides.strands_other_tenant_count ?? 0;
   return {
-    group_name: overrides.group_name ?? "acme-devs",
-    mapped_total: overrides.mapped_total ?? own.length + other + unmaterialized,
-    mapped_own_tenant: own,
-    mapped_other_tenant_rows: other,
-    mapped_unmaterialized_rows: unmaterialized,
-    strands_total: overrides.strands_total ?? strandsOwn.length + strandsOther,
-    strands_own_tenant: strandsOwn,
-    strands_other_tenant_count: strandsOther,
+    mode: "ok",
+    body: {
+      group_name: overrides.group_name ?? "acme-devs",
+      mapped_total:
+        overrides.mapped_total ?? own.length + other + unmaterialized,
+      mapped_own_tenant: own,
+      mapped_other_tenant_rows: other,
+      mapped_unmaterialized_rows: unmaterialized,
+      strands_total:
+        overrides.strands_total ?? strandsOwn.length + strandsOther,
+      strands_own_tenant: strandsOwn,
+      strands_other_tenant_count: strandsOther,
+    },
   };
 }
 
@@ -368,7 +373,7 @@ describe("/admin/coord/members — Cognito group delete", () => {
   // telling the operator there is nothing to break.
   // ---------------------------------------------------------------------
 
-  it("reports an unreadable tenant-mapping read as unknown, never as 'no tenant mappings'", async () => {
+  it("reports an unreadable tenant-mapping read as unknown, never as 'no mappings in your tenant'", async () => {
     state.mappingsMode = "error";
     const user_ = userEvent.setup();
     render(<MembersPage />);
@@ -384,7 +389,7 @@ describe("/admin/coord/members — Cognito group delete", () => {
     expect(
       within(blast).queryByTestId("cognito-group-unmapped-acme-devs")
     ).toBeNull();
-    expect(blast.textContent ?? "").not.toMatch(/no tenant mappings/i);
+    expect(blast.textContent ?? "").not.toMatch(/no mappings in your tenant/i);
   });
 
   it("does not claim an empty blast radius in the confirmation when the verdict read failed", async () => {
@@ -456,10 +461,10 @@ describe("/admin/coord/members — Cognito group delete", () => {
     expect(
       within(blast).queryByTestId("cognito-group-unmapped-acme-devs")
     ).toBeNull();
-    expect(blast.textContent ?? "").not.toMatch(/no tenant mappings/i);
+    expect(blast.textContent ?? "").not.toMatch(/no mappings in your tenant/i);
   });
 
-  it("treats a 200 with a malformed body as unknown, never as 'no mappings'", async () => {
+  it("treats a 200 with a malformed body as unknown, never as 'no mappings in your tenant'", async () => {
     // The status-only trap: `res.ok` is true, so a check that stops at the
     // status calls this a successful read. What the body actually carries is
     // no answer at all — and a `?? []` fallback would render that as the
@@ -478,7 +483,7 @@ describe("/admin/coord/members — Cognito group delete", () => {
     expect(
       within(blast).queryByTestId("cognito-group-unmapped-acme-devs")
     ).toBeNull();
-    expect(blast.textContent ?? "").not.toMatch(/no tenant mappings/i);
+    expect(blast.textContent ?? "").not.toMatch(/no mappings in your tenant/i);
 
     // …and the confirmation is NOT derived from that list any more: it reads
     // the pool-wide verdict itself, so a malformed list read leaves it able
@@ -489,7 +494,7 @@ describe("/admin/coord/members — Cognito group delete", () => {
     await waitFor(() =>
       expect(
         screen.getByTestId("cognito-delete-confirm-mappings-acme-devs")
-      ).toHaveTextContent(/pool-wide/i)
+      ).toHaveTextContent(/No coord tenant mappings reference this group/i)
     );
   });
 
@@ -532,7 +537,7 @@ describe("/admin/coord/members — Cognito group delete", () => {
     expect(
       within(blast).queryByTestId("cognito-group-mapping-acme-devs-acme-operator")
     ).toBeNull();
-    expect(blast.textContent ?? "").not.toMatch(/no tenant mappings/i);
+    expect(blast.textContent ?? "").not.toMatch(/no mappings in your tenant/i);
   });
 
   it("spends no member probes on a panel nobody opened", async () => {
@@ -749,6 +754,12 @@ describe("/admin/coord/members — Cognito group delete", () => {
       expect(bullet).not.toHaveTextContent(
         /No coord tenant mappings reference this group/i
       );
+      // Nothing of the caller's is listed, so "the ones in your tenant,
+      // above" would point at nothing; the tail names who CAN clear it.
+      expect(bullet).toHaveTextContent(
+        /by an administrator of the tenants they are in/i
+      );
+      expect(bullet).not.toHaveTextContent(/above/i);
 
       await user_.type(
         screen.getByTestId("cognito-delete-confirm-acme-devs-phrase-input"),
@@ -776,6 +787,7 @@ describe("/admin/coord/members — Cognito group delete", () => {
         "cognito-delete-confirm-mappings-acme-devs"
       );
       await waitFor(() => expect(bullet).toHaveTextContent("acme, beta-corp"));
+      expect(bullet).toHaveTextContent(/the ones in your tenant, above/i);
       expect(bullet).toHaveTextContent(
         /2 further mappings in tenants you do not administer/i
       );
@@ -866,7 +878,13 @@ describe("/admin/coord/members — Cognito group delete", () => {
       );
       await waitFor(() => expect(bullet).toHaveTextContent(/could not be read/i));
       expect(bullet).toHaveTextContent(/unknown/i);
-      expect(bullet).toHaveTextContent(/not yet deployed the blast-radius read/i);
+      // The CAUSE — code + coord's status — and NOT the delete's refusal
+      // prose: "Nothing was deleted" is about a click nobody made yet.
+      expect(bullet).toHaveTextContent(
+        /mapping_check_unavailable, coord answered 404/
+      );
+      expect(bullet).not.toHaveTextContent(/not yet deployed the blast-radius read/i);
+      expect(bullet).not.toHaveTextContent(/Nothing was deleted/i);
       expect(bullet).toHaveTextContent(/server-side/i);
       expect(bullet).not.toHaveTextContent(/No coord tenant mappings/i);
 

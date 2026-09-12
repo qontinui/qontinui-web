@@ -220,15 +220,24 @@ class TestTheVerdictIsReturnedHonestly:
         assert body["mapped_own_tenant"] == []
         assert body["strands_own_tenant"] == []
 
-    def test_the_body_never_carries_another_tenants_slug(
+    def test_the_key_set_is_pinned_so_a_new_field_must_come_through_here(
         self, admin_client: TestClient
     ) -> None:
         # Coord names no tenant the caller does not administer; this route
-        # must not grow a field that would. Pin the key set so a future
-        # "helpful" addition has to come through here.
-        r = _Read(verdict=_verdict(other=4, strands_other=2))
+        # must not grow a field that would. This pins the KEY SET (a leak
+        # through a new field) and that the two slug lists are exactly the
+        # own-tenant inputs (a leak through an existing one). It cannot see
+        # a slug coord itself mislabels as own-tenant -- that is coord's test.
+        r = _Read(
+            verdict=_verdict(
+                own=[_own("acme")], other=4, strands_own=["acme"], strands_other=2
+            )
+        )
         out = r.run(admin_client, _preview_url())
-        assert set(out.json()) == {
+        body = out.json()
+        assert body["mapped_own_tenant"] == ["acme"]
+        assert body["strands_own_tenant"] == ["acme"]
+        assert set(body) == {
             "group_name",
             "mapped_total",
             "mapped_own_tenant",
@@ -301,6 +310,11 @@ class TestTheGatesRunBeforeCoordIsAsked:
         assert r.get_calls == []
 
     def test_a_non_superuser_is_403_and_costs_no_coord_round_trip(self) -> None:
+        # A MALFORMED name, on purpose: with a valid one a 403 from the gate
+        # and a 400 from the validator are indistinguishable from outside, and
+        # swapping the two `Depends` would pass. The anonymous-caller version
+        # of the same ordering is enumerated in
+        # ``test_operations_cognito_group_error_mapping.py``.
         from app.api.deps import (
             get_async_db,
             get_current_active_user_async,
@@ -320,6 +334,6 @@ class TestTheGatesRunBeforeCoordIsAsked:
         app.include_router(operations_router, prefix="/api/v1/operations")
 
         r = _Read()
-        out = r.run(TestClient(app), _preview_url())
+        out = r.run(TestClient(app), _preview_url("acme%20devs"))
         assert out.status_code == 403, out.text
         assert r.get_calls == []
