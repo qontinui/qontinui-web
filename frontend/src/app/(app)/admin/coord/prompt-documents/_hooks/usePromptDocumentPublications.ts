@@ -4,11 +4,15 @@ import { useCallback, useState } from "react";
 import { toast } from "sonner";
 import { httpClient } from "@/services/service-factory";
 import type {
+  ClauseConflictChoice,
+  ClauseMergeApplyResponse,
+  ClauseMergePreview,
   ListPublicationsResponse,
   Publication,
   PublicationSummary,
   PromptDocumentKind,
   PublishResponse,
+  UpstreamDecisionResponse,
 } from "../types";
 
 const API = "/api/v1/operations";
@@ -29,6 +33,17 @@ function publicationPath(
 
 function message(err: unknown, fallback: string): string {
   return err instanceof Error ? err.message : fallback;
+}
+
+/** `/coord/prompt-documents/:kind/:name/<tail>`, each segment encoded. */
+function documentPath(
+  kind: PromptDocumentKind,
+  name: string,
+  tail: string
+): string {
+  return `${API}/coord/prompt-documents/${encodeURIComponent(
+    kind
+  )}/${encodeURIComponent(name)}/${tail}`;
 }
 
 /**
@@ -58,6 +73,45 @@ export function classifyPublishError(text: string): PublishRefusal {
   // The web backend proxies coord route by route; a 404 that names no coord
   // error code is this deployment's proxy not carrying the route yet, which is
   // a different fact from coord refusing and must not be reported as one.
+  if (/failed: 404\b/.test(text)) return "not_proxied";
+  return "unknown";
+}
+
+/**
+ * The typed refusals the three modified-tenant decisions can return (plan
+ * `2026-09-04-cross-tenant-policy-publishing` D4 / Phase 7), recovered the same
+ * way as [`classifyPublishError`] and with the same caveat: this CHOOSES AN
+ * EXPLANATION, it never decides whether something is allowed.
+ *
+ * `document_moved` and `unresolved_conflicts` are the two the dialog acts on
+ * (re-read, or point at the clauses still needing a choice); the rest render
+ * coord's own sentence.
+ */
+export type UpstreamDecisionRefusal =
+  | "document_moved"
+  | "already_current"
+  | "already_reviewed"
+  | "unresolved_conflicts"
+  | "whole_body_fallback"
+  | "nothing_to_merge"
+  | "schema_migration_pending"
+  | "not_proxied"
+  | "unknown";
+
+export function classifyUpstreamDecisionError(
+  text: string
+): UpstreamDecisionRefusal {
+  for (const code of [
+    "document_moved",
+    "already_current",
+    "already_reviewed",
+    "unresolved_conflicts",
+    "whole_body_fallback",
+    "nothing_to_merge",
+    "schema_migration_pending",
+  ] as const) {
+    if (text.includes(code)) return code;
+  }
   if (/failed: 404\b/.test(text)) return "not_proxied";
   return "unknown";
 }
@@ -196,6 +250,145 @@ export function usePromptDocumentPublications() {
     []
   );
 
+  // ---- the modified-tenant decisions (D4, Phase 7) ----------------------
+  //
+  // Three writes and one read, all against the SAME document address the
+  // dialog already holds. Each write carries `expected_version` — the
+  // `current_version` the operator was looking at — so a body that moved
+  // underneath the decision is a `document_moved` refusal rather than a
+  // silent overwrite. On a refusal the toast carries coord's own sentence;
+  // the caller gets `null` and decides whether to re-read.
+
+  const [deciding, setDeciding] = useState(false);
+
+  /** `Adopt upstream`: replace the body with the publication and advance the tracked version. */
+  const adoptUpstream = useCallback(
+    async (
+      kind: PromptDocumentKind,
+      name: string,
+      publicationVersion: number,
+      expectedVersion: number
+    ): Promise<UpstreamDecisionResponse | null> => {
+      try {
+        setDeciding(true);
+        const result = await httpClient.post<UpstreamDecisionResponse>(
+          documentPath(kind, name, "upstream-adopt"),
+          {
+            publication_version: publicationVersion,
+            expected_version: expectedVersion,
+          }
+        );
+        toast.success(
+          `Adopted publication v${result.publication_version} as ${kind}/${name} v${result.to_version}`
+        );
+        return result;
+      } catch (err) {
+        toast.error(message(err, "Failed to adopt the publication"));
+        return null;
+      } finally {
+        setDeciding(false);
+      }
+    },
+    []
+  );
+
+  /**
+   * `Keep mine`: record "reviewed publication N, declined" — the tracked
+   * version advances, the body does not. This is what clears the badge.
+   */
+  const keepMine = useCallback(
+    async (
+      kind: PromptDocumentKind,
+      name: string,
+      publicationVersion: number,
+      expectedVersion: number
+    ): Promise<UpstreamDecisionResponse | null> => {
+      try {
+        setDeciding(true);
+        const result = await httpClient.post<UpstreamDecisionResponse>(
+          documentPath(kind, name, "upstream-keep"),
+          {
+            publication_version: publicationVersion,
+            expected_version: expectedVersion,
+          }
+        );
+        toast.success(
+          `Kept your ${kind}/${name}; publication v${result.publication_version} recorded as reviewed`
+        );
+        return result;
+      } catch (err) {
+        toast.error(message(err, "Failed to record the decision"));
+        return null;
+      } finally {
+        setDeciding(false);
+      }
+    },
+    []
+  );
+
+  /**
+   * The clause-grained merge PREVIEW for a `policy` document. Read-only —
+   * coord decides nothing and writes nothing here. `null` on any failure,
+   * with the reason toasted: a preview that could not be read is UNKNOWN,
+   * not "nothing to merge".
+   */
+  const fetchMergePreview = useCallback(
+    async (
+      kind: PromptDocumentKind,
+      name: string,
+      publicationVersion: number
+    ): Promise<ClauseMergePreview | null> => {
+      try {
+        return await httpClient.get<ClauseMergePreview>(
+          `${documentPath(kind, name, "upstream-merge")}?publication_version=${publicationVersion}`
+        );
+      } catch (err) {
+        toast.error(message(err, "Failed to load the clause merge preview"));
+        return null;
+      }
+    },
+    []
+  );
+
+  /**
+   * `Merge clauses`: land a reviewed clause-grained merge. `resolutions` is
+   * one choice per CONFLICTED clause; coord refuses (`unresolved_conflicts`,
+   * naming them) rather than defaulting any that are missing, and the panel
+   * does not offer the button until every one is chosen — so that refusal is
+   * a belt-and-braces check, not the normal path.
+   */
+  const applyMerge = useCallback(
+    async (
+      kind: PromptDocumentKind,
+      name: string,
+      publicationVersion: number,
+      expectedVersion: number,
+      resolutions: Record<string, ClauseConflictChoice>
+    ): Promise<ClauseMergeApplyResponse | null> => {
+      try {
+        setDeciding(true);
+        const result = await httpClient.post<ClauseMergeApplyResponse>(
+          documentPath(kind, name, "upstream-merge"),
+          {
+            publication_version: publicationVersion,
+            expected_version: expectedVersion,
+            resolutions,
+          }
+        );
+        toast.success(
+          `Merged publication v${result.publication_version} into ${kind}/${name} clause by clause (v${result.to_version}, ${result.clauses} clauses)`
+        );
+        return result;
+      } catch (err) {
+        toast.error(message(err, "Failed to merge the publication"));
+        return null;
+      } finally {
+        setDeciding(false);
+      }
+    },
+    []
+  );
+
   return {
     publishing,
     /**
@@ -208,5 +401,11 @@ export function usePromptDocumentPublications() {
     fetchPublications,
     fetchPublication,
     publish,
+    /** True while any of the three decisions is in flight. */
+    deciding,
+    adoptUpstream,
+    keepMine,
+    fetchMergePreview,
+    applyMerge,
   };
 }
