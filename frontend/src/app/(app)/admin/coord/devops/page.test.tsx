@@ -50,9 +50,16 @@ vi.mock("@/services/service-factory", () => ({
 // their own tests) and one of them opens a WebSocket. Stubbed to a seeded,
 // empty stream so the machine list under test is built from the fleet payload
 // and coord's device list alone.
+//
+// The device-status half is seedable rather than permanently empty: its rows
+// carry the runner's own `details` bag, which is where the credential posture
+// of plan `2026-09-12-runner-loads-with-an-expired-coord-credential-and-…`
+// arrives. Tests that do not seed it get exactly the empty stream this stub
+// always was.
+const deviceStatusRows = new Map<string, unknown>();
 vi.mock("@/components/operations/useDeviceStatusStream", () => ({
   useDeviceStatusStream: () => ({
-    byHostname: new Map(),
+    byHostname: deviceStatusRows,
     connected: false,
     error: null,
     seeded: true,
@@ -99,9 +106,42 @@ import {
 } from "@/components/operations/FleetHealthSummary";
 import { useFleetHealth } from "@/components/operations/useFleetHealth";
 
-/** Coord wire shape — mirrors `DeviceHealthSnapshot` (fleet_health.rs). */
-function coordDevice(id: string, hostname: string, state?: string) {
-  return { device_id: id, hostname, state };
+/**
+ * Coord wire shape — mirrors `DeviceHealthSnapshot` (fleet_health.rs).
+ *
+ * `extra` carries the fields a given test is about (today: `credential_dark`),
+ * spread verbatim so a fixture can also serve a coord that omits them — which
+ * is the UNKNOWN case, and the one the credential tests below turn on.
+ */
+function coordDevice(
+  id: string,
+  hostname: string,
+  state?: string,
+  extra?: Record<string, unknown>
+) {
+  return { device_id: id, hostname, state, ...(extra ?? {}) };
+}
+
+/**
+ * One `coord.device_status` row as the stream serves it, carrying the runner's
+ * open `details` bag. Only the fields `MachineCard` reads are populated.
+ */
+function deviceStatusRow(
+  deviceId: string,
+  hostname: string,
+  details: Record<string, unknown>
+) {
+  return {
+    device_id: deviceId,
+    hostname,
+    current_task: null,
+    current_repo: null,
+    current_branch: null,
+    free_text: null,
+    details,
+    tenant_id: null,
+    updated_at: new Date().toISOString(),
+  };
 }
 
 /** A runner row as `GET /operations/fleet` serves it. */
@@ -257,6 +297,7 @@ describe("/admin/coord/devops", () => {
     httpGet.mockReset();
     httpFetch.mockReset();
     routerPush.mockReset();
+    deviceStatusRows.clear();
     window.localStorage.clear();
   });
 
@@ -940,9 +981,9 @@ describe("/admin/coord/devops — CI capacity", () => {
     // than about the machine. The rule THIS test guards is narrower and
     // unchanged: nothing in the CI-capacity area may render as a dead toggle,
     // because a dead toggle there IS a claim about the machine.
-    const deadControls = Array.from(ghost.querySelectorAll("[disabled]")).filter(
-      (el) => el.closest('[data-testid="device-drain"]') === null
-    );
+    const deadControls = Array.from(
+      ghost.querySelectorAll("[disabled]")
+    ).filter((el) => el.closest('[data-testid="device-drain"]') === null);
     expect(deadControls).toEqual([]);
     // ...and the linked machine on the same page is unaffected.
     expect(
@@ -1508,5 +1549,259 @@ describe("/admin/coord/devops — machine drain", () => {
     expect(
       within(block).queryByTestId("device-drain-undrain")
     ).not.toBeInTheDocument();
+  });
+});
+
+/**
+ * **Can each machine still reach coord?** — plan
+ * `2026-09-12-runner-loads-with-an-expired-coord-credential-and-tells-nobody`
+ * Phase 5.
+ *
+ * The incident: a runner restored an EXPIRED coord device JWT at boot, could
+ * not self-refresh, and told nobody. It answered every probe, so coord read it
+ * `healthy`; its 164 session rows carried 5 `claudeCodeSessionId`s, and a
+ * device whose sessions are all unbound is otherwise invisible in this console
+ * — its absence read as "no sessions", not as "a machine that cannot reach us".
+ *
+ * The assertion that matters most is the THIRD one. A device on a runner or a
+ * coord that reports no credential at all must render UNKNOWN and must not be
+ * worded or coloured as if it were `live`; getting that wrong reproduces the
+ * exact defect this phase exists to close, on a page built to report it.
+ */
+describe("/admin/coord/devops — the coord-credential axis", () => {
+  beforeEach(() => {
+    httpGet.mockReset();
+    httpFetch.mockReset();
+    routerPush.mockReset();
+    deviceStatusRows.clear();
+    window.localStorage.clear();
+  });
+
+  /** The credential badge on one machine's row, or null. */
+  function credentialBadge(hostname: string): HTMLElement | null {
+    return (
+      document
+        .querySelector(`[data-hostname="${hostname}"]`)
+        ?.querySelector("[data-operations-coord-credential]") ?? null
+    );
+  }
+
+  it("renders a live device as live, and raises nothing on the strip", async () => {
+    mockRoutes({
+      devices: [
+        coordDevice("d-1", "msi", "healthy", {
+          // The scan RAN and this device was not in its result set.
+          credential_dark: { dark: false },
+        }),
+      ],
+      runners: [runner("msi")],
+      samples: [],
+      healthExtras: { credential_dark_scrape_up: true },
+    });
+
+    render(<CoordDevOpsPage />);
+
+    await waitFor(() => expect(credentialBadge("msi")).not.toBeNull());
+    const badge = credentialBadge("msi") as HTMLElement;
+    expect(badge).toHaveAttribute("data-operations-coord-credential", "live");
+    expect(badge).toHaveAttribute(
+      "data-operations-coord-credential-measured",
+      "true"
+    );
+    expect(badge).toHaveTextContent("credential live");
+    // Calm: no red, no ✕, and nothing on the strip. A fleet with nothing to
+    // say says nothing.
+    expect(badge.innerHTML).not.toMatch(/bg-red-/);
+    expect(badge).not.toHaveTextContent("✕");
+    expect(
+      screen.queryByTestId("coord-devops-credential-dark-badge")
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByTestId("coord-devops-credential-unknown-badge")
+    ).not.toBeInTheDocument();
+  });
+
+  it("renders a dark device in red, names the runner's reason, and counts it on the strip", async () => {
+    mockRoutes({
+      devices: [
+        coordDevice("d-1", "msi", "healthy", {
+          credential_dark: {
+            dark: true,
+            reason:
+              "device-JWT re-mint failed (coord non-2xx or persist error) and the existing JWT is expired",
+          },
+        }),
+      ],
+      // Coord still reads this box HEALTHY — the whole point. The two axes
+      // must be able to disagree on one row.
+      runners: [runner("msi")],
+      samples: [],
+      healthExtras: { credential_dark_scrape_up: true },
+    });
+
+    render(<CoordDevOpsPage />);
+
+    await waitFor(() => expect(credentialBadge("msi")).not.toBeNull());
+    const badge = credentialBadge("msi") as HTMLElement;
+    expect(badge).toHaveAttribute("data-operations-coord-credential", "dark");
+    // R3: red, because a person must act — and the colourblind-safe glyph.
+    expect(badge.innerHTML).toMatch(/bg-red-/);
+    expect(badge).toHaveTextContent("✕");
+    // The runner's own reason is one hover away, not a trip to the alert row.
+    expect(
+      badge.querySelector("[data-status-kind='dark']")?.getAttribute("title")
+    ).toContain("re-mint failed");
+    // Liveness is untouched: coord still reaches this machine.
+    expect(
+      document
+        .querySelector('[data-hostname="msi"]')
+        ?.querySelector('[data-coord-state="healthy"]')
+    ).not.toBeNull();
+    // And the strip carries the count, in red, linking to the alerts list
+    // where coord's critical `runner_coord_credentials_missing` row lives.
+    const strip = screen.getByTestId("coord-devops-credential-dark-badge");
+    expect(strip).toHaveTextContent("credential dark 1");
+    fireEvent.click(strip);
+    expect(routerPush).toHaveBeenCalledWith("/admin/coord/alerts");
+  });
+
+  it("renders a device whose report carries NO credential as UNKNOWN, never as healthy", async () => {
+    // The coord this fixture serves predates the join (or its read failed):
+    // no `credential_dark` on the device, and no flag on the body. This is the
+    // shape every device had before the plan, and the shape a device on an
+    // older runner build keeps having afterwards.
+    mockRoutes({
+      devices: [coordDevice("d-1", "msi", "healthy")],
+      runners: [runner("msi")],
+      samples: [],
+    });
+
+    render(<CoordDevOpsPage />);
+
+    await waitFor(() => expect(credentialBadge("msi")).not.toBeNull());
+    const badge = credentialBadge("msi") as HTMLElement;
+    expect(badge).toHaveAttribute(
+      "data-operations-coord-credential",
+      "unknown"
+    );
+    expect(badge).toHaveAttribute(
+      "data-operations-coord-credential-measured",
+      "false"
+    );
+    expect(badge).toHaveTextContent("credential unknown");
+    // The load-bearing negative: NOT live, and not painted calm. Amber is the
+    // ignorance floor — a statement about our knowledge, not about the box.
+    expect(badge).not.toHaveTextContent("credential live");
+    expect(badge.innerHTML).toMatch(/bg-amber-/);
+    expect(
+      badge.querySelector("[data-status-kind='unknown']")?.getAttribute("title")
+    ).toMatch(/UNKNOWN, not healthy/);
+    // …and the strip says so too, as a count of unmeasured machines rather
+    // than a zero.
+    expect(
+      screen.getByTestId("coord-devops-credential-unknown-badge")
+    ).toHaveTextContent("credential unknown 1");
+    expect(
+      screen.queryByTestId("coord-devops-credential-dark-badge")
+    ).not.toBeInTheDocument();
+  });
+
+  it("says so differently when coord tells us its credential join did not run", async () => {
+    mockRoutes({
+      devices: [coordDevice("d-1", "msi", "healthy")],
+      runners: [runner("msi")],
+      samples: [],
+      // Coord served the flag and it is FALSE: its own read failed, so the
+      // null beside it is coord's gap rather than a fact about the machine.
+      healthExtras: { credential_dark_scrape_up: false },
+    });
+
+    render(<CoordDevOpsPage />);
+
+    const strip = await screen.findByTestId(
+      "coord-devops-credential-unknown-badge"
+    );
+    // "Coord could not read it" and "nobody has reported one" are different
+    // facts and the badge words them differently — same discipline the
+    // `alerts unknown` badge one field up already follows.
+    expect(strip.getAttribute("title")).toMatch(/could not read/);
+    expect(strip.getAttribute("title")).not.toMatch(/never reported/);
+  });
+
+  it("reports the finer posture, and its `since`, once a runner publishes one", async () => {
+    // Forward compatibility, and the arm the boolean wire cannot reach: the
+    // runner's own `details.coord_credential` bag (plan Phase 1, landing in
+    // qontinui-runner) distinguishes `unrefreshable` — every automatic rung
+    // has failed — from a generic dark, and is the only source of `since`.
+    deviceStatusRows.set(
+      "msi",
+      deviceStatusRow("d-1", "msi", {
+        coord_credential: {
+          ok: false,
+          posture: "unrefreshable",
+          since: "2026-09-12T03:54:26Z",
+          reason: "slot JWT is expired/opaque — cannot self-refresh",
+        },
+      })
+    );
+    mockRoutes({
+      devices: [
+        coordDevice("d-1", "msi", "healthy", {
+          // Coord's coarser join says dark; the runner's own report is finer
+          // and wins, without contradicting it.
+          credential_dark: { dark: true },
+        }),
+      ],
+      runners: [runner("msi")],
+      samples: [],
+      healthExtras: { credential_dark_scrape_up: true },
+    });
+
+    render(<CoordDevOpsPage />);
+
+    await waitFor(() => expect(credentialBadge("msi")).not.toBeNull());
+    const badge = credentialBadge("msi") as HTMLElement;
+    expect(badge).toHaveAttribute(
+      "data-operations-coord-credential",
+      "unrefreshable"
+    );
+    expect(badge).toHaveTextContent("credential unrefreshable");
+    expect(badge.innerHTML).toMatch(/bg-red-/);
+    // `since <ts>`, rendered only because a producer published one.
+    expect(
+      badge.querySelector("[data-operations-coord-credential-since]")
+    ).not.toBeNull();
+    expect(badge).toHaveTextContent(/since /);
+  });
+
+  it("renders the credential axis on EVERY row, including a coord-only device", async () => {
+    // A device that reaches this page through coord's health read alone is
+    // exactly the population the incident hid in. It gets the badge too.
+    mockRoutes({
+      devices: [
+        coordDevice("d-1", "msi", "healthy", {
+          credential_dark: { dark: false },
+        }),
+        coordDevice("d-2", "ghost", "healthy"),
+      ],
+      runners: [runner("msi")],
+      samples: [],
+      healthExtras: { credential_dark_scrape_up: true },
+    });
+
+    render(<CoordDevOpsPage />);
+
+    await waitFor(() => expect(credentialBadge("ghost")).not.toBeNull());
+    expect(credentialBadge("ghost")).toHaveAttribute(
+      "data-operations-coord-credential",
+      "unknown"
+    );
+    expect(credentialBadge("msi")).toHaveAttribute(
+      "data-operations-coord-credential",
+      "live"
+    );
+    expect(
+      screen.getByTestId("coord-devops-credential-unknown-badge")
+    ).toHaveTextContent("credential unknown 1");
   });
 });
