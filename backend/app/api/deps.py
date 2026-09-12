@@ -18,6 +18,8 @@ __all__ = [
     "get_current_user_from_ws",
     "get_authenticated_device",
     "get_authenticated_device_user",
+    "get_reporting_device",
+    "DEVICE_ONLY_REFUSAL",
     "get_audit_actor_user_id",
     "get_audit_actor_user",
     "get_audit_actor_principal",
@@ -173,7 +175,6 @@ async def _verify_device_jwt(token: str) -> tuple[dict, User]:
     """Verify a coord-issued device JWT and resolve the owning user."""
     from sqlalchemy import select
 
-    from app.core.config import coord_device_setting_name
     from app.db.session import AsyncSessionLocal
     from app.services.coord_jwks import (
         CoordJWKSUnavailableError,
@@ -182,6 +183,7 @@ async def _verify_device_jwt(token: str) -> tuple[dict, User]:
         coord_jwks_client,
         describe_token_rejection,
         identity_mismatch_remedy_fields,
+        jwks_failure_log_fields,
     )
 
     try:
@@ -196,14 +198,8 @@ async def _verify_device_jwt(token: str) -> tuple[dict, User]:
         # ``coord_device_setting_name``), so a reader handed only the URL is
         # left guessing which knob to turn — the same "right about the fault,
         # wrong about what to do next" gap the identity alarm below closed.
-        logger.error(
-            "device_token_jwks_unavailable",
-            error=str(exc),
-            failure=type(exc).__name__,
-            cause=type(exc.__cause__).__name__ if exc.__cause__ else None,
-            coord_url=coord_jwks_client.coord_url,
-            coord_url_setting=coord_device_setting_name(),
-        )
+        # The shared field set carries it (``coord_url_setting``).
+        logger.error("device_token_jwks_unavailable", **jwks_failure_log_fields(exc))
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Device authentication temporarily unavailable.",
@@ -403,6 +399,63 @@ async def get_audit_actor_principal(
     distinction it has no use for.
     """
     return await _resolve_actor_principal(user, credentials)
+
+
+#: The 403 detail :func:`get_reporting_device` returns to an operator. One
+#: string, so the route's docs and its tests quote the same words.
+DEVICE_ONLY_REFUSAL = (
+    "This route accepts only a coord device token. It records what a DEVICE "
+    "measured about its own scan source, so the reporting device is taken from "
+    "the token's device_id claim — an operator session carries no device "
+    "identity and cannot report on a device's behalf. Read the readings with "
+    "GET instead."
+)
+
+
+async def get_reporting_device(
+    user: User | None = Depends(current_active_user_optional),
+    credentials: HTTPAuthorizationCredentials | None = Depends(_optional_bearer_scheme),
+) -> DeviceTokenContext:
+    """Resolve a caller that MUST be a paired device, refusing an operator.
+
+    For write routes whose subject is the device itself — the row is keyed on
+    the token's ``device_id`` claim — where the dual-auth doors
+    (:func:`get_audit_actor_user` and friends) are wrong twice over: they
+    discard the claim set, and they would admit an operator, who has no
+    device id to key on.
+
+    Same inputs and same precedence as :func:`_resolve_actor_principal`, with
+    the operator arm turned into a refusal rather than a success:
+
+    * A resolved Cognito user → **403** :data:`DEVICE_ONLY_REFUSAL`. Checked
+      FIRST, exactly as the dual-auth tree lets that arm win: a browser user
+      whose request also carries a device bearer is still the operator, and a
+      forwarded device token must not let them report as the device.
+    * A bearer that verifies as a device token → the
+      :class:`DeviceTokenContext`, with ``device_id`` read eagerly so a token
+      missing the claim is a 401 here rather than inside the handler.
+    * A bearer that fails device verification propagates that 401 (or the
+      503 from an unreachable coord JWKS) — never a fall-through.
+    * Neither → 401.
+
+    ``_verify_device_jwt`` is looked up at call time, which is what lets the
+    test suites stub coord's JWKS at ``deps._verify_device_jwt``.
+    """
+    if user is not None:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=DEVICE_ONLY_REFUSAL,
+        )
+    if credentials is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Device authentication required.",
+        )
+    claims, device_user = await _verify_device_jwt(credentials.credentials)
+    context = DeviceTokenContext(claims=claims, user=device_user)
+    # Eager: raises the 401 for a token without a usable device_id claim.
+    _ = context.device_id
+    return context
 
 
 async def get_audit_actor_user_id(

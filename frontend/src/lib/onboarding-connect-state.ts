@@ -59,9 +59,14 @@
  * narrowing provenance checks, each verified by the party that minted it —
  * which is the only party that can adjudicate its claim. In particular
  * `runnerState` grants nothing over the bind target: the runner claims with its
- * OWN Cognito bearer, so the destination tenant comes from that bearer and never
- * from the nonce. See `qontinui-runner`'s `setup_wizard::take_connect_state_if_valid`
- * (single-use, 15-min TTL, checked before any network call).
+ * OWN Cognito bearer AND the same `connect_state` (the P2 deep link carries both
+ * — `onboarding-status/page.tsx` `buildRunnerDeepLink`), so the destination
+ * tenant is the token's, exactly as in the browser claim, and never comes from
+ * the nonce. Coord then requires the runner's bearer to match the token's
+ * tenant and minting operator, so a runner signed in as someone else is refused
+ * rather than bound elsewhere. See `qontinui-runner`'s
+ * `setup_wizard::take_connect_state_if_valid` (single-use, 15-min TTL, checked
+ * before any network call).
  *
  * ## Wire format
  * `<flow>~<login>~<nonce>~<connect_state>[~<runnerState>]` — `~` is safe as a

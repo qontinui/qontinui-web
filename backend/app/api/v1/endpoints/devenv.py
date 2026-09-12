@@ -23,6 +23,9 @@ Mounted under ``/api/v1/devenv``. Endpoints:
   configuration (the runner's ``CiNodeSettings``). The PUT saves and then
   dispatches through coord to the paired runner; see the section comment above
   those handlers for why that is the only write path.
+* ``GET``/``PUT /auto-enroll-policy`` — the owner's connect-time
+  auto-enrollment policy (may new boxes self-enroll, and into which
+  environment). Owner-scoped; an absent row reads as enabled.
 * CRUD ``/environments``
 * ``PUT /environments/{id}/canonical`` — atomically set the canonical
   machine (validated owned + has a config row for the env)
@@ -35,13 +38,19 @@ from __future__ import annotations
 from uuid import UUID
 
 import httpx
+import structlog
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from qontinui_schemas.common import utc_now
+from sqlalchemy import func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_async_db, get_current_active_user_async
+from app.config.redis_config import get_redis
+from app.core.config import settings
 from app.crud import devenv_machine_crud
-from app.models.devenv import Environment, Machine
+from app.models.devenv import AutoEnrollPolicy, Environment, Machine
+from app.models.device import Device
 from app.models.user import User
 from app.repositories.devenv import (
     application_repo,
@@ -57,6 +66,8 @@ from app.schemas.devenv import (
     ApplicationCreate,
     ApplicationResponse,
     ApplicationUpdate,
+    AutoEnrollPolicyResponse,
+    AutoEnrollPolicyUpdate,
     CanonicalChangeResponse,
     CiNodeConfig,
     CiNodeConfigResponse,
@@ -81,6 +92,10 @@ from app.schemas.devenv import (
 )
 from app.services import coord_device, devenv_drift
 from app.services.coord_proxy import post_to_coord
+from app.services.devenv_auto_enroll import resolve_target_environment
+from app.services.runner_websocket_manager import get_runner_websocket_manager
+
+logger = structlog.get_logger(__name__)
 
 router = APIRouter()
 
@@ -328,6 +343,10 @@ async def create_machine(
         description=payload.description,
         environment_id=payload.environment_id,
     )
+    # Stamp provenance at the writer so new rows are honest from day one. Rows
+    # created before devenv_09 keep NULL (= origin unknown) and are never
+    # backfilled with a guess.
+    machine.enrollment_origin = "manual"
     devenv_machine_crud.mint_enrollment_code(machine)
     await db.flush()
     await db.refresh(machine)
@@ -354,15 +373,75 @@ async def dispatch_enroll(
     directive to that device's runner. The runner enrolls itself — no terminal,
     no copy-paste.
 
-    The machine + code are ALWAYS created and returned, even if the dispatch is
-    rejected (device offline / unknown), so the UI can fall back to the
-    copy-paste command (Phase 1(b)). Coord's admin-gated route resolves the
-    operator from the forwarded Cognito bearer.
+    Once the request is ACCEPTED, the machine + code are always created and
+    returned even if the dispatch itself is rejected (device offline, coord
+    unreachable, coord refuses), so the UI can fall back to the copy-paste
+    command (Phase 1(b)). Coord's admin-gated route resolves the operator from
+    the forwarded Cognito bearer.
+
+    Two refusals happen BEFORE any of that, and neither creates a machine or a
+    code:
+
+    * **404 ``device_not_found``** — ``target_device_id`` is not a device this
+      caller owns (or does not exist; the two are deliberately indistinguishable).
+    * **409 ``device_already_has_machine``** — the device already has a live
+      machine row, so binding another would breach
+      ``uq_devenv_machine_active_coord_device``. With connect-time
+      auto-enrollment on this is an ordinary outcome, not an edge case: the
+      engine enrolls a box the moment it connects, while the dashboard picker
+      still offers it. The remedy is the caller's — revoke or delete the
+      existing machine first — which is why it is a typed code and not a 500.
+
+    Two transports, tried in order. When the device is connected, the directive
+    goes down the authenticated device WebSocket web already holds; otherwise
+    (or if that send does not land) it falls back to the coord hop exactly as
+    it shipped. ``dispatched`` means the same thing on both paths, so no caller
+    changes.
+
+    AUTHORIZATION LIVES HERE, not in either transport. This route used to be
+    authorized only by the transport it happened to use: coord's
+    ``POST /devenv/enroll-dispatch`` sits behind ``require_role(admin)``, so
+    only an operator could reach a device through it. The socket transport has
+    no such gate — web holds the device's socket directly — so with the socket
+    tried first, a non-admin who named ANY connected device would have had a
+    machine row of their own bound to someone else's box, and would then have
+    received that box's environment captures.
+
+    So the caller's ownership of ``target_device_id`` is checked ONCE, up
+    front, and both transports are downstream of it. A device that is not the
+    caller's own resolves to 404 exactly like every other cross-owner id in
+    this module (existence is never leaked), and nothing is created before the
+    check passes.
     """
+    # The gate — before the name check, so a non-owner cannot even probe which
+    # of their own names are free against someone else's device, and long
+    # before any row exists.
+    owned_device = await db.scalar(
+        select(Device.device_id).where(
+            Device.device_id == payload.target_device_id,
+            Device.user_id == current_user.id,
+        )
+    )
+    if owned_device is None:
+        raise _not_found("device")
+
     if await machine_repo.name_exists(db, owner_id=current_user.id, name=payload.name):
         raise _conflict("machine_name_taken", "Machine name already in use.")
     if payload.environment_id is not None:
         await _get_editable_environment(db, current_user.id, payload.environment_id)
+    # devenv_10 pre-check: the device may already have a live machine row (the
+    # connect-time engine creates one the moment a paired box comes online).
+    # Without this the bind below trips ``uq_devenv_machine_active_coord_device``
+    # at flush time — an untyped 500 on a poisoned transaction, in place of the
+    # documented "machine + code are ALWAYS created and returned" contract.
+    existing = await devenv_machine_crud.live_machine_for_device(
+        db, coord_device_id=payload.target_device_id
+    )
+    if existing is not None:
+        raise _conflict(
+            devenv_machine_crud.DEVICE_ALREADY_HAS_MACHINE_CODE,
+            devenv_machine_crud.DEVICE_ALREADY_HAS_MACHINE_MESSAGE,
+        )
 
     machine = await machine_repo.create(
         db,
@@ -375,12 +454,77 @@ async def dispatch_enroll(
     # Bind the machine to the chosen coord device up front (the dispatch flow
     # knows the device; the copy-paste flow learns it only at enroll-consume).
     machine.coord_device_id = payload.target_device_id
+    # Operator-pushed, on either transport below — the origin describes who
+    # asked for the machine, not which wire carried the directive.
+    machine.enrollment_origin = "dispatched"
     devenv_machine_crud.mint_enrollment_code(machine)
-    await db.flush()
-    await db.refresh(machine)
-    await db.commit()
+    try:
+        await db.flush()
+        await db.refresh(machine)
+        await db.commit()
+    except IntegrityError:
+        # The pre-check above is not the guarantee — the index is, and a
+        # connect-time auto-enrollment can land between the two. Roll back
+        # (the transaction is poisoned) and answer with the SAME typed 409 the
+        # pre-check does, so a caller never has to tell the two apart.
+        await db.rollback()
+        raise _conflict(
+            devenv_machine_crud.DEVICE_ALREADY_HAS_MACHINE_CODE,
+            devenv_machine_crud.DEVICE_ALREADY_HAS_MACHINE_MESSAGE,
+        ) from None
 
     created = MachineCreatedResponse.from_model(machine)
+
+    # Prefer the device socket web is already holding (plan
+    # ``2026-08-05-devenv-auto-enrollment-on-connection``, decision 1B). The
+    # coord hop below is fire-and-forget onto a DIFFERENT socket that may be
+    # down (it no-ops without a coord URL and backs off to 60s); this one we
+    # can confirm is up before we use it, and the runner acks on it.
+    #
+    # ``dispatched`` keeps exactly its existing meaning — "the directive was
+    # handed off" — so the dashboard and the copy-paste fallback are unchanged
+    # either way. Any failure here falls through to the shipped coord path
+    # rather than failing the request: the machine + code are already created
+    # and returned regardless.
+    socket_payload: dict[str, object] = {
+        "enrollment_code": created.enrollment_code,
+        "machine_id": str(machine.id),
+    }
+    if machine.environment_id is not None:
+        socket_payload["environment_id"] = str(machine.environment_id)
+
+    try:
+        redis = await get_redis()
+        manager = await get_runner_websocket_manager(redis)
+        # Cross-process Redis state, not the in-process registry: this HTTP
+        # request may land on a replica that does not hold the device's socket,
+        # where the memory-only check would say "offline" about a live device.
+        # The send then publishes via Redis pub/sub
+        # (``require_local_connection=False``) so it reaches whichever replica
+        # does own the socket.
+        if await manager.is_connected_redis(payload.target_device_id):
+            sent = await manager.send_devenv_enroll(
+                payload.target_device_id,
+                socket_payload,
+                require_local_connection=False,
+            )
+            if sent:
+                logger.info(
+                    "devenv_dispatch_enroll_via_socket",
+                    machine_id=str(machine.id),
+                    target_device_id=str(payload.target_device_id),
+                )
+                return DispatchEnrollResponse(machine=created, dispatched=True)
+    except Exception as exc:
+        # Redis unavailable / manager unresolvable is not a reason to fail an
+        # operator's dispatch — the coord path is still there and unchanged.
+        logger.warning(
+            "devenv_dispatch_enroll_socket_failed",
+            machine_id=str(machine.id),
+            target_device_id=str(payload.target_device_id),
+            error=str(exc),
+            error_type=type(exc).__name__,
+        )
 
     # Dispatch the enroll directive to the device's runner via coord. Best-effort:
     # a rejection/timeout does NOT undo the machine — the operator falls back to
@@ -569,21 +713,47 @@ async def regenerate_enrollment(
 
     Re-enrolling a machine that already has a key rotates its credential:
     the agent must re-enroll with the new code to obtain a new key.
+
+    Clearing ``revoked_at`` un-revokes the row, and that is what makes this the
+    sharpest of the three devenv_10 writers: revoke-then-regenerate is the
+    reversibility story the whole auto-enrollment default rests on. If the
+    device acquired a NEW live machine row while this one was revoked — exactly
+    what the connect-time engine does, since the partial index deliberately
+    leaves a revoked row out of the way — un-revoking would produce two live
+    rows for one device. That is a typed 409, not a 500.
     """
     machine = await machine_repo.get(
         db, owner_id=current_user.id, machine_id=machine_id
     )
     if machine is None:
         raise _not_found("machine")
+    if machine.revoked_at is not None and machine.coord_device_id is not None:
+        successor = await devenv_machine_crud.live_machine_for_device(
+            db,
+            coord_device_id=machine.coord_device_id,
+            exclude_machine_id=machine.id,
+        )
+        if successor is not None:
+            raise _conflict(
+                devenv_machine_crud.DEVICE_ALREADY_HAS_MACHINE_CODE,
+                devenv_machine_crud.DEVICE_ALREADY_HAS_MACHINE_MESSAGE,
+            )
     devenv_machine_crud.mint_enrollment_code(machine)
     # A fresh enrollment supersedes any prior key — clear it so the old
     # credential stops authenticating once re-enrollment is requested.
     machine.key_hash = None
     machine.enrolled_at = None
     machine.revoked_at = None
-    await db.flush()
-    await db.refresh(machine)
-    await db.commit()
+    try:
+        await db.flush()
+        await db.refresh(machine)
+        await db.commit()
+    except IntegrityError:
+        await db.rollback()
+        raise _conflict(
+            devenv_machine_crud.DEVICE_ALREADY_HAS_MACHINE_CODE,
+            devenv_machine_crud.DEVICE_ALREADY_HAS_MACHINE_MESSAGE,
+        ) from None
     return MachineCreatedResponse.from_model(machine)
 
 
@@ -627,6 +797,133 @@ async def set_machine_environment(
     )
     await db.commit()
     return MachineResponse.from_model(machine)
+
+
+# ---------------------------------------------------------------------------
+# Auto-enrollment policy (plan 2026-08-05, Phase 5)
+#
+# The owner's control over the connect-time enrollment engine: may new boxes
+# enroll themselves, and where do they land. This pair of routes is what makes
+# Phase 4 visible and reversible — shipping the engine without them would leave
+# its no-ops exactly as unobservable as the gap the plan set out to close.
+#
+# Owner-scoped, deliberately, and NOT org-shared like applications and
+# environments. The policy keys on ``owner_user_id`` and the engine resolves it
+# from the device's verified owner, so there is no second reader for whom an
+# org-shared view would mean anything.
+# ---------------------------------------------------------------------------
+
+
+async def _policy_view(
+    db: AsyncSession, *, user_id: UUID, policy: AutoEnrollPolicy | None
+) -> AutoEnrollPolicyResponse:
+    """Render a policy row (or its absence) plus what it actually resolves to.
+
+    An ABSENT row is reported as ``enabled=True, configured=False`` — the
+    column default, and the rule the engine follows (decision 3). We do NOT
+    materialise a row to read one: an owner who has never opened this surface
+    should not acquire state by being looked at, and the default has to keep
+    working for the owners who never will.
+
+    ``globally_enabled`` carries the deployment flag alongside the owner's
+    setting. Both halves, never one: during the rollout the flag is false
+    everywhere and the owner's ``enabled`` is true by default, so reporting
+    only the second would describe an engine that is doing nothing as healthy.
+    """
+    env_count = (
+        await db.scalar(
+            select(func.count())
+            .select_from(Environment)
+            .where(Environment.owner_user_id == user_id)
+        )
+    ) or 0
+    effective = await resolve_target_environment(db, user_id=user_id, policy=policy)
+    return AutoEnrollPolicyResponse(
+        enabled=policy.enabled if policy is not None else True,
+        globally_enabled=bool(settings.DEVENV_AUTO_ENROLL_ENABLED),
+        target_environment_id=(
+            policy.target_environment_id if policy is not None else None
+        ),
+        configured=policy is not None,
+        effective_environment_id=effective,
+        environment_count=int(env_count),
+        updated_at=policy.updated_at if policy is not None else None,
+    )
+
+
+@router.get("/auto-enroll-policy", response_model=AutoEnrollPolicyResponse)
+async def get_auto_enroll_policy(
+    db: AsyncSession = Depends(get_async_db),
+    current_user: User = Depends(get_current_active_user_async),
+) -> AutoEnrollPolicyResponse:
+    """Read the caller's auto-enrollment policy.
+
+    Never creates the row. A missing row reads as enabled with no target, which
+    is what the engine does with it.
+    """
+    policy = await db.scalar(
+        select(AutoEnrollPolicy).where(
+            AutoEnrollPolicy.owner_user_id == current_user.id
+        )
+    )
+    return await _policy_view(db, user_id=current_user.id, policy=policy)
+
+
+@router.put("/auto-enroll-policy", response_model=AutoEnrollPolicyResponse)
+async def set_auto_enroll_policy(
+    payload: AutoEnrollPolicyUpdate,
+    db: AsyncSession = Depends(get_async_db),
+    current_user: User = Depends(get_current_active_user_async),
+) -> AutoEnrollPolicyResponse:
+    """Set the caller's auto-enrollment policy, creating the row on first write.
+
+    ``target_environment_id`` must be an environment the caller OWNS. The
+    column carries no FK (it is a soft reference, matching
+    ``machines.environment_id``), so nothing at the database level stops a
+    foreign or dangling id from being stored — and the engine already treats
+    one defensively, falling back to the single-environment rule. That defence
+    is a backstop for rows written before this route existed, not a licence to
+    write bad ones: a stored id that silently never resolves is exactly the
+    quiet no-op this phase exists to eliminate, so it is rejected here.
+
+    Cross-owner ids resolve to 404, not 403, so this route cannot be used to
+    probe which environment ids exist.
+    """
+    if payload.target_environment_id is not None:
+        owned = await db.scalar(
+            select(Environment.id).where(
+                Environment.id == payload.target_environment_id,
+                Environment.owner_user_id == current_user.id,
+            )
+        )
+        if owned is None:
+            raise _not_found("environment")
+
+    policy = await db.scalar(
+        select(AutoEnrollPolicy).where(
+            AutoEnrollPolicy.owner_user_id == current_user.id
+        )
+    )
+    if policy is None:
+        policy = AutoEnrollPolicy(owner_user_id=current_user.id)
+        db.add(policy)
+    policy.enabled = payload.enabled
+    policy.target_environment_id = payload.target_environment_id
+    policy.updated_at = utc_now()
+    await db.flush()
+    await db.commit()
+    await db.refresh(policy)
+    logger.info(
+        "devenv_auto_enroll_policy_set",
+        user_id=str(current_user.id),
+        enabled=policy.enabled,
+        target_environment_id=(
+            str(policy.target_environment_id)
+            if policy.target_environment_id is not None
+            else None
+        ),
+    )
+    return await _policy_view(db, user_id=current_user.id, policy=policy)
 
 
 # ---------------------------------------------------------------------------

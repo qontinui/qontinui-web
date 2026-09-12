@@ -1,0 +1,110 @@
+name: One-off - Seed Claude Account Roster
+
+# Manual dispatcher for scripts/seed_claude_accounts.py — mirrors the
+# one-off Fargate task-override pattern deploy-web.yml already uses for
+# scripts/backfill_github_identities.py ("Backfill GitHub identities" step),
+# reusing the CURRENTLY DEPLOYED web task-definition (no rebuild) rather than
+# registering a fresh revision. Idempotent (upserts by (user_id, account_key)
+# — see the script's own docstring), so safe to re-run.
+
+on:
+  workflow_dispatch:
+    inputs:
+      email:
+        description: "Login email of the user to seed (auth.users.email). Leave empty if using device_id instead."
+        type: string
+        required: false
+      device_id:
+        description: "device_id of one of the user's already-paired runners (coord.devices.device_id), resolves the owning user via that pairing. Leave empty if using email instead."
+        type: string
+        required: false
+      dry_run:
+        description: "Log what would change, write nothing"
+        type: boolean
+        default: false
+
+env:
+  AWS_REGION: us-east-1
+  ECS_CLUSTER: ${{ secrets.STAGING_ECS_CLUSTER }}
+  ECS_CONTAINER: web
+  ECS_TASK_FAMILY: qontinui-staging-web
+  ECS_SUBNETS: ${{ secrets.STAGING_PRIVATE_SUBNET_IDS }}
+  ECS_SECURITY_GROUP: ${{ secrets.STAGING_CLIENT_SG_ID }}
+
+jobs:
+  seed:
+    name: Run seed_claude_accounts as a one-off ECS task
+    runs-on: ubuntu-latest
+    environment: production
+    permissions:
+      contents: read
+    steps:
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v5
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Validate exactly one of email/device_id was given
+        run: |
+          if [ -z "${{ inputs.email }}" ] && [ -z "${{ inputs.device_id }}" ]; then
+            echo "::error::give either email or device_id"
+            exit 1
+          fi
+          if [ -n "${{ inputs.email }}" ] && [ -n "${{ inputs.device_id }}" ]; then
+            echo "::error::give only one of email / device_id, not both"
+            exit 1
+          fi
+
+      - name: Run the seed task
+        env:
+          SEED_EMAIL: ${{ inputs.email }}
+          SEED_DEVICE_ID: ${{ inputs.device_id }}
+          SEED_DRY_RUN: ${{ inputs.dry_run }}
+        run: |
+          set -uo pipefail
+          SUBNETS_JSON=$(echo "${ECS_SUBNETS}" | python3 -c 'import sys,json; print(json.dumps([s.strip() for s in sys.stdin.read().split(",") if s.strip()]))')
+
+          # Build the containerOverrides purely from env vars (never interpolated
+          # into a shell/JSON string directly) so an email containing quotes or
+          # shell metacharacters cannot break the command or escape the JSON.
+          OVERRIDES=$(python3 -c "import json, os; target = ['--email', os.environ['SEED_EMAIL']] if os.environ.get('SEED_EMAIL') else ['--device-id', os.environ['SEED_DEVICE_ID']]; command = ['python', '-m', 'scripts.seed_claude_accounts'] + target + (['--dry-run'] if os.environ.get('SEED_DRY_RUN') == 'true' else []); print(json.dumps({'containerOverrides': [{'name': os.environ['ECS_CONTAINER'], 'command': command}]}))")
+          echo "overrides: $OVERRIDES"
+
+          TASK_ARN=$(aws ecs run-task \
+            --cluster "${ECS_CLUSTER}" \
+            --task-definition "${ECS_TASK_FAMILY}" \
+            --launch-type FARGATE \
+            --network-configuration "awsvpcConfiguration={subnets=${SUBNETS_JSON},securityGroups=[${ECS_SECURITY_GROUP}],assignPublicIp=DISABLED}" \
+            --overrides "$OVERRIDES" \
+            --started-by "gha-seed-claude-accounts-${GITHUB_RUN_ID}" \
+            --region "${AWS_REGION}" \
+            --query 'tasks[0].taskArn' --output text)
+
+          if [ -z "$TASK_ARN" ] || [ "$TASK_ARN" = "None" ]; then
+            echo "::error::run-task returned no taskArn"
+            exit 1
+          fi
+          echo "Started $TASK_ARN"
+
+          aws ecs wait tasks-stopped \
+            --cluster "${ECS_CLUSTER}" --tasks "$TASK_ARN" --region "${AWS_REGION}"
+
+          TASK_ID=$(echo "$TASK_ARN" | awk -F/ '{print $NF}')
+          EXIT_CODE=$(aws ecs describe-tasks \
+            --cluster "${ECS_CLUSTER}" --tasks "$TASK_ARN" --region "${AWS_REGION}" \
+            --query 'tasks[0].containers[0].exitCode' --output text)
+          echo "exitCode=${EXIT_CODE}"
+
+          aws logs get-log-events \
+            --log-group-name "/ecs/qontinui-staging/web" \
+            --log-stream-name "web/web/${TASK_ID}" \
+            --region "${AWS_REGION}" --limit 100 \
+            --query 'events[].message' --output text 2>/dev/null | tail -100 \
+            || echo "(log stream not yet flushed)"
+
+          if [ "${EXIT_CODE}" != "0" ]; then
+            echo "::error::seed task exited ${EXIT_CODE}"
+            exit 1
+          fi

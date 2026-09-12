@@ -29,7 +29,9 @@ import textwrap
 import time
 from types import SimpleNamespace
 
+import httpx
 import pytest
+from starlette.datastructures import Headers
 
 from app.api.v1.endpoints import device_bridge_ws
 
@@ -47,8 +49,10 @@ class _FakeURL:
 
 
 class _FakeRequest:
-    def __init__(self, *, headers: dict[str, str] | None = None) -> None:
+    def __init__(self, *, headers: dict[str, str] | Headers | None = None) -> None:
         self.method = "GET"
+        # A dict for the common case; a real Starlette ``Headers`` when a test
+        # needs a REPEATED name, which a dict cannot carry.
         self.headers = headers or {}
         self.cookies: dict[str, str] = {}
         self.url = _FakeURL()
@@ -112,7 +116,9 @@ async def test_runner_proxy_concurrent_calls_do_not_serialize(monkeypatch):
     class _SlowResponse:
         status_code = 200
         content = b"ok"
-        headers: dict[str, str] = {}
+        # A real ``httpx.Headers``, not a dict: the handler reads
+        # ``multi_items()``, which only the real type provides.
+        headers = httpx.Headers()
 
     class _SlowAsyncClient:
         def __init__(self, *a, **kw) -> None:
@@ -228,7 +234,7 @@ async def test_runner_proxy_passes_runner_error_status_through(monkeypatch):
     class _NotFoundResponse:
         status_code = 404
         content = b'{"detail":"nope"}'
-        headers = {"content-type": "application/json"}
+        headers = httpx.Headers({"content-type": "application/json"})
 
     class _NotFoundClient:
         def __init__(self, *a, **kw) -> None:
@@ -278,11 +284,13 @@ async def test_runner_proxy_strips_content_encoding(monkeypatch):
     class _GzipResponse:
         status_code = 200
         content = b"plain-decoded-body"
-        headers = {
-            "content-type": "text/plain",
-            "content-encoding": "gzip",
-            "transfer-encoding": "chunked",
-        }
+        headers = httpx.Headers(
+            {
+                "content-type": "text/plain",
+                "content-encoding": "gzip",
+                "transfer-encoding": "chunked",
+            }
+        )
 
     class _GzipClient:
         def __init__(self, *a, **kw) -> None:
@@ -509,3 +517,251 @@ def test_module_docstring_names_both_mechanisms() -> None:
     assert "devices_ws.py" in doc
     assert "runner-proxy" in doc.lower()
     assert "Redis" in doc
+
+
+# ---------------------------------------------------------------------------
+# W1 residue — two things the urllib -> httpx swap left half-done
+# ---------------------------------------------------------------------------
+
+
+def test_httpx_merges_its_own_accept_encoding_default() -> None:
+    """The premise of the next test, pinned against the real httpx.
+
+    Dropping ``accept-encoding`` from the forwarded header dict does NOT make
+    the request go out without one: httpx merges its client defaults into
+    whatever ``headers=`` it is handed. If a future httpx stops doing that,
+    this fails and the ``identity`` override below becomes redundant rather
+    than load-bearing — which is worth being told about explicitly.
+    """
+    built = httpx.Client().build_request(
+        "GET", "http://127.0.0.1:9876/x", headers={"x-test": "1"}
+    )
+
+    assert built.headers["accept-encoding"] == "gzip, deflate", (
+        "httpx no longer merges a default accept-encoding; re-read "
+        "_LOCAL_PROXY_EXCLUDED_REQUEST_HEADERS's comment."
+    )
+
+    # And the other half the handler relies on, for the PAIR-SEQUENCE form it
+    # now sends: an explicit pair overrides the merged default rather than
+    # sitting beside it, and repeated names survive the merge. The handler's
+    # own tests stub the client, so this is the only place the real merge
+    # runs.
+    as_pairs = httpx.Client().build_request(
+        "GET",
+        "http://127.0.0.1:9876/x",
+        headers=[("x-repeat", "a"), ("x-repeat", "b"), ("accept-encoding", "identity")],
+    )
+    assert as_pairs.headers.get_list("accept-encoding") == ["identity"], (
+        "httpx's merge no longer lets an explicit pair replace its default; the "
+        "forced identity pair would then ride BESIDE gzip, deflate."
+    )
+    assert as_pairs.headers.get_list("x-repeat") == ["a", "b"]
+
+
+@pytest.mark.asyncio
+async def test_runner_proxy_negotiates_identity_encoding(monkeypatch):
+    """The loopback hop actually ASKS for an uncompressed body.
+
+    ``accept-encoding`` is in the excluded-request set, and the comment there
+    used to claim that alone made the runner reply uncompressed. It does not —
+    httpx merges its own ``gzip, deflate`` default back in (pinned above), so
+    the runner was still being invited to compress a loopback response that
+    httpx would then spend CPU decoding. The handler now SETS ``identity``.
+    """
+
+    async def _fake_active_port(*, bearer, user_id):
+        return 9876
+
+    monkeypatch.setattr(
+        device_bridge_ws.coord_device,
+        "get_active_routing_port",
+        _fake_active_port,
+        raising=True,
+    )
+
+    seen: dict[str, str] = {}
+
+    class _EchoResponse:
+        status_code = 200
+        content = b"ok"
+        headers = httpx.Headers()
+
+    class _CapturingClient:
+        def __init__(self, *a, **kw) -> None:
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *a):
+            return False
+
+        async def request(self, method, url, **kw):
+            # ``httpx.Headers`` accepts whatever shape the handler hands
+            # ``headers=`` — a dict or a pair sequence — the way httpx does.
+            seen.update(
+                {k.lower(): v for k, v in httpx.Headers(kw.get("headers")).items()}
+            )
+            return _EchoResponse()
+
+    monkeypatch.setattr(
+        device_bridge_ws.httpx, "AsyncClient", _CapturingClient, raising=True
+    )
+
+    await device_bridge_ws.runner_proxy(
+        _FakeRequest(headers={"Accept-Encoding": "gzip, br"}),
+        "status",
+        user=SimpleNamespace(id=USER_ID),
+    )
+
+    assert seen.get("accept-encoding") == "identity", (
+        "the caller's accept-encoding must be replaced with identity, not "
+        f"merely dropped — sent: {seen.get('accept-encoding')!r}"
+    )
+
+
+@pytest.mark.asyncio
+async def test_runner_proxy_preserves_repeated_set_cookie(monkeypatch):
+    """Two ``Set-Cookie`` headers survive as two headers.
+
+    ``httpx.Headers.items()`` emits each name once, joining repeats with
+    ", ". That is lossless for RFC 7230 comma-list headers but NOT for
+    ``Set-Cookie``, whose value may itself contain a comma
+    (``Expires=Wed, 09 Jun 2027 ...``). Collapsed, the two cookies below reach
+    the caller as one unparseable header and at least one cookie is silently
+    lost — so the handler must build the response from ``raw_headers``.
+    """
+
+    async def _fake_active_port(*, bearer, user_id):
+        return 9876
+
+    monkeypatch.setattr(
+        device_bridge_ws.coord_device,
+        "get_active_routing_port",
+        _fake_active_port,
+        raising=True,
+    )
+
+    class _CookieResponse:
+        status_code = 200
+        content = b"ok"
+        headers = httpx.Headers(
+            [
+                (b"set-cookie", b"a=1; Expires=Wed, 09 Jun 2027 10:18:14 GMT"),
+                (b"set-cookie", b"b=2; Path=/"),
+                (b"content-type", b"text/plain"),
+                (b"content-length", b"999"),
+            ]
+        )
+
+    class _CookieClient:
+        def __init__(self, *a, **kw) -> None:
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *a):
+            return False
+
+        async def request(self, method, url, **kw):
+            return _CookieResponse()
+
+    monkeypatch.setattr(
+        device_bridge_ws.httpx, "AsyncClient", _CookieClient, raising=True
+    )
+
+    resp = await device_bridge_ws.runner_proxy(
+        _FakeRequest(), "status", user=SimpleNamespace(id=USER_ID)
+    )
+
+    cookies = [
+        v.decode("latin-1")
+        for k, v in resp.raw_headers
+        if k.decode("latin-1").lower() == "set-cookie"
+    ]
+
+    assert cookies == [
+        "a=1; Expires=Wed, 09 Jun 2027 10:18:14 GMT",
+        "b=2; Path=/",
+    ], f"repeated Set-Cookie was collapsed: {cookies!r}"
+
+    assert resp.status_code == 200
+    assert resp.headers["content-type"] == "text/plain"
+    # The runner's own content-length described the pre-decode body; Starlette
+    # recomputes it from the bytes actually being sent.
+    assert resp.headers["content-length"] == str(len(b"ok"))
+
+
+@pytest.mark.asyncio
+async def test_runner_proxy_forwards_repeated_request_headers(monkeypatch):
+    """Two request headers of one name reach the runner as two.
+
+    The request-side twin of the ``Set-Cookie`` case above. Starlette's
+    ``Headers.items()`` yields every raw pair, repeats included; the handler
+    used to pour them into a dict, which keeps only the LAST value of a
+    repeated name. httpx accepts a pair sequence and sends each pair, so the
+    lossless form is available for free — the same point the response side
+    made with ``multi_items()``.
+    """
+
+    async def _fake_active_port(*, bearer, user_id):
+        return 9876
+
+    monkeypatch.setattr(
+        device_bridge_ws.coord_device,
+        "get_active_routing_port",
+        _fake_active_port,
+        raising=True,
+    )
+
+    sent: list[tuple[str, str]] = []
+
+    class _EchoResponse:
+        status_code = 200
+        content = b"ok"
+        headers = httpx.Headers()
+
+    class _CapturingClient:
+        def __init__(self, *a, **kw) -> None:
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *a):
+            return False
+
+        async def request(self, method, url, **kw):
+            sent.extend(
+                (k.lower(), v)
+                for k, v in httpx.Headers(kw.get("headers")).multi_items()
+            )
+            return _EchoResponse()
+
+    monkeypatch.setattr(
+        device_bridge_ws.httpx, "AsyncClient", _CapturingClient, raising=True
+    )
+
+    await device_bridge_ws.runner_proxy(
+        _FakeRequest(
+            headers=Headers(
+                raw=[
+                    (b"x-repeat", b"first"),
+                    (b"x-repeat", b"second"),
+                    (b"x-once", b"1"),
+                ]
+            )
+        ),
+        "status",
+        user=SimpleNamespace(id=USER_ID),
+    )
+
+    repeated = [v for k, v in sent if k == "x-repeat"]
+    assert repeated == ["first", "second"], (
+        f"a repeated request header was collapsed on the way to the runner: {repeated!r}"
+    )
+    assert [v for k, v in sent if k == "x-once"] == ["1"]
+    # The forced identity negotiation still rides along with the pair list.
+    assert [v for k, v in sent if k == "accept-encoding"] == ["identity"]

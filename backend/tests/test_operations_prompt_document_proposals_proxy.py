@@ -10,9 +10,12 @@ a mocked ``httpx.AsyncClient``, so no live coord is needed.
 
 The behaviours that matter here, and why:
 
-* ``decided_by`` is stamped from the SESSION and the client body is reduced to
-  ``decision_note`` alone — a browser must not be able to choose who a decision
-  is attributed to, nor smuggle ``status``/``tenant_id`` past the proxy;
+* the client body is reduced to ``decision_note`` alone and ``decided_by`` is
+  NOT forwarded — coord's ``DecisionRequest`` is ``deny_unknown_fields`` with
+  ``decision_note`` as its only field and stamps the decider itself, so sending
+  ``decided_by`` is a hard ``400`` on every approve/reject. A browser must not be
+  able to choose who a decision is attributed to, nor smuggle
+  ``status``/``tenant_id`` past the proxy;
 * the LIST route degrades to an explicit ``unavailable`` note while coord's
   Phase 5 half is undeployed (its route 404s), because an unreadable queue
   rendered as an empty one is the exact failure the review feed exists to
@@ -222,10 +225,9 @@ class TestDecideProposal:
 
         assert resp.status_code == 200
         forwarded = instance.post.call_args.kwargs["json"]
-        assert forwarded == {
-            "decision_note": "Agreed after review.",
-            "decided_by": TEST_USER_EMAIL,
-        }
+        # Exactly coord's DecisionRequest shape: no ``decided_by`` at all, neither
+        # the forged one nor a session-stamped one (coord 400s on the field).
+        assert forwarded == {"decision_note": "Agreed after review."}
         assert instance.post.call_args.args[0].endswith(f"/{action}")
 
     def test_missing_body_is_allowed(self, auth_client: TestClient):
@@ -237,10 +239,7 @@ class TestDecideProposal:
             resp = auth_client.post(f"{PROPOSALS}/{_proposal()['id']}/reject")
 
         assert resp.status_code == 200
-        assert instance.post.call_args.kwargs["json"] == {
-            "decision_note": None,
-            "decided_by": TEST_USER_EMAIL,
-        }
+        assert instance.post.call_args.kwargs["json"] == {"decision_note": None}
 
     def test_coord_404_does_not_degrade(self, auth_client: TestClient):
         """A decision that silently no-ops would be worse than an error."""

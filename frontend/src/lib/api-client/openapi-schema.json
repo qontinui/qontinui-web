@@ -3921,6 +3921,96 @@
         "title": "AutoCreateBaselinesResponse",
         "type": "object"
       },
+      "AutoEnrollPolicyResponse": {
+        "description": "The owner's auto-enrollment policy, plus what it actually resolves to.\n\n``configured`` is False when NO row exists. That is not the same as\ndisabled: an absent row reads as ``enabled=True`` (the column default), so\nthe flag exists to let the UI distinguish \"the owner chose this\" from \"the\nowner has never visited this surface and is getting the default\".\n\n``effective_environment_id`` is the environment a new box would actually\njoin right now, computed by the same precedence the engine uses: a target\nthe owner really owns, else their single environment, else NULL. NULL with\n``environment_count > 1`` is the ambiguous state \u2014 the engine will skip\nevery new machine and log, and the UI must name that rather than showing a\nhealthy-looking \"on\".\n\n``globally_enabled`` is the DEPLOYMENT's ``DEVENV_AUTO_ENROLL_ENABLED``\nflag, and it dominates every other field here. It ships **false** and is\nturned on tenant by tenant, so for the whole rollout window the engine\nanswers ``disabled_globally`` before it reads a single row \u2014 while\n``enabled`` (the owner's own setting) still says true, because it does. A\nresponse that reported only the owner's half would let the panel render a\nhealthy \"on\" over an engine that does nothing at all, on day one, for\neverybody. It is exposed for exactly that reason and for no other: the\nowner cannot change it and there is no route that would let them.",
+        "properties": {
+          "configured": {
+            "title": "Configured",
+            "type": "boolean"
+          },
+          "effective_environment_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Effective Environment Id"
+          },
+          "enabled": {
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "environment_count": {
+            "title": "Environment Count",
+            "type": "integer"
+          },
+          "globally_enabled": {
+            "title": "Globally Enabled",
+            "type": "boolean"
+          },
+          "target_environment_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target Environment Id"
+          },
+          "updated_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated At"
+          }
+        },
+        "required": [
+          "enabled",
+          "globally_enabled",
+          "configured",
+          "environment_count"
+        ],
+        "title": "AutoEnrollPolicyResponse",
+        "type": "object"
+      },
+      "AutoEnrollPolicyUpdate": {
+        "description": "Set the owner's auto-enrollment policy.\n\nBoth fields are required on a PUT \u2014 this is a whole-row write, not a patch,\nso a client can never half-state a policy and leave the other half at a\nvalue it never saw. ``target_environment_id: null`` clears the target.",
+        "properties": {
+          "enabled": {
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "target_environment_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target Environment Id"
+          }
+        },
+        "required": [
+          "enabled"
+        ],
+        "title": "AutoEnrollPolicyUpdate",
+        "type": "object"
+      },
       "AutomationScreenshot": {
         "properties": {
           "automation_metadata": {
@@ -8129,6 +8219,160 @@
           "jobs"
         ],
         "title": "ClaimJobsResponse",
+        "type": "object"
+      },
+      "ClaudeAccountEntry": {
+        "description": "One roster entry, as written by a human (no id/timestamps).",
+        "properties": {
+          "account_key": {
+            "description": "e.g. \"gmail\", \"hotmail\"",
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "Account Key",
+            "type": "string"
+          },
+          "dir_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Overrides the derived local directory name (default \".claude-<account_key>\")",
+            "title": "Dir Name"
+          },
+          "email": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Login address; null means unverified, not absent",
+            "title": "Email"
+          },
+          "shortcut": {
+            "description": "e.g. \"clg\" (informational)",
+            "maxLength": 20,
+            "minLength": 1,
+            "title": "Shortcut",
+            "type": "string"
+          }
+        },
+        "required": [
+          "account_key",
+          "shortcut"
+        ],
+        "title": "ClaudeAccountEntry",
+        "type": "object"
+      },
+      "ClaudeAccountEntryResponse": {
+        "description": "One roster entry as returned by the API.",
+        "properties": {
+          "account_key": {
+            "description": "e.g. \"gmail\", \"hotmail\"",
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "Account Key",
+            "type": "string"
+          },
+          "created_at": {
+            "title": "Created At",
+            "type": "string"
+          },
+          "dir_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Overrides the derived local directory name (default \".claude-<account_key>\")",
+            "title": "Dir Name"
+          },
+          "email": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Login address; null means unverified, not absent",
+            "title": "Email"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "shortcut": {
+            "description": "e.g. \"clg\" (informational)",
+            "maxLength": 20,
+            "minLength": 1,
+            "title": "Shortcut",
+            "type": "string"
+          },
+          "updated_at": {
+            "title": "Updated At",
+            "type": "string"
+          },
+          "user_id": {
+            "format": "uuid",
+            "title": "User Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "account_key",
+          "shortcut",
+          "id",
+          "user_id",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "ClaudeAccountEntryResponse",
+        "type": "object"
+      },
+      "ClaudeAccountRosterResponse": {
+        "description": "The full roster for one user.",
+        "properties": {
+          "accounts": {
+            "items": {
+              "$ref": "#/components/schemas/ClaudeAccountEntryResponse"
+            },
+            "title": "Accounts",
+            "type": "array"
+          }
+        },
+        "required": [
+          "accounts"
+        ],
+        "title": "ClaudeAccountRosterResponse",
+        "type": "object"
+      },
+      "ClaudeAccountRosterUpdate": {
+        "description": "Replace the full roster \u2014 the whole list is the unit, matching the\ndeclarative-roster semantics of qontinui-claude-config/accounts.json.",
+        "properties": {
+          "accounts": {
+            "items": {
+              "$ref": "#/components/schemas/ClaudeAccountEntry"
+            },
+            "title": "Accounts",
+            "type": "array"
+          }
+        },
+        "required": [
+          "accounts"
+        ],
+        "title": "ClaudeAccountRosterUpdate",
         "type": "object"
       },
       "ClaudeSessionInfo": {
@@ -26786,6 +27030,17 @@
             "title": "Enrollment Expires At",
             "type": "string"
           },
+          "enrollment_origin": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Enrollment Origin"
+          },
           "environment_id": {
             "anyOf": [
               {
@@ -26999,6 +27254,17 @@
             "default": false,
             "title": "Enrolled",
             "type": "boolean"
+          },
+          "enrollment_origin": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Enrollment Origin"
           },
           "environment_id": {
             "anyOf": [
@@ -38374,6 +38640,446 @@
           }
         },
         "title": "SavedApiRequestUpdate",
+        "type": "object"
+      },
+      "ScanRootListResponse": {
+        "description": "Every device's latest reading for the caller's organization.",
+        "properties": {
+          "count": {
+            "title": "Count",
+            "type": "integer"
+          },
+          "detail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Detail"
+          },
+          "fresh_count": {
+            "title": "Fresh Count",
+            "type": "integer"
+          },
+          "fresh_within_secs": {
+            "title": "Fresh Within Secs",
+            "type": "integer"
+          },
+          "rows": {
+            "items": {
+              "$ref": "#/components/schemas/ScanRootRow"
+            },
+            "title": "Rows",
+            "type": "array"
+          },
+          "state": {
+            "enum": [
+              "reported",
+              "unknown"
+            ],
+            "title": "State",
+            "type": "string"
+          }
+        },
+        "required": [
+          "state",
+          "detail",
+          "fresh_within_secs",
+          "count",
+          "fresh_count",
+          "rows"
+        ],
+        "title": "ScanRootListResponse",
+        "type": "object"
+      },
+      "ScanRootReport": {
+        "additionalProperties": false,
+        "description": "One device's reading of the directory its plan-library body sync scans.",
+        "properties": {
+          "ahead": {
+            "anyOf": [
+              {
+                "maximum": 9.223372036854776e+18,
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ahead"
+          },
+          "behind": {
+            "anyOf": [
+              {
+                "maximum": 9.223372036854776e+18,
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Behind"
+          },
+          "counts_are_floors": {
+            "title": "Counts Are Floors",
+            "type": "boolean"
+          },
+          "default_ref": {
+            "anyOf": [
+              {
+                "maxLength": 255,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default Ref"
+          },
+          "detail": {
+            "anyOf": [
+              {
+                "maxLength": 4096,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Detail"
+          },
+          "head_sha": {
+            "anyOf": [
+              {
+                "maxLength": 64,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Head Sha"
+          },
+          "observed_at": {
+            "format": "date-time",
+            "title": "Observed At",
+            "type": "string"
+          },
+          "plans_dir": {
+            "anyOf": [
+              {
+                "maxLength": 4096,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Plans Dir"
+          },
+          "ref_age_secs": {
+            "anyOf": [
+              {
+                "maximum": 9.223372036854776e+18,
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ref Age Secs"
+          },
+          "ref_sha": {
+            "anyOf": [
+              {
+                "maxLength": 64,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ref Sha"
+          },
+          "repo_root": {
+            "anyOf": [
+              {
+                "maxLength": 4096,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Repo Root"
+          },
+          "source_repo": {
+            "anyOf": [
+              {
+                "maxLength": 255,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Repo"
+          },
+          "state": {
+            "enum": [
+              "measured",
+              "not_scanning",
+              "not_a_git_work_tree",
+              "unknown"
+            ],
+            "title": "State",
+            "type": "string"
+          }
+        },
+        "required": [
+          "state",
+          "counts_are_floors",
+          "observed_at"
+        ],
+        "title": "ScanRootReport",
+        "type": "object"
+      },
+      "ScanRootReportResponse": {
+        "description": "The stored row after a report.",
+        "properties": {
+          "applied": {
+            "title": "Applied",
+            "type": "boolean"
+          },
+          "created": {
+            "title": "Created",
+            "type": "boolean"
+          },
+          "row": {
+            "$ref": "#/components/schemas/ScanRootRow"
+          }
+        },
+        "required": [
+          "created",
+          "applied",
+          "row"
+        ],
+        "title": "ScanRootReportResponse",
+        "type": "object"
+      },
+      "ScanRootRow": {
+        "description": "One device's stored reading, with the read route's VERDICT on top.\n\n``state`` / ``detail`` are the verdict a reader should key on, not the\nstored values. ``state`` is ``unknown`` with:\n\n* an ``observation_stale:`` detail once the device has not reported within\n  ``fresh_within_secs`` (by ``received_at``);\n* a ``reading_superseded:`` detail when the device's latest report was\n  observed before the stored reading (a clock step-back or a\n  late-delivered report), so the stored reading may not be what it reports\n  now (``last_report_applied: false``);\n* a ``ref_stale:`` detail for a ``measured`` floor reading that is 0\n  behind.\n\nPrecedence: ``observation_stale`` > ``reading_superseded`` > ``ref_stale``.\nWhat the device actually sent is in ``reported_state`` /\n``reported_detail``. The counts and ``ref_age_secs`` are served as reported\nwhatever the verdict \u2014 a reader keying on ``state`` does not trust them\nwhen it is ``unknown``.",
+        "properties": {
+          "ahead": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ahead"
+          },
+          "behind": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Behind"
+          },
+          "counts_are_floors": {
+            "title": "Counts Are Floors",
+            "type": "boolean"
+          },
+          "default_ref": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default Ref"
+          },
+          "detail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Detail"
+          },
+          "device_id": {
+            "format": "uuid",
+            "title": "Device Id",
+            "type": "string"
+          },
+          "head_sha": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Head Sha"
+          },
+          "last_report_applied": {
+            "title": "Last Report Applied",
+            "type": "boolean"
+          },
+          "last_report_observed_at": {
+            "title": "Last Report Observed At",
+            "type": "string"
+          },
+          "observation_age_secs": {
+            "title": "Observation Age Secs",
+            "type": "integer"
+          },
+          "observation_fresh": {
+            "title": "Observation Fresh",
+            "type": "boolean"
+          },
+          "observed_at": {
+            "title": "Observed At",
+            "type": "string"
+          },
+          "observed_skew_secs": {
+            "title": "Observed Skew Secs",
+            "type": "integer"
+          },
+          "plans_dir": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Plans Dir"
+          },
+          "received_at": {
+            "title": "Received At",
+            "type": "string"
+          },
+          "ref_age_secs": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ref Age Secs"
+          },
+          "ref_sha": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ref Sha"
+          },
+          "repo_root": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Repo Root"
+          },
+          "reported_detail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reported Detail"
+          },
+          "reported_state": {
+            "enum": [
+              "measured",
+              "not_scanning",
+              "not_a_git_work_tree",
+              "unknown"
+            ],
+            "title": "Reported State",
+            "type": "string"
+          },
+          "source_repo": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Repo"
+          },
+          "state": {
+            "enum": [
+              "measured",
+              "not_scanning",
+              "not_a_git_work_tree",
+              "unknown"
+            ],
+            "title": "State",
+            "type": "string"
+          }
+        },
+        "required": [
+          "device_id",
+          "state",
+          "detail",
+          "reported_state",
+          "reported_detail",
+          "plans_dir",
+          "repo_root",
+          "source_repo",
+          "default_ref",
+          "ref_sha",
+          "head_sha",
+          "behind",
+          "ahead",
+          "ref_age_secs",
+          "counts_are_floors",
+          "observed_at",
+          "received_at",
+          "last_report_applied",
+          "last_report_observed_at",
+          "observed_skew_secs",
+          "observation_age_secs",
+          "observation_fresh"
+        ],
+        "title": "ScanRootRow",
         "type": "object"
       },
       "ScheduledWorkflowRunCreate": {
@@ -63731,6 +64437,105 @@
         ]
       }
     },
+    "/api/v1/claude-accounts": {
+      "get": {
+        "description": "Return the caller device's owning user's Claude account roster.\n\nThis is the endpoint runners fetch from \u2014 device-JWT authenticated\n(`get_authenticated_device`), same as every other runner-facing surface.",
+        "operationId": "api_v1_claude_accounts_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ClaudeAccountRosterResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Get Claude Account Roster",
+        "tags": [
+          "claude-accounts"
+        ]
+      }
+    },
+    "/api/v1/claude-accounts/mine": {
+      "get": {
+        "description": "Return the current human user's own Claude account roster.",
+        "operationId": "api_v1_claude_accounts_mine_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ClaudeAccountRosterResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Get My Claude Account Roster",
+        "tags": [
+          "claude-accounts"
+        ]
+      },
+      "put": {
+        "description": "Replace the current user's full roster.\n\nThe whole list is the unit (matches accounts.json's declarative-roster\nsemantics) \u2014 this deletes every existing row for the user and re-inserts\nthe given list, rather than diffing individual entries.",
+        "operationId": "api_v1_claude_accounts_mine_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ClaudeAccountRosterUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ClaudeAccountRosterResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Replace My Claude Account Roster",
+        "tags": [
+          "claude-accounts"
+        ]
+      }
+    },
     "/api/v1/clipboard": {
       "post": {
         "description": "Push clipboard content from a device.",
@@ -67846,7 +68651,7 @@
     },
     "/api/v1/devenv/agent/enroll": {
       "post": {
-        "description": "Consume a one-time enrollment code and mint a machine key.\n\n**No machine-key dependency** \u2014 the enrollment code IS the credential\n(the agent has no key yet). The code is consumed under a ``FOR UPDATE``\nrow lock so concurrent enroll attempts serialize and only the first\nsucceeds. The plaintext key is returned ONCE; only its hash + prefix\nare stored.\n\nReturns the machine's bound ``environment_id`` if exactly one\nenvironment exists for the owner (a convenience for single-environment\nsetups); otherwise ``None`` and the agent reports per-environment by id.",
+        "description": "Consume a one-time enrollment code and mint a machine key.\n\n**No machine-key dependency** \u2014 the enrollment code IS the credential\n(the agent has no key yet). The code is consumed under a ``FOR UPDATE``\nrow lock so concurrent enroll attempts serialize and only the first\nsucceeds. The plaintext key is returned ONCE; only its hash + prefix\nare stored.\n\nReturns the machine's bound ``environment_id`` if exactly one\nenvironment exists for the owner (a convenience for single-environment\nsetups); otherwise ``None`` and the agent reports per-environment by id.\n\n``coord_device_id`` binding and devenv_10. With connect-time auto-enrollment\non, \"the box beats the human\" is the NORMAL ordering, not a race: an owner\ncreates a machine by hand (no ``coord_device_id``), and before they paste\nthe one-liner the box connects and the engine creates its own row bound to\nthat device. Consuming the hand-made code would then bind a SECOND live row\nto the same device and trip\n``uq_devenv_machine_active_coord_device`` \u2014 an untyped 500 on the agent's\nvery first call. It is a typed 409 instead, which the agent can report as\n\"this device is already enrolled as another machine\" rather than \"the\nserver broke\".",
         "operationId": "api_v1_devenv_agent_enroll_post",
         "requestBody": {
           "content": {
@@ -68221,6 +69026,78 @@
           }
         ],
         "summary": "Update Application",
+        "tags": [
+          "environments"
+        ]
+      }
+    },
+    "/api/v1/devenv/auto-enroll-policy": {
+      "get": {
+        "description": "Read the caller's auto-enrollment policy.\n\nNever creates the row. A missing row reads as enabled with no target, which\nis what the engine does with it.",
+        "operationId": "api_v1_devenv_auto_enroll_policy_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AutoEnrollPolicyResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Get Auto Enroll Policy",
+        "tags": [
+          "environments"
+        ]
+      },
+      "put": {
+        "description": "Set the caller's auto-enrollment policy, creating the row on first write.\n\n``target_environment_id`` must be an environment the caller OWNS. The\ncolumn carries no FK (it is a soft reference, matching\n``machines.environment_id``), so nothing at the database level stops a\nforeign or dangling id from being stored \u2014 and the engine already treats\none defensively, falling back to the single-environment rule. That defence\nis a backstop for rows written before this route existed, not a licence to\nwrite bad ones: a stored id that silently never resolves is exactly the\nquiet no-op this phase exists to eliminate, so it is rejected here.\n\nCross-owner ids resolve to 404, not 403, so this route cannot be used to\nprobe which environment ids exist.",
+        "operationId": "api_v1_devenv_auto_enroll_policy_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AutoEnrollPolicyUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AutoEnrollPolicyResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Set Auto Enroll Policy",
         "tags": [
           "environments"
         ]
@@ -68934,7 +69811,7 @@
     },
     "/api/v1/devenv/machines/dispatch-enroll": {
       "post": {
-        "description": "Create a machine + dispatch an enroll directive to a paired runner.\n\nPhase 3 (dispatched self-enroll): the operator picks an already-paired\ncoord device in the dashboard; the server mints the machine + one-time\ncode, binds it to the chosen device, then asks coord to publish an enroll\ndirective to that device's runner. The runner enrolls itself \u2014 no terminal,\nno copy-paste.\n\nThe machine + code are ALWAYS created and returned, even if the dispatch is\nrejected (device offline / unknown), so the UI can fall back to the\ncopy-paste command (Phase 1(b)). Coord's admin-gated route resolves the\noperator from the forwarded Cognito bearer.",
+        "description": "Create a machine + dispatch an enroll directive to a paired runner.\n\nPhase 3 (dispatched self-enroll): the operator picks an already-paired\ncoord device in the dashboard; the server mints the machine + one-time\ncode, binds it to the chosen device, then asks coord to publish an enroll\ndirective to that device's runner. The runner enrolls itself \u2014 no terminal,\nno copy-paste.\n\nOnce the request is ACCEPTED, the machine + code are always created and\nreturned even if the dispatch itself is rejected (device offline, coord\nunreachable, coord refuses), so the UI can fall back to the copy-paste\ncommand (Phase 1(b)). Coord's admin-gated route resolves the operator from\nthe forwarded Cognito bearer.\n\nTwo refusals happen BEFORE any of that, and neither creates a machine or a\ncode:\n\n* **404 ``device_not_found``** \u2014 ``target_device_id`` is not a device this\n  caller owns (or does not exist; the two are deliberately indistinguishable).\n* **409 ``device_already_has_machine``** \u2014 the device already has a live\n  machine row, so binding another would breach\n  ``uq_devenv_machine_active_coord_device``. With connect-time\n  auto-enrollment on this is an ordinary outcome, not an edge case: the\n  engine enrolls a box the moment it connects, while the dashboard picker\n  still offers it. The remedy is the caller's \u2014 revoke or delete the\n  existing machine first \u2014 which is why it is a typed code and not a 500.\n\nTwo transports, tried in order. When the device is connected, the directive\ngoes down the authenticated device WebSocket web already holds; otherwise\n(or if that send does not land) it falls back to the coord hop exactly as\nit shipped. ``dispatched`` means the same thing on both paths, so no caller\nchanges.\n\nAUTHORIZATION LIVES HERE, not in either transport. This route used to be\nauthorized only by the transport it happened to use: coord's\n``POST /devenv/enroll-dispatch`` sits behind ``require_role(admin)``, so\nonly an operator could reach a device through it. The socket transport has\nno such gate \u2014 web holds the device's socket directly \u2014 so with the socket\ntried first, a non-admin who named ANY connected device would have had a\nmachine row of their own bound to someone else's box, and would then have\nreceived that box's environment captures.\n\nSo the caller's ownership of ``target_device_id`` is checked ONCE, up\nfront, and both transports are downstream of it. A device that is not the\ncaller's own resolves to 404 exactly like every other cross-owner id in\nthis module (existence is never leaked), and nothing is created before the\ncheck passes.",
         "operationId": "api_v1_devenv_machines_dispatch_enroll_post",
         "requestBody": {
           "content": {
@@ -69292,7 +70169,7 @@
     },
     "/api/v1/devenv/machines/{machine_id}/regenerate-enrollment": {
       "post": {
-        "description": "Mint a fresh one-time enrollment code for a machine.\n\nRe-enrolling a machine that already has a key rotates its credential:\nthe agent must re-enroll with the new code to obtain a new key.",
+        "description": "Mint a fresh one-time enrollment code for a machine.\n\nRe-enrolling a machine that already has a key rotates its credential:\nthe agent must re-enroll with the new code to obtain a new key.\n\nClearing ``revoked_at`` un-revokes the row, and that is what makes this the\nsharpest of the three devenv_10 writers: revoke-then-regenerate is the\nreversibility story the whole auto-enrollment default rests on. If the\ndevice acquired a NEW live machine row while this one was revoked \u2014 exactly\nwhat the connect-time engine does, since the partial index deliberately\nleaves a revoked row out of the way \u2014 un-revoking would produce two live\nrows for one device. That is a typed 409, not a 500.",
         "operationId": "api_v1_devenv_machines_machine_id_regenerate_enrollment_post",
         "parameters": [
           {
@@ -84057,7 +84934,7 @@
     },
     "/api/v1/operations/coord/prompt-document-proposals/{proposal_id}/approve": {
       "post": {
-        "description": "Approve a pending proposal \u2014 coord applies the edit and returns the new\ndocument version. Tenant-admin only.\n\nOnly ``decision_note`` is taken from the client; ``decided_by`` is stamped\nfrom the authenticated session. Coord's 4xx (already decided, stale\n``base_version``, unknown id) passes through verbatim \u2014 including the 404 you\nget before coord's Phase 5 deploy, which must stay visible rather than\nsilently no-op.",
+        "description": "Approve a pending proposal \u2014 coord applies the edit and returns the new\ndocument version. Tenant-admin only.\n\nOnly ``decision_note`` is forwarded. Coord's ``DecisionRequest`` accepts\nTHAT FIELD ALONE and denies unknown fields, and coord stamps ``decided_by``\nitself from the operator context the request already carries \u2014 so sending it\nfrom here is not a redundant belt-and-braces, it is a hard ``400``:\n``invalid body: unknown field `decided_by`, expected `decision_note```.\nThat is what this endpoint did until 2026-09-04, which made **every** approve\nand reject click fail. Do not reintroduce it: identity is coord's to derive,\nexactly as it is on the agent-notifications door.\n\nCoord's 4xx (already decided, stale ``base_version``, unknown id) passes\nthrough verbatim \u2014 including the 404 you get before coord's Phase 5 deploy,\nwhich must stay visible rather than silently no-op.",
         "operationId": "api_v1_operations_coord_prompt_document_proposals_proposal_id_approve_post",
         "parameters": [
           {
@@ -84123,7 +85000,7 @@
     },
     "/api/v1/operations/coord/prompt-document-proposals/{proposal_id}/reject": {
       "post": {
-        "description": "Reject a pending proposal \u2014 the edit is never applied. Tenant-admin only.\n\nSame body reduction and server-side ``decided_by`` stamp as\n:func:`approve_prompt_document_proposal`.",
+        "description": "Reject a pending proposal \u2014 the edit is never applied. Tenant-admin only.\n\nSame body reduction as :func:`approve_prompt_document_proposal`, and the\nsame reason for it: ``decision_note`` is the only field coord's\n``DecisionRequest`` accepts, and ``decided_by`` is coord's to stamp from the\noperator context. Sending it is a ``400``, not a courtesy.",
         "operationId": "api_v1_operations_coord_prompt_document_proposals_proposal_id_reject_post",
         "parameters": [
           {
@@ -93642,6 +94519,97 @@
           }
         ],
         "summary": "Does each plan's record agree with reality? (three-way reconciliation)",
+        "tags": [
+          "plan-library"
+        ]
+      }
+    },
+    "/api/v1/plan-library/scan-roots": {
+      "get": {
+        "description": "The caller's organization's readings, one per reporting device.\n\nSame credentials as the plan-library list (an operator session or a device\ntoken). Each row carries its age and a ``state`` VERDICT that is\n``unknown`` when the device has not reported within ``fresh_within_secs``\n(by ``received_at``; ``observation_stale:``), when its latest report was\nobserved before the stored reading (``reading_superseded:``), or when its\nreading is 0 behind a stale ref (``ref_stale:``) \u2014 in that order of\nprecedence: ``observation_stale`` > ``reading_superseded`` >\n``ref_stale``. The device's own values stay in ``reported_state`` /\n``reported_detail``. An organization with no rows answers\n``state: \"unknown\"``, never an empty \"all current\".",
+        "operationId": "api_v1_plan_library_scan_roots_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScanRootListResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          },
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Every device's latest plan-scan-source reading, judged for age",
+        "tags": [
+          "plan-library"
+        ]
+      },
+      "post": {
+        "description": "Store the reporting device's latest reading, replacing an older one.\n\nOne row per ``(organization, device)``. ``device_id`` is the verified\ntoken's claim; the organization is the device's paired operator's personal\norganization \u2014 the same scope its artifact upserts land in. ``201`` on the\ndevice's first report, ``200`` on every later one.\n\nA report observed EARLIER than the stored reading (a late or retried\ndelivery, or a runner clock that stepped back) does not replace it:\n``200`` with ``applied: false`` and the stored row \u2014 but it still refreshes\n``received_at``, because the device demonstrably reported, and marks the\nrow ``reading_superseded`` until a newer report applies. A report whose\n``observed_at`` is more than 300 s ahead of this server's clock is a 422.",
+        "operationId": "api_v1_plan_library_scan_roots_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ScanRootReport"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScanRootReportResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScanRootReportResponse"
+                }
+              }
+            },
+            "description": "The device's first reading for this organization."
+          },
+          "403": {
+            "description": "The caller is an operator session, not a device."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          },
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "A device reports its latest plan-scan-source reading (upsert)",
         "tags": [
           "plan-library"
         ]

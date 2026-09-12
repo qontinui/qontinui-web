@@ -15,10 +15,20 @@ These tests pin both halves, on the raise site and on the handler.
 
 from __future__ import annotations
 
+import ast
+import inspect
+import pathlib
+
 import httpx
 import pytest
 
-from app.services.coord_jwks import CoordJWKSClient, CoordJWKSUnavailableError
+from app.core.config import coord_device_setting_name
+from app.services.coord_jwks import (
+    CoordJWKSClient,
+    CoordJWKSUnavailableError,
+    coord_jwks_client,
+    jwks_failure_log_fields,
+)
 
 
 @pytest.mark.asyncio
@@ -115,46 +125,128 @@ def test_client_exposes_the_resolved_coord_url() -> None:
     assert client.coord_url == "https://coord.example.test"
 
 
-def test_rejection_handlers_log_url_and_exception_class() -> None:
-    """Both ``CoordJWKSUnavailableError`` handlers log the URL and the class.
+# The two JWKS doors this backend verifies tokens against, each with its own
+# unavailable-error class and its own shared log-field helper. One walk, both
+# doors: the Cognito client is a hand-copy of the coord one, and it carried
+# the pre-fix shape (``error=str(exc)`` alone, a raise naming no URL) for as
+# long as this guard knew only the coord class. A third door added tomorrow
+# is one more row here, not a third copy of the walk.
+_JWKS_DOORS = [
+    pytest.param("CoordJWKSUnavailableError", "jwks_failure_log_fields", 4, id="coord"),
+    pytest.param(
+        "CognitoJWKSUnavailableError",
+        "cognito_jwks_failure_log_fields",
+        2,
+        id="cognito",
+    ),
+]
 
-    Source-level pin: the runner sees only the vague close reason / 503
-    detail, so losing these fields from the log silently restores the
-    undiagnosable state without failing anything else.
 
-    ``coord_url_setting`` is pinned here for the same reason it is pinned on
-    the identity alarm: TWO settings can produce the URL logged beside it and
-    they are not interchangeable, so the URL alone leaves the reader guessing
-    which knob to turn. It must be DERIVED — a literal ``"COORD_URL"`` or
-    ``"COORD_DEVICE_URL"`` in the handler is right for one deployment only,
-    which is the drift this pin exists to catch.
+def _terminating_jwks_handlers(error_class: str) -> list[tuple[str, str]]:
+    """Every ``except <error_class>`` handler that ENDS the error.
+
+    Discovered by walking ``app/`` rather than enumerated, because an
+    enumerated list is what let one of the coord handlers ship without the
+    fields (``memory.py``'s, which kept ``error=str(exc)`` alone while the
+    other two were fixed). A handler added tomorrow is caught by this walk.
+
+    A bare ``raise`` handler is a pass-through, not a reporting site — the
+    outer handler owns the log line — so it is excluded.
+
+    Shapes this walk does NOT see, none present today: a catch through an
+    attribute (``except cognito_jwks.CognitoJWKSUnavailableError`` is an
+    ``ast.Attribute``, not an ``ast.Name``), an aliased import (``import …
+    as X``), and a handler that ends the error through a base class
+    (``except RuntimeError`` around ``verify_token``). Any of those would
+    pass here silently; grep for the class before trusting a green run
+    after adding a handler in one of those spellings.
     """
-    import inspect
+    app_root = pathlib.Path(__file__).resolve().parents[1] / "app"
+    found: list[tuple[str, str]] = []
 
-    from app.api import deps
-    from app.api.v1.endpoints import devices_ws
+    for py in sorted(app_root.rglob("*.py")):
+        source = py.read_text(encoding="utf-8")
+        if error_class not in source:
+            continue
+        for node in ast.walk(ast.parse(source)):
+            if not isinstance(node, ast.ExceptHandler) or node.type is None:
+                continue
+            caught = {n.id for n in ast.walk(node.type) if isinstance(n, ast.Name)}
+            if error_class not in caught:
+                continue
+            # A pass-through re-raise reports nothing; the caller does.
+            if all(
+                isinstance(stmt, ast.Raise) and stmt.exc is None for stmt in node.body
+            ):
+                continue
+            body = "\n".join(ast.unparse(stmt) for stmt in node.body)
+            found.append((f"{py.relative_to(app_root.parent)}:{node.lineno}", body))
 
-    for func in (devices_ws.websocket_device_unified_endpoint, deps._verify_device_jwt):
-        source = inspect.getsource(func)
-        # Narrow to the JWKS-unavailable handler. The bound is the START of
-        # the NEXT `except` clause, not a byte count: a fixed window silently
-        # shrinks the region being asserted on as the handler's comments grow,
-        # so a `logger.error` pushed past it reads as a MISSING field. That is
-        # a false failure in the same test whose job is to catch a real one.
-        idx = source.index("except CoordJWKSUnavailableError")
-        rest = source[idx + 1 :]
-        nxt = rest.find("\n    except ")
-        handler = rest[:nxt] if nxt != -1 else rest
-        assert "coord_url=coord_jwks_client.coord_url" in handler, (
-            f"{func.__name__} must log the coord URL it dialled."
+    return found
+
+
+@pytest.mark.parametrize(("error_class", "helper", "known_count"), _JWKS_DOORS)
+def test_every_terminating_jwks_handler_logs_the_diagnostic_fields(
+    error_class: str, helper: str, known_count: int
+) -> None:
+    """Every reporting handler routes its log through its door's field set.
+
+    Source-level pin: the caller sees only the vague close reason / 503
+    detail, so a handler that logs ``error=str(exc)`` alone silently
+    restores the undiagnosable state without failing anything else. That is
+    not hypothetical — it is the state ``memory.py`` was left in on the
+    coord door, and the state BOTH Cognito handlers were left in for as long
+    as this walk knew only the coord class.
+    """
+    handlers = _terminating_jwks_handlers(error_class)
+
+    # A walk that finds nothing must fail rather than pass vacuously.
+    assert len(handlers) >= known_count, (
+        f"expected at least the {known_count} known reporting handlers for "
+        f"{error_class}, found {[where for where, _ in handlers]}"
+    )
+
+    for where, body in handlers:
+        assert f"{helper}(exc)" in body, (
+            f"{where}: the {error_class} handler must log **{helper}(exc) — "
+            f"logging str(exc) alone cannot separate a wrong URL setting from "
+            f"an unreachable upstream.\n{body}"
         )
-        assert "failure=type(exc).__name__" in handler, (
-            f"{func.__name__} must log the exception class, not just str(exc)."
-        )
-        assert "cause=" in handler, (
-            f"{func.__name__} must log the chained transport cause."
-        )
-        assert "coord_url_setting=coord_device_setting_name()" in handler, (
-            f"{func.__name__} must name the SETTING that produced the URL, "
-            f"derived from the configuration in force."
-        )
+
+
+def test_the_shared_field_set_names_url_class_and_chained_cause() -> None:
+    """The helper carries all four fields, cause included, for a real chain."""
+    try:
+        try:
+            raise httpx.ConnectTimeout("timed out")
+        except httpx.ConnectTimeout as transport_exc:
+            raise CoordJWKSUnavailableError("boom") from transport_exc
+    except CoordJWKSUnavailableError as exc:
+        fields = jwks_failure_log_fields(exc)
+
+    assert fields["error"] == "boom"
+    assert fields["failure"] == "CoordJWKSUnavailableError"
+    assert fields["cause"] == "ConnectTimeout", (
+        "the chained transport class is the half that says WHICH fault it was."
+    )
+    assert fields["coord_url"] == coord_jwks_client.coord_url
+    assert fields["coord_url_setting"] == coord_device_setting_name(), (
+        "the log must name the SETTING that produced the URL, not just the URL."
+    )
+
+
+def test_the_setting_name_is_derived_not_written_out() -> None:
+    """``coord_url_setting`` is pinned for the same reason it is pinned on the
+    identity alarm: TWO settings can produce the URL logged beside it and they
+    are not interchangeable. It must be DERIVED — a literal ``"COORD_URL"`` or
+    ``"COORD_DEVICE_URL"`` in the field set is right for one deployment only,
+    which is the drift this pin exists to catch."""
+    source = inspect.getsource(jwks_failure_log_fields)
+    assert '"coord_url_setting": coord_device_setting_name()' in source
+    assert '"COORD_URL"' not in source and '"COORD_DEVICE_URL"' not in source
+
+
+def test_the_shared_field_set_tolerates_an_unchained_error() -> None:
+    """A raise with no ``from`` reports ``cause=None``, not a crash."""
+    fields = jwks_failure_log_fields(CoordJWKSUnavailableError("no chain"))
+    assert fields["cause"] is None

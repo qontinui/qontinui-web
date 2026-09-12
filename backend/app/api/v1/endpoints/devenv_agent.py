@@ -32,6 +32,7 @@ from uuid import UUID
 
 import structlog
 from fastapi import APIRouter, Depends, Header, HTTPException, status
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_async_db
@@ -133,6 +134,17 @@ async def enroll_agent(
     Returns the machine's bound ``environment_id`` if exactly one
     environment exists for the owner (a convenience for single-environment
     setups); otherwise ``None`` and the agent reports per-environment by id.
+
+    ``coord_device_id`` binding and devenv_10. With connect-time auto-enrollment
+    on, "the box beats the human" is the NORMAL ordering, not a race: an owner
+    creates a machine by hand (no ``coord_device_id``), and before they paste
+    the one-liner the box connects and the engine creates its own row bound to
+    that device. Consuming the hand-made code would then bind a SECOND live row
+    to the same device and trip
+    ``uq_devenv_machine_active_coord_device`` — an untyped 500 on the agent's
+    very first call. It is a typed 409 instead, which the agent can report as
+    "this device is already enrolled as another machine" rather than "the
+    server broke".
     """
     code = payload.enrollment_code.strip().upper()
     machine = await devenv_machine_crud.get_enrollable_machine(db, code)
@@ -154,12 +166,46 @@ async def enroll_agent(
                 "message": "machine_id does not match the enrollment code.",
             },
         )
-    plaintext = await devenv_machine_crud.consume_enrollment(
-        db,
-        machine=machine,
-        hostname=payload.hostname,
-        coord_device_id=payload.coord_device_id,
-    )
+    # devenv_10 pre-check — only when this consume would actually MOVE the
+    # binding. Re-enrolling a machine already bound to the same device is the
+    # ordinary rotate path and must stay a 200.
+    if (
+        payload.coord_device_id is not None
+        and machine.coord_device_id != payload.coord_device_id
+    ):
+        occupant = await devenv_machine_crud.live_machine_for_device(
+            db,
+            coord_device_id=payload.coord_device_id,
+            exclude_machine_id=machine.id,
+        )
+        if occupant is not None:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail={
+                    "code": devenv_machine_crud.DEVICE_ALREADY_HAS_MACHINE_CODE,
+                    "message": devenv_machine_crud.DEVICE_ALREADY_HAS_MACHINE_MESSAGE,
+                },
+            )
+
+    try:
+        plaintext = await devenv_machine_crud.consume_enrollment(
+            db,
+            machine=machine,
+            hostname=payload.hostname,
+            coord_device_id=payload.coord_device_id,
+        )
+    except IntegrityError:
+        # The index is the authority; the pre-check only makes the normal
+        # ordering typed. A concurrent connect that binds the device between
+        # the two lands here, and answers identically.
+        await db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={
+                "code": devenv_machine_crud.DEVICE_ALREADY_HAS_MACHINE_CODE,
+                "message": devenv_machine_crud.DEVICE_ALREADY_HAS_MACHINE_MESSAGE,
+            },
+        ) from None
 
     # Resolve the bound environment. Phase 2 P1: an EXPLICIT binding on the
     # machine (``machines.environment_id``) wins deterministically, so a

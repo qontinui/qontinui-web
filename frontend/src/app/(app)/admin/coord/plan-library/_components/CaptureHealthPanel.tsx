@@ -1,6 +1,7 @@
 "use client";
 
-import { AlertTriangle, Activity } from "lucide-react";
+import { AlertTriangle, Activity, RefreshCw } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useCaptureHealth } from "../_hooks/usePlanLibrary";
 import {
@@ -39,9 +40,15 @@ function relativeDays(iso: string | null): string | null {
  * The recency figure is "last TOUCHED", not "last write": the backend sources
  * it from `max(updated_at)`, which a kind correction bumps without any capture
  * having occurred. The label says what the column actually knows.
+ *
+ * It carries its own Refresh, as `Scan sources` beside it does. The two
+ * answer halves of one question — which door wrote the corpus, and how stale
+ * the tree behind that door was — so an operator who can re-ask only one half
+ * without reloading the page ends up comparing a fresh reading against counts
+ * of unknown age.
  */
 export function CaptureHealthPanel() {
-  const { data, loading, error } = useCaptureHealth();
+  const { data, loading, error, reload } = useCaptureHealth();
 
   return (
     <section
@@ -50,7 +57,7 @@ export function CaptureHealthPanel() {
     >
       <div className="flex items-start gap-3">
         <Activity className="mt-0.5 size-5 shrink-0 text-muted-foreground" />
-        <div>
+        <div className="min-w-0">
           <h2 className="text-sm font-semibold">Capture health</h2>
           <p className="mt-1 text-xs text-muted-foreground">
             Where the corpus is coming from. The scan is the backbone; the agent
@@ -58,6 +65,17 @@ export function CaptureHealthPanel() {
             edges only the agent that ran the chain knows.
           </p>
         </div>
+        <Button
+          variant="ghost"
+          size="sm"
+          className="ml-auto h-7 shrink-0 px-2 text-xs"
+          onClick={() => reload()}
+          disabled={loading}
+          data-testid="capture-health-refresh"
+        >
+          <RefreshCw className="size-3" aria-hidden />
+          Refresh
+        </Button>
       </div>
 
       {error && (
