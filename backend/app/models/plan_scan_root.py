@@ -43,11 +43,33 @@ from app.models.work_artifact import NIL_ORGANIZATION_ID
 #: ``ck_plan_scan_root_observations_state``; mirrored as a ``Literal`` on the
 #: request schema so a bad value is a 422, not an IntegrityError 500. Spelled
 #: exactly as the runner's ``ScanDivergenceState`` serializes.
+#:
+#: This tuple is the ONE copy the code derives from — :data:`STATE_CHECK_SQL`
+#: below builds this model's CHECK out of it, and
+#: ``tests/test_plan_scan_root_state_vocabulary.py`` pins the two copies it
+#: cannot reach (the request schema's ``Literal``, and the shipped migration's
+#: own CHECK, which is history and must never be rewritten) against it. Adding
+#: a fifth state without updating those is a silent drift that Postgres would
+#: only surface as a 500 on the first device to report it.
+#:
+#: The operator console's copy (``SCAN_ROOT_STATES`` in the frontend's
+#: ``admin/coord/plan-library/types.ts``) is across a language seam this suite
+#: does not parse. ``types.wire.test.ts`` beside it pins it against the
+#: committed OpenAPI snapshots, which backend CI regenerates from this app's
+#: schema.
 SCAN_ROOT_STATES: tuple[str, ...] = (
     "measured",
     "not_scanning",
     "not_a_git_work_tree",
     "unknown",
+)
+
+#: The model's ``state`` CHECK, built from :data:`SCAN_ROOT_STATES` rather than
+#: restating it. Byte-identical to the literal this replaced, and to the
+#: shipped migration's clause modulo whitespace — which is the property the
+#: vocabulary test asserts rather than assumes.
+STATE_CHECK_SQL = "state IN ({})".format(
+    ", ".join(f"'{state}'" for state in SCAN_ROOT_STATES)
 )
 
 #: The NULL-collapsing organization expression of the identity index, spelled
@@ -73,7 +95,7 @@ class PlanScanRootObservation(Base):
             unique=True,
         ),
         CheckConstraint(
-            "state IN ('measured', 'not_scanning', 'not_a_git_work_tree', 'unknown')",
+            STATE_CHECK_SQL,
             name="ck_plan_scan_root_observations_state",
         ),
         CheckConstraint(

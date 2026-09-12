@@ -3,9 +3,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { httpClient } from "@/services/service-factory";
+import { useRetainedValue } from "@/components/console";
 import type {
   CaptureHealthResponse,
   DivergentResponse,
+  ScanRootListResponse,
   WorkArtifactDetail,
   WorkArtifactKind,
   WorkArtifactListResponse,
@@ -281,29 +283,118 @@ export function useDivergentArtifacts() {
   return { data, loading, error, reload: load };
 }
 
-/** Corpus census by capture door — is the agent door being used at all? */
-export function useCaptureHealth() {
-  const [data, setData] = useState<CaptureHealthResponse | null>(null);
+/**
+ * One route, read on mount and again on every `reload`, whose last good answer
+ * is KEPT across a failed read — the plumbing both health panels share.
+ *
+ * Built on the console's `useRetainedValue` rather than a private newest-id
+ * guard, which is what each hook carried before. Reads DO overlap, even with a
+ * panel's Refresh disabled while one is out: React StrictMode runs the mount
+ * effect twice in development, and nothing stops a second caller. And
+ * `http-client.ts` overwrites the caller's AbortController signal, so an
+ * overlapping read cannot be cancelled and BOTH will settle. A newest-id guard
+ * handles two of the three orderings and loses the third: read A is out, a
+ * newer read B FAILS, then A answers with real data — and is thrown away,
+ * leaving the panel saying nothing could be read although something was.
+ * `readSequence.ts` documents exactly that loss, and it is why the primitive
+ * compares sequences instead.
+ *
+ * * `data` / `fetchedAt` — the newest DELIVERED answer, and the wall-clock at
+ *   which its request left. Neither moves on a failed read, so a panel keeps
+ *   the rows and can say they may be stale rather than blanking them.
+ * * `error` — set exactly when what is on screen is not the answer to the
+ *   latest read that finished: a newer read failed after it (`stale`), or no
+ *   read has ever delivered and one failed. A late failure behind a newer
+ *   success never raises it. A late success behind a newer failure keeps it,
+ *   because the data shown is older than the read that failed.
+ * * `loading` — true until the NEWEST read settles, so an older one landing
+ *   first cannot re-enable Refresh while a read is still out.
+ */
+function useRetainedRead<T>(url: string, failureMessage: string) {
+  const answer = useRetainedValue<{ data: T; fetchedAt: Date } | null>(null);
+  const { issue, settle } = answer;
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [failure, setFailure] = useState<string | null>(null);
+  const newestIssued = useRef(0);
+  const newestFailed = useRef(0);
 
   const load = useCallback(async () => {
+    const ticket = issue();
+    newestIssued.current = ticket;
+    setLoading(true);
+    // Taken BEFORE the await, not after. The server computed any ages in this
+    // response at some point after the request left, so stamping the moment it
+    // LANDED would make every reading look up to one round trip fresher than
+    // it is. On this fleet that round trip has been sampled in seconds, not
+    // milliseconds, so it is not always negligible — and erring early is the
+    // honest side for an age.
+    const requestedAt = new Date();
     try {
-      setLoading(true);
-      setData(
-        await httpClient.get<CaptureHealthResponse>(`${API}/capture-health`)
-      );
-      setError(null);
+      const data = await httpClient.get<T>(url);
+      settle(ticket, { value: { data, fetchedAt: requestedAt } });
     } catch (err) {
-      setError(message(err, "Failed to load capture health"));
+      settle(ticket, null);
+      // Keep the NEWEST failure's words: an older read failing late must not
+      // replace them.
+      if (ticket > newestFailed.current) {
+        newestFailed.current = ticket;
+        setFailure(message(err, failureMessage));
+      }
     } finally {
-      setLoading(false);
+      if (newestIssued.current === ticket) setLoading(false);
     }
-  }, []);
+  }, [issue, settle, url, failureMessage]);
 
   useEffect(() => {
     load();
   }, [load]);
 
-  return { data, loading, error, reload: load };
+  return {
+    data: answer.value?.data ?? null,
+    fetchedAt: answer.value?.fetchedAt ?? null,
+    loading,
+    error: answer.stale || !answer.hasRead ? failure : null,
+    reload: load,
+  };
+}
+
+/** Corpus census by capture door — is the agent door being used at all? */
+export function useCaptureHealth() {
+  // No `fetchedAt`: this panel's recency is day-granular and computed at
+  // render, so it renders no read-at stamp to feed.
+  const { data, loading, error, reload } =
+    useRetainedRead<CaptureHealthResponse>(
+      `${API}/capture-health`,
+      "Failed to load capture health"
+    );
+  return { data, loading, error, reload };
+}
+
+/**
+ * Every reporting device's latest reading of the tree its body sync scans.
+ *
+ * Deliberately the same shape as [`useCaptureHealth`] — one read, no
+ * polling — because the two panels answer halves of one question ("where is
+ * the corpus coming from" / "how current is what it was read from"), and an
+ * operator re-asks either with the Refresh on its panel.
+ *
+ * On failure `data` is left at whatever was last read and `error` is set, so
+ * the panel can say the rows may be stale rather than blanking them. The
+ * absent case is NOT modelled as an empty list here: the route answers
+ * `state: "unknown"` with rows `[]` for an organization no device has reported
+ * for, and that distinction is the point of the route.
+ *
+ * `fetchedAt` is the wall-clock at which `data`'s request left. The route's
+ * `observation_age_secs`, `observation_fresh` and `fresh_count` are
+ * server-computed deltas FROZEN at that instant, and this hook does not poll —
+ * so without a stamp a console left open overnight keeps rendering "heard 30s
+ * ago". That is the very defect this feature exists to remove, reappearing one
+ * level up, at the panel instead of the row. The panel renders it beside the
+ * summary.
+ */
+export function useScanRoots() {
+  return useRetainedRead<ScanRootListResponse>(
+    `${API}/scan-roots`,
+    "Failed to load scan sources"
+  );
 }
