@@ -41,9 +41,59 @@ from os.path import abspath, dirname
 sys.path.insert(0, dirname(dirname(abspath(__file__))))
 
 from app.db.base import Base
-from app.db.base_class import *  # Import all models
 
-target_metadata = Base.metadata
+# ---------------------------------------------------------------------------
+# `target_metadata` is built LAZILY, and only for commands that read it.
+#
+# `from app.db.base_class import *` costs ~1.9s (2.5s with `app.db.base`): it
+# pulls `app.models`, `qontinui_schemas.generated`,
+# `fastapi_users_db_sqlalchemy` and `sqlalchemy.ext.asyncio`. It exists solely
+# to populate `Base.metadata` for `--autogenerate`, which is PROHIBITED here
+# (see the note below, and .github/PULL_REQUEST_TEMPLATE.md).
+#
+# It was paid at module scope on EVERY alembic invocation. The backend test
+# suite spawns ~285 of them per CI run (each migration test reaches its
+# revision through `alembic upgrade` in a subprocess), and every production
+# deploy migration paid it too — all to build metadata that `upgrade`,
+# `downgrade` and `stamp` never look at. Measured cost model from 8 nightly CI
+# logs: ~9.03s per alembic subprocess, of which this import is the largest
+# single removable part.
+#
+# ALLOWLIST, not denylist, and that direction is the safety argument. Only
+# commands PROVEN not to consult metadata skip the import; anything
+# unrecognised — a new alembic verb, a programmatic `alembic.command` call with
+# no `cmd_opts`, an `alembic check` — loads it exactly as before. So the failure
+# mode of getting this wrong is "slower than necessary", never "autogenerate
+# silently diffed against empty metadata", which per the note below would
+# propose DROPPING the ~75 unmodeled coord tables.
+_METADATA_FREE_COMMANDS = frozenset(
+    {"upgrade", "downgrade", "stamp", "current", "history", "heads", "branches", "show"}
+)
+
+
+def _invoked_command() -> str | None:
+    """The alembic CLI command name, or None when it cannot be determined.
+
+    None is the fail-safe answer: it routes to loading the metadata.
+    """
+    cmd = getattr(getattr(config, "cmd_opts", None), "cmd", None)
+    try:
+        return cmd[0].__name__
+    except (TypeError, IndexError, AttributeError):
+        return None
+
+
+def _target_metadata():
+    """`Base.metadata`, importing the model tree only when it will be read."""
+    if _invoked_command() in _METADATA_FREE_COMMANDS:
+        return None
+    # A plain module import, not `import *`: the star form is a SyntaxError
+    # inside a function, and it was never needed — importing the module is
+    # what executes the model definitions and registers them on
+    # `Base.metadata`. The names it would have bound were unused here.
+    import app.db.base_class  # noqa: F401  (registers models on Base.metadata)
+
+    return Base.metadata
 
 
 # Atlas-owned tables (Row 3 schema-half pilot, Wave 1.4).
@@ -98,7 +148,7 @@ def run_migrations_offline() -> None:
     url = config.get_main_option("sqlalchemy.url")
     context.configure(
         url=url,
-        target_metadata=target_metadata,
+        target_metadata=_target_metadata(),
         literal_binds=True,
         dialect_opts={"paramstyle": "named"},
         include_schemas=True,
@@ -125,7 +175,7 @@ def run_migrations_online() -> None:
     with connectable.connect() as connection:
         context.configure(
             connection=connection,
-            target_metadata=target_metadata,
+            target_metadata=_target_metadata(),
             include_schemas=True,
             include_object=_include_object,
         )
