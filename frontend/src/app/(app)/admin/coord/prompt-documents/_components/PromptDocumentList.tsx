@@ -13,7 +13,10 @@ import {
   Send,
 } from "lucide-react";
 import { usePromptDocuments } from "../_hooks/usePromptDocuments";
-import { usePromptDocumentPublications } from "../_hooks/usePromptDocumentPublications";
+import {
+  usePromptDocumentPublications,
+  type UpstreamDecisionOutcome,
+} from "../_hooks/usePromptDocumentPublications";
 import { PromptDocumentCreateDialog } from "./PromptDocumentCreateDialog";
 import { PromptDocumentEditorDialog } from "./PromptDocumentEditorDialog";
 import { PromptDocumentHistoryDialog } from "./PromptDocumentHistoryDialog";
@@ -162,54 +165,69 @@ export function PromptDocumentList() {
    * closes the dialog, because the comparison it was showing no longer
    * describes the document.
    */
-  const afterDecision = async () => {
-    setUpstreamOpen(false);
-    await reload();
+  const settleDecision = async (
+    doc: PromptDocument,
+    outcome: UpstreamDecisionOutcome<unknown>
+  ): Promise<boolean> => {
+    if (outcome.ok) {
+      setUpstreamOpen(false);
+      await reload();
+      return true;
+    }
+    // The decision was made against a version that is no longer current.
+    // Retrying with the same number would refuse forever, so put the LIVE
+    // document in front of the operator: re-reading it re-runs the dialog's
+    // comparison against the version coord actually holds.
+    if (outcome.refusal === "document_moved") {
+      const full = await fetchDocument(doc.kind, doc.name);
+      if (full) setEditing(full);
+    }
+    return false;
   };
 
   const handleAdoptUpstream = async (
     doc: PromptDocument,
     publication: Publication
-  ): Promise<boolean> => {
-    const res = await adoptUpstream(
-      doc.kind,
-      doc.name,
-      publication.publication_version,
-      doc.current_version
+  ): Promise<boolean> =>
+    settleDecision(
+      doc,
+      await adoptUpstream(
+        doc.kind,
+        doc.name,
+        publication.publication_version,
+        doc.current_version
+      )
     );
-    if (res) await afterDecision();
-    return res != null;
-  };
 
   const handleKeepMine = async (
     doc: PromptDocument,
     publication: Publication
-  ): Promise<boolean> => {
-    const res = await keepMine(
-      doc.kind,
-      doc.name,
-      publication.publication_version,
-      doc.current_version
+  ): Promise<boolean> =>
+    settleDecision(
+      doc,
+      await keepMine(
+        doc.kind,
+        doc.name,
+        publication.publication_version,
+        doc.current_version
+      )
     );
-    if (res) await afterDecision();
-    return res != null;
-  };
 
   const handleMergeClauses = async (
     doc: PromptDocument,
     publication: Publication,
     resolutions: Record<string, ClauseConflictChoice>
-  ): Promise<boolean> => {
-    const res = await applyMerge(
-      doc.kind,
-      doc.name,
-      publication.publication_version,
-      doc.current_version,
-      resolutions
+  ): Promise<boolean> =>
+    settleDecision(
+      doc,
+      await applyMerge(
+        doc.kind,
+        doc.name,
+        publication.publication_version,
+        doc.current_version,
+        resolutions
+      )
     );
-    if (res) await afterDecision();
-    return res != null;
-  };
 
   /**
    * Publishing needs no body here: coord promotes the document's own current

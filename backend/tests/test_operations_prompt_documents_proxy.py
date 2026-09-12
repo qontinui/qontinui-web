@@ -892,3 +892,44 @@ class TestUpstreamDecisions:
             )
 
         assert resp.status_code == 503
+
+
+class TestUpstreamDecisionsAuthSplit:
+    """The fixture above overrides BOTH tenant dependencies with the same
+    lambda, so the tests in ``TestUpstreamDecisions`` cannot tell a write route
+    that slipped onto the membership dependency from one on the admin gate.
+    This one can: the admin dependency is made to refuse, and every write must
+    refuse with it while the read still answers."""
+
+    @staticmethod
+    def _app_with_admin_refused() -> FastAPI:
+        from fastapi import HTTPException
+
+        from app.api.v1.endpoints.operations import require_coord_tenant_admin
+
+        app = _build_test_app()
+
+        def refuse() -> None:
+            raise HTTPException(status_code=403, detail="not a tenant admin")
+
+        app.dependency_overrides[require_coord_tenant_admin] = refuse
+        return app
+
+    def test_every_decision_write_needs_admin_and_the_preview_does_not(self):
+        client = TestClient(self._app_with_admin_refused())
+        base = f"{API_PREFIX}/coord/prompt-documents/policy/coordination"
+        with _patch_httpx() as MockClient:
+            instance = AsyncMock()
+            instance.get.return_value = _mock_response(json_data={"mode": "clauses"})
+            instance.post.return_value = _mock_response(json_data={"merged": True})
+            _configure_mock_client(MockClient, instance)
+
+            for tail in ("upstream-adopt", "upstream-keep", "upstream-merge"):
+                resp = client.post(f"{base}/{tail}", json={"publication_version": 1})
+                assert resp.status_code == 403, tail
+            assert instance.post.call_count == 0
+
+            resp = client.get(f"{base}/upstream-merge")
+
+        assert resp.status_code == 200
+        assert instance.get.call_count == 1

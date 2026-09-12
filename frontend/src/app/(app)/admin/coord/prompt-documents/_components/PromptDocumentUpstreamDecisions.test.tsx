@@ -257,12 +257,43 @@ describe("the whole-body decisions", () => {
   });
 });
 
-describe("Merge clauses", () => {
-  it("is offered for a policy document and withheld from every other kind", async () => {
-    routeGets(
-      [summary("policy", "testing"), summary("agent_playbook", "plan-capture")],
-      CLAUSE_PLAN
+describe("a decision refused as document_moved", () => {
+  it("re-reads the document so the next attempt carries the live version", async () => {
+    routeGets([summary("policy", "testing")], CLAUSE_PLAN);
+    postMock.mockRejectedValue(
+      new Error(
+        'POST /api/v1/operations/coord/prompt-documents/policy/testing/upstream-keep failed: 409 - {"error":"document_moved","current_version":9}'
+      )
     );
+    render(<PromptDocumentList />);
+    const user = await openUpstream("policy", "testing");
+    const getOneCallsBefore = getMock.mock.calls.filter(
+      ([u]) => u === `${API}/coord/prompt-documents/policy/testing`
+    ).length;
+
+    await user.click(screen.getByTestId("upstream-keep-mine"));
+
+    await waitFor(() => expect(postMock).toHaveBeenCalledTimes(1));
+    // Refused: the dialog stays open on the comparison, and the document is
+    // fetched again rather than left at the version coord just rejected.
+    await waitFor(() =>
+      expect(
+        getMock.mock.calls.filter(
+          ([u]) => u === `${API}/coord/prompt-documents/policy/testing`
+        ).length
+      ).toBe(getOneCallsBefore + 1)
+    );
+    expect(screen.getByTestId("upstream-keep-mine")).toBeVisible();
+    // And the list was NOT re-read — nothing landed.
+    expect(
+      getMock.mock.calls.filter(([u]) => u === `${API}/coord/prompt-documents`)
+    ).toHaveLength(1);
+  });
+});
+
+describe("Merge clauses", () => {
+  it("is offered for a policy document", async () => {
+    routeGets([summary("policy", "testing")], CLAUSE_PLAN);
     render(<PromptDocumentList />);
 
     await openUpstream("policy", "testing");
@@ -316,8 +347,7 @@ describe("Merge clauses", () => {
 
     const apply = screen.getByTestId("upstream-merge-apply");
     expect(apply).toBeDisabled();
-    // Clicking a disabled apply sends nothing — coord would 409, but this
-    // surface never even asks.
+    // Opening the merge view and reading the plan sent no write.
     expect(postMock).not.toHaveBeenCalled();
 
     await user.click(
