@@ -1375,11 +1375,14 @@ class TestSlugFilter:
         assert [a["slug"] for a in manifest["artifacts"]] == [posted]
 
 
-async def _seed_scan_roots(db: AsyncSession, *, behinds: tuple[int, ...]) -> list[UUID]:
+async def _seed_scan_roots(
+    db: AsyncSession, *, behinds: tuple[int, ...], org_id: UUID | None = None
+) -> list[UUID]:
     """One fresh, exact ``measured`` reading per ``behinds`` entry.
 
-    Written through the real upsert into the NULL organization bucket, which
-    is where ``api_user`` (no personal organization) reads.
+    Written through the real upsert into ``org_id`` — by default the NULL
+    organization bucket, which is where ``api_user`` (no personal
+    organization) reads.
     """
     from app.crud import plan_scan_root as scan_root_crud
 
@@ -1389,7 +1392,7 @@ async def _seed_scan_roots(db: AsyncSession, *, behinds: tuple[int, ...]) -> lis
         device_id = uuid4()
         await scan_root_crud.upsert_observation(
             db,
-            org_id=None,
+            org_id=org_id,
             device_id=device_id,
             fields={
                 "state": "measured",
@@ -1572,6 +1575,90 @@ class TestCorpusHealth:
 
         via_route = await _get_scan_roots_route(async_db_session, api_user)
         assert _without_request_clock(scan_roots) == _without_request_clock(via_route)
+
+    async def test_scan_roots_never_carries_another_organizations_devices(
+        self, async_db_session: AsyncSession
+    ) -> None:
+        """Device ids, paths and SHAs of another tenant's feeders stay out.
+
+        Every other test here reads as ``api_user``, whose scope IS the NULL
+        bucket, so dropping the org scope from the corpus-health read changes
+        nothing for them. This caller has a real personal organization, and
+        readings sit in BOTH the NULL bucket and a third organization — so an
+        unscoped read shows up here as extra rows. Mutation-proved: passing
+        ``org_id=None`` to the read in ``_load_corpus_health`` fails this test.
+        """
+        from app.models.organization import Organization
+        from app.models.user import User
+
+        user = User(
+            email=f"planlib_org_{uuid4().hex[:8]}@example.com",
+            username=f"planlib_org_{uuid4().hex[:8]}",
+            full_name="Plan Library Org Tester",
+            is_active=True,
+            is_verified=True,
+        )
+        async_db_session.add(user)
+        await async_db_session.commit()
+        await async_db_session.refresh(user)
+        org = Organization(
+            name=f"Personal {uuid4().hex[:6]}",
+            slug=f"personal-{uuid4().hex[:10]}",
+            owner_id=user.id,
+            settings={"is_personal": True},
+        )
+        async_db_session.add(org)
+        await async_db_session.commit()
+        await async_db_session.refresh(org)
+
+        (mine,) = await _seed_scan_roots(async_db_session, behinds=(3,), org_id=org.id)
+        await _seed_scan_roots(async_db_session, behinds=(1,))
+        await _seed_scan_roots(async_db_session, behinds=(2,), org_id=uuid4())
+
+        app = _build_app(db_session=async_db_session, user=user)
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app), base_url="http://test"
+        ) as org_client:
+            resp = await org_client.get(API_PREFIX)
+        assert resp.status_code == 200, resp.text
+        scan_roots = resp.json()["corpus_health"]["scan_roots"]
+
+        assert [r["device_id"] for r in scan_roots["rows"]] == [str(mine)]
+        assert scan_roots["count"] == 1
+        (rollup,) = scan_roots["by_source_repo"]
+        assert rollup["min_behind"] == 3
+
+    async def test_a_failed_scan_root_read_degrades_to_unknown_not_a_500(
+        self,
+        client: httpx.AsyncClient,
+        async_db_session: AsyncSession,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """The drift report is report-only beside the corpus read.
+
+        A failing read of it must neither fail the page nor pass as "no
+        drift": the page is served, its counts intact, and ``scan_roots``
+        says ``read_failed``. Mutation-proved: without the savepoint guard in
+        ``_load_corpus_health`` this request raises.
+        """
+        from app.api.v1.endpoints import plan_library as endpoint
+
+        await client.post(API_PREFIX, json=_payload(kind="plan"))
+        await _seed_scan_roots(async_db_session, behinds=(3,))
+
+        async def _broken(*_args: object, **_kwargs: object) -> None:
+            raise OperationalError("SELECT ...", {}, Exception("connection lost"))
+
+        monkeypatch.setattr(endpoint.scan_root_crud, "list_observations", _broken)
+
+        resp = await client.get(API_PREFIX)
+        assert resp.status_code == 200, resp.text
+        health = resp.json()["corpus_health"]
+        assert health["plan_count"] == 1
+        assert health["scan_roots"]["state"] == "unknown"
+        assert health["scan_roots"]["detail"].startswith("read_failed:")
+        assert health["scan_roots"]["rows"] == []
+        assert "connection lost" not in health["scan_roots"]["detail"]
 
 
 class TestStrictQueryKeepsEveryDeclaredKey:
