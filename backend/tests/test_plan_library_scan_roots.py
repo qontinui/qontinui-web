@@ -60,9 +60,13 @@ from pydantic import ValidationError
 from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.v1.endpoints.plan_library_scan_roots import FRESH_WITHIN_SECS
 from app.models.plan_scan_root import PlanScanRootObservation
 from app.schemas.plan_library_scan_roots import MAX_FUTURE_SKEW_SECS, ScanRootReport
+from app.services.plan_scan_root_health import (
+    FRESH_WITHIN_SECS,
+    REF_STALE_ZERO_FLOOR_DETAIL,
+    ref_stale_zero_behind_detail,
+)
 
 API_PREFIX = "/api/v1/plan-library"
 SCAN_ROOTS = f"{API_PREFIX}/scan-roots"
@@ -584,10 +588,6 @@ class TestFloorRule:
 
         Mutation-proved: making ``zero_behind_floor_detail`` return ``None``
         fails this test and the ahead > 0 one below."""
-        from app.api.v1.endpoints.plan_library_scan_roots import (
-            REF_STALE_ZERO_FLOOR_DETAIL,
-        )
-
         async with _client(app_no_cognito, TOKEN_A) as client:
             posted = await client.post(
                 SCAN_ROOTS,
@@ -614,10 +614,6 @@ class TestFloorRule:
         """The rule keys on ``behind == 0``, not on 0/0: "0 behind" against a
         stale ref establishes nothing whatever ``ahead`` is — and ``ahead`` is
         as of that same ref, which the detail says."""
-        from app.api.v1.endpoints.plan_library_scan_roots import (
-            ref_stale_zero_behind_detail,
-        )
-
         async with _client(app_no_cognito, TOKEN_A) as client:
             await client.post(
                 SCAN_ROOTS,

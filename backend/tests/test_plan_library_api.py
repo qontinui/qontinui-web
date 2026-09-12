@@ -1375,6 +1375,79 @@ class TestSlugFilter:
         assert [a["slug"] for a in manifest["artifacts"]] == [posted]
 
 
+async def _seed_scan_roots(db: AsyncSession, *, behinds: tuple[int, ...]) -> list[UUID]:
+    """One fresh, exact ``measured`` reading per ``behinds`` entry.
+
+    Written through the real upsert into the NULL organization bucket, which
+    is where ``api_user`` (no personal organization) reads.
+    """
+    from app.crud import plan_scan_root as scan_root_crud
+
+    now = datetime.now(UTC)
+    device_ids: list[UUID] = []
+    for behind in behinds:
+        device_id = uuid4()
+        await scan_root_crud.upsert_observation(
+            db,
+            org_id=None,
+            device_id=device_id,
+            fields={
+                "state": "measured",
+                "plans_dir": "/w/qontinui-dev-notes/plans",
+                "repo_root": "/w/qontinui-dev-notes",
+                "source_repo": "qontinui-dev-notes/plans",
+                "default_ref": "origin/main",
+                "ref_sha": "a" * 40,
+                "head_sha": "b" * 40,
+                "behind": behind,
+                "ahead": 0,
+                "ref_age_secs": 120,
+                "counts_are_floors": False,
+                "detail": None,
+                "observed_at": now,
+            },
+        )
+        device_ids.append(device_id)
+    return device_ids
+
+
+async def _get_scan_roots_route(db: AsyncSession, user) -> dict:
+    """``GET /plan-library/scan-roots`` for ``user``, on its own app.
+
+    Its own app because mounting that router AFTER ``plan_library``'s would
+    let ``GET /{artifact_id}`` swallow the path (see the route-order note in
+    ``plan_library_scan_roots.py``).
+    """
+    from app.api.deps import current_active_user_optional, get_async_db
+    from app.api.v1.endpoints.plan_library_scan_roots import router
+
+    app = FastAPI()
+    app.dependency_overrides[current_active_user_optional] = lambda: user
+
+    async def _db_override():
+        yield db
+
+    app.dependency_overrides[get_async_db] = _db_override
+    app.include_router(router, prefix=API_PREFIX)
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app), base_url="http://test"
+    ) as http_client:
+        resp = await http_client.get(f"{API_PREFIX}/scan-roots")
+    assert resp.status_code == 200, resp.text
+    return resp.json()
+
+
+def _without_request_clock(scan_roots: dict) -> dict:
+    """Drop the one field two reads a moment apart may legitimately differ on."""
+    return {
+        **scan_roots,
+        "rows": [
+            {k: v for k, v in row.items() if k != "observation_age_secs"}
+            for row in scan_roots["rows"]
+        ],
+    }
+
+
 class TestCorpusHealth:
     """``corpus_health`` rides on every list page (Phase 2 of
     ``2026-08-27-plan-corpus-read-path-is-dark``, D1).
@@ -1446,6 +1519,59 @@ class TestCorpusHealth:
         via_route = (await client.get(f"{API_PREFIX}/capture-health")).json()
         assert via_list == via_route
         assert via_route["newest_updated_at"] is not None
+
+    async def test_scan_roots_is_unknown_when_no_device_has_reported(
+        self, client: httpx.AsyncClient
+    ) -> None:
+        """No readings is UNKNOWN on the list page too, never "all current".
+
+        Plan ``2026-09-11-the-plan-corpus-scan-root-does-not-report-its-own-drift``:
+        a runner whose build predates the report sends nothing, and that
+        silence must not read as a corpus whose feeders are in step.
+        """
+        scan_roots = (await client.get(API_PREFIX)).json()["corpus_health"][
+            "scan_roots"
+        ]
+        assert scan_roots["state"] == "unknown"
+        assert scan_roots["detail"].startswith("no_observation:")
+        assert scan_roots["rows"] == []
+        assert scan_roots["by_source_repo"] == []
+
+    async def test_scan_roots_carries_every_reading_and_the_rollup(
+        self,
+        client: httpx.AsyncClient,
+        async_db_session: AsyncSession,
+        api_user,
+    ) -> None:
+        """Each device's reading rides on the page, folded per scan source.
+
+        And it is ``GET /plan-library/scan-roots`` — the same builder — so
+        the two reads agree on everything but the per-request age.
+        """
+        current, lagging = await _seed_scan_roots(async_db_session, behinds=(3, 254))
+
+        # A filtered page that matches nothing still carries the whole
+        # corpus's feeders: the filter is what was asked, not what of.
+        resp = await client.get(API_PREFIX, params={"slug": "nothing-like-this"})
+        assert resp.status_code == 200, resp.text
+        scan_roots = resp.json()["corpus_health"]["scan_roots"]
+
+        assert scan_roots["state"] == "reported"
+        assert scan_roots["count"] == scan_roots["fresh_count"] == 2
+        assert {r["device_id"] for r in scan_roots["rows"]} == {
+            str(current),
+            str(lagging),
+        }
+        (rollup,) = scan_roots["by_source_repo"]
+        assert rollup["source_repo"] == "qontinui-dev-notes/plans"
+        assert rollup["state"] == "measured"
+        assert rollup["min_behind"] == 3
+        assert rollup["min_behind_is_floor"] is False
+        assert rollup["least_behind_device_ids"] == [str(current)]
+        assert rollup["lagging_device_ids"] == [str(lagging)]
+
+        via_route = await _get_scan_roots_route(async_db_session, api_user)
+        assert _without_request_clock(scan_roots) == _without_request_clock(via_route)
 
 
 class TestStrictQueryKeepsEveryDeclaredKey:

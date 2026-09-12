@@ -536,6 +536,74 @@ def _coord_ok(work_unit: dict[str, Any], citations: list[dict[str, Any]]):
     return AsyncMock(side_effect=_fake)
 
 
+class TestCandidatesCarryCorpusHealth:
+    """``/candidates`` carries the list page's ``corpus_health`` block.
+
+    Plan ``2026-09-11-the-plan-corpus-scan-root-does-not-report-its-own-drift``,
+    the deferred ``CorpusHealth`` fold-in: a consumer ranking candidates must
+    be able to tell, in the SAME read, whether the corpus they came from is
+    fed by current checkouts — without a second request it has no reason to
+    think of making.
+    """
+
+    async def test_the_block_is_the_whole_corpus_and_names_its_feeders(
+        self, client: httpx.AsyncClient, async_db_session: AsyncSession
+    ) -> None:
+        from app.crud import plan_scan_root as scan_root_crud
+
+        await _plan(async_db_session, org_id=None, slug=_slug("health-a"))
+        await _plan(async_db_session, org_id=None, slug=_slug("health-b"))
+        device_id = uuid4()
+        await scan_root_crud.upsert_observation(
+            async_db_session,
+            org_id=None,
+            device_id=device_id,
+            fields={
+                "state": "measured",
+                "source_repo": "qontinui-dev-notes/plans",
+                "default_ref": "origin/main",
+                "behind": 41,
+                "ahead": 0,
+                "ref_age_secs": None,
+                "counts_are_floors": True,
+                "observed_at": datetime.now(UTC),
+            },
+        )
+
+        # A page past the end: no items, but the block still describes the
+        # whole corpus rather than this (empty) page.
+        resp = await client.get(
+            CANDIDATES,
+            params={"limit": 1, "offset": 50, "include_coord": "false"},
+        )
+        assert resp.status_code == 200, resp.text
+        body = resp.json()
+        assert body["items"] == []
+        health = body["corpus_health"]
+        assert health["plan_count"] == 2
+
+        listed = await client.get(API_PREFIX)
+        assert health["plan_count"] == listed.json()["corpus_health"]["plan_count"]
+
+        scan_roots = health["scan_roots"]
+        assert scan_roots["state"] == "reported"
+        assert [r["device_id"] for r in scan_roots["rows"]] == [str(device_id)]
+        (rollup,) = scan_roots["by_source_repo"]
+        # "At least 41 behind": its ref is of unknown age, so the minimum is a
+        # floor, and the roll-up says so rather than presenting 41 as exact.
+        assert rollup["min_behind"] == 41
+        assert rollup["min_behind_is_floor"] is True
+
+    async def test_no_reading_is_unknown_on_candidates_too(
+        self, client: httpx.AsyncClient
+    ) -> None:
+        resp = await client.get(CANDIDATES, params={"include_coord": "false"})
+        assert resp.status_code == 200, resp.text
+        scan_roots = resp.json()["corpus_health"]["scan_roots"]
+        assert scan_roots["state"] == "unknown"
+        assert scan_roots["by_source_repo"] == []
+
+
 class TestCandidatesHttp:
     async def test_returns_the_local_signals(
         self, client: httpx.AsyncClient, async_db_session: AsyncSession, api_user
