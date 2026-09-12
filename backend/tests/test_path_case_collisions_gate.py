@@ -22,18 +22,28 @@ What these tests pin:
    reported. That resolves identically everywhere by extension priority; it is
    a different smell, and reporting it would make the gate cry wolf on a
    pattern the tree may legitimately hold.
-4. Full-path collisions are reported at the SHALLOWEST prefix: a colliding
-   directory is one finding, not one per file beneath it, and the stems under
-   it are not reported a second time.
+4. Full-path collisions are reported at the SHALLOWEST prefix that explains
+   them: a colliding directory is one finding, not one per file beneath it,
+   and the stems under it are not reported a second time — but a nested pair
+   that STILL differs below the colliding ancestor (``Foo/Bar`` vs
+   ``Foo/bar``) is a second defect the directory rename leaves behind, and is
+   kept. A TS leaf pair that collides as a path is one finding, not one under
+   each heading.
 5. A directory holding an ``index.<ext>`` is a module stem, so ``Foo/index.ts``
    beside ``foo.ts`` is the #1282 defect with a directory on one side.
+   ``.d.mts``/``.d.cts`` strip as one extension like ``.d.ts``, and an
+   upper-cased extension is still a module — a probe for ``Foo.ts`` hits
+   ``foo.TS`` on the same filesystems.
 6. The fold is per-character (``str.lower``), not full case folding: ``ß`` and
    ``ss`` are distinct on NTFS and APFS, so they are distinct here.
 7. The gate reads the INDEX, end to end: a temporary repository whose index
    holds both spellings — which no case-insensitive working tree could hold —
    exits 1 and names the pair. Built with ``git update-index --cacheinfo`` so
    the fixture is the same on every platform, including the one where the
-   defect is real.
+   defect is real. And it reads it NUL-delimited: without ``-z`` git C-quotes
+   any non-ASCII path, so ``Ärger.ts``/``ärger.ts`` would be folded as the
+   literal octal-escaped string and pass — the one place where the sibling
+   gate's ``ls-files`` call, copied verbatim, would have been wrong here.
 8. A collision exits 1 and NAMES both members; an empty index exits 2, never
    0 — the vacuous-pass class ``_gate_lib`` exists to prevent.
 9. The LANE ROSTER — exactly three files invoke this script, the three the
@@ -120,11 +130,29 @@ def test_same_case_stem_with_two_extensions_is_not_reported() -> None:
 
 
 def test_a_colliding_directory_is_one_finding_at_the_shallowest_prefix() -> None:
-    tracked = ["Foo/x.ts", "foo/y.ts", "foo/X.ts", "bar/z.ts"]
+    tracked = ["Foo/x.ts", "foo/y.ts", "foo/x.ts", "bar/z.ts"]
     paths = gate.path_collisions(tracked)
     assert paths == [["Foo", "foo"]]
-    # `Foo/x.ts` vs `foo/X.ts` collide as stems only BECAUSE the directory
+    # `Foo/x.ts` vs `foo/x.ts` collide as stems only BECAUSE the directory
     # does; renaming the directory fixes both, so they are not a second finding.
+    assert gate._outside(gate.module_stem_collisions(tracked), paths) == []
+
+
+def test_a_nested_pair_that_still_differs_below_the_ancestor_is_kept() -> None:
+    # Renaming `Foo` -> `foo` leaves `foo/Bar` beside `foo/bar`: a second
+    # defect, reported now rather than on the next commit.
+    tracked = ["Foo/a.ts", "foo/b.ts", "Foo/Bar/x.ts", "Foo/bar/y.ts"]
+    assert gate.path_collisions(tracked) == [["Foo", "foo"], ["Foo/Bar", "Foo/bar"]]
+    # ...whereas a nested pair that differs ONLY in the ancestor is explained
+    # by it, and dropped.
+    tracked = ["Foo/x.ts", "foo/x.ts", "Foo/Bar/q.ts", "foo/Bar/r.ts"]
+    assert gate.path_collisions(tracked) == [["Foo", "foo"]]
+
+
+def test_a_ts_leaf_pair_that_collides_as_a_path_is_reported_once() -> None:
+    tracked = ["a/Foo.ts", "a/foo.ts"]
+    paths = gate.path_collisions(tracked)
+    assert paths == [["a/Foo.ts", "a/foo.ts"]]
     assert gate._outside(gate.module_stem_collisions(tracked), paths) == []
 
 
@@ -143,10 +171,22 @@ def test_a_directory_with_an_index_file_is_a_module_stem() -> None:
 
 def test_dot_d_ts_is_stripped_as_one_extension() -> None:
     assert gate._module_stem("a/foo.d.ts") == "a/foo"
+    assert gate._module_stem("a/foo.d.mts") == "a/foo"
+    assert gate._module_stem("a/foo.d.cts") == "a/foo"
     assert gate._module_stem("a/foo.ts") == "a/foo"
     assert gate._module_stem("a/foo.md") is None
+    # A bare extension is a dotfile, not a module with an empty name.
+    assert gate._module_stem("a/.ts") is None
+    assert gate._module_stem(".ts") is None
     assert gate.module_stem_collisions(["a/foo.d.ts", "a/Foo.ts"]) == [
         ["a/Foo.ts", "a/foo.d.ts"]
+    ]
+
+
+def test_an_upper_cased_extension_is_still_a_module() -> None:
+    assert gate._module_stem("a/foo.TS") == "a/foo"
+    assert gate.module_stem_collisions(["a/Foo.tsx", "a/foo.TS"]) == [
+        ["a/Foo.tsx", "a/foo.TS"]
     ]
 
 
@@ -162,6 +202,7 @@ def test_the_fold_is_per_character_not_full_casefold() -> None:
 # --------------------------------------------------------------------------
 
 _EMPTY_BLOB = "e69de29bb2d1d6434b8b29ae775ad8c2e48c5391"
+BACKSLASH = chr(92)
 
 
 def _git(repo: Path, *args: str) -> subprocess.CompletedProcess[str]:
@@ -175,7 +216,26 @@ def _git(repo: Path, *args: str) -> subprocess.CompletedProcess[str]:
     )
 
 
-def _repo_with_index(tmp_path: Path, paths: list[str]) -> Path:
+_AMBIENT_GIT_VARS = ("GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE")
+
+
+def _isolate_git(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Keep the fixture's git calls off the caller's repository.
+
+    Under a git hook (or some wrappers) ``GIT_DIR`` / ``GIT_INDEX_FILE`` are
+    exported, and ``update-index`` would then write the fixture's entries into
+    the CALLER's index. ``GIT_CEILING_DIRECTORIES`` stops a plain directory
+    under ``tmp_path`` from resolving to whatever repository happens to
+    enclose the temp root.
+    """
+    for var in _AMBIENT_GIT_VARS:
+        monkeypatch.delenv(var, raising=False)
+    monkeypatch.setenv("GIT_CEILING_DIRECTORIES", str(tmp_path))
+
+
+def _repo_with_index(
+    tmp_path: Path, paths: list[str], monkeypatch: pytest.MonkeyPatch
+) -> Path:
     """A repository whose INDEX holds ``paths`` — and whose tree holds nothing.
 
     ``--cacheinfo`` writes index entries directly, so two spellings that a
@@ -183,6 +243,7 @@ def _repo_with_index(tmp_path: Path, paths: list[str]) -> Path:
     the index. That is the state a Linux-authored commit leaves a Windows clone
     in, and it is the state the gate must see through.
     """
+    _isolate_git(tmp_path, monkeypatch)
     repo = tmp_path / "repo"
     repo.mkdir()
     _git(repo, "init", "-q")
@@ -213,7 +274,7 @@ def _run_gate_in(repo: Path, monkeypatch: pytest.MonkeyPatch) -> int:
 def test_a_colliding_index_exits_one_and_names_both_members(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    repo = _repo_with_index(tmp_path, [*_PR_1282_PAIR, "README.md"])
+    repo = _repo_with_index(tmp_path, [*_PR_1282_PAIR, "README.md"], monkeypatch)
     assert _run_gate_in(repo, monkeypatch) == gate.EXIT_VIOLATION
     stderr = capsys.readouterr().err
     for member in _PR_1282_PAIR:
@@ -221,10 +282,30 @@ def test_a_colliding_index_exits_one_and_names_both_members(
     assert "TS1149" in stderr, "the remediation must name the tsc error a reader saw"
 
 
+def test_non_ascii_paths_are_folded_not_quoted(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # Default `core.quotePath` C-quotes every one of these in plain `ls-files`
+    # output; `-z` is what lets the gate see the real names. A path pair, a
+    # stem pair and a directory pair, each with a non-ASCII byte in play.
+    repo = _repo_with_index(
+        tmp_path,
+        ["Ärger.ts", "ärger.ts", "Foo/ü.ts", "foo/x.ts", "README.md"],
+        monkeypatch,
+    )
+    assert _run_gate_in(repo, monkeypatch) == gate.EXIT_VIOLATION
+    stderr = capsys.readouterr().err
+    assert "Ärger.ts  <->  ärger.ts" in stderr, stderr
+    assert "Foo  <->  foo" in stderr, stderr
+    assert BACKSLASH + "303" not in stderr, "a C-quoted path leaked into the report"
+
+
 def test_a_clean_index_exits_zero_and_reports_the_count(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    repo = _repo_with_index(tmp_path, ["a/foo.ts", "a/Bar.tsx", "README.md"])
+    repo = _repo_with_index(
+        tmp_path, ["a/foo.ts", "a/Bar.tsx", "README.md"], monkeypatch
+    )
     assert _run_gate_in(repo, monkeypatch) == 0
     assert "scanned 3 tracked file(s)" in capsys.readouterr().out
 
@@ -232,7 +313,7 @@ def test_a_clean_index_exits_zero_and_reports_the_count(
 def test_an_empty_index_is_vacuous_not_clean(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    repo = _repo_with_index(tmp_path, [])
+    repo = _repo_with_index(tmp_path, [], monkeypatch)
     with pytest.raises(SystemExit) as exc:
         _run_gate_in(repo, monkeypatch)
     assert exc.value.code == gate.EXIT_VACUOUS
@@ -243,6 +324,7 @@ def test_a_failed_git_call_is_vacuous_not_clean(
 ) -> None:
     # Not a repository at all: `git ls-files` errors, and that must not read
     # as "no tracked files collide".
+    _isolate_git(tmp_path, monkeypatch)
     not_a_repo = tmp_path / "plain"
     not_a_repo.mkdir()
     assert _run_gate_in(not_a_repo, monkeypatch) == gate.EXIT_VACUOUS
