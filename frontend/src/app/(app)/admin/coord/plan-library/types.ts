@@ -333,3 +333,112 @@ export type {
   FleetPolicyView,
   FleetPolicyWriteResult,
 } from "../_shared/fleetPolicy";
+
+// ──────────────────── scan sources (per-device readings) ────────────────────
+
+/**
+ * The four states a device's runner can report for the directory its
+ * plan-library body sync scans. Mirrors `ScanRootState` in
+ * `backend/app/schemas/plan_library_scan_roots.py`, which mirrors the runner's
+ * `ScanDivergenceState`.
+ */
+export const SCAN_ROOT_STATES = [
+  "measured",
+  "not_scanning",
+  "not_a_git_work_tree",
+  "unknown",
+] as const;
+
+export type ScanRootState = (typeof SCAN_ROOT_STATES)[number];
+
+export const SCAN_ROOT_STATE_LABELS: Record<ScanRootState, string> = {
+  measured: "Measured",
+  not_scanning: "Not scanning",
+  not_a_git_work_tree: "Not a git work tree",
+  unknown: "Unknown",
+};
+
+/** Render an unrecognised state as itself rather than as blank. */
+export function scanRootStateLabel(state: string): string {
+  return SCAN_ROOT_STATE_LABELS[state as ScanRootState] ?? state;
+}
+
+/**
+ * One device's latest reading, as the READ route renders it.
+ *
+ * The distinction this type must never collapse — the same one
+ * `CoordLinkState` and `CoordPrState` carry above — is `state` vs
+ * `reported_state`. `state` is the backend's VERDICT, and it is the field that
+ * decides WHAT MAY BE CLAIMED: it is `"unknown"` whenever the reading cannot
+ * support a claim about NOW, even though the device reported `"measured"`.
+ * Three rules produce that, in precedence order, each naming itself in
+ * `detail`:
+ *
+ * * `observation_stale:` — nothing received from the device inside
+ *   `fresh_within_secs`. A device that went quiet has established nothing.
+ * * `reading_superseded:` — its latest report was observed BEFORE the stored
+ *   reading (a clock step-back, or a late delivery), so the stored reading may
+ *   not be what it says now.
+ * * `ref_stale:` — a `measured` reading whose counts are floors and whose
+ *   `behind` is 0. Zero commits behind a ref that may itself be days old is a
+ *   lower bound of nothing, never "in step".
+ *
+ * `reported_state` / `reported_detail` keep what the device actually sent, so
+ * the panel can show both without a reader mistaking one for the other.
+ *
+ * A SECOND question has a different answer, and conflating the two is a live
+ * defect rather than a nicety: what TENSE may a claim be made in? That is
+ * decided by `observation_fresh` and `last_report_applied`, NOT by `state` —
+ * because `ref_stale` is a verdict of `unknown` on a row that is perfectly
+ * fresh. The device reported seconds ago; what is stale is the ref it measured
+ * against. A reader that took `state` as the answer to both would write "when
+ * last measured" over a live device and send an operator after the wrong box.
+ * `ScanSourcesPanel`'s `readingIsCurrent` is the worked example.
+ */
+export interface ScanRootRow {
+  device_id: string;
+  /** The VERDICT. Key on this, never on `reported_state`. */
+  state: ScanRootState;
+  detail: string | null;
+  /** What the device sent, verbatim. Never a verdict. */
+  reported_state: ScanRootState;
+  reported_detail: string | null;
+  plans_dir: string | null;
+  repo_root: string | null;
+  source_repo: string | null;
+  default_ref: string | null;
+  ref_sha: string | null;
+  head_sha: string | null;
+  /** `null` is NOT MEASURED. Never render it as `0`. */
+  behind: number | null;
+  ahead: number | null;
+  ref_age_secs: number | null;
+  /** `true` = the counts are LOWER BOUNDS ("at least N"), not exact. */
+  counts_are_floors: boolean;
+  observed_at: string;
+  received_at: string;
+  last_report_applied: boolean;
+  last_report_observed_at: string;
+  observed_skew_secs: number;
+  observation_age_secs: number;
+  observation_fresh: boolean;
+}
+
+/**
+ * Every reporting device's latest reading.
+ *
+ * `state: "unknown"` is the no-rows answer and it is load-bearing: an empty
+ * list is NOT "every feeder is current". A runner whose build predates the
+ * report, or whose body sync is off, sends nothing at all — indistinguishable
+ * here from a fleet with no drift, which is why the backend refuses to render
+ * the empty case as agreement and this panel must not either.
+ */
+export interface ScanRootListResponse {
+  state: "reported" | "unknown";
+  detail: string | null;
+  fresh_within_secs: number;
+  count: number;
+  /** `count > 0` with `fresh_count === 0` means every feeder has gone quiet. */
+  fresh_count: number;
+  rows: ScanRootRow[];
+}

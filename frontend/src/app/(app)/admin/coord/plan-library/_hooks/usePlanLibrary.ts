@@ -6,6 +6,7 @@ import { httpClient } from "@/services/service-factory";
 import type {
   CaptureHealthResponse,
   DivergentResponse,
+  ScanRootListResponse,
   WorkArtifactDetail,
   WorkArtifactKind,
   WorkArtifactListResponse,
@@ -306,4 +307,73 @@ export function useCaptureHealth() {
   }, [load]);
 
   return { data, loading, error, reload: load };
+}
+
+/**
+ * Every reporting device's latest reading of the tree its body sync scans.
+ *
+ * Deliberately the same shape as [`useCaptureHealth`] — one read, no
+ * polling — because the two panels answer halves of one question ("where is
+ * the corpus coming from" / "how current is what it was read from") and an
+ * operator refreshes the page to re-ask either.
+ *
+ * On failure `data` is left at whatever was last read and `error` is set, so
+ * the panel can say the rows may be stale rather than blanking them. The
+ * absent case is NOT modelled as an empty list here: the route answers
+ * `state: "unknown"` with rows `[]` for an organization no device has reported
+ * for, and that distinction is the point of the route.
+ */
+export function useScanRoots() {
+  const [data, setData] = useState<ScanRootListResponse | null>(null);
+  //: Wall-clock at which `data` arrived. The route's `observation_age_secs`,
+  //: `observation_fresh` and `fresh_count` are server-computed deltas FROZEN
+  //: at that instant, and this hook does not poll — so without a stamp a
+  //: console left open overnight keeps rendering "heard 30s ago". That is the
+  //: very defect this feature exists to remove, reappearing one level up, at
+  //: the panel instead of the row. The panel renders this beside the summary.
+  const [fetchedAt, setFetchedAt] = useState<Date | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  // Monotonic id of the newest request, for the same reason [`usePlanLibrary`]
+  // carries one: `http-client.ts` overwrites the caller's AbortController
+  // signal, so two in-flight reads cannot be cancelled and BOTH will write.
+  // The inversion that matters is on the error state — a late failure paints
+  // "the readings below are the last ones read and may be stale" over rows
+  // that are in fact fresh, and a late success clears a banner that was
+  // telling the truth.
+  const requestId = useRef(0);
+
+  const load = useCallback(async () => {
+    const id = ++requestId.current;
+    const mine = () => requestId.current === id;
+    try {
+      setLoading(true);
+      // Taken BEFORE the await, not after. The server computed the ages in
+      // this response at some point after the request left, so stamping the
+      // moment it LANDED would make every reading look up to one round trip
+      // fresher than it is. On this fleet that round trip has been sampled in
+      // seconds, not milliseconds, so it is not always negligible — and
+      // erring early is the honest side for an age.
+      const requestedAt = new Date();
+      const next = await httpClient.get<ScanRootListResponse>(
+        `${API}/scan-roots`
+      );
+      if (!mine()) return;
+      setData(next);
+      setFetchedAt(requestedAt);
+      setError(null);
+    } catch (err) {
+      if (!mine()) return;
+      setError(message(err, "Failed to load scan sources"));
+    } finally {
+      if (mine()) setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  return { data, fetchedAt, loading, error, reload: load };
 }
