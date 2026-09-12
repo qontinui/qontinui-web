@@ -1,0 +1,1097 @@
+"""``/api/v1/plan-library/scan-roots`` — per-device plan-scan-source readings.
+
+Revised Phase 2 (web half) of
+``2026-09-11-the-plan-corpus-scan-root-does-not-report-its-own-drift``.
+
+What is asserted here
+---------------------
+1. **One row per device, overwritten.** A device's first report creates its
+   row (201), every later one replaces it (200) — never a second row, and a
+   later reading's nulls clear the earlier reading's values.
+2. **The device is the TOKEN's.** ``device_id`` is the verified token's claim;
+   a body ``device_id`` (or ``organization_id``) is a 422 and writes nothing.
+3. **Only a device may write.** An operator session is a 403 naming why —
+   including one that also forwards a device bearer — and anonymous is a 401.
+4. **Staleness reads UNKNOWN, on THIS server's clock.** A device not heard
+   from for more than 2700 s — by ``received_at`` only — reads
+   ``state: "unknown"`` with an ``observation_stale:`` detail (what was sent
+   stays in ``reported_state`` / ``reported_detail``). A runner clock that is
+   50 min behind does not age a live device out; ``observed_skew_secs`` shows
+   the skew instead. An organization with no readings answers top-level
+   ``state: "unknown"``, never an empty "all current".
+4a. **"0 behind" against a stale ref reads UNKNOWN.** A fresh ``measured``
+   floor reading with ``behind == 0`` reads ``state: "unknown"`` with a
+   ``ref_stale:`` detail whatever ``ahead`` is; a floor with a non-zero
+   ``behind`` stays ``measured``.
+4b. **Out-of-order reports keep the newer reading, still count as contact,
+   and mark it superseded.** A report observed earlier than the stored one
+   answers ``applied: false``, leaves the reading alone, refreshes
+   ``received_at``, and the row reads ``state: "unknown"`` /
+   ``reading_superseded`` until a newer report applies again — a reading the
+   device has since contradicted is never served as current.
+4c. **A future-dated report is a 422**, so one skewed report cannot pin the
+   row (the reviewer's wedge probe, kept as a regression test).
+5. **Route order.** Through the real ``api_router``, ``GET
+   /api/v1/plan-library/scan-roots`` reaches this handler and is not swallowed
+   by ``plan_library``'s ``GET /{artifact_id}``.
+6. **Validation.** Bad ``state``, negative, oversized or non-strict counts, a
+   non-strict ``counts_are_floors``, a ``measured`` reading without counts,
+   counts / ref age / floors on an unmeasured state, a ``measured`` reading of
+   unknown ref age that does not claim floors, an unexplained ``unknown`` and a
+   naive ``observed_at`` are all 422s — each for the reason named.
+
+Layering matches ``tests/test_plan_library_device_auth.py``: ``httpx`` +
+``ASGITransport`` so handlers share the test's asyncio loop and session, the
+Cognito arm pinned by overriding ``current_active_user_optional``, and coord's
+JWKS stubbed at ``deps._verify_device_jwt``.
+"""
+
+from __future__ import annotations
+
+from datetime import UTC, datetime, timedelta
+from typing import Any
+from uuid import UUID, uuid4
+
+import httpx
+import pytest
+import pytest_asyncio
+from fastapi import FastAPI, HTTPException, status
+from pydantic import ValidationError
+from sqlalchemy import func, select, update
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.api.v1.endpoints.plan_library_scan_roots import FRESH_WITHIN_SECS
+from app.models.plan_scan_root import PlanScanRootObservation
+from app.schemas.plan_library_scan_roots import MAX_FUTURE_SKEW_SECS, ScanRootReport
+
+API_PREFIX = "/api/v1/plan-library"
+SCAN_ROOTS = f"{API_PREFIX}/scan-roots"
+
+pytestmark = pytest.mark.asyncio
+
+DEVICE_A = UUID("0a0a0a0a-0000-4000-8000-00000000000a")
+DEVICE_B = UUID("0b0b0b0b-0000-4000-8000-00000000000b")
+
+TOKEN_A = "device-a-jwt"
+TOKEN_B = "device-b-jwt"
+TOKEN_NO_DEVICE_ID = "device-jwt-without-device-id-claim"
+
+
+def _reading(**overrides: Any) -> dict[str, Any]:
+    """A ``measured`` reading as the runner's ``report_scan_root`` sends it."""
+    body: dict[str, Any] = {
+        "state": "measured",
+        "plans_dir": "/home/op/qontinui-dev-notes/plans",
+        "repo_root": "/home/op/qontinui-dev-notes",
+        "source_repo": "qontinui-dev-notes/plans",
+        "default_ref": "origin/main",
+        "ref_sha": "a" * 40,
+        "head_sha": "b" * 40,
+        "behind": 254,
+        "ahead": 0,
+        "ref_age_secs": 220,
+        "counts_are_floors": False,
+        "detail": None,
+        "observed_at": datetime.now(UTC).isoformat(),
+    }
+    body.update(overrides)
+    return body
+
+
+async def _make_user(db: AsyncSession, stem: str):
+    from app.models.user import User
+
+    user = User(
+        email=f"{stem}_{uuid4().hex[:8]}@example.com",
+        username=f"{stem}_{uuid4().hex[:8]}",
+        full_name="Scan Root Test User",
+        is_active=True,
+        is_verified=True,
+    )
+    db.add(user)
+    await db.commit()
+    await db.refresh(user)
+    return user
+
+
+async def _make_personal_org(db: AsyncSession, user):
+    """A REAL personal org, so scope assertions never compare ``None`` to ``None``."""
+    from app.models.organization import Organization
+
+    org = Organization(
+        name=f"Personal {uuid4().hex[:6]}",
+        slug=f"personal-{uuid4().hex[:10]}",
+        owner_id=user.id,
+        settings={"is_personal": True},
+    )
+    db.add(org)
+    await db.commit()
+    await db.refresh(org)
+    return org
+
+
+def _build_app(*, db_session: AsyncSession, cognito_user=None) -> FastAPI:
+    """Mount ONLY the scan-roots router, Cognito arm pinned, DB overridden."""
+    from app.api.deps import current_active_user_optional, get_async_db
+    from app.api.v1.endpoints.plan_library_scan_roots import router
+
+    app = FastAPI()
+    app.dependency_overrides[current_active_user_optional] = lambda: cognito_user
+
+    async def _db_override():
+        yield db_session
+
+    app.dependency_overrides[get_async_db] = _db_override
+    app.include_router(router, prefix=API_PREFIX)
+    return app
+
+
+@pytest_asyncio.fixture()
+async def owner(async_db_session: AsyncSession):
+    """The operator the device tokens resolve to, with a personal org."""
+    user = await _make_user(async_db_session, "scanroot_owner")
+    org = await _make_personal_org(async_db_session, user)
+    return user, org
+
+
+@pytest.fixture()
+def stub_device_jwt(monkeypatch, owner):
+    """Two device tokens and one without a ``device_id`` claim, all owned by
+    ``owner``. Any other token gets the verifier's own 401."""
+    from app.api import deps
+
+    user, _org = owner
+    claims_by_token = {
+        TOKEN_A: {"device_id": str(DEVICE_A), "user_id": str(user.id)},
+        TOKEN_B: {"device_id": str(DEVICE_B), "user_id": str(user.id)},
+        TOKEN_NO_DEVICE_ID: {"user_id": str(user.id)},
+    }
+    seen: list[str] = []
+
+    async def _fake_verify(token: str):
+        seen.append(token)
+        if token not in claims_by_token:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid or expired device token.",
+            )
+        return claims_by_token[token], user
+
+    monkeypatch.setattr(deps, "_verify_device_jwt", _fake_verify)
+    return seen
+
+
+@pytest_asyncio.fixture()
+async def app_no_cognito(async_db_session: AsyncSession, stub_device_jwt):
+    return _build_app(db_session=async_db_session, cognito_user=None)
+
+
+def _unmeasured(state: str, **overrides: Any) -> dict[str, Any]:
+    """A valid non-``measured`` reading: no counts, no ref age, no floors."""
+    body = _reading(
+        state=state,
+        behind=None,
+        ahead=None,
+        ref_age_secs=None,
+        counts_are_floors=False,
+        detail="the plans dir is not inside a git work tree",
+    )
+    body.update(overrides)
+    return body
+
+
+def _client(app: FastAPI, token: str | None = None) -> httpx.AsyncClient:
+    headers = {"Authorization": f"Bearer {token}"} if token else {}
+    return httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app),
+        base_url="http://test",
+        headers=headers,
+    )
+
+
+def _received_at(resp: httpx.Response) -> datetime:
+    return datetime.fromisoformat(resp.json()["row"]["received_at"])
+
+
+async def _rows_for(db: AsyncSession, device_id: UUID) -> list[PlanScanRootObservation]:
+    # ``populate_existing`` rather than ``expire_all()``: the latter would also
+    # expire the fixtures' user/org rows, whose next attribute read is then a
+    # sync lazy load inside async code.
+    result = await db.execute(
+        select(PlanScanRootObservation)
+        .where(PlanScanRootObservation.device_id == device_id)
+        .execution_options(populate_existing=True)
+    )
+    return list(result.scalars().all())
+
+
+# ===========================================================================
+# 1-2. The upsert is keyed per device, and the device is the token's
+# ===========================================================================
+
+
+class TestUpsertKeyedPerDevice:
+    async def test_first_report_creates_and_later_reports_overwrite_one_row(
+        self,
+        app_no_cognito: FastAPI,
+        async_db_session: AsyncSession,
+        owner,
+        stub_device_jwt: list[str],
+    ) -> None:
+        _user, org = owner
+        async with _client(app_no_cognito, TOKEN_A) as client:
+            first = await client.post(SCAN_ROOTS, json=_reading(behind=254))
+            second = await client.post(SCAN_ROOTS, json=_reading(behind=3, ahead=1))
+
+        assert first.status_code == 201, first.text
+        assert first.json()["created"] is True
+        assert second.status_code == 200, second.text
+        assert second.json()["created"] is False
+        # The bearer really went through device verification.
+        assert stub_device_jwt == [TOKEN_A, TOKEN_A]
+
+        rows = await _rows_for(async_db_session, DEVICE_A)
+        assert len(rows) == 1, "a second report must overwrite, not append"
+        row = rows[0]
+        assert row.device_id == DEVICE_A
+        assert row.organization_id == org.id
+        assert (row.behind, row.ahead) == (3, 1)
+        assert second.json()["row"]["device_id"] == str(DEVICE_A)
+        # ``received_at`` moves with every report; ``created_at`` does not.
+        assert row.received_at >= _received_at(first)
+        assert row.created_at == _received_at(first)
+
+    async def test_a_later_reading_clears_what_it_no_longer_reports(
+        self, app_no_cognito: FastAPI, async_db_session: AsyncSession
+    ) -> None:
+        """A reading is a whole snapshot: a device that went from ``measured``
+        to ``not_scanning`` must not keep showing its old counts."""
+        async with _client(app_no_cognito, TOKEN_A) as client:
+            await client.post(SCAN_ROOTS, json=_reading(behind=254))
+            resp = await client.post(
+                SCAN_ROOTS,
+                json={
+                    "state": "not_scanning",
+                    "counts_are_floors": False,
+                    "observed_at": datetime.now(UTC).isoformat(),
+                },
+            )
+        assert resp.status_code == 200, resp.text
+        [row] = await _rows_for(async_db_session, DEVICE_A)
+        assert row.state == "not_scanning"
+        assert row.behind is None and row.ahead is None
+        assert row.plans_dir is None and row.ref_sha is None
+
+    async def test_two_devices_get_two_rows(
+        self, app_no_cognito: FastAPI, async_db_session: AsyncSession
+    ) -> None:
+        async with _client(app_no_cognito, TOKEN_A) as a:
+            assert (
+                await a.post(SCAN_ROOTS, json=_reading(behind=10))
+            ).status_code == 201
+        async with _client(app_no_cognito, TOKEN_B) as b:
+            assert (
+                await b.post(SCAN_ROOTS, json=_reading(behind=20))
+            ).status_code == 201
+            listed = await b.get(SCAN_ROOTS)
+
+        assert listed.status_code == 200, listed.text
+        by_device = {r["device_id"]: r["behind"] for r in listed.json()["rows"]}
+        assert by_device == {str(DEVICE_A): 10, str(DEVICE_B): 20}
+        assert listed.json()["count"] == 2
+
+    async def test_a_body_device_id_is_refused_and_writes_nothing(
+        self, app_no_cognito: FastAPI, async_db_session: AsyncSession
+    ) -> None:
+        """The body has nowhere to put a device: ``extra="forbid"`` turns the
+        attempt into a 422 naming the key, rather than a silently ignored or —
+        worse — honoured override."""
+        forged = uuid4()
+        async with _client(app_no_cognito, TOKEN_A) as client:
+            resp = await client.post(SCAN_ROOTS, json=_reading(device_id=str(forged)))
+        assert resp.status_code == 422, resp.text
+        assert any(err["loc"][-1] == "device_id" for err in resp.json()["detail"])
+        assert await _rows_for(async_db_session, forged) == []
+        assert await _rows_for(async_db_session, DEVICE_A) == []
+
+    async def test_a_body_organization_id_is_refused(
+        self, app_no_cognito: FastAPI
+    ) -> None:
+        async with _client(app_no_cognito, TOKEN_A) as client:
+            resp = await client.post(
+                SCAN_ROOTS, json=_reading(organization_id=str(uuid4()))
+            )
+        assert resp.status_code == 422, resp.text
+        assert any(err["loc"][-1] == "organization_id" for err in resp.json()["detail"])
+
+    async def test_a_token_without_a_device_id_claim_is_401(
+        self, app_no_cognito: FastAPI
+    ) -> None:
+        async with _client(app_no_cognito, TOKEN_NO_DEVICE_ID) as client:
+            resp = await client.post(SCAN_ROOTS, json=_reading())
+        assert resp.status_code == 401, resp.text
+        assert "device_id" in resp.json()["detail"]
+
+
+# ===========================================================================
+# 3. Only a device may write
+# ===========================================================================
+
+
+class TestOnlyADeviceMayWrite:
+    async def test_an_operator_session_is_403_with_the_reason(
+        self, async_db_session: AsyncSession, owner, stub_device_jwt: list[str]
+    ) -> None:
+        from app.api.deps import DEVICE_ONLY_REFUSAL
+
+        user, _org = owner
+        app = _build_app(db_session=async_db_session, cognito_user=user)
+        async with _client(app) as client:
+            resp = await client.post(SCAN_ROOTS, json=_reading())
+        assert resp.status_code == 403, resp.text
+        assert resp.json()["detail"] == DEVICE_ONLY_REFUSAL
+        assert "device_id claim" in DEVICE_ONLY_REFUSAL
+        result = await async_db_session.execute(
+            select(func.count()).select_from(PlanScanRootObservation)
+        )
+        assert result.scalar_one() == 0
+        # The operator arm answered; the device verifier was never consulted.
+        assert stub_device_jwt == []
+
+    async def test_an_operator_forwarding_a_device_bearer_is_still_403(
+        self, async_db_session: AsyncSession, owner, stub_device_jwt: list[str]
+    ) -> None:
+        """The operator arm wins, exactly as in the dual-auth tree: a browser
+        user cannot report as a device by carrying its token."""
+        user, _org = owner
+        app = _build_app(db_session=async_db_session, cognito_user=user)
+        async with _client(app, TOKEN_A) as client:
+            resp = await client.post(SCAN_ROOTS, json=_reading())
+        assert resp.status_code == 403, resp.text
+        assert await _rows_for(async_db_session, DEVICE_A) == []
+
+    async def test_anonymous_is_401(self, app_no_cognito: FastAPI) -> None:
+        async with _client(app_no_cognito) as client:
+            resp = await client.post(SCAN_ROOTS, json=_reading())
+        assert resp.status_code == 401, resp.text
+
+    async def test_an_invalid_bearer_is_401_not_a_silent_pass(
+        self, app_no_cognito: FastAPI
+    ) -> None:
+        async with _client(app_no_cognito, "not-a-device-token") as client:
+            resp = await client.post(SCAN_ROOTS, json=_reading())
+        assert resp.status_code == 401, resp.text
+
+    async def test_an_operator_can_still_READ(
+        self, async_db_session: AsyncSession, owner, app_no_cognito: FastAPI
+    ) -> None:
+        """Refusing the operator is a WRITE rule. The device's paired operator
+        reads the same organization the device wrote into."""
+        user, _org = owner
+        async with _client(app_no_cognito, TOKEN_A) as device:
+            assert (await device.post(SCAN_ROOTS, json=_reading())).status_code == 201
+        app = _build_app(db_session=async_db_session, cognito_user=user)
+        async with _client(app) as operator:
+            resp = await operator.get(SCAN_ROOTS)
+        assert resp.status_code == 200, resp.text
+        assert [r["device_id"] for r in resp.json()["rows"]] == [str(DEVICE_A)]
+
+
+# ===========================================================================
+# 4. The read: freshness, staleness, and silence
+# ===========================================================================
+
+
+async def _age_row(
+    db: AsyncSession,
+    device_id: UUID,
+    *,
+    observed_ago: timedelta,
+    received_ago: timedelta,
+) -> None:
+    now = datetime.now(UTC)
+    await db.execute(
+        update(PlanScanRootObservation)
+        .where(PlanScanRootObservation.device_id == device_id)
+        .values(observed_at=now - observed_ago, received_at=now - received_ago)
+    )
+    await db.commit()
+
+
+class TestReadFreshness:
+    async def test_a_just_written_reading_is_fresh_and_reads_as_reported(
+        self, app_no_cognito: FastAPI
+    ) -> None:
+        async with _client(app_no_cognito, TOKEN_A) as client:
+            await client.post(SCAN_ROOTS, json=_reading(behind=254))
+            resp = await client.get(SCAN_ROOTS)
+
+        assert resp.status_code == 200, resp.text
+        body = resp.json()
+        assert body["state"] == "reported"
+        assert body["detail"] is None
+        assert body["fresh_within_secs"] == 2700 == FRESH_WITHIN_SECS
+        assert (body["count"], body["fresh_count"]) == (1, 1)
+        [row] = body["rows"]
+        assert row["observation_fresh"] is True
+        assert 0 <= row["observation_age_secs"] < 60
+        assert row["state"] == row["reported_state"] == "measured"
+        assert row["detail"] is None and row["reported_detail"] is None
+        assert "effective_state" not in row
+        # Every reported field round-trips.
+        assert row["behind"] == 254
+        assert row["counts_are_floors"] is False
+        assert row["source_repo"] == "qontinui-dev-notes/plans"
+        assert row["ref_age_secs"] == 220
+
+    async def test_a_reading_older_than_the_window_reads_unknown(
+        self, app_no_cognito: FastAPI, async_db_session: AsyncSession
+    ) -> None:
+        """The stale rule: ``state`` / ``detail`` ARE the verdict.
+
+        Mutation-proved: replacing ``fresh = age <= FRESH_WITHIN_SECS`` in
+        ``render_row`` with ``fresh = True`` fails this test,
+        ``test_freshness_ignores_a_current_observed_at_on_a_silent_device`` and
+        ``test_staleness_outranks_the_floor_verdict``."""
+        async with _client(app_no_cognito, TOKEN_A) as client:
+            await client.post(SCAN_ROOTS, json=_reading(behind=0, ahead=0))
+            stale = timedelta(seconds=FRESH_WITHIN_SECS + 60)
+            await _age_row(
+                async_db_session, DEVICE_A, observed_ago=stale, received_ago=stale
+            )
+            resp = await client.get(SCAN_ROOTS)
+
+        body = resp.json()
+        assert body["state"] == "reported"
+        assert (body["count"], body["fresh_count"]) == (1, 0)
+        [row] = body["rows"]
+        assert row["observation_fresh"] is False
+        assert row["observation_age_secs"] >= FRESH_WITHIN_SECS + 60
+        # A reader keying on ``state`` sees the verdict — a stale "0 behind"
+        # must not read as "in step" — while what was sent is still served.
+        assert row["state"] == "unknown"
+        assert row["detail"].startswith("observation_stale:")
+        assert "measured" in row["detail"]
+        assert row["reported_state"] == "measured"
+        assert row["reported_detail"] is None
+        assert row["behind"] == 0
+
+    async def test_a_reading_inside_the_window_is_still_fresh(
+        self, app_no_cognito: FastAPI, async_db_session: AsyncSession
+    ) -> None:
+        """The window is not narrower than 2700 s: two missed heartbeats is
+        jitter, not silence."""
+        async with _client(app_no_cognito, TOKEN_A) as client:
+            await client.post(SCAN_ROOTS, json=_reading())
+            inside = timedelta(seconds=FRESH_WITHIN_SECS - 120)
+            await _age_row(
+                async_db_session, DEVICE_A, observed_ago=inside, received_ago=inside
+            )
+            resp = await client.get(SCAN_ROOTS)
+        [row] = resp.json()["rows"]
+        assert row["observation_fresh"] is True
+        assert row["state"] == "measured"
+
+    async def test_a_live_device_with_a_clock_50_min_behind_stays_fresh(
+        self, app_no_cognito: FastAPI
+    ) -> None:
+        """Liveness is this server's clock: a runner whose clock is 50 minutes
+        slow, reporting right now, is fresh — and the skew is visible."""
+        behind_clock = datetime.now(UTC) - timedelta(minutes=50)
+        async with _client(app_no_cognito, TOKEN_A) as client:
+            posted = await client.post(
+                SCAN_ROOTS, json=_reading(observed_at=behind_clock.isoformat())
+            )
+            resp = await client.get(SCAN_ROOTS)
+        assert posted.status_code == 201, posted.text
+        [row] = resp.json()["rows"]
+        assert row["observation_fresh"] is True
+        assert row["state"] == "measured"
+        assert 0 <= row["observation_age_secs"] < 60
+        assert 50 * 60 <= row["observed_skew_secs"] < 50 * 60 + 60
+
+    async def test_freshness_ignores_a_current_observed_at_on_a_silent_device(
+        self, app_no_cognito: FastAPI, async_db_session: AsyncSession
+    ) -> None:
+        """The mirror case: a current-looking ``observed_at`` cannot keep a
+        device fresh that this server has not heard from in two hours."""
+        async with _client(app_no_cognito, TOKEN_A) as client:
+            await client.post(SCAN_ROOTS, json=_reading())
+            await _age_row(
+                async_db_session,
+                DEVICE_A,
+                observed_ago=timedelta(seconds=0),
+                received_ago=timedelta(hours=2),
+            )
+            resp = await client.get(SCAN_ROOTS)
+        [row] = resp.json()["rows"]
+        assert row["observation_fresh"] is False
+        assert row["state"] == "unknown"
+        assert row["observed_skew_secs"] < -7000
+
+    async def test_a_fresh_unmeasured_state_reads_as_reported(
+        self, app_no_cognito: FastAPI
+    ) -> None:
+        async with _client(app_no_cognito, TOKEN_A) as client:
+            await client.post(SCAN_ROOTS, json=_unmeasured("not_a_git_work_tree"))
+            resp = await client.get(SCAN_ROOTS)
+        [row] = resp.json()["rows"]
+        assert row["state"] == row["reported_state"] == "not_a_git_work_tree"
+        assert row["detail"] == row["reported_detail"]
+        assert "not inside a git work tree" in row["detail"]
+
+    async def test_an_unreported_org_reads_unknown_not_all_current(
+        self, app_no_cognito: FastAPI
+    ) -> None:
+        async with _client(app_no_cognito, TOKEN_A) as client:
+            resp = await client.get(SCAN_ROOTS)
+        assert resp.status_code == 200, resp.text
+        body = resp.json()
+        assert body["state"] == "unknown"
+        assert body["detail"].startswith("no_observation:")
+        assert body["rows"] == []
+        assert (body["count"], body["fresh_count"]) == (0, 0)
+
+    async def test_another_organization_sees_none_of_these_readings(
+        self, app_no_cognito: FastAPI, async_db_session: AsyncSession
+    ) -> None:
+        async with _client(app_no_cognito, TOKEN_A) as device:
+            assert (await device.post(SCAN_ROOTS, json=_reading())).status_code == 201
+        stranger = await _make_user(async_db_session, "scanroot_stranger")
+        await _make_personal_org(async_db_session, stranger)
+        app = _build_app(db_session=async_db_session, cognito_user=stranger)
+        async with _client(app) as client:
+            resp = await client.get(SCAN_ROOTS)
+        assert resp.json()["state"] == "unknown"
+        assert resp.json()["rows"] == []
+
+    async def test_an_unknown_query_key_is_refused(
+        self, app_no_cognito: FastAPI
+    ) -> None:
+        """``StrictQueryRoute``: a filter this route does not implement is a
+        422, not a silently unfiltered page."""
+        async with _client(app_no_cognito, TOKEN_A) as client:
+            resp = await client.get(SCAN_ROOTS, params={"device_id": str(DEVICE_A)})
+        assert resp.status_code == 422, resp.text
+
+
+class TestFloorRule:
+    async def test_a_fresh_zero_floor_reads_unknown_ref_stale(
+        self, app_no_cognito: FastAPI
+    ) -> None:
+        """0/0 against a ref that is stale or of unknown age is a lower bound of
+        nothing — it must not read as "in step".
+
+        Mutation-proved: making ``zero_behind_floor_detail`` return ``None``
+        fails this test and the ahead > 0 one below."""
+        from app.api.v1.endpoints.plan_library_scan_roots import (
+            REF_STALE_ZERO_FLOOR_DETAIL,
+        )
+
+        async with _client(app_no_cognito, TOKEN_A) as client:
+            posted = await client.post(
+                SCAN_ROOTS,
+                json=_reading(
+                    behind=0, ahead=0, ref_age_secs=None, counts_are_floors=True
+                ),
+            )
+            resp = await client.get(SCAN_ROOTS)
+        assert posted.status_code == 201, posted.text
+        [row] = resp.json()["rows"]
+        assert row["observation_fresh"] is True
+        assert row["state"] == "unknown"
+        assert row["detail"] == REF_STALE_ZERO_FLOOR_DETAIL
+        assert row["detail"].startswith("ref_stale: 0/0 counts")
+        assert row["reported_state"] == "measured"
+        assert (row["behind"], row["ahead"]) == (0, 0)
+        assert row["counts_are_floors"] is True
+        # The POST's own echo carries the same verdict.
+        assert posted.json()["row"]["state"] == "unknown"
+
+    async def test_a_zero_behind_floor_with_commits_ahead_reads_unknown(
+        self, app_no_cognito: FastAPI
+    ) -> None:
+        """The rule keys on ``behind == 0``, not on 0/0: "0 behind" against a
+        stale ref establishes nothing whatever ``ahead`` is — and ``ahead`` is
+        as of that same ref, which the detail says."""
+        from app.api.v1.endpoints.plan_library_scan_roots import (
+            ref_stale_zero_behind_detail,
+        )
+
+        async with _client(app_no_cognito, TOKEN_A) as client:
+            await client.post(
+                SCAN_ROOTS,
+                json=_reading(
+                    behind=0, ahead=11, ref_age_secs=None, counts_are_floors=True
+                ),
+            )
+            [row] = (await client.get(SCAN_ROOTS)).json()["rows"]
+        assert row["state"] == "unknown"
+        assert row["detail"] == ref_stale_zero_behind_detail(11)
+        assert row["detail"] == (
+            "ref_stale: 0 behind against a ref that is stale or of unknown age "
+            "is a lower bound, not agreement (ahead 11 is also as of that ref)"
+        )
+        assert row["reported_state"] == "measured"
+        assert row["ahead"] == 11
+
+    async def test_a_floor_with_commits_behind_stays_measured(
+        self, app_no_cognito: FastAPI
+    ) -> None:
+        """ "At least 254 behind" is a true claim; ``counts_are_floors`` says it
+        is a lower bound. Only a floor of 0 behind is degraded."""
+        async with _client(app_no_cognito, TOKEN_A) as client:
+            await client.post(
+                SCAN_ROOTS,
+                json=_reading(
+                    behind=254, ahead=3, ref_age_secs=30_000, counts_are_floors=True
+                ),
+            )
+            [row] = (await client.get(SCAN_ROOTS)).json()["rows"]
+        assert row["state"] == "measured"
+        assert row["counts_are_floors"] is True
+        assert (row["behind"], row["ahead"]) == (254, 3)
+
+    async def test_an_exact_zero_zero_is_in_step(self, app_no_cognito: FastAPI) -> None:
+        """Not a floor → 0/0 IS agreement, and reads ``measured``."""
+        async with _client(app_no_cognito, TOKEN_A) as client:
+            await client.post(
+                SCAN_ROOTS, json=_reading(behind=0, ahead=0, counts_are_floors=False)
+            )
+            [row] = (await client.get(SCAN_ROOTS)).json()["rows"]
+        assert row["state"] == "measured"
+        assert row["detail"] is None
+
+    async def test_staleness_outranks_the_floor_verdict(
+        self, app_no_cognito: FastAPI, async_db_session: AsyncSession
+    ) -> None:
+        async with _client(app_no_cognito, TOKEN_A) as client:
+            await client.post(
+                SCAN_ROOTS,
+                json=_reading(
+                    behind=0, ahead=0, ref_age_secs=None, counts_are_floors=True
+                ),
+            )
+            stale = timedelta(seconds=FRESH_WITHIN_SECS + 1)
+            await _age_row(
+                async_db_session, DEVICE_A, observed_ago=stale, received_ago=stale
+            )
+            [row] = (await client.get(SCAN_ROOTS)).json()["rows"]
+        assert row["state"] == "unknown"
+        assert row["detail"].startswith("observation_stale:")
+
+
+class TestOutOfOrder:
+    async def test_an_older_report_does_not_replace_a_newer_one(
+        self, app_no_cognito: FastAPI, async_db_session: AsyncSession
+    ) -> None:
+        """A late delivery (a retry that lost a race) does not replace the
+        newer reading: 200, ``applied: false``, the stored reading comes back —
+        and ``received_at`` still moves, because the device DID report.
+
+        Mutation-proved: making the ``CASE`` always take the incoming value
+        fails this test; making ``received_at`` keep the stored value on a
+        declined report fails it and the wedge regression below."""
+        newer = datetime.now(UTC)
+        older = newer - timedelta(minutes=10)
+        async with _client(app_no_cognito, TOKEN_A) as client:
+            first = await client.post(
+                SCAN_ROOTS, json=_reading(behind=3, observed_at=newer.isoformat())
+            )
+            late = await client.post(
+                SCAN_ROOTS, json=_reading(behind=254, observed_at=older.isoformat())
+            )
+        assert first.status_code == 201, first.text
+        assert first.json()["applied"] is True
+        assert late.status_code == 200, late.text
+        assert late.json()["applied"] is False
+        assert late.json()["created"] is False
+        assert late.json()["row"]["behind"] == 3
+
+        [row] = await _rows_for(async_db_session, DEVICE_A)
+        assert row.behind == 3
+        assert row.observed_at == newer
+        # Declined as a READING, but it was contact: liveness moved.
+        assert row.received_at == _received_at(late)
+        assert _received_at(late) > _received_at(first)
+        # ...and the stored reading is flagged, not served as current.
+        assert row.last_report_applied is False
+        assert row.last_report_observed_at == older
+        echoed = late.json()["row"]
+        assert echoed["last_report_applied"] is False
+        assert echoed["state"] == "unknown"
+        assert echoed["detail"].startswith("reading_superseded:")
+
+    async def test_an_equal_observed_at_applies_as_a_heartbeat(
+        self, app_no_cognito: FastAPI, async_db_session: AsyncSession
+    ) -> None:
+        """A runner re-posting the same reading is applied, so ``received_at``
+        moves and the row does not age out while the device is alive."""
+        observed = datetime.now(UTC).isoformat()
+        async with _client(app_no_cognito, TOKEN_A) as client:
+            first = await client.post(SCAN_ROOTS, json=_reading(observed_at=observed))
+            again = await client.post(SCAN_ROOTS, json=_reading(observed_at=observed))
+        assert again.status_code == 200, again.text
+        assert again.json()["applied"] is True
+        assert _received_at(again) >= _received_at(first)
+
+    async def test_a_newer_report_applies(self, app_no_cognito: FastAPI) -> None:
+        older = datetime.now(UTC) - timedelta(minutes=10)
+        async with _client(app_no_cognito, TOKEN_A) as client:
+            await client.post(
+                SCAN_ROOTS, json=_reading(behind=254, observed_at=older.isoformat())
+            )
+            newer = await client.post(SCAN_ROOTS, json=_reading(behind=3))
+        assert newer.json()["applied"] is True
+        assert newer.json()["row"]["behind"] == 3
+        assert newer.json()["row"]["last_report_applied"] is True
+
+
+class TestReadingSuperseded:
+    """A device's latest report contradicts the stored reading → UNKNOWN.
+
+    The third review's must-fix: a declined report refreshed liveness but left
+    the device's OLD reading served as ``measured`` and fresh — stored 0/0,
+    device now 254 behind, GET still said "in step"."""
+
+    async def test_a_six_hour_clock_step_back_reads_superseded(
+        self, app_no_cognito: FastAPI
+    ) -> None:
+        """Mutation-proved: making ``superseded_detail`` return ``None``, or
+        making the upsert always write ``last_report_applied = true``, fails
+        this test, the precedence test, the flipped wedge regression and
+        ``test_an_older_report_does_not_replace_a_newer_one``."""
+        stored_at = datetime.now(UTC)
+        stepped_back = stored_at - timedelta(hours=6)
+        async with _client(app_no_cognito, TOKEN_A) as client:
+            await client.post(
+                SCAN_ROOTS,
+                json=_reading(behind=0, ahead=0, observed_at=stored_at.isoformat()),
+            )
+            declined = await client.post(
+                SCAN_ROOTS,
+                json=_reading(behind=254, observed_at=stepped_back.isoformat()),
+            )
+            [row] = (await client.get(SCAN_ROOTS)).json()["rows"]
+
+        assert declined.status_code == 200, declined.text
+        assert declined.json()["applied"] is False
+        # Fresh — the device DID report — but not current.
+        assert row["observation_fresh"] is True
+        assert row["last_report_applied"] is False
+        assert row["state"] == "unknown"
+        assert row["detail"] == (
+            "reading_superseded: the device's latest report was observed ~21600 s "
+            "before the stored reading (a clock step-back or a late-delivered "
+            "report), so the stored reading may not be what it reports now"
+        )
+        # The stored reading is still served, flagged, for a reader who wants it.
+        assert row["reported_state"] == "measured"
+        assert (row["behind"], row["ahead"]) == (0, 0)
+        assert datetime.fromisoformat(row["last_report_observed_at"]) == stepped_back
+
+    async def test_the_next_newer_report_clears_it(
+        self, app_no_cognito: FastAPI
+    ) -> None:
+        """Once the device's clock catches up, its next report applies and the
+        row is current again."""
+        stored_at = datetime.now(UTC) - timedelta(minutes=1)
+        async with _client(app_no_cognito, TOKEN_A) as client:
+            await client.post(
+                SCAN_ROOTS, json=_reading(behind=0, observed_at=stored_at.isoformat())
+            )
+            await client.post(
+                SCAN_ROOTS,
+                json=_reading(
+                    behind=254,
+                    observed_at=(stored_at - timedelta(hours=6)).isoformat(),
+                ),
+            )
+            caught_up = await client.post(
+                SCAN_ROOTS,
+                json=_reading(behind=254, observed_at=datetime.now(UTC).isoformat()),
+            )
+            [row] = (await client.get(SCAN_ROOTS)).json()["rows"]
+
+        assert caught_up.json()["applied"] is True
+        assert row["last_report_applied"] is True
+        assert row["state"] == "measured"
+        assert row["detail"] is None
+        assert row["behind"] == 254
+        assert row["last_report_observed_at"] == row["observed_at"]
+
+    async def test_precedence_stale_then_superseded_then_floor(
+        self, app_no_cognito: FastAPI, async_db_session: AsyncSession
+    ) -> None:
+        """``observation_stale`` > ``reading_superseded`` > ``ref_stale``."""
+        stored_at = datetime.now(UTC)
+        async with _client(app_no_cognito, TOKEN_A) as client:
+            # A 0-behind floor (would read ref_stale) ...
+            await client.post(
+                SCAN_ROOTS,
+                json=_reading(
+                    behind=0,
+                    ahead=0,
+                    ref_age_secs=None,
+                    counts_are_floors=True,
+                    observed_at=stored_at.isoformat(),
+                ),
+            )
+            # ... superseded by a declined report: superseded wins over floor.
+            await client.post(
+                SCAN_ROOTS,
+                json=_reading(
+                    behind=5,
+                    observed_at=(stored_at - timedelta(minutes=5)).isoformat(),
+                ),
+            )
+            [row] = (await client.get(SCAN_ROOTS)).json()["rows"]
+            assert row["detail"].startswith("reading_superseded:")
+
+            # Then the device goes quiet: stale wins over superseded.
+            stale = timedelta(seconds=FRESH_WITHIN_SECS + 60)
+            await async_db_session.execute(
+                update(PlanScanRootObservation)
+                .where(PlanScanRootObservation.device_id == DEVICE_A)
+                .values(received_at=datetime.now(UTC) - stale)
+            )
+            await async_db_session.commit()
+            [row] = (await client.get(SCAN_ROOTS)).json()["rows"]
+        assert row["state"] == "unknown"
+        assert row["detail"].startswith("observation_stale:")
+
+
+class TestClockSkew:
+    async def test_a_future_dated_report_is_422_and_writes_nothing(
+        self, app_no_cognito: FastAPI, async_db_session: AsyncSession
+    ) -> None:
+        """Mutation-proved: removing the ``MAX_FUTURE_SKEW_SECS`` check from
+        ``ScanRootReport`` fails this test and the wedge regression below."""
+        ahead = datetime.now(UTC) + timedelta(seconds=MAX_FUTURE_SKEW_SECS + 120)
+        async with _client(app_no_cognito, TOKEN_A) as client:
+            resp = await client.post(
+                SCAN_ROOTS, json=_reading(observed_at=ahead.isoformat())
+            )
+        assert resp.status_code == 422, resp.text
+        [err] = resp.json()["detail"]
+        assert err["loc"][-1] == "observed_at"
+        assert "ahead of this server's clock" in err["msg"]
+        assert f"limit is {MAX_FUTURE_SKEW_SECS} s" in err["msg"]
+        assert await _rows_for(async_db_session, DEVICE_A) == []
+
+    async def test_ordinary_drift_inside_the_bound_is_accepted(
+        self, app_no_cognito: FastAPI
+    ) -> None:
+        ahead = datetime.now(UTC) + timedelta(seconds=MAX_FUTURE_SKEW_SECS - 60)
+        async with _client(app_no_cognito, TOKEN_A) as client:
+            resp = await client.post(
+                SCAN_ROOTS, json=_reading(observed_at=ahead.isoformat())
+            )
+        assert resp.status_code == 201, resp.text
+        assert resp.json()["row"]["observed_skew_secs"] < 0
+
+    async def test_a_skewed_report_cannot_wedge_a_live_device(
+        self, app_no_cognito: FastAPI, async_db_session: AsyncSession
+    ) -> None:
+        """Regression for the second review's wedge probe.
+
+        Before the fix: one report dated a year ahead was stored; every honest
+        report after it lost the ``observed_at >=`` guard, a declined report
+        did not refresh ``received_at``, and 50 minutes later the live,
+        posting device read ``unknown`` with the honest reading discarded.
+        Now: the far-future report is refused outright, and even a skewed
+        report INSIDE the bound cannot age the device out — the declined
+        honest reports still count as contact. And (third review) the stored
+        +250 s reading is NOT served as current while the device's own latest
+        report contradicts it: the row reads ``reading_superseded``."""
+        now = datetime.now(UTC)
+        async with _client(app_no_cognito, TOKEN_A) as client:
+            # 1. The probe's own opening move is refused, so nothing is pinned.
+            far_future = await client.post(
+                SCAN_ROOTS,
+                json=_reading(
+                    behind=0, observed_at=(now + timedelta(days=365)).isoformat()
+                ),
+            )
+            assert far_future.status_code == 422, far_future.text
+            assert await _rows_for(async_db_session, DEVICE_A) == []
+
+            # 2. The worst a skewed clock can now plant: +250 s.
+            skewed = await client.post(
+                SCAN_ROOTS,
+                json=_reading(
+                    behind=0, observed_at=(now + timedelta(seconds=250)).isoformat()
+                ),
+            )
+            assert skewed.status_code == 201, skewed.text
+            # Simulate 50 minutes since that receipt.
+            await async_db_session.execute(
+                update(PlanScanRootObservation)
+                .where(PlanScanRootObservation.device_id == DEVICE_A)
+                .values(received_at=now - timedelta(minutes=50))
+            )
+            await async_db_session.commit()
+
+            # 3. The live device posts an honest current reading. It loses the
+            #    ordering to the +250 s one, but it is contact.
+            honest = await client.post(
+                SCAN_ROOTS,
+                json=_reading(behind=254, observed_at=datetime.now(UTC).isoformat()),
+            )
+            listing = await client.get(SCAN_ROOTS)
+
+        assert honest.status_code == 200, honest.text
+        assert honest.json()["applied"] is False
+        [row] = listing.json()["rows"]
+        # Alive (the honest report was contact) ...
+        assert row["observation_fresh"] is True
+        # ... but the stored 0-behind reading is contradicted by the device's
+        # latest report of 254 behind, so it must not read "in step".
+        assert row["state"] == "unknown"
+        assert row["detail"].startswith("reading_superseded:")
+        stepped = int(row["detail"].split("observed ~")[1].split(" s before")[0])
+        assert 200 <= stepped <= 250
+        assert row["last_report_applied"] is False
+        assert row["reported_state"] == "measured"
+        assert row["behind"] == 0
+
+
+# ===========================================================================
+# 5. Route order through the REAL api_router
+# ===========================================================================
+
+
+class TestRouteOrder:
+    def test_scan_roots_is_registered_before_the_artifact_id_route(self) -> None:
+        from app.api.v1.api import api_router
+
+        paths = [getattr(r, "path", None) for r in api_router.routes]
+        scan_roots_idx = paths.index("/plan-library/scan-roots")
+        artifact_idx = paths.index("/plan-library/{artifact_id}")
+        assert scan_roots_idx < artifact_idx, (
+            "plan_library's GET /{artifact_id} would swallow /scan-roots "
+            "(FastAPI does not fall through on a failed path-param conversion)"
+        )
+
+    async def test_get_scan_roots_reaches_its_handler_through_api_router(
+        self, async_db_session: AsyncSession, stub_device_jwt: list[str]
+    ) -> None:
+        from app.api.deps import current_active_user_optional, get_async_db
+        from app.api.v1.api import api_router
+
+        app = FastAPI()
+        app.dependency_overrides[current_active_user_optional] = lambda: None
+
+        async def _db_override():
+            yield async_db_session
+
+        app.dependency_overrides[get_async_db] = _db_override
+        app.include_router(api_router, prefix="/api/v1")
+
+        async with _client(app, TOKEN_A) as client:
+            posted = await client.post(SCAN_ROOTS, json=_reading())
+            resp = await client.get(SCAN_ROOTS)
+
+        assert posted.status_code == 201, posted.text
+        # A 422 here is the /{artifact_id} route rejecting "scan-roots" as a UUID.
+        assert resp.status_code == 200, resp.text
+        assert resp.json()["fresh_within_secs"] == FRESH_WITHIN_SECS
+        assert [r["device_id"] for r in resp.json()["rows"]] == [str(DEVICE_A)]
+
+
+# ===========================================================================
+# 6. Validation
+# ===========================================================================
+
+
+class TestValidation:
+    @pytest.mark.parametrize(
+        ("body", "match"),
+        [
+            (_reading(state="exact"), "literal_error|Input should be"),
+            (_reading(behind=-1), "greater than or equal"),
+            (_reading(ahead=-3), "greater than or equal"),
+            (_reading(ref_age_secs=-1), "greater than or equal"),
+            (_reading(behind=2**63), "less than or equal"),
+            # Strict types: no coercion of a bool or a numeric string.
+            (_reading(behind=True), "valid integer"),
+            (_reading(ahead="12"), "valid integer"),
+            (_reading(ref_age_secs=12.0), "valid integer"),
+            (_reading(counts_are_floors="false"), "valid boolean"),
+            (_reading(counts_are_floors=1), "valid boolean"),
+            (_reading(counts_are_floors=None), "valid boolean"),
+            # A measured reading must carry both counts.
+            (_reading(behind=None), "missing: behind"),
+            (_reading(ahead=None), "missing: ahead"),
+            # The floor rule: unknown ref age means the counts are floors.
+            (
+                _reading(ref_age_secs=None, counts_are_floors=False),
+                "must report counts_are_floors: true",
+            ),
+            # Unmeasured states carry no counts, no ref age and no floors.
+            (
+                _unmeasured("unknown", behind=5),
+                "only a 'measured' reading carries counts",
+            ),
+            (
+                _unmeasured("unknown", ref_age_secs=60),
+                "only a 'measured' reading carries a ref age or floors",
+            ),
+            (
+                _unmeasured("not_scanning", counts_are_floors=True),
+                "only a 'measured' reading carries a ref age or floors",
+            ),
+            # An unknown must say why.
+            (_unmeasured("unknown", detail=None), "must carry a non-empty 'detail'"),
+            (
+                _unmeasured("not_a_git_work_tree", detail="   "),
+                "must carry a non-empty 'detail'",
+            ),
+            (_reading(observed_at="2026-09-11T12:00:00"), "timezone"),
+        ],
+    )
+    def test_the_schema_rejects_for_the_named_reason(
+        self, body: dict[str, Any], match: str
+    ) -> None:
+        with pytest.raises(ValidationError, match=match):
+            ScanRootReport.model_validate(body)
+
+    def test_each_valid_shape_is_accepted(self) -> None:
+        ScanRootReport.model_validate(_reading())
+        # Measured with unknown ref age, claiming floors.
+        ScanRootReport.model_validate(
+            _reading(ref_age_secs=None, counts_are_floors=True)
+        )
+        # Measured with an old ref, claiming floors (the 6 h threshold is the
+        # runner's to apply, not re-judged here).
+        ScanRootReport.model_validate(
+            _reading(ref_age_secs=30_000, counts_are_floors=True)
+        )
+        ScanRootReport.model_validate(_unmeasured("unknown", detail="no origin/HEAD"))
+        ScanRootReport.model_validate(_unmeasured("not_a_git_work_tree"))
+        ScanRootReport.model_validate(
+            {
+                "state": "not_scanning",
+                "counts_are_floors": False,
+                "observed_at": "2026-09-11T12:00:00Z",
+            }
+        )
+
+    async def test_bad_bodies_are_422_over_http_and_write_nothing(
+        self, app_no_cognito: FastAPI, async_db_session: AsyncSession
+    ) -> None:
+        async with _client(app_no_cognito, TOKEN_A) as client:
+            responses = [
+                await client.post(SCAN_ROOTS, json=body)
+                for body in (
+                    _reading(state="stale"),
+                    _reading(behind=-5),
+                    _reading(behind=True),
+                    _reading(ahead="12"),
+                    _reading(ref_age_secs=None, counts_are_floors=False),
+                    _unmeasured("unknown", ref_age_secs=60),
+                )
+            ]
+        for resp in responses:
+            assert resp.status_code == 422, resp.text
+        assert await _rows_for(async_db_session, DEVICE_A) == []
