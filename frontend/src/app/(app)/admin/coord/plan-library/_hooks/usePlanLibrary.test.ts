@@ -703,6 +703,35 @@ describe.each([
     expect(result.current.error).toBeNull();
   });
 
+  it("names the NEWEST failure, not an older one that lands after it", async () => {
+    let failSlow: (e: unknown) => void = () => {};
+    getMock.mockImplementationOnce(
+      () =>
+        new Promise((_resolve, reject) => {
+          failSlow = reject;
+        })
+    );
+    getMock.mockRejectedValueOnce(new Error("newer read: 503"));
+
+    const { result } = renderHook(() => useHook());
+    await act(async () => {
+      await result.current.reload();
+    });
+    expect(result.current.error).toContain("newer read: 503");
+
+    await act(async () => {
+      failSlow(new Error("older read: timeout"));
+      // A macrotask, so the straggler's rejection has run all the way through
+      // the hook's catch before anything is asserted. Nothing observable
+      // changes when it lands correctly, so there is nothing to `waitFor`.
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+    // The banner explains why what is on screen is not current; the reason is
+    // the most recent attempt's, and a straggler must not rewrite it.
+    expect(result.current.error).toContain("newer read: 503");
+    expect(result.current.error).not.toContain("older read");
+  });
+
   it("keeps `loading` true while the NEWEST read is still out", async () => {
     const releaseOld = pending();
     const releaseNew = pending();
