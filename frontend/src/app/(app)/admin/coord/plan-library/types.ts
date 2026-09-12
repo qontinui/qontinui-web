@@ -492,10 +492,13 @@ export type ScanRootRollupState = (typeof SCAN_ROOT_ROLLUP_STATES)[number];
  *
  * `min_behind` is drawn only from rows whose VERDICT (`state`) is `measured`,
  * so a silent, contradicted or 0-behind-floor device contributes no number.
- * `min_behind_is_floor: true` means every device at that minimum counted
- * against a stale ref — the minimum is itself "at least N". The id lists still
- * name every feeder: a lagging device can write an older body over a newer
- * head even while a current one exists.
+ * `min_behind_is_floor: true` means no exact reading reaches that minimum —
+ * it is itself "at least N".
+ *
+ * The four id lists PARTITION the feeders, and a device is named least-behind
+ * or lagging only when the readings PROVE it: floor counts are lower bounds,
+ * so "at least 5" is not thereby ahead of "exactly 9". What the readings
+ * cannot place is `lag_unknown_device_ids` — never render it as either.
  */
 export interface ScanRootSourceRollup {
   source_repo: string | null;
@@ -507,8 +510,13 @@ export interface ScanRootSourceRollup {
   min_behind: number | null;
   /** `null` exactly when `min_behind` is. */
   min_behind_is_floor: boolean | null;
+  /** Proven least behind: an exact reading of an exact minimum. */
   least_behind_device_ids: string[];
+  /** Proven lagging: more commits behind than the smallest EXACT reading. */
   lagging_device_ids: string[];
+  /** Measured, but the readings cannot say whether least behind or lagging. */
+  lag_unknown_device_ids: string[];
+  /** Verdict other than `measured`; each row's `detail` says why. */
   unmeasured_device_ids: string[];
 }
 
@@ -527,8 +535,8 @@ export type ScanRootListState = (typeof SCAN_ROOT_LIST_STATES)[number];
  * Which fields of a wire type admit `null` — as a VALUE that tsc checks
  * against the type, so that a test can compare it with the backend's schema.
  *
- * `ScanRootRow` and `ScanRootListResponse` are hand-written mirrors of the
- * backend's response models, and an interface does not exist at runtime, so
+ * `ScanRootRow`, `ScanRootListResponse` and `ScanRootSourceRollup` are
+ * hand-written mirrors of the backend's response models, and an interface does not exist at runtime, so
  * no test can compare one with anything. This mapped type is the bridge. A
  * value annotated `WireNullability<T>` must name EVERY key of `T` (a missing
  * one is an error) and no other (the excess-property check), and must set each
@@ -545,7 +553,7 @@ export type ScanRootListState = (typeof SCAN_ROOT_LIST_STATES)[number];
  * REQUIRED-NESS AND NULLABILITY, and nothing more. It does not pin base types:
  * `WireNullability<{ n: number }>` and `WireNullability<{ n: string }>` are
  * the same type. The closed vocabularies are pinned separately — the consts by
- * that test, and their use by the three verdict fields by
+ * that test, and their use by the four verdict fields by
  * [`ScanRootVocabulariesPinned`] below.
  *
  * The witnesses are read by that test and nothing else; tree-shaking drops
@@ -607,6 +615,7 @@ export const SCAN_ROOT_ROLLUP_NULLABLE: WireNullability<ScanRootSourceRollup> = 
   min_behind_is_floor: true,
   least_behind_device_ids: false,
   lagging_device_ids: false,
+  lag_unknown_device_ids: false,
   unmeasured_device_ids: false,
 };
 
@@ -619,7 +628,7 @@ type Equal<A, B> =
 type Expect<T extends true> = T;
 
 /**
- * The three verdict fields carry the pinned vocabularies, not a wider
+ * The four verdict fields carry the pinned vocabularies, not a wider
  * `string`.
  *
  * Widening one would pass every other check here: the wire test pins the

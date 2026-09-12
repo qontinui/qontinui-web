@@ -134,6 +134,7 @@ from fastapi import (
     Response,
     status,
 )
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import (
@@ -199,7 +200,10 @@ from app.schemas.plan_library import (
 )
 from app.services import plan_status
 from app.services.permissions import resolve_personal_organization
-from app.services.plan_scan_root_health import scan_roots_health
+from app.services.plan_scan_root_health import (
+    scan_roots_health,
+    scan_roots_read_failed,
+)
 
 logger = structlog.get_logger(__name__)
 
@@ -2313,16 +2317,33 @@ async def _load_corpus_health(db: AsyncSession, *, org_id: UUID | None) -> Corpu
     capture census is ``/capture-health``'s, and ``scan_roots`` is
     ``GET /plan-library/scan-roots``'s, each through that route's own builder.
     UNFILTERED by any page query, org-scoped like the page.
+
+    The scan-root read is REPORT-ONLY beside a corpus read, so its failure
+    must not fail the page: it runs in a savepoint (a failed statement would
+    otherwise poison the request's transaction for everything after it) and
+    degrades to ``scan_roots_read_failed`` — ``state: "unknown"``, never an
+    empty list that reads as "no drift". ``GET /plan-library/scan-roots``
+    itself does not degrade: the readings are its whole answer.
     """
     census = await crud.capture_health(db, org_id=org_id)
-    observations = await scan_root_crud.list_observations(db, org_id=org_id)
+    try:
+        async with db.begin_nested():
+            observations = await scan_root_crud.list_observations(db, org_id=org_id)
+    except SQLAlchemyError as exc:
+        logger.warning(
+            "plan_library.corpus_health_scan_roots_read_failed",
+            error=type(exc).__name__,
+        )
+        scan_roots = scan_roots_read_failed(exc)
+    else:
+        scan_roots = scan_roots_health(observations, now=datetime.now(UTC))
     artifact_count, plan_count, newest = crud.corpus_totals(census)
     return CorpusHealth(
         artifact_count=artifact_count,
         plan_count=plan_count,
         newest_updated_at=newest,
         capture=_capture_health_response(census),
-        scan_roots=scan_roots_health(observations, now=datetime.now(UTC)),
+        scan_roots=scan_roots,
     )
 
 
