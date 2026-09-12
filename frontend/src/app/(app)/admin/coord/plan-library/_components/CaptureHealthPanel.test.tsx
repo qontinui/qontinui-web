@@ -61,13 +61,15 @@ describe("CaptureHealthPanel — Refresh", () => {
     expect(reload).toHaveBeenCalledTimes(1);
   });
 
-  it("is disabled while a read is in flight", () => {
-    useCaptureHealthMock.mockReturnValue(hookState({ loading: true }));
+  it("is disabled while a read is in flight, so a click issues no second read", () => {
+    const reload = vi.fn();
+    useCaptureHealthMock.mockReturnValue(hookState({ loading: true, reload }));
     render(<CaptureHealthPanel />);
 
-    expect(
-      screen.getByTestId("capture-health-refresh").hasAttribute("disabled")
-    ).toBe(true);
+    const refresh = screen.getByTestId("capture-health-refresh");
+    expect(refresh.hasAttribute("disabled")).toBe(true);
+    refresh.click();
+    expect(reload).not.toHaveBeenCalled();
   });
 
   it("MUTATION: and enabled once it has landed", () => {

@@ -477,8 +477,13 @@ export type ScanRootListState = (typeof SCAN_ROOT_LIST_STATES)[number];
  * because the witnesses live HERE. That config excludes `*.test.ts`, so a
  * type-level assertion written in a test file is checked by nothing at all.
  * `types.wire.test.ts` then holds each witness to the committed OpenAPI
- * snapshots. The chain is interface = witness = snapshot = backend, and each
- * link is enforced by CI rather than by a reviewer noticing.
+ * snapshots. The chain is interface = witness = snapshot = backend, each link
+ * enforced by CI rather than by a reviewer noticing — for FIELD NAMES,
+ * REQUIRED-NESS AND NULLABILITY, and nothing more. It does not pin base types:
+ * `WireNullability<{ n: number }>` and `WireNullability<{ n: string }>` are
+ * the same type. The closed vocabularies are pinned separately — the consts by
+ * that test, and their use by the three verdict fields by
+ * [`ScanRootVocabulariesPinned`] below.
  *
  * The witnesses are read by that test and nothing else; tree-shaking drops
  * them from every bundle.
@@ -526,3 +531,27 @@ export const SCAN_ROOT_LIST_NULLABLE: WireNullability<ScanRootListResponse> = {
   fresh_count: false,
   rows: false,
 };
+
+/** `true` exactly when `A` and `B` are the same type, not merely assignable. */
+type Equal<A, B> =
+  (<X>() => X extends A ? 1 : 2) extends <X>() => X extends B ? 1 : 2
+    ? true
+    : false;
+
+type Expect<T extends true> = T;
+
+/**
+ * The three verdict fields carry the pinned vocabularies, not a wider
+ * `string`.
+ *
+ * Widening one would pass every other check here: the wire test pins the
+ * CONSTS, and a witness says nothing about base types. Meanwhile the panel
+ * would lose exhaustiveness on the one field it keys every claim on.
+ * Type-only, and exported solely so it is not an unused local;
+ * `npm run type-check` is what evaluates it.
+ */
+export type ScanRootVocabulariesPinned = [
+  Expect<Equal<ScanRootRow["state"], ScanRootState>>,
+  Expect<Equal<ScanRootRow["reported_state"], ScanRootState>>,
+  Expect<Equal<ScanRootListResponse["state"], ScanRootListState>>,
+];

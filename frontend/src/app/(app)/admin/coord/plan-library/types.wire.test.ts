@@ -3,8 +3,9 @@
  *
  * qontinui-web#1318 closed this defect class on the backend — four
  * hand-written copies of the scan-root state vocabulary with nothing tying any
- * two of them together (`backend/tests/test_plan_scan_root_state_vocabulary.py`)
- * — and in the same diff added a fifth, here, tied to none of them. It also
+ * two of them together (`backend/tests/test_plan_scan_root_state_vocabulary.py`,
+ * which counts the runner's `ScanDivergenceState` as a fifth) — and in the same
+ * diff added a sixth, here, tied to none of them. It also
  * mirrored both response shapes by hand as `ScanRootRow` and
  * `ScanRootListResponse`. Nothing crossed that seam: vitest strips types
  * without checking them, and `npm run type-check` excludes test files
@@ -56,6 +57,12 @@ interface ObjectSchema {
   required?: string[];
 }
 
+/** Each snapshot is ~3.4 MB; parse it once, not once per component. */
+const documents = new Map<
+  string,
+  { components?: { schemas?: Record<string, unknown> } }
+>();
+
 /**
  * One component schema, or a thrown error naming it.
  *
@@ -64,7 +71,11 @@ interface ObjectSchema {
  * written the other way round, pass — for a reason nobody can read.
  */
 function component(file: string, name: string): ObjectSchema {
-  const doc = JSON.parse(readFileSync(path.join(API_CLIENT, file), "utf8"));
+  let doc = documents.get(file);
+  if (doc === undefined) {
+    doc = JSON.parse(readFileSync(path.join(API_CLIENT, file), "utf8"));
+    documents.set(file, doc);
+  }
   const found = doc?.components?.schemas?.[name];
   if (!found?.properties) {
     throw new Error(`${name} is not in ${file} — renamed on the backend?`);
