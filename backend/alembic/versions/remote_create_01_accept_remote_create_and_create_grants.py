@@ -1,7 +1,7 @@
 """coord.devices.accept_remote_create + coord.create_grants — the create grant
 
 Revision ID: remote_create_01
-Revises: claude_acct_01
+Revises: coord_test_results_idx_01
 Create Date: 2026-09-11
 
 Phase 3b-migration of plan
@@ -122,7 +122,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "remote_create_01"
-down_revision: str | Sequence[str] | None = "claude_acct_01"
+down_revision: str | Sequence[str] | None = "coord_test_results_idx_01"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
