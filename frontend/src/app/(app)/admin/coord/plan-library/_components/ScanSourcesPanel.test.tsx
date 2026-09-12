@@ -449,7 +449,58 @@ describe("driftSummary — a null count is not measured, and a floor is not exac
       row({ behind: 0, ahead: 0, counts_are_floors: true, state: "unknown" })
     );
     expect(floor).not.toMatch(/in step/i);
-    expect(floor).toContain("at least 0 behind");
+    expect(floor).toContain("At least 0 behind");
+  });
+
+  it("a ref_stale row is disowned but NOT past tense — it is fresh", () => {
+    // The three `unknown` rules do not agree about the reading's age. This
+    // device reported seconds ago; what is stale is the REF it measured
+    // against. "When last measured" would invent a silence that is not there
+    // and send an operator after the wrong device.
+    const refStale = driftSummary(
+      row({
+        state: "unknown",
+        detail: "ref_stale: 0/0 counts against a ref that is stale …",
+        behind: 0,
+        ahead: 0,
+        counts_are_floors: true,
+        ref_age_secs: null,
+        observation_fresh: true,
+        last_report_applied: true,
+      })
+    );
+    expect(refStale).not.toContain("When last measured");
+    expect(refStale).not.toMatch(/in step/i);
+    expect(refStale).toContain("At least 0 behind");
+  });
+
+  it("MUTATION: the same row gone silent DOES switch to past tense", () => {
+    const silent = driftSummary(
+      row({
+        state: "unknown",
+        behind: 0,
+        ahead: 0,
+        counts_are_floors: true,
+        observation_fresh: false,
+        last_report_applied: true,
+      })
+    );
+    expect(silent).toContain("When last measured");
+  });
+
+  it("MUTATION: so does a superseded reading, though it is fresh", () => {
+    // Tense keys on BOTH clocks. A device reporting on time whose latest
+    // report contradicts the stored reading is fresh and still not current.
+    const superseded = driftSummary(
+      row({
+        state: "unknown",
+        behind: 0,
+        ahead: 0,
+        observation_fresh: true,
+        last_report_applied: false,
+      })
+    );
+    expect(superseded).toContain("When last measured");
   });
 
   it("carries ahead alongside behind, hedged the same way", () => {

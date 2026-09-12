@@ -27,18 +27,26 @@ export function shortDuration(secs: number): string {
 }
 
 /**
- * Is this row's reading a claim about NOW?
+ * Is the STORED reading still the device's current word?
  *
- * True only when the READ ROUTE'S VERDICT is still `measured`. The route sets
- * `state: "unknown"` for each of its three rules — the device went silent
- * (`observation_stale:`), its latest report contradicts the stored reading
- * (`reading_superseded:`), or the counts are a 0-behind floor (`ref_stale:`) —
- * and its own row docstring warns that the counts are "served as reported
- * whatever the verdict", so the numbers survive a verdict that disowns them.
- * Every present-tense sentence in this file is gated on this.
+ * This gates TENSE, and it is deliberately not `state === "measured"`. The
+ * route's three `unknown` rules do not all mean the same thing about the
+ * reading's age, and collapsing them mis-describes one of the three:
+ *
+ * * `observation_stale:` — the device went silent. The reading is old. Past.
+ * * `reading_superseded:` — its latest report contradicts the stored reading,
+ *   so the stored one is by construction not its latest word. Past.
+ * * `ref_stale:` — a 0-behind FLOOR. The device reported it moments ago and is
+ *   perfectly live; what is stale is the REF it measured against. Writing
+ *   "When last measured" here would invent a silence that is not there and
+ *   point the operator at the wrong device.
+ *
+ * So tense keys on the two clocks that actually say whether the reading is the
+ * device's latest — and the separate question "may this sentence claim
+ * agreement?" keys on the verdict, in [`driftSummary`] below.
  */
-function isCurrent(row: ScanRootRow): boolean {
-  return row.state === "measured";
+function readingIsCurrent(row: ScanRootRow): boolean {
+  return row.observation_fresh && row.last_report_applied;
 }
 
 /**
@@ -47,29 +55,32 @@ function isCurrent(row: ScanRootRow): boolean {
  * Four rules, all load-bearing, all the reason the backend carries a verdict
  * and a floors flag beside the raw counts rather than just the numbers:
  *
- * * **A count the verdict disowns is never a present-tense claim.** When
- *   `state` is not `measured` the counts still arrive — the route serves them
- *   verbatim — but they describe a past reading, so they are rendered as one
- *   ("When last measured: …") and the agreement phrasing is withheld entirely.
- *   Without this a device silent for 2.5 hours whose last reading was 0/0
- *   rendered "In step with its ref." directly beneath a badge reading
- *   `Unknown` — a confident present-tense claim of agreement about a feeder
- *   that has established nothing, which is the exact defect this whole feature
- *   exists to remove.
+ * * **Agreement is claimed only on a verdict that supports it.** The counts
+ *   arrive whatever the verdict — the route serves them verbatim — so `state`
+ *   has to be consulted, not just the numbers. Without this a device silent
+ *   for 2.5 hours whose last reading was 0/0 rendered "In step with its ref."
+ *   directly beneath a badge reading `Unknown`: a confident present-tense
+ *   claim of agreement about a feeder that has established nothing, which is
+ *   the exact defect this whole feature exists to remove.
+ * * **A reading that is not the device's latest word is written in the past
+ *   tense**, on the [`readingIsCurrent`] test above — which is a different
+ *   question from the one on the line before, and answered by different
+ *   fields. A `ref_stale` row is disowned AND current.
  * * **A `null` count is NOT MEASURED and must never render as `0`** — `behind`
  *   and `ahead` alike.
  * * **A FLOOR renders as "at least N"** — the counts were taken against a ref
  *   that is stale or of unknown age, so they are lower bounds.
- * * **Only an EXACT `0` behind, on a current verdict, may read "in step".** A
- *   floor of 0 behind is a lower bound of nothing, and the route has already
- *   turned that row's verdict into `unknown` / `ref_stale:`.
+ * * **Only an EXACT `0` behind may read "in step".** A floor of 0 behind is a
+ *   lower bound of nothing, and the route has already turned that row's
+ *   verdict into `unknown` / `ref_stale:`.
  */
 export function driftSummary(row: ScanRootRow): string {
   if (row.behind == null) return "Distance not measured.";
   const floor = row.counts_are_floors;
-  const current = isCurrent(row);
+  const current = readingIsCurrent(row);
+  const mayClaimAgreement = row.state === "measured" && current;
 
-  if (row.behind === 0 && !floor && current) {
+  if (row.behind === 0 && !floor && mayClaimAgreement) {
     if (row.ahead == null) return "Not behind its ref; ahead not measured.";
     return row.ahead ? `In step, ${row.ahead} ahead.` : "In step with its ref.";
   }
