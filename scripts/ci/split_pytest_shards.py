@@ -132,22 +132,46 @@ def main(argv: list[str] | None = None) -> int:
         required=True,
         help="file holding `pytest --collect-only -q` output, or - for stdin",
     )
-    parser.add_argument("--shards", type=int, required=True, help="total shard count")
-    parser.add_argument(
-        "--shard", type=int, required=True, help="this shard, 1-based (1..shards)"
-    )
+    parser.add_argument("--shards", type=int, help="total shard count")
+    parser.add_argument("--shard", type=int, help="this shard, 1-based (1..shards)")
     parser.add_argument("--out", help="write the selected files here (default: stdout)")
+    parser.add_argument(
+        "--min-files",
+        type=int,
+        default=0,
+        help=(
+            "fail (exit 4) unless at least this many DISTINCT test files appear "
+            "in the collection; pass the on-disk `test_*.py` count to reject a "
+            "truncated collection"
+        ),
+    )
+    parser.add_argument(
+        "--count-only",
+        action="store_true",
+        help=(
+            "report the collected counts and apply --min-files, then exit "
+            "without selecting a shard"
+        ),
+    )
     args = parser.parse_args(argv)
 
-    if args.shards < 1:
-        print(f"::error::--shards must be >= 1, got {args.shards}", file=sys.stderr)
-        return 1
-    if not 1 <= args.shard <= args.shards:
-        print(
-            f"::error::--shard must be in 1..{args.shards}, got {args.shard}",
-            file=sys.stderr,
-        )
-        return 1
+    if not args.count_only:
+        if args.shards is None or args.shard is None:
+            print(
+                "::error::--shards and --shard are required unless --count-only "
+                "is given",
+                file=sys.stderr,
+            )
+            return 1
+        if args.shards < 1:
+            print(f"::error::--shards must be >= 1, got {args.shards}", file=sys.stderr)
+            return 1
+        if not 1 <= args.shard <= args.shards:
+            print(
+                f"::error::--shard must be in 1..{args.shards}, got {args.shard}",
+                file=sys.stderr,
+            )
+            return 1
 
     if args.nodeids == "-":
         text = sys.stdin.read()
@@ -162,12 +186,52 @@ def main(argv: list[str] | None = None) -> int:
             "Refusing to emit an empty selection: pytest would then collect the "
             "whole tests/ directory, so every shard would run the entire suite. "
             "Check that `pytest --collect-only -q` succeeded and that its output "
-            "was captured.",
+            "was captured, and that pytest ran at NEGATIVE verbosity (node ids "
+            "print only there; pytest.ini addopts carrying -v cancel a lone -q, "
+            "which is what `-o addopts=` in the workflow exists to prevent).",
             file=sys.stderr,
         )
         return 2
 
     weights = file_weights(nodeids)
+
+    # The TRUNCATION check, and it lives here rather than in the calling shell
+    # for two measured reasons. A second copy of the node-id rule in bash
+    # disagreed with this module's own regex (it accepted `:`/`[`/`]` in a path
+    # and over-counted), and a bash numeric test on an empty variable fails OPEN
+    # without tripping `-e` — a tripwire that fails open is not a tripwire. One
+    # parser, one rule, and the comparison happens where the value cannot be an
+    # empty string.
+    #
+    # The caller passes the on-disk `test_*.py` count, not a constant: a
+    # hardcoded node-id floor is decoration, because a handful of large files
+    # clears any plausible number while the collection is missing most of the
+    # suite.
+    if len(weights) < args.min_files:
+        print(
+            f"::error::collection is TRUNCATED: {len(weights)} distinct test "
+            f"files ({len(nodeids)} node ids), but {args.min_files} were "
+            "expected. This is the one shape sharding cannot survive silently - "
+            "a truncated collection shards cleanly and every shard goes green "
+            "while covering only part of the suite. Three causes, in order of "
+            "likelihood: the collection really was cut short (read the "
+            "collection output above); a conftest `collect_ignore` / "
+            "`norecursedirs` entry now excludes more files than the caller's "
+            "floor allows for (backend/tests/conftest.py excludes "
+            "`integration`); or a `test_*.py` file collected ZERO tests, i.e. a "
+            "dead test module.",
+            file=sys.stderr,
+        )
+        return 4
+
+    if args.count_only:
+        print(
+            f"collection OK: {len(weights)} test files, {len(nodeids)} node ids "
+            f"(floor {args.min_files})",
+            file=sys.stderr,
+        )
+        return 0
+
     selected = assign(weights, args.shards)[args.shard - 1]
 
     if not selected:

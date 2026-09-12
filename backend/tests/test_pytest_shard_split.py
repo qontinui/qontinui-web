@@ -280,6 +280,107 @@ def test_cli_rejects_an_out_of_range_shard(tmp_path, shard, capsys):
     assert "--shard must be in" in capsys.readouterr().err
 
 
+def test_cli_requires_shard_args_unless_counting(tmp_path, capsys):
+    rc = splitter.main(["--nodeids", _write(tmp_path, _REAL_SHAPE)])
+    assert rc == 1
+    assert "required unless --count-only" in capsys.readouterr().err
+
+
+# --- the truncation floor --------------------------------------------------
+#
+# A truncated collection is the ONE shape the split cannot survive silently: it
+# shards cleanly and every shard goes green while covering part of the suite.
+# The floor is therefore checked where the node ids are already parsed, and it
+# is the caller's on-disk file count rather than a constant.
+
+
+def test_count_only_accepts_a_complete_collection(tmp_path, capsys):
+    rc = splitter.main(
+        ["--nodeids", _write(tmp_path, _REAL_SHAPE), "--count-only", "--min-files", "3"]
+    )
+    assert rc == 0
+    assert "collection OK: 3 test files" in capsys.readouterr().err
+
+
+def test_count_only_rejects_a_truncated_collection(tmp_path, capsys):
+    """The floor's whole purpose: fewer files present than the tree has."""
+    rc = splitter.main(
+        [
+            "--nodeids",
+            _write(tmp_path, _REAL_SHAPE),
+            "--count-only",
+            "--min-files",
+            "10",
+        ]
+    )
+    assert rc == 4
+    err = capsys.readouterr().err
+    assert "TRUNCATED" in err
+    assert "3 distinct test files" in err
+    assert "10 were expected" in err
+
+
+def test_the_floor_also_guards_a_real_shard_selection(tmp_path):
+    """Not only the --count-only pass: a short collection must never be sharded."""
+    rc = splitter.main(
+        [
+            "--nodeids",
+            _write(tmp_path, _REAL_SHAPE),
+            "--shards",
+            "2",
+            "--shard",
+            "1",
+            "--min-files",
+            "10",
+        ]
+    )
+    assert rc == 4
+
+
+def test_the_floor_is_off_by_default(tmp_path):
+    """Absent --min-files, the splitter must not invent a floor of its own."""
+    rc = splitter.main(["--nodeids", _write(tmp_path, _REAL_SHAPE), "--count-only"])
+    assert rc == 0
+
+
+def test_the_collect_step_checks_the_floor_through_the_splitter():
+    """The step must not grow a second copy of the node-id rule again.
+
+    Two copies disagreed (the bash one accepted `:`/`[`/`]` in a path and
+    over-counted), and `$(grep -c … || true)` fed an empty string into a numeric
+    test, which fails OPEN. So the pins are: the step calls the splitter's
+    counting mode, derives the floor from the tree, and carries no hardcoded
+    numeric floor of its own.
+    """
+    run = _step(_shard_job(), COLLECT_STEP_NAME)["run"]
+    assert "--count-only" in run, "the collect step must check the collection"
+    assert "--min-files" in run, "the collect step must pass a truncation floor"
+    assert "find tests -name 'test_*.py'" in run, (
+        "the floor must be DERIVED from the on-disk test files, not hardcoded"
+    )
+    assert "expected_files * 3 / 4" in run, (
+        "the floor must stay a FRACTION of the on-disk count: conftest sets "
+        "collect_ignore (5 of 231 files today), so an exact floor reds a correct "
+        "collection, and hardcoding the ignore list here is the drift this "
+        "replaced"
+    )
+    # The two NEGATIVE pins run against comment-stripped text. The step's prose
+    # deliberately explains why the bash grep and the constant floor were
+    # removed, and a naive substring check matches that explanation and fails on
+    # a correct step -- which it did, on the first run of this very test. What is
+    # being pinned is what the step RUNS, not what it says about its own history.
+    code = "\n".join(
+        line for line in run.splitlines() if not line.strip().startswith("#")
+    )
+    assert "-lt 500" not in code, (
+        "a hardcoded node-id floor is what this replaced; 32 of 231 files clear "
+        "500, so it passed a 7x-truncated collection"
+    )
+    assert "grep -c" not in code, (
+        "the node-id rule must have exactly one implementation, in the splitter"
+    )
+
+
 # --- the workflow wiring ---------------------------------------------------
 
 
