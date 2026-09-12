@@ -45,8 +45,10 @@ What is asserted
 
 5. **The full coord statement returns the right rows.** Seeded AFTER the build
    (self-maintaining — no ``REINDEX``): the roster is exactly the tests the
-   repo's LATEST ``head_sha`` carried (a test dropped before the latest ingest
-   is not scored; a test only in the latest ingest is), each test gets its
+   repo's TWO most recent ``head_sha``s carried (a test absent from both is not
+   scored; a test only in the newest is; a test only in the previous — the
+   in-flight-chunk / subset-job case the second head exists for — is), each
+   test gets its
    newest ``window`` rows and no more, and another repo's rows never leak in.
 
 6. **Downgrade removes exactly the two composites and restores the prefix
@@ -136,10 +138,17 @@ _HISTORY_SQL = text(
         SELECT head_sha FROM coord.test_results
         WHERE repo = :repo AND head_sha IS NOT NULL
         ORDER BY observed_at DESC LIMIT 1
+    ), previous AS (
+        SELECT t.head_sha FROM coord.test_results t, latest
+        WHERE t.repo = :repo AND t.head_sha IS NOT NULL
+          AND t.head_sha <> latest.head_sha
+        ORDER BY t.observed_at DESC LIMIT 1
     ), roster AS (
         SELECT DISTINCT t.test_id
-        FROM coord.test_results t, latest
-        WHERE t.repo = :repo AND t.head_sha = latest.head_sha
+        FROM coord.test_results t
+        WHERE t.repo = :repo
+          AND t.head_sha IN (SELECT head_sha FROM latest
+                             UNION SELECT head_sha FROM previous)
     )
     SELECT h.test_id, h.outcome, h.duration_seconds,
            h.head_sha, h.shard, h.observed_at
@@ -203,8 +212,10 @@ def _seed(engine: Engine) -> None:
     Eight ingests for ``_REPO`` (``sha0`` newest … ``sha7`` oldest), two shards
     each, so every test has 16 rows — four times ``_WINDOW``. The roster edges:
 
-    * ``t_dropped`` exists in every ingest EXCEPT the newest → not scored.
+    * ``t_dropped`` exists in every ingest EXCEPT the newest two → not scored.
     * ``t_new`` exists ONLY in the newest ingest → scored, with 2 rows.
+    * ``t_prev`` exists ONLY in the second-newest ingest (an in-flight newest
+      chunk, or a subset job landing last, looks exactly like this) → scored.
     * ``t1`` fails on ``sha2``/ubuntu only — the one row the window must keep
       and the values assertion checks for.
 
@@ -223,7 +234,11 @@ def _seed(engine: Engine) -> None:
             sha = f"sha{i}"
             at = _NEWEST - timedelta(minutes=i)
             tests = ["bin::mod::t1", "bin::mod::t2"]
-            tests.append("bin::mod::t_new" if i == 0 else "bin::mod::t_dropped")
+            tests.append(
+                {0: "bin::mod::t_new", 1: "bin::mod::t_prev"}.get(
+                    i, "bin::mod::t_dropped"
+                )
+            )
             for tid in tests:
                 for shard in _SHARDS:
                     outcome = (
@@ -387,18 +402,29 @@ def test_coord_test_results_idx_01_serves_the_per_test_history_read() -> None:
         for r in rows:
             by_test.setdefault(r.test_id, []).append(r)
 
-        assert set(by_test) == {"bin::mod::t1", "bin::mod::t2", "bin::mod::t_new"}, (
-            "the roster is the LATEST ingest's tests: t_dropped (absent from "
-            f"sha0) must not be scored, t_new (only in sha0) must. Got {set(by_test)}"
+        assert set(by_test) == {
+            "bin::mod::t1",
+            "bin::mod::t2",
+            "bin::mod::t_new",
+            "bin::mod::t_prev",
+        }, (
+            "the roster is the two newest ingests' tests: t_dropped (absent from "
+            "sha0 AND sha1) must not be scored; t_new (only in sha0) and t_prev "
+            f"(only in sha1) must. Got {set(by_test)}"
         )
         assert all(
-            len(v) == _WINDOW for k, v in by_test.items() if k != "bin::mod::t_new"
+            len(v) == _WINDOW
+            for k, v in by_test.items()
+            if k not in ("bin::mod::t_new", "bin::mod::t_prev")
         ), (
             f"each test gets exactly its newest {_WINDOW} rows: "
             f"{ {k: len(v) for k, v in by_test.items()} }"
         )
         assert len(by_test["bin::mod::t_new"]) == 2, (
             "t_new has only the newest ingest's two shard rows"
+        )
+        assert len(by_test["bin::mod::t_prev"]) == 2, (
+            "t_prev has only the previous ingest's two shard rows"
         )
         # The window is the NEWEST rows: sha0 and sha1 (two shards each), so
         # the sha2 failure falls just outside a window of 4 — and inside 6.
