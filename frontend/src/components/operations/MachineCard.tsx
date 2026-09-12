@@ -31,6 +31,11 @@ import {
   VOLUME_STALE_AFTER_MS,
   volumeSeverity,
 } from "./utils";
+import { StatusBadge } from "@/components/console";
+import {
+  COORD_CREDENTIAL_PALETTE,
+  resolveCoordCredential,
+} from "./coordCredentialStatus";
 import { CiRunnerBadge } from "./CiRunnerBadge";
 import {
   DeviceCrossLinks,
@@ -538,6 +543,53 @@ export function MachineCard({
         : `Coord knows this device (${machine.coordHealth.device_id}) but ` +
           `reports no state for it. Unknown, not healthy.`;
 
+  /**
+   * **Can this machine still reach coord?** — the second credential question
+   * this card asks, and the one it could not ask at all until plan
+   * `2026-09-12-runner-loads-with-an-expired-coord-credential-and-tells-nobody`
+   * Phase 5.
+   *
+   * `coordState` above says whether COORD still reaches the machine. This says
+   * whether the MACHINE still reaches coord, which is a genuinely independent
+   * axis: the incident behind the plan is a box coord read as `healthy` the
+   * whole time, whose runner had restored an expired device JWT at boot and
+   * whose every spawned session worked without coord and did not know it.
+   *
+   * Resolved from two sources because neither alone is enough today — coord's
+   * `credential_dark` join (a boolean), and the runner's own
+   * `details.coord_credential` bag off the device-status row, which is where
+   * the plan's typed posture will appear when the runner half ships. Precedence
+   * and the UNKNOWN rule both live in `resolveCoordCredential`.
+   *
+   * Gated on there being a source at all: on a mount built WITHOUT the coord
+   * health read, an absent verdict is an absence of the READ, and the card says
+   * nothing rather than claiming this machine's credential is unknown.
+   */
+  const reportedCredential = (
+    machine.currentActivity?.details as Record<string, unknown> | undefined
+  )?.coord_credential;
+  const credential =
+    machine.coordHealth || reportedCredential !== undefined
+      ? resolveCoordCredential({
+          credentialDark: machine.coordHealth?.matched
+            ? machine.coordHealth.credential_dark
+            : undefined,
+          reported: reportedCredential,
+        })
+      : null;
+  /**
+   * `since <ts>` — rendered ONLY when a reporter published one.
+   *
+   * No producer writes it yet (the posture is the plan's Phase 1, in
+   * `qontinui-runner`), so this is normally absent. It is deliberately not
+   * back-filled from the heartbeat's `updated_at`: that is when the machine
+   * last SPOKE, not when its credential went bad, and a fabricated "since"
+   * under a red badge is the kind of precision an operator acts on.
+   */
+  const credentialSince = credential?.since
+    ? relativeTime(credential.since)
+    : null;
+
   // Pick OS from first runner
   const os = runners[0]?.os ?? "unknown";
   const osVersion = runners[0]?.osVersion ?? null;
@@ -625,6 +677,36 @@ export function MachineCard({
                   {coordStateLabel}
                 </TooltipContent>
               </Tooltip>
+            )}
+
+            {/* The credential axis. Rendered through the console's own
+                `StatusBadge` + audited palette rather than a one-off style, so
+                the red it borrows means what red means everywhere else in the
+                console — someone must act now — and the amber `unknown` reads
+                as ignorance rather than as calm (style guide R3/§4.1). The
+                badge carries its own `title`, so the "why" is one hover away
+                without a tooltip provider. */}
+            {credential && (
+              <span
+                className="contents"
+                data-operations-coord-credential={credential.kind}
+                data-operations-coord-credential-measured={String(
+                  credential.measured
+                )}
+              >
+                <StatusBadge
+                  status={credential}
+                  palette={COORD_CREDENTIAL_PALETTE}
+                />
+                {credentialSince && (
+                  <span
+                    className="text-[11px] text-muted-foreground"
+                    data-operations-coord-credential-since
+                  >
+                    since {credentialSince}
+                  </span>
+                )}
+              </span>
             )}
 
             <Badge variant={osBadgeVariant(os)} className="gap-1">
