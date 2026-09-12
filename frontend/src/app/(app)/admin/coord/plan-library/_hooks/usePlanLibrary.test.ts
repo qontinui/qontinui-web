@@ -698,6 +698,10 @@ describe.each([
 
     await act(async () => {
       releaseSlow(payload);
+      // A macrotask, so the straggler has settled all the way through the
+      // hook before the negative is asserted — not merely a microtask that
+      // happens to be queued ahead of it today.
+      await new Promise((resolve) => setTimeout(resolve, 0));
     });
     expect(result.current.data).toEqual(fresh);
     expect(result.current.error).toBeNull();
