@@ -111,6 +111,22 @@ describe("ClearanceRuleList write-control gating", () => {
   });
 });
 
+describe("ClearanceRuleList repo display", () => {
+  it("shows an empty-string repo instead of hiding it", () => {
+    // The `empty-repo` explanation talks about this repo, so the row must show
+    // it: a truthiness check would render '' as no repo at all.
+    authState.isCoordAdmin = true;
+    renderList([
+      {
+        ...rule({ gate_class: "ops-confirm", authority: "agent_any" }),
+        repo: "",
+      },
+    ]);
+    expandTheRow();
+    expect(screen.getByText(/repo: \(empty string\)/)).toBeTruthy();
+  });
+});
+
 // The delete confirmation itself is NOT driven from here: its trigger is a
 // `DestructiveButton`, which deliberately blocks any click whose
 // `event.isTrusted` is false (the UI-Bridge/synthetic-click guard), so no
