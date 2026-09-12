@@ -31,14 +31,20 @@ follows. It is NULLABLE with NO DEFAULT: every existing row is genuinely
 unknown-provenance, and a non-null default would count every historical
 worktree as an autonomous dispatch.
 
-Index ``idx_agent_worktrees_dispatch_inflight`` is partial,
-``(tenant_id, device_id, created_at) WHERE dispatch_source IS NOT NULL``. It
-serves the Phase 1a in-flight count (vet finding 4):
+Two partial indexes serve the Phase 1a in-flight count (vet finding 4):
 ``dispatch_source IS NOT NULL AND status IN (...) AND created_at > now() -
-horizon``, grouped per target device and per tenant. Autonomous rows are a
-small subset, and interactive rows never enter it. ``status`` is left out of
-the key because the count ALSO admits ``abandoned`` rows until Phase 2a fixes
-liveness, so the created-at horizon is what bounds the count, not the status.
+horizon``, counted once per target device and once per tenant.
+
+- ``idx_agent_worktrees_dispatch_inflight_device``:
+  ``(device_id, created_at) WHERE dispatch_source IS NOT NULL``.
+- ``idx_agent_worktrees_dispatch_inflight_tenant``:
+  ``(tenant_id, created_at) WHERE dispatch_source IS NOT NULL``.
+
+Each count gets an equality prefix plus a range on ``created_at``. Autonomous
+rows are a small subset, and interactive rows never enter either index.
+``status`` is left out of the key because the count ALSO admits ``abandoned``
+rows until Phase 2a fixes liveness, so the created-at horizon bounds the count,
+not the status.
 
 2. ``coord.tenant_merge_settings.auto_fix_pr BOOLEAN NULL``
 -----------------------------------------------------------
@@ -49,14 +55,31 @@ code, so the column carries no DEFAULT. A ``NOT NULL DEFAULT true`` would turn
 every tenant row into an explicit ON that could not be told apart from an
 operator's choice.
 
+Locking — ``coord.agent_worktrees`` is on coord's allocate hot path
+-------------------------------------------------------------------
+- ``SET LOCAL lock_timeout = '3s'`` runs before each DDL transaction, following
+  ``coord_wu_authored_at_01`` and ``coord_sessions_work_unit_slug``. A column
+  add that queues behind a long query fails fast instead of stalling every
+  later reader behind its ACCESS EXCLUSIVE request.
+- Both column adds run first. The indexes are built LAST, with
+  ``CREATE INDEX CONCURRENTLY`` inside ``autocommit_block()``, following
+  ``coord_alerts_pagedidx_01``. Entering the block commits the column adds and
+  releases their lock before the index scan starts, so the build never holds
+  ACCESS EXCLUSIVE.
+
 Deploy order and degradation
 ----------------------------
 coord's in-flight count treats a missing ``dispatch_source`` column as UNKNOWN,
 and UNKNOWN defers. A coord deploy that lands ahead of this migration therefore
 fails closed.
 
-Idempotency: column adds are guarded by an inspector check, and the index uses
-``IF NOT EXISTS``. ``downgrade()`` reverses both, in reverse order.
+Idempotency: column adds are guarded by an inspector check, and index builds
+use ``IF NOT EXISTS``. **``IF NOT EXISTS`` is not a full guard for a
+CONCURRENTLY build.** A killed build leaves an INVALID index under that name,
+and a re-run then skips it and reports success. After any interrupted run,
+check ``pg_index.indisvalid``, drop the invalid index, and re-run
+(the same trap ``coord_alerts_pagedidx_01`` records). ``downgrade()`` reverses
+everything in reverse order.
 """
 
 from collections.abc import Sequence
@@ -72,6 +95,11 @@ down_revision: str = "policy_rules_tombstone_01"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
+_INFLIGHT_INDEXES: tuple[tuple[str, str], ...] = (
+    ("idx_agent_worktrees_dispatch_inflight_device", "device_id, created_at"),
+    ("idx_agent_worktrees_dispatch_inflight_tenant", "tenant_id, created_at"),
+)
+
 
 def _has_column(table: str, column: str) -> bool:
     """True if ``coord.<table>`` already has ``column``."""
@@ -82,7 +110,9 @@ def _has_column(table: str, column: str) -> bool:
 
 
 def upgrade() -> None:
-    """Add dispatch_source (+ in-flight index) and auto_fix_pr."""
+    """Add dispatch_source and auto_fix_pr, then build the in-flight indexes."""
+
+    op.execute("SET LOCAL lock_timeout = '3s'")
 
     # 1. Provenance of an autonomous coord dispatch. NULL = interactive.
     if not _has_column("agent_worktrees", "dispatch_source"):
@@ -91,13 +121,6 @@ def upgrade() -> None:
             sa.Column("dispatch_source", sa.Text(), nullable=True),
             schema="coord",
         )
-    op.execute(
-        """
-        CREATE INDEX IF NOT EXISTS idx_agent_worktrees_dispatch_inflight
-            ON coord.agent_worktrees (tenant_id, device_id, created_at)
-            WHERE dispatch_source IS NOT NULL
-        """
-    )
 
     # 2. Tenant-tier PR-fixer off-switch. NULL = default (ON, resolved in coord).
     if not _has_column("tenant_merge_settings", "auto_fix_pr"):
@@ -107,14 +130,30 @@ def upgrade() -> None:
             schema="coord",
         )
 
+    # 3. LAST: the in-flight indexes, built CONCURRENTLY outside the DDL
+    #    transaction so the hot table is never locked for the scan.
+    with op.get_context().autocommit_block():
+        for name, columns in _INFLIGHT_INDEXES:
+            op.execute(
+                f"""
+                CREATE INDEX CONCURRENTLY IF NOT EXISTS {name}
+                    ON coord.agent_worktrees ({columns})
+                    WHERE dispatch_source IS NOT NULL
+                """
+            )
+
 
 def downgrade() -> None:
-    """Drop both columns and the index (reverse order)."""
+    """Drop the indexes, then both columns (reverse order)."""
+
+    with op.get_context().autocommit_block():
+        for name, _columns in reversed(_INFLIGHT_INDEXES):
+            op.execute(f"DROP INDEX CONCURRENTLY IF EXISTS coord.{name}")
+
+    op.execute("SET LOCAL lock_timeout = '3s'")
 
     if _has_column("tenant_merge_settings", "auto_fix_pr"):
         op.drop_column("tenant_merge_settings", "auto_fix_pr", schema="coord")
-
-    op.execute("DROP INDEX IF EXISTS coord.idx_agent_worktrees_dispatch_inflight")
 
     if _has_column("agent_worktrees", "dispatch_source"):
         op.drop_column("agent_worktrees", "dispatch_source", schema="coord")
