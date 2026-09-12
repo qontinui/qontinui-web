@@ -555,11 +555,16 @@ export function MachineCard({
    * whole time, whose runner had restored an expired device JWT at boot and
    * whose every spawned session worked without coord and did not know it.
    *
-   * Resolved from two sources because neither alone is enough today — coord's
-   * `credential_dark` join (a boolean), and the runner's own
-   * `details.coord_credential` bag off the device-status row, which is where
-   * the plan's typed posture will appear when the runner half ships. Precedence
-   * and the UNKNOWN rule both live in `resolveCoordCredential`.
+   * Resolved from two sources because neither alone is enough — coord's
+   * `credential_dark` join, and the runner's own `details.coord_credential`
+   * bag off the device-status row, which is where the plan's typed posture
+   * will appear when the runner half ships. They answer different halves of
+   * the question and are not interchangeable: coord's join can only conclude
+   * `dark` (its `dark: false` is a roster stamp covering every device its scan
+   * did not name, the unreporting ones included), while the bag's PRESENCE is
+   * the only thing that can conclude `live`. Precedence and the UNKNOWN rule
+   * both live in `resolveCoordCredential` — this card passes both sources and
+   * decides nothing.
    *
    * Gated on there being a source at all: on a mount built WITHOUT the coord
    * health read, an absent verdict is an absence of the READ, and the card says

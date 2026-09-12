@@ -1586,11 +1586,59 @@ describe("/admin/coord/devops — the coord-credential axis", () => {
     );
   }
 
-  it("renders a live device as live, and raises nothing on the strip", async () => {
+  it("renders a device that REPORTED a healthy credential as live", async () => {
+    // The runner published `coord_credential.ok = true` on its heartbeat, so
+    // something actually measured this machine. That — not coord's roster
+    // stamp — is what earns the calm badge.
+    deviceStatusRows.set(
+      "msi",
+      deviceStatusRow("d-1", "msi", { coord_credential: { ok: true } })
+    );
     mockRoutes({
       devices: [
         coordDevice("d-1", "msi", "healthy", {
-          // The scan RAN and this device was not in its result set.
+          credential_dark: { dark: false },
+        }),
+      ],
+      runners: [runner("msi")],
+      samples: [],
+      healthExtras: { credential_dark_scrape_up: true },
+    });
+
+    render(<CoordDevOpsPage />);
+
+    await waitFor(() =>
+      expect(credentialBadge("msi")).toHaveAttribute(
+        "data-operations-coord-credential",
+        "live"
+      )
+    );
+    const badge = credentialBadge("msi") as HTMLElement;
+    expect(badge).toHaveAttribute(
+      "data-operations-coord-credential-measured",
+      "true"
+    );
+    expect(badge).toHaveTextContent("credential live");
+    // Calm: no red, no ✕, and no dark count on the strip.
+    expect(badge.innerHTML).not.toMatch(/bg-red-/);
+    expect(badge).not.toHaveTextContent("✕");
+    expect(
+      screen.queryByTestId("coord-devops-credential-dark-badge")
+    ).not.toBeInTheDocument();
+  });
+
+  // C5. Coord's `{dark: false}` is a roster stamp, not a measurement:
+  // `join_credential_dark` writes it onto every device its
+  // `coord_credential.ok = 'false'` scan did not select, which includes every
+  // device whose runner published no credential at all. Rendering one of those
+  // `credential live` on a calm badge is this plan's own incident, committed
+  // by the page built to report it.
+  it("renders a device coord merely did not name as UNKNOWN, not live", async () => {
+    mockRoutes({
+      devices: [
+        coordDevice("d-1", "msi", "healthy", {
+          // The scan RAN and this device was not in its result set — which
+          // says nothing whatever about its credential.
           credential_dark: { dark: false },
         }),
       ],
@@ -1603,21 +1651,22 @@ describe("/admin/coord/devops — the coord-credential axis", () => {
 
     await waitFor(() => expect(credentialBadge("msi")).not.toBeNull());
     const badge = credentialBadge("msi") as HTMLElement;
-    expect(badge).toHaveAttribute("data-operations-coord-credential", "live");
+    expect(badge).toHaveAttribute(
+      "data-operations-coord-credential",
+      "unknown"
+    );
     expect(badge).toHaveAttribute(
       "data-operations-coord-credential-measured",
-      "true"
+      "false"
     );
-    expect(badge).toHaveTextContent("credential live");
-    // Calm: no red, no ✕, and nothing on the strip. A fleet with nothing to
-    // say says nothing.
-    expect(badge.innerHTML).not.toMatch(/bg-red-/);
-    expect(badge).not.toHaveTextContent("✕");
+    expect(badge).not.toHaveTextContent("credential live");
+    expect(badge.innerHTML).toMatch(/bg-amber-/);
+    // And the strip counts it as unmeasured rather than as an all-clear.
+    expect(
+      screen.getByTestId("coord-devops-credential-unknown-badge")
+    ).toHaveTextContent("credential unknown 1");
     expect(
       screen.queryByTestId("coord-devops-credential-dark-badge")
-    ).not.toBeInTheDocument();
-    expect(
-      screen.queryByTestId("coord-devops-credential-unknown-badge")
     ).not.toBeInTheDocument();
   });
 
@@ -1777,6 +1826,10 @@ describe("/admin/coord/devops — the coord-credential axis", () => {
   it("renders the credential axis on EVERY row, including a coord-only device", async () => {
     // A device that reaches this page through coord's health read alone is
     // exactly the population the incident hid in. It gets the badge too.
+    deviceStatusRows.set(
+      "msi",
+      deviceStatusRow("d-1", "msi", { coord_credential: { ok: true } })
+    );
     mockRoutes({
       devices: [
         coordDevice("d-1", "msi", "healthy", {
@@ -1800,8 +1853,14 @@ describe("/admin/coord/devops — the coord-credential axis", () => {
       "data-operations-coord-credential",
       "live"
     );
+    // The strip and the rows disagree here ON PURPOSE, and this is the
+    // assertion that pins it: the rollup sees fleet-health rows only, where
+    // `msi`'s affirmative report does not appear, so it counts BOTH machines
+    // as unmeasured. The strip under-claims; it never over-claims. Wiring the
+    // device-status stream into this page would close the gap — and would
+    // cost a second subscription the page does not otherwise need.
     expect(
       screen.getByTestId("coord-devops-credential-unknown-badge")
-    ).toHaveTextContent("credential unknown 1");
+    ).toHaveTextContent("credential unknown 2");
   });
 });
