@@ -33,6 +33,8 @@ from __future__ import annotations
 
 import importlib.util
 import re
+import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -298,6 +300,74 @@ def _step(job: dict, name: str) -> dict:
         if step.get("name") == name:
             return step
     raise AssertionError(f"the `test` job has no step named {name!r}")
+
+
+def _collect_flags() -> list[str]:
+    """The flags the workflow's OWN collect step passes — derived, not restated.
+
+    Deriving them is the whole point: a test that hardcoded the flags would keep
+    passing when the workflow's flags changed, which is exactly the drift that
+    broke the first CI run of this change.
+    """
+    run = _step(_shard_job(), COLLECT_STEP_NAME)["run"]
+    match = re.search(r"pytest\s+tests/\s+([^\n>]*)", run)
+    assert match, f"no `pytest tests/` invocation in the {COLLECT_STEP_NAME!r} step"
+    return [tok for tok in match.group(1).split() if tok != "\\"]
+
+
+def test_the_workflows_own_collect_flags_emit_parseable_nodeids(tmp_path):
+    """Pins the collect output SHAPE against this repo's REAL pytest.ini.
+
+    This is the test that would have caught the first CI run's failure, and it
+    is worth spelling out why the synthetic fixtures above could not. `-q` does
+    not SET quiet, it DECREMENTS verbosity; `pytest.ini`'s `addopts` carry `-v`,
+    so a lone `-q` lands on verbosity 0 — and at verbosity 0 `--collect-only`
+    prints the indented `<Module ...>` / `<Function ...>` tree, in which no line
+    matches a node id. Measured on the first run: 5157 output lines, ZERO node
+    ids, all six shards red before a single test executed.
+
+    So this test runs pytest FOR REAL, with the flags taken out of the workflow
+    step and against a copy of this repo's own pytest.ini. It fails on the
+    broken flag set and passes on the fixed one, and because the flags are
+    derived rather than restated it also catches a future `addopts` edit that
+    re-breaks the collection.
+    """
+    (tmp_path / "pytest.ini").write_text(
+        (REPO_ROOT / "backend" / "pytest.ini").read_text(encoding="utf-8"),
+        encoding="utf-8",
+    )
+    tests_dir = tmp_path / "tests"
+    tests_dir.mkdir()
+    (tests_dir / "test_probe.py").write_text(
+        "import pytest\n"
+        "\n"
+        "\n"
+        "def test_one():\n"
+        "    pass\n"
+        "\n"
+        "\n"
+        "@pytest.mark.parametrize('x', [1, 2])\n"
+        "def test_two(x):\n"
+        "    pass\n",
+        encoding="utf-8",
+    )
+
+    flags = _collect_flags()
+    proc = subprocess.run(
+        [sys.executable, "-m", "pytest", "tests/", *flags],
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+    )
+    nodeids = splitter.parse_nodeids(proc.stdout)
+
+    assert nodeids, (
+        "the workflow's own collect flags produced NO parseable node ids against "
+        f"backend/pytest.ini.\nflags: {flags}\nexit: {proc.returncode}\n"
+        f"stdout:\n{proc.stdout[:2000]}\nstderr:\n{proc.stderr[:1000]}"
+    )
+    # 3 collected tests: test_one, plus test_two[1] and test_two[2].
+    assert len(nodeids) == 3, f"expected 3 node ids, got {nodeids}"
 
 
 def test_the_matrix_length_equals_the_shard_count_the_step_passes():
