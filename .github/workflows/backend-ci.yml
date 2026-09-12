@@ -565,16 +565,39 @@ jobs:
             cat collected-nodeids.txt
             exit 1
           fi
-          nodeids=$(grep -cE '^[^[:space:]]+\.py(::|$)' collected-nodeids.txt || true)
-          echo "collected $(wc -l < collected-nodeids.txt) output lines, ${nodeids} parseable node ids"
-          # A FLOOR, deliberately not a target. ZERO is the verbosity trap above.
-          # A non-zero but small count is worse, because it is the ONE shape the
-          # splitter cannot detect: a truncated collection shards perfectly
-          # happily, and six green shards would then cover a fraction of the
-          # suite. At ~4100 collected tests, under 500 is truncation, not a
-          # smaller suite.
-          if [ "${nodeids}" -lt 500 ]; then
-            echo "::error title=Collection is empty or truncated::pytest --collect-only produced $(wc -l < collected-nodeids.txt) lines and only ${nodeids} parseable node ids, below the floor of 500 for a ~4100-test suite. ZERO means the verbosity trap: node ids print only at NEGATIVE verbosity, and pytest.ini's addopts (-v) cancel the -q here unless '-o addopts=' is present. A low-but-non-zero count means the collection was TRUNCATED - do not shard it. Last lines of the collection output follow."
+          echo "collection produced $(wc -l < collected-nodeids.txt) output lines"
+          # The emptiness AND truncation checks both live in the splitter, which
+          # already parses node ids. A second copy of that rule here was a real
+          # defect, not a hypothetical one: it accepted characters the splitter
+          # rejects and over-counted, and `$(grep -c … || true)` fed an EMPTY
+          # string into a numeric test, which fails OPEN without tripping `-e`.
+          # A tripwire that fails open is not a tripwire, so there is now exactly
+          # one parser and the comparison happens in Python.
+          #
+          # The floor is the on-disk FILE COUNT, not a constant. A hardcoded
+          # node-id floor is decoration: measured on this tree, 32 of 231 test
+          # files already clear 500 node ids, so a collection truncated to a
+          # seventh of the suite would pass it and six green shards would cover
+          # ~14% of the tests. Deriving it means it cannot go stale as the suite
+          # grows, and it makes the invariant the honest one: every `test_*.py`
+          # pytest would collect must actually appear in the collection.
+          expected_files=$(find tests -name 'test_*.py' -type f | wc -l)
+          # THREE QUARTERS of the on-disk count, and the fraction is measured,
+          # not chosen for comfort. An EXACT floor is wrong: conftest.py sets
+          # `collect_ignore` (today `["integration"]`, 5 of 231 test files), so
+          # requiring every `test_*.py` to appear would red a perfectly correct
+          # collection. Duplicating that ignore list here is exactly the drift
+          # this design removed one commit ago, so the floor tolerates it by
+          # ratio instead: 3/4 of 231 is 173, while a collection truncated to the
+          # 32 files that used to clear a 500-node-id floor fails hard. The trade
+          # is stated plainly -- this catches GROSS truncation, not a 10% one.
+          min_files=$(( expected_files * 3 / 4 ))
+          echo "test files on disk: ${expected_files}; truncation floor: ${min_files}"
+          if ! python ../scripts/ci/split_pytest_shards.py \
+              --nodeids collected-nodeids.txt \
+              --count-only \
+              --min-files "${min_files}"; then
+            echo "Last lines of the collection output, for context:"
             tail -20 collected-nodeids.txt
             exit 1
           fi
@@ -630,7 +653,11 @@ jobs:
       # the same flags + service stack, then exports). It was moved out so a main
       # push no longer re-runs this entire gating workflow just to feed coord.
       # The pytest invocation above keeps --cov-context=test / --junitxml: those
-      # flags are harmless on PRs and keep the two suites byte-identical.
+      # flags are harmless on PRs, and they keep this lane's FLAGS identical to
+      # the producer's. The suites themselves are no longer identical and cannot
+      # be: since the 2026-09-12 shard split this job runs one shard's file list
+      # while the producer still runs the whole suite. Flag parity is what the
+      # per-test coverage export needs; suite parity was never the requirement.
 
       # Budget-creep tripwire, the same one the coverage producer carries and
       # for the same reason -- see the long rationale at its site in
