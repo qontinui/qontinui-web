@@ -192,6 +192,27 @@ repos:
         pass_filenames: false
         always_run: true
 
+      - id: path-case-collisions
+        name: no tracked paths collide case-insensitively
+        # SAME SCRIPT as .github/workflows/path-case-collisions.yml and
+        # .qontinui/ci.toml's `path-case-collisions` step. This hook is the lane
+        # that matters most, because the defect it catches is one CI cannot see:
+        # `8f053ba47` (PR #1282) had TranscriptStores.tsx tracked beside
+        # transcriptStores.ts, which is fine on a case-sensitive Linux runner and
+        # breaks `import "./TranscriptStores"` on every Windows and macOS box —
+        # where it surfaced as the `tsc-typecheck` hook above refusing EVERY
+        # frontend commit, whatever the diff. Reads the index (`git ls-files`),
+        # so it gives the same answer on either kind of filesystem.
+        #
+        # `always_run` with `pass_filenames: false`: a collision is a property
+        # of the PAIR of tracked paths, and the commit that creates it adds only
+        # the second spelling — which may be a rename, an untouched `.ts` beside
+        # a new `.tsx`, or a directory. No `files:` pattern names that reliably.
+        entry: python scripts/ci/check_path_case_collisions.py
+        language: system
+        pass_filenames: false
+        always_run: true
+
       - id: forbid-fixed-sleeps-in-e2e
         name: forbid fixed sleeps in e2e
         # SAME SCRIPT as .github/workflows/forbid-fixed-sleeps-in-e2e.yml and
