@@ -302,6 +302,46 @@ def test_count_only_accepts_a_complete_collection(tmp_path, capsys):
     assert "collection OK: 3 test files" in capsys.readouterr().err
 
 
+def test_count_only_refuses_a_zero_floor(tmp_path, capsys):
+    """The checking mode must not be satisfiable by a floor of nothing.
+
+    Its one caller derives the floor in shell, and a derived value can arrive as
+    0 (a pipeline reports the exit status of its LAST command, so
+    `find … | wc -l` succeeds even when `find` failed). A zero floor there is a
+    gate that passes vacuously, so the mode refuses it outright rather than
+    trusting every caller to validate.
+    """
+    rc = splitter.main(
+        ["--nodeids", _write(tmp_path, _REAL_SHAPE), "--count-only", "--min-files", "0"]
+    )
+    assert rc == 1
+    assert "requires a positive --min-files" in capsys.readouterr().err
+
+
+def test_count_only_rejects_a_node_id_shortfall(tmp_path, capsys):
+    """The FILE floor alone is loose; the node-id floor is what closes it.
+
+    Measured on the real tree: dropping the 53 heaviest collectable files keeps
+    173 of 231 files — passing a 3/4 file floor — while losing 62% of the test
+    functions. So a collection can satisfy the file floor and still be gutted.
+    """
+    rc = splitter.main(
+        [
+            "--nodeids",
+            _write(tmp_path, _REAL_SHAPE),
+            "--count-only",
+            "--min-files",
+            "3",
+            "--min-nodeids",
+            "99",
+        ]
+    )
+    assert rc == 4
+    err = capsys.readouterr().err
+    assert "TRUNCATED" in err
+    assert "5 node ids (floor 99)" in err
+
+
 def test_count_only_rejects_a_truncated_collection(tmp_path, capsys):
     """The floor's whole purpose: fewer files present than the tree has."""
     rc = splitter.main(
@@ -316,8 +356,8 @@ def test_count_only_rejects_a_truncated_collection(tmp_path, capsys):
     assert rc == 4
     err = capsys.readouterr().err
     assert "TRUNCATED" in err
-    assert "3 distinct test files" in err
-    assert "10 were expected" in err
+    # Both floors are reported, so the message names which one was missed.
+    assert "3 distinct test files (floor 10)" in err
 
 
 def test_the_floor_also_guards_a_real_shard_selection(tmp_path):
@@ -337,9 +377,16 @@ def test_the_floor_also_guards_a_real_shard_selection(tmp_path):
     assert rc == 4
 
 
-def test_the_floor_is_off_by_default(tmp_path):
-    """Absent --min-files, the splitter must not invent a floor of its own."""
-    rc = splitter.main(["--nodeids", _write(tmp_path, _REAL_SHAPE), "--count-only"])
+def test_the_floors_are_off_by_default_on_the_selection_path(tmp_path):
+    """Absent floors, the splitter must not invent one of its own.
+
+    This is the LIBRARY default and it applies to the selection path. The
+    checking mode is deliberately stricter — see
+    `test_count_only_refuses_a_zero_floor`.
+    """
+    rc = splitter.main(
+        ["--nodeids", _write(tmp_path, _REAL_SHAPE), "--shards", "2", "--shard", "1"]
+    )
     assert rc == 0
 
 
@@ -363,6 +410,14 @@ def test_the_collect_step_checks_the_floor_through_the_splitter():
         "collect_ignore (5 of 231 files today), so an exact floor reds a correct "
         "collection, and hardcoding the ignore list here is the drift this "
         "replaced"
+    )
+    assert "--min-nodeids" in run, (
+        "a FILE floor alone is loose: 173 of 231 files can remain while 62% of "
+        "the tests are gone, so the node-id floor must be passed too"
+    )
+    assert 'if [ -z "${expected_files}" ] || [ "${expected_files}" -lt 100 ]' in run, (
+        "the DERIVED floor must be validated: `find … | wc -l` reports wc's exit "
+        "status, so a failed find yields 0 and the tripwire disarms itself"
     )
     # The two NEGATIVE pins run against comment-stripped text. The step's prose
     # deliberately explains why the bash grep and the constant floor were

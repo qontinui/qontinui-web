@@ -146,14 +146,40 @@ def main(argv: list[str] | None = None) -> int:
         ),
     )
     parser.add_argument(
+        "--min-nodeids",
+        type=int,
+        default=0,
+        help=(
+            "fail (exit 4) unless at least this many NODE IDS appear in the "
+            "collection. Counting files alone is not enough: dropping the 53 "
+            "heaviest files leaves 173 of 231 files (a 3/4 file floor passes) "
+            "while losing 62% of the tests"
+        ),
+    )
+    parser.add_argument(
         "--count-only",
         action="store_true",
         help=(
-            "report the collected counts and apply --min-files, then exit "
-            "without selecting a shard"
+            "report the collected counts and apply the floors, then exit "
+            "without selecting a shard; requires a positive --min-files"
         ),
     )
     args = parser.parse_args(argv)
+
+    # `--count-only` exists for ONE caller, the workflow's collect step, and its
+    # entire job is to apply a floor. Permitting a zero floor there would let the
+    # gate pass vacuously if the caller ever computed one badly -- which is
+    # exactly what a `find | wc -l` that fails open does. A library default of 0
+    # (no floor) is fine; getting it by accident in the checking mode is not.
+    if args.count_only and args.min_files < 1:
+        print(
+            "::error::--count-only requires a positive --min-files: its only "
+            f"purpose is to APPLY a floor, and {args.min_files} means no floor "
+            "at all. If the caller derives the floor, validate the derived value "
+            "before passing it.",
+            file=sys.stderr,
+        )
+        return 1
 
     if not args.count_only:
         if args.shards is None or args.shard is None:
@@ -207,11 +233,17 @@ def main(argv: list[str] | None = None) -> int:
     # hardcoded node-id floor is decoration, because a handful of large files
     # clears any plausible number while the collection is missing most of the
     # suite.
-    if len(weights) < args.min_files:
+    # TWO floors, because they catch different truncation shapes and the file
+    # count alone is materially loose: dropping the 53 heaviest collectable files
+    # keeps 173 of 231 files -- passing a 3/4 FILE floor -- while losing 2263 of
+    # 3601 test functions, 62% of the suite. A conftest import error under one
+    # heavy subtree presents most FILES and loses most TESTS, which is precisely
+    # that shape, so the node-id floor is what closes it.
+    if len(weights) < args.min_files or len(nodeids) < args.min_nodeids:
         print(
             f"::error::collection is TRUNCATED: {len(weights)} distinct test "
-            f"files ({len(nodeids)} node ids), but {args.min_files} were "
-            "expected. This is the one shape sharding cannot survive silently - "
+            f"files (floor {args.min_files}) and {len(nodeids)} node ids (floor "
+            f"{args.min_nodeids}). This is the one shape sharding cannot survive silently - "
             "a truncated collection shards cleanly and every shard goes green "
             "while covering only part of the suite. Three causes, in order of "
             "likelihood: the collection really was cut short (read the "
@@ -226,8 +258,8 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.count_only:
         print(
-            f"collection OK: {len(weights)} test files, {len(nodeids)} node ids "
-            f"(floor {args.min_files})",
+            f"collection OK: {len(weights)} test files (floor {args.min_files}), "
+            f"{len(nodeids)} node ids (floor {args.min_nodeids})",
             file=sys.stderr,
         )
         return 0
