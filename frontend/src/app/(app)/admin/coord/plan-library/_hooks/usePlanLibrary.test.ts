@@ -359,9 +359,7 @@ describe("usePlanLibrary — kind correction", () => {
 describe("useDivergentArtifacts", () => {
   it("keeps content drift and kind forks as separate findings", async () => {
     getMock.mockResolvedValue({
-      groups: [
-        { kind: "plan", slug: "s1", variant_count: 2, variants: [] },
-      ],
+      groups: [{ kind: "plan", slug: "s1", variant_count: 2, variants: [] }],
       total: 1,
       kind_forks: [
         {
@@ -484,5 +482,69 @@ describe("useScanRoots", () => {
     // on the evidence of a network failure.
     expect(result.current.data).toBeNull();
     expect(result.current.error).toContain("backend down");
+  });
+});
+
+describe("useScanRoots — a failed reload must not blank, and must not invert", () => {
+  it("keeps the rows a successful load produced when a reload fails", async () => {
+    const page = {
+      state: "reported",
+      detail: null,
+      fresh_within_secs: 2700,
+      count: 1,
+      fresh_count: 1,
+      rows: [{ device_id: "d", state: "measured" }],
+    };
+    getMock.mockResolvedValueOnce(page);
+
+    const { result } = renderHook(() => useScanRoots());
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
+    getMock.mockRejectedValueOnce(new Error("backend down"));
+    await act(async () => {
+      await result.current.reload();
+    });
+
+    // The panel's error copy promises exactly this — "the readings below are
+    // the last ones read and may be stale" — so blanking `data` here would
+    // make that sentence a lie about an empty list.
+    expect(result.current.data).toEqual(page);
+    expect(result.current.error).toContain("backend down");
+  });
+
+  it("a late response never overwrites a newer one", async () => {
+    const slow = {
+      state: "reported",
+      count: 1,
+      fresh_count: 1,
+      rows: [],
+      detail: null,
+      fresh_within_secs: 2700,
+    };
+    const fresh = { ...slow, count: 2 };
+    let releaseSlow: (v: unknown) => void = () => {};
+    getMock
+      .mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            releaseSlow = resolve;
+          })
+      )
+      .mockResolvedValueOnce(fresh);
+
+    const { result } = renderHook(() => useScanRoots());
+    // Second read starts and finishes while the first is still in flight.
+    await act(async () => {
+      void result.current.reload();
+    });
+    await waitFor(() => expect(result.current.data).toEqual(fresh));
+
+    await act(async () => {
+      releaseSlow(slow);
+      await Promise.resolve();
+    });
+
+    // Without the request-id guard the stale page would land last and win.
+    expect(result.current.data).toEqual(fresh);
   });
 });

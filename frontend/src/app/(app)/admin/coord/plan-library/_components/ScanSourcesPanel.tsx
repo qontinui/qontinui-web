@@ -7,52 +7,141 @@ import { useScanRoots } from "../_hooks/usePlanLibrary";
 import { scanRootStateLabel, type ScanRootRow } from "../types";
 
 /**
- * `n` seconds as a short duration. Whole units only — this is a health
- * reading, not a stopwatch, and "2h" is easier to compare across eight rows
- * than "2h 14m 9s".
+ * `n` seconds as a short duration, ROUNDED UP.
+ *
+ * Whole units only — this is a health reading, not a stopwatch, and "2h" is
+ * easier to compare across eight rows than "2h 14m 9s".
+ *
+ * Rounding up rather than down is the load-bearing half. Every use here is an
+ * AGE — how long a device has been silent, how old the ref it measured against
+ * was — so flooring makes a feeder look more current than it is: 23h59m silent
+ * would read `23h`, and 1d23h would read `1d`. The error has to fall on the
+ * conservative side of the claim, which for an age means over-stating it.
  */
 export function shortDuration(secs: number): string {
-  const s = Math.max(0, Math.floor(secs));
+  const s = Math.max(0, Math.ceil(secs));
   if (s < 60) return `${s}s`;
-  if (s < 3600) return `${Math.floor(s / 60)}m`;
-  if (s < 86_400) return `${Math.floor(s / 3600)}h`;
-  return `${Math.floor(s / 86_400)}d`;
+  if (s < 3600) return `${Math.ceil(s / 60)}m`;
+  if (s < 86_400) return `${Math.ceil(s / 3600)}h`;
+  return `${Math.ceil(s / 86_400)}d`;
+}
+
+/**
+ * Is this row's reading a claim about NOW?
+ *
+ * True only when the READ ROUTE'S VERDICT is still `measured`. The route sets
+ * `state: "unknown"` for each of its three rules — the device went silent
+ * (`observation_stale:`), its latest report contradicts the stored reading
+ * (`reading_superseded:`), or the counts are a 0-behind floor (`ref_stale:`) —
+ * and its own row docstring warns that the counts are "served as reported
+ * whatever the verdict", so the numbers survive a verdict that disowns them.
+ * Every present-tense sentence in this file is gated on this.
+ */
+function isCurrent(row: ScanRootRow): boolean {
+  return row.state === "measured";
 }
 
 /**
  * How far this device's scanned tree is from its default branch, in words.
  *
- * Three rules, all of them load-bearing, all of them the reason the backend
- * carries `counts_are_floors` beside the counts rather than just the numbers:
+ * Four rules, all load-bearing, all the reason the backend carries a verdict
+ * and a floors flag beside the raw counts rather than just the numbers:
  *
- * * A `null` count is NOT MEASURED and must never render as `0`. A defaulted
- *   zero is exactly the false "in step" this whole feature exists to remove.
- * * A FLOOR renders as "at least N" — the counts were taken against a ref that
- *   is stale or of unknown age, so they are lower bounds.
- * * Only an EXACT `0` behind may read as "in step". A floor of 0 behind is a
- *   lower bound of nothing, and the backend has already turned that row's
- *   verdict into `unknown` / `ref_stale:`; this function must not contradict
- *   it by printing agreement beside it.
+ * * **A count the verdict disowns is never a present-tense claim.** When
+ *   `state` is not `measured` the counts still arrive — the route serves them
+ *   verbatim — but they describe a past reading, so they are rendered as one
+ *   ("When last measured: …") and the agreement phrasing is withheld entirely.
+ *   Without this a device silent for 2.5 hours whose last reading was 0/0
+ *   rendered "In step with its ref." directly beneath a badge reading
+ *   `Unknown` — a confident present-tense claim of agreement about a feeder
+ *   that has established nothing, which is the exact defect this whole feature
+ *   exists to remove.
+ * * **A `null` count is NOT MEASURED and must never render as `0`** — `behind`
+ *   and `ahead` alike.
+ * * **A FLOOR renders as "at least N"** — the counts were taken against a ref
+ *   that is stale or of unknown age, so they are lower bounds.
+ * * **Only an EXACT `0` behind, on a current verdict, may read "in step".** A
+ *   floor of 0 behind is a lower bound of nothing, and the route has already
+ *   turned that row's verdict into `unknown` / `ref_stale:`.
  */
 export function driftSummary(row: ScanRootRow): string {
   if (row.behind == null) return "Distance not measured.";
   const floor = row.counts_are_floors;
-  if (row.behind === 0 && !floor) {
+  const current = isCurrent(row);
+
+  if (row.behind === 0 && !floor && current) {
+    if (row.ahead == null) return "Not behind its ref; ahead not measured.";
     return row.ahead ? `In step, ${row.ahead} ahead.` : "In step with its ref.";
   }
-  const at = floor ? "At least " : "";
+
+  const at = floor ? "at least " : "";
   const behind = `${at}${row.behind} behind`;
-  const ahead = row.ahead
-    ? `, ${floor ? "at least " : ""}${row.ahead} ahead`
-    : "";
+  const ahead =
+    row.ahead == null
+      ? ", ahead not measured"
+      : row.ahead
+        ? `, ${at}${row.ahead} ahead`
+        : "";
   const floors = floor ? " (lower bounds — the ref itself may be stale)" : "";
-  return `${behind}${ahead}${floors}.`;
+  const clause = `${behind}${ahead}${floors}`;
+
+  // Past tense, and explicitly so, whenever the verdict disowns the numbers.
+  return current
+    ? `${clause.charAt(0).toUpperCase()}${clause.slice(1)}.`
+    : `When last measured: ${clause}.`;
+}
+
+/**
+ * The ref-age sentence, or `null` when there is no age to report.
+ *
+ * Phrased as of the READING, never as of now. `ref_age_secs` was measured at
+ * `observed_at`, so on a row the device has not refreshed in hours "Ref last
+ * known refreshed 2m ago" is a floor rendered as an exact present-tense fact —
+ * the same mistake the counts are guarded against one function up.
+ */
+export function refAgeSummary(row: ScanRootRow): string | null {
+  if (row.ref_age_secs == null) return null;
+  return `Ref was ${shortDuration(row.ref_age_secs)} old at that reading.`;
+}
+
+/**
+ * How visually loud a verdict should be.
+ *
+ * `unknown` gets its own weight. It is the verdict meaning "this row
+ * establishes nothing", and rendering it in the same `secondary` grey as
+ * `not_scanning` — a settled, benign fact — makes the row that needs a second
+ * look read like the row that does not.
+ */
+function stateVariant(state: ScanRootRow["state"]) {
+  if (state === "measured") return "outline" as const;
+  if (state === "unknown") return "warning" as const;
+  return "secondary" as const;
+}
+
+/**
+ * A runner clock far enough from this server's to be worth naming.
+ *
+ * The backend keeps `observed_skew_secs` precisely so a skewed clock is
+ * visible rather than silently aging a live device out or pinning its row, and
+ * it is a write-side refusal past +300 s. Under a minute is ordinary NTP
+ * drift and not worth a line.
+ */
+const SKEW_WORTH_REPORTING_SECS = 60;
+
+function skewSummary(row: ScanRootRow): string | null {
+  const skew = row.observed_skew_secs;
+  if (Math.abs(skew) < SKEW_WORTH_REPORTING_SECS) return null;
+  return skew > 0
+    ? `The reading reached this server ${shortDuration(skew)} after the runner took it — a runner clock behind this one, or a late delivery.`
+    : `The runner's clock is ${shortDuration(-skew)} ahead of this server's.`;
 }
 
 /**
  * One device's row.
  *
- * Keys on `state` — the READ ROUTE'S VERDICT — and never on `reported_state`.
+ * Keys on `state` — the READ ROUTE'S VERDICT — and never on `reported_state`,
+ * and that holds for the prose as well as for the badge: `driftSummary` and
+ * `refAgeSummary` both take the whole row so they can consult the verdict too.
  * When the two disagree the verdict wins and the reported pair is shown BELOW
  * it, labelled as what the device said, so an operator can see both without
  * being able to mistake one for the other. That disagreement is the normal
@@ -63,6 +152,8 @@ export function driftSummary(row: ScanRootRow): string {
 function ScanRootRowView({ row }: { row: ScanRootRow }) {
   const verdictDiffers =
     row.state !== row.reported_state || row.detail !== row.reported_detail;
+  const refAge = refAgeSummary(row);
+  const skew = skewSummary(row);
 
   return (
     <div
@@ -71,13 +162,18 @@ function ScanRootRowView({ row }: { row: ScanRootRow }) {
     >
       <div className="flex flex-wrap items-center gap-2">
         <Badge
-          variant={row.state === "measured" ? "outline" : "secondary"}
+          variant={stateVariant(row.state)}
           className="shrink-0"
           data-testid={`scan-root-state-${row.device_id}`}
         >
           {scanRootStateLabel(row.state)}
         </Badge>
-        <code className="shrink-0 rounded bg-muted px-1.5 py-0.5 text-[10px]">
+        {/* Truncated to fit the row; the full id is on the title so an
+            operator can identify the device without hitting the API. */}
+        <code
+          className="shrink-0 rounded bg-muted px-1.5 py-0.5 text-[10px]"
+          title={row.device_id}
+        >
           {row.device_id.slice(0, 8)}
         </code>
         <span className="truncate text-muted-foreground">
@@ -99,9 +195,7 @@ function ScanRootRowView({ row }: { row: ScanRootRow }) {
       >
         {driftSummary(row)}
         {row.default_ref ? ` Against ${row.default_ref}.` : ""}
-        {row.ref_age_secs != null
-          ? ` Ref last known refreshed ${shortDuration(row.ref_age_secs)} ago.`
-          : ""}
+        {refAge ? ` ${refAge}` : ""}
       </p>
 
       {row.detail && (
@@ -110,6 +204,15 @@ function ScanRootRowView({ row }: { row: ScanRootRow }) {
           data-testid={`scan-root-detail-${row.device_id}`}
         >
           {row.detail}
+        </p>
+      )}
+
+      {skew && (
+        <p
+          className="mt-1 text-[11px] text-muted-foreground"
+          data-testid={`scan-root-skew-${row.device_id}`}
+        >
+          {skew}
         </p>
       )}
 
@@ -156,6 +259,12 @@ export function ScanSourcesPanel() {
   const { data, loading, error } = useScanRoots();
 
   const allQuiet = data != null && data.count > 0 && data.fresh_count === 0;
+  // The empty branch is chosen by the ROWS, not by the top-level `state`.
+  // Today the route only answers `unknown` when it has no rows, but nothing in
+  // the wire type ties the two, and keying on `state` would silently render
+  // "no device has reported" OVER rows that exist — a false absence, which is
+  // the failure this panel is built to avoid rather than to introduce.
+  const empty = data != null && data.rows.length === 0;
 
   return (
     <section
@@ -192,7 +301,7 @@ export function ScanSourcesPanel() {
 
       {loading && !data ? (
         <Skeleton className="mt-4 h-20 w-full" />
-      ) : data == null ? null : data.state === "unknown" ? (
+      ) : data == null ? null : empty ? (
         <p
           className="mt-3 text-xs text-muted-foreground"
           data-testid="scan-sources-none"

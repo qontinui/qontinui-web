@@ -1,18 +1,28 @@
 /**
  * ScanSourcesPanel — the absences it must not render as agreement.
  *
- * The backend spends four rules turning a reading that cannot support a claim
- * about NOW into `state: "unknown"` with a self-naming `detail`. A panel that
- * keyed on `reported_state`, defaulted a `null` count to `0`, or rendered an
- * empty list as "all current" would undo every one of them on the way to the
- * screen — and the operator would see a confident, specific, wrong answer,
- * which is worse than the silence this feature replaced.
+ * The backend spends three rules turning a reading that cannot support a claim
+ * about NOW into `state: "unknown"` with a self-naming `detail`, and then
+ * serves the counts verbatim anyway (its own row docstring: "served as
+ * reported whatever the verdict — a reader keying on `state` does not trust
+ * them when it is `unknown`"). A panel that keyed on `reported_state`,
+ * defaulted a `null` count to `0`, rendered an empty list as "all current", or
+ * — the one that shipped in review and is pinned hardest below — wrote a
+ * present-tense sentence out of counts the verdict had disowned, would undo
+ * every one of those on the way to the screen. The operator would then see a
+ * confident, specific, wrong answer, which is worse than the silence this
+ * feature replaced.
  *
- * So each test below pins one of those, by MUTATION where a mutation exists:
- * flip the bit the rule keys on and the copy must change.
+ * So each test pins one rule, by MUTATION where a mutation exists: flip the
+ * one bit the rule keys on and the copy must change. Fixtures are shapes the
+ * ROUTE can actually emit — `render_row` makes every non-fresh row
+ * `state: "unknown"` with an `observation_stale:` detail, so a fixture that
+ * leaves a silent row `measured` teaches a shape that does not exist and
+ * cannot catch the bug that does.
  *
  * The hook is mocked. Its own behaviour (leaving stale data in place on a
- * failed reload) is a property of `useScanRoots`, not of this rendering.
+ * failed reload, and not letting a late response overwrite a newer one) is a
+ * property of `useScanRoots`, covered in `../_hooks/usePlanLibrary.test.ts`.
  */
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
@@ -26,6 +36,7 @@ vi.mock("../_hooks/usePlanLibrary", () => ({
 import {
   ScanSourcesPanel,
   driftSummary,
+  refAgeSummary,
   shortDuration,
 } from "./ScanSourcesPanel";
 import type { ScanRootListResponse, ScanRootRow } from "../types";
@@ -60,6 +71,47 @@ function row(overrides: Partial<ScanRootRow> = {}): ScanRootRow {
   };
 }
 
+/**
+ * A row the route emits for a device it has not heard from inside the window:
+ * the VERDICT is `unknown` with an `observation_stale:` detail, while the
+ * counts it last reported are served unchanged. `behind: 0` is deliberate —
+ * it is the input on which a verdict-blind renderer says "In step with its
+ * ref." about a feeder that has been silent for hours.
+ */
+function silentRow(overrides: Partial<ScanRootRow> = {}): ScanRootRow {
+  return row({
+    state: "unknown",
+    detail:
+      "observation_stale: last report received 9000 s ago, past the 2700 s " +
+      "freshness window; it reported state 'measured', which says nothing " +
+      "about now",
+    reported_state: "measured",
+    behind: 0,
+    ahead: 0,
+    observation_age_secs: 9000,
+    observation_fresh: false,
+    ...overrides,
+  });
+}
+
+/** The route's second verdict: the device's latest report contradicts the
+ *  stored reading, so the reading is kept and disowned. */
+function supersededRow(overrides: Partial<ScanRootRow> = {}): ScanRootRow {
+  return row({
+    state: "unknown",
+    detail:
+      "reading_superseded: the device's latest report was observed ~21600 s " +
+      "before the stored reading (a clock step-back or a late-delivered " +
+      "report), so the stored reading may not be what it reports now",
+    reported_state: "measured",
+    behind: 0,
+    ahead: 0,
+    last_report_applied: false,
+    last_report_observed_at: "2026-09-11T23:00:00Z",
+    ...overrides,
+  });
+}
+
 function listed(
   rows: ScanRootRow[],
   overrides: Partial<ScanRootListResponse> = {}
@@ -75,15 +127,77 @@ function listed(
   };
 }
 
+interface HookState {
+  data: ScanRootListResponse | null;
+  loading: boolean;
+  error: string | null;
+  reload: () => void;
+}
+
+// Typed, so a key typo (`errors:` for `error:`) is a compile error rather than
+// a test that passes green against a hook state it never built.
 function hookState(
   data: ScanRootListResponse | null,
-  overrides: Record<string, unknown> = {}
-) {
+  overrides: Partial<HookState> = {}
+): HookState {
   return { data, loading: false, error: null, reload: vi.fn(), ...overrides };
 }
 
 beforeEach(() => {
   vi.clearAllMocks();
+});
+
+describe("ScanSourcesPanel — a disowned count is never a present-tense claim", () => {
+  it("REGRESSION: a silent device last read 0/0 must not read 'In step'", () => {
+    useScanRootsMock.mockReturnValue(hookState(listed([silentRow()])));
+    render(<ScanSourcesPanel />);
+
+    const drift = screen.getByTestId(`scan-root-drift-${DEVICE}`);
+    // The whole finding: the badge said Unknown and this sentence said the
+    // feeder agreed with its ref. It is the sentence an operator reads.
+    expect(drift.textContent).not.toMatch(/in step/i);
+    expect(drift.textContent).toContain("When last measured: 0 behind");
+    expect(screen.getByTestId(`scan-root-state-${DEVICE}`).textContent).toBe(
+      "Unknown"
+    );
+  });
+
+  it("REGRESSION: the same leak on the superseded verdict", () => {
+    useScanRootsMock.mockReturnValue(hookState(listed([supersededRow()])));
+    render(<ScanSourcesPanel />);
+
+    const drift = screen.getByTestId(`scan-root-drift-${DEVICE}`);
+    expect(drift.textContent).not.toMatch(/in step/i);
+    expect(drift.textContent).toContain("When last measured");
+    expect(
+      screen.getByTestId(`scan-root-detail-${DEVICE}`).textContent
+    ).toContain("reading_superseded:");
+  });
+
+  it("MUTATION: the identical counts on a CURRENT verdict do read 'In step'", () => {
+    // One bit apart from `silentRow()`: the verdict. The sentence must flip.
+    useScanRootsMock.mockReturnValue(
+      hookState(
+        listed([row({ behind: 0, ahead: 0, observation_age_secs: 30 })])
+      )
+    );
+    render(<ScanSourcesPanel />);
+
+    expect(
+      screen.getByTestId(`scan-root-drift-${DEVICE}`).textContent
+    ).toContain("In step with its ref.");
+  });
+
+  it("does not present the ref age as if it were current", () => {
+    useScanRootsMock.mockReturnValue(hookState(listed([silentRow()])));
+    render(<ScanSourcesPanel />);
+
+    const drift = screen.getByTestId(`scan-root-drift-${DEVICE}`);
+    // `ref_age_secs` was measured at `observed_at`, 2.5h ago — "refreshed 2m
+    // ago" would be a floor rendered as an exact present-tense fact.
+    expect(drift.textContent).toContain("old at that reading");
+    expect(drift.textContent).not.toMatch(/refreshed 2m ago/);
+  });
 });
 
 describe("ScanSourcesPanel — no rows is UNKNOWN, never 'all current'", () => {
@@ -99,11 +213,10 @@ describe("ScanSourcesPanel — no rows is UNKNOWN, never 'all current'", () => {
     );
     render(<ScanSourcesPanel />);
 
-    const none = screen.getByTestId("scan-sources-none");
-    expect(none.textContent).toContain("not established");
-    // The load-bearing half: nothing on screen claims the feeders are current.
+    expect(screen.getByTestId("scan-sources-none").textContent).toContain(
+      "not established"
+    );
     expect(screen.queryByTestId("scan-sources-summary")).toBeNull();
-    expect(document.body.textContent).not.toMatch(/In step/i);
   });
 
   it("still says so when the backend sends no detail to quote", () => {
@@ -118,30 +231,30 @@ describe("ScanSourcesPanel — no rows is UNKNOWN, never 'all current'", () => {
       "is not established"
     );
   });
+
+  it("the empty branch is chosen by the ROWS, not the top-level state", () => {
+    // A future backend that answered `unknown` WITH rows must not have those
+    // rows replaced by "no device has reported" — that is a false absence.
+    useScanRootsMock.mockReturnValue(
+      hookState(
+        listed([silentRow()], { state: "unknown", detail: "some roll-up" })
+      )
+    );
+    render(<ScanSourcesPanel />);
+
+    expect(screen.queryByTestId("scan-sources-none")).toBeNull();
+    expect(screen.getByTestId(`scan-root-${DEVICE}`)).toBeTruthy();
+  });
 });
 
 describe("ScanSourcesPanel — the verdict wins over what the device reported", () => {
-  it("shows the stale verdict, not the `measured` the device last sent", () => {
-    const stale = row({
-      state: "unknown",
-      detail:
-        "observation_stale: last report received 9000 s ago, past the 2700 s " +
-        "freshness window; it reported state 'measured', which says nothing " +
-        "about now",
-      reported_state: "measured",
-      observation_age_secs: 9000,
-      observation_fresh: false,
-    });
-    useScanRootsMock.mockReturnValue(hookState(listed([stale])));
+  it("shows the stale verdict and labels the reported one as the device's", () => {
+    useScanRootsMock.mockReturnValue(hookState(listed([silentRow()])));
     render(<ScanSourcesPanel />);
 
-    expect(screen.getByTestId(`scan-root-state-${DEVICE}`).textContent).toBe(
-      "Unknown"
-    );
     expect(
       screen.getByTestId(`scan-root-detail-${DEVICE}`).textContent
     ).toContain("observation_stale:");
-    // The reported value is shown, and shown as the DEVICE's claim.
     expect(
       screen.getByTestId(`scan-root-reported-${DEVICE}`).textContent
     ).toContain("The device reported");
@@ -150,7 +263,27 @@ describe("ScanSourcesPanel — the verdict wins over what the device reported", 
     );
   });
 
-  it("MUTATION: the same row fresh and applied renders the reported state", () => {
+  it("surfaces the reported pair when only the DETAIL differs", () => {
+    // Both `unknown`, so a state-only comparison would hide what the device
+    // said about its own unknown — the half a reader needs to act on it.
+    useScanRootsMock.mockReturnValue(
+      hookState(
+        listed([
+          silentRow({
+            reported_state: "unknown",
+            reported_detail: "unknown: the plans dir does not resolve",
+          }),
+        ])
+      )
+    );
+    render(<ScanSourcesPanel />);
+
+    expect(
+      screen.getByTestId(`scan-root-reported-${DEVICE}`).textContent
+    ).toContain("the plans dir does not resolve");
+  });
+
+  it("MUTATION: a fresh applied row shows no reported line at all", () => {
     useScanRootsMock.mockReturnValue(hookState(listed([row()])));
     render(<ScanSourcesPanel />);
 
@@ -164,8 +297,7 @@ describe("ScanSourcesPanel — the verdict wins over what the device reported", 
   });
 
   it("names every feeder quiet when count > 0 and fresh_count === 0", () => {
-    const quiet = row({ observation_fresh: false, observation_age_secs: 9000 });
-    useScanRootsMock.mockReturnValue(hookState(listed([quiet])));
+    useScanRootsMock.mockReturnValue(hookState(listed([silentRow()])));
     render(<ScanSourcesPanel />);
 
     expect(screen.getByTestId("scan-sources-summary").textContent).toContain(
@@ -177,12 +309,57 @@ describe("ScanSourcesPanel — the verdict wins over what the device reported", 
     useScanRootsMock.mockReturnValue(hookState(listed([row()])));
     render(<ScanSourcesPanel />);
 
-    expect(
-      screen.getByTestId("scan-sources-summary").textContent
-    ).not.toContain("gone quiet");
-    expect(screen.getByTestId("scan-sources-summary").textContent).toContain(
-      "1 of 1 device reported"
+    const summary = screen.getByTestId("scan-sources-summary").textContent;
+    expect(summary).not.toContain("gone quiet");
+    expect(summary).toContain("1 of 1 device reported");
+  });
+});
+
+describe("ScanSourcesPanel — row detail", () => {
+  it("names a clock skew worth reporting, and stays quiet under a minute", () => {
+    useScanRootsMock.mockReturnValue(
+      hookState(listed([row({ observed_skew_secs: 600 })]))
     );
+    const { unmount } = render(<ScanSourcesPanel />);
+    expect(
+      screen.getByTestId(`scan-root-skew-${DEVICE}`).textContent
+    ).toContain("after the runner took it");
+    unmount();
+
+    useScanRootsMock.mockReturnValue(
+      hookState(listed([row({ observed_skew_secs: 3 })]))
+    );
+    render(<ScanSourcesPanel />);
+    expect(screen.queryByTestId(`scan-root-skew-${DEVICE}`)).toBeNull();
+  });
+
+  it("falls back through source_repo → plans_dir → an explicit absence", () => {
+    useScanRootsMock.mockReturnValue(
+      hookState(listed([row({ source_repo: null })]))
+    );
+    const { unmount } = render(<ScanSourcesPanel />);
+    expect(screen.getByTestId(`scan-root-${DEVICE}`).textContent).toContain(
+      "/w/qontinui-dev-notes/plans"
+    );
+    unmount();
+
+    useScanRootsMock.mockReturnValue(
+      hookState(listed([row({ source_repo: null, plans_dir: null })]))
+    );
+    render(<ScanSourcesPanel />);
+    expect(screen.getByTestId(`scan-root-${DEVICE}`).textContent).toContain(
+      "scan root not reported"
+    );
+  });
+
+  it("carries the full device id even though the label is truncated", () => {
+    useScanRootsMock.mockReturnValue(hookState(listed([row()])));
+    render(<ScanSourcesPanel />);
+
+    const code = screen
+      .getByTestId(`scan-root-${DEVICE}`)
+      .querySelector("code[title]");
+    expect(code?.getAttribute("title")).toBe(DEVICE);
   });
 });
 
@@ -193,9 +370,11 @@ describe("ScanSourcesPanel — a failed read is UNKNOWN, not zero", () => {
     );
     render(<ScanSourcesPanel />);
 
-    const err = screen.getByTestId("scan-sources-error");
-    expect(err.textContent).toContain("unknown, not current");
+    expect(screen.getByTestId("scan-sources-error").textContent).toContain(
+      "unknown, not current"
+    );
     expect(screen.queryByTestId("scan-sources-summary")).toBeNull();
+    expect(screen.queryByTestId("scan-sources-none")).toBeNull();
   });
 
   it("keeps the last rows and flags them as possibly stale", () => {
@@ -209,29 +388,49 @@ describe("ScanSourcesPanel — a failed read is UNKNOWN, not zero", () => {
     );
     expect(screen.getByTestId(`scan-root-${DEVICE}`)).toBeTruthy();
   });
+
+  it("shows a skeleton on the first load, not an empty state", () => {
+    useScanRootsMock.mockReturnValue(hookState(null, { loading: true }));
+    render(<ScanSourcesPanel />);
+
+    // "No device has reported" while the first read is still in flight would
+    // be the same false absence in a different costume.
+    expect(screen.queryByTestId("scan-sources-none")).toBeNull();
+    expect(screen.queryByTestId("scan-sources-summary")).toBeNull();
+  });
 });
 
 describe("driftSummary — a null count is not measured, and a floor is not exact", () => {
   it("never renders an unmeasured distance as 0", () => {
-    const text = driftSummary(
-      row({
-        state: "not_scanning",
-        behind: null,
-        ahead: null,
-        ref_age_secs: null,
-      })
+    expect(
+      driftSummary(
+        row({
+          state: "not_scanning",
+          behind: null,
+          ahead: null,
+          ref_age_secs: null,
+        })
+      )
+    ).toBe("Distance not measured.");
+  });
+
+  it("does not default a null `ahead` to zero either", () => {
+    // The asymmetry the review caught: `behind: null` was guarded, `ahead`
+    // was truthiness-tested, so `null` and `0` read identically.
+    expect(driftSummary(row({ behind: 0, ahead: null }))).toBe(
+      "Not behind its ref; ahead not measured."
     );
-    expect(text).toBe("Distance not measured.");
-    expect(text).not.toMatch(/\b0\b/);
+    expect(driftSummary(row({ behind: 3, ahead: null }))).toBe(
+      "3 behind, ahead not measured."
+    );
+    // MUTATION: a real zero says nothing about "not measured".
+    expect(driftSummary(row({ behind: 3, ahead: 0 }))).toBe("3 behind.");
   });
 
   it("renders a floor as a lower bound", () => {
-    expect(
-      driftSummary(row({ behind: 254, counts_are_floors: true }))
-    ).toContain("At least 254 behind");
-    expect(
-      driftSummary(row({ behind: 254, counts_are_floors: true }))
-    ).toContain("lower bounds");
+    const floor = driftSummary(row({ behind: 254, counts_are_floors: true }));
+    expect(floor).toContain("At least 254 behind");
+    expect(floor).toContain("lower bounds");
   });
 
   it("MUTATION: the same counts exact drop the hedge", () => {
@@ -240,17 +439,17 @@ describe("driftSummary — a null count is not measured, and a floor is not exac
     expect(exact.toLowerCase()).not.toContain("at least");
   });
 
-  it("only an EXACT zero behind reads as in step", () => {
+  it("only an EXACT zero behind, on a current verdict, reads as in step", () => {
     expect(driftSummary(row({ behind: 0, ahead: 0 }))).toBe(
       "In step with its ref."
     );
-    // The floor of the same numbers is the row the backend already turned into
-    // `unknown` / `ref_stale:`. This must not print agreement beside it.
+    // A floor of the same numbers is the row the route already turned into
+    // `unknown` / `ref_stale:`, so both guards refuse it.
     const floor = driftSummary(
-      row({ behind: 0, ahead: 0, counts_are_floors: true })
+      row({ behind: 0, ahead: 0, counts_are_floors: true, state: "unknown" })
     );
     expect(floor).not.toMatch(/in step/i);
-    expect(floor).toContain("At least 0 behind");
+    expect(floor).toContain("at least 0 behind");
   });
 
   it("carries ahead alongside behind, hedged the same way", () => {
@@ -260,10 +459,33 @@ describe("driftSummary — a null count is not measured, and a floor is not exac
     expect(driftSummary(row({ behind: 0, ahead: 2 }))).toBe(
       "In step, 2 ahead."
     );
+    expect(
+      driftSummary(row({ behind: 3, ahead: 2, counts_are_floors: true }))
+    ).toContain("At least 3 behind, at least 2 ahead");
+  });
+});
+
+describe("refAgeSummary", () => {
+  it("is always phrased as of the reading, never as of now", () => {
+    expect(refAgeSummary(row({ ref_age_secs: 120 }))).toBe(
+      "Ref was 2m old at that reading."
+    );
+  });
+
+  it("is absent, not zero, when the age is unknown", () => {
+    expect(refAgeSummary(row({ ref_age_secs: null }))).toBeNull();
   });
 });
 
 describe("shortDuration", () => {
+  it("rounds UP, so an age is never under-stated", () => {
+    // Flooring would make every feeder look more current than it is — 23h59m
+    // silent reading as "23h", 1d23h as "1d".
+    expect(shortDuration(86_340)).toBe("24h");
+    expect(shortDuration(169_200)).toBe("2d");
+    expect(shortDuration(90)).toBe("2m");
+  });
+
   it("renders whole units and never a negative", () => {
     expect(shortDuration(0)).toBe("0s");
     expect(shortDuration(-5)).toBe("0s");
