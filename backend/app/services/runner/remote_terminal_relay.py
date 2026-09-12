@@ -1803,6 +1803,11 @@ class RemoteTerminalRelay:
         """Translate one TARGET frame for this source; False when it is not ours."""
         await self._reap_expired(session)
         frame_type = frame.get("type")
+        # Declared once for the whole dispatch. The correlated arms below narrow
+        # it to non-Optional behind their own `is None` guards, which would
+        # otherwise fix the inferred type at `_Attachment` and reject the
+        # terminal-routed arms that legitimately assign `_Attachment | None`.
+        att: _Attachment | None
 
         if frame_type == "terminal_attached":
             # Correlated by the MINTED id and bound to the device the grant
