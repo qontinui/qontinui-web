@@ -154,6 +154,17 @@ def test_a_ts_leaf_pair_that_collides_as_a_path_is_reported_once() -> None:
     paths = gate.path_collisions(tracked)
     assert paths == [["a/Foo.ts", "a/foo.ts"]]
     assert gate._outside(gate.module_stem_collisions(tracked), paths) == []
+    # A third spelling joining the stem group does not resurrect it: renaming
+    # `a/Foo.ts` still fixes all of it.
+    tracked = ["a/Foo.ts", "a/foo.ts", "a/foo.tsx"]
+    paths = gate.path_collisions(tracked)
+    assert gate._outside(gate.module_stem_collisions(tracked), paths) == []
+
+
+def test_an_upper_cased_index_file_still_makes_its_directory_a_stem() -> None:
+    assert gate.module_stem_collisions(["a/Foo/INDEX.TS", "a/foo.ts"]) == [
+        ["a/Foo/", "a/foo.ts"]
+    ]
 
 
 def test_a_leaf_path_collision_inside_a_clean_directory_names_the_leaves() -> None:
