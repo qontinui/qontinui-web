@@ -4467,9 +4467,41 @@ async def get_claude_accounts(
               "account_selection_mode": "least_usage"  // manual | least_usage | null
             }
           ],
+          "prepaid": [
+            {
+              "device_id": "<uuid>",
+              "provider": "deepseek",
+              "label": "DeepSeek",
+              "currency": "USD",
+              "balance_micros": 19280000,   // 1e-6 units; null = NOT REPORTED
+              "granted_micros": 5000000,
+              "topped_up_micros": 14280000,
+              "is_available": true,
+              "error": null,               // provider message when the probe failed
+              "stale": false,
+              "updated_at": "<rfc3339>"
+            }
+          ],
           "table_provisioned": true,
-          "columns_provisioned": true
+          "columns_provisioned": true,
+          "prepaid_table_provisioned": true
         }
+
+    ``prepaid`` is a **different object family** from ``accounts`` and lives in
+    its own ``coord.prepaid_balances`` table, keyed ``(tenant, device,
+    provider)``. It rides this feed rather than a route of its own so the fleet
+    keeps one reporting cadence and one staleness model for a machine's AI
+    account posture — plan
+    ``2026-09-12-prepaid-balance-is-a-fleet-fact-with-no-ingest``, which also
+    records why these are NOT two extra columns on ``claude_account_usage``
+    (that table's ``weekly_utilization`` is ``NOT NULL DEFAULT 0``, so every
+    prepaid row would read as a Claude account at 0%).
+
+    **A ``null`` money field is NOT zero.** It means the device's runner build
+    predates the report, or its probe errored — UNKNOWN. A real ``0`` means the
+    account is out of credit, which is a very different thing to show an
+    operator. ``error IS NOT NULL`` is the "these numbers are not a reading"
+    predicate.
 
     **An absent roster is UNKNOWN, not "no accounts".** Three distinct
     states have to stay distinguishable, because a false "this machine has
@@ -4505,6 +4537,19 @@ async def get_claude_accounts(
 
     accounts = payload.get("accounts")
     accounts = list(accounts) if isinstance(accounts, list) else []
+
+    # Prepaid (pay-as-you-go) provider balances ride the SAME coord feed rather
+    # than a second route — see plan
+    # `2026-09-12-prepaid-balance-is-a-fleet-fact-with-no-ingest`. They are a
+    # DIFFERENT object family from `accounts` (keyed by provider, e.g.
+    # `deepseek`, with a money balance instead of a utilization fraction) and
+    # live in their own `coord.prepaid_balances` table, so they are surfaced as
+    # their own key with their own provisioning flag. Filtered by `device_id`
+    # here with the same client-side rule as `accounts`, for the same reason:
+    # coord's read route is tenant-scoped and takes no device filter.
+    prepaid = payload.get("prepaid")
+    prepaid = list(prepaid) if isinstance(prepaid, list) else []
+
     if device_id is not None:
         wanted = str(device_id)
         accounts = [
@@ -4512,12 +4557,26 @@ async def get_claude_accounts(
             for row in accounts
             if isinstance(row, dict) and str(row.get("device_id")) == wanted
         ]
+        prepaid = [
+            row
+            for row in prepaid
+            if isinstance(row, dict) and str(row.get("device_id")) == wanted
+        ]
 
     return {
         "accounts": accounts,
+        "prepaid": prepaid,
         # `.get` with no default: absent stays None (unknown), never True.
         "table_provisioned": payload.get("table_provisioned"),
         "columns_provisioned": payload.get("columns_provisioned"),
+        # Same three-state contract as `table_provisioned`, one table over:
+        # `False` means `coord.prepaid_balances` does not exist on this
+        # deployment (alembic `coord_prepaid_balances_01` unapplied), `None`
+        # means coord itself predates the field and we observed nothing. An
+        # empty `prepaid` with the flag `True` is the only "genuinely no
+        # prepaid provider is configured" reading. Consumers must not render
+        # `None` as `False`.
+        "prepaid_table_provisioned": payload.get("prepaid_table_provisioned"),
     }
 
 
