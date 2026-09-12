@@ -147,6 +147,17 @@ describe("resolutionCandidates", () => {
     ]);
   });
 
+  it("breaks a band/priority/created_at tie on policy_id, as coord's ORDER BY does", () => {
+    // Identical except policy_id, passed in REVERSE order: only the final
+    // `policy_id ASC` tie-break can put them the right way round.
+    const second = rule({ gate_class: "c", policy_id: "p-b" });
+    const first = rule({ gate_class: "c", policy_id: "p-a" });
+    const ordered = resolutionCandidates([second, first]).map(
+      (c) => c.row.policy_id
+    );
+    expect(ordered).toEqual(["p-a", "p-b"]);
+  });
+
   it("keeps a repo-scoped SYSTEM row — the system band has no repo predicate", () => {
     // resolver.rs: `OR ($4::uuid IS NOT NULL AND tenant_id = $4)` — the system
     // arm carries no repo clause at all, so a repo-scoped built-in still
