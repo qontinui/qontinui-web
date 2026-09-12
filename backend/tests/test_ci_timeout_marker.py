@@ -74,10 +74,13 @@ MARKER_WORKFLOWS = [
 
 TRIPWIRE_STEP_NAME = "Warn if the job is approaching its budget"
 
-# The tripwire is carried by every job on the 90-minute backend-suite budget:
-# the non-gating producer it was written for, and `backend-ci`'s `test` job,
-# which runs the byte-identical suite as the GATING lane. Asserted against a
-# glob, exactly like MARKER_WORKFLOWS.
+# The tripwire is carried by both jobs that run this backend suite: the
+# non-gating producer it was written for (the whole suite, 90-minute budget) and
+# `backend-ci`'s `test` job, the GATING lane, which since the 2026-09-12 shard
+# split runs ONE SHARD's file list on a 45-minute per-shard budget. The budgets
+# deliberately differ now, which is why every assertion below reads each
+# carrier's own `timeout-minutes` rather than a shared constant. Asserted
+# against a glob, exactly like MARKER_WORKFLOWS.
 TRIPWIRE_WORKFLOWS = [
     "backend-ci.yml",
     "backend-coverage-producer.yml",
