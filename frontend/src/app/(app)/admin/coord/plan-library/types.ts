@@ -341,6 +341,12 @@ export type {
  * plan-library body sync scans. Mirrors `ScanRootState` in
  * `backend/app/schemas/plan_library_scan_roots.py`, which mirrors the runner's
  * `ScanDivergenceState`.
+ *
+ * Pinned, not merely mirrored: `types.wire.test.ts` compares it with the
+ * `state` and `reported_state` enums in the committed OpenAPI snapshots, which
+ * backend CI regenerates from the live schema and refuses to let drift. A state
+ * added on the backend therefore fails a frontend test, rather than reaching
+ * this console as a value nothing here was written for.
  */
 export const SCAN_ROOT_STATES = [
   "measured",
@@ -434,7 +440,7 @@ export interface ScanRootRow {
  * the empty case as agreement and this panel must not either.
  */
 export interface ScanRootListResponse {
-  state: "reported" | "unknown";
+  state: ScanRootListState;
   detail: string | null;
   fresh_within_secs: number;
   count: number;
@@ -442,3 +448,81 @@ export interface ScanRootListResponse {
   fresh_count: number;
   rows: ScanRootRow[];
 }
+
+/**
+ * The list route's top-level verdict. `unknown` is the no-rows answer.
+ *
+ * A const rather than an inline union for the same reason
+ * [`SCAN_ROOT_STATES`] is one: a union does not exist at runtime, so no test
+ * could compare it with the backend's enum.
+ */
+export const SCAN_ROOT_LIST_STATES = ["reported", "unknown"] as const;
+
+export type ScanRootListState = (typeof SCAN_ROOT_LIST_STATES)[number];
+
+/**
+ * Which fields of a wire type admit `null` — as a VALUE that tsc checks
+ * against the type, so that a test can compare it with the backend's schema.
+ *
+ * `ScanRootRow` and `ScanRootListResponse` are hand-written mirrors of the
+ * backend's response models, and an interface does not exist at runtime, so
+ * no test can compare one with anything. This mapped type is the bridge. A
+ * value annotated `WireNullability<T>` must name EVERY key of `T` (a missing
+ * one is an error) and no other (the excess-property check), and must set each
+ * to `true` exactly when the field admits `null`. An OPTIONAL field maps to
+ * `never`, which no value satisfies: every field on these responses is
+ * required on the wire, and `-?` would otherwise let a stray `?` through.
+ *
+ * `npm run type-check` holds each witness to its interface — and it only can
+ * because the witnesses live HERE. That config excludes `*.test.ts`, so a
+ * type-level assertion written in a test file is checked by nothing at all.
+ * `types.wire.test.ts` then holds each witness to the committed OpenAPI
+ * snapshots. The chain is interface = witness = snapshot = backend, and each
+ * link is enforced by CI rather than by a reviewer noticing.
+ *
+ * The witnesses are read by that test and nothing else; tree-shaking drops
+ * them from every bundle.
+ */
+export type WireNullability<T> = {
+  [K in keyof T]-?: Record<never, never> extends Pick<T, K>
+    ? never
+    : null extends T[K]
+      ? true
+      : false;
+};
+
+/** `ScanRootRow`'s nullability, as a value. See [`WireNullability`]. */
+export const SCAN_ROOT_ROW_NULLABLE: WireNullability<ScanRootRow> = {
+  device_id: false,
+  state: false,
+  detail: true,
+  reported_state: false,
+  reported_detail: true,
+  plans_dir: true,
+  repo_root: true,
+  source_repo: true,
+  default_ref: true,
+  ref_sha: true,
+  head_sha: true,
+  behind: true,
+  ahead: true,
+  ref_age_secs: true,
+  counts_are_floors: false,
+  observed_at: false,
+  received_at: false,
+  last_report_applied: false,
+  last_report_observed_at: false,
+  observed_skew_secs: false,
+  observation_age_secs: false,
+  observation_fresh: false,
+};
+
+/** `ScanRootListResponse`'s nullability, as a value. See [`WireNullability`]. */
+export const SCAN_ROOT_LIST_NULLABLE: WireNullability<ScanRootListResponse> = {
+  state: false,
+  detail: true,
+  fresh_within_secs: false,
+  count: false,
+  fresh_count: false,
+  rows: false,
+};

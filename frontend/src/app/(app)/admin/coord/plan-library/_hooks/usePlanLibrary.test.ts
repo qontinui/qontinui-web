@@ -451,6 +451,69 @@ describe("useCaptureHealth — a failed read is not a corpus of zero", () => {
   });
 });
 
+describe("useCaptureHealth — a wired reload must not blank, and must not invert", () => {
+  const census = {
+    total: 1,
+    doors: [
+      {
+        captured_by: "runner_scan",
+        count: 1,
+        known: true,
+        first_at: null,
+        last_touched_at: null,
+      },
+    ],
+  };
+
+  it("keeps the doors a successful load produced when a reload fails", async () => {
+    getMock.mockResolvedValueOnce(census);
+
+    const { result } = renderHook(() => useCaptureHealth());
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
+    getMock.mockRejectedValueOnce(new Error("backend down"));
+    await act(async () => {
+      await result.current.reload();
+    });
+
+    // The panel's error copy promises "the counts below are the last ones read
+    // and may be stale" — blanking `data` would make that a lie about nothing.
+    expect(result.current.data).toEqual(census);
+    expect(result.current.error).toContain("backend down");
+  });
+
+  it("a late response never overwrites a newer one", async () => {
+    const fresh = { ...census, total: 2 };
+    let failSlow: (e: unknown) => void = () => {};
+    getMock
+      .mockImplementationOnce(
+        () =>
+          new Promise((_resolve, reject) => {
+            failSlow = reject;
+          })
+      )
+      .mockResolvedValueOnce(fresh);
+
+    const { result } = renderHook(() => useCaptureHealth());
+    // The second read starts and lands while the first is still out.
+    await act(async () => {
+      void result.current.reload();
+    });
+    await waitFor(() => expect(result.current.data).toEqual(fresh));
+
+    await act(async () => {
+      failSlow(new Error("backend down"));
+      await Promise.resolve();
+    });
+
+    // Without the request-id guard the superseded read's FAILURE lands last
+    // and paints "may be stale" over counts that were just refreshed.
+    expect(result.current.data).toEqual(fresh);
+    expect(result.current.error).toBeNull();
+    expect(result.current.loading).toBe(false);
+  });
+});
+
 describe("useScanRoots", () => {
   it("reads the scan-roots door and preserves the UNKNOWN no-rows shape", async () => {
     getMock.mockResolvedValue({

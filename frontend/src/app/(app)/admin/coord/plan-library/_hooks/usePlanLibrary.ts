@@ -288,17 +288,30 @@ export function useCaptureHealth() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  // The same request-id guard [`useScanRoots`] carries, for the same reason:
+  // `http-client.ts` overwrites the caller's AbortController signal, so two
+  // in-flight reads cannot be cancelled and BOTH will write. `reload` is wired
+  // to a button now, so a second read can overlap the first — and a late
+  // failure landing after a newer success paints "the counts below may be
+  // stale" over counts that are current.
+  const requestId = useRef(0);
+
   const load = useCallback(async () => {
+    const id = ++requestId.current;
+    const mine = () => requestId.current === id;
     try {
       setLoading(true);
-      setData(
-        await httpClient.get<CaptureHealthResponse>(`${API}/capture-health`)
+      const next = await httpClient.get<CaptureHealthResponse>(
+        `${API}/capture-health`
       );
+      if (!mine()) return;
+      setData(next);
       setError(null);
     } catch (err) {
+      if (!mine()) return;
       setError(message(err, "Failed to load capture health"));
     } finally {
-      setLoading(false);
+      if (mine()) setLoading(false);
     }
   }, []);
 
@@ -314,8 +327,8 @@ export function useCaptureHealth() {
  *
  * Deliberately the same shape as [`useCaptureHealth`] — one read, no
  * polling — because the two panels answer halves of one question ("where is
- * the corpus coming from" / "how current is what it was read from") and an
- * operator refreshes the page to re-ask either.
+ * the corpus coming from" / "how current is what it was read from"), and an
+ * operator re-asks either with the Refresh on its panel.
  *
  * On failure `data` is left at whatever was last read and `error` is set, so
  * the panel can say the rows may be stale rather than blanking them. The
