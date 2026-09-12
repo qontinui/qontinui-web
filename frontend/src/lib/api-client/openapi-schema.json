@@ -83315,6 +83315,58 @@
         ]
       }
     },
+    "/api/v1/operations/coord/cognito/groups/{group_name}/blast-radius": {
+      "get": {
+        "description": "What deleting this group would take down \u2014 the DELETE's own verdict,\nread ahead of time so the confirmation dialog shows it BEFORE the click.\n\nSuperuser-gated like the delete it previews. Read-only, so no audit row\nand no rate limit, matching the sibling ``\u2026/users`` read.\n\nThis exists because the dashboard's pre-delete preview used to be derived\nfrom coord's tenant-scoped mappings LIST \u2014 the same read the guards\nthemselves were derived from until 2026-08-28, and wrong in the same way\n(see the module comment above :data:`HOME_GROUP_SUFFIX`). After the guards\nmoved to the pool-wide verdict the backend could see MORE than the dialog:\nthe dialog said \"no coord tenant mappings reference this group\" and the\ndelete then 409'd. Nothing was destroyed, but a preview that contradicts\nthe guard it previews is one an operator learns to ignore. The dialog now\nreads THIS route, which is the SAME reader the delete runs\n(:func:`_coord_group_blast_radius`), so the two cannot disagree except by\nthe state changing between the read and the click \u2014 and the delete still\nre-runs the check itself.\n\nSame fail-closed contract as the delete: a coord failure is a **502**\n``mapping_check_unavailable`` / ``mapping_check_unreadable``, never a\nzeroed verdict. The caller renders that as UNKNOWN. The response is the\nparsed verdict with the same partial disclosure the 409 details carry \u2014\nown-tenant slugs named (sorted, deduplicated, via :func:`_display_slugs`),\nevery other tenant an integer \u2014 plus the two totals, so nothing here\ncan be read as \"the list is the whole blast radius\".",
+        "operationId": "api_v1_operations_coord_cognito_groups_group_name_blast_radius_get",
+        "parameters": [
+          {
+            "description": "Cognito group name.",
+            "in": "path",
+            "name": "group_name",
+            "required": true,
+            "schema": {
+              "description": "Cognito group name.",
+              "title": "Group Name",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Get Cognito Group Blast Radius Api V1 Operations Coord Cognito Groups  Group Name  Blast Radius Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Get Cognito Group Blast Radius",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
     "/api/v1/operations/coord/cognito/groups/{group_name}/users": {
       "delete": {
         "description": "Remove a user (resolved by email) from a Cognito group.\nSuperuser-gated, rate-limited, audited.\n\n404 if no user has that email; 409 if the email is ambiguous (>1 match);\n400 if the email or the group name is one Cognito rejects as malformed.",
