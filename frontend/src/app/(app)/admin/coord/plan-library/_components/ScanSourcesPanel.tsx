@@ -37,6 +37,31 @@ export function shortDuration(secs: number): string {
 }
 
 /**
+ * `n` seconds rendered EXACTLY, with no hedge.
+ *
+ * For a value the server knows precisely — the freshness window, which is a
+ * configured constant, not a measurement — where [`shortDuration`]'s `+` would
+ * hedge a number nobody is uncertain about. (And hedge it in the wrong
+ * direction: for a WINDOW the useful bound is the opposite of an age's.)
+ */
+export function exactDuration(secs: number): string {
+  const s = Math.max(0, Math.floor(secs));
+  if (s < 60) return `${s}s`;
+  const parts: string[] = [];
+  const take = (size: number, suffix: string) => {
+    const n = Math.floor(s / size) % (size === 86_400 ? Infinity : 24);
+    if (n) parts.push(`${n}${suffix}`);
+  };
+  take(86_400, "d");
+  take(3600, "h");
+  const mins = Math.floor(s / 60) % 60;
+  if (mins) parts.push(`${mins}m`);
+  const rem = s % 60;
+  if (rem) parts.push(`${rem}s`);
+  return parts.join(" ");
+}
+
+/**
  * The one `unknown` rule that leaves the reading CURRENT, named by its own
  * `detail` prefix rather than inferred.
  *
@@ -54,30 +79,42 @@ export function shortDuration(secs: number): string {
 const REF_STALE_PREFIX = "ref_stale:";
 
 /**
- * Is the STORED reading still the device's current word?
+ * What this panel is entitled to say about WHEN the stored reading applies.
  *
- * This gates TENSE, and it is deliberately not `state === "measured"`. The
- * route's three `unknown` rules do not all mean the same thing about the
- * reading's age, and collapsing them mis-describes one of the three:
+ * Three values, not two, and the third is the point. Tense is deliberately not
+ * `state === "measured"`: the route's three `unknown` rules do not agree about
+ * the reading's age, and collapsing them mis-describes one of the three.
  *
- * * `observation_stale:` — the device went silent. The reading is old. Past.
- * * `reading_superseded:` — its latest report contradicts the stored reading,
- *   so the stored one is by construction not its latest word. Past.
- * * `ref_stale:` — a 0-behind FLOOR. The device reported it moments ago and is
- *   perfectly live; what is stale is the REF it measured against. Writing
- *   "When last measured" here would invent a silence that is not there and
- *   point the operator at the wrong device.
+ * * `"current"` — the reading is the device's latest word. Either the verdict
+ *   is `measured`, or it is `unknown` for the one reason compatible with
+ *   currency: `ref_stale:`, a 0-behind FLOOR, where the device reported
+ *   moments ago and is perfectly live — what is stale is the REF it measured
+ *   against. Present tense.
+ * * `"stale"` — the device went silent (`observation_stale:`), or its latest
+ *   report contradicts the stored reading (`reading_superseded:`), so the
+ *   stored one is by construction not its latest word. Past tense.
+ * * `"unknown"` — the route disowned the reading for a reason THIS BUILD DOES
+ *   NOT RECOGNISE. Unreachable today, and reachable the moment a fourth
+ *   `unknown` rule is added that implies neither silence nor supersession nor
+ *   a floor.
  *
- * So tense keys on the two clocks that actually say whether the reading is the
- * device's latest word, AND — for a row the verdict has disowned — on the
- * route naming a reason that is compatible with it still being current. The
- * separate question "may this sentence claim agreement?" keys on the verdict,
- * in [`driftSummary`] below.
+ * That third value exists because the two-valued version was wrong in both
+ * directions and only one of them was obvious. Calling such a row `current`
+ * prints its counts in the present tense with no hedge — round 1's defect,
+ * re-entered through the door round 1's fix left open. Calling it `stale`
+ * prints "When last measured" beside an age label reading "heard 5s ago": an
+ * invented silence, on the same row, one line apart, pointing an operator at
+ * the wrong box — which is the precise harm this function's `ref_stale` arm
+ * exists to prevent. Hedging without asserting a silence is the only arm that
+ * is conservative in both directions, and it is what `"unknown"` renders.
  */
-function readingIsCurrent(row: ScanRootRow): boolean {
-  if (!row.observation_fresh || !row.last_report_applied) return false;
-  if (row.state === "measured") return true;
-  return (row.detail ?? "").startsWith(REF_STALE_PREFIX);
+type ReadingCurrency = "current" | "stale" | "unknown";
+
+function readingCurrency(row: ScanRootRow): ReadingCurrency {
+  if (!row.observation_fresh || !row.last_report_applied) return "stale";
+  if (row.state === "measured") return "current";
+  if ((row.detail ?? "").startsWith(REF_STALE_PREFIX)) return "current";
+  return "unknown";
 }
 
 /**
@@ -108,8 +145,8 @@ function readingIsCurrent(row: ScanRootRow): boolean {
 export function driftSummary(row: ScanRootRow): string {
   if (row.behind == null) return "Distance not measured.";
   const floor = row.counts_are_floors;
-  const current = readingIsCurrent(row);
-  const mayClaimAgreement = row.state === "measured" && current;
+  const currency = readingCurrency(row);
+  const mayClaimAgreement = row.state === "measured" && currency === "current";
 
   if (row.behind === 0 && !floor && mayClaimAgreement) {
     if (row.ahead == null) return "Not behind its ref; ahead not measured.";
@@ -121,19 +158,23 @@ export function driftSummary(row: ScanRootRow): string {
   const ahead =
     row.ahead == null
       ? ", ahead not measured"
-      : row.ahead || !current
-        ? // On the past-tense path a measured `0 ahead` is kept rather than
-          // dropped: the present-tense path says it through "In step with its
-          // ref", and nothing says it here unless it is written out.
+      : row.ahead || currency !== "current"
+        ? // Off the present-tense path a measured `0 ahead` is kept rather
+          // than dropped: the present-tense path says it through "In step
+          // with its ref", and nothing says it here unless it is written out.
           `, ${at}${row.ahead} ahead`
         : "";
   const floors = floor ? " (lower bounds — the ref itself may be stale)" : "";
   const clause = `${behind}${ahead}${floors}`;
+  const sentence = `${clause.charAt(0).toUpperCase()}${clause.slice(1)}.`;
 
-  // Past tense, and explicitly so, whenever the verdict disowns the numbers.
-  return current
-    ? `${clause.charAt(0).toUpperCase()}${clause.slice(1)}.`
-    : `When last measured: ${clause}.`;
+  if (currency === "current") return sentence;
+  // "stale" asserts the reading is old, which is established. "unknown" must
+  // not: the device may have reported seconds ago, and the age label beside
+  // this sentence will say so.
+  return currency === "stale"
+    ? `When last measured: ${clause}.`
+    : `As reported: ${clause}.`;
 }
 
 /**
@@ -187,10 +228,12 @@ const SKEW_WORTH_REPORTING_SECS = 60;
  * the backend names THREE causes and the third one co-occurs with a verdict
  * already on screen: on a superseded row `received_at` is the DECLINED
  * report's arrival while `observed_at` belongs to the older stored reading, so
- * a large positive skew there is bookkeeping rather than a clock problem.
- * Offering "a runner clock behind this one, or a late delivery" directly above
- * a detail line reading `reading_superseded:` would be two explanations, both
- * wrong.
+ * a large positive skew there is bookkeeping ON ITS OWN. Offering "a runner
+ * clock behind this one, or a late delivery" directly above a detail line
+ * reading `reading_superseded:` would be two explanations, both wrong. The
+ * replacement does not go the other way and DENY a clock problem either: the
+ * two are not separable from `observed_skew_secs` alone, so the sentence says
+ * the supersession accounts for the gap without claiming nothing else does.
  */
 function skewSummary(row: ScanRootRow): string | null {
   const skew = row.observed_skew_secs;
@@ -200,7 +243,7 @@ function skewSummary(row: ScanRootRow): string | null {
   }
   return row.last_report_applied
     ? `This reading reached the server ${shortDuration(skew)} after the runner took it — a runner clock behind this one, or a late delivery.`
-    : `This reading is ${shortDuration(skew)} older than the device's last contact, which is what a superseded reading looks like rather than a clock problem.`;
+    : `This reading is ${shortDuration(skew)} older than the device's last contact, which a superseded reading produces on its own — with or without a clock problem on top.`;
 }
 
 /**
@@ -300,17 +343,26 @@ function ScanRootRowView({ row }: { row: ScanRootRow }) {
 }
 
 /**
- * "as of HH:MM:SS" — the moment every age on this panel was measured.
+ * "Read at …" — the moment every age on this panel was measured.
  *
- * Small, and the whole reason the ages above it can be trusted. Without it a
+ * Small, and the whole reason the ages above it can be trusted: without it a
  * figure computed once keeps being read as though it were computed now.
+ *
+ * The DATE is shown whenever the read was not today, which is not a detail.
+ * The case this stamp exists for is a console left open overnight, and that is
+ * exactly the case a bare `toLocaleTimeString()` cannot express — "Read at
+ * 22:14:03" is indistinguishable from 22:14:03 yesterday, so the stamp would
+ * fail precisely where it was needed. Same-day reads keep the short form,
+ * because that is every read an operator makes while actually working.
  */
 function ReadAt({ at }: { at: Date | null }) {
   if (!at) return null;
+  const today = new Date().toDateString() === at.toDateString();
   return (
     <span data-testid="scan-sources-read-at">
       {" "}
-      Read at {at.toLocaleTimeString()}; the ages above are as of then.
+      Read at {today ? at.toLocaleTimeString() : at.toLocaleString()}; the ages
+      above are as of then.
     </span>
   );
 }
@@ -432,7 +484,7 @@ export function ScanSourcesPanel() {
           >
             {data.fresh_count} of {data.count} device
             {data.count === 1 ? "" : "s"} reported within the last{" "}
-            {shortDuration(data.fresh_within_secs)}.
+            {exactDuration(data.fresh_within_secs)}.
             {allQuiet
               ? " Every feeder has gone quiet — none of these readings says anything about now."
               : ""}
