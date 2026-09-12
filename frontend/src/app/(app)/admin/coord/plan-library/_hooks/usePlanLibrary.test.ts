@@ -499,6 +499,8 @@ describe("useScanRoots — a failed reload must not blank, and must not invert",
 
     const { result } = renderHook(() => useScanRoots());
     await waitFor(() => expect(result.current.loading).toBe(false));
+    const firstStamp = result.current.fetchedAt;
+    expect(firstStamp).toBeInstanceOf(Date);
 
     getMock.mockRejectedValueOnce(new Error("backend down"));
     await act(async () => {
@@ -510,6 +512,13 @@ describe("useScanRoots — a failed reload must not blank, and must not invert",
     // make that sentence a lie about an empty list.
     expect(result.current.data).toEqual(page);
     expect(result.current.error).toContain("backend down");
+    // AND the stamp must not move. The panel renders "Read at HH:MM:SS; the
+    // ages above are as of then" from it, so advancing it on a FAILED read
+    // would print a fresh timestamp over rows fetched minutes earlier — a
+    // stale reading relabelled as current, which is the defect this whole
+    // feature exists to remove. Moving `setFetchedAt` into the catch block
+    // ships exactly that, and without this assertion the suite stays green.
+    expect(result.current.fetchedAt).toEqual(firstStamp);
   });
 
   it("a late response never overwrites a newer one", async () => {
@@ -538,6 +547,7 @@ describe("useScanRoots — a failed reload must not blank, and must not invert",
       void result.current.reload();
     });
     await waitFor(() => expect(result.current.data).toEqual(fresh));
+    const freshStamp = result.current.fetchedAt;
 
     await act(async () => {
       releaseSlow(slow);
@@ -546,5 +556,17 @@ describe("useScanRoots — a failed reload must not blank, and must not invert",
 
     // Without the request-id guard the stale page would land last and win.
     expect(result.current.data).toEqual(fresh);
+    // The stamp is written in the same guarded block, so a discarded response
+    // must not leave its timestamp behind over the data that did win.
+    expect(result.current.fetchedAt).toEqual(freshStamp);
+  });
+
+  it("has no stamp before the first read lands", async () => {
+    // A stamp with no reading behind it is the confident default the panel
+    // refuses to render; the hook must not invent one at mount.
+    getMock.mockImplementationOnce(() => new Promise(() => {}));
+    const { result } = renderHook(() => useScanRoots());
+    expect(result.current.fetchedAt).toBeNull();
+    expect(result.current.data).toBeNull();
   });
 });

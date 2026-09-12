@@ -36,6 +36,7 @@ vi.mock("../_hooks/usePlanLibrary", () => ({
 import {
   ScanSourcesPanel,
   driftSummary,
+  exactDuration,
   refAgeSummary,
   shortDuration,
 } from "./ScanSourcesPanel";
@@ -182,23 +183,32 @@ describe("ScanSourcesPanel — a disowned count is never a present-tense claim",
     ).toContain("reading_superseded:");
   });
 
-  it("MUTATION: the same row heard from again does read 'In step'", () => {
-    // Literally one field apart from `silentRow()` — the freshness bit the
-    // tense test keys on. Everything else, counts included, is identical.
+  it("MUTATION: what freshness moves is the AGE label and the TENSE", () => {
+    // Route-faithful pair. `render_row` couples freshness to the verdict — a
+    // non-fresh row is always `unknown` with an `observation_stale:` detail —
+    // so the honest mutation is between two rows the route can actually emit,
+    // not a `silentRow` with its freshness bit flipped (which would claim to
+    // be fresh while carrying a staleness reason, a shape no response has).
+    const read = () => ({
+      drift: screen.getByTestId(`scan-root-drift-${DEVICE}`).textContent,
+      age: screen.getByTestId(`scan-root-age-${DEVICE}`).textContent,
+    });
+
+    useScanRootsMock.mockReturnValue(hookState(listed([silentRow()])));
+    const first = render(<ScanSourcesPanel />);
+    const silent = read();
+    first.unmount();
+
     useScanRootsMock.mockReturnValue(
-      hookState(listed([silentRow({ observation_fresh: true })]))
+      hookState(listed([row({ behind: 0, ahead: 0 })]))
     );
     render(<ScanSourcesPanel />);
+    const fresh = read();
 
-    // Still `state: "unknown"`, so no agreement claim…
-    expect(
-      screen.getByTestId(`scan-root-drift-${DEVICE}`).textContent
-    ).not.toMatch(/in step/i);
-    // …but no longer past tense either: the reading IS the device's latest.
-    // (`silentRow`'s detail is `observation_stale:`, which is not a reason
-    // compatible with currency, so this still reads as past — pinned below.)
-    const plainMeasured = driftSummary(row({ behind: 0, ahead: 0 }));
-    expect(plainMeasured).toBe("In step with its ref.");
+    expect(silent.age).toContain("silent");
+    expect(fresh.age).toContain("heard");
+    expect(silent.drift).toContain("When last measured: 0 behind");
+    expect(fresh.drift).toContain("In step with its ref.");
   });
 
   it("does not present the ref age as if it were current", () => {
@@ -660,7 +670,10 @@ describe("skewSummary — a stored skew is never a claim about the clock now", (
     render(<ScanSourcesPanel />);
 
     const skew = screen.getByTestId(`scan-root-skew-${DEVICE}`).textContent;
-    expect(skew).toContain("superseded reading looks like");
+    expect(skew).toContain("a superseded reading produces on its own");
+    // …and it does not go the other way and DENY a clock problem either: the
+    // two are not separable from `observed_skew_secs` alone.
+    expect(skew).toContain("with or without a clock problem");
     expect(skew).not.toContain("late delivery");
   });
 
@@ -694,7 +707,11 @@ describe("readingIsCurrent — the reason is read, not re-derived", () => {
       })
     );
     expect(exotic).not.toMatch(/in step/i);
-    expect(exotic).toContain("When last measured");
+    // …and does NOT assert a silence: this device reported seconds ago, and
+    // "When last measured" beside a "heard 5s ago" label would be the same
+    // false implication in the other direction.
+    expect(exotic).toContain("As reported:");
+    expect(exotic).not.toContain("When last measured");
   });
 
   it("MUTATION: the recognised `ref_stale:` reason does stay present tense", () => {
@@ -711,5 +728,127 @@ describe("readingIsCurrent — the reason is read, not re-derived", () => {
       })
     );
     expect(refStale).not.toContain("When last measured");
+  });
+});
+
+describe("the unrecognised-reason arm hedges WITHOUT asserting a silence", () => {
+  it("says 'As reported', not 'When last measured', on a live device", () => {
+    // The two-valued version was wrong in both directions and only one was
+    // obvious. Calling such a row current prints its counts present-tense with
+    // no hedge (round 1's defect). Calling it stale prints "When last
+    // measured" one line above an age label reading "heard 5s ago" — an
+    // invented silence on the same row, pointing an operator at the wrong box,
+    // which is the harm the `ref_stale` arm exists to prevent.
+    useScanRootsMock.mockReturnValue(
+      hookState(
+        listed([
+          row({
+            state: "unknown",
+            detail: "plans_dir_moved: a rule this build has never seen",
+            behind: 254,
+            ahead: 0,
+            observation_age_secs: 5,
+            observation_fresh: true,
+            last_report_applied: true,
+          }),
+        ])
+      )
+    );
+    render(<ScanSourcesPanel />);
+
+    const drift = screen.getByTestId(`scan-root-drift-${DEVICE}`).textContent;
+    const age = screen.getByTestId(`scan-root-age-${DEVICE}`).textContent;
+    expect(drift).toContain("As reported: 254 behind");
+    expect(drift).not.toContain("When last measured");
+    expect(drift).not.toMatch(/in step/i);
+    // The row must not contradict itself: it says "heard 5s ago" beside it.
+    expect(age).toContain("heard 5s ago");
+  });
+
+  it("MUTATION: a recognised stale reason DOES assert the silence", () => {
+    expect(driftSummary(silentRow({ behind: 254 }))).toContain(
+      "When last measured"
+    );
+  });
+
+  it("MUTATION: the `ref_stale:` prefix keeps a fresh row present-tense", () => {
+    // THE WIRE CONTRACT. This prefix is spelled in TypeScript and produced in
+    // Python, across a repo boundary no compiler crosses; the backend half is
+    // pinned by `test_the_ref_stale_prefix_is_what_the_route_actually_emits`
+    // in `backend/tests/test_plan_scan_root_state_vocabulary.py`. Reword the
+    // route's detail to `ref_stale(0/0):` and every such row silently flips to
+    // the hedged arm on a live device — so both halves are pinned, and this is
+    // the half that lives here.
+    const refStale = driftSummary(
+      row({
+        state: "unknown",
+        detail: "ref_stale: 0/0 counts against a stale ref are a lower bound",
+        behind: 0,
+        ahead: 0,
+        counts_are_floors: true,
+        ref_age_secs: null,
+      })
+    );
+    expect(refStale).toContain("At least 0 behind");
+    expect(refStale).not.toContain("As reported");
+    expect(refStale).not.toContain("When last measured");
+  });
+});
+
+describe("exactDuration — a window is known precisely and carries no hedge", () => {
+  it("renders the freshness window without shortDuration's `+`", () => {
+    // `shortDuration`'s `+` means "at least", which is right for an age and
+    // wrong for a configured constant nobody is uncertain about — and hedged
+    // in the opposite direction from the one a window would want.
+    expect(exactDuration(2700)).toBe("45m");
+    expect(exactDuration(3700)).toBe("1h 1m 40s");
+    expect(shortDuration(3700)).toBe("1h+");
+  });
+
+  it("covers the units it is used across", () => {
+    expect(exactDuration(0)).toBe("0s");
+    expect(exactDuration(59)).toBe("59s");
+    expect(exactDuration(3600)).toBe("1h");
+    expect(exactDuration(90_000)).toBe("1d 1h");
+  });
+
+  it("is what the summary line renders", () => {
+    useScanRootsMock.mockReturnValue(hookState(listed([row()])));
+    render(<ScanSourcesPanel />);
+    expect(screen.getByTestId("scan-sources-summary").textContent).toContain(
+      "within the last 45m."
+    );
+  });
+});
+
+describe("ReadAt — the overnight case it exists for", () => {
+  it("shows the DATE when the read was not today", () => {
+    // The stamp's motivating case is a console left open overnight, which is
+    // exactly the case a bare time cannot express: "Read at 22:14:03" is
+    // indistinguishable from 22:14:03 yesterday.
+    const yesterday = new Date(Date.now() - 26 * 3600 * 1000);
+    useScanRootsMock.mockReturnValue(
+      hookState(listed([row()]), { fetchedAt: yesterday })
+    );
+    render(<ScanSourcesPanel />);
+
+    const stamp = screen.getByTestId("scan-sources-read-at").textContent ?? "";
+    expect(stamp).toContain(yesterday.toLocaleString());
+    // MUTATION guard: the short form alone would not carry the date.
+    expect(stamp).not.toBe(
+      ` Read at ${yesterday.toLocaleTimeString()}; the ages above are as of then.`
+    );
+  });
+
+  it("keeps the short form for a read made today", () => {
+    const earlier = new Date(Date.now() - 5 * 60 * 1000);
+    useScanRootsMock.mockReturnValue(
+      hookState(listed([row()]), { fetchedAt: earlier })
+    );
+    render(<ScanSourcesPanel />);
+
+    expect(screen.getByTestId("scan-sources-read-at").textContent).toContain(
+      `Read at ${earlier.toLocaleTimeString()};`
+    );
   });
 });

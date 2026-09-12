@@ -349,12 +349,19 @@ export function useScanRoots() {
     const mine = () => requestId.current === id;
     try {
       setLoading(true);
+      // Taken BEFORE the await, not after. The server computed the ages in
+      // this response at some point after the request left, so stamping the
+      // moment it LANDED would make every reading look up to one round trip
+      // fresher than it is. On this fleet that round trip has been sampled in
+      // seconds, not milliseconds, so it is not always negligible — and
+      // erring early is the honest side for an age.
+      const requestedAt = new Date();
       const next = await httpClient.get<ScanRootListResponse>(
         `${API}/scan-roots`
       );
       if (!mine()) return;
       setData(next);
-      setFetchedAt(new Date());
+      setFetchedAt(requestedAt);
       setError(null);
     } catch (err) {
       if (!mine()) return;
