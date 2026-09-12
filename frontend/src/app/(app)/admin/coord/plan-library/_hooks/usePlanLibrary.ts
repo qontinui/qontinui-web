@@ -325,6 +325,13 @@ export function useCaptureHealth() {
  */
 export function useScanRoots() {
   const [data, setData] = useState<ScanRootListResponse | null>(null);
+  //: Wall-clock at which `data` arrived. The route's `observation_age_secs`,
+  //: `observation_fresh` and `fresh_count` are server-computed deltas FROZEN
+  //: at that instant, and this hook does not poll — so without a stamp a
+  //: console left open overnight keeps rendering "heard 30s ago". That is the
+  //: very defect this feature exists to remove, reappearing one level up, at
+  //: the panel instead of the row. The panel renders this beside the summary.
+  const [fetchedAt, setFetchedAt] = useState<Date | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -334,8 +341,7 @@ export function useScanRoots() {
   // The inversion that matters is on the error state — a late failure paints
   // "the readings below are the last ones read and may be stale" over rows
   // that are in fact fresh, and a late success clears a banner that was
-  // telling the truth. Nothing calls `reload` today; the guard is here so the
-  // first caller that wires a refresh button does not inherit that.
+  // telling the truth.
   const requestId = useRef(0);
 
   const load = useCallback(async () => {
@@ -348,6 +354,7 @@ export function useScanRoots() {
       );
       if (!mine()) return;
       setData(next);
+      setFetchedAt(new Date());
       setError(null);
     } catch (err) {
       if (!mine()) return;
@@ -361,5 +368,5 @@ export function useScanRoots() {
     load();
   }, [load]);
 
-  return { data, loading, error, reload: load };
+  return { data, fetchedAt, loading, error, reload: load };
 }

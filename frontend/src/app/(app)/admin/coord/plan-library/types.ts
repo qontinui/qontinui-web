@@ -368,10 +368,11 @@ export function scanRootStateLabel(state: string): string {
  *
  * The distinction this type must never collapse — the same one
  * `CoordLinkState` and `CoordPrState` carry above — is `state` vs
- * `reported_state`. `state` is the backend's VERDICT and is the only field a
- * reader may key on: it is `"unknown"` whenever the reading cannot support a
- * claim about NOW, even though the device reported `"measured"`. Three rules
- * produce that, in precedence order, each naming itself in `detail`:
+ * `reported_state`. `state` is the backend's VERDICT, and it is the field that
+ * decides WHAT MAY BE CLAIMED: it is `"unknown"` whenever the reading cannot
+ * support a claim about NOW, even though the device reported `"measured"`.
+ * Three rules produce that, in precedence order, each naming itself in
+ * `detail`:
  *
  * * `observation_stale:` — nothing received from the device inside
  *   `fresh_within_secs`. A device that went quiet has established nothing.
@@ -384,6 +385,15 @@ export function scanRootStateLabel(state: string): string {
  *
  * `reported_state` / `reported_detail` keep what the device actually sent, so
  * the panel can show both without a reader mistaking one for the other.
+ *
+ * A SECOND question has a different answer, and conflating the two is a live
+ * defect rather than a nicety: what TENSE may a claim be made in? That is
+ * decided by `observation_fresh` and `last_report_applied`, NOT by `state` —
+ * because `ref_stale` is a verdict of `unknown` on a row that is perfectly
+ * fresh. The device reported seconds ago; what is stale is the ref it measured
+ * against. A reader that took `state` as the answer to both would write "when
+ * last measured" over a live device and send an operator after the wrong box.
+ * `ScanSourcesPanel`'s `readingIsCurrent` is the worked example.
  */
 export interface ScanRootRow {
   device_id: string;

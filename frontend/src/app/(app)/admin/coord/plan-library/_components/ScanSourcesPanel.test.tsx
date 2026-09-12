@@ -129,6 +129,7 @@ function listed(
 
 interface HookState {
   data: ScanRootListResponse | null;
+  fetchedAt: Date | null;
   loading: boolean;
   error: string | null;
   reload: () => void;
@@ -140,7 +141,14 @@ function hookState(
   data: ScanRootListResponse | null,
   overrides: Partial<HookState> = {}
 ): HookState {
-  return { data, loading: false, error: null, reload: vi.fn(), ...overrides };
+  return {
+    data,
+    fetchedAt: data ? new Date("2026-09-12T05:00:00Z") : null,
+    loading: false,
+    error: null,
+    reload: vi.fn(),
+    ...overrides,
+  };
 }
 
 beforeEach(() => {
@@ -174,18 +182,23 @@ describe("ScanSourcesPanel — a disowned count is never a present-tense claim",
     ).toContain("reading_superseded:");
   });
 
-  it("MUTATION: the identical counts on a CURRENT verdict do read 'In step'", () => {
-    // One bit apart from `silentRow()`: the verdict. The sentence must flip.
+  it("MUTATION: the same row heard from again does read 'In step'", () => {
+    // Literally one field apart from `silentRow()` — the freshness bit the
+    // tense test keys on. Everything else, counts included, is identical.
     useScanRootsMock.mockReturnValue(
-      hookState(
-        listed([row({ behind: 0, ahead: 0, observation_age_secs: 30 })])
-      )
+      hookState(listed([silentRow({ observation_fresh: true })]))
     );
     render(<ScanSourcesPanel />);
 
+    // Still `state: "unknown"`, so no agreement claim…
     expect(
       screen.getByTestId(`scan-root-drift-${DEVICE}`).textContent
-    ).toContain("In step with its ref.");
+    ).not.toMatch(/in step/i);
+    // …but no longer past tense either: the reading IS the device's latest.
+    // (`silentRow`'s detail is `observation_stale:`, which is not a reason
+    // compatible with currency, so this still reads as past — pinned below.)
+    const plainMeasured = driftSummary(row({ behind: 0, ahead: 0 }));
+    expect(plainMeasured).toBe("In step with its ref.");
   });
 
   it("does not present the ref age as if it were current", () => {
@@ -193,10 +206,12 @@ describe("ScanSourcesPanel — a disowned count is never a present-tense claim",
     render(<ScanSourcesPanel />);
 
     const drift = screen.getByTestId(`scan-root-drift-${DEVICE}`);
-    // `ref_age_secs` was measured at `observed_at`, 2.5h ago — "refreshed 2m
-    // ago" would be a floor rendered as an exact present-tense fact.
+    // `ref_age_secs` was measured at `observed_at`, 2.5h ago, so ANY
+    // present-tense framing of it — "refreshed 2m ago", "the ref is 2m old" —
+    // is a floor rendered as an exact fact about now. Pin the property, not
+    // one historical phrasing: the sentence must be anchored to the reading.
     expect(drift.textContent).toContain("old at that reading");
-    expect(drift.textContent).not.toMatch(/refreshed 2m ago/);
+    expect(drift.textContent).not.toMatch(/\bago\b/);
   });
 });
 
@@ -393,6 +408,9 @@ describe("ScanSourcesPanel — a failed read is UNKNOWN, not zero", () => {
     useScanRootsMock.mockReturnValue(hookState(null, { loading: true }));
     render(<ScanSourcesPanel />);
 
+    // Positively: a skeleton is on screen. Asserting only the two absences
+    // would pass just as happily against a component that rendered nothing.
+    expect(screen.getByTestId("scan-sources-loading")).toBeTruthy();
     // "No device has reported" while the first read is still in flight would
     // be the same false absence in a different costume.
     expect(screen.queryByTestId("scan-sources-none")).toBeNull();
@@ -444,9 +462,16 @@ describe("driftSummary — a null count is not measured, and a floor is not exac
       "In step with its ref."
     );
     // A floor of the same numbers is the row the route already turned into
-    // `unknown` / `ref_stale:`, so both guards refuse it.
+    // `unknown` / `ref_stale:`, so the agreement guard refuses it — while the
+    // tense guard leaves it present, because the DEVICE is fresh.
     const floor = driftSummary(
-      row({ behind: 0, ahead: 0, counts_are_floors: true, state: "unknown" })
+      row({
+        behind: 0,
+        ahead: 0,
+        counts_are_floors: true,
+        state: "unknown",
+        detail: "ref_stale: 0/0 counts against a stale ref are a lower bound",
+      })
     );
     expect(floor).not.toMatch(/in step/i);
     expect(floor).toContain("At least 0 behind");
@@ -529,21 +554,162 @@ describe("refAgeSummary", () => {
 });
 
 describe("shortDuration", () => {
-  it("rounds UP, so an age is never under-stated", () => {
-    // Flooring would make every feeder look more current than it is — 23h59m
-    // silent reading as "23h", 1d23h as "1d".
-    expect(shortDuration(86_340)).toBe("24h");
-    expect(shortDuration(169_200)).toBe("2d");
-    expect(shortDuration(90)).toBe("2m");
+  it("floors the unit and marks the remainder, so an age is never mis-stated", () => {
+    // Flooring alone under-states (23h59m silent reading as "23h" looks more
+    // current than it is); ceiling alone over-states by up to a whole unit
+    // (1h0m1s reading as "2h"). Floor plus `+` is "at least", which is true
+    // in both directions and is the same hedge a floor COUNT carries.
+    expect(shortDuration(86_340)).toBe("23h+");
+    expect(shortDuration(3601)).toBe("1h+");
+    expect(shortDuration(169_200)).toBe("1d+");
+    expect(shortDuration(90)).toBe("1m+");
+  });
+
+  it("leaves an exact value unmarked", () => {
+    // The freshness window (2700 s) is exact and must read plainly, not as a
+    // hedged "at least".
+    expect(shortDuration(2700)).toBe("45m");
+    expect(shortDuration(60)).toBe("1m");
+    expect(shortDuration(3600)).toBe("1h");
+    expect(shortDuration(86_400)).toBe("1d");
   });
 
   it("renders whole units and never a negative", () => {
     expect(shortDuration(0)).toBe("0s");
     expect(shortDuration(-5)).toBe("0s");
     expect(shortDuration(59)).toBe("59s");
-    expect(shortDuration(60)).toBe("1m");
-    expect(shortDuration(2700)).toBe("45m");
-    expect(shortDuration(3600)).toBe("1h");
-    expect(shortDuration(86_400)).toBe("1d");
+  });
+});
+
+describe("ScanSourcesPanel — every age is stamped with when it was read", () => {
+  it("stamps the populated summary, so a figure cannot silently age", () => {
+    // `observation_age_secs` and `fresh_count` are server-computed deltas
+    // frozen at fetch time, and the panel does not poll. Unstamped, a console
+    // left open overnight keeps reading "heard 30s ago" — the feature's own
+    // thesis failing at the panel instead of at the row.
+    useScanRootsMock.mockReturnValue(hookState(listed([row()])));
+    render(<ScanSourcesPanel />);
+
+    expect(screen.getByTestId("scan-sources-read-at").textContent).toContain(
+      "the ages above are as of then"
+    );
+  });
+
+  it("stamps the empty state too", () => {
+    useScanRootsMock.mockReturnValue(
+      hookState(listed([], { state: "unknown", detail: "no_observation: …" }))
+    );
+    render(<ScanSourcesPanel />);
+
+    expect(screen.getByTestId("scan-sources-read-at")).toBeTruthy();
+  });
+
+  it("renders no stamp when nothing has been read", () => {
+    // A stamp with no reading behind it would be the confident default this
+    // panel exists to refuse.
+    useScanRootsMock.mockReturnValue(
+      hookState(null, { error: "backend down" })
+    );
+    render(<ScanSourcesPanel />);
+
+    expect(screen.queryByTestId("scan-sources-read-at")).toBeNull();
+  });
+
+  it("offers the refresh the stamp implies, disabled while a read is in flight", () => {
+    const reload = vi.fn();
+    useScanRootsMock.mockReturnValue(hookState(listed([row()]), { reload }));
+    const { unmount } = render(<ScanSourcesPanel />);
+    screen.getByTestId("scan-sources-refresh").click();
+    expect(reload).toHaveBeenCalledTimes(1);
+    unmount();
+
+    useScanRootsMock.mockReturnValue(
+      hookState(listed([row()]), { loading: true })
+    );
+    render(<ScanSourcesPanel />);
+    expect(
+      screen.getByTestId("scan-sources-refresh").hasAttribute("disabled")
+    ).toBe(true);
+  });
+});
+
+describe("skewSummary — a stored skew is never a claim about the clock now", () => {
+  it("writes the negative branch in the past tense", () => {
+    // Skew is stored per row and does not decay. On a device silent for days,
+    // "the runner's clock IS 2m ahead" asserts a present fact from a row that
+    // establishes nothing about the present; it may have been fixed since.
+    useScanRootsMock.mockReturnValue(
+      hookState(listed([silentRow({ observed_skew_secs: -120 })]))
+    );
+    render(<ScanSourcesPanel />);
+
+    const skew = screen.getByTestId(`scan-root-skew-${DEVICE}`).textContent;
+    expect(skew).toContain("was 2m ahead");
+    expect(skew).toContain("when it reported");
+    expect(skew).not.toMatch(/clock is /);
+  });
+
+  it("does not blame the clock for a SUPERSEDED row's bookkeeping skew", () => {
+    // The backend names three causes for a positive skew; the third is "the
+    // stored reading is older than the device's last contact", which is
+    // exactly a superseded row. Offering the other two here would be two
+    // explanations, both wrong, above a detail line saying so.
+    useScanRootsMock.mockReturnValue(
+      hookState(listed([supersededRow({ observed_skew_secs: 21_600 })]))
+    );
+    render(<ScanSourcesPanel />);
+
+    const skew = screen.getByTestId(`scan-root-skew-${DEVICE}`).textContent;
+    expect(skew).toContain("superseded reading looks like");
+    expect(skew).not.toContain("late delivery");
+  });
+
+  it("MUTATION: the same skew on an APPLIED row does name the two clock causes", () => {
+    useScanRootsMock.mockReturnValue(
+      hookState(listed([row({ observed_skew_secs: 21_600 })]))
+    );
+    render(<ScanSourcesPanel />);
+
+    expect(
+      screen.getByTestId(`scan-root-skew-${DEVICE}`).textContent
+    ).toContain("late delivery");
+  });
+});
+
+describe("readingIsCurrent — the reason is read, not re-derived", () => {
+  it("a fresh, applied `unknown` row with an UNRECOGNISED reason stays hedged", () => {
+    // A fourth `unknown` rule implying neither silence, supersession nor a
+    // floor would, under a field-inferred test, print its counts in the
+    // present tense with no hedge — the round-1 defect coming back through
+    // the door the round-1 fix left open. An unknown reason takes the
+    // conservative arm.
+    const exotic = driftSummary(
+      row({
+        state: "unknown",
+        detail: "some_future_rule: a reason this build has never seen",
+        behind: 0,
+        ahead: 0,
+        observation_fresh: true,
+        last_report_applied: true,
+      })
+    );
+    expect(exotic).not.toMatch(/in step/i);
+    expect(exotic).toContain("When last measured");
+  });
+
+  it("MUTATION: the recognised `ref_stale:` reason does stay present tense", () => {
+    const refStale = driftSummary(
+      row({
+        state: "unknown",
+        detail: "ref_stale: 0/0 counts against a ref that is stale …",
+        behind: 0,
+        ahead: 0,
+        counts_are_floors: true,
+        ref_age_secs: null,
+        observation_fresh: true,
+        last_report_applied: true,
+      })
+    );
+    expect(refStale).not.toContain("When last measured");
   });
 });

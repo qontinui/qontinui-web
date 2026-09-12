@@ -1,30 +1,57 @@
 "use client";
 
-import { AlertTriangle, GitBranch } from "lucide-react";
+import { AlertTriangle, GitBranch, RefreshCw } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useScanRoots } from "../_hooks/usePlanLibrary";
 import { scanRootStateLabel, type ScanRootRow } from "../types";
 
 /**
- * `n` seconds as a short duration, ROUNDED UP.
+ * `n` seconds as a short duration that never over- or under-states it.
  *
  * Whole units only — this is a health reading, not a stopwatch, and "2h" is
- * easier to compare across eight rows than "2h 14m 9s".
+ * easier to compare across eight rows than "2h 14m 9s". The rounding is the
+ * load-bearing part, and neither obvious choice is right:
  *
- * Rounding up rather than down is the load-bearing half. Every use here is an
- * AGE — how long a device has been silent, how old the ref it measured against
- * was — so flooring makes a feeder look more current than it is: 23h59m silent
- * would read `23h`, and 1d23h would read `1d`. The error has to fall on the
- * conservative side of the claim, which for an age means over-stating it.
+ * * FLOORING under-states an age, so a feeder silent 23h59m reads `23h` and
+ *   looks more current than it is.
+ * * CEILING over-states it by up to a whole unit — 1h0m1s silent would read
+ *   `2h`, a ~60% exaggeration, and a figure nobody can trust in the loud
+ *   direction is only marginally better than one nobody can trust in the
+ *   quiet one.
+ *
+ * So: floor the unit and append `+` when anything was dropped. `1h+` is "at
+ * least an hour", which is true, bounded, and the same hedge
+ * [`driftSummary`] puts on a floor count. An exact value carries no `+`, so
+ * the freshness window (2700 s) still reads plainly as `45m`.
  */
 export function shortDuration(secs: number): string {
-  const s = Math.max(0, Math.ceil(secs));
+  const s = Math.max(0, Math.floor(secs));
+  const unit = (size: number, suffix: string) =>
+    `${Math.floor(s / size)}${suffix}${s % size ? "+" : ""}`;
   if (s < 60) return `${s}s`;
-  if (s < 3600) return `${Math.ceil(s / 60)}m`;
-  if (s < 86_400) return `${Math.ceil(s / 3600)}h`;
-  return `${Math.ceil(s / 86_400)}d`;
+  if (s < 3600) return unit(60, "m");
+  if (s < 86_400) return unit(3600, "h");
+  return unit(86_400, "d");
 }
+
+/**
+ * The one `unknown` rule that leaves the reading CURRENT, named by its own
+ * `detail` prefix rather than inferred.
+ *
+ * The route publishes which rule fired — every `unknown` detail starts
+ * `observation_stale:`, `reading_superseded:` or `ref_stale:` — and this reads
+ * that discriminator instead of reconstructing it from the raw fields. The
+ * difference only shows up on a rule that does not exist yet: were a FOURTH
+ * `unknown` rule added that implies neither silence, nor supersession, nor a
+ * floor, a field-inferred test would call its row current and print its counts
+ * in the present tense with no hedge — the round-1 defect, re-entered through
+ * the door the round-1 fix left open. An unrecognised reason is treated as not
+ * current, which is the conservative arm: a hedge on a row that did not need
+ * one costs an operator nothing.
+ */
+const REF_STALE_PREFIX = "ref_stale:";
 
 /**
  * Is the STORED reading still the device's current word?
@@ -42,11 +69,15 @@ export function shortDuration(secs: number): string {
  *   point the operator at the wrong device.
  *
  * So tense keys on the two clocks that actually say whether the reading is the
- * device's latest — and the separate question "may this sentence claim
- * agreement?" keys on the verdict, in [`driftSummary`] below.
+ * device's latest word, AND — for a row the verdict has disowned — on the
+ * route naming a reason that is compatible with it still being current. The
+ * separate question "may this sentence claim agreement?" keys on the verdict,
+ * in [`driftSummary`] below.
  */
 function readingIsCurrent(row: ScanRootRow): boolean {
-  return row.observation_fresh && row.last_report_applied;
+  if (!row.observation_fresh || !row.last_report_applied) return false;
+  if (row.state === "measured") return true;
+  return (row.detail ?? "").startsWith(REF_STALE_PREFIX);
 }
 
 /**
@@ -90,8 +121,11 @@ export function driftSummary(row: ScanRootRow): string {
   const ahead =
     row.ahead == null
       ? ", ahead not measured"
-      : row.ahead
-        ? `, ${at}${row.ahead} ahead`
+      : row.ahead || !current
+        ? // On the past-tense path a measured `0 ahead` is kept rather than
+          // dropped: the present-tense path says it through "In step with its
+          // ref", and nothing says it here unless it is written out.
+          `, ${at}${row.ahead} ahead`
         : "";
   const floors = floor ? " (lower bounds — the ref itself may be stale)" : "";
   const clause = `${behind}${ahead}${floors}`;
@@ -139,12 +173,34 @@ function stateVariant(state: ScanRootRow["state"]) {
  */
 const SKEW_WORTH_REPORTING_SECS = 60;
 
+/**
+ * The clock-skew sentence, or `null` when the skew is ordinary drift.
+ *
+ * Both halves are written as statements about the READING, never about the
+ * device's clock now. Skew is stored per row and does not decay, so on a
+ * device silent for days "the runner's clock IS 2m ahead" asserts a present
+ * fact from a row that establishes nothing about the present — the same
+ * mistake the counts are guarded against two functions up. The clock may well
+ * have been fixed since.
+ *
+ * The positive branch's cause list is gated on `last_report_applied`, because
+ * the backend names THREE causes and the third one co-occurs with a verdict
+ * already on screen: on a superseded row `received_at` is the DECLINED
+ * report's arrival while `observed_at` belongs to the older stored reading, so
+ * a large positive skew there is bookkeeping rather than a clock problem.
+ * Offering "a runner clock behind this one, or a late delivery" directly above
+ * a detail line reading `reading_superseded:` would be two explanations, both
+ * wrong.
+ */
 function skewSummary(row: ScanRootRow): string | null {
   const skew = row.observed_skew_secs;
   if (Math.abs(skew) < SKEW_WORTH_REPORTING_SECS) return null;
-  return skew > 0
-    ? `The reading reached this server ${shortDuration(skew)} after the runner took it — a runner clock behind this one, or a late delivery.`
-    : `The runner's clock is ${shortDuration(-skew)} ahead of this server's.`;
+  if (skew < 0) {
+    return `The runner's clock was ${shortDuration(-skew)} ahead of this server's when it reported.`;
+  }
+  return row.last_report_applied
+    ? `This reading reached the server ${shortDuration(skew)} after the runner took it — a runner clock behind this one, or a late delivery.`
+    : `This reading is ${shortDuration(skew)} older than the device's last contact, which is what a superseded reading looks like rather than a clock problem.`;
 }
 
 /**
@@ -244,6 +300,22 @@ function ScanRootRowView({ row }: { row: ScanRootRow }) {
 }
 
 /**
+ * "as of HH:MM:SS" — the moment every age on this panel was measured.
+ *
+ * Small, and the whole reason the ages above it can be trusted. Without it a
+ * figure computed once keeps being read as though it were computed now.
+ */
+function ReadAt({ at }: { at: Date | null }) {
+  if (!at) return null;
+  return (
+    <span data-testid="scan-sources-read-at">
+      {" "}
+      Read at {at.toLocaleTimeString()}; the ages above are as of then.
+    </span>
+  );
+}
+
+/**
  * How current is the tree each device scans to feed this corpus.
  *
  * The sibling of Capture health, and the other half of one question. Capture
@@ -265,9 +337,21 @@ function ScanRootRowView({ row }: { row: ScanRootRow }) {
  * * **Every feeder quiet** (`count > 0`, `fresh_count === 0`) is called out on
  *   its own line, because a list of rows that all say `unknown` reads, at a
  *   glance, like a list of rows.
+ *
+ * And a fourth, which is the same rule one level up. Every age on this panel —
+ * `observation_age_secs`, `observation_fresh`, `fresh_count` — is a
+ * SERVER-COMPUTED DELTA frozen at fetch time, and this panel does not poll. A
+ * console left open overnight would otherwise keep reading "heard 30s ago",
+ * which is a stale reading rendered as current: the feature's own thesis,
+ * failing at the panel rather than at the row. So every figure is stamped with
+ * the moment it was read, and the refresh that makes the stamp actionable sits
+ * next to it. The stamp is deliberately the READ time and not a client-side
+ * re-computation of each age: the route is explicit that only the server's
+ * clock is trusted for liveness, and aging the rows here would quietly
+ * substitute the browser's.
  */
 export function ScanSourcesPanel() {
-  const { data, loading, error } = useScanRoots();
+  const { data, fetchedAt, loading, error, reload } = useScanRoots();
 
   const allQuiet = data != null && data.count > 0 && data.fresh_count === 0;
   // The empty branch is chosen by the ROWS, not by the top-level `state`.
@@ -284,7 +368,7 @@ export function ScanSourcesPanel() {
     >
       <div className="flex items-start gap-3">
         <GitBranch className="mt-0.5 size-5 shrink-0 text-muted-foreground" />
-        <div>
+        <div className="min-w-0">
           <h2 className="text-sm font-semibold">Scan sources</h2>
           <p className="mt-1 text-xs text-muted-foreground">
             How far the working tree each device scans sits from its default
@@ -293,6 +377,17 @@ export function ScanSourcesPanel() {
             captured artifacts cannot show that, and this can.
           </p>
         </div>
+        <Button
+          variant="ghost"
+          size="sm"
+          className="ml-auto h-7 shrink-0 px-2 text-xs"
+          onClick={() => reload()}
+          disabled={loading}
+          data-testid="scan-sources-refresh"
+        >
+          <RefreshCw className="size-3" aria-hidden />
+          Refresh
+        </Button>
       </div>
 
       {error && (
@@ -311,7 +406,10 @@ export function ScanSourcesPanel() {
       )}
 
       {loading && !data ? (
-        <Skeleton className="mt-4 h-20 w-full" />
+        <Skeleton
+          className="mt-4 h-20 w-full"
+          data-testid="scan-sources-loading"
+        />
       ) : data == null ? null : empty ? (
         <p
           className="mt-3 text-xs text-muted-foreground"
@@ -319,6 +417,7 @@ export function ScanSourcesPanel() {
         >
           {data.detail ??
             "No device has reported a scan-source reading for this organization, so whether the corpus's feeders are current is not established. An empty list is not “every feeder is current”."}
+          <ReadAt at={fetchedAt} />
         </p>
       ) : (
         <>
@@ -337,6 +436,7 @@ export function ScanSourcesPanel() {
             {allQuiet
               ? " Every feeder has gone quiet — none of these readings says anything about now."
               : ""}
+            <ReadAt at={fetchedAt} />
           </p>
         </>
       )}
