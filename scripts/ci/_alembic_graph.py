@@ -63,6 +63,21 @@ class Scan:
     no parseable ``revision = ...``; ``revisions`` holds only the parsed
     ones. Keeping both is what lets a caller tell "clean chain" apart from
     "the parse broke" — N files and zero revisions is a defect, not a pass.
+
+    ``parsed_count`` and ``duplicates`` exist because ``revisions`` is KEYED BY
+    revision id: two files declaring the same id collapse into one entry, and
+    the head set is then computed over a graph that silently lost a node. That
+    is not a hypothetical — qontinui-web #1316 declared ``main``'s own head id
+    in a second file and the gate answered ``HEAD_COUNT=1``, exit 0, on
+    2026-09-12.
+
+    ``file_count`` CANNOT detect it, and the tempting predicate
+    ``file_count == len(revisions)`` is wrong: a legitimate non-revision file
+    (``__init__.py``) makes ``file_count`` exceed the revision count with
+    nothing amiss. Only the count of files that actually PARSED a revision may
+    be compared, which is why ``parsed_count`` is a separate field and
+    ``parsed_count == len(revisions)`` — equivalently, ``duplicates`` being
+    empty — is the honest check.
     """
 
     file_count: int
@@ -72,6 +87,19 @@ class Scan:
     """revision id -> the file it was parsed from."""
     heads: tuple[str, ...]
     """Sorted revision ids that no other revision names as a parent."""
+    parsed_count: int = 0
+    """How many FILES yielded a parseable ``revision`` — duplicates included.
+
+    Defaults only so that a caller constructing a :class:`Scan` by hand does
+    not break; every in-repo ``Scan`` comes from :func:`scan_sources`, which
+    always sets it.
+    """
+    duplicates: tuple[tuple[str, Path, Path], ...] = ()
+    """``(revision id, first file, second file)`` per id declared more than once.
+
+    Empty by default, so a hand-built :class:`Scan` is never reported as
+    duplicated on the strength of a missing argument.
+    """
 
 
 def safe_id(revision: str) -> str:
@@ -104,20 +132,59 @@ def scan_sources(sources: dict[Path, str]) -> Scan:
     are read out of the ``down_revision`` right-hand side by string literal,
     so both the scalar (``down_revision = "x"``) and the branch-merge tuple
     (``down_revision = ("x", "y")``) forms are handled.
+
+    Two files declaring ONE revision id are recorded in
+    :attr:`Scan.duplicates` rather than silently collapsed. The last one still
+    wins in ``revisions`` — changing that would move the head verdict on trees
+    unrelated to this defect — so the record is what makes the collapse
+    visible, and the caller decides. See :class:`Scan`.
     """
     revisions: dict[str, str] = {}
     paths: dict[str, Path] = {}
     parents: set[str] = set()
+    duplicates: list[tuple[str, Path, Path]] = []
+    parsed_count = 0
     for path, source in sources.items():
         parsed = parse_source(source)
         if parsed is None:
             continue
         rev, down = parsed
+        parsed_count += 1
+        if rev in revisions:
+            # The assignment below overwrites the first file's entry, dropping
+            # a node from the graph. Record it: a caller that cannot see this
+            # cannot tell a clean chain from a collapsed one, and its head
+            # count is not a verdict either way.
+            duplicates.append((rev, paths[rev], path))
         revisions[rev] = down
         paths[rev] = path
         parents.update(PARENT_REF_RE.findall(down))
     heads = tuple(sorted(r for r in revisions if r not in parents))
-    return Scan(file_count=len(sources), revisions=revisions, paths=paths, heads=heads)
+    return Scan(
+        file_count=len(sources),
+        revisions=revisions,
+        paths=paths,
+        heads=heads,
+        parsed_count=parsed_count,
+        duplicates=tuple(duplicates),
+    )
+
+
+def duplicate_groups(scan: Scan) -> dict[str, list[Path]]:
+    """``{revision id: [every file declaring it]}`` for the duplicated ids.
+
+    :attr:`Scan.duplicates` records one entry per OVERWRITE, so three files
+    sharing an id produce two pairwise entries — ``(b1, b2)`` and ``(b2, b3)``
+    — which read as two independent collisions and leave the first file out of
+    the second pair. Callers reporting to a human want one entry per id naming
+    every file, and the count of distinct ids rather than of overwrites.
+    """
+    groups: dict[str, list[Path]] = {}
+    for rev, first, second in scan.duplicates:
+        files = groups.setdefault(rev, [first])
+        if second not in files:
+            files.append(second)
+    return groups
 
 
 def read_dir_sources(versions_dir: Path) -> dict[Path, str]:
