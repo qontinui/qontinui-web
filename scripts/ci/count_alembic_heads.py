@@ -36,12 +36,23 @@ buy, and the reason its message names the exact ``down_revision`` token to
 adopt, is that naming the right token was the entire fix in 3 of 3 cases.
 
 Exit codes: 0 exactly one head, 1 more than one head, 2 the scan proved
-nothing (no revision files, no revisions parsed, or zero heads — a zero-head
-chain means a cycle, which is a defect, not a pass).
+nothing (no revision files, no revisions parsed, a DUPLICATE revision id, or
+zero heads — a zero-head chain means a cycle, which is a defect, not a pass).
+
+A duplicate revision id is exit 2 rather than 1 because it does not mean "this
+tree has two heads"; it means THE HEAD COUNT IS NOT A VERDICT. ``Scan``'s
+``revisions`` is keyed by revision id, so the second file to declare one
+overwrites the first and that migration vanishes from the graph — and the
+count printed above it was computed over a tree the scan did not fully see.
+Measured on 2026-09-12: qontinui-web #1316 added a second file declaring
+``coord_test_results_idx_01``, ``main``'s own head, and this gate answered
+551 files scanned / 550 parsed, ``HEAD_COUNT=1``, exit 0 — green on precisely
+the condition it exists to catch.
 
 ``--report-only`` downgrades ONLY the multi-head case to exit 0; it still
-exits 2 on a scan that proved nothing, because an informational workflow that
-silently counted zero revisions is exactly as useless as a gate that did.
+exits 2 on a scan that proved nothing or on a duplicate revision id, because
+an informational workflow that silently counted zero revisions — or counted
+heads over a collapsed graph — is exactly as useless as a gate that did.
 """
 
 from __future__ import annotations
@@ -112,6 +123,23 @@ already landed; if either is still unlanded (an open PR that a
 land forked — the common case), the fix is a one-token
 `down_revision` edit and a merge revision would be permanent
 bookkeeping added for nothing.
+"""
+
+
+DUPLICATE_REMEDY = """
+Why this is exit 2 and not a head count: the revision graph is keyed by
+revision id, so the second file to declare an id OVERWRITES the first and that
+migration disappears from the graph. Whatever head count this scan printed was
+computed over a tree it did not fully see, so it is NOT A VERDICT — in either
+direction.
+
+Resolution: give ONE of the two files a new, unique revision id, re-point its
+`down_revision` (and the `Revises:` line in its docstring) onto the current
+head, and rename any test that pins the old id.
+
+Do NOT reach for `alembic merge`. There is no fork here to merge: there are two
+revisions wearing one name, and alembic itself refuses such a tree at
+`alembic upgrade head`.
 """
 
 
@@ -327,6 +355,27 @@ def main() -> int:
     require_nonempty(
         len(scan.revisions), "parseable `revision = ...` assignments", label
     )
+    # Non-vacuity, second half: `revisions` is keyed by revision id, so two
+    # files declaring one id collapse into a single node and every count below
+    # is computed over a tree we did not fully see. Compared against
+    # `parsed_count`, NOT `file_count` — a legitimate non-revision file
+    # (`__init__.py`) makes `file_count` exceed the revision count with nothing
+    # wrong, so that comparison would fire on a healthy tree.
+    if scan.duplicates:
+        err(
+            f"{len(scan.duplicates)} DUPLICATE revision id(s) under {label}: "
+            f"{scan.parsed_count} file(s) parsed a revision but only "
+            f"{len(scan.revisions)} distinct id(s) survived the scan."
+        )
+        for rev, first, second in scan.duplicates:
+            err(f"  - {rev} is declared by BOTH:")
+            err(f"      {_where(rev, first)}")
+            err(f"      {_where(rev, second)}")
+        print(DUPLICATE_REMEDY, file=sys.stderr)
+        print(WHY_BLOCKING, file=sys.stderr)
+        # NOT downgraded by --report-only: unlike a fork, this says the head
+        # computation itself proved nothing, which is the vacuous arm.
+        return EXIT_VACUOUS
 
     report(scan, label)
 

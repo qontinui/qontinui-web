@@ -560,6 +560,20 @@ def main() -> int:
     if not main_scan.revisions:
         err(f"parsed zero revisions from {VERSIONS_DIR}/ — the scan proved nothing.")
         return EXIT_VACUOUS
+    if main_scan.duplicates:
+        # Keyed by revision id, so a duplicate silently dropped a node and
+        # `landed` below would be missing an id every simulated PR is compared
+        # against. Advising off that is worse than not advising.
+        err(
+            f"{VERSIONS_DIR}/ declares {len(main_scan.duplicates)} DUPLICATE "
+            f"revision id(s) — {main_scan.parsed_count} file(s) parsed a revision "
+            f"but only {len(main_scan.revisions)} survived, so the head "
+            "computation is not a verdict:"
+        )
+        for rev, first, second in main_scan.duplicates:
+            err(f"  - {rev}: {first} and {second}")
+        err("Skipping the open-PR sweep rather than advising off a collapsed graph.")
+        return EXIT_VACUOUS
     if len(main_scan.heads) != 1:
         # `main` itself is forked. The workflow's own comment on the merging PR
         # covers that; simulating other PRs against a broken baseline would
@@ -648,6 +662,18 @@ def main() -> int:
             failures.append(f"#{number}: could not read its revision files: {exc}")
             continue
         scan = scan_sources(sources)
+
+        if scan.duplicates:
+            # The PR introduces a second file declaring an id already in the
+            # tree. `count_alembic_heads.py` exits 2 on exactly this, and its
+            # head count is meaningless, so the fork text would be wrong.
+            # Report and leave the PR's notice alone.
+            dupes = ", ".join(rev for rev, _, _ in scan.duplicates)
+            failures.append(
+                f"#{number}: simulated tree has DUPLICATE revision id(s) "
+                f"({dupes}) — the head count is not a verdict; left untouched"
+            )
+            continue
 
         if not scan.heads:
             # A zero-head chain is a CYCLE. `count_alembic_heads.py` exits 2 on

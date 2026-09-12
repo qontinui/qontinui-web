@@ -18,9 +18,21 @@ edit. These tests pin the properties that make the advice right:
    case it is correct for.
 5. An unreadable baseline is ``unknown``, never "nothing has landed". That
    inversion would turn "I could not check" into confident wrong advice.
+6. A DUPLICATE revision id is recorded rather than silently collapsed, and it
+   FAILS the gate. ``Scan.revisions`` is keyed by revision id, so the second
+   file to declare one overwrites the first and a node vanishes from the
+   graph; on 2026-09-12 that made the gate answer ``HEAD_COUNT=1``, exit 0,
+   for a tree carrying two files named ``coord_test_results_idx_01``
+   (qontinui-web #1316) — green on the exact condition it exists to catch.
+   ``file_count`` cannot detect it and ``file_count == len(revisions)`` is the
+   WRONG predicate, because a legitimate non-revision file makes
+   ``file_count`` exceed the revision count with nothing amiss; only
+   ``parsed_count`` may be compared.
 
 The gate's own two lanes are exercised end to end at the bottom: exit 0 on a
-single head, exit 1 on a fork, exit 2 on a scan that proved nothing.
+single head, exit 1 on a fork, exit 2 on a scan that proved nothing —
+including a duplicate revision id, which collapses the graph and makes any
+head count meaningless.
 """
 
 from __future__ import annotations
@@ -109,6 +121,61 @@ def test_a_file_without_a_revision_assignment_is_counted_but_not_parsed() -> Non
     scan = scan_sources(sources)
     assert scan.file_count == 2
     assert len(scan.revisions) == 1
+
+
+# ---------------------------------------------------------------------------
+# 6. a duplicate revision id collapses the graph — and must be visible
+# ---------------------------------------------------------------------------
+
+
+def test_a_duplicate_revision_id_is_recorded_rather_than_silently_collapsed() -> None:
+    """Two files, one id. The graph keeps one node; the scan must say so."""
+    sources = {
+        **_tree(("a", None), ("b", "a")),
+        Path("b_again.py"): _revision("b", "a"),
+    }
+    scan = scan_sources(sources)
+    assert scan.parsed_count == 3
+    assert len(scan.revisions) == 2  # one node was overwritten
+    assert [rev for rev, _, _ in scan.duplicates] == ["b"]
+    _, first, second = scan.duplicates[0]
+    assert {first.name, second.name} == {"b.py", "b_again.py"}
+
+
+def test_a_clean_tree_reports_no_duplicates() -> None:
+    scan = scan_sources(_tree(("a", None), ("b", "a"), ("c", "b")))
+    assert scan.duplicates == ()
+    assert scan.parsed_count == len(scan.revisions) == 3
+
+
+def test_an_unparseable_file_is_not_a_duplicate() -> None:
+    """Why the predicate is ``parsed_count``, not ``file_count``.
+
+    ``file_count == len(revisions)`` is the tempting check and it is WRONG: a
+    legitimate non-revision file in the directory makes ``file_count`` exceed
+    the revision count with nothing amiss, so that comparison would fail a
+    healthy tree. This pins the distinction so the cheaper-looking predicate
+    cannot be substituted later.
+    """
+    sources = {**_tree(("a", None)), Path("__init__.py"): "# not a revision\n"}
+    scan = scan_sources(sources)
+    assert scan.file_count == 2
+    assert scan.parsed_count == 1
+    assert scan.duplicates == ()
+
+
+def test_a_duplicate_can_hide_a_fork_entirely() -> None:
+    """The dangerous shape: the collapse does not merely lose a node, it can
+    turn a genuine two-head tree into a one-head report. ``c`` and the second
+    ``b`` both claim ``b``'s id; the survivor's parent is whichever file was
+    read last, so the head set stops describing the tree on disk."""
+    sources = {
+        **_tree(("a", None), ("b", "a")),
+        Path("b_dup.py"): _revision("b", None),
+    }
+    scan = scan_sources(sources)
+    assert len(scan.revisions) == 2
+    assert scan.duplicates != ()
 
 
 # ---------------------------------------------------------------------------
@@ -319,6 +386,59 @@ def test_gate_exits_two_on_a_cycle(tmp_path: Path) -> None:
     result = _run(_write(tmp_path / "v", ("x", "y"), ("y", "x")), "--baseline-ref", "")
     assert result.returncode == 2
     assert "ZERO heads" in result.stderr
+
+
+def _write_duplicate(tmp_path: Path) -> Path:
+    """A tree where two files declare one revision id."""
+    versions = _write(tmp_path / "v", ("a", None), ("b", "a"))
+    (versions / "b_again.py").write_text(_revision("b", "a"), encoding="utf-8")
+    return versions
+
+
+def test_gate_exits_two_on_a_duplicate_revision_id(tmp_path: Path) -> None:
+    result = _run(_write_duplicate(tmp_path), "--baseline-ref", "")
+    assert result.returncode == 2, result.stdout + result.stderr
+    assert "DUPLICATE revision id" in result.stderr
+    # Both files must be named: the author cannot see which one was swallowed.
+    assert "b.py" in result.stderr
+    assert "b_again.py" in result.stderr
+    # `alembic merge` appears only as the thing NOT to reach for — there is no
+    # fork to merge, just two revisions wearing one name.
+    assert "Do NOT reach for `alembic merge`" in result.stderr
+
+
+def test_report_only_does_not_downgrade_a_duplicate_revision_id(
+    tmp_path: Path,
+) -> None:
+    """``--report-only`` downgrades a FORK, because the informational lane must
+    reach its comment step. It must not downgrade this: a duplicate says the
+    head computation proved nothing, which is the vacuous arm, not a verdict
+    the lane can report and move past."""
+    result = _run(_write_duplicate(tmp_path), "--baseline-ref", "", "--report-only")
+    assert result.returncode == 2, result.stdout + result.stderr
+    assert "DUPLICATE revision id" in result.stderr
+
+
+def test_the_duplicate_that_made_this_gate_green_now_fails(tmp_path: Path) -> None:
+    """The measured 2026-09-12 shape, as a regression.
+
+    qontinui-web #1316 added a second file declaring ``coord_test_results_idx_01``
+    — ``main``'s own head — off the same parent. The gate reported 551 files
+    scanned, **550** parsed, ``HEAD_COUNT=1``, exit 0: a pass earned by losing
+    a node rather than by a clean chain.
+    """
+    versions = _write(
+        tmp_path / "v",
+        ("plan_library_05", None),
+        ("coord_test_results_idx_01", "plan_library_05"),
+    )
+    (versions / "coord_test_results_idx_01_repo_observed_at.py").write_text(
+        _revision("coord_test_results_idx_01", "plan_library_05"), encoding="utf-8"
+    )
+    result = _run(versions, "--baseline-ref", "")
+    assert result.returncode == 2, result.stdout + result.stderr
+    assert "NOT A VERDICT" in result.stderr
+    assert "coord_test_results_idx_01" in result.stderr
 
 
 def test_a_fork_with_an_unreadable_baseline_says_so_and_does_not_recommend_merge(
