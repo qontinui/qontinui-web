@@ -68,6 +68,15 @@ What this deliberately does NOT do
 
 Ordering against coord: SOFT. The coord read works without this index; it is
 merely slow for quiet repos. Nothing in coord references the index by name.
+The coord side is the qontinui-coord PR titled "coord: batch the test-results
+ingest, bound the flakiness read, retain 14 days" (same follow-up), which
+cites this revision.
+
+Chained off ``plan_library_05_scan_root_observations`` — the head on
+``origin/main`` at authoring time, NOT the head of this branch's own tree
+(``claude_acct_01``), which a peer's revision had already taken while this
+one was being written. ``scripts/ci/count_alembic_heads.py`` counts heads on
+the MERGE, which is the only count that matters.
 
 ``CREATE INDEX CONCURRENTLY``, in an ``autocommit_block`` — the same reasons
 and the same precedent as ``coord_pg_overload_idx_02``: a hot append-heavy
@@ -81,7 +90,7 @@ the same name, which ``IF NOT EXISTS`` would then skip. If that happens,
 manually ``DROP INDEX`` the invalid index and re-run.
 
 Revision ID: coord_test_results_idx_01
-Revises: claude_acct_01
+Revises: plan_library_05_scan_root_observations
 Create Date: 2026-09-12
 
 """
@@ -92,7 +101,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "coord_test_results_idx_01"
-down_revision: str | Sequence[str] | None = "claude_acct_01"
+down_revision: str | Sequence[str] | None = "plan_library_05_scan_root_observations"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
