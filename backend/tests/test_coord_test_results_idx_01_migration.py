@@ -84,7 +84,7 @@ from tests._alembic_harness import (
 )
 
 _REVISION_ID = "coord_test_results_idx_01"
-_PARENT_REVISION_ID = "claude_acct_01"
+_PARENT_REVISION_ID = "plan_library_05_scan_root_observations"
 
 _IDX_REPO_TEST_OBSERVED = "idx_test_results_repo_test_observed"
 _IDX_REPO_OBSERVED = "idx_test_results_repo_observed"
