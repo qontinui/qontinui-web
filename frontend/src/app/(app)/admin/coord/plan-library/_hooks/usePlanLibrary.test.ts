@@ -634,9 +634,12 @@ describe("useScanRoots — a failed reload must not blank, and must not invert",
   });
 });
 
-// The orderings a newest-id guard gets WRONG, pinned on both hooks because both
-// run the same `useRetainedRead`. The two orderings it gets right are pinned
-// per hook above.
+// Overlapping reads, pinned on both hooks because both run the same
+// `useRetainedRead`. Three of these are orderings a newest-id guard gets WRONG
+// (a superseded success after a newer failure, `loading` while the newest read
+// is out, and whose failure the banner names). The fourth — a superseded
+// success after a newer one — a newest-id guard gets right, and it is here to
+// catch the opposite mistake: a hook that applies whatever lands last.
 describe.each([
   ["useCaptureHealth", () => useCaptureHealth(), { total: 1, doors: [] }],
   [
