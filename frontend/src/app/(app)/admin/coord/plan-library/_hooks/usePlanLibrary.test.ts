@@ -1,5 +1,5 @@
 /**
- * usePlanLibrary / useDivergentArtifacts / useCaptureHealth.
+ * usePlanLibrary / useDivergentArtifacts / useCaptureHealth / useScanRoots.
  *
  * The list hook is mostly plumbing; what is worth pinning is the behaviour
  * that is wrong in a way nobody notices:
@@ -40,6 +40,7 @@ import {
   useCaptureHealth,
   useDivergentArtifacts,
   usePlanLibrary,
+  useScanRoots,
 } from "./usePlanLibrary";
 
 function row(overrides: Record<string, unknown> = {}) {
@@ -447,6 +448,40 @@ describe("useCaptureHealth — a failed read is not a corpus of zero", () => {
 
     // Rendering three zeroed doors here would state "the agent door has never
     // been used" on the evidence of a network failure.
+    expect(result.current.data).toBeNull();
+    expect(result.current.error).toContain("backend down");
+  });
+});
+
+describe("useScanRoots", () => {
+  it("reads the scan-roots door and preserves the UNKNOWN no-rows shape", async () => {
+    getMock.mockResolvedValue({
+      state: "unknown",
+      detail: "no_observation: no device has reported …",
+      fresh_within_secs: 2700,
+      count: 0,
+      fresh_count: 0,
+      rows: [],
+    });
+
+    const { result } = renderHook(() => useScanRoots());
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
+    expect(getMock).toHaveBeenCalledWith("/api/v1/plan-library/scan-roots");
+    // The whole point of the route: an empty list arrives labelled `unknown`,
+    // and the hook must not flatten that into "no rows, so nothing is wrong".
+    expect(result.current.data?.state).toBe("unknown");
+    expect(result.current.data?.rows).toEqual([]);
+  });
+
+  it("a failed read is not a fleet with no drift", async () => {
+    getMock.mockRejectedValue(new Error("backend down"));
+
+    const { result } = renderHook(() => useScanRoots());
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
+    // Synthesising an empty list here would render as "no feeder is behind"
+    // on the evidence of a network failure.
     expect(result.current.data).toBeNull();
     expect(result.current.error).toContain("backend down");
   });
