@@ -897,6 +897,38 @@ describe("/admin/coord/members — Cognito group delete", () => {
       ).toBeEnabled();
     });
 
+    it("renders an UNREADABLE verdict's reason, and does not claim coord never answered", async () => {
+      // `mapping_check_unreadable` carries NO `coord_status` — coord did
+      // answer, with a body that is not the verdict — and a `reason`. The
+      // absent key must not be read as `null` ("never completed an answer"):
+      // that would send the operator to check transport when the thing to
+      // check is coord's body, or a proxy in front of it.
+      state.blastRadius = {
+        mode: "error",
+        status: 502,
+        body: {
+          detail: {
+            error: "mapping_check_unreadable",
+            reason: "the body carries no mapped_total",
+            message: "Refused: coord's answer could not be read. Nothing was deleted.",
+          },
+        },
+      };
+      const user_ = userEvent.setup();
+      render(<MembersPage />);
+      await openConfirm(user_);
+
+      const bullet = await screen.findByTestId(
+        "cognito-delete-confirm-mappings-acme-devs"
+      );
+      await waitFor(() => expect(bullet).toHaveTextContent(/could not be read/i));
+      expect(bullet).toHaveTextContent(
+        /mapping_check_unreadable: the body carries no mapped_total/
+      );
+      expect(bullet).not.toHaveTextContent(/never completed/i);
+      expect(bullet).not.toHaveTextContent(/Nothing was deleted/i);
+    });
+
     it("treats a 200 that is not a verdict as unknown, never as 'none'", async () => {
       // The status-only trap again: `res.ok`, and no counts. `?? 0` on a
       // missing `mapped_total` would print the all-clear this whole change

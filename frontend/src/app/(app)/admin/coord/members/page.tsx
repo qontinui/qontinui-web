@@ -1729,14 +1729,28 @@ async function blastRadiusReadCause(res: Response): Promise<string> {
   try {
     const detail = (JSON.parse(text) as { detail?: unknown })?.detail;
     if (detail && typeof detail === "object") {
-      const { error, coord_status } = detail as {
+      const { error, coord_status, reason } = detail as {
         error?: unknown;
         coord_status?: unknown;
+        reason?: unknown;
       };
       if (typeof error === "string" && error) {
-        return typeof coord_status === "number"
-          ? `${error}, coord answered ${coord_status}`
-          : `${error}, coord never completed an answer`;
+        // Three shapes, and ABSENT is not `null`. `mapping_check_unavailable`
+        // always carries `coord_status` — a number for coord's own answer,
+        // `null` when coord never completed one. `mapping_check_unreadable`
+        // carries no `coord_status` at all, deliberately: coord DID answer,
+        // with a body that is not the verdict, and it carries a `reason`
+        // instead. Reading absent as `null` would tell the operator coord
+        // never answered in exactly the case where it did.
+        if (typeof coord_status === "number") {
+          return `${error}, coord answered ${coord_status}`;
+        }
+        if (coord_status === null) {
+          return `${error}, coord never completed an answer`;
+        }
+        return typeof reason === "string" && reason
+          ? `${error}: ${reason}`
+          : error;
       }
     }
   } catch {
