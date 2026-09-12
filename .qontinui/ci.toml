@@ -11,9 +11,11 @@
 # line number — line numbers in those files move constantly and a stale citation
 # makes the invariant unauditable.
 #
-# Seven gates are stronger than "mirrored": web-boundary-lint, forbid-public-
-# schema, alembic-single-head, coord-column-drop-guard, gitignore-tracked-files,
-# ruff-version-parity and path-case-collisions
+# The script-backed gates are stronger than "mirrored": web-boundary-lint,
+# forbid-public-schema, alembic-single-head, coord-column-drop-guard,
+# gitignore-tracked-files, ruff-version-parity, path-case-collisions and
+# forbid-fixed-sleeps-in-e2e (count them from the `command` arrays below, not
+# from a number here - the last number this line carried was stale)
 # invoke the SAME committed script the workflow invokes (scripts/ci/*.py), so
 # there is nothing left to keep in sync — the two lanes cannot drift because
 # there is only one copy of the logic. That is the
