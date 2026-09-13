@@ -267,8 +267,8 @@ class ScanRootSourceRollup(BaseModel):
 
     Any feeder can add a plan to the corpus, so how far behind the corpus is
     is bounded by its LEAST-behind current feeder. ``min_behind`` is NOT a
-    ceiling on what the corpus lacks: it bounds that feeder's distance from
-    BELOW ("at least 41" may really be 300), and only an exact value bounds
+    ceiling on what the corpus lacks: it bounds the least-behind COMPARABLE
+    feeder's distance from BELOW ("at least 41" may really be 300), and only an exact value bounds
     the corpus — and then only as of that ref. Every claim here is taken
     over the COMPARISON SET: readings that are fresh, applied (not contradicted
     by a later, declined report) and carry a count — a ``measured`` verdict, or
@@ -326,16 +326,19 @@ class ScanRootSourceRollup(BaseModel):
     least_behind_device_ids: list[UUID]
     #: Comparable devices above the fewest commits behind among the comparable
     #: readings, under the same ordering condition (and likewise kept when the
-    #: roll-up is ``unknown`` for a floor of 0). Empty when unordered — NOT ESTABLISHED, never "none lagging".
+    #: roll-up is ``unknown`` for a floor of 0). Empty when unordered — NOT
+    #: ESTABLISHED, never "none lagging".
     lagging_device_ids: list[UUID]
     #: Comparable devices the readings do not order: EVERY one of them when
     #: they counted against different or unknown refs, or against one stale ref
-    #: while some device carries commits of its own (``ahead > 0``). Empty when
-    #: ordered.
+    #: while some device reports anything but ``ahead == 0`` (commits of its
+    #: own, or no ``ahead`` at all). Empty when ordered.
     lag_unknown_device_ids: list[UUID]
     #: Devices with no comparable reading: silent, contradicted, not scanning,
     #: not a git work tree, or unknown — plus a ``measured`` row carrying no
-    #: ``behind``, which the write door refuses, so a stored one is corrupt.
+    #: ``behind``, which the write door refuses, so a stored one is corrupt. (A
+    #: row with a ``behind`` but no ``ahead``, refused alike, stays comparable
+    #: and is simply never ordered against a stale ref.)
     unmeasured_device_ids: list[UUID]
 
 
