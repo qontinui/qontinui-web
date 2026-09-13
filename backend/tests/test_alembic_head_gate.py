@@ -1235,6 +1235,7 @@ def _drive_main(
     posted: list[str] | None = None,
     test_sources: dict[Path, str] | Exception | None = None,
     pin_calls: list[int] | None = None,
+    extra_files: int = 0,
 ) -> tuple[int, str]:
     """Run `notifier.main()` over ONE fake open PR with every call faked.
 
@@ -1250,7 +1251,9 @@ def _drive_main(
     def _files(*_a: object, **_k: object) -> list[dict]:
         if files_raises is not None:
             raise files_raises
-        return [{"filename": f"{notifier.VERSIONS_DIR}/from_the_pr.py"}]
+        return [{"filename": f"{notifier.VERSIONS_DIR}/from_the_pr.py"}] + [
+            {"filename": f"docs/padding_{index}.md"} for index in range(extra_files)
+        ]
 
     monkeypatch.setattr(notifier, "scan_dir", lambda _d: main_scan)
     monkeypatch.setattr(notifier, "read_dir_sources", lambda _d: main_sources)
@@ -1649,14 +1652,33 @@ def test_a_pin_naming_a_different_parent_is_not_listed() -> None:
             "module_attribute", "mine", "somewhere_else"
         )
     }
+    # Not listed as a REWRITE — rewriting it would assert a parent this graph
+    # never showed it had...
     assert find_parent_pins(test_sources, "mine", "a", "landed") == ()
     sources, scan, remediation = _forked_scan()
     sites = plan_repoint_sites(scan, remediation, sources, test_sources)
+    assert sites["mine"].pins == ()
+    assert [(p.lineno, p.value) for p in sites["mine"].mismatched_pins] == [
+        (2, "somewhere_else")
+    ]
     text = render_remediation(
         remediation, "origin/main", scan.heads, sites=sites, pin_scope="the tests"
     )
-    assert "somewhere_else" not in text
-    assert "no `_PARENT_REVISION_ID` pin found for mine" in text
+    comment = notifier.render_comment(
+        scan.heads, remediation, "cafebabe1234", sites=sites, pin_scope="the tests"
+    )
+    # ...but NAMED: "no pin found" would be false, there IS one and it is wrong.
+    # The location goes through `repo_relative`, which resolves against the
+    # working directory — so compare against that, not a hand-typed prefix.
+    location = notifier.repo_relative(Path("backend/tests/test_mine_migration.py"))
+    assert (
+        f'`_PARENT_REVISION_ID` in {location}:2 names "somewhere_else", not "a"'
+        " — check it" in text
+    )
+    assert 'names "somewhere_else", not "a" — check it' in comment
+    for rendered in (text, comment):
+        assert "pin found" not in rendered
+        assert '_PARENT_REVISION_ID = "landed"' not in rendered
 
 
 def test_a_pin_in_another_revisions_test_is_not_listed() -> None:
@@ -1688,6 +1710,19 @@ def test_the_sites_quote_the_authors_own_lines() -> None:
         "mine", Path("mine.py"), "landed", sites, "the tests"
     )
     assert any("has no Revises: line" in line for line in comment_lines)
+    # The counter says the same thing, and does not invent a before-line.
+    counter_lines = counter._site_lines(
+        "mine", Path("mine.py"), "landed", sites, "the tests"
+    )
+    assert any("has no `Revises:` line" in line for line in counter_lines)
+    assert not any("Revises: landed" in line for line in counter_lines)
+    # A single-quoted parent keeps its single quotes.
+    single = "revision = 'mine'\ndown_revision = 'a'\n"
+    scan = scan_sources({Path("mine.py"): single, **_tree(("a", None))})
+    assert repoint_sites(scan, "mine", "landed", single, {}).down_revision == (
+        "down_revision = 'a'",
+        "down_revision = 'landed'",
+    )
 
 
 def test_the_counter_main_names_the_pin_it_found_on_disk(
@@ -1999,3 +2034,218 @@ def test_only_test_files_that_could_hold_a_pin_are_downloaded(
     ]
     assert len(sources) == 3
     assert notifier.pr_version_files(files) == [files[-1]]
+
+
+# ---------------------------------------------------------------------------
+# Review round 3: masking must read strings the way Python does
+# ---------------------------------------------------------------------------
+
+_TRIPLE = '"' * 3
+
+_MASKING_TRAPS = {
+    # `'"""'` is a real idiom: test_pdann_01 splits a source on it.
+    "triple_quote_in_a_single_quoted_literal": (
+        f"_SPLIT = '{_TRIPLE}'\n"
+        '_REVISION_ID = "mine"\n'
+        '_PARENT_REVISION_ID = "a"\n'
+        "\n\n"
+        "def test_x() -> None:\n"
+        f"    {_TRIPLE}Docstring — with a non-ASCII dash.{_TRIPLE}\n",
+        3,
+    ),
+    "triple_quote_in_a_comment": (
+        f"# see the {_TRIPLE} block below\n"
+        '_REVISION_ID = "mine"\n'
+        '_PARENT_REVISION_ID = "a"\n'
+        "\n\n"
+        "def test_x() -> None:\n"
+        f"    {_TRIPLE}Docstring.{_TRIPLE}\n",
+        3,
+    ),
+    "escaped_triple_quote_inside_a_docstring": (
+        f"{_TRIPLE}Module doc with an escaped \\{_TRIPLE} inside it.\n"
+        f"{_TRIPLE}\n"
+        '_REVISION_ID = "mine"\n'
+        '_PARENT_REVISION_ID = "a"\n'
+        "\n\n"
+        "def test_x() -> None:\n"
+        f"    {_TRIPLE}Docstring.{_TRIPLE}\n",
+        4,
+    ),
+}
+
+
+@pytest.mark.parametrize("trap", sorted(_MASKING_TRAPS))
+def test_a_stray_triple_quote_does_not_blank_the_real_declaration(trap: str) -> None:
+    source, pin_line = _MASKING_TRAPS[trap]
+    compile(source, trap, "exec")  # the fixture is real Python, not a guess
+    found = find_parent_pins({Path("t.py"): source}, "mine", "a", "landed")
+    assert [(p.lineno, p.after) for p in found] == [
+        (pin_line, '_PARENT_REVISION_ID = "landed"')
+    ]
+
+
+def test_masking_falls_back_when_the_file_does_not_tokenize() -> None:
+    """A half-written file still masks its docstring rather than qualifying it."""
+    source = (
+        '_REVISION_ID = "other"\n'
+        '_PARENT_REVISION_ID = "a"\n'
+        f"{_TRIPLE}\n"
+        '_REVISION_ID = "mine"\n'
+        f"{_TRIPLE}\n"
+        "broken = (\n"
+    )
+    assert find_parent_pins({Path("t.py"): source}, "mine", "a", "x") == ()
+    assert [
+        p.lineno for p in find_parent_pins({Path("t.py"): source}, "other", "a", "x")
+    ] == [2]
+
+
+@pytest.mark.parametrize("kind", ["timeout", "reset", "incomplete_read"])
+def test_a_failed_body_read_is_an_api_error_not_a_crash(kind: str) -> None:
+    """`urlopen` returned; the READ failed. That must reach `except ApiError`."""
+    import http.client
+
+    raised = {
+        "timeout": TimeoutError("The read operation timed out"),
+        "reset": ConnectionResetError("Connection reset by peer"),
+        "incomplete_read": http.client.IncompleteRead(b"partial", 100),
+    }[kind]
+
+    class _Response:
+        headers: dict[str, str] = {}
+
+        def __enter__(self) -> _Response:
+            return self
+
+        def __exit__(self, *_exc: object) -> None:
+            return None
+
+        def read(self) -> bytes:
+            raise raised
+
+    original = notifier.urllib.request.urlopen
+    notifier.urllib.request.urlopen = lambda request, timeout=None: _Response()
+    try:
+        with pytest.raises(notifier.ApiError, match=type(raised).__name__):
+            notifier._request("https://example.invalid/x", "t")
+    finally:
+        notifier.urllib.request.urlopen = original
+
+
+def _counter_fork(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture,
+    pairs: tuple[tuple[str, str | None], ...],
+    landed: set[str],
+    extra: dict[str, str] | None = None,
+) -> tuple[int, str, list[Path]]:
+    """Run the counter's `main()` in-process, recording every pin-search read."""
+    versions = _write(tmp_path / "v", *pairs)
+    for name, text in (extra or {}).items():
+        (versions / name).write_text(text, encoding="utf-8")
+    reads: list[Path] = []
+
+    def _record(tests_dir: Path) -> dict[Path, str]:
+        reads.append(tests_dir)
+        return {}
+
+    monkeypatch.setattr(counter, "read_test_sources", _record)
+    monkeypatch.setattr(counter, "revisions_at_ref", lambda *_a: landed)
+    monkeypatch.setattr(
+        sys, "argv", ["count_alembic_heads.py", "--versions-dir", str(versions)]
+    )
+    code = counter.main()
+    return code, capsys.readouterr().err, reads
+
+
+@pytest.mark.parametrize(
+    ("label", "pairs", "landed", "extra", "kind"),
+    [
+        (
+            "blocked_without_edits",
+            (("a", None), ("landed", "a"), ("c", "a"), ("d", "a")),
+            {"a", "landed"},
+            {"m.py": 'revision: str = "m"\ndown_revision = ("c", "d")\n'},
+            "blocked",
+        ),
+        ("chain", (("a", None), ("p", "a"), ("q", "a")), {"a"}, None, "chain"),
+    ],
+)
+def test_the_counter_does_not_search_for_pins_without_a_revision_to_repoint(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture,
+    label: str,
+    pairs: tuple[tuple[str, str | None], ...],
+    landed: set[str],
+    extra: dict[str, str] | None,
+    kind: str,
+) -> None:
+    versions_sources = {Path(f"{rev}.py"): _revision(rev, down) for rev, down in pairs}
+    for name, text in (extra or {}).items():
+        versions_sources[Path(name)] = text
+    remediation = plan_remediation(scan_sources(versions_sources), landed)
+    assert remediation.kind == kind
+    if kind == "blocked":
+        assert remediation.target == "landed" and remediation.edits == ()
+    code, stderr, reads = _counter_fork(
+        tmp_path, monkeypatch, capsys, pairs, landed, extra
+    )
+    assert code == counter.EXIT_VIOLATION  # the verdict does not move
+    assert reads == [], f"{label}: searched for pins with nothing to re-point"
+    assert "UNKNOWN" not in stderr
+    assert "pin found" not in stderr
+    assert "_PARENT_REVISION_ID = " not in stderr
+    assert "computed, not literal" not in stderr
+
+
+def test_the_counter_does_search_for_pins_on_a_plain_fork(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture
+) -> None:
+    """Positive control for the test above."""
+    _, stderr, reads = _counter_fork(
+        tmp_path,
+        monkeypatch,
+        capsys,
+        (("a", None), ("landed", "a"), ("mine", "a")),
+        {"a", "landed"},
+    )
+    assert reads == [counter.TESTS_ROOT]
+    assert "no `_PARENT_REVISION_ID` pin found for mine" in stderr
+
+
+def test_the_sweep_says_no_pin_found_when_its_search_ran_and_found_none(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """`test_sources={}` — searched, nothing there — is NOT an UNKNOWN."""
+    simulated = {**_tree(("a", None), ("b", "a")), Path("c.py"): _revision("c", "a")}
+    posted: list[str] = []
+    code, stderr = _drive_main(monkeypatch, simulated, posted=posted, test_sources={})
+    assert code == 0
+    assert len(posted) == 1
+    assert "no `_PARENT_REVISION_ID` pin found for `c`" in posted[0]
+    assert "UNKNOWN" not in posted[0]
+    assert "pin search is UNKNOWN" not in stderr
+
+
+def test_a_capped_file_listing_makes_the_pin_search_unknown(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """At GitHub's 3000-file cap the pin's file may simply not be listed."""
+    simulated = {**_tree(("a", None), ("b", "a")), Path("c.py"): _revision("c", "a")}
+    posted: list[str] = []
+    pin_calls: list[int] = []
+    code, _ = _drive_main(
+        monkeypatch,
+        simulated,
+        posted=posted,
+        pin_calls=pin_calls,
+        extra_files=notifier.PR_FILES_LISTING_CAP,
+    )
+    assert code == 0  # wording only; the exit code does not move
+    assert pin_calls == []  # nothing fetched from a listing we cannot trust
+    assert len(posted) == 1
+    assert "UNKNOWN" in posted[0]
+    assert "pin found" not in posted[0]
