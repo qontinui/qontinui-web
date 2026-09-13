@@ -79,9 +79,11 @@ an ``--out`` that cannot be written, is ``io_error`` rather than a traceback.
 from __future__ import annotations
 
 import argparse
+import io
 import re
 import sys
 from collections import Counter
+from typing import TextIO
 
 # A pytest `--collect-only -q` line is a node id: a path, then optionally
 # `::`-separated class/function parts, then optionally a `[param]` suffix.
@@ -188,9 +190,19 @@ def _parse_verdict_line(line: str) -> dict[str, str]:
     return fields
 
 
+def _stderr() -> TextIO:
+    """`sys.stderr`, or a discarding sink when stderr is closed.
+
+    `print(file=None)` silently writes to STDOUT -- and without `--out`, stdout
+    is the shard's file list. A closed stderr would otherwise put the prose and
+    the verdict line into the selection a caller hands to pytest.
+    """
+    return sys.stderr if sys.stderr is not None else io.StringIO()
+
+
 def _finish(exit_code: int, verdict: str, **fields: object) -> int:
     """Print the verdict line to stderr and hand back `exit_code` for `main`."""
-    print(format_verdict(verdict, exit_code, **fields), file=sys.stderr)
+    print(format_verdict(verdict, exit_code, **fields), file=_stderr())
     return exit_code
 
 
@@ -220,6 +232,8 @@ def _abandon_stdout() -> None:
     prints ``Exception ignored ...`` AFTER the verdict line -- measured against
     ``/dev/full``. Closing it makes the shutdown flush a no-op.
     """
+    if sys.stdout is None:
+        return
     try:
         sys.stdout.close()
     except (OSError, ValueError):
@@ -331,7 +345,7 @@ def main(argv: list[str] | None = None) -> int:
             f"purpose is to APPLY a floor, and {args.min_files} means no floor "
             "at all. If the caller derives the floor, validate the derived value "
             "before passing it.",
-            file=sys.stderr,
+            file=_stderr(),
         )
         return _finish(1, "bad_args", mode=mode, reason="min_files_not_positive")
 
@@ -345,7 +359,7 @@ def main(argv: list[str] | None = None) -> int:
             "::error::--count-only requires a positive --min-nodeids: it is the "
             f"floor that catches a collection which keeps most FILES and loses "
             f"most TESTS, and {args.min_nodeids} means no such floor at all.",
-            file=sys.stderr,
+            file=_stderr(),
         )
         return _finish(1, "bad_args", mode=mode, reason="min_nodeids_not_positive")
 
@@ -354,16 +368,16 @@ def main(argv: list[str] | None = None) -> int:
             print(
                 "::error::--shards and --shard are required unless --count-only "
                 "is given",
-                file=sys.stderr,
+                file=_stderr(),
             )
             return _finish(1, "bad_args", mode=mode, reason="shard_args_missing")
         if args.shards < 1:
-            print(f"::error::--shards must be >= 1, got {args.shards}", file=sys.stderr)
+            print(f"::error::--shards must be >= 1, got {args.shards}", file=_stderr())
             return _finish(1, "bad_args", mode=mode, reason="shards_not_positive")
         if not 1 <= args.shard <= args.shards:
             print(
                 f"::error::--shard must be in 1..{args.shards}, got {args.shard}",
-                file=sys.stderr,
+                file=_stderr(),
             )
             return _finish(1, "bad_args", mode=mode, reason="shard_out_of_range")
 
@@ -376,9 +390,7 @@ def main(argv: list[str] | None = None) -> int:
     # ValueError covers a strict text stream's UnicodeDecodeError and an
     # embedded NUL in the path, both of which were tracebacks with no verdict.
     except (OSError, ValueError) as exc:
-        print(
-            f"::error::cannot read --nodeids {args.nodeids!r}: {exc}", file=sys.stderr
-        )
+        print(f"::error::cannot read --nodeids {args.nodeids!r}: {exc}", file=_stderr())
         return _finish(1, "io_error", mode=mode, stage="read")
 
     nodeids = parse_nodeids(text)
@@ -391,7 +403,7 @@ def main(argv: list[str] | None = None) -> int:
             "was captured, and that pytest ran at NEGATIVE verbosity (node ids "
             "print only there; pytest.ini addopts carrying -v cancel a lone -q, "
             "which is what `-o addopts=` in the workflow exists to prevent).",
-            file=sys.stderr,
+            file=_stderr(),
         )
         return _finish(2, "no_nodeids", mode=mode, nodeids=0)
 
@@ -428,7 +440,7 @@ def main(argv: list[str] | None = None) -> int:
             "floor allows for (backend/tests/conftest.py excludes "
             "`integration`); or a `test_*.py` file collected ZERO tests, i.e. a "
             "dead test module.",
-            file=sys.stderr,
+            file=_stderr(),
         )
         files_short = len(weights) < args.min_files
         nodeids_short = len(nodeids) < args.min_nodeids
@@ -451,7 +463,7 @@ def main(argv: list[str] | None = None) -> int:
         print(
             f"collection OK: {len(weights)} test files (floor {args.min_files}), "
             f"{len(nodeids)} node ids (floor {args.min_nodeids})",
-            file=sys.stderr,
+            file=_stderr(),
         )
         return _finish(
             0,
@@ -471,7 +483,7 @@ def main(argv: list[str] | None = None) -> int:
             f"of {len(weights)} collected files ({len(nodeids)} tests). With more "
             "files than shards this cannot happen, so the collection or the split "
             "is wrong. Refusing to run an empty shard.",
-            file=sys.stderr,
+            file=_stderr(),
         )
         return _finish(
             3,
@@ -490,6 +502,8 @@ def main(argv: list[str] | None = None) -> int:
             with open(args.out, "w", encoding="utf-8", newline="\n") as handle:
                 handle.write(body)
         else:
+            if sys.stdout is None:
+                raise OSError("stdout is closed")
             sys.stdout.write(body)
             # write() only fills a buffer. Without this flush a full or closed
             # stdout fails at interpreter shutdown -- AFTER an `ok exit=0`
@@ -502,7 +516,7 @@ def main(argv: list[str] | None = None) -> int:
         print(
             f"::error::cannot write shard {args.shard}/{args.shards}'s selection "
             f"to {target}: {exc}",
-            file=sys.stderr,
+            file=_stderr(),
         )
         return _finish(
             1,
@@ -518,7 +532,7 @@ def main(argv: list[str] | None = None) -> int:
     print(
         f"shard {args.shard}/{args.shards}: {len(selected)} of {len(weights)} files, "
         f"{mine} of {total} collected tests",
-        file=sys.stderr,
+        file=_stderr(),
     )
     return _finish(
         0,

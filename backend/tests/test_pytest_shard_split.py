@@ -418,33 +418,65 @@ def test_help_renders():
     assert excinfo.value.code == 0
 
 
-def test_the_table_has_one_row_per_verdict_call_site():
-    """Reachable verdict NAMES are not reachable EXITS.
+def _finish_call_sites() -> list[tuple[str, frozenset[str], dict[str, object]]]:
+    """Each `_finish(...)` call in the script: (verdict, field names, literals).
 
-    The vocabulary test above passes as long as each verdict appears once, so a
-    new `_finish` call reusing an existing verdict would go untested. Counting
-    call sites against table rows makes adding one without a row a red test.
+    Every site is distinguishable by these three: the verdict literal, the set
+    of keyword names it passes, and the values of those keywords that are
+    literals (`reason=`, `stage=`, `nodeids=0`).
     """
     tree = ast.parse(SCRIPT_PATH.read_text(encoding="utf-8"))
-    sites = [
-        node
-        for node in ast.walk(tree)
-        if isinstance(node, ast.Call)
-        and isinstance(node.func, ast.Name)
-        and node.func.id == "_finish"
-    ]
-    assert len(sites) == len(_EVERY_EXIT), (
-        f"{len(sites)} `_finish` call sites but {len(_EVERY_EXIT)} table rows; "
-        "give every exit path its own row"
-    )
-    # Counts alone let a duplicated row hide a deleted one, so every row must
-    # also name a DIFFERENT exit.
-    identities = [
-        (verdict, tuple(sorted(fields.items())))
-        for _, _, _, verdict, fields in _EVERY_EXIT
-    ]
-    assert len(identities) == len(set(identities)), (
-        f"two table rows name the same exit: {identities}"
+    sites = []
+    for node in ast.walk(tree):
+        if not (
+            isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Name)
+            and node.func.id == "_finish"
+        ):
+            continue
+        verdict = node.args[1]
+        assert isinstance(verdict, ast.Constant), f"line {node.lineno}: verdict"
+        keys = frozenset(kw.arg for kw in node.keywords if kw.arg)
+        literals = {
+            kw.arg: kw.value.value
+            for kw in node.keywords
+            if kw.arg and isinstance(kw.value, ast.Constant)
+        }
+        sites.append((verdict.value, keys, literals))
+    return sites
+
+
+def test_the_table_maps_one_to_one_onto_the_finish_call_sites(tmp_path, capsys):
+    """Every exit path has exactly one row, and every row exercises a different one.
+
+    Neither a count nor row uniqueness proves that: a near-duplicate row (one
+    extra field) could replace a deleted row and pass both. So each row is RUN,
+    its verdict line is matched against the call sites read from the source,
+    and the rows must hit every site exactly once.
+    """
+    sites = _finish_call_sites()
+    hit_by_row = []
+    for index, (text, extra, _, _, _) in enumerate(_EVERY_EXIT):
+        row_dir = tmp_path / f"row{index}"
+        row_dir.mkdir()
+        nodeids = str(row_dir / "absent.txt") if text is None else _write(row_dir, text)
+        argv = [arg.replace("{tmp}", str(row_dir)) for arg in extra]
+        splitter.main(["--nodeids", nodeids, *argv])
+        parsed = splitter.parse_verdict(capsys.readouterr().err)
+        assert parsed is not None, f"row {index} printed no verdict line"
+        produced = set(parsed) - {"verdict", "exit"}
+        hits = [
+            site
+            for site, (verdict, keys, literals) in enumerate(sites)
+            if verdict == parsed["verdict"]
+            and keys == produced
+            and all(str(value) == parsed.get(key) for key, value in literals.items())
+        ]
+        assert len(hits) == 1, f"row {index} ({parsed}) matches call sites {hits}"
+        hit_by_row.append(hits[0])
+    assert sorted(hit_by_row) == list(range(len(sites))), (
+        f"rows hit call sites {sorted(hit_by_row)} of {len(sites)}; every "
+        "`_finish` call needs exactly one row"
     )
 
 
@@ -465,6 +497,18 @@ def test_every_return_in_main_goes_through_finish():
             and isinstance(call.func, ast.Name)
             and call.func.id == "_finish"
         ), f"`main` line {node.lineno} returns without `_finish`"
+    # `sys.exit(n)` / `raise SystemExit` exit without a verdict line too, and
+    # falling off the end of `main` returns None.
+    for node in ast.walk(main):
+        if isinstance(node, ast.Raise):
+            assert "SystemExit" not in ast.unparse(node), (
+                f"`main` line {node.lineno} raises SystemExit"
+            )
+        if isinstance(node, ast.Call):
+            assert ast.unparse(node.func) not in {"sys.exit", "exit", "quit"}, (
+                f"`main` line {node.lineno} exits without `_finish`"
+            )
+    assert isinstance(main.body[-1], ast.Return), "`main` can fall off its end"
 
 
 def test_an_in_process_text_stdin_without_a_buffer_still_works(monkeypatch, capsys):
@@ -495,6 +539,28 @@ def test_a_nul_byte_in_out_is_io_error(tmp_path, capsys):
     rc = splitter.main(["--nodeids", nodeids, *_OK_SELECT, "--out", "bad\0path"])
     assert rc == 1
     _verdict(capsys, 1, "io_error", stage="write")
+
+
+def test_a_closed_stdout_is_io_error(tmp_path, monkeypatch, capsys):
+    monkeypatch.setattr(sys, "stdout", None)
+    rc = splitter.main(["--nodeids", _write(tmp_path, _REAL_SHAPE), *_OK_SELECT])
+    monkeypatch.undo()
+    assert rc == 1
+    _verdict(capsys, 1, "io_error", stage="write")
+
+
+def test_a_closed_stderr_never_leaks_into_the_selection(tmp_path, monkeypatch, capsys):
+    """`print(file=None)` writes to STDOUT -- which here is the list pytest runs."""
+    nodeids = _write(tmp_path, _REAL_SHAPE)
+    monkeypatch.setattr(sys, "stderr", None)
+    rc = splitter.main(["--nodeids", nodeids, "--shards", "1", "--shard", "1"])
+    monkeypatch.undo()
+    assert rc == 0
+    assert capsys.readouterr().out.splitlines() == [
+        "tests/sub/test_beta.py",
+        "tests/test_alpha.py",
+        "tests/test_gamma.py",
+    ]
 
 
 def test_stdin_with_a_non_utf8_byte_still_ends_in_a_verdict(monkeypatch, capsys):
