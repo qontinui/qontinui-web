@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
   choiceFromTenant,
-  effectiveSummary,
   readAutoFixPr,
   tenantFromChoice,
+  tenantSummary,
 } from "./auto-fix-pr";
 
 describe("readAutoFixPr", () => {
@@ -63,6 +63,16 @@ describe("readAutoFixPr", () => {
       readAutoFixPr({ auto_fix_pr_tenant: null, auto_fix_pr_source: "default" })
     ).toEqual({ tenant: null, effective: false, source: "unknown" });
   });
+
+  it("refuses a malformed tenant value rather than showing it as Default", () => {
+    expect(
+      readAutoFixPr({
+        auto_fix_pr_tenant: "false",
+        auto_fix_pr: false,
+        auto_fix_pr_source: "tenant",
+      })
+    ).toBeNull();
+  });
 });
 
 describe("choice <-> tenant column", () => {
@@ -76,17 +86,19 @@ describe("choice <-> tenant column", () => {
   });
 });
 
-describe("effectiveSummary", () => {
-  it("names the layer that decided", () => {
+describe("tenantSummary", () => {
+  it("names the layer that decided, deriving the default from coord", () => {
     expect(
-      effectiveSummary({ tenant: null, effective: true, source: "default" })
+      tenantSummary({ tenant: null, effective: true, source: "default" })
     ).toEqual({ value: "On", tone: "on", from: "the default (on)" });
     expect(
-      effectiveSummary({ tenant: false, effective: false, source: "tenant" })
-    ).toEqual({ value: "Off", tone: "off", from: "this tenant's setting" });
-    // Tenant On, but a repo's explicit false wins — coord says so via `repo`.
+      tenantSummary({ tenant: null, effective: false, source: "default" })
+    ).toEqual({ value: "Off", tone: "off", from: "the default (off)" });
     expect(
-      effectiveSummary({ tenant: true, effective: false, source: "repo" })
+      tenantSummary({ tenant: false, effective: false, source: "tenant" })
+    ).toEqual({ value: "Off", tone: "off", from: "this tenant's setting" });
+    expect(
+      tenantSummary({ tenant: true, effective: false, source: "repo" })
     ).toEqual({
       value: "Off",
       tone: "off",
@@ -96,7 +108,7 @@ describe("effectiveSummary", () => {
 
   it("renders unknown as treated-as-off", () => {
     expect(
-      effectiveSummary({ tenant: null, effective: false, source: "unknown" })
+      tenantSummary({ tenant: null, effective: false, source: "unknown" })
     ).toEqual({
       value: "Unknown (treated as off)",
       tone: "unknown",
