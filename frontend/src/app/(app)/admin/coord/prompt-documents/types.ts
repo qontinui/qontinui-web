@@ -1076,6 +1076,190 @@ export interface PublishResponse {
   immutable: string;
 }
 
+// --------------- the modified-tenant decisions (D4, Phase 7) ---------------
+
+/**
+ * `POST /coord/prompt-documents/:kind/:name/upstream-adopt` and
+ * `.../upstream-keep` body — the two whole-body decisions on an upstream
+ * publication (plan `2026-09-04-cross-tenant-policy-publishing` D4).
+ */
+export interface UpstreamDecisionRequest {
+  /**
+   * Which publication was reviewed. REQUIRED: the operator decided against a
+   * specific body, and "the latest" may have moved since the dialog loaded.
+   */
+  publication_version: number;
+  /** The `current_version` the decision was made against; coord 409s if it moved. */
+  expected_version?: number;
+}
+
+/** 200 body of both decision routes. */
+export interface UpstreamDecisionResponse {
+  kind: PromptDocumentKind;
+  name: string;
+  from_version: number;
+  to_version: number;
+  publication_version: number;
+  /** Whether the body had diverged from what it tracked, as coord found it BEFORE the write. */
+  local_modified: boolean;
+}
+
+/**
+ * What the clause-grained merge decided for one clause name — coord's
+ * `ClauseMergeDecision`, snake_case on the wire.
+ *
+ * Every variant but `conflict` is a decision coord is entitled to make because
+ * ONE side provably did not move. `conflict` is the ABSENCE of a decision: the
+ * operator supplies it, per clause, and coord refuses to land the merge until
+ * every one has been supplied. There is no "prefer upstream" default anywhere.
+ */
+export type ClauseMergeDecision =
+  | "unchanged"
+  | "take_upstream_edit"
+  | "take_upstream_addition"
+  | "take_upstream_removal"
+  | "keep_local_addition"
+  | "keep_local_edit"
+  | "keep_local_removal"
+  | "conflict";
+
+export const CLAUSE_MERGE_DECISION_LABEL: Record<ClauseMergeDecision, string> =
+  {
+    unchanged: "Unchanged",
+    take_upstream_edit: "Takes the upstream edit",
+    take_upstream_addition: "Takes the new upstream clause",
+    take_upstream_removal: "Removed upstream — removed here too",
+    keep_local_addition: "Yours — added here, stays",
+    keep_local_edit: "Yours — edited here, stays",
+    keep_local_removal: "Removed here — stays removed",
+    conflict: "Needs your choice",
+  };
+
+/** Why a clause could not be decided — coord's `ConflictReason`. */
+export type ClauseConflictReason =
+  | "both_edited"
+  | "edited_locally_removed_upstream"
+  | "removed_locally_edited_upstream"
+  | "baseline_unknown";
+
+export const CLAUSE_CONFLICT_REASON_LABEL: Record<
+  ClauseConflictReason,
+  string
+> = {
+  both_edited: "Changed on both sides since the base",
+  edited_locally_removed_upstream: "Edited here, removed upstream",
+  removed_locally_edited_upstream: "Removed here, edited upstream",
+  baseline_unknown:
+    "No base could be established, so coord cannot tell which side moved",
+};
+
+/** Which side the operator picks for one conflicted clause. Two arms, no default. */
+export type ClauseConflictChoice = "local" | "upstream";
+
+/** One side of a clause in the merge view — coord's `ParsedClause`. */
+export interface MergeClauseSide {
+  clause_id: string;
+  category: string | null;
+  status: string | null;
+  tier: string | null;
+  trigger: string | null;
+  action: string | null;
+  bounds: string | null;
+  escalate_if: string | null;
+  anti_triggers: string[];
+  depends_on: string[];
+  links: string[];
+}
+
+/** One clause name's row in the merge view. Absent side = absent on that side. */
+export interface ClauseMergeEntry {
+  clause: string;
+  decision: ClauseMergeDecision;
+  conflict_reason?: ClauseConflictReason;
+  /** Denormalized `decision === "conflict"`, so a client need not know the variant list. */
+  requires_choice: boolean;
+  base?: MergeClauseSide;
+  local?: MergeClauseSide;
+  upstream?: MergeClauseSide;
+}
+
+/**
+ * Why a document cannot be merged clause by clause — coord's
+ * `WholeBodyFallback`, tagged on `reason` with the detail beside it. The
+ * console then offers the whole-body Adopt / Keep-mine pair instead.
+ */
+export type ClauseMergeWholeBodyFallback =
+  | { reason: "local_not_clause_structured" }
+  | { reason: "upstream_not_clause_structured" }
+  | { reason: "duplicate_clause_names"; detail: string }
+  | { reason: "preamble_not_representable"; detail: string };
+
+export const CLAUSE_MERGE_FALLBACK_LABEL: Record<
+  ClauseMergeWholeBodyFallback["reason"],
+  string
+> = {
+  local_not_clause_structured:
+    "This tenant's body has no `## clause:` blocks — it never adopted the clause model.",
+  upstream_not_clause_structured: "The publication has no `## clause:` blocks.",
+  duplicate_clause_names: "One side names a clause twice.",
+  preamble_not_representable:
+    "One side carries prose before its first clause header, which a clause recompile would delete.",
+};
+
+interface ClauseMergePreviewBase {
+  kind: PromptDocumentKind;
+  name: string;
+  current_version: number;
+  tracked_publication_version: number | null;
+  publication_version: number;
+  publication_release_note: string | null;
+  /** Where the merge base came from. `unknown` makes every non-identical clause a conflict. */
+  base_source: "tracked_publication" | "code_seed" | "unknown";
+  base_publication_version?: number;
+  base_unknown_reason?: string;
+}
+
+/** `GET /coord/prompt-documents/policy/:name/upstream-merge` response. */
+export type ClauseMergePreview = ClauseMergePreviewBase &
+  (
+    | {
+        mode: "clauses";
+        base_known: boolean;
+        /** Upstream document order first, then clauses only this tenant has. */
+        entries: ClauseMergeEntry[];
+        /** The clause names the apply will refuse to proceed without. */
+        conflicts: string[];
+        /** Nothing would change if this plan landed. */
+        noop: boolean;
+      }
+    | { mode: "whole_body"; fallback: ClauseMergeWholeBodyFallback }
+  );
+
+/** `POST .../upstream-merge` body. */
+export interface ClauseMergeApplyRequest {
+  publication_version: number;
+  expected_version?: number;
+  /** One choice per CONFLICTED clause. A conflicted clause missing here is a 409, never a default. */
+  resolutions: Record<string, ClauseConflictChoice>;
+}
+
+/** `POST .../upstream-merge` 200 body. */
+export interface ClauseMergeApplyResponse {
+  merged: boolean;
+  kind: PromptDocumentKind;
+  name: string;
+  from_version: number;
+  to_version: number;
+  publication_version: number;
+  /** How many clauses the merged body carries. */
+  clauses: number;
+  entries: {
+    clause: string;
+    decision: ClauseMergeDecision;
+    resolved_as: ClauseConflictChoice | null;
+  }[];
+}
+
 // --------------- the upstream-adoption dial (`policy_upstream`) ---------------
 
 /**

@@ -8567,6 +8567,129 @@ async def get_prompt_document_publication(
     )
 
 
+# The MODIFIED-tenant decisions (plan ``2026-09-04-cross-tenant-policy-publishing``
+# D4 and Phase 7). A document whose body diverged from the publication it tracks
+# is never overwritten by the fan-out; the operator resolves it from the upstream
+# dialog with one of three acts, each proxied verbatim to coord's tenant-scoped
+# route. All three are WRITES into the caller's own tenant and gate on
+# ``require_coord_tenant_admin`` like every other prompt-document mutation
+# (coord re-checks admin on every write). The merge PREVIEW is a read and gates
+# on tenant membership, matching the clause list beside it.
+#
+# Every one of these needs the D3 columns provisioned; coord answers ``503
+# schema_migration_pending`` otherwise, which passes through — a decision coord
+# cannot record must not look like one it took.
+
+
+@router.post("/coord/prompt-documents/{kind}/{name}/upstream-adopt")
+async def adopt_upstream_prompt_document(
+    kind: str,
+    name: str,
+    body: dict[str, Any],
+    tenant_id: UUID = Depends(require_coord_tenant_admin),
+) -> Any:
+    """``Adopt upstream``: replace this tenant's body with a publication and
+    advance the tracked version, in one coord transaction. Tenant-admin only.
+
+    Body: ``{publication_version, expected_version?}``. ``publication_version``
+    is REQUIRED — the operator reviewed a specific body, and "the latest" may
+    have moved since the dialog loaded it. ``expected_version`` is the
+    optimistic-lock guard; coord answers ``409 document_moved`` if the document
+    changed underneath. ``409 already_current`` when the document already IS
+    that publication. The local edits stay recoverable from version history.
+    """
+    return await _proxy_coord_post(
+        f"/coord/prompt-documents/{quote(kind, safe='')}/{quote(name, safe='')}"
+        "/upstream-adopt",
+        body,
+        tenant_id=tenant_id,
+    )
+
+
+@router.post("/coord/prompt-documents/{kind}/{name}/upstream-keep")
+async def keep_local_prompt_document(
+    kind: str,
+    name: str,
+    body: dict[str, Any],
+    tenant_id: UUID = Depends(require_coord_tenant_admin),
+) -> Any:
+    """``Keep mine``: record "reviewed publication N, declined" — advance the
+    tracked version WITHOUT changing the body. Tenant-admin only.
+
+    Not a no-op, and the plan is explicit about why: this is the mechanism that
+    clears the ``update available`` badge for a tenant that means to keep its
+    edits; without it the badge nags forever. Same body shape as the adopt
+    route. Coord answers ``409 already_reviewed`` when the tracked version is
+    already at or past ``publication_version`` — the pointer only moves
+    forward.
+    """
+    return await _proxy_coord_post(
+        f"/coord/prompt-documents/{quote(kind, safe='')}/{quote(name, safe='')}"
+        "/upstream-keep",
+        body,
+        tenant_id=tenant_id,
+    )
+
+
+@router.get("/coord/prompt-documents/{kind}/{name}/upstream-merge")
+async def preview_upstream_merge(
+    kind: str,
+    name: str,
+    publication_version: int | None = None,
+    tenant_id: UUID = Depends(get_tenant_id),
+) -> Any:
+    """The clause-grained three-way merge PREVIEW for a ``policy`` document
+    (Phase 7). Read-only: it decides nothing and writes nothing. Any tenant
+    member.
+
+    Coord answers ``mode: "clauses"`` with one entry per clause name — the
+    decision, ``requires_choice``, and the ``base`` / ``local`` / ``upstream``
+    sides for a three-column diff — or ``mode: "whole_body"`` with the reason a
+    clause merge is not defined for this pair (no clause blocks on one side,
+    duplicate clause names, or prose before the first clause header that a
+    clause recompile could not reconstruct). ``publication_version`` absent
+    means the latest. Coord's own ``400`` for a non-``policy`` kind passes
+    through.
+    """
+    params = (
+        {"publication_version": publication_version}
+        if publication_version is not None
+        else None
+    )
+    return await _proxy_coord_get(
+        f"/coord/prompt-documents/{quote(kind, safe='')}/{quote(name, safe='')}"
+        "/upstream-merge",
+        params=params,
+        tenant_id=tenant_id,
+    )
+
+
+@router.post("/coord/prompt-documents/{kind}/{name}/upstream-merge")
+async def apply_upstream_merge(
+    kind: str,
+    name: str,
+    body: dict[str, Any],
+    tenant_id: UUID = Depends(require_coord_tenant_admin),
+) -> Any:
+    """``Merge clauses``: land a reviewed clause-grained merge (Phase 7).
+    Tenant-admin only.
+
+    Body: ``{publication_version, expected_version?, resolutions?}``.
+    ``resolutions`` maps each CONFLICTED clause name to ``"local"`` or
+    ``"upstream"``; a conflicted clause missing from it is ``409
+    unresolved_conflicts`` naming the clauses — coord never picks a side. The
+    other ``409`` codes are ``document_moved``, ``whole_body_fallback`` (use
+    Adopt / Keep instead) and ``nothing_to_merge``. Forwarded verbatim; the
+    per-clause choices are the operator's and this proxy adds none.
+    """
+    return await _proxy_coord_post(
+        f"/coord/prompt-documents/{quote(kind, safe='')}/{quote(name, safe='')}"
+        "/upstream-merge",
+        body,
+        tenant_id=tenant_id,
+    )
+
+
 @router.get("/coord/prompt-document-kind-tiers")
 async def list_prompt_document_kind_tiers(
     tenant_id: UUID = Depends(get_tenant_id),

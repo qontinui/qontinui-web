@@ -85997,6 +85997,279 @@
         ]
       }
     },
+    "/api/v1/operations/coord/prompt-documents/{kind}/{name}/upstream-adopt": {
+      "post": {
+        "description": "``Adopt upstream``: replace this tenant's body with a publication and\nadvance the tracked version, in one coord transaction. Tenant-admin only.\n\nBody: ``{publication_version, expected_version?}``. ``publication_version``\nis REQUIRED \u2014 the operator reviewed a specific body, and \"the latest\" may\nhave moved since the dialog loaded it. ``expected_version`` is the\noptimistic-lock guard; coord answers ``409 document_moved`` if the document\nchanged underneath. ``409 already_current`` when the document already IS\nthat publication. The local edits stay recoverable from version history.",
+        "operationId": "api_v1_operations_coord_prompt_documents_kind_name_upstream_adopt_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "kind",
+            "required": true,
+            "schema": {
+              "title": "Kind",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "title": "Name",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "Body",
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Adopt Upstream Prompt Document Api V1 Operations Coord Prompt Documents  Kind   Name  Upstream Adopt Post"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Adopt Upstream Prompt Document",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
+    "/api/v1/operations/coord/prompt-documents/{kind}/{name}/upstream-keep": {
+      "post": {
+        "description": "``Keep mine``: record \"reviewed publication N, declined\" \u2014 advance the\ntracked version WITHOUT changing the body. Tenant-admin only.\n\nNot a no-op, and the plan is explicit about why: this is the mechanism that\nclears the ``update available`` badge for a tenant that means to keep its\nedits; without it the badge nags forever. Same body shape as the adopt\nroute. Coord answers ``409 already_reviewed`` when the tracked version is\nalready at or past ``publication_version`` \u2014 the pointer only moves\nforward.",
+        "operationId": "api_v1_operations_coord_prompt_documents_kind_name_upstream_keep_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "kind",
+            "required": true,
+            "schema": {
+              "title": "Kind",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "title": "Name",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "Body",
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Keep Local Prompt Document Api V1 Operations Coord Prompt Documents  Kind   Name  Upstream Keep Post"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Keep Local Prompt Document",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
+    "/api/v1/operations/coord/prompt-documents/{kind}/{name}/upstream-merge": {
+      "get": {
+        "description": "The clause-grained three-way merge PREVIEW for a ``policy`` document\n(Phase 7). Read-only: it decides nothing and writes nothing. Any tenant\nmember.\n\nCoord answers ``mode: \"clauses\"`` with one entry per clause name \u2014 the\ndecision, ``requires_choice``, and the ``base`` / ``local`` / ``upstream``\nsides for a three-column diff \u2014 or ``mode: \"whole_body\"`` with the reason a\nclause merge is not defined for this pair (no clause blocks on one side,\nduplicate clause names, or prose before the first clause header that a\nclause recompile could not reconstruct). ``publication_version`` absent\nmeans the latest. Coord's own ``400`` for a non-``policy`` kind passes\nthrough.",
+        "operationId": "api_v1_operations_coord_prompt_documents_kind_name_upstream_merge_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "kind",
+            "required": true,
+            "schema": {
+              "title": "Kind",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "title": "Name",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "publication_version",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Publication Version"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Preview Upstream Merge Api V1 Operations Coord Prompt Documents  Kind   Name  Upstream Merge Get"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Preview Upstream Merge",
+        "tags": [
+          "operations"
+        ]
+      },
+      "post": {
+        "description": "``Merge clauses``: land a reviewed clause-grained merge (Phase 7).\nTenant-admin only.\n\nBody: ``{publication_version, expected_version?, resolutions?}``.\n``resolutions`` maps each CONFLICTED clause name to ``\"local\"`` or\n``\"upstream\"``; a conflicted clause missing from it is ``409\nunresolved_conflicts`` naming the clauses \u2014 coord never picks a side. The\nother ``409`` codes are ``document_moved``, ``whole_body_fallback`` (use\nAdopt / Keep instead) and ``nothing_to_merge``. Forwarded verbatim; the\nper-clause choices are the operator's and this proxy adds none.",
+        "operationId": "api_v1_operations_coord_prompt_documents_kind_name_upstream_merge_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "kind",
+            "required": true,
+            "schema": {
+              "title": "Kind",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "title": "Name",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "Body",
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Apply Upstream Merge Api V1 Operations Coord Prompt Documents  Kind   Name  Upstream Merge Post"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Apply Upstream Merge",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
     "/api/v1/operations/coord/prompt-documents/{kind}/{name}/versions": {
       "get": {
         "description": "Version-history metadata for one prompt document (newest first, no\nbodies). Any authenticated tenant member.",
