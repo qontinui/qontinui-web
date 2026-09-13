@@ -24,19 +24,30 @@
  *     collapsed, rather than as a fourth section: the knob and the telemetry
  *     that says what to set it to belong in one viewport.
  *
- * ## The health strip answers TWO questions, not one
+ * ## The health strip answers THREE questions, not one
  *
- * The badge cluster carries machine liveness AND coord's unresolved-alert
- * severity rollup, because those are different claims and the page used to
- * make only the first. `by_state: {healthy: 8}` is liveness; it says nothing
- * about alerts, and a steward read it as an all-clear while thousands of
- * unresolved criticals stood (plan
- * `2026-08-31-devops-surface-renders-no-alert-signal`). Coord had been
- * publishing the rollup on this page's own poll the whole time — it was
+ * The badge cluster carries machine liveness, coord's unresolved-alert
+ * severity rollup, AND whether the machines can still reach coord, because
+ * those are different claims and the page used to make only the first.
+ * `by_state: {healthy: 8}` is liveness; it says nothing about alerts, and a
+ * steward read it as an all-clear while thousands of unresolved criticals
+ * stood (plan `2026-08-31-devops-surface-renders-no-alert-signal`). Coord had
+ * been publishing the rollup on this page's own poll the whole time — it was
  * discarded by a hook type that declared only `devices`.
  *
- * This costs NO new read: `alerts` rides the `/fleet/health` body the page
- * already polls, which is R1's "derived from data already on the page".
+ * The third question is the same shape one field over, and was found the same
+ * way (plan
+ * `2026-09-12-runner-loads-with-an-expired-coord-credential-and-tells-nobody`
+ * Phase 5). Liveness is coord reaching the machine; a runner that boots with
+ * an expired coord device JWT answers every probe and reads `healthy` here
+ * while every session it spawns silently has no coord access. Coord joins that
+ * fact onto each device row as `credential_dark` and raises a critical alert
+ * per dark device — and this page discarded the field and rendered the alert
+ * only as a count with no machine attached.
+ *
+ * This costs NO new read: `alerts` and `credential_dark` both ride the
+ * `/fleet/health` body the page already polls, which is R1's "derived from
+ * data already on the page".
  *
  * ## What this page does NOT do
  *
@@ -78,6 +89,7 @@ import { ExternalLink } from "lucide-react";
 import { HealthStrip } from "@/components/console";
 import type { HealthBadge } from "@/components/console";
 import { FleetOverview, FleetResourcesSection } from "@/components/operations";
+import { summarizeCoordCredentials } from "@/components/operations/coordCredentialStatus";
 import { summarizeFleetLiveness } from "@/components/operations/fleetLiveness";
 import { useDevenvMachines } from "@/components/operations/useDevenvMachines";
 import { useFleetDrain } from "@/components/operations/useFleetDrain";
@@ -203,6 +215,76 @@ export default function CoordDevOpsPage() {
     ];
   }, [alertCounts, alertsScrapeUp, router]);
 
+  /**
+   * **The third question the strip answers: can the machines still reach
+   * COORD?** Plan
+   * `2026-09-12-runner-loads-with-an-expired-coord-credential-and-tells-nobody`
+   * Phase 5.
+   *
+   * `by_state` is coord reaching the machine, `alerts` is anything wrong
+   * anywhere; neither can see a runner that booted with an expired device JWT
+   * and kept working. That machine answers every probe, so it reads `healthy`
+   * here while every session it spawns has no coord access and does not know
+   * it. The only thing that made it visible was a critical alert whose COUNT
+   * was on this page and whose MACHINE was not.
+   *
+   * Derived from the devices already polled (R1, never a second fetch). Both
+   * badges are conditional, and the two are deliberately separate counts:
+   *
+   * * `credential dark N` — measured, and someone must go and fix those
+   *   machines. The only badge here that borrows red besides `unreachable`.
+   * * `credential unknown N` — nothing measured them. **Never folded into the
+   *   healthy side and never rendered as `0`**, which is the same rule the
+   *   `alerts unknown` badge above follows and the rule this whole plan is
+   *   about (`[policy: silent-empty-is-unknown]`).
+   *
+   * **Expect `credential unknown` to count most of the fleet, and read it as
+   * the honest number it is.** This strip sees the fleet-health rows only —
+   * the runner's own `coord_credential` bag rides the device-status stream,
+   * which is subscribed one level down in `FleetOverview` and is what the
+   * per-machine badge resolves against. Coord's join alone can conclude
+   * `dark` and nothing else: its `dark: false` is a roster stamp for "the
+   * scan did not name this device", which pools the healthy with the
+   * never-reported. So `credential dark N` is exact, and every other device
+   * is unmeasured *by this view*. Counting them as healthy instead is what an
+   * earlier cut of `coordCredentialStatus` did, and it put a calm
+   * `credential live` badge on precisely the machines the plan was written
+   * about.
+   */
+  const credentials = useMemo(
+    () =>
+      summarizeCoordCredentials(devices, fleet.data?.credential_dark_scrape_up),
+    [devices, fleet.data?.credential_dark_scrape_up]
+  );
+
+  const credentialBadges = useMemo<HealthBadge[]>(() => {
+    const badges: HealthBadge[] = [];
+    if (credentials.needsAction > 0) {
+      badges.push({
+        key: "credential-dark",
+        label: `credential dark ${credentials.needsAction}`,
+        tone: "attention",
+        title:
+          "Machines that reported no usable coord device JWT. Sessions spawned on them work without coord and do not know it. Opens the alerts list, where each one has a critical runner_coord_credentials_missing alert.",
+        onClick: () => router.push(ALERTS_HREF),
+        "data-testid": "coord-devops-credential-dark-badge",
+      });
+    }
+    if (credentials.unknown > 0) {
+      badges.push({
+        key: "credential-unknown",
+        label: `credential unknown ${credentials.unknown}`,
+        tone: "muted",
+        title:
+          credentials.scrapeUp === false
+            ? "Coord could not read the per-device credential join on this poll. This is not 'their credentials are fine' — it is no measurement."
+            : "These machines carry no coord-credential verdict on this read. Coord's join only names machines that reported a DEAD credential, so a machine missing from it may be fine or may have reported nothing at all — this strip cannot tell, and each machine's own row below can. UNKNOWN, not healthy.",
+        "data-testid": "coord-devops-credential-unknown-badge",
+      });
+    }
+    return badges;
+  }, [credentials, router]);
+
   return (
     // `overflow-x-auto`: the resource strip is wide, and it must scroll rather
     // than strand its right-hand columns off-screen. Vertical scroll comes
@@ -274,6 +356,11 @@ export default function CoordDevOpsPage() {
                 },
               ]
             : []),
+          // Credentials next: "are the machines there?" is answered above,
+          // and this answers "can the ones that ARE there still reach coord?"
+          // — an independent axis, because the incident it exists for is a
+          // machine that answered every probe with a dead coord credential.
+          ...credentialBadges,
           // Alerts last, after the liveness cluster: the four above answer
           // "are the machines there?", these answer "is anything wrong?", and
           // the second question is the one this page could not previously ask.

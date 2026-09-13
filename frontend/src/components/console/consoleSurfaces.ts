@@ -163,6 +163,11 @@ import {
   AUTHOR_GLYPH_KINDS as AGENT_TEXT_UNIT_AUTHOR_GLYPH_KINDS,
   STATUS_BADGE_CLASS as AGENT_TEXT_UNIT_STATUS_CLASS,
 } from "@/app/(app)/admin/coord/_agent-text-units/_lib/unitRows";
+import {
+  COORD_CREDENTIAL_ATTENTION_BY_POSTURE,
+  COORD_CREDENTIAL_AUTHOR_GLYPH_KINDS,
+  COORD_CREDENTIAL_BADGE_CLASS,
+} from "@/components/operations/coordCredentialStatus";
 
 export interface ConsoleSurface {
   /** Human-readable name + route, for the test's `it(...)` title. */
@@ -387,6 +392,22 @@ export const CONSOLE_PALETTES: ReadonlyArray<ConsoleSurface> = [
       badgeClass: AGENT_TEXT_UNIT_STATUS_CLASS,
       authorGlyphKinds:
         AGENT_TEXT_UNIT_AUTHOR_GLYPH_KINDS as ReadonlySet<string>,
+    },
+  },
+  {
+    // The SECOND credential axis on the Dev Ops machine row: `coordState`
+    // says whether coord still reaches the machine, this says whether the
+    // machine still reaches coord. Its `unknown` is amber BY FLOOR and is
+    // rendered, not skipped — a device nothing measured is the whole defect
+    // plan `2026-09-12-runner-loads-with-an-expired-coord-credential-and-…`
+    // exists to surface.
+    surface: "coord credential (/admin/coord/devops)",
+    module: "components/operations/coordCredentialStatus.ts",
+    attentionByKind: COORD_CREDENTIAL_ATTENTION_BY_POSTURE,
+    palette: {
+      badgeClass: COORD_CREDENTIAL_BADGE_CLASS,
+      authorGlyphKinds:
+        COORD_CREDENTIAL_AUTHOR_GLYPH_KINDS as ReadonlySet<string>,
     },
   },
   // --- the consolidated sessions console ------------------------------------

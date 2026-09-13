@@ -1,0 +1,52 @@
+name: pre-commit hook tests
+
+# Runs the unit tests that live beside the repo's own pre-commit hooks in
+# `.pre-commit-hooks/` (today: test_check_alembic_schema_args.py).
+#
+# WHY THIS WORKFLOW EXISTS. Those tests ran nowhere: backend-ci.yml runs
+# `pytest tests/` from `backend/`, which never collects `.pre-commit-hooks/`,
+# and pre-commit runs the hooks themselves, not their tests. So a regression in
+# a hook's audit — e.g. the DROP INDEX pattern added by plan
+# 2026-09-12-alembic-schema-arg-hook-does-not-audit-drop-index — could land
+# with every check green. A test that never runs cannot fail.
+#
+# NOT A REQUIRED CHECK, and it must stay that way while it carries a `paths:`
+# filter: a required context skipped by a paths filter leaves every PR that
+# does not touch these files stuck on "Expected — waiting for status" (the
+# rationale alembic-graph-pr.yml and coord-column-drop-guard.yml quote). If it
+# is ever made required, delete the filters first.
+
+on:
+  pull_request:
+    branches: [main, develop]
+    paths:
+      - '.pre-commit-hooks/**'
+      - '.github/workflows/pre-commit-hook-tests.yml'
+  push:
+    branches: [main]
+    paths:
+      - '.pre-commit-hooks/**'
+      - '.github/workflows/pre-commit-hook-tests.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  pre-commit-hook-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install pytest
+        run: python -m pip install "pytest>=9,<10"
+
+      - name: Run hook tests
+        # The hooks are stdlib-only, so pytest is the sole dependency.
+        # `-rA` prints a per-test result line, so a green run shows what ran;
+        # pytest exits 5 when it collects no tests, which fails this step
+        # rather than passing vacuously.
+        run: python -m pytest .pre-commit-hooks -rA
