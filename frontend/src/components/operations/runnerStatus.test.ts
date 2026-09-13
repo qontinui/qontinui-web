@@ -96,6 +96,7 @@ function record(overrides: Partial<RunnerSessionRecord> = {}): RunnerSessionReco
     windDown: windDown(),
     windDownKnown: true,
     windDownTruncated: false,
+    sharedClaudeIdCount: 1,
     ...overrides,
   };
 }
@@ -162,7 +163,10 @@ describe("resolveReadiness", () => {
   });
 
   it("is green only for an explicit fresh `safe: true`", () => {
-    const safe = resolveReadiness(body(sampleRow({ readiness_safe: true })), DEVICE);
+    const safe = resolveReadiness(
+      body(sampleRow({ readiness_safe: true, readiness_blocking: 0 })),
+      DEVICE
+    );
     expect(deriveReadinessHealth(safe, 0)).toMatchObject({
       level: "green",
       headline: "Safe to restart",
@@ -368,5 +372,163 @@ describe("describeControlError", () => {
 
   it("names a 422 as an action this coord does not know", () => {
     expect(describeControlError(422, "{}").message).toMatch(/does not\s+know this action/);
+  });
+});
+
+describe("resolveReadiness — which row carries the verdict (contract C1)", () => {
+  const SAME_INSTANT = "2026-09-13T10:00:00Z";
+  const wslNoReadiness = (overrides: Record<string, unknown> = {}) => ({
+    device_id: DEVICE,
+    lane: "wsl",
+    sampled_at: SAME_INSTANT,
+    readiness_age_secs: 20,
+    readiness_state: "absent",
+    ...overrides,
+  });
+
+  it("never lets a wsl row with no readiness win a tie at the same sampled_at", () => {
+    const host = sampleRow({ sampled_at: SAME_INSTANT, readiness_reason: "host verdict" });
+    // Listed FIRST, same instant, same age: only the ranking can separate them.
+    const read = resolveReadiness(body(wslNoReadiness(), host), DEVICE);
+    expect(read.kind).toBe("fresh");
+    expect(read.kind === "fresh" && read.sample.reason).toBe("host verdict");
+  });
+
+  it("prefers the host lane even when both rows are marked fresh", () => {
+    const read = resolveReadiness(
+      body(
+        wslNoReadiness({ readiness_state: "fresh" }),
+        sampleRow({ sampled_at: SAME_INSTANT, readiness_reason: "host verdict" })
+      ),
+      DEVICE
+    );
+    expect(read.kind === "fresh" && read.sample.reason).toBe("host verdict");
+  });
+
+  it("picks the row carrying readiness when coord serves no lane field", () => {
+    const { lane: _lane, ...hostless } = sampleRow({
+      sampled_at: SAME_INSTANT,
+      readiness_reason: "the one with data",
+    });
+    const bare = { device_id: DEVICE, sampled_at: SAME_INSTANT, readiness_age_secs: 20, readiness_state: "fresh" };
+    const read = resolveReadiness(body(bare, hostless), DEVICE);
+    expect(read.kind === "fresh" && read.sample.reason).toBe("the one with data");
+  });
+
+  it("does not read a verdict off a marked wsl row while the host lane is there", () => {
+    const hostUnmarked = {
+      device_id: DEVICE,
+      lane: "host",
+      sampled_at: SAME_INSTANT,
+    };
+    const read = resolveReadiness(body(wslNoReadiness({ readiness_state: "fresh" }), hostUnmarked), DEVICE);
+    expect(read.kind).toBe("not_served");
+  });
+});
+
+describe("deriveReadinessHealth — verdicts its own inputs cannot back", () => {
+  it("renders amber when the runner says safe but reports blockers", () => {
+    const read = resolveReadiness(
+      body(sampleRow({ readiness_safe: true, readiness_blocking: 3 })),
+      DEVICE
+    );
+    const health = deriveReadinessHealth(read, 0);
+    expect(health.level).toBe("amber");
+    expect(health.headline).not.toBe("Safe to restart");
+    expect(health.detail).toMatch(/runner says safe but reports 3 blocking/);
+  });
+
+  it("names exit-stuck sessions in the same contradiction", () => {
+    const read = resolveReadiness(
+      body(sampleRow({ readiness_safe: true, readiness_blocking: 0, wind_down_exit_stuck: 1 })),
+      DEVICE
+    );
+    expect(deriveReadinessHealth(read, 0).detail).toMatch(/1 exit-stuck/);
+  });
+
+  it("says blockers unknown when exit-stuck is null", () => {
+    const read = resolveReadiness(body(sampleRow({ wind_down_exit_stuck: null })), DEVICE);
+    const health = deriveReadinessHealth(read, 0);
+    expect(health.level).toBe("amber");
+    expect(health.detail).toMatch(/blockers unknown/);
+  });
+
+  it("says blockers unknown while the session census is not read", () => {
+    const read = resolveReadiness(body(sampleRow()), DEVICE);
+    expect(deriveReadinessHealth(read, null).detail).toMatch(/blockers unknown/);
+    expect(deriveReadinessHealth(read, 0).detail).not.toMatch(/blockers unknown/);
+  });
+
+  it("stays red on a known author row even when other inputs are unknown", () => {
+    const read = resolveReadiness(body(sampleRow({ wind_down_exit_stuck: 2 })), DEVICE);
+    const health = deriveReadinessHealth(read, null);
+    expect(health.level).toBe("red");
+    expect(health.detail).not.toMatch(/blockers unknown/);
+  });
+});
+
+describe("joinRunnerSessions — an ambiguous Claude session id", () => {
+  const read = resolveReadiness(
+    body(sampleRow({ wind_down_sessions: [windDown({ spawn_origin: "steward" })] })),
+    DEVICE
+  );
+  const twins = [
+    session({ sessionId: "11111111-0000-4000-8000-000000000001", spawnOrigin: "steward" }),
+    session({ sessionId: "22222222-0000-4000-8000-000000000002", spawnOrigin: "steward" }),
+  ];
+
+  it("withholds the runner's entry, the status and the actions from every twin", () => {
+    const rows = joinRunnerSessions(twins, read);
+    // Two coord rows, and no extra runner-only row for the consumed entry.
+    expect(rows).toHaveLength(2);
+    for (const rec of rows) {
+      expect(rec.sharedClaudeIdCount).toBe(2);
+      expect(rec.windDown).toBeNull();
+      const status = deriveRunnerSessionStatus(rec);
+      expect(status.kind).toBe("unknown");
+      expect(status.reason).toMatch(/2 open coord sessions share/);
+      expect(blocksRestartLabel(rec)).toBe("UNKNOWN");
+      const gates = sessionActionGates(rec);
+      expect(gates.finish_and_close.allowed).toBe(false);
+      expect(gates.stop_at_boundary.allowed).toBe(false);
+    }
+  });
+
+  it("does not count a closed twin", () => {
+    const rows = joinRunnerSessions(
+      [twins[0], { ...twins[1], closedAt: "2026-09-13T11:00:00Z" }],
+      read
+    );
+    expect(rows).toHaveLength(1);
+    expect(rows[0].sharedClaudeIdCount).toBe(1);
+    expect(rows[0].windDown).not.toBeNull();
+    expect(sessionActionGates(rows[0]).finish_and_close.allowed).toBe(true);
+  });
+});
+
+describe("describeControlError — who refused a 422", () => {
+  it("names the web backend's own validation, through the app envelope", () => {
+    const envelope = {
+      error: "VALIDATION_ERROR",
+      message: "Invalid request data",
+      details: [{ field: "body.reason", message: "String should have at most 2000 characters", type: "string_too_long" }],
+    };
+    const described = describeControlError(422, JSON.stringify(envelope));
+    expect(described.message).toMatch(/web backend rejected the request before asking coord/);
+    expect(described.message).toMatch(/body\.reason: String should have at most 2000/);
+  });
+
+  it("names the web backend's validation from a bare FastAPI body too", () => {
+    const bare = { detail: [{ loc: ["body", "action"], msg: "Input should be 'finish_and_close' or 'stop_at_boundary'" }] };
+    expect(describeControlError(422, JSON.stringify(bare)).message).toMatch(
+      /before asking coord — body\.action: Input should be/
+    );
+  });
+
+  it("names coord's typed 422 as coord's refusal", () => {
+    const described = describeControlError(422, JSON.stringify({ error: "unknown_action", message: "x" }));
+    expect(described.code).toBe("unknown_action");
+    expect(described.message).toMatch(/Coord refused the request \(unknown_action\)/);
+    expect(described.message).not.toMatch(/web backend/);
   });
 });

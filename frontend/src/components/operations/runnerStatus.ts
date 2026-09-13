@@ -144,6 +144,52 @@ function parseWindDownSessions(value: unknown): {
   return { sessions, unreadable };
 }
 
+const READINESS_FIELDS = [
+  "readiness_safe",
+  "readiness_reason",
+  "readiness_blocking",
+  "readiness_finished",
+  "wind_down_candidates",
+  "wind_down_exit_stuck",
+  "wind_down_sessions",
+] as const;
+
+/** Whether a sample row carries any readiness value at all. */
+function carriesReadiness(row: Record<string, unknown>): boolean {
+  return READINESS_FIELDS.some(
+    (field) => row[field] !== undefined && row[field] !== null
+  );
+}
+
+function laneRank(row: Record<string, unknown>): number {
+  if (row.lane === "host") return 2;
+  // A coord that serves no lane field is not a statement about the lane.
+  if (row.lane === undefined || row.lane === null) return 1;
+  return 0;
+}
+
+/**
+ * Best readiness row first: carries readiness, then host lane, then the newest
+ * `sampled_at`, then the smallest server-computed age.
+ */
+function compareReadinessRows(
+  a: Record<string, unknown>,
+  b: Record<string, unknown>
+): number {
+  const carried = Number(carriesReadiness(b)) - Number(carriesReadiness(a));
+  if (carried !== 0) return carried;
+  const lane = laneRank(b) - laneRank(a);
+  if (lane !== 0) return lane;
+  const at = (r: Record<string, unknown>) =>
+    typeof r.sampled_at === "string" ? Date.parse(r.sampled_at) || 0 : 0;
+  const newer = at(b) - at(a);
+  if (newer !== 0) return newer;
+  return (
+    (optionalCount(a.readiness_age_secs) ?? Infinity) -
+    (optionalCount(b.readiness_age_secs) ?? Infinity)
+  );
+}
+
 /**
  * The device's readiness from a `/fleet/resource-samples` body.
  *
@@ -192,13 +238,32 @@ export function resolveReadiness(
         "coord deployment predates the readiness fields.",
     };
   }
-  // Coord marks one row; if a future coord marks more, the youngest wins.
-  const row = marked.reduce((best, r) =>
-    (optionalCount(r.readiness_age_secs) ?? Infinity) <
-    (optionalCount(best.readiness_age_secs) ?? Infinity)
-      ? r
-      : best
+  // Only the HOST lane carries readiness (contract C1), and the `wsl` lane is
+  // POSTed in the same batch with the same `sampled_at`. So the choice is never
+  // "the newest row": it is the best-ranked marked row, where a row carrying
+  // readiness outranks one that carries none, the host lane outranks any
+  // other, and only then does recency decide. A `wsl` row with no readiness
+  // can therefore never win a tie.
+  const hostMarked = marked.filter((r) => r.lane === "host");
+  const pool = hostMarked.length > 0 ? hostMarked : marked;
+  // `pool` is non-empty (`marked` was checked above), so reduce needs no seed.
+  const row = pool.reduce((best, r) =>
+    compareReadinessRows(r, best) < 0 ? r : best
   );
+  if (
+    typeof row.lane === "string" &&
+    row.lane !== "host" &&
+    !carriesReadiness(row) &&
+    rows.some((r) => r.lane === "host")
+  ) {
+    return {
+      kind: "not_served",
+      reason:
+        `Coord marked this device's \`${row.lane}\` lane rather than its host ` +
+        "lane, and only the host lane carries readiness, so no verdict is read " +
+        "from it.",
+    };
+  }
   const ageSecs = optionalCount(row.readiness_age_secs);
   const state = row.readiness_state;
 
@@ -257,10 +322,14 @@ export interface ReadinessHealth {
  * that will not close until someone declares it finished) and amber when the
  * blockers are working sessions that will clear on their own (R3). Every
  * UNKNOWN is amber — never green, which would assert "nothing is wrong here".
+ *
+ * `authorRowCount` is `null` while the session census is loading or failed:
+ * then the rows that would make the strip red are unknown, and the detail
+ * says so rather than letting amber stand as a quiet "nothing needs a human".
  */
 export function deriveReadinessHealth(
   read: ReadinessRead,
-  authorRowCount: number
+  authorRowCount: number | null
 ): ReadinessHealth {
   const unknown = (detail: string): ReadinessHealth => ({
     level: "amber",
@@ -294,6 +363,21 @@ export function deriveReadinessHealth(
       const { sample } = read;
       const age = `reported ${formatAgeSecs(sample.ageSecs)} ago`;
       if (sample.safe === true) {
+        const blocking = sample.blocking ?? 0;
+        const stuck = sample.exitStuck ?? 0;
+        if (blocking > 0 || stuck > 0) {
+          // The verdict and its own counts disagree. Green would pick the
+          // verdict and hide the counts; neither half is trusted.
+          const parts = [
+            blocking > 0 ? `${blocking} blocking` : null,
+            stuck > 0 ? `${stuck} exit-stuck` : null,
+          ].filter((p): p is string => p !== null);
+          return {
+            level: "amber",
+            headline: "Readiness contradicts itself",
+            detail: `runner says safe but reports ${parts.join(" and ")} · ${age}`,
+          };
+        }
         return { level: "green", headline: "Safe to restart", detail: age };
       }
       if (sample.safe === null) {
@@ -301,11 +385,14 @@ export function deriveReadinessHealth(
           `the runner could not decide${sample.reason ? ` — ${sample.reason}` : ""} · ${age}`
         );
       }
-      const needsHuman = (sample.exitStuck ?? 0) > 0 || authorRowCount > 0;
+      const needsHuman =
+        (sample.exitStuck ?? 0) > 0 || (authorRowCount ?? 0) > 0;
+      const blockersKnown = sample.exitStuck !== null && authorRowCount !== null;
+      const detail = `${sample.reason ?? "the runner gave no reason"} · ${age}`;
       return {
         level: needsHuman ? "red" : "amber",
         headline: "Not safe to restart",
-        detail: `${sample.reason ?? "the runner gave no reason"} · ${age}`,
+        detail: needsHuman || blockersKnown ? detail : `${detail} · blockers unknown`,
       };
     }
   }
@@ -429,6 +516,13 @@ export interface RunnerSessionRecord {
   windDownKnown: boolean;
   /** The runner's array was capped, so a missing entry may just be cut off. */
   windDownTruncated: boolean;
+  /**
+   * How many OPEN coord rows share this row's `claudeCodeSessionId` (1 when it
+   * is unique, 0 for a runner-only row). Above 1 the join cannot say which
+   * coord row the runner's entry belongs to, so the row is UNKNOWN and offers
+   * no action — a control request could land on the wrong coord session.
+   */
+  sharedClaudeIdCount: number;
 }
 
 /**
@@ -453,21 +547,33 @@ export function joinRunnerSessions(
       byClaudeId.set(normalizeId(w.claude_code_session_id), w);
     }
   }
+  const open = sessions.filter((s) => !s.closedAt);
+  const openPerClaudeId = new Map<string, number>();
+  for (const session of open) {
+    if (!session.claudeCodeSessionId) continue;
+    const id = normalizeId(session.claudeCodeSessionId);
+    openPerClaudeId.set(id, (openPerClaudeId.get(id) ?? 0) + 1);
+  }
   const matched = new Set<string>();
   const out: RunnerSessionRecord[] = [];
-  for (const session of sessions) {
-    if (session.closedAt) continue;
+  for (const session of open) {
     const claudeId = session.claudeCodeSessionId
       ? normalizeId(session.claudeCodeSessionId)
       : null;
-    const windDown = claudeId ? (byClaudeId.get(claudeId) ?? null) : null;
-    if (windDown && claudeId) matched.add(claudeId);
+    const shared = claudeId ? (openPerClaudeId.get(claudeId) ?? 1) : 1;
+    const entry = claudeId ? (byClaudeId.get(claudeId) ?? null) : null;
+    // Consumed either way, so an ambiguous id does not ALSO surface as a
+    // runner-only row.
+    if (entry && claudeId) matched.add(claudeId);
     out.push({
       key: `session:${session.sessionId}`,
       session,
-      windDown,
+      // Attached to no row when the id is ambiguous: which coord session the
+      // runner means is exactly what cannot be told.
+      windDown: shared > 1 ? null : entry,
       windDownKnown: known,
       windDownTruncated: truncated,
+      sharedClaudeIdCount: shared,
     });
   }
   for (const [claudeId, windDown] of byClaudeId) {
@@ -478,6 +584,7 @@ export function joinRunnerSessions(
       windDown,
       windDownKnown: known,
       windDownTruncated: truncated,
+      sharedClaudeIdCount: 0,
     });
   }
   return out;
@@ -557,6 +664,14 @@ function status(
 export function deriveRunnerSessionStatus(
   rec: RunnerSessionRecord
 ): RowStatus<RunnerSessionKind> {
+  if (rec.sharedClaudeIdCount > 1) {
+    return status(
+      "unknown",
+      UNKNOWN_LABEL,
+      `${rec.sharedClaudeIdCount} open coord sessions share this Claude session id, ` +
+        "so which one the runner reports on cannot be told"
+    );
+  }
   if (!rec.windDownKnown) {
     return status(
       "unknown",
@@ -757,6 +872,15 @@ export function sessionActionGates(
   if (rec.session === null) {
     return { finish_and_close: noSession, stop_at_boundary: noSession };
   }
+  if (rec.sharedClaudeIdCount > 1) {
+    const ambiguous: ActionGate = {
+      allowed: false,
+      reason:
+        `${rec.sharedClaudeIdCount} open coord sessions share this Claude ` +
+        "session id, so a request could reach the wrong one",
+    };
+    return { finish_and_close: ambiguous, stop_at_boundary: ambiguous };
+  }
 
   let finish: ActionGate;
   if (!rec.windDownKnown) {
@@ -798,6 +922,12 @@ export function sessionActionGates(
   return { finish_and_close: finish, stop_at_boundary: stop };
 }
 
+/** `ErrorCode.VALIDATION_ERROR` — the web backend's own request validation. */
+export const WEB_VALIDATION_ERROR_CODE = "VALIDATION_ERROR";
+
+/** The longest reason the proxy accepts (`SessionControlRequestBody`). */
+export const CONTROL_REASON_MAX_LENGTH = 2000;
+
 export type ControlWriteResult =
   | { ok: true; eventId: string | null }
   | { ok: false; status: number | null; code: string | null; message: string };
@@ -808,12 +938,19 @@ export type ControlWriteResult =
  * The proxy forwards coord's typed body (`structured_errors=True`), which the
  * backend's error envelope splices to the top level (`{error: …}`); a bare
  * FastAPI app nests it (`{detail: {error: …}}`). Both are read.
+ *
+ * A 422 has two authors and they mean opposite things. The WEB backend's own
+ * validation (pydantic, before coord is asked) answers
+ * `{error: "VALIDATION_ERROR", details: [{field, message}]}` through the app
+ * envelope, or `{detail: [...]}` from a bare app: nothing reached coord. Coord's
+ * 422 carries its own code: coord was asked and refused.
  */
 export function describeControlError(
   status: number,
   bodyText: string
 ): { code: string | null; message: string } {
   let code: string | null = null;
+  let validationIssues: string[] | null = null;
   try {
     const parsed: unknown = JSON.parse(bodyText);
     if (isRecord(parsed)) {
@@ -821,11 +958,42 @@ export function describeControlError(
       else if (isRecord(parsed.detail) && typeof parsed.detail.error === "string") {
         code = parsed.detail.error;
       }
+      const issues = Array.isArray(parsed.details)
+        ? parsed.details
+        : Array.isArray(parsed.detail)
+          ? parsed.detail
+          : null;
+      if (code === WEB_VALIDATION_ERROR_CODE || (code === null && issues !== null)) {
+        validationIssues = (issues ?? []).map((issue) => {
+          if (!isRecord(issue)) return String(issue);
+          const field =
+            typeof issue.field === "string"
+              ? issue.field
+              : Array.isArray(issue.loc)
+                ? issue.loc.join(".")
+                : "";
+          const message =
+            typeof issue.message === "string"
+              ? issue.message
+              : typeof issue.msg === "string"
+                ? issue.msg
+                : "invalid";
+          return field ? `${field}: ${message}` : message;
+        });
+      }
     }
   } catch {
     // Not JSON — an intermediary's error page. The status still speaks.
   }
   const snippet = bodyText.trim().slice(0, 200);
+  if (status === 422 && validationIssues !== null) {
+    return {
+      code,
+      message:
+        "The web backend rejected the request before asking coord" +
+        (validationIssues.length > 0 ? ` — ${validationIssues.join("; ")}` : "."),
+    };
+  }
   if (code === "session_not_found") {
     return {
       code,
@@ -853,8 +1021,11 @@ export function describeControlError(
     return {
       code,
       message:
-        "Coord refused the request as malformed — most likely it does not " +
-        `know this action yet.${snippet ? ` (${snippet})` : ""}`,
+        code !== null
+          ? `Coord refused the request (${code}) — most likely this coord does ` +
+            "not know this action yet."
+          : "Coord refused the request as malformed — most likely it does not " +
+            `know this action yet.${snippet ? ` (${snippet})` : ""}`,
     };
   }
   if (status === 403) {

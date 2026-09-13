@@ -409,3 +409,101 @@ class TestReadinessRidesTheResourceSample:
         assert served["readiness_safe"] is None
         assert served["readiness_blocking"] is None
         assert params == {"device_id": DEVICE_ID, "history": False}
+
+
+class TestControlSuccessBodies:
+    def test_a_non_json_2xx_is_an_empty_body_with_coords_status(
+        self, auth_client: TestClient
+    ):
+        accepted = MagicMock(spec=httpx.Response)
+        accepted.status_code = 202
+        accepted.text = ""
+        accepted.json.side_effect = ValueError("Expecting value")
+        with _patch_httpx() as MockClient:
+            mock_instance = MagicMock()
+            mock_instance.post = AsyncMock(return_value=accepted)
+            _configure_mock_client(MockClient, mock_instance)
+            resp = auth_client.post(CONTROL_ROUTE, json={"action": "finish_and_close"})
+
+        # Accepted is accepted: never a 500 because the body would not parse.
+        assert resp.status_code == 202
+        assert resp.json() == {}
+
+
+# ---------------------------------------------------------------------------
+# The control proxy through the app's REAL error envelope
+# ---------------------------------------------------------------------------
+
+
+def _build_enveloped_app() -> FastAPI:
+    """The minimal test app plus the two handlers `app.main` registers.
+
+    The other tests here run on a bare ``FastAPI()``, where a structured
+    ``detail`` comes back nested as ``{"detail": {...}}``. Production splices
+    it to the top level through ``http_exception_handler``, and answers its own
+    validation through ``validation_exception_handler`` — the two shapes the
+    browser actually parses. Registering the same functions ``app.main`` does
+    pins those shapes without importing the whole application.
+    """
+    from fastapi.exceptions import RequestValidationError
+    from starlette.exceptions import HTTPException as StarletteHTTPException
+
+    from app.middleware.error_handler import (
+        http_exception_handler,
+        validation_exception_handler,
+    )
+
+    test_app = _build_test_app()
+    test_app.add_exception_handler(StarletteHTTPException, http_exception_handler)  # type: ignore[arg-type]
+    test_app.add_exception_handler(RequestValidationError, validation_exception_handler)  # type: ignore[arg-type]
+    return test_app
+
+
+class TestControlThroughTheAppErrorEnvelope:
+    @pytest.fixture()
+    def enveloped_client(self) -> TestClient:
+        return TestClient(_build_enveloped_app())
+
+    @pytest.mark.parametrize(
+        ("status", "error"),
+        [(404, "session_not_found"), (409, "session_closed"), (422, "unknown_action")],
+    )
+    def test_coords_code_lands_at_the_top_level(
+        self, enveloped_client: TestClient, status: int, error: str
+    ):
+        with _patch_httpx() as MockClient:
+            mock_instance = MagicMock()
+            mock_instance.post = AsyncMock(
+                return_value=_mock_response(status, {"error": error})
+            )
+            _configure_mock_client(MockClient, mock_instance)
+            resp = enveloped_client.post(
+                CONTROL_ROUTE, json={"action": "finish_and_close"}
+            )
+
+        assert resp.status_code == status
+        body = resp.json()
+        # The frontend's `describeControlError` reads `error` here first.
+        assert body["error"] == error
+        assert "detail" not in body
+        assert "message" in body
+
+    def test_the_webs_own_validation_is_a_distinct_422(
+        self, enveloped_client: TestClient
+    ):
+        with _patch_httpx() as MockClient:
+            mock_instance = MagicMock()
+            mock_instance.post = AsyncMock(return_value=_mock_response(202, {}))
+            _configure_mock_client(MockClient, mock_instance)
+            resp = enveloped_client.post(
+                CONTROL_ROUTE,
+                json={"action": "finish_and_close", "reason": "x" * 2001},
+            )
+
+        assert resp.status_code == 422
+        body = resp.json()
+        # `VALIDATION_ERROR` + `details` is what tells the browser nothing
+        # reached coord, as opposed to coord's own typed 422 above.
+        assert body["error"] == "VALIDATION_ERROR"
+        assert [d["field"] for d in body["details"]] == ["body.reason"]
+        mock_instance.post.assert_not_called()
