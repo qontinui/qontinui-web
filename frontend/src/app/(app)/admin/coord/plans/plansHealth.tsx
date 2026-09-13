@@ -166,12 +166,17 @@ export function derivePlansHealth(
           : "No plan is blocked";
   const window =
     unrecognised > 0
-      ? "a status this build has no label for is shown verbatim"
+      ? "A status this build has no label for is shown verbatim"
       : "";
-  // Stale, not unknown: the rows are real, only their age is not. This
-  // qualifier is why the detail line is de-duplicated rather than deleted —
-  // without it a failed refresh would render its counts unqualified.
-  const detail = readFailed ? staleDetail(window) : window || undefined;
+  // Stale, not unknown: the rows are real, only their age is not. The
+  // qualifier is why the detail line is de-duplicated rather than deleted:
+  // under a BLOCKED headline nothing else says the counts are old. Where the
+  // headline is itself the failure sentence, the detail does not repeat it —
+  // saying "Last refresh failed" twice side by side is the same duplication
+  // this strip just removed for the numbers.
+  const headlineQualifies = readFailed && blocked === 0;
+  const detail =
+    readFailed && !headlineQualifies ? staleDetail(window) : window || undefined;
 
   return {
     level,

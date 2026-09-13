@@ -363,10 +363,14 @@ export default function CoordPlansListPage() {
             ))}
           </SelectContent>
         </Select>
+        {/* Keyed on the question: a press whose read was superseded by a filter
+            change must not leave the NEW question's control busy for up to the
+            60s request timeout, over a read whose answer will be discarded. */}
         <RefreshButton
+          key={status}
           onRefresh={refresh}
           label="Refresh plans"
-          title={`Refresh plans (re-reads the work-unit list now; it also refreshes itself every ${POLL_INTERVAL_MS / 1000} s)`}
+          title={`Re-reads the work-unit list now; it also refreshes itself every ${POLL_INTERVAL_MS / 1000} s`}
           data-testid="coord-plans-refresh"
         />
       </div>

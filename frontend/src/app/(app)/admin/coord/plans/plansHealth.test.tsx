@@ -76,7 +76,7 @@ describe("derivePlansHealth", () => {
     // The explanation survives de-duplication; the number moves to the
     // `unlabelled N` badge.
     expect(h.detail).toBe(
-      "a status this build has no label for is shown verbatim"
+      "A status this build has no label for is shown verbatim"
     );
   });
 
@@ -137,9 +137,9 @@ describe("derivePlansHealth", () => {
       // What does NOT survive is the present-tense headline: "No work units in
       // this window" is a claim about now, off a read that is failing now.
       expect(h.headline).toBe("Last refresh failed — these counts are not current");
-      // With the counts gone from the detail line, the staleness qualifier is
-      // ALL that is left of it — and it must still be there.
-      expect(h.detail).toBe("Last refresh failed — these counts are stale.");
+      // The headline IS the failure sentence here, so the detail line does not
+      // say it a second time — and has nothing else left to say.
+      expect(h.detail).toBeUndefined();
     });
 
     it("does not leave 'No plan is blocked' unqualified over a stale list", () => {
@@ -154,8 +154,9 @@ describe("derivePlansHealth", () => {
       // level and the headline, not just the detail line. Qualifying it in one
       // line of small print under a pulsing green dot is not qualifying it.
       expect(h.headline).not.toBe("No plan is blocked");
+      expect(h.headline).toBe("Last refresh failed — these counts are not current");
       expect(h.level).toBe("amber");
-      expect(h.detail).toBe("Last refresh failed — these counts are stale.");
+      expect(h.detail).toBeUndefined();
     });
 
     it("keeps the all-clear green while the read is current", () => {
@@ -172,6 +173,10 @@ describe("derivePlansHealth", () => {
       const h = derivePlansHealth([{ slug: "a", status: "blocked" }], true, true);
       expect(h.level).toBe("red");
       expect(h.headline).toBe("A plan is blocked on a human");
+      // The blocked headline says nothing about the read, so the staleness
+      // qualifier has to be in the detail line — the one arm where deleting
+      // that line would render the counts unqualified.
+      expect(h.detail).toBe("Last refresh failed — these counts are stale.");
     });
 
     it("keeps a retained blocked plan red rather than dashing it", () => {
@@ -185,14 +190,29 @@ describe("derivePlansHealth", () => {
       expect(h.headline).toBe("A plan is blocked on a human");
     });
 
-    it("keeps the unlabelled explanation qualified as stale, without its count", () => {
+    it("keeps the unlabelled explanation under a failure headline, without its count", () => {
       const h = derivePlansHealth(
         [{ slug: "d", status: "weird_new_state" }],
         true,
         true
       );
+      expect(h.headline).toBe("Last refresh failed — these counts are not current");
       expect(h.detail).toBe(
-        "Last refresh failed — these counts are stale. a status this build has no label for is shown verbatim"
+        "A status this build has no label for is shown verbatim"
+      );
+    });
+
+    it("qualifies the unlabelled explanation as stale under a blocked headline", () => {
+      const h = derivePlansHealth(
+        [
+          { slug: "c", status: "blocked" },
+          { slug: "d", status: "weird_new_state" },
+        ],
+        true,
+        true
+      );
+      expect(h.detail).toBe(
+        "Last refresh failed — these counts are stale. A status this build has no label for is shown verbatim"
       );
     });
   });
@@ -206,12 +226,15 @@ describe("derivePlansHealth", () => {
    * so a stray duplicate cannot hide behind a coincidence.
    */
   describe("each count is rendered exactly once", () => {
-    const recognised: CoordPlanRow[] = [
+    const unblocked: CoordPlanRow[] = [
       { slug: "s1", status: "shipped" },
       { slug: "s2", status: "shipped" },
       { slug: "s3", status: "shipped" },
       { slug: "p1", status: "in_progress" },
       { slug: "p2", status: "in_progress" },
+    ];
+    const recognised: CoordPlanRow[] = [
+      ...unblocked,
       { slug: "b1", status: "blocked" },
     ];
     const withUnlabelled: CoordPlanRow[] = [
@@ -225,12 +248,16 @@ describe("derivePlansHealth", () => {
     const occurrences = (text: string, needle: RegExp) =>
       (text.match(needle) ?? []).length;
 
+    // Every headline arm that carries counts: blocked (red), the all-clear,
+    // and the read-failed sentence.
     it.each([
-      ["current, recognised", recognised, false, false],
-      ["stale, recognised", recognised, true, false],
-      ["current, with unlabelled rows", withUnlabelled, false, true],
-      ["stale, with unlabelled rows", withUnlabelled, true, true],
-    ] as const)("%s", (_name, plans, readFailed, hasUnlabelled) => {
+      ["current, blocked", recognised, false, 1, false],
+      ["stale, blocked", recognised, true, 1, false],
+      ["current, unblocked", unblocked, false, 0, false],
+      ["stale, unblocked", unblocked, true, 0, false],
+      ["current, with unlabelled rows", withUnlabelled, false, 1, true],
+      ["stale, with unlabelled rows", withUnlabelled, true, 1, true],
+    ] as const)("%s", (_name, plans, readFailed, blocked, hasUnlabelled) => {
       const h = renderBadges(true, [...plans], readFailed);
       const text = screen.getByTestId("strip").textContent ?? "";
 
@@ -243,7 +270,7 @@ describe("derivePlansHealth", () => {
       // is matched by lookaround, not a word boundary.
       const digit = (n: number) => new RegExp(`(?<!\\d)${n}(?!\\d)`, "g");
       expect(text).toContain(`plans ${plans.length}`);
-      expect(text).toContain("blocked 1");
+      expect(text).toContain(`blocked ${blocked}`);
       expect(text).toContain("in progress 2");
       expect(occurrences(text, /in progress/g)).toBe(1);
       expect(text).toContain("shipped 3");

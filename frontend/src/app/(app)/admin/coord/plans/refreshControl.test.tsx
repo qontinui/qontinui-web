@@ -72,12 +72,16 @@ describe("/admin/coord/plans refresh control", () => {
     expect(button).toBe(refreshButton());
     expect(button).toHaveAttribute(
       "title",
-      "Refresh plans (re-reads the work-unit list now; it also refreshes itself every 10 s)"
+      "Re-reads the work-unit list now; it also refreshes itself every 10 s"
     );
-    // The icon is decoration; the name is the label, not an SVG.
+    // The icon is decoration; the name is the label, not an SVG. (lucide-react
+    // currently stamps aria-hidden on a bare icon by itself, so this is a guard
+    // against that default changing rather than a pin on RefreshButton's own
+    // prop — the name assertion above is the load-bearing one.)
     const icon = button.querySelector("svg");
     expect(icon).not.toBeNull();
     expect(icon).toHaveAttribute("aria-hidden", "true");
+    expect(icon?.querySelector("title")).toBeNull();
   });
 
   it("acknowledges a click for exactly as long as the read it issued is out", async () => {
@@ -168,5 +172,81 @@ describe("/admin/coord/plans refresh control", () => {
       vi.advanceTimersByTime(POLL_INTERVAL_MS);
     });
     expect(get).toHaveBeenCalledTimes(3);
+  });
+
+  it("does not free a lock it did not take: a click during the first read", async () => {
+    // The click finds the first read holding the lock, so it issues its own
+    // read WITHOUT taking the lock. When that click read lands first, it must
+    // leave the lock with the first read — or the next tick stacks a third
+    // concurrent read of the same question.
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const firstRead = deferred();
+    const clickRead = deferred();
+    let call = 0;
+    get.mockImplementation(() => {
+      call += 1;
+      if (call === 1) return firstRead.promise;
+      if (call === 2) return clickRead.promise;
+      return Promise.resolve({ work_units: [] });
+    });
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+    render(<CoordPlansListPage />);
+    await waitFor(() => expect(get).toHaveBeenCalledTimes(1));
+
+    await user.click(refreshButton());
+    await waitFor(() => expect(get).toHaveBeenCalledTimes(2));
+    await act(async () => {
+      clickRead.resolve({ work_units: [] });
+    });
+
+    await act(async () => {
+      vi.advanceTimersByTime(POLL_INTERVAL_MS);
+    });
+    // The first read is still out and still holds the lock.
+    expect(get).toHaveBeenCalledTimes(2);
+
+    await act(async () => {
+      firstRead.resolve({ work_units: [] });
+    });
+  });
+
+  it("does not free the NEW question's lock when its read outlives a filter change", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const clickRead = deferred();
+    const switchedRead = deferred();
+    let call = 0;
+    get.mockImplementation((url: string) => {
+      call += 1;
+      if (url.includes("status=blocked")) return switchedRead.promise;
+      if (call === 1) return Promise.resolve({ work_units: [] });
+      return clickRead.promise;
+    });
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+    render(<CoordPlansListPage />);
+    await screen.findByTestId("coord-plans-empty");
+
+    // The click takes the free lock; its read stays out.
+    await user.click(refreshButton());
+    await waitFor(() => expect(get).toHaveBeenCalledTimes(2));
+
+    // The operator changes the filter: the new question's first read takes
+    // the lock and stays out too.
+    await user.click(screen.getByTestId("coord-plans-status-select"));
+    await user.click(await screen.findByRole("option", { name: "Blocked" }));
+    await waitFor(() => expect(get).toHaveBeenCalledTimes(3));
+
+    // The superseded click read lands. It belongs to the old question, so it
+    // must not release the lock the new question's read holds.
+    await act(async () => {
+      clickRead.resolve({ work_units: [] });
+    });
+    await act(async () => {
+      vi.advanceTimersByTime(POLL_INTERVAL_MS);
+    });
+    expect(get).toHaveBeenCalledTimes(3);
+
+    await act(async () => {
+      switchedRead.resolve({ work_units: [] });
+    });
   });
 });
