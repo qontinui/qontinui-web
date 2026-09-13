@@ -2232,8 +2232,9 @@ async def list_work_artifacts(
     same query, so the two reads cannot disagree, and its ``scan_roots``
     block is ``GET /plan-library/scan-roots`` rendered by the same builder:
     how far behind its default branch each device's scan source is, so a page
-    drawn from a stale corpus can say so. Two extra queries per list call —
-    one aggregate, one over a table of one row per device.
+    drawn from a stale corpus can say so. Two extra reads per list call — one
+    aggregate, and one over a table of one row per device inside a savepoint
+    (four round trips in all).
 
     ``slug`` is a QUERY key, not a path segment: this adds no route, so the
     literal-before-pattern ordering below (``/divergent``, ``/capture-health``
@@ -2330,9 +2331,14 @@ async def _load_corpus_health(db: AsyncSession, *, org_id: UUID | None) -> Corpu
         async with db.begin_nested():
             observations = await scan_root_crud.list_observations(db, org_id=org_id)
     except SQLAlchemyError as exc:
+        # The page names only the class; the log carries the traceback, so a
+        # missing migration and a timeout stay distinguishable to an operator —
+        # and so does a session-misuse bug this broad catch would otherwise
+        # hide as a report-only degradation.
         logger.warning(
             "plan_library.corpus_health_scan_roots_read_failed",
             error=type(exc).__name__,
+            exc_info=True,
         )
         scan_roots = scan_roots_read_failed(exc)
     else:
