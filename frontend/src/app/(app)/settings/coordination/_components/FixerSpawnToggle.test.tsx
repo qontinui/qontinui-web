@@ -5,9 +5,10 @@
  * reaches coord and the sentence the operator reads.
  *
  * Enumerated: the three tenant positions (NULL / true / false) on read and on
- * write, every effective source (default / tenant / repo / unknown), the
- * unsupported coord build, a load failure, a save failure, read-only access,
- * and a click on the already-active position.
+ * write, every source (default / tenant / repo / unknown), the unsupported
+ * coord build, a load failure and its retry, a save failure, an unconfirmed
+ * save, a click during an in-flight save, read-only access, the autonomy-off
+ * note, and a click on the already-active position.
  */
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -39,6 +40,7 @@ vi.mock("sonner", () => ({
 import { FixerSpawnToggle } from "./FixerSpawnToggle";
 
 const PATH = "/api/v1/operations/pr-merge/settings";
+const POSITIONS = ["default", "on", "off"] as const;
 
 function settings(fields: Record<string, unknown>) {
   return {
@@ -47,19 +49,25 @@ function settings(fields: Record<string, unknown>) {
   };
 }
 
-function pressed(value: "default" | "on" | "off"): string | null {
+const DEFAULT_ON = settings({
+  auto_fix_pr_tenant: null,
+  auto_fix_pr: true,
+  auto_fix_pr_source: "default",
+});
+
+function checked(value: (typeof POSITIONS)[number]): string | null {
   return screen
     .getByTestId(`fixer-spawn-${value}`)
-    .getAttribute("aria-pressed");
+    .getAttribute("aria-checked");
 }
 
-async function effectiveText(): Promise<string> {
+async function tenantText(): Promise<string> {
   await waitFor(() =>
-    expect(screen.getByTestId("fixer-spawn-effective").textContent).not.toMatch(
-      /Loading/
-    )
+    expect(
+      screen.getByTestId("fixer-spawn-tenant-setting").textContent
+    ).not.toMatch(/Loading/)
   );
-  return screen.getByTestId("fixer-spawn-effective").textContent ?? "";
+  return screen.getByTestId("fixer-spawn-tenant-setting").textContent ?? "";
 }
 
 beforeEach(() => {
@@ -71,19 +79,16 @@ beforeEach(() => {
 
 describe("FixerSpawnToggle — read", () => {
   it("NULL tenant column: Default is selected and the default decides", async () => {
-    get.mockResolvedValue(
-      settings({
-        auto_fix_pr_tenant: null,
-        auto_fix_pr: true,
-        auto_fix_pr_source: "default",
-      })
-    );
+    get.mockResolvedValue(DEFAULT_ON);
     render(<FixerSpawnToggle canEdit />);
-    expect(await effectiveText()).toContain("Effective: On — from the default (on).");
+    expect(await tenantText()).toContain(
+      "Tenant setting: On — from the default (on)."
+    );
     expect(get).toHaveBeenCalledWith(PATH);
-    expect(pressed("default")).toBe("true");
-    expect(pressed("on")).toBe("false");
-    expect(pressed("off")).toBe("false");
+    expect(checked("default")).toBe("true");
+    expect(checked("on")).toBe("false");
+    expect(checked("off")).toBe("false");
+    expect(screen.getByRole("radiogroup")).toBeTruthy();
   });
 
   it("explicit tenant Off", async () => {
@@ -95,10 +100,10 @@ describe("FixerSpawnToggle — read", () => {
       })
     );
     render(<FixerSpawnToggle canEdit />);
-    expect(await effectiveText()).toContain(
-      "Effective: Off — from this tenant's setting."
+    expect(await tenantText()).toContain(
+      "Tenant setting: Off — from this tenant's setting."
     );
-    expect(pressed("off")).toBe("true");
+    expect(checked("off")).toBe("true");
   });
 
   it("tenant On overridden by a repo's explicit false reads Off from the repo", async () => {
@@ -110,10 +115,10 @@ describe("FixerSpawnToggle — read", () => {
       })
     );
     render(<FixerSpawnToggle canEdit />);
-    expect(await effectiveText()).toContain(
-      "Effective: Off — from a repo's .qontinui/config.yml."
+    expect(await tenantText()).toContain(
+      "Tenant setting: Off — from a repo's .qontinui/config.yml."
     );
-    expect(pressed("on")).toBe("true");
+    expect(checked("on")).toBe("true");
   });
 
   it("an unknown source is never rendered as on", async () => {
@@ -125,61 +130,70 @@ describe("FixerSpawnToggle — read", () => {
       })
     );
     render(<FixerSpawnToggle canEdit />);
-    const text = await effectiveText();
+    const text = await tenantText();
     expect(text).toContain("Unknown (treated as off)");
-    expect(text).not.toMatch(/Effective: On/);
+    expect(text).not.toMatch(/Tenant setting: On/);
   });
 
   it("a coord build without the fields says so and disables every position", async () => {
     get.mockResolvedValue(settings({}));
     render(<FixerSpawnToggle canEdit />);
-    expect(await effectiveText()).toContain("Unknown (treated as off)");
+    expect(await tenantText()).toContain("Unknown (treated as off)");
     expect(screen.getByTestId("fixer-spawn-unsupported")).toBeTruthy();
-    for (const v of ["default", "on", "off"] as const) {
+    for (const v of POSITIONS) {
       expect(
         (screen.getByTestId(`fixer-spawn-${v}`) as HTMLButtonElement).disabled
       ).toBe(true);
     }
   });
 
-  it("a load failure renders unknown, never on, and shows the error", async () => {
-    get.mockRejectedValue(new Error("GET failed: 502"));
+  it("a load failure renders unknown, never on, and Retry reloads", async () => {
+    get.mockRejectedValueOnce(new Error("GET failed: 502"));
     render(<FixerSpawnToggle canEdit />);
-    expect(await effectiveText()).toContain("Unknown (treated as off)");
-    expect(screen.getByTestId("fixer-spawn-error").textContent).toContain("502");
+    expect(await tenantText()).toContain("Unknown (treated as off)");
+    expect(screen.getByTestId("fixer-spawn-error").textContent).toContain(
+      "502"
+    );
     expect(screen.queryByTestId("fixer-spawn-unsupported")).toBeNull();
+
+    get.mockResolvedValueOnce(DEFAULT_ON);
+    await userEvent.click(screen.getByTestId("fixer-spawn-retry"));
+    await waitFor(() => expect(checked("default")).toBe("true"));
+    expect(get).toHaveBeenCalledTimes(2);
+    expect(screen.queryByTestId("fixer-spawn-error")).toBeNull();
   });
 
-  it("read-only access disables the positions", async () => {
-    get.mockResolvedValue(
-      settings({
-        auto_fix_pr_tenant: null,
-        auto_fix_pr: true,
-        auto_fix_pr_source: "default",
-      })
-    );
+  it("read-only access disables every position", async () => {
+    get.mockResolvedValue(DEFAULT_ON);
     render(<FixerSpawnToggle canEdit={false} />);
-    await effectiveText();
-    expect(
-      (screen.getByTestId("fixer-spawn-off") as HTMLButtonElement).disabled
-    ).toBe(true);
+    await tenantText();
+    for (const v of POSITIONS) {
+      expect(
+        (screen.getByTestId(`fixer-spawn-${v}`) as HTMLButtonElement).disabled
+      ).toBe(true);
+    }
+  });
+
+  it("says dispatch is also off when the pr_fix autonomy row is not effective", async () => {
+    get.mockResolvedValue(DEFAULT_ON);
+    const { rerender } = render(
+      <FixerSpawnToggle canEdit autonomyEffective={false} />
+    );
+    await tenantText();
+    expect(screen.getByTestId("fixer-spawn-autonomy-off")).toBeTruthy();
+    rerender(<FixerSpawnToggle canEdit autonomyEffective />);
+    expect(screen.queryByTestId("fixer-spawn-autonomy-off")).toBeNull();
   });
 });
 
 describe("FixerSpawnToggle — write", () => {
-  const base = settings({
-    auto_fix_pr_tenant: null,
-    auto_fix_pr: true,
-    auto_fix_pr_source: "default",
-  });
-
   it.each([
     ["off", false, "tenant", false],
     ["on", true, "tenant", true],
   ] as const)(
     "clicking %s PATCHes auto_fix_pr=%s and re-seeds from the response",
     async (choice, body, source, effective) => {
-      get.mockResolvedValue(base);
+      get.mockResolvedValue(DEFAULT_ON);
       patch.mockResolvedValue(
         settings({
           auto_fix_pr_tenant: body,
@@ -188,11 +202,11 @@ describe("FixerSpawnToggle — write", () => {
         })
       );
       render(<FixerSpawnToggle canEdit />);
-      await effectiveText();
+      await tenantText();
       await userEvent.click(screen.getByTestId(`fixer-spawn-${choice}`));
       await waitFor(() => expect(patch).toHaveBeenCalledTimes(1));
       expect(patch).toHaveBeenCalledWith(PATH, { auto_fix_pr: body });
-      await waitFor(() => expect(pressed(choice)).toBe("true"));
+      await waitFor(() => expect(checked(choice)).toBe("true"));
       expect(toastSuccess).toHaveBeenCalled();
     }
   );
@@ -205,33 +219,76 @@ describe("FixerSpawnToggle — write", () => {
         auto_fix_pr_source: "tenant",
       })
     );
-    patch.mockResolvedValue(base);
+    patch.mockResolvedValue(DEFAULT_ON);
     render(<FixerSpawnToggle canEdit />);
-    await effectiveText();
+    await tenantText();
     await userEvent.click(screen.getByTestId("fixer-spawn-default"));
     await waitFor(() =>
       expect(patch).toHaveBeenCalledWith(PATH, { auto_fix_pr: null })
     );
-    await waitFor(() => expect(pressed("default")).toBe("true"));
+    await waitFor(() => expect(checked("default")).toBe("true"));
   });
 
   it("clicking the already-active position sends nothing", async () => {
-    get.mockResolvedValue(base);
+    get.mockResolvedValue(DEFAULT_ON);
     render(<FixerSpawnToggle canEdit />);
-    await effectiveText();
+    await tenantText();
     await userEvent.click(screen.getByTestId("fixer-spawn-default"));
     expect(patch).not.toHaveBeenCalled();
   });
 
   it("a failed save keeps the previous state and toasts the error", async () => {
-    get.mockResolvedValue(base);
+    get.mockResolvedValue(DEFAULT_ON);
     patch.mockRejectedValue(new Error("PATCH failed: 400 - unknown field"));
     render(<FixerSpawnToggle canEdit />);
-    await effectiveText();
+    await tenantText();
     await userEvent.click(screen.getByTestId("fixer-spawn-off"));
     await waitFor(() => expect(toastError).toHaveBeenCalled());
-    expect(pressed("default")).toBe("true");
-    expect(pressed("off")).toBe("false");
-    expect(await effectiveText()).toContain("Effective: On — from the default (on).");
+    expect(checked("default")).toBe("true");
+    expect(checked("off")).toBe("false");
+    expect(toastSuccess).not.toHaveBeenCalled();
+  });
+
+  it("a 2xx that does not read back the sent value is NOT reported as saved", async () => {
+    get.mockResolvedValue(DEFAULT_ON);
+    patch.mockResolvedValue(settings({}));
+    render(<FixerSpawnToggle canEdit />);
+    await tenantText();
+    await userEvent.click(screen.getByTestId("fixer-spawn-off"));
+    await waitFor(() => expect(toastError).toHaveBeenCalled());
+    expect(toastSuccess).not.toHaveBeenCalled();
+    // It reloads the authoritative state instead of trusting the write.
+    await waitFor(() => expect(get).toHaveBeenCalledTimes(2));
+  });
+
+  it("a click during an in-flight save is dropped, not raced", async () => {
+    get.mockResolvedValue(DEFAULT_ON);
+    let resolvePatch: (v: unknown) => void = () => {};
+    patch.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolvePatch = resolve;
+        })
+    );
+    render(<FixerSpawnToggle canEdit />);
+    await tenantText();
+    await userEvent.click(screen.getByTestId("fixer-spawn-off"));
+    await waitFor(() =>
+      expect(
+        screen.getByTestId("fixer-spawn-on").getAttribute("aria-disabled")
+      ).toBe("true")
+    );
+    await userEvent.click(screen.getByTestId("fixer-spawn-on"));
+    expect(patch).toHaveBeenCalledTimes(1);
+
+    resolvePatch(
+      settings({
+        auto_fix_pr_tenant: false,
+        auto_fix_pr: false,
+        auto_fix_pr_source: "tenant",
+      })
+    );
+    await waitFor(() => expect(checked("off")).toBe("true"));
+    expect(patch).toHaveBeenCalledTimes(1);
   });
 });

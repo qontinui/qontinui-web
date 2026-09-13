@@ -11,14 +11,15 @@
  *   override so the tenant follows the default.
  * - GET profile fields:
  *   - `auto_fix_pr_tenant: boolean | null` — the raw tenant column;
- *   - `auto_fix_pr: boolean` — the value coord resolved;
+ *   - `auto_fix_pr: boolean` — the value coord resolved at TENANT level;
  *   - `auto_fix_pr_source: "default" | "tenant" | "repo" | "unknown"`.
  *
- * Coord resolves, not this file. The rule is: an explicit OFF at any scope
- * wins; otherwise an explicit ON; otherwise the default ON. This file renders
- * what coord decided. The one thing it adds is refusing to render an
- * `unknown` source as on: served policy `agent-spawn-authorization` v11 says an
- * unreadable preference never resolves permissive.
+ * Coord resolves, not this file — including what the default is. The rule is:
+ * an explicit OFF at any scope wins; otherwise an explicit ON; otherwise the
+ * default. This file renders what coord decided. The one thing it adds is
+ * refusing to render an `unknown` source as on: served policy
+ * `agent-spawn-authorization` v11 says an unreadable preference never
+ * resolves permissive.
  */
 
 export type AutoFixPrSource = "default" | "tenant" | "repo" | "unknown";
@@ -29,7 +30,7 @@ export type AutoFixPrChoice = "default" | "on" | "off";
 export interface AutoFixPrState {
   /** Raw `tenant_merge_settings.auto_fix_pr`: NULL = follow the default. */
   tenant: boolean | null;
-  /** Coord's resolved value. */
+  /** Coord's resolved value at tenant level. */
   effective: boolean;
   /** The layer that decided `effective`. */
   source: AutoFixPrSource;
@@ -45,10 +46,12 @@ const KNOWN_SOURCES: readonly AutoFixPrSource[] = [
 /**
  * Read the dial off a coord `EffectiveProfile`.
  *
- * Returns `null` when the coord build behind the proxy does not serve the
- * fields yet. That is "not settable here", which the UI must say instead of
- * inventing a value. A source string outside the contract is read as
- * `unknown`, not as whatever `auto_fix_pr` claims.
+ * Returns `null` when the profile does not carry a well-formed dial — the
+ * coord build does not serve the fields yet, or a field has a shape outside
+ * the contract. That is "not settable here", which the UI must say instead of
+ * inventing a value. A source string outside the contract, or a missing
+ * resolved boolean, is read as `unknown`, never as whatever `auto_fix_pr`
+ * claims.
  */
 export function readAutoFixPr(profile: unknown): AutoFixPrState | null {
   if (profile === null || typeof profile !== "object") return null;
@@ -57,20 +60,19 @@ export function readAutoFixPr(profile: unknown): AutoFixPrState | null {
     return null;
   }
   const rawTenant = p.auto_fix_pr_tenant;
-  const tenant = typeof rawTenant === "boolean" ? rawTenant : null;
+  if (rawTenant !== null && typeof rawTenant !== "boolean") {
+    // A stored value we cannot represent must not render as "Default".
+    return null;
+  }
   const rawSource = p.auto_fix_pr_source;
-  const source: AutoFixPrSource =
+  let source: AutoFixPrSource =
     typeof rawSource === "string" &&
     (KNOWN_SOURCES as readonly string[]).includes(rawSource)
       ? (rawSource as AutoFixPrSource)
       : "unknown";
-  const effective = typeof p.auto_fix_pr === "boolean" ? p.auto_fix_pr : false;
-  return {
-    tenant,
-    // An unreadable preference is never permissive, whatever the bool says.
-    effective: source === "unknown" ? false : effective,
-    source: typeof p.auto_fix_pr === "boolean" ? source : "unknown",
-  };
+  if (typeof p.auto_fix_pr !== "boolean") source = "unknown";
+  const effective = source === "unknown" ? false : p.auto_fix_pr === true;
+  return { tenant: rawTenant, effective, source };
 }
 
 export function choiceFromTenant(tenant: boolean | null): AutoFixPrChoice {
@@ -84,7 +86,7 @@ export function tenantFromChoice(choice: AutoFixPrChoice): boolean | null {
   return choice === "on";
 }
 
-export interface EffectiveSummary {
+export interface TenantSummary {
   /** "On" / "Off" / "Unknown (treated as off)". */
   value: string;
   tone: "on" | "off" | "unknown";
@@ -92,7 +94,7 @@ export interface EffectiveSummary {
   from: string;
 }
 
-export function effectiveSummary(state: AutoFixPrState): EffectiveSummary {
+export function tenantSummary(state: AutoFixPrState): TenantSummary {
   if (state.source === "unknown") {
     return {
       value: "Unknown (treated as off)",
@@ -100,9 +102,10 @@ export function effectiveSummary(state: AutoFixPrState): EffectiveSummary {
       from: "coord could not read this preference",
     };
   }
+  const onOff = state.effective ? "on" : "off";
   const from =
     state.source === "default"
-      ? "the default (on)"
+      ? `the default (${onOff})`
       : state.source === "tenant"
         ? "this tenant's setting"
         : "a repo's .qontinui/config.yml";

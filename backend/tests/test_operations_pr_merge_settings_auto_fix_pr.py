@@ -129,3 +129,6 @@ def test_coord_refusal_surfaces_rather_than_reading_as_saved(
         resp = client.patch(API, json={"auto_fix_pr": False})
 
     assert resp.status_code == 400
+    assert "auto_fix_pr" in resp.json()["detail"], (
+        "coord's refusal text must reach the operator, not just the status"
+    )

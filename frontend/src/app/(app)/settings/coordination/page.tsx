@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useState } from "react";
+import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
@@ -117,6 +117,9 @@ export default function CoordinationSettingsPage() {
     (d) => d.decision_domain === "next_step"
   );
   const primaryOn = draft["next_step"] === "auto_decide";
+  const prFixDomain = settings?.domains.find(
+    (d) => d.decision_domain === "pr_fix"
+  );
 
   return (
     <div className="p-6">
@@ -270,8 +273,10 @@ export default function CoordinationSettingsPage() {
                     domain.requires_master && !masterEnabled;
 
                   return (
-                    <Fragment key={domain.decision_domain}>
-                    <div className="flex items-start gap-3 px-4 py-3">
+                    <div
+                      key={domain.decision_domain}
+                      className="flex items-start gap-3 px-4 py-3"
+                    >
                       {/* Label + meta */}
                       <div className="flex-1 min-w-0 space-y-0.5">
                         <div className="flex items-center gap-2">
@@ -327,20 +332,23 @@ export default function CoordinationSettingsPage() {
                         )}
                       </div>
                     </div>
-                    {/* The tenant off-switch for fixer SPAWNS sits beside the
-                        pr_fix autonomy row it pairs with: autonomy decides
-                        whether coord may act, this decides whether it may
-                        start a session at all. */}
-                    {domain.decision_domain === "pr_fix" && (
-                      <FixerSpawnToggle canEdit={canEdit} />
-                    )}
-                    </Fragment>
                   );
                 })}
               </div>
             </CollapsibleContent>
           </Collapsible>
         </section>
+
+        <div className="border-t border-border" />
+
+        {/* PR fixer spawn off-switch. Its own section, outside the Advanced
+            disclosure and independent of the next-step settings load: it is a
+            different endpoint, and policy requires it to be reachable. It
+            pairs with the "Automatic fixer for stuck PRs" autonomy row. */}
+        <FixerSpawnToggle
+          canEdit={canEdit}
+          autonomyEffective={prFixDomain?.effective}
+        />
 
         <div className="border-t border-border" />
 
