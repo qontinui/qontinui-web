@@ -76,23 +76,35 @@ export function readAutoFixPr(profile: unknown): AutoFixPrState | null {
 }
 
 /**
- * Classify a failed PATCH by coord's refusal body.
+ * Classify a failed PATCH: did the write POSSIBLY land?
  *
- * coord answers a write it could not complete with 503
- * `{error: "auto_fix_pr_column_unavailable", cause, written}`:
- * - `written: false` — nothing was written, so the refusal is a clean failure;
- * - `written: null` (`cause: "commit_unconfirmed"`) — coord cannot tell whether
- *   the commit landed. That is UNCONFIRMED, never saved and never a clean
- *   failure: the caller must reload and show what coord actually serves.
+ * Two kinds of failure leave the outcome unknown, and both must be reported
+ * that way — never as saved, and never as a clean failure that invites a
+ * blind retry. The caller reloads and shows what coord actually serves.
  *
- * The web proxy surfaces coord's body as text inside the thrown error message,
- * so this reads the message rather than a structured response. Anything that
- * does not carry an explicit `written: null` is a plain failure.
+ * 1. coord refuses with 503
+ *    `{error: "auto_fix_pr_column_unavailable", cause, written}`, and
+ *    `written` is null (`cause: "commit_unconfirmed"`): coord cannot tell
+ *    whether the commit landed. An explicit `written: false` (or `true`) is a
+ *    definite answer and is NOT unconfirmed.
+ * 2. The request timed out after it may have been processed. That is either the
+ *    web proxy's 504 "timeout waiting for coord", or HttpClient's own abort
+ *    ("Request timeout - …").
+ *
+ * A 502 (coord unreachable) is a clean failure, because nothing was sent.
+ *
+ * What the browser sees: the proxy raises `HTTPException(detail=<coord body
+ * text>)`, and the backend's error handler wraps it as
+ * `{error, message: <coord body text>, timestamp, path}`. HttpClient then
+ * throws `PATCH <url> failed: <status> - <that envelope>`. So coord's body
+ * arrives JSON-escaped inside the message, and this reads the message text.
  */
 export function isUnconfirmedWrite(errorMessage: string): boolean {
   const match = errorMessage.match(/\\?"written\\?"\s*:\s*(null|true|false)/);
   if (match) return match[1] === "null";
-  return /commit_unconfirmed/.test(errorMessage);
+  if (/commit_unconfirmed/.test(errorMessage)) return true;
+  if (/ failed: 504 - /.test(errorMessage)) return true;
+  return /^Request timeout/.test(errorMessage);
 }
 
 export function choiceFromTenant(tenant: boolean | null): AutoFixPrChoice {
