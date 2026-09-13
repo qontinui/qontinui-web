@@ -719,6 +719,9 @@ export function LandedWriteFeed({
                         rows={2}
                         required
                         aria-required="true"
+                        // The composer opens on a deliberate click, so moving
+                        // focus into the one field it asks for is expected.
+                        autoFocus
                         placeholder="For example: this was never decided — it was recorded from a guess."
                         data-testid={`withdraw-reason-${write.kind}-${write.name}`}
                       />
