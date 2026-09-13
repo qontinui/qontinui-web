@@ -18,14 +18,19 @@ What is asserted, and why each one can break silently:
    would select is updated IN PLACE (no duplicate), and every distractor —
    a turned-off row, a tombstoned row, a repo-scoped row, and another tenant's
    row — is byte-identical afterwards. Downgrade restores the target's
-   ``autonomy_level``, ``mode``, ``updated_at`` and ``updated_by`` exactly —
-   including a prior DETERMINISTIC row carrying a reserved ``kind``, which the
-   upgrade moves to guidance and the downgrade must move back.
+   ``autonomy_level``, ``priority``, ``updated_at`` and ``updated_by`` exactly.
+   The target is a DETERMINISTIC row with a reserved ``kind``, and its ``mode``,
+   ``kind`` and ``action`` are never rewritten. Its priority drops strictly below
+   every live rival coord serves in the system band — an ENABLED tombstoned row
+   and a repo-scoped row — so it wins a foreign tenant's consult; expired and
+   turned-off rows are not rivals.
 3. **Idempotency** — re-running ``upgrade`` over a database whose undo ledger
    already names this revision neither double-inserts nor overwrites the
    recorded prior values.
-4. **No system tenant** — the revision is a no-op rather than an error or a row
-   keyed to a guessed tenant.
+4. **No system tenant** — no ``is_system`` row means a no-op, even while the
+   bootstrap slug still exists (coord reads only the marker).
+5. **Shared ledger** — downgrade removes only this revision's ledger rows and
+   keeps the table while another revision's rows remain.
 
 Substrate comes from ``_alembic_harness``: an ephemeral database inside the
 test Postgres, skipped when none is reachable. A skip proves nothing — point it
@@ -135,6 +140,7 @@ def _insert_rule(
     kind: str | None = None,
     enabled: bool = True,
     deleted: bool = False,
+    expired: bool = False,
     priority: int = 100,
     action: str = "{}",
 ) -> uuid.UUID:
@@ -146,11 +152,13 @@ def _insert_rule(
                 INSERT INTO coord.policy_rules
                     (policy_id, tenant_id, repo, name, kind, decision_domain,
                      mode, autonomy_level, condition, action, priority, enabled,
-                     deleted_at, created_by, updated_by, created_at, updated_at)
+                     deleted_at, expires_at, created_by, updated_by, created_at,
+                     updated_at)
                 VALUES
                     (:p, :t, :repo, :name, :kind, 'pr_fix', :mode, :level,
                      '{}'::jsonb, CAST(:action AS jsonb), :prio, :enabled,
                      CASE WHEN :deleted THEN now() ELSE NULL END,
+                     CASE WHEN :expired THEN now() - interval '1 hour' ELSE NULL END,
                      'operator:fixture', 'operator:fixture',
                      now() - interval '3 days', now() - interval '2 days')
                 """
@@ -167,6 +175,7 @@ def _insert_rule(
                 "prio": priority,
                 "enabled": enabled,
                 "deleted": deleted,
+                "expired": expired,
             },
         )
     return policy_id
@@ -191,7 +200,6 @@ def _by_id(rows: list[dict]) -> dict[uuid.UUID, dict]:
 
 def _assert_seeded(row: dict) -> None:
     assert row["autonomy_level"] == "auto_decide"
-    assert row["mode"] == "guidance"
     assert row["repo"] is None
     assert row["enabled"] is True
     assert row["deleted_at"] is None
@@ -201,6 +209,25 @@ def _assert_seeded(row: dict) -> None:
 # ---------------------------------------------------------------------------
 # Live walks.
 # ---------------------------------------------------------------------------
+
+
+def _system_band_winner(engine: Engine, system: uuid.UUID) -> uuid.UUID:
+    """The row coord serves in the system band for a NON-system tenant's consult.
+
+    Mirrors ``fetch_policies_by_domain``: every enabled, unexpired system row
+    for the domain, whatever its ``repo``, ranked ``priority, created_at``.
+    """
+    with engine.connect() as conn:
+        value = conn.execute(
+            text(
+                "SELECT policy_id FROM coord.policy_rules "
+                "WHERE tenant_id = :s AND COALESCE(decision_domain, kind) = 'pr_fix' "
+                "AND enabled = true AND (expires_at IS NULL OR expires_at > now()) "
+                "ORDER BY priority ASC, created_at ASC LIMIT 1"
+            ),
+            {"s": str(system)},
+        ).scalar_one()
+    return uuid.UUID(str(value))
 
 
 def test_insert_case_creates_one_row_and_downgrade_removes_it(_admin_url: str) -> None:
@@ -215,6 +242,7 @@ def test_insert_case_creates_one_row_and_downgrade_removes_it(_admin_url: str) -
         seeded = rows[0]
         assert uuid.UUID(str(seeded["tenant_id"])) == system
         assert seeded["decision_domain"] == "pr_fix"
+        assert seeded["mode"] == "guidance"
         assert seeded["kind"] is None, (
             "policy_rules_mode_kind_check lets a guidance row carry NULL kind; a "
             "reserved kind would enrol the row in coord's v1 per-kind loader"
@@ -222,13 +250,14 @@ def test_insert_case_creates_one_row_and_downgrade_removes_it(_admin_url: str) -
         assert seeded["condition"] == {}
         assert seeded["action"] == {}
         assert seeded["payload"] is None
+        assert seeded["priority"] == 100
         assert seeded["created_by"] == _ACTOR
         _assert_seeded(seeded)
 
         run_alembic(backend_root(), db_url, "downgrade", "-1")
         assert _pr_fix_rows(engine) == [], "downgrade must remove the inserted row"
         assert not table_exists(engine, "coord", "policy_rule_seed_undo"), (
-            "downgrade must drop the undo ledger"
+            "downgrade must drop the undo ledger once it is empty"
         )
 
         run_alembic(backend_root(), db_url, "upgrade", _REVISION_ID)
@@ -237,7 +266,29 @@ def test_insert_case_creates_one_row_and_downgrade_removes_it(_admin_url: str) -
         _assert_seeded(again[0])
 
 
-def test_update_case_touches_only_the_resolved_row_and_downgrade_restores_it(
+def test_insert_outranks_a_repo_scoped_system_row(_admin_url: str) -> None:
+    """With no tenant-wide row, an existing repo-scoped system row must not keep
+    winning other tenants' consults."""
+    with ephemeral_database(_admin_url, "prfixdefault_insrank") as (engine, db_url):
+        run_alembic(backend_root(), db_url, "upgrade", _PARENT_REVISION_ID)
+        system = _system_tenant(engine)
+        repo_scoped = _insert_rule(
+            engine, tenant_id=system, repo="qontinui/qontinui-dev-notes", priority=7
+        )
+        before = _by_id(_pr_fix_rows(engine))
+
+        run_alembic(backend_root(), db_url, "upgrade", _REVISION_ID)
+        after = _by_id(_pr_fix_rows(engine))
+        (seeded_id,) = set(after) - set(before)
+        assert after[seeded_id]["priority"] == 6
+        assert after[repo_scoped] == before[repo_scoped]
+        assert _system_band_winner(engine, system) == seeded_id
+
+        run_alembic(backend_root(), db_url, "downgrade", "-1")
+        assert _by_id(_pr_fix_rows(engine)) == before
+
+
+def test_update_case_touches_only_the_target_and_downgrade_restores_it(
     _admin_url: str,
 ) -> None:
     with ephemeral_database(_admin_url, "prfixdefault_update") as (engine, db_url):
@@ -245,9 +296,8 @@ def test_update_case_touches_only_the_resolved_row_and_downgrade_restores_it(
         system = _system_tenant(engine)
         other = _insert_tenant(engine)
 
-        # The prior target is DETERMINISTIC with a reserved kind and a real
-        # action — the shape furthest from the seed, so a restore that forgets
-        # any recorded column shows up.
+        # The target is DETERMINISTIC with a reserved kind and a real action —
+        # the shape furthest from the seed — so any over-reaching write shows.
         target = _insert_rule(
             engine,
             tenant_id=system,
@@ -257,17 +307,18 @@ def test_update_case_touches_only_the_resolved_row_and_downgrade_restores_it(
             action='{"type": "escalate", "escalation_message": "prior"}',
             priority=50,
         )
-        # Distractors — none of them is what coord's resolver reads for the
-        # system band, so none may change.
-        lower_precedence = _insert_rule(engine, tenant_id=system, priority=200)
-        turned_off = _insert_rule(engine, tenant_id=system, enabled=False, priority=1)
-        tombstoned = _insert_rule(
-            engine, tenant_id=system, enabled=False, deleted=True, priority=1
+        # RIVALS coord serves in the system band (so the target must outrank):
+        tombstoned_live = _insert_rule(
+            engine, tenant_id=system, enabled=True, deleted=True, priority=3
         )
         repo_scoped = _insert_rule(
             engine, tenant_id=system, repo="qontinui/qontinui-dev-notes", priority=1
         )
-        foreign = _insert_rule(engine, tenant_id=other, priority=1)
+        lower_precedence = _insert_rule(engine, tenant_id=system, priority=200)
+        # NOT rivals — coord never serves them, so they must not move the rank:
+        turned_off = _insert_rule(engine, tenant_id=system, enabled=False, priority=-50)
+        expired = _insert_rule(engine, tenant_id=system, expired=True, priority=-40)
+        foreign = _insert_rule(engine, tenant_id=other, priority=-30)
 
         before = _by_id(_pr_fix_rows(engine))
 
@@ -276,33 +327,57 @@ def test_update_case_touches_only_the_resolved_row_and_downgrade_restores_it(
 
         assert set(after) == set(before), "an UPDATE case must not insert a row"
         _assert_seeded(after[target])
-        assert after[target]["kind"] == "escalation_rule", "kind is never rewritten"
-        assert after[target]["action"] == before[target]["action"], (
-            "action is never rewritten"
+        for column in ("mode", "kind", "action", "condition", "repo", "name"):
+            assert after[target][column] == before[target][column], (
+                f"{column} is never rewritten on the target"
+            )
+        assert after[target]["priority"] == 0, (
+            "the target must rank strictly below the lowest live rival (1), and "
+            "turned-off / expired / foreign rows are not rivals"
         )
+        assert _system_band_winner(engine, system) == target
         for untouched in (
+            tombstoned_live,
+            repo_scoped,
             lower_precedence,
             turned_off,
-            tombstoned,
-            repo_scoped,
+            expired,
             foreign,
         ):
             assert after[untouched] == before[untouched], (
-                f"row {untouched} is not the resolver's system-band pick and must "
-                "be byte-identical after upgrade"
+                f"row {untouched} is not the target and must be byte-identical"
             )
 
         run_alembic(backend_root(), db_url, "downgrade", "-1")
         restored = _by_id(_pr_fix_rows(engine))
         assert restored == before, (
             "downgrade must restore every pr_fix row exactly — autonomy_level, "
-            "mode, action, updated_at and updated_by of the target included"
+            "priority, updated_at and updated_by of the target included"
         )
 
         run_alembic(backend_root(), db_url, "upgrade", _REVISION_ID)
         reapplied = _by_id(_pr_fix_rows(engine))
         assert set(reapplied) == set(before)
         _assert_seeded(reapplied[target])
+
+
+def test_a_tombstoned_tenant_wide_row_is_never_adopted(_admin_url: str) -> None:
+    with ephemeral_database(_admin_url, "prfixdefault_tomb") as (engine, db_url):
+        run_alembic(backend_root(), db_url, "upgrade", _PARENT_REVISION_ID)
+        system = _system_tenant(engine)
+        tomb = _insert_rule(engine, tenant_id=system, enabled=True, deleted=True)
+        before = _by_id(_pr_fix_rows(engine))
+
+        run_alembic(backend_root(), db_url, "upgrade", _REVISION_ID)
+        after = _by_id(_pr_fix_rows(engine))
+        assert after[tomb] == before[tomb], "a tombstoned row is never the target"
+        (seeded_id,) = set(after) - set(before)
+        _assert_seeded(after[seeded_id])
+        assert after[seeded_id]["priority"] == 99
+        assert _system_band_winner(engine, system) == seeded_id
+
+        run_alembic(backend_root(), db_url, "downgrade", "-1")
+        assert _by_id(_pr_fix_rows(engine)) == before
 
 
 def test_rerun_over_a_populated_ledger_is_a_no_op(_admin_url: str) -> None:
@@ -338,22 +413,52 @@ def test_rerun_over_a_populated_ledger_is_a_no_op(_admin_url: str) -> None:
         assert _by_id(_pr_fix_rows(engine))[target] == before[target]
 
 
-def test_no_system_tenant_is_a_no_op(_admin_url: str) -> None:
-    with ephemeral_database(_admin_url, "prfixdefault_nosys") as (engine, db_url):
-        run_alembic(backend_root(), db_url, "upgrade", _PARENT_REVISION_ID)
+def test_downgrade_keeps_another_revisions_ledger_rows(_admin_url: str) -> None:
+    with ephemeral_database(_admin_url, "prfixdefault_shared") as (engine, db_url):
+        run_alembic(backend_root(), db_url, "upgrade", _REVISION_ID)
+        foreign_policy = uuid.uuid4()
         with engine.begin() as conn:
             conn.execute(
                 text(
-                    "UPDATE coord.tenants SET is_system = false, "
-                    "slug = 'renamed-' || left(tenant_id::text, 8) WHERE is_system "
-                    "OR slug = 'personal-jspinak'"
-                )
+                    "INSERT INTO coord.policy_rule_seed_undo "
+                    "(revision, policy_id, disposition, prior) "
+                    "VALUES ('some_other_seed_01', :p, 'inserted', NULL)"
+                ),
+                {"p": str(foreign_policy)},
             )
+
+        run_alembic(backend_root(), db_url, "downgrade", "-1")
+        assert table_exists(engine, "coord", "policy_rule_seed_undo"), (
+            "downgrade must not drop a ledger another revision still uses"
+        )
+        with engine.connect() as conn:
+            remaining = (
+                conn.execute(text("SELECT revision FROM coord.policy_rule_seed_undo"))
+                .scalars()
+                .all()
+            )
+        assert remaining == ["some_other_seed_01"]
+
+
+def test_no_system_tenant_is_a_no_op_even_with_the_bootstrap_slug(
+    _admin_url: str,
+) -> None:
+    with ephemeral_database(_admin_url, "prfixdefault_nosys") as (engine, db_url):
+        run_alembic(backend_root(), db_url, "upgrade", _PARENT_REVISION_ID)
+        with engine.begin() as conn:
+            # Unmark the system tenant but KEEP its slug: coord reads only the
+            # marker, so a slug-keyed seed would be one tenant's own setting.
+            conn.execute(text("UPDATE coord.tenants SET is_system = false"))
+            slug_rows = conn.execute(
+                text(
+                    "SELECT count(*) FROM coord.tenants WHERE slug = 'personal-jspinak'"
+                )
+            ).scalar_one()
+        assert slug_rows == 1, "fixture precondition: the bootstrap slug still exists"
 
         run_alembic(backend_root(), db_url, "upgrade", _REVISION_ID)
         assert _pr_fix_rows(engine) == [], (
-            "with no system tenant there is no system band to seed; the revision "
-            "must not key a row to a guessed tenant"
+            "with no is_system tenant there is no system band to seed"
         )
 
         run_alembic(backend_root(), db_url, "downgrade", "-1")
