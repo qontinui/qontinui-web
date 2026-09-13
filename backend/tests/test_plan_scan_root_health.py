@@ -282,9 +282,9 @@ class TestComparisonSet:
         ago and both counts are exact, yet the refs differ, so the minimum is a
         floor and a floor of 0 reads ``unknown``. The served reason used to be
         ``ref_stale:`` regardless — telling every API and ``corpus_health``
-        reader (and the Scan sources panel's roll-up reader, which renders the
-        detail verbatim) to re-fetch boxes that were already current, while
-        this device's own row reads ``measured``, 0 behind."""
+        reader (and any reader that renders the detail verbatim) to re-fetch
+        boxes that were already current, while this device's own row reads
+        ``measured``, 0 behind."""
         in_step = _obs(behind=0, ref_sha="a" * 40)
         behind = _obs(behind=5, ref_sha="b" * 40)
         assert render_row(in_step, now=NOW).state == "measured"
@@ -296,13 +296,18 @@ class TestComparisonSet:
         assert rollup.detail is not None
         assert rollup.detail.startswith("refs_not_shared:")
         assert "ref_stale" not in rollup.detail
+        # Only the MINIMUM is disowned: device B is exactly 5 behind its own
+        # ref, and the served reason must not say otherwise.
+        assert "any comparable feeder" not in rollup.detail
+        assert "least-behind comparable feeder" in rollup.detail
         assert rollup.lag_unknown_device_ids == _ids(in_step, behind)
 
     def test_an_unknown_ref_is_not_shared_either(self) -> None:
         """A reading with no ``ref_sha`` cannot share a ref with anyone."""
         # A ``measured`` reading reaches the server with a null ``ref_sha`` when
         # the runner could not send its sha (the body push drops an over-length
-        # one); the ref's age travels independently, so this one is exact.
+        # one); the ref's age travels independently, so its counts are not
+        # floors.
         zero = _obs(behind=0, ref_sha=None)
         other = _obs(behind=5)
 
