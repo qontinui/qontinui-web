@@ -34,6 +34,32 @@ on:
     branches: [main]
     paths:
       - "backend/alembic/versions/**"
+  # Re-run the sweep on demand. Added because this lane could not be
+  # RE-RUN after being fixed: its push trigger is paths-filtered to the
+  # versions dir, so a change to the sweep itself never re-fires it and the
+  # last recorded verdict on `main` stays whatever it was until the next
+  # migration lands — which is exactly what happened on 2026-09-13, when a
+  # fix to the sweep left `main` displaying the red the fix had removed.
+  #
+  # NOT self-applying, and the distinction matters: `workflow_dispatch` is
+  # only offered once the file carrying it is on the DEFAULT branch. So this
+  # creates the capability; it does not clear a red badge by merging. Someone
+  # then fires it — `gh workflow run "alembic graph check" --ref main`.
+  #
+  # Safe on this event, and each half is worth stating. "Comment on merging PR
+  # if forked" is guarded by `github.event.head_commit.message != ''`, and on
+  # a dispatch that property does not exist — GitHub evaluates a dereference
+  # of a nonexistent property to the EMPTY STRING, so the guard is false and
+  # the step self-skips. Correct, since a dispatch run has no merging PR, and
+  # load-bearing rather than decorative: the other conjunct
+  # (`steps.heads.outputs.count > 1`) evaluates normally here, so on a forked
+  # `main` this guard is the only thing standing between a dispatch and a
+  # comment on an unrelated PR.
+  #
+  # The open-PR sweep does run, and is idempotent by construction: every sweep
+  # is a full recomputation against the then-current `main`, and it EDITS its
+  # one marker comment per PR rather than posting a second.
+  workflow_dispatch:
 
 # Serialise the sweeps. The one-marker-comment-per-PR rule is enforced by
 # reading the comments first, which is a check-then-write, not a lock: two
@@ -45,6 +71,12 @@ on:
 # running still drops the middle one. Harmless here — every sweep is a full
 # recomputation against the then-current main, so the last one wins and is
 # correct.
+#
+# `workflow_dispatch` feeds this same group: `github.ref` is
+# `refs/heads/main` on both events. That is fine, and the direction is the
+# safe one — a real land arriving while a dispatch is merely PENDING
+# displaces the DISPATCH, not the land, and `cancel-in-progress: false`
+# means a dispatch never kills a sweep already running.
 concurrency:
   group: alembic-graph-check-${{ github.ref }}
   cancel-in-progress: false
