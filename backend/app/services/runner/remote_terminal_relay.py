@@ -5,10 +5,10 @@ D6 / transport B1. A SOURCE device (a runner whose operator clicked *Attach*
 on a fleet session) speaks the ``remote_terminal_*`` family on its existing
 ``WS /api/v1/devices/ws`` socket. This module:
 
-1. **verifies the attach grant** coord minted — the same JWKS verifier
+1. **verifies the grant** coord minted — the same JWKS verifier
    ``devices_ws`` uses for the device token itself — and refuses with a typed
-   ``error`` code when the grant is not an ``attach_grant``, is expired, or
-   was minted for a different source device;
+   ``error`` code when the grant is not the kind the frame needs, is expired,
+   or was minted for a different source device;
 2. **claims and registers the attachment** in Redis (multi-replica): the grant
    is claimed atomically (``SET NX EXAT``) so one grant admits ONE live
    attachment on ONE socket, and once the target names the terminal the
@@ -61,6 +61,20 @@ record of who holds which terminal, expiring with the grant.
 ``release_source`` deletes all three, so a source that reconnects re-presents
 its grant successfully once the old socket has torn down; a re-presentation
 that races the teardown reads ``attach_grant_consumed`` and retries.
+
+Remote CREATE
+-------------
+Plan ``2026-09-11-headless-runner-parity-from-a-headed-runner`` adds a second
+capability on the same socket: ``remote_terminal_create``, presented with a
+``create_grant`` (addressed by target DEVICE, carrying no session) and
+forwarded as ``terminal_create`` with ``remote.kind = "create"``. The target
+answers ``terminal_created`` on the ordinary response channel, correlated by
+the minted ``request_id``; the relay forwards it as ``remote_terminal_created``
+with a declared ``coord_session_id`` and drops the grant, so driving the new
+terminal needs a separate attach grant. A create grant admits no
+session-scoped frame (``grant_wrong_kind``), and every relay refusal of one is
+spelled ``create_grant_*``. Unlike attach, a create's claim key is NOT deleted
+on release — it expires with the grant, which is what single use means.
 
 Forward direction is replica-local
 ----------------------------------
@@ -161,6 +175,10 @@ CODE_TARGET_NOT_CONNECTED = "target_not_connected"
 CODE_CREATE_GRANT_INVALID = "create_grant_invalid"
 CODE_CREATE_GRANT_EXPIRED = "create_grant_expired"
 CODE_CREATE_GRANT_WRONG_SOURCE = "create_grant_wrong_source"
+# Single use, for a create: the grant was already presented on this socket, or
+# its claim is held. The attach twin is ``attach_grant_consumed``; the rule
+# above applies to it and to expiry alike — see ``_Attachment.expired_code``.
+CODE_CREATE_GRANT_CONSUMED = "create_grant_consumed"
 # A grant presented for frames of the other kind: a create grant driving a PTY,
 # or an attach grant asking for a spawn. The capability, not the token, is what
 # is wrong.
@@ -520,6 +538,19 @@ class _Attachment:
 
     def expired(self, now: float | None = None) -> bool:
         return (now if now is not None else time.time()) >= self.exp
+
+    def expired_code(self) -> str:
+        """The refusal code for THIS grant having expired.
+
+        Every relay site that expires a grant after admission (the sweep and
+        ``_authorize``) goes through here, so a create that times out unanswered
+        is not reported to its waiter as an expired ATTACH grant.
+        """
+        return (
+            CODE_CREATE_GRANT_EXPIRED
+            if self.kind == KIND_CREATE
+            else CODE_GRANT_EXPIRED
+        )
 
     def remote_block(self) -> dict[str, Any]:
         block: dict[str, Any] = {
@@ -1122,7 +1153,7 @@ class RemoteTerminalRelay:
         if jti in session.grants:
             await self._refuse(
                 session,
-                CODE_GRANT_CONSUMED,
+                CODE_CREATE_GRANT_CONSUMED,
                 "grant already presented on this socket",
                 request_id=request_id,
                 grant_jti=jti,
@@ -1170,7 +1201,7 @@ class RemoteTerminalRelay:
         if not claimed:
             await self._refuse(
                 session,
-                CODE_GRANT_CONSUMED,
+                CODE_CREATE_GRANT_CONSUMED,
                 "grant is already held by a live attachment",
                 request_id=request_id,
                 grant_jti=jti,
@@ -1274,7 +1305,7 @@ class RemoteTerminalRelay:
             await self._drop_attachment(session, att)
             await self._refuse(
                 session,
-                CODE_GRANT_EXPIRED,
+                att.expired_code(),
                 "grant expired",
                 request_id=request_id,
                 grant_jti=att.grant_jti,
@@ -1523,7 +1554,7 @@ class RemoteTerminalRelay:
                 attached=att.attached,
             )
             await self._evict(
-                session, att, code=CODE_GRANT_EXPIRED, message="grant expired"
+                session, att, code=att.expired_code(), message="grant expired"
             )
 
     # ------------------------------------------------------------------
