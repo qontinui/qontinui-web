@@ -25,7 +25,7 @@ first three from the reader's side, numbered there 3, 3a and 3c):
    ``state: "unknown"``; a row this server has not heard from within
    :data:`FRESH_WITHIN_SECS` reads ``state: "unknown"`` with an
    ``observation_stale:`` detail.
-2. **"0 behind" against a stale ref is UNKNOWN, never "in step"** — for a row,
+2. **A 0-behind floor is UNKNOWN, never "in step"** — for a row,
    and for a roll-up whose fewest commits behind is a floor of 0: "at least 0
    behind" establishes no distance, so the roll-up reads ``unknown`` with a
    null minimum rather than "measured, 0 behind". Its detail names the cause:
@@ -140,10 +140,11 @@ ZERO_FLOOR_MINIMUM_DETAIL = (
 #: ``ref_stale:`` would send an operator to re-fetch boxes that may be current.
 REFS_NOT_SHARED_ZERO_MINIMUM_DETAIL = (
     "refs_not_shared: the fewest commits behind among the comparable readings "
-    "is 0, but they counted against different or unidentified refs, and such "
-    "counts do not compare whatever each ref's age (each row's detail says "
-    "whether its own ref is stale) — so how far behind the least-behind feeder "
-    "is is not established, and the readings do not order the devices"
+    "is 0, but they counted against different or unidentified refs, so the "
+    "counts are not established to compare whatever each ref's age (each "
+    "row's detail says whether its own ref is stale) — how far behind any "
+    "comparable feeder is is not established, and the readings do not order "
+    "the devices"
 )
 
 
