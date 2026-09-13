@@ -101,6 +101,10 @@ VERDICTS = frozenset(
 #: Keys `format_verdict` places itself, and therefore refuses as caller fields.
 _RESERVED_KEYS = frozenset({"verdict", "exit"})
 
+#: An exit code as the verdict line spells it. `str.isdigit` is not this: it
+#: accepts Unicode digits such as `²`.
+_EXIT_CODE = re.compile(r"-?[0-9]+")
+
 
 def is_verdict_line(line: str) -> bool:
     """Whether `line` CLAIMS to be a verdict line -- well-formed or not.
@@ -124,10 +128,18 @@ def format_verdict(verdict: str, exit_code: int, /, **fields: object) -> str:
     reserved = sorted(_RESERVED_KEYS & fields.keys())
     if reserved:
         raise ValueError(f"verdict fields may not be named {reserved}")
+    # `type() is int` rather than isinstance: `True` would render `exit=True`.
+    if type(exit_code) is not int:
+        raise ValueError(f"exit_code must be an int, got {exit_code!r}")
     tokens = [f"verdict={verdict}"]
     for key, value in fields.items():
         text = str(value)
-        if not text or "=" in key + text or any(ch.isspace() for ch in key + text):
+        if (
+            not key
+            or not text
+            or "=" in key + text
+            or any(ch.isspace() for ch in key + text)
+        ):
             raise ValueError(f"verdict field {key}={text!r} is not a bare token")
         tokens.append(f"{key}={text}")
     tokens.append(f"exit={exit_code}")
@@ -138,32 +150,38 @@ def parse_verdict(text: str) -> dict[str, str] | None:
     """The fields of the LAST verdict line in `text`, or None when there is none.
 
     A malformed line raises rather than yielding a partial reading: a reader
-    that guesses is the prose-matching this line exists to replace. Every line
-    `is_verdict_line` claims is held to the whole contract -- one space after
-    the prefix, bare ``key=value`` tokens with no repeated key, ``verdict``
-    first and in `VERDICTS`, ``exit`` last and an integer.
+    that guesses is the prose-matching this line exists to replace. EVERY line
+    `is_verdict_line` claims is held to the whole contract, not only the last
+    one -- one space after the prefix, bare ``key=value`` tokens with no
+    repeated key, ``verdict`` first and in `VERDICTS`, ``exit`` last and an
+    ASCII integer.
     """
-    lines = [line.strip() for line in text.splitlines() if is_verdict_line(line)]
-    if not lines:
-        return None
-    last = lines[-1]
-    body = last[len(VERDICT_PREFIX) :]
+    parsed = [
+        _parse_verdict_line(line.strip())
+        for line in text.splitlines()
+        if is_verdict_line(line)
+    ]
+    return parsed[-1] if parsed else None
+
+
+def _parse_verdict_line(line: str) -> dict[str, str]:
+    body = line[len(VERDICT_PREFIX) :]
     if not body.startswith(" ") or not body.strip():
-        raise ValueError(f"malformed verdict line {last!r}")
+        raise ValueError(f"malformed verdict line {line!r}")
     fields: dict[str, str] = {}
     for token in body.split():
         key, sep, value = token.partition("=")
         if not sep or not key or not value or "=" in value or key in fields:
-            raise ValueError(f"malformed verdict token {token!r} in {last!r}")
+            raise ValueError(f"malformed verdict token {token!r} in {line!r}")
         fields[key] = value
     keys = list(fields)
     if (
         keys[0] != "verdict"
         or keys[-1] != "exit"
         or fields["verdict"] not in VERDICTS
-        or not fields["exit"].lstrip("-").isdigit()
+        or not _EXIT_CODE.fullmatch(fields["exit"])
     ):
-        raise ValueError(f"verdict line breaks the output contract: {last!r}")
+        raise ValueError(f"verdict line breaks the output contract: {line!r}")
     return fields
 
 
@@ -171,6 +189,20 @@ def _finish(exit_code: int, verdict: str, **fields: object) -> int:
     """Print the verdict line to stderr and hand back `exit_code` for `main`."""
     print(format_verdict(verdict, exit_code, **fields), file=sys.stderr)
     return exit_code
+
+
+def _abandon_stdout() -> None:
+    """Close a stdout whose write already failed, so shutdown cannot retry it.
+
+    The unwritten bytes stay buffered. Left open, the interpreter's exit-time
+    flush fails a second time, replaces this run's exit code with 120 and
+    prints ``Exception ignored ...`` AFTER the verdict line -- measured against
+    ``/dev/full``. Closing it makes the shutdown flush a no-op.
+    """
+    try:
+        sys.stdout.close()
+    except (OSError, ValueError):
+        pass
 
 
 def parse_nodeids(text: str) -> list[str]:
@@ -316,7 +348,10 @@ def main(argv: list[str] | None = None) -> int:
 
     try:
         if args.nodeids == "-":
-            text = sys.stdin.read()
+            # Decoded with the SAME `errors="replace"` as the file branch. A
+            # strict locale decode would raise UnicodeDecodeError on one stray
+            # byte -- a traceback with no verdict line.
+            text = sys.stdin.buffer.read().decode("utf-8", errors="replace")
         else:
             with open(args.nodeids, encoding="utf-8", errors="replace") as handle:
                 text = handle.read()
@@ -429,16 +464,23 @@ def main(argv: list[str] | None = None) -> int:
         )
 
     body = "\n".join(selected) + "\n"
+    target = repr(args.out) if args.out else "stdout"
     try:
         if args.out:
             with open(args.out, "w", encoding="utf-8", newline="\n") as handle:
                 handle.write(body)
         else:
             sys.stdout.write(body)
-    except OSError as exc:
+            # write() only fills a buffer. Without this flush a full or closed
+            # stdout fails at interpreter shutdown -- AFTER an `ok exit=0`
+            # verdict line, which would then be neither last nor true.
+            sys.stdout.flush()
+    except (OSError, UnicodeError) as exc:
+        if not args.out:
+            _abandon_stdout()
         print(
             f"::error::cannot write shard {args.shard}/{args.shards}'s selection "
-            f"to {args.out!r}: {exc}",
+            f"to {target}: {exc}",
             file=sys.stderr,
         )
         return _finish(

@@ -31,7 +31,9 @@ makes a mismatch a red step rather than a narrowed gate.
 
 from __future__ import annotations
 
+import ast
 import importlib.util
+import io
 import re
 import subprocess
 import sys
@@ -416,6 +418,80 @@ def test_help_renders():
     assert excinfo.value.code == 0
 
 
+def test_the_table_has_one_row_per_verdict_call_site():
+    """Reachable verdict NAMES are not reachable EXITS.
+
+    The vocabulary test above passes as long as each verdict appears once, so a
+    new `_finish` call reusing an existing verdict would go untested. Counting
+    call sites against table rows makes adding one without a row a red test.
+    """
+    tree = ast.parse(SCRIPT_PATH.read_text(encoding="utf-8"))
+    sites = [
+        node
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Name)
+        and node.func.id == "_finish"
+    ]
+    assert len(sites) == len(_EVERY_EXIT), (
+        f"{len(sites)} `_finish` call sites but {len(_EVERY_EXIT)} table rows; "
+        "give every exit path its own row"
+    )
+
+
+def test_stdin_with_a_non_utf8_byte_still_ends_in_a_verdict(monkeypatch, capsys):
+    raw = b"tests/test_\xff.py::test_one\ntests/test_b.py::test_two\n"
+    monkeypatch.setattr(sys, "stdin", io.TextIOWrapper(io.BytesIO(raw), "utf-8"))
+    rc = splitter.main(
+        ["--nodeids", "-", "--count-only", "--min-files", "2", "--min-nodeids", "2"]
+    )
+    assert rc == 0
+    _verdict(capsys, 0, "ok", files=2, nodeids=2)
+
+
+class _FullStdout(io.StringIO):
+    """A stdout whose buffered write only fails when flushed, once."""
+
+    armed = True
+
+    def flush(self):
+        if self.armed:
+            self.armed = False
+            raise OSError(28, "No space left on device")
+
+
+def test_a_failed_stdout_flush_is_io_error_not_ok(tmp_path, monkeypatch, capsys):
+    """Without an explicit flush the failure lands at shutdown, after `ok exit=0`."""
+    monkeypatch.setattr(sys, "stdout", _FullStdout())
+    rc = splitter.main(["--nodeids", _write(tmp_path, _REAL_SHAPE), *_OK_SELECT])
+    assert rc == 1
+    _verdict(capsys, 1, "io_error", stage="write")
+
+
+@pytest.mark.skipif(not Path("/dev/full").exists(), reason="needs /dev/full")
+def test_a_full_stdout_exits_1_with_the_verdict_last_for_real(tmp_path):
+    """The in-process test above cannot see interpreter shutdown; this one can.
+
+    Measured before `_abandon_stdout`: the run printed `io_error exit=1`, then
+    the exit-time flush of the still-buffered bytes failed again, turned the
+    exit code into 120 and printed `Exception ignored ...` AFTER the verdict.
+    """
+    nodeids = _write(tmp_path, _REAL_SHAPE)
+    with open("/dev/full", "w", encoding="utf-8") as full:
+        proc = subprocess.run(
+            [sys.executable, str(SCRIPT_PATH), "--nodeids", nodeids, *_OK_SELECT],
+            stdout=full,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
+    assert proc.returncode == 1, proc.stderr
+    lines = proc.stderr.splitlines()
+    assert lines and splitter.is_verdict_line(lines[-1]), proc.stderr
+    parsed = splitter.parse_verdict(lines[-1])
+    assert parsed is not None
+    assert (parsed["verdict"], parsed["stage"]) == ("io_error", "write")
+
+
 def test_parse_verdict_reads_the_last_verdict_line_among_prose():
     text = (
         "::error::a human-facing explanation that may change at will\n"
@@ -448,6 +524,10 @@ def test_parse_verdict_is_none_when_there_is_no_verdict_line():
         "shard-split: verdict=ok k= exit=0",  # empty value
         "shard-split:",  # prefix with nothing after it
         "shard-split:verdict=ok exit=0",  # no space after the prefix
+        "shard-split: verdict=ok exit=--5",  # not an integer
+        "shard-split: verdict=ok exit=²",  # a Unicode digit, not an ASCII one
+        # A malformed EARLIER line must not be skipped for a good last one.
+        "shard-split: garbage\nshard-split: verdict=ok exit=0",
     ],
 )
 def test_parse_verdict_refuses_a_malformed_line(line):
@@ -463,11 +543,18 @@ def test_parse_verdict_refuses_a_malformed_line(line):
         {"reason": ""},  # empty value
         {"exit": "3"},  # reserved key: would emit `exit` twice
         {"verdict": "ok"},  # reserved key: would emit `verdict` twice
+        {"": "1"},  # empty key
     ],
 )
 def test_format_verdict_refuses_what_parse_verdict_would_reject(fields):
     with pytest.raises(ValueError):
         splitter.format_verdict("bad_args", 1, **fields)
+
+
+@pytest.mark.parametrize("exit_code", ["abc", True, 1.0])
+def test_format_verdict_refuses_a_non_int_exit_code(exit_code):
+    with pytest.raises(ValueError):
+        splitter.format_verdict("ok", exit_code)
 
 
 def test_format_and_parse_round_trip():
