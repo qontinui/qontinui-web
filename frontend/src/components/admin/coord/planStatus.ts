@@ -306,19 +306,111 @@ export function derivePlanStatus(
 }
 
 /**
- * The date prefix a plan slug conventionally opens with, used as the row's
- * mono identity chip. Falls back to the leading segment so a slug that does
- * not follow the convention still gets a stable, short identity rather than a
- * blank chip.
+ * What the identity chip renders when the plan has NO authoring date at all —
+ * neither a dated slug nor a coord `authored_at`. An em dash, the same "we do
+ * not know" the row's time cell says in words via {@link PLAN_TIME_ABSENT}.
  */
-export function planIdentity(slug: string): string {
-  const m = /^(\d{4}-\d{2}-\d{2})-/.exec(slug);
-  if (m?.[1]) return m[1];
-  const head = slug.split("-").slice(0, 2).join("-");
-  return head || slug;
+export const PLAN_IDENTITY_ABSENT = "\u2014";
+
+/**
+ * The leading 10 characters of an ISO instant, IFF they are a real calendar
+ * date. Shape alone is not validity — `2026-13-45` matches the pattern — so
+ * the day is round-tripped through `Date.parse`, which is NaN for a
+ * non-existent date in the ISO form.
+ */
+function authoredDay(value?: string | null): string | null {
+  const head = (value ?? "").slice(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(head)) return null;
+  return Number.isNaN(Date.parse(`${head}T00:00:00Z`)) ? null : head;
 }
 
-/** The slug with its {@link planIdentity} prefix removed (never empty). */
+/** The `YYYY-MM-DD-` prefix a plan slug conventionally opens with. */
+function slugDay(slug: string): string | null {
+  return /^(\d{4}-\d{2}-\d{2})-/.exec(slug)?.[1] ?? null;
+}
+
+/**
+ * The row's mono identity chip: the date the plan was **authored**.
+ *
+ * Two sources, in this order, and no third:
+ *
+ * 1. The slug's own `YYYY-MM-DD` prefix. This stays first because it is the
+ *    same substring the runner's `authored_at_from_stem` derives the column
+ *    from, so a dated slug and its `authored_at` cannot disagree — and it is
+ *    right even for a coord row that predates the column.
+ * 2. coord `work_units.authored_at`, which plan
+ *    `2026-09-02-coord-work-units-carry-no-authoring-date` added and
+ *    backfilled.
+ *
+ * Neither available → {@link PLAN_IDENTITY_ABSENT}.
+ *
+ * ## Why the slug-word fallback was DELETED
+ *
+ * This used to fall back to the slug's first two hyphen-segments, so that an
+ * undated slug still got "a stable, short identity rather than a blank chip".
+ * That was a defensible trade while there was no other date to show — and it
+ * stopped being one the moment `authored_at` shipped. The chip sits in the
+ * position operators read as the row's date, so the fallback printed WORDS
+ * where a date belongs:
+ *
+ *     coordinator-assign   (slug `coordinator-assign-task-dispatch-race-...`)
+ *     qontinui-schemas     (slug `qontinui-schemas-rust-codegen`)
+ *     plans to do          (no hyphens at all — chip and label rendered
+ *                           IDENTICALLY, so the row read as a date of itself)
+ *
+ * Measured against coord on 2026-09-13 (1,835 rows the page lists, `shepherd-`
+ * excluded as it excludes them): 149 slugs are undated and so showed words
+ * today; **108 of those already carry a real `authored_at`** and now render the
+ * date they always had. The remaining 41 render the em dash — an admitted
+ * blank, which is the honest answer and is strictly better than a plausible
+ * wrong one in a date column.
+ *
+ * `created_at` is deliberately NOT a third source. It is the INGEST time (for
+ * most of the corpus, a bulk-backfill date); the detail panel shows it under
+ * the word "ingested" precisely so it is never read as an authoring date, and
+ * promoting it here would undo that one line above.
+ */
+export function planIdentity(slug: string, authoredAt?: string | null): string {
+  return slugDay(slug) ?? authoredDay(authoredAt) ?? PLAN_IDENTITY_ABSENT;
+}
+
+/**
+ * Tooltip for the identity chip, in the shape {@link describePlanStatus} and
+ * {@link PLAN_TIME_ABSENT} already use on this surface: it names WHERE the
+ * date came from, so a slug-derived date and a coord-derived one are
+ * distinguishable without reading the slug — and an absent one says which of
+ * the two sources was missing rather than leaving a bare dash unexplained.
+ */
+export function planIdentityTitle(
+  slug: string,
+  authoredAt?: string | null
+): string {
+  const fromSlug = slugDay(slug);
+  if (fromSlug)
+    return `Authored ${fromSlug} — from the plan slug's date prefix.`;
+  const fromCoord = authoredDay(authoredAt);
+  if (fromCoord) {
+    return (
+      `Authored ${fromCoord} — coord's recorded authoring date ` +
+      `(work_units.authored_at). This slug carries no date prefix.`
+    );
+  }
+  return (
+    "No authoring date recorded: this slug carries no date prefix and coord " +
+    "holds no authored_at for this work unit."
+  );
+}
+
+/**
+ * The slug with its date prefix removed (never empty).
+ *
+ * Reads the SLUG-derived identity only — it deliberately does not take the
+ * authoring date, because a date that came out of coord's column is not a
+ * substring of the slug and there is nothing to strip. The `startsWith` guard
+ * is what makes that safe and is asserted by `planStatus.test.ts`: for an
+ * undated slug {@link planIdentity} now returns the em dash, which no slug
+ * begins with, so the full slug comes back.
+ */
 export function planRest(slug: string): string {
   const id = planIdentity(slug);
   return slug.startsWith(`${id}-`) ? slug.slice(id.length + 1) : slug;
