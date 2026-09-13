@@ -428,9 +428,10 @@ export function LandedWriteFeed({
       {/* Coord genuinely failing gets the amber treatment; "incomplete but
           working" (degraded / partial / truncated) stays muted. The standing
           completeness caveat rides in the same box, after them, because it
-          says how to read them: those notes are the ONLY way a landed write
-          goes missing from this list, and the separate push notice is what is
-          best-effort. Hiding it when nothing else went wrong would leave the
+          says how to read them: those notes are the ONLY way the served list
+          drops a landed write (the author filter hides rows from view, and
+          counts them in its own line), and the separate push notice is what
+          is best-effort. Hiding it when nothing else went wrong would leave the
           operator guessing which of the two surfaces to trust. */}
       <div
         className={cn(
