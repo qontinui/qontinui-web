@@ -5,7 +5,11 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useScanRoots } from "../_hooks/usePlanLibrary";
-import { scanRootStateLabel, type ScanRootRow } from "../types";
+import {
+  scanRootStateLabel,
+  type ScanRootRow,
+  type ScanRootSourceRollup,
+} from "../types";
 
 /**
  * `n` seconds as a short duration that never over- or under-states it.
@@ -343,6 +347,199 @@ function ScanRootRowView({ row }: { row: ScanRootRow }) {
 }
 
 /**
+ * How far behind one scan source's least-behind COMPARABLE feeder is, in words.
+ *
+ * The roll-up answers the corpus's question rather than a device's, and it
+ * carries the row rules one level up:
+ *
+ * * **`null` is NOT ESTABLISHED, never `0`.** An `unknown` roll-up — no
+ *   comparable reading, or a minimum that is a floor of 0 — serves a null
+ *   `min_behind`, and this says so rather than printing a distance. The
+ *   verdict is consulted as well as the number, for the same reason
+ *   [`driftSummary`] consults it.
+ * * **A floor is "at least N".** `min_behind_is_floor: true` bounds the
+ *   least-behind comparable feeder from below.
+ * * **Exact is exact only as of a ref.** `false` means every comparable device
+ *   counted against one ref that some device had fetched within six hours of
+ *   its reading — never against the live tip, which the server never knows.
+ * * **It is a bound on a FEEDER, never a ceiling on what the corpus lacks**,
+ *   and a device with no comparable reading may be less behind than anything
+ *   stated, so that caveat is written out whenever such a device exists.
+ */
+export function rollupDistanceSummary(rollup: ScanRootSourceRollup): string {
+  if (
+    rollup.state !== "measured" ||
+    rollup.min_behind == null ||
+    rollup.min_behind_is_floor == null
+  ) {
+    return "How far behind its least-behind feeder is is not established.";
+  }
+  const n = rollup.min_behind;
+  const distance = rollup.min_behind_is_floor
+    ? `at least ${n} behind (a lower bound — the refs may be stale)`
+    : `exactly ${n} behind, as of a ref fetched within six hours of the reading — not the live tip`;
+  const unmeasured = rollup.unmeasured_device_ids.length;
+  const caveat = unmeasured
+    ? ` ${unmeasured} device${unmeasured === 1 ? "" : "s"} with no comparable reading may be less behind.`
+    : "";
+  return `Least-behind comparable feeder: ${distance}.${caveat}`;
+}
+
+/** Device ids, shortened to fit, with the full id on the title. */
+function DeviceIdList({
+  label,
+  ids,
+  testId,
+}: {
+  label: string;
+  ids: string[];
+  testId: string;
+}) {
+  if (ids.length === 0) return null;
+  return (
+    <p className="mt-1 text-[11px] text-muted-foreground" data-testid={testId}>
+      {label}:{" "}
+      {ids.map((id, i) => (
+        <span key={id}>
+          {i > 0 ? ", " : ""}
+          <code className="rounded bg-muted px-1 py-0.5 text-[10px]" title={id}>
+            {id.slice(0, 8)}
+          </code>
+        </span>
+      ))}
+    </p>
+  );
+}
+
+/**
+ * One scan source's roll-up.
+ *
+ * The four id lists partition the source's feeders and each is rendered only
+ * when non-empty — an EMPTY list is never rendered as a claim. That matters
+ * most for `lagging_device_ids`: it is empty both when every comparable device
+ * is level and when the readings cannot order the devices at all, and "none
+ * lagging" would be false in the second case. So no "none lagging" line exists,
+ * and when devices are unordered the panel says outright that which feeders lag
+ * is not established.
+ */
+function ScanSourceRollupView({ rollup }: { rollup: ScanRootSourceRollup }) {
+  const key = rollup.source_repo ?? "(none)";
+  return (
+    <div
+      className="border-t border-border/60 px-3 py-2.5 text-xs first:border-t-0"
+      data-testid={`scan-source-rollup-${key}`}
+    >
+      <div className="flex flex-wrap items-center gap-2">
+        <Badge
+          variant={stateVariant(rollup.state)}
+          className="shrink-0"
+          data-testid={`scan-source-rollup-state-${key}`}
+        >
+          {scanRootStateLabel(rollup.state)}
+        </Badge>
+        <span className="truncate font-medium">
+          {rollup.source_repo ?? "no scan source reported"}
+        </span>
+        <span className="ml-auto shrink-0 text-muted-foreground">
+          {rollup.comparable_count} of {rollup.device_count} device
+          {rollup.device_count === 1 ? "" : "s"} comparable
+        </span>
+      </div>
+
+      <p
+        className="mt-1 text-[11px] text-muted-foreground"
+        data-testid={`scan-source-rollup-distance-${key}`}
+      >
+        {rollupDistanceSummary(rollup)}
+      </p>
+
+      {rollup.detail && (
+        <p
+          className="mt-1 text-[11px] text-amber-700 dark:text-amber-300"
+          data-testid={`scan-source-rollup-detail-${key}`}
+        >
+          {rollup.detail}
+        </p>
+      )}
+
+      <DeviceIdList
+        label="Least behind, as of the shared ref"
+        ids={rollup.least_behind_device_ids}
+        testId={`scan-source-rollup-least-${key}`}
+      />
+      <DeviceIdList
+        label="Lagging, as of the shared ref"
+        ids={rollup.lagging_device_ids}
+        testId={`scan-source-rollup-lagging-${key}`}
+      />
+      <DeviceIdList
+        label="Not ordered by the readings"
+        ids={rollup.lag_unknown_device_ids}
+        testId={`scan-source-rollup-unordered-${key}`}
+      />
+      {rollup.lag_unknown_device_ids.length > 0 && (
+        <p
+          className="mt-1 text-[11px] text-muted-foreground"
+          data-testid={`scan-source-rollup-unordered-note-${key}`}
+        >
+          These counted against different, unknown or stale refs, so which
+          feeders lag is not established.
+        </p>
+      )}
+      <DeviceIdList
+        label="No comparable reading"
+        ids={rollup.unmeasured_device_ids}
+        testId={`scan-source-rollup-unmeasured-${key}`}
+      />
+    </div>
+  );
+}
+
+/**
+ * The per-source roll-ups, above the device rows they fold.
+ *
+ * The route serves one roll-up per source whenever it serves rows, so a
+ * missing or empty list beside rows is a response this build was not written
+ * for — a backend predating the roll-up, most likely. It reads as NOT
+ * ESTABLISHED rather than rendering nothing, since nothing would look like a
+ * panel with no drift to report.
+ */
+function ScanSourceRollups({
+  rollups,
+}: {
+  rollups: ScanRootSourceRollup[] | undefined;
+}) {
+  if (!rollups?.length) {
+    return (
+      <p
+        className="mt-3 text-[11px] text-muted-foreground"
+        data-testid="scan-sources-rollup-unserved"
+      >
+        No per-source roll-up was served, so how far behind each source&apos;s
+        least-behind feeder is is not established.
+      </p>
+    );
+  }
+  return (
+    <div className="mt-3" data-testid="scan-sources-rollups">
+      <h3 className="text-xs font-medium">By scan source</h3>
+      <p className="mt-0.5 text-[11px] text-muted-foreground">
+        Each distance bounds the least-behind current feeder, not the number of
+        plans the corpus lacks.
+      </p>
+      <div className="mt-2 overflow-hidden rounded-md border border-border bg-background">
+        {rollups.map((rollup) => (
+          <ScanSourceRollupView
+            key={rollup.source_repo ?? "(none)"}
+            rollup={rollup}
+          />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/**
  * "Read at …" — the moment every age on this panel was measured.
  *
  * Small, and the whole reason the ages above it can be trusted: without it a
@@ -473,7 +670,9 @@ export function ScanSourcesPanel() {
         </p>
       ) : (
         <>
-          <div className="mt-3 overflow-hidden rounded-md border border-border bg-background">
+          <ScanSourceRollups rollups={data.by_source_repo} />
+          <h3 className="mt-3 text-xs font-medium">By device</h3>
+          <div className="mt-2 overflow-hidden rounded-md border border-border bg-background">
             {data.rows.map((row) => (
               <ScanRootRowView key={row.device_id} row={row} />
             ))}
