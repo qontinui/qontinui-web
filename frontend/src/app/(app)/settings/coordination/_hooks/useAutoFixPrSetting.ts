@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { httpClient } from "@/services/service-factory";
 import {
@@ -25,6 +25,7 @@ export interface UseAutoFixPrSettingReturn {
   /** `null` when loaded but the coord build does not serve the fields. */
   state: AutoFixPrState | null;
   setChoice: (choice: AutoFixPrChoice) => Promise<void>;
+  reload: () => void;
 }
 
 /**
@@ -33,15 +34,23 @@ export interface UseAutoFixPrSettingReturn {
  * page's Save button: it is a different endpoint and a different table from
  * the next-step autonomy draft, and a Save that silently covered both would
  * blur which write failed.
+ *
+ * A write counts as saved only when coord's response READS BACK the value that
+ * was sent. A 2xx whose profile lacks the dial, or carries a different tenant
+ * value, is an unconfirmed write and is reported as one.
  */
 export function useAutoFixPrSetting(): UseAutoFixPrSettingReturn {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [state, setState] = useState<AutoFixPrState | null>(null);
+  const [loadNonce, setLoadNonce] = useState(0);
+  const savingRef = useRef(false);
 
   useEffect(() => {
     let cancelled = false;
+    setLoading(true);
+    setError(null);
     (async () => {
       try {
         const data =
@@ -49,6 +58,7 @@ export function useAutoFixPrSetting(): UseAutoFixPrSettingReturn {
         if (!cancelled) setState(readAutoFixPr(data?.profile));
       } catch (err) {
         if (!cancelled) {
+          setState(null);
           setError(
             err instanceof Error ? err.message : "Failed to load merge settings"
           );
@@ -60,16 +70,31 @@ export function useAutoFixPrSetting(): UseAutoFixPrSettingReturn {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [loadNonce]);
+
+  const reload = useCallback(() => setLoadNonce((n) => n + 1), []);
 
   const setChoice = useCallback(async (choice: AutoFixPrChoice) => {
+    // One write at a time: a second click while a PATCH is in flight is
+    // dropped rather than racing the first to a last-writer-wins result.
+    if (savingRef.current) return;
+    savingRef.current = true;
     setSaving(true);
+    const sent = tenantFromChoice(choice);
     try {
       const data = await httpClient.patch<TenantSettingsResponse>(
         SETTINGS_PATH,
-        { auto_fix_pr: tenantFromChoice(choice) }
+        { auto_fix_pr: sent }
       );
-      setState(readAutoFixPr(data?.profile));
+      const next = readAutoFixPr(data?.profile);
+      if (next === null || next.tenant !== sent) {
+        toast.error(
+          "Coord accepted the request but did not confirm the fixer setting — reloading."
+        );
+        setLoadNonce((n) => n + 1);
+        return;
+      }
+      setState(next);
       setError(null);
       toast.success("Fixer session setting saved");
     } catch (err) {
@@ -77,9 +102,10 @@ export function useAutoFixPrSetting(): UseAutoFixPrSettingReturn {
         err instanceof Error ? err.message : "Failed to save fixer setting"
       );
     } finally {
+      savingRef.current = false;
       setSaving(false);
     }
   }, []);
 
-  return { loading, saving, error, state, setChoice };
+  return { loading, saving, error, state, setChoice, reload };
 }
