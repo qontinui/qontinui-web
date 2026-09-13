@@ -24,7 +24,7 @@ Inbound messages handled (unchanged from the legacy endpoint):
     ``dispatch_ack`` / ``command_response`` / ``chat_response`` /
     ``terminal_response`` — relayed to subscribed frontends/mobiles.
   - ``remote_terminal_*`` — the device is the SOURCE of a remote-terminal
-                       attach (D6); brokered by
+                       attach (D6) or create; brokered by
                        ``services.runner.remote_terminal_relay``.
   - ``terminal_attached`` — the device is the TARGET answering one; routed
                        to the attached source only, never to mobiles.
