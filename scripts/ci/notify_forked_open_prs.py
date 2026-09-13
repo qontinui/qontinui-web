@@ -127,6 +127,7 @@ from _alembic_graph import (  # noqa: E402
     VERSIONS_DIR,
     RepointSites,
     Scan,
+    computed_pin_text,
     duplicate_groups,
     no_pin_found_text,
     plan_remediation,
@@ -149,7 +150,14 @@ API_ROOT = os.environ.get("GITHUB_API_URL", "https://api.github.com")
 
 
 class ApiError(RuntimeError):
-    """A GitHub API call failed. Always fatal — never swallowed into a pass."""
+    """A GitHub API call failed. Never swallowed into a pass.
+
+    Every raise is recorded as a FAILURE that makes the sweep exit 2 — with ONE
+    exception. A failed read of a PR's test files (:func:`pr_test_sources`) is
+    used only to word the ``_PARENT_REVISION_ID`` advice, not to decide
+    anything, so it is recorded as a finding: the notice still posts and says
+    the pin search is UNKNOWN, and the exit code does not move.
+    """
 
 
 def _request(
@@ -227,7 +235,14 @@ def _in_versions_dir(name: str) -> bool:
     )
 
 
-def pr_version_files(repo: str, number: int, token: str) -> list[dict]:
+def pr_files(repo: str, number: int, token: str) -> list[dict]:
+    """EVERY file this PR changes. Listed ONCE per PR and filtered by callers."""
+    return _paginate(
+        f"{API_ROOT}/repos/{repo}/pulls/{number}/files?per_page=100", token
+    )
+
+
+def pr_version_files(files: list[dict]) -> list[dict]:
     """This PR's changes to files the GATE would actually scan.
 
     The filter must match ``scan_dir``'s ``glob("*.py")`` exactly — directly
@@ -236,9 +251,6 @@ def pr_version_files(repo: str, number: int, token: str) -> list[dict]:
     passes it green, i.e. tell an author their required check is red when it
     is not. Disagreeing with the gate is the one thing this must never do.
     """
-    files = _paginate(
-        f"{API_ROOT}/repos/{repo}/pulls/{number}/files?per_page=100", token
-    )
     return [f for f in files if _in_versions_dir(str(f.get("filename", "")))]
 
 
@@ -255,27 +267,43 @@ def _in_tests_dir(name: str) -> bool:
     return name.startswith(f"{TESTS_DIR}/") and name.endswith(".py")
 
 
-def pr_test_sources(repo: str, pr: dict, token: str) -> dict[Path, str]:
+def _worth_downloading(entry: dict) -> bool:
+    """Could this changed test file hold a ``_PARENT_REVISION_ID`` pin?
+
+    Skipped ONLY when that is certain: an ADDED file whose ``patch`` is present
+    is the whole file, so a patch never mentioning the constant proves the file
+    has none. A modified file's patch shows only hunks — the pin can sit
+    outside them — and GitHub omits ``patch`` on large diffs, so both of those
+    are downloaded rather than guessed at.
+    """
+    name = str(entry.get("filename", ""))
+    if not _in_tests_dir(name) or entry.get("status") == "removed":
+        return False
+    patch = entry.get("patch")
+    if entry.get("status") == "added" and isinstance(patch, str):
+        return "_PARENT_REVISION_ID" in patch
+    return True
+
+
+def pr_test_sources(
+    repo: str, pr: dict, files: list[dict], token: str
+) -> dict[Path, str]:
     """``{path: text at the PR head}`` for the test files this PR changes.
 
     Where a forked revision's ``_PARENT_REVISION_ID`` pin lives: the revision
-    is unlanded, so its migration test arrives in the same PR. Only called for
-    a PR that needs a re-point, so it costs one file listing plus one blob per
-    changed ``.py`` under ``TESTS_DIR`` on forked PRs alone. Raises
-    :class:`ApiError`; the caller turns that into an UNKNOWN pin search.
+    is unlanded, so its migration test arrives in the same PR. ``files`` is the
+    PR's listing that ``main`` already fetched with :func:`pr_files`, so this
+    costs one blob per candidate test file and no second listing. Called only
+    for a PR with a revision to re-point. Raises :class:`ApiError`; the caller
+    records that as a finding and an UNKNOWN pin search.
     """
-    number = int(pr["number"])
     head_sha = pr["head"]["sha"]
-    files = _paginate(
-        f"{API_ROOT}/repos/{repo}/pulls/{number}/files?per_page=100", token
-    )
     return {
         REPO_ROOT / str(entry["filename"]): blob_at(
             repo, str(entry["filename"]), head_sha, token
         )
         for entry in files
-        if _in_tests_dir(str(entry.get("filename", "")))
-        and entry.get("status") != "removed"
+        if _worth_downloading(entry)
     }
 
 
@@ -401,16 +429,25 @@ def _site_block(
             f"+ Revises: {new}",
         ]
     pins = sites.pins if sites else ()
+    computed = sites.computed_pins if sites else ()
     for pin in pins:
         lines += [
             f"# 3. the test pin — {_fence_safe(repo_relative(pin.path))}:{pin.lineno}",
             f"- {_fence_safe(pin.before)}",
             f"+ {_fence_safe(pin.after)}",
         ]
-    if not pins:
+    for computed_pin in computed:
+        lines += [
+            f"# 3. the test pin — {_fence_safe(repo_relative(computed_pin.path))}:"
+            f"{computed_pin.lineno} — computed, not literal: check it by hand",
+            f"# {_fence_safe(computed_pin.line)}",
+        ]
+    if not pins and not computed:
         lines.append("# 3. the test pin — see below")
     lines += ["```", ""]
-    if not pins:
+    if computed:
+        lines += [f"3. **Test pin:** {computed_pin_text()}.", ""]
+    elif not pins:
         if sites is None or pin_scope is None:
             lines += [
                 "3. **Test pin: UNKNOWN** — the pin search did not run. Look under",
@@ -671,6 +708,12 @@ def sweep_exit_code(failures: list[str], findings: list[str]) -> int:
     reported and exit 0. ``findings`` is accepted rather than ignored so the
     asymmetry is stated in the signature instead of being implied by an
     absence.
+
+    ONE ``findings`` class is not a verdict about a PR's tree: a failed read of
+    the PR's test files (:func:`pr_test_sources`). That read only words the
+    ``_PARENT_REVISION_ID`` advice — the fork verdict was already reached and
+    the notice still posts, saying the pin search is UNKNOWN — so it is the
+    single :class:`ApiError` that does not count as a failure.
     """
     return EXIT_VACUOUS if failures else 0
 
@@ -878,10 +921,13 @@ def main() -> int:
     for pr in prs:
         number = int(pr["number"])
         try:
-            touched = pr_version_files(args.repo, number, token)
+            # Listed ONCE: the versions-dir filter and, for a PR that needs a
+            # re-point, the test-file pin search both read this same list.
+            files = pr_files(args.repo, number, token)
         except ApiError as exc:
             failures.append(f"#{number}: could not list files: {exc}")
             continue
+        touched = pr_version_files(files)
 
         if not touched:
             # Nothing to check — but it may still be carrying a notice from an
@@ -973,10 +1019,13 @@ def main() -> int:
         remediation = plan_remediation(scan, landed)
         sites: dict[str, RepointSites] = {}
         pin_scope: str | None = None
-        if remediation.target is not None:
+        if remediation.target is not None and remediation.edits:
+            # No `edits` (a `blocked` remedy whose only chain has no one-token
+            # site) means no revision to re-point: no pin to find, no fetch,
+            # and no "pin search is UNKNOWN" finding for a notice without one.
             test_sources: dict[Path, str] = {}
             try:
-                test_sources = pr_test_sources(args.repo, pr, token)
+                test_sources = pr_test_sources(args.repo, pr, files, token)
                 pin_scope = f"the files this PR changes under `{TESTS_DIR}/`"
             except ApiError as exc:
                 # A FINDING, not a failure: the fork verdict and the comment
@@ -1026,12 +1075,14 @@ def main() -> int:
     if findings:
         # Deliberately says nothing about WHAT was found or what to do about
         # it: `findings` holds unrelated classes (an un-adviseable tree, a
-        # second marker comment) whose remedies differ, and each message
-        # carries its own. All this line may state is the one property they
-        # share — none of them is a failure of the sweep.
+        # second marker comment, a failed read of a PR's test files) whose
+        # remedies differ, and each message carries its own. All this line may
+        # state is the one property they share — none of them is a failure of
+        # the sweep.
         err(
             f"{len(findings)} finding(s) recorded. None of them redden this "
-            "lane: each is a defect in a PR, not in `main`."
+            "lane: each is a defect in a PR rather than in `main`, or a failed "
+            "read of a PR's test files that only words its pin advice."
         )
     if failures:
         for failure in failures:
