@@ -14,13 +14,14 @@ What is asserted, and why each is a separate claim:
 1. **The minimum is taken over VERDICTS.** A device that went quiet, whose
    latest report was contradicted, or that reported a 0-behind floor has
    ``state: "unknown"`` and contributes no number.
-2. **A minimum no exact reading reaches is a floor.** Floors are lower bounds,
-   so the minimum is exact only when some device AT it measured against a
-   fresh ref.
+2. **The minimum is exact only against ONE fresh ref.** Every device must have
+   counted against the same ``ref_sha``, and someone must have fetched it
+   fresh; otherwise ``min_behind`` is a floor.
 3. **A device is named least-behind or lagging only when the readings prove
-   it.** "At least 5" is not ahead of "exactly 9": the one usable bound is the
-   smallest EXACT reading, and a device reporting more than it is provably
-   lagging. What cannot be placed is ``lag_unknown``. The four id lists
+   it.** Counts against different refs do not order devices — the review
+   counterexample: exactly 3 behind a five-hour-old ref can be 13 behind the
+   ref another device is exactly 5 behind. Placement needs one shared ref, and
+   on one shared ref it holds whatever the floor flags say. The four id lists
    partition the devices.
 4. **No measured verdict is UNKNOWN, never 0.** ``min_behind`` and
    ``min_behind_is_floor`` are ``null`` and the detail says why.
@@ -29,10 +30,10 @@ What is asserted, and why each is a separate claim:
 6. **Grouping** is per ``source_repo``, named sources in order, ``null`` last.
 
 Each rule was mutation-proved when written: minimum over ``reported_state``
-(fails 1), ``min_behind_is_floor`` hard-coded ``False`` (fails 2), lagging
-compared against ``min_behind`` instead of the exact ceiling (fails 3's
-floor-undercut case), least-behind admitting floor rows (fails 3's tie case),
-and ``<`` for ``<=`` on the window (fails 5).
+(fails 1), ``shared_ref`` forced true (fails 2 and 3's different-ref cases),
+the floor flag ignoring the shared ref (fails 2's different-ref case),
+``min_behind_is_floor`` hard-coded ``False`` (fails 2's nobody-fetched-fresh
+case), and ``<`` for ``<=`` on the window (fails 5).
 """
 
 from __future__ import annotations
@@ -52,10 +53,11 @@ from app.services.plan_scan_root_health import (
 
 NOW = datetime(2026, 9, 12, 5, 0, tzinfo=UTC)
 SOURCE = "qontinui-dev-notes/plans"
+REF = "d455ad5cb" + "0" * 31
 
 
 def _obs(**overrides: object) -> PlanScanRootObservation:
-    """A fresh, applied, exact ``measured`` reading unless overridden."""
+    """A fresh, applied, exact ``measured`` reading against ``REF``."""
     fields: dict[str, object] = {
         "device_id": uuid4(),
         "organization_id": None,
@@ -65,7 +67,7 @@ def _obs(**overrides: object) -> PlanScanRootObservation:
         "repo_root": "/w/qontinui-dev-notes",
         "source_repo": SOURCE,
         "default_ref": "origin/main",
-        "ref_sha": "d455ad5cb",
+        "ref_sha": REF,
         "head_sha": "0d2390c07",
         "behind": 254,
         "ahead": 0,
@@ -210,33 +212,36 @@ class TestMinimumIsOverVerdicts:
         assert rollup.unmeasured_device_ids == [zero_floor.device_id]
 
 
-class TestFloorRule:
-    def test_a_minimum_reached_only_by_floors_is_a_floor(self) -> None:
-        # One floor of unknown ref age, one against a ref older than 6 h.
+class TestExactOnlyAgainstOneFreshRef:
+    def test_one_shared_ref_that_someone_fetched_fresh_is_exact(self) -> None:
+        """The floor device counted against the very commit another device
+        just fetched, so its "at least 7" is exactly 7 behind the tip."""
+        rollup = _only_rollup(_floor(7), _obs(behind=30))
+        assert rollup.min_behind == 7
+        assert rollup.min_behind_is_floor is False
+
+    def test_one_shared_ref_nobody_fetched_fresh_is_a_floor(self) -> None:
+        # One ref of unknown age, one the runner judged older than 6 h.
         rollup = _only_rollup(
-            _floor(7),
-            _obs(behind=7, ref_age_secs=90_000, counts_are_floors=True),
-            _obs(behind=30),
+            _floor(7), _obs(behind=30, ref_age_secs=90_000, counts_are_floors=True)
         )
         assert rollup.min_behind == 7
         assert rollup.min_behind_is_floor is True
 
-    def test_a_minimum_reached_by_a_floor_and_an_exact_reading_is_exact(
-        self,
-    ) -> None:
-        rollup = _only_rollup(_floor(7), _obs(behind=7))
-        assert rollup.min_behind_is_floor is False
+    def test_exact_readings_on_different_refs_make_the_minimum_a_floor(self) -> None:
+        rollup = _only_rollup(
+            _obs(behind=3, ref_sha="a" * 40), _obs(behind=5, ref_sha="b" * 40)
+        )
+        assert rollup.min_behind == 3
+        assert rollup.min_behind_is_floor is True
 
-    def test_an_exact_reading_above_a_floor_minimum_does_not_make_it_exact(
-        self,
-    ) -> None:
-        rollup = _only_rollup(_floor(5), _obs(behind=9))
-        assert rollup.min_behind == 5
+    def test_an_unknown_ref_makes_the_minimum_a_floor(self) -> None:
+        rollup = _only_rollup(_obs(behind=3, ref_sha=None), _obs(behind=5))
         assert rollup.min_behind_is_floor is True
 
 
 class TestOnlyProvenStandingIsNamed:
-    def test_exact_readings_place_every_device(self) -> None:
+    def test_one_shared_ref_places_every_device(self) -> None:
         leader = _obs(behind=2)
         tied = _obs(behind=2)
         lagging = _obs(behind=254)
@@ -248,51 +253,39 @@ class TestOnlyProvenStandingIsNamed:
         assert rollup.lagging_device_ids == [lagging.device_id]
         assert rollup.lag_unknown_device_ids == []
 
-    def test_a_floor_above_the_exact_ceiling_is_provably_lagging(self) -> None:
-        """At least 40 behind, while some device is exactly 3 behind."""
-        exact = _obs(behind=3)
-        floor = _floor(40)
-
-        rollup = _only_rollup(exact, floor)
-
-        assert rollup.least_behind_device_ids == [exact.device_id]
-        assert rollup.lagging_device_ids == [floor.device_id]
-        assert rollup.lag_unknown_device_ids == []
-
-    def test_a_floor_undercutting_an_exact_reading_places_neither(self) -> None:
-        """ "At least 5" may really be 100 behind — not ahead of "exactly 9".
-
-        Comparing reported numbers would name the exact device lagging and the
-        floor device least behind; the readings establish neither.
-        """
+    def test_on_one_shared_ref_a_floor_flag_does_not_block_placement(self) -> None:
+        """Both counted against the same commit: 5 behind it IS ahead of 9."""
         floor = _floor(5)
         exact = _obs(behind=9)
 
         rollup = _only_rollup(floor, exact)
 
-        assert rollup.min_behind == 5
+        assert rollup.least_behind_device_ids == [floor.device_id]
+        assert rollup.lagging_device_ids == [exact.device_id]
+        assert rollup.lag_unknown_device_ids == []
+
+    def test_counts_against_different_refs_place_nobody(self) -> None:
+        """The review counterexample. A's ref is five hours old and A is 3
+        behind it; B fetched a ref 10 commits newer and is 5 behind that — so
+        B is AHEAD of A, which is 13 behind B's ref. Comparing 3 with 5 would
+        name A least behind and B lagging: both false."""
+        a = _obs(behind=3, ref_sha="a" * 40, ref_age_secs=18_000)
+        b = _obs(behind=5, ref_sha="b" * 40)
+
+        rollup = _only_rollup(a, b)
+
         assert rollup.least_behind_device_ids == []
         assert rollup.lagging_device_ids == []
-        assert rollup.lag_unknown_device_ids == _ids(floor, exact)
+        assert rollup.lag_unknown_device_ids == _ids(a, b)
 
-    def test_a_floor_tied_with_an_exact_minimum_is_not_least_behind(self) -> None:
-        """Exactly 7 IS least behind; "at least 7" may be far behind."""
-        exact = _obs(behind=7)
-        floor = _floor(7)
+    def test_an_unknown_ref_places_nobody(self) -> None:
+        unknown_ref = _obs(behind=2, ref_sha=None)
+        known = _obs(behind=9)
 
-        rollup = _only_rollup(exact, floor)
-
-        assert rollup.least_behind_device_ids == [exact.device_id]
-        assert rollup.lagging_device_ids == []
-        assert rollup.lag_unknown_device_ids == [floor.device_id]
-
-    def test_with_no_exact_reading_nothing_is_placed(self) -> None:
-        floors = (_floor(1), _floor(50))
-
-        rollup = _only_rollup(*floors)
+        rollup = _only_rollup(unknown_ref, known)
 
         assert (rollup.least_behind_device_ids, rollup.lagging_device_ids) == ([], [])
-        assert rollup.lag_unknown_device_ids == _ids(*floors)
+        assert rollup.lag_unknown_device_ids == _ids(unknown_ref, known)
 
 
 class TestNoMeasuredVerdictIsUnknown:

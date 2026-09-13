@@ -16,7 +16,7 @@ module imports ``plan_library._resolve_org_id``, so ``plan_library`` importing
 the verdict back from it would be a cycle.
 
 Invariants (the route docstring in ``plan_library_scan_roots.py`` restates the
-first three from the reader's side):
+first three from the reader's side, numbered there 3, 3a and 3c):
 
 1. **Silence is UNKNOWN, never "current".** No rows reads top-level
    ``state: "unknown"``; a row this server has not heard from within
@@ -31,18 +31,22 @@ first three from the reader's side):
    0-behind floor contributes no number. Any feeder can add a plan to the
    corpus, so the least-behind CURRENT feeder bounds what the corpus lacks;
    a stale feeder's old low number would understate it.
-5. **A minimum drawn only from floors is itself a floor.** Each device's true
-   distance is at least what it reported, so the true minimum is at least the
-   reported minimum — and equals it only when a device reporting exactly that
-   number measured against a fresh ref.
+5. **The minimum is exact only against ONE fresh ref.** A device's ``behind``
+   counts commits on ITS remote-tracking ref, and the default branch only
+   moves forward, so its distance to the newest branch is at least what it
+   reported: ``min_behind`` is always a true lower bound. It is exact only when
+   every measured device counted against the SAME ``ref_sha`` and at least one
+   of them fetched that ref within the runner's freshness window — then that
+   commit was the branch tip, and every count is against it.
 6. **A device is named least-behind or lagging only when the readings PROVE
-   it.** Floors make reported numbers incomparable: a device reporting "at
-   least 5" may really be 100 behind, so it is not thereby ahead of a device
-   reporting exactly 9. The exact readings give the one usable bound — the
-   least-behind feeder is at most ``min(exact behind)`` away — and a device
-   reporting more than that bound is provably lagging. Everything the
-   readings cannot place goes to ``lag_unknown_device_ids``, so the four id
-   lists partition the feeders and none of them overclaims.
+   it — and counts against different refs prove nothing.** A device exactly 3
+   behind a five-hour-old ref can be 13 behind the ref another device is
+   exactly 5 behind, so comparing the numbers would name the wrong feeder.
+   Placement therefore happens only when every measured device shares one
+   non-null ``ref_sha``: all counts are then against the same commit and
+   order the devices exactly, whatever each device's floor flag says about
+   that commit's age. Otherwise every measured device is
+   ``lag_unknown_device_ids``. The four id lists partition the feeders.
 7. **A failed read is UNKNOWN, never "no drift".** The block rides on reads
    whose purpose is the corpus, not the drift report, so a scan-root read
    failure there is served as :func:`scan_roots_read_failed` rather than
@@ -249,6 +253,10 @@ def rollup_source(
     verdict disowns set the minimum. Every row lands in exactly one of the four
     id lists (invariant 6) — the roll-up names every feeder, because a lagging
     or silent one can still write (and regress) the corpus.
+
+    A ``measured`` verdict with no ``behind`` is counted unmeasured. The write
+    door refuses such a report, so a stored one is a corrupted row, and a
+    count nobody measured must not reach the minimum.
     """
     measured: list[tuple[ScanRootRow, int]] = []
     unmeasured: list[ScanRootRow] = []
@@ -272,25 +280,21 @@ def rollup_source(
             unmeasured_device_ids=_device_ids(unmeasured),
         )
     min_behind = min(behind for _, behind in measured)
-    # An exact reading is one device's TRUE distance, so the least-behind
-    # feeder is at most this far behind. Floors bound nothing from above.
-    ceiling = min(
-        (behind for row, behind in measured if not row.counts_are_floors),
-        default=None,
+    refs = {row.ref_sha for row, _ in measured}
+    # Invariant 6: counts order devices only when they are all against one
+    # known commit.
+    shared_ref = len(refs) == 1 and None not in refs
+    # Invariant 5: exact only when that one commit was fetched fresh by someone.
+    min_behind_is_floor = not (
+        shared_ref and any(not row.counts_are_floors for row, _ in measured)
     )
-    # Invariant 5: the minimum is exact only when an exact reading reaches it.
-    min_behind_is_floor = ceiling is None or ceiling > min_behind
-    least = [
-        row
-        for row, behind in measured
-        if not min_behind_is_floor
-        and not row.counts_are_floors
-        and behind == min_behind
-    ]
-    lagging = [
-        row for row, behind in measured if ceiling is not None and behind > ceiling
-    ]
-    placed = {row.device_id for row in (*least, *lagging)}
+    if shared_ref:
+        least = [row for row, behind in measured if behind == min_behind]
+        lagging = [row for row, behind in measured if behind > min_behind]
+        lag_unknown: list[ScanRootRow] = []
+    else:
+        least, lagging = [], []
+        lag_unknown = [row for row, _ in measured]
     return ScanRootSourceRollup(
         source_repo=source_repo,
         state="measured",
@@ -301,9 +305,7 @@ def rollup_source(
         min_behind_is_floor=min_behind_is_floor,
         least_behind_device_ids=_device_ids(least),
         lagging_device_ids=_device_ids(lagging),
-        lag_unknown_device_ids=_device_ids(
-            [row for row, _ in measured if row.device_id not in placed]
-        ),
+        lag_unknown_device_ids=_device_ids(lag_unknown),
         unmeasured_device_ids=_device_ids(unmeasured),
     )
 

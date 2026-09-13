@@ -273,8 +273,10 @@ class ScanRootSourceRollup(BaseModel):
     The roll-up still names EVERY feeder, because a lagging device is not
     harmless just because a current one exists: it can write an older body
     over a newer head. The four id lists PARTITION the devices, and a device is
-    placed as least-behind or lagging only when the readings prove it — floor
-    counts are lower bounds, so "at least 5" is not thereby ahead of exactly 9.
+    placed as least-behind or lagging only when the readings prove it: counts
+    taken against different refs do not order devices (exactly 3 behind a
+    five-hour-old ref can be 13 behind the ref another device is exactly 5
+    behind), so placement needs every measured device on one ``ref_sha``.
     """
 
     #: The artifact upsert's ``source_repo`` form, as the devices reported it.
@@ -286,29 +288,34 @@ class ScanRootSourceRollup(BaseModel):
     detail: str | None
     #: Every device whose stored reading names this ``source_repo``.
     device_count: int
-    #: How many of them have a ``measured`` verdict.
+    #: How many of them have a ``measured`` verdict carrying a count.
     measured_count: int
-    #: The fewest commits behind among the ``measured`` verdicts. ``null`` when
-    #: ``unknown`` — NOT 0: no current feeder established any distance.
+    #: The fewest commits behind among the ``measured`` verdicts, each against
+    #: its own device's ref — always a true LOWER BOUND on how far behind the
+    #: least-behind feeder is. ``null`` when ``unknown`` — NOT 0: no current
+    #: feeder established any distance.
     min_behind: int | None
-    #: ``True`` when every device reporting ``min_behind`` counted against a
-    #: stale or unaged ref, so the minimum is itself a LOWER BOUND ("at least
-    #: N"). ``null`` exactly when ``min_behind`` is.
+    #: ``False`` only when every ``measured`` device counted against the SAME
+    #: ``ref_sha`` and at least one of them fetched it fresh — then
+    #: ``min_behind`` is exact. Otherwise ``True``: "at least N". ``null``
+    #: exactly when ``min_behind`` is.
     min_behind_is_floor: bool | None
-    #: Devices PROVEN least behind: an exact reading of ``min_behind`` when
-    #: that minimum is exact. Empty whenever ``min_behind_is_floor`` is true —
-    #: then no device is established as the least behind.
+    #: Devices PROVEN least behind: they report ``min_behind`` and every
+    #: ``measured`` device counted against the same ``ref_sha``. Empty when the
+    #: refs differ or any is unknown.
     least_behind_device_ids: list[UUID]
-    #: Devices PROVEN lagging: they report (at least) more commits behind than
-    #: the smallest EXACT reading, so some feeder is certainly ahead of them.
-    #: Empty when no reading is exact — nothing then bounds the least-behind
-    #: feeder from above.
+    #: Devices PROVEN lagging: more commits behind than ``min_behind``, against
+    #: the one ``ref_sha`` every ``measured`` device shares. Empty when the refs
+    #: differ or any is unknown.
     lagging_device_ids: list[UUID]
-    #: ``measured`` devices the readings cannot place — a floor tied with or
-    #: below the smallest exact reading, or an exact reading when a floor
-    #: undercuts it. Each may be least behind or lagging; neither is known.
+    #: ``measured`` devices the readings cannot place: EVERY one of them when
+    #: they counted against different (or unknown) ``ref_sha``s, because counts
+    #: against different commits do not order devices. Empty when they share
+    #: one.
     lag_unknown_device_ids: list[UUID]
-    #: Devices whose verdict is anything but ``measured``.
+    #: Devices whose verdict is anything but ``measured`` — plus a ``measured``
+    #: row carrying no ``behind``, which the write door refuses, so a stored one
+    #: is corrupt and is counted here rather than trusted.
     unmeasured_device_ids: list[UUID]
 
 

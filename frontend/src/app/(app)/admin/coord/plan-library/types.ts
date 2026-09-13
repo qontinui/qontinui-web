@@ -492,13 +492,15 @@ export type ScanRootRollupState = (typeof SCAN_ROOT_ROLLUP_STATES)[number];
  *
  * `min_behind` is drawn only from rows whose VERDICT (`state`) is `measured`,
  * so a silent, contradicted or 0-behind-floor device contributes no number.
- * `min_behind_is_floor: true` means no exact reading reaches that minimum —
- * it is itself "at least N".
+ * `min_behind` is always a true lower bound; `min_behind_is_floor: false`
+ * (exact) only when every measured device counted against the same `ref_sha`
+ * and one of them fetched it fresh.
  *
  * The four id lists PARTITION the feeders, and a device is named least-behind
- * or lagging only when the readings PROVE it: floor counts are lower bounds,
- * so "at least 5" is not thereby ahead of "exactly 9". What the readings
- * cannot place is `lag_unknown_device_ids` — never render it as either.
+ * or lagging only when the readings PROVE it. Counts against different refs
+ * do not order devices — exactly 3 behind a five-hour-old ref can be 13 behind
+ * the ref another device is exactly 5 behind — so when the refs differ, every
+ * measured device is `lag_unknown_device_ids`. Never render it as either.
  */
 export interface ScanRootSourceRollup {
   source_repo: string | null;
@@ -510,11 +512,11 @@ export interface ScanRootSourceRollup {
   min_behind: number | null;
   /** `null` exactly when `min_behind` is. */
   min_behind_is_floor: boolean | null;
-  /** Proven least behind: an exact reading of an exact minimum. */
+  /** Proven least behind: at `min_behind`, all devices on one `ref_sha`. */
   least_behind_device_ids: string[];
-  /** Proven lagging: more commits behind than the smallest EXACT reading. */
+  /** Proven lagging: above `min_behind`, all devices on one `ref_sha`. */
   lagging_device_ids: string[];
-  /** Measured, but the readings cannot say whether least behind or lagging. */
+  /** Measured, but on different or unknown refs, so not placeable. */
   lag_unknown_device_ids: string[];
   /** Verdict other than `measured`; each row's `detail` says why. */
   unmeasured_device_ids: string[];
@@ -536,8 +538,8 @@ export type ScanRootListState = (typeof SCAN_ROOT_LIST_STATES)[number];
  * against the type, so that a test can compare it with the backend's schema.
  *
  * `ScanRootRow`, `ScanRootListResponse` and `ScanRootSourceRollup` are
- * hand-written mirrors of the backend's response models, and an interface does not exist at runtime, so
- * no test can compare one with anything. This mapped type is the bridge. A
+ * hand-written mirrors of the backend's response models, and an interface
+ * does not exist at runtime, so no test can compare one with anything. This mapped type is the bridge. A
  * value annotated `WireNullability<T>` must name EVERY key of `T` (a missing
  * one is an error) and no other (the excess-property check), and must set each
  * to `true` exactly when the field admits `null`. An OPTIONAL field maps to
