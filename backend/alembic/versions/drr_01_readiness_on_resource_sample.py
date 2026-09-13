@@ -1,7 +1,7 @@
 """coord.device_resource_samples — restart readiness and drain wind-down
 
 Revision ID: drr_01
-Revises: presetprov01_allow_preset_provisional_profile_source
+Revises: oplog_age_idx_01
 Create Date: 2026-09-13
 
 Phase 5 of plan
@@ -187,20 +187,22 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "drr_01"
-down_revision: str | Sequence[str] | None = "presetprov01_allow_preset_provisional_profile_source"  # fmt: skip
+down_revision: str | Sequence[str] | None = "oplog_age_idx_01"  # fmt: skip
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
-# `# fmt: skip` above is load-bearing, not style: ruff format would wrap this
-# over-88-column line in parentheses, and `scripts/ci/_alembic_graph.py`'s
-# `DOWN_RE` is line-anchored (its "KNOWN PARSE LIMIT" note), so a wrapped
-# `down_revision` reads as NO parent and `alembic-heads-pr` reports two heads.
+# `# fmt: skip` above is load-bearing, not style. The head gate in
+# `scripts/ci/_alembic_graph.py` reads `DOWN_RE` one line at a time (see its
+# KNOWN PARSE LIMIT note), and ruff format wraps an over-88-column assignment in
+# parentheses, which that regex reads as NO parent, so `alembic-heads-pr` then
+# reports two heads. Today the parent id is short enough not to wrap; the marker
+# stays so a re-point onto a longer head id cannot silently break the gate.
 
 # down_revision is the LOCAL CHAIN HEAD at authoring time
 # (`scripts/ci/count_alembic_heads.py` -> HEAD_COUNT=1), not `lasac_01`, whose
 # column group this extends. Pointing at a non-head would fork the graph, and
-# `alembic-graph-pr.yml`'s `alembic-heads-pr` job (a required check) fails the
-# PR for that.
+# the `alembic-heads-pr` job in `alembic-graph-pr.yml` (a required check) fails
+# the PR for that.
 #
 # The head can MOVE between authoring and landing. If `alembic-heads-pr` reports `HEAD_COUNT=2`, re-point this line AND
 # `_PARENT_REVISION_ID` in `tests/test_drr_01_readiness_on_resource_sample_migration.py`
@@ -208,12 +210,20 @@ depends_on: str | Sequence[str] | None = None
 
 _TABLE = "coord.device_resource_samples"
 
-# The one column list, spelled once. The upgrade's ADDs and the downgrade's
-# DROPs are generated from it so they cannot drift into different sets — the
-# same construction `lasac_01` and `fleet_res_tel_05` use.
+# The seven columns, as data. This tuple is the interface the migration test pins
+# (names and DDL types); the SQL below spells the same seven as STATIC string
+# literals, and the test asserts the two agree statement by statement.
+#
+# Why the SQL is not generated from this tuple, as `lasac_01` and
+# `fleet_res_tel_05` do: coord merge-train migration classifier
+# (`qontinui-coord` `crates/coord/src/pr_merge/migration_classifier.rs`,
+# `classify_op`, the `"execute"` arm) extracts string literals from the
+# argument of each execute call and rejects a call with none as
+# "op.execute with no static SQL string literal (dynamic = unsafe)". A static
+# literal is the only op.execute shape it can inspect at all.
 #
 # INTEGER, not BIGINT, for the four counters: they join the counter group coord
-# reads as `Option<i32>`. See the module docstring — the width is an interface
+# reads as `Option<i32>`. See the module docstring. The width is an interface
 # with the coord read, not a range judgement.
 _READINESS_COLUMNS: tuple[tuple[str, str], ...] = (
     ("readiness_safe", "BOOLEAN"),
@@ -226,23 +236,25 @@ _READINESS_COLUMNS: tuple[tuple[str, str], ...] = (
 )
 
 
-def _add_columns(table: str) -> str:
-    """One ALTER carrying every column, so the table can never get a subset."""
-    adds = ",\n            ".join(
-        f"ADD COLUMN IF NOT EXISTS {name} {sql_type}"
-        for name, sql_type in _READINESS_COLUMNS
-    )
-    return f"ALTER TABLE {table}\n            {adds}"
-
-
 def upgrade() -> None:
     """Add the seven readiness / wind-down columns to coord.device_resource_samples."""
-    op.execute(_add_columns(_TABLE))
+    op.execute(
+        """
+        ALTER TABLE coord.device_resource_samples
+            ADD COLUMN IF NOT EXISTS readiness_safe BOOLEAN,
+            ADD COLUMN IF NOT EXISTS readiness_reason TEXT,
+            ADD COLUMN IF NOT EXISTS readiness_blocking INTEGER,
+            ADD COLUMN IF NOT EXISTS readiness_finished INTEGER,
+            ADD COLUMN IF NOT EXISTS wind_down_candidates INTEGER,
+            ADD COLUMN IF NOT EXISTS wind_down_exit_stuck INTEGER,
+            ADD COLUMN IF NOT EXISTS wind_down_sessions JSONB
+        """
+    )
 
     # Column comments carry what a name cannot: that NULL is UNKNOWN and never
     # a verdict, that the counters are a snapshot of one runner process, and
-    # what bounds the JSONB array. psql's describe-table output is where a human
-    # meets this schema; the docstring above ships nowhere they will see it.
+    # what bounds the JSONB array. The psql describe-table output is where a
+    # human meets this schema; the docstring above ships nowhere they will see it.
     op.execute(
         """
         COMMENT ON COLUMN coord.device_resource_samples.readiness_safe IS
@@ -326,16 +338,24 @@ def downgrade() -> None:
     The COMMENTs go with the columns — a column comment has no independent
     existence to drop.
 
-    The DROP is built HERE rather than from a module-level template, for the
-    reason `fleet_res_tel_05` gives in its own downgrade docstring:
-    `scripts/ci/check_coord_column_drops.py` scans the module minus this
-    function body, and a module-level DROP template is where that scan has
-    historically read an upgrade-path drop that the upgrade never makes.
+    The DROP lives in this function body as a static literal. That keeps it
+    out of `scripts/ci/check_coord_column_drops.py`'s upgrade-path scan, which
+    skips the `downgrade()` body, and gives coord's migration classifier a
+    literal it can read rather than a dynamic string.
 
-    `_READINESS_COLUMNS` remains the single source, so the ADD and the DROP
-    still cannot drift into different sets; only the SQL string moved.
+    `_READINESS_COLUMNS` stays the single list the migration test checks both
+    statements against, so the ADD and the DROP cannot drift into different
+    sets.
     """
-    drops = ",\n            ".join(
-        f"DROP COLUMN IF EXISTS {name}" for name, _ in _READINESS_COLUMNS
+    op.execute(
+        """
+        ALTER TABLE coord.device_resource_samples
+            DROP COLUMN IF EXISTS readiness_safe,
+            DROP COLUMN IF EXISTS readiness_reason,
+            DROP COLUMN IF EXISTS readiness_blocking,
+            DROP COLUMN IF EXISTS readiness_finished,
+            DROP COLUMN IF EXISTS wind_down_candidates,
+            DROP COLUMN IF EXISTS wind_down_exit_stuck,
+            DROP COLUMN IF EXISTS wind_down_sessions
+        """
     )
-    op.execute(f"ALTER TABLE {_TABLE}\n            {drops}")

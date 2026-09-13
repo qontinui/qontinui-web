@@ -56,7 +56,7 @@ from tests._alembic_harness import (
 # revision's own `down_revision` — the first test below enforces it. If the alembic
 # head moves before landing, re-point BOTH together.
 _REVISION_ID = "drr_01"
-_PARENT_REVISION_ID = "presetprov01_allow_preset_provisional_profile_source"
+_PARENT_REVISION_ID = "oplog_age_idx_01"
 _REVISION_FILENAME = "drr_01_readiness_on_resource_sample.py"
 
 _TABLE = "device_resource_samples"
@@ -120,7 +120,7 @@ def test_the_pinned_parent_matches_the_revisions_down_revision() -> None:
 
 
 def test_the_revision_names_the_columns_coord_reads_from_one_list() -> None:
-    """The ADDs are generated, so the module constant IS the interface."""
+    """The static SQL is checked against this list, so it IS the interface."""
     module = _revision_module()
     assert tuple(module._READINESS_COLUMNS) == _EXPECTED_DDL, (
         "the revision's column list changed; coord reads these names over a "
@@ -166,13 +166,9 @@ def test_the_revision_docstring_states_the_retention_posture() -> None:
     assert "DEFAULT_CONTINUATION_SESSION_CAP" in doc
 
 
-def test_the_revision_generates_its_drops_from_the_same_list(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """Downgrade must be the exact inverse, over the one list."""
+def _recorded_sql(monkeypatch: pytest.MonkeyPatch, step: str) -> list[str]:
+    """Run ``upgrade`` or ``downgrade`` against a recording ``op`` stub."""
     module = _revision_module()
-    adds = module._add_columns(_QUALIFIED)
-
     executed: list[str] = []
 
     class _RecordingOp:
@@ -181,14 +177,70 @@ def test_the_revision_generates_its_drops_from_the_same_list(
             executed.append(str(sql))
 
     monkeypatch.setattr(module, "op", _RecordingOp)
-    module.downgrade()
+    getattr(module, step)()
+    return executed
 
-    drops = "\n".join(executed)
-    assert executed, "downgrade() emitted no SQL at all"
-    assert f"ALTER TABLE {_QUALIFIED}" in drops
+
+def _add_statement(monkeypatch: pytest.MonkeyPatch) -> str:
+    """The one ``ALTER TABLE … ADD COLUMN`` statement ``upgrade()`` emits."""
+    adds = [
+        sql
+        for sql in _recorded_sql(monkeypatch, "upgrade")
+        if "ADD COLUMN" in sql.upper()
+    ]
+    assert len(adds) == 1, f"expected one ADD COLUMN statement, got {len(adds)}"
+    return adds[0]
+
+
+def test_the_static_add_and_drop_cover_exactly_the_one_list(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Upgrade ADDs and downgrade DROPs exactly the seven listed columns."""
+    add = _add_statement(monkeypatch)
+    drops = "\n".join(_recorded_sql(monkeypatch, "downgrade"))
+
+    assert f"ALTER TABLE {_QUALIFIED}" in add
+    assert f"ALTER TABLE {_QUALIFIED}" in drops, (
+        "downgrade() must ALTER the qualified table; an unqualified name would "
+        "hit whatever `search_path` happens to be"
+    )
     for name, sql_type in _EXPECTED_DDL:
-        assert f"ADD COLUMN IF NOT EXISTS {name} {sql_type}" in adds
+        assert f"ADD COLUMN IF NOT EXISTS {name} {sql_type}" in add
         assert f"DROP COLUMN IF EXISTS {name}" in drops
+    assert add.count("ADD COLUMN") == len(_EXPECTED_DDL), (
+        "the static ADD names a column the list does not"
+    )
+    assert drops.count("DROP COLUMN") == len(_EXPECTED_DDL), (
+        "the static DROP names a column the list does not"
+    )
+
+
+def test_every_op_execute_takes_a_static_string_literal() -> None:
+    """coord's migration classifier cannot read a dynamic ``op.execute`` argument.
+
+    ``qontinui-coord`` ``pr_merge/migration_classifier.rs`` (``classify_op``,
+    the ``"execute"`` arm) rejects an ``op.execute`` whose argument carries no
+    string literal: "op.execute with no static SQL string literal (dynamic =
+    unsafe)". An f-string or a helper call reintroduced here would hold the PR
+    on the merge train again.
+    """
+    tree = ast.parse(_revision_source())
+    calls = [
+        node
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Attribute)
+        and node.func.attr == "execute"
+        and isinstance(node.func.value, ast.Name)
+        and node.func.value.id == "op"
+    ]
+    assert calls, "the revision makes no op.execute calls at all"
+    for call in calls:
+        assert len(call.args) == 1 and not call.keywords
+        arg = call.args[0]
+        assert isinstance(arg, ast.Constant) and isinstance(arg.value, str), (
+            f"op.execute at line {call.lineno} is not a static string literal"
+        )
 
 
 def test_no_module_level_drop_template_reappears() -> None:
@@ -370,16 +422,16 @@ def test_up_down_up_leaves_no_residue_and_keeps_the_sample_row() -> None:
         _assert_columns_commented(engine)
 
 
-def test_upgrade_is_idempotent() -> None:
+def test_upgrade_is_idempotent(monkeypatch: pytest.MonkeyPatch) -> None:
     """Re-running the revision's own ADD is a no-op, not an error."""
+    add = _add_statement(monkeypatch)
     admin_url = _admin_url_or_skip()
     with ephemeral_database(admin_url, "drr01i") as (engine, db_url):
         run_alembic(backend_root(), db_url, "upgrade", _REVISION_ID)
         _assert_columns_present(engine)
 
-        module = _revision_module()
         with engine.begin() as conn:
-            conn.execute(text(module._add_columns(_QUALIFIED)))
+            conn.execute(text(add))
 
         _assert_columns_present(engine)
         _assert_columns_commented(engine)
