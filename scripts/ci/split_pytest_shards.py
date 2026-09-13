@@ -101,9 +101,9 @@ VERDICTS = frozenset(
 #: Keys `format_verdict` places itself, and therefore refuses as caller fields.
 _RESERVED_KEYS = frozenset({"verdict", "exit"})
 
-#: An exit code as the verdict line spells it. `str.isdigit` is not this: it
-#: accepts Unicode digits such as `²`.
-_EXIT_CODE = re.compile(r"-?[0-9]+")
+#: An exit code as `format_verdict` spells it: a canonical ASCII integer, so no
+#: `-0`, no `007`. `str.isdigit` is not this -- it accepts Unicode digits (`²`).
+_EXIT_CODE = re.compile(r"0|-?[1-9][0-9]*")
 
 
 def is_verdict_line(line: str) -> bool:
@@ -152,21 +152,24 @@ def parse_verdict(text: str) -> dict[str, str] | None:
     A malformed line raises rather than yielding a partial reading: a reader
     that guesses is the prose-matching this line exists to replace. EVERY line
     `is_verdict_line` claims is held to the whole contract, not only the last
-    one -- one space after the prefix, bare ``key=value`` tokens with no
-    repeated key, ``verdict`` first and in `VERDICTS`, ``exit`` last and an
-    ASCII integer.
+    one -- exactly the text `format_verdict` writes: the prefix at column 0,
+    tokens separated by single spaces with nothing leading or trailing, bare
+    ``key=value`` tokens with no repeated key, ``verdict`` first and in
+    `VERDICTS`, ``exit`` last and a canonical ASCII integer.
     """
     parsed = [
-        _parse_verdict_line(line.strip())
-        for line in text.splitlines()
-        if is_verdict_line(line)
+        _parse_verdict_line(line) for line in text.splitlines() if is_verdict_line(line)
     ]
     return parsed[-1] if parsed else None
 
 
 def _parse_verdict_line(line: str) -> dict[str, str]:
     body = line[len(VERDICT_PREFIX) :]
-    if not body.startswith(" ") or not body.strip():
+    if (
+        not line.startswith(VERDICT_PREFIX)
+        or not body.strip()
+        or body != " " + " ".join(body.split())
+    ):
         raise ValueError(f"malformed verdict line {line!r}")
     fields: dict[str, str] = {}
     for token in body.split():
@@ -189,6 +192,24 @@ def _finish(exit_code: int, verdict: str, **fields: object) -> int:
     """Print the verdict line to stderr and hand back `exit_code` for `main`."""
     print(format_verdict(verdict, exit_code, **fields), file=sys.stderr)
     return exit_code
+
+
+def _read_stdin() -> str:
+    """All of stdin, decoded with the file branch's ``errors="replace"``.
+
+    A strict locale decode raises UnicodeDecodeError on one stray byte. Reads
+    bytes through ``.buffer`` when the stream has one, and falls back to the
+    text stream when it has none (an in-process ``io.StringIO``). A closed
+    stdin is ``None``, reported as the OSError it is rather than an
+    AttributeError.
+    """
+    stream = sys.stdin
+    if stream is None:
+        raise OSError("stdin is closed")
+    raw = getattr(stream, "buffer", None)
+    if raw is None:
+        return stream.read()
+    return raw.read().decode("utf-8", errors="replace")
 
 
 def _abandon_stdout() -> None:
@@ -348,14 +369,13 @@ def main(argv: list[str] | None = None) -> int:
 
     try:
         if args.nodeids == "-":
-            # Decoded with the SAME `errors="replace"` as the file branch. A
-            # strict locale decode would raise UnicodeDecodeError on one stray
-            # byte -- a traceback with no verdict line.
-            text = sys.stdin.buffer.read().decode("utf-8", errors="replace")
+            text = _read_stdin()
         else:
             with open(args.nodeids, encoding="utf-8", errors="replace") as handle:
                 text = handle.read()
-    except OSError as exc:
+    # ValueError covers a strict text stream's UnicodeDecodeError and an
+    # embedded NUL in the path, both of which were tracebacks with no verdict.
+    except (OSError, ValueError) as exc:
         print(
             f"::error::cannot read --nodeids {args.nodeids!r}: {exc}", file=sys.stderr
         )
@@ -475,7 +495,8 @@ def main(argv: list[str] | None = None) -> int:
             # stdout fails at interpreter shutdown -- AFTER an `ok exit=0`
             # verdict line, which would then be neither last nor true.
             sys.stdout.flush()
-    except (OSError, UnicodeError) as exc:
+    # ValueError covers UnicodeEncodeError, a closed stdout and a NUL in --out.
+    except (OSError, ValueError) as exc:
         if not args.out:
             _abandon_stdout()
         print(

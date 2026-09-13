@@ -437,6 +437,64 @@ def test_the_table_has_one_row_per_verdict_call_site():
         f"{len(sites)} `_finish` call sites but {len(_EVERY_EXIT)} table rows; "
         "give every exit path its own row"
     )
+    # Counts alone let a duplicated row hide a deleted one, so every row must
+    # also name a DIFFERENT exit.
+    identities = [
+        (verdict, tuple(sorted(fields.items())))
+        for _, _, _, verdict, fields in _EVERY_EXIT
+    ]
+    assert len(identities) == len(set(identities)), (
+        f"two table rows name the same exit: {identities}"
+    )
+
+
+def test_every_return_in_main_goes_through_finish():
+    """A bare `return N` in `main` would exit with no verdict line, untested."""
+    tree = ast.parse(SCRIPT_PATH.read_text(encoding="utf-8"))
+    main = next(
+        node
+        for node in tree.body
+        if isinstance(node, ast.FunctionDef) and node.name == "main"
+    )
+    returns = [node for node in ast.walk(main) if isinstance(node, ast.Return)]
+    assert returns, "`main` has no return statements at all"
+    for node in returns:
+        call = node.value
+        assert (
+            isinstance(call, ast.Call)
+            and isinstance(call.func, ast.Name)
+            and call.func.id == "_finish"
+        ), f"`main` line {node.lineno} returns without `_finish`"
+
+
+def test_an_in_process_text_stdin_without_a_buffer_still_works(monkeypatch, capsys):
+    """`io.StringIO` has no `.buffer`; reading stdin must not assume one."""
+    monkeypatch.setattr(sys, "stdin", io.StringIO(_REAL_SHAPE))
+    rc = splitter.main(
+        ["--nodeids", "-", "--count-only", "--min-files", "3", "--min-nodeids", "5"]
+    )
+    assert rc == 0
+    _verdict(capsys, 0, "ok", files=3, nodeids=5)
+
+
+def test_a_closed_stdin_is_io_error(monkeypatch, capsys):
+    monkeypatch.setattr(sys, "stdin", None)
+    rc = splitter.main(["--nodeids", "-", *_OK_SELECT])
+    assert rc == 1
+    _verdict(capsys, 1, "io_error", stage="read")
+
+
+def test_a_nul_byte_in_nodeids_is_io_error(capsys):
+    rc = splitter.main(["--nodeids", "bad\0path", *_OK_SELECT])
+    assert rc == 1
+    _verdict(capsys, 1, "io_error", stage="read")
+
+
+def test_a_nul_byte_in_out_is_io_error(tmp_path, capsys):
+    nodeids = _write(tmp_path, _REAL_SHAPE)
+    rc = splitter.main(["--nodeids", nodeids, *_OK_SELECT, "--out", "bad\0path"])
+    assert rc == 1
+    _verdict(capsys, 1, "io_error", stage="write")
 
 
 def test_stdin_with_a_non_utf8_byte_still_ends_in_a_verdict(monkeypatch, capsys):
@@ -526,6 +584,12 @@ def test_parse_verdict_is_none_when_there_is_no_verdict_line():
         "shard-split:verdict=ok exit=0",  # no space after the prefix
         "shard-split: verdict=ok exit=--5",  # not an integer
         "shard-split: verdict=ok exit=²",  # a Unicode digit, not an ASCII one
+        "shard-split: verdict=ok exit=-0",  # not the canonical spelling of 0
+        "shard-split: verdict=ok exit=007",  # leading zeros
+        "shard-split:  verdict=ok   exit=0",  # runs of spaces
+        "shard-split: verdict=ok\texit=0",  # a tab between tokens
+        "shard-split: verdict=ok exit=0  ",  # trailing whitespace
+        "  shard-split: verdict=ok exit=0",  # indented: claimed, not canonical
         # A malformed EARLIER line must not be skipped for a good last one.
         "shard-split: garbage\nshard-split: verdict=ok exit=0",
     ],
