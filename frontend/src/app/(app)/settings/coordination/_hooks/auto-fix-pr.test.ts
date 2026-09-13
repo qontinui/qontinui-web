@@ -77,17 +77,24 @@ describe("readAutoFixPr", () => {
 });
 
 describe("isUnconfirmedWrite", () => {
-  // The shape the web proxy throws: HttpClient wraps the proxy's JSON error,
-  // whose `detail` is coord's refusal body as text.
-  const thrown = (coordBody: object) =>
-    `PATCH /api/v1/operations/pr-merge/settings failed: 503 - ${JSON.stringify({
-      detail: JSON.stringify(coordBody),
-    })}`;
+  // The shape the browser actually receives. The web proxy raises
+  // HTTPException(detail=<coord body text>). The backend's error handler wraps
+  // that as {error, message, timestamp, path}, and HttpClient throws
+  // `PATCH <url> failed: <status> - <envelope text>`.
+  const thrown = (status: number, coordBody: object) =>
+    `PATCH /api/v1/operations/pr-merge/settings failed: ${status} - ${JSON.stringify(
+      {
+        error: "service_unavailable",
+        message: JSON.stringify(coordBody),
+        timestamp: 0,
+        path: "/api/v1/operations/pr-merge/settings",
+      }
+    )}`;
 
   it("written: null (commit_unconfirmed) is UNCONFIRMED", () => {
     expect(
       isUnconfirmedWrite(
-        thrown({
+        thrown(503, {
           error: "auto_fix_pr_column_unavailable",
           cause: "commit_unconfirmed",
           written: null,
@@ -104,7 +111,7 @@ describe("isUnconfirmedWrite", () => {
   ])("written: false (%s) is a clean failure, not unconfirmed", (cause) => {
     expect(
       isUnconfirmedWrite(
-        thrown({
+        thrown(503, {
           error: "auto_fix_pr_column_unavailable",
           cause,
           written: false,
@@ -113,15 +120,34 @@ describe("isUnconfirmedWrite", () => {
     ).toBe(false);
   });
 
-  it("an explicit written: false wins over the cause text", () => {
+  it("an explicit written: false or true is definite, whatever the cause text", () => {
     expect(
       isUnconfirmedWrite(
-        thrown({ cause: "commit_unconfirmed", written: false })
+        thrown(503, { cause: "commit_unconfirmed", written: false })
       )
     ).toBe(false);
+    expect(isUnconfirmedWrite(thrown(503, { written: true }))).toBe(false);
   });
 
-  it("unrelated errors are plain failures", () => {
+  it("a timeout may have been processed: 504 and the client abort are UNCONFIRMED", () => {
+    expect(
+      isUnconfirmedWrite(
+        'PATCH /api/v1/operations/pr-merge/settings failed: 504 - {"error":"gateway_timeout","message":"timeout waiting for coord"}'
+      )
+    ).toBe(true);
+    expect(
+      isUnconfirmedWrite(
+        "Request timeout - backend may be starting up. Please try again."
+      )
+    ).toBe(true);
+  });
+
+  it("502 (coord unreachable, nothing sent) and unrelated errors are plain failures", () => {
+    expect(
+      isUnconfirmedWrite(
+        'PATCH /api/v1/operations/pr-merge/settings failed: 502 - {"error":"bad_gateway","message":"coord is not reachable"}'
+      )
+    ).toBe(false);
     expect(isUnconfirmedWrite("PATCH failed: 400 - unknown field")).toBe(false);
     expect(isUnconfirmedWrite("network down")).toBe(false);
   });

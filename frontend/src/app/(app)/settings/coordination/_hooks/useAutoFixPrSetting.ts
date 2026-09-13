@@ -102,10 +102,11 @@ export function useAutoFixPrSetting(): UseAutoFixPrSettingReturn {
       const message =
         err instanceof Error ? err.message : "Failed to save fixer setting";
       if (isUnconfirmedWrite(message)) {
-        // coord could not tell whether the commit landed. Neither "saved" nor
-        // "safe to retry": show what coord actually serves now.
+        // coord could not confirm the commit, or the request timed out after
+        // it may have been processed. Neither "saved" nor "safe to retry":
+        // show what coord actually serves now.
         toast.error(
-          "Save outcome unknown — coord could not confirm the commit. Reloading to check."
+          "Save outcome unknown — the change may or may not have been applied. Reloading to check."
         );
         setLoadNonce((n) => n + 1);
         return;

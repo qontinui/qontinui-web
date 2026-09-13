@@ -287,19 +287,37 @@ describe("FixerSpawnToggle — write", () => {
     await waitFor(() => expect(get).toHaveBeenCalledTimes(2));
   });
 
-  it("a commit_unconfirmed 503 (written: null) is reported as UNKNOWN and reloads", async () => {
-    get.mockResolvedValue(DEFAULT_ON);
-    patch.mockRejectedValue(
-      new Error(
-        `PATCH ${PATH} failed: 503 - ${JSON.stringify({
-          detail: JSON.stringify({
-            error: "auto_fix_pr_column_unavailable",
-            cause: "commit_unconfirmed",
-            written: null,
-          }),
-        })}`
-      )
+  // The envelope the browser actually receives: the backend error handler puts
+  // coord's refusal body under `message`, and HttpClient prefixes the status.
+  const refusal = (status: number, body: object | string) =>
+    new Error(
+      `PATCH ${PATH} failed: ${status} - ${JSON.stringify({
+        error: "service_unavailable",
+        message: typeof body === "string" ? body : JSON.stringify(body),
+        timestamp: 0,
+        path: PATH,
+      })}`
     );
+
+  it.each([
+    [
+      "commit_unconfirmed 503 (written: null)",
+      refusal(503, {
+        error: "auto_fix_pr_column_unavailable",
+        cause: "commit_unconfirmed",
+        written: null,
+      }),
+    ],
+    ["proxy 504 timeout", refusal(504, "timeout waiting for coord")],
+    [
+      "client abort",
+      new Error(
+        "Request timeout - backend may be starting up. Please try again."
+      ),
+    ],
+  ])("%s is reported as outcome UNKNOWN and reloads", async (_label, error) => {
+    get.mockResolvedValue(DEFAULT_ON);
+    patch.mockRejectedValue(error);
     render(<FixerSpawnToggle canEdit />);
     await tenantText();
     await userEvent.click(screen.getByTestId("fixer-spawn-off"));
@@ -310,19 +328,19 @@ describe("FixerSpawnToggle — write", () => {
     await waitFor(() => expect(get).toHaveBeenCalledTimes(2));
   });
 
-  it("a written: false 503 is a clean failure: error shown, no reload", async () => {
+  it.each([
+    [
+      "written: false 503",
+      refusal(503, {
+        error: "auto_fix_pr_column_unavailable",
+        cause: "write_failed",
+        written: false,
+      }),
+    ],
+    ["proxy 502 (nothing sent)", refusal(502, "coord is not reachable")],
+  ])("%s is a clean failure: error shown, no reload", async (_label, error) => {
     get.mockResolvedValue(DEFAULT_ON);
-    patch.mockRejectedValue(
-      new Error(
-        `PATCH ${PATH} failed: 503 - ${JSON.stringify({
-          detail: JSON.stringify({
-            error: "auto_fix_pr_column_unavailable",
-            cause: "write_failed",
-            written: false,
-          }),
-        })}`
-      )
-    );
+    patch.mockRejectedValue(error);
     render(<FixerSpawnToggle canEdit />);
     await tenantText();
     await userEvent.click(screen.getByTestId("fixer-spawn-off"));
