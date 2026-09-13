@@ -390,7 +390,7 @@ export function rollupDistanceSummary(rollup: ScanRootSourceRollup): string {
   const distance =
     rollup.min_behind_is_floor === false
       ? `Least-behind comparable feeder: exactly ${n} behind the one ref every comparable feeder counted against — a ref some feeder had fetched within ${RUNNER_REF_FRESH_WITHIN} of its reading, not the live tip.`
-      : `Least-behind comparable feeder: at least ${n} behind (a lower bound — the comparable feeders did not share one ref, or none of them had fetched it within ${RUNNER_REF_FRESH_WITHIN}).`;
+      : `Least-behind comparable feeder: at least ${n} behind (a lower bound — the comparable feeders were not shown to share one ref, or none was known to have fetched it within ${RUNNER_REF_FRESH_WITHIN}).`;
 
   const unmeasured = rollup.unmeasured_device_ids.length;
   if (unmeasured === 0) return distance;
@@ -659,8 +659,8 @@ export function ScanSourcesPanel() {
               <p className="mt-0.5 text-[11px] text-muted-foreground">
                 Any feeder can add a plan, so a source&apos;s least-behind
                 comparable feeder bounds how far behind the corpus is, but only
-                when its count is exact; a lower bound means the corpus may be
-                further behind.
+                when its count is exact (and then only as of that ref); a lower
+                bound means the corpus may be further behind.
               </p>
               <div className="mt-2 overflow-hidden rounded-md border border-border bg-background">
                 {rollups.map((rollup) => (
