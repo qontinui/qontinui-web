@@ -32,7 +32,7 @@ first three from the reader's side, numbered there 3, 3a and 3c):
    ``ref_stale:`` when every comparable device counted against one ref that is
    stale or of unknown age, ``refs_not_shared:`` when they counted against
    different or unidentified refs (then the minimum is a floor whatever each
-   ref's age, so staleness is not what the roll-up can name).
+   ref's age, and incomparability is what the roll-up can name).
 3. **A contradicted reading is UNKNOWN.** Precedence: ``observation_stale`` >
    ``reading_superseded`` > ``ref_stale``.
 4. **The roll-up is taken over what a reading still establishes about now.**
@@ -141,10 +141,11 @@ ZERO_FLOOR_MINIMUM_DETAIL = (
 REFS_NOT_SHARED_ZERO_MINIMUM_DETAIL = (
     "refs_not_shared: the fewest commits behind among the comparable readings "
     "is 0, but no single named ref is confirmed to be shared by all of them "
-    "(they name different refs, or some name none), so the roll-up does not "
-    "treat that 0 as exact, whatever each ref's age — it states no least-behind "
-    "distance and names no device least behind or lagging (each row states its "
-    "own count, and its counts_are_floors whether that count is a lower bound)"
+    "(the readings name different refs, or at least one names none), so the "
+    "roll-up does not treat that 0 as exact, whatever each ref's age — it "
+    "states no least-behind distance and names no device least behind or "
+    "lagging (each row states its own count, and its counts_are_floors whether "
+    "that count is a floor even as of its own ref)"
 )
 
 
