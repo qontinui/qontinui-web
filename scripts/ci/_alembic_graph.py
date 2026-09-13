@@ -450,10 +450,12 @@ PIN_PARENT_RE = re.compile(
     r'(["\'])(?P<value>[^"\'\n]*)\1[ \t]*(?:#[^\n]*)?$',
     re.M,
 )
-#: A pin whose right-hand side is NOT a string literal — `_parent_revision_id()`
-#: and the like. It cannot be rewritten, and it must not read as "no pin".
-PIN_PARENT_COMPUTED_RE = re.compile(
-    r"^[ \t]*_PARENT_REVISION_ID[ \t]*(?::[^=\n]*)?=[ \t]*(?![\"'\s])[^\n]*$", re.M
+#: The LEFT-hand side of any `_PARENT_REVISION_ID` assignment, `==` excluded.
+#: :func:`find_computed_parent_pins` matches it in MASKED text and reads the
+#: value from the original line, so a pin whose value is itself a string
+#: masking blanks (`= _parent_revision_id()`, `= \"\"\"a\"\"\"`) is never lost.
+PIN_PARENT_ASSIGN_RE = re.compile(
+    r"^[ \t]*_PARENT_REVISION_ID[ \t]*(?::[^=\n]*)?=(?!=)", re.M
 )
 REVISES_RE = re.compile(r"^Revises:[^\n]*$", re.M)
 #: FALLBACK ONLY, for text :mod:`tokenize` refuses. It opens a mask at any
@@ -675,8 +677,20 @@ def find_computed_parent_pins(
     """
     found: list[ComputedPin] = []
     for path, source, masked in _qualifying_sources(test_sources, revision):
-        for match in PIN_PARENT_COMPUTED_RE.finditer(masked):
-            line = _line_at(source, match.start(), match.end()).rstrip()
+        # The LEFT-hand side is found in the MASKED text, so a pin line quoted
+        # inside a docstring is ignored. The RIGHT-hand side is judged on the
+        # ORIGINAL line: masking blanks every triple-quoted string, including
+        # one that IS the pin's value (`_PARENT_REVISION_ID = """a"""`), and
+        # judging the blanked text reported such a pin as nothing at all —
+        # "no pin found" about a file that has one.
+        for match in PIN_PARENT_ASSIGN_RE.finditer(masked):
+            line_end = source.find("\n", match.start())
+            line = _line_at(
+                source, match.start(), len(source) if line_end == -1 else line_end
+            ).rstrip()
+            rhs = line[match.end() - match.start() :].strip()
+            if not rhs or PIN_PARENT_RE.fullmatch(line):
+                continue  # no value, or a plain literal the other finders own
             lineno = source.count("\n", 0, match.start()) + 1
             found.append(ComputedPin(path, lineno, line))
     return tuple(found)

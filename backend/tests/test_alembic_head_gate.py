@@ -2556,3 +2556,42 @@ def test_an_unreadable_test_file_makes_the_counter_pin_search_unknown(
     assert "test_locked.py" in stderr
     assert "UNKNOWN" in stderr
     assert "pin found" not in stderr
+
+
+@pytest.mark.parametrize(
+    ("label", "rhs"),
+    [
+        ("triple_quoted_on_one_line", f"{_TRIPLE}a{_TRIPLE}"),
+        ("raw_triple_quoted_on_one_line", f"r{_TRIPLE}a{_TRIPLE}"),
+        ("fstring_on_one_line", 'f"{_BASE}"'),
+        ("raw_string", 'r"a"'),
+    ],
+)
+def test_a_pin_whose_value_is_itself_a_string_is_never_silently_dropped(
+    label: str, rhs: str
+) -> None:
+    """Masking blanks a triple-quoted string even when it IS the pin's value.
+
+    Judging the blanked right-hand side put `_PARENT_REVISION_ID = \"\"\"a\"\"\"`
+    in no bucket at all, so the advice said "no pin found" about a file with a
+    pin. Every such value must surface as a pin a human checks.
+    """
+    from _alembic_graph import find_mismatched_parent_pins
+
+    source = f'_BASE = "a"\n_REVISION_ID = "mine"\n_PARENT_REVISION_ID = {rhs}\n'
+    compile(source, label, "exec")
+    test_sources = {Path("backend/tests/test_mine_migration.py"): source}
+    assert find_parent_pins(test_sources, "mine", "a", "x") == ()
+    assert find_mismatched_parent_pins(test_sources, "mine", "a") == ()
+    computed = find_computed_parent_pins(test_sources, "mine")
+    assert [(c.lineno, c.line) for c in computed] == [
+        (3, f"_PARENT_REVISION_ID = {rhs}")
+    ]
+
+    sources, scan, remediation = _forked_scan()
+    sites = plan_repoint_sites(scan, remediation, sources, test_sources)
+    text = render_remediation(
+        remediation, "origin/main", scan.heads, sites=sites, pin_scope="the tests"
+    )
+    assert "computed, not literal — check it by hand" in text
+    assert "pin found" not in text
