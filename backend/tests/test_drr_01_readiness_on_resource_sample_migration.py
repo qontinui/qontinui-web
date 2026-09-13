@@ -53,8 +53,8 @@ from tests._alembic_harness import (
 
 # Pinned explicitly rather than "head" so a later revision landing on top cannot
 # silently change what this test walks. `_PARENT_REVISION_ID` MUST equal the
-# revision's own `down_revision` — the first test below enforces it. When coord
-# re-points the revision at land time, re-point BOTH together.
+# revision's own `down_revision` — the first test below enforces it. If the alembic
+# head moves before landing, re-point BOTH together.
 _REVISION_ID = "drr_01"
 _PARENT_REVISION_ID = "presetprov01_allow_preset_provisional_profile_source"
 _REVISION_FILENAME = "drr_01_readiness_on_resource_sample.py"
