@@ -94,6 +94,7 @@ import {
   Package,
   Plug,
   Puzzle,
+  Cpu,
   Rocket,
   Scale,
   ScrollText,
@@ -447,6 +448,20 @@ const GROUPS: NavGroup[] = [
         label: "Spawn",
         icon: Rocket,
         testId: "coord-nav-spawn",
+        operatorOnly: true,
+      },
+      {
+        // A DEVICE MAINTENANCE surface (plan
+        // `2026-09-13-drained-runner-never-reaches-idle` D10): drain one
+        // runner, watch its restart readiness, and wind down the sessions in
+        // the way. Dev Ops rather than a sixth session console — it links to
+        // `/sessions?device=` for history instead of reimplementing it. Beside
+        // Spawn because the two are the operator's two levers on a runner:
+        // put work on it, and get it quiet enough to rebuild.
+        href: "/admin/coord/runners",
+        label: "Runners",
+        icon: Cpu,
+        testId: "coord-nav-runners",
         operatorOnly: true,
       },
       {

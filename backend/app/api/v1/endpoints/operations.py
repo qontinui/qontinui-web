@@ -4708,6 +4708,22 @@ async def get_fleet_resource_samples(
       the threshold and the raw value: a verdict that prints only the
       number it tripped on leaves the next incident's forensics unable to
       ask whether it was work or a leak.
+    * The **readiness** fields (plan
+      ``2026-09-13-drained-runner-never-reaches-idle`` D8) —
+      ``readiness_safe``, ``readiness_reason``, ``readiness_blocking``,
+      ``readiness_finished``, ``wind_down_candidates``,
+      ``wind_down_exit_stuck``, the bounded ``wind_down_sessions`` array
+      (with ``wind_down_sessions_truncated`` when coord cut it), and, on the
+      NEWEST sample per device, the server-computed ``readiness_age_secs`` and
+      ``readiness_state`` (``fresh | stale | absent``). This is the device's
+      restart-readiness verdict, pushed by the runner on the same 30 s sample
+      rather than read through a relay into the runner. There is deliberately
+      no separate readiness route: ``/admin/coord/runners`` reads it here with
+      ``device_id`` and ``history=false``. Passed through untouched, with the
+      NULL rule once more doing real work — ``readiness_safe: null`` is "the
+      runner could not decide", and ``readiness_state`` is coord's freshness
+      verdict so no browser subtracts its own clock from ``sampled_at``. A
+      ``stale`` or ``absent`` row renders UNKNOWN, never the last verdict.
 
     ``schema_pending: true`` means the sibling alembic migration
     (qontinui-web#949) has not reached coord's database yet — coord
@@ -6818,6 +6834,170 @@ async def list_coord_sessions(
         "row_class_counts": counts,
         "agent_half": agent_half,
     }
+
+
+# ---- Per-device session census + operator session control ----------------
+#
+# Plan `2026-09-13-drained-runner-never-reaches-idle` Phase 8 (D9, D10). Both
+# routes back `/admin/coord/runners`, the device-maintenance surface: drain a
+# runner, watch its readiness, and wind down the sessions that keep it from
+# being restartable.
+#
+# **Declared ABOVE ``/sessions/{session_id}`` on purpose.** FastAPI matches in
+# declaration order, and ``fleet`` is a perfectly good path segment for a
+# ``{session_id}`` parameter: declared below it, ``GET /sessions/fleet`` would
+# reach the single-session route and come back as a 422 on a non-UUID id —
+# a dead read with nothing failing at build time.
+#
+# The readiness half of that page is NOT a route here. It rides the existing
+# ``GET /fleet/resource-samples?device_id=`` proxy, which passes coord's rows
+# through untouched — the readiness fields coord adds to them reach the
+# browser with no change on this side (plan D8: "extend that sample, do not
+# add a table or a route").
+
+
+@router.get("/sessions/fleet")
+async def get_coord_sessions_fleet(
+    device_id: UUID | None = Query(
+        default=None,
+        description="Restrict to one coord device. Applied in coord's SQL.",
+    ),
+    state: str | None = Query(
+        default=None,
+        description="Restrict to one `coord.sessions.state`. Forwarded verbatim.",
+    ),
+    include_closed: bool | None = Query(
+        default=None,
+        description="Include closed sessions. Coord defaults to false.",
+    ),
+    limit: int | None = Query(
+        default=None,
+        description=(
+            "Page size. Coord CLAMPS this and echoes the applied value as "
+            "`limit`; deliberately not range-validated here."
+        ),
+    ),
+    cursor: str | None = Query(
+        default=None,
+        description="An opaque `nextCursor` from a previous page of the same scope.",
+    ),
+    tenant_id: UUID = Depends(get_tenant_id),
+) -> Any:
+    """Proxy coord's ``GET /coord/sessions/fleet`` (tenant-scoped).
+
+    The body is coord's ``FleetSessionsResponse``, passed through untouched,
+    and it is **camelCase** — ``sessionId``, ``claudeCodeSessionId``,
+    ``sessionStatus``, ``startedAt``, ``nextCursor`` and the three
+    ``…ColumnPresent`` capability flags. Plan D7 adds ``spawnOrigin``,
+    ``continuationGateId`` and ``dispatchSource`` to each row in the same
+    casing. No ``response_model`` is declared, so nothing here filters a
+    field coord adds, and a coord predating D7 simply omits the three keys —
+    which the page renders as an unknown origin, never as a default one.
+
+    ``nextCursor != null`` is coord's statement that more rows match this
+    scope than it served. The caller must say so rather than present the page
+    as the device's whole census.
+
+    A failure passes through with coord's status (``_proxy_coord_get`` raises
+    on ≥400, and a transport failure is a 502/504). It is never degraded to an
+    empty list here: "coord could not tell us" and "this device runs no
+    sessions" call for opposite next steps.
+    """
+    params: dict[str, Any] = {}
+    if device_id is not None:
+        params["device_id"] = str(device_id)
+    if state is not None:
+        params["state"] = state
+    if include_closed is not None:
+        params["include_closed"] = include_closed
+    if limit is not None:
+        params["limit"] = limit
+    if cursor is not None:
+        params["cursor"] = cursor
+    return await _proxy_coord_get(
+        "/coord/sessions/fleet", params=params or None, tenant_id=tenant_id
+    )
+
+
+class SessionControlRequestBody(BaseModel):
+    """Closed body for ``POST /operations/sessions/{session_id}/control``.
+
+    Assembled into coord's wire body field by field rather than forwarded
+    verbatim, for the same reason the drain body is: the operator's browser
+    never gets to put a key on this write that the contract does not name.
+    In particular there is no ``requested_by`` — coord stamps the author from
+    its authenticated operator context, and an audit row with a
+    client-asserted author is not an audit row.
+
+    ``action`` is a closed vocabulary. ``finish_and_close`` declares the
+    session finished and asks the runner to close it once it is idle (D4/D9 —
+    the operator's click IS the declaration a runner never infers).
+    ``stop_at_boundary`` asks a loop or steward session to stop at its next
+    iteration boundary (D6). Anything else is a local 422 before coord is
+    asked.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    action: Literal["finish_and_close", "stop_at_boundary"]
+    reason: str | None = Field(default=None, max_length=2000)
+
+    @field_validator("reason")
+    @classmethod
+    def _blank_reason_is_no_reason(cls, v: str | None) -> str | None:
+        """A whitespace-only reason is dropped rather than recorded.
+
+        The reason is optional on this write, so a blank one is not a refusal
+        — but it must not reach the audit row as ``"   "`` either, which
+        reads as "the operator wrote something" when they did not.
+        """
+        if v is None:
+            return None
+        stripped = v.strip()
+        return stripped or None
+
+
+@router.post("/sessions/{session_id}/control")
+async def post_coord_session_control(
+    session_id: UUID,
+    body: SessionControlRequestBody,
+    tenant_id: UUID = Depends(require_coord_tenant_admin),
+) -> Any:
+    """Ask the runner holding a session to finish-and-close it, or to stop it
+    at its next iteration boundary.
+
+    Proxies coord's ``POST /coord/sessions/{session_id}/control``. Coord
+    records the request as a durable ``control_request`` session event and
+    publishes it to the device, so a runner that is offline right now still
+    receives it on its next catch-up read (plan D9). The runner acts only on
+    a ``claude_code_session_id`` present in its OWN lifecycle store; nothing
+    here, and nothing in coord, forces a process kill.
+
+    Coord answers ``202`` with ``{event_id, session_id, device_id, action}``
+    and that status is echoed verbatim — a bare JSON return would be wrapped
+    as ``200`` and hide that the request was ACCEPTED, not carried out.
+
+    Refusals are typed and pass through with coord's status and body
+    (``structured_errors=True``): ``404 session_not_found``,
+    ``409 session_closed`` and a ``422`` for an action coord does not know.
+    They mean different things — "no such session", "already over" and "this
+    coord predates the action" — and the console tells them apart rather than
+    rendering one "failed".
+
+    Admin-gated here (``require_coord_tenant_admin``) as a UX and
+    defence-in-depth layer; coord re-checks on its own.
+    """
+    wire: dict[str, Any] = {"action": body.action}
+    if body.reason is not None:
+        wire["reason"] = body.reason
+    coord_body, status_code = await _proxy_coord_post(
+        f"/coord/sessions/{session_id}/control",
+        wire,
+        tenant_id=tenant_id,
+        return_status=True,
+        structured_errors=True,
+    )
+    return JSONResponse(content=coord_body, status_code=status_code)
 
 
 @router.get("/sessions/{session_id}")
