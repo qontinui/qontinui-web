@@ -658,6 +658,12 @@ def find_parent_pins(
             if value != old_parent:
                 continue
             line = _line_at(source, match.start(), match.end()).rstrip()
+            if not PIN_PARENT_RE.fullmatch(line):
+                # ONE predicate for "a plain literal pin", shared with the
+                # computed finder. `= "a" \"\"\"b\"\"\"` matches on the MASKED line
+                # (the triple-quoted half is blanked) but is not a plain literal
+                # on the original, so it belongs to computed — never to both.
+                continue
             offset = match.start("value") - match.start()
             after = line[:offset] + new_parent + line[offset + len(old_parent) :]
             lineno = source.count("\n", 0, match.start()) + 1
@@ -737,6 +743,8 @@ def find_mismatched_parent_pins(
             if value == old_parent:
                 continue
             line = _line_at(source, match.start(), match.end()).rstrip()
+            if not PIN_PARENT_RE.fullmatch(line):
+                continue  # not a plain literal on the original line: computed's
             lineno = source.count("\n", 0, match.start()) + 1
             found.append(MismatchedPin(path, lineno, line, value))
     return tuple(found)
@@ -793,6 +801,10 @@ def read_test_sources(
         return None
     found: dict[Path, str] = {}
     for path in sorted(tests_dir.rglob("*.py")):
+        if not path.is_file():
+            # A directory or dangling symlink named `*.py` holds no pin. Reading
+            # it would raise OSError and mark EVERY run's search incomplete.
+            continue
         try:
             text = path.read_text(encoding="utf-8", errors="replace")
         except OSError:

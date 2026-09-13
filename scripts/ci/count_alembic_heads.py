@@ -178,6 +178,7 @@ def _site_lines(
     target: str,
     sites: RepointSites | None,
     pin_scope: str | None,
+    unreadable: tuple[Path, ...] = (),
 ) -> list[str]:
     """The three edit sites for re-pointing ONE revision, as plain text.
 
@@ -236,6 +237,14 @@ def _site_lines(
                 + ":",
                 f"             {other.line}",
             ]
+        if pin_scope is None:
+            # Pins WERE found, but the search did not see every file. Say so,
+            # or a partial result reads as the whole answer.
+            unread = ", ".join(repo_relative(path) for path in unreadable)
+            lines.append(
+                "           (pin search incomplete: could not read "
+                f"{unread or 'every file'})"
+            )
     elif sites is None or pin_scope is None:
         lines += [
             "      3. the test pin: UNKNOWN — the pin search did not run, or could",
@@ -256,6 +265,7 @@ def _sites_block(
     remediation: Remediation,
     sites: dict[str, RepointSites] | None,
     pin_scope: str | None,
+    unreadable: tuple[Path, ...] = (),
 ) -> list[str]:
     """Every edit's three sites. Shared by the ``repoint`` and ``blocked`` arms."""
     lines: list[str] = []
@@ -266,6 +276,7 @@ def _sites_block(
             remediation.target or "",
             (sites or {}).get(revision),
             pin_scope,
+            unreadable,
         )
     return lines
 
@@ -275,6 +286,7 @@ def _repoint_remedy(
     baseline: str,
     sites: dict[str, RepointSites] | None = None,
     pin_scope: str | None = None,
+    unreadable: tuple[Path, ...] = (),
 ) -> str:
     """The author-facing text for the case that actually happens."""
     lines = [
@@ -291,7 +303,7 @@ def _repoint_remedy(
         "head count into a red test suite:",
         "",
     ]
-    lines += _sites_block(remediation, sites, pin_scope)
+    lines += _sites_block(remediation, sites, pin_scope, unreadable)
     lines += [
         "Then re-run this gate and the revision's migration test. Do NOT use",
         "`alembic merge` here: the forked revision has not landed, so a",
@@ -336,16 +348,19 @@ def render_remediation(
     *,
     sites: dict[str, RepointSites] | None = None,
     pin_scope: str | None = None,
+    unreadable: tuple[Path, ...] = (),
 ) -> str:
     """Pick the remedy text matching what the graph actually shows.
 
     ``sites`` carries the exact before -> after lines per re-pointed revision,
     and ``pin_scope`` names what the pin search looked at. ``pin_scope is
-    None`` means the search did not run, and the text says UNKNOWN rather than
-    implying the test has no pin.
+    None`` means the search did not run or did not finish, and the text says
+    UNKNOWN rather than implying the test has no pin. ``unreadable`` names the
+    files an incomplete search could not read, so a pin it DID find is never
+    presented as the whole answer.
     """
     if remediation.kind == "repoint":
-        return _repoint_remedy(remediation, baseline, sites, pin_scope)
+        return _repoint_remedy(remediation, baseline, sites, pin_scope, unreadable)
     if remediation.kind == "merge":
         return MERGE_REMEDY.format(baseline=baseline, heads=" ".join(heads))
     if remediation.kind == "unknown":
@@ -372,7 +387,7 @@ def render_remediation(
                 "not be touched):",
                 "",
             ]
-            lines += _sites_block(remediation, sites, pin_scope)
+            lines += _sites_block(remediation, sites, pin_scope, unreadable)
         elif remediation.target:
             lines += [f"`{remediation.target}` is the landed head.", ""]
         else:
@@ -540,12 +555,12 @@ def main() -> int:
         remediation = plan_remediation(scan, landed)
         sites: dict[str, RepointSites] = {}
         pin_scope: str | None = None
+        unreadable: list[Path] = []
         if remediation.target is not None and remediation.edits:
             # Chooses WORDING only, like the baseline lookup: nothing here can
             # move the exit code. An absent tests dir is an UNKNOWN pin search.
             # No `edits` (a `blocked` remedy whose only chain has no one-token
             # site) means no revision to re-point, so no pin to look for.
-            unreadable: list[Path] = []
             test_sources = read_test_sources(TESTS_ROOT, unreadable)
             if unreadable:
                 # An INCOMPLETE search is UNKNOWN, not "no pin found": the pin
@@ -567,6 +582,7 @@ def main() -> int:
                 scan.heads,
                 sites=sites,
                 pin_scope=pin_scope,
+                unreadable=tuple(unreadable),
             ),
             file=sys.stderr,
         )
