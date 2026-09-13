@@ -213,6 +213,10 @@ class TestComparisonSet:
 
         rollup = _only_rollup(fresh, zero_floor)
 
+        # An EXACT 0 is a real distance: measured, with no detail — only a
+        # FLOOR of 0 reads unknown.
+        assert rollup.state == "measured"
+        assert rollup.detail is None
         assert rollup.min_behind == 0
         assert rollup.min_behind_is_floor is False
         assert rollup.least_behind_device_ids == [zero_floor.device_id]
@@ -267,6 +271,18 @@ class TestComparisonSet:
 
         assert rollup.comparable_count == 1
         assert rollup.unmeasured_device_ids == [not_git.device_id]
+
+    def test_a_measured_row_with_no_count_is_not_comparable(self) -> None:
+        """The write door refuses a ``measured`` report with no ``behind``, so a
+        stored one is corrupt — and a count nobody measured must not reach the
+        minimum, where a reader would take it for a distance."""
+        counted = _obs(behind=3)
+        corrupt = _obs(behind=None)
+
+        rollup = _only_rollup(counted, corrupt)
+
+        assert rollup.min_behind == 3
+        assert rollup.unmeasured_device_ids == [corrupt.device_id]
 
 
 class TestExactOnlyAgainstOneFreshRef:
@@ -372,6 +388,17 @@ class TestOnlyOrderedStandingIsNamed:
 
         assert (rollup.least_behind_device_ids, rollup.lagging_device_ids) == ([], [])
         assert rollup.lag_unknown_device_ids == _ids(unknown_ref, known)
+
+    def test_a_stale_shared_ref_with_an_unknown_ahead_places_nobody(self) -> None:
+        """An unreported ``ahead`` is not 0: that device may carry commits of
+        its own, which is exactly what makes a stale ref unorderable."""
+        unknown_ahead = _floor(5, ahead=None)
+        plain = _floor(9)
+
+        rollup = _only_rollup(unknown_ahead, plain)
+
+        assert (rollup.least_behind_device_ids, rollup.lagging_device_ids) == ([], [])
+        assert rollup.lag_unknown_device_ids == _ids(unknown_ahead, plain)
 
 
 class TestNoComparableReadingIsUnknown:

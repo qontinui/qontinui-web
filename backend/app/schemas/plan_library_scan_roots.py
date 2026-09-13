@@ -266,7 +266,10 @@ class ScanRootSourceRollup(BaseModel):
     """Every device feeding ONE scan source, folded to the corpus's question.
 
     Any feeder can add a plan to the corpus, so how far behind the corpus is
-    is bounded by its LEAST-behind current feeder. Every claim here is taken
+    is bounded by its LEAST-behind current feeder. ``min_behind`` is NOT a
+    ceiling on what the corpus lacks: it bounds that feeder's distance from
+    BELOW ("at least 41" may really be 300), and only an exact value bounds
+    the corpus — and then only as of that ref. Every claim here is taken
     over the COMPARISON SET: readings that are fresh, applied (not contradicted
     by a later, declined report) and carry a count — a ``measured`` verdict, or
     a 0-behind floor the verdict marks ``ref_stale``. A silent or contradicted
@@ -321,8 +324,9 @@ class ScanRootSourceRollup(BaseModel):
     #: order holds as of that ref (see the class docstring). Kept when the
     #: roll-up is ``unknown`` for a floor of 0: the order is still established.
     least_behind_device_ids: list[UUID]
-    #: Comparable devices above ``min_behind``, under the same ordering
-    #: condition. Empty when unordered — NOT ESTABLISHED, never "none lagging".
+    #: Comparable devices above the fewest commits behind among the comparable
+    #: readings, under the same ordering condition (and likewise kept when the
+    #: roll-up is ``unknown`` for a floor of 0). Empty when unordered — NOT ESTABLISHED, never "none lagging".
     lagging_device_ids: list[UUID]
     #: Comparable devices the readings do not order: EVERY one of them when
     #: they counted against different or unknown refs, or against one stale ref
