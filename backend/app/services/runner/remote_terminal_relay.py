@@ -856,7 +856,11 @@ class RemoteTerminalRelay:
             # target never answered, and stranding that grant until expiry
             # would be the only alternative.
             att = await self._authorize(
-                session, msg, require_bound=False, require_attach_kind=False
+                session,
+                msg,
+                require_bound=False,
+                require_attach_kind=False,
+                settle_waiter=False,
             )
             if att is not None:
                 await self._detach_target(session, att, att.terminal_id)
@@ -1265,8 +1269,13 @@ class RemoteTerminalRelay:
         *,
         require_bound: bool = True,
         require_attach_kind: bool = True,
+        settle_waiter: bool = True,
     ) -> _Attachment | None:
         """Admit a post-attach frame only for a registered, live grant.
+
+        ``settle_waiter`` (the default) lets the expiry arm tell a still-pending
+        attach or create waiter its grant lapsed. The detach door clears it: a
+        source that detaches has abandoned that waiter.
 
         With ``require_bound`` (the default) the TARGET must also have
         answered ``terminal_attached`` and the frame must name that terminal;
@@ -1312,7 +1321,7 @@ class RemoteTerminalRelay:
             if (
                 att.request_id is not None
                 and att.request_id != request_id
-                and msg.get("type") != "remote_terminal_detach"
+                and settle_waiter
                 and self._waiter_pending(session, att.grant_jti)
             ):
                 await self._send_to_source(
@@ -1959,6 +1968,30 @@ class RemoteTerminalRelay:
                     request_id=source_request_id,
                     grant_jti=att.grant_jti,
                     terminal_id=terminal_id,
+                )
+                return True
+            if session.grants.get(att.grant_jti) is not att:
+                # Evicted DURING the bind — the sweep, ``_authorize``'s expiry
+                # arm or a lost listener ran while ``_bind_terminal`` awaited.
+                # This waiter's correlation was already popped above, so that
+                # teardown could not answer it; and the terminal key was bound
+                # AFTER its registry release, so it would leak until expiry.
+                # Answering ``remote_terminal_attached`` here would settle the
+                # source's waiter as a success on a grant that no longer exists.
+                await self._release_registry(att)
+                await self._detach_target(session, att, terminal_id)
+                await self._send_to_source(
+                    session,
+                    {
+                        "type": "remote_terminal_error",
+                        "request_id": source_request_id,
+                        "grant_jti": att.grant_jti,
+                        "terminal_id": terminal_id,
+                        "code": (
+                            att.expired_code() if att.expired() else CODE_LISTENER_LOST
+                        ),
+                        "message": "the attachment ended while its terminal was being bound",
+                    },
                 )
                 return True
             if (
