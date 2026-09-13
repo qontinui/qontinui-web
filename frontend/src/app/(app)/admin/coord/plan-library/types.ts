@@ -485,7 +485,9 @@ export interface ScanRootListResponse {
 /**
  * A roll-up's verdict. `unknown` = no device feeding this source has a
  * comparable reading, or the fewest commits behind is a floor of 0 ("at least
- * 0" establishes nothing) — `min_behind` is then `null`, never `0`.
+ * 0" establishes nothing) — `min_behind` is then `null`, never `0`. The id
+ * lists of an `unknown` roll-up may still carry an order the readings
+ * establish; `unknown` is about the distance, not the order.
  */
 export const SCAN_ROOT_ROLLUP_STATES = ["measured", "unknown"] as const;
 
@@ -498,7 +500,8 @@ export type ScanRootRollupState = (typeof SCAN_ROOT_ROLLUP_STATES)[number];
  * Every claim is over the COMPARISON SET: readings that are fresh, applied and
  * carry a count — a `measured` verdict, or a 0-behind floor the verdict marks
  * `ref_stale`. A device in `unmeasured_device_ids` may be less behind than
- * anything stated. `min_behind` is a lower bound; `min_behind_is_floor: false`
+ * anything stated. `min_behind` is a lower bound on the least-behind feeder's
+ * distance — NOT a ceiling on what the corpus lacks; `min_behind_is_floor: false`
  * means exact against a ref some device had fetched within six hours of its
  * reading (the runner's definition), never against the live tip.
  *
@@ -521,9 +524,9 @@ export interface ScanRootSourceRollup {
   min_behind: number | null;
   /** `null` exactly when `min_behind` is. */
   min_behind_is_floor: boolean | null;
-  /** Comparable devices at `min_behind`, when the readings order them. */
+  /** Comparable devices at the fewest commits behind, when the readings order them. */
   least_behind_device_ids: string[];
-  /** Comparable devices above `min_behind`, when the readings order them. */
+  /** Comparable devices above the fewest commits behind, when the readings order them. */
   lagging_device_ids: string[];
   /** Comparable devices the readings do not order. */
   lag_unknown_device_ids: string[];
