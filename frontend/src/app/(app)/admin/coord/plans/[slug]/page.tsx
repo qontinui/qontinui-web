@@ -23,10 +23,11 @@
  * dropped. They DO carry `current_phase`, a derived `first_shipped_at` (the
  * first transition into `shipped` — there is no `shipped_at`; a field by that
  * name sat on `CoordPlanRow` for months with nothing serving it) and a
- * nullable slug-derived `authored_at` (plan
+ * nullable `authored_at` (plan
  * `2026-09-02-coord-work-units-carry-no-authoring-date`). The meta strip
- * shows `authored` beside `updated`, and says "not recorded" when coord has
- * no authoring date rather than substituting the ingest date.
+ * shows `authored` beside `updated` — the EFFECTIVE date `planAuthoredAt`
+ * derives (slug prefix, then coord's column) — and says "not recorded" when
+ * neither source has one rather than substituting the ingest date.
  *
  * ## Console style (Phase 3 Wave 3)
  *
