@@ -44,6 +44,7 @@ import {
   PLAN_TIME_ABSENT,
   describePlanStatus,
   derivePlanStatus,
+  planAuthoredAt,
   planIdentity,
   planIdentityTitle,
   planRest,
@@ -68,6 +69,11 @@ export function PlanRow({
   // shipped → authored → ingested; `updated_at` is a scanner touch, not a
   // plan event, and lives in the detail panel below. See `planRowTime`.
   const { at, verb } = planRowTime(plan);
+  // The detail's `authored` line reads the SAME effective date as the chip,
+  // the row time and the page's sort — slug prefix, then coord's column — so
+  // a dated slug with a NULL column never says "ingested" under a chip that
+  // shows its authoring date.
+  const authoredAt = planAuthoredAt(plan);
   const href = `/admin/coord/plans/${encodeURIComponent(plan.slug)}`;
 
   return (
@@ -170,14 +176,10 @@ export function PlanRow({
                 the cell says so: "not recorded" is a real, common state the
                 page's own sort has to reason about, never a blank and never
                 the ingest date wearing the authored label. */}
-            {plan.authored_at ? (
-              <span title={`Authored ${plan.authored_at}`}>
+            {authoredAt ? (
+              <span title={`Authored ${authoredAt}`}>
                 authored{" "}
-                <RowTime
-                  at={plan.authored_at}
-                  verb="Authored"
-                  className="inline"
-                />
+                <RowTime at={authoredAt} verb="Authored" className="inline" />
               </span>
             ) : plan.created_at ? (
               <span title={`Ingested ${plan.created_at}`}>

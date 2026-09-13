@@ -120,6 +120,34 @@ describe("sortPlans", () => {
     ).toEqual(["b-mid", "c-newest", "a-oldest"]);
   });
 
+  it("dates a slug-dated row whose coord column is NULL from the slug, not as undated", () => {
+    // The 29-row case measured 2026-09-13: units created since 2026-09-10
+    // through the MCP upsert door carry a dated slug and a NULL `authored_at`.
+    // They are the NEWEST plans in the corpus, and the default `authored_desc`
+    // sort was sinking them to the bottom as "undated" — under an identity
+    // chip that showed their date. The sort reads the same effective date the
+    // chip does.
+    const withSlugDated = [
+      ...CORPUS,
+      row("2026-09-12-newest-by-slug", "2026-09-13T00:00:00Z", null, null),
+    ];
+    expect(sortPlans(withSlugDated, "authored_desc").at(0)?.slug).toBe(
+      "2026-09-12-newest-by-slug"
+    );
+    expect(sortPlans(withSlugDated, "authored_asc").at(-1)?.slug).toBe(
+      "2026-09-12-newest-by-slug"
+    );
+    // ...while a slug whose prefix is not a real calendar day is still undated
+    // (runner parity: `2026-02-30` stores NULL there too) and still sinks.
+    const withBogus = [
+      ...CORPUS,
+      row("2026-02-30-bogus", "2026-09-13T00:00:00Z", null, null),
+    ];
+    expect(sortPlans(withBogus, "authored_desc").at(-1)?.slug).toBe(
+      "2026-02-30-bogus"
+    );
+  });
+
   it("sinks rows with NO ingest date to the bottom in BOTH directions", () => {
     const withGap = [
       ...CORPUS,
