@@ -1679,6 +1679,39 @@ def test_a_pin_naming_a_different_parent_is_not_listed() -> None:
     for rendered in (text, comment):
         assert "pin found" not in rendered
         assert '_PARENT_REVISION_ID = "landed"' not in rendered
+    # The notifier also names it INSIDE its code block, as a comment line.
+    assert f"# 3. the test pin — {location}:2 — names another parent: check it" in (
+        comment
+    )
+    assert f"# {_pin_line('module_attribute', 'somewhere_else')}" in comment
+
+    # One file holding BOTH a pin naming the old parent and one naming something
+    # else: each is reported exactly once, in its own bucket — never twice.
+    both_path = Path("backend/tests/test_mine_both_migration.py")
+    both = {
+        both_path: (
+            '_REVISION_ID = "mine"\n'
+            '_PARENT_REVISION_ID = "a"\n'
+            '_PARENT_REVISION_ID = "somewhere_else"\n'
+        )
+    }
+    both_sites = plan_repoint_sites(scan, remediation, sources, both)
+    assert [(p.lineno, p.before) for p in both_sites["mine"].pins] == [
+        (2, '_PARENT_REVISION_ID = "a"')
+    ]
+    assert [(p.lineno, p.value) for p in both_sites["mine"].mismatched_pins] == [
+        (3, "somewhere_else")
+    ]
+    both_text = render_remediation(
+        remediation, "origin/main", scan.heads, sites=both_sites, pin_scope="the tests"
+    )
+    both_comment = notifier.render_comment(
+        scan.heads, remediation, "cafebabe1234", sites=both_sites, pin_scope="x"
+    )
+    for rendered in (both_text, both_comment):
+        assert rendered.count('_PARENT_REVISION_ID = "a"') == 1
+        assert rendered.count('names "somewhere_else"') == 1
+        assert 'names "a"' not in rendered
 
 
 def test_a_pin_in_another_revisions_test_is_not_listed() -> None:
@@ -2072,6 +2105,28 @@ _MASKING_TRAPS = {
         f"    {_TRIPLE}Docstring.{_TRIPLE}\n",
         4,
     ),
+    # A triple-quoted f-string quoting another revision's lines. On 3.12+ the
+    # tokenizer splits it into FSTRING_START .. FSTRING_END, not one STRING.
+    "fstring_docstring_quoting_another_revision": (
+        '_WHO = "x"\n'
+        f"_NOTE = f{_TRIPLE}Borrowed from the {{_WHO}} test:\n"
+        '_REVISION_ID = "x"\n'
+        '_PARENT_REVISION_ID = "a"\n'
+        f"{_TRIPLE}\n"
+        '_REVISION_ID = "mine"\n'
+        '_PARENT_REVISION_ID = "a"\n',
+        7,
+    ),
+    # A single-quoted string continued across lines with backslashes: not
+    # triple-quoted, but multi-line, and it quotes a declaration.
+    "backslash_continued_single_quoted_string": (
+        "_NOTE = 'quoted: \\\n"
+        '_REVISION_ID = "x" \\\n'
+        "end'\n"
+        '_REVISION_ID = "mine"\n'
+        '_PARENT_REVISION_ID = "a"\n',
+        5,
+    ),
 }
 
 
@@ -2147,7 +2202,7 @@ def _counter_fork(
         (versions / name).write_text(text, encoding="utf-8")
     reads: list[Path] = []
 
-    def _record(tests_dir: Path) -> dict[Path, str]:
+    def _record(tests_dir: Path, *_rest: object) -> dict[Path, str]:
         reads.append(tests_dir)
         return {}
 
@@ -2242,10 +2297,262 @@ def test_a_capped_file_listing_makes_the_pin_search_unknown(
         simulated,
         posted=posted,
         pin_calls=pin_calls,
-        extra_files=notifier.PR_FILES_LISTING_CAP,
+        # EXACTLY the cap in total (one revision file + CAP - 1 padding):
+        # GitHub never returns more, so `>=` is the boundary under test, and a
+        # 3001-file listing would let `>` pass too.
+        extra_files=notifier.PR_FILES_LISTING_CAP - 1,
     )
     assert code == 0  # wording only; the exit code does not move
     assert pin_calls == []  # nothing fetched from a listing we cannot trust
     assert len(posted) == 1
     assert "UNKNOWN" in posted[0]
     assert "pin found" not in posted[0]
+
+
+# ---------------------------------------------------------------------------
+# Review round 4: the tokenizer can fail in ways no narrow `except` names
+# ---------------------------------------------------------------------------
+
+#: Measured: CPython 3.12.14 and 3.13.5 raise SystemError from
+#: `tokenize.generate_tokens` on this text, a stray `}` then a NUL.
+_TOKENIZER_CRASH = "' }\n\x00"
+
+
+def _regex_mask(source: str) -> str:
+    """What the documented regex fallback produces, for comparison."""
+    import re
+
+    import _alembic_graph as graph
+
+    return graph.TRIPLE_QUOTED_RE.sub(
+        lambda m: re.sub(r"[^\n]", " ", m.group(0)), source.replace("\r", " ")
+    )
+
+
+@pytest.mark.parametrize(
+    "raised",
+    [
+        SystemError("returned a result with an exception set"),
+        IndentationError("unindent does not match any outer indentation level"),
+        SyntaxError("invalid syntax"),
+        "TokenError",
+    ],
+    ids=["SystemError", "IndentationError", "SyntaxError", "TokenError"],
+)
+def test_any_tokenizer_failure_falls_back_to_the_regex(
+    monkeypatch: pytest.MonkeyPatch, raised: object
+) -> None:
+    import tokenize
+
+    import _alembic_graph as graph
+
+    error = (
+        tokenize.TokenError("EOF in multi-line statement")
+        if raised == "TokenError"
+        else raised
+    )
+    # A fixture on which the two paths DISAGREE, so "the fallback ran" is
+    # observable: tokenize reads `'\"\"\"'` as one string, the regex opens a
+    # mask there and blanks the real declaration.
+    source = _MASKING_TRAPS["triple_quote_in_a_single_quoted_literal"][0]
+    assert graph._mask_triple_quoted(source) != _regex_mask(source)
+
+    def _explode(*_a: object, **_k: object) -> object:
+        raise error  # type: ignore[misc]
+
+    monkeypatch.setattr(graph.tokenize, "generate_tokens", _explode)
+    assert graph._mask_triple_quoted(source) == _regex_mask(source)
+    # ...which is the regex's documented misread, and no exception.
+    assert find_parent_pins({Path("t.py"): source}, "mine", "a", "x") == ()
+
+
+def test_the_measured_tokenizer_crash_input_does_not_raise() -> None:
+    import _alembic_graph as graph
+
+    masked = graph._mask_triple_quoted(_TOKENIZER_CRASH)
+    assert len(masked) == len(_TOKENIZER_CRASH)
+    assert masked.count("\n") == _TOKENIZER_CRASH.count("\n")
+
+
+def test_one_untokenizable_test_file_does_not_stop_the_sweep(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The 3.12 end-to-end crash: exit 1, zero comments. Now: exit 0, notice posted.
+
+    The real crash text is used, AND the tokenizer is forced to raise
+    SystemError on it — so the test fails on the narrow `except` on every
+    Python, not only on the versions where the text itself crashes.
+    """
+    import _alembic_graph as graph
+
+    real_spans = graph._string_spans
+
+    def _crash_on_nul(text: str) -> list[tuple[int, int]]:
+        if "\x00" in text:
+            raise SystemError("returned a result with an exception set")
+        return real_spans(text)
+
+    monkeypatch.setattr(graph, "_string_spans", _crash_on_nul)
+    simulated = {**_tree(("a", None), ("b", "a")), Path("c.py"): _revision("c", "a")}
+    posted: list[str] = []
+    code, _ = _drive_main(
+        monkeypatch,
+        simulated,
+        posted=posted,
+        test_sources={
+            Path("backend/tests/test_broken.py"): _TOKENIZER_CRASH,
+            Path("backend/tests/test_c_migration.py"): _pin_file(
+                "literal_in_source", "c", "a"
+            ),
+        },
+    )
+    assert code == 0
+    assert len(posted) == 1
+    assert '+ _PARENT_REVISION_ID = "b"' in posted[0]
+
+
+def test_masked_offsets_are_characters_not_bytes() -> None:
+    """Non-ASCII BEFORE a masked string on the same line shifts a byte offset."""
+    import _alembic_graph as graph
+
+    source = (
+        'EM = "— —"; NOTE = """quoted:\n'
+        '_REVISION_ID = "x"\n'
+        '"""\n'
+        '_REVISION_ID = "mine"\n'
+        '_PARENT_REVISION_ID = "a"\n'
+    )
+    compile(source, "offsets", "exec")
+    first_line = graph._mask_triple_quoted(source).split("\n")[0]
+    assert first_line == 'EM = "— —"; NOTE = ' + " " * len('"""quoted:')
+    assert find_parent_pins({Path("t.py"): source}, "x", "a", "y") == ()
+    assert [
+        p.lineno for p in find_parent_pins({Path("t.py"): source}, "mine", "a", "y")
+    ] == [5]
+
+
+def test_no_masking_trap_qualifies_the_revision_it_only_quotes() -> None:
+    """Every trap that quotes `_REVISION_ID = "x"` inside a string must not
+    make that file a pin source for `x`."""
+    for trap, (source, _) in _MASKING_TRAPS.items():
+        test_sources = {Path("t.py"): source}
+        assert find_parent_pins(test_sources, "x", "a", "y") == (), trap
+        assert find_computed_parent_pins(test_sources, "x") == (), trap
+
+
+def test_a_mismatched_value_is_sanitised_before_it_reaches_prose() -> None:
+    """The value comes from a PR author's file and lands in a bot's comment."""
+    sources, scan, remediation = _forked_scan()
+    evil = "evil` @org/team"
+    test_sources = {
+        Path("backend/tests/test_mine_migration.py"): (
+            f'_REVISION_ID = "mine"\n_PARENT_REVISION_ID = "{evil}"\n'
+        )
+    }
+    sites = plan_repoint_sites(scan, remediation, sources, test_sources)
+    assert [p.value for p in sites["mine"].mismatched_pins] == [evil]
+    comment = notifier.render_comment(
+        scan.heads, remediation, "cafebabe1234", sites=sites, pin_scope="x"
+    )
+    # Odd segments of a split on the fence marker are code; even ones are prose,
+    # where a backtick closes a span and an @mention fires.
+    prose = "".join(comment.split("```")[0::2])
+    assert "@org/team" not in prose
+    assert "evil`" not in prose
+    assert 'names "evilorgteam"' in prose
+
+
+def test_a_non_literal_down_revision_is_not_described_as_a_root() -> None:
+    pin = {
+        Path("backend/tests/test_mine_migration.py"): (
+            '_REVISION_ID = "mine"\n_PARENT_REVISION_ID = "a"\n'
+        )
+    }
+
+    def _render(source: str):
+        scan = scan_sources({Path("mine.py"): source})
+        sites = repoint_sites(scan, "mine", "landed", source, pin)
+        text = "\n".join(
+            counter._site_lines("mine", Path("mine.py"), "landed", sites, "the tests")
+        )
+        comment = "\n".join(
+            notifier._site_block("mine", Path("mine.py"), "landed", sites, "the tests")
+        )
+        return sites, text, comment
+
+    sites, text, comment = _render('revision = "mine"\ndown_revision = PARENT\n')
+    assert sites.old_parent is None and sites.parent_unparsed
+    for rendered in (text, comment):
+        assert (
+            "no parent literal parsed from `down_revision` — check it by hand"
+            in rendered
+        )
+        assert "not None" not in rendered
+
+    root, root_text, root_comment = _render(
+        'revision = "mine"\ndown_revision = None  # first of its chain\n'
+    )
+    assert root.old_parent is None and not root.parent_unparsed
+    for rendered in (root_text, root_comment):
+        assert 'names "a", not None — check it' in rendered
+        assert "no parent literal parsed" not in rendered
+
+
+def test_a_pin_already_naming_the_target_says_so() -> None:
+    sources, scan, remediation = _forked_scan()
+    test_sources = {
+        Path("backend/tests/test_mine_migration.py"): (
+            '_REVISION_ID = "mine"\n_PARENT_REVISION_ID = "landed"\n'
+        )
+    }
+    sites = plan_repoint_sites(scan, remediation, sources, test_sources)
+    text = render_remediation(
+        remediation, "origin/main", scan.heads, sites=sites, pin_scope="the tests"
+    )
+    comment = notifier.render_comment(
+        scan.heads, remediation, "cafebabe1234", sites=sites, pin_scope="the tests"
+    )
+    for rendered in (text, comment):
+        assert 'already names the target "landed" — nothing to change there' in (
+            rendered
+        )
+        assert 'names "landed", not' not in rendered
+
+
+def test_an_unreadable_test_file_makes_the_counter_pin_search_unknown(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture
+) -> None:
+    """Skipping an unreadable file used to end in "no pin found" — about a
+    search that never saw the file the pin could be in."""
+    import _alembic_graph as graph
+
+    versions = _write(tmp_path / "v", ("a", None), ("landed", "a"), ("mine", "a"))
+    tests_dir = tmp_path / "tests"
+    tests_dir.mkdir()
+    (tests_dir / "test_other.py").write_text(
+        '_REVISION_ID = "other"\n_PARENT_REVISION_ID = "a"\n', encoding="utf-8"
+    )
+    locked = tests_dir / "test_locked.py"
+    locked.write_text("# made unreadable below\n", encoding="utf-8")
+    real_read_text = Path.read_text
+
+    def _read_text(self: Path, *args: object, **kwargs: object) -> str:
+        if self.name == "test_locked.py":
+            raise PermissionError(13, "Permission denied", str(self))
+        return real_read_text(self, *args, **kwargs)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(Path, "read_text", _read_text)
+    unreadable: list[Path] = []
+    assert graph.read_test_sources(tests_dir, unreadable) is not None
+    assert unreadable == [locked]
+
+    monkeypatch.setattr(counter, "TESTS_ROOT", tests_dir)
+    monkeypatch.setattr(counter, "revisions_at_ref", lambda *_a: {"a", "landed"})
+    monkeypatch.setattr(
+        sys, "argv", ["count_alembic_heads.py", "--versions-dir", str(versions)]
+    )
+    assert counter.main() == counter.EXIT_VIOLATION  # the verdict does not move
+    stderr = capsys.readouterr().err
+    assert "test_locked.py" in stderr
+    assert "UNKNOWN" in stderr
+    assert "pin found" not in stderr
