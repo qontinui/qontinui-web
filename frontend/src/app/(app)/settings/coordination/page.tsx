@@ -161,7 +161,7 @@ export default function CoordinationSettingsPage() {
         )}
 
         {/* Read-only notice */}
-        {!canEdit && (
+        {settings !== null && !canEdit && (
           <div className="rounded-lg border border-border px-4 py-3">
             <p className="text-xs text-muted-foreground">
               You have read-only access to these settings. A coord-tenant admin
