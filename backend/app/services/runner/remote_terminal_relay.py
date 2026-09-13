@@ -74,10 +74,13 @@ with a declared ``coord_session_id`` and drops the grant, so driving the new
 terminal needs a separate attach grant. A create grant admits no
 session-scoped frame (``grant_wrong_kind``). Every refusal about a create
 grant ITSELF — invalid, expired, wrong source, consumed — is spelled
-``create_grant_*``; refusals about the relay's own infrastructure or the target
-(``attach_verifier_unavailable``, ``attach_registry_unavailable``,
-``target_not_connected``, ``listener_lost``) keep their shared spellings, so
-match on the code, not the prefix. Unlike attach, a create's claim key is NOT deleted
+``create_grant_*``. Other refusals a create can receive keep their shared
+spellings — among them ``grant_wrong_kind``, ``attach_not_registered`` (a frame
+naming a create grant this socket no longer holds),
+``attach_verifier_unavailable``, ``attach_registry_unavailable``,
+``target_not_connected`` and ``listener_lost``; that list is illustrative, not
+exhaustive, so match on the code, not the prefix. Unlike attach, a create's
+claim key is NOT deleted
 on release — it expires with the grant, which is what single use means.
 
 Forward direction is replica-local
@@ -1294,6 +1297,26 @@ class RemoteTerminalRelay:
         # ``grant_wrong_kind`` and left it registered — holding its claim record
         # and per-target listener — until some later frame's sweep reached it.
         if att.expired():
+            # The frame that tripped expiry is not necessarily the one WAITING
+            # on this grant: an attach or create the target never answered has
+            # its own waiter under ``att.request_id``. Dropping the grant clears
+            # that correlation silently, so settle it exactly as ``_evict``
+            # does — otherwise it hangs until the source's client-side timeout.
+            if (
+                not att.attached
+                and att.request_id is not None
+                and att.request_id != request_id
+            ):
+                await self._send_to_source(
+                    session,
+                    {
+                        "type": "remote_terminal_error",
+                        "grant_jti": att.grant_jti,
+                        "code": att.expired_code(),
+                        "message": "grant expired",
+                        "request_id": att.request_id,
+                    },
+                )
             # Same two-sided teardown as ``_evict``: the target learns the
             # grant is gone rather than holding a detached subscriber.
             await self._detach_target(session, att, att.terminal_id)
