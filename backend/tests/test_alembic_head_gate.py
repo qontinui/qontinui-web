@@ -2313,9 +2313,12 @@ def test_a_capped_file_listing_makes_the_pin_search_unknown(
 # Review round 4: the tokenizer can fail in ways no narrow `except` names
 # ---------------------------------------------------------------------------
 
-#: Measured: CPython 3.12.14 and 3.13.5 raise SystemError from
-#: `tokenize.generate_tokens` on this text, a stray `}` then a NUL.
-_TOKENIZER_CRASH = "' }\n\x00"
+#: Measured on stock CPython 3.12.14 and 3.13.5: `tokenize.generate_tokens`
+#: raises SystemError on exactly this text — a space, a stray `}`, a newline, a
+#: NUL. Near-misses do NOT: `"' }\n\x00"` (a leading quote) and `"}\n\x00"` both
+#: raise TokenError. The sweep test also forces SystemError through a
+#: monkeypatch, so it fails on the narrow `except` on every Python version.
+_TOKENIZER_CRASH = " }\n\x00"
 
 
 def _regex_mask(source: str) -> str:
@@ -2565,6 +2568,12 @@ def test_an_unreadable_test_file_makes_the_counter_pin_search_unknown(
         ("raw_triple_quoted_on_one_line", f"r{_TRIPLE}a{_TRIPLE}"),
         ("fstring_on_one_line", 'f"{_BASE}"'),
         ("raw_string", 'r"a"'),
+        # Implicit concatenation: valid Python, value "ab". The plain `"a"`
+        # half matched on the MASKED line, so it used to land in the rewrite
+        # (or mismatched) bucket AND in computed.
+        ("implicit_concatenation", f'"a" {_TRIPLE}b{_TRIPLE}'),
+        ("implicit_concatenation_mismatched", f'"z" {_TRIPLE}b{_TRIPLE}'),
+        ("implicit_concatenation_multi_line", f'"a" {_TRIPLE}b\n{_TRIPLE}'),
     ],
 )
 def test_a_pin_whose_value_is_itself_a_string_is_never_silently_dropped(
@@ -2574,18 +2583,24 @@ def test_a_pin_whose_value_is_itself_a_string_is_never_silently_dropped(
 
     Judging the blanked right-hand side put `_PARENT_REVISION_ID = \"\"\"a\"\"\"`
     in no bucket at all, so the advice said "no pin found" about a file with a
-    pin. Every such value must surface as a pin a human checks.
+    pin. Every such value must surface as a pin a human checks — in EXACTLY one
+    bucket, so it is never both rewritten and flagged.
     """
     from _alembic_graph import find_mismatched_parent_pins
 
     source = f'_BASE = "a"\n_REVISION_ID = "mine"\n_PARENT_REVISION_ID = {rhs}\n'
     compile(source, label, "exec")
     test_sources = {Path("backend/tests/test_mine_migration.py"): source}
-    assert find_parent_pins(test_sources, "mine", "a", "x") == ()
-    assert find_mismatched_parent_pins(test_sources, "mine", "a") == ()
+    literal = find_parent_pins(test_sources, "mine", "a", "x")
+    mismatched = find_mismatched_parent_pins(test_sources, "mine", "a")
     computed = find_computed_parent_pins(test_sources, "mine")
+    assert len(literal) + len(mismatched) + len(computed) == 1, (
+        literal,
+        mismatched,
+        computed,
+    )
     assert [(c.lineno, c.line) for c in computed] == [
-        (3, f"_PARENT_REVISION_ID = {rhs}")
+        (3, f"_PARENT_REVISION_ID = {rhs}".split("\n")[0])
     ]
 
     sources, scan, remediation = _forked_scan()
@@ -2595,3 +2610,77 @@ def test_a_pin_whose_value_is_itself_a_string_is_never_silently_dropped(
     )
     assert "computed, not literal — check it by hand" in text
     assert "pin found" not in text
+
+
+def _lock_one_test_file(monkeypatch: pytest.MonkeyPatch, name: str) -> None:
+    """Make `Path.read_text` raise PermissionError for one file name only."""
+    real_read_text = Path.read_text
+
+    def _read_text(self: Path, *args: object, **kwargs: object) -> str:
+        if self.name == name:
+            raise PermissionError(13, "Permission denied", str(self))
+        return real_read_text(self, *args, **kwargs)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(Path, "read_text", _read_text)
+
+
+def test_a_partial_pin_search_that_found_a_pin_still_says_it_was_incomplete(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture
+) -> None:
+    """Listing the pins it DID find, with no word about the file it could not
+    read, made a partial search read as the whole answer."""
+    versions = _write(tmp_path / "v", ("a", None), ("landed", "a"), ("mine", "a"))
+    tests_dir = tmp_path / "tests"
+    tests_dir.mkdir()
+    (tests_dir / "test_mine_migration.py").write_text(
+        _pin_file("literal_in_source", "mine", "a"), encoding="utf-8"
+    )
+    (tests_dir / "test_locked.py").write_text("# unreadable\n", encoding="utf-8")
+    _lock_one_test_file(monkeypatch, "test_locked.py")
+    monkeypatch.setattr(counter, "TESTS_ROOT", tests_dir)
+    monkeypatch.setattr(counter, "revisions_at_ref", lambda *_a: {"a", "landed"})
+    monkeypatch.setattr(
+        sys, "argv", ["count_alembic_heads.py", "--versions-dir", str(versions)]
+    )
+    assert counter.main() == counter.EXIT_VIOLATION  # the verdict does not move
+    stderr = capsys.readouterr().err
+    # Only the part AFTER the remedy's own header, so the earlier err() line
+    # naming the unreadable file cannot satisfy these on its own.
+    site_block = stderr.split("A re-point is THREE edits")[1]
+    assert 'after:  _PARENT_REVISION_ID = "landed"' in site_block
+    assert "(pin search incomplete: could not read " in site_block
+    assert "test_locked.py)" in site_block
+
+    # And directly: the note appears only when the search was NOT complete.
+    sources, scan, remediation = _forked_scan()
+    sites = plan_repoint_sites(
+        scan,
+        remediation,
+        sources,
+        {Path("t.py"): _pin_file("literal_in_source", "mine", "a")},
+    )["mine"]
+    partial = counter._site_lines(
+        "mine", Path("mine.py"), "landed", sites, None, (Path("locked.py"),)
+    )
+    complete = counter._site_lines("mine", Path("mine.py"), "landed", sites, "x")
+    assert any("(pin search incomplete: could not read" in line for line in partial)
+    assert not any("pin search incomplete" in line for line in complete)
+
+
+def test_a_non_file_named_like_a_test_is_skipped_not_unreadable(
+    tmp_path: Path,
+) -> None:
+    """A directory or dangling symlink named `*.py` must not make EVERY run's
+    pin search UNKNOWN."""
+    import _alembic_graph as graph
+
+    tests_dir = tmp_path / "tests"
+    tests_dir.mkdir()
+    real = tests_dir / "test_mine_migration.py"
+    real.write_text(_pin_file("literal_in_source", "mine", "a"), encoding="utf-8")
+    (tests_dir / "a_directory.py").mkdir()
+    (tests_dir / "dangling.py").symlink_to(tmp_path / "does_not_exist.py")
+    unreadable: list[Path] = []
+    found = graph.read_test_sources(tests_dir, unreadable)
+    assert unreadable == []
+    assert found is not None and list(found) == [real]
