@@ -193,6 +193,11 @@ def _site_lines(
     )
     lines.append("      1. the `down_revision` assignment, in that file:")
     lines += _before_after(down_before, down_after, "(its current down_revision line)")
+    if sites is not None and sites.parent_unparsed:
+        lines.append(
+            "             (no parent literal parsed from `down_revision` — check it"
+            " by hand)"
+        )
     if sites is not None and sites.revises is None:
         lines.append(
             "      2. the module docstring has no `Revises:` line — nothing to change."
@@ -221,14 +226,21 @@ def _site_lines(
             location = f"{repo_relative(other.path)}:{other.lineno}"
             lines += [
                 "           "
-                + mismatched_pin_text(location, other.value, sites.old_parent)
+                + mismatched_pin_text(
+                    location,
+                    other.value,
+                    sites.old_parent if sites else None,
+                    new_parent=target,
+                    parent_unparsed=bool(sites and sites.parent_unparsed),
+                )
                 + ":",
                 f"             {other.line}",
             ]
     elif sites is None or pin_scope is None:
         lines += [
-            "      3. the test pin: UNKNOWN — the pin search did not run. Look",
-            f"         under {TESTS_DIR}/ for this revision's migration test and",
+            "      3. the test pin: UNKNOWN — the pin search did not run, or could",
+            "         not read every file. Look under",
+            f"         {TESTS_DIR}/ for this revision's migration test and",
             f'         set its `_PARENT_REVISION_ID` to "{target}" too.',
         ]
     else:
@@ -533,8 +545,19 @@ def main() -> int:
             # move the exit code. An absent tests dir is an UNKNOWN pin search.
             # No `edits` (a `blocked` remedy whose only chain has no one-token
             # site) means no revision to re-point, so no pin to look for.
-            test_sources = read_test_sources(TESTS_ROOT)
-            if test_sources is not None:
+            unreadable: list[Path] = []
+            test_sources = read_test_sources(TESTS_ROOT, unreadable)
+            if unreadable:
+                # An INCOMPLETE search is UNKNOWN, not "no pin found": the pin
+                # may sit in exactly the file that could not be read. Leaving
+                # `pin_scope` None makes the advice say so.
+                err(
+                    f"could not read {len(unreadable)} test file(s) while searching "
+                    "for `_PARENT_REVISION_ID` pins — the pin search is UNKNOWN:"
+                )
+                for path in unreadable:
+                    err(f"  - {repo_relative(path)}")
+            elif test_sources is not None:
                 pin_scope = f"every *.py under {TESTS_DIR}/ in this checkout"
             sites = plan_repoint_sites(scan, remediation, sources, test_sources or {})
         print(

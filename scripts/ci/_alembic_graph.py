@@ -527,7 +527,18 @@ def _mask_triple_quoted(source: str) -> str:
     text = source.replace("\r", " ")
     try:
         spans = _string_spans(text)
-    except (tokenize.TokenError, IndentationError, SyntaxError):
+    except Exception:
+        # Bare `Exception`, deliberately. The input is a PR author's test file,
+        # and the tokenizer does not confine itself to TokenError /
+        # IndentationError / SyntaxError: on CPython 3.12.14 and 3.13.5,
+        # `' }\n\x00'` makes `generate_tokens` raise SystemError, which escaped
+        # the narrower clause and crashed the notifier's whole sweep (exit 1,
+        # no comments posted). Masking only chooses advice WORDING, so any
+        # failure must degrade to the regex rather than abort the run.
+        #
+        # Known fallback misread, accepted: an unterminated `"""` is not masked
+        # by the regex, so a pin line quoted after it can surface as a phantom
+        # mismatched pin. It is named for a human, never rewritten.
         return TRIPLE_QUOTED_RE.sub(lambda m: re.sub(r"[^\n]", " ", m.group(0)), text)
     chars = list(text)
     for start, end in spans:
@@ -587,6 +598,12 @@ class RepointSites:
     mismatched_pins: tuple[MismatchedPin, ...] = ()
     """Literal pins in this revision's test naming something OTHER than
     ``old_parent``. Not rewritten, but named — "no pin found" would be false."""
+    parent_unparsed: bool = False
+    """``down_revision``'s right-hand side held no parent literal (``= PARENT``).
+
+    Distinct from a true chain root, whose right-hand side IS ``None``: both
+    leave ``old_parent`` as ``None``, but only a root may be described that way.
+    """
 
 
 def _qualifying_sources(
@@ -633,7 +650,10 @@ def find_parent_pins(
     found: list[ParentPin] = []
     for path, source, masked in _qualifying_sources(test_sources, revision):
         for match in PIN_PARENT_RE.finditer(masked):
-            if match.group("value") != old_parent:
+            # Value read from the ORIGINAL text, exactly as the mismatched
+            # finder does, so the two buckets cannot disagree about one line.
+            value = source[match.start("value") : match.end("value")]
+            if value != old_parent:
                 continue
             line = _line_at(source, match.start(), match.end()).rstrip()
             offset = match.start("value") - match.start()
@@ -708,19 +728,52 @@ def find_mismatched_parent_pins(
     return tuple(found)
 
 
-def mismatched_pin_text(location: str, value: str, old_parent: str | None) -> str:
-    """The ONE wording for a literal pin that names the wrong parent."""
+def mismatched_pin_text(
+    location: str,
+    value: str,
+    old_parent: str | None,
+    *,
+    new_parent: str | None = None,
+    parent_unparsed: bool = False,
+) -> str:
+    """The ONE wording for a literal pin that does not name the old parent.
+
+    Three different statements, kept apart because each asks something else of
+    the reader:
+
+    * the pin ALREADY names ``new_parent`` — nothing to change there;
+    * ``down_revision`` had no parent literal to read (``= PARENT``), so there
+      is no old parent to compare against — printing ``not None`` would claim
+      a chain root nobody declared;
+    * otherwise the pin names a parent other than the old one.
+    """
+    if new_parent is not None and value == new_parent:
+        return (
+            f'`_PARENT_REVISION_ID` in {location} already names the target "{value}"'
+            " — nothing to change there"
+        )
+    if parent_unparsed:
+        return (
+            f'`_PARENT_REVISION_ID` in {location} names "{value}"; no parent literal'
+            " parsed from `down_revision` — check it by hand"
+        )
     old = f'"{old_parent}"' if old_parent is not None else "None"
     return f'`_PARENT_REVISION_ID` in {location} names "{value}", not {old} — check it'
 
 
-def read_test_sources(tests_dir: Path) -> dict[Path, str] | None:
+def read_test_sources(
+    tests_dir: Path, unreadable: list[Path] | None = None
+) -> dict[Path, str] | None:
     """``{path: text}`` for every ``*.py`` under ``tests_dir`` naming a pin.
 
     Only files that contain ``_PARENT_REVISION_ID`` at all are kept, so the
     dict stays small; :func:`find_parent_pins` does the real matching.
     ``None`` — not ``{}`` — when the directory does not exist, because "could
     not search" must not render as "searched and found nothing".
+
+    A file that cannot be read is appended to ``unreadable`` when given. A
+    caller seeing it non-empty must treat the search as INCOMPLETE — the pin
+    may be in exactly that file — and say UNKNOWN, not "no pin found".
     """
     if not tests_dir.is_dir():
         return None
@@ -729,6 +782,8 @@ def read_test_sources(tests_dir: Path) -> dict[Path, str] | None:
         try:
             text = path.read_text(encoding="utf-8", errors="replace")
         except OSError:
+            if unreadable is not None:
+                unreadable.append(path)
             continue
         if "_PARENT_REVISION_ID" in text:
             found[path] = text
@@ -754,6 +809,11 @@ def repoint_sites(
 ) -> RepointSites:
     """All three edit sites for re-pointing ``revision`` onto ``new_parent``."""
     old_parent = old_parent_of(scan, revision)
+    # `old_parent is None` has two causes that must not share wording: a true
+    # chain root (the right-hand side IS `None`) and a right-hand side holding
+    # no string literal at all (`down_revision = PARENT`).
+    declared_rhs = scan.revisions.get(revision, "None").partition("#")[0].strip()
+    parent_unparsed = old_parent is None and declared_rhs != "None"
     down_before: str | None = None
     down_after = f'down_revision: str | Sequence[str] | None = "{new_parent}"'
     revises: tuple[str | None, str] | None = (None, f"Revises: {new_parent}")
@@ -804,6 +864,7 @@ def repoint_sites(
         pins=find_parent_pins(test_sources, revision, old_parent, new_parent),
         computed_pins=find_computed_parent_pins(test_sources, revision),
         mismatched_pins=find_mismatched_parent_pins(test_sources, revision, old_parent),
+        parent_unparsed=parent_unparsed,
     )
 
 
