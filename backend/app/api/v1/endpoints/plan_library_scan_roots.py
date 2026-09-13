@@ -189,8 +189,12 @@ async def list_scan_roots(
 
     ``by_source_repo`` folds the rows per scan source: the fewest commits
     behind among the ``measured`` verdicts, whether that minimum is a floor,
-    and which devices lag or cannot be measured. It is byte-for-byte the
-    ``corpus_health.scan_roots`` block the list and ``/candidates`` carry.
+    and which devices are proven least behind, proven lagging, unplaceable
+    (``lag_unknown``) or unmeasured. The same builder renders the
+    ``corpus_health.scan_roots`` block the list and ``/candidates`` carry, so
+    the two agree on everything but the per-request ``observation_age_secs`` —
+    except that the block degrades to ``read_failed`` where this route, whose
+    whole answer the readings are, lets a read failure surface as an error.
     """
     org_id = await _resolve_org_id(db, current_user)
     observations = await crud.list_observations(db, org_id=org_id)

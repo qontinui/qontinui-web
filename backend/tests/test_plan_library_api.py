@@ -1638,16 +1638,22 @@ class TestCorpusHealth:
 
         A failing read of it must neither fail the page nor pass as "no
         drift": the page is served, its counts intact, and ``scan_roots``
-        says ``read_failed``. Mutation-proved: without the savepoint guard in
-        ``_load_corpus_health`` this request raises.
+        says ``read_failed``.
+
+        The failure is a REAL failing statement on the request's session, not a
+        Python exception raised before any SQL: an aborted Postgres transaction
+        rejects every later statement, and that — not the exception — is what
+        the savepoint exists to contain. So the session is used again
+        afterwards. Mutation-proved: removing only ``begin_nested()`` (keeping
+        the ``except``) fails the second request.
         """
         from app.api.v1.endpoints import plan_library as endpoint
 
         await client.post(API_PREFIX, json=_payload(kind="plan"))
         await _seed_scan_roots(async_db_session, behinds=(3,))
 
-        async def _broken(*_args: object, **_kwargs: object) -> None:
-            raise OperationalError("SELECT ...", {}, Exception("connection lost"))
+        async def _broken(db: AsyncSession, **_kwargs: object) -> None:
+            await db.execute(text("SELECT 1 / 0"))
 
         monkeypatch.setattr(endpoint.scan_root_crud, "list_observations", _broken)
 
@@ -1658,7 +1664,12 @@ class TestCorpusHealth:
         assert health["scan_roots"]["state"] == "unknown"
         assert health["scan_roots"]["detail"].startswith("read_failed:")
         assert health["scan_roots"]["rows"] == []
-        assert "connection lost" not in health["scan_roots"]["detail"]
+        assert "division" not in health["scan_roots"]["detail"]
+
+        # The failed statement was contained: the session still answers.
+        again = await client.get(API_PREFIX)
+        assert again.status_code == 200, again.text
+        assert again.json()["corpus_health"]["plan_count"] == 1
 
 
 class TestStrictQueryKeepsEveryDeclaredKey:
