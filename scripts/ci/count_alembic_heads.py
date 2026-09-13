@@ -75,6 +75,7 @@ from _alembic_graph import (  # noqa: E402
     Remediation,
     RepointSites,
     Scan,
+    computed_pin_text,
     duplicate_groups,
     no_pin_found_text,
     plan_remediation,
@@ -202,11 +203,18 @@ def _site_lines(
             revises_before, f"Revises: {target}", "(its current Revises: line)"
         )
     pins = sites.pins if sites else ()
-    if pins:
+    computed = sites.computed_pins if sites else ()
+    if pins or computed:
         lines.append("      3. the `_PARENT_REVISION_ID` pin in its migration test:")
         for pin in pins:
             lines.append(f"           {repo_relative(pin.path)}:{pin.lineno}")
             lines += _before_after(pin.before, pin.after, "")
+        for computed_pin in computed:
+            lines += [
+                f"           {repo_relative(computed_pin.path)}:{computed_pin.lineno}"
+                f" — {computed_pin_text()}:",
+                f"             {computed_pin.line}",
+            ]
     elif sites is None or pin_scope is None:
         lines += [
             "      3. the test pin: UNKNOWN — the pin search did not run. Look",
@@ -510,9 +518,11 @@ def main() -> int:
         remediation = plan_remediation(scan, landed)
         sites: dict[str, RepointSites] = {}
         pin_scope: str | None = None
-        if remediation.target is not None:
+        if remediation.target is not None and remediation.edits:
             # Chooses WORDING only, like the baseline lookup: nothing here can
             # move the exit code. An absent tests dir is an UNKNOWN pin search.
+            # No `edits` (a `blocked` remedy whose only chain has no one-token
+            # site) means no revision to re-point, so no pin to look for.
             test_sources = read_test_sources(TESTS_ROOT)
             if test_sources is not None:
                 pin_scope = f"every *.py under {TESTS_DIR}/ in this checkout"

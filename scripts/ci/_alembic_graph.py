@@ -436,13 +436,45 @@ def plan_remediation(scan: Scan, landed: set[str] | None) -> Remediation:
 #: Where the migration tests that pin a revision's parent live.
 TESTS_DIR = "backend/tests"
 
+# Every class here is `[ \t]`, never `\s`, and the optional annotation is
+# `[^=\n]*`: a pattern that can cross a newline pairs a bare annotation
+# (`_PARENT_REVISION_ID: str`) with the NEXT line's `= "x"` and reports a pin
+# that is not there. Leading indentation, either quote style, a trailing
+# `# comment` and a CRLF line end are all real spellings and all match.
 PIN_REVISION_RE = re.compile(
-    r'^_REVISION_ID\s*(?::[^=]*)?=\s*["\']([^"\'\n]*)["\']', re.M
+    r'^[ \t]*_REVISION_ID[ \t]*(?::[^=\n]*)?=[ \t]*(["\'])([^"\'\n]*)\1', re.M
 )
 PIN_PARENT_RE = re.compile(
-    r'^_PARENT_REVISION_ID\s*(?::[^=]*)?=\s*["\']([^"\'\n]*)["\'][ \t]*$', re.M
+    r"^[ \t]*_PARENT_REVISION_ID[ \t]*(?::[^=\n]*)?=[ \t]*"
+    r'(["\'])(?P<value>[^"\'\n]*)\1[ \t]*(?:#[^\n]*)?$',
+    re.M,
+)
+#: A pin whose right-hand side is NOT a string literal — `_parent_revision_id()`
+#: and the like. It cannot be rewritten, and it must not read as "no pin".
+PIN_PARENT_COMPUTED_RE = re.compile(
+    r"^[ \t]*_PARENT_REVISION_ID[ \t]*(?::[^=\n]*)?=[ \t]*(?![\"'\s])[^\n]*$", re.M
 )
 REVISES_RE = re.compile(r"^Revises:[^\n]*$", re.M)
+TRIPLE_QUOTED_RE = re.compile(r'("""|\'\'\')(?:.|\n)*?\1')
+
+
+def _mask_triple_quoted(source: str) -> str:
+    """``source`` with every triple-quoted string blanked, offsets preserved.
+
+    A docstring quoting ANOTHER revision's ``_REVISION_ID = "x"`` line — which
+    is how these tests explain themselves — would otherwise qualify the file
+    for the wrong revision, and a quoted pin line would be listed as a pin.
+    Newlines are kept and every other character becomes a space, so a match
+    offset in the masked text is the same offset in the original.
+    """
+    return TRIPLE_QUOTED_RE.sub(
+        lambda m: re.sub(r"[^\n]", " ", m.group(0)), source.replace("\r", " ")
+    )
+
+
+def _line_at(source: str, start: int, end: int) -> str:
+    """The original text of ``source[start:end]``, CR stripped."""
+    return source[start:end].replace("\r", "")
 
 
 @dataclass(frozen=True)
@@ -453,6 +485,15 @@ class ParentPin:
     lineno: int
     before: str
     after: str
+
+
+@dataclass(frozen=True)
+class ComputedPin:
+    """A ``_PARENT_REVISION_ID`` computed at runtime — a human must check it."""
+
+    path: Path
+    lineno: int
+    line: str
 
 
 @dataclass(frozen=True)
@@ -476,6 +517,26 @@ class RepointSites:
     down_revision: tuple[str | None, str]
     revises: tuple[str | None, str] | None
     pins: tuple[ParentPin, ...]
+    computed_pins: tuple[ComputedPin, ...] = ()
+    """Pins in this revision's test that are not literals; checked by hand."""
+
+
+def _qualifying_sources(
+    test_sources: dict[Path, str], revision: str
+) -> list[tuple[Path, str, str]]:
+    """``(path, original, masked)`` for files that DECLARE ``revision``.
+
+    The declaration is read from the masked text, so a docstring quoting some
+    other test's ``_REVISION_ID = "x"`` line qualifies nothing.
+    """
+    out: list[tuple[Path, str, str]] = []
+    for path in sorted(test_sources):
+        source = test_sources[path]
+        masked = _mask_triple_quoted(source)
+        declared = {m.group(2) for m in PIN_REVISION_RE.finditer(masked)}
+        if revision in declared:
+            out.append((path, source, masked))
+    return out
 
 
 def find_parent_pins(
@@ -492,24 +553,44 @@ def find_parent_pins(
     already names something else is deliberately not listed: rewriting it
     would assert a parent this graph never showed it had.
 
+    ``after`` changes only the literal: indentation, quote style, annotation
+    and any trailing ``# comment`` are kept, so the advice never tells an
+    author to delete something they wrote.
+
     ``old_parent is None`` (a chain root, ``down_revision = None``) matches
     nothing, because no string pin can name ``None``.
     """
     if old_parent is None:
         return ()
     found: list[ParentPin] = []
-    for path in sorted(test_sources):
-        source = test_sources[path]
-        if revision not in PIN_REVISION_RE.findall(source):
-            continue
-        for match in PIN_PARENT_RE.finditer(source):
-            if match.group(1) != old_parent:
+    for path, source, masked in _qualifying_sources(test_sources, revision):
+        for match in PIN_PARENT_RE.finditer(masked):
+            if match.group("value") != old_parent:
                 continue
-            line = match.group(0)
-            offset = match.start(1) - match.start(0)
+            line = _line_at(source, match.start(), match.end()).rstrip()
+            offset = match.start("value") - match.start()
             after = line[:offset] + new_parent + line[offset + len(old_parent) :]
             lineno = source.count("\n", 0, match.start()) + 1
             found.append(ParentPin(path, lineno, line, after))
+    return tuple(found)
+
+
+def find_computed_parent_pins(
+    test_sources: dict[Path, str], revision: str
+) -> tuple[ComputedPin, ...]:
+    """``_PARENT_REVISION_ID`` assignments in ``revision``'s test that are NOT literals.
+
+    ``_PARENT_REVISION_ID = _parent_revision_id()`` is on ``main`` today. It
+    cannot be rewritten and usually follows ``down_revision`` by itself, but
+    that is a property of the function this cannot read — so it is named for a
+    human rather than silently counted as "no pin".
+    """
+    found: list[ComputedPin] = []
+    for path, source, masked in _qualifying_sources(test_sources, revision):
+        for match in PIN_PARENT_COMPUTED_RE.finditer(masked):
+            line = _line_at(source, match.start(), match.end()).rstrip()
+            lineno = source.count("\n", 0, match.start()) + 1
+            found.append(ComputedPin(path, lineno, line))
     return tuple(found)
 
 
@@ -519,6 +600,11 @@ def no_pin_found_text(revision: str) -> str:
         f"no `_PARENT_REVISION_ID` pin found for {revision} — if its test pins "
         "the parent under another name, update it too"
     )
+
+
+def computed_pin_text() -> str:
+    """The ONE wording for a pin this matcher cannot rewrite."""
+    return "a `_PARENT_REVISION_ID` is computed, not literal — check it by hand"
 
 
 def read_test_sources(tests_dir: Path) -> dict[Path, str] | None:
@@ -567,13 +653,37 @@ def repoint_sites(
     if revision_source is not None:
         down_match = DOWN_RE.search(revision_source)
         if down_match:
-            down_before = down_match.group(0)
-            # Keep the author's own left-hand side (annotated or legacy).
+            down_before = down_match.group(0).replace("\r", "").rstrip()
+            # Keep the author's own left-hand side (annotated or legacy) AND
+            # any trailing `# comment`: only the parent literal changes, so the
+            # advice never tells an author to delete what they wrote.
             lhs = down_before[: down_match.start(1) - down_match.start(0)]
-            down_after = f'{lhs}"{new_parent}"'
+            rhs = down_before[len(lhs) :]
+            value, hash_sign, comment = rhs.partition("#")
+            literal = (
+                re.search(r"([\"'])" + re.escape(old_parent) + r"\1", value)
+                if old_parent is not None
+                else None
+            )
+            if literal:
+                quote = literal.group(1)
+                new_value = (
+                    value[: literal.start()]
+                    + f"{quote}{new_parent}{quote}"
+                    + value[literal.end() :]
+                )
+            else:
+                # `None` (a chain root) or no readable literal: write the
+                # target, keeping whatever spacing preceded a comment.
+                trailing = value[len(value.rstrip()) :]
+                new_value = f'"{new_parent}"' + trailing
+            down_after = lhs + new_value + hash_sign + comment
         revises_match = REVISES_RE.search(revision_source)
         revises = (
-            (revises_match.group(0), f"Revises: {new_parent}")
+            (
+                revises_match.group(0).replace("\r", "").rstrip(),
+                f"Revises: {new_parent}",
+            )
             if revises_match
             else None
         )
@@ -585,6 +695,7 @@ def repoint_sites(
         down_revision=(down_before, down_after),
         revises=revises,
         pins=find_parent_pins(test_sources, revision, old_parent, new_parent),
+        computed_pins=find_computed_parent_pins(test_sources, revision),
     )
 
 
