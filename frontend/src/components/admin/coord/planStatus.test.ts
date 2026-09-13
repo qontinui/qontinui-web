@@ -5,9 +5,11 @@ import {
   derivePlanStatus,
   describePlanStatus,
   planIdentity,
+  planIdentityTitle,
   planRest,
   planRowTime,
   PLAN_ATTENTION_BY_TONE,
+  PLAN_IDENTITY_ABSENT,
   PLAN_STATUS_PALETTE,
   PLAN_TONE_CLASS,
   type PlanStatusTone,
@@ -168,10 +170,81 @@ describe("planIdentity / planRest", () => {
     expect(planRest("2026-08-16-coord-console-ui")).toBe("coord-console-ui");
   });
 
-  it("never returns a blank identity for an unconventional slug", () => {
-    expect(planIdentity("adhoc-cleanup")).toBe("adhoc-cleanup");
-    expect(planIdentity("single")).toBe("single");
+  it("prefers the slug's own prefix over authored_at, which derives from it", () => {
+    // `authored_at_from_stem` reads the same characters, so the two cannot
+    // legitimately disagree — and the slug arm is right even for a coord row
+    // written before the column existed.
+    expect(
+      planIdentity("2026-08-16-coord-console-ui", "2020-01-01T00:00:00Z")
+    ).toBe("2026-08-16");
+  });
+
+  it("falls back to coord's authored_at for an undated slug", () => {
+    // The fix: 108 of the 149 undated slugs on `/plans` (measured against
+    // coord 2026-09-13) carry a real authoring date, and this is how the chip
+    // reaches it.
+    expect(
+      planIdentity(
+        "coordinator-assign-task-dispatch-race",
+        "2026-07-04T09:30:00Z"
+      )
+    ).toBe("2026-07-04");
+    expect(planIdentity("qontinui-schemas-rust-codegen", "2026-02-19")).toBe(
+      "2026-02-19"
+    );
+  });
+
+  it("renders an em dash — NOT slug words — when no date is known at all", () => {
+    // REVISED EXPECTATION. This case used to assert that an unconventional
+    // slug still produced a non-blank identity from its own first two
+    // hyphen-segments ("adhoc-cleanup", "single"). That was the defect: the
+    // chip occupies the position operators read as the row's date, so the
+    // fallback printed WORDS in a date column — `coordinator-assign`,
+    // `qontinui-schemas` — and an operator reported exactly that. A slug with
+    // no hyphen at all made it worse still: the chip and the label rendered
+    // the identical string. An admitted blank beats a plausible wrong date;
+    // "never blank" was the wrong property to protect.
+    expect(planIdentity("adhoc-cleanup")).toBe(PLAN_IDENTITY_ABSENT);
+    expect(planIdentity("single")).toBe(PLAN_IDENTITY_ABSENT);
+    expect(planIdentity("plans to do")).toBe(PLAN_IDENTITY_ABSENT);
+    // 41 of the 149 undated slugs have no authored_at either. An explicit
+    // null/undefined is the same UNKNOWN, never a guess — and `created_at`
+    // is not consulted as a third source: it is the INGEST date, shown in the
+    // detail panel under the word "ingested" for exactly that reason.
+    expect(planIdentity("adhoc-cleanup", null)).toBe(PLAN_IDENTITY_ABSENT);
+    expect(planIdentity("adhoc-cleanup", "")).toBe(PLAN_IDENTITY_ABSENT);
+  });
+
+  it("rejects an authored_at that is date-SHAPED but not a real day", () => {
+    expect(planIdentity("adhoc-cleanup", "2026-13-45T00:00:00Z")).toBe(
+      PLAN_IDENTITY_ABSENT
+    );
+    expect(planIdentity("adhoc-cleanup", "not-a-date")).toBe(
+      PLAN_IDENTITY_ABSENT
+    );
+  });
+
+  it("keeps the WHOLE slug when the identity is not a slug prefix", () => {
+    // `planRest` strips only a prefix it can actually see in the slug, so an
+    // authored_at-derived or absent identity removes nothing.
     expect(planRest("single")).toBe("single");
+    expect(planRest("adhoc-cleanup")).toBe("adhoc-cleanup");
+    expect(planRest("coordinator-assign-task-dispatch-race")).toBe(
+      "coordinator-assign-task-dispatch-race"
+    );
+    expect(planRest("plans to do")).toBe("plans to do");
+  });
+
+  it("says WHERE the chip's date came from, or that there is none", () => {
+    expect(planIdentityTitle("2026-08-16-coord-console-ui")).toMatch(
+      /slug's date prefix/
+    );
+    expect(
+      planIdentityTitle("qontinui-schemas-rust-codegen", "2026-02-19")
+    ).toMatch(/work_units\.authored_at/);
+    expect(planIdentityTitle("plans to do")).toMatch(
+      /No authoring date recorded/
+    );
   });
 });
 

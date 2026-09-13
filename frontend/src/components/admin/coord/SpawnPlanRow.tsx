@@ -57,6 +57,7 @@ import {
   describePlanStatus,
   derivePlanStatus,
   planIdentity,
+  planIdentityTitle,
   planRest,
   planRowTime,
   type CoordPlanRow,
@@ -87,7 +88,15 @@ export function SpawnPlanRow({
           expanded={expanded}
           onToggle={onToggle}
           attention={status.attention}
-          identity={planIdentity(plan.slug)}
+          identity={
+            // The chip is the plan's AUTHORING DATE, and coord's
+            // `authored_at` is the second source `planIdentity` needs to
+            // reach it for a slug with no date prefix. Passing it is what
+            // stops the chip rendering slug WORDS in the date position.
+            <span title={planIdentityTitle(plan.slug, plan.authored_at)}>
+              {planIdentity(plan.slug, plan.authored_at)}
+            </span>
+          }
           label={
             <span
               title={plan.title ? `${plan.slug} — ${plan.title}` : plan.slug}
