@@ -174,15 +174,41 @@ describe("FixerSpawnToggle — read", () => {
     }
   });
 
-  it("says dispatch is also off when the pr_fix autonomy row is not effective", async () => {
+  it("notes dispatch is off ONLY for a not_effective autonomy row", async () => {
     get.mockResolvedValue(DEFAULT_ON);
     const { rerender } = render(
-      <FixerSpawnToggle canEdit autonomyEffective={false} />
+      <FixerSpawnToggle canEdit autonomyState="not_effective" />
     );
     await tenantText();
     expect(screen.getByTestId("fixer-spawn-autonomy-off")).toBeTruthy();
-    rerender(<FixerSpawnToggle canEdit autonomyEffective />);
-    expect(screen.queryByTestId("fixer-spawn-autonomy-off")).toBeNull();
+    // `unknown` is coord's normal pr_fix verdict (unobserved conjunct); an
+    // absent state means the row did not load. Neither is "flag off".
+    for (const state of ["unknown", "effective", undefined] as const) {
+      rerender(<FixerSpawnToggle canEdit autonomyState={state} />);
+      expect(screen.queryByTestId("fixer-spawn-autonomy-off")).toBeNull();
+      expect(screen.queryByText(/platform flag off/)).toBeNull();
+    }
+  });
+
+  it("explains a read-only switch when edit rights could not be determined", async () => {
+    get.mockResolvedValue(DEFAULT_ON);
+    render(<FixerSpawnToggle canEdit={false} editRightsKnown={false} />);
+    await tenantText();
+    expect(screen.getByTestId("fixer-spawn-rights-unknown")).toBeTruthy();
+  });
+
+  it("arrow keys move focus between positions without writing", async () => {
+    get.mockResolvedValue(DEFAULT_ON);
+    render(<FixerSpawnToggle canEdit />);
+    await tenantText();
+    expect(screen.getByTestId("fixer-spawn-default").tabIndex).toBe(0);
+    expect(screen.getByTestId("fixer-spawn-on").tabIndex).toBe(-1);
+    screen.getByTestId("fixer-spawn-default").focus();
+    await userEvent.keyboard("{ArrowRight}");
+    expect(document.activeElement).toBe(screen.getByTestId("fixer-spawn-on"));
+    await userEvent.keyboard("{ArrowLeft}{ArrowLeft}");
+    expect(document.activeElement).toBe(screen.getByTestId("fixer-spawn-off"));
+    expect(patch).not.toHaveBeenCalled();
   });
 });
 
