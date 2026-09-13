@@ -76,7 +76,7 @@ describe("derivePlansHealth", () => {
     // The explanation survives de-duplication; the number moves to the
     // `unlabelled N` badge.
     expect(h.detail).toBe(
-      "A status this build has no label for is shown verbatim"
+      "A status this build has no label for is shown verbatim."
     );
   });
 
@@ -198,7 +198,7 @@ describe("derivePlansHealth", () => {
       );
       expect(h.headline).toBe("Last refresh failed — these counts are not current");
       expect(h.detail).toBe(
-        "A status this build has no label for is shown verbatim"
+        "A status this build has no label for is shown verbatim."
       );
     });
 
@@ -212,7 +212,7 @@ describe("derivePlansHealth", () => {
         true
       );
       expect(h.detail).toBe(
-        "Last refresh failed — these counts are stale. A status this build has no label for is shown verbatim"
+        "Last refresh failed — these counts are stale. A status this build has no label for is shown verbatim."
       );
     });
   });

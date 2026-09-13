@@ -166,7 +166,7 @@ export function derivePlansHealth(
           : "No plan is blocked";
   const window =
     unrecognised > 0
-      ? "A status this build has no label for is shown verbatim"
+      ? "A status this build has no label for is shown verbatim."
       : "";
   // Stale, not unknown: the rows are real, only their age is not. The
   // qualifier is why the detail line is de-duplicated rather than deleted:

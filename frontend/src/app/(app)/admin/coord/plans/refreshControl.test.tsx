@@ -249,4 +249,38 @@ describe("/admin/coord/plans refresh control", () => {
       switchedRead.resolve({ work_units: [] });
     });
   });
+
+  it("does not stay busy on the new question over a press the filter change superseded", async () => {
+    const clickRead = deferred();
+    const switchedRead = deferred();
+    let call = 0;
+    get.mockImplementation((url: string) => {
+      call += 1;
+      if (url.includes("status=blocked")) return switchedRead.promise;
+      if (call === 1) return Promise.resolve({ work_units: [] });
+      return clickRead.promise;
+    });
+    const user = userEvent.setup();
+    render(<CoordPlansListPage />);
+    await screen.findByTestId("coord-plans-empty");
+
+    await user.click(refreshButton());
+    await waitFor(() =>
+      expect(refreshButton()).toHaveAttribute("aria-busy", "true")
+    );
+
+    // The question changes while that press's read is still out. Its answer
+    // will be discarded, so the control must not keep acknowledging it.
+    await user.click(screen.getByTestId("coord-plans-status-select"));
+    await user.click(await screen.findByRole("option", { name: "Blocked" }));
+    await waitFor(() => expect(get).toHaveBeenCalledTimes(3));
+
+    expect(refreshButton()).not.toHaveAttribute("aria-busy", "true");
+    expect(refreshButton()).not.toHaveAttribute("aria-disabled", "true");
+
+    await act(async () => {
+      clickRead.resolve({ work_units: [] });
+      switchedRead.resolve({ work_units: [] });
+    });
+  });
 });
