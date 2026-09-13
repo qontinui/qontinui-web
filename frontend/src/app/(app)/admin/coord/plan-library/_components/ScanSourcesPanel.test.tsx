@@ -138,6 +138,8 @@ function listed(
 
 const OTHER_DEVICE = "c79a07d5-7e40-49b4-87fa-554c749f9644";
 const SOURCE = "qontinui-dev-notes/plans";
+/** The panel's collision-free key for SOURCE (see `rollupKey`). */
+const KEY = `repo:${SOURCE}`;
 
 /**
  * The shape production served on 2026-09-13: one comparable feeder, exact,
@@ -184,7 +186,7 @@ function withRollups(rollups: ScanRootSourceRollup[]): ScanRootListResponse {
 describe("rollupDistanceSummary — exact only when the roll-up says so", () => {
   it("names an exact minimum with the window it is exact against", () => {
     expect(rollupDistanceSummary(rollup())).toBe(
-      "Least-behind comparable feeder: exactly 499 behind, as of a ref fetched within 6 h of that reading."
+      "Least-behind comparable feeder: exactly 499 behind the one ref every comparable feeder counted against — a ref some feeder had fetched within 6 h of its reading, not the live tip."
     );
   });
 
@@ -204,7 +206,10 @@ describe("rollupDistanceSummary — exact only when the roll-up says so", () => 
 
   it("an exact 0 is still exact, and still carries its window", () => {
     expect(rollupDistanceSummary(rollup({ min_behind: 0 }))).toContain(
-      "exactly 0 behind, as of a ref fetched within 6 h"
+      "exactly 0 behind the one ref every comparable feeder counted against"
+    );
+    expect(rollupDistanceSummary(rollup({ min_behind: 0 }))).toContain(
+      "within 6 h of its reading, not the live tip"
     );
   });
 
@@ -252,14 +257,14 @@ describe("ScanSourcesPanel — the per-source roll-up is read", () => {
     render(<ScanSourcesPanel />);
 
     expect(screen.getByTestId("scan-sources-by-source")).toBeTruthy();
-    expect(screen.getByTestId(`scan-source-state-${SOURCE}`).textContent).toBe(
+    expect(screen.getByTestId(`scan-source-state-${KEY}`).textContent).toBe(
       "Measured"
     );
     expect(
-      screen.getByTestId(`scan-source-distance-${SOURCE}`).textContent
+      screen.getByTestId(`scan-source-distance-${KEY}`).textContent
     ).toContain("exactly 499 behind");
     expect(
-      screen.getByTestId(`scan-source-comparable-${SOURCE}`).textContent
+      screen.getByTestId(`scan-source-comparable-${KEY}`).textContent
     ).toBe("1 of 1 device comparable");
     // The per-device rows are still there beneath it.
     expect(screen.getByTestId(`scan-root-${DEVICE}`)).toBeTruthy();
@@ -269,16 +274,17 @@ describe("ScanSourcesPanel — the per-source roll-up is read", () => {
     useScanRootsMock.mockReturnValue(hookState(withRollups([refStaleRollup()])));
     render(<ScanSourcesPanel />);
 
-    expect(screen.getByTestId(`scan-source-state-${SOURCE}`).textContent).toBe(
+    expect(screen.getByTestId(`scan-source-state-${KEY}`).textContent).toBe(
       "Unknown"
     );
-    expect(
-      screen.getByTestId(`scan-source-detail-${SOURCE}`).textContent
-    ).toContain("ref_stale:");
+    // Verbatim, not a paraphrase that happens to keep the prefix.
+    expect(screen.getByTestId(`scan-source-detail-${KEY}`).textContent).toBe(
+      refStaleRollup().detail
+    );
     // `unknown` is about the distance, not the order: the least-behind list
     // the readings established is still named.
     expect(
-      screen.getByTestId(`scan-source-least_behind_device_ids-${SOURCE}`)
+      screen.getByTestId(`scan-source-least_behind_device_ids-${KEY}`)
         .textContent
     ).toContain(DEVICE.slice(0, 8));
   });
@@ -286,7 +292,7 @@ describe("ScanSourcesPanel — the per-source roll-up is read", () => {
   it("MUTATION: a measured roll-up has no detail line", () => {
     useScanRootsMock.mockReturnValue(hookState(withRollups([rollup()])));
     render(<ScanSourcesPanel />);
-    expect(screen.queryByTestId(`scan-source-detail-${SOURCE}`)).toBeNull();
+    expect(screen.queryByTestId(`scan-source-detail-${KEY}`)).toBeNull();
   });
 
   it("an empty lagging list is not 'none lagging' — it gets no line", () => {
@@ -306,13 +312,13 @@ describe("ScanSourcesPanel — the per-source roll-up is read", () => {
     render(<ScanSourcesPanel />);
 
     expect(
-      screen.queryByTestId(`scan-source-lagging_device_ids-${SOURCE}`)
+      screen.queryByTestId(`scan-source-lagging_device_ids-${KEY}`)
     ).toBeNull();
-    const section = screen.getByTestId(`scan-source-${SOURCE}`).textContent;
+    const section = screen.getByTestId(`scan-source-${KEY}`).textContent;
     expect(section).not.toMatch(/none lagging|no device (is )?lagging/i);
     // What IS established — that the order is not — is said, with both ids.
     const unordered = screen.getByTestId(
-      `scan-source-lag_unknown_device_ids-${SOURCE}`
+      `scan-source-lag_unknown_device_ids-${KEY}`
     ).textContent;
     expect(unordered).toContain("Not ordered");
     expect(unordered).toContain(DEVICE.slice(0, 8));
@@ -334,7 +340,7 @@ describe("ScanSourcesPanel — the per-source roll-up is read", () => {
     render(<ScanSourcesPanel />);
 
     const lagging = screen.getByTestId(
-      `scan-source-lagging_device_ids-${SOURCE}`
+      `scan-source-lagging_device_ids-${KEY}`
     );
     expect(lagging.textContent).toContain("Lagging");
     expect(lagging.querySelector("code[title]")?.getAttribute("title")).toBe(
@@ -353,11 +359,11 @@ describe("ScanSourcesPanel — the per-source roll-up is read", () => {
     render(<ScanSourcesPanel />);
 
     expect(
-      screen.getByTestId(`scan-source-unmeasured_device_ids-${SOURCE}`)
+      screen.getByTestId(`scan-source-unmeasured_device_ids-${KEY}`)
         .textContent
     ).toContain("No comparable reading");
     expect(
-      screen.getByTestId(`scan-source-comparable-${SOURCE}`).textContent
+      screen.getByTestId(`scan-source-comparable-${KEY}`).textContent
     ).toBe("1 of 2 devices comparable");
   });
 
@@ -367,9 +373,53 @@ describe("ScanSourcesPanel — the per-source roll-up is read", () => {
     );
     render(<ScanSourcesPanel />);
 
-    expect(screen.getByTestId("scan-source-unnamed").textContent).toContain(
+    expect(screen.getByTestId("scan-source-none").textContent).toContain(
       "Readings that name no scan source"
     );
+  });
+
+  it("a source literally named 'unnamed' does not collide with the null group", () => {
+    useScanRootsMock.mockReturnValue(
+      hookState(
+        withRollups([
+          rollup({ source_repo: "unnamed" }),
+          rollup({ source_repo: null }),
+        ])
+      )
+    );
+    render(<ScanSourcesPanel />);
+
+    expect(screen.getByTestId("scan-source-repo:unnamed").textContent).toContain(
+      "unnamed"
+    );
+    expect(screen.getByTestId("scan-source-none").textContent).toContain(
+      "Readings that name no scan source"
+    );
+  });
+
+  it("rows with no roll-up say the roll-up is unknown, not silence", () => {
+    // The contract says the roll-up is empty exactly when the rows are; a
+    // backend deployed out of step breaks that. Pins the non-empty guard,
+    // which the no-rows test cannot reach (that branch returns first).
+    useScanRootsMock.mockReturnValue(hookState(withRollups([])));
+    render(<ScanSourcesPanel />);
+
+    expect(screen.queryByTestId("scan-sources-by-source")).toBeNull();
+    expect(
+      screen.getByTestId("scan-sources-by-source-missing").textContent
+    ).toContain("unknown — not current");
+    // The per-device rows still render beneath it.
+    expect(screen.getByTestId(`scan-root-${DEVICE}`)).toBeTruthy();
+  });
+
+  it("MUTATION: a response with no roll-up field at all does not crash", () => {
+    const { by_source_repo: _omitted, ...withoutRollup } = listed([row()]);
+    useScanRootsMock.mockReturnValue(
+      hookState(withoutRollup as unknown as ScanRootListResponse)
+    );
+    render(<ScanSourcesPanel />);
+
+    expect(screen.getByTestId("scan-sources-by-source-missing")).toBeTruthy();
   });
 
   it("renders no by-source section when there are no rows", () => {

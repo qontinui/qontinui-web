@@ -384,10 +384,13 @@ export function rollupDistanceSummary(rollup: ScanRootSourceRollup): string {
   }
 
   const n = rollup.min_behind;
+  // The backend's exactness rule is ONE shared ref plus ANY one feeder that had
+  // fetched it within the window of its own reading — not every feeder, and
+  // not the live tip. Both sentences say exactly that much.
   const distance =
     rollup.min_behind_is_floor === false
-      ? `Least-behind comparable feeder: exactly ${n} behind, as of a ref fetched within ${RUNNER_REF_FRESH_WITHIN} of that reading.`
-      : `Least-behind comparable feeder: at least ${n} behind (a lower bound — the comparable feeders did not all count against one ref fetched within ${RUNNER_REF_FRESH_WITHIN}).`;
+      ? `Least-behind comparable feeder: exactly ${n} behind the one ref every comparable feeder counted against — a ref some feeder had fetched within ${RUNNER_REF_FRESH_WITHIN} of its reading, not the live tip.`
+      : `Least-behind comparable feeder: at least ${n} behind (a lower bound — the comparable feeders did not share one ref, or none of them had fetched it within ${RUNNER_REF_FRESH_WITHIN}).`;
 
   const unmeasured = rollup.unmeasured_device_ids.length;
   if (unmeasured === 0) return distance;
@@ -407,10 +410,13 @@ export function rollupDistanceSummary(rollup: ScanRootSourceRollup): string {
  * rendered whenever it is non-empty.
  */
 const ROLLUP_DEVICE_LISTS = [
-  { key: "least_behind_device_ids", label: "Least behind" },
+  {
+    key: "least_behind_device_ids",
+    label: "Least behind (among comparable readings)",
+  },
   {
     key: "lagging_device_ids",
-    label: "Lagging — the readings place these behind the least-behind",
+    label: "Lagging, as of the shared ref — the readings place these behind",
   },
   {
     key: "lag_unknown_device_ids",
@@ -421,6 +427,16 @@ const ROLLUP_DEVICE_LISTS = [
   key: keyof ScanRootSourceRollup;
   label: string;
 }>;
+
+/**
+ * A key for one roll-up that no `source_repo` can collide with: named sources
+ * are prefixed, and the group of readings that named none is a bare word no
+ * prefixed key can equal. (`source_repo ?? "unnamed"` would give a source
+ * literally named `unnamed` the null group's key.)
+ */
+export function rollupKey(rollup: ScanRootSourceRollup): string {
+  return rollup.source_repo === null ? "none" : `repo:${rollup.source_repo}`;
+}
 
 /** A device id truncated to fit, with the full id on the title. */
 function DeviceIdChip({ id }: { id: string }) {
@@ -441,7 +457,7 @@ function DeviceIdChip({ id }: { id: string }) {
  * paraphrase of it here would be a second vocabulary to drift.
  */
 function ScanSourceRollupView({ rollup }: { rollup: ScanRootSourceRollup }) {
-  const key = rollup.source_repo ?? "unnamed";
+  const key = rollupKey(rollup);
 
   return (
     <div
@@ -572,6 +588,10 @@ export function ScanSourcesPanel() {
   // "no device has reported" OVER rows that exist — a false absence, which is
   // the failure this panel is built to avoid rather than to introduce.
   const empty = data != null && data.rows.length === 0;
+  // Read defensively: the wire type makes the roll-up required, but a backend
+  // predating it would send none, and `.length` on that would take the whole
+  // panel down rather than say what is missing.
+  const rollups: ScanRootSourceRollup[] = data?.by_source_repo ?? [];
 
   return (
     <section
@@ -633,25 +653,35 @@ export function ScanSourcesPanel() {
         </p>
       ) : (
         <>
-          {data.by_source_repo.length > 0 && (
+          {rollups.length > 0 ? (
             <div className="mt-3" data-testid="scan-sources-by-source">
               <h3 className="text-xs font-medium">By scan source</h3>
               <p className="mt-0.5 text-[11px] text-muted-foreground">
                 Any feeder can add a plan, so a source&apos;s least-behind
-                current feeder bounds how far behind the corpus is — and only
-                an exact count bounds it. A lower bound means the corpus may be
-                further behind than it says.
+                comparable feeder bounds how far behind the corpus is, but only
+                when its count is exact; a lower bound means the corpus may be
+                further behind.
               </p>
               <div className="mt-2 overflow-hidden rounded-md border border-border bg-background">
-                {data.by_source_repo.map((rollup) => (
-                  <ScanSourceRollupView
-                    key={rollup.source_repo ?? "unnamed"}
-                    rollup={rollup}
-                  />
+                {rollups.map((rollup) => (
+                  <ScanSourceRollupView key={rollupKey(rollup)} rollup={rollup} />
                 ))}
               </div>
               <h3 className="mt-3 text-xs font-medium">By device</h3>
             </div>
+          ) : (
+            // Rows with no roll-up is a shape the contract rules out ("empty
+            // exactly when rows is") — which is what a backend deployed out of
+            // step with this build would produce. Silence there would read as
+            // "no source is behind"; say it is unknown instead.
+            <p
+              className="mt-3 text-[11px] text-amber-700 dark:text-amber-300"
+              data-testid="scan-sources-by-source-missing"
+            >
+              This response carries no per-source roll-up, so how far behind
+              each scan source&apos;s least-behind feeder is is unknown — not
+              current.
+            </p>
           )}
           <div className="mt-3 overflow-hidden rounded-md border border-border bg-background">
             {data.rows.map((row) => (
