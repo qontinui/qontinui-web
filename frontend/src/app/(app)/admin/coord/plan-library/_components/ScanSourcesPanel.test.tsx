@@ -170,9 +170,13 @@ function refStaleRollup(
 ): ScanRootSourceRollup {
   return rollup({
     state: "unknown",
+    // The backend's own string (ZERO_FLOOR_MINIMUM_DETAIL in
+    // plan_scan_root_health.py), so the fixture is a real wire value.
     detail:
-      "ref_stale: the fewest commits behind is a floor of 0 against a stale " +
-      "ref, which establishes no distance",
+      "ref_stale: the fewest commits behind among the comparable readings is a " +
+      "floor of 0 — at least 0 behind establishes no distance, so how far behind " +
+      "the least-behind feeder is is not established (the device lists still " +
+      "carry whatever order the readings establish)",
     min_behind: null,
     min_behind_is_floor: null,
     ...overrides,
