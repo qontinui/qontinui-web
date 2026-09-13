@@ -570,6 +570,22 @@ function DocumentRow({
               {upstream.label}
             </span>
           )}
+          {doc.withdrawn === true && (
+            // Muted, not amber: a withdrawn record waits on nobody (R3). Only
+            // an explicit `true` — a coord predating withdrawal omits the
+            // field, and that must not read as a live record either.
+            <span
+              className="inline-flex shrink-0 items-center rounded bg-muted px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground"
+              title={
+                doc.withdrawn_reason
+                  ? `Withdrawn — no longer counts as a decision. Reason given: ${doc.withdrawn_reason}`
+                  : "Withdrawn — no longer counts as a decision."
+              }
+              data-testid={`doc-withdrawn-${doc.kind}-${doc.name}`}
+            >
+              Withdrawn
+            </span>
+          )}
           {inertBriefing && (
             <span
               className="inline-flex shrink-0 items-center rounded border border-amber-500/40 bg-amber-500/10 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-amber-700 dark:text-amber-400"
