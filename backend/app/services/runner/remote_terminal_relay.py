@@ -72,8 +72,12 @@ answers ``terminal_created`` on the ordinary response channel, correlated by
 the minted ``request_id``; the relay forwards it as ``remote_terminal_created``
 with a declared ``coord_session_id`` and drops the grant, so driving the new
 terminal needs a separate attach grant. A create grant admits no
-session-scoped frame (``grant_wrong_kind``), and every relay refusal of one is
-spelled ``create_grant_*``. Unlike attach, a create's claim key is NOT deleted
+session-scoped frame (``grant_wrong_kind``). Every refusal about a create
+grant ITSELF — invalid, expired, wrong source, consumed — is spelled
+``create_grant_*``; refusals about the relay's own infrastructure or the target
+(``attach_verifier_unavailable``, ``attach_registry_unavailable``,
+``target_not_connected``, ``listener_lost``) keep their shared spellings, so
+match on the code, not the prefix. Unlike attach, a create's claim key is NOT deleted
 on release — it expires with the grant, which is what single use means.
 
 Forward direction is replica-local
@@ -542,7 +546,7 @@ class _Attachment:
     def expired_code(self) -> str:
         """The refusal code for THIS grant having expired.
 
-        Every relay site that expires a grant after admission (the sweep and
+        Every relay site that REPORTS an expiry after admission (the sweep and
         ``_authorize``) goes through here, so a create that times out unanswered
         is not reported to its waiter as an expired ATTACH grant.
         """
@@ -1202,7 +1206,10 @@ class RemoteTerminalRelay:
             await self._refuse(
                 session,
                 CODE_CREATE_GRANT_CONSUMED,
-                "grant is already held by a live attachment",
+                # Not "held by a live attachment": a create's claim outlives
+                # the create on purpose (``_release_registry``), so nothing
+                # need be live for this to fire.
+                "grant already spent — a create grant is single use",
                 request_id=request_id,
                 grant_jti=jti,
             )
@@ -1283,6 +1290,23 @@ class RemoteTerminalRelay:
                 terminal_id=terminal_id,
             )
             return None
+        # Expiry BEFORE kind. The other order answered an expired create grant
+        # ``grant_wrong_kind`` and left it registered — holding its claim record
+        # and per-target listener — until some later frame's sweep reached it.
+        if att.expired():
+            # Same two-sided teardown as ``_evict``: the target learns the
+            # grant is gone rather than holding a detached subscriber.
+            await self._detach_target(session, att, att.terminal_id)
+            await self._drop_attachment(session, att)
+            await self._refuse(
+                session,
+                att.expired_code(),
+                "grant expired",
+                request_id=request_id,
+                grant_jti=att.grant_jti,
+                terminal_id=terminal_id,
+            )
+            return None
         if require_attach_kind and att.kind != KIND_ATTACH:
             # A create grant holds no session and no terminal: it bought one
             # spawn and nothing else. Refused HERE rather than falling through
@@ -1293,20 +1317,6 @@ class RemoteTerminalRelay:
                 CODE_GRANT_WRONG_KIND,
                 "a create grant does not attach to a terminal — mint an attach "
                 "grant for the session it created",
-                request_id=request_id,
-                grant_jti=att.grant_jti,
-                terminal_id=terminal_id,
-            )
-            return None
-        if att.expired():
-            # Same two-sided teardown as ``_evict``: the target learns the
-            # grant is gone rather than holding a detached subscriber.
-            await self._detach_target(session, att, att.terminal_id)
-            await self._drop_attachment(session, att)
-            await self._refuse(
-                session,
-                att.expired_code(),
-                "grant expired",
                 request_id=request_id,
                 grant_jti=att.grant_jti,
                 terminal_id=terminal_id,
