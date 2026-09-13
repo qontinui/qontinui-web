@@ -952,13 +952,13 @@ describe("RefreshButton (§6.4)", () => {
       <RefreshButton
         onRefresh={() => undefined}
         label="Refresh widgets"
-        title="Refresh widgets (returns to the first page)"
+        title="Returns to the first page"
         data-testid="rb"
       />
     );
     const button = screen.getByRole("button", { name: "Refresh widgets" });
     expect(button).toBe(screen.getByTestId("rb"));
-    expect(button).toHaveAttribute("title", "Refresh widgets (returns to the first page)");
+    expect(button).toHaveAttribute("title", "Returns to the first page");
     expect(button.querySelector("svg")).toHaveAttribute("aria-hidden", "true");
     expect(button).not.toHaveAttribute("aria-busy");
   });

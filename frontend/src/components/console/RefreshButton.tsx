@@ -18,9 +18,11 @@
  *
  * - **`label`** is the accessible name (`aria-label`). The control is icon-only,
  *   so without it there is no name at all.
- * - **`title`** names the action AND ITS EFFECT — "returns to the first page",
- *   "also refreshes itself every 10 s". That is the half a bare "Refresh" never
- *   says, and it is what `/admin/coord/alerts` already did by hand.
+ * - **`title`** names what the press does AND ITS EFFECT — "returns to the
+ *   first page", "also refreshes itself every 10 s". That is the half a bare
+ *   "Refresh" never says, and it is what `/admin/coord/alerts` already did by
+ *   hand. It is the accessible description, announced after the name, so it
+ *   does not repeat the label.
  *
  * Both are required by the type rather than defaulted, because a default
  * ("Refresh") is exactly the name that says nothing about what is refreshed.
@@ -60,7 +62,11 @@ export interface RefreshButtonProps {
   onRefresh: () => Promise<unknown> | void;
   /** Accessible name — WHAT is refreshed, e.g. `"Refresh plans"`. */
   label: string;
-  /** Tooltip naming the action and its EFFECT. */
+  /**
+   * Tooltip naming what the press DOES and its effect. It becomes the
+   * accessible description, read right after `label`, so it should not
+   * restate the label.
+   */
   title: string;
   className?: string;
   "data-testid"?: string;
@@ -107,7 +113,7 @@ export function RefreshButton({
       title={title}
       aria-busy={busy || undefined}
       aria-disabled={busy || undefined}
-      className={[busy ? "cursor-progress" : "", className ?? ""]
+      className={[busy ? "cursor-progress opacity-70" : "", className ?? ""]
         .filter(Boolean)
         .join(" ")}
       data-testid={testId}
