@@ -46,10 +46,12 @@ import urllib.error
 from pathlib import Path
 
 import pytest
+import yaml
 
 from tests.gate_lane_roster import (
     assert_docstring_names_every_lane,
     assert_lane_roster,
+    invoking_files,
 )
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -1059,3 +1061,400 @@ def test_the_scripts_docstring_names_every_lane() -> None:
     describing a shape the repo no longer has.
     """
     assert_docstring_names_every_lane(_gate_docstring(), _SCRIPT_REF, _DECLARED_LANES)
+
+
+# ---------------------------------------------------------------------------
+# 21. a finding about a PR is not a failure of the sweep
+#
+# 2026-09-13: `alembic graph check` was red on `main` for two consecutive
+# runs. `main`'s own chain was fine both times (`HEAD_COUNT=1`, 553
+# revisions, head `remote_create_01`) — the red came from the open-PR sweep,
+# which found that PR #1316's SIMULATED tree duplicated `coord_test_results
+# _idx_01`, a revision id that had landed on `main` at 16:41 while #1316 was
+# still open. Duplicate detection had landed 3h43m later (94d578e2/cfcf4d20)
+# and routed that verdict into `failures`, whose only exit is EXIT_VACUOUS.
+#
+# So a defect wholly contained in ONE unmerged PR reddened `main`'s lane, and
+# no commit to `main` could clear it: the offending file was never in `main`.
+# ---------------------------------------------------------------------------
+
+
+def test_a_duplicate_in_a_simulated_tree_is_reported_as_a_finding() -> None:
+    sources = {
+        **_tree(("a", None), ("b", "a")),
+        Path("b_from_the_pr.py"): _revision("b", "a"),
+    }
+    defect = notifier.content_defect(1316, scan_sources(sources))
+    assert defect is not None
+    assert "DUPLICATE" in defect
+    assert "#1316" in defect
+    # The id, and BOTH colliding files: this annotation is the only signal the
+    # un-adviseable arm emits, so it has to be actionable without a local run.
+    assert "b (b.py, b_from_the_pr.py)" in defect
+    # And its own remedy. The shared trailer cannot carry this — `findings`
+    # also holds marker-comment findings, which `alembic-heads-pr` says
+    # nothing about — so a message that loses it becomes unactionable.
+    assert "alembic-heads-pr" in defect
+
+
+def test_a_zero_head_cycle_is_reported_as_a_finding() -> None:
+    """A cycle has no head, so the fork text would be wrong — but the sweep
+    still reached a verdict about it."""
+    sources = _tree(("a", "b"), ("b", "a"))
+    scan = scan_sources(sources)
+    assert scan.heads == ()
+    defect = notifier.content_defect(99, scan)
+    assert defect is not None
+    assert "ZERO heads" in defect
+    assert "alembic-heads-pr" in defect  # its own remedy, not the trailer's
+
+
+def test_a_clean_simulated_tree_has_no_defect() -> None:
+    scan = scan_sources(_tree(("a", None), ("b", "a"), ("c", "b")))
+    assert notifier.content_defect(1, scan) is None
+
+
+def test_a_fork_is_not_a_content_defect() -> None:
+    """Two heads is the thing this script EXISTS to report, over a comment on
+    the PR. It must not be swallowed by the un-adviseable arm."""
+    scan = scan_sources(_tree(("a", None), ("b", "a"), ("c", "a")))
+    assert len(scan.heads) == 2
+    assert notifier.content_defect(1, scan) is None
+
+
+def test_a_finding_alone_does_not_redden_the_sweep() -> None:
+    """The regression, pinned. A PR the sweep read successfully and declined
+    to advise is a verdict, not an incomplete run."""
+    assert notifier.sweep_exit_code([], ["#1316: simulated tree has DUPLICATE"]) == 0
+
+
+def test_a_failure_still_reddens_the_sweep() -> None:
+    """The other half: a PR the sweep could not read proves nothing, and that
+    must never read as a clean sweep."""
+    assert (
+        notifier.sweep_exit_code(["#17: could not list files: 502"], [])
+        == notifier.EXIT_VACUOUS
+    )
+
+
+def test_a_failure_wins_over_a_finding() -> None:
+    assert (
+        notifier.sweep_exit_code(["#17: could not comment: 502"], ["#1316: DUPLICATE"])
+        == notifier.EXIT_VACUOUS
+    )
+
+
+def test_the_counter_still_blocks_the_tree_this_lane_now_tolerates(
+    tmp_path: Path,
+) -> None:
+    """Staying green in the sweep is only safe because the PR's OWN required
+    gate is red on the same tree.
+
+    The invariant has four links. This test asserts two — `count_alembic_heads
+    .py` REFUSES the exact tree the sweep now merely REPORTS, and
+    `alembic-graph-pr.yml` really invokes that script (via the lane roster,
+    which parses the workflow's `run:` slots rather than trusting prose). The
+    third, that the workflow is not narrowed so it skips the PRs this lane
+    tolerates, is asserted by its sibling `test_the_pr_lane_is_not_narrowed`.
+    The fourth — that the check is REQUIRED and protection is strict — is a
+    GitHub setting no test here can observe; it is named in the module
+    docstring as the premise it is.
+
+    If this test ever FAILS, the tolerance added to the sweep has become a
+    hole and must be reverted with it.
+    """
+    scan = scan_sources(
+        {
+            **_tree(("a", None), ("b", "a")),
+            Path("b_again.py"): _revision("b", "a"),
+        }
+    )
+    # The sweep reports it and stays green ...
+    defect = notifier.content_defect(1316, scan)
+    assert defect is not None
+    assert notifier.sweep_exit_code([], [defect]) == 0
+    # ... precisely because the blocking gate does not.
+    result = _run(_write_duplicate(tmp_path), "--baseline-ref", "")
+    assert result.returncode == 2, result.stdout + result.stderr
+    assert "DUPLICATE revision id" in result.stderr
+
+    # The lane tolerates TWO trees, so both legs need the counter behind them.
+    cycle = _run(_write(tmp_path / "cyc", ("x", "y"), ("y", "x")), "--baseline-ref", "")
+    assert cycle.returncode == 2, cycle.stdout + cycle.stderr
+    assert "ZERO heads" in cycle.stderr
+
+    # And the lane that runs the counter is the PR lane, established from the
+    # workflow file rather than from this docstring.
+    assert ".github/workflows/alembic-graph-pr.yml" in {
+        str(f) for f in invoking_files("scripts/ci/count_alembic_heads.py")
+    }
+
+
+def test_duplicates_are_classified_before_the_zero_head_cycle() -> None:
+    """The ordering in `content_defect` is load-bearing, not cosmetic.
+
+    A tree can be BOTH: `main` has `a->None`, `b->a`; the PR adds a second
+    file declaring `a` with `down_revision = "b"`. The collapse leaves
+    `{a: "b", b: "a"}` with every node parented, so the head set is empty —
+    while the real three-file tree contains no cycle at all. Reporting
+    "ZERO heads (a cycle)" there is a claim about a tree that does not exist,
+    so duplicates must win. `count_alembic_heads.py` orders the same way.
+    """
+    scan = scan_sources(
+        {
+            **_tree(("a", None), ("b", "a")),
+            Path("a_from_the_pr.py"): _revision("a", "b"),
+        }
+    )
+    assert scan.duplicates != ()
+    assert scan.heads == ()  # both arms are live on this one tree
+    defect = notifier.content_defect(7, scan)
+    assert defect is not None
+    assert "DUPLICATE" in defect
+    assert "cycle" not in defect
+
+
+# ---------------------------------------------------------------------------
+# 22. `main()`-level exit code — the routing, not the classifier
+#
+# Everything in section 21 tests `content_defect` and `sweep_exit_code` in
+# isolation, and an independent review proved that is not enough: mutating
+# `findings.append(defect)` back to `failures.append(defect)` in `main()` —
+# the exact regression — left all of those green. The classification is only
+# half the behaviour; which list `main()` puts it in is the other half, and
+# these are the tests that fail on that mutation.
+# ---------------------------------------------------------------------------
+
+
+def _drive_main(
+    monkeypatch: pytest.MonkeyPatch,
+    simulated: dict[Path, str],
+    *,
+    files_raises: Exception | None = None,
+    comments: list[dict] | None = None,
+    posted: list[str] | None = None,
+) -> tuple[int, str]:
+    """Run `notifier.main()` over ONE fake open PR with every call faked.
+
+    `main` reaches the network in five places and the versions dir in two.
+    All seven are replaced, so this exercises the real control flow —
+    including the `failures` / `findings` routing under test — without a
+    token, a socket, or the repo's own 553 revisions.
+    """
+    main_sources = _tree(("a", None), ("b", "a"))
+    main_scan = scan_sources(main_sources)
+    assert len(main_scan.heads) == 1 and not main_scan.duplicates  # sane baseline
+
+    def _files(*_a: object, **_k: object) -> list[dict]:
+        if files_raises is not None:
+            raise files_raises
+        return [{"filename": f"{notifier.VERSIONS_DIR}/from_the_pr.py"}]
+
+    monkeypatch.setattr(notifier, "scan_dir", lambda _d: main_scan)
+    monkeypatch.setattr(notifier, "read_dir_sources", lambda _d: main_sources)
+    monkeypatch.setattr(notifier, "open_prs", lambda *_a: [{"number": 1316}])
+    monkeypatch.setattr(notifier, "prs_carrying_a_notice", lambda *_a: (set(), ""))
+    monkeypatch.setattr(notifier, "pr_version_files", _files)
+    monkeypatch.setattr(notifier, "simulate", lambda *_a, **_k: simulated)
+    monkeypatch.setattr(notifier, "find_marker_comments", lambda *_a: comments or [])
+
+    def _write(_repo: object, _n: object, body: str, *_a: object, **_k: object) -> str:
+        # Recording, not just stubbed: "left untouched" is a promise about
+        # this call NOT happening, and a `lambda` that swallows it makes the
+        # promise uncheckable.
+        if posted is not None:
+            posted.append(body)
+        return "posted"
+
+    monkeypatch.setattr(notifier, "write_comment", _write)
+    monkeypatch.setenv("GITHUB_TOKEN", "fake")
+    monkeypatch.setattr(sys, "argv", ["notify_forked_open_prs.py", "--repo", "o/r"])
+
+    captured = io.StringIO()
+    monkeypatch.setattr(sys, "stderr", captured)
+    return notifier.main(), captured.getvalue()
+
+
+def test_main_stays_green_when_one_prs_tree_is_un_adviseable(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """THE regression, at the level that actually produced it.
+
+    This is the 2026-09-13 shape: `main` is single-headed and clean, and one
+    open PR re-declares an id that has already landed. The sweep must report
+    it and exit 0 — the duplicate is in the PR's tree, not in `main`, so a
+    red here is a red no commit to `main` could clear.
+    """
+    simulated = {
+        **_tree(("a", None), ("b", "a")),
+        Path("b_from_the_pr.py"): _revision("b", "a"),
+    }
+    posted: list[str] = []
+    code, stderr = _drive_main(
+        monkeypatch,
+        simulated,
+        # ONE existing notice, which matters: a duplicate COLLAPSES to a
+        # single head, so without the arm's `continue` this PR reaches the
+        # "single head — ok" branch and that notice gets cleared. The notice
+        # has to exist for the fall-through to be observable at all.
+        comments=[{"id": 11, "body": "x"}],
+        posted=posted,
+    )
+    assert code == 0
+    # "left untouched" is a promise about this list. Dropping the `continue`
+    # under the arm's TODO posts RESOLVED_BODY here — telling the author
+    # their fork is resolved on a collapsed tree whose `alembic-heads-pr` is
+    # red. Nothing else in the suite catches that.
+    assert posted == []
+    # Green, but never silent — and the annotation carries its own remedy,
+    # since the shared trailer is now class-agnostic.
+    assert "DUPLICATE" in stderr
+    assert "#1316" in stderr
+    assert "b_from_the_pr.py" in stderr
+    assert "alembic-heads-pr" in stderr
+
+
+def test_main_stays_green_when_a_prs_chain_is_a_cycle(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The other tolerated tree, routed the same way."""
+    posted: list[str] = []
+    code, stderr = _drive_main(
+        monkeypatch, _tree(("x", "y"), ("y", "x")), posted=posted
+    )
+    assert code == 0
+    assert "ZERO heads" in stderr
+    # Same promise: posting the fork text over a 0-head chain is the
+    # wrong-advice defect `content_defect`'s own docstring names.
+    assert posted == []
+
+
+def test_main_reddens_when_a_pr_could_not_be_swept(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The half that must NOT have moved: a PR the sweep could not read
+    proves nothing, so the run is INCOMPLETE and still exits 2."""
+    code, stderr = _drive_main(
+        monkeypatch,
+        _tree(("a", None), ("b", "a")),
+        files_raises=notifier.ApiError("502 Bad Gateway"),
+    )
+    assert code == notifier.EXIT_VACUOUS
+    assert "could not list files" in stderr
+    assert "INCOMPLETE" in stderr
+
+
+def test_main_stays_green_on_a_plain_fork(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A fork is what this script exists to find, and finding one has always
+    been exit 0. Pinned here so the finding/failure split cannot drag it."""
+    simulated = {**_tree(("a", None), ("b", "a")), Path("c.py"): _revision("c", "a")}
+    code, _ = _drive_main(monkeypatch, simulated)
+    assert code == 0
+
+
+def test_main_stays_green_when_a_pr_carries_two_marker_comments(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """`_report_duplicates` is a finding too, and its routing needs pinning
+    at `main()` level for the same reason the content defects did.
+
+    A second marker comment is a defect in the PR's comment thread. The sweep
+    listed the comments, maintained the first and carried on — it proved
+    plenty, and no commit to `main` can delete a comment on someone's PR. So
+    it is reported and the lane stays green.
+    """
+    simulated = {**_tree(("a", None), ("b", "a")), Path("c.py"): _revision("c", "a")}
+    code, stderr = _drive_main(
+        monkeypatch,
+        simulated,
+        comments=[{"id": 11, "body": "x"}, {"id": 22, "body": "y"}],
+    )
+    assert code == 0
+    assert "2 fork-notice comments exist" in stderr
+    assert "Delete the extras" in stderr
+
+
+def test_a_marker_comment_finding_is_not_told_to_check_the_head_gate(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The trailer must not hand one finding class the other's remedy.
+
+    `alembic-heads-pr` counts revision heads; it has no opinion whatever
+    about duplicate bot comments, and nothing blocks a PR for carrying two.
+    A run whose only finding is a second marker comment must therefore not
+    mention that gate anywhere, and must not claim the PR was left
+    un-adviseable — the line above it says the notice was maintained.
+    """
+    simulated = {**_tree(("a", None), ("b", "a")), Path("c.py"): _revision("c", "a")}
+    code, stderr = _drive_main(
+        monkeypatch,
+        simulated,
+        comments=[{"id": 11, "body": "x"}, {"id": 22, "body": "y"}],
+    )
+    assert code == 0
+    assert "alembic-heads-pr" not in stderr
+    assert "could not be advised" not in stderr
+
+
+def test_the_un_adviseable_count_counts_only_un_adviseable_trees(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The summary counter is about trees, not about the findings list.
+
+    A PR that is merely forked and carrying an extra marker comment produces
+    a finding but nothing was left untouched, so the count must be 0. Reading
+    `len(findings)` there reported one PR under a label that did not apply
+    to it.
+    """
+    simulated = {**_tree(("a", None), ("b", "a")), Path("c.py"): _revision("c", "a")}
+    buf = io.StringIO()
+    monkeypatch.setattr(sys, "stdout", buf)
+    _drive_main(
+        monkeypatch,
+        simulated,
+        comments=[{"id": 11, "body": "x"}, {"id": 22, "body": "y"}],
+    )
+    assert "0 left untouched as un-adviseable." in buf.getvalue()
+
+
+def test_an_un_adviseable_tree_still_increments_that_count(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The other side of the counter, so it cannot be pinned to a constant."""
+    simulated = {
+        **_tree(("a", None), ("b", "a")),
+        Path("b_from_the_pr.py"): _revision("b", "a"),
+    }
+    buf = io.StringIO()
+    monkeypatch.setattr(sys, "stdout", buf)
+    _drive_main(monkeypatch, simulated)
+    assert "1 left untouched as un-adviseable." in buf.getvalue()
+
+
+def test_the_pr_lane_is_not_narrowed() -> None:
+    """The load-bearing link, asserted instead of described.
+
+    The whole safety case for the sweep tolerating an un-adviseable tree is
+    that `alembic-graph-pr.yml` runs the counter on EVERY PR this sweep can
+    reach. TWO deliberate absences carry that, and until now both lived only
+    as comments in that workflow: no `paths:` filter, and `main` still in the
+    branch list. Narrowing either one silently reopens the hole this change
+    tolerates, with nothing failing — hence the name, which is about
+    narrowing in general rather than about the filter alone.
+    """
+    workflow = yaml.safe_load(
+        (REPO_ROOT / ".github/workflows/alembic-graph-pr.yml").read_text(
+            encoding="utf-8"
+        )
+    )
+    # `on` is parsed by PyYAML 1.1 rules as the boolean True, not the string.
+    triggers = workflow.get("on", workflow.get(True))
+    assert "paths" not in triggers["pull_request"]
+    assert "paths-ignore" not in triggers["pull_request"]
+    # And it must still run on PRs against `main` at all. Dropping `main`
+    # from this list reopens the hole more completely than a paths filter
+    # would: the sweep enumerates only base=main PRs, so every PR it can
+    # tolerate would be one the counter never ran on.
+    assert "main" in triggers["pull_request"]["branches"]
