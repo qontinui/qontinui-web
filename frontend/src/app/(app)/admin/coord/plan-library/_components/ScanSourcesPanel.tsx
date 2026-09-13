@@ -271,6 +271,7 @@ function ScanRootRowView({ row }: { row: ScanRootRow }) {
 
   return (
     <div
+      id={`scan-root-${row.device_id}`}
       className="border-t border-border/60 px-3 py-2.5 text-xs first:border-t-0"
       data-testid={`scan-root-${row.device_id}`}
     >
@@ -357,13 +358,14 @@ function ScanRootRowView({ row }: { row: ScanRootRow }) {
  *   `min_behind`, and this says so rather than printing a distance. The
  *   verdict is consulted as well as the number, for the same reason
  *   [`driftSummary`] consults it.
- * * **A floor is "at least N", and its reason is not "stale refs".**
- *   `min_behind_is_floor: true` bounds the least-behind comparable feeder
- *   from below whenever the comparable devices did not all count against one
- *   recently fetched ref — which includes two devices each counting exactly
- *   against its own fresh ref, since counts against different refs do not
- *   compare. Blaming staleness would send an operator to re-fetch a box that
- *   is already current.
+ * * **A floor is "at least N", and its reason names neither staleness nor
+ *   sharing.** `min_behind_is_floor: true` whenever the comparable readings do
+ *   not all count against one ref KNOWN to have been fetched within six hours
+ *   of a reading. Three shapes produce that — different refs (each possibly
+ *   fresh), an unidentified ref, or one shared ref whose age is stale OR
+ *   UNKNOWN — so "the refs may be stale" is false for the first, and "no
+ *   shared recently fetched ref" asserts an age nothing measured for the last
+ *   (a lone device whose runner cannot read its ref's age is a floor too).
  * * **Exact is exact only as of a ref.** `false` means every comparable device
  *   counted against one ref that some comparable device had fetched within six
  *   hours of its reading — never against the live tip, which the server never
@@ -383,7 +385,7 @@ export function rollupDistanceSummary(rollup: ScanRootSourceRollup): string {
   }
   const n = rollup.min_behind;
   const distance = rollup.min_behind_is_floor
-    ? `at least ${n} behind (a lower bound — no single recently fetched ref is shared by every comparable reading)`
+    ? `at least ${n} behind (a lower bound — the comparable readings do not all count against one ref known to have been fetched within six hours of a reading)`
     : `exactly ${n} behind, as of a ref some comparable device had fetched within six hours of its reading — not the live tip`;
   const unmeasured = rollup.unmeasured_device_ids.length;
   const caveat = unmeasured
@@ -393,12 +395,15 @@ export function rollupDistanceSummary(rollup: ScanRootSourceRollup): string {
 }
 
 /**
- * Device ids, IN FULL.
+ * Device ids, IN FULL, each linking to its device row below.
  *
  * Naming which feeder lags is the point of these lists, so the id is not
  * shortened: a prefix can be shared (a time-ordered id's leading digits are a
  * timestamp), and a full id kept only in a `title` is unreachable by keyboard
- * or touch.
+ * or touch. The link is what makes the full id USABLE: the device rows show an
+ * 8-character prefix, and the "No comparable reading" list relies on those
+ * rows to say why, so two devices sharing a prefix could not otherwise be told
+ * apart there.
  */
 function DeviceIdList({
   label,
@@ -416,9 +421,14 @@ function DeviceIdList({
       {ids.map((id, i) => (
         <span key={id}>
           {i > 0 ? ", " : ""}
-          <code className="break-all rounded bg-muted px-1 py-0.5 text-[10px]">
-            {id}
-          </code>
+          <a
+            href={`#scan-root-${id}`}
+            className="underline-offset-2 hover:underline"
+          >
+            <code className="break-all rounded bg-muted px-1 py-0.5 text-[10px]">
+              {id}
+            </code>
+          </a>
         </span>
       ))}
     </p>
@@ -474,11 +484,10 @@ function ScanSourceRollupView({ rollup }: { rollup: ScanRootSourceRollup }) {
         </Badge>
         {/* "no source_repo reported", not "no scan source": the device rows
             below fall back to `plans_dir`, so a device reporting a path but no
-            `source_repo` lands here beside a row that shows one. */}
-        <span
-          className="min-w-0 truncate font-medium"
-          title={rollup.source_repo ?? undefined}
-        >
+            `source_repo` lands here beside a row that shows one. Wrapped, not
+            truncated: two sources sharing a long prefix would otherwise look
+            identical at phone width, with the difference only in a `title`. */}
+        <span className="min-w-0 break-all font-medium">
           {rollup.source_repo ?? "no source_repo reported"}
         </span>
         <span className="ml-auto shrink-0 text-muted-foreground">
