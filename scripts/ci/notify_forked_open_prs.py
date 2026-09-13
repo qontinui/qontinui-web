@@ -435,6 +435,10 @@ def _site_block(
         else "# (its current down_revision line)",
         f"+ {_fence_safe(down_after)}",
     ]
+    if sites is not None and sites.parent_unparsed:
+        lines.append(
+            "# (no parent literal parsed from down_revision — check it by hand)"
+        )
     if sites is not None and sites.revises is None:
         lines.append(
             f"# 2. the module docstring has no Revises: line — {fenced_where}"
@@ -482,12 +486,14 @@ def _site_block(
             f"`{location}:{other.lineno}`",
             safe_id(other.value),
             safe_id(old_parent) if old_parent is not None else None,
+            new_parent=new,
+            parent_unparsed=bool(sites and sites.parent_unparsed),
         )
         lines += [f"3. **Test pin:** {text}.", ""]
     if not pins and not computed and not mismatched:
         if sites is None or pin_scope is None:
             lines += [
-                "3. **Test pin: UNKNOWN** — the pin search did not run. Look under",
+                "3. **Test pin: UNKNOWN** — the pin search did not complete. Look under",
                 f"   `{TESTS_DIR}/` for this revision's migration test and set its",
                 f'   `_PARENT_REVISION_ID` to `"{new}"` too; several of those tests',
                 "   assert it equals `down_revision`.",
