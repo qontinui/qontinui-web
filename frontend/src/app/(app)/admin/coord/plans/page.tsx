@@ -32,8 +32,9 @@
  *
  * ## Which date (plan `2026-09-02-coord-work-units-carry-no-authoring-date`)
  *
- * The default sort is `authored_desc` on coord's slug-derived `authored_at`,
- * and the "undated" caveat counts rows WITHOUT one. It used to be
+ * The default sort is `authored_desc` on the plan's EFFECTIVE authoring date
+ * (`planAuthoredAt`: the slug's date prefix, else coord's `authored_at`), and
+ * the "undated" caveat counts rows with NEITHER. It used to be
  * `created_desc` on `created_at` — the INGEST time, a bulk-backfill date for
  * most of the corpus — under the label "Newest created", so a plan written in
  * May sorted as a June plan. With a coord that predates the column every row
@@ -66,7 +67,10 @@ import {
   readIsUnknown,
 } from "@/components/console";
 import { PlanRow } from "@/components/admin/coord/PlanRow";
-import type { CoordPlanRow } from "@/components/admin/coord/planStatus";
+import {
+  planAuthoredAt,
+  type CoordPlanRow,
+} from "@/components/admin/coord/planStatus";
 import { httpClient } from "@/services/service-factory";
 import { sortPlans, SORTS, type SortKey } from "./planSort";
 import { derivePlansHealth, SHEPHERD_SLUG_PREFIX } from "./plansHealth";
@@ -266,9 +270,13 @@ export default function CoordPlansListPage() {
   // than we sorted. Say so: with the list capped at `updated_at DESC`, an
   // "oldest authored" answer drawn from this window can be wrong.
   const truncated = plans.length >= FETCH_LIMIT;
-  // No `authored_at` — an undated slug, or a coord that predates the column.
-  // UNKNOWN either way: these rows sink in the sort and the caveat says so.
-  const missingAuthored = plans.filter((p) => !p.authored_at).length;
+  // No authoring date from EITHER source — the slug carries no date prefix
+  // AND coord holds no `authored_at` (`planAuthoredAt`, the deriver the chip,
+  // the row time and the sort all read). Counting the bare column here would
+  // call a dated slug with a NULL column "undated" while its own chip shows
+  // the date. UNKNOWN either way: these rows sink in the sort and the caveat
+  // says so.
+  const missingAuthored = plans.filter((p) => !planAuthoredAt(p)).length;
   const loaded = data !== null;
   // R6 — "not fetched" includes "fetched and FAILED". The shared deriver grew
   // this arm for `/spawn`; this route reads the same list from the same
@@ -378,8 +386,9 @@ export default function CoordPlansListPage() {
               className="text-xs text-muted-foreground"
               data-testid="coord-plans-missing-authored-notice"
             >
-              {missingAuthored} of {plans.length} have no authoring date
-              recorded; they sort last rather than being treated as oldest.
+              {missingAuthored} of {plans.length} have no authoring date —
+              no date prefix on the slug and no authored_at in coord; they
+              sort last rather than being treated as oldest.
             </p>
           )}
         </CollapsiblePanel>
