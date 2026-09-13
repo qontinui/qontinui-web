@@ -8471,6 +8471,47 @@ async def restore_prompt_document_version(
     )
 
 
+@router.post("/coord/prompt-documents/{kind}/{name}/withdraw")
+async def withdraw_prompt_document(
+    kind: str,
+    name: str,
+    body: dict[str, Any] | None = None,
+    tenant_id: UUID = Depends(require_coord_tenant_admin),
+) -> Any:
+    """Withdraw a decision record. Tenant-admin only.
+
+    Plan ``2026-09-13-decision-records-are-agent-writable-but-policy-says-they-are-not``
+    §7 (3.1-3.3). The undo for a CREATED record: a v1 has no earlier body, so
+    neither the landed-write feed's Undo (a PATCH of the prior version) nor
+    :func:`restore_prompt_document_version` can reverse it. Coord answers by
+    writing a NEW version that rewrites only the frontmatter ``status`` (to
+    ``withdrawn``) and ``withdrawn_reason`` keys and keeps the body below the
+    fence byte-for-byte. Nothing is deleted — the row and its history remain,
+    and the feed's ordinary head-version Undo reinstates it.
+
+    Only valid for kind ``decision_record``; coord is the authority on that and
+    its 4xx passes through, as do unknown-document and non-admin refusals.
+
+    Body: ``{reason}``. Only ``reason`` is forwarded. The withdrawer is NOT
+    stamped here and never taken from the browser: coord derives it from its own
+    authenticated ``OperatorContext``, for the same reason the version-restore
+    proxy above declines to stamp ``updated_by``. Whether a reason is required
+    (and what counts as blank) is coord's rule, not a second copy of it here.
+    """
+    payload: dict[str, Any] = {}
+    reason = (body or {}).get("reason")
+    if reason is not None:
+        payload["reason"] = reason
+    # Re-encoded for the same reason as the restore proxy: FastAPI hands the
+    # path segments back URL-decoded.
+    return await _proxy_coord_post(
+        f"/coord/prompt-documents/{quote(kind, safe='')}/{quote(name, safe='')}"
+        "/withdraw",
+        payload,
+        tenant_id=tenant_id,
+    )
+
+
 # ---------------------------------------------------------------------------
 # Per-KIND prompt-document authorship tier
 # ---------------------------------------------------------------------------
@@ -9092,6 +9133,50 @@ _WRITE_ANNOTATIONS: tuple[tuple[str, tuple[type, ...]], ...] = (
 )
 
 
+# The DOCUMENT-level withdrawal state coord serves on a ``decision_record`` row
+# (plan ``2026-09-13-decision-records-are-agent-writable-but-policy-says-they-are-not``
+# §7 3.1), keyed by coord's field name → the name it takes on a write row.
+#
+# Renamed on the way through because a write row is a VERSION and these describe
+# the document's CURRENT state: an unprefixed ``withdrawn`` on v1 would read as
+# "this version was withdrawn", when what is true is that the document it belongs
+# to is withdrawn now (by a later version). Same membership rule as
+# ``_WRITE_ANNOTATIONS``: a coord build that predates the state omits the keys,
+# and so does this feed — never ``false``, which would assert every record is
+# live on a server that cannot say.
+_DOCUMENT_STATE_ANNOTATIONS: tuple[tuple[str, str, tuple[type, ...]], ...] = (
+    ("withdrawn", "document_withdrawn", (bool,)),
+    ("withdrawn_reason", "document_withdrawn_reason", (str,)),
+)
+
+
+def _document_state_annotations(doc: dict[str, Any]) -> dict[str, Any]:
+    """The withdrawal keys coord actually served on this document's list row.
+
+    Membership, not ``.get`` — see :func:`_write_annotations` for why a key built
+    with ``.get`` cannot say "not served". A value of the wrong type is dropped
+    and logged rather than forwarded, because the frontend's contract cannot hold
+    it and a numeric ``withdrawn`` would otherwise be truthy-rendered as a
+    withdrawal coord never recorded.
+    """
+    out: dict[str, Any] = {}
+    for source, target, admissible in _DOCUMENT_STATE_ANNOTATIONS:
+        if source not in doc:
+            continue
+        value = doc[source]
+        if value is None or isinstance(value, admissible):
+            out[target] = value
+            continue
+        logger.warning(
+            "prompt_document_state_annotation_wrong_type",
+            kind=doc.get("kind"),
+            name=doc.get("name"),
+            annotation=source,
+            got=type(value).__name__,
+        )
+    return out
+
+
 def _write_annotations(version: dict[str, Any], doc: dict[str, Any]) -> dict[str, Any]:
     """The annotation keys coord actually served on this version row.
 
@@ -9667,6 +9752,9 @@ async def list_prompt_document_writes(
             continue
         current_version = result.get("current_version")
         label = doc.get("description") or doc.get("name")
+        # Computed once per document: it is the document's state, identical on
+        # every one of its write rows.
+        doc_state = _document_state_annotations(doc)
         for version in result.get("versions") or []:
             if not isinstance(version, dict):
                 continue
@@ -9684,6 +9772,7 @@ async def list_prompt_document_writes(
                     # fixed literal above is exactly the shape that cannot
                     # express "this key was not served".
                     **_write_annotations(version, doc),
+                    **doc_state,
                 }
             )
 
