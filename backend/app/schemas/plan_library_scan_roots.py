@@ -299,8 +299,8 @@ class ScanRootSourceRollup(BaseModel):
     #: no distance, and must never read as "measured, 0 behind".
     state: ScanRootRollupState
     #: A ``no_comparable_reading:``, ``ref_stale:`` (a zero floor on one shared
-    #: ref nobody fetched fresh) or ``refs_not_shared:`` (a zero minimum across
-    #: different or unknown refs) line when ``unknown``;
+    #: ref that is stale or of unknown age) or ``refs_not_shared:`` (a zero
+    #: minimum across different or unidentified refs) line when ``unknown``;
     #: null when ``measured``.
     detail: str | None
     #: Every device whose stored reading names this ``source_repo``.
