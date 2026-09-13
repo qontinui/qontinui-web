@@ -18,10 +18,21 @@
  * 6. **Finish & close goes through a confirm dialog that names the session**,
  *    and only the confirm sends the request.
  * 7. **Coord's typed refusals reach the row**, by name.
+ * 8. **The confirm re-checks the live row.** A session that stops being idle
+ *    while the dialog is open is not sent.
+ * 9. **One click, one request.** A second press while the first is out does
+ *    not post twice.
  */
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { render, screen, waitFor, within } from "@testing-library/react";
+import {
+  act,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
 const DEVICE = "3f4c1a52-9a1e-4b6f-9f0f-8c2f0f0a11bd";
@@ -136,6 +147,10 @@ function sample(overrides: Record<string, unknown> = {}) {
   };
 }
 
+function controlCalls() {
+  return httpFetch.mock.calls.filter(([url]) => String(url).includes("/control"));
+}
+
 function res(status: number, body: unknown) {
   const text = typeof body === "string" ? body : JSON.stringify(body);
   return {
@@ -152,7 +167,7 @@ let sessionsResponse = res(200, {
   nextCursor: null,
   workAxisColumnsPresent: true,
 });
-let controlResponse = res(202, {
+let controlResponse: ReturnType<typeof res> | Promise<ReturnType<typeof res>> = res(202, {
   event_id: "e0e0e0e0-0000-4000-8000-000000000000",
   session_id: IDLE.sessionId,
   device_id: DEVICE,
@@ -387,5 +402,59 @@ describe("/admin/coord/runners", () => {
           String(url).includes("/sessions/fleet")
       )
     ).toBe(false);
+  });
+
+  it("does not send finish & close when the session stops being idle while the dialog is open", async () => {
+    render(<CoordRunnersPage />);
+    const row = await openRow("c1a0de00");
+    await userEvent.click(within(row).getByTestId("coord-runners-finish-close"));
+    const confirm = await screen.findByTestId("coord-runners-finish-confirm-confirm");
+    expect(confirm).not.toBeDisabled();
+
+    // The runner now reports the session busy; the page re-reads underneath
+    // the open dialog. `fireEvent` because the modal marks the page inert.
+    const busy = sample();
+    busy.latest[0].wind_down_sessions[0].idle_state = "busy";
+    samplesResponse = res(200, busy);
+    fireEvent.click(screen.getByTestId("coord-runners-refresh"));
+
+    expect(
+      await screen.findByTestId("coord-runners-finish-blocked")
+    ).toHaveTextContent("The session is no longer idle — not sent.");
+    expect(screen.getByTestId("coord-runners-finish-confirm-confirm")).toBeDisabled();
+    fireEvent.click(screen.getByTestId("coord-runners-finish-confirm-confirm"));
+    expect(controlCalls()).toHaveLength(0);
+  });
+
+  it("posts stop at boundary once for two presses while the first is out", async () => {
+    let release!: (r: ReturnType<typeof res>) => void;
+    controlResponse = new Promise((r) => {
+      release = r;
+    });
+    render(<CoordRunnersPage />);
+    const row = await openRow("5e5e5e5e");
+    const stop = within(row).getByTestId("coord-runners-stop-boundary");
+    // Both presses inside ONE act: the first press's `pending` state has not
+    // re-rendered the button disabled yet when the second lands.
+    act(() => {
+      stop.click();
+      stop.click();
+    });
+    expect(controlCalls()).toHaveLength(1);
+
+    await act(async () => {
+      release(
+        res(202, {
+          event_id: "e0e0e0e0-0000-4000-8000-000000000000",
+          session_id: STEWARD.sessionId,
+          device_id: DEVICE,
+          action: "stop_at_boundary",
+        })
+      );
+    });
+    expect(
+      await within(row).findByTestId("coord-runners-action-accepted")
+    ).toBeInTheDocument();
+    expect(controlCalls()).toHaveLength(1);
   });
 });

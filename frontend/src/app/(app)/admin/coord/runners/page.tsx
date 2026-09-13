@@ -27,7 +27,7 @@
  * file only lays it out.
  */
 
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
@@ -61,6 +61,7 @@ import {
 import { useFleetDrain } from "@/components/operations/useFleetDrain";
 import { useFleetHealth } from "@/components/operations/useFleetHealth";
 import {
+  CONTROL_REASON_MAX_LENGTH,
   RUNNER_SESSION_PALETTE,
   blocksRestartLabel,
   countLabel,
@@ -302,6 +303,9 @@ export default function CoordRunnersPage() {
   );
   const [confirmReason, setConfirmReason] = useState("");
   const [pendingKey, setPendingKey] = useState<string | null>(null);
+  // Rows with a request out right now. A ref, not state: two clicks inside one
+  // render (before `pending` disables the button) must still send only once.
+  const inFlight = useRef(new Set<string>());
   const [outcomes, setOutcomes] = useState<Record<string, ControlWriteResult>>(
     {}
   );
@@ -332,7 +336,10 @@ export default function CoordRunnersPage() {
   const authorRows = records.filter(
     (r) => deriveRunnerSessionStatus(r).attention === "author"
   ).length;
-  const health = deriveReadinessHealth(readiness.read, authorRows);
+  const health = deriveReadinessHealth(
+    readiness.read,
+    sessions.read.kind === "ok" ? authorRows : null
+  );
   const counts = readinessCounts(readiness.read);
   const drainState = resolveDeviceDrain(drain.read, deviceId, Date.now());
   // The drain write is keyed on the coord device id, which the selection IS.
@@ -346,14 +353,20 @@ export default function CoordRunnersPage() {
 
   const send = useCallback(
     async (rec: RunnerSessionRecord, action: SessionControlAction, reason?: string) => {
-      if (rec.session === null) return;
+      if (rec.session === null || inFlight.current.has(rec.key)) return;
+      inFlight.current.add(rec.key);
       setPendingKey(rec.key);
-      const res = await postSessionControl({
-        sessionId: rec.session.sessionId,
-        action,
-        reason,
-      });
-      setPendingKey(null);
+      let res: ControlWriteResult;
+      try {
+        res = await postSessionControl({
+          sessionId: rec.session.sessionId,
+          action,
+          reason,
+        });
+      } finally {
+        inFlight.current.delete(rec.key);
+        setPendingKey(null);
+      }
       setOutcomes((prev) => ({ ...prev, [rec.key]: res }));
       if (res.ok) {
         toast.success(`${ACTION_LABEL[action]} requested for ${shortSessionId(rec)}`, {
@@ -372,14 +385,49 @@ export default function CoordRunnersPage() {
     [readiness, sessions]
   );
 
+  // The dialog was opened on a snapshot of the row; the polls keep running
+  // underneath it. Whether finish & close is still allowed is decided against
+  // the row as it stands NOW, both while the dialog is open (the confirm button
+  // is disabled) and again at the moment of confirming.
+  const confirmingCurrent =
+    confirming === null
+      ? null
+      : (records.find((r) => r.key === confirming.key) ?? null);
+  const confirmStillAllowed =
+    confirmingCurrent !== null &&
+    sessionActionGates(confirmingCurrent).finish_and_close.allowed;
+  const confirmBlockedMessage =
+    confirming === null || confirmStillAllowed
+      ? null
+      : confirmingCurrent === null
+        ? "The session is no longer listed — not sent."
+        : "The session is no longer idle — not sent.";
+
   const confirmFinish = useCallback(async () => {
     if (confirming === null) return;
     const target = confirming;
     const reason = confirmReason;
     setConfirming(null);
     setConfirmReason("");
-    await send(target, "finish_and_close", reason);
-  }, [confirming, confirmReason, send]);
+    if (confirmingCurrent === null || !confirmStillAllowed) {
+      const message =
+        confirmBlockedMessage ?? "The session is no longer idle — not sent.";
+      setOutcomes((prev) => ({
+        ...prev,
+        [target.key]: { ok: false, status: null, code: null, message },
+      }));
+      toast.error("Finish & close was not sent", { description: message });
+      return;
+    }
+    await send(confirmingCurrent, "finish_and_close", reason);
+  }, [
+    confirming,
+    confirmReason,
+    confirmingCurrent,
+    confirmStillAllowed,
+    confirmBlockedMessage,
+    send,
+  ]);
 
   const refreshAll = useCallback(
     () =>
@@ -622,10 +670,20 @@ export default function CoordRunnersPage() {
         }
         confirmLabel={ACTION_LABEL.finish_and_close}
         busy={pendingKey !== null}
+        confirmDisabled={!confirmStillAllowed}
         onConfirm={() => void confirmFinish()}
         testId="coord-runners-finish-confirm"
         extra={
           <div className="space-y-1.5">
+            {confirmBlockedMessage && (
+              <p
+                role="alert"
+                className="text-xs text-destructive"
+                data-testid="coord-runners-finish-blocked"
+              >
+                {confirmBlockedMessage}
+              </p>
+            )}
             <Label htmlFor="coord-runners-finish-reason">
               Reason{" "}
               <span className="text-xs text-muted-foreground">(optional)</span>
@@ -634,6 +692,7 @@ export default function CoordRunnersPage() {
               id="coord-runners-finish-reason"
               value={confirmReason}
               onChange={(e) => setConfirmReason(e.target.value)}
+              maxLength={CONTROL_REASON_MAX_LENGTH}
               placeholder="e.g. rebuilding the runner"
               data-testid="coord-runners-finish-reason"
             />

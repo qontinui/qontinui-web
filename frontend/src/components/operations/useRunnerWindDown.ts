@@ -80,15 +80,24 @@ function useDevicePoll<T>(
   current.current = deviceId;
   const latest = useRef<Keyed<T> | null>(null);
   latest.current = cell;
+  // Every request takes the next number; an answer is applied only when it is
+  // newer than the last one applied. A poll that stalls and lands after a
+  // later refresh must not overwrite the fresher answer — for readiness that
+  // would put an older verdict back on screen.
+  const issued = useRef(0);
+  const applied = useRef(0);
 
   const refresh = useCallback(async () => {
     if (deviceId === "") return;
+    const seq = ++issued.current;
     const previous =
       latest.current && latest.current.deviceId === deviceId
         ? latest.current.value
         : null;
     const next = await load(deviceId, previous);
-    if (current.current === deviceId) setCell({ deviceId, value: next });
+    if (current.current !== deviceId || seq <= applied.current) return;
+    applied.current = seq;
+    setCell({ deviceId, value: next });
   }, [deviceId, load]);
 
   useEffect(() => {
