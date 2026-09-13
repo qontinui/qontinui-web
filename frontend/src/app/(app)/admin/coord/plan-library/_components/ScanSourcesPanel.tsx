@@ -357,11 +357,18 @@ function ScanRootRowView({ row }: { row: ScanRootRow }) {
  *   `min_behind`, and this says so rather than printing a distance. The
  *   verdict is consulted as well as the number, for the same reason
  *   [`driftSummary`] consults it.
- * * **A floor is "at least N".** `min_behind_is_floor: true` bounds the
- *   least-behind comparable feeder from below.
+ * * **A floor is "at least N", and its reason is not "stale refs".**
+ *   `min_behind_is_floor: true` bounds the least-behind comparable feeder
+ *   from below whenever the comparable devices did not all count against one
+ *   recently fetched ref — which includes two devices each counting exactly
+ *   against its own fresh ref, since counts against different refs do not
+ *   compare. Blaming staleness would send an operator to re-fetch a box that
+ *   is already current.
  * * **Exact is exact only as of a ref.** `false` means every comparable device
- *   counted against one ref that some device had fetched within six hours of
- *   its reading — never against the live tip, which the server never knows.
+ *   counted against one ref that some comparable device had fetched within six
+ *   hours of its reading — never against the live tip, which the server never
+ *   knows. (Six hours is the runner's freshness window; the wire does not carry
+ *   it.)
  * * **It is a bound on a FEEDER, never a ceiling on what the corpus lacks**,
  *   and a device with no comparable reading may be less behind than anything
  *   stated, so that caveat is written out whenever such a device exists.
@@ -376,8 +383,8 @@ export function rollupDistanceSummary(rollup: ScanRootSourceRollup): string {
   }
   const n = rollup.min_behind;
   const distance = rollup.min_behind_is_floor
-    ? `at least ${n} behind (a lower bound — the refs may be stale)`
-    : `exactly ${n} behind, as of a ref fetched within six hours of the reading — not the live tip`;
+    ? `at least ${n} behind (a lower bound — the comparable devices did not all count against one recently fetched ref)`
+    : `exactly ${n} behind, as of a ref some comparable device had fetched within six hours of its reading — not the live tip`;
   const unmeasured = rollup.unmeasured_device_ids.length;
   const caveat = unmeasured
     ? ` ${unmeasured} device${unmeasured === 1 ? "" : "s"} with no comparable reading may be less behind.`
@@ -412,6 +419,20 @@ function DeviceIdList({
 }
 
 /**
+ * A roll-up's addressing key, which no two roll-ups can share.
+ *
+ * `source_repo` is free text, so it cannot be spliced into a test id as-is: a
+ * source named `state-foo/plans` would collide with the state badge of
+ * `foo/plans`, and any literal stand-in for the `null` group could collide
+ * with a source actually spelled that way. Prefixing every named source
+ * `repo=` and giving `null` the bare `null` makes the two disjoint, and the
+ * role sits BEFORE the key behind a `:` so no suffix can mimic it.
+ */
+export function rollupKey(sourceRepo: string | null): string {
+  return sourceRepo === null ? "null" : `repo=${sourceRepo}`;
+}
+
+/**
  * One scan source's roll-up.
  *
  * The four id lists partition the source's feeders and each is rendered only
@@ -421,24 +442,34 @@ function DeviceIdList({
  * lagging" would be false in the second case. So no "none lagging" line exists,
  * and when devices are unordered the panel says outright that which feeders lag
  * is not established.
+ *
+ * The least-behind and lagging lists are scoped to COMPARABLE readings in
+ * their labels, not only in the distance sentence: on a floor-of-0 roll-up the
+ * backend keeps both lists while the distance sentence carries no caveat, so
+ * the label is the only place left to say a device with no comparable reading
+ * may be less behind than the one named.
  */
 function ScanSourceRollupView({ rollup }: { rollup: ScanRootSourceRollup }) {
-  const key = rollup.source_repo ?? "(none)";
+  const id = (role: string) =>
+    `scan-source-rollup:${role}:${rollupKey(rollup.source_repo)}`;
   return (
     <div
       className="border-t border-border/60 px-3 py-2.5 text-xs first:border-t-0"
-      data-testid={`scan-source-rollup-${key}`}
+      data-testid={id("source")}
     >
       <div className="flex flex-wrap items-center gap-2">
         <Badge
           variant={stateVariant(rollup.state)}
           className="shrink-0"
-          data-testid={`scan-source-rollup-state-${key}`}
+          data-testid={id("state")}
         >
           {scanRootStateLabel(rollup.state)}
         </Badge>
-        <span className="truncate font-medium">
-          {rollup.source_repo ?? "no scan source reported"}
+        {/* "no source_repo reported", not "no scan source": the device rows
+            below fall back to `plans_dir`, so a device reporting a path but no
+            `source_repo` lands here beside a row that shows one. */}
+        <span className="min-w-0 truncate font-medium">
+          {rollup.source_repo ?? "no source_repo reported"}
         </span>
         <span className="ml-auto shrink-0 text-muted-foreground">
           {rollup.comparable_count} of {rollup.device_count} device
@@ -448,48 +479,59 @@ function ScanSourceRollupView({ rollup }: { rollup: ScanRootSourceRollup }) {
 
       <p
         className="mt-1 text-[11px] text-muted-foreground"
-        data-testid={`scan-source-rollup-distance-${key}`}
+        data-testid={id("distance")}
       >
         {rollupDistanceSummary(rollup)}
       </p>
 
-      {rollup.detail && (
+      {rollup.detail ? (
         <p
           className="mt-1 text-[11px] text-amber-700 dark:text-amber-300"
-          data-testid={`scan-source-rollup-detail-${key}`}
+          data-testid={id("detail")}
         >
           {rollup.detail}
         </p>
-      )}
+      ) : rollup.state !== "measured" ? (
+        // The backend always serves a reason with `unknown`; a badge reading
+        // Unknown beside nothing would still be the worst rendering of a wire
+        // that drifted, so the absence is said rather than left blank.
+        <p
+          className="mt-1 text-[11px] text-amber-700 dark:text-amber-300"
+          data-testid={id("detail")}
+        >
+          No reason was served for this verdict.
+        </p>
+      ) : null}
 
       <DeviceIdList
-        label="Least behind, as of the shared ref"
+        label="Least behind among comparable readings, as of the shared ref"
         ids={rollup.least_behind_device_ids}
-        testId={`scan-source-rollup-least-${key}`}
+        testId={id("least")}
       />
       <DeviceIdList
-        label="Lagging, as of the shared ref"
+        label="Lagging among comparable readings, as of the shared ref"
         ids={rollup.lagging_device_ids}
-        testId={`scan-source-rollup-lagging-${key}`}
+        testId={id("lagging")}
       />
       <DeviceIdList
         label="Not ordered by the readings"
         ids={rollup.lag_unknown_device_ids}
-        testId={`scan-source-rollup-unordered-${key}`}
+        testId={id("unordered")}
       />
       {rollup.lag_unknown_device_ids.length > 0 && (
         <p
           className="mt-1 text-[11px] text-muted-foreground"
-          data-testid={`scan-source-rollup-unordered-note-${key}`}
+          data-testid={id("unordered-note")}
         >
-          These counted against different, unknown or stale refs, so which
-          feeders lag is not established.
+          These counted against different or unknown refs, or against one stale
+          ref while some device reported commits of its own or no ahead count,
+          so which feeders lag is not established.
         </p>
       )}
       <DeviceIdList
         label="No comparable reading"
         ids={rollup.unmeasured_device_ids}
-        testId={`scan-source-rollup-unmeasured-${key}`}
+        testId={id("unmeasured")}
       />
     </div>
   );
@@ -524,13 +566,13 @@ function ScanSourceRollups({
     <div className="mt-3" data-testid="scan-sources-rollups">
       <h3 className="text-xs font-medium">By scan source</h3>
       <p className="mt-0.5 text-[11px] text-muted-foreground">
-        Each distance bounds the least-behind current feeder, not the number of
-        plans the corpus lacks.
+        Each distance is about the least-behind comparable feeder — exact or a
+        lower bound, as stated — and never the number of plans the corpus lacks.
       </p>
       <div className="mt-2 overflow-hidden rounded-md border border-border bg-background">
         {rollups.map((rollup) => (
           <ScanSourceRollupView
-            key={rollup.source_repo ?? "(none)"}
+            key={rollupKey(rollup.source_repo)}
             rollup={rollup}
           />
         ))}
