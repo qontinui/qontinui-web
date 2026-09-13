@@ -39,6 +39,7 @@ from __future__ import annotations
 
 import ast
 import io
+import os
 import subprocess
 import sys
 import types
@@ -2684,3 +2685,50 @@ def test_a_non_file_named_like_a_test_is_skipped_not_unreadable(
     found = graph.read_test_sources(tests_dir, unreadable)
     assert unreadable == []
     assert found is not None and list(found) == [real]
+
+
+@pytest.mark.skipif(
+    not hasattr(os, "geteuid") or os.geteuid() == 0,
+    reason="root ignores directory permissions, so the directory cannot be locked",
+)
+def test_a_file_in_a_listable_but_unenterable_directory_is_unreadable_not_a_crash(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture
+) -> None:
+    """A mode-0600 directory can be LISTED but not ENTERED, so `Path.is_file()`
+    on a file inside it raises PermissionError instead of returning False. Asked
+    outside the `try`, that crashed the counter — no remediation printed, and
+    `--report-only` exiting 1 instead of 0."""
+    import _alembic_graph as graph
+
+    tests_dir = tmp_path / "tests"
+    tests_dir.mkdir()
+    locked_dir = tests_dir / "locked"
+    locked_dir.mkdir()
+    inner = locked_dir / "test_x.py"
+    inner.write_text('_PARENT_REVISION_ID = "a"\n', encoding="utf-8")
+    locked_dir.chmod(0o600)
+    try:
+        unreadable: list[Path] = []
+        assert graph.read_test_sources(tests_dir, unreadable) == {}
+        assert unreadable == [inner]
+
+        versions = _write(tmp_path / "v", ("a", None), ("landed", "a"), ("mine", "a"))
+        monkeypatch.setattr(counter, "TESTS_ROOT", tests_dir)
+        monkeypatch.setattr(counter, "revisions_at_ref", lambda *_a: {"a", "landed"})
+        monkeypatch.setattr(
+            sys,
+            "argv",
+            [
+                "count_alembic_heads.py",
+                "--versions-dir",
+                str(versions),
+                "--report-only",
+            ],
+        )
+        assert counter.main() == 0  # --report-only still reports rather than dies
+        stderr = capsys.readouterr().err
+        assert "test_x.py" in stderr
+        assert "UNKNOWN" in stderr
+    finally:
+        # Restore, or pytest cannot clean `tmp_path` up afterwards.
+        locked_dir.chmod(0o700)
