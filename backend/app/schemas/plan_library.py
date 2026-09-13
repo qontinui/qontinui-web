@@ -727,8 +727,13 @@ class PlanCandidateResponse(BaseModel):
     #: The same block every ``GET /plan-library`` page carries, so a consumer
     #: ranking these candidates learns in the same read whether the corpus
     #: they came from is complete and whether its feeders are current. Covers
-    #: the WHOLE corpus, not this page.
-    corpus_health: CorpusHealth
+    #: the WHOLE corpus, not this page. ``null`` — with the reason beside it —
+    #: when the block could not be read: it is report-only on this route, so a
+    #: failed read never fails the candidates, and null is UNKNOWN, not healthy.
+    corpus_health: CorpusHealth | None
+    #: Why ``corpus_health`` is null (a ``read_failed:`` line naming only the
+    #: error class); null whenever the block was read.
+    corpus_health_unavailable_reason: str | None
 
 
 # ───────── three-way status reconciliation (Phase 4) ─────────

@@ -8,8 +8,11 @@ this module turns the stored rows into what a corpus READER may claim.
 Two readers, one function. ``GET /plan-library/scan-roots`` and the
 ``corpus_health.scan_roots`` block on every ``GET /plan-library`` page and on
 ``/candidates`` both render through :func:`scan_roots_health`, so the three
-renderings of one set of rows cannot disagree — the same pattern as the
-capture census, which ``/capture-health`` and the list page share.
+renderings apply the same rules to the same rows — the same pattern as the
+capture census, which ``/capture-health`` and the list page share. They can
+still differ by WHEN each is read (ages, and a verdict that flips at the
+freshness boundary between two reads), and in that the corpus block degrades a
+failed read to ``read_failed`` where the route surfaces the error.
 
 Why this lives in a service and not in the scan-roots endpoint module: that
 module imports ``plan_library._resolve_org_id``, so ``plan_library`` importing
@@ -25,28 +28,39 @@ first three from the reader's side, numbered there 3, 3a and 3c):
 2. **"0 behind" against a stale ref is UNKNOWN, never "in step".**
 3. **A contradicted reading is UNKNOWN.** Precedence: ``observation_stale`` >
    ``reading_superseded`` > ``ref_stale``.
-4. **The roll-up is taken over VERDICTS, never over reported values.** A
-   source's minimum ``behind`` is drawn only from rows whose verdict is
-   ``measured`` — so a device that went quiet, was contradicted, or reported a
-   0-behind floor contributes no number. Any feeder can add a plan to the
-   corpus, so the least-behind CURRENT feeder bounds what the corpus lacks;
-   a stale feeder's old low number would understate it.
-5. **The minimum is exact only against ONE fresh ref.** A device's ``behind``
-   counts commits on ITS remote-tracking ref, and the default branch only
-   moves forward, so its distance to the newest branch is at least what it
-   reported: ``min_behind`` is always a true lower bound. It is exact only when
-   every measured device counted against the SAME ``ref_sha`` and at least one
-   of them fetched that ref within the runner's freshness window — then that
-   commit was the branch tip, and every count is against it.
-6. **A device is named least-behind or lagging only when the readings PROVE
-   it — and counts against different refs prove nothing.** A device exactly 3
-   behind a five-hour-old ref can be 13 behind the ref another device is
-   exactly 5 behind, so comparing the numbers would name the wrong feeder.
-   Placement therefore happens only when every measured device shares one
-   non-null ``ref_sha``: all counts are then against the same commit and
-   order the devices exactly, whatever each device's floor flag says about
-   that commit's age. Otherwise every measured device is
-   ``lag_unknown_device_ids``. The four id lists partition the feeders.
+4. **The roll-up is taken over what a reading still establishes about now.**
+   Its COMPARISON SET is every reading that is fresh (heard from within the
+   window), applied (not contradicted by a later, declined report) and carries
+   a count — a ``measured`` verdict, or a 0-behind floor the verdict marks
+   ``ref_stale``. ``ref_stale`` exists so a floor of 0 never reads "in step"
+   ON ITS OWN; beside other counts against the same commit it is exactly as
+   comparable as they are, and leaving it out would name the wrong device
+   least behind. A silent or contradicted feeder's number says nothing about
+   now and stays out. Devices outside the set (``unmeasured_device_ids``) may
+   be less behind than anything the roll-up states, so every roll-up claim is
+   scoped to the comparison set.
+5. **``min_behind`` is a lower bound, and "exact" means exact against a fresh
+   ref — never against the live tip.** A device's ``behind`` counts commits on
+   ITS remote-tracking ref, and the default branch only moves forward, so its
+   distance to the live tip is at least what it reported. ``min_behind_is_floor``
+   is ``False`` only when every comparable device counted against one
+   ``ref_sha`` and at least one of them fetched it within the runner's
+   freshness window — the runner's own definition of an exact count
+   (``SCAN_REF_FRESH_WITHIN``, six hours). This server never knows the live
+   tip, and two refs fetched within the window can differ.
+6. **A device is named least-behind or lagging only when the readings ORDER
+   it.** Counts against different refs do not: exactly 3 behind a
+   five-hour-old ref can be 13 behind the ref another device is exactly 5
+   behind. On one shared ref they do when that ref is fresh by the rule above,
+   or when it is stale and every comparable device reports ``ahead == 0`` —
+   the commits added since are then missing from every device alike. A device
+   carrying commits of its own (``ahead > 0``) against a stale ref may already
+   hold some of what was merged since, so it can be ahead of a device that
+   reports fewer behind. Anything unordered is ``lag_unknown_device_ids``; the
+   four id lists partition the feeders. On an active repository devices fetch
+   at different moments and report different refs, so placement is often
+   empty — an empty ``lagging_device_ids`` means NOT ESTABLISHED, never "none
+   lagging".
 7. **A failed read is UNKNOWN, never "no drift".** The block rides on reads
    whose purpose is the corpus, not the drift report, so a scan-root read
    failure there is served as :func:`scan_roots_read_failed` rather than
@@ -95,12 +109,12 @@ def ref_stale_zero_behind_detail(ahead: int) -> str:
     )
 
 
-def no_measured_reading_detail(device_count: int) -> str:
-    """A roll-up's ``detail`` when none of its devices has a ``measured`` verdict."""
+def no_comparable_reading_detail(device_count: int) -> str:
+    """A roll-up's ``detail`` when none of its devices has a comparable reading."""
     return (
-        f"no_measured_reading: none of the {device_count} device(s) reporting "
-        "this scan source has a reading that supports a claim about now (each "
-        "row's state and detail say why), so how far behind the corpus's "
+        f"no_comparable_reading: none of the {device_count} device(s) reporting "
+        "this scan source has a fresh, applied reading that carries a count "
+        "(each row's state and detail say why), so how far behind the corpus's "
         "least-behind feeder is is not established — not 0"
     )
 
@@ -247,31 +261,38 @@ def rollup_source(
 ) -> ScanRootSourceRollup:
     """The per-scan-source roll-up over ``rows``, which all share ``source_repo``.
 
-    Only a row whose VERDICT is ``measured`` contributes a number (invariant
-    4): the verdict already folds in staleness, supersession and the 0-behind
-    floor, so reading ``reported_state`` here would let exactly the rows the
-    verdict disowns set the minimum. Every row lands in exactly one of the four
-    id lists (invariant 6) — the roll-up names every feeder, because a lagging
-    or silent one can still write (and regress) the corpus.
+    The comparison set (invariant 4) is read off the reading, not the verdict:
+    the verdict marks a 0-behind floor ``unknown`` so it never reads "in step"
+    alone, but its count is as comparable as any other against the same
+    commit. What the verdict ALSO folds in — silence and supersession — is
+    applied here directly, from ``observation_fresh`` and
+    ``last_report_applied``. Every row lands in exactly one of the four id
+    lists (invariant 6): the roll-up names every feeder, because a lagging or
+    silent one can still write (and regress) the corpus.
 
-    A ``measured`` verdict with no ``behind`` is counted unmeasured. The write
-    door refuses such a report, so a stored one is a corrupted row, and a
-    count nobody measured must not reach the minimum.
+    A ``measured`` reading with no ``behind`` is counted unmeasured: the write
+    door refuses one, so a stored one is corrupt, and a count nobody measured
+    must not reach the minimum.
     """
-    measured: list[tuple[ScanRootRow, int]] = []
+    comparable: list[tuple[ScanRootRow, int]] = []
     unmeasured: list[ScanRootRow] = []
     for row in rows:
-        if row.state == "measured" and row.behind is not None:
-            measured.append((row, row.behind))
+        if (
+            row.reported_state == "measured"
+            and row.observation_fresh
+            and row.last_report_applied
+            and row.behind is not None
+        ):
+            comparable.append((row, row.behind))
         else:
             unmeasured.append(row)
-    if not measured:
+    if not comparable:
         return ScanRootSourceRollup(
             source_repo=source_repo,
             state="unknown",
-            detail=no_measured_reading_detail(len(rows)),
+            detail=no_comparable_reading_detail(len(rows)),
             device_count=len(rows),
-            measured_count=0,
+            comparable_count=0,
             min_behind=None,
             min_behind_is_floor=None,
             least_behind_device_ids=[],
@@ -279,28 +300,27 @@ def rollup_source(
             lag_unknown_device_ids=[],
             unmeasured_device_ids=_device_ids(unmeasured),
         )
-    min_behind = min(behind for _, behind in measured)
-    refs = {row.ref_sha for row, _ in measured}
-    # Invariant 6: counts order devices only when they are all against one
-    # known commit.
+    min_behind = min(behind for _, behind in comparable)
+    refs = {row.ref_sha for row, _ in comparable}
     shared_ref = len(refs) == 1 and None not in refs
-    # Invariant 5: exact only when that one commit was fetched fresh by someone.
-    min_behind_is_floor = not (
-        shared_ref and any(not row.counts_are_floors for row, _ in measured)
-    )
-    if shared_ref:
-        least = [row for row, behind in measured if behind == min_behind]
-        lagging = [row for row, behind in measured if behind > min_behind]
+    # Invariant 5: exact against a ref someone fetched within the window.
+    exact = shared_ref and any(not row.counts_are_floors for row, _ in comparable)
+    # Invariant 6: one shared ref that is fresh, or stale with nothing ahead.
+    ordered = shared_ref and (exact or all(row.ahead == 0 for row, _ in comparable))
+    if ordered:
+        least = [row for row, behind in comparable if behind == min_behind]
+        lagging = [row for row, behind in comparable if behind > min_behind]
         lag_unknown: list[ScanRootRow] = []
     else:
         least, lagging = [], []
-        lag_unknown = [row for row, _ in measured]
+        lag_unknown = [row for row, _ in comparable]
+    min_behind_is_floor = not exact
     return ScanRootSourceRollup(
         source_repo=source_repo,
         state="measured",
         detail=None,
         device_count=len(rows),
-        measured_count=len(measured),
+        comparable_count=len(comparable),
         min_behind=min_behind,
         min_behind_is_floor=min_behind_is_floor,
         least_behind_device_ids=_device_ids(least),
