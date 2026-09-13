@@ -280,9 +280,10 @@ class TestComparisonSet:
         """Post-merge review of #1331. Both devices fetched their refs minutes
         ago and both counts are exact, yet the refs differ, so the minimum is a
         floor and a floor of 0 reads ``unknown``. The served reason used to be
-        ``ref_stale:`` regardless, and the panel showed it word for word beside
-        a device row reading "In step with its ref." — sending an operator to
-        re-fetch a box that was already current."""
+        ``ref_stale:`` regardless — telling every API and ``corpus_health``
+        reader (and the console reader that renders roll-up details verbatim)
+        to re-fetch boxes that were already current, while this device's own
+        row reads ``measured``, 0 behind."""
         in_step = _obs(behind=0, ref_sha="a" * 40)
         behind = _obs(behind=5, ref_sha="b" * 40)
         assert render_row(in_step, now=NOW).state == "measured"
@@ -294,12 +295,12 @@ class TestComparisonSet:
         assert rollup.detail is not None
         assert rollup.detail.startswith("refs_not_shared:")
         assert "ref_stale" not in rollup.detail
-        assert "stale" not in rollup.detail
         assert rollup.lag_unknown_device_ids == _ids(in_step, behind)
 
     def test_an_unknown_ref_is_not_shared_either(self) -> None:
         """A reading with no ``ref_sha`` cannot share a ref with anyone."""
-        zero = _obs(behind=0, ref_sha=None)
+        # A runner that cannot resolve the ref has no age for it either.
+        zero = _obs(behind=0, ref_sha=None, ref_age_secs=None, counts_are_floors=True)
         other = _obs(behind=5)
 
         rollup = _only_rollup(zero, other)

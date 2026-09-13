@@ -193,9 +193,11 @@ async def list_scan_roots(
     floor, and which devices the readings order as least behind or lagging,
     cannot order (``lag_unknown``), or have no comparable reading
     (``unmeasured``). A roll-up whose fewest commits behind is a floor of 0
-    reads ``unknown`` with a ``ref_stale:`` detail and a null minimum — "at
-    least 0" is no distance — while its lists keep whatever order the readings
-    establish. The same builder renders the ``corpus_health.scan_roots``
+    reads ``unknown`` with a null minimum — "at least 0" is no distance — and a
+    detail naming the cause: ``ref_stale:`` when every comparable reading
+    counted against one ref that is stale or of unknown age,
+    ``refs_not_shared:`` when they counted against different or unidentified
+    refs. Its lists keep whatever order the readings establish. The same builder renders the ``corpus_health.scan_roots``
     block the list and ``/candidates`` carry, so both apply the same rules to
     the same rows; two reads can still differ by when they happen (ages, and a
     verdict that flips at the freshness boundary), and the block degrades a

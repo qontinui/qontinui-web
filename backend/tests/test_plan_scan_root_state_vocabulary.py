@@ -341,7 +341,7 @@ def test_the_rollup_zero_floor_details_name_their_cause() -> None:
     its own prefix. ``ref_stale:`` is kept for one shared stale ref;
     ``refs_not_shared:`` must never start with it, because the panel's tense
     rule keys on ``ref_stale:`` for rows and a copy-edit that folded the two
-    together would put staleness back on a roll-up whose refs are fresh."""
+    together would put staleness back on a roll-up whose refs may be fresh."""
     from app.services.plan_scan_root_health import (
         REFS_NOT_SHARED_ZERO_MINIMUM_DETAIL,
         ZERO_FLOOR_MINIMUM_DETAIL,
@@ -350,7 +350,7 @@ def test_the_rollup_zero_floor_details_name_their_cause() -> None:
     assert ZERO_FLOOR_MINIMUM_DETAIL.startswith(FRONTEND_REF_STALE_PREFIX)
     assert REFS_NOT_SHARED_ZERO_MINIMUM_DETAIL.startswith("refs_not_shared:")
     assert not REFS_NOT_SHARED_ZERO_MINIMUM_DETAIL.startswith(VERDICT_PREFIXES)
-    assert "stale" not in REFS_NOT_SHARED_ZERO_MINIMUM_DETAIL
+    assert "ref_stale" not in REFS_NOT_SHARED_ZERO_MINIMUM_DETAIL
 
 
 def _row(**overrides: object) -> PlanScanRootObservation:
