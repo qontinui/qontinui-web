@@ -6877,7 +6877,7 @@ async def get_coord_sessions_fleet(
     ),
     state: str | None = Query(
         default=None,
-        description="Restrict to one `coord.sessions.state`. Forwarded verbatim.",
+        description="Restrict to one coord session state (e.g. active, closed). Forwarded verbatim.",
     ),
     include_closed: bool | None = Query(
         default=None,

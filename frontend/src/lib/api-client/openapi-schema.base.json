@@ -90083,7 +90083,7 @@
             }
           },
           {
-            "description": "Restrict to one `coord.sessions.state`. Forwarded verbatim.",
+            "description": "Restrict to one coord session state (e.g. active, closed). Forwarded verbatim.",
             "in": "query",
             "name": "state",
             "required": false,
@@ -90096,7 +90096,7 @@
                   "type": "null"
                 }
               ],
-              "description": "Restrict to one `coord.sessions.state`. Forwarded verbatim.",
+              "description": "Restrict to one coord session state (e.g. active, closed). Forwarded verbatim.",
               "title": "State"
             }
           },
