@@ -196,6 +196,22 @@ export interface PromptDocumentWrite {
    * Served by the same not-yet-landed coord change as `loosening`.
    */
   notification_ref?: string | null;
+  /**
+   * **OPTIONAL — DOCUMENT state, not this version's.** `true` when the
+   * document this write belongs to is currently withdrawn — a
+   * `decision_record` whose frontmatter `status` is `withdrawn` (plan
+   * `2026-09-13-decision-records-are-agent-writable-but-policy-says-they-are-not`,
+   * §7 3.1). Carried from coord's document row as `withdrawn`, renamed by the
+   * web proxy so a v1 row does not read as "this version was withdrawn" when a
+   * later version is what withdrew it.
+   *
+   * A coord build that predates withdrawal omits it. Absent is UNKNOWN, never
+   * "live": the page marks only an explicit `true` and asserts nothing
+   * otherwise.
+   */
+  document_withdrawn?: boolean | null;
+  /** The reason recorded with the withdrawal, when coord served one. */
+  document_withdrawn_reason?: string | null;
 }
 
 /**
