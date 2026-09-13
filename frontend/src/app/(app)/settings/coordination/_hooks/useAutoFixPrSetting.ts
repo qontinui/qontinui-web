@@ -6,6 +6,7 @@ import { httpClient } from "@/services/service-factory";
 import {
   type AutoFixPrChoice,
   type AutoFixPrState,
+  isUnconfirmedWrite,
   readAutoFixPr,
   tenantFromChoice,
 } from "./auto-fix-pr";
@@ -98,9 +99,18 @@ export function useAutoFixPrSetting(): UseAutoFixPrSettingReturn {
       setError(null);
       toast.success("Fixer session setting saved");
     } catch (err) {
-      toast.error(
-        err instanceof Error ? err.message : "Failed to save fixer setting"
-      );
+      const message =
+        err instanceof Error ? err.message : "Failed to save fixer setting";
+      if (isUnconfirmedWrite(message)) {
+        // coord could not tell whether the commit landed. Neither "saved" nor
+        // "safe to retry": show what coord actually serves now.
+        toast.error(
+          "Save outcome unknown — coord could not confirm the commit. Reloading to check."
+        );
+        setLoadNonce((n) => n + 1);
+        return;
+      }
+      toast.error(message);
     } finally {
       savingRef.current = false;
       setSaving(false);
