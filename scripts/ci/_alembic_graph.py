@@ -532,10 +532,11 @@ def _mask_triple_quoted(source: str) -> str:
     except Exception:
         # Bare `Exception`, deliberately. The input is a PR author's test file,
         # and the tokenizer does not confine itself to TokenError /
-        # IndentationError / SyntaxError: on CPython 3.12.14 and 3.13.5,
-        # `' }\n\x00'` makes `generate_tokens` raise SystemError, which escaped
-        # the narrower clause and crashed the notifier's whole sweep (exit 1,
-        # no comments posted). Masking only chooses advice WORDING, so any
+        # IndentationError / SyntaxError: on stock CPython 3.12.14 and 3.13.5,
+        # `" }\n\x00"` (a space, `}`, newline, NUL) makes `generate_tokens`
+        # raise SystemError — while the near-misses `"' }\n\x00"` and
+        # `"}\n\x00"` raise TokenError. SystemError escaped the narrower clause
+        # and crashed the notifier's whole sweep (exit 1, no comments posted). Masking only chooses advice WORDING, so any
         # failure must degrade to the regex rather than abort the run.
         #
         # Known fallback misread, accepted: an unterminated `"""` is not masked
@@ -801,11 +802,16 @@ def read_test_sources(
         return None
     found: dict[Path, str] = {}
     for path in sorted(tests_dir.rglob("*.py")):
-        if not path.is_file():
-            # A directory or dangling symlink named `*.py` holds no pin. Reading
-            # it would raise OSError and mark EVERY run's search incomplete.
-            continue
         try:
+            # INSIDE the `try`, deliberately. `Path.is_file()` swallows only
+            # ENOENT/ENOTDIR/EBADF/ELOOP: for a file in a directory that can be
+            # listed but not entered (mode 0600) it RAISES PermissionError,
+            # which outside the `try` crashed the counter instead of marking
+            # that file unreadable.
+            if not path.is_file():
+                # A directory or dangling symlink named `*.py` holds no pin, and
+                # counting it unreadable would make EVERY run's search UNKNOWN.
+                continue
             text = path.read_text(encoding="utf-8", errors="replace")
         except OSError:
             if unreadable is not None:
