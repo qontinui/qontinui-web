@@ -717,6 +717,8 @@ export function LandedWriteFeed({
                         value={withdrawReason}
                         onChange={(e) => setWithdrawReason(e.target.value)}
                         rows={2}
+                        required
+                        aria-required="true"
                         placeholder="For example: this was never decided — it was recorded from a guess."
                         data-testid={`withdraw-reason-${write.kind}-${write.name}`}
                       />

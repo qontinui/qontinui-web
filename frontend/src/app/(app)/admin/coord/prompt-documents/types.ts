@@ -506,7 +506,7 @@ export interface PromptDocumentSummary {
    * `true` when coord says this record is withdrawn. Only an explicit `true`
    * is rendered — absent (an older coord) is UNKNOWN, never "live".
    */
-  withdrawn?: boolean;
+  withdrawn?: boolean | null;
   /** The reason recorded with the withdrawal, when there is one. */
   withdrawn_reason?: string | null;
   updated_by: string | null;
