@@ -36,7 +36,7 @@
  */
 
 import { describe, it, expect, vi } from "vitest";
-import { render, screen, within, fireEvent } from "@testing-library/react";
+import { act, render, screen, within, fireEvent } from "@testing-library/react";
 
 vi.mock("@/contexts/auth-context", () => ({
   useAuth: () => ({ isCoordAdmin: true }),
@@ -69,6 +69,7 @@ function renderFeed(props: Partial<Parameters<typeof LandedWriteFeed>[0]> = {}) 
       loading={false}
       acting={false}
       onRevert={vi.fn().mockResolvedValue(true)}
+      onWithdraw={vi.fn().mockResolvedValue(true)}
       onLoadDiff={vi.fn().mockResolvedValue(undefined)}
       diffFor={() => null}
       {...props}
@@ -680,5 +681,168 @@ describe("LandedWriteFeed — the filter and the flagged claim describe ONE set"
     expect(
       screen.getByTestId("write-loosening-policy-engineering-priorities-4")
     ).toBeInTheDocument();
+  });
+});
+
+describe("LandedWriteFeed — Withdraw for a created decision record", () => {
+  const created = () =>
+    write({
+      kind: "decision_record",
+      name: "no-cross-tenant-reads",
+      label: "No cross-tenant reads",
+      version_number: 1,
+      current_version: 1,
+    });
+
+  it("offers Withdraw, not Undo, on a head v1 decision record", () => {
+    renderFeed({ writes: [created()] });
+    expect(
+      screen.getByTestId("withdraw-decision_record-no-cross-tenant-reads")
+    ).toHaveTextContent("Withdraw");
+    expect(
+      screen.queryByTestId("revert-decision_record-no-cross-tenant-reads")
+    ).toBeNull();
+  });
+
+  it("does not offer Withdraw on a head v1 of any other kind", () => {
+    renderFeed({
+      writes: [
+        write({ kind: "initiative", name: "ship-it", version_number: 1, current_version: 1 }),
+        write({ kind: "policy", name: "operating-rules", version_number: 1, current_version: 1 }),
+      ],
+    });
+    expect(screen.queryByTestId("withdraw-initiative-ship-it")).toBeNull();
+    expect(screen.queryByTestId("withdraw-policy-operating-rules")).toBeNull();
+  });
+
+  it("keeps Undo, and offers no Withdraw, on a later decision-record version", () => {
+    renderFeed({
+      writes: [
+        write({
+          kind: "decision_record",
+          name: "no-cross-tenant-reads",
+          version_number: 2,
+          current_version: 2,
+        }),
+        write({
+          kind: "decision_record",
+          name: "no-cross-tenant-reads",
+          version_number: 1,
+          current_version: 2,
+          created_at: "2026-08-26T11:51:41Z",
+        }),
+      ],
+    });
+    expect(
+      screen.getByTestId("revert-decision_record-no-cross-tenant-reads")
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByTestId("withdraw-decision_record-no-cross-tenant-reads")
+    ).toBeNull();
+  });
+
+  it("opens an in-place reason composer and will not submit a blank reason", () => {
+    const onWithdraw = vi.fn().mockResolvedValue(true);
+    renderFeed({ writes: [created()], onWithdraw });
+
+    expect(
+      screen.queryByTestId("withdraw-composer-decision_record-no-cross-tenant-reads")
+    ).toBeNull();
+    fireEvent.click(
+      screen.getByTestId("withdraw-decision_record-no-cross-tenant-reads")
+    );
+    const confirm = screen.getByTestId(
+      "withdraw-confirm-decision_record-no-cross-tenant-reads"
+    );
+    expect(confirm).toBeDisabled();
+
+    // Whitespace is not a reason.
+    fireEvent.change(
+      screen.getByTestId("withdraw-reason-decision_record-no-cross-tenant-reads"),
+      { target: { value: "   " } }
+    );
+    expect(confirm).toBeDisabled();
+    fireEvent.click(confirm);
+    expect(onWithdraw).not.toHaveBeenCalled();
+  });
+
+  it("submits the trimmed reason and closes the composer once it lands", async () => {
+    const record = created();
+    const onWithdraw = vi.fn().mockResolvedValue(true);
+    renderFeed({ writes: [record], onWithdraw });
+
+    fireEvent.click(
+      screen.getByTestId("withdraw-decision_record-no-cross-tenant-reads")
+    );
+    fireEvent.change(
+      screen.getByTestId("withdraw-reason-decision_record-no-cross-tenant-reads"),
+      { target: { value: "  never decided  " } }
+    );
+    fireEvent.click(
+      screen.getByTestId("withdraw-confirm-decision_record-no-cross-tenant-reads")
+    );
+
+    expect(onWithdraw).toHaveBeenCalledWith(record, "never decided");
+    expect(
+      await screen.findByTestId("withdraw-decision_record-no-cross-tenant-reads")
+    ).toHaveAttribute("aria-expanded", "false");
+    expect(
+      screen.queryByTestId("withdraw-composer-decision_record-no-cross-tenant-reads")
+    ).toBeNull();
+  });
+
+  it("keeps the composer and its text when the withdrawal fails", async () => {
+    const onWithdraw = vi.fn().mockResolvedValue(false);
+    renderFeed({ writes: [created()], onWithdraw });
+
+    fireEvent.click(
+      screen.getByTestId("withdraw-decision_record-no-cross-tenant-reads")
+    );
+    const reason = screen.getByTestId(
+      "withdraw-reason-decision_record-no-cross-tenant-reads"
+    );
+    fireEvent.change(reason, { target: { value: "never decided" } });
+    // Inside `act` so the rejected-withdrawal promise SETTLES before asserting —
+    // a bare waitFor on the call would pass before the composer could close.
+    await act(async () => {
+      fireEvent.click(
+        screen.getByTestId("withdraw-confirm-decision_record-no-cross-tenant-reads")
+      );
+    });
+
+    expect(onWithdraw).toHaveBeenCalled();
+    expect(
+      screen.getByTestId("withdraw-reason-decision_record-no-cross-tenant-reads")
+    ).toHaveValue("never decided");
+  });
+
+  it("marks rows of a withdrawn record, and only on an explicit true", () => {
+    renderFeed({
+      writes: [
+        write({
+          kind: "decision_record",
+          name: "voided",
+          version_number: 2,
+          current_version: 2,
+          document_withdrawn: true,
+          document_withdrawn_reason: "never decided",
+        }),
+        write({
+          kind: "decision_record",
+          name: "older-coord",
+          version_number: 3,
+          current_version: 3,
+        }),
+      ],
+    });
+    const badge = screen.getByTestId("write-withdrawn-decision_record-voided-2");
+    expect(badge).toHaveTextContent("Withdrawn");
+    expect(badge).toHaveAttribute(
+      "title",
+      expect.stringContaining("never decided")
+    );
+    expect(
+      screen.queryByTestId("write-withdrawn-decision_record-older-coord-3")
+    ).toBeNull();
   });
 });
