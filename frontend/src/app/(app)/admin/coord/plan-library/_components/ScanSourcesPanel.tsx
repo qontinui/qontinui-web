@@ -5,7 +5,11 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useScanRoots } from "../_hooks/usePlanLibrary";
-import { scanRootStateLabel, type ScanRootRow } from "../types";
+import {
+  scanRootStateLabel,
+  type ScanRootRow,
+  type ScanRootSourceRollup,
+} from "../types";
 
 /**
  * `n` seconds as a short duration that never over- or under-states it.
@@ -267,7 +271,13 @@ function ScanRootRowView({ row }: { row: ScanRootRow }) {
 
   return (
     <div
-      className="border-t border-border/60 px-3 py-2.5 text-xs first:border-t-0"
+      id={`scan-root-${row.device_id}`}
+      // `target:` marks the row a roll-up id linked to. Without it a click
+      // lands on a list of rows whose ids show the same 8-character prefix,
+      // which is the ambiguity the link exists to resolve. Neutral, not amber:
+      // amber is this panel's warning colour, and a linked Measured row is not
+      // a warning.
+      className="scroll-mt-4 border-t border-border/60 px-3 py-2.5 text-xs first:border-t-0 target:bg-muted target:ring-1 target:ring-inset target:ring-ring"
       data-testid={`scan-root-${row.device_id}`}
     >
       <div className="flex flex-wrap items-center gap-2">
@@ -338,6 +348,264 @@ function ScanRootRowView({ row }: { row: ScanRootRow }) {
           {row.reported_detail ? `: ${row.reported_detail}` : ""}
         </p>
       )}
+    </div>
+  );
+}
+
+/**
+ * How far behind one scan source's least-behind COMPARABLE feeder is, in words.
+ *
+ * The roll-up answers the corpus's question rather than a device's, and it
+ * carries the row rules one level up:
+ *
+ * * **`null` is NOT ESTABLISHED, never `0`.** An `unknown` roll-up — no
+ *   comparable reading, or a minimum that is a floor of 0 — serves a null
+ *   `min_behind`, and this says so rather than printing a distance. The
+ *   verdict is consulted as well as the number, for the same reason
+ *   [`driftSummary`] consults it.
+ * * **A floor is "at least N", and its reason names neither staleness nor
+ *   sharing.** `min_behind_is_floor: true` whenever the comparable readings do
+ *   not all count against one ref KNOWN to have been fetched within six hours
+ *   of a reading. Three shapes produce that — different refs (each possibly
+ *   fresh), an unidentified ref, or one shared ref whose age is stale OR
+ *   UNKNOWN — so "the refs may be stale" is false for the first, and "no
+ *   shared recently fetched ref" asserts an age nothing measured for the last
+ *   (a lone device whose runner cannot read its ref's age is a floor too).
+ * * **Exact is exact only as of a ref.** `false` means every comparable device
+ *   counted against one ref that some comparable device had fetched within six
+ *   hours of its reading — never against the live tip, which the server never
+ *   knows. (Six hours is the runner's freshness window; the wire does not carry
+ *   it.)
+ * * **It is a bound on a FEEDER, never a ceiling on what the corpus lacks**,
+ *   and a device with no comparable reading may be less behind than anything
+ *   stated, so that caveat is written out whenever such a device exists.
+ */
+export function rollupDistanceSummary(rollup: ScanRootSourceRollup): string {
+  if (
+    rollup.state !== "measured" ||
+    rollup.min_behind == null ||
+    rollup.min_behind_is_floor == null
+  ) {
+    return "The least-behind feeder's distance is not established.";
+  }
+  const n = rollup.min_behind;
+  const distance = rollup.min_behind_is_floor
+    ? `at least ${n} behind (a lower bound — the comparable readings do not all count against one ref known to have been fetched within six hours of a reading)`
+    : `exactly ${n} behind, as of a ref some comparable device had fetched within six hours of its reading — not the live tip`;
+  const unmeasured = rollup.unmeasured_device_ids.length;
+  const caveat = unmeasured
+    ? ` ${unmeasured} device${unmeasured === 1 ? "" : "s"} with no comparable reading may be less behind.`
+    : "";
+  return `Least-behind comparable feeder: ${distance}.${caveat}`;
+}
+
+/**
+ * Device ids, IN FULL, each linking to its device row below.
+ *
+ * Naming which feeder lags is the point of these lists, so the id is not
+ * shortened: a prefix can be shared (a time-ordered id's leading digits are a
+ * timestamp), and a full id kept only in a `title` is unreachable by keyboard
+ * or touch. The link is what makes the full id USABLE: the device rows show an
+ * 8-character prefix, and the "No comparable reading" list relies on those
+ * rows to say why, so two devices sharing a prefix could not otherwise be told
+ * apart there.
+ */
+function DeviceIdList({
+  label,
+  ids,
+  testId,
+}: {
+  label: string;
+  ids: string[];
+  testId: string;
+}) {
+  if (ids.length === 0) return null;
+  return (
+    <p className="mt-1 text-[11px] text-muted-foreground" data-testid={testId}>
+      {label}:{" "}
+      {ids.map((id, i) => (
+        <span key={id}>
+          {i > 0 ? ", " : ""}
+          <a
+            href={`#scan-root-${id}`}
+            // Underlined at rest, not only on hover: keyboard and touch users
+            // never hover, and colour alone would not mark it as a link.
+            className="rounded underline decoration-dotted underline-offset-2 hover:decoration-solid focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+          >
+            <code className="break-all rounded bg-muted px-1 py-0.5 text-[10px]">
+              {id}
+            </code>
+          </a>
+        </span>
+      ))}
+    </p>
+  );
+}
+
+/**
+ * A roll-up's addressing key, which no two roll-ups can share.
+ *
+ * `source_repo` is free text, so it cannot be spliced into a test id as-is: a
+ * source named `state-foo/plans` would collide with the state badge of
+ * `foo/plans`, and any literal stand-in for the `null` group could collide
+ * with a source actually spelled that way. Prefixing every named source
+ * `repo=` and giving `null` the bare `null` makes the two disjoint, and the
+ * role sits BEFORE the key behind a `:` so no suffix can mimic it.
+ */
+export function rollupKey(sourceRepo: string | null): string {
+  return sourceRepo === null ? "null" : `repo=${sourceRepo}`;
+}
+
+/**
+ * One scan source's roll-up.
+ *
+ * The four id lists partition the source's feeders and each is rendered only
+ * when non-empty — an EMPTY list is never rendered as a claim. That matters
+ * most for `lagging_device_ids`: it is empty both when every comparable device
+ * is level and when the readings cannot order the devices at all, and "none
+ * lagging" would be false in the second case. So no "none lagging" line exists,
+ * and when devices are unordered the panel says outright that which feeders lag
+ * is not established.
+ *
+ * The least-behind and lagging lists are scoped to COMPARABLE readings in
+ * their labels, not only in the distance sentence: on a floor-of-0 roll-up the
+ * backend keeps both lists while the distance sentence carries no caveat, so
+ * the label is the only place left to say a device with no comparable reading
+ * may be less behind than the one named.
+ */
+function ScanSourceRollupView({ rollup }: { rollup: ScanRootSourceRollup }) {
+  const id = (role: string) =>
+    `scan-source-rollup:${role}:${rollupKey(rollup.source_repo)}`;
+  return (
+    <div
+      className="border-t border-border/60 px-3 py-2.5 text-xs first:border-t-0"
+      data-testid={id("source")}
+    >
+      <div className="flex flex-wrap items-center gap-2">
+        <Badge
+          variant={stateVariant(rollup.state)}
+          className="shrink-0"
+          data-testid={id("state")}
+        >
+          {scanRootStateLabel(rollup.state)}
+        </Badge>
+        {/* "no source_repo reported", not "no scan source": the device rows
+            below fall back to `plans_dir`, so a device reporting a path but no
+            `source_repo` lands here beside a row that shows one. Wrapped, not
+            truncated: two sources sharing a long prefix would otherwise look
+            identical at phone width, with the difference only in a `title`.
+            `overflow-wrap: anywhere` rather than `break-all`, so a name breaks
+            mid-word only when nothing else fits. */}
+        <span className="min-w-0 font-medium [overflow-wrap:anywhere]">
+          {rollup.source_repo ?? "no source_repo reported"}
+        </span>
+        <span className="ml-auto shrink-0 text-muted-foreground">
+          {rollup.comparable_count} of {rollup.device_count} device
+          {rollup.device_count === 1 ? "" : "s"} comparable
+        </span>
+      </div>
+
+      <p
+        className="mt-1 text-[11px] text-muted-foreground"
+        data-testid={id("distance")}
+      >
+        {rollupDistanceSummary(rollup)}
+      </p>
+
+      {rollup.detail ? (
+        <p
+          className="mt-1 text-[11px] text-amber-700 dark:text-amber-300"
+          data-testid={id("detail")}
+        >
+          {rollup.detail}
+        </p>
+      ) : rollup.state !== "measured" ? (
+        // The backend always serves a reason with `unknown`; a badge reading
+        // Unknown beside nothing would still be the worst rendering of a wire
+        // that drifted, so the absence is said rather than left blank.
+        <p
+          className="mt-1 text-[11px] text-amber-700 dark:text-amber-300"
+          data-testid={id("detail")}
+        >
+          No reason was served for this verdict.
+        </p>
+      ) : null}
+
+      <DeviceIdList
+        label="Least behind among comparable readings, as of the one ref they all counted against"
+        ids={rollup.least_behind_device_ids}
+        testId={id("least")}
+      />
+      <DeviceIdList
+        label="Lagging among comparable readings, as of the one ref they all counted against"
+        ids={rollup.lagging_device_ids}
+        testId={id("lagging")}
+      />
+      <DeviceIdList
+        label="Not ordered by the readings"
+        ids={rollup.lag_unknown_device_ids}
+        testId={id("unordered")}
+      />
+      {rollup.lag_unknown_device_ids.length > 0 && (
+        <p
+          className="mt-1 text-[11px] text-muted-foreground"
+          data-testid={id("unordered-note")}
+        >
+          The readings not ordered counted against different or unknown refs, or
+          against one ref that is stale or of unknown age while some device
+          reported commits of its own or no ahead count, so which feeders lag is
+          not established.
+        </p>
+      )}
+      <DeviceIdList
+        label="No comparable reading"
+        ids={rollup.unmeasured_device_ids}
+        testId={id("unmeasured")}
+      />
+    </div>
+  );
+}
+
+/**
+ * The per-source roll-ups, above the device rows they fold.
+ *
+ * The route serves one roll-up per source whenever it serves rows, so a
+ * missing or empty list beside rows is a response this build was not written
+ * for — a backend predating the roll-up, most likely. It reads as NOT
+ * ESTABLISHED rather than rendering nothing, since nothing would look like a
+ * panel with no drift to report.
+ */
+function ScanSourceRollups({
+  rollups,
+}: {
+  rollups: ScanRootSourceRollup[] | undefined;
+}) {
+  if (!rollups?.length) {
+    return (
+      <p
+        className="mt-3 text-[11px] text-muted-foreground"
+        data-testid="scan-sources-rollup-unserved"
+      >
+        No per-source roll-up was served, so the least-behind feeder&apos;s
+        distance is not established for any source.
+      </p>
+    );
+  }
+  return (
+    <div className="mt-3" data-testid="scan-sources-rollups">
+      <h3 className="text-xs font-medium">By scan source</h3>
+      <p className="mt-0.5 text-[11px] text-muted-foreground">
+        Each distance is about the least-behind comparable feeder — exact or a
+        lower bound, as stated — and never the number of plans the corpus lacks.
+      </p>
+      <div className="mt-2 overflow-hidden rounded-md border border-border bg-background">
+        {rollups.map((rollup) => (
+          <ScanSourceRollupView
+            key={rollupKey(rollup.source_repo)}
+            rollup={rollup}
+          />
+        ))}
+      </div>
     </div>
   );
 }
@@ -473,7 +741,9 @@ export function ScanSourcesPanel() {
         </p>
       ) : (
         <>
-          <div className="mt-3 overflow-hidden rounded-md border border-border bg-background">
+          <ScanSourceRollups rollups={data.by_source_repo} />
+          <h3 className="mt-3 text-xs font-medium">By device</h3>
+          <div className="mt-2 overflow-hidden rounded-md border border-border bg-background">
             {data.rows.map((row) => (
               <ScanRootRowView key={row.device_id} row={row} />
             ))}
