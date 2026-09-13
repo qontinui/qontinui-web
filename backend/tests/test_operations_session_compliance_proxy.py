@@ -391,6 +391,35 @@ class TestRestoreVersion:
         assert resp.status_code == 404
 
 
+def test_withdraw_non_admin_gets_403_before_any_coord_call() -> None:
+    """The web tier gates withdraw on ``require_coord_tenant_admin`` itself.
+
+    Coord re-checks, but a proxy that forwarded a developer's request would make
+    coord the only gate. Every other test in this file overrides the admin
+    dependency to pass, so without this case swapping it for ``get_tenant_id``
+    would stay green.
+    """
+    from fastapi import HTTPException
+
+    from app.api.v1.endpoints.operations import require_coord_tenant_admin
+
+    def _deny() -> None:
+        raise HTTPException(status_code=403, detail="not_coord_tenant_admin")
+
+    app = _build_test_app()
+    app.dependency_overrides[require_coord_tenant_admin] = _deny
+    with _patch_httpx() as MockClient:
+        instance = AsyncMock()
+        _configure_mock_client(MockClient, instance)
+        resp = TestClient(app).post(
+            f"{API_PREFIX}/coord/prompt-documents/decision_record/x/withdraw",
+            json={"reason": "r"},
+        )
+
+    assert resp.status_code == 403
+    instance.post.assert_not_called()
+
+
 class TestWithdrawDecisionRecord:
     """``POST …/prompt-documents/{kind}/{name}/withdraw`` — plan
     ``2026-09-13-decision-records-are-agent-writable-but-policy-says-they-are-not``
