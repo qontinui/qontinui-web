@@ -41,7 +41,9 @@ const DIAL = {
   },
 };
 
-function nextStepSettings(prFixEffective: boolean) {
+function nextStepSettings(
+  effectiveState: "effective" | "not_effective" | "unknown"
+) {
   return {
     master_enabled: true,
     can_edit: true,
@@ -55,7 +57,9 @@ function nextStepSettings(prFixEffective: boolean) {
         mode: "guidance",
         resolved_from: "system",
         requires_master: true,
-        effective: prFixEffective,
+        // coord's `effective` is only the `effective` arm of effective_state.
+        effective: effectiveState === "effective",
+        effective_state: effectiveState,
       },
     ],
   };
@@ -63,11 +67,17 @@ function nextStepSettings(prFixEffective: boolean) {
 
 beforeEach(() => get.mockReset());
 
+function checkedAttr(value: "default" | "on" | "off"): string | null {
+  return screen
+    .getByTestId(`fixer-spawn-${value}`)
+    .getAttribute("aria-checked");
+}
+
 describe("CoordinationSettingsPage — fixer spawn switch placement", () => {
-  it("renders the switch without opening Advanced, with the autonomy-off note", async () => {
+  it("renders the switch without opening Advanced; no false 'off' note for unknown", async () => {
     get.mockImplementation((url: unknown) =>
       String(url ?? "").includes("next-step-settings")
-        ? Promise.resolve(nextStepSettings(false))
+        ? Promise.resolve(nextStepSettings("unknown"))
         : String(url ?? "").includes("pr-merge/settings")
           ? Promise.resolve(DIAL)
           : Promise.resolve({})
@@ -80,13 +90,13 @@ describe("CoordinationSettingsPage — fixer spawn switch placement", () => {
       screen.queryByText("Automatic fixer for stuck PRs", { selector: "span" })
     ).toBeNull();
     await waitFor(() =>
-      expect(screen.getByTestId("fixer-spawn-autonomy-off")).toBeTruthy()
-    );
-    await waitFor(() =>
       expect(
         (screen.getByTestId("fixer-spawn-off") as HTMLButtonElement).disabled
       ).toBe(false)
     );
+    // pr_fix's normal verdict is `unknown` (unobserved conjunct): no "off" note.
+    expect(screen.queryByTestId("fixer-spawn-autonomy-off")).toBeNull();
+    expect(screen.queryByTestId("fixer-spawn-rights-unknown")).toBeNull();
   });
 
   it("keeps the switch visible when next-step settings fail to load", async () => {
@@ -102,10 +112,17 @@ describe("CoordinationSettingsPage — fixer spawn switch placement", () => {
     // Without the next-step load there is no can_edit, so it is read-only,
     // and no autonomy verdict is invented.
     expect(screen.queryByTestId("fixer-spawn-autonomy-off")).toBeNull();
+    // Wait for the dial to finish loading — while loading every position is
+    // disabled anyway, which would make the read-only assertion vacuous.
     await waitFor(() =>
       expect(
-        (screen.getByTestId("fixer-spawn-off") as HTMLButtonElement).disabled
-      ).toBe(true)
+        screen.getByTestId("fixer-spawn-tenant-setting").textContent
+      ).not.toMatch(/Loading/)
     );
+    expect(checkedAttr("default")).toBe("true");
+    expect(
+      (screen.getByTestId("fixer-spawn-off") as HTMLButtonElement).disabled
+    ).toBe(true);
+    expect(screen.getByTestId("fixer-spawn-rights-unknown")).toBeTruthy();
   });
 });

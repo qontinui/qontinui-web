@@ -19,6 +19,12 @@ export interface NextStepDomain {
   resolved_from: "system" | "tenant" | "repo";
   requires_master: boolean;
   effective: boolean;
+  /**
+   * coord's three-valued verdict. `effective` is only its `effective` arm, so a
+   * domain with an unobserved conjunct (pr_fix) reads `effective: false` even
+   * when nothing visible is off — `unknown` is how coord says so.
+   */
+  effective_state?: "effective" | "not_effective" | "unknown";
 }
 
 export interface NextStepSettings {

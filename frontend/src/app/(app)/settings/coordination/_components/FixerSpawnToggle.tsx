@@ -1,6 +1,6 @@
 "use client";
 
-import { useId } from "react";
+import { type KeyboardEvent, useId, useRef } from "react";
 import { Loader2 } from "lucide-react";
 import {
   type AutoFixPrChoice,
@@ -18,12 +18,18 @@ const CHOICES: { value: AutoFixPrChoice; label: string }[] = [
 interface FixerSpawnToggleProps {
   canEdit: boolean;
   /**
-   * Whether coord's `pr_fix` autonomy row is itself effective (master flag
-   * armed AND autonomy Auto). `undefined` when that row could not be loaded.
-   * This switch is one conjunct of fixer dispatch, not the whole answer, so
-   * the section says so when another conjunct is off.
+   * False when the request that carries edit rights (next-step settings) did
+   * not load, so the switch is read-only for a reason the operator should see.
    */
-  autonomyEffective?: boolean;
+  editRightsKnown?: boolean;
+  /**
+   * coord's `effective_state` for the `pr_fix` autonomy row. Only
+   * `not_effective` is a VISIBLE conjunct being off (platform flag off or
+   * autonomy not Auto) and earns a note. `unknown` is coord's normal verdict
+   * for pr_fix (it carries an unobserved conjunct) and `undefined` means the
+   * row did not load — neither may be rendered as "off".
+   */
+  autonomyState?: "effective" | "not_effective" | "unknown";
 }
 
 /**
@@ -40,11 +46,29 @@ interface FixerSpawnToggleProps {
  */
 export function FixerSpawnToggle({
   canEdit,
-  autonomyEffective,
+  editRightsKnown = true,
+  autonomyState,
 }: FixerSpawnToggleProps) {
   const { loading, saving, error, state, setChoice, reload } =
     useAutoFixPrSetting();
   const labelId = useId();
+  const buttonRefs = useRef<(HTMLButtonElement | null)[]>([]);
+
+  // ARIA radio pattern with a roving tabindex. Arrow keys MOVE FOCUS only;
+  // Space/Enter selects. Selection-follows-focus is deliberately not used:
+  // every selection is an immediate write to a fleet spawn switch.
+  const onRadioKeyDown = (e: KeyboardEvent<HTMLButtonElement>, idx: number) => {
+    const delta =
+      e.key === "ArrowRight" || e.key === "ArrowDown"
+        ? 1
+        : e.key === "ArrowLeft" || e.key === "ArrowUp"
+          ? -1
+          : 0;
+    if (delta === 0) return;
+    e.preventDefault();
+    const next = (idx + delta + CHOICES.length) % CHOICES.length;
+    buttonRefs.current[next]?.focus();
+  };
 
   const unsupported = !loading && !error && state === null;
   const current = state ? choiceFromTenant(state.tenant) : null;
@@ -118,8 +142,13 @@ export function FixerSpawnToggle({
               return (
                 <button
                   key={opt.value}
+                  ref={(el) => {
+                    buttonRefs.current[idx] = el;
+                  }}
                   type="button"
                   role="radio"
+                  tabIndex={active || (current === null && idx === 0) ? 0 : -1}
+                  onKeyDown={(e) => onRadioKeyDown(e, idx)}
                   aria-checked={active}
                   aria-disabled={saving || undefined}
                   disabled={hardDisabled}
@@ -156,7 +185,7 @@ export function FixerSpawnToggle({
           <span className="font-mono">true</span> does not override Off here.
         </p>
 
-        {autonomyEffective === false && (
+        {autonomyState === "not_effective" && (
           <p
             className="text-xs text-yellow-500/80"
             data-testid="fixer-spawn-autonomy-off"
@@ -164,6 +193,16 @@ export function FixerSpawnToggle({
             Fixer dispatch is also off for another reason: the &ldquo;Automatic
             fixer for stuck PRs&rdquo; row under Advanced is not effective
             (platform flag off, or its autonomy is not Auto).
+          </p>
+        )}
+
+        {!editRightsKnown && (
+          <p
+            className="text-xs text-muted-foreground"
+            data-testid="fixer-spawn-rights-unknown"
+          >
+            Read-only here: your edit rights could not be determined because the
+            coordination settings did not load. Reload the page to try again.
           </p>
         )}
 
