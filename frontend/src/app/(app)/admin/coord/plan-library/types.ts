@@ -517,6 +517,22 @@ export type ScanRootRollupState = (typeof SCAN_ROOT_ROLLUP_STATES)[number];
 export interface ScanRootSourceRollup {
   source_repo: string | null;
   state: ScanRootRollupState;
+  /**
+   * Why an `unknown` roll-up is unknown; `null` on a `measured` one. The
+   * backend starts it with the cause (`rollup_source` in
+   * `plan_scan_root_health.py`):
+   *
+   * * `no_comparable_reading:` — no device has a comparable reading.
+   * * `ref_stale:` — a floor of 0 where every comparable reading counted
+   *   against ONE ref that is stale or of unknown age.
+   * * `refs_not_shared:` — a 0 where the comparable readings name different
+   *   refs, or at least one names none. The prefix does not say any ref is
+   *   stale (each device may be exact against a recently fetched ref), though
+   *   a row's own `detail` may; no device is named least behind or lagging.
+   *
+   * Displayed verbatim, never matched: unlike a row's `detail`, no rendering
+   * decision keys on these prefixes.
+   */
   detail: string | null;
   device_count: number;
   /** Devices with a fresh, applied reading carrying a count. */
