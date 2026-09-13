@@ -57,6 +57,22 @@ file list — an empty list handed to ``pytest`` would make it collect the whole
 directory, which is a 6x blowup at best and a silently narrowed gate at worst.
 A shard that selects nothing is likewise an error: with N shards over more than
 N files it cannot happen, so it means the collection or the split is wrong.
+
+Output contract
+---------------
+
+The ``::error::`` text is for people and is free to change. What a program -- or
+a test -- reads is the ONE verdict line every run prints LAST on stderr::
+
+    shard-split: verdict=truncated mode=count files=3 nodeids=5 min_files=10 min_nodeids=1 exit=4
+
+Space-separated ``key=value`` tokens; no value contains whitespace; ``verdict``
+comes first and ``exit`` (the process exit code) last. ``verdict`` is one of
+``VERDICTS`` and :func:`parse_verdict` is the one reader. It exists because
+pinning the prose broke a substring test four times across the review of the PR
+that introduced this script. The only exit with no verdict line is argparse's
+own usage error, which shares exit 2 with ``no_nodeids`` -- so read the line,
+not the code.
 """
 
 from __future__ import annotations
@@ -71,6 +87,57 @@ from collections import Counter
 # Anchored on a `.py` path so the trailing count summary ("4129 tests collected
 # in 31.52s"), warning preambles, blank lines and error banners cannot match.
 _NODEID = re.compile(r"^(?P<path>[^\s:\[\]]+\.py)(?:::|$)")
+
+#: The prefix of the one machine-readable line every run of `main` prints last.
+VERDICT_PREFIX = "shard-split:"
+
+#: The closed verdict vocabulary. A new exit path adds its verdict HERE; the
+#: test module pins that every member is reachable from `main`.
+VERDICTS = frozenset({"ok", "bad_args", "no_nodeids", "truncated", "empty_shard"})
+
+
+def format_verdict(verdict: str, exit_code: int, **fields: object) -> str:
+    """The verdict line: ``shard-split: verdict=<v> key=value ... exit=<code>``."""
+    if verdict not in VERDICTS:
+        raise ValueError(f"unknown verdict {verdict!r}")
+    tokens = [f"verdict={verdict}"]
+    tokens += [f"{key}={value}" for key, value in fields.items()]
+    tokens.append(f"exit={exit_code}")
+    for token in tokens:
+        if any(ch.isspace() for ch in token):
+            raise ValueError(f"verdict token {token!r} contains whitespace")
+    return f"{VERDICT_PREFIX} {' '.join(tokens)}"
+
+
+def parse_verdict(text: str) -> dict[str, str] | None:
+    """The fields of the LAST verdict line in `text`, or None when there is none.
+
+    A malformed line raises rather than yielding a partial reading: a reader
+    that guesses is the prose-matching this line exists to replace.
+    """
+    lines = [
+        line.strip()
+        for line in text.splitlines()
+        if line.strip().startswith(VERDICT_PREFIX + " ")
+    ]
+    if not lines:
+        return None
+    last = lines[-1]
+    fields: dict[str, str] = {}
+    for token in last[len(VERDICT_PREFIX) :].split():
+        key, sep, value = token.partition("=")
+        if not sep or not key or key in fields:
+            raise ValueError(f"malformed verdict token {token!r} in {last!r}")
+        fields[key] = value
+    if fields.get("verdict") not in VERDICTS or "exit" not in fields:
+        raise ValueError(f"verdict line lacks a known verdict or an exit: {last!r}")
+    return fields
+
+
+def _finish(exit_code: int, verdict: str, **fields: object) -> int:
+    """Print the verdict line to stderr and hand back `exit_code` for `main`."""
+    print(format_verdict(verdict, exit_code, **fields), file=sys.stderr)
+    return exit_code
 
 
 def parse_nodeids(text: str) -> list[str]:
@@ -165,6 +232,7 @@ def main(argv: list[str] | None = None) -> int:
         ),
     )
     args = parser.parse_args(argv)
+    mode = "count" if args.count_only else "select"
 
     # `--count-only` exists for ONE caller, the workflow's collect step, and its
     # entire job is to apply a floor. Permitting a zero floor there would let the
@@ -179,7 +247,7 @@ def main(argv: list[str] | None = None) -> int:
             "before passing it.",
             file=sys.stderr,
         )
-        return 1
+        return _finish(1, "bad_args", mode=mode, reason="min_files_not_positive")
 
     # The SAME rule for the second floor, because the argument for the first
     # applies verbatim to it and it is fed by the same derivation class. Left
@@ -193,7 +261,7 @@ def main(argv: list[str] | None = None) -> int:
             f"most TESTS, and {args.min_nodeids} means no such floor at all.",
             file=sys.stderr,
         )
-        return 1
+        return _finish(1, "bad_args", mode=mode, reason="min_nodeids_not_positive")
 
     if not args.count_only:
         if args.shards is None or args.shard is None:
@@ -202,16 +270,16 @@ def main(argv: list[str] | None = None) -> int:
                 "is given",
                 file=sys.stderr,
             )
-            return 1
+            return _finish(1, "bad_args", mode=mode, reason="shard_args_missing")
         if args.shards < 1:
             print(f"::error::--shards must be >= 1, got {args.shards}", file=sys.stderr)
-            return 1
+            return _finish(1, "bad_args", mode=mode, reason="shards_not_positive")
         if not 1 <= args.shard <= args.shards:
             print(
                 f"::error::--shard must be in 1..{args.shards}, got {args.shard}",
                 file=sys.stderr,
             )
-            return 1
+            return _finish(1, "bad_args", mode=mode, reason="shard_out_of_range")
 
     if args.nodeids == "-":
         text = sys.stdin.read()
@@ -231,7 +299,7 @@ def main(argv: list[str] | None = None) -> int:
             "which is what `-o addopts=` in the workflow exists to prevent).",
             file=sys.stderr,
         )
-        return 2
+        return _finish(2, "no_nodeids", mode=mode, nodeids=0)
 
     weights = file_weights(nodeids)
 
@@ -268,7 +336,15 @@ def main(argv: list[str] | None = None) -> int:
             "dead test module.",
             file=sys.stderr,
         )
-        return 4
+        return _finish(
+            4,
+            "truncated",
+            mode=mode,
+            files=len(weights),
+            nodeids=len(nodeids),
+            min_files=args.min_files,
+            min_nodeids=args.min_nodeids,
+        )
 
     if args.count_only:
         print(
@@ -276,7 +352,15 @@ def main(argv: list[str] | None = None) -> int:
             f"{len(nodeids)} node ids (floor {args.min_nodeids})",
             file=sys.stderr,
         )
-        return 0
+        return _finish(
+            0,
+            "ok",
+            mode=mode,
+            files=len(weights),
+            nodeids=len(nodeids),
+            min_files=args.min_files,
+            min_nodeids=args.min_nodeids,
+        )
 
     selected = assign(weights, args.shards)[args.shard - 1]
 
@@ -288,7 +372,15 @@ def main(argv: list[str] | None = None) -> int:
             "is wrong. Refusing to run an empty shard.",
             file=sys.stderr,
         )
-        return 3
+        return _finish(
+            3,
+            "empty_shard",
+            mode=mode,
+            shards=args.shards,
+            shard=args.shard,
+            files=len(weights),
+            nodeids=len(nodeids),
+        )
 
     total = sum(weights.values())
     mine = sum(weights[p] for p in selected)
@@ -304,7 +396,17 @@ def main(argv: list[str] | None = None) -> int:
             handle.write(body)
     else:
         sys.stdout.write(body)
-    return 0
+    return _finish(
+        0,
+        "ok",
+        mode=mode,
+        shards=args.shards,
+        shard=args.shard,
+        files=len(weights),
+        nodeids=len(nodeids),
+        selected_files=len(selected),
+        selected_tests=mine,
+    )
 
 
 if __name__ == "__main__":  # pragma: no cover
