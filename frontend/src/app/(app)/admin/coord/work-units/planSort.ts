@@ -22,7 +22,8 @@
  *
  * ## Three timestamps, three different questions
  *
- * `authored_at` is when the plan was WRITTEN (slug-derived, nullable — plan
+ * `authored_at` is when the plan was WRITTEN (nullable, and not only
+ * slug-derived — a bodyless unit's creator may supply it; plan
  * `2026-09-02-coord-work-units-carry-no-authoring-date`), read through
  * `planAuthoredAt` so that a dated slug whose coord column is NULL — a unit
  * created through the MCP upsert door, 29 of them on 2026-09-13, all the
