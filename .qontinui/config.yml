@@ -1,12 +1,40 @@
 # .qontinui/config.yml — qontinui PR-merge policy (edit to override dashboard settings)
+#
+# `framework` and `merge.escalate_paths` were rendered by coord's bootstrap on
+# 2026-07-21 from the framework detector of that day, which chained the non-JS
+# detection arms onto the JS `if` and so saw this polyglot repo (root
+# `package.json` AND root `pyproject.toml`) as bare `node`. The detector was
+# fixed on 2026-07-29 (coord `085c55c5`, "detect ALL of a polyglot repo's
+# ecosystems, not just the first"), but nothing re-renders an already-committed
+# file — so this repo's effective escalate set silently lost every migration
+# glob for the whole of that window, and `backend/alembic/versions/**` stopped
+# being routed to the migration classifier at all. web#1102 landed an
+# `op.execute`-composed `DROP COLUMN` through that gap on 2026-08-27.
+#
+# This file is now the `node` + `python` presets composed, MINUS the three
+# python dependency manifests (`pyproject.toml`, `requirements.txt`,
+# `setup.py`). Those classify `dependencies` / `block_soft`, which
+# `find_escalate_block` routes through the same blocking arm as `block_hard` —
+# adding them would gate every backend dependency change behind an operator
+# override. That is a policy widening for the operator to choose, surfaced by
+# the onboarding doctor's `preset_covers_manifests` check, not smuggled in with
+# a migration-gate repair.
+#
+# Plan: 2026-09-03-config-yml-escalate-replace-degates-tenant-migration-policy
 version: 1
-framework: node
+framework: node+python
 merge:
   confidence_threshold: 0.75
   escalate_paths:
   - package.json
   - package-lock.json
   - pnpm-lock.yaml
+  # python preset, Migrations class — both are verbatim
+  # `DEFAULT_ESCALATE_POLICIES` keys, so they classify
+  # `migrations` / `auto_if_provably_safe` and are routed to the migration
+  # classifier rather than hard-blocked.
+  - '**/alembic/versions/**'
+  - '**/migrations/**'
   auto_merge_categories:
   - docs
   - test
