@@ -2229,8 +2229,9 @@ async def list_work_artifacts(
     ``items: []`` is never the whole answer: ``plan_count: 0`` beside it says
     "the corpus holds no plans", which is a different sentence from "no such
     plan". Its ``capture`` block is ``/capture-health``'s census from the
-    same query, so the two reads cannot disagree, and its ``scan_roots``
-    block is ``GET /plan-library/scan-roots`` rendered by the same builder:
+    same query and builder, and its ``scan_roots`` block is
+    ``GET /plan-library/scan-roots`` rendered by the same builder (two reads
+    can still differ by when they happen):
     how far behind its default branch each device's scan source is, so a page
     drawn from a stale corpus can say so. Two extra reads per list call — one
     aggregate, and one over a table of one row per device inside a savepoint

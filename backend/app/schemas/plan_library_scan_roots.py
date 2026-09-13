@@ -257,7 +257,8 @@ class ScanRootRow(BaseModel):
 
 
 #: A roll-up's verdict: ``measured`` when at least one of its devices has a
-#: COMPARABLE reading (fresh, applied, carrying a count), otherwise ``unknown``.
+#: COMPARABLE reading (fresh, applied, carrying a count) and the fewest commits
+#: behind is not a floor of 0; otherwise ``unknown``.
 ScanRootRollupState = Literal["measured", "unknown"]
 
 
@@ -279,7 +280,9 @@ class ScanRootSourceRollup(BaseModel):
     devices on one ``ref_sha`` that is either fresh or, if stale, with every
     device reporting ``ahead == 0``. Counts against different refs do not order
     devices (exactly 3 behind a five-hour-old ref can be 13 behind the ref
-    another device is exactly 5 behind). On an active repository devices fetch
+    another device is exactly 5 behind). On a fresh ref the order holds AS OF
+    that ref: a lagging device carrying commits of its own may already hold
+    some merged since, within the runner's window. On an active repository devices fetch
     at different moments, so placement is often empty: an empty
     ``lagging_device_ids`` means NOT ESTABLISHED, never "none lagging".
     """
@@ -287,9 +290,12 @@ class ScanRootSourceRollup(BaseModel):
     #: The artifact upsert's ``source_repo`` form, as the devices reported it.
     #: ``null`` groups the readings that named none.
     source_repo: str | None
-    #: ``unknown`` when no device here has a comparable reading.
+    #: ``unknown`` when no device here has a comparable reading, or when the
+    #: fewest commits behind is a FLOOR of 0 — "at least 0 behind" establishes
+    #: no distance, and must never read as "measured, 0 behind".
     state: ScanRootRollupState
-    #: A ``no_comparable_reading:`` line when ``unknown``; null when ``measured``.
+    #: A ``no_comparable_reading:`` or ``ref_stale:`` line when ``unknown``;
+    #: null when ``measured``.
     detail: str | None
     #: Every device whose stored reading names this ``source_repo``.
     device_count: int
@@ -299,18 +305,21 @@ class ScanRootSourceRollup(BaseModel):
     #: its own device's ref — a LOWER BOUND on how far behind the least-behind
     #: COMPARABLE device is (a device in ``unmeasured_device_ids`` may be less
     #: behind). ``null`` when ``unknown`` — NOT 0: nothing established a
-    #: distance.
+    #: distance (including a floor of 0, which establishes none).
     min_behind: int | None
     #: ``False`` only when every comparable device counted against the SAME
-    #: ``ref_sha`` and at least one of them fetched it within the runner's
-    #: freshness window — exact against a ref fetched within six hours, the
+    #: ``ref_sha`` and at least one of them had fetched it within the runner's
+    #: freshness window at the time of its reading — exact against a ref fetched
+    #: within six hours of that reading (so up to ~6 h 45 min old now), the
     #: runner's definition of an exact count, and NOT against the live tip,
     #: which this server never knows. Otherwise ``True``: "at least N".
     #: ``null`` exactly when ``min_behind`` is.
     min_behind_is_floor: bool | None
-    #: Comparable devices at ``min_behind``, when the readings ORDER the
-    #: comparable devices (one shared ``ref_sha`` that is fresh, or stale with
-    #: every device at ``ahead == 0``). Empty otherwise.
+    #: Comparable devices at the fewest commits behind, when the readings ORDER
+    #: the comparable devices (one shared ``ref_sha`` that is fresh, or stale
+    #: with every device at ``ahead == 0``). Empty otherwise. On a fresh ref the
+    #: order holds as of that ref (see the class docstring). Kept when the
+    #: roll-up is ``unknown`` for a floor of 0: the order is still established.
     least_behind_device_ids: list[UUID]
     #: Comparable devices above ``min_behind``, under the same ordering
     #: condition. Empty when unordered — NOT ESTABLISHED, never "none lagging".

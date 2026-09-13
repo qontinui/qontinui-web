@@ -510,7 +510,8 @@ class CorpusHealth(BaseModel):
     Every figure is org-scoped like the page, and UNFILTERED by the page's
     own query: the caller's filter is what they asked about, this is what
     they asked it of. ``capture`` is the ``/capture-health`` census from the
-    SAME query, so the two never disagree.
+    SAME query and the same builder, so the two apply one rule to one census
+    (two reads can still differ by when they happen).
     """
 
     #: Every artifact in scope, all kinds.
