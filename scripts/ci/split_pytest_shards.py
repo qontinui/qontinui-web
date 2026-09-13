@@ -181,6 +181,20 @@ def main(argv: list[str] | None = None) -> int:
         )
         return 1
 
+    # The SAME rule for the second floor, because the argument for the first
+    # applies verbatim to it and it is fed by the same derivation class. Left
+    # unvalidated, `--min-nodeids 0` was silently accepted in checking mode while
+    # `--min-files 0` was refused -- and the node-id floor is the one that covers
+    # the truncation shape the file floor cannot see.
+    if args.count_only and args.min_nodeids < 1:
+        print(
+            "::error::--count-only requires a positive --min-nodeids: it is the "
+            f"floor that catches a collection which keeps most FILES and loses "
+            f"most TESTS, and {args.min_nodeids} means no such floor at all.",
+            file=sys.stderr,
+        )
+        return 1
+
     if not args.count_only:
         if args.shards is None or args.shard is None:
             print(

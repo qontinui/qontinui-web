@@ -296,7 +296,15 @@ def test_cli_requires_shard_args_unless_counting(tmp_path, capsys):
 
 def test_count_only_accepts_a_complete_collection(tmp_path, capsys):
     rc = splitter.main(
-        ["--nodeids", _write(tmp_path, _REAL_SHAPE), "--count-only", "--min-files", "3"]
+        [
+            "--nodeids",
+            _write(tmp_path, _REAL_SHAPE),
+            "--count-only",
+            "--min-files",
+            "3",
+            "--min-nodeids",
+            "5",
+        ]
     )
     assert rc == 0
     assert "collection OK: 3 test files" in capsys.readouterr().err
@@ -316,6 +324,29 @@ def test_count_only_refuses_a_zero_floor(tmp_path, capsys):
     )
     assert rc == 1
     assert "requires a positive --min-files" in capsys.readouterr().err
+
+
+def test_count_only_refuses_a_zero_node_id_floor(tmp_path, capsys):
+    """The second floor gets the same validation as the first.
+
+    It was accepted silently at 0 and at -99 while `--min-files 0` was refused --
+    an asymmetry in the commit that added it. The node-id floor is the one that
+    catches a collection keeping most FILES while losing most TESTS, so an
+    accidental zero there is the more expensive of the two.
+    """
+    rc = splitter.main(
+        [
+            "--nodeids",
+            _write(tmp_path, _REAL_SHAPE),
+            "--count-only",
+            "--min-files",
+            "3",
+            "--min-nodeids",
+            "0",
+        ]
+    )
+    assert rc == 1
+    assert "requires a positive --min-nodeids" in capsys.readouterr().err
 
 
 def test_count_only_rejects_a_node_id_shortfall(tmp_path, capsys):
@@ -351,6 +382,8 @@ def test_count_only_rejects_a_truncated_collection(tmp_path, capsys):
             "--count-only",
             "--min-files",
             "10",
+            "--min-nodeids",
+            "1",
         ]
     )
     assert rc == 4
@@ -415,10 +448,17 @@ def test_the_collect_step_checks_the_floor_through_the_splitter():
         "a FILE floor alone is loose: 173 of 231 files can remain while 62% of "
         "the tests are gone, so the node-id floor must be passed too"
     )
-    assert 'if [ -z "${expected_files}" ] || [ "${expected_files}" -lt 100 ]' in run, (
-        "the DERIVED floor must be validated: `find … | wc -l` reports wc's exit "
-        "status, so a failed find yields 0 and the tripwire disarms itself"
-    )
+    # Three ARMS, pinned individually. `find … | wc -l` reports wc's exit status,
+    # so a failed find yields 0 and an unvalidated floor disarms itself; and a
+    # non-numeric value makes `[ x -lt 100 ]` print an error and PROCEED. Pinning
+    # the whole condition as one string broke the moment an arm was added, which
+    # is the substring-pin lesson this file has now learned four times.
+    for arm, why in (
+        ('[ -z "${expected_files}" ]', "an empty value must be UNKNOWN"),
+        ('[ -n "${expected_files//[0-9]/}" ]', "a non-numeric value must be UNKNOWN"),
+        ("-lt 100", "an implausibly small count must be UNKNOWN"),
+    ):
+        assert arm in run, f"the derived floor must be validated: {why} ({arm})"
     # The two NEGATIVE pins run against comment-stripped text. The step's prose
     # deliberately explains why the bash grep and the constant floor were
     # removed, and a naive substring check matches that explanation and fails on
