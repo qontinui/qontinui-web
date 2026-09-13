@@ -3352,17 +3352,9 @@ async def test_detaching_an_expired_create_grant_is_refused_as_create_expired(
         },
     )
 
-    # The create was never answered, so its OWN waiter is settled too, under
-    # the create's request id — not left to the source's timeout.
-    assert ws.of_type("remote_terminal_error") == [
-        {
-            "type": "remote_terminal_error",
-            "grant_jti": claims["jti"],
-            "code": "create_grant_expired",
-            "message": "grant expired",
-            "request_id": "req-create-1",
-        }
-    ]
+    # A detach ABANDONS the create, so its waiter is not told — the same as a
+    # live detach, which tells it nothing.
+    assert ws.of_type("remote_terminal_error") == []
     assert ws.of_type("error") == [
         {
             "type": "error",
@@ -3417,6 +3409,128 @@ async def test_an_expired_create_grant_is_refused_as_expired_not_wrong_kind(
     assert session.grants == {}
     assert session.listeners == {}
     _assert_only_the_create_claim_survives(redis, claims)
+    await relay.release_source(ws)
+
+
+class _YieldingWS(_FakeWS):
+    """A socket whose send yields once, as a real one does."""
+
+    async def send_json(self, payload: dict[str, Any]) -> None:
+        await asyncio.sleep(0)
+        self.sent.append(payload)
+
+
+@pytest.mark.parametrize("kind", ["attach", "create"])
+async def test_an_expiring_waiter_is_told_once_despite_a_concurrent_sweep(
+    relay: RemoteTerminalRelay, kind: str
+) -> None:
+    """``_authorize``'s expiry arm and the listener's sweep race for one grant.
+
+    The arm used to await its notice while the grant was still registered, so
+    a target frame's sweep running on the listener task found it and ``_evict``
+    told the same waiter again. Both paths now claim the grant before awaiting.
+    Parametrised over both kinds so an attach waiter is pinned as well.
+    """
+    ws = _YieldingWS()
+    manager = _manager()
+    if kind == "attach":
+        claims = _claims()
+        await _attach(relay, ws, manager, claims)
+        waiter = "req-attach-1"
+    else:
+        claims = _create_claims()
+        await _create(relay, ws, manager, claims)
+        waiter = "req-create-1"
+    session = relay._sessions[id(ws)]
+    session.grants[claims["jti"]].exp = int(time.time()) - 1
+
+    await asyncio.gather(
+        relay.handle_source_frame(
+            {
+                "type": "remote_terminal_input",
+                "request_id": "in-1",
+                "grant_jti": claims["jti"],
+                "terminal_id": "t1",
+                "data": "x",
+            },
+            SOURCE_DEVICE,
+            manager,
+            ws,
+        ),
+        relay.route_target_frame(
+            session, TARGET_DEVICE, {"type": "terminal_output", "terminal_id": "zz"}
+        ),
+    )
+
+    notices = [f for f in ws.sent if f.get("request_id") == waiter]
+    assert [f["type"] for f in notices] == ["remote_terminal_error"], ws.sent
+    assert session.grants == {}
+    await relay.release_source(ws)
+
+
+async def test_a_frame_under_the_waiters_own_id_gets_one_refusal_not_two(
+    relay: RemoteTerminalRelay,
+) -> None:
+    """When the expiring frame IS the waiter's id, the refusal settles it."""
+    ws = _FakeWS()
+    manager = _manager()
+    claims = _claims()
+    await _attach(relay, ws, manager, claims)
+    session = relay._sessions[id(ws)]
+    session.grants[claims["jti"]].exp = int(time.time()) - 1
+
+    await _send(
+        relay,
+        ws,
+        manager,
+        {
+            "type": "remote_terminal_input",
+            "request_id": "req-attach-1",
+            "grant_jti": claims["jti"],
+            "terminal_id": "t1",
+            "data": "x",
+        },
+    )
+
+    assert ws.of_type("remote_terminal_error") == []
+    assert [(e["code"], e["request_id"]) for e in ws.of_type("error")] == [
+        ("attach_grant_expired", "req-attach-1")
+    ]
+
+
+@pytest.mark.parametrize("via", ["authorize", "sweep"])
+async def test_an_already_answered_waiter_is_not_told_again_at_expiry(
+    relay: RemoteTerminalRelay, via: str
+) -> None:
+    """``attach_terminal_missing`` answers the waiter but keeps the grant.
+
+    ``not att.attached`` read that grant as still awaited, so expiry — through
+    ``_authorize`` or the sweep — sent the same request id a second, contradictory
+    answer. The pending dicts are the real record of who is still listening.
+    """
+    ws = _FakeWS()
+    manager = _manager()
+    claims = _claims()
+    await _attach(relay, ws, manager, claims)
+    session = relay._sessions[id(ws)]
+    minted = _forwarded_attach(manager)["request_id"]
+    await relay.route_target_frame(
+        session, TARGET_DEVICE, {"type": "terminal_attached", "request_id": minted}
+    )
+    assert claims["jti"] in session.grants
+    session.grants[claims["jti"]].exp = int(time.time()) - 1
+
+    grant = claims["jti"] if via == "authorize" else "other"
+    await _send(
+        relay,
+        ws,
+        manager,
+        {"type": "remote_terminal_input", "request_id": "in-1", "grant_jti": grant},
+    )
+
+    answers = [f["code"] for f in ws.sent if f.get("request_id") == "req-attach-1"]
+    assert answers == ["attach_terminal_missing"], ws.sent
+    assert session.grants == {}
     await relay.release_source(ws)
 
 
