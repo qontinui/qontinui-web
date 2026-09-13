@@ -984,6 +984,46 @@ describe("ScanSourcesPanel — the per-source roll-up", () => {
     expect(screen.getByTestId(rid("lagging")).textContent).toContain(DEVICE_B);
   });
 
+  it("a refs_not_shared zero minimum reads Unknown with that reason, naming no device least or lagging", () => {
+    // `rollup_source`'s zero_floor arm WITHOUT a shared ref — e.g. two devices
+    // each counting against their own ref (or naming none), so the 0 is not
+    // exact and nothing is ordered. Documents the shape the backend serves and
+    // pins that the panel displays its reason verbatim; choosing the prefix is
+    // the backend's, pinned in `test_plan_scan_root_health.py`.
+    useScanRootsMock.mockReturnValue(
+      hookState(
+        rolled([
+          rollup({
+            state: "unknown",
+            detail:
+              "refs_not_shared: the fewest commits behind among the comparable readings is 0, but no single named ref is confirmed to be shared by all of them …",
+            device_count: 2,
+            comparable_count: 2,
+            min_behind: null,
+            min_behind_is_floor: null,
+            least_behind_device_ids: [],
+            lagging_device_ids: [],
+            lag_unknown_device_ids: [DEVICE, DEVICE_B],
+          }),
+        ])
+      )
+    );
+    render(<ScanSourcesPanel />);
+
+    expect(screen.getByTestId(rid("state")).textContent).toBe("Unknown");
+    const distance = screen.getByTestId(rid("distance")).textContent;
+    expect(distance).toContain("not established");
+    expect(distance).not.toMatch(/\b0 behind/);
+    const detail = screen.getByTestId(rid("detail")).textContent;
+    expect(detail).toContain("refs_not_shared:");
+    expect(detail).not.toContain("ref_stale:");
+    expect(screen.queryByTestId(rid("least"))).toBeNull();
+    expect(screen.queryByTestId(rid("lagging"))).toBeNull();
+    const unordered = screen.getByTestId(rid("unordered")).textContent;
+    expect(unordered).toContain(DEVICE);
+    expect(unordered).toContain(DEVICE_B);
+  });
+
   it("unordered devices say which feeders lag is not established — never 'none lagging'", () => {
     // `rollup_source`'s unordered arm: counts against different refs.
     useScanRootsMock.mockReturnValue(
