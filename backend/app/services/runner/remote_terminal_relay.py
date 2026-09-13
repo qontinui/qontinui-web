@@ -1312,17 +1312,19 @@ class RemoteTerminalRelay:
             # send below, telling the waiter a second time.
             session.grants.pop(att.grant_jti, None)
             # The frame that tripped expiry is not necessarily the one WAITING
-            # on this grant: an attach or create still pending has its own
-            # waiter under ``att.request_id``, and dropping the grant clears
-            # that correlation silently — so settle it, as ``_evict`` would,
-            # rather than leave it to the source's client-side timeout. Not for
-            # a detach: a live detach tells an abandoned waiter nothing, and an
-            # expired one must not either.
+            # on this grant: an attach or create the target never answered has
+            # its own waiter under ``att.request_id``, and dropping the grant
+            # clears that correlation silently — so settle it, on the same
+            # predicate ``_evict`` uses, rather than leave it to the source's
+            # client-side timeout. That predicate errs toward telling a waiter
+            # that was already answered (the source drops an unmatched id), never
+            # toward silence. Not for a detach: a live detach tells an abandoned
+            # waiter nothing, and an expired one must not either.
             if (
-                att.request_id is not None
+                settle_waiter
+                and not att.attached
+                and att.request_id is not None
                 and att.request_id != request_id
-                and settle_waiter
-                and self._waiter_pending(session, att.grant_jti)
             ):
                 await self._send_to_source(
                     session,
@@ -1548,21 +1550,6 @@ class RemoteTerminalRelay:
         if att.target_device_id not in session.targets():
             await self._stop_listener(session, att.target_device_id)
 
-    @staticmethod
-    def _waiter_pending(session: _SourceSession, grant_jti: str) -> bool:
-        """True while an attach or create on this grant still awaits its answer.
-
-        ``not att.attached`` is NOT this predicate: a ``terminal_attached``
-        that named no terminal is answered with ``attach_terminal_missing`` and
-        its correlation popped, while the grant stays registered unattached. The
-        pending dicts are the record of who is still listening.
-        """
-        return any(
-            jti == grant_jti
-            for pending in (session.pending_attach, session.pending_create)
-            for _, jti in pending.values()
-        )
-
     async def _evict(
         self, session: _SourceSession, att: _Attachment, *, code: str, message: str
     ) -> None:
@@ -1586,10 +1573,7 @@ class RemoteTerminalRelay:
             "code": code,
             "message": message,
         }
-        # Echo the original request id only while its waiter is still pending;
-        # one already answered (e.g. ``attach_terminal_missing``) must not be
-        # told again.
-        if att.request_id is not None and self._waiter_pending(session, att.grant_jti):
+        if not att.attached and att.request_id is not None:
             payload["request_id"] = att.request_id
         if att.terminal_id is not None:
             payload["terminal_id"] = att.terminal_id
@@ -1968,30 +1952,6 @@ class RemoteTerminalRelay:
                     request_id=source_request_id,
                     grant_jti=att.grant_jti,
                     terminal_id=terminal_id,
-                )
-                return True
-            if session.grants.get(att.grant_jti) is not att:
-                # Evicted DURING the bind — the sweep, ``_authorize``'s expiry
-                # arm or a lost listener ran while ``_bind_terminal`` awaited.
-                # This waiter's correlation was already popped above, so that
-                # teardown could not answer it; and the terminal key was bound
-                # AFTER its registry release, so it would leak until expiry.
-                # Answering ``remote_terminal_attached`` here would settle the
-                # source's waiter as a success on a grant that no longer exists.
-                await self._release_registry(att)
-                await self._detach_target(session, att, terminal_id)
-                await self._send_to_source(
-                    session,
-                    {
-                        "type": "remote_terminal_error",
-                        "request_id": source_request_id,
-                        "grant_jti": att.grant_jti,
-                        "terminal_id": terminal_id,
-                        "code": (
-                            att.expired_code() if att.expired() else CODE_LISTENER_LOST
-                        ),
-                        "message": "the attachment ended while its terminal was being bound",
-                    },
                 )
                 return True
             if (
