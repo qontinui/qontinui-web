@@ -46,19 +46,22 @@ import type { PromptDocumentWrite } from "../types";
  * The standing limit of this feed, stated whether or not anything went wrong
  * this request — and stated about the right surface.
  *
- * The LIST cannot silently miss a write. It is assembled from each document's
- * version history (the web proxy's `list_prompt_document_writes` reads
- * `…/versions` per document, not coord's notification store), and a version is
- * written by the same commit as the write itself. Every way the proxy can drop
- * a write — a document whose history did not come back, documents beyond the
- * fan-out ceiling, the page slice — sets a per-response caveat that renders in
- * this same box.
+ * The LIST cannot silently miss a write that had landed when it was read. It is
+ * assembled from each document's version history (the web proxy's
+ * `list_prompt_document_writes` reads `…/versions` per document, not coord's
+ * notification store), and a version is written by the same commit as the write
+ * itself. Every way the proxy can drop a write — a document whose history did
+ * not come back, documents beyond the fan-out ceiling, the page slice — sets a
+ * per-response caveat that renders in this same box, above this one.
  *
  * What is best-effort is the operator's PUSH notice of a write: the post-commit
  * `PolicyDocumentChanged` emit. Coord reconciles it — a sweep re-emits the
- * notice for any edited version that has none — but creation deliberately never
- * emits, and a created document is announced by the finding its author filed
- * with the write (`notification_ref`, the row's "Why" link) instead.
+ * notice for an edited version (`version_number > 1`) inside its lookback
+ * window that has none — with two limits said on screen: nothing is sent, or
+ * re-sent, while `coord.notifications` is unprovisioned (the sweep reports
+ * UNKNOWN then), and creation deliberately never emits. A created document is
+ * announced by the finding its author filed with the write (`notification_ref`,
+ * the row's "Why" link) instead.
  *
  * This text used to say the list itself "can be incomplete" because of that
  * emit, which pointed the operator at the wrong surface: it told them to
@@ -67,12 +70,13 @@ import type { PromptDocumentWrite } from "../types";
  */
 const COMPLETENESS_CAVEAT =
   "This list is read from each document's version history, so a write that " +
-  "landed cannot be missing from it without a note above saying so. The " +
-  "notice coord sends you about a change is separate: it goes out after the " +
-  "write, and coord looks for edits whose notice failed to go out and sends " +
-  "it again. A " +
-  "newly created document sends no notice — it is announced by the reasoning " +
-  "its author filed with it.";
+  "had landed when the page loaded cannot be missing from it without a note " +
+  "above saying so. The notice coord sends you about a change is separate: it " +
+  "goes out after the write, and coord looks for recent edits whose notice " +
+  "failed to go out and sends it again. While coord's notification store is " +
+  "not set up, no notices go out and none are re-sent. A newly created " +
+  "document sends no notice — it is announced by the reasoning its author " +
+  "filed with it.";
 
 /** DOM id of one row's diff panel — the target of the row's `aria-controls`. */
 function diffPanelId(
@@ -423,9 +427,11 @@ export function LandedWriteFeed({
 
       {/* Coord genuinely failing gets the amber treatment; "incomplete but
           working" (degraded / partial / truncated) stays muted. The standing
-          completeness caveat rides in the same box — it describes the same
-          class of gap, and hiding it when nothing else went wrong is exactly
-          the implied completeness this surface must not offer. */}
+          completeness caveat rides in the same box, after them, because it
+          says how to read them: those notes are the ONLY way a landed write
+          goes missing from this list, and the separate push notice is what is
+          best-effort. Hiding it when nothing else went wrong would leave the
+          operator guessing which of the two surfaces to trust. */}
       <div
         className={cn(
           "flex items-start gap-2 rounded-lg border px-3 py-2.5",

@@ -29,9 +29,10 @@
  *    pinned separately now, which is why there are two cases that look alike.
  * 4. **The completeness caveat is always on screen, and names the right
  *    surface.** The list is built from version history, so it is the complete
- *    view; the best-effort channel is the push notice, which coord reconciles.
- *    A caveat that blamed the list sent the operator to distrust the one
- *    surface that cannot silently miss a write.
+ *    view as of the read; the best-effort channel is the push notice, which
+ *    coord reconciles within limits the caveat also states. A caveat that
+ *    blamed the list sent the operator to distrust the one surface that cannot
+ *    silently miss a write.
  */
 
 import { describe, it, expect, vi } from "vitest";
@@ -263,10 +264,13 @@ describe("LandedWriteFeed — honesty about completeness", () => {
     // The list is built from version history — say so, not the opposite.
     expect(caveat).toHaveTextContent(/version history/i);
     expect(caveat).toHaveTextContent(/cannot be missing/i);
-    // The best-effort channel is the NOTICE, and coord reconciles it.
-    expect(caveat).toHaveTextContent(/failed to go out and sends it again/i);
+    // The best-effort channel is the NOTICE, and coord re-sends a missed one…
+    expect(caveat).toHaveTextContent(/sends it again|re-?sen/i);
+    // …but only for RECENT edits, and not at all while the store is not set up.
+    expect(caveat).toHaveTextContent(/recent/i);
+    expect(caveat).toHaveTextContent(/not set up/i);
     // A created document is announced by its author's reasoning instead.
-    expect(caveat).toHaveTextContent(/newly created document sends no notice/i);
+    expect(caveat).toHaveTextContent(/newly created/i);
   });
 
   it("no longer tells the operator the LIST can be incomplete", () => {
