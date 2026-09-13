@@ -1077,17 +1077,9 @@ describe("ScanSourcesPanel — the per-source roll-up", () => {
       row({ device_id: D, source_repo: OTHER, behind: 3, ref_sha: "y" }),
       row({ device_id: E, source_repo: OTHER, behind: 9, ref_sha: "z" }),
     ];
+    // Served in the backend's order: named sources sorted by name, so
+    // "other-repo/plans" comes before "qontinui-dev-notes/plans".
     const rollups = [
-      // One fresh shared ref: ordered, exactly 0 behind; C is silent.
-      rollup({
-        device_count: 3,
-        comparable_count: 2,
-        min_behind: 0,
-        min_behind_is_floor: false,
-        least_behind_device_ids: [A],
-        lagging_device_ids: [B],
-        unmeasured_device_ids: [C],
-      }),
       // Two refs: unordered, and the minimum is a floor.
       rollup({
         source_repo: OTHER,
@@ -1097,6 +1089,16 @@ describe("ScanSourcesPanel — the per-source roll-up", () => {
         min_behind_is_floor: true,
         least_behind_device_ids: [],
         lag_unknown_device_ids: [D, E],
+      }),
+      // One fresh shared ref: ordered, exactly 0 behind; C is silent.
+      rollup({
+        device_count: 3,
+        comparable_count: 2,
+        min_behind: 0,
+        min_behind_is_floor: false,
+        least_behind_device_ids: [A],
+        lagging_device_ids: [B],
+        unmeasured_device_ids: [C],
       }),
     ];
     useScanRootsMock.mockReturnValue(
@@ -1110,7 +1112,7 @@ describe("ScanSourcesPanel — the per-source roll-up", () => {
         .querySelectorAll<HTMLAnchorElement>('a[href^="#scan-root-"]')
     );
     expect(links.map((a) => a.getAttribute("href"))).toEqual(
-      [A, B, C, D, E].map((id) => `#scan-root-${id}`)
+      [D, E, A, B, C].map((id) => `#scan-root-${id}`)
     );
     for (const a of links) {
       const href = a.getAttribute("href") ?? "";

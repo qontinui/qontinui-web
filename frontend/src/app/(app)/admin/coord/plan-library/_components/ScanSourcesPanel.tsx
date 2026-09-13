@@ -274,8 +274,10 @@ function ScanRootRowView({ row }: { row: ScanRootRow }) {
       id={`scan-root-${row.device_id}`}
       // `target:` marks the row a roll-up id linked to. Without it a click
       // lands on a list of rows whose ids show the same 8-character prefix,
-      // which is the ambiguity the link exists to resolve.
-      className="scroll-mt-4 border-t border-border/60 px-3 py-2.5 text-xs first:border-t-0 target:bg-amber-500/10 target:ring-1 target:ring-inset target:ring-amber-500/40"
+      // which is the ambiguity the link exists to resolve. Neutral, not amber:
+      // amber is this panel's warning colour, and a linked Measured row is not
+      // a warning.
+      className="scroll-mt-4 border-t border-border/60 px-3 py-2.5 text-xs first:border-t-0 target:bg-muted target:ring-1 target:ring-inset target:ring-ring"
       data-testid={`scan-root-${row.device_id}`}
     >
       <div className="flex flex-wrap items-center gap-2">
