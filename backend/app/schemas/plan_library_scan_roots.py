@@ -257,7 +257,7 @@ class ScanRootRow(BaseModel):
 
 
 #: A roll-up's verdict: ``measured`` when at least one of its devices has a
-#: ``measured`` VERDICT, otherwise ``unknown``.
+#: COMPARABLE reading (fresh, applied, carrying a count), otherwise ``unknown``.
 ScanRootRollupState = Literal["measured", "unknown"]
 
 
@@ -265,66 +265,74 @@ class ScanRootSourceRollup(BaseModel):
     """Every device feeding ONE scan source, folded to the corpus's question.
 
     Any feeder can add a plan to the corpus, so how far behind the corpus is
-    is bounded by its LEAST-behind current feeder: ``min_behind``. It is drawn
-    only from rows whose ``state`` VERDICT is ``measured`` — a device that went
-    quiet, was contradicted, or reported a 0-behind floor contributes no
-    number, so a stale feeder's old low reading cannot understate the gap.
+    is bounded by its LEAST-behind current feeder. Every claim here is taken
+    over the COMPARISON SET: readings that are fresh, applied (not contradicted
+    by a later, declined report) and carry a count — a ``measured`` verdict, or
+    a 0-behind floor the verdict marks ``ref_stale``. A silent or contradicted
+    device's old number stays out, and a device in ``unmeasured_device_ids``
+    may be less behind than anything stated.
 
-    The roll-up still names EVERY feeder, because a lagging device is not
-    harmless just because a current one exists: it can write an older body
-    over a newer head. The four id lists PARTITION the devices, and a device is
-    placed as least-behind or lagging only when the readings prove it: counts
-    taken against different refs do not order devices (exactly 3 behind a
-    five-hour-old ref can be 13 behind the ref another device is exactly 5
-    behind), so placement needs every measured device on one ``ref_sha``.
+    The roll-up names EVERY feeder, because a lagging device is not harmless
+    just because a current one exists: it can write an older body over a newer
+    head. The four id lists PARTITION the devices, and a device is placed as
+    least-behind or lagging only when the readings ORDER it: all comparable
+    devices on one ``ref_sha`` that is either fresh or, if stale, with every
+    device reporting ``ahead == 0``. Counts against different refs do not order
+    devices (exactly 3 behind a five-hour-old ref can be 13 behind the ref
+    another device is exactly 5 behind). On an active repository devices fetch
+    at different moments, so placement is often empty: an empty
+    ``lagging_device_ids`` means NOT ESTABLISHED, never "none lagging".
     """
 
     #: The artifact upsert's ``source_repo`` form, as the devices reported it.
     #: ``null`` groups the readings that named none.
     source_repo: str | None
-    #: ``unknown`` when no device here has a ``measured`` verdict.
+    #: ``unknown`` when no device here has a comparable reading.
     state: ScanRootRollupState
-    #: A ``no_measured_reading:`` line when ``unknown``; null when ``measured``.
+    #: A ``no_comparable_reading:`` line when ``unknown``; null when ``measured``.
     detail: str | None
     #: Every device whose stored reading names this ``source_repo``.
     device_count: int
-    #: How many of them have a ``measured`` verdict carrying a count.
-    measured_count: int
-    #: The fewest commits behind among the ``measured`` verdicts, each against
-    #: its own device's ref — always a true LOWER BOUND on how far behind the
-    #: least-behind feeder is. ``null`` when ``unknown`` — NOT 0: no current
-    #: feeder established any distance.
+    #: How many of them have a COMPARABLE reading (see the class docstring).
+    comparable_count: int
+    #: The fewest commits behind among the comparable readings, each against
+    #: its own device's ref — a LOWER BOUND on how far behind the least-behind
+    #: COMPARABLE device is (a device in ``unmeasured_device_ids`` may be less
+    #: behind). ``null`` when ``unknown`` — NOT 0: nothing established a
+    #: distance.
     min_behind: int | None
-    #: ``False`` only when every ``measured`` device counted against the SAME
-    #: ``ref_sha`` and at least one of them fetched it fresh — then
-    #: ``min_behind`` is exact. Otherwise ``True``: "at least N". ``null``
-    #: exactly when ``min_behind`` is.
+    #: ``False`` only when every comparable device counted against the SAME
+    #: ``ref_sha`` and at least one of them fetched it within the runner's
+    #: freshness window — exact against a ref fetched within six hours, the
+    #: runner's definition of an exact count, and NOT against the live tip,
+    #: which this server never knows. Otherwise ``True``: "at least N".
+    #: ``null`` exactly when ``min_behind`` is.
     min_behind_is_floor: bool | None
-    #: Devices PROVEN least behind: they report ``min_behind`` and every
-    #: ``measured`` device counted against the same ``ref_sha``. Empty when the
-    #: refs differ or any is unknown.
+    #: Comparable devices at ``min_behind``, when the readings ORDER the
+    #: comparable devices (one shared ``ref_sha`` that is fresh, or stale with
+    #: every device at ``ahead == 0``). Empty otherwise.
     least_behind_device_ids: list[UUID]
-    #: Devices PROVEN lagging: more commits behind than ``min_behind``, against
-    #: the one ``ref_sha`` every ``measured`` device shares. Empty when the refs
-    #: differ or any is unknown.
+    #: Comparable devices above ``min_behind``, under the same ordering
+    #: condition. Empty when unordered — NOT ESTABLISHED, never "none lagging".
     lagging_device_ids: list[UUID]
-    #: ``measured`` devices the readings cannot place: EVERY one of them when
-    #: they counted against different (or unknown) ``ref_sha``s, because counts
-    #: against different commits do not order devices. Empty when they share
-    #: one.
+    #: Comparable devices the readings do not order: EVERY one of them when
+    #: they counted against different or unknown refs, or against one stale ref
+    #: while some device carries commits of its own (``ahead > 0``). Empty when
+    #: ordered.
     lag_unknown_device_ids: list[UUID]
-    #: Devices whose verdict is anything but ``measured`` — plus a ``measured``
-    #: row carrying no ``behind``, which the write door refuses, so a stored one
-    #: is corrupt and is counted here rather than trusted.
+    #: Devices with no comparable reading: silent, contradicted, not scanning,
+    #: not a git work tree, or unknown — plus a ``measured`` row carrying no
+    #: ``behind``, which the write door refuses, so a stored one is corrupt.
     unmeasured_device_ids: list[UUID]
 
 
 class ScanRootListResponse(BaseModel):
     """Every device's latest reading for the caller's organization.
 
-    Served by ``GET /plan-library/scan-roots`` and, identically, as
-    ``corpus_health.scan_roots`` on every plan-library list page and on
-    ``/candidates`` — one builder renders all three.
+    Served by ``GET /plan-library/scan-roots`` and, through the same builder,
+    as ``corpus_health.scan_roots`` on every plan-library list page and on
+    ``/candidates`` — where a failed read degrades to ``read_failed`` instead
+    of an error.
     """
 
     #: ``"reported"`` when at least one device has a row; ``"unknown"`` when

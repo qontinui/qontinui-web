@@ -562,6 +562,9 @@ class TestCandidatesCarryCorpusHealth:
                 "state": "measured",
                 "source_repo": "qontinui-dev-notes/plans",
                 "default_ref": "origin/main",
+                # A known ref, so the floor below comes from the ref's AGE
+                # alone — a null ref_sha would force a floor by itself.
+                "ref_sha": "a" * 40,
                 "behind": 41,
                 "ahead": 0,
                 "ref_age_secs": None,
@@ -599,9 +602,49 @@ class TestCandidatesCarryCorpusHealth:
     ) -> None:
         resp = await client.get(CANDIDATES, params={"include_coord": "false"})
         assert resp.status_code == 200, resp.text
-        scan_roots = resp.json()["corpus_health"]["scan_roots"]
+        body = resp.json()
+        assert body["corpus_health_unavailable_reason"] is None
+        scan_roots = body["corpus_health"]["scan_roots"]
         assert scan_roots["state"] == "unknown"
         assert scan_roots["by_source_repo"] == []
+
+    async def test_a_failed_corpus_health_read_does_not_fail_candidates(
+        self,
+        client: httpx.AsyncClient,
+        async_db_session: AsyncSession,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """The block is report-only here: ``/candidates`` read neither the
+        capture census nor the scan-root table before it carried the block, so
+        a failure in either must not take the candidates down with it.
+
+        The failure is a REAL failing statement on the request's session (the
+        census read), so containment is proved by the session still answering
+        the next request, not merely by an exception being caught.
+        """
+        from sqlalchemy import text
+
+        from app.api.v1.endpoints import plan_library as endpoint
+
+        await _plan(async_db_session, org_id=None, slug=_slug("still-served"))
+
+        async def _broken(db: AsyncSession, **_kwargs: object) -> None:
+            await db.execute(text("SELECT 1 / 0"))
+
+        monkeypatch.setattr(endpoint.crud, "capture_health", _broken)
+
+        resp = await client.get(CANDIDATES, params={"include_coord": "false"})
+        assert resp.status_code == 200, resp.text
+        body = resp.json()
+        assert body["total"] >= 1
+        assert body["corpus_health"] is None
+        reason = body["corpus_health_unavailable_reason"]
+        assert reason.startswith("read_failed:")
+        assert "division" not in reason
+
+        again = await client.get(CANDIDATES, params={"include_coord": "false"})
+        assert again.status_code == 200, again.text
+        assert again.json()["total"] >= 1
 
 
 class TestCandidatesHttp:
