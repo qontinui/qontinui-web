@@ -140,12 +140,11 @@ ZERO_FLOOR_MINIMUM_DETAIL = (
 #: ``ref_stale:`` would send an operator to re-fetch boxes that may be current.
 REFS_NOT_SHARED_ZERO_MINIMUM_DETAIL = (
     "refs_not_shared: the fewest commits behind among the comparable readings "
-    "is 0, but the readings do not establish one shared, identified ref (they "
-    "name different refs, or one names none), so the minimum is a floor "
-    "whatever each ref's age (each row's detail says whether its own ref is "
-    "stale) — how far behind the least-behind comparable feeder is is not "
-    "established (nor which feeder that is), and the readings do not order "
-    "the devices"
+    "is 0, but no single named ref is confirmed to be shared by all of them "
+    "(they name different refs, or some name none), so the roll-up does not "
+    "treat that 0 as exact, whatever each ref's age — it states no least-behind "
+    "distance and names no device least behind or lagging (each row states its "
+    "own count, and its counts_are_floors whether that count is a lower bound)"
 )
 
 
