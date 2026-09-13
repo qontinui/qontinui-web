@@ -3513,11 +3513,13 @@ async def test_a_frame_under_the_waiters_own_id_gets_one_refusal_not_two(
 async def test_an_attached_grants_expiry_notice_carries_no_request_id(
     relay: RemoteTerminalRelay,
 ) -> None:
-    """An ANSWERED attach's request id is never echoed at expiry.
+    """A BOUND attach's request id is never echoed at expiry.
 
-    Even with an unanswered scrollback request outstanding on the same grant:
-    the attach it came through was settled long ago, and echoing its request id
-    would hand that waiter a second, contradictory answer.
+    Its waiter was settled when the terminal bound, so echoing that id would hand
+    it a second, contradictory answer. The outstanding scrollback request is a
+    regression guard: it keeps a ``pending_buffer`` entry naming the grant, so a
+    future "is a waiter pending" check that wrongly counted scrollback would
+    fail here.
     """
     ws = _FakeWS()
     manager = _manager()

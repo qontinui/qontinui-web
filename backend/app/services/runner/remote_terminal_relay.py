@@ -1317,9 +1317,11 @@ class RemoteTerminalRelay:
             # clears that correlation silently — so settle it, on the same
             # predicate ``_evict`` uses, rather than leave it to the source's
             # client-side timeout. That predicate errs toward telling a waiter
-            # that was already answered (the source drops an unmatched id), never
-            # toward silence. Not for a detach: a live detach tells an abandoned
-            # waiter nothing, and an expired one must not either.
+            # that was already answered — the source finds no waiter under that
+            # id and routes by ``grant_jti``, which names no live pane for a grant
+            # that never bound — never toward silence. Not for a detach: a live
+            # detach tells an abandoned waiter nothing, and an expired one must
+            # not either.
             if (
                 settle_waiter
                 and not att.attached
