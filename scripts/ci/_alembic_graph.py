@@ -410,3 +410,205 @@ def plan_remediation(scan: Scan, landed: set[str] | None) -> Remediation:
     # chain. Dropping them made the caller say "no single landed head" and
     # nothing else, when the exact files to edit were already computed.
     return Remediation("chain", landed_heads, unlanded_heads, None, edits)
+
+
+# ---------------------------------------------------------------------------
+# The three edit sites of a re-point
+# ---------------------------------------------------------------------------
+#
+# Re-pointing an unlanded revision is NOT a one-token edit, and advice that
+# says it is turns a red head count into a red test suite (qontinui-web #1216).
+# A re-point touches three sites:
+#
+#   1. the ``down_revision`` assignment;
+#   2. the module docstring's ``Revises: <parent>`` line;
+#   3. the ``_PARENT_REVISION_ID = "<parent>"`` pin in the revision's migration
+#      test under ``backend/tests/``. Dozens of those tests declare the pin and
+#      several assert it equals ``down_revision`` — as a regex group, as
+#      ``module.down_revision``, or as a literal f-string searched for in the
+#      source — so leaving it stale fails the suite. The rest use it as an
+#      ``alembic upgrade``/``downgrade`` target, which is silently wrong.
+#
+# Everything below is pure: callers hand in file text, so the local gate (which
+# reads a checkout) and the post-land notifier (which fetches a PR's files at
+# its head) share one matcher and cannot disagree about what a pin is.
+
+#: Where the migration tests that pin a revision's parent live.
+TESTS_DIR = "backend/tests"
+
+PIN_REVISION_RE = re.compile(
+    r'^_REVISION_ID\s*(?::[^=]*)?=\s*["\']([^"\'\n]*)["\']', re.M
+)
+PIN_PARENT_RE = re.compile(
+    r'^_PARENT_REVISION_ID\s*(?::[^=]*)?=\s*["\']([^"\'\n]*)["\'][ \t]*$', re.M
+)
+REVISES_RE = re.compile(r"^Revises:[^\n]*$", re.M)
+
+
+@dataclass(frozen=True)
+class ParentPin:
+    """One ``_PARENT_REVISION_ID`` line that must move with the re-point."""
+
+    path: Path
+    lineno: int
+    before: str
+    after: str
+
+
+@dataclass(frozen=True)
+class RepointSites:
+    """The exact before -> after lines for re-pointing ONE revision.
+
+    ``down_revision`` and ``revises`` are ``(before, after)``. ``before`` is
+    ``None`` when the revision's source was not available to read, and
+    ``revises`` is ``None`` when the source was read and holds no ``Revises:``
+    line — two different statements, which renderers must not merge.
+
+    ``pins`` empty is NOT proof the test has no pin: the matcher only knows the
+    ``_PARENT_REVISION_ID`` spelling, and it only saw the files it was handed.
+    Renderers must say that rather than stay silent.
+    """
+
+    revision: str
+    path: Path | None
+    old_parent: str | None
+    new_parent: str
+    down_revision: tuple[str | None, str]
+    revises: tuple[str | None, str] | None
+    pins: tuple[ParentPin, ...]
+
+
+def find_parent_pins(
+    test_sources: dict[Path, str],
+    revision: str,
+    old_parent: str | None,
+    new_parent: str,
+) -> tuple[ParentPin, ...]:
+    """Every ``_PARENT_REVISION_ID`` pin that names ``old_parent`` for ``revision``.
+
+    A file qualifies only when it declares ``_REVISION_ID = "<revision>"`` —
+    a pin in some other revision's test is not this re-point's business — and
+    a pin line is listed only when its literal IS ``old_parent``. A pin that
+    already names something else is deliberately not listed: rewriting it
+    would assert a parent this graph never showed it had.
+
+    ``old_parent is None`` (a chain root, ``down_revision = None``) matches
+    nothing, because no string pin can name ``None``.
+    """
+    if old_parent is None:
+        return ()
+    found: list[ParentPin] = []
+    for path in sorted(test_sources):
+        source = test_sources[path]
+        if revision not in PIN_REVISION_RE.findall(source):
+            continue
+        for match in PIN_PARENT_RE.finditer(source):
+            if match.group(1) != old_parent:
+                continue
+            line = match.group(0)
+            offset = match.start(1) - match.start(0)
+            after = line[:offset] + new_parent + line[offset + len(old_parent) :]
+            lineno = source.count("\n", 0, match.start()) + 1
+            found.append(ParentPin(path, lineno, line, after))
+    return tuple(found)
+
+
+def no_pin_found_text(revision: str) -> str:
+    """The ONE wording for "the matcher found no pin" — never read as absent."""
+    return (
+        f"no `_PARENT_REVISION_ID` pin found for {revision} — if its test pins "
+        "the parent under another name, update it too"
+    )
+
+
+def read_test_sources(tests_dir: Path) -> dict[Path, str] | None:
+    """``{path: text}`` for every ``*.py`` under ``tests_dir`` naming a pin.
+
+    Only files that contain ``_PARENT_REVISION_ID`` at all are kept, so the
+    dict stays small; :func:`find_parent_pins` does the real matching.
+    ``None`` — not ``{}`` — when the directory does not exist, because "could
+    not search" must not render as "searched and found nothing".
+    """
+    if not tests_dir.is_dir():
+        return None
+    found: dict[Path, str] = {}
+    for path in sorted(tests_dir.rglob("*.py")):
+        try:
+            text = path.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        if "_PARENT_REVISION_ID" in text:
+            found[path] = text
+    return found
+
+
+def old_parent_of(scan: Scan, revision: str) -> str | None:
+    """The single parent ``revision`` currently declares, or ``None``.
+
+    A fork root is never a merge revision (those are ``blocked``), so there is
+    at most one string literal to read.
+    """
+    parents = PARENT_REF_RE.findall(scan.revisions.get(revision, ""))
+    return parents[0] if len(parents) == 1 else None
+
+
+def repoint_sites(
+    scan: Scan,
+    revision: str,
+    new_parent: str,
+    revision_source: str | None,
+    test_sources: dict[Path, str],
+) -> RepointSites:
+    """All three edit sites for re-pointing ``revision`` onto ``new_parent``."""
+    old_parent = old_parent_of(scan, revision)
+    down_before: str | None = None
+    down_after = f'down_revision: str | Sequence[str] | None = "{new_parent}"'
+    revises: tuple[str | None, str] | None = (None, f"Revises: {new_parent}")
+    if revision_source is not None:
+        down_match = DOWN_RE.search(revision_source)
+        if down_match:
+            down_before = down_match.group(0)
+            # Keep the author's own left-hand side (annotated or legacy).
+            lhs = down_before[: down_match.start(1) - down_match.start(0)]
+            down_after = f'{lhs}"{new_parent}"'
+        revises_match = REVISES_RE.search(revision_source)
+        revises = (
+            (revises_match.group(0), f"Revises: {new_parent}")
+            if revises_match
+            else None
+        )
+    return RepointSites(
+        revision=revision,
+        path=scan.paths.get(revision),
+        old_parent=old_parent,
+        new_parent=new_parent,
+        down_revision=(down_before, down_after),
+        revises=revises,
+        pins=find_parent_pins(test_sources, revision, old_parent, new_parent),
+    )
+
+
+def plan_repoint_sites(
+    scan: Scan,
+    remediation: Remediation,
+    sources: dict[Path, str],
+    test_sources: dict[Path, str],
+) -> dict[str, RepointSites]:
+    """``{revision: RepointSites}`` for every edit a single-target remedy names.
+
+    Empty when the remedy has no single ``target`` — the ``chain`` and
+    target-less ``blocked`` arms name roots but no parent to adopt, and this
+    will not invent one.
+    """
+    if remediation.target is None:
+        return {}
+    return {
+        revision: repoint_sites(
+            scan,
+            revision,
+            remediation.target,
+            sources.get(path) if path is not None else None,
+            test_sources,
+        )
+        for revision, path in remediation.edits
+    }
