@@ -340,8 +340,13 @@ export interface PlanCandidateResponse {
   coord_available: boolean;
   work_unit_population_state: WorkUnitPopulationState;
   work_unit_population_reason: string | null;
-  /** The whole corpus's health — the same block every list page carries. */
-  corpus_health: CorpusHealth;
+  /**
+   * The whole corpus's health — the same block every list page carries.
+   * `null` when it could not be read (report-only here): UNKNOWN, not healthy.
+   */
+  corpus_health: CorpusHealth | null;
+  /** Why `corpus_health` is null (a `read_failed:` line); null when it was read. */
+  corpus_health_unavailable_reason: string | null;
 }
 
 // ───────────────────────────── fleet policy ─────────────────────────────
@@ -479,7 +484,7 @@ export interface ScanRootListResponse {
 
 /**
  * A roll-up's verdict. `unknown` = no device feeding this source has a
- * `measured` verdict, so no distance is established — `min_behind` is `null`,
+ * comparable reading, so no distance is established — `min_behind` is `null`,
  * never `0`.
  */
 export const SCAN_ROOT_ROLLUP_STATES = ["measured", "unknown"] as const;
@@ -490,35 +495,38 @@ export type ScanRootRollupState = (typeof SCAN_ROOT_ROLLUP_STATES)[number];
  * Every device feeding ONE scan source, folded to the corpus's question: how
  * far behind is its least-behind CURRENT feeder?
  *
- * `min_behind` is drawn only from rows whose VERDICT (`state`) is `measured`,
- * so a silent, contradicted or 0-behind-floor device contributes no number.
- * `min_behind` is always a true lower bound; `min_behind_is_floor: false`
- * (exact) only when every measured device counted against the same `ref_sha`
- * and one of them fetched it fresh.
+ * Every claim is over the COMPARISON SET: readings that are fresh, applied and
+ * carry a count — a `measured` verdict, or a 0-behind floor the verdict marks
+ * `ref_stale`. A device in `unmeasured_device_ids` may be less behind than
+ * anything stated. `min_behind` is a lower bound; `min_behind_is_floor: false`
+ * means exact against a ref some device fetched within six hours (the runner's
+ * definition), never against the live tip.
  *
  * The four id lists PARTITION the feeders, and a device is named least-behind
- * or lagging only when the readings PROVE it. Counts against different refs
- * do not order devices — exactly 3 behind a five-hour-old ref can be 13 behind
- * the ref another device is exactly 5 behind — so when the refs differ, every
- * measured device is `lag_unknown_device_ids`. Never render it as either.
+ * or lagging only when the readings ORDER it: one shared `ref_sha` that is
+ * fresh, or stale with every device at `ahead === 0`. Otherwise every
+ * comparable device is `lag_unknown_device_ids` — so an empty
+ * `lagging_device_ids` is NOT ESTABLISHED, never "none lagging". Placement is
+ * often empty on an active repository, where devices fetch at different times.
  */
 export interface ScanRootSourceRollup {
   source_repo: string | null;
   state: ScanRootRollupState;
   detail: string | null;
   device_count: number;
-  measured_count: number;
+  /** Devices with a fresh, applied reading carrying a count. */
+  comparable_count: number;
   /** `null` is NOT ESTABLISHED. Never render it as `0`. */
   min_behind: number | null;
   /** `null` exactly when `min_behind` is. */
   min_behind_is_floor: boolean | null;
-  /** Proven least behind: at `min_behind`, all devices on one `ref_sha`. */
+  /** Comparable devices at `min_behind`, when the readings order them. */
   least_behind_device_ids: string[];
-  /** Proven lagging: above `min_behind`, all devices on one `ref_sha`. */
+  /** Comparable devices above `min_behind`, when the readings order them. */
   lagging_device_ids: string[];
-  /** Measured, but on different or unknown refs, so not placeable. */
+  /** Comparable devices the readings do not order. */
   lag_unknown_device_ids: string[];
-  /** Verdict other than `measured`; each row's `detail` says why. */
+  /** No comparable reading; each row's `state` and `detail` say why. */
   unmeasured_device_ids: string[];
 }
 
@@ -539,8 +547,9 @@ export type ScanRootListState = (typeof SCAN_ROOT_LIST_STATES)[number];
  *
  * `ScanRootRow`, `ScanRootListResponse` and `ScanRootSourceRollup` are
  * hand-written mirrors of the backend's response models, and an interface
- * does not exist at runtime, so no test can compare one with anything. This mapped type is the bridge. A
- * value annotated `WireNullability<T>` must name EVERY key of `T` (a missing
+ * does not exist at runtime, so no test can compare one with anything. This
+ * mapped type is the bridge. A value annotated `WireNullability<T>` must name
+ * EVERY key of `T` (a missing
  * one is an error) and no other (the excess-property check), and must set each
  * to `true` exactly when the field admits `null`. An OPTIONAL field maps to
  * `never`, which no value satisfies: every field on these responses is
@@ -612,7 +621,7 @@ export const SCAN_ROOT_ROLLUP_NULLABLE: WireNullability<ScanRootSourceRollup> = 
   state: false,
   detail: true,
   device_count: false,
-  measured_count: false,
+  comparable_count: false,
   min_behind: true,
   min_behind_is_floor: true,
   least_behind_device_ids: false,

@@ -3418,6 +3418,28 @@ async def list_plan_candidates(
             )
         )
 
+    # Report-only on THIS route: before it carried the block, /candidates read
+    # neither the capture census nor the scan-root table, so a failure in
+    # either must not take the candidates down. A savepoint contains the failed
+    # statement; the block is then null with the reason beside it — UNKNOWN,
+    # never a healthy-looking default.
+    corpus_health: CorpusHealth | None = None
+    corpus_health_unavailable_reason: str | None = None
+    try:
+        async with db.begin_nested():
+            corpus_health = await _load_corpus_health(db, org_id=org_id)
+    except SQLAlchemyError as exc:
+        logger.warning(
+            "plan_library.candidates_corpus_health_read_failed",
+            error=type(exc).__name__,
+            exc_info=True,
+        )
+        corpus_health_unavailable_reason = (
+            f"read_failed: the corpus health block could not be read "
+            f"({type(exc).__name__}); the candidates are unaffected, and a null "
+            "block is UNKNOWN, not healthy."
+        )
+
     return PlanCandidateResponse(
         items=items,
         count=len(items),
@@ -3433,7 +3455,8 @@ async def list_plan_candidates(
             _open_followup(edge, origin, now) for edge, origin in followup_rows
         ],
         open_followup_total=followup_total,
-        corpus_health=await _load_corpus_health(db, org_id=org_id),
+        corpus_health=corpus_health,
+        corpus_health_unavailable_reason=corpus_health_unavailable_reason,
     )
 
 
