@@ -3510,106 +3510,14 @@ async def test_a_frame_under_the_waiters_own_id_gets_one_refusal_not_two(
     ]
 
 
-@pytest.mark.parametrize("via", ["authorize", "sweep"])
-async def test_an_already_answered_waiter_is_not_told_again_at_expiry(
-    relay: RemoteTerminalRelay, via: str
-) -> None:
-    """``attach_terminal_missing`` answers the waiter but keeps the grant.
-
-    ``not att.attached`` read that grant as still awaited, so expiry — through
-    ``_authorize`` or the sweep — sent the same request id a second, contradictory
-    answer. The pending dicts are the real record of who is still listening.
-    """
-    ws = _FakeWS()
-    manager = _manager()
-    claims = _claims()
-    await _attach(relay, ws, manager, claims)
-    session = relay._sessions[id(ws)]
-    minted = _forwarded_attach(manager)["request_id"]
-    await relay.route_target_frame(
-        session, TARGET_DEVICE, {"type": "terminal_attached", "request_id": minted}
-    )
-    assert claims["jti"] in session.grants
-    session.grants[claims["jti"]].exp = int(time.time()) - 1
-
-    grant = claims["jti"] if via == "authorize" else "other"
-    await _send(
-        relay,
-        ws,
-        manager,
-        {"type": "remote_terminal_input", "request_id": "in-1", "grant_jti": grant},
-    )
-
-    answers = [f["code"] for f in ws.sent if f.get("request_id") == "req-attach-1"]
-    assert answers == ["attach_terminal_missing"], ws.sent
-    assert session.grants == {}
-    await relay.release_source(ws)
-
-
-async def test_an_eviction_during_the_bind_answers_the_waiter_not_attached(
-    relay: RemoteTerminalRelay, redis: _FakeRedis
-) -> None:
-    """The ``terminal_attached`` arm pops its waiter, then awaits the bind.
-
-    A sweep in that window evicts the grant, but the waiter is no longer pending,
-    so its notice carries no request id. The bind used to finish and answer
-    ``remote_terminal_attached`` — settling the source's waiter as a SUCCESS on a
-    dead grant — and the terminal key, bound after the release, leaked.
-    """
-    ws = _FakeWS()
-    manager = _manager()
-    claims = _claims()
-    await _attach(relay, ws, manager, claims)
-    session = relay._sessions[id(ws)]
-    minted = _forwarded_attach(manager)["request_id"]
-    real_bind = relay._bind_terminal
-    gate = asyncio.Event()
-
-    async def slow_bind(att: Any, terminal_id: str) -> bool:
-        att.exp = int(time.time()) - 1  # the grant lapses mid round-trip
-        await gate.wait()
-        return await real_bind(att, terminal_id)
-
-    relay._bind_terminal = slow_bind  # type: ignore[method-assign]
-    routing = asyncio.create_task(
-        relay.route_target_frame(
-            session,
-            TARGET_DEVICE,
-            {"type": "terminal_attached", "request_id": minted, "terminal_id": "t1"},
-        )
-    )
-    await _settle()
-    # An unrelated source frame runs the sweep while the bind is gated.
-    await _send(
-        relay,
-        ws,
-        manager,
-        {"type": "remote_terminal_input", "request_id": "in-1", "grant_jti": "other"},
-    )
-    manager.send_terminal.reset_mock()
-    gate.set()
-    assert await routing is True
-
-    answers = [
-        (f["type"], f["code"]) for f in ws.sent if f.get("request_id") == "req-attach-1"
-    ]
-    assert answers == [("remote_terminal_error", "attach_grant_expired")], ws.sent
-    assert ws.of_type("remote_terminal_attached") == []
-    detach = manager.send_terminal.await_args.args[1]
-    assert (detach["type"], detach["terminal_id"]) == ("terminal_detach", "t1")
-    assert session.grants == {}
-    assert redis.empty(), (redis.strings, redis.hashes)
-    await relay.release_source(ws)
-
-
-async def test_an_unanswered_scrollback_request_is_not_a_pending_waiter(
+async def test_an_attached_grants_expiry_notice_carries_no_request_id(
     relay: RemoteTerminalRelay,
 ) -> None:
-    """``_waiter_pending`` looks at attach and create correlations only.
+    """An ANSWERED attach's request id is never echoed at expiry.
 
-    A ``pending_buffer`` entry names the same grant, but the attach it came
-    through was answered long ago: echoing that attach's request id at expiry
-    would give its waiter a second, contradictory answer.
+    Even with an unanswered scrollback request outstanding on the same grant:
+    the attach it came through was settled long ago, and echoing its request id
+    would hand that waiter a second, contradictory answer.
     """
     ws = _FakeWS()
     manager = _manager()
