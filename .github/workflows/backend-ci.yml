@@ -591,7 +591,8 @@ jobs:
           # numeric test this design already deleted, so it gets the same
           # treatment the tripwire step next door gives JOB_START_EPOCH: an
           # implausible value is UNKNOWN and stops the job, never a silent pass.
-          if [ -z "${expected_files}" ] || [ "${expected_files}" -lt 100 ]; then
+          if [ -z "${expected_files}" ] || [ -n "${expected_files//[0-9]/}" ] \
+              || [ "${expected_files}" -lt 100 ]; then
             echo "::error title=Truncation floor UNKNOWN::find reported '${expected_files}' test files under tests/, which cannot be right for this suite (226 collectable of 231 on disk today). The floor was NOT applied and the collection was NOT checked, so this job stops rather than sharding an unverified collection."
             exit 1
           fi
@@ -610,7 +611,12 @@ jobs:
           # exactly that shape: most files present, most tests gone. At ~4141
           # node ids over 231 files the suite averages ~18 per file, so a floor
           # of 10x the file count (2310 today) sits well under a healthy
-          # collection and far above that 62% shape.
+          # collection and far above that 62% shape. The PAIR bounds the hole at
+          # ~36%, it does not close it: dropping the 18 heaviest files keeps 208
+          # files and exactly 2310 node ids while losing 1293 of 3603 tests. That
+          # residue needs every other file to collect normally, which is not what
+          # an import error or a plugin regression looks like - so it is accepted,
+          # and named here rather than left to be discovered.
           min_files=$(( expected_files * 3 / 4 ))
           min_nodeids=$(( expected_files * 10 ))
           echo "test files on disk: ${expected_files}; floors: ${min_files} files, ${min_nodeids} node ids"
