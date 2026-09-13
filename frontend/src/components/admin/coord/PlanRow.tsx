@@ -356,8 +356,9 @@ export function PlanRow({
             data-testid="coord-plan-card-dates"
           >
             {/* Three dates, three different facts, each under the word for
-                what it IS: `authored` is when the plan was written (coord
-                `authored_at`, slug-derived), `ingested` is when coord first
+                what it IS: `authored` is when the plan was written (the slug's
+                date prefix, else coord `authored_at` — `planAuthoredAt`),
+                `ingested` is when coord first
                 saw the row (`created_at` — mislabelled "created" here until
                 plan 2026-09-02-coord-work-units-carry-no-authoring-date),
                 `updated` is the scanner's last touch, honest HERE because it
