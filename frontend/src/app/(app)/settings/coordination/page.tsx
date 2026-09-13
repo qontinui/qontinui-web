@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { Fragment, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
@@ -24,6 +24,7 @@ import {
   type AutonomyLevel,
 } from "./_hooks/useNextStepSettings";
 import { PrioritySetsSection } from "./_components/PrioritySetsSection";
+import { FixerSpawnToggle } from "./_components/FixerSpawnToggle";
 
 // ---- helpers ----------------------------------------------------------------
 
@@ -269,10 +270,8 @@ export default function CoordinationSettingsPage() {
                     domain.requires_master && !masterEnabled;
 
                   return (
-                    <div
-                      key={domain.decision_domain}
-                      className="flex items-start gap-3 px-4 py-3"
-                    >
+                    <Fragment key={domain.decision_domain}>
+                    <div className="flex items-start gap-3 px-4 py-3">
                       {/* Label + meta */}
                       <div className="flex-1 min-w-0 space-y-0.5">
                         <div className="flex items-center gap-2">
@@ -328,6 +327,14 @@ export default function CoordinationSettingsPage() {
                         )}
                       </div>
                     </div>
+                    {/* The tenant off-switch for fixer SPAWNS sits beside the
+                        pr_fix autonomy row it pairs with: autonomy decides
+                        whether coord may act, this decides whether it may
+                        start a session at all. */}
+                    {domain.decision_domain === "pr_fix" && (
+                      <FixerSpawnToggle canEdit={canEdit} />
+                    )}
+                    </Fragment>
                   );
                 })}
               </div>
