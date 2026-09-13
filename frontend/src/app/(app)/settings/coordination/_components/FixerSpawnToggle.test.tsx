@@ -287,6 +287,52 @@ describe("FixerSpawnToggle — write", () => {
     await waitFor(() => expect(get).toHaveBeenCalledTimes(2));
   });
 
+  it("a commit_unconfirmed 503 (written: null) is reported as UNKNOWN and reloads", async () => {
+    get.mockResolvedValue(DEFAULT_ON);
+    patch.mockRejectedValue(
+      new Error(
+        `PATCH ${PATH} failed: 503 - ${JSON.stringify({
+          detail: JSON.stringify({
+            error: "auto_fix_pr_column_unavailable",
+            cause: "commit_unconfirmed",
+            written: null,
+          }),
+        })}`
+      )
+    );
+    render(<FixerSpawnToggle canEdit />);
+    await tenantText();
+    await userEvent.click(screen.getByTestId("fixer-spawn-off"));
+    await waitFor(() => expect(toastError).toHaveBeenCalled());
+    expect(String(toastError.mock.calls[0][0])).toMatch(/outcome unknown/i);
+    expect(toastSuccess).not.toHaveBeenCalled();
+    // Not treated as a clean failure either: it re-reads what coord serves.
+    await waitFor(() => expect(get).toHaveBeenCalledTimes(2));
+  });
+
+  it("a written: false 503 is a clean failure: error shown, no reload", async () => {
+    get.mockResolvedValue(DEFAULT_ON);
+    patch.mockRejectedValue(
+      new Error(
+        `PATCH ${PATH} failed: 503 - ${JSON.stringify({
+          detail: JSON.stringify({
+            error: "auto_fix_pr_column_unavailable",
+            cause: "write_failed",
+            written: false,
+          }),
+        })}`
+      )
+    );
+    render(<FixerSpawnToggle canEdit />);
+    await tenantText();
+    await userEvent.click(screen.getByTestId("fixer-spawn-off"));
+    await waitFor(() => expect(toastError).toHaveBeenCalled());
+    expect(String(toastError.mock.calls[0][0])).not.toMatch(/outcome unknown/i);
+    expect(toastSuccess).not.toHaveBeenCalled();
+    expect(get).toHaveBeenCalledTimes(1);
+    expect(checked("default")).toBe("true");
+  });
+
   it("a click during an in-flight save is dropped, not raced", async () => {
     get.mockResolvedValue(DEFAULT_ON);
     let resolvePatch: (v: unknown) => void = () => {};

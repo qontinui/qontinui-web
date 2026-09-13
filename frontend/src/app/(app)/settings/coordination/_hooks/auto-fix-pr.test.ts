@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   choiceFromTenant,
+  isUnconfirmedWrite,
   readAutoFixPr,
   tenantFromChoice,
   tenantSummary,
@@ -72,6 +73,57 @@ describe("readAutoFixPr", () => {
         auto_fix_pr_source: "tenant",
       })
     ).toBeNull();
+  });
+});
+
+describe("isUnconfirmedWrite", () => {
+  // The shape the web proxy throws: HttpClient wraps the proxy's JSON error,
+  // whose `detail` is coord's refusal body as text.
+  const thrown = (coordBody: object) =>
+    `PATCH /api/v1/operations/pr-merge/settings failed: 503 - ${JSON.stringify({
+      detail: JSON.stringify(coordBody),
+    })}`;
+
+  it("written: null (commit_unconfirmed) is UNCONFIRMED", () => {
+    expect(
+      isUnconfirmedWrite(
+        thrown({
+          error: "auto_fix_pr_column_unavailable",
+          cause: "commit_unconfirmed",
+          written: null,
+        })
+      )
+    ).toBe(true);
+  });
+
+  it.each([
+    "not_yet_added",
+    "dropped_while_read",
+    "unprobed_and_unreadable",
+    "write_failed",
+  ])("written: false (%s) is a clean failure, not unconfirmed", (cause) => {
+    expect(
+      isUnconfirmedWrite(
+        thrown({
+          error: "auto_fix_pr_column_unavailable",
+          cause,
+          written: false,
+        })
+      )
+    ).toBe(false);
+  });
+
+  it("an explicit written: false wins over the cause text", () => {
+    expect(
+      isUnconfirmedWrite(
+        thrown({ cause: "commit_unconfirmed", written: false })
+      )
+    ).toBe(false);
+  });
+
+  it("unrelated errors are plain failures", () => {
+    expect(isUnconfirmedWrite("PATCH failed: 400 - unknown field")).toBe(false);
+    expect(isUnconfirmedWrite("network down")).toBe(false);
   });
 });
 

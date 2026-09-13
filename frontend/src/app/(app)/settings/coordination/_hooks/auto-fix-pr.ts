@@ -75,6 +75,26 @@ export function readAutoFixPr(profile: unknown): AutoFixPrState | null {
   return { tenant: rawTenant, effective, source };
 }
 
+/**
+ * Classify a failed PATCH by coord's refusal body.
+ *
+ * coord answers a write it could not complete with 503
+ * `{error: "auto_fix_pr_column_unavailable", cause, written}`:
+ * - `written: false` — nothing was written, so the refusal is a clean failure;
+ * - `written: null` (`cause: "commit_unconfirmed"`) — coord cannot tell whether
+ *   the commit landed. That is UNCONFIRMED, never saved and never a clean
+ *   failure: the caller must reload and show what coord actually serves.
+ *
+ * The web proxy surfaces coord's body as text inside the thrown error message,
+ * so this reads the message rather than a structured response. Anything that
+ * does not carry an explicit `written: null` is a plain failure.
+ */
+export function isUnconfirmedWrite(errorMessage: string): boolean {
+  const match = errorMessage.match(/\\?"written\\?"\s*:\s*(null|true|false)/);
+  if (match) return match[1] === "null";
+  return /commit_unconfirmed/.test(errorMessage);
+}
+
 export function choiceFromTenant(tenant: boolean | null): AutoFixPrChoice {
   if (tenant === null) return "default";
   return tenant ? "on" : "off";
