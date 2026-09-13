@@ -50,7 +50,6 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Button } from "@/components/ui/button";
 import {
   Select,
   SelectContent,
@@ -58,11 +57,12 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { ArrowDownUp, Filter, RefreshCw, TriangleAlert } from "lucide-react";
+import { ArrowDownUp, Filter, TriangleAlert } from "lucide-react";
 import {
   CollapsiblePanel,
   HealthStrip,
   RecordList,
+  RefreshButton,
   readIsUnknown,
 } from "@/components/console";
 import { PlanRow } from "@/components/admin/coord/PlanRow";
@@ -171,7 +171,11 @@ export default function CoordPlansListPage() {
    * FAILURE landing after a fresh success shows a banner the newest read
    * disagrees with. That fails safe — it over-reports trouble — where the
    * opposite silences it. `pollInFlight` keeps same-question ticks from
-   * overlapping in the first place, so the window is the refresh button.
+   * overlapping in the first place, and a refresh CLICK takes the same lock
+   * when it is free (`refresh` below), so no tick can stack on a manual read
+   * either. What remains is one narrower window: a click made while a poll
+   * or the first read is already out still issues its own read, which is the
+   * overlap `filterWindowReset.test.tsx` pins as guarded by the two counters.
    */
   const questionGen = useRef(0);
   const reqGen = useRef(0);
@@ -257,6 +261,36 @@ export default function CoordPlansListPage() {
     };
   }, [fetchData]);
 
+  /**
+   * The refresh button's read — the operator's, never the poll's.
+   *
+   * It returns the read's promise so `<RefreshButton>` acknowledges the press
+   * for exactly as long as that read is out; the poll calls `fetchData`
+   * directly and has no path to that state, so the control never pulses on a
+   * tick (plan `2026-09-09-coord-plans-page-controls-do-not-acknowledge-or-name-themselves`
+   * F1).
+   *
+   * It TAKES `pollInFlight` when the lock is free, so the ticks that come due
+   * while a manual read is out skip instead of stacking a second read of the
+   * same question on top of it. When a poll already holds the lock the click
+   * still issues its own read rather than waiting for or joining that one:
+   * the operator asked for a read now, and the resulting overlap is exactly
+   * what `questionGen`/`reqGen` above are for. The release is question-scoped
+   * for the same reason as the effect's `releaseLock`: a filter change while
+   * this read is out hands the lock to the new question's read, which this
+   * one must not free.
+   */
+  const refresh = useCallback(() => {
+    const tookLock = !pollInFlight.current;
+    if (tookLock) pollInFlight.current = true;
+    const question = questionGen.current;
+    return fetchData().finally(() => {
+      if (tookLock && question === questionGen.current) {
+        pollInFlight.current = false;
+      }
+    });
+  }, [fetchData]);
+
   const plans = useMemo(
     () => data?.work_units ?? data?.plans ?? [],
     [data]
@@ -329,14 +363,12 @@ export default function CoordPlansListPage() {
             ))}
           </SelectContent>
         </Select>
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={fetchData}
+        <RefreshButton
+          onRefresh={refresh}
+          label="Refresh plans"
+          title={`Refresh plans (re-reads the work-unit list now; it also refreshes itself every ${POLL_INTERVAL_MS / 1000} s)`}
           data-testid="coord-plans-refresh"
-        >
-          <RefreshCw className="h-3 w-3" />
-        </Button>
+        />
       </div>
 
       {/* R7 — the window caveats are infrastructural, so they collapse; the
