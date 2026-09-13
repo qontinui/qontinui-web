@@ -196,7 +196,24 @@ def _write(tmp_path: Path, text: str) -> str:
     return str(path)
 
 
-def test_cli_selects_one_shard_and_writes_it(tmp_path):
+def _verdict(capsys, rc: int, verdict: str, **expected: object) -> dict[str, str]:
+    """The run's machine-readable verdict line, checked against `rc` and `expected`.
+
+    Tests read THIS line, never the ``::error::`` prose: pinning prose broke a
+    substring test four times across the review of the PR that introduced the
+    splitter, and the prose is meant for people and free to change.
+    """
+    err = capsys.readouterr().err
+    fields = splitter.parse_verdict(err)
+    assert fields is not None, f"no verdict line on stderr:\n{err}"
+    assert fields["verdict"] == verdict, fields
+    assert fields["exit"] == str(rc), fields
+    for key, value in expected.items():
+        assert fields.get(key) == str(value), f"{key}: {fields}"
+    return fields
+
+
+def test_cli_selects_one_shard_and_writes_it(tmp_path, capsys):
     out = tmp_path / "shard.txt"
     rc = splitter.main(
         [
@@ -214,6 +231,17 @@ def test_cli_selects_one_shard_and_writes_it(tmp_path):
     selected = out.read_text(encoding="utf-8").split()
     assert selected, "a shard of a 3-file corpus must not be empty"
     assert all(p.endswith(".py") for p in selected)
+    _verdict(
+        capsys,
+        0,
+        "ok",
+        mode="select",
+        shards=2,
+        shard=1,
+        files=3,
+        nodeids=5,
+        selected_files=len(selected),
+    )
 
 
 def test_cli_shards_partition_the_corpus(tmp_path):
@@ -260,7 +288,7 @@ def test_cli_fails_loudly_on_an_empty_collection(tmp_path, capsys):
         ]
     )
     assert rc == 2
-    assert "ZERO pytest node ids" in capsys.readouterr().err
+    _verdict(capsys, 2, "no_nodeids", nodeids=0)
 
 
 def test_cli_fails_when_a_shard_would_be_empty(tmp_path, capsys):
@@ -268,7 +296,7 @@ def test_cli_fails_when_a_shard_would_be_empty(tmp_path, capsys):
         ["--nodeids", _write(tmp_path, _REAL_SHAPE), "--shards", "5", "--shard", "5"]
     )
     assert rc == 3
-    assert "selected no test files" in capsys.readouterr().err
+    _verdict(capsys, 3, "empty_shard", shards=5, shard=5, files=3)
 
 
 @pytest.mark.parametrize("shard", ["0", "7"])
@@ -277,13 +305,92 @@ def test_cli_rejects_an_out_of_range_shard(tmp_path, shard, capsys):
         ["--nodeids", _write(tmp_path, _REAL_SHAPE), "--shards", "6", "--shard", shard]
     )
     assert rc == 1
-    assert "--shard must be in" in capsys.readouterr().err
+    _verdict(capsys, 1, "bad_args", reason="shard_out_of_range")
 
 
 def test_cli_requires_shard_args_unless_counting(tmp_path, capsys):
     rc = splitter.main(["--nodeids", _write(tmp_path, _REAL_SHAPE)])
     assert rc == 1
-    assert "required unless --count-only" in capsys.readouterr().err
+    _verdict(capsys, 1, "bad_args", reason="shard_args_missing")
+
+
+# --- the verdict line ------------------------------------------------------
+#
+# Every run of `main` ends with ONE machine-readable line on stderr. These pin
+# its framing and that every exit path produces it; the tests above pin its
+# content per arm.
+
+_EVERY_EXIT = [
+    (["--shards", "2", "--shard", "1"], 0, "ok"),
+    (["--count-only", "--min-files", "3", "--min-nodeids", "5"], 0, "ok"),
+    (["--count-only", "--min-files", "0"], 1, "bad_args"),
+    (["--count-only", "--min-files", "3", "--min-nodeids", "0"], 1, "bad_args"),
+    ([], 1, "bad_args"),
+    (["--shards", "0", "--shard", "1"], 1, "bad_args"),
+    (["--shards", "6", "--shard", "7"], 1, "bad_args"),
+    (["--shards", "5", "--shard", "5"], 3, "empty_shard"),
+    (["--count-only", "--min-files", "10", "--min-nodeids", "1"], 4, "truncated"),
+]
+
+
+@pytest.mark.parametrize(("extra", "rc", "verdict"), _EVERY_EXIT)
+def test_every_exit_path_ends_with_exactly_one_verdict_line(
+    tmp_path, capsys, extra, rc, verdict
+):
+    assert splitter.main(["--nodeids", _write(tmp_path, _REAL_SHAPE), *extra]) == rc
+    lines = capsys.readouterr().err.splitlines()
+    verdict_lines = [ln for ln in lines if ln.startswith(splitter.VERDICT_PREFIX)]
+    assert len(verdict_lines) == 1, lines
+    assert lines[-1] == verdict_lines[0], "the verdict line must be the LAST line"
+    fields = splitter.parse_verdict(lines[-1])
+    assert fields is not None
+    assert (fields["verdict"], fields["exit"]) == (verdict, str(rc))
+    keys = list(fields)
+    assert (keys[0], keys[-1]) == ("verdict", "exit"), keys
+
+
+def test_every_verdict_in_the_vocabulary_is_reachable():
+    """A verdict nothing emits is dead vocabulary; one missing here is untested."""
+    reached = {verdict for _, _, verdict in _EVERY_EXIT} | {"no_nodeids"}
+    assert reached == splitter.VERDICTS
+
+
+def test_parse_verdict_reads_the_last_verdict_line_among_prose():
+    text = (
+        "::error::a human-facing explanation that may change at will\n"
+        "shard-split: verdict=truncated files=1 exit=4\n"
+        "shard-split: verdict=ok mode=count files=3 exit=0\n"
+        "trailing prose\n"
+    )
+    assert splitter.parse_verdict(text) == {
+        "verdict": "ok",
+        "mode": "count",
+        "files": "3",
+        "exit": "0",
+    }
+
+
+def test_parse_verdict_is_none_when_there_is_no_verdict_line():
+    assert splitter.parse_verdict("collection OK: 3 test files\n") is None
+
+
+@pytest.mark.parametrize(
+    "line",
+    [
+        "shard-split: verdict=ok files exit=0",  # token without `=`
+        "shard-split: verdict=ok files=1 files=2 exit=0",  # duplicate key
+        "shard-split: verdict=maybe exit=0",  # verdict outside the vocabulary
+        "shard-split: verdict=ok files=1",  # no exit code
+    ],
+)
+def test_parse_verdict_refuses_a_malformed_line(line):
+    with pytest.raises(ValueError):
+        splitter.parse_verdict(line)
+
+
+def test_format_verdict_refuses_whitespace_in_a_value():
+    with pytest.raises(ValueError):
+        splitter.format_verdict("bad_args", 1, reason="two words")
 
 
 # --- the truncation floor --------------------------------------------------
@@ -307,7 +414,9 @@ def test_count_only_accepts_a_complete_collection(tmp_path, capsys):
         ]
     )
     assert rc == 0
-    assert "collection OK: 3 test files" in capsys.readouterr().err
+    _verdict(
+        capsys, 0, "ok", mode="count", files=3, nodeids=5, min_files=3, min_nodeids=5
+    )
 
 
 def test_count_only_refuses_a_zero_floor(tmp_path, capsys):
@@ -323,7 +432,7 @@ def test_count_only_refuses_a_zero_floor(tmp_path, capsys):
         ["--nodeids", _write(tmp_path, _REAL_SHAPE), "--count-only", "--min-files", "0"]
     )
     assert rc == 1
-    assert "requires a positive --min-files" in capsys.readouterr().err
+    _verdict(capsys, 1, "bad_args", mode="count", reason="min_files_not_positive")
 
 
 def test_count_only_refuses_a_zero_node_id_floor(tmp_path, capsys):
@@ -346,7 +455,7 @@ def test_count_only_refuses_a_zero_node_id_floor(tmp_path, capsys):
         ]
     )
     assert rc == 1
-    assert "requires a positive --min-nodeids" in capsys.readouterr().err
+    _verdict(capsys, 1, "bad_args", mode="count", reason="min_nodeids_not_positive")
 
 
 def test_count_only_rejects_a_node_id_shortfall(tmp_path, capsys):
@@ -368,9 +477,7 @@ def test_count_only_rejects_a_node_id_shortfall(tmp_path, capsys):
         ]
     )
     assert rc == 4
-    err = capsys.readouterr().err
-    assert "TRUNCATED" in err
-    assert "5 node ids (floor 99)" in err
+    _verdict(capsys, 4, "truncated", files=3, nodeids=5, min_files=3, min_nodeids=99)
 
 
 def test_count_only_rejects_a_truncated_collection(tmp_path, capsys):
@@ -387,13 +494,11 @@ def test_count_only_rejects_a_truncated_collection(tmp_path, capsys):
         ]
     )
     assert rc == 4
-    err = capsys.readouterr().err
-    assert "TRUNCATED" in err
-    # Both floors are reported, so the message names which one was missed.
-    assert "3 distinct test files (floor 10)" in err
+    # Both floors are reported, so the verdict names which one was missed.
+    _verdict(capsys, 4, "truncated", files=3, nodeids=5, min_files=10, min_nodeids=1)
 
 
-def test_the_floor_also_guards_a_real_shard_selection(tmp_path):
+def test_the_floor_also_guards_a_real_shard_selection(tmp_path, capsys):
     """Not only the --count-only pass: a short collection must never be sharded."""
     rc = splitter.main(
         [
@@ -408,6 +513,7 @@ def test_the_floor_also_guards_a_real_shard_selection(tmp_path):
         ]
     )
     assert rc == 4
+    _verdict(capsys, 4, "truncated", mode="select", files=3, min_files=10)
 
 
 def test_the_floors_are_off_by_default_on_the_selection_path(tmp_path):
