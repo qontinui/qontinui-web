@@ -16,14 +16,14 @@ widen MUST deploy before the coord write ships (served policy
 ``production-and-cost`` ``alembic-sole-authorship``).
 
 Revision ID: presetprov01_allow_preset_provisional_profile_source
-Revises: pr_fixer_spawn_01
+Revises: remote_create_01
 """
 
 from alembic import op
 
 # revision identifiers, used by Alembic.
 revision = "presetprov01_allow_preset_provisional_profile_source"
-down_revision = "pr_fixer_spawn_01"
+down_revision = "remote_create_01"
 branch_labels = None
 depends_on = None
 
