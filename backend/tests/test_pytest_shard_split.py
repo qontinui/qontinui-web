@@ -505,8 +505,15 @@ def test_every_return_in_main_goes_through_finish():
                 f"`main` line {node.lineno} raises SystemExit"
             )
         if isinstance(node, ast.Call):
-            assert ast.unparse(node.func) not in {"sys.exit", "exit", "quit"}, (
-                f"`main` line {node.lineno} exits without `_finish`"
+            # `parser.error(...)` is the idiomatic argparse way to add a check
+            # after parse_args, and exits 2 with no verdict line; so does
+            # `parser.exit(...)`. Nothing in `main` legitimately ends in either.
+            name = ast.unparse(node.func)
+            exits = name in {"sys.exit", "exit", "quit", "os._exit"} or name.endswith(
+                (".error", ".exit")
+            )
+            assert not exits, (
+                f"`main` line {node.lineno} exits via `{name}` without `_finish`"
             )
     assert isinstance(main.body[-1], ast.Return), "`main` can fall off its end"
 
@@ -547,6 +554,59 @@ def test_a_closed_stdout_is_io_error(tmp_path, monkeypatch, capsys):
     monkeypatch.undo()
     assert rc == 1
     _verdict(capsys, 1, "io_error", stage="write")
+
+
+def test_the_docstring_example_is_what_the_script_writes(tmp_path, capsys):
+    """The Output contract's sample line is what a new reader codes against."""
+    example = next(
+        line.strip()
+        for line in (splitter.__doc__ or "").splitlines()
+        if line.strip().startswith(splitter.VERDICT_PREFIX)
+    )
+    rc = splitter.main(
+        [
+            "--nodeids",
+            _write(tmp_path, _REAL_SHAPE),
+            "--count-only",
+            "--min-files",
+            "10",
+            "--min-nodeids",
+            "1",
+        ]
+    )
+    assert rc == 4
+    assert capsys.readouterr().err.splitlines()[-1] == example
+
+
+def test_no_print_in_the_script_targets_sys_stderr_directly():
+    """Only `_stderr()` may be a print target.
+
+    `file=sys.stderr` is `file=None` when stderr is closed, and `print` then
+    writes to STDOUT -- the shard's file list when `--out` is not given. The
+    closed-stderr tests run only two paths; this covers every call site.
+    """
+    tree = ast.parse(SCRIPT_PATH.read_text(encoding="utf-8"))
+    direct = [
+        node.lineno
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Call)
+        and any(
+            kw.arg == "file" and ast.unparse(kw.value) == "sys.stderr"
+            for kw in node.keywords
+        )
+    ]
+    assert not direct, f"`file=sys.stderr` at lines {direct}; use `_stderr()`"
+
+
+def test_a_closed_stderr_on_an_error_path_writes_nothing_to_stdout(
+    tmp_path, monkeypatch, capsys
+):
+    nodeids = _write(tmp_path, _REAL_SHAPE)
+    monkeypatch.setattr(sys, "stderr", None)
+    rc = splitter.main(["--nodeids", nodeids, "--shards", "0", "--shard", "1"])
+    monkeypatch.undo()
+    assert rc == 1
+    assert capsys.readouterr().out == ""
 
 
 def test_a_closed_stderr_never_leaks_into_the_selection(tmp_path, monkeypatch, capsys):
