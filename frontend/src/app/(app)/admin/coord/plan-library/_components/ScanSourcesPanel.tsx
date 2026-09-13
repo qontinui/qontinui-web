@@ -379,11 +379,11 @@ export function rollupDistanceSummary(rollup: ScanRootSourceRollup): string {
     rollup.min_behind == null ||
     rollup.min_behind_is_floor == null
   ) {
-    return "How far behind its least-behind feeder is is not established.";
+    return "The least-behind feeder's distance is not established.";
   }
   const n = rollup.min_behind;
   const distance = rollup.min_behind_is_floor
-    ? `at least ${n} behind (a lower bound — the comparable devices did not all count against one recently fetched ref)`
+    ? `at least ${n} behind (a lower bound — no single recently fetched ref is shared by every comparable reading)`
     : `exactly ${n} behind, as of a ref some comparable device had fetched within six hours of its reading — not the live tip`;
   const unmeasured = rollup.unmeasured_device_ids.length;
   const caveat = unmeasured
@@ -392,7 +392,14 @@ export function rollupDistanceSummary(rollup: ScanRootSourceRollup): string {
   return `Least-behind comparable feeder: ${distance}.${caveat}`;
 }
 
-/** Device ids, shortened to fit, with the full id on the title. */
+/**
+ * Device ids, IN FULL.
+ *
+ * Naming which feeder lags is the point of these lists, so the id is not
+ * shortened: a prefix can be shared (a time-ordered id's leading digits are a
+ * timestamp), and a full id kept only in a `title` is unreachable by keyboard
+ * or touch.
+ */
 function DeviceIdList({
   label,
   ids,
@@ -409,8 +416,8 @@ function DeviceIdList({
       {ids.map((id, i) => (
         <span key={id}>
           {i > 0 ? ", " : ""}
-          <code className="rounded bg-muted px-1 py-0.5 text-[10px]" title={id}>
-            {id.slice(0, 8)}
+          <code className="break-all rounded bg-muted px-1 py-0.5 text-[10px]">
+            {id}
           </code>
         </span>
       ))}
@@ -468,7 +475,10 @@ function ScanSourceRollupView({ rollup }: { rollup: ScanRootSourceRollup }) {
         {/* "no source_repo reported", not "no scan source": the device rows
             below fall back to `plans_dir`, so a device reporting a path but no
             `source_repo` lands here beside a row that shows one. */}
-        <span className="min-w-0 truncate font-medium">
+        <span
+          className="min-w-0 truncate font-medium"
+          title={rollup.source_repo ?? undefined}
+        >
           {rollup.source_repo ?? "no source_repo reported"}
         </span>
         <span className="ml-auto shrink-0 text-muted-foreground">
@@ -523,9 +533,10 @@ function ScanSourceRollupView({ rollup }: { rollup: ScanRootSourceRollup }) {
           className="mt-1 text-[11px] text-muted-foreground"
           data-testid={id("unordered-note")}
         >
-          These counted against different or unknown refs, or against one stale
-          ref while some device reported commits of its own or no ahead count,
-          so which feeders lag is not established.
+          The readings not ordered counted against different or unknown refs, or
+          against one ref that is stale or of unknown age while some device
+          reported commits of its own or no ahead count, so which feeders lag is
+          not established.
         </p>
       )}
       <DeviceIdList
@@ -557,8 +568,8 @@ function ScanSourceRollups({
         className="mt-3 text-[11px] text-muted-foreground"
         data-testid="scan-sources-rollup-unserved"
       >
-        No per-source roll-up was served, so how far behind each source&apos;s
-        least-behind feeder is is not established.
+        No per-source roll-up was served, so the least-behind feeder&apos;s
+        distance is not established for any source.
       </p>
     );
   }

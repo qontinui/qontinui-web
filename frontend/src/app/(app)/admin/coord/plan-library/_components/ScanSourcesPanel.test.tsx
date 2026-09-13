@@ -853,7 +853,7 @@ describe("rollupDistanceSummary — the corpus's question, with the row rules on
     // send an operator to re-fetch a box that is already current.
     const text = rollupDistanceSummary(rollup({ min_behind_is_floor: true }));
     expect(text).toContain(
-      "(a lower bound — the comparable devices did not all count against one recently fetched ref)"
+      "(a lower bound — no single recently fetched ref is shared by every comparable reading)"
     );
     expect(text).not.toMatch(/stale/);
   });
@@ -877,9 +877,7 @@ describe("rollupDistanceSummary — the corpus's question, with the row rules on
         unmeasured_device_ids: [DEVICE],
       })
     );
-    expect(text).toBe(
-      "How far behind its least-behind feeder is is not established."
-    );
+    expect(text).toBe("The least-behind feeder's distance is not established.");
     expect(text).not.toMatch(/\b0\b/);
   });
 
@@ -902,7 +900,7 @@ describe("rollupDistanceSummary — the corpus's question, with the row rules on
     ]) {
       const text = rollupDistanceSummary(drifted);
       expect(text).toBe(
-        "How far behind its least-behind feeder is is not established."
+        "The least-behind feeder's distance is not established."
       );
     }
   });
@@ -944,9 +942,7 @@ describe("ScanSourcesPanel — the per-source roll-up", () => {
     expect(screen.getByTestId(rid("source")).textContent).toContain(
       "1 of 1 device comparable"
     );
-    expect(screen.getByTestId(rid("least")).textContent).toContain(
-      DEVICE.slice(0, 8)
-    );
+    expect(screen.getByTestId(rid("least")).textContent).toContain(DEVICE);
     // The device rows are still there beneath it.
     expect(screen.getByTestId(`scan-root-${DEVICE}`)).toBeTruthy();
   });
@@ -980,9 +976,7 @@ describe("ScanSourcesPanel — the per-source roll-up", () => {
     expect(screen.getByTestId(rid("detail")).textContent).toContain(
       "ref_stale:"
     );
-    expect(screen.getByTestId(rid("lagging")).textContent).toContain(
-      DEVICE_B.slice(0, 8)
-    );
+    expect(screen.getByTestId(rid("lagging")).textContent).toContain(DEVICE_B);
   });
 
   it("unordered devices say which feeders lag is not established — never 'none lagging'", () => {
@@ -1007,14 +1001,14 @@ describe("ScanSourcesPanel — the per-source roll-up", () => {
     expect(screen.queryByTestId(rid("lagging"))).toBeNull();
     expect(screen.queryByTestId(rid("least"))).toBeNull();
     const unordered = screen.getByTestId(rid("unordered")).textContent;
-    expect(unordered).toContain(DEVICE.slice(0, 8));
-    expect(unordered).toContain(DEVICE_B.slice(0, 8));
+    expect(unordered).toContain(DEVICE);
+    expect(unordered).toContain(DEVICE_B);
     const note = screen.getByTestId(rid("unordered-note")).textContent;
     expect(note).toContain("which feeders lag is not established");
     // The whole reason, not "stale refs": one stale shared ref with every
     // device at `ahead == 0` DOES order the devices.
     expect(note).toContain(
-      "or against one stale ref while some device reported commits of its own or no ahead count"
+      "or against one ref that is stale or of unknown age while some device reported commits of its own or no ahead count"
     );
     expect(screen.getByTestId("scan-sources").textContent).not.toMatch(
       /none lagging/i
@@ -1027,7 +1021,7 @@ describe("ScanSourcesPanel — the per-source roll-up", () => {
     expect(screen.queryByTestId(rid("unordered-note"))).toBeNull();
   });
 
-  it("lists devices with no comparable reading, with the full id on hover", () => {
+  it("lists devices with no comparable reading by their FULL id, not a prefix", () => {
     useScanRootsMock.mockReturnValue(
       hookState(
         rolled([rollup({ device_count: 2, unmeasured_device_ids: [DEVICE_B] })])
@@ -1035,9 +1029,33 @@ describe("ScanSourcesPanel — the per-source roll-up", () => {
     );
     render(<ScanSourcesPanel />);
 
+    // A time-ordered id's leading digits are a timestamp, so two devices can
+    // share a prefix; and an id kept only in a `title` is unreachable by
+    // keyboard or touch.
     const list = screen.getByTestId(rid("unmeasured"));
-    expect(list.textContent).toContain(DEVICE_B.slice(0, 8));
-    expect(list.querySelector("code")?.getAttribute("title")).toBe(DEVICE_B);
+    expect(list.querySelector("code")?.textContent).toBe(DEVICE_B);
+  });
+
+  it("counts devices in the plural when there is more than one", () => {
+    useScanRootsMock.mockReturnValue(
+      hookState(
+        rolled([rollup({ device_count: 2, unmeasured_device_ids: [DEVICE_B] })])
+      )
+    );
+    render(<ScanSourcesPanel />);
+    expect(screen.getByTestId(rid("source")).textContent).toContain(
+      "1 of 2 devices comparable"
+    );
+  });
+
+  it("puts the full source name on the truncated label", () => {
+    useScanRootsMock.mockReturnValue(hookState(rolled([rollup()])));
+    render(<ScanSourcesPanel />);
+    expect(
+      screen
+        .getByTestId(rid("source"))
+        .querySelector('[title="qontinui-dev-notes/plans"]')
+    ).not.toBeNull();
   });
 
   it("the null group renders as a source nobody named, not as a blank", () => {
@@ -1074,7 +1092,7 @@ describe("ScanSourcesPanel — the per-source roll-up", () => {
     ]);
     expect(
       screen.getByTestId("scan-source-rollup:least:null").textContent
-    ).toContain(DEVICE_B.slice(0, 8));
+    ).toContain(DEVICE_B);
   });
 
   it("free-text source names cannot collide with a role or with the null group", () => {
@@ -1082,6 +1100,11 @@ describe("ScanSourcesPanel — the per-source roll-up", () => {
     // of `state-foo/plans` WAS the state badge of `foo/plans`, and a source
     // spelled like the null stand-in shared its ids. `getByTestId` throws on a
     // duplicate, so each lookup below proves uniqueness as well as presence.
+    //
+    // The fixtures are DELIBERATELY not shapes the builder emits (an `unknown`
+    // roll-up still carrying a distance; one device listed in four sources):
+    // only the test ids are under test here, and every other test in this
+    // block uses a builder-faithful shape.
     useScanRootsMock.mockReturnValue(
       hookState(
         rolled([
@@ -1117,7 +1140,7 @@ describe("ScanSourcesPanel — the per-source roll-up", () => {
     const distance = screen.getByTestId(rid("distance")).textContent;
     expect(distance).toContain("at least 254 behind");
     expect(distance).toContain(
-      "did not all count against one recently fetched ref"
+      "no single recently fetched ref is shared by every comparable reading"
     );
   });
 
@@ -1155,7 +1178,7 @@ describe("ScanSourcesPanel — the per-source roll-up", () => {
       "Lagging among comparable readings"
     );
     expect(screen.getByTestId(rid("unmeasured")).textContent).toContain(
-      DEVICE_C.slice(0, 8)
+      DEVICE_C
     );
   });
 
