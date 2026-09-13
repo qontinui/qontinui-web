@@ -2990,6 +2990,7 @@ async def _proxy_coord_post(
     timeout: httpx.Timeout | None = None,
     return_status: bool = False,
     structured_errors: bool = False,
+    non_json_success_as_empty: bool = False,
 ) -> Any:
     """Proxy a POST request to coord and return the JSON body.
 
@@ -3033,6 +3034,12 @@ async def _proxy_coord_post(
     for every other route, invisible to their tests (which run against a bare
     ``FastAPI()`` with no handlers registered), so each route opts in
     knowingly.
+
+    ``non_json_success_as_empty`` — when True, a coord 2xx whose body is not
+    JSON (an empty ``202``, or text) is returned as ``{}`` instead of raising
+    out of ``resp.json()`` as a 500. A success is still a success: the write
+    was accepted, and turning that into a server error would tell the operator
+    it failed. Default False preserves the prior behavior exactly.
     """
     url = f"{settings.COORD_URL}{path}"
     headers = (
@@ -3056,9 +3063,15 @@ async def _proxy_coord_post(
             status_code=resp.status_code,
             detail=_coord_error_detail(resp) if structured_errors else resp.text,
         )
+    try:
+        body = resp.json()
+    except ValueError:
+        if not non_json_success_as_empty:
+            raise
+        body = {}
     if return_status:
-        return resp.json(), resp.status_code
-    return resp.json()
+        return body, resp.status_code
+    return body
 
 
 def _coord_error_detail(resp: httpx.Response) -> Any:
@@ -6975,7 +6988,9 @@ async def post_coord_session_control(
 
     Coord answers ``202`` with ``{event_id, session_id, device_id, action}``
     and that status is echoed verbatim — a bare JSON return would be wrapped
-    as ``200`` and hide that the request was ACCEPTED, not carried out.
+    as ``200`` and hide that the request was ACCEPTED, not carried out. A 2xx
+    whose body is not JSON comes back as ``{}`` with coord's status, never as
+    a 500.
 
     Refusals are typed and pass through with coord's status and body
     (``structured_errors=True``): ``404 session_not_found``,
@@ -6996,6 +7011,8 @@ async def post_coord_session_control(
         tenant_id=tenant_id,
         return_status=True,
         structured_errors=True,
+        # An accepted request whose body does not parse is still accepted.
+        non_json_success_as_empty=True,
     )
     return JSONResponse(content=coord_body, status_code=status_code)
 
