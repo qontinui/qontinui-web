@@ -26,7 +26,8 @@ import type { CoordPlanRow } from "@/components/admin/coord/planStatus";
 export interface PlansHealth {
   level: HealthStripLevel;
   headline: string;
-  detail: string;
+  /** Absent when there is nothing to say that the badges do not already say. */
+  detail?: string;
   badges: HealthBadge[];
 }
 
@@ -140,9 +141,19 @@ export function derivePlansHealth(
       : unrecognised > 0 || readFailed
         ? "amber"
         : "green";
+  // **Every count is said ONCE, in the badges.** The headline and the detail
+  // used to restate four of them beside the badges that already carried them
+  // (plan `2026-09-09-coord-plans-page-controls-do-not-acknowledge-or-name-themselves`
+  // F2). The badge cluster is the one place a number lives in EVERY arm of
+  // this strip — the unknown and waiting arms above put `blocked –` there and
+  // nowhere else — so the headline states the verdict and the badge the
+  // measurement. What the detail line still says is everything that is NOT a
+  // count: the staleness qualifier and why a status renders verbatim.
   const headline =
     blocked > 0
-      ? `${blocked} plan${blocked === 1 ? "" : "s"} blocked on a human`
+      ? blocked === 1
+        ? "A plan is blocked on a human"
+        : "Plans are blocked on a human"
       : readFailed
         ? // Names the read that has not come back, and stops there. "No plan
           // was blocked at the last good read" would be the tempting phrasing
@@ -155,10 +166,12 @@ export function derivePlansHealth(
           : "No plan is blocked";
   const window =
     unrecognised > 0
-      ? `${unrecognised} carry a status this build has no label for — shown verbatim`
-      : `${active} in progress, ${shipped} shipped`;
-  // Stale, not unknown: the rows are real, only their age is not.
-  const detail = readFailed ? staleDetail(window) : window;
+      ? "a status this build has no label for is shown verbatim"
+      : "";
+  // Stale, not unknown: the rows are real, only their age is not. This
+  // qualifier is why the detail line is de-duplicated rather than deleted —
+  // without it a failed refresh would render its counts unqualified.
+  const detail = readFailed ? staleDetail(window) : window || undefined;
 
   return {
     level,

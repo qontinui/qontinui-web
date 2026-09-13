@@ -51,7 +51,20 @@ describe("derivePlansHealth", () => {
   it("goes red on a blocked plan, because nothing downstream clears one", () => {
     const h = derivePlansHealth(rows, true);
     expect(h.level).toBe("red");
-    expect(h.headline).toBe("1 plan blocked on a human");
+    // The verdict, not the measurement: the count lives in the `blocked N`
+    // badge, the one place a number sits in EVERY arm of this strip.
+    expect(h.headline).toBe("A plan is blocked on a human");
+  });
+
+  it("pluralises the blocked verdict without restating the count", () => {
+    const h = derivePlansHealth(
+      [
+        { slug: "c", status: "blocked" },
+        { slug: "e", status: "blocked" },
+      ],
+      true
+    );
+    expect(h.headline).toBe("Plans are blocked on a human");
   });
 
   it("goes amber — not green — when a status has no label in this build", () => {
@@ -60,7 +73,11 @@ describe("derivePlansHealth", () => {
       true
     );
     expect(h.level).toBe("amber");
-    expect(h.detail).toMatch(/no label for/);
+    // The explanation survives de-duplication; the number moves to the
+    // `unlabelled N` badge.
+    expect(h.detail).toBe(
+      "a status this build has no label for is shown verbatim"
+    );
   });
 
   it("is green on a loaded, unblocked, fully-recognised window", () => {
@@ -120,7 +137,9 @@ describe("derivePlansHealth", () => {
       // What does NOT survive is the present-tense headline: "No work units in
       // this window" is a claim about now, off a read that is failing now.
       expect(h.headline).toBe("Last refresh failed — these counts are not current");
-      expect(h.detail).toMatch(/^Last refresh failed/);
+      // With the counts gone from the detail line, the staleness qualifier is
+      // ALL that is left of it — and it must still be there.
+      expect(h.detail).toBe("Last refresh failed — these counts are stale.");
     });
 
     it("does not leave 'No plan is blocked' unqualified over a stale list", () => {
@@ -136,7 +155,7 @@ describe("derivePlansHealth", () => {
       // line of small print under a pulsing green dot is not qualifying it.
       expect(h.headline).not.toBe("No plan is blocked");
       expect(h.level).toBe("amber");
-      expect(h.detail).toMatch(/^Last refresh failed — these counts are stale\./);
+      expect(h.detail).toBe("Last refresh failed — these counts are stale.");
     });
 
     it("keeps the all-clear green while the read is current", () => {
@@ -152,7 +171,7 @@ describe("derivePlansHealth", () => {
       // red whether or not the last refresh landed.
       const h = derivePlansHealth([{ slug: "a", status: "blocked" }], true, true);
       expect(h.level).toBe("red");
-      expect(h.headline).toMatch(/1 plan blocked on a human/);
+      expect(h.headline).toBe("A plan is blocked on a human");
     });
 
     it("keeps a retained blocked plan red rather than dashing it", () => {
@@ -163,7 +182,78 @@ describe("derivePlansHealth", () => {
         true
       );
       expect(h.level).toBe("red");
-      expect(h.headline).toBe("1 plan blocked on a human");
+      expect(h.headline).toBe("A plan is blocked on a human");
+    });
+
+    it("keeps the unlabelled explanation qualified as stale, without its count", () => {
+      const h = derivePlansHealth(
+        [{ slug: "d", status: "weird_new_state" }],
+        true,
+        true
+      );
+      expect(h.detail).toBe(
+        "Last refresh failed — these counts are stale. a status this build has no label for is shown verbatim"
+      );
+    });
+  });
+
+  /**
+   * F2 of plan `2026-09-09-coord-plans-page-controls-do-not-acknowledge-or-name-themselves`:
+   * the strip used to say four numbers twice — once in the detail line or the
+   * headline, and once in the badge beside it. Each count is now rendered ONCE,
+   * in the badge cluster. Asserted on the RENDERED strip, the text an operator
+   * reads, in every arm that carries counts, with counts chosen to be distinct
+   * so a stray duplicate cannot hide behind a coincidence.
+   */
+  describe("each count is rendered exactly once", () => {
+    const recognised: CoordPlanRow[] = [
+      { slug: "s1", status: "shipped" },
+      { slug: "s2", status: "shipped" },
+      { slug: "s3", status: "shipped" },
+      { slug: "p1", status: "in_progress" },
+      { slug: "p2", status: "in_progress" },
+      { slug: "b1", status: "blocked" },
+    ];
+    const withUnlabelled: CoordPlanRow[] = [
+      ...recognised,
+      { slug: "u1", status: "weird_new_state" },
+      { slug: "u2", status: "weird_new_state" },
+      { slug: "u3", status: "weird_new_state" },
+      { slug: "u4", status: "weird_new_state" },
+    ];
+
+    const occurrences = (text: string, needle: RegExp) =>
+      (text.match(needle) ?? []).length;
+
+    it.each([
+      ["current, recognised", recognised, false, false],
+      ["stale, recognised", recognised, true, false],
+      ["current, with unlabelled rows", withUnlabelled, false, true],
+      ["stale, with unlabelled rows", withUnlabelled, true, true],
+    ] as const)("%s", (_name, plans, readFailed, hasUnlabelled) => {
+      const h = renderBadges(true, [...plans], readFailed);
+      const text = screen.getByTestId("strip").textContent ?? "";
+
+      // No number outside the badge cluster.
+      expect(h.headline).not.toMatch(/\d/);
+      expect(h.detail ?? "").not.toMatch(/\d/);
+
+      // Each badge's number, once, in the whole strip. Badges concatenate in
+      // `textContent` with no separator ("in progress 2shipped 3"), so a digit
+      // is matched by lookaround, not a word boundary.
+      const digit = (n: number) => new RegExp(`(?<!\\d)${n}(?!\\d)`, "g");
+      expect(text).toContain(`plans ${plans.length}`);
+      expect(text).toContain("blocked 1");
+      expect(text).toContain("in progress 2");
+      expect(occurrences(text, /in progress/g)).toBe(1);
+      expect(text).toContain("shipped 3");
+      expect(occurrences(text, /shipped/g)).toBe(1);
+      expect(occurrences(text, digit(2))).toBe(1);
+      expect(occurrences(text, digit(3))).toBe(1);
+      if (hasUnlabelled) {
+        expect(text).toContain("unlabelled 4");
+        expect(occurrences(text, digit(4))).toBe(1);
+      }
     });
   });
 });
