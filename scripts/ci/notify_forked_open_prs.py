@@ -64,8 +64,9 @@ the sweep is exhaustive.
 Cost is one API call per open PR (its file list), plus a blob per changed
 revision file and a comment listing per PR that actually carries one, plus a
 single search for PRs holding a stale notice. A PR that needs a re-point
-costs one more file listing and a blob per ``.py`` it changes under
-``backend/tests/``, to find its ``_PARENT_REVISION_ID`` pin. With 16 open PRs that is ~20
+reuses that same file list and adds one blob per CANDIDATE test file under
+``backend/tests/`` — an added file whose patch never mentions
+``_PARENT_REVISION_ID`` is not downloaded. With 16 open PRs that is ~20
 calls; ``GITHUB_TOKEN``'s budget is 1,000/hour/repo. It scales linearly with
 open PRs, so on a repo with hundreds, watch it.
 
@@ -112,6 +113,7 @@ current land's correctness depends on it, and the next land retries.
 from __future__ import annotations
 
 import argparse
+import http.client
 import json
 import os
 import sys
@@ -129,6 +131,7 @@ from _alembic_graph import (  # noqa: E402
     Scan,
     computed_pin_text,
     duplicate_groups,
+    mismatched_pin_text,
     no_pin_found_text,
     plan_remediation,
     plan_repoint_sites,
@@ -200,6 +203,12 @@ def _request(
         ) from exc
     except urllib.error.URLError as exc:  # pragma: no cover - network path
         raise ApiError(f"{method} {url} -> {exc.reason}") from exc
+    except (OSError, http.client.HTTPException) as exc:
+        # The body read can fail AFTER `urlopen` returned: a `TimeoutError` or
+        # `ConnectionResetError` (both `OSError`) or `http.client.IncompleteRead`.
+        # Unwrapped, any of them escaped every `except ApiError` in `main` and
+        # crashed the sweep instead of being recorded against one PR.
+        raise ApiError(f"{method} {url} -> {type(exc).__name__}: {exc}") from exc
     if accept.endswith("raw"):
         return raw.decode("utf-8", errors="replace"), headers
     return (json.loads(raw) if raw else None), headers
@@ -267,6 +276,12 @@ def _in_tests_dir(name: str) -> bool:
     return name.startswith(f"{TESTS_DIR}/") and name.endswith(".py")
 
 
+#: GitHub's "list pull request files" endpoint returns at most this many files,
+#: however it is paginated. A listing that reaches it may be missing the very
+#: test file that holds a pin, so the pin search is UNKNOWN there.
+PR_FILES_LISTING_CAP = 3000
+
+
 def _worth_downloading(entry: dict) -> bool:
     """Could this changed test file hold a ``_PARENT_REVISION_ID`` pin?
 
@@ -280,6 +295,12 @@ def _worth_downloading(entry: dict) -> bool:
     if not _in_tests_dir(name) or entry.get("status") == "removed":
         return False
     patch = entry.get("patch")
+    # ASSUMPTION this skip rests on: for a diff too large to render, GitHub
+    # OMITS `patch` rather than truncating it, so a present patch on an added
+    # file is the whole file. If GitHub ever truncated instead, a pin past the
+    # cut would be skipped and read as "no pin found". Separately, the listing
+    # itself stops at PR_FILES_LISTING_CAP files; `main` checks that before
+    # this runs.
     if entry.get("status") == "added" and isinstance(patch, str):
         return "_PARENT_REVISION_ID" in patch
     return True
@@ -436,18 +457,34 @@ def _site_block(
             f"- {_fence_safe(pin.before)}",
             f"+ {_fence_safe(pin.after)}",
         ]
+    mismatched = sites.mismatched_pins if sites else ()
     for computed_pin in computed:
         lines += [
             f"# 3. the test pin — {_fence_safe(repo_relative(computed_pin.path))}:"
             f"{computed_pin.lineno} — computed, not literal: check it by hand",
             f"# {_fence_safe(computed_pin.line)}",
         ]
-    if not pins and not computed:
+    for other in mismatched:
+        lines += [
+            f"# 3. the test pin — {_fence_safe(repo_relative(other.path))}:"
+            f"{other.lineno} — names another parent: check it",
+            f"# {_fence_safe(other.line)}",
+        ]
+    if not pins and not computed and not mismatched:
         lines.append("# 3. the test pin — see below")
     lines += ["```", ""]
     if computed:
         lines += [f"3. **Test pin:** {computed_pin_text()}.", ""]
-    elif not pins:
+    old_parent = sites.old_parent if sites else None
+    for other in mismatched:
+        location = _fence_safe(repo_relative(other.path)).replace("`", "")
+        text = mismatched_pin_text(
+            f"`{location}:{other.lineno}`",
+            safe_id(other.value),
+            safe_id(old_parent) if old_parent is not None else None,
+        )
+        lines += [f"3. **Test pin:** {text}.", ""]
+    if not pins and not computed and not mismatched:
         if sites is None or pin_scope is None:
             lines += [
                 "3. **Test pin: UNKNOWN** — the pin search did not run. Look under",
@@ -1024,17 +1061,27 @@ def main() -> int:
             # site) means no revision to re-point: no pin to find, no fetch,
             # and no "pin search is UNKNOWN" finding for a notice without one.
             test_sources: dict[Path, str] = {}
-            try:
-                test_sources = pr_test_sources(args.repo, pr, files, token)
-                pin_scope = f"the files this PR changes under `{TESTS_DIR}/`"
-            except ApiError as exc:
-                # A FINDING, not a failure: the fork verdict and the comment
-                # still stand, and the comment says the pin search is UNKNOWN
-                # (`pin_scope is None`) rather than implying there is no pin.
-                findings.append(
-                    f"#{number}: could not read its test files, so its notice "
-                    f"says the `_PARENT_REVISION_ID` pin search is UNKNOWN: {exc}"
+            if len(files) >= PR_FILES_LISTING_CAP:
+                # The listing may be truncated, so a pin file can be missing
+                # from it: leave `pin_scope` None and the notice says UNKNOWN,
+                # never "no pin found".
+                note(
+                    f"#{number}: file listing reached GitHub's "
+                    f"{PR_FILES_LISTING_CAP}-file cap — pin search is UNKNOWN."
                 )
+            else:
+                try:
+                    test_sources = pr_test_sources(args.repo, pr, files, token)
+                    pin_scope = f"the files this PR changes under `{TESTS_DIR}/`"
+                except ApiError as exc:
+                    # A FINDING, not a failure: the fork verdict and the
+                    # comment still stand, and the comment says the pin search
+                    # is UNKNOWN (`pin_scope is None`) rather than implying
+                    # there is no pin.
+                    findings.append(
+                        f"#{number}: could not read its test files, so its notice "
+                        f"says the `_PARENT_REVISION_ID` pin search is UNKNOWN: {exc}"
+                    )
             sites = plan_repoint_sites(scan, remediation, sources, test_sources)
         body = render_comment(
             scan.heads,

@@ -23,6 +23,7 @@ import io
 import re
 import subprocess
 import tarfile
+import tokenize
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -455,7 +456,59 @@ PIN_PARENT_COMPUTED_RE = re.compile(
     r"^[ \t]*_PARENT_REVISION_ID[ \t]*(?::[^=\n]*)?=[ \t]*(?![\"'\s])[^\n]*$", re.M
 )
 REVISES_RE = re.compile(r"^Revises:[^\n]*$", re.M)
+#: FALLBACK ONLY, for text :mod:`tokenize` refuses. It opens a mask at any
+#: triple quote — including one inside ``'"""'``, a comment, or behind a
+#: backslash — so it can blank a real declaration.
 TRIPLE_QUOTED_RE = re.compile(r'("""|\'\'\')(?:.|\n)*?\1')
+_STRING_PREFIX_RE = re.compile(r"^[A-Za-z]*")
+#: ``(start, end)`` token-type pairs delimiting an f-/t-string on Pythons whose
+#: tokenizer splits them (3.12+ and 3.14+); absent names are skipped.
+_SPLIT_STRING_TOKENS = tuple(
+    (getattr(tokenize, start), getattr(tokenize, end))
+    for start, end in (
+        ("FSTRING_START", "FSTRING_END"),
+        ("TSTRING_START", "TSTRING_END"),
+    )
+    if hasattr(tokenize, start) and hasattr(tokenize, end)
+)
+
+
+def _is_triple_quoted(token_text: str) -> bool:
+    """Does a string token (or an f-string start) open with a triple quote?"""
+    return _STRING_PREFIX_RE.sub("", token_text, count=1).startswith(('"""', "'''"))
+
+
+def _string_spans(text: str) -> list[tuple[int, int]]:
+    """``(start, end)`` offsets of every triple-quoted or multi-line string.
+
+    Read with :mod:`tokenize`, which knows what a string IS: a triple quote
+    inside a single-quoted literal, a comment, or behind a backslash escape is
+    not a delimiter. Single-line single-quoted strings are left alone — a
+    pin's own value is one. Raises whatever :mod:`tokenize` raises.
+    """
+    line_starts = [0]
+    for line in text.split("\n")[:-1]:
+        line_starts.append(line_starts[-1] + len(line) + 1)
+
+    def offset(position: tuple[int, int]) -> int:
+        row, col = position
+        return line_starts[row - 1] + col
+
+    starts = {start: end for start, end in _SPLIT_STRING_TOKENS}
+    ends = set(starts.values())
+    spans: list[tuple[int, int]] = []
+    opened: list[tuple[tuple[int, int], bool]] = []
+    for token in tokenize.generate_tokens(io.StringIO(text).readline):
+        if token.type == tokenize.STRING:
+            if _is_triple_quoted(token.string) or token.start[0] != token.end[0]:
+                spans.append((offset(token.start), offset(token.end)))
+        elif token.type in starts:
+            opened.append((token.start, _is_triple_quoted(token.string)))
+        elif token.type in ends and opened:
+            start, triple = opened.pop()
+            if triple or start[0] != token.end[0]:
+                spans.append((offset(start), offset(token.end)))
+    return spans
 
 
 def _mask_triple_quoted(source: str) -> str:
@@ -466,10 +519,22 @@ def _mask_triple_quoted(source: str) -> str:
     for the wrong revision, and a quoted pin line would be listed as a pin.
     Newlines are kept and every other character becomes a space, so a match
     offset in the masked text is the same offset in the original.
+
+    String spans come from :mod:`tokenize`. Only when it refuses the text (a
+    half-written file) does this fall back to :data:`TRIPLE_QUOTED_RE`, whose
+    known misreads are named on the pattern.
     """
-    return TRIPLE_QUOTED_RE.sub(
-        lambda m: re.sub(r"[^\n]", " ", m.group(0)), source.replace("\r", " ")
-    )
+    text = source.replace("\r", " ")
+    try:
+        spans = _string_spans(text)
+    except (tokenize.TokenError, IndentationError, SyntaxError):
+        return TRIPLE_QUOTED_RE.sub(lambda m: re.sub(r"[^\n]", " ", m.group(0)), text)
+    chars = list(text)
+    for start, end in spans:
+        for index in range(start, end):
+            if chars[index] != "\n":
+                chars[index] = " "
+    return "".join(chars)
 
 
 def _line_at(source: str, start: int, end: int) -> str:
@@ -519,6 +584,9 @@ class RepointSites:
     pins: tuple[ParentPin, ...]
     computed_pins: tuple[ComputedPin, ...] = ()
     """Pins in this revision's test that are not literals; checked by hand."""
+    mismatched_pins: tuple[MismatchedPin, ...] = ()
+    """Literal pins in this revision's test naming something OTHER than
+    ``old_parent``. Not rewritten, but named — "no pin found" would be false."""
 
 
 def _qualifying_sources(
@@ -605,6 +673,45 @@ def no_pin_found_text(revision: str) -> str:
 def computed_pin_text() -> str:
     """The ONE wording for a pin this matcher cannot rewrite."""
     return "a `_PARENT_REVISION_ID` is computed, not literal — check it by hand"
+
+
+@dataclass(frozen=True)
+class MismatchedPin:
+    """A literal ``_PARENT_REVISION_ID`` naming something other than the old parent."""
+
+    path: Path
+    lineno: int
+    line: str
+    value: str
+
+
+def find_mismatched_parent_pins(
+    test_sources: dict[Path, str], revision: str, old_parent: str | None
+) -> tuple[MismatchedPin, ...]:
+    """Literal pins in ``revision``'s test whose value is NOT ``old_parent``.
+
+    :func:`find_parent_pins` deliberately does not rewrite these. They are
+    still reported, because a renderer that saw no rewrite would otherwise say
+    "no pin found" about a file that plainly has one — it is stale already, or
+    pins something this graph does not show, and either way a human decides.
+    With ``old_parent is None`` (a chain root) every literal pin is listed.
+    """
+    found: list[MismatchedPin] = []
+    for path, source, masked in _qualifying_sources(test_sources, revision):
+        for match in PIN_PARENT_RE.finditer(masked):
+            value = source[match.start("value") : match.end("value")]
+            if value == old_parent:
+                continue
+            line = _line_at(source, match.start(), match.end()).rstrip()
+            lineno = source.count("\n", 0, match.start()) + 1
+            found.append(MismatchedPin(path, lineno, line, value))
+    return tuple(found)
+
+
+def mismatched_pin_text(location: str, value: str, old_parent: str | None) -> str:
+    """The ONE wording for a literal pin that names the wrong parent."""
+    old = f'"{old_parent}"' if old_parent is not None else "None"
+    return f'`_PARENT_REVISION_ID` in {location} names "{value}", not {old} — check it'
 
 
 def read_test_sources(tests_dir: Path) -> dict[Path, str] | None:
@@ -696,6 +803,7 @@ def repoint_sites(
         revises=revises,
         pins=find_parent_pins(test_sources, revision, old_parent, new_parent),
         computed_pins=find_computed_parent_pins(test_sources, revision),
+        mismatched_pins=find_mismatched_parent_pins(test_sources, revision, old_parent),
     )
 
 
