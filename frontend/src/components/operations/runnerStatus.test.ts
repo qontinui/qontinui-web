@@ -525,6 +525,23 @@ describe("describeControlError — who refused a 422", () => {
     );
   });
 
+  it("blames coord, not the web, for coord's plain-text 422 the envelope labelled VALIDATION_ERROR", () => {
+    // What the app envelope makes of `HTTPException(422, detail=<coord text>)`:
+    // the default code for 422, coord's text as the message, and NO `details`.
+    const envelope = {
+      error: "VALIDATION_ERROR",
+      message: "unknown variant `stop_at_boundary`, expected `finish_and_close`",
+      timestamp: 1789400000,
+      path: "http://testserver/api/v1/operations/sessions/x/control",
+    };
+    const described = describeControlError(422, JSON.stringify(envelope));
+    expect(described.message).toMatch(/^Coord refused the request/);
+    expect(described.message).toMatch(/unknown variant `stop_at_boundary`/);
+    expect(described.message).not.toMatch(/web backend/);
+    // The envelope's default label is not presented as a code coord sent.
+    expect(described.code).toBeNull();
+  });
+
   it("names coord's typed 422 as coord's refusal", () => {
     const described = describeControlError(422, JSON.stringify({ error: "unknown_action", message: "x" }));
     expect(described.code).toBe("unknown_action");

@@ -944,6 +944,14 @@ export type ControlWriteResult =
  * `{error: "VALIDATION_ERROR", details: [{field, message}]}` through the app
  * envelope, or `{detail: [...]}` from a bare app: nothing reached coord. Coord's
  * 422 carries its own code: coord was asked and refused.
+ *
+ * **Only the pydantic issue array proves the web's own validation.** The app
+ * envelope labels EVERY string-detail 422 `VALIDATION_ERROR`
+ * (`get_default_error_code(422)`), so a plain-text 422 from coord — an older
+ * coord that does not know `stop_at_boundary` — arrives as
+ * `{error: "VALIDATION_ERROR", message: <coord's text>}` with no `details`.
+ * That is coord's refusal, and `VALIDATION_ERROR` there is the envelope's
+ * default label, not a code coord sent.
  */
 export function describeControlError(
   status: number,
@@ -951,6 +959,7 @@ export function describeControlError(
 ): { code: string | null; message: string } {
   let code: string | null = null;
   let validationIssues: string[] | null = null;
+  let envelopeMessage: string | null = null;
   try {
     const parsed: unknown = JSON.parse(bodyText);
     if (isRecord(parsed)) {
@@ -958,13 +967,17 @@ export function describeControlError(
       else if (isRecord(parsed.detail) && typeof parsed.detail.error === "string") {
         code = parsed.detail.error;
       }
-      const issues = Array.isArray(parsed.details)
-        ? parsed.details
-        : Array.isArray(parsed.detail)
-          ? parsed.detail
-          : null;
-      if (code === WEB_VALIDATION_ERROR_CODE || (code === null && issues !== null)) {
-        validationIssues = (issues ?? []).map((issue) => {
+      if (typeof parsed.message === "string") envelopeMessage = parsed.message;
+      const webValidation =
+        (code === WEB_VALIDATION_ERROR_CODE && Array.isArray(parsed.details)) ||
+        (code === null && Array.isArray(parsed.detail));
+      if (webValidation) {
+        const issues: unknown[] = Array.isArray(parsed.details)
+          ? parsed.details
+          : Array.isArray(parsed.detail)
+            ? parsed.detail
+            : [];
+        validationIssues = issues.map((issue) => {
           if (!isRecord(issue)) return String(issue);
           const field =
             typeof issue.field === "string"
@@ -1018,14 +1031,25 @@ export function describeControlError(
     };
   }
   if (status === 422) {
+    // `VALIDATION_ERROR` without `details` is the envelope's default label on
+    // coord's plain-text 422, not a code coord chose — so it is not shown as
+    // one, and coord's own text is.
+    const coordCode = code === WEB_VALIDATION_ERROR_CODE ? null : code;
+    const coordText = (
+      code === WEB_VALIDATION_ERROR_CODE && envelopeMessage !== null
+        ? envelopeMessage
+        : snippet
+    )
+      .trim()
+      .slice(0, 200);
     return {
-      code,
+      code: coordCode,
       message:
-        code !== null
-          ? `Coord refused the request (${code}) — most likely this coord does ` +
-            "not know this action yet."
+        coordCode !== null
+          ? `Coord refused the request (${coordCode}) — most likely this coord ` +
+            "does not know this action yet."
           : "Coord refused the request as malformed — most likely it does not " +
-            `know this action yet.${snippet ? ` (${snippet})` : ""}`,
+            `know this action yet.${coordText ? ` (${coordText})` : ""}`,
     };
   }
   if (status === 403) {

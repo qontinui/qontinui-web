@@ -488,6 +488,33 @@ class TestControlThroughTheAppErrorEnvelope:
         assert "detail" not in body
         assert "message" in body
 
+    def test_coords_plain_text_422_arrives_labelled_but_without_details(
+        self, enveloped_client: TestClient
+    ):
+        # An older coord that does not know the action answers a plain-text
+        # 422. `_coord_error_detail` keeps it as text, and the envelope labels
+        # every string-detail 422 `VALIDATION_ERROR` — so the ONLY thing that
+        # separates it from the web's own validation is the missing `details`.
+        coord_text = "unknown variant `stop_at_boundary`, expected `finish_and_close`"
+        with _patch_httpx() as MockClient:
+            mock_instance = MagicMock()
+            plain = MagicMock(spec=httpx.Response)
+            plain.status_code = 422
+            plain.text = coord_text
+            plain.json.side_effect = ValueError("Expecting value")
+            mock_instance.post = AsyncMock(return_value=plain)
+            _configure_mock_client(MockClient, mock_instance)
+            resp = enveloped_client.post(
+                CONTROL_ROUTE, json={"action": "stop_at_boundary"}
+            )
+
+        assert resp.status_code == 422
+        body = resp.json()
+        assert body["error"] == "VALIDATION_ERROR"
+        assert body["message"] == coord_text
+        assert "details" not in body
+        mock_instance.post.assert_called_once()
+
     def test_the_webs_own_validation_is_a_distinct_422(
         self, enveloped_client: TestClient
     ):
