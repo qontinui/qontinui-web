@@ -41463,6 +41463,37 @@
         "title": "SessionArtifactUpsertResponse",
         "type": "object"
       },
+      "SessionControlRequestBody": {
+        "additionalProperties": false,
+        "description": "Closed body for ``POST /operations/sessions/{session_id}/control``.\n\nAssembled into coord's wire body field by field rather than forwarded\nverbatim, for the same reason the drain body is: the operator's browser\nnever gets to put a key on this write that the contract does not name.\nIn particular there is no ``requested_by`` \u2014 coord stamps the author from\nits authenticated operator context, and an audit row with a\nclient-asserted author is not an audit row.\n\n``action`` is a closed vocabulary. ``finish_and_close`` declares the\nsession finished and asks the runner to close it once it is idle (D4/D9 \u2014\nthe operator's click IS the declaration a runner never infers).\n``stop_at_boundary`` asks a loop or steward session to stop at its next\niteration boundary (D6). Anything else is a local 422 before coord is\nasked.",
+        "properties": {
+          "action": {
+            "enum": [
+              "finish_and_close",
+              "stop_at_boundary"
+            ],
+            "title": "Action",
+            "type": "string"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "maxLength": 2000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          }
+        },
+        "required": [
+          "action"
+        ],
+        "title": "SessionControlRequestBody",
+        "type": "object"
+      },
       "SessionRelaunchRequest": {
         "description": "Ask for a session back \u2014 as a resume, or as a transfer.\n\nThe two are NOT interchangeable (plan \u00a73.5). ``resume`` restores the\nconversation on the account and machine that owns it; ``transfer`` cannot,\nbecause a Claude Code transcript is account-scoped and no other account\ncan ``claude --resume`` it. Labelling the second a resume is how state gets\nsilently lost, so the mode is required and the response carries the tier.",
         "properties": {
@@ -87551,7 +87582,7 @@
     },
     "/api/v1/operations/fleet/resource-samples": {
       "get": {
-        "description": "Proxy coord's ``GET /coord/devices/resource-samples`` (tenant-scoped).\n\nResponse shape (coord-authored \u2014 this proxy adds and removes\nnothing)::\n\n    {\n      \"latest\": [ResourceSampleRow, ...],   # newest per anchor\n      \"count\": <int>,\n      \"history\": [HistorySeries, ...],      # bounded sparkline window\n      \"window_secs\": <float>,               # EFFECTIVE, post-clamp\n      \"latest_lookback_secs\": <float>,\n      \"history_points_per_anchor\": <int>,\n      \"history_truncated\": <bool>,\n      \"schema_pending\": <bool>\n    }\n\nEach ``ResourceSampleRow`` carries a **server-computed** ``pressure``\n(``{ratio, basis}``, or ``null`` for \"no opinion\"), ``age_secs``, and\nthe admission fields ``floor`` / ``disk_floor``\n(``{basis, bytes, source, verdict, reject_bytes, reject_source}``),\n``pressure_floor``\n(``{basis, ratio, source, verdict, reject_ratio, reject_source}``),\n``saturation`` (``{ratio, basis}``), ``saturation_floor``\n(the same shape as ``pressure_floor``) and ``headroom``\n(``ok | warn | breach | unknown``). All are passed through untouched\non purpose:\n\n* ``pressure`` is the ONE lane-pressure definition that coord's CI\n  ranker also reads. Recomputing it here (or in the browser) is\n  exactly the dashboard/dispatcher drift \u00a7C0 exists to prevent.\n* ``age_secs`` is computed by Postgres in the same statement as the\n  row, so a browser never subtracts its own clock from a server\n  timestamp.\n* ``headroom`` is the VERDICT coord's admission acts on, and the\n  strip colours rows from it rather than from a client-side band\n  over ``pressure`` \u2014 the two could otherwise disagree exactly at\n  the boundary. It is not defaultable here: a row arriving without\n  these fields (a coord that predates them) must reach the browser\n  without them, which renders as *unknown*, never as healthy. Note\n  ``floor.basis`` \u2014 the floor is on a different column from the\n  ratio's divisors, so it cannot be collapsed into a pressure\n  threshold anywhere along this path.\n* ``reject_bytes`` is the SECOND enforcer on the same column: a\n  column can be guarded twice with deliberately different numbers\n  (host commit \u2014 supervisor defers at 5 GiB, ``ci_node`` rejects at\n  4 GiB), and the rejecting one sits lower so the recoverable wait\n  trips first. ``null`` means no rejecting enforcer governs the\n  column and must not be defaulted to ``bytes`` or to zero; absent\n  means an older coord. The envelope's ``headroom_warn_margin``\n  travels the same way \u2014 the client reads the amber margin off the\n  response rather than naming one.\n* ``pressure_floor`` is a threshold on the RATIO axis, not the byte\n  axis, and the two run in opposite directions: a byte floor is\n  crossed going down, a pressure ceiling going up. The Linux lanes\n  have no byte memory floor at all (nothing in the fleet floors\n  ``mem_available_bytes``) \u2014 their only guard is ``ci_node``'s\n  swap-ratio defer \u2014 so dropping this field would render a WSL row\n  under an active guard as unguarded. ``null`` on the Windows host\n  lane, whose guards are byte-based, is a fact about that lane and\n  is not the same as the field being absent.\n* A ``verdict`` of ``null`` means a threshold coord reports and\n  NOTHING enforces (``min_free_mem_bytes_wsl`` is exactly that: a\n  \u00a7D1 control that validates and versions with no consumer). It must\n  reach the browser as null so it can render \"set, not enforced\"\n  instead of inheriting a verb it does not have.\n* The **saturation** fields \u2014 ``threads_max``, ``threads_used``,\n  ``pids_max``, ``pids_used`` and ``saturation_source`` (alembic\n  ``fleet_res_tel_04``, qontinui-web#1104) \u2014 are a THIRD axis, and\n  the only one that is instrumentally independent of memory. On\n  2026-08-27 a container sat at 190,840 of a 192,146 kernel thread\n  ceiling (99.3%), no ``fork()`` on the box could succeed, and every\n  memory and disk figure this route returned was green *and\n  accurate*: they were all measuring a resource that had not run\n  out. Passed through untouched like everything else here, and with\n  the same rule doing more work than usual \u2014 **NULL must stay NULL**.\n  A fabricated ``0`` does not merely misreport on this axis, it\n  inverts the reading: ``threads_used = 0`` renders as *perfectly\n  idle* on the one column built to catch a saturated box, and a\n  ``NULLS LAST`` ranking would then promote the blind machine to the\n  front of the dispatch queue.\n* ``saturation_source`` (``cgroup`` | ``proc`` | ``job_object`` |\n  null) is not bookkeeping and must not be dropped as a label: a\n  cgroup counts **tasks (threads)** and ``/proc`` counts\n  **thread-group leaders**, which coord's own ``process_health.rs``\n  records as \"different quantities\" \u2014 they can differ by an order of\n  magnitude. A publisher that probes the cgroup, fails, and falls\n  back to ``/proc`` emits a number whose meaning changed with\n  nothing else in the row saying so. It carries no CHECK in the\n  schema (an unrecognised provenance label would otherwise fail the\n  whole INSERT and discard the memory and disk metrics on the same\n  row), so an unexpected value reaches the browser and renders as an\n  explicit unknown rather than being coerced here.\n* ``saturation`` and ``saturation_floor`` are the SERVER-COMPUTED\n  half of that axis, and the half the browser actually renders \u2014 the\n  five raw columns above only caption it. ``saturation`` is\n  ``{ratio, basis}`` with ``basis: \"threads\"``, computed as\n  ``threads_used / threads_max`` and falling back to the ``pids_*``\n  pair where a cgroup or job-object ceiling is the binding one;\n  ``saturation_floor`` is ``pressure_floor``'s shape on\n  ``basis: \"thread_ratio\"``. **The threshold travels on the wire for\n  the same reason the ratio does.** coord's dispatch ranking reads\n  this floor, so a client that named its own number could render\n  amber while the ranker had already stopped electing the machine \u2014\n  \u00a7C1's defect, one axis over. Both are optional and independently\n  nullable, and the caller reads the difference: keys **absent** is a\n  coord that predates the axis, ``null`` on every count is a\n  publisher whose runner predates the probe, and a count without its\n  ceiling is a probe that FAILED. All three render *unknown* \u2014 never\n  healthy, and never ``0``.\n* ``headroom`` composes all three axes, not two: coord grades the\n  worst of memory, disk and task saturation into the one verdict the\n  strip colours from. That is why the saturation ratio must not be\n  banded client-side \u2014 the composition is coord's, and a second one\n  in the browser would disagree with it exactly at the boundary. A\n  coord predating the axis sends no saturation fields, and the row's\n  ``headroom`` is then the worst of the two axes it does send; the\n  caller renders the third as *unreported* rather than inferring that\n  it is clear.\n* The **spawn-capacity** fields \u2014 ``thread_count`` and\n  ``active_terminal_sessions`` (alembic ``lasac_01``) \u2014 are a FOURTH\n  axis and, unlike ``threads_used``, are scoped to the *publishing\n  process* rather than to the lane. That distinction is the whole\n  point: on 2026-08-29 the primary runner wedged carrying 540 OS\n  threads against tokio's 512-slot blocking pool, 119 of them parked\n  mid-``CreateProcess``, so new spawns silently stopped while the box\n  sat at a few percent of its kernel thread ceiling and every memory,\n  commit and disk figure on this row read healthy *and accurate*. A\n  lane-wide saturation number cannot see that; a per-process thread\n  count is the direct proxy for it. Passed through untouched, with\n  the same NULL rule doing the same extra work: a fabricated ``0``\n  inverts rather than under-reports, since a live process cannot have\n  zero threads and zero renders as *maximally idle* on the one column\n  built to catch a saturated one.\n* ``active_terminal_sessions`` is the EXPLANATORY half and is never a\n  trip condition on its own \u2014 a machine can carry N sessions\n  comfortably or N sessions each leaking a stuck ``spawn_blocking``\n  call, and only the thread count separates those. It travels beside\n  ``thread_count`` for the same reason ``EffectiveFloor`` carries both\n  the threshold and the raw value: a verdict that prints only the\n  number it tripped on leaves the next incident's forensics unable to\n  ask whether it was work or a leak.\n\n``schema_pending: true`` means the sibling alembic migration\n(qontinui-web#949) has not reached coord's database yet \u2014 coord\ndegrades to an empty set rather than 500ing, and the caller must\nrender that as **unknown**, never as healthy.\n\nQuery params are forwarded verbatim WITHOUT local range validation:\ncoord clamps out-of-range values and echoes the effective bounds, and\na 422 here would turn a slightly-greedy render into a blank panel.",
+        "description": "Proxy coord's ``GET /coord/devices/resource-samples`` (tenant-scoped).\n\nResponse shape (coord-authored \u2014 this proxy adds and removes\nnothing)::\n\n    {\n      \"latest\": [ResourceSampleRow, ...],   # newest per anchor\n      \"count\": <int>,\n      \"history\": [HistorySeries, ...],      # bounded sparkline window\n      \"window_secs\": <float>,               # EFFECTIVE, post-clamp\n      \"latest_lookback_secs\": <float>,\n      \"history_points_per_anchor\": <int>,\n      \"history_truncated\": <bool>,\n      \"schema_pending\": <bool>\n    }\n\nEach ``ResourceSampleRow`` carries a **server-computed** ``pressure``\n(``{ratio, basis}``, or ``null`` for \"no opinion\"), ``age_secs``, and\nthe admission fields ``floor`` / ``disk_floor``\n(``{basis, bytes, source, verdict, reject_bytes, reject_source}``),\n``pressure_floor``\n(``{basis, ratio, source, verdict, reject_ratio, reject_source}``),\n``saturation`` (``{ratio, basis}``), ``saturation_floor``\n(the same shape as ``pressure_floor``) and ``headroom``\n(``ok | warn | breach | unknown``). All are passed through untouched\non purpose:\n\n* ``pressure`` is the ONE lane-pressure definition that coord's CI\n  ranker also reads. Recomputing it here (or in the browser) is\n  exactly the dashboard/dispatcher drift \u00a7C0 exists to prevent.\n* ``age_secs`` is computed by Postgres in the same statement as the\n  row, so a browser never subtracts its own clock from a server\n  timestamp.\n* ``headroom`` is the VERDICT coord's admission acts on, and the\n  strip colours rows from it rather than from a client-side band\n  over ``pressure`` \u2014 the two could otherwise disagree exactly at\n  the boundary. It is not defaultable here: a row arriving without\n  these fields (a coord that predates them) must reach the browser\n  without them, which renders as *unknown*, never as healthy. Note\n  ``floor.basis`` \u2014 the floor is on a different column from the\n  ratio's divisors, so it cannot be collapsed into a pressure\n  threshold anywhere along this path.\n* ``reject_bytes`` is the SECOND enforcer on the same column: a\n  column can be guarded twice with deliberately different numbers\n  (host commit \u2014 supervisor defers at 5 GiB, ``ci_node`` rejects at\n  4 GiB), and the rejecting one sits lower so the recoverable wait\n  trips first. ``null`` means no rejecting enforcer governs the\n  column and must not be defaulted to ``bytes`` or to zero; absent\n  means an older coord. The envelope's ``headroom_warn_margin``\n  travels the same way \u2014 the client reads the amber margin off the\n  response rather than naming one.\n* ``pressure_floor`` is a threshold on the RATIO axis, not the byte\n  axis, and the two run in opposite directions: a byte floor is\n  crossed going down, a pressure ceiling going up. The Linux lanes\n  have no byte memory floor at all (nothing in the fleet floors\n  ``mem_available_bytes``) \u2014 their only guard is ``ci_node``'s\n  swap-ratio defer \u2014 so dropping this field would render a WSL row\n  under an active guard as unguarded. ``null`` on the Windows host\n  lane, whose guards are byte-based, is a fact about that lane and\n  is not the same as the field being absent.\n* A ``verdict`` of ``null`` means a threshold coord reports and\n  NOTHING enforces (``min_free_mem_bytes_wsl`` is exactly that: a\n  \u00a7D1 control that validates and versions with no consumer). It must\n  reach the browser as null so it can render \"set, not enforced\"\n  instead of inheriting a verb it does not have.\n* The **saturation** fields \u2014 ``threads_max``, ``threads_used``,\n  ``pids_max``, ``pids_used`` and ``saturation_source`` (alembic\n  ``fleet_res_tel_04``, qontinui-web#1104) \u2014 are a THIRD axis, and\n  the only one that is instrumentally independent of memory. On\n  2026-08-27 a container sat at 190,840 of a 192,146 kernel thread\n  ceiling (99.3%), no ``fork()`` on the box could succeed, and every\n  memory and disk figure this route returned was green *and\n  accurate*: they were all measuring a resource that had not run\n  out. Passed through untouched like everything else here, and with\n  the same rule doing more work than usual \u2014 **NULL must stay NULL**.\n  A fabricated ``0`` does not merely misreport on this axis, it\n  inverts the reading: ``threads_used = 0`` renders as *perfectly\n  idle* on the one column built to catch a saturated box, and a\n  ``NULLS LAST`` ranking would then promote the blind machine to the\n  front of the dispatch queue.\n* ``saturation_source`` (``cgroup`` | ``proc`` | ``job_object`` |\n  null) is not bookkeeping and must not be dropped as a label: a\n  cgroup counts **tasks (threads)** and ``/proc`` counts\n  **thread-group leaders**, which coord's own ``process_health.rs``\n  records as \"different quantities\" \u2014 they can differ by an order of\n  magnitude. A publisher that probes the cgroup, fails, and falls\n  back to ``/proc`` emits a number whose meaning changed with\n  nothing else in the row saying so. It carries no CHECK in the\n  schema (an unrecognised provenance label would otherwise fail the\n  whole INSERT and discard the memory and disk metrics on the same\n  row), so an unexpected value reaches the browser and renders as an\n  explicit unknown rather than being coerced here.\n* ``saturation`` and ``saturation_floor`` are the SERVER-COMPUTED\n  half of that axis, and the half the browser actually renders \u2014 the\n  five raw columns above only caption it. ``saturation`` is\n  ``{ratio, basis}`` with ``basis: \"threads\"``, computed as\n  ``threads_used / threads_max`` and falling back to the ``pids_*``\n  pair where a cgroup or job-object ceiling is the binding one;\n  ``saturation_floor`` is ``pressure_floor``'s shape on\n  ``basis: \"thread_ratio\"``. **The threshold travels on the wire for\n  the same reason the ratio does.** coord's dispatch ranking reads\n  this floor, so a client that named its own number could render\n  amber while the ranker had already stopped electing the machine \u2014\n  \u00a7C1's defect, one axis over. Both are optional and independently\n  nullable, and the caller reads the difference: keys **absent** is a\n  coord that predates the axis, ``null`` on every count is a\n  publisher whose runner predates the probe, and a count without its\n  ceiling is a probe that FAILED. All three render *unknown* \u2014 never\n  healthy, and never ``0``.\n* ``headroom`` composes all three axes, not two: coord grades the\n  worst of memory, disk and task saturation into the one verdict the\n  strip colours from. That is why the saturation ratio must not be\n  banded client-side \u2014 the composition is coord's, and a second one\n  in the browser would disagree with it exactly at the boundary. A\n  coord predating the axis sends no saturation fields, and the row's\n  ``headroom`` is then the worst of the two axes it does send; the\n  caller renders the third as *unreported* rather than inferring that\n  it is clear.\n* The **spawn-capacity** fields \u2014 ``thread_count`` and\n  ``active_terminal_sessions`` (alembic ``lasac_01``) \u2014 are a FOURTH\n  axis and, unlike ``threads_used``, are scoped to the *publishing\n  process* rather than to the lane. That distinction is the whole\n  point: on 2026-08-29 the primary runner wedged carrying 540 OS\n  threads against tokio's 512-slot blocking pool, 119 of them parked\n  mid-``CreateProcess``, so new spawns silently stopped while the box\n  sat at a few percent of its kernel thread ceiling and every memory,\n  commit and disk figure on this row read healthy *and accurate*. A\n  lane-wide saturation number cannot see that; a per-process thread\n  count is the direct proxy for it. Passed through untouched, with\n  the same NULL rule doing the same extra work: a fabricated ``0``\n  inverts rather than under-reports, since a live process cannot have\n  zero threads and zero renders as *maximally idle* on the one column\n  built to catch a saturated one.\n* ``active_terminal_sessions`` is the EXPLANATORY half and is never a\n  trip condition on its own \u2014 a machine can carry N sessions\n  comfortably or N sessions each leaking a stuck ``spawn_blocking``\n  call, and only the thread count separates those. It travels beside\n  ``thread_count`` for the same reason ``EffectiveFloor`` carries both\n  the threshold and the raw value: a verdict that prints only the\n  number it tripped on leaves the next incident's forensics unable to\n  ask whether it was work or a leak.\n* The **readiness** fields (plan\n  ``2026-09-13-drained-runner-never-reaches-idle`` D8) \u2014\n  ``readiness_safe``, ``readiness_reason``, ``readiness_blocking``,\n  ``readiness_finished``, ``wind_down_candidates``,\n  ``wind_down_exit_stuck``, the bounded ``wind_down_sessions`` array\n  (with ``wind_down_sessions_truncated`` when coord cut it), and, on the\n  NEWEST sample per device, the server-computed ``readiness_age_secs`` and\n  ``readiness_state`` (``fresh | stale | absent``). This is the device's\n  restart-readiness verdict, pushed by the runner on the same 30 s sample\n  rather than read through a relay into the runner. There is deliberately\n  no separate readiness route: ``/admin/coord/runners`` reads it here with\n  ``device_id`` and ``history=false``. Passed through untouched, with the\n  NULL rule once more doing real work \u2014 ``readiness_safe: null`` is \"the\n  runner could not decide\", and ``readiness_state`` is coord's freshness\n  verdict so no browser subtracts its own clock from ``sampled_at``. A\n  ``stale`` or ``absent`` row renders UNKNOWN, never the last verdict.\n\n``schema_pending: true`` means the sibling alembic migration\n(qontinui-web#949) has not reached coord's database yet \u2014 coord\ndegrades to an empty set rather than 500ing, and the caller must\nrender that as **unknown**, never as healthy.\n\nQuery params are forwarded verbatim WITHOUT local range validation:\ncoord clamps out-of-range values and echoes the effective bounds, and\na 422 here would turn a slightly-greedy render into a blank panel.",
         "operationId": "api_v1_operations_fleet_resource_samples_get",
         "parameters": [
           {
@@ -92191,6 +92222,131 @@
         ]
       }
     },
+    "/api/v1/operations/sessions/fleet": {
+      "get": {
+        "description": "Proxy coord's ``GET /coord/sessions/fleet`` (tenant-scoped).\n\nThe body is coord's ``FleetSessionsResponse``, passed through untouched,\nand it is **camelCase** \u2014 ``sessionId``, ``claudeCodeSessionId``,\n``sessionStatus``, ``startedAt``, ``nextCursor`` and the three\n``\u2026ColumnPresent`` capability flags. Plan D7 adds ``spawnOrigin``,\n``continuationGateId`` and ``dispatchSource`` to each row in the same\ncasing. No ``response_model`` is declared, so nothing here filters a\nfield coord adds, and a coord predating D7 simply omits the three keys \u2014\nwhich the page renders as an unknown origin, never as a default one.\n\n``nextCursor != null`` is coord's statement that more rows match this\nscope than it served. The caller must say so rather than present the page\nas the device's whole census.\n\nA failure passes through with coord's status (``_proxy_coord_get`` raises\non \u2265400, and a transport failure is a 502/504). It is never degraded to an\nempty list here: \"coord could not tell us\" and \"this device runs no\nsessions\" call for opposite next steps.",
+        "operationId": "api_v1_operations_sessions_fleet_get",
+        "parameters": [
+          {
+            "description": "Restrict to one coord device. Applied in coord's SQL.",
+            "in": "query",
+            "name": "device_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Restrict to one coord device. Applied in coord's SQL.",
+              "title": "Device Id"
+            }
+          },
+          {
+            "description": "Restrict to one `coord.sessions.state`. Forwarded verbatim.",
+            "in": "query",
+            "name": "state",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Restrict to one `coord.sessions.state`. Forwarded verbatim.",
+              "title": "State"
+            }
+          },
+          {
+            "description": "Include closed sessions. Coord defaults to false.",
+            "in": "query",
+            "name": "include_closed",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Include closed sessions. Coord defaults to false.",
+              "title": "Include Closed"
+            }
+          },
+          {
+            "description": "Page size. Coord CLAMPS this and echoes the applied value as `limit`; deliberately not range-validated here.",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Page size. Coord CLAMPS this and echoes the applied value as `limit`; deliberately not range-validated here.",
+              "title": "Limit"
+            }
+          },
+          {
+            "description": "An opaque `nextCursor` from a previous page of the same scope.",
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "An opaque `nextCursor` from a previous page of the same scope.",
+              "title": "Cursor"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Get Coord Sessions Fleet Api V1 Operations Sessions Fleet Get"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Coord Sessions Fleet",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
     "/api/v1/operations/sessions/{session_id}": {
       "delete": {
         "description": "Close a session (DELETE \u2192 `state='closed'`, releases claim).",
@@ -92365,6 +92521,65 @@
           }
         },
         "summary": "Get Session Claims",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
+    "/api/v1/operations/sessions/{session_id}/control": {
+      "post": {
+        "description": "Ask the runner holding a session to finish-and-close it, or to stop it\nat its next iteration boundary.\n\nProxies coord's ``POST /coord/sessions/{session_id}/control``. Coord\nrecords the request as a durable ``control_request`` session event and\npublishes it to the device, so a runner that is offline right now still\nreceives it on its next catch-up read (plan D9). The runner acts only on\na ``claude_code_session_id`` present in its OWN lifecycle store; nothing\nhere, and nothing in coord, forces a process kill.\n\nCoord answers ``202`` with ``{event_id, session_id, device_id, action}``\nand that status is echoed verbatim \u2014 a bare JSON return would be wrapped\nas ``200`` and hide that the request was ACCEPTED, not carried out.\n\nRefusals are typed and pass through with coord's status and body\n(``structured_errors=True``): ``404 session_not_found``,\n``409 session_closed`` and a ``422`` for an action coord does not know.\nThey mean different things \u2014 \"no such session\", \"already over\" and \"this\ncoord predates the action\" \u2014 and the console tells them apart rather than\nrendering one \"failed\".\n\nAdmin-gated here (``require_coord_tenant_admin``) as a UX and\ndefence-in-depth layer; coord re-checks on its own.",
+        "operationId": "api_v1_operations_sessions_session_id_control_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SessionControlRequestBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Post Coord Session Control Api V1 Operations Sessions  Session Id  Control Post"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Post Coord Session Control",
         "tags": [
           "operations"
         ]
