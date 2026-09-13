@@ -1049,9 +1049,73 @@ describe("ScanSourcesPanel — the per-source roll-up", () => {
 
     const link = screen.getByTestId(rid("least")).querySelector("a");
     expect(link?.getAttribute("href")).toBe(`#scan-root-${DEVICE}`);
+    // Marked as a link at rest — keyboard and touch users never hover.
+    expect(link?.className).toMatch(/(^|\s)underline(\s|$)/);
     const target = document.getElementById(`scan-root-${DEVICE}`);
     expect(target).not.toBeNull();
     expect(target?.getAttribute("data-testid")).toBe(`scan-root-${DEVICE}`);
+    // …and the row it lands on says it is the one that was linked to.
+    expect(target?.className).toContain("target:");
+  });
+
+  it("every in-page link resolves, on a response the builder can emit", () => {
+    // Two sources, because one roll-up cannot hold both an order and an
+    // unordered list. Every listed device has its row, as it does on the wire:
+    // the roll-up is computed from the rows of the same response.
+    const [A, B, C, D, E] = [
+      "0a000000-0000-4000-8000-000000000001",
+      "0b000000-0000-4000-8000-000000000002",
+      "0c000000-0000-4000-8000-000000000003",
+      "0d000000-0000-4000-8000-000000000004",
+      "0e000000-0000-4000-8000-000000000005",
+    ];
+    const OTHER = "other-repo/plans";
+    const rows = [
+      row({ device_id: A, behind: 0, ahead: 0, ref_sha: "x" }),
+      row({ device_id: B, behind: 5, ahead: 0, ref_sha: "x" }),
+      silentRow({ device_id: C, ref_sha: "x" }),
+      row({ device_id: D, source_repo: OTHER, behind: 3, ref_sha: "y" }),
+      row({ device_id: E, source_repo: OTHER, behind: 9, ref_sha: "z" }),
+    ];
+    const rollups = [
+      // One fresh shared ref: ordered, exactly 0 behind; C is silent.
+      rollup({
+        device_count: 3,
+        comparable_count: 2,
+        min_behind: 0,
+        min_behind_is_floor: false,
+        least_behind_device_ids: [A],
+        lagging_device_ids: [B],
+        unmeasured_device_ids: [C],
+      }),
+      // Two refs: unordered, and the minimum is a floor.
+      rollup({
+        source_repo: OTHER,
+        device_count: 2,
+        comparable_count: 2,
+        min_behind: 3,
+        min_behind_is_floor: true,
+        least_behind_device_ids: [],
+        lag_unknown_device_ids: [D, E],
+      }),
+    ];
+    useScanRootsMock.mockReturnValue(
+      hookState(listed(rows, { by_source_repo: rollups }))
+    );
+    render(<ScanSourcesPanel />);
+
+    const links = Array.from(
+      screen
+        .getByTestId("scan-sources-rollups")
+        .querySelectorAll<HTMLAnchorElement>('a[href^="#scan-root-"]')
+    );
+    expect(links.map((a) => a.getAttribute("href"))).toEqual(
+      [A, B, C, D, E].map((id) => `#scan-root-${id}`)
+    );
+    for (const a of links) {
+      const href = a.getAttribute("href") ?? "";
+      expect(document.getElementById(href.slice(1))).not.toBeNull();
+    }
   });
 
   it("counts devices in the plural when there is more than one", () => {
@@ -1082,7 +1146,7 @@ describe("ScanSourcesPanel — the per-source roll-up", () => {
       (el) => el.textContent === long
     );
     expect(name).toBeDefined();
-    expect(name?.className).toContain("break-all");
+    expect(name?.className).toContain("[overflow-wrap:anywhere]");
     expect(name?.className).not.toContain("truncate");
   });
 
