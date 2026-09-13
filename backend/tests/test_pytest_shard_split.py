@@ -320,39 +320,100 @@ def test_cli_requires_shard_args_unless_counting(tmp_path, capsys):
 # its framing and that every exit path produces it; the tests above pin its
 # content per arm.
 
+_NO_NODEIDS = "no nodeids here\n"
+_OK_SELECT = ["--shards", "2", "--shard", "1"]
+
+#: One row per exit path of `main`: (collect output, or None for an unreadable
+#: --nodeids path; extra argv, where `{tmp}` is the test's tmp dir; exit code;
+#: verdict; fields the verdict line must carry). The reachable vocabulary is
+#: derived from THIS table and nothing else.
 _EVERY_EXIT = [
-    (["--shards", "2", "--shard", "1"], 0, "ok"),
-    (["--count-only", "--min-files", "3", "--min-nodeids", "5"], 0, "ok"),
-    (["--count-only", "--min-files", "0"], 1, "bad_args"),
-    (["--count-only", "--min-files", "3", "--min-nodeids", "0"], 1, "bad_args"),
-    ([], 1, "bad_args"),
-    (["--shards", "0", "--shard", "1"], 1, "bad_args"),
-    (["--shards", "6", "--shard", "7"], 1, "bad_args"),
-    (["--shards", "5", "--shard", "5"], 3, "empty_shard"),
-    (["--count-only", "--min-files", "10", "--min-nodeids", "1"], 4, "truncated"),
+    (_REAL_SHAPE, _OK_SELECT, 0, "ok", {"mode": "select"}),
+    (
+        _REAL_SHAPE,
+        ["--count-only", "--min-files", "3", "--min-nodeids", "5"],
+        0,
+        "ok",
+        {"mode": "count"},
+    ),
+    (
+        _REAL_SHAPE,
+        ["--count-only", "--min-files", "0"],
+        1,
+        "bad_args",
+        {"reason": "min_files_not_positive"},
+    ),
+    (
+        _REAL_SHAPE,
+        ["--count-only", "--min-files", "3", "--min-nodeids", "0"],
+        1,
+        "bad_args",
+        {"reason": "min_nodeids_not_positive"},
+    ),
+    (_REAL_SHAPE, [], 1, "bad_args", {"reason": "shard_args_missing"}),
+    (
+        _REAL_SHAPE,
+        ["--shards", "0", "--shard", "1"],
+        1,
+        "bad_args",
+        {"reason": "shards_not_positive"},
+    ),
+    (
+        _REAL_SHAPE,
+        ["--shards", "6", "--shard", "7"],
+        1,
+        "bad_args",
+        {"reason": "shard_out_of_range"},
+    ),
+    (None, _OK_SELECT, 1, "io_error", {"stage": "read"}),
+    (
+        _REAL_SHAPE,
+        [*_OK_SELECT, "--out", "{tmp}/no/such/dir/shard.txt"],
+        1,
+        "io_error",
+        {"stage": "write", "shard": "1"},
+    ),
+    (_NO_NODEIDS, _OK_SELECT, 2, "no_nodeids", {"nodeids": "0"}),
+    (_REAL_SHAPE, ["--shards", "5", "--shard", "5"], 3, "empty_shard", {}),
+    (
+        _REAL_SHAPE,
+        ["--count-only", "--min-files", "10", "--min-nodeids", "1"],
+        4,
+        "truncated",
+        {"missed": "files"},
+    ),
 ]
 
 
-@pytest.mark.parametrize(("extra", "rc", "verdict"), _EVERY_EXIT)
+@pytest.mark.parametrize(("text", "extra", "rc", "verdict", "fields"), _EVERY_EXIT)
 def test_every_exit_path_ends_with_exactly_one_verdict_line(
-    tmp_path, capsys, extra, rc, verdict
+    tmp_path, capsys, text, extra, rc, verdict, fields
 ):
-    assert splitter.main(["--nodeids", _write(tmp_path, _REAL_SHAPE), *extra]) == rc
+    nodeids = str(tmp_path / "absent.txt") if text is None else _write(tmp_path, text)
+    argv = [arg.replace("{tmp}", str(tmp_path)) for arg in extra]
+    assert splitter.main(["--nodeids", nodeids, *argv]) == rc
+
     lines = capsys.readouterr().err.splitlines()
-    verdict_lines = [ln for ln in lines if ln.startswith(splitter.VERDICT_PREFIX)]
+    verdict_lines = [ln for ln in lines if splitter.is_verdict_line(ln)]
     assert len(verdict_lines) == 1, lines
     assert lines[-1] == verdict_lines[0], "the verdict line must be the LAST line"
-    fields = splitter.parse_verdict(lines[-1])
-    assert fields is not None
-    assert (fields["verdict"], fields["exit"]) == (verdict, str(rc))
-    keys = list(fields)
-    assert (keys[0], keys[-1]) == ("verdict", "exit"), keys
+    parsed = splitter.parse_verdict(lines[-1])
+    assert parsed is not None
+    assert (parsed["verdict"], parsed["exit"]) == (verdict, str(rc))
+    for key, value in fields.items():
+        assert parsed.get(key) == value, f"{key}: {parsed}"
 
 
 def test_every_verdict_in_the_vocabulary_is_reachable():
     """A verdict nothing emits is dead vocabulary; one missing here is untested."""
-    reached = {verdict for _, _, verdict in _EVERY_EXIT} | {"no_nodeids"}
-    assert reached == splitter.VERDICTS
+    assert {row[3] for row in _EVERY_EXIT} == splitter.VERDICTS
+
+
+def test_help_renders():
+    """`--help` must print, not raise: a bare `%` in help text crashes argparse."""
+    with pytest.raises(SystemExit) as excinfo:
+        splitter.main(["--help"])
+    assert excinfo.value.code == 0
 
 
 def test_parse_verdict_reads_the_last_verdict_line_among_prose():
@@ -381,6 +442,12 @@ def test_parse_verdict_is_none_when_there_is_no_verdict_line():
         "shard-split: verdict=ok files=1 files=2 exit=0",  # duplicate key
         "shard-split: verdict=maybe exit=0",  # verdict outside the vocabulary
         "shard-split: verdict=ok files=1",  # no exit code
+        "shard-split: exit=0 verdict=ok",  # verdict not first, exit not last
+        "shard-split: verdict=ok exit=abc",  # non-integer exit
+        "shard-split: verdict=ok k=a=b exit=0",  # `=` inside a value
+        "shard-split: verdict=ok k= exit=0",  # empty value
+        "shard-split:",  # prefix with nothing after it
+        "shard-split:verdict=ok exit=0",  # no space after the prefix
     ],
 )
 def test_parse_verdict_refuses_a_malformed_line(line):
@@ -388,9 +455,29 @@ def test_parse_verdict_refuses_a_malformed_line(line):
         splitter.parse_verdict(line)
 
 
-def test_format_verdict_refuses_whitespace_in_a_value():
+@pytest.mark.parametrize(
+    "fields",
+    [
+        {"reason": "two words"},  # whitespace in a value
+        {"reason": "a=b"},  # `=` in a value
+        {"reason": ""},  # empty value
+        {"exit": "3"},  # reserved key: would emit `exit` twice
+        {"verdict": "ok"},  # reserved key: would emit `verdict` twice
+    ],
+)
+def test_format_verdict_refuses_what_parse_verdict_would_reject(fields):
     with pytest.raises(ValueError):
-        splitter.format_verdict("bad_args", 1, reason="two words")
+        splitter.format_verdict("bad_args", 1, **fields)
+
+
+def test_format_and_parse_round_trip():
+    line = splitter.format_verdict("truncated", 4, mode="count", missed="both")
+    assert splitter.parse_verdict(line) == {
+        "verdict": "truncated",
+        "mode": "count",
+        "missed": "both",
+        "exit": "4",
+    }
 
 
 # --- the truncation floor --------------------------------------------------
@@ -477,7 +564,32 @@ def test_count_only_rejects_a_node_id_shortfall(tmp_path, capsys):
         ]
     )
     assert rc == 4
-    _verdict(capsys, 4, "truncated", files=3, nodeids=5, min_files=3, min_nodeids=99)
+    _verdict(
+        capsys,
+        4,
+        "truncated",
+        missed="nodeids",
+        files=3,
+        nodeids=5,
+        min_files=3,
+        min_nodeids=99,
+    )
+
+
+def test_a_truncated_verdict_names_both_floors_when_both_are_missed(tmp_path, capsys):
+    rc = splitter.main(
+        [
+            "--nodeids",
+            _write(tmp_path, _REAL_SHAPE),
+            "--count-only",
+            "--min-files",
+            "10",
+            "--min-nodeids",
+            "99",
+        ]
+    )
+    assert rc == 4
+    _verdict(capsys, 4, "truncated", missed="both")
 
 
 def test_count_only_rejects_a_truncated_collection(tmp_path, capsys):
@@ -494,8 +606,17 @@ def test_count_only_rejects_a_truncated_collection(tmp_path, capsys):
         ]
     )
     assert rc == 4
-    # Both floors are reported, so the verdict names which one was missed.
-    _verdict(capsys, 4, "truncated", files=3, nodeids=5, min_files=10, min_nodeids=1)
+    # `missed` names which floor failed; both counts and floors ride along.
+    _verdict(
+        capsys,
+        4,
+        "truncated",
+        missed="files",
+        files=3,
+        nodeids=5,
+        min_files=10,
+        min_nodeids=1,
+    )
 
 
 def test_the_floor_also_guards_a_real_shard_selection(tmp_path, capsys):
@@ -513,7 +634,7 @@ def test_the_floor_also_guards_a_real_shard_selection(tmp_path, capsys):
         ]
     )
     assert rc == 4
-    _verdict(capsys, 4, "truncated", mode="select", files=3, min_files=10)
+    _verdict(capsys, 4, "truncated", mode="select", missed="files", min_files=10)
 
 
 def test_the_floors_are_off_by_default_on_the_selection_path(tmp_path):

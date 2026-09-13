@@ -70,9 +70,10 @@ Space-separated ``key=value`` tokens; no value contains whitespace; ``verdict``
 comes first and ``exit`` (the process exit code) last. ``verdict`` is one of
 ``VERDICTS`` and :func:`parse_verdict` is the one reader. It exists because
 pinning the prose broke a substring test four times across the review of the PR
-that introduced this script. The only exit with no verdict line is argparse's
-own usage error, which shares exit 2 with ``no_nodeids`` -- so read the line,
-not the code.
+that introduced this script. The only exits with no verdict line are argparse's
+own: a usage error (exit 2, which ``no_nodeids`` shares -- so read the line, not
+the code) and ``--help`` (exit 0). A ``--nodeids`` file that cannot be read, or
+an ``--out`` that cannot be written, is ``io_error`` rather than a traceback.
 """
 
 from __future__ import annotations
@@ -93,19 +94,43 @@ VERDICT_PREFIX = "shard-split:"
 
 #: The closed verdict vocabulary. A new exit path adds its verdict HERE; the
 #: test module pins that every member is reachable from `main`.
-VERDICTS = frozenset({"ok", "bad_args", "no_nodeids", "truncated", "empty_shard"})
+VERDICTS = frozenset(
+    {"ok", "bad_args", "io_error", "no_nodeids", "truncated", "empty_shard"}
+)
+
+#: Keys `format_verdict` places itself, and therefore refuses as caller fields.
+_RESERVED_KEYS = frozenset({"verdict", "exit"})
 
 
-def format_verdict(verdict: str, exit_code: int, **fields: object) -> str:
-    """The verdict line: ``shard-split: verdict=<v> key=value ... exit=<code>``."""
+def is_verdict_line(line: str) -> bool:
+    """Whether `line` CLAIMS to be a verdict line -- well-formed or not.
+
+    The writer, the reader and the tests all use this one rule, so a line that
+    looks like a verdict can never be skipped by one and parsed by another.
+    """
+    return line.strip().startswith(VERDICT_PREFIX)
+
+
+def format_verdict(verdict: str, exit_code: int, /, **fields: object) -> str:
+    """The verdict line: ``shard-split: verdict=<v> key=value ... exit=<code>``.
+
+    Refuses anything `parse_verdict` would reject, so the writer can never emit
+    a line its own reader refuses. The two leading parameters are positional-only
+    so that a caller field named ``verdict`` reaches the reserved-key check
+    instead of colliding with the parameter.
+    """
     if verdict not in VERDICTS:
         raise ValueError(f"unknown verdict {verdict!r}")
+    reserved = sorted(_RESERVED_KEYS & fields.keys())
+    if reserved:
+        raise ValueError(f"verdict fields may not be named {reserved}")
     tokens = [f"verdict={verdict}"]
-    tokens += [f"{key}={value}" for key, value in fields.items()]
+    for key, value in fields.items():
+        text = str(value)
+        if not text or "=" in key + text or any(ch.isspace() for ch in key + text):
+            raise ValueError(f"verdict field {key}={text!r} is not a bare token")
+        tokens.append(f"{key}={text}")
     tokens.append(f"exit={exit_code}")
-    for token in tokens:
-        if any(ch.isspace() for ch in token):
-            raise ValueError(f"verdict token {token!r} contains whitespace")
     return f"{VERDICT_PREFIX} {' '.join(tokens)}"
 
 
@@ -113,24 +138,32 @@ def parse_verdict(text: str) -> dict[str, str] | None:
     """The fields of the LAST verdict line in `text`, or None when there is none.
 
     A malformed line raises rather than yielding a partial reading: a reader
-    that guesses is the prose-matching this line exists to replace.
+    that guesses is the prose-matching this line exists to replace. Every line
+    `is_verdict_line` claims is held to the whole contract -- one space after
+    the prefix, bare ``key=value`` tokens with no repeated key, ``verdict``
+    first and in `VERDICTS`, ``exit`` last and an integer.
     """
-    lines = [
-        line.strip()
-        for line in text.splitlines()
-        if line.strip().startswith(VERDICT_PREFIX + " ")
-    ]
+    lines = [line.strip() for line in text.splitlines() if is_verdict_line(line)]
     if not lines:
         return None
     last = lines[-1]
+    body = last[len(VERDICT_PREFIX) :]
+    if not body.startswith(" ") or not body.strip():
+        raise ValueError(f"malformed verdict line {last!r}")
     fields: dict[str, str] = {}
-    for token in last[len(VERDICT_PREFIX) :].split():
+    for token in body.split():
         key, sep, value = token.partition("=")
-        if not sep or not key or key in fields:
+        if not sep or not key or not value or "=" in value or key in fields:
             raise ValueError(f"malformed verdict token {token!r} in {last!r}")
         fields[key] = value
-    if fields.get("verdict") not in VERDICTS or "exit" not in fields:
-        raise ValueError(f"verdict line lacks a known verdict or an exit: {last!r}")
+    keys = list(fields)
+    if (
+        keys[0] != "verdict"
+        or keys[-1] != "exit"
+        or fields["verdict"] not in VERDICTS
+        or not fields["exit"].lstrip("-").isdigit()
+    ):
+        raise ValueError(f"verdict line breaks the output contract: {last!r}")
     return fields
 
 
@@ -220,7 +253,7 @@ def main(argv: list[str] | None = None) -> int:
             "fail (exit 4) unless at least this many NODE IDS appear in the "
             "collection. Counting files alone is not enough: dropping the 53 "
             "heaviest files leaves 173 of 231 files (a 3/4 file floor passes) "
-            "while losing 62% of the tests"
+            "while losing 62%% of the tests"
         ),
     )
     parser.add_argument(
@@ -281,11 +314,17 @@ def main(argv: list[str] | None = None) -> int:
             )
             return _finish(1, "bad_args", mode=mode, reason="shard_out_of_range")
 
-    if args.nodeids == "-":
-        text = sys.stdin.read()
-    else:
-        with open(args.nodeids, encoding="utf-8", errors="replace") as handle:
-            text = handle.read()
+    try:
+        if args.nodeids == "-":
+            text = sys.stdin.read()
+        else:
+            with open(args.nodeids, encoding="utf-8", errors="replace") as handle:
+                text = handle.read()
+    except OSError as exc:
+        print(
+            f"::error::cannot read --nodeids {args.nodeids!r}: {exc}", file=sys.stderr
+        )
+        return _finish(1, "io_error", mode=mode, stage="read")
 
     nodeids = parse_nodeids(text)
     if not nodeids:
@@ -336,10 +375,17 @@ def main(argv: list[str] | None = None) -> int:
             "dead test module.",
             file=sys.stderr,
         )
+        files_short = len(weights) < args.min_files
+        nodeids_short = len(nodeids) < args.min_nodeids
+        if files_short and nodeids_short:
+            missed = "both"
+        else:
+            missed = "files" if files_short else "nodeids"
         return _finish(
             4,
             "truncated",
             mode=mode,
+            missed=missed,
             files=len(weights),
             nodeids=len(nodeids),
             min_files=args.min_files,
@@ -382,6 +428,28 @@ def main(argv: list[str] | None = None) -> int:
             nodeids=len(nodeids),
         )
 
+    body = "\n".join(selected) + "\n"
+    try:
+        if args.out:
+            with open(args.out, "w", encoding="utf-8", newline="\n") as handle:
+                handle.write(body)
+        else:
+            sys.stdout.write(body)
+    except OSError as exc:
+        print(
+            f"::error::cannot write shard {args.shard}/{args.shards}'s selection "
+            f"to {args.out!r}: {exc}",
+            file=sys.stderr,
+        )
+        return _finish(
+            1,
+            "io_error",
+            mode=mode,
+            stage="write",
+            shards=args.shards,
+            shard=args.shard,
+        )
+
     total = sum(weights.values())
     mine = sum(weights[p] for p in selected)
     print(
@@ -389,13 +457,6 @@ def main(argv: list[str] | None = None) -> int:
         f"{mine} of {total} collected tests",
         file=sys.stderr,
     )
-
-    body = "\n".join(selected) + "\n"
-    if args.out:
-        with open(args.out, "w", encoding="utf-8", newline="\n") as handle:
-            handle.write(body)
-    else:
-        sys.stdout.write(body)
     return _finish(
         0,
         "ok",
