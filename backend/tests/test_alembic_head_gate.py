@@ -694,7 +694,7 @@ def test_the_mixed_case_reports_BOTH_halves() -> None:
     assert remediation.target == "landed"
     assert [rev for rev, _ in remediation.edits] == ["h1"]
     text = render_remediation(remediation, "origin/main", scan.heads)
-    assert "h1" in text and "one-token fix" in text
+    assert "h1" in text and "plain re-point" in text
     assert "APPEND" in text
     comment = notifier.render_comment(scan.heads, remediation, "deadbeefcafe")
     assert "h1" in comment and "APPEND" in comment
@@ -1233,6 +1233,7 @@ def _drive_main(
     files_raises: Exception | None = None,
     comments: list[dict] | None = None,
     posted: list[str] | None = None,
+    test_sources: dict[Path, str] | Exception | None = None,
 ) -> tuple[int, str]:
     """Run `notifier.main()` over ONE fake open PR with every call faked.
 
@@ -1256,6 +1257,13 @@ def _drive_main(
     monkeypatch.setattr(notifier, "prs_carrying_a_notice", lambda *_a: (set(), ""))
     monkeypatch.setattr(notifier, "pr_version_files", _files)
     monkeypatch.setattr(notifier, "simulate", lambda *_a, **_k: simulated)
+
+    def _test_sources(*_a: object, **_k: object) -> dict[Path, str]:
+        if isinstance(test_sources, Exception):
+            raise test_sources
+        return test_sources or {}
+
+    monkeypatch.setattr(notifier, "pr_test_sources", _test_sources)
     monkeypatch.setattr(notifier, "find_marker_comments", lambda *_a: comments or [])
 
     def _write(_repo: object, _n: object, body: str, *_a: object, **_k: object) -> str:
@@ -1458,3 +1466,284 @@ def test_the_pr_lane_is_not_narrowed() -> None:
     # would: the sweep enumerates only base=main PRs, so every PR it can
     # tolerate would be one the counter never ran on.
     assert "main" in triggers["pull_request"]["branches"]
+
+
+# ---------------------------------------------------------------------------
+# A re-point is THREE sites, not one token
+#
+# Plan `2026-09-05-alembic-fork-remediation-is-pairwise-the-population-is-n`
+# §8.2 / §8.4 item 5. Advice naming only `down_revision` turned a red head count
+# into a red test suite on #1216: the revision's migration test pins
+# `_PARENT_REVISION_ID`, and several such tests assert it equals
+# `down_revision`. The pin fixtures below are the three assertion shapes found
+# on web `main` — the declaration line is the same in all three, which is
+# exactly why one matcher serves them.
+# ---------------------------------------------------------------------------
+
+import count_alembic_heads as counter  # noqa: E402
+from _alembic_graph import (  # noqa: E402
+    find_parent_pins,
+    plan_repoint_sites,
+    repoint_sites,
+)
+
+_PIN_SHAPES = {
+    # e.g. test_parkwuslug_01 / test_wf_resume_fingerprint_01
+    "regex_group": (
+        "import re\n\n"
+        '_REVISION_ID = "@REV@"\n'
+        '_PARENT_REVISION_ID = "@PARENT@"\n\n\n'
+        "def test_parent_pin_is_the_real_parent(source: str) -> None:\n"
+        "    match = _DOWN_RE.search(source)\n"
+        '    assert match.group("parent") == _PARENT_REVISION_ID\n'
+    ),
+    # e.g. test_fleet_res_tel_05
+    "module_attribute": (
+        '_REVISION_ID = "@REV@"\n'
+        '_PARENT_REVISION_ID = "@PARENT@"\n\n\n'
+        "def test_parent_pin_is_the_real_parent(module) -> None:\n"
+        "    assert module.down_revision == _PARENT_REVISION_ID\n"
+    ),
+    # e.g. test_pdtier_01 / test_pdtier_02
+    "literal_in_source": (
+        '_REVISION_ID = "@REV@"\n'
+        '_PARENT_REVISION_ID = "@PARENT@"\n\n\n'
+        "def test_parent_pin_is_the_real_parent(source: str) -> None:\n"
+        "    assert (\n"
+        "        f'down_revision: str | Sequence[str] | None = "
+        '"{_PARENT_REVISION_ID}"\' in source\n'
+        "    )\n"
+    ),
+}
+
+
+def _pin_file(shape: str, rev: str, parent: str) -> str:
+    return _PIN_SHAPES[shape].replace("@REV@", rev).replace("@PARENT@", parent)
+
+
+def _forked_scan():
+    """`landed` and `mine` both claim `a`; `landed` is on the baseline."""
+    sources = _tree(("a", None), ("landed", "a"), ("mine", "a"))
+    scan = scan_sources(sources)
+    remediation = plan_remediation(scan, landed={"a", "landed"})
+    assert remediation.kind == "repoint" and remediation.target == "landed"
+    return sources, scan, remediation
+
+
+@pytest.mark.parametrize("shape", sorted(_PIN_SHAPES))
+def test_a_pin_of_every_shape_is_found_and_rewritten(shape: str) -> None:
+    pin_path = Path("backend/tests/test_mine_migration.py")
+    found = find_parent_pins(
+        {pin_path: _pin_file(shape, "mine", "a")}, "mine", "a", "landed"
+    )
+    assert len(found) == 1
+    assert found[0].path == pin_path
+    assert found[0].before == '_PARENT_REVISION_ID = "a"'
+    assert found[0].after == '_PARENT_REVISION_ID = "landed"'
+    assert (
+        found[0].lineno
+        == _pin_file(shape, "mine", "a").splitlines().index('_PARENT_REVISION_ID = "a"')
+        + 1
+    )
+
+
+@pytest.mark.parametrize("shape", sorted(_PIN_SHAPES))
+def test_both_renderers_carry_the_pin_rewrite_for_every_shape(shape: str) -> None:
+    sources, scan, remediation = _forked_scan()
+    pin_path = Path("backend/tests/test_mine_migration.py")
+    sites = plan_repoint_sites(
+        scan, remediation, sources, {pin_path: _pin_file(shape, "mine", "a")}
+    )
+    text = render_remediation(
+        remediation, "origin/main", scan.heads, sites=sites, pin_scope="the tests"
+    )
+    comment = notifier.render_comment(
+        scan.heads, remediation, "cafebabe1234", sites=sites, pin_scope="the tests"
+    )
+    for rendered in (text, comment):
+        # All three sites, each with its exact before -> after line.
+        assert 'down_revision: str | Sequence[str] | None = "a"' in rendered
+        assert 'down_revision: str | Sequence[str] | None = "landed"' in rendered
+        assert "Revises: a" in rendered
+        assert "Revises: landed" in rendered
+        assert '_PARENT_REVISION_ID = "a"' in rendered
+        assert '_PARENT_REVISION_ID = "landed"' in rendered
+        assert "test_mine_migration.py" in rendered
+        assert "no `_PARENT_REVISION_ID` pin found" not in rendered
+        # The defect this block exists for: never "one token" again.
+        assert "one token" not in rendered.lower()
+        assert "one-token" not in rendered.lower()
+
+
+def test_no_pin_says_so_explicitly_in_both_renderers() -> None:
+    sources, scan, remediation = _forked_scan()
+    sites = plan_repoint_sites(scan, remediation, sources, {})
+    assert sites["mine"].pins == ()
+    text = render_remediation(
+        remediation, "origin/main", scan.heads, sites=sites, pin_scope="the tests"
+    )
+    comment = notifier.render_comment(
+        scan.heads, remediation, "cafebabe1234", sites=sites, pin_scope="the tests"
+    )
+    expected_tail = "— if its test pins the parent under another name, update it too"
+    assert f"no `_PARENT_REVISION_ID` pin found for mine {expected_tail}" in text
+    assert f"no `_PARENT_REVISION_ID` pin found for `mine` {expected_tail}" in comment
+    for rendered in (text, comment):
+        assert "Revises: landed" in rendered  # the other two sites still named
+
+
+def test_a_pin_search_that_did_not_run_is_unknown_not_none_found() -> None:
+    """`pin_scope=None` — nobody searched — must not read as "no pin"."""
+    sources, scan, remediation = _forked_scan()
+    sites = plan_repoint_sites(scan, remediation, sources, {})
+    text = render_remediation(remediation, "origin/main", scan.heads, sites=sites)
+    comment = notifier.render_comment(
+        scan.heads, remediation, "cafebabe1234", sites=sites
+    )
+    for rendered in (text, comment):
+        assert "UNKNOWN" in rendered
+        assert "pin found" not in rendered
+    # And with no sites at all, the three sites are still named.
+    bare = render_remediation(remediation, "origin/main", scan.heads)
+    assert "_PARENT_REVISION_ID" in bare and "Revises:" in bare and "UNKNOWN" in bare
+
+
+def test_a_pin_naming_a_different_parent_is_not_listed() -> None:
+    test_sources = {
+        Path("backend/tests/test_mine_migration.py"): _pin_file(
+            "module_attribute", "mine", "somewhere_else"
+        )
+    }
+    assert find_parent_pins(test_sources, "mine", "a", "landed") == ()
+    sources, scan, remediation = _forked_scan()
+    sites = plan_repoint_sites(scan, remediation, sources, test_sources)
+    text = render_remediation(
+        remediation, "origin/main", scan.heads, sites=sites, pin_scope="the tests"
+    )
+    assert "somewhere_else" not in text
+    assert "no `_PARENT_REVISION_ID` pin found for mine" in text
+
+
+def test_a_pin_in_another_revisions_test_is_not_listed() -> None:
+    """Same old parent, different `_REVISION_ID`: not this re-point's file."""
+    test_sources = {
+        Path("backend/tests/test_other_migration.py"): _pin_file(
+            "regex_group", "other", "a"
+        )
+    }
+    assert find_parent_pins(test_sources, "mine", "a", "landed") == ()
+
+
+def test_a_chain_root_has_no_pin_to_match() -> None:
+    """`down_revision = None` — no string pin can name it."""
+    test_sources = {Path("t.py"): _pin_file("regex_group", "r", "None")}
+    assert find_parent_pins(test_sources, "r", None, "landed") == ()
+
+
+def test_the_sites_quote_the_authors_own_lines() -> None:
+    """A legacy unannotated file keeps its own left-hand side; a missing
+    `Revises:` line is reported as absent, not invented."""
+    source = 'revision = "mine"\ndown_revision = "a"\n'
+    scan = scan_sources({Path("mine.py"): source, **_tree(("a", None))})
+    sites = repoint_sites(scan, "mine", "landed", source, {})
+    assert sites.old_parent == "a"
+    assert sites.down_revision == ('down_revision = "a"', 'down_revision = "landed"')
+    assert sites.revises is None
+    comment_lines = notifier._site_block(
+        "mine", Path("mine.py"), "landed", sites, "the tests"
+    )
+    assert any("has no Revises: line" in line for line in comment_lines)
+
+
+def test_the_counter_main_names_the_pin_it_found_on_disk(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture
+) -> None:
+    """The local-tree wiring end to end: exit code unchanged, pin named."""
+    versions = _write(tmp_path / "v", ("a", None), ("landed", "a"), ("mine", "a"))
+    tests_dir = tmp_path / "tests"
+    tests_dir.mkdir()
+    pin = tests_dir / "test_mine_migration.py"
+    pin.write_text(_pin_file("literal_in_source", "mine", "a"), encoding="utf-8")
+    monkeypatch.setattr(counter, "TESTS_ROOT", tests_dir)
+    monkeypatch.setattr(counter, "revisions_at_ref", lambda *_a: {"a", "landed"})
+    monkeypatch.setattr(
+        sys, "argv", ["count_alembic_heads.py", "--versions-dir", str(versions)]
+    )
+    assert counter.main() == counter.EXIT_VIOLATION  # still 1 on a fork
+    stderr = capsys.readouterr().err
+    assert "test_mine_migration.py" in stderr
+    assert 'before: _PARENT_REVISION_ID = "a"' in stderr
+    assert 'after:  _PARENT_REVISION_ID = "landed"' in stderr
+    assert "before: Revises: a" in stderr
+
+
+def test_the_counter_main_says_unknown_when_the_tests_dir_is_absent(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture
+) -> None:
+    versions = _write(tmp_path / "v", ("a", None), ("landed", "a"), ("mine", "a"))
+    monkeypatch.setattr(counter, "TESTS_ROOT", tmp_path / "no_such_dir")
+    monkeypatch.setattr(counter, "revisions_at_ref", lambda *_a: {"a", "landed"})
+    monkeypatch.setattr(
+        sys, "argv", ["count_alembic_heads.py", "--versions-dir", str(versions)]
+    )
+    assert counter.main() == counter.EXIT_VIOLATION
+    stderr = capsys.readouterr().err
+    assert "UNKNOWN" in stderr
+    assert "pin found" not in stderr
+
+
+def test_the_sweep_posts_the_pin_rewrite_from_the_prs_own_test_file(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """`_drive_main`'s baseline is `a -> b`; the PR adds `c` off `a`."""
+    simulated = {**_tree(("a", None), ("b", "a")), Path("c.py"): _revision("c", "a")}
+    posted: list[str] = []
+    code, _ = _drive_main(
+        monkeypatch,
+        simulated,
+        posted=posted,
+        test_sources={
+            Path("backend/tests/test_c_migration.py"): _pin_file(
+                "regex_group", "c", "a"
+            )
+        },
+    )
+    assert code == 0
+    assert len(posted) == 1
+    assert '- _PARENT_REVISION_ID = "a"' in posted[0]
+    assert '+ _PARENT_REVISION_ID = "b"' in posted[0]
+    assert "test_c_migration.py" in posted[0]
+
+
+def test_an_unreadable_pr_test_listing_is_a_finding_and_an_unknown_notice(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Exit code unchanged (a finding, not a failure); the notice says UNKNOWN."""
+    simulated = {**_tree(("a", None), ("b", "a")), Path("c.py"): _revision("c", "a")}
+    posted: list[str] = []
+    code, stderr = _drive_main(
+        monkeypatch,
+        simulated,
+        posted=posted,
+        test_sources=notifier.ApiError("502 Bad Gateway"),
+    )
+    assert code == 0
+    assert "pin search is UNKNOWN" in stderr
+    assert len(posted) == 1
+    assert "UNKNOWN" in posted[0]
+    assert "pin found" not in posted[0]
+
+
+def test_the_advice_never_claims_coord_will_repoint() -> None:
+    """Coord's arming is UNKNOWN (plan §8.5 Phase 0); the text must not promise it."""
+    sources, scan, remediation = _forked_scan()
+    sites = plan_repoint_sites(scan, remediation, sources, {})
+    comment = notifier.render_comment(
+        scan.heads, remediation, "cafebabe1234", sites=sites, pin_scope="x"
+    )
+    text = render_remediation(
+        remediation, "origin/main", scan.heads, sites=sites, pin_scope="x"
+    )
+    for rendered in (comment, text):
+        assert "coord will" not in rendered.lower()
+        assert "automatically" not in rendered.lower()

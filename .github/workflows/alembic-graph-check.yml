@@ -128,7 +128,7 @@ jobs:
           # every revision in the checkout has landed by definition. That
           # makes `alembic merge` the correct remedy here and the script
           # says so — which is NOT true of the open-PR sweep below, where
-          # the forked revision is unlanded and a one-token re-point is the
+          # the forked revision is unlanded and a three-site re-point is the
           # fix. Same script, opposite advice, because the graphs differ.
           python ../scripts/ci/count_alembic_heads.py --report-only \
             --baseline-ref HEAD | tee heads.txt
@@ -190,7 +190,7 @@ jobs:
               ``,
               `The merge revision is empty bookkeeping (just joins parents); it's a no-op DDL.`,
               ``,
-              `> ⚠️ **Do not copy this remedy to an open PR whose chain forked.** There the forked revision has *not* landed, so the fix is a one-token \`down_revision\` edit and a merge revision would be permanent bookkeeping added for nothing. \`notify_forked_open_prs.py\` (next step in this workflow) comments the exact token on each affected PR.`,
+              `> ⚠️ **Do not copy this remedy to an open PR whose chain forked.** There the forked revision has *not* landed, so the fix is a re-point — its \`down_revision\`, its \`Revises:\` docstring line, and the \`_PARENT_REVISION_ID\` pin in its migration test — and a merge revision would be permanent bookkeeping added for nothing. \`notify_forked_open_prs.py\` (next step in this workflow) comments the exact edits on each affected PR.`,
               ``,
               `<sub>The advice this comment used to carry — claim \`down_revision\` via \`/coord/claims/acquire\` before authoring — is **retired**: coord answers 410 Gone for \`ClaimKind::AlembicRevision\` and the author-time sibling-head guard was deleted in favour of land-time re-pointing. It also could not have helped: in all three recorded forks the declared parent WAS the single head at authoring time.</sub>`,
             ].join('\n');
