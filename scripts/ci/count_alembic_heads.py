@@ -77,6 +77,7 @@ from _alembic_graph import (  # noqa: E402
     Scan,
     computed_pin_text,
     duplicate_groups,
+    mismatched_pin_text,
     no_pin_found_text,
     plan_remediation,
     plan_repoint_sites,
@@ -204,7 +205,8 @@ def _site_lines(
         )
     pins = sites.pins if sites else ()
     computed = sites.computed_pins if sites else ()
-    if pins or computed:
+    mismatched = sites.mismatched_pins if sites else ()
+    if pins or computed or mismatched:
         lines.append("      3. the `_PARENT_REVISION_ID` pin in its migration test:")
         for pin in pins:
             lines.append(f"           {repo_relative(pin.path)}:{pin.lineno}")
@@ -214,6 +216,14 @@ def _site_lines(
                 f"           {repo_relative(computed_pin.path)}:{computed_pin.lineno}"
                 f" — {computed_pin_text()}:",
                 f"             {computed_pin.line}",
+            ]
+        for other in mismatched:
+            location = f"{repo_relative(other.path)}:{other.lineno}"
+            lines += [
+                "           "
+                + mismatched_pin_text(location, other.value, sites.old_parent)
+                + ":",
+                f"             {other.line}",
             ]
     elif sites is None or pin_scope is None:
         lines += [
