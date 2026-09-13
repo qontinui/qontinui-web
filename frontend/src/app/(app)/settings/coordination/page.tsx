@@ -347,7 +347,8 @@ export default function CoordinationSettingsPage() {
             pairs with the "Automatic fixer for stuck PRs" autonomy row. */}
         <FixerSpawnToggle
           canEdit={canEdit}
-          autonomyEffective={prFixDomain?.effective}
+          editRightsKnown={settings !== null}
+          autonomyState={prFixDomain?.effective_state}
         />
 
         <div className="border-t border-border" />
