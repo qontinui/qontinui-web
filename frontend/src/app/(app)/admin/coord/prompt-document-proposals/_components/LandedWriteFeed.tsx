@@ -44,27 +44,39 @@ import type { PromptDocumentWrite } from "../types";
 
 /**
  * The standing limit of this feed, stated whether or not anything went wrong
- * this request.
+ * this request — and stated about the right surface.
  *
- * The feed is assembled from coord's version history, which is written by the
- * same commit as the write — but the operator's *notice* of a write is the
- * post-commit `PolicyDocumentChanged` emit, and that emit is best-effort by
- * design: `notify_document_version_change` logs and raises a
- * `PolicyChangeNotificationEmitFailed` alert rather than failing the write, and
- * is skipped entirely while `coord.notifications` is unprovisioned. That alert
- * kind has no resolver, so a row it opens outlives the fault.
+ * The LIST cannot silently miss a write that had landed when it was read. It is
+ * assembled from each document's version history (the web proxy's
+ * `list_prompt_document_writes` reads `…/versions` per document, not coord's
+ * notification store), and a version is written by the same commit as the write
+ * itself. Every way the proxy can drop a write — a document whose history did
+ * not come back, documents beyond the fan-out ceiling, the page slice — sets a
+ * per-response caveat that renders in this same box, above this one.
  *
- * None of that sets a per-response caveat, so nothing above would say it. A
- * surface that reports what agents changed must not imply it reports ALL of it,
- * and the honest place to say so is beside the caveats that describe the same
- * class of gap.
+ * What is best-effort is the operator's PUSH notice of a write: the post-commit
+ * `PolicyDocumentChanged` emit. Coord reconciles it — a sweep re-emits the
+ * notice for an edited version (`version_number > 1`) inside its lookback
+ * window that has none — with two limits said on screen: nothing is sent, or
+ * re-sent, while `coord.notifications` is unprovisioned (the sweep reports
+ * UNKNOWN then), and creation deliberately never emits. A created document is
+ * announced by the finding its author filed with the write (`notification_ref`,
+ * the row's "Why" link) instead.
+ *
+ * This text used to say the list itself "can be incomplete" because of that
+ * emit, which pointed the operator at the wrong surface: it told them to
+ * distrust the one view that is complete, and said nothing useful about the
+ * channel that was not.
  */
 const COMPLETENESS_CAVEAT =
-  "This list can be incomplete without saying so. Coord announces a write after " +
-  "committing it, on a best-effort path: a failed announcement is logged and " +
-  "alerted rather than retried, and none are sent at all while coord's " +
-  "notification store is unprovisioned. Treat an absent write as unknown, not " +
-  "as one that never happened.";
+  "This list is read from each document's version history, so a write that " +
+  "had landed when the page loaded cannot be missing from it without a note " +
+  "above saying so. The notice coord sends you about a change is separate: it " +
+  "goes out after the write, and coord looks for recent edits whose notice " +
+  "failed to go out and sends it again. While coord's notification store is " +
+  "not set up, no notices go out and none are re-sent. A newly created " +
+  "document sends no notice — it is announced by the reasoning its author " +
+  "filed with it.";
 
 /** DOM id of one row's diff panel — the target of the row's `aria-controls`. */
 function diffPanelId(
@@ -109,7 +121,7 @@ interface LandedWriteFeedProps {
  * not a constant: coord's `policy_write` dial decides whether a classified
  * loosening — an edit that grants or widens what agents may do — is held as a
  * proposal or lands announced. So this feed does not promise a direction. It
- * promises completeness of what landed (subject to `COMPLETENESS_CAVEAT`), and
+ * promises completeness of what landed (see `COMPLETENESS_CAVEAT`), and
  * it MARKS a loosening rather than assuming none can appear.
  *
  * Monitoring surface, not a supervision queue — plan
@@ -415,9 +427,12 @@ export function LandedWriteFeed({
 
       {/* Coord genuinely failing gets the amber treatment; "incomplete but
           working" (degraded / partial / truncated) stays muted. The standing
-          completeness caveat rides in the same box — it describes the same
-          class of gap, and hiding it when nothing else went wrong is exactly
-          the implied completeness this surface must not offer. */}
+          completeness caveat rides in the same box, after them, because it
+          says how to read them: those notes are the ONLY way the served list
+          drops a landed write (the author filter hides rows from view, and
+          counts them in its own line), and the separate push notice is what
+          is best-effort. Hiding it when nothing else went wrong would leave the
+          operator guessing which of the two surfaces to trust. */}
       <div
         className={cn(
           "flex items-start gap-2 rounded-lg border px-3 py-2.5",

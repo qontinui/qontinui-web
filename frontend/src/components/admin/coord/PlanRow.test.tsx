@@ -91,6 +91,94 @@ function rowTimeCell(): HTMLElement {
   return cell;
 }
 
+/**
+ * The identity chip — the mono badge that opens the row, and the position
+ * operators read as the row's DATE.
+ *
+ * It used to fall back to the slug's first two hyphen-segments when the slug
+ * carried no `YYYY-MM-DD` prefix, which put WORDS in that position
+ * (`coordinator-assign`, `qontinui-schemas`) and, for a slug with no hyphen at
+ * all, rendered the chip and the label identically. An operator reported it as
+ * "a non-date value in the date field". Since plan
+ * `2026-09-02-coord-work-units-carry-no-authoring-date` the row has a real
+ * authoring date to show instead, and where even that is missing it admits it.
+ */
+function identityChip(): HTMLElement {
+  // The chip is the first child of the row button: `<Badge>` wrapping the
+  // `<span title>` this row supplies. Queried by structure because it carries
+  // no testid of its own (and D4a freezes the testids that exist).
+  const row = screen.getByTestId("coord-plan-card");
+  const chip = row.querySelector("span[title]");
+  if (!chip) throw new Error("no identity chip rendered");
+  return chip as HTMLElement;
+}
+
+describe("PlanRow identity chip", () => {
+  it("shows the slug's own date prefix when it has one", () => {
+    renderRow({ slug: "2026-08-16-coord-console-ui", status: "draft" });
+    expect(identityChip()).toHaveTextContent("2026-08-16");
+    expect(identityChip()).toHaveAttribute(
+      "title",
+      expect.stringContaining("slug's date prefix")
+    );
+  });
+
+  it("shows coord's authored_at for a slug with no date prefix", () => {
+    // The 108-of-149 case measured against coord 2026-09-13: an undated slug
+    // that nonetheless has a real authoring date recorded.
+    renderRow({
+      slug: "coordinator-assign-task-dispatch-race",
+      status: "draft",
+      authored_at: "2026-07-04T09:30:00Z",
+    });
+    expect(identityChip()).toHaveTextContent("2026-07-04");
+    expect(identityChip()).toHaveAttribute(
+      "title",
+      expect.stringContaining("work_units.authored_at")
+    );
+    // …and the label still carries the WHOLE slug: nothing was stripped off
+    // the front of it, because the date is not a prefix of it.
+    expect(screen.getByTestId("coord-plan-card")).toHaveTextContent(
+      "coordinator-assign-task-dispatch-race"
+    );
+  });
+
+  it("says it has no date rather than printing slug words", () => {
+    // The 41-of-149 case: undated slug, no authored_at. This is the
+    // expectation the old "never returns a blank identity" test protected the
+    // opposite of.
+    renderRow({ slug: "qontinui-schemas-rust-codegen", status: "draft" });
+    const chip = identityChip();
+    expect(chip).toHaveTextContent("\u2014");
+    expect(chip).not.toHaveTextContent(/qontinui/);
+    expect(chip).toHaveAttribute(
+      "title",
+      expect.stringContaining("No authoring date recorded")
+    );
+  });
+
+  it("no longer renders the chip and the label identically (`plans to do`)", () => {
+    // A slug with no hyphen at all: the old fallback returned the whole slug,
+    // so the row read as a date of itself.
+    renderRow({ slug: "plans to do", status: "draft" });
+    const chip = identityChip();
+    expect(chip).toHaveTextContent("\u2014");
+    expect(chip).not.toHaveTextContent(/plans/);
+    expect(screen.getByTestId("coord-plan-card")).toHaveTextContent(
+      "plans to do"
+    );
+  });
+
+  it("prefers the slug prefix over authored_at when both are present", () => {
+    renderRow({
+      slug: "2026-08-16-coord-console-ui",
+      status: "draft",
+      authored_at: "2020-01-01T00:00:00Z",
+    });
+    expect(identityChip()).toHaveTextContent("2026-08-16");
+  });
+});
+
 describe("PlanRow detail (R5) and the frozen testids (D4a)", () => {
   const plan = {
     slug: "2026-08-16-p-5",
