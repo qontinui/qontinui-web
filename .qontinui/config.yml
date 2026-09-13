@@ -29,12 +29,26 @@ merge:
   - package.json
   - package-lock.json
   - pnpm-lock.yaml
-  # python preset, Migrations class — both are verbatim
-  # `DEFAULT_ESCALATE_POLICIES` keys, so they classify
-  # `migrations` / `auto_if_provably_safe` and are routed to the migration
-  # classifier rather than hard-blocked.
+  # python preset, Migrations class. A verbatim `DEFAULT_ESCALATE_POLICIES`
+  # key, so it classifies `migrations` / `auto_if_provably_safe` and is routed
+  # to the migration classifier rather than hard-blocked.
   - '**/alembic/versions/**'
-  - '**/migrations/**'
+  #
+  # The python preset's second Migrations glob, '**/migrations/**', is
+  # DELIBERATELY NOT HERE. `is_migration_path` qualifies any path carrying a
+  # `/migrations/` segment, and this repo has three that are not DB migrations:
+  # frontend/src/lib/config-migration/migrations/ (17 .ts files, the live
+  # config-migration system), frontend/src/lib/rag-config-migration/migrations/,
+  # and the admin console route frontend/src/app/(app)/admin/coord/migrations/.
+  # `select_migration_disposition_files` applies no extension filter, so those
+  # .ts files would be fetched and handed to `classify_file`, which falls
+  # through to reject("unrecognized migration file kind (not .py/alembic or
+  # .sql)") -- and `classify` is all-or-nothing, so ONE .ts file would block the
+  # whole PR with a diagnostic claiming a malformed migration.
+  # `**/alembic/versions/**` alone restores the gate this repair is about
+  # (web#1102 was an alembic revision), so the second glob buys nothing here and
+  # imports a false-positive surface. Add it back only scoped, as
+  # `backend/migrations/**`, and only with a reason.
   auto_merge_categories:
   - docs
   - test
