@@ -507,15 +507,30 @@ def test_every_return_in_main_goes_through_finish():
         if isinstance(node, ast.Call):
             # `parser.error(...)` is the idiomatic argparse way to add a check
             # after parse_args, and exits 2 with no verdict line; so does
-            # `parser.exit(...)`. Nothing in `main` legitimately ends in either.
+            # `parser.exit(...)`. Matched on the parser object only, so a
+            # `log.error(...)` is not mistaken for an exit.
             name = ast.unparse(node.func)
-            exits = name in {"sys.exit", "exit", "quit", "os._exit"} or name.endswith(
-                (".error", ".exit")
-            )
+            exits = name in {
+                "sys.exit",
+                "exit",
+                "quit",
+                "os._exit",
+                "parser.error",
+                "parser.exit",
+            }
             assert not exits, (
                 f"`main` line {node.lineno} exits via `{name}` without `_finish`"
             )
     assert isinstance(main.body[-1], ast.Return), "`main` can fall off its end"
+    # The name match above is escaped by importing an exit under another name.
+    aliased = [
+        f"line {node.lineno}: from {node.module} import {alias.name}"
+        for node in ast.walk(tree)
+        if isinstance(node, ast.ImportFrom)
+        for alias in node.names
+        if (node.module, alias.name) in {("sys", "exit"), ("os", "_exit")}
+    ]
+    assert not aliased, f"an exit imported by name escapes this guard: {aliased}"
 
 
 def test_an_in_process_text_stdin_without_a_buffer_still_works(monkeypatch, capsys):
@@ -579,23 +594,41 @@ def test_the_docstring_example_is_what_the_script_writes(tmp_path, capsys):
 
 
 def test_no_print_in_the_script_targets_sys_stderr_directly():
-    """Only `_stderr()` may be a print target.
+    """Only `_stderr()` may reach stderr, and every `print` must name a target.
 
-    `file=sys.stderr` is `file=None` when stderr is closed, and `print` then
-    writes to STDOUT -- the shard's file list when `--out` is not given. The
-    closed-stderr tests run only two paths; this covers every call site.
+    `sys.stderr` is None when stderr is closed: `print(file=None)` then writes
+    to STDOUT -- the shard's file list when `--out` is not given -- and
+    `sys.stderr.write(...)` raises AttributeError with no verdict line. A `print`
+    with no `file=` writes to stdout outright. The closed-stderr tests run only
+    two paths; this covers every call site, however it is spelled.
     """
     tree = ast.parse(SCRIPT_PATH.read_text(encoding="utf-8"))
-    direct = [
-        node.lineno
-        for node in ast.walk(tree)
-        if isinstance(node, ast.Call)
-        and any(
-            kw.arg == "file" and ast.unparse(kw.value) == "sys.stderr"
-            for kw in node.keywords
-        )
-    ]
-    assert not direct, f"`file=sys.stderr` at lines {direct}; use `_stderr()`"
+    helper = next(
+        node
+        for node in tree.body
+        if isinstance(node, ast.FunctionDef) and node.name == "_stderr"
+    )
+    inside_helper = {id(node) for node in ast.walk(helper)}
+    offenders = []
+    for node in ast.walk(tree):
+        if id(node) in inside_helper:
+            continue
+        if isinstance(node, ast.Attribute) and ast.unparse(node) == "sys.stderr":
+            offenders.append(f"line {node.lineno}: sys.stderr")
+        if (
+            isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Name)
+            and node.func.id == "print"
+            and not any(kw.arg == "file" for kw in node.keywords)
+        ):
+            offenders.append(f"line {node.lineno}: print without file=")
+        if (
+            isinstance(node, ast.ImportFrom)
+            and node.module == "sys"
+            and any(alias.name == "stderr" for alias in node.names)
+        ):
+            offenders.append(f"line {node.lineno}: from sys import stderr")
+    assert not offenders, f"stderr access bypasses `_stderr()`: {offenders}"
 
 
 def test_a_closed_stderr_on_an_error_path_writes_nothing_to_stdout(
