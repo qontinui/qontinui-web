@@ -64,7 +64,7 @@ Output contract
 The ``::error::`` text is for people and is free to change. What a program -- or
 a test -- reads is the ONE verdict line every run prints LAST on stderr::
 
-    shard-split: verdict=truncated mode=count files=3 nodeids=5 min_files=10 min_nodeids=1 exit=4
+    shard-split: verdict=truncated mode=count missed=files files=3 nodeids=5 min_files=10 min_nodeids=1 exit=4
 
 Space-separated ``key=value`` tokens; no value contains whitespace; ``verdict``
 comes first and ``exit`` (the process exit code) last. ``verdict`` is one of
