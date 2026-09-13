@@ -419,7 +419,10 @@ export function usePromptDocumentProposals() {
    * `current_version` is a page-load snapshot. If a peer edited or already
    * withdrew the record since, it is no longer the v1 this control was offered
    * on, and withdrawing on the strength of a stale row would act on a document
-   * the operator has not seen.
+   * the operator has not seen. As with `revertWrite`, the window is narrowed to
+   * one request, not closed: a peer write can still land between the re-read
+   * and the POST, because coord's withdraw route takes no version
+   * precondition. The damage is bounded — a withdrawal is itself undoable.
    */
   const withdrawWrite = useCallback(
     async (write: PromptDocumentWrite, reason: string): Promise<boolean> => {

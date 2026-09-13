@@ -32,12 +32,19 @@
  *    fleet, and no per-response caveat would ever say so.
  */
 
-import { describe, it, expect, vi } from "vitest";
+import { beforeEach, describe, it, expect, vi } from "vitest";
 import { act, render, screen, within, fireEvent } from "@testing-library/react";
 
+const authState = vi.hoisted(() => ({ isCoordAdmin: true }));
 vi.mock("@/contexts/auth-context", () => ({
-  useAuth: () => ({ isCoordAdmin: true }),
+  useAuth: () => authState,
 }));
+
+// Reset rather than left to declaration order: the non-admin case below sets it
+// `false`, and every later test must not pass only by reassigning it first.
+beforeEach(() => {
+  authState.isCoordAdmin = true;
+});
 
 import { LandedWriteFeed } from "./LandedWriteFeed";
 import type { PromptDocumentWrite } from "../types";
@@ -796,6 +803,17 @@ describe("LandedWriteFeed — Withdraw for a created decision record", () => {
     expect(
       screen.getByTestId("withdraw-reason-decision_record-no-cross-tenant-reads")
     ).toHaveValue("never decided");
+  });
+
+  it("gates Withdraw from a non-admin, and says why", () => {
+    authState.isCoordAdmin = false;
+    renderFeed({ writes: [created()] });
+    expect(
+      screen.queryByTestId("withdraw-decision_record-no-cross-tenant-reads")
+    ).toBeNull();
+    expect(
+      within(rowFor(created())).getByTestId("coord-admin-only-notice")
+    ).toHaveTextContent("Admin only");
   });
 
   it("marks rows of a withdrawn record, and only on an explicit true", () => {
