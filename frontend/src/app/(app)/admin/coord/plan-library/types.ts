@@ -144,6 +144,27 @@ export interface WorkArtifactDetail extends WorkArtifactSummary {
   coord: CandidateCoordLink;
 }
 
+/**
+ * What the corpus a page was drawn from actually holds — UNFILTERED by the
+ * page's own query, org-scoped like it. `plan_count: 0` beside an empty page
+ * reads "the corpus holds no plans", which is a different sentence from "no
+ * such plan" (2026-08-27-plan-corpus-read-path-is-dark, D1).
+ */
+export interface CorpusHealth {
+  artifact_count: number;
+  plan_count: number;
+  /** `max(updated_at)` in scope; `null` on an EMPTY corpus, never an epoch. */
+  newest_updated_at: string | null;
+  /** The `/capture-health` census, from the same query and builder. */
+  capture: CaptureHealthResponse;
+  /**
+   * `GET /plan-library/scan-roots`, from the same builder: how far each
+   * feeding device's scan source is from its default branch. `state:
+   * "unknown"` with no rows is "no device has reported", never "current".
+   */
+  scan_roots: ScanRootListResponse;
+}
+
 export interface WorkArtifactListResponse {
   items: WorkArtifactSummary[];
   /** This page's length (`items.length`); `total` is the unpaged total. */
@@ -151,6 +172,7 @@ export interface WorkArtifactListResponse {
   total: number;
   offset: number;
   limit: number;
+  corpus_health: CorpusHealth;
 }
 
 // ───────────────────────────── divergence ─────────────────────────────
@@ -219,6 +241,8 @@ export interface CaptureDoorHealth {
 export interface CaptureHealthResponse {
   total: number;
   doors: CaptureDoorHealth[];
+  /** `max(updated_at)` across every door; `null` on an empty corpus. */
+  newest_updated_at: string | null;
 }
 
 // ──────────────────── coord link (candidates read) ────────────────────
@@ -316,6 +340,13 @@ export interface PlanCandidateResponse {
   coord_available: boolean;
   work_unit_population_state: WorkUnitPopulationState;
   work_unit_population_reason: string | null;
+  /**
+   * The whole corpus's health — the same block every list page carries.
+   * `null` when it could not be read (report-only here): UNKNOWN, not healthy.
+   */
+  corpus_health: CorpusHealth | null;
+  /** Why `corpus_health` is null (a `read_failed:` line); null when it was read. */
+  corpus_health_unavailable_reason: string | null;
 }
 
 // ───────────────────────────── fleet policy ─────────────────────────────
@@ -447,6 +478,67 @@ export interface ScanRootListResponse {
   /** `count > 0` with `fresh_count === 0` means every feeder has gone quiet. */
   fresh_count: number;
   rows: ScanRootRow[];
+  /** One roll-up per distinct `source_repo`; empty exactly when `rows` is. */
+  by_source_repo: ScanRootSourceRollup[];
+}
+
+/**
+ * A roll-up's verdict. `unknown` = no device feeding this source has a
+ * comparable reading, or the fewest commits behind is a floor of 0 ("at least
+ * 0" establishes nothing) — `min_behind` is then `null`, never `0`. The id
+ * lists of an `unknown` roll-up may still carry an order the readings
+ * establish; `unknown` is about the distance, not the order.
+ */
+export const SCAN_ROOT_ROLLUP_STATES = ["measured", "unknown"] as const;
+
+export type ScanRootRollupState = (typeof SCAN_ROOT_ROLLUP_STATES)[number];
+
+/**
+ * Every device feeding ONE scan source, folded to the corpus's question: how
+ * far behind is its least-behind COMPARABLE feeder?
+ *
+ * Every claim is over the COMPARISON SET: readings that are fresh, applied and
+ * carry a count — a `measured` verdict, or a 0-behind floor the verdict marks
+ * `ref_stale`. A device in `unmeasured_device_ids` may be less behind than
+ * anything stated. `min_behind` is a lower bound on the least-behind
+ * comparable feeder's distance — NOT a ceiling on what the corpus lacks; a
+ * `min_behind_is_floor: false` means exact against a ref some device had
+ * fetched within six hours of its reading (the runner's definition), never
+ * against the live tip.
+ *
+ * The four id lists PARTITION the feeders, and a device is named least-behind
+ * or lagging only when the readings ORDER it: one shared `ref_sha` that is
+ * fresh (the order then holds as of that ref), or stale with every device at
+ * `ahead === 0`. Otherwise every comparable device is `lag_unknown_device_ids`
+ * — so an empty `lagging_device_ids` is NOT ESTABLISHED, never "none lagging".
+ * Placement is often empty on an active repository, where devices fetch at
+ * different times.
+ */
+export interface ScanRootSourceRollup {
+  source_repo: string | null;
+  state: ScanRootRollupState;
+  detail: string | null;
+  device_count: number;
+  /** Devices with a fresh, applied reading carrying a count. */
+  comparable_count: number;
+  /** `null` is NOT ESTABLISHED. Never render it as `0`. */
+  min_behind: number | null;
+  /** `null` exactly when `min_behind` is. */
+  min_behind_is_floor: boolean | null;
+  /**
+   * Comparable devices at the fewest commits behind, when the readings order
+   * them.
+   */
+  least_behind_device_ids: string[];
+  /**
+   * Comparable devices above the fewest commits behind, when the readings
+   * order them.
+   */
+  lagging_device_ids: string[];
+  /** Comparable devices the readings do not order. */
+  lag_unknown_device_ids: string[];
+  /** No comparable reading; each row's `state` and `detail` say why. */
+  unmeasured_device_ids: string[];
 }
 
 /**
@@ -464,10 +556,11 @@ export type ScanRootListState = (typeof SCAN_ROOT_LIST_STATES)[number];
  * Which fields of a wire type admit `null` — as a VALUE that tsc checks
  * against the type, so that a test can compare it with the backend's schema.
  *
- * `ScanRootRow` and `ScanRootListResponse` are hand-written mirrors of the
- * backend's response models, and an interface does not exist at runtime, so
- * no test can compare one with anything. This mapped type is the bridge. A
- * value annotated `WireNullability<T>` must name EVERY key of `T` (a missing
+ * `ScanRootRow`, `ScanRootListResponse` and `ScanRootSourceRollup` are
+ * hand-written mirrors of the backend's response models, and an interface
+ * does not exist at runtime, so no test can compare one with anything. This
+ * mapped type is the bridge. A value annotated `WireNullability<T>` must name
+ * EVERY key of `T` (a missing
  * one is an error) and no other (the excess-property check), and must set each
  * to `true` exactly when the field admits `null`. An OPTIONAL field maps to
  * `never`, which no value satisfies: every field on these responses is
@@ -482,7 +575,7 @@ export type ScanRootListState = (typeof SCAN_ROOT_LIST_STATES)[number];
  * REQUIRED-NESS AND NULLABILITY, and nothing more. It does not pin base types:
  * `WireNullability<{ n: number }>` and `WireNullability<{ n: string }>` are
  * the same type. The closed vocabularies are pinned separately — the consts by
- * that test, and their use by the three verdict fields by
+ * that test, and their use by the four verdict fields by
  * [`ScanRootVocabulariesPinned`] below.
  *
  * The witnesses are read by that test and nothing else; tree-shaking drops
@@ -530,7 +623,24 @@ export const SCAN_ROOT_LIST_NULLABLE: WireNullability<ScanRootListResponse> = {
   count: false,
   fresh_count: false,
   rows: false,
+  by_source_repo: false,
 };
+
+/** `ScanRootSourceRollup`'s nullability, as a value. See [`WireNullability`]. */
+export const SCAN_ROOT_ROLLUP_NULLABLE: WireNullability<ScanRootSourceRollup> =
+  {
+    source_repo: true,
+    state: false,
+    detail: true,
+    device_count: false,
+    comparable_count: false,
+    min_behind: true,
+    min_behind_is_floor: true,
+    least_behind_device_ids: false,
+    lagging_device_ids: false,
+    lag_unknown_device_ids: false,
+    unmeasured_device_ids: false,
+  };
 
 /** `true` exactly when `A` and `B` are the same type, not merely assignable. */
 type Equal<A, B> =
@@ -541,7 +651,7 @@ type Equal<A, B> =
 type Expect<T extends true> = T;
 
 /**
- * The three verdict fields carry the pinned vocabularies, not a wider
+ * The four verdict fields carry the pinned vocabularies, not a wider
  * `string`.
  *
  * Widening one would pass every other check here: the wire test pins the
@@ -554,4 +664,5 @@ export type ScanRootVocabulariesPinned = [
   Expect<Equal<ScanRootRow["state"], ScanRootState>>,
   Expect<Equal<ScanRootRow["reported_state"], ScanRootState>>,
   Expect<Equal<ScanRootListResponse["state"], ScanRootListState>>,
+  Expect<Equal<ScanRootSourceRollup["state"], ScanRootRollupState>>,
 ];

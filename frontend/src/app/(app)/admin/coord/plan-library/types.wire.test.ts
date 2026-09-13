@@ -33,6 +33,8 @@ import { describe, expect, it } from "vitest";
 import {
   SCAN_ROOT_LIST_NULLABLE,
   SCAN_ROOT_LIST_STATES,
+  SCAN_ROOT_ROLLUP_NULLABLE,
+  SCAN_ROOT_ROLLUP_STATES,
   SCAN_ROOT_ROW_NULLABLE,
   SCAN_ROOT_STATES,
 } from "./types";
@@ -106,6 +108,8 @@ const sorted = (values: Iterable<string>) => [...values].sort();
 describe.each(SNAPSHOTS)("the scan-root wire contract, against %s", (file) => {
   const row = component(file, "ScanRootRow");
   const list = component(file, "ScanRootListResponse");
+  const rollup = component(file, "ScanRootSourceRollup");
+  const corpus = component(file, "CorpusHealth");
 
   it("the row's verdict admits exactly SCAN_ROOT_STATES", () => {
     expect(enumOf(row, "state")).toEqual(sorted(SCAN_ROOT_STATES));
@@ -125,9 +129,26 @@ describe.each(SNAPSHOTS)("the scan-root wire contract, against %s", (file) => {
     );
   });
 
+  it("a roll-up's verdict admits exactly SCAN_ROOT_ROLLUP_STATES", () => {
+    expect(enumOf(rollup, "state")).toEqual(sorted(SCAN_ROOT_ROLLUP_STATES));
+  });
+
+  it("the list's roll-ups are the roll-up schema pinned here", () => {
+    expect(list.properties.by_source_repo?.items?.$ref).toBe(
+      "#/components/schemas/ScanRootSourceRollup"
+    );
+  });
+
+  it("corpus health carries the list schema, not a second copy of it", () => {
+    expect(
+      (corpus.properties.scan_roots as { $ref?: string } | undefined)?.$ref
+    ).toBe("#/components/schemas/ScanRootListResponse");
+  });
+
   describe.each([
     ["ScanRootRow", row, SCAN_ROOT_ROW_NULLABLE],
     ["ScanRootListResponse", list, SCAN_ROOT_LIST_NULLABLE],
+    ["ScanRootSourceRollup", rollup, SCAN_ROOT_ROLLUP_NULLABLE],
   ] as const)("%s", (_name, schema, witness) => {
     it("names exactly the fields the backend serves", () => {
       expect(sorted(Object.keys(witness))).toEqual(

@@ -147,6 +147,17 @@ describe("resolutionCandidates", () => {
     ]);
   });
 
+  it("breaks a band/priority/created_at tie on policy_id, as coord's ORDER BY does", () => {
+    // Identical except policy_id, passed in REVERSE order: only the final
+    // `policy_id ASC` tie-break can put them the right way round.
+    const second = rule({ gate_class: "c", policy_id: "p-b" });
+    const first = rule({ gate_class: "c", policy_id: "p-a" });
+    const ordered = resolutionCandidates([second, first]).map(
+      (c) => c.row.policy_id
+    );
+    expect(ordered).toEqual(["p-a", "p-b"]);
+  });
+
   it("keeps a repo-scoped SYSTEM row — the system band has no repo predicate", () => {
     // resolver.rs: `OR ($4::uuid IS NOT NULL AND tenant_id = $4)` — the system
     // arm carries no repo clause at all, so a repo-scoped built-in still
@@ -166,25 +177,34 @@ describe("resolutionCandidates", () => {
     expect(effective.authority).toBe("operator_only");
   });
 
-  it("ranks a repo-'' workspace row in the Repo band, above every tenant row", () => {
-    // `$3 = repo.unwrap_or("")`, so `repo = ''` satisfies `repo = $3` and
-    // computes scope_band 0 — ahead of a tenant-wide row of ANY priority.
+  it("keeps a repo-'' SYSTEM row — the system band has no repo predicate", () => {
+    // The `built_in` guard is what separates a dead empty-repo WORKSPACE row
+    // from a working system default that happens to carry an empty repo.
+    expect(
+      inertReason(rule({ gate_class: "c", built_in: true, repo: "" }))
+    ).toBeNull();
+  });
+
+  it("drops a repo-'' workspace row — a gate's `$3` is NULL, so it never matches", () => {
+    // qontinui-coord#2061 binds `$3` as a nullable param (NULL for a gate), so
+    // `repo = ''` is neither `repo IS NULL` nor `repo = $3`: coord's SELECT
+    // never returns the row, and the tenant-wide row decides.
     const tenantWide = rule({
       gate_class: "c",
       authority: "operator_only",
-      priority: 1,
+      priority: 9999,
     });
-    const repoBand = rule({
+    const emptyRepo = rule({
       gate_class: "c",
       authority: "agent_any",
-      priority: 9999,
+      priority: 1,
       repo: "",
     });
-    const effective = resolveEffectiveAuthority([tenantWide, repoBand], "c");
+    const effective = resolveEffectiveAuthority([tenantWide, emptyRepo], "c");
     expect(effective.kind).toBe("rule");
     if (effective.kind !== "rule") return;
-    expect(effective.rule.policy_id).toBe(repoBand.policy_id);
-    expect(effective.authority).toBe("agent_any");
+    expect(effective.rule.policy_id).toBe(tenantWide.policy_id);
+    expect(effective.authority).toBe("operator_only");
   });
 
   it("drops every row coord's SELECT would not return", () => {
@@ -208,6 +228,7 @@ describe("inertReason names the clause that excludes a row", () => {
   it.each([
     ["disabled", rule({ enabled: false })],
     ["repo-scoped", rule({ repo: "qontinui-coord" })], // workspace row only
+    ["empty-repo", rule({ repo: "" })], // workspace row only
     ["expired", rule({ expires_at: "2020-01-01T00:00:00Z" })],
     ["no-class", rule({ payload: { authority: "agent_any" } })],
     [

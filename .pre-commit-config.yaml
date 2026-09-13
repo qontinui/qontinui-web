@@ -108,7 +108,9 @@ repos:
         files: ^backend/alembic/versions/.*\.py$
         # Two checks: (1) op.<gated_func>(..., schema=...) kwarg
         # presence, (2) raw SQL inside op.execute("...") names a
-        # schema for every CREATE/ALTER/DROP/REFERENCES/INDEX-ON.
+        # schema for every CREATE/ALTER/DROP TABLE, REFERENCES, INDEX-ON
+        # and DROP INDEX (every name in a DROP INDEX list).
+        # The hook's tests run in CI: .github/workflows/pre-commit-hook-tests.yml.
         # Pre-commit invokes with the changed-file list so the audit
         # only runs on migrations actually being touched — already-
         # applied legacy revisions aren't re-audited.

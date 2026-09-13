@@ -36,6 +36,7 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.schemas.base import BaseORMSchema, IsoDatetime
+from app.schemas.plan_library_scan_roots import ScanRootListResponse
 
 WorkArtifactKind = Literal[
     "investigation_prompt",
@@ -372,17 +373,6 @@ class WorkArtifactDetail(WorkArtifactSummary):
     coord: CandidateCoordLink = Field(default_factory=CandidateCoordLink)
 
 
-class WorkArtifactListResponse(BaseModel):
-    """A page of list rows. ``count`` is this page's length; ``total`` is the
-    unpaged total."""
-
-    items: list[WorkArtifactSummary]
-    count: int
-    total: int
-    offset: int
-    limit: int
-
-
 class WorkArtifactUpsertResponse(BaseModel):
     """Upsert outcome.
 
@@ -497,6 +487,66 @@ class CaptureHealthResponse(BaseModel):
 
     total: int
     doors: list[CaptureDoorHealth]
+    #: ``max(updated_at)`` across every door — the corpus's freshness in one
+    #: figure, beside the census. ``null`` on an empty corpus.
+    newest_updated_at: IsoDatetime | None = None
+
+
+# ───────────────────── list page + corpus health ─────────────────────
+
+
+class CorpusHealth(BaseModel):
+    """What the corpus this page was drawn from actually holds.
+
+    ``2026-08-27-plan-corpus-read-path-is-dark`` design decision D1: a read
+    path that cannot report its own health is not a read path. Without this
+    block a ``200`` with ``items: []`` was two indistinguishable sentences —
+    "no such plan" and "the corpus holds no plans at all" (the body sync
+    is opt-in and its off-state is unlogged, so the second was the live
+    state on the operator box for weeks). With it, ``plan_count: 0`` beside
+    an empty page says which, and ``newest_updated_at`` says how long ago the
+    corpus last moved.
+
+    Every figure is org-scoped like the page, and UNFILTERED by the page's
+    own query: the caller's filter is what they asked about, this is what
+    they asked it of. ``capture`` is the ``/capture-health`` census from the
+    SAME query and the same builder, so the two apply one rule to one census
+    (two reads can still differ by when they happen).
+    """
+
+    #: Every artifact in scope, all kinds.
+    artifact_count: int
+    #: ``kind == "plan"`` only — the number the by-stem probes care about.
+    plan_count: int
+    #: ``max(updated_at)`` in scope; ``null`` on an EMPTY corpus, never an
+    #: epoch. Last TOUCHED, not last captured (see ``CaptureDoorHealth``).
+    newest_updated_at: IsoDatetime | None = None
+    capture: CaptureHealthResponse
+    #: How far the directories FEEDING this corpus are from their default
+    #: branch, one judged reading per reporting device plus a per-source
+    #: roll-up — ``GET /plan-library/scan-roots``, from the same builder
+    #: (plan ``2026-09-11-the-plan-corpus-scan-root-does-not-report-its-own-drift``).
+    #: ``plan_count`` says what the corpus holds; this says whether its feeders
+    #: are current. ``state: "unknown"`` with no rows means no device has
+    #: reported — never "every feeder is current".
+    scan_roots: ScanRootListResponse
+
+
+class WorkArtifactListResponse(BaseModel):
+    """A page of list rows, plus the health of the corpus it was drawn from.
+
+    ``corpus_health`` is reported on EVERY page, filtered or not, so an
+    empty ``items`` can always be read against ``plan_count`` — a zero on a
+    frozen corpus and a zero on a real absence are different findings.
+    """
+
+    items: list[WorkArtifactSummary]
+    #: This page's length; ``total`` is the unpaged total.
+    count: int
+    total: int
+    offset: int
+    limit: int
+    corpus_health: CorpusHealth
 
 
 # ─────────────────── candidate selection (Phase 6) ───────────────────
@@ -675,6 +725,16 @@ class PlanCandidateResponse(BaseModel):
     #: Unpaged count of open follow-ups, so a truncated ``open_followups``
     #: never reads as the whole queue.
     open_followup_total: int = 0
+    #: The same block every ``GET /plan-library`` page carries, so a consumer
+    #: ranking these candidates learns in the same read whether the corpus
+    #: they came from is complete and whether its feeders are current. Covers
+    #: the WHOLE corpus, not this page. ``null`` — with the reason beside it —
+    #: when the block could not be read: it is report-only on this route, so a
+    #: failed read never fails the candidates, and null is UNKNOWN, not healthy.
+    corpus_health: CorpusHealth | None
+    #: Why ``corpus_health`` is null (a ``read_failed:`` line naming only the
+    #: error class); null whenever the block was read.
+    corpus_health_unavailable_reason: str | None
 
 
 # ───────── three-way status reconciliation (Phase 4) ─────────

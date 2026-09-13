@@ -256,8 +256,102 @@ class ScanRootRow(BaseModel):
     observation_fresh: bool
 
 
+#: A roll-up's verdict: ``measured`` when at least one of its devices has a
+#: COMPARABLE reading (fresh, applied, carrying a count) and the fewest commits
+#: behind is not a floor of 0; otherwise ``unknown``.
+ScanRootRollupState = Literal["measured", "unknown"]
+
+
+class ScanRootSourceRollup(BaseModel):
+    """Every device feeding ONE scan source, folded to the corpus's question.
+
+    Any feeder can add a plan to the corpus, so how far behind the corpus is
+    is bounded by its LEAST-behind current feeder. ``min_behind`` is NOT a
+    ceiling on what the corpus lacks: it bounds the least-behind COMPARABLE
+    feeder's distance from BELOW ("at least 41" may really be 300), and only
+    an exact value bounds the corpus — and then only as of that ref. Every
+    claim here is taken over the COMPARISON SET: readings that are fresh,
+    applied (not contradicted by a later, declined report) and carry a count
+    — a ``measured`` verdict, or a 0-behind floor the verdict marks
+    ``ref_stale``. A silent or contradicted device's old number stays out, and
+    a device in ``unmeasured_device_ids`` may be less behind than anything
+    stated.
+
+    The roll-up names EVERY feeder, because a lagging device is not harmless
+    just because a current one exists: it can write an older body over a newer
+    head. The four id lists PARTITION the devices, and a device is placed as
+    least-behind or lagging only when the readings ORDER it: all comparable
+    devices on one ``ref_sha`` that is either fresh or, if stale, with every
+    device reporting ``ahead == 0``. Counts against different refs do not order
+    devices (exactly 3 behind a five-hour-old ref can be 13 behind the ref
+    another device is exactly 5 behind). On a fresh ref the order holds AS OF
+    that ref: a lagging device carrying commits of its own may already hold
+    some merged since, within the runner's window. On an active repository
+    devices fetch at different moments, so placement is often empty: an empty
+    ``lagging_device_ids`` means NOT ESTABLISHED, never "none lagging".
+    """
+
+    #: The artifact upsert's ``source_repo`` form, as the devices reported it.
+    #: ``null`` groups the readings that named none.
+    source_repo: str | None
+    #: ``unknown`` when no device here has a comparable reading, or when the
+    #: fewest commits behind is a FLOOR of 0 — "at least 0 behind" establishes
+    #: no distance, and must never read as "measured, 0 behind".
+    state: ScanRootRollupState
+    #: A ``no_comparable_reading:`` or ``ref_stale:`` line when ``unknown``;
+    #: null when ``measured``.
+    detail: str | None
+    #: Every device whose stored reading names this ``source_repo``.
+    device_count: int
+    #: How many of them have a COMPARABLE reading (see the class docstring).
+    comparable_count: int
+    #: The fewest commits behind among the comparable readings, each against
+    #: its own device's ref — a LOWER BOUND on how far behind the least-behind
+    #: COMPARABLE device is (a device in ``unmeasured_device_ids`` may be less
+    #: behind). ``null`` when ``unknown`` — NOT 0: nothing established a
+    #: distance (including a floor of 0, which establishes none).
+    min_behind: int | None
+    #: ``False`` only when every comparable device counted against the SAME
+    #: ``ref_sha`` and at least one of them had fetched it within the runner's
+    #: freshness window at the time of its reading — exact against a ref fetched
+    #: within six hours of that reading (so up to ~6 h 45 min old now), the
+    #: runner's definition of an exact count, and NOT against the live tip,
+    #: which this server never knows. Otherwise ``True``: "at least N".
+    #: ``null`` exactly when ``min_behind`` is.
+    min_behind_is_floor: bool | None
+    #: Comparable devices at the fewest commits behind, when the readings ORDER
+    #: the comparable devices (one shared ``ref_sha`` that is fresh, or stale
+    #: with every device at ``ahead == 0``). Empty otherwise. On a fresh ref the
+    #: order holds as of that ref (see the class docstring). Kept when the
+    #: roll-up is ``unknown`` for a floor of 0: the order is still established.
+    least_behind_device_ids: list[UUID]
+    #: Comparable devices above the fewest commits behind among the comparable
+    #: readings, under the same ordering condition (and likewise kept when the
+    #: roll-up is ``unknown`` for a floor of 0). Empty when unordered — NOT
+    #: ESTABLISHED, never "none lagging".
+    lagging_device_ids: list[UUID]
+    #: Comparable devices the readings do not order: EVERY one of them when
+    #: they counted against different or unknown refs, or against one stale ref
+    #: while some device reports anything but ``ahead == 0`` (commits of its
+    #: own, or no ``ahead`` at all). Empty when ordered.
+    lag_unknown_device_ids: list[UUID]
+    #: Devices with no comparable reading: silent, contradicted, not scanning,
+    #: not a git work tree, or unknown — plus a ``measured`` row carrying no
+    #: ``behind``, which the write door refuses, so a stored one is corrupt. (A
+    #: row with a ``behind`` but no ``ahead``, refused alike, stays comparable,
+    #: and on a stale shared ref leaves EVERY comparable device unordered — see
+    #: ``lag_unknown_device_ids``.)
+    unmeasured_device_ids: list[UUID]
+
+
 class ScanRootListResponse(BaseModel):
-    """Every device's latest reading for the caller's organization."""
+    """Every device's latest reading for the caller's organization.
+
+    Served by ``GET /plan-library/scan-roots`` and, through the same builder,
+    as ``corpus_health.scan_roots`` on every plan-library list page and on
+    ``/candidates`` — where a failed read degrades to ``read_failed`` instead
+    of an error.
+    """
 
     #: ``"reported"`` when at least one device has a row; ``"unknown"`` when
     #: none has — an empty list is NOT "every feeder is current".
@@ -272,6 +366,10 @@ class ScanRootListResponse(BaseModel):
     #: ``fresh_count == 0`` means every feeder has gone quiet.
     fresh_count: int
     rows: list[ScanRootRow]
+    #: One roll-up per distinct ``source_repo`` over ``rows`` — named sources
+    #: in order, then the ``null`` group. Empty exactly when ``rows`` is, and
+    #: then ``state`` is ``unknown``: an empty roll-up is not "no drift".
+    by_source_repo: list[ScanRootSourceRollup]
 
 
 class ScanRootReportResponse(BaseModel):

@@ -6527,6 +6527,17 @@
             "title": "Doors",
             "type": "array"
           },
+          "newest_updated_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Newest Updated At"
+          },
           "total": {
             "title": "Total",
             "type": "integer"
@@ -10713,6 +10724,44 @@
           }
         },
         "title": "CoreSettingsSchema",
+        "type": "object"
+      },
+      "CorpusHealth": {
+        "description": "What the corpus this page was drawn from actually holds.\n\n``2026-08-27-plan-corpus-read-path-is-dark`` design decision D1: a read\npath that cannot report its own health is not a read path. Without this\nblock a ``200`` with ``items: []`` was two indistinguishable sentences \u2014\n\"no such plan\" and \"the corpus holds no plans at all\" (the body sync\nis opt-in and its off-state is unlogged, so the second was the live\nstate on the operator box for weeks). With it, ``plan_count: 0`` beside\nan empty page says which, and ``newest_updated_at`` says how long ago the\ncorpus last moved.\n\nEvery figure is org-scoped like the page, and UNFILTERED by the page's\nown query: the caller's filter is what they asked about, this is what\nthey asked it of. ``capture`` is the ``/capture-health`` census from the\nSAME query and the same builder, so the two apply one rule to one census\n(two reads can still differ by when they happen).",
+        "properties": {
+          "artifact_count": {
+            "title": "Artifact Count",
+            "type": "integer"
+          },
+          "capture": {
+            "$ref": "#/components/schemas/CaptureHealthResponse"
+          },
+          "newest_updated_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Newest Updated At"
+          },
+          "plan_count": {
+            "title": "Plan Count",
+            "type": "integer"
+          },
+          "scan_roots": {
+            "$ref": "#/components/schemas/ScanRootListResponse"
+          }
+        },
+        "required": [
+          "artifact_count",
+          "plan_count",
+          "capture",
+          "scan_roots"
+        ],
+        "title": "CorpusHealth",
         "type": "object"
       },
       "CostTrendDataPoint": {
@@ -31742,6 +31791,27 @@
             "title": "Coord Available",
             "type": "boolean"
           },
+          "corpus_health": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CorpusHealth"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "corpus_health_unavailable_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Corpus Health Unavailable Reason"
+          },
           "count": {
             "title": "Count",
             "type": "integer"
@@ -31809,7 +31879,9 @@
           "count",
           "total",
           "offset",
-          "limit"
+          "limit",
+          "corpus_health",
+          "corpus_health_unavailable_reason"
         ],
         "title": "PlanCandidateResponse",
         "type": "object"
@@ -37829,8 +37901,15 @@
         "type": "object"
       },
       "ScanRootListResponse": {
-        "description": "Every device's latest reading for the caller's organization.",
+        "description": "Every device's latest reading for the caller's organization.\n\nServed by ``GET /plan-library/scan-roots`` and, through the same builder,\nas ``corpus_health.scan_roots`` on every plan-library list page and on\n``/candidates`` \u2014 where a failed read degrades to ``read_failed`` instead\nof an error.",
         "properties": {
+          "by_source_repo": {
+            "items": {
+              "$ref": "#/components/schemas/ScanRootSourceRollup"
+            },
+            "title": "By Source Repo",
+            "type": "array"
+          },
           "count": {
             "title": "Count",
             "type": "integer"
@@ -37876,7 +37955,8 @@
           "fresh_within_secs",
           "count",
           "fresh_count",
-          "rows"
+          "rows",
+          "by_source_repo"
         ],
         "title": "ScanRootListResponse",
         "type": "object"
@@ -38266,6 +38346,118 @@
           "observation_fresh"
         ],
         "title": "ScanRootRow",
+        "type": "object"
+      },
+      "ScanRootSourceRollup": {
+        "description": "Every device feeding ONE scan source, folded to the corpus's question.\n\nAny feeder can add a plan to the corpus, so how far behind the corpus is\nis bounded by its LEAST-behind current feeder. ``min_behind`` is NOT a\nceiling on what the corpus lacks: it bounds the least-behind COMPARABLE\nfeeder's distance from BELOW (\"at least 41\" may really be 300), and only\nan exact value bounds the corpus \u2014 and then only as of that ref. Every\nclaim here is taken over the COMPARISON SET: readings that are fresh,\napplied (not contradicted by a later, declined report) and carry a count\n\u2014 a ``measured`` verdict, or a 0-behind floor the verdict marks\n``ref_stale``. A silent or contradicted device's old number stays out, and\na device in ``unmeasured_device_ids`` may be less behind than anything\nstated.\n\nThe roll-up names EVERY feeder, because a lagging device is not harmless\njust because a current one exists: it can write an older body over a newer\nhead. The four id lists PARTITION the devices, and a device is placed as\nleast-behind or lagging only when the readings ORDER it: all comparable\ndevices on one ``ref_sha`` that is either fresh or, if stale, with every\ndevice reporting ``ahead == 0``. Counts against different refs do not order\ndevices (exactly 3 behind a five-hour-old ref can be 13 behind the ref\nanother device is exactly 5 behind). On a fresh ref the order holds AS OF\nthat ref: a lagging device carrying commits of its own may already hold\nsome merged since, within the runner's window. On an active repository\ndevices fetch at different moments, so placement is often empty: an empty\n``lagging_device_ids`` means NOT ESTABLISHED, never \"none lagging\".",
+        "properties": {
+          "comparable_count": {
+            "title": "Comparable Count",
+            "type": "integer"
+          },
+          "detail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Detail"
+          },
+          "device_count": {
+            "title": "Device Count",
+            "type": "integer"
+          },
+          "lag_unknown_device_ids": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "title": "Lag Unknown Device Ids",
+            "type": "array"
+          },
+          "lagging_device_ids": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "title": "Lagging Device Ids",
+            "type": "array"
+          },
+          "least_behind_device_ids": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "title": "Least Behind Device Ids",
+            "type": "array"
+          },
+          "min_behind": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Min Behind"
+          },
+          "min_behind_is_floor": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Min Behind Is Floor"
+          },
+          "source_repo": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Repo"
+          },
+          "state": {
+            "enum": [
+              "measured",
+              "unknown"
+            ],
+            "title": "State",
+            "type": "string"
+          },
+          "unmeasured_device_ids": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "title": "Unmeasured Device Ids",
+            "type": "array"
+          }
+        },
+        "required": [
+          "source_repo",
+          "state",
+          "detail",
+          "device_count",
+          "comparable_count",
+          "min_behind",
+          "min_behind_is_floor",
+          "least_behind_device_ids",
+          "lagging_device_ids",
+          "lag_unknown_device_ids",
+          "unmeasured_device_ids"
+        ],
+        "title": "ScanRootSourceRollup",
         "type": "object"
       },
       "ScheduledWorkflowRunCreate": {
@@ -53104,8 +53296,11 @@
         "type": "object"
       },
       "WorkArtifactListResponse": {
-        "description": "A page of list rows. ``count`` is this page's length; ``total`` is the\nunpaged total.",
+        "description": "A page of list rows, plus the health of the corpus it was drawn from.\n\n``corpus_health`` is reported on EVERY page, filtered or not, so an\nempty ``items`` can always be read against ``plan_count`` \u2014 a zero on a\nfrozen corpus and a zero on a real absence are different findings.",
         "properties": {
+          "corpus_health": {
+            "$ref": "#/components/schemas/CorpusHealth"
+          },
           "count": {
             "title": "Count",
             "type": "integer"
@@ -53135,7 +53330,8 @@
           "count",
           "total",
           "offset",
-          "limit"
+          "limit",
+          "corpus_health"
         ],
         "title": "WorkArtifactListResponse",
         "type": "object"
@@ -91392,6 +91588,7 @@
     },
     "/api/v1/plan-library": {
       "get": {
+        "description": "A filtered page, with the health of the corpus it came from.\n\n``corpus_health`` (design decision D1 of\n``2026-08-27-plan-corpus-read-path-is-dark``) rides on every page so that\n``items: []`` is never the whole answer: ``plan_count: 0`` beside it says\n\"the corpus holds no plans\", which is a different sentence from \"no such\nplan\". Its ``capture`` block is ``/capture-health``'s census from the\nsame query and builder, and its ``scan_roots`` block is\n``GET /plan-library/scan-roots`` rendered by the same builder (two reads\ncan still differ by when they happen):\nhow far behind its default branch each device's scan source is, so a page\ndrawn from a stale corpus can say so. Two extra reads per list call \u2014 one\naggregate, and one over a table of one row per device inside a savepoint\n(four round trips in all).\n\n``slug`` is a QUERY key, not a path segment: this adds no route, so the\nliteral-before-pattern ordering below (``/divergent``, ``/capture-health``\n\u2026 declared before ``/{artifact_id}``) is untouched.",
         "operationId": "api_v1_plan_library_get",
         "parameters": [
           {
@@ -91486,7 +91683,7 @@
             }
           },
           {
-            "description": "Soft link to a coord work unit. Not resolved; a slug with no matching work unit simply returns its artifacts.",
+            "description": "Soft link to a coord work unit. Not resolved; a slug with no matching work unit simply returns its artifacts. The scanner writes it for kind=plan only and a hand-POSTed row may carry none \u2014 for a by-stem lookup that must find the row whoever wrote it, use `slug`.",
             "in": "query",
             "name": "work_unit_slug",
             "required": false,
@@ -91499,8 +91696,26 @@
                   "type": "null"
                 }
               ],
-              "description": "Soft link to a coord work unit. Not resolved; a slug with no matching work unit simply returns its artifacts.",
+              "description": "Soft link to a coord work unit. Not resolved; a slug with no matching work unit simply returns its artifacts. The scanner writes it for kind=plan only and a hand-POSTed row may carry none \u2014 for a by-stem lookup that must find the row whoever wrote it, use `slug`.",
               "title": "Work Unit Slug"
+            }
+          },
+          {
+            "description": "Exact match on the artifact's OWN slug \u2014 part of its identity, never null, written by every door (the scanner writes the file stem). Distinct from `work_unit_slug`, the nullable soft link; `q` does not search identifiers.",
+            "in": "query",
+            "name": "slug",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Exact match on the artifact's OWN slug \u2014 part of its identity, never null, written by every door (the scanner writes the file stem). Distinct from `work_unit_slug`, the nullable soft link; `q` does not search identifiers.",
+              "title": "Slug"
             }
           },
           {
@@ -91631,7 +91846,7 @@
     },
     "/api/v1/plan-library/candidates": {
       "get": {
-        "description": "Candidate selection for agents \u2014 signals, never a verdict.\n\nReturns unshipped plans, each carrying the inputs an agent needs to decide\nwhat to pick up next: ``status``, ``repos``, ``unmet_depends_on``,\n``linked_prs`` with their merged state, ``age_days``, ``last_touched``, and\nthe ``prompt_chain`` that produced the plan.\n\n**The population is the UNION of both corpus layers** \u2014 non-terminal\n``kind='plan'`` artifacts, plus coord's non-terminal, date-slugged,\nnon-``shepherd-*`` work units that no artifact already claims. Plan\n``2026-09-03-vet-imp-sweep-selects-from-the-sparse-document-layer``: drawn\nfrom the document layer alone this read saw 13 of 606 addressable plans,\nbecause that layer holds plan BODIES and fills only under an opt-in body\nsync, while the question this route answers is settled by fields the\nOPERATIONAL layer owns. Each item's ``document_state`` says which layer it\ncame from, and a work-unit-only row carries a null ``id`` \u2014 there is no\nartifact to give it one, so it is resolved by ``source_path`` instead.\n\nThe union can only ADD rows: coord's half is a best-effort read, and when\nit fails the population degrades to exactly the artifact-only one this\nroute returned before, flagged by ``work_unit_population_state:\n\"unavailable\"``. That flag is separate from ``coord_available`` on\npurpose \u2014 a 403 on the population door is coord ANSWERING, so it never\ntrips the page-wide circuit, and without its own flag the route would\nsilently fall back to a 2% view of the corpus while reporting coord\nhealthy.\n\n**There is no criticality score** (design decision D6). A hardcoded score\nwould be a guess frozen into SQL; the read exposes the evidence and the\nagent ranks. The only ordering is a stable default \u2014 oldest-vetted-first\n(``coalesce(authored_at, created_at) ASC``, ``id`` breaking ties; work-unit\nrows on ``coalesce(first_in_progress_at, created_at)``, and losing a tie to\nan artifact so a page without them is unchanged) \u2014 with no weighting of any\nkind. Work-unit rows are neither capped nor re-weighted toward ``vetted``:\n411 of the 635 carried an empty status, which would make that a guess over\nthe least-known rows.\n\nCoord-owned fields (the work unit and its PR citations) come over coord's\nHTTP API, never from coord's Postgres schema. Two things the payload is\ncareful about:\n\n* ``work_unit_slug`` is a soft link with NO foreign key and it may dangle.\n  A missing work unit is a NORMAL result \u2014 null-joined as\n  ``work_unit_state: \"dangling\"``, never a 404 and never an error.\n* An unreachable or slow coord degrades to ``\"unavailable\"`` on the\n  affected fields, and the whole read still returns the local signals.\n  ``unavailable`` is UNKNOWN \u2014 it is NOT \"this plan has no PRs\". The two\n  are distinct values precisely so a consumer cannot confuse them.\n\n``open_followups`` (Phase 7, additive) carries work that has **no plan\nyet** \u2014 open ``spawned_followup`` edges, oldest first. It is a separate\nlist rather than extra ``items`` because a follow-up nobody has written is\nnot an artifact and has no id to be a candidate with; folding it into\n``items`` would mean inventing one. ``items`` is unchanged.\n\nTwo principals reach this route (module docstring, invariant 7) and the\ncoord half is fetched with whichever bearer they presented, so the coord\nreads follow the credential to the door tier that accepts it \u2014 the\noperator routes for a Cognito user, the ``agent-`` twins for the runner's\ndevice JWT. Nothing else about the response differs between them.",
+        "description": "Candidate selection for agents \u2014 signals, never a verdict.\n\nReturns unshipped plans, each carrying the inputs an agent needs to decide\nwhat to pick up next: ``status``, ``repos``, ``unmet_depends_on``,\n``linked_prs`` with their merged state, ``age_days``, ``last_touched``, and\nthe ``prompt_chain`` that produced the plan.\n\n**The population is the UNION of both corpus layers** \u2014 non-terminal\n``kind='plan'`` artifacts, plus coord's non-terminal, date-slugged,\nnon-``shepherd-*`` work units that no artifact already claims. Plan\n``2026-09-03-vet-imp-sweep-selects-from-the-sparse-document-layer``: drawn\nfrom the document layer alone this read saw 13 of 606 addressable plans,\nbecause that layer holds plan BODIES and fills only under an opt-in body\nsync, while the question this route answers is settled by fields the\nOPERATIONAL layer owns. Each item's ``document_state`` says which layer it\ncame from, and a work-unit-only row carries a null ``id`` \u2014 there is no\nartifact to give it one, so it is resolved by ``source_path`` instead.\n\nThe union can only ADD rows: coord's half is a best-effort read, and when\nit fails the population degrades to exactly the artifact-only one this\nroute returned before, flagged by ``work_unit_population_state:\n\"unavailable\"``. That flag is separate from ``coord_available`` on\npurpose \u2014 a 403 on the population door is coord ANSWERING, so it never\ntrips the page-wide circuit, and without its own flag the route would\nsilently fall back to a 2% view of the corpus while reporting coord\nhealthy.\n\n**There is no criticality score** (design decision D6). A hardcoded score\nwould be a guess frozen into SQL; the read exposes the evidence and the\nagent ranks. The only ordering is a stable default \u2014 oldest-vetted-first\n(``coalesce(authored_at, created_at) ASC``, ``id`` breaking ties; work-unit\nrows on ``coalesce(first_in_progress_at, created_at)``, and losing a tie to\nan artifact so a page without them is unchanged) \u2014 with no weighting of any\nkind. Work-unit rows are neither capped nor re-weighted toward ``vetted``:\n411 of the 635 carried an empty status, which would make that a guess over\nthe least-known rows.\n\nCoord-owned fields (the work unit and its PR citations) come over coord's\nHTTP API, never from coord's Postgres schema. Two things the payload is\ncareful about:\n\n* ``work_unit_slug`` is a soft link with NO foreign key and it may dangle.\n  A missing work unit is a NORMAL result \u2014 null-joined as\n  ``work_unit_state: \"dangling\"``, never a 404 and never an error.\n* An unreachable or slow coord degrades to ``\"unavailable\"`` on the\n  affected fields, and the whole read still returns the local signals.\n  ``unavailable`` is UNKNOWN \u2014 it is NOT \"this plan has no PRs\". The two\n  are distinct values precisely so a consumer cannot confuse them.\n\n``open_followups`` (Phase 7, additive) carries work that has **no plan\nyet** \u2014 open ``spawned_followup`` edges, oldest first. It is a separate\nlist rather than extra ``items`` because a follow-up nobody has written is\nnot an artifact and has no id to be a candidate with; folding it into\n``items`` would mean inventing one. ``items`` is unchanged.\n\n``corpus_health`` is the block every list page carries \u2014 the corpus's\ncounts, capture census, and each feeding device's scan-source drift \u2014 so\na consumer ranking these candidates can see, in the same read, whether\nthe corpus they were drawn from is stale. Report-only: a stale corpus is\nstill the best available answer, and nothing here refuses to serve it.\n\nTwo principals reach this route (module docstring, invariant 7) and the\ncoord half is fetched with whichever bearer they presented, so the coord\nreads follow the credential to the door tier that accepts it \u2014 the\noperator routes for a Cognito user, the ``agent-`` twins for the runner's\ndevice JWT. Nothing else about the response differs between them.",
         "operationId": "api_v1_plan_library_candidates_get",
         "parameters": [
           {
@@ -91961,6 +92176,24 @@
             }
           },
           {
+            "description": "Exact match on the artifact's own slug (see the list route).",
+            "in": "query",
+            "name": "slug",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Exact match on the artifact's own slug (see the list route).",
+              "title": "Slug"
+            }
+          },
+          {
             "description": "Hard bound on archived artifacts. When it truncates, the response says so in `X-Export-Truncated` \u2014 a silently short export is indistinguishable from a short corpus.",
             "in": "query",
             "name": "limit",
@@ -92151,7 +92384,7 @@
     },
     "/api/v1/plan-library/scan-roots": {
       "get": {
-        "description": "The caller's organization's readings, one per reporting device.\n\nSame credentials as the plan-library list (an operator session or a device\ntoken). Each row carries its age and a ``state`` VERDICT that is\n``unknown`` when the device has not reported within ``fresh_within_secs``\n(by ``received_at``; ``observation_stale:``), when its latest report was\nobserved before the stored reading (``reading_superseded:``), or when its\nreading is 0 behind a stale ref (``ref_stale:``) \u2014 in that order of\nprecedence: ``observation_stale`` > ``reading_superseded`` >\n``ref_stale``. The device's own values stay in ``reported_state`` /\n``reported_detail``. An organization with no rows answers\n``state: \"unknown\"``, never an empty \"all current\".",
+        "description": "The caller's organization's readings, one per reporting device.\n\nSame credentials as the plan-library list (an operator session or a device\ntoken). Each row carries its age and a ``state`` VERDICT that is\n``unknown`` when the device has not reported within ``fresh_within_secs``\n(by ``received_at``; ``observation_stale:``), when its latest report was\nobserved before the stored reading (``reading_superseded:``), or when its\nreading is 0 behind a stale ref (``ref_stale:``) \u2014 in that order of\nprecedence: ``observation_stale`` > ``reading_superseded`` >\n``ref_stale``. The device's own values stay in ``reported_state`` /\n``reported_detail``. An organization with no rows answers\n``state: \"unknown\"``, never an empty \"all current\".\n\n``by_source_repo`` folds the rows per scan source over its comparison set \u2014\nreadings that are fresh, applied and carry a count, including a\n``ref_stale`` 0-behind floor: the fewest commits behind, whether that is a\nfloor, and which devices the readings order as least behind or lagging,\ncannot order (``lag_unknown``), or have no comparable reading\n(``unmeasured``). A roll-up whose fewest commits behind is a floor of 0\nreads ``unknown`` with a ``ref_stale:`` detail and a null minimum \u2014 \"at\nleast 0\" is no distance \u2014 while its lists keep whatever order the readings\nestablish. The same builder renders the ``corpus_health.scan_roots``\nblock the list and ``/candidates`` carry, so both apply the same rules to\nthe same rows; two reads can still differ by when they happen (ages, and a\nverdict that flips at the freshness boundary), and the block degrades a\nfailed read to ``read_failed`` where this route, whose whole answer the\nreadings are, lets it surface as an error.",
         "operationId": "api_v1_plan_library_scan_roots_get",
         "responses": {
           "200": {

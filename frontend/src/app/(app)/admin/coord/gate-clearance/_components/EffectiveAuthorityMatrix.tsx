@@ -106,7 +106,8 @@ function ClassRow({
   );
   const nearMiss = nearMissRecommendedClass(gateClass);
   // Rows that name this class but can never match (disabled / repo-scoped /
-  // unparseable) — invisible in the resolution, so they must be visible here.
+  // empty repo / unparseable) — invisible in the resolution, so they must be
+  // visible here.
   const inertForClass = rules.filter(
     (r) =>
       isGateClearanceRow(r) &&

@@ -8,6 +8,7 @@
 // ============================================================================
 
 import type { Runner } from "@qontinui/shared-types";
+import type { DeviceCredentialDark } from "./coordCredentialStatus";
 
 export interface ClaudeSessionInfo {
   pid: number;
@@ -686,6 +687,23 @@ export type CoordHealthJoin =
        * inventing one.
        */
       hostname?: string;
+      /**
+       * **Can this machine still reach coord?** — coord's `credential_dark`
+       * join, carried through verbatim (plan
+       * `2026-09-12-runner-loads-with-an-expired-coord-credential-and-tells-nobody`
+       * Phase 5).
+       *
+       * Threaded rather than dropped, which is what `heartbeat_state` above
+       * still is: a device whose coord sessions are all unbound is otherwise
+       * INVISIBLE in this console, so "no row about it" and "nothing wrong
+       * with it" look identical — the exact reading that let a runner work for
+       * a month with a dead credential.
+       *
+       * Absent / `null` is **UNKNOWN, never healthy**. `MachineCard` renders
+       * it through `resolveCoordCredential`, which is the only place that
+       * decision is made.
+       */
+      credential_dark?: DeviceCredentialDark | null;
     }
   | { matched: false };
 

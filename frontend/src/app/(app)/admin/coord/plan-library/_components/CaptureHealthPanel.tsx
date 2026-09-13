@@ -136,8 +136,17 @@ export function CaptureHealthPanel() {
       ) : null}
 
       {data && data.total > 0 && (
-        <p className="mt-3 text-[11px] text-muted-foreground">
+        <p
+          className="mt-3 text-[11px] text-muted-foreground"
+          data-testid="capture-health-total"
+        >
           {data.total} artifact{data.total === 1 ? "" : "s"} in the corpus.
+          {/* Freshness beside the census: a corpus nothing has touched in
+              weeks is the body-sync-off shape, and the counts alone cannot
+              show it. */}{" "}
+          {relativeDays(data.newest_updated_at)
+            ? `Newest touched ${relativeDays(data.newest_updated_at)}.`
+            : "Newest touched date unknown."}
         </p>
       )}
     </section>

@@ -976,9 +976,10 @@ class TestCoordPolicyListFilters:
 
     def test_empty_filter_value_is_forwarded_not_dropped(self, client: TestClient):
         """``?repo=`` is a REAL filter to coord (it selects the degenerate
-        empty-repo rows the clearance resolver ranks in its own band), so a
-        truthiness check here would silently turn a narrow query into a wide
-        one and answer a question the caller never asked."""
+        empty-repo rows, which no gate consult resolves — ``gateClearance.ts``
+        ``inertReason``, ``empty-repo``), so a truthiness check here would
+        silently turn a narrow query into a wide one and answer a question the
+        caller never asked."""
         mock_resp = _mock_response(json_data={"policies": [], "total": 0})
         with _patch_httpx() as MockClient:
             instance = AsyncMock()
