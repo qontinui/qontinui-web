@@ -298,7 +298,9 @@ class ScanRootSourceRollup(BaseModel):
     #: fewest commits behind is a FLOOR of 0 — "at least 0 behind" establishes
     #: no distance, and must never read as "measured, 0 behind".
     state: ScanRootRollupState
-    #: A ``no_comparable_reading:`` or ``ref_stale:`` line when ``unknown``;
+    #: A ``no_comparable_reading:``, ``ref_stale:`` (a zero floor on one shared
+    #: ref nobody fetched fresh) or ``refs_not_shared:`` (a zero minimum across
+    #: different or unknown refs) line when ``unknown``;
     #: null when ``measured``.
     detail: str | None
     #: Every device whose stored reading names this ``source_repo``.
