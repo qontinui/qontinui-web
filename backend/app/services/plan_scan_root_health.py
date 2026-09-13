@@ -140,10 +140,11 @@ ZERO_FLOOR_MINIMUM_DETAIL = (
 #: ``ref_stale:`` would send an operator to re-fetch boxes that may be current.
 REFS_NOT_SHARED_ZERO_MINIMUM_DETAIL = (
     "refs_not_shared: the fewest commits behind among the comparable readings "
-    "is 0, but they counted against different or unidentified refs, so the "
-    "counts are not established to compare whatever each ref's age (each "
-    "row's detail says whether its own ref is stale) — how far behind any "
-    "comparable feeder is is not established, and the readings do not order "
+    "is 0, but the readings do not establish one shared, identified ref (they "
+    "name different refs, or one names none), so the minimum is a floor "
+    "whatever each ref's age (each row's detail says whether its own ref is "
+    "stale) — how far behind the least-behind comparable feeder is is not "
+    "established (nor which feeder that is), and the readings do not order "
     "the devices"
 )
 
@@ -357,7 +358,7 @@ def rollup_source(
     # Invariant 2, one level up: "at least 0 behind" is no distance at all.
     zero_floor = min_behind_is_floor and min_behind == 0
     # Name the cause the readings establish: a zero floor on one shared ref is
-    # staleness; on different or unknown refs it is incomparability.
+    # staleness; on different or unidentified refs it is incomparability.
     zero_floor_detail = (
         ZERO_FLOOR_MINIMUM_DETAIL if shared_ref else REFS_NOT_SHARED_ZERO_MINIMUM_DETAIL
     )

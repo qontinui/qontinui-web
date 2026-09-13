@@ -300,7 +300,7 @@ class ScanRootSourceRollup(BaseModel):
     state: ScanRootRollupState
     #: A ``no_comparable_reading:``, ``ref_stale:`` (a zero floor on one shared
     #: ref that is stale or of unknown age) or ``refs_not_shared:`` (a zero
-    #: minimum across different or unidentified refs) line when ``unknown``;
+    #: floor across different or unidentified refs) line when ``unknown``;
     #: null when ``measured``.
     detail: str | None
     #: Every device whose stored reading names this ``source_repo``.
@@ -333,7 +333,7 @@ class ScanRootSourceRollup(BaseModel):
     #: ESTABLISHED, never "none lagging".
     lagging_device_ids: list[UUID]
     #: Comparable devices the readings do not order: EVERY one of them when
-    #: they counted against different or unknown refs, or against one stale ref
+    #: they counted against different or unidentified refs, or against one stale ref
     #: while some device reports anything but ``ahead == 0`` (commits of its
     #: own, or no ``ahead`` at all). Empty when ordered.
     lag_unknown_device_ids: list[UUID]
