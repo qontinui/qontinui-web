@@ -296,18 +296,18 @@ class TestComparisonSet:
         assert rollup.detail is not None
         assert rollup.detail.startswith("refs_not_shared:")
         assert "ref_stale" not in rollup.detail
-        # Only the MINIMUM is disowned: device B is exactly 5 behind its own
-        # ref, and the served reason must not say otherwise.
+        # The reason describes what the ROLL-UP declines to state; it must not
+        # disown device B, which its own row reports exactly 5 behind.
         assert "any comparable feeder" not in rollup.detail
-        assert "least-behind comparable feeder" in rollup.detail
+        assert "states no least-behind distance" in rollup.detail
         assert rollup.lag_unknown_device_ids == _ids(in_step, behind)
 
     def test_an_unknown_ref_is_not_shared_either(self) -> None:
         """A reading with no ``ref_sha`` cannot share a ref with anyone."""
         # A ``measured`` reading reaches the server with a null ``ref_sha`` when
         # the runner could not send its sha (the body push drops an over-length
-        # one); the ref's age travels independently, so its counts are not
-        # floors.
+        # one); the ref's age travels independently, so its counts can be
+        # exact (this fixture's are).
         zero = _obs(behind=0, ref_sha=None)
         other = _obs(behind=5)
 
@@ -330,6 +330,12 @@ class TestComparisonSet:
         assert rollup.detail is not None
         assert rollup.detail.startswith("refs_not_shared:")
         assert rollup.lag_unknown_device_ids == [lone.device_id]
+        # One reading: its row says "measured, 0 behind", so the reason may not
+        # claim the feeder, the order, or the distance is unknown — only that
+        # the roll-up does not treat the 0 as exact.
+        assert "which feeder" not in rollup.detail
+        assert "do not order" not in rollup.detail
+        assert "does not treat that 0 as exact" in rollup.detail
 
     def test_a_device_with_no_count_is_listed_unmeasured(self) -> None:
         counted = _obs(behind=3)
