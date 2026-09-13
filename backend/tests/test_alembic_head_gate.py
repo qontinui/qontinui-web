@@ -1234,6 +1234,7 @@ def _drive_main(
     comments: list[dict] | None = None,
     posted: list[str] | None = None,
     test_sources: dict[Path, str] | Exception | None = None,
+    pin_calls: list[int] | None = None,
 ) -> tuple[int, str]:
     """Run `notifier.main()` over ONE fake open PR with every call faked.
 
@@ -1255,10 +1256,12 @@ def _drive_main(
     monkeypatch.setattr(notifier, "read_dir_sources", lambda _d: main_sources)
     monkeypatch.setattr(notifier, "open_prs", lambda *_a: [{"number": 1316}])
     monkeypatch.setattr(notifier, "prs_carrying_a_notice", lambda *_a: (set(), ""))
-    monkeypatch.setattr(notifier, "pr_version_files", _files)
+    monkeypatch.setattr(notifier, "pr_files", _files)
     monkeypatch.setattr(notifier, "simulate", lambda *_a, **_k: simulated)
 
     def _test_sources(*_a: object, **_k: object) -> dict[Path, str]:
+        if pin_calls is not None:
+            pin_calls.append(1)
         if isinstance(test_sources, Exception):
             raise test_sources
         return test_sources or {}
@@ -1482,43 +1485,73 @@ def test_the_pr_lane_is_not_narrowed() -> None:
 
 import count_alembic_heads as counter  # noqa: E402
 from _alembic_graph import (  # noqa: E402
+    find_computed_parent_pins,
     find_parent_pins,
     plan_repoint_sites,
     repoint_sites,
 )
 
+#: ``shape -> (file template, the pin line as written)``. The three assertion
+#: bodies are the ones on web ``main``; the PIN LINE varies too, because a
+#: fixture set whose pin line is identical in every entry passes against a
+#: matcher that only knows that one spelling.
 _PIN_SHAPES = {
-    # e.g. test_parkwuslug_01 / test_wf_resume_fingerprint_01
+    # Assertion as in test_parkwuslug_01; pin annotated and single-quoted.
     "regex_group": (
         "import re\n\n"
         '_REVISION_ID = "@REV@"\n'
-        '_PARENT_REVISION_ID = "@PARENT@"\n\n\n'
+        "@PIN@\n\n\n"
         "def test_parent_pin_is_the_real_parent(source: str) -> None:\n"
         "    match = _DOWN_RE.search(source)\n"
-        '    assert match.group("parent") == _PARENT_REVISION_ID\n'
+        '    assert match.group("parent") == _PARENT_REVISION_ID\n',
+        "_PARENT_REVISION_ID: str = '@PARENT@'",
     ),
-    # e.g. test_fleet_res_tel_05
+    # Assertion as in test_fleet_res_tel_05; pin carries a trailing comment.
     "module_attribute": (
         '_REVISION_ID = "@REV@"\n'
-        '_PARENT_REVISION_ID = "@PARENT@"\n\n\n'
+        "@PIN@\n\n\n"
         "def test_parent_pin_is_the_real_parent(module) -> None:\n"
-        "    assert module.down_revision == _PARENT_REVISION_ID\n"
+        "    assert module.down_revision == _PARENT_REVISION_ID\n",
+        '_PARENT_REVISION_ID = "@PARENT@"  # MUST equal down_revision',
     ),
-    # e.g. test_pdtier_01 / test_pdtier_02
+    # Assertion as in test_pdtier_01 / _02; the plain form most files use.
     "literal_in_source": (
         '_REVISION_ID = "@REV@"\n'
-        '_PARENT_REVISION_ID = "@PARENT@"\n\n\n'
+        "@PIN@\n\n\n"
         "def test_parent_pin_is_the_real_parent(source: str) -> None:\n"
         "    assert (\n"
         "        f'down_revision: str | Sequence[str] | None = "
         '"{_PARENT_REVISION_ID}"\' in source\n'
-        "    )\n"
+        "    )\n",
+        '_PARENT_REVISION_ID = "@PARENT@"',
+    ),
+    # Both constants as class attributes — indented.
+    "indented": (
+        "class TestPins:\n"
+        '    _REVISION_ID = "@REV@"\n'
+        "@PIN@\n\n"
+        "    def test_pin(self, module) -> None:\n"
+        "        assert module.down_revision == self._PARENT_REVISION_ID\n",
+        '    _PARENT_REVISION_ID = "@PARENT@"',
+    ),
+    # A file checked out with CRLF line ends.
+    "crlf": (
+        '_REVISION_ID = "@REV@"\r\n'
+        "@PIN@\r\n\r\n"
+        "def test_pin(module) -> None:\r\n"
+        "    assert module.down_revision == _PARENT_REVISION_ID\r\n",
+        '_PARENT_REVISION_ID = "@PARENT@"',
     ),
 }
 
 
+def _pin_line(shape: str, parent: str) -> str:
+    return _PIN_SHAPES[shape][1].replace("@PARENT@", parent)
+
+
 def _pin_file(shape: str, rev: str, parent: str) -> str:
-    return _PIN_SHAPES[shape].replace("@REV@", rev).replace("@PARENT@", parent)
+    template = _PIN_SHAPES[shape][0]
+    return template.replace("@PIN@", _pin_line(shape, parent)).replace("@REV@", rev)
 
 
 def _forked_scan():
@@ -1538,12 +1571,14 @@ def test_a_pin_of_every_shape_is_found_and_rewritten(shape: str) -> None:
     )
     assert len(found) == 1
     assert found[0].path == pin_path
-    assert found[0].before == '_PARENT_REVISION_ID = "a"'
-    assert found[0].after == '_PARENT_REVISION_ID = "landed"'
+    # The line as written — quote style, annotation, indentation, comment —
+    # with ONLY the literal changed. No `\r` survives from a CRLF file.
+    assert found[0].before == _pin_line(shape, "a")
+    assert found[0].after == _pin_line(shape, "landed")
+    assert "\r" not in found[0].before + found[0].after
     assert (
         found[0].lineno
-        == _pin_file(shape, "mine", "a").splitlines().index('_PARENT_REVISION_ID = "a"')
-        + 1
+        == _pin_file(shape, "mine", "a").splitlines().index(_pin_line(shape, "a")) + 1
     )
 
 
@@ -1566,8 +1601,8 @@ def test_both_renderers_carry_the_pin_rewrite_for_every_shape(shape: str) -> Non
         assert 'down_revision: str | Sequence[str] | None = "landed"' in rendered
         assert "Revises: a" in rendered
         assert "Revises: landed" in rendered
-        assert '_PARENT_REVISION_ID = "a"' in rendered
-        assert '_PARENT_REVISION_ID = "landed"' in rendered
+        assert _pin_line(shape, "a").strip() in rendered
+        assert _pin_line(shape, "landed").strip() in rendered
         assert "test_mine_migration.py" in rendered
         assert "no `_PARENT_REVISION_ID` pin found" not in rendered
         # The defect this block exists for: never "one token" again.
@@ -1710,8 +1745,8 @@ def test_the_sweep_posts_the_pin_rewrite_from_the_prs_own_test_file(
     )
     assert code == 0
     assert len(posted) == 1
-    assert '- _PARENT_REVISION_ID = "a"' in posted[0]
-    assert '+ _PARENT_REVISION_ID = "b"' in posted[0]
+    assert f"- {_pin_line('regex_group', 'a')}" in posted[0]
+    assert f"+ {_pin_line('regex_group', 'b')}" in posted[0]
     assert "test_c_migration.py" in posted[0]
 
 
@@ -1747,3 +1782,220 @@ def test_the_advice_never_claims_coord_will_repoint() -> None:
     for rendered in (comment, text):
         assert "coord will" not in rendered.lower()
         assert "automatically" not in rendered.lower()
+
+
+# ---------------------------------------------------------------------------
+# Review round 2: what the matcher must NOT match, and when it must not run
+# ---------------------------------------------------------------------------
+
+_MERGE_M = 'revision: str = "m"\ndown_revision = ("c", "d")\n'
+
+
+@pytest.mark.parametrize(
+    ("label", "simulated"),
+    [
+        ("single_head", _tree(("a", None), ("b", "a"))),
+        ("merge", _tree(("a", None), ("b", None))),
+        ("chain", _tree(("a", None), ("b", "a"), ("p", "b"), ("q", "b"))),
+        (
+            "blocked_without_edits",
+            {
+                **_tree(("a", None), ("b", "a"), ("c", "a"), ("d", "a")),
+                Path("m.py"): _MERGE_M,
+            },
+        ),
+    ],
+)
+def test_the_pin_search_does_not_run_without_a_revision_to_repoint(
+    monkeypatch: pytest.MonkeyPatch, label: str, simulated: dict[Path, str]
+) -> None:
+    """No `edits` means nothing to re-point: no fetch, and no UNKNOWN finding."""
+    if label == "blocked_without_edits":
+        remediation = plan_remediation(scan_sources(simulated), {"a", "b"})
+        assert remediation.kind == "blocked"
+        assert remediation.target == "b" and remediation.edits == ()
+    pin_calls: list[int] = []
+    code, stderr = _drive_main(monkeypatch, simulated, pin_calls=pin_calls)
+    assert code == 0
+    assert pin_calls == []
+    assert "pin search is UNKNOWN" not in stderr
+
+
+def test_the_pin_search_does_run_for_a_plain_fork(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The positive control for the test above — otherwise it proves nothing."""
+    simulated = {**_tree(("a", None), ("b", "a")), Path("c.py"): _revision("c", "a")}
+    pin_calls: list[int] = []
+    _drive_main(monkeypatch, simulated, pin_calls=pin_calls)
+    assert pin_calls == [1]
+
+
+def test_only_the_pin_naming_the_old_parent_is_listed_among_two() -> None:
+    source = (
+        '_REVISION_ID = "mine"\n'
+        '_PARENT_REVISION_ID = "a"\n'
+        '_PARENT_REVISION_ID = "zzz"  # a second, unrelated pin\n'
+    )
+    found = find_parent_pins({Path("t.py"): source}, "mine", "a", "landed")
+    assert [(p.lineno, p.after) for p in found] == [
+        (2, '_PARENT_REVISION_ID = "landed"')
+    ]
+
+
+def test_an_annotation_cannot_borrow_the_next_lines_value() -> None:
+    """`[^=]*` spanned the newline: `_PARENT_REVISION_ID: str` + `_X = "a"`."""
+    parent_trap = (
+        '_REVISION_ID = "mine"\n_PARENT_REVISION_ID: str\n_SOMETHING_ELSE = "a"\n'
+    )
+    assert find_parent_pins({Path("t.py"): parent_trap}, "mine", "a", "x") == ()
+    assert find_computed_parent_pins({Path("t.py"): parent_trap}, "mine") == ()
+    revision_trap = '_REVISION_ID: str\n_OTHER = "mine"\n_PARENT_REVISION_ID = "a"\n'
+    assert find_parent_pins({Path("t.py"): revision_trap}, "mine", "a", "x") == ()
+
+
+def test_a_docstring_quoting_another_revisions_lines_does_not_qualify() -> None:
+    source = (
+        '"""Copied from the mine test, for contrast:\n'
+        "\n"
+        '_REVISION_ID = "mine"\n'
+        '_PARENT_REVISION_ID = "a"\n'
+        '"""\n'
+        "\n"
+        '_REVISION_ID = "other"\n'
+        '_PARENT_REVISION_ID = "a"\n'
+    )
+    sources = {Path("backend/tests/test_other_migration.py"): source}
+    assert find_parent_pins(sources, "mine", "a", "landed") == ()
+    # ...while the file's REAL declaration still works, at its real line.
+    assert [p.lineno for p in find_parent_pins(sources, "other", "a", "x")] == [8]
+
+
+def test_a_computed_pin_is_named_for_a_human_not_reported_absent() -> None:
+    sources, scan, remediation = _forked_scan()
+    test_sources = {
+        Path("backend/tests/test_mine_migration.py"): (
+            '_REVISION_ID = "mine"\n_PARENT_REVISION_ID = _parent_revision_id()\n'
+        )
+    }
+    sites = plan_repoint_sites(scan, remediation, sources, test_sources)
+    assert sites["mine"].pins == ()
+    assert [c.lineno for c in sites["mine"].computed_pins] == [2]
+    text = render_remediation(
+        remediation, "origin/main", scan.heads, sites=sites, pin_scope="the tests"
+    )
+    comment = notifier.render_comment(
+        scan.heads, remediation, "cafebabe1234", sites=sites, pin_scope="the tests"
+    )
+    for rendered in (text, comment):
+        assert (
+            "a `_PARENT_REVISION_ID` is computed, not literal — check it by hand"
+            in rendered
+        )
+        assert "pin found" not in rendered
+        assert "_parent_revision_id()" in rendered
+
+
+def test_the_blocked_arm_of_both_renderers_carries_the_three_sites() -> None:
+    sources = {
+        **_tree(
+            ("a", None),
+            ("landed", "a"),
+            ("h1", "a"),
+            ("h2", "h1"),
+            ("b", "a"),
+            ("c", "a"),
+        ),
+        Path("m.py"): 'revision: str = "m"\ndown_revision = ("b", "c")\n',
+    }
+    scan = scan_sources(sources)
+    remediation = plan_remediation(scan, landed={"a", "landed"})
+    assert remediation.kind == "blocked"
+    assert [rev for rev, _ in remediation.edits] == ["h1"]
+    pin_path = Path("backend/tests/test_h1_migration.py")
+    sites = plan_repoint_sites(
+        scan, remediation, sources, {pin_path: _pin_file("module_attribute", "h1", "a")}
+    )
+    text = render_remediation(
+        remediation, "origin/main", scan.heads, sites=sites, pin_scope="the tests"
+    )
+    comment = notifier.render_comment(
+        scan.heads, remediation, "cafebabe1234", sites=sites, pin_scope="the tests"
+    )
+    for rendered in (text, comment):
+        assert "APPEND" in rendered
+        assert "Revises: landed" in rendered
+        assert _pin_line("module_attribute", "a") in rendered
+        assert _pin_line("module_attribute", "landed") in rendered
+        assert "test_h1_migration.py" in rendered
+
+
+def test_a_down_revision_comment_survives_the_rewrite_and_cr_does_not() -> None:
+    source = (
+        '"""mine\r\n\r\nRevises: a\r\n"""\r\n'
+        'revision: str = "mine"\r\n'
+        'down_revision: str | None = "a"  # forked off a\r\n'
+    )
+    scan = scan_sources({Path("mine.py"): source, **_tree(("a", None))})
+    sites = repoint_sites(scan, "mine", "landed", source, {})
+    assert sites.down_revision == (
+        'down_revision: str | None = "a"  # forked off a',
+        'down_revision: str | None = "landed"  # forked off a',
+    )
+    assert sites.revises == ("Revises: a", "Revises: landed")
+
+
+def test_a_chain_roots_none_is_replaced_and_its_comment_kept() -> None:
+    source = 'revision = "r"\ndown_revision = None  # the first of its chain\n'
+    scan = scan_sources({Path("r.py"): source})
+    sites = repoint_sites(scan, "r", "landed", source, {})
+    assert sites.down_revision[1] == (
+        'down_revision = "landed"  # the first of its chain'
+    )
+
+
+def test_only_test_files_that_could_hold_a_pin_are_downloaded(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    files = [
+        {
+            "filename": "backend/tests/test_added_no_pin.py",
+            "status": "added",
+            "patch": "@@ +1 @@\n+def test_x(): pass\n",
+        },
+        {
+            "filename": "backend/tests/test_added_pin.py",
+            "status": "added",
+            "patch": '@@ +1 @@\n+_PARENT_REVISION_ID = "a"\n',
+        },
+        {
+            "filename": "backend/tests/test_modified.py",
+            "status": "modified",
+            "patch": "@@ -9 +9 @@\n-x\n+y\n",
+        },
+        {"filename": "backend/tests/test_added_big.py", "status": "added"},
+        {"filename": "backend/tests/test_removed.py", "status": "removed"},
+        {"filename": "backend/app/not_a_test.py", "status": "added", "patch": ""},
+        {"filename": f"{notifier.VERSIONS_DIR}/rev.py", "status": "added"},
+    ]
+    fetched: list[str] = []
+
+    def _blob(_repo: str, path: str, _ref: str, _token: str) -> str:
+        fetched.append(path)
+        return "x"
+
+    def _no_second_listing(*_a: object, **_k: object) -> list[dict]:
+        raise AssertionError("pr_test_sources must reuse the listing it was given")
+
+    monkeypatch.setattr(notifier, "blob_at", _blob)
+    monkeypatch.setattr(notifier, "_paginate", _no_second_listing)
+    sources = notifier.pr_test_sources(
+        "o/r", {"number": 1, "head": {"sha": "deadbeef"}}, files, "t"
+    )
+    assert sorted(fetched) == [
+        "backend/tests/test_added_big.py",
+        "backend/tests/test_added_pin.py",
+        "backend/tests/test_modified.py",
+    ]
+    assert len(sources) == 3
+    assert notifier.pr_version_files(files) == [files[-1]]
