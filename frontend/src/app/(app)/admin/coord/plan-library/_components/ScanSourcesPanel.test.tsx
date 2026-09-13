@@ -847,15 +847,16 @@ describe("rollupDistanceSummary — the corpus's question, with the row rules on
   });
 
   it("a floor names the reason the contract gives, not ref staleness", () => {
-    // `min_behind_is_floor` is `not exact`, and `exact` needs one SHARED ref:
-    // two devices each exact against its own ref fetched a minute ago still
-    // make a floor. "The refs may be stale" would be false there, and would
-    // send an operator to re-fetch a box that is already current.
+    // `min_behind_is_floor` is `not exact`; `exact` needs one SHARED ref that
+    // some reading KNOWS was fetched within six hours. Different fresh refs, an
+    // unidentified ref, and one ref of UNKNOWN age all make a floor. This
+    // fixture is one device — the last shape — so the copy may assert neither
+    // staleness ("the refs may be stale") nor a sharing problem.
     const text = rollupDistanceSummary(rollup({ min_behind_is_floor: true }));
     expect(text).toContain(
-      "(a lower bound — no single recently fetched ref is shared by every comparable reading)"
+      "(a lower bound — the comparable readings do not all count against one ref known to have been fetched within six hours of a reading)"
     );
-    expect(text).not.toMatch(/stale/);
+    expect(text).not.toMatch(/stale|recently|shared by/);
   });
 
   it("an exact 0 is still a distance as of a ref, never 'in step'", () => {
@@ -924,6 +925,10 @@ describe("rollupDistanceSummary — the corpus's question, with the row rules on
 });
 
 describe("ScanSourcesPanel — the per-source roll-up", () => {
+  // One device row beside roll-ups that may name more devices than it: the
+  // backend computes a roll-up FROM the rows, so that pairing is not a shape
+  // it serves. The panel renders the two independently, which is all these
+  // tests exercise; the row is there so the section's non-empty branch runs.
   const rolled = (rollups: ScanRootSourceRollup[]) =>
     listed([row()], { by_source_repo: rollups });
   // Spelled out rather than built with `rollupKey`, so a change to the id
@@ -1036,6 +1041,19 @@ describe("ScanSourcesPanel — the per-source roll-up", () => {
     expect(list.querySelector("code")?.textContent).toBe(DEVICE_B);
   });
 
+  it("links each listed id to its device row, which carries the anchor", () => {
+    // The rows show an 8-character prefix; the link is how a full id in the
+    // roll-up is matched to the row that says why the device is where it is.
+    useScanRootsMock.mockReturnValue(hookState(rolled([rollup()])));
+    render(<ScanSourcesPanel />);
+
+    const link = screen.getByTestId(rid("least")).querySelector("a");
+    expect(link?.getAttribute("href")).toBe(`#scan-root-${DEVICE}`);
+    const target = document.getElementById(`scan-root-${DEVICE}`);
+    expect(target).not.toBeNull();
+    expect(target?.getAttribute("data-testid")).toBe(`scan-root-${DEVICE}`);
+  });
+
   it("counts devices in the plural when there is more than one", () => {
     useScanRootsMock.mockReturnValue(
       hookState(
@@ -1048,14 +1066,24 @@ describe("ScanSourcesPanel — the per-source roll-up", () => {
     );
   });
 
-  it("puts the full source name on the truncated label", () => {
-    useScanRootsMock.mockReturnValue(hookState(rolled([rollup()])));
+  it("shows the full source name as wrapped text, never truncated", () => {
+    // Two sources sharing a long prefix must stay distinguishable at phone
+    // width, and a name kept only in a `title` is unreachable by touch.
+    const long =
+      "a-very-long-repository-name-that-shares-its-prefix/plans/sub-a";
+    useScanRootsMock.mockReturnValue(
+      hookState(rolled([rollup({ source_repo: long })]))
+    );
     render(<ScanSourcesPanel />);
-    expect(
-      screen
-        .getByTestId(rid("source"))
-        .querySelector('[title="qontinui-dev-notes/plans"]')
-    ).not.toBeNull();
+    const container = screen.getByTestId(
+      `scan-source-rollup:source:repo=${long}`
+    );
+    const name = Array.from(container.querySelectorAll("span")).find(
+      (el) => el.textContent === long
+    );
+    expect(name).toBeDefined();
+    expect(name?.className).toContain("break-all");
+    expect(name?.className).not.toContain("truncate");
   });
 
   it("the null group renders as a source nobody named, not as a blank", () => {
@@ -1140,7 +1168,7 @@ describe("ScanSourcesPanel — the per-source roll-up", () => {
     const distance = screen.getByTestId(rid("distance")).textContent;
     expect(distance).toContain("at least 254 behind");
     expect(distance).toContain(
-      "no single recently fetched ref is shared by every comparable reading"
+      "do not all count against one ref known to have been fetched within six hours of a reading"
     );
   });
 
