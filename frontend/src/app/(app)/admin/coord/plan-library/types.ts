@@ -501,18 +501,18 @@ export type ScanRootRollupState = (typeof SCAN_ROOT_ROLLUP_STATES)[number];
  * carry a count — a `measured` verdict, or a 0-behind floor the verdict marks
  * `ref_stale`. A device in `unmeasured_device_ids` may be less behind than
  * anything stated. `min_behind` is a lower bound on the least-behind
- * comparable feeder's distance — NOT a ceiling on what the corpus lacks;
- * `min_behind_is_floor: false`
- * means exact against a ref some device had fetched within six hours of its
- * reading (the runner's definition), never against the live tip.
+ * comparable feeder's distance — NOT a ceiling on what the corpus lacks; a
+ * `min_behind_is_floor: false` means exact against a ref some device had
+ * fetched within six hours of its reading (the runner's definition), never
+ * against the live tip.
  *
  * The four id lists PARTITION the feeders, and a device is named least-behind
  * or lagging only when the readings ORDER it: one shared `ref_sha` that is
  * fresh (the order then holds as of that ref), or stale with every device at
- * `ahead === 0`. Otherwise every
- * comparable device is `lag_unknown_device_ids` — so an empty
- * `lagging_device_ids` is NOT ESTABLISHED, never "none lagging". Placement is
- * often empty on an active repository, where devices fetch at different times.
+ * `ahead === 0`. Otherwise every comparable device is `lag_unknown_device_ids`
+ * — so an empty `lagging_device_ids` is NOT ESTABLISHED, never "none lagging".
+ * Placement is often empty on an active repository, where devices fetch at
+ * different times.
  */
 export interface ScanRootSourceRollup {
   source_repo: string | null;

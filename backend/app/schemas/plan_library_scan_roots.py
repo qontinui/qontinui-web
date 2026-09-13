@@ -268,13 +268,14 @@ class ScanRootSourceRollup(BaseModel):
     Any feeder can add a plan to the corpus, so how far behind the corpus is
     is bounded by its LEAST-behind current feeder. ``min_behind`` is NOT a
     ceiling on what the corpus lacks: it bounds the least-behind COMPARABLE
-    feeder's distance from BELOW ("at least 41" may really be 300), and only an exact value bounds
-    the corpus — and then only as of that ref. Every claim here is taken
-    over the COMPARISON SET: readings that are fresh, applied (not contradicted
-    by a later, declined report) and carry a count — a ``measured`` verdict, or
-    a 0-behind floor the verdict marks ``ref_stale``. A silent or contradicted
-    device's old number stays out, and a device in ``unmeasured_device_ids``
-    may be less behind than anything stated.
+    feeder's distance from BELOW ("at least 41" may really be 300), and only
+    an exact value bounds the corpus — and then only as of that ref. Every
+    claim here is taken over the COMPARISON SET: readings that are fresh,
+    applied (not contradicted by a later, declined report) and carry a count
+    — a ``measured`` verdict, or a 0-behind floor the verdict marks
+    ``ref_stale``. A silent or contradicted device's old number stays out, and
+    a device in ``unmeasured_device_ids`` may be less behind than anything
+    stated.
 
     The roll-up names EVERY feeder, because a lagging device is not harmless
     just because a current one exists: it can write an older body over a newer
@@ -285,8 +286,8 @@ class ScanRootSourceRollup(BaseModel):
     devices (exactly 3 behind a five-hour-old ref can be 13 behind the ref
     another device is exactly 5 behind). On a fresh ref the order holds AS OF
     that ref: a lagging device carrying commits of its own may already hold
-    some merged since, within the runner's window. On an active repository devices fetch
-    at different moments, so placement is often empty: an empty
+    some merged since, within the runner's window. On an active repository
+    devices fetch at different moments, so placement is often empty: an empty
     ``lagging_device_ids`` means NOT ESTABLISHED, never "none lagging".
     """
 
@@ -337,8 +338,9 @@ class ScanRootSourceRollup(BaseModel):
     #: Devices with no comparable reading: silent, contradicted, not scanning,
     #: not a git work tree, or unknown — plus a ``measured`` row carrying no
     #: ``behind``, which the write door refuses, so a stored one is corrupt. (A
-    #: row with a ``behind`` but no ``ahead``, refused alike, stays comparable
-    #: and is simply never ordered against a stale ref.)
+    #: row with a ``behind`` but no ``ahead``, refused alike, stays comparable,
+    #: and on a stale shared ref leaves EVERY comparable device unordered — see
+    #: ``lag_unknown_device_ids``.)
     unmeasured_device_ids: list[UUID]
 
 
