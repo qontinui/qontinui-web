@@ -33,10 +33,10 @@ the reading (fails 1's zero-floor cases), ``shared_ref`` forced true (fails
 2's and 3's different- and unknown-ref cases), ordering that ignores ``ahead``
 (fails 3's CX1 case), ``min_behind_is_floor`` hard-coded ``False`` (fails 2's
 nobody-fetched-fresh case), a floor-of-0 minimum served as ``measured`` (fails
-the round-4 lone-zero-floor case), every 0 served ``unknown`` (fails the exact
+the round-4 lone-zero-floor case), every 0 served ``unknown`` (fails the
 zero-floor-on-the-shared-commit case), a null ``ahead`` read as 0 (fails the
 unknown-ahead case), removing the null-``behind`` guard (fails the
-no-count case), and ``<`` for ``<=`` on the window (fails 5).
+measured-row-with-no-count case), and ``<`` for ``<=`` on the window (fails 5).
 """
 
 from __future__ import annotations
