@@ -32,7 +32,8 @@ the comparison set (fails 1's stale case), dropping ``last_report_applied``
 the reading (fails 1's zero-floor cases), ``shared_ref`` forced true (fails
 2's and 3's different- and unknown-ref cases), ordering that ignores ``ahead``
 (fails 3's CX1 case), ``min_behind_is_floor`` hard-coded ``False`` (fails 2's
-nobody-fetched-fresh case), and ``<`` for ``<=`` on the window (fails 5).
+nobody-fetched-fresh case), a floor-of-0 minimum served as ``measured`` (fails
+the round-4 lone-zero-floor case), and ``<`` for ``<=`` on the window (fails 5).
 """
 
 from __future__ import annotations
@@ -201,10 +202,11 @@ class TestComparisonSet:
         assert rollup.unmeasured_device_ids == [superseded.device_id]
 
     def test_a_zero_behind_floor_on_the_shared_commit_is_comparable(self) -> None:
-        """Review round 3, CX2. B fetched R fresh and is exactly 5 behind; A's
-        verdict is ``ref_stale`` (a 0-behind floor), but A counted against the
-        SAME commit R, which B's fetch shows is current. Leaving A out named B
-        "least behind" at "exactly 5" — both false: A is 0 behind R."""
+        """Review round 3, CX2. B fetched R within the runner's window and is
+        exactly 5 behind; A's verdict is ``ref_stale`` (a 0-behind floor), but A
+        counted against the SAME commit R, which B's fetch makes an exact ref.
+        Leaving A out named B "least behind" at "exactly 5" — both false: A is
+        0 behind R."""
         fresh = _obs(behind=5)
         zero_floor = _floor(0)
         assert render_row(zero_floor, now=NOW).state == "unknown"  # ref_stale
@@ -218,16 +220,44 @@ class TestComparisonSet:
         assert rollup.unmeasured_device_ids == []
 
     def test_two_floors_on_one_ref_with_nothing_ahead_are_ordered(self) -> None:
-        """Review round 3, CX3: "at least 2" was stated over a device 0 behind."""
+        """Review round 3, CX3: "at least 2" was stated over a device 0 behind.
+        The order is established; the distance — a floor of 0 — is not."""
         zero = _floor(0)
         two = _floor(2)
 
         rollup = _only_rollup(zero, two)
 
-        assert rollup.min_behind == 0
-        assert rollup.min_behind_is_floor is True
+        assert rollup.state == "unknown"
+        assert rollup.min_behind is None
         assert rollup.least_behind_device_ids == [zero.device_id]
         assert rollup.lagging_device_ids == [two.device_id]
+
+    def test_a_lone_zero_behind_floor_is_unknown_not_measured_zero(self) -> None:
+        """Review round 4. The row reads ``ref_stale``; the roll-up must not
+        turn the same "at least 0" into "measured, 0 behind"."""
+        zero = _floor(0)
+
+        rollup = _only_rollup(zero)
+
+        assert render_row(zero, now=NOW).state == "unknown"
+        assert rollup.state == "unknown"
+        assert rollup.detail is not None
+        assert rollup.detail.startswith("ref_stale:")
+        assert rollup.min_behind is None
+        assert rollup.min_behind_is_floor is None
+        assert rollup.comparable_count == 1
+
+    def test_a_zero_floor_beside_an_exact_count_on_another_ref_is_unknown(
+        self,
+    ) -> None:
+        zero = _floor(0, ref_sha="a" * 40)
+        exact = _obs(behind=5, ref_sha="b" * 40)
+
+        rollup = _only_rollup(zero, exact)
+
+        assert rollup.state == "unknown"
+        assert rollup.min_behind is None
+        assert rollup.lag_unknown_device_ids == _ids(zero, exact)
 
     def test_a_device_with_no_count_is_listed_unmeasured(self) -> None:
         counted = _obs(behind=3)
@@ -281,8 +311,11 @@ class TestOnlyOrderedStandingIsNamed:
         assert rollup.lag_unknown_device_ids == []
 
     def test_a_fresh_shared_ref_orders_a_device_carrying_commits(self) -> None:
-        """Against a current ref no commit has been merged since, so a device's
-        own commits cannot hide any of what it is missing."""
+        """Exact AS OF R: both counts are against a ref the runner treats as
+        exact (fetched within six hours), so they order the devices against R.
+        Against the live tip a device carrying its own commits may already hold
+        some merged since, within that window — the residue the runner's own
+        definition of "exact" accepts, and the docs state."""
         carrying = _obs(behind=3, ahead=5)
         plain = _obs(behind=1)
 
