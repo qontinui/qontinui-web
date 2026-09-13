@@ -29,9 +29,10 @@ first three from the reader's side, numbered there 3, 3a and 3c):
    and for a roll-up whose fewest commits behind is a floor of 0: "at least 0
    behind" establishes no distance, so the roll-up reads ``unknown`` with a
    null minimum rather than "measured, 0 behind". Its detail names the cause:
-   ``ref_stale:`` when every comparable device counted against one ref nobody
-   fetched fresh, ``refs_not_shared:`` when they counted against different or
-   unknown refs (then the floor is incomparability, not staleness).
+   ``ref_stale:`` when every comparable device counted against one ref that is
+   stale or of unknown age, ``refs_not_shared:`` when they counted against
+   different or unidentified refs (then the minimum is a floor whatever each
+   ref's age, so staleness is not what the roll-up can name).
 3. **A contradicted reading is UNKNOWN.** Precedence: ``observation_stale`` >
    ``reading_superseded`` > ``ref_stale``.
 4. **The roll-up is taken over what a reading still establishes about now.**
@@ -121,8 +122,8 @@ def ref_stale_zero_behind_detail(ahead: int) -> str:
 
 
 #: A roll-up's ``detail`` when its fewest commits behind is a floor of 0 and
-#: every comparable device counted against ONE ref that nobody fetched within
-#: the runner's window — the only zero floor that staleness actually explains.
+#: every comparable device counted against ONE ref that is stale or of unknown
+#: age — the only zero floor the ref's age alone explains.
 ZERO_FLOOR_MINIMUM_DETAIL = (
     "ref_stale: the fewest commits behind among the comparable readings is a "
     "floor of 0 — at least 0 behind establishes no distance, so how far behind "
@@ -131,17 +132,18 @@ ZERO_FLOOR_MINIMUM_DETAIL = (
 )
 
 #: A roll-up's ``detail`` when its fewest commits behind is 0 but the
-#: comparable devices counted against DIFFERENT (or unknown) refs. The minimum
-#: is a floor there for a reason that has nothing to do with staleness: two
-#: devices can each be exact against a ref fetched a minute ago, and counts
-#: against different refs still do not compare. ``ref_stale:`` would send an
-#: operator to re-fetch a box that is already current.
+#: comparable devices counted against DIFFERENT (or unidentified) refs. The
+#: minimum is a floor there whatever each ref's age: two devices can each be
+#: exact against a ref fetched a minute ago, and counts against different refs
+#: still do not compare. Some device's own ref may ALSO be stale, which its row's
+#: detail says; what the roll-up can name is the incomparability, and
+#: ``ref_stale:`` would send an operator to re-fetch boxes that may be current.
 REFS_NOT_SHARED_ZERO_MINIMUM_DETAIL = (
     "refs_not_shared: the fewest commits behind among the comparable readings "
-    "is 0, but they counted against different or unknown refs, and counts "
-    "against different refs do not compare — so how far behind the "
-    "least-behind feeder is is not established, and the readings do not order "
-    "the devices"
+    "is 0, but they counted against different or unidentified refs, and such "
+    "counts do not compare whatever each ref's age (each row's detail says "
+    "whether its own ref is stale) — so how far behind the least-behind feeder "
+    "is is not established, and the readings do not order the devices"
 )
 
 
