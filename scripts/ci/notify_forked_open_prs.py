@@ -2,7 +2,9 @@
 """Tell every open PR that THIS land just forked its alembic chain.
 
 Invoked by ``.github/workflows/alembic-graph-check.yml`` on every push to
-``main`` that touches ``backend/alembic/versions/``.
+``main`` that touches ``backend/alembic/versions/``, and on a manual
+``workflow_dispatch`` of that workflow (which exists because the paths filter
+means a change to this sweep never re-fires the lane that runs it).
 
 ## The gap this closes
 
@@ -49,8 +51,8 @@ comment in the same change that adds this script.
 
 ## Scope and cost
 
-Only PRs based on ``main`` are swept: this runs on a push to ``main``, so a
-``develop``-based PR was not forked by it. ``alembic-graph-pr.yml`` does gate
+Only PRs based on ``main`` are swept: this runs on a push to ``main`` (or a
+dispatch against it), so a ``develop``-based PR was not forked by it. ``alembic-graph-pr.yml`` does gate
 ``develop`` PRs too, and they are NOT covered here — say so rather than imply
 the sweep is exhaustive.
 
@@ -67,11 +69,37 @@ success: a sweep that skipped PRs must not look like a sweep that found
 nothing. Per-PR failures are collected rather than fatal on the spot, so one
 transient 502 cannot leave the rest of the PRs unnotified.
 
-The ONE relaxation of that rule, stated so it is not a surprise: a failed
-notice SEARCH (:func:`prs_carrying_a_notice`) logs and returns ``None``
-without changing the exit code. It only drives best-effort clearing of stale
-notices on PRs that no longer carry a revision; nothing about the current
-land's correctness depends on it, and the next land retries.
+**A FINDING ABOUT A PR IS NOT A FAILURE OF THE SWEEP**, and the exit code
+turns on that distinction. ``2`` means *this sweep proved nothing* about one
+or more PRs. It does not mean *the sweep found something bad*: the whole
+point of the run is to find forks, and a fork has always exited 0. The two
+un-adviseable trees below — a duplicate revision id, and a zero-head chain
+(a cycle) — are verdicts in exactly that class. The sweep read the PR, built
+its simulated tree and reached a definite answer; what it declined to do was
+post fork text that would be wrong. They are reported as annotations and
+counted in the summary, and they leave the exit code alone.
+
+Routing them to ``2`` instead reddened this lane on ``main`` for a defect
+wholly contained in ONE unmerged PR, while ``main``'s own chain was provably
+single-headed — a red that no commit to ``main`` could clear, because the
+offending file was not in ``main``. Their real gate is the PR's own required
+``alembic-heads-pr`` check: ``count_alembic_heads.py`` exits 2 on both of
+these trees, and ``alembic-graph-pr.yml`` runs it on every PR against the
+merge ref — no ``paths:`` filter and ``main`` still in its branch list, both
+deliberately. Three of the four links are asserted by tests: the counter's
+verdict, the invocation, and the workflow narrowings that would silently
+reopen this hole. The REMAINING link — that the check is REQUIRED and
+protection is strict, so a stale-base PR must re-run it before it can land —
+is a GitHub setting that nothing in this tree can observe, and it is the
+load-bearing premise of the paragraph above: relax it and this lane's
+tolerance silently becomes a hole.
+
+The ONE relaxation of the FAILURE rule — not of the finding rule two
+paragraphs above, which is a separate thing — stated so it is not a surprise:
+a failed notice SEARCH (:func:`prs_carrying_a_notice`) logs and returns
+``None`` without changing the exit code. It only drives best-effort clearing
+of stale notices on PRs that no longer carry a revision; nothing about the
+current land's correctness depends on it, and the next land retries.
 """
 
 from __future__ import annotations
@@ -89,6 +117,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from _alembic_graph import (  # noqa: E402
     VERSIONS_DIR,
+    Scan,
     duplicate_groups,
     plan_remediation,
     read_dir_sources,
@@ -438,11 +467,79 @@ def find_marker_comments(repo: str, number: int, token: str) -> list[dict]:
     return [c for c in comments if _is_our_comment(c)]
 
 
-def _report_duplicates(number: int, found: list[dict], failures: list[str]) -> None:
-    """A second marker comment is a defect, not something to edit around."""
+# Carried by the two content-defect messages and by nothing else. It used to
+# live in the shared trailer, which was wrong the moment `_report_duplicates`
+# joined `findings`: `alembic-heads-pr` counts revision heads and has no
+# opinion at all about duplicate bot comments, so the trailer was telling a
+# reader that an irrelevant gate had their finding covered. A remedy belongs
+# to the finding that earned it.
+_GATED_BY_THE_PR_LANE = (
+    "This lane does not read check status: the PR's own `alembic-heads-pr` "
+    "check counts the same tree and SHOULD be red on it — verify that before "
+    "landing the PR."
+)
+
+
+def content_defect(number: int, scan: Scan) -> str | None:
+    """Describe a defect in the PR's OWN simulated tree, or ``None`` if clean.
+
+    The two trees whose head count is not a verdict, so the fork text this
+    script posts would be wrong: a DUPLICATE revision id (two files declaring
+    one id collapse into a single node, so every count is computed over a tree
+    we did not fully see) and a ZERO-head chain (a cycle).
+
+    This is a *finding*, not a sweep failure — see the exit-code contract in
+    the module docstring. The caller reports it and leaves the PR's notice
+    alone; it must not change the exit code.
+    """
+    if scan.duplicates:
+        groups = duplicate_groups(scan)
+        # Named WITH their files, as the `main`-tree arm does. This annotation
+        # is the only signal this arm emits, so "which two files" has to be in
+        # it or the reader has to rebuild the tree locally to find out.
+        dupes = "; ".join(
+            f"{rev} ({', '.join(sorted(f.name for f in files))})"
+            for rev, files in groups.items()
+        )
+        return (
+            f"#{number}: simulated tree has DUPLICATE revision id(s) "
+            f"({dupes}) — the head count is not a verdict; left untouched. "
+            f"{_GATED_BY_THE_PR_LANE}"
+        )
+    if not scan.heads:
+        return (
+            f"#{number}: simulated chain has ZERO heads (a cycle) — "
+            f"not a fork; left untouched. {_GATED_BY_THE_PR_LANE}"
+        )
+    return None
+
+
+def sweep_exit_code(failures: list[str], findings: list[str]) -> int:
+    """The exit code is a verdict on the SWEEP, not on what the sweep found.
+
+    ``failures`` are PRs this run could not read, could not comment on, or
+    otherwise could not finish — it proved nothing about them, so the run is
+    INCOMPLETE and exits :data:`EXIT_VACUOUS`. ``findings`` are PRs it read
+    successfully and reached a definite verdict on; like a fork, they are
+    reported and exit 0. ``findings`` is accepted rather than ignored so the
+    asymmetry is stated in the signature instead of being implied by an
+    absence.
+    """
+    return EXIT_VACUOUS if failures else 0
+
+
+def _report_duplicates(number: int, found: list[dict], findings: list[str]) -> None:
+    """A second marker comment is a defect, not something to edit around.
+
+    A FINDING, by the contract in the module docstring: the sweep listed the
+    comments, found more than one, and maintained the first. It proved plenty
+    about this PR — and the extra comment is on the PR, not in `main`, so
+    reddening `main`'s lane for it would be a red no commit to `main` can
+    clear, which is the shape this script's exit contract exists to avoid.
+    """
     if len(found) > 1:
         ids = ", ".join(str(c.get("id")) for c in found[1:])
-        failures.append(
+        findings.append(
             f"#{number}: {len(found)} fork-notice comments exist (extra ids: "
             f"{ids}); only the first is maintained. Delete the extras."
         )
@@ -618,6 +715,11 @@ def main() -> int:
     # that the affected authors hear about it. The job still reddens at the
     # end, so a partial sweep is never mistaken for a clean one.
     failures: list[str] = []
+    # Findings are kept apart from failures because they answer a different
+    # question — see `sweep_exit_code`. A PR whose simulated tree is
+    # un-adviseable was swept successfully; this lane reports it and stays
+    # green, and the PR's own required gate is what blocks the merge.
+    findings: list[str] = []
     if notice_search_partial:
         # The search SUCCEEDED and returned a knowingly-incomplete answer. That
         # is not the blessed best-effort case (a FAILED search), and leaving it
@@ -625,7 +727,7 @@ def main() -> int:
         # Prefixed, because `failures` is otherwise per-PR and the summary
         # counts it: an unlabelled entry reads as "a PR could not be swept".
         failures.append(f"notice search: {notice_search_partial}")
-    examined = forked = cleared = 0
+    examined = forked = cleared = un_adviseable = 0
     for pr in prs:
         number = int(pr["number"])
         try:
@@ -641,7 +743,7 @@ def main() -> int:
                 try:
                     found = find_marker_comments(args.repo, number, token)
                     existing = found[0] if found else None
-                    _report_duplicates(number, found, failures)
+                    _report_duplicates(number, found, findings)
                     if existing is not None:
                         result = write_comment(
                             args.repo,
@@ -673,27 +775,22 @@ def main() -> int:
             continue
         scan = scan_sources(sources)
 
-        if scan.duplicates:
-            # The PR introduces a second file declaring an id already in the
-            # tree. `count_alembic_heads.py` exits 2 on exactly this, and its
-            # head count is meaningless, so the fork text would be wrong.
-            # Report and leave the PR's notice alone.
-            dupes = ", ".join(duplicate_groups(scan))
-            failures.append(
-                f"#{number}: simulated tree has DUPLICATE revision id(s) "
-                f"({dupes}) — the head count is not a verdict; left untouched"
-            )
-            continue
-
-        if not scan.heads:
-            # A zero-head chain is a CYCLE. `count_alembic_heads.py` exits 2 on
-            # exactly this tree, so it is not "ok" and its notice must not be
-            # cleared — but it is also not the fork this script describes, and
-            # posting the fork text would be wrong. Report and leave alone.
-            failures.append(
-                f"#{number}: simulated chain has ZERO heads (a cycle) — "
-                "not a fork; left untouched"
-            )
+        # A duplicate revision id or a zero-head cycle makes the head count
+        # meaningless, so the fork text would be wrong. Report and leave the
+        # PR's notice alone — and do NOT redden this lane for it: the tree is
+        # the PR's, not `main`'s, and `alembic-heads-pr` already blocks it.
+        defect = content_defect(number, scan)
+        if defect is not None:
+            findings.append(defect)
+            un_adviseable += 1
+            # TODO: this arm tells the AUTHOR nothing — it leaves the notice
+            # alone and only annotates a green run on `main`. Posting a
+            # distinct body (not the fork text, which would be wrong here) is
+            # the real close, deliberately deferred: it means writing new
+            # comment bodies to live PRs, which is a wider blast radius than
+            # the red-main fix this arm was added by. Safe to defer only
+            # because the PR cannot land un-noticed while the PR lane's check
+            # is required — see the premise named in the module docstring.
             continue
 
         if len(scan.heads) == 1:
@@ -701,7 +798,7 @@ def main() -> int:
             try:
                 found = find_marker_comments(args.repo, number, token)
                 existing = found[0] if found else None
-                _report_duplicates(number, found, failures)
+                _report_duplicates(number, found, findings)
             except ApiError as exc:
                 failures.append(f"#{number}: could not read comments: {exc}")
                 continue
@@ -731,7 +828,7 @@ def main() -> int:
         try:
             found = find_marker_comments(args.repo, number, token)
             existing = found[0] if found else None
-            _report_duplicates(number, found, failures)
+            _report_duplicates(number, found, findings)
             result = write_comment(
                 args.repo, number, body, token, existing, dry_run=args.dry_run
             )
@@ -749,14 +846,29 @@ def main() -> int:
 
     note(
         f"swept {len(prs)} open PR(s); {examined} touch {VERSIONS_DIR}/; "
-        f"{forked} forked; {cleared} notice(s) cleared."
+        f"{forked} forked; {cleared} notice(s) cleared; "
+        f"{un_adviseable} left untouched as un-adviseable."
     )
+    # Findings are annotated, so they are never silent — but they are not part
+    # of the exit code. `::error` in the log is the loud channel; a red job on
+    # `main` is the wrong one, because `main` is not what is broken.
+    for finding in findings:
+        err(finding)
+    if findings:
+        # Deliberately says nothing about WHAT was found or what to do about
+        # it: `findings` holds unrelated classes (an un-adviseable tree, a
+        # second marker comment) whose remedies differ, and each message
+        # carries its own. All this line may state is the one property they
+        # share — none of them is a failure of the sweep.
+        err(
+            f"{len(findings)} finding(s) recorded. None of them redden this "
+            "lane: each is a defect in a PR, not in `main`."
+        )
     if failures:
         for failure in failures:
             err(failure)
         err(f"{len(failures)} problem(s) recorded — this run is INCOMPLETE, not clean.")
-        return EXIT_VACUOUS
-    return 0
+    return sweep_exit_code(failures, findings)
 
 
 if __name__ == "__main__":

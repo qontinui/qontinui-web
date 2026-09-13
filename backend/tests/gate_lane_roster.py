@@ -21,8 +21,12 @@ it:
 
 * ``backend/alembic/versions/grantorig_01_operator_roles_grant_origin.py:179``
   — a sentence inside a migration's docstring;
-* ``scripts/ci/notify_forked_open_prs.py:352,361,373`` — string literals in
-  remediation text that the notifier posts into PR comments.
+* three string literals inside ``render_comment`` in
+  ``scripts/ci/notify_forked_open_prs.py`` — remediation text the notifier
+  posts into PR comments. Named by FUNCTION, not by line: the line numbers
+  this list used to carry (``352,361,373``) were already wrong by nine lines
+  before anyone noticed, which is the same stale-prose defect this module
+  exists to catch.
 
 All four are non-comment lines in ``.py`` files, so the ``#``-prefix rule admits
 every one of them. Three further classes are on ``main`` today that the same
