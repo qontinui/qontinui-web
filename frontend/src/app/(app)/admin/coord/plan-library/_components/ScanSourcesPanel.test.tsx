@@ -38,9 +38,14 @@ import {
   driftSummary,
   exactDuration,
   refAgeSummary,
+  rollupDistanceSummary,
   shortDuration,
 } from "./ScanSourcesPanel";
-import type { ScanRootListResponse, ScanRootRow } from "../types";
+import type {
+  ScanRootListResponse,
+  ScanRootRow,
+  ScanRootSourceRollup,
+} from "../types";
 
 const DEVICE = "eb2155ed-4152-4a91-be82-5d4346f717fc";
 
@@ -124,12 +129,259 @@ function listed(
     count: rows.length,
     fresh_count: rows.filter((r) => r.observation_fresh).length,
     rows,
-    // The panel does not read the roll-up; an empty one keeps the fixture a
-    // complete wire value without asserting anything about it.
+    // An empty roll-up renders no by-source section, so the per-device tests
+    // below stay about the rows; the roll-up tests pass their own.
     by_source_repo: [],
     ...overrides,
   };
 }
+
+const OTHER_DEVICE = "c79a07d5-7e40-49b4-87fa-554c749f9644";
+const SOURCE = "qontinui-dev-notes/plans";
+
+/**
+ * The shape production served on 2026-09-13: one comparable feeder, exact,
+ * ordered as the least behind.
+ */
+function rollup(
+  overrides: Partial<ScanRootSourceRollup> = {}
+): ScanRootSourceRollup {
+  return {
+    source_repo: SOURCE,
+    state: "measured",
+    detail: null,
+    device_count: 1,
+    comparable_count: 1,
+    min_behind: 499,
+    min_behind_is_floor: false,
+    least_behind_device_ids: [DEVICE],
+    lagging_device_ids: [],
+    lag_unknown_device_ids: [],
+    unmeasured_device_ids: [],
+    ...overrides,
+  };
+}
+
+/** The route's floor-of-0 verdict: no distance, but the order is kept. */
+function refStaleRollup(
+  overrides: Partial<ScanRootSourceRollup> = {}
+): ScanRootSourceRollup {
+  return rollup({
+    state: "unknown",
+    detail:
+      "ref_stale: the fewest commits behind is a floor of 0 against a stale " +
+      "ref, which establishes no distance",
+    min_behind: null,
+    min_behind_is_floor: null,
+    ...overrides,
+  });
+}
+
+function withRollups(rollups: ScanRootSourceRollup[]): ScanRootListResponse {
+  return listed([row()], { by_source_repo: rollups });
+}
+
+describe("rollupDistanceSummary — exact only when the roll-up says so", () => {
+  it("names an exact minimum with the window it is exact against", () => {
+    expect(rollupDistanceSummary(rollup())).toBe(
+      "Least-behind comparable feeder: exactly 499 behind, as of a ref fetched within 6 h of that reading."
+    );
+  });
+
+  it("MUTATION: the same minimum as a floor is a lower bound, never 'exactly'", () => {
+    const floor = rollupDistanceSummary(rollup({ min_behind_is_floor: true }));
+    expect(floor).toContain("at least 499 behind");
+    expect(floor).toContain("lower bound");
+    expect(floor).not.toContain("exactly");
+  });
+
+  it("takes the floor arm when the flag is null beside a number", () => {
+    // Not a shape the route emits; the conservative arm is the floor.
+    expect(
+      rollupDistanceSummary(rollup({ min_behind_is_floor: null }))
+    ).toContain("at least 499 behind");
+  });
+
+  it("an exact 0 is still exact, and still carries its window", () => {
+    expect(rollupDistanceSummary(rollup({ min_behind: 0 }))).toContain(
+      "exactly 0 behind, as of a ref fetched within 6 h"
+    );
+  });
+
+  it("never renders an unestablished minimum as 0", () => {
+    const refStale = rollupDistanceSummary(refStaleRollup());
+    expect(refStale).toBe("Distance not established.");
+    expect(refStale).not.toMatch(/\b0\b/);
+  });
+
+  it("MUTATION: keys on the verdict, not on a number beside an `unknown`", () => {
+    // A minimum arriving beside `unknown` is not a claim the panel may make —
+    // the verdict decides, exactly as the per-device rows key on `state`.
+    expect(rollupDistanceSummary(refStaleRollup({ min_behind: 12 }))).toBe(
+      "Distance not established."
+    );
+  });
+
+  it("says why when no feeder has a comparable reading", () => {
+    expect(
+      rollupDistanceSummary(
+        refStaleRollup({
+          detail: "no_comparable_reading: every feeder is silent",
+          comparable_count: 0,
+          least_behind_device_ids: [],
+          unmeasured_device_ids: [DEVICE],
+        })
+      )
+    ).toBe("Distance not established: no feeder has a comparable reading.");
+  });
+
+  it("warns that an unmeasured device may be less behind", () => {
+    const hedged = rollupDistanceSummary(
+      rollup({ device_count: 2, unmeasured_device_ids: [OTHER_DEVICE] })
+    );
+    expect(hedged).toContain("1 device has no comparable reading");
+    expect(hedged).toContain("may be less behind");
+    // MUTATION: with every feeder comparable, no hedge.
+    expect(rollupDistanceSummary(rollup())).not.toContain("may be less behind");
+  });
+});
+
+describe("ScanSourcesPanel — the per-source roll-up is read", () => {
+  it("renders each source's verdict, distance and device counts", () => {
+    useScanRootsMock.mockReturnValue(hookState(withRollups([rollup()])));
+    render(<ScanSourcesPanel />);
+
+    expect(screen.getByTestId("scan-sources-by-source")).toBeTruthy();
+    expect(screen.getByTestId(`scan-source-state-${SOURCE}`).textContent).toBe(
+      "Measured"
+    );
+    expect(
+      screen.getByTestId(`scan-source-distance-${SOURCE}`).textContent
+    ).toContain("exactly 499 behind");
+    expect(
+      screen.getByTestId(`scan-source-comparable-${SOURCE}`).textContent
+    ).toBe("1 of 1 device comparable");
+    // The per-device rows are still there beneath it.
+    expect(screen.getByTestId(`scan-root-${DEVICE}`)).toBeTruthy();
+  });
+
+  it("renders the served `unknown` reason verbatim and keeps the order", () => {
+    useScanRootsMock.mockReturnValue(hookState(withRollups([refStaleRollup()])));
+    render(<ScanSourcesPanel />);
+
+    expect(screen.getByTestId(`scan-source-state-${SOURCE}`).textContent).toBe(
+      "Unknown"
+    );
+    expect(
+      screen.getByTestId(`scan-source-detail-${SOURCE}`).textContent
+    ).toContain("ref_stale:");
+    // `unknown` is about the distance, not the order: the least-behind list
+    // the readings established is still named.
+    expect(
+      screen.getByTestId(`scan-source-least_behind_device_ids-${SOURCE}`)
+        .textContent
+    ).toContain(DEVICE.slice(0, 8));
+  });
+
+  it("MUTATION: a measured roll-up has no detail line", () => {
+    useScanRootsMock.mockReturnValue(hookState(withRollups([rollup()])));
+    render(<ScanSourcesPanel />);
+    expect(screen.queryByTestId(`scan-source-detail-${SOURCE}`)).toBeNull();
+  });
+
+  it("an empty lagging list is not 'none lagging' — it gets no line", () => {
+    useScanRootsMock.mockReturnValue(
+      hookState(
+        withRollups([
+          rollup({
+            device_count: 2,
+            comparable_count: 2,
+            min_behind_is_floor: true,
+            least_behind_device_ids: [],
+            lag_unknown_device_ids: [DEVICE, OTHER_DEVICE],
+          }),
+        ])
+      )
+    );
+    render(<ScanSourcesPanel />);
+
+    expect(
+      screen.queryByTestId(`scan-source-lagging_device_ids-${SOURCE}`)
+    ).toBeNull();
+    const section = screen.getByTestId(`scan-source-${SOURCE}`).textContent;
+    expect(section).not.toMatch(/none lagging|no device (is )?lagging/i);
+    // What IS established — that the order is not — is said, with both ids.
+    const unordered = screen.getByTestId(
+      `scan-source-lag_unknown_device_ids-${SOURCE}`
+    ).textContent;
+    expect(unordered).toContain("Not ordered");
+    expect(unordered).toContain(DEVICE.slice(0, 8));
+    expect(unordered).toContain(OTHER_DEVICE.slice(0, 8));
+  });
+
+  it("MUTATION: a proven laggard IS named, with its full id on the title", () => {
+    useScanRootsMock.mockReturnValue(
+      hookState(
+        withRollups([
+          rollup({
+            device_count: 2,
+            comparable_count: 2,
+            lagging_device_ids: [OTHER_DEVICE],
+          }),
+        ])
+      )
+    );
+    render(<ScanSourcesPanel />);
+
+    const lagging = screen.getByTestId(
+      `scan-source-lagging_device_ids-${SOURCE}`
+    );
+    expect(lagging.textContent).toContain("Lagging");
+    expect(lagging.querySelector("code[title]")?.getAttribute("title")).toBe(
+      OTHER_DEVICE
+    );
+  });
+
+  it("names the devices with no comparable reading", () => {
+    useScanRootsMock.mockReturnValue(
+      hookState(
+        withRollups([
+          rollup({ device_count: 2, unmeasured_device_ids: [OTHER_DEVICE] }),
+        ])
+      )
+    );
+    render(<ScanSourcesPanel />);
+
+    expect(
+      screen.getByTestId(`scan-source-unmeasured_device_ids-${SOURCE}`)
+        .textContent
+    ).toContain("No comparable reading");
+    expect(
+      screen.getByTestId(`scan-source-comparable-${SOURCE}`).textContent
+    ).toBe("1 of 2 devices comparable");
+  });
+
+  it("labels the group of readings that named no scan source", () => {
+    useScanRootsMock.mockReturnValue(
+      hookState(withRollups([rollup({ source_repo: null })]))
+    );
+    render(<ScanSourcesPanel />);
+
+    expect(screen.getByTestId("scan-source-unnamed").textContent).toContain(
+      "Readings that name no scan source"
+    );
+  });
+
+  it("renders no by-source section when there are no rows", () => {
+    useScanRootsMock.mockReturnValue(
+      hookState(
+        listed([], { state: "unknown", detail: "no_observation: …", count: 0 })
+      )
+    );
+    render(<ScanSourcesPanel />);
+    expect(screen.queryByTestId("scan-sources-by-source")).toBeNull();
+  });
+});
 
 interface HookState {
   data: ScanRootListResponse | null;
