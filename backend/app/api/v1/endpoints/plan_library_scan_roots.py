@@ -187,14 +187,17 @@ async def list_scan_roots(
     ``reported_detail``. An organization with no rows answers
     ``state: "unknown"``, never an empty "all current".
 
-    ``by_source_repo`` folds the rows per scan source: the fewest commits
-    behind among the ``measured`` verdicts, whether that minimum is a floor,
-    and which devices are proven least behind, proven lagging, unplaceable
-    (``lag_unknown``) or unmeasured. The same builder renders the
-    ``corpus_health.scan_roots`` block the list and ``/candidates`` carry, so
-    the two agree on everything but the per-request ``observation_age_secs`` —
-    except that the block degrades to ``read_failed`` where this route, whose
-    whole answer the readings are, lets a read failure surface as an error.
+    ``by_source_repo`` folds the rows per scan source over its comparison set —
+    readings that are fresh, applied and carry a count, including a
+    ``ref_stale`` 0-behind floor: the fewest commits behind, whether that is a
+    floor, and which devices the readings order as least behind or lagging,
+    cannot order (``lag_unknown``), or have no comparable reading
+    (``unmeasured``). The same builder renders the ``corpus_health.scan_roots``
+    block the list and ``/candidates`` carry, so both apply the same rules to
+    the same rows; two reads can still differ by when they happen (ages, and a
+    verdict that flips at the freshness boundary), and the block degrades a
+    failed read to ``read_failed`` where this route, whose whole answer the
+    readings are, lets it surface as an error.
     """
     org_id = await _resolve_org_id(db, current_user)
     observations = await crud.list_observations(db, org_id=org_id)

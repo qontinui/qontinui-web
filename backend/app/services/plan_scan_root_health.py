@@ -25,7 +25,10 @@ first three from the reader's side, numbered there 3, 3a and 3c):
    ``state: "unknown"``; a row this server has not heard from within
    :data:`FRESH_WITHIN_SECS` reads ``state: "unknown"`` with an
    ``observation_stale:`` detail.
-2. **"0 behind" against a stale ref is UNKNOWN, never "in step".**
+2. **"0 behind" against a stale ref is UNKNOWN, never "in step"** — for a row,
+   and for a roll-up whose fewest commits behind is a floor of 0: "at least 0
+   behind" establishes no distance, so the roll-up reads ``unknown`` with a
+   ``ref_stale:`` detail and a null minimum rather than "measured, 0 behind".
 3. **A contradicted reading is UNKNOWN.** Precedence: ``observation_stale`` >
    ``reading_superseded`` > ``ref_stale``.
 4. **The roll-up is taken over what a reading still establishes about now.**
@@ -44,10 +47,12 @@ first three from the reader's side, numbered there 3, 3a and 3c):
    ITS remote-tracking ref, and the default branch only moves forward, so its
    distance to the live tip is at least what it reported. ``min_behind_is_floor``
    is ``False`` only when every comparable device counted against one
-   ``ref_sha`` and at least one of them fetched it within the runner's
-   freshness window — the runner's own definition of an exact count
-   (``SCAN_REF_FRESH_WITHIN``, six hours). This server never knows the live
-   tip, and two refs fetched within the window can differ.
+   ``ref_sha`` and at least one of them had fetched it within the runner's
+   freshness window at the time of its reading — the runner's own definition
+   of an exact count (``SCAN_REF_FRESH_WITHIN``, six hours), judged at the
+   reading, which may itself be up to :data:`FRESH_WITHIN_SECS` old. This
+   server never knows the live tip, and two refs fetched within the window can
+   differ.
 6. **A device is named least-behind or lagging only when the readings ORDER
    it.** Counts against different refs do not: exactly 3 behind a
    five-hour-old ref can be 13 behind the ref another device is exactly 5
@@ -56,7 +61,10 @@ first three from the reader's side, numbered there 3, 3a and 3c):
    the commits added since are then missing from every device alike. A device
    carrying commits of its own (``ahead > 0``) against a stale ref may already
    hold some of what was merged since, so it can be ahead of a device that
-   reports fewer behind. Anything unordered is ``lag_unknown_device_ids``; the
+   reports fewer behind. On a fresh ref the same can happen against the live
+   tip, bounded by what merged within the window; the order is exact AS OF
+   that ref, which is what "exact" means here (invoked by invariant 5). Anything
+   unordered is ``lag_unknown_device_ids``; the
    four id lists partition the feeders. On an active repository devices fetch
    at different moments and report different refs, so placement is often
    empty — an empty ``lagging_device_ids`` means NOT ESTABLISHED, never "none
@@ -107,6 +115,15 @@ def ref_stale_zero_behind_detail(ahead: int) -> str:
         "ref_stale: 0 behind against a ref that is stale or of unknown age is a "
         f"lower bound, not agreement (ahead {ahead} is also as of that ref)"
     )
+
+
+#: A roll-up's ``detail`` when its fewest commits behind is a floor of 0.
+ZERO_FLOOR_MINIMUM_DETAIL = (
+    "ref_stale: the fewest commits behind among the comparable readings is a "
+    "floor of 0 — at least 0 behind establishes no distance, so how far behind "
+    "the least-behind feeder is is not established (the device lists still "
+    "carry whatever order the readings establish)"
+)
 
 
 def no_comparable_reading_detail(device_count: int) -> str:
@@ -315,14 +332,16 @@ def rollup_source(
         least, lagging = [], []
         lag_unknown = [row for row, _ in comparable]
     min_behind_is_floor = not exact
+    # Invariant 2, one level up: "at least 0 behind" is no distance at all.
+    zero_floor = min_behind_is_floor and min_behind == 0
     return ScanRootSourceRollup(
         source_repo=source_repo,
-        state="measured",
-        detail=None,
+        state="unknown" if zero_floor else "measured",
+        detail=ZERO_FLOOR_MINIMUM_DETAIL if zero_floor else None,
         device_count=len(rows),
         comparable_count=len(comparable),
-        min_behind=min_behind,
-        min_behind_is_floor=min_behind_is_floor,
+        min_behind=None if zero_floor else min_behind,
+        min_behind_is_floor=None if zero_floor else min_behind_is_floor,
         least_behind_device_ids=_device_ids(least),
         lagging_device_ids=_device_ids(lagging),
         lag_unknown_device_ids=_device_ids(lag_unknown),

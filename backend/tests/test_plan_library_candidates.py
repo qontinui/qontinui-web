@@ -646,6 +646,35 @@ class TestCandidatesCarryCorpusHealth:
         assert again.status_code == 200, again.text
         assert again.json()["total"] >= 1
 
+    async def test_a_failed_scan_root_read_on_candidates_degrades_only_that_block(
+        self,
+        client: httpx.AsyncClient,
+        async_db_session: AsyncSession,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """The INNER savepoint: a scan-root read failure inside the corpus-health
+        load degrades just ``scan_roots`` to ``read_failed``, and the census
+        beside it — and the candidates — are still served."""
+        from sqlalchemy import text
+
+        from app.api.v1.endpoints import plan_library as endpoint
+
+        await _plan(async_db_session, org_id=None, slug=_slug("inner"))
+
+        async def _broken(db: AsyncSession, **_kwargs: object) -> None:
+            await db.execute(text("SELECT 1 / 0"))
+
+        monkeypatch.setattr(endpoint.scan_root_crud, "list_observations", _broken)
+
+        resp = await client.get(CANDIDATES, params={"include_coord": "false"})
+        assert resp.status_code == 200, resp.text
+        body = resp.json()
+        assert body["corpus_health_unavailable_reason"] is None
+        health = body["corpus_health"]
+        assert health["plan_count"] == 1
+        assert health["scan_roots"]["state"] == "unknown"
+        assert health["scan_roots"]["detail"].startswith("read_failed:")
+
 
 class TestCandidatesHttp:
     async def test_returns_the_local_signals(
