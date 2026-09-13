@@ -495,7 +495,7 @@ export type ScanRootRollupState = (typeof SCAN_ROOT_ROLLUP_STATES)[number];
 
 /**
  * Every device feeding ONE scan source, folded to the corpus's question: how
- * far behind is its least-behind CURRENT feeder?
+ * far behind is its least-behind COMPARABLE feeder?
  *
  * Every claim is over the COMPARISON SET: readings that are fresh, applied and
  * carry a count — a `measured` verdict, or a 0-behind floor the verdict marks
@@ -627,19 +627,20 @@ export const SCAN_ROOT_LIST_NULLABLE: WireNullability<ScanRootListResponse> = {
 };
 
 /** `ScanRootSourceRollup`'s nullability, as a value. See [`WireNullability`]. */
-export const SCAN_ROOT_ROLLUP_NULLABLE: WireNullability<ScanRootSourceRollup> = {
-  source_repo: true,
-  state: false,
-  detail: true,
-  device_count: false,
-  comparable_count: false,
-  min_behind: true,
-  min_behind_is_floor: true,
-  least_behind_device_ids: false,
-  lagging_device_ids: false,
-  lag_unknown_device_ids: false,
-  unmeasured_device_ids: false,
-};
+export const SCAN_ROOT_ROLLUP_NULLABLE: WireNullability<ScanRootSourceRollup> =
+  {
+    source_repo: true,
+    state: false,
+    detail: true,
+    device_count: false,
+    comparable_count: false,
+    min_behind: true,
+    min_behind_is_floor: true,
+    least_behind_device_ids: false,
+    lagging_device_ids: false,
+    lag_unknown_device_ids: false,
+    unmeasured_device_ids: false,
+  };
 
 /** `true` exactly when `A` and `B` are the same type, not merely assignable. */
 type Equal<A, B> =

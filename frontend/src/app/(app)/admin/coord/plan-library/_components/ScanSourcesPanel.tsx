@@ -272,7 +272,10 @@ function ScanRootRowView({ row }: { row: ScanRootRow }) {
   return (
     <div
       id={`scan-root-${row.device_id}`}
-      className="border-t border-border/60 px-3 py-2.5 text-xs first:border-t-0"
+      // `target:` marks the row a roll-up id linked to. Without it a click
+      // lands on a list of rows whose ids show the same 8-character prefix,
+      // which is the ambiguity the link exists to resolve.
+      className="scroll-mt-4 border-t border-border/60 px-3 py-2.5 text-xs first:border-t-0 target:bg-amber-500/10 target:ring-1 target:ring-inset target:ring-amber-500/40"
       data-testid={`scan-root-${row.device_id}`}
     >
       <div className="flex flex-wrap items-center gap-2">
@@ -423,7 +426,9 @@ function DeviceIdList({
           {i > 0 ? ", " : ""}
           <a
             href={`#scan-root-${id}`}
-            className="underline-offset-2 hover:underline"
+            // Underlined at rest, not only on hover: keyboard and touch users
+            // never hover, and colour alone would not mark it as a link.
+            className="rounded underline decoration-dotted underline-offset-2 hover:decoration-solid focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
           >
             <code className="break-all rounded bg-muted px-1 py-0.5 text-[10px]">
               {id}
@@ -486,8 +491,10 @@ function ScanSourceRollupView({ rollup }: { rollup: ScanRootSourceRollup }) {
             below fall back to `plans_dir`, so a device reporting a path but no
             `source_repo` lands here beside a row that shows one. Wrapped, not
             truncated: two sources sharing a long prefix would otherwise look
-            identical at phone width, with the difference only in a `title`. */}
-        <span className="min-w-0 break-all font-medium">
+            identical at phone width, with the difference only in a `title`.
+            `overflow-wrap: anywhere` rather than `break-all`, so a name breaks
+            mid-word only when nothing else fits. */}
+        <span className="min-w-0 font-medium [overflow-wrap:anywhere]">
           {rollup.source_repo ?? "no source_repo reported"}
         </span>
         <span className="ml-auto shrink-0 text-muted-foreground">
@@ -523,12 +530,12 @@ function ScanSourceRollupView({ rollup }: { rollup: ScanRootSourceRollup }) {
       ) : null}
 
       <DeviceIdList
-        label="Least behind among comparable readings, as of the shared ref"
+        label="Least behind among comparable readings, as of the one ref they all counted against"
         ids={rollup.least_behind_device_ids}
         testId={id("least")}
       />
       <DeviceIdList
-        label="Lagging among comparable readings, as of the shared ref"
+        label="Lagging among comparable readings, as of the one ref they all counted against"
         ids={rollup.lagging_device_ids}
         testId={id("lagging")}
       />
