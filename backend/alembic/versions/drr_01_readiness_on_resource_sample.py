@@ -113,8 +113,8 @@ posture to be stated rather than assumed. As read on qontinui-coord
 ``origin/main`` on 2026-09-13:
 
 * **A prune exists.** ``device_resource_samples::prune_samples`` runs
-  ``DELETE FROM coord.device_resource_samples WHERE sampled_at < now() -
-  make_interval(secs => $1)`` (``PRUNE_SQL``), wired into coord's leader-gated
+  a ``DELETE`` of every row whose ``sampled_at`` is older than the retention
+  window (``PRUNE_SQL``), wired into coord's leader-gated
   pruner loop in ``main.rs`` beside the ``device_status`` and worktree-census
   prunes. It is a GLOBAL pass keyed on ``sampled_at`` alone, which is the shape
   ``fleet_res_tel_01`` required so rows with a NULL ``tenant_id`` are pruned too.
@@ -136,7 +136,8 @@ the enforced bound is Phase 6's ingest length cap. At 64 entries of roughly
 200 bytes the value is ~13 KB (TOASTed, off the main heap). Worst case, a lane
 publishing every 30 s over the 7-day window keeps ~20,160 rows, ~260 MB for that
 one lane-week if every sample carried a full array. In practice the array is
-empty or NULL on any runner that is not draining, and a drain is transient, so
+``[]`` on any probed runner that is not draining (NULL only on a runner that
+cannot report), and a drain is transient, so
 the steady-state cost is near zero. The table stays bounded by the prune above
 — it is a sample table, not a metrics platform.
 
@@ -201,8 +202,7 @@ depends_on: str | Sequence[str] | None = None
 # `alembic-graph-pr.yml`'s `alembic-heads-pr` job (a required check) fails the
 # PR for that.
 #
-# The head can MOVE between authoring and landing; coord re-points it at land
-# time. If `alembic-heads-pr` reports `HEAD_COUNT=2`, re-point this line AND
+# The head can MOVE between authoring and landing. If `alembic-heads-pr` reports `HEAD_COUNT=2`, re-point this line AND
 # `_PARENT_REVISION_ID` in `tests/test_drr_01_readiness_on_resource_sample_migration.py`
 # together — that is the gate working as designed.
 
@@ -289,8 +289,8 @@ def upgrade() -> None:
         COMMENT ON COLUMN coord.device_resource_samples.wind_down_candidates IS
             'Sessions the drain wind-down is considering at sample time: '
             'finished AND idle, close-eligible or still inside the grace '
-            'period (plan D4). NULL = not probed or the runner is not '
-            'draining, never 0. INTEGER, read as Option<i32>.'
+            'period (plan D4). NULL = not probed, NEVER 0; a runner that is '
+            'probed and not draining reports 0. INTEGER, read as Option<i32>.'
         """
     )
     op.execute(
