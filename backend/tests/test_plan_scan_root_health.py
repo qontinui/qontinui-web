@@ -33,7 +33,9 @@ the reading (fails 1's zero-floor cases), ``shared_ref`` forced true (fails
 2's and 3's different- and unknown-ref cases), ordering that ignores ``ahead``
 (fails 3's CX1 case), ``min_behind_is_floor`` hard-coded ``False`` (fails 2's
 nobody-fetched-fresh case), a floor-of-0 minimum served as ``measured`` (fails
-the round-4 lone-zero-floor case), every 0 served ``unknown`` (fails the
+the round-4 lone-zero-floor case), every zero-floor detail served as
+``ref_stale:`` (fails the exact-zero-on-another-ref case) or as
+``refs_not_shared:`` (fails the two-floors-on-one-ref case), every 0 served ``unknown`` (fails the
 zero-floor-on-the-shared-commit case), a null ``ahead`` read as 0 (fails the
 unknown-ahead case), removing the null-``behind`` guard (fails the
 measured-row-with-no-count case), and ``<`` for ``<=`` on the window (fails 5).
@@ -235,6 +237,9 @@ class TestComparisonSet:
         rollup = _only_rollup(zero, two)
 
         assert rollup.state == "unknown"
+        # One shared ref nobody fetched fresh: staleness IS the cause here.
+        assert rollup.detail is not None
+        assert rollup.detail.startswith("ref_stale:")
         assert rollup.min_behind is None
         assert rollup.least_behind_device_ids == [zero.device_id]
         assert rollup.lagging_device_ids == [two.device_id]
@@ -265,6 +270,43 @@ class TestComparisonSet:
         assert rollup.state == "unknown"
         assert rollup.min_behind is None
         assert rollup.lag_unknown_device_ids == _ids(zero, exact)
+        # Two refs: the floor is incomparability, whatever either ref's age.
+        assert rollup.detail is not None
+        assert rollup.detail.startswith("refs_not_shared:")
+
+    def test_an_exact_zero_on_its_own_fresh_ref_beside_another_ref_is_not_ref_stale(
+        self,
+    ) -> None:
+        """Post-merge review of #1331. Both devices fetched their refs minutes
+        ago and both counts are exact, yet the refs differ, so the minimum is a
+        floor and a floor of 0 reads ``unknown``. The served reason used to be
+        ``ref_stale:`` regardless, and the panel showed it word for word beside
+        a device row reading "In step with its ref." — sending an operator to
+        re-fetch a box that was already current."""
+        in_step = _obs(behind=0, ref_sha="a" * 40)
+        behind = _obs(behind=5, ref_sha="b" * 40)
+        assert render_row(in_step, now=NOW).state == "measured"
+
+        rollup = _only_rollup(in_step, behind)
+
+        assert rollup.state == "unknown"
+        assert rollup.min_behind is None
+        assert rollup.detail is not None
+        assert rollup.detail.startswith("refs_not_shared:")
+        assert "ref_stale" not in rollup.detail
+        assert "stale" not in rollup.detail
+        assert rollup.lag_unknown_device_ids == _ids(in_step, behind)
+
+    def test_an_unknown_ref_is_not_shared_either(self) -> None:
+        """A reading with no ``ref_sha`` cannot share a ref with anyone."""
+        zero = _obs(behind=0, ref_sha=None)
+        other = _obs(behind=5)
+
+        rollup = _only_rollup(zero, other)
+
+        assert rollup.state == "unknown"
+        assert rollup.detail is not None
+        assert rollup.detail.startswith("refs_not_shared:")
 
     def test_a_device_with_no_count_is_listed_unmeasured(self) -> None:
         counted = _obs(behind=3)

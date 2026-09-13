@@ -28,7 +28,10 @@ first three from the reader's side, numbered there 3, 3a and 3c):
 2. **"0 behind" against a stale ref is UNKNOWN, never "in step"** — for a row,
    and for a roll-up whose fewest commits behind is a floor of 0: "at least 0
    behind" establishes no distance, so the roll-up reads ``unknown`` with a
-   ``ref_stale:`` detail and a null minimum rather than "measured, 0 behind".
+   null minimum rather than "measured, 0 behind". Its detail names the cause:
+   ``ref_stale:`` when every comparable device counted against one ref nobody
+   fetched fresh, ``refs_not_shared:`` when they counted against different or
+   unknown refs (then the floor is incomparability, not staleness).
 3. **A contradicted reading is UNKNOWN.** Precedence: ``observation_stale`` >
    ``reading_superseded`` > ``ref_stale``.
 4. **The roll-up is taken over what a reading still establishes about now.**
@@ -117,12 +120,28 @@ def ref_stale_zero_behind_detail(ahead: int) -> str:
     )
 
 
-#: A roll-up's ``detail`` when its fewest commits behind is a floor of 0.
+#: A roll-up's ``detail`` when its fewest commits behind is a floor of 0 and
+#: every comparable device counted against ONE ref that nobody fetched within
+#: the runner's window — the only zero floor that staleness actually explains.
 ZERO_FLOOR_MINIMUM_DETAIL = (
     "ref_stale: the fewest commits behind among the comparable readings is a "
     "floor of 0 — at least 0 behind establishes no distance, so how far behind "
     "the least-behind feeder is is not established (the device lists still "
     "carry whatever order the readings establish)"
+)
+
+#: A roll-up's ``detail`` when its fewest commits behind is 0 but the
+#: comparable devices counted against DIFFERENT (or unknown) refs. The minimum
+#: is a floor there for a reason that has nothing to do with staleness: two
+#: devices can each be exact against a ref fetched a minute ago, and counts
+#: against different refs still do not compare. ``ref_stale:`` would send an
+#: operator to re-fetch a box that is already current.
+REFS_NOT_SHARED_ZERO_MINIMUM_DETAIL = (
+    "refs_not_shared: the fewest commits behind among the comparable readings "
+    "is 0, but they counted against different or unknown refs, and counts "
+    "against different refs do not compare — so how far behind the "
+    "least-behind feeder is is not established, and the readings do not order "
+    "the devices"
 )
 
 
@@ -334,10 +353,15 @@ def rollup_source(
     min_behind_is_floor = not exact
     # Invariant 2, one level up: "at least 0 behind" is no distance at all.
     zero_floor = min_behind_is_floor and min_behind == 0
+    # Name the cause the readings establish: a zero floor on one shared ref is
+    # staleness; on different or unknown refs it is incomparability.
+    zero_floor_detail = (
+        ZERO_FLOOR_MINIMUM_DETAIL if shared_ref else REFS_NOT_SHARED_ZERO_MINIMUM_DETAIL
+    )
     return ScanRootSourceRollup(
         source_repo=source_repo,
         state="unknown" if zero_floor else "measured",
-        detail=ZERO_FLOOR_MINIMUM_DETAIL if zero_floor else None,
+        detail=zero_floor_detail if zero_floor else None,
         device_count=len(rows),
         comparable_count=len(comparable),
         min_behind=None if zero_floor else min_behind,
