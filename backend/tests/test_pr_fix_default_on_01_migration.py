@@ -2,8 +2,8 @@
 
 Plan ``2026-09-12-pr-fixer-spawns-default-on-bounded-and-coordinated-with-the-author``
 Phase 4c seeds the SYSTEM tenant's ``coord.policy_rules`` row for
-``decision_domain='pr_fix'`` to ``autonomy_level='auto_decide'`` in
-``mode='guidance'`` (``kind`` NULL — a deterministic row would need a reserved
+``decision_domain='pr_fix'`` to ``autonomy_level='auto_decide'`` — an
+inserted row in ``mode='guidance'``, an updated row keeping its own mode (``kind`` NULL — a deterministic row would need a reserved
 v1 ``kind``; see the revision docstring). The revision is only DDL-light — its contract is which
 row it touches, what it writes, and that ``downgrade`` puts every byte back.
 None of that is visible from a green ``alembic upgrade``.
@@ -359,6 +359,31 @@ def test_update_case_touches_only_the_target_and_downgrade_restores_it(
         reapplied = _by_id(_pr_fix_rows(engine))
         assert set(reapplied) == set(before)
         _assert_seeded(reapplied[target])
+
+
+def test_update_never_raises_a_target_already_below_its_rivals(
+    _admin_url: str,
+) -> None:
+    with ephemeral_database(_admin_url, "prfixdefault_keeplow") as (engine, db_url):
+        run_alembic(backend_root(), db_url, "upgrade", _PARENT_REVISION_ID)
+        system = _system_tenant(engine)
+        target = _insert_rule(engine, tenant_id=system, priority=5)
+        rival = _insert_rule(
+            engine, tenant_id=system, repo="qontinui/qontinui-web", priority=200
+        )
+        before = _by_id(_pr_fix_rows(engine))
+
+        run_alembic(backend_root(), db_url, "upgrade", _REVISION_ID)
+        after = _by_id(_pr_fix_rows(engine))
+        _assert_seeded(after[target])
+        assert after[target]["priority"] == 5, (
+            "a target already ranked below every rival keeps its priority; the "
+            "seed only ever lowers it"
+        )
+        assert after[rival] == before[rival]
+
+        run_alembic(backend_root(), db_url, "downgrade", "-1")
+        assert _by_id(_pr_fix_rows(engine)) == before
 
 
 def test_a_tombstoned_tenant_wide_row_is_never_adopted(_admin_url: str) -> None:
