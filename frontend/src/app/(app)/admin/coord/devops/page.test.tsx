@@ -1606,7 +1606,7 @@ describe("/admin/coord/devops — the coord-credential axis", () => {
     ["has failed", "HTTP 500", true, "HTTP 500"],
     ["has not seeded yet", null, false, "not loaded yet"],
   ])(
-    "names a device-status stream that %s (and was never fed) as its own cause, not as the runners' silence",
+    "names a device-status stream that %s (no full read ever succeeded) as its own cause, not as the runners' silence",
     async (_name, error, seeded, cause) => {
       deviceStatusStream.error = error;
       deviceStatusStream.seeded = seeded;
@@ -1632,7 +1632,7 @@ describe("/admin/coord/devops — the coord-credential axis", () => {
       // …but the tooltip says the READ failed, not that the runner was silent.
       const title = strip.getAttribute("title") ?? "";
       expect(title).toContain(
-        `The runner credential reports could not be read (device-status stream: ${cause})`
+        `No full device-status read has succeeded yet (${cause}); runner reports that arrived since may be incomplete`
       );
       expect(title).not.toMatch(/Neither coord's dark scan nor/);
       expect(title).not.toMatch(/may be stale/);
@@ -1642,7 +1642,7 @@ describe("/admin/coord/devops — the coord-credential axis", () => {
   it("says a stream that WAS fed but whose latest read failed may be stale, not unreadable", async () => {
     // Rows are being served from an earlier read; one re-seed then failed.
     // `msi` still reports nothing of its own, so it stays counted unknown —
-    // but "could not be read" would be false, because the stream was read.
+    // but "no full read has succeeded" would be false, because one did.
     deviceStatusRows.set(
       "msi",
       deviceStatusRow("d-1", "msi", { current_task: "x" })
@@ -1671,7 +1671,7 @@ describe("/admin/coord/devops — the coord-credential axis", () => {
     expect(title).toContain(
       "The last device-status read failed (HTTP 502); runner reports may be stale"
     );
-    expect(title).not.toMatch(/could not be read/);
+    expect(title).not.toMatch(/No full device-status read/);
   });
 
   /** The credential badge on one machine's row, or null. */

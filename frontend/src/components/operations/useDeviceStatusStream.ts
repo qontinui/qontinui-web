@@ -24,12 +24,23 @@ const log = createLogger("DeviceStatusStream");
 const MAX_RECONNECT_ATTEMPTS = 5;
 
 /**
- * Ceiling for the re-seed retry that runs while the socket is live (see
+ * Ceiling for the seed retry that runs while the socket is the live feed (see
  * `scheduleSeedRetry`). It starts at `DEVICE_STATUS_POLL_FALLBACK_MS` and
  * doubles per consecutive failure up to this, so a REST route that stays down
  * behind a healthy socket costs at most one read a minute.
  */
 const SEED_RETRY_MAX_MS = 60_000;
+
+/**
+ * How one fleet read ended.
+ *
+ * - `ok` / `failed` — the read landed while it was still the CURRENT read, so
+ *   its result is now the hook's state.
+ * - `superseded_or_unmounted` — a newer read started before this one landed,
+ *   or the hook unmounted. The result was discarded: it set no state and armed
+ *   nothing. Deliberately not folded into `failed`.
+ */
+type FleetReadOutcome = "ok" | "failed" | "superseded_or_unmounted";
 
 export interface UseDeviceStatusStreamResult {
   /** hostname (or device_id) → DeviceStatus map, keyed by
@@ -41,12 +52,13 @@ export interface UseDeviceStatusStreamResult {
   /** True iff the upstream WS is currently connected. False while
    *  polling fallback is active. */
   connected: boolean;
-  /** The last fleet read's (REST seed or poll) error message, or null.
-   *  Cleared ONLY by the next successful fleet read. A pushed frame is one
+  /** The last CURRENT fleet read's (REST seed or poll) error message, or
+   *  null. Cleared ONLY by a successful fleet read. A pushed frame is one
    *  device's row, not a fleet read, so it never clears this — a REST route
-   *  that keeps failing behind a working socket stays reported. (The hook
-   *  keeps no WS-connection error text; `connected` carries that.)
-   *  Informational only — the hook keeps trying. */
+   *  that keeps failing behind a working socket stays reported. A read that
+   *  lands after a newer one started is discarded and touches neither this
+   *  nor anything else. (The hook keeps no WS-connection error text;
+   *  `connected` carries that.) Informational only — the hook keeps trying. */
   error: string | null;
   /** True once the initial REST seed has settled (success OR error).
    *  Lets consumers (`DeviceStatusTile`) distinguish "still loading"
@@ -57,7 +69,8 @@ export interface UseDeviceStatusStreamResult {
    *  pushed frame (one device's row is not a read of the fleet). So
    *  `everSeeded && error` means "serving rows from an earlier fleet read,
    *  and the latest one failed" (possibly stale), while `!everSeeded` means
-   *  no fleet read has ever succeeded — whatever frames have arrived. */
+   *  no fleet read has ever succeeded — though rows may have arrived by
+   *  frame. */
   everSeeded: boolean;
   /** Force a REST refetch (used by the `Refresh` button on the UI). */
   refetch: () => Promise<void>;
@@ -77,9 +90,14 @@ export interface UseDeviceStatusStreamResult {
  *    the map keyed by hostname (or `device_id` when hostname is null).
  * 4. On WS error/close, exponential-backoff reconnect (5 attempts,
  *    cap 30s). Falls back to 5s polling between attempts.
- * 5. The socket re-seeds over REST when it opens. If that re-seed fails,
- *    a single retry timer re-seeds with capped backoff for as long as
- *    the socket stays the live feed — never alongside polling.
+ * 5. Every fleet read (mount, socket open, tab show, poll, Refresh, retry)
+ *    is SEQUENCED: a response that lands after a newer read started is
+ *    discarded. When the current read fails while the socket is the live
+ *    feed (open, and no polling), ONE retry timer re-reads with capped
+ *    backoff until a read succeeds — whichever path the failed read came
+ *    from. The retry is owned by a generation: success, polling, socket
+ *    close, tab hide and unmount all retire it, so it never runs beside
+ *    polling and never outlives its socket.
  *
  * Cleanup discipline mirrors the pattern in
  * `realtime-connections-context.tsx`: every async path checks the
@@ -100,9 +118,19 @@ export function useDeviceStatusStream(): UseDeviceStatusStreamResult {
   const pollTimerRef = useRef<NodeJS.Timeout | null>(null);
   const reconnectTimerRef = useRef<NodeJS.Timeout | null>(null);
   const reconnectAttemptsRef = useRef(0);
-  const seedRetryTimerRef = useRef<NodeJS.Timeout | null>(null);
-  const seedRetryAttemptsRef = useRef(0);
   const cleanedUpRef = useRef(false);
+  // Fleet-read ordering: every read takes the next number, and only the
+  // latest read may write state or arm a retry.
+  const readSeqRef = useRef(0);
+  // The seed retry: at most one timer, owned by one generation.
+  // `clearSeedRetry` bumps the generation, so a timer from an older chain
+  // acts on nothing.
+  const seedRetryTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const seedRetryGenRef = useRef(0);
+  const seedRetryAttemptsRef = useRef(0);
+  // `seedFromRest` arms the retry and the retry calls `seedFromRest`; this ref
+  // breaks that cycle.
+  const scheduleSeedRetryRef = useRef<() => void>(() => {});
 
   // hostname OR device_id as the key, spelled by `coordDeviceHostKey` — the
   // one key `FleetOverview`'s machine grouping and the devops strip's
@@ -119,75 +147,94 @@ export function useDeviceStatusStream(): UseDeviceStatusStreamResult {
   }, []);
 
   const clearSeedRetry = useCallback(() => {
+    seedRetryGenRef.current += 1;
     if (seedRetryTimerRef.current) {
       clearTimeout(seedRetryTimerRef.current);
       seedRetryTimerRef.current = null;
     }
   }, []);
 
-  /** One fleet read. Resolves `true` iff it succeeded. */
-  const seedFromRest = useCallback(async (): Promise<boolean> => {
+  /**
+   * One fleet read, sequenced. Only the CURRENT read — no newer read started,
+   * not unmounted — may write state; any other result is discarded. A current
+   * read that fails asks for the retry, which arms only if the socket is the
+   * live feed.
+   */
+  const seedFromRest = useCallback(async (): Promise<FleetReadOutcome> => {
+    const seq = ++readSeqRef.current;
+    const isCurrent = () => !cleanedUpRef.current && seq === readSeqRef.current;
     try {
       const resp = await httpClient.fetch(DEVICE_STATUS_API);
       if (!resp.ok) {
         throw new Error(`HTTP ${resp.status}`);
       }
       const data = (await resp.json()) as DeviceStatusResponse;
-      if (cleanedUpRef.current) return false;
+      if (!isCurrent()) return "superseded_or_unmounted";
       // Newest row per key: coord serves newest-first, and a plain set-loop
       // would leave the OLDEST row under a shared hostname.
       setByHostname(indexDeviceStatusRows(data.devices ?? []));
       setError(null);
       setSeeded(true);
       setEverSeeded(true);
-      // A successful fleet read is what a pending re-seed retry was waiting
-      // for, whichever path produced it.
       seedRetryAttemptsRef.current = 0;
       clearSeedRetry();
-      return true;
+      return "ok";
     } catch (err) {
-      if (cleanedUpRef.current) return false;
+      if (!isCurrent()) return "superseded_or_unmounted";
       const msg = err instanceof Error ? err.message : "fetch failed";
       log.warn("GET /device-status failed:", msg);
       setError(msg);
       // An error is still an answer — the tile should show its error
       // state, not an indefinite "Loading…".
       setSeeded(true);
-      return false;
+      // The trigger is the failure itself, whichever path this read came
+      // from (mount, socket open, tab show, Refresh, a retry).
+      scheduleSeedRetryRef.current();
+      return "failed";
     }
   }, [clearSeedRetry]);
 
   /**
-   * Retry a failed re-seed while the socket is the live feed.
+   * Arm the seed retry after a current fleet read failed — but only while the
+   * socket is the live feed: OPEN, no polling running, tab visible, mounted.
+   * Otherwise something else already owns re-reading (polling, a reconnect's
+   * on-open read, the tab-show read) and a retry would double it.
    *
-   * One timer at a time, starting at `DEVICE_STATUS_POLL_FALLBACK_MS` and
-   * doubling per consecutive failure up to {@link SEED_RETRY_MAX_MS}. It stands
-   * down the moment anything else owns re-reading: the socket closing (whose
-   * `onclose` starts polling), polling starting, the tab hiding, unmount, or
-   * any successful seed. So it never runs concurrently with polling.
+   * Never more than one timer: arming retires the previous generation first.
    */
   const scheduleSeedRetry = useCallback(() => {
+    const ws = wsRef.current;
+    if (
+      cleanedUpRef.current ||
+      document.hidden ||
+      pollTimerRef.current !== null ||
+      ws === null ||
+      ws.readyState !== WebSocket.OPEN
+    ) {
+      return;
+    }
     clearSeedRetry();
-    const arm = () => {
-      const delay = Math.min(
-        DEVICE_STATUS_POLL_FALLBACK_MS *
-          Math.pow(2, seedRetryAttemptsRef.current),
-        SEED_RETRY_MAX_MS
-      );
-      seedRetryAttemptsRef.current += 1;
-      seedRetryTimerRef.current = setTimeout(attempt, delay);
-    };
-    const attempt = () => {
+    const gen = seedRetryGenRef.current;
+    const delay = Math.min(
+      DEVICE_STATUS_POLL_FALLBACK_MS *
+        Math.pow(2, seedRetryAttemptsRef.current),
+      SEED_RETRY_MAX_MS
+    );
+    seedRetryAttemptsRef.current += 1;
+    seedRetryTimerRef.current = setTimeout(() => {
+      // A timer from a retired chain touches nothing — not even the ref,
+      // which may already hold a newer chain's timer.
+      if (gen !== seedRetryGenRef.current) return;
       seedRetryTimerRef.current = null;
-      if (cleanedUpRef.current || document.hidden || wsRef.current === null) {
-        return;
-      }
-      void seedFromRest().then((ok) => {
-        if (!ok && !cleanedUpRef.current && wsRef.current !== null) arm();
-      });
-    };
-    arm();
+      // If this read fails it re-arms through `seedFromRest`'s own rule; if a
+      // newer read overtakes it, it is discarded and arms nothing.
+      void seedFromRest();
+    }, delay);
   }, [clearSeedRetry, seedFromRest]);
+
+  useEffect(() => {
+    scheduleSeedRetryRef.current = scheduleSeedRetry;
+  }, [scheduleSeedRetry]);
 
   const stopPolling = useCallback(() => {
     if (pollTimerRef.current) {
@@ -198,8 +245,8 @@ export function useDeviceStatusStream(): UseDeviceStatusStreamResult {
 
   const startPolling = useCallback(() => {
     stopPolling();
-    // Polling re-reads the fleet on its own; a re-seed retry beside it would
-    // double the reads.
+    // Polling re-reads the fleet on its own; a retry beside it would double
+    // the reads.
     clearSeedRetry();
     pollTimerRef.current = setInterval(() => {
       if (!document.hidden) void seedFromRest();
@@ -266,15 +313,14 @@ export function useDeviceStatusStream(): UseDeviceStatusStreamResult {
       }
       setConnected(true);
       reconnectAttemptsRef.current = 0;
+      // A new socket starts its retry backoff from the bottom.
+      seedRetryAttemptsRef.current = 0;
       stopPolling();
       // Re-seed once on connect to absorb any updates that landed
       // while we were disconnected — the WS only pushes diffs from
-      // here forward. If this re-seed fails, `error` stays set (frames do
-      // not clear it) and a bounded retry re-reads until one succeeds;
-      // polling is NOT restarted beside the live socket.
-      void seedFromRest().then((ok) => {
-        if (!ok) scheduleSeedRetry();
-      });
+      // here forward. If it fails, `seedFromRest` arms the retry: this
+      // socket is now the live feed.
+      void seedFromRest();
     };
 
     ws.onmessage = (event) => {
@@ -304,7 +350,9 @@ export function useDeviceStatusStream(): UseDeviceStatusStreamResult {
     ws.onclose = () => {
       setConnected(false);
       if (wsRef.current === ws) wsRef.current = null;
+      // The retry belonged to this socket; polling takes over re-reading.
       clearSeedRetry();
+      seedRetryAttemptsRef.current = 0;
       if (cleanedUpRef.current || document.hidden) return;
 
       if (reconnectAttemptsRef.current < MAX_RECONNECT_ATTEMPTS) {
@@ -325,7 +373,6 @@ export function useDeviceStatusStream(): UseDeviceStatusStreamResult {
     applyRow,
     clearSeedRetry,
     closeWs,
-    scheduleSeedRetry,
     seedFromRest,
     startPolling,
     stopPolling,

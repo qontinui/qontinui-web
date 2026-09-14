@@ -294,10 +294,11 @@ export default function CoordDevOpsPage() {
       // case: those machines really are unmeasured on this read.
       //
       // The stream has two failure shapes and they are different claims:
-      // NEVER fed (no rows were ever read — "could not be read"), and fed
-      // earlier but the latest read failed (rows are being served, possibly
-      // stale — "may be stale"). A single failed re-seed while frames keep
-      // arriving must not read as "unreadable".
+      // no FULL fleet read has succeeded yet (rows may still have arrived one
+      // device at a time by frame, so they may be incomplete), and a full read
+      // succeeded earlier but the latest one failed (rows are being served,
+      // possibly stale). A single failed re-seed behind a working socket must
+      // read as "may be stale", never as "nothing was read".
       const causes: string[] = [];
       if (credentials.scrapeUp === false) {
         causes.push(
@@ -306,7 +307,7 @@ export default function CoordDevOpsPage() {
       }
       if (!deviceStatus.everSeeded) {
         causes.push(
-          `The runner credential reports could not be read (device-status stream: ${deviceStatus.error ?? "not loaded yet"}), so machines coord did not name dark are UNKNOWN — not healthy.`
+          `No full device-status read has succeeded yet (${deviceStatus.error ?? "not loaded yet"}); runner reports that arrived since may be incomplete, so machines coord did not name dark are UNKNOWN — not healthy.`
         );
       } else if (deviceStatus.error !== null) {
         causes.push(
