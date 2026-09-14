@@ -665,23 +665,26 @@ export function LandedWriteFeed({
                       // linked. Not a <Button>: nothing here is actionable,
                       // and a control that looks like the edit rows' "Why"
                       // but does nothing would be the same false promise in
-                      // a different coat. The explanation and the FULL id are
-                      // in the text — a `title` is not an accessible name, and
-                      // the console has no finding reader, so the id is the
-                      // operator's only handle on the reasoning and must be
-                      // copyable, not hover-only. `h-8 text-sm` matches the
-                      // `size="sm"` controls it sits beside.
+                      // a different coat. The row keeps the short form — this
+                      // cluster is `shrink-0`, so prose here would crush the
+                      // label on the left — and says the rest for a screen
+                      // reader; the full, copyable id is in the expanded
+                      // detail (R8: raw ids live in the detail, not the row).
+                      // `h-8 text-sm` matches the `size="sm"` controls beside
+                      // it.
                       <span
                         className="inline-flex h-8 items-center gap-1.5 px-2 text-sm text-muted-foreground"
                         data-testid={`write-reasoning-finding-${write.kind}-${write.name}-${write.version_number}`}
                       >
                         <MessageSquareText className="size-4 shrink-0" />
                         <span>
-                          Why: no notice sent — a created document is
-                          announced by its author&apos;s finding{" "}
-                          <code className="select-all rounded bg-muted px-1 py-0.5 text-[10px]">
-                            {reasoning.findingId}
-                          </code>
+                          Why: no notice sent
+                          <span className="sr-only">
+                            {" "}
+                            — a created document is announced by its
+                            author&apos;s finding; expand this row to read its
+                            id
+                          </span>
                         </span>
                       </span>
                     )}
@@ -784,6 +787,27 @@ export function LandedWriteFeed({
                       </div>
                     </div>
                   </CoordAdminOnly>
+                )}
+
+                {expanded && reasoning?.kind === "finding_only" && (
+                  // The full id, where R8 puts raw ids: in the detail, as
+                  // selectable text. It is the operator's only handle on the
+                  // reasoning — the console has no finding reader — so it is
+                  // complete and `select-all`, never truncated or hover-only.
+                  // Outside `WriteDiff` so it is present while the diff is
+                  // still loading or failed to load: the reasoning reference
+                  // does not depend on the bodies coming back.
+                  <p
+                    className="border-t border-border px-3 py-2 text-xs text-muted-foreground"
+                    data-testid={`write-reasoning-finding-id-${write.kind}-${write.name}-${write.version_number}`}
+                  >
+                    Reasoning: this write created the document, so no notice
+                    was sent. Its author filed coord finding{" "}
+                    <code className="select-all rounded bg-muted px-1 py-0.5 text-[10px]">
+                      {reasoning.findingId}
+                    </code>
+                    .
+                  </p>
                 )}
 
                 {expanded && (
