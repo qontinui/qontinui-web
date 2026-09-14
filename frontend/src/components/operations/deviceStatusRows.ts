@@ -77,6 +77,10 @@ export function mergeDeviceStatusRow<T extends KeyedRow>(
 ): Map<string, T> {
   const key = coordDeviceHostKey(row);
   const current = prev.get(key);
+  // Tie-break differs from `indexDeviceStatusRows` ON PURPOSE: a seed's later
+  // rows are OLDER (newest-first order), a pushed frame arrives AFTER the row
+  // it meets — so without a stamp, the seed keeps first-seen and a merge takes
+  // the incoming row. Do not "fix" one to match the other.
   if (
     current !== undefined &&
     current.device_id !== row.device_id &&
