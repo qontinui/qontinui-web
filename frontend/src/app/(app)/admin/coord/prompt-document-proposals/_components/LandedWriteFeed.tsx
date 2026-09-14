@@ -650,7 +650,7 @@ export function LandedWriteFeed({
                       >
                         <Link
                           href={reasoning.href}
-                          title="Open the notification this write was announced with, and the reasoning its author recorded."
+                          title={`Open the notification this write was announced with, and the reasoning its author recorded (coord finding ${reasoning.findingId}).`}
                           data-testid={`write-reasoning-${write.kind}-${write.name}-${write.version_number}`}
                         >
                           <MessageSquareText className="size-4" />
@@ -660,32 +660,29 @@ export function LandedWriteFeed({
                     )}
 
                     {reasoning?.kind === "finding_only" && (
-                      // A CREATED document (v1) has reasoning but no notice to
-                      // open: creation never emits, and the reconciler skips
-                      // v1 — the completeness caveat above says so in as many
-                      // words. The old link sent the operator into the
-                      // notifications feed anyway, where the `?ref=` banner
-                      // reported an event that cannot exist as one that "may
-                      // be older than these". So the reference is shown, not
-                      // linked, and the tooltip says where the reasoning is.
-                      // Not a <Button>: nothing here is actionable, and a
-                      // control that looks like the row above's "Why" but
-                      // does nothing would be the same false promise in a
-                      // different coat.
+                      // A CREATED document has reasoning but no notice to
+                      // open (`reasoningRef`), so the reference is shown, not
+                      // linked. Not a <Button>: nothing here is actionable,
+                      // and a control that looks like the edit rows' "Why"
+                      // but does nothing would be the same false promise in
+                      // a different coat. The explanation and the FULL id are
+                      // in the text — a `title` is not an accessible name, and
+                      // the console has no finding reader, so the id is the
+                      // operator's only handle on the reasoning and must be
+                      // copyable, not hover-only. `h-8 text-sm` matches the
+                      // `size="sm"` controls it sits beside.
                       <span
-                        className="inline-flex items-center gap-1.5 px-2 text-xs text-muted-foreground"
-                        title={
-                          "This write created the document, and a created " +
-                          "document sends no notice. Its author's reasoning " +
-                          `is coord finding ${reasoning.findingId}.`
-                        }
+                        className="inline-flex h-8 items-center gap-1.5 px-2 text-sm text-muted-foreground"
                         data-testid={`write-reasoning-finding-${write.kind}-${write.name}-${write.version_number}`}
                       >
-                        <MessageSquareText className="size-4" />
-                        Why:{" "}
-                        <code className="rounded bg-muted px-1 py-0.5 text-[10px]">
-                          finding {reasoning.findingId.slice(0, 8)}
-                        </code>
+                        <MessageSquareText className="size-4 shrink-0" />
+                        <span>
+                          Why: no notice sent — a created document is
+                          announced by its author&apos;s finding{" "}
+                          <code className="select-all rounded bg-muted px-1 py-0.5 text-[10px]">
+                            {reasoning.findingId}
+                          </code>
+                        </span>
                       </span>
                     )}
 
