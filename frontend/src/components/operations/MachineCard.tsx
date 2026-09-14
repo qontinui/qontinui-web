@@ -89,6 +89,13 @@ interface MachineCardProps {
   drainState?: DeviceDrainState;
   /** Forced re-read of the drain map after a successful drain/undrain. */
   onDrainActed?: () => void;
+  /**
+   * The clock (epoch ms) the credential report's staleness is judged against.
+   * The Dev Ops Overview passes its ticking clock so a report that ages past
+   * its bound flips to `unknown` without waiting for a read; `undefined` falls
+   * back to `Date.now()` at render.
+   */
+  nowMs?: number;
 }
 
 function OsIcon({ os }: { os: string }) {
@@ -368,6 +375,7 @@ export function MachineCard({
   drainTarget,
   drainState,
   onDrainActed,
+  nowMs,
 }: MachineCardProps) {
   const { hostname, displayName, runners, claudeSessions } = machine;
 
@@ -591,6 +599,7 @@ export function MachineCard({
             ? machine.coordHealth.credential_dark
             : undefined,
           ...reportedCredential,
+          now: nowMs,
         })
       : null;
   /**

@@ -82,7 +82,7 @@
  * points one implementation instead of a fork.
  */
 
-import { useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ExternalLink } from "lucide-react";
@@ -130,6 +130,19 @@ export default function CoordDevOpsPage() {
   // credential rollup below reads the same `details` bag the rows do.
   const deviceStatus = useDeviceStatusStream();
   const devices = fleet.data?.devices ?? EMPTY_DEVICES;
+  // The page's clock, advanced independently of every read. A runner's
+  // `coord_credential` report goes stale by TIME alone
+  // (`resolveCoordCredential`), and the runner that stopped reporting is
+  // exactly the one that sends no frame to re-render anything — so without
+  // this tick a quiet stream, or a fleet-health outage that pins `devices`,
+  // would keep counting that machine `ok` on the strip and `live` on its row.
+  // 15 s is well under the 900 s staleness bound, so the transition can't be
+  // missed. Same tick `FleetResourceStrip` keeps for its row ages.
+  const [nowMs, setNowMs] = useState(() => Date.now());
+  useEffect(() => {
+    const t = setInterval(() => setNowMs(Date.now()), 15_000);
+    return () => clearInterval(t);
+  }, []);
 
   // R1: derived from data already on the page, never a second fetch. The
   // derivation itself is pure and unit-tested (`fleetLiveness.ts`).
@@ -269,9 +282,15 @@ export default function CoordDevOpsPage() {
       summarizeCoordCredentials(
         devices,
         deviceStatus.byHostname,
-        fleet.data?.credential_dark_scrape_up
+        fleet.data?.credential_dark_scrape_up,
+        nowMs
       ),
-    [devices, deviceStatus.byHostname, fleet.data?.credential_dark_scrape_up]
+    [
+      devices,
+      deviceStatus.byHostname,
+      fleet.data?.credential_dark_scrape_up,
+      nowMs,
+    ]
   );
 
   const credentialBadges = useMemo<HealthBadge[]>(() => {
@@ -476,6 +495,7 @@ export default function CoordDevOpsPage() {
         ciMachines={ciMachines}
         drain={drain}
         deviceStatus={deviceStatus}
+        nowMs={nowMs}
       />
 
       {/* 2. Resources and 3. CI occupancy, over the section's own single

@@ -29,6 +29,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  act,
   fireEvent,
   render,
   screen,
@@ -1729,6 +1730,69 @@ describe("/admin/coord/devops — the coord-credential axis", () => {
     expect(
       screen.queryByTestId("coord-devops-credential-unknown-badge")
     ).not.toBeInTheDocument();
+  });
+
+  // A report goes stale by TIME alone, and the runner that stopped reporting is
+  // the one that sends no frame. So the strip must re-resolve on the page's own
+  // clock: here the stream stays silent and fleet-health starts failing (which
+  // pins `devices`), and the only thing that moves is time.
+  it("flips a healthy report to UNKNOWN once it ages past its bound, with no new data", async () => {
+    vi.useFakeTimers({
+      toFake: ["Date", "setInterval", "clearInterval"],
+    });
+    try {
+      vi.setSystemTime(new Date("2026-09-14T12:00:00Z"));
+      deviceStatusRows.set(
+        "msi",
+        deviceStatusRow("d-1", "msi", { coord_credential: { ok: true } })
+      );
+      mockRoutes({
+        devices: [
+          coordDevice("d-1", "msi", "healthy", {
+            credential_dark: { dark: false },
+          }),
+        ],
+        runners: [runner("msi")],
+        samples: [],
+        healthExtras: { credential_dark_scrape_up: true },
+      });
+
+      render(<CoordDevOpsPage />);
+
+      await waitFor(() =>
+        expect(credentialBadge("msi")).toHaveAttribute(
+          "data-operations-coord-credential",
+          "live"
+        )
+      );
+      expect(
+        screen.queryByTestId("coord-devops-credential-unknown-badge")
+      ).not.toBeInTheDocument();
+
+      // Coord's health read goes down: `devices` keeps its last identity.
+      httpGet.mockImplementation((url: unknown) =>
+        String(url).includes("fleet/health")
+          ? Promise.reject(new Error("HTTP 503"))
+          : Promise.resolve({ latest: [], history: [] })
+      );
+
+      // Past the 900 s fallback bound, by the page's 15 s tick.
+      await act(async () => {
+        vi.advanceTimersByTime(915_000);
+      });
+
+      await waitFor(() =>
+        expect(
+          screen.getByTestId("coord-devops-credential-unknown-badge")
+        ).toHaveTextContent("credential unknown 1")
+      );
+      expect(credentialBadge("msi")).toHaveAttribute(
+        "data-operations-coord-credential",
+        "unknown"
+      );
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   // C5. Coord's `{dark: false}` is a roster stamp, not a measurement:
