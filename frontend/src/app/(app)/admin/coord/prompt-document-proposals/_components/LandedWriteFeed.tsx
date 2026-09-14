@@ -39,7 +39,7 @@ import {
   hasLooseningVerdict,
   isDocumentWithdrawn,
   isLoosening,
-  notificationHref,
+  reasoningRef,
   sortWritesForFeed,
   writeKey,
 } from "../_lib/writes";
@@ -64,8 +64,11 @@ import type { PromptDocumentWrite } from "../types";
  * window that has none — with two limits said on screen: nothing is sent, or
  * re-sent, while `coord.notifications` is unprovisioned (the sweep reports
  * UNKNOWN then), and creation deliberately never emits. A created document is
- * announced by the finding its author filed with the write (`notification_ref`,
- * the row's "Why" link) instead.
+ * announced by the finding its author filed with the write (`notification_ref`)
+ * instead — which is why a v1 row shows that finding as a reference and NOT as
+ * the "Why" link the edit rows carry: the link opens the notifications feed,
+ * and for a v1 there is no event there to open (`_lib/writes.ts`
+ * `reasoningRef`).
  *
  * This text used to say the list itself "can be incomplete" because of that
  * emit, which pointed the operator at the wrong surface: it told them to
@@ -542,7 +545,7 @@ export function LandedWriteFeed({
             const expanded = expandedKey === key;
             const flagged = isLoosening(write);
             const authorClass = classifyWriteAuthor(write.edited_by);
-            const href = notificationHref(write.notification_ref);
+            const reasoning = reasoningRef(write);
             const withdrawn = isDocumentWithdrawn(write);
             const withdrawable = canWithdraw(write);
             const composing = withdrawable && withdrawingKey === key;
@@ -636,7 +639,7 @@ export function LandedWriteFeed({
                   </button>
 
                   <div className="flex shrink-0 items-center gap-2">
-                    {href && (
+                    {reasoning?.kind === "notice" && (
                       // Absent ref ⇒ no link. Points into the EXISTING
                       // notifications feed; this route builds no second one.
                       <Button
@@ -646,7 +649,7 @@ export function LandedWriteFeed({
                         className="gap-1.5"
                       >
                         <Link
-                          href={href}
+                          href={reasoning.href}
                           title="Open the notification this write was announced with, and the reasoning its author recorded."
                           data-testid={`write-reasoning-${write.kind}-${write.name}-${write.version_number}`}
                         >
@@ -654,6 +657,36 @@ export function LandedWriteFeed({
                           Why
                         </Link>
                       </Button>
+                    )}
+
+                    {reasoning?.kind === "finding_only" && (
+                      // A CREATED document (v1) has reasoning but no notice to
+                      // open: creation never emits, and the reconciler skips
+                      // v1 — the completeness caveat above says so in as many
+                      // words. The old link sent the operator into the
+                      // notifications feed anyway, where the `?ref=` banner
+                      // reported an event that cannot exist as one that "may
+                      // be older than these". So the reference is shown, not
+                      // linked, and the tooltip says where the reasoning is.
+                      // Not a <Button>: nothing here is actionable, and a
+                      // control that looks like the row above's "Why" but
+                      // does nothing would be the same false promise in a
+                      // different coat.
+                      <span
+                        className="inline-flex items-center gap-1.5 px-2 text-xs text-muted-foreground"
+                        title={
+                          "This write created the document, and a created " +
+                          "document sends no notice. Its author's reasoning " +
+                          `is coord finding ${reasoning.findingId}.`
+                        }
+                        data-testid={`write-reasoning-finding-${write.kind}-${write.name}-${write.version_number}`}
+                      >
+                        <MessageSquareText className="size-4" />
+                        Why:{" "}
+                        <code className="rounded bg-muted px-1 py-0.5 text-[10px]">
+                          finding {reasoning.findingId.slice(0, 8)}
+                        </code>
+                      </span>
                     )}
 
                     {isHead && write.version_number > 1 && (
