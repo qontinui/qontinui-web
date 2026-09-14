@@ -7,6 +7,8 @@
  * Renders ONLY when the per-user durable preference is ON AND the
  * per-session consent decision is still ``null`` (i.e. this is the first
  * authenticated visit in this browser session since the user opted in).
+ * The provider additionally does not mount it on loopback dev, where
+ * consent is auto-granted (``lib/ui-bridge/co-pilot-gates``).
  *
  * Hard rules (consent SAFETY rails — must not regress):
  *   - A click on the modal's backdrop / overlay = "Not now" (revoke), NOT

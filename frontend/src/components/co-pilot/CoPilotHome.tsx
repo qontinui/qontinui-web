@@ -507,8 +507,10 @@ export function CoPilotHome() {
     void run(trimmed, { explain });
   }, [prompt, busy, explain, pushHistory, run]);
 
-  // Re-arm the GLOBAL <CoPilotConsentModal> (mounted in the UI Bridge
-  // provider) by clearing the per-session decision back to null.
+  // Clear the per-session decision back to null: off loopback dev this
+  // re-arms the GLOBAL <CoPilotConsentModal> (mounted in the UI Bridge
+  // provider); on loopback dev, where no modal is mounted, it restores the
+  // auto-grant.
   const reConsent = useCallback(() => {
     consent.reset();
   }, [consent]);

@@ -10,6 +10,10 @@
  *     (the relay listener un-mounts within the next React render);
  *   - a "Disable for this account" link that ALSO flips the per-user
  *     durable preference back to false so a fresh session won't re-prompt.
+ *     Hidden while consent stands only on the loopback-dev auto-grant: that
+ *     grant never consults the preference, so the link could not deliver the
+ *     durable opt-out it promises (a new tab would be live again). Stop still
+ *     revokes for the session.
  *
  * # data-bridge-invisible="true" (interactive subtree only)
  *
@@ -61,6 +65,7 @@ import { useCoPilotPreference } from "@/hooks/useCoPilotPreference";
 import { useCoPilotSessionConsent } from "@/hooks/useCoPilotSessionConsent";
 import {
   isCoPilotConsentSatisfied,
+  isLoopbackAutoGrant,
   useIsLoopbackDev,
 } from "@/lib/ui-bridge/co-pilot-gates";
 
@@ -111,11 +116,15 @@ export function CoPilotActiveBanner() {
   // lights the banner (and its Stop button) too. Opting out of polling
   // while the consent layer is closed avoids unnecessary load on the
   // audit-log endpoint for the 99% of users who haven't opted in.
-  const pollingEnabled = isCoPilotConsentSatisfied({
+  const consentInputs = {
     loopbackDev,
     preferenceEnabled: preference.enabled,
     consentState: consent.state,
-  });
+  };
+  const pollingEnabled = isCoPilotConsentSatisfied(consentInputs);
+  // The account opt-out only means something when the preference is what
+  // holds the gate open — see the header.
+  const showAccountOptOut = !isLoopbackAutoGrant(consentInputs);
   const { isActive, lastActionAt } = useCoPilotActivity({
     enabled: pollingEnabled,
   });
@@ -193,14 +202,16 @@ export function CoPilotActiveBanner() {
           )}
         </div>
         <div className="flex items-center gap-3 shrink-0">
-          <button
-            type="button"
-            onClick={handleDisableForAccount}
-            className="text-xs underline underline-offset-2 hover:text-white"
-            data-testid="co-pilot-active-banner-disable-account"
-          >
-            Disable for this account
-          </button>
+          {showAccountOptOut && (
+            <button
+              type="button"
+              onClick={handleDisableForAccount}
+              className="text-xs underline underline-offset-2 hover:text-white"
+              data-testid="co-pilot-active-banner-disable-account"
+            >
+              Disable for this account
+            </button>
+          )}
           <button
             type="button"
             onClick={handleStop}
