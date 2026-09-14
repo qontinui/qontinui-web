@@ -126,7 +126,9 @@ export default function CoordinationSettingsPage() {
       <div className="max-w-2xl space-y-6">
         {/* Header */}
         <div>
-          <h2 className="text-lg font-semibold">Coordination &amp; automation</h2>
+          <h2 className="text-lg font-semibold">
+            Coordination &amp; automation
+          </h2>
           <p className="text-sm text-muted-foreground">
             Control how coordination handles autonomous next-step work when your
             interactive session goes stale.
@@ -296,6 +298,16 @@ export default function CoordinationSettingsPage() {
                         <p className="text-xs text-muted-foreground truncate">
                           {domain.description}
                         </p>
+                        {domain.autonomy_level_source === "code_fallback" && (
+                          <p
+                            className="text-xs text-yellow-500/80"
+                            data-testid={`domain-fallback-${domain.decision_domain}`}
+                          >
+                            Built-in default, not saved yet: coord has no policy
+                            for this domain. Choose a level and save to apply
+                            it.
+                          </p>
+                        )}
                         <p className="text-xs text-muted-foreground">
                           Effective:{" "}
                           {effectiveBlocked ? (
