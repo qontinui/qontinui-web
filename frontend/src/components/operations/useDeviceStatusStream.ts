@@ -13,8 +13,38 @@ import {
   indexDeviceStatusRows,
   mergeDeviceStatusRow,
 } from "./deviceStatusRows";
+import { DEFAULT_REQUEST_TIMEOUT_MS } from "@/services/http-client";
 
 const log = createLogger("DeviceStatusStream");
+
+/**
+ * Deadline for reading a device-status response BODY. `httpClient`'s abort
+ * timer is cleared once headers arrive, so a body that stalls after them would
+ * otherwise keep the read in flight forever — and a poll tick starts no read
+ * while one is in flight, so polling would stop for good.
+ */
+const BODY_READ_TIMEOUT_MS = DEFAULT_REQUEST_TIMEOUT_MS;
+
+/** `resp.json()`, rejecting if it has not settled within `ms`. */
+async function readJsonWithDeadline(
+  resp: { json: () => Promise<unknown> },
+  ms: number
+): Promise<unknown> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      resp.json(),
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(
+          () => reject(new Error("device-status response body timed out")),
+          ms
+        );
+      }),
+    ]);
+  } finally {
+    if (timer !== undefined) clearTimeout(timer);
+  }
+}
 
 /**
  * Number of consecutive WS reconnect attempts before falling back to
@@ -183,7 +213,12 @@ export function useDeviceStatusStream(): UseDeviceStatusStreamResult {
       if (!resp.ok) {
         throw new Error(`HTTP ${resp.status}`);
       }
-      const data = (await resp.json()) as DeviceStatusResponse;
+      // A stalled body is a failed read (its message lands in `error`), and
+      // the `finally` below still takes this read out of flight.
+      const data = (await readJsonWithDeadline(
+        resp,
+        BODY_READ_TIMEOUT_MS
+      )) as DeviceStatusResponse;
       if (!claimLanding()) return "superseded_or_unmounted";
       // Newest row per key: coord serves newest-first, and a plain set-loop
       // would leave the OLDEST row under a shared hostname.
@@ -217,7 +252,9 @@ export function useDeviceStatusStream(): UseDeviceStatusStreamResult {
    * Otherwise something else already owns re-reading (polling, a reconnect's
    * on-open read, the tab-show read) and a retry would double it.
    *
-   * Never more than one timer: arming retires the previous generation first.
+   * Idempotent: while a retry is already pending, another failure neither
+   * re-arms it nor steps the backoff — two failures landing back to back do
+   * not skip a backoff step. So there is never more than one timer.
    */
   const scheduleSeedRetry = useCallback(() => {
     const ws = wsRef.current;
@@ -232,6 +269,9 @@ export function useDeviceStatusStream(): UseDeviceStatusStreamResult {
     ) {
       return;
     }
+    // Only the current generation's timer is ever held here: `clearSeedRetry`
+    // nulls it, and a firing timer nulls it before reading.
+    if (seedRetryTimerRef.current !== null) return;
     clearSeedRetry();
     const gen = seedRetryGenRef.current;
     const delay = Math.min(

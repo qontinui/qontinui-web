@@ -502,43 +502,81 @@ describe("useDeviceStatusStream", () => {
       hook.unmount();
       expect(vi.getTimerCount()).toBe(0);
     });
-  });
 
-  describe("the hook owns exactly one socket", () => {
-    it("under StrictMode's mount → unmount → mount, one socket survives and no other reaches state", async () => {
-      fallback = () => ok();
-      const hook = await mount({ reactStrictMode: true });
+    it("is idempotent: a second failure while a retry is pending neither re-arms it nor steps the backoff", async () => {
+      // mount ok · on-open fails (arms at 5s) · Refresh fails before it fires
+      queue = [ok(), fail(503), fail(500), ok([deviceRow("d-1", "msi")])];
+      const hook = await mount();
+      await openLatestSocket();
+      expect(vi.getTimerCount()).toBe(1);
 
-      // The first effect pass's connect was overtaken while awaiting its token.
-      expect(unclosedSockets()).toHaveLength(1);
-      const live = unclosedSockets()[0];
-
-      for (const s of FakeWebSocket.instances) {
-        await act(async () => {
-          s.open();
-        });
-        await flush();
-      }
-      expect(hook.result.current.connected).toBe(true);
-
-      queue = [fail(500)];
+      await advance(2_000);
       await act(async () => {
         await hook.result.current.refetch();
       });
       await flush();
-      expect(vi.getTimerCount()).toBe(1); // the live socket's retry
-
-      // Anything else the hook created must not reach state.
-      for (const s of FakeWebSocket.instances.filter((x) => x !== live)) {
-        await act(async () => {
-          s.push(deviceRow("orphan", "orphan-host"));
-          s.serverClose();
-        });
-        await flush();
-      }
-      expect(hook.result.current.byHostname.has("orphan-host")).toBe(false);
-      expect(hook.result.current.connected).toBe(true);
+      expect(hook.result.current.error).toBe("HTTP 500");
       expect(vi.getTimerCount()).toBe(1);
+
+      // Still the first step (5s from the on-open failure) — not re-armed at
+      // 10s from the Refresh.
+      await advance(DEVICE_STATUS_POLL_FALLBACK_MS - 2_000);
+      expect(calls).toBe(4);
+      expect(hook.result.current.error).toBeNull();
+      expect(vi.getTimerCount()).toBe(0);
+      hook.unmount();
+    });
+  });
+
+  describe("a stalled response body", () => {
+    it("cannot stop polling: past the body deadline the read fails, and the next poll reads again", async () => {
+      getWebSocketToken.mockResolvedValue(null); // polling mode
+      const stalledBody: Resp = {
+        ok: true,
+        status: 200,
+        json: () => new Promise<unknown>(() => {}),
+      };
+      queue = [ok(), stalledBody, ok([deviceRow("d-1", "msi")])];
+      const hook = await mount();
+      expect(calls).toBe(1);
+
+      // A Refresh at t=2s whose headers arrive but whose body never does. It
+      // stays in flight, so every poll tick skips.
+      await advance(2_000);
+      await act(async () => {
+        void hook.result.current.refetch();
+      });
+      await flush();
+      expect(calls).toBe(2);
+      await advance(58_000); // t=60s, inside the deadline
+      expect(calls).toBe(2);
+      expect(hook.result.current.error).toBeNull();
+
+      await advance(3_000); // t=63s, past the 60s body deadline
+      expect(hook.result.current.error).toBe(
+        "device-status response body timed out"
+      );
+      expect(calls).toBe(2);
+
+      await advance(DEVICE_STATUS_POLL_FALLBACK_MS); // the next tick reads again
+      expect(calls).toBe(3);
+      expect(hook.result.current.error).toBeNull();
+      expect(hook.result.current.byHostname.get("msi")?.device_id).toBe("d-1");
+      hook.unmount();
+      expect(vi.getTimerCount()).toBe(0);
+    });
+  });
+
+  describe("the hook owns exactly one socket", () => {
+    it("under StrictMode's mount → unmount → mount, exactly one socket is ever built, and none is open after unmount", async () => {
+      fallback = () => ok();
+      const hook = await mount({ reactStrictMode: true });
+
+      // The first effect pass's connect was overtaken while awaiting its token,
+      // so no orphan socket was ever built.
+      expect(FakeWebSocket.instances).toHaveLength(1);
+      const live = await openLatestSocket();
+      expect(hook.result.current.connected).toBe(true);
       expect(live.closedByClient).toBe(false);
 
       hook.unmount();
@@ -602,7 +640,7 @@ describe("useDeviceStatusStream", () => {
       expect(ws2.closedByClient).toBe(true);
     });
 
-    it("a hide and show while the token fetch is pending leaves at most one socket, and none after unmount", async () => {
+    it("a hide and show while the token fetch is pending leaves exactly one working socket, and none after unmount", async () => {
       fallback = () => ok();
       const tokens: Array<(value: string) => void> = [];
       getWebSocketToken.mockImplementation(
@@ -632,7 +670,10 @@ describe("useDeviceStatusStream", () => {
       }
       await flush();
       expect(tokens.length).toBeGreaterThanOrEqual(2);
-      expect(FakeWebSocket.instances.length).toBeLessThanOrEqual(1);
+      // Exactly one: the show's connect built it, the overtaken one built none.
+      expect(FakeWebSocket.instances).toHaveLength(1);
+      await openLatestSocket();
+      expect(hook.result.current.connected).toBe(true);
 
       hook.unmount();
       await flush();
