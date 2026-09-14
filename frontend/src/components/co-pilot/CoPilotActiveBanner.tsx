@@ -59,6 +59,10 @@ import { ApiConfig } from "@/services/api-config";
 import { useCoPilotActivity } from "@/hooks/useCoPilotActivity";
 import { useCoPilotPreference } from "@/hooks/useCoPilotPreference";
 import { useCoPilotSessionConsent } from "@/hooks/useCoPilotSessionConsent";
+import {
+  isCoPilotConsentSatisfied,
+  useIsLoopbackDev,
+} from "@/lib/ui-bridge/co-pilot-gates";
 
 const REVOCATION_AUDIT_URL = `${ApiConfig.API_BASE_URL}/api/v1/users/me/co-pilot/activity`;
 
@@ -101,11 +105,17 @@ function recordRevocation(reason: "stop_button" | "disable_for_account") {
 export function CoPilotActiveBanner() {
   const preference = useCoPilotPreference();
   const consent = useCoPilotSessionConsent();
-  // Only poll when the listener is actually live — opting out of polling
+  const loopbackDev = useIsLoopbackDev();
+  // Only poll when the listener is actually live — the SAME consent
+  // predicate the provider mounts the relay on, so a loopback-dev auto-grant
+  // lights the banner (and its Stop button) too. Opting out of polling
   // while the consent layer is closed avoids unnecessary load on the
   // audit-log endpoint for the 99% of users who haven't opted in.
-  const pollingEnabled =
-    preference.enabled && consent.state === "granted";
+  const pollingEnabled = isCoPilotConsentSatisfied({
+    loopbackDev,
+    preferenceEnabled: preference.enabled,
+    consentState: consent.state,
+  });
   const { isActive, lastActionAt } = useCoPilotActivity({
     enabled: pollingEnabled,
   });

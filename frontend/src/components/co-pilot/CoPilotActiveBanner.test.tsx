@@ -2,8 +2,9 @@
  * Tests for ``<CoPilotActiveBanner>``.
  *
  * §4.5 contract under test:
- *   - banner renders ONLY when preference=true AND consent=granted AND
- *     activity says isActive
+ *   - banner renders ONLY when the relay consent predicate holds
+ *     (preference=true AND consent=granted, or loopback dev not revoked)
+ *     AND activity says isActive
  *   - the rendered banner subtree is wrapped in
  *     ``data-bridge-invisible="true"`` (SDK auto-register skip — Stop
  *     button MUST be inside that subtree so the bridge can't click it)
@@ -34,6 +35,13 @@ vi.mock("@/services/service-factory", () => ({
 }));
 vi.mock("@/services/api-config", () => ({
   ApiConfig: { API_BASE_URL: "" },
+}));
+// Loopback detection is effect-driven and dev-only (NODE_ENV is "test"
+// here), so stub it; the consent predicate itself stays real.
+const gates = vi.hoisted(() => ({ loopbackDev: false }));
+vi.mock("@/lib/ui-bridge/co-pilot-gates", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/ui-bridge/co-pilot-gates")>()),
+  useIsLoopbackDev: () => gates.loopbackDev,
 }));
 
 function jsonResponse(body: unknown): Response {
@@ -66,6 +74,7 @@ describe("<CoPilotActiveBanner>", () => {
   beforeEach(() => {
     fetchMock.mockReset();
     window.sessionStorage.clear();
+    gates.loopbackDev = false;
   });
   afterEach(() => {
     window.sessionStorage.clear();
@@ -118,6 +127,49 @@ describe("<CoPilotActiveBanner>", () => {
     await waitFor(() => {
       expect(screen.queryByTestId("co-pilot-active-banner")).not.toBeNull();
     });
+  });
+
+  it("lights on loopback dev with preference off and no session decision (auto-grant)", async () => {
+    // The relay listener is live under the loopback auto-grant, so the
+    // "AI in control" banner — and its Stop button — must be too.
+    gates.loopbackDev = true;
+    const recent = new Date(Date.now() - 2_000).toISOString();
+    fetchMock.mockImplementation((url: string) => {
+      if (typeof url === "string" && url.includes("/preferences")) {
+        return Promise.resolve(preferenceResponse(false));
+      }
+      return Promise.resolve(activityResponse([{ occurred_at: recent }]));
+    });
+    renderBanner();
+    await waitFor(() => {
+      expect(screen.queryByTestId("co-pilot-active-banner")).not.toBeNull();
+      expect(screen.queryByTestId("co-pilot-active-banner-stop")).not.toBeNull();
+    });
+  });
+
+  it("stays dark on loopback dev after an explicit revoke", async () => {
+    gates.loopbackDev = true;
+    window.sessionStorage.setItem(__CO_PILOT_SESSION_CONSENT_KEY__, "revoked");
+    const recent = new Date(Date.now() - 2_000).toISOString();
+    fetchMock.mockImplementation((url: string) => {
+      if (typeof url === "string" && url.includes("/preferences")) {
+        return Promise.resolve(preferenceResponse(true));
+      }
+      return Promise.resolve(activityResponse([{ occurred_at: recent }]));
+    });
+    renderBanner();
+    await waitFor(() => {
+      expect(
+        screen.queryByTestId("co-pilot-active-banner-hidden")
+      ).not.toBeNull();
+    });
+    // Revoked means no polling at all, not just a hidden banner.
+    expect(
+      fetchMock.mock.calls.some(
+        ([url]: [string]) =>
+          typeof url === "string" && url.includes("/co-pilot/activity")
+      )
+    ).toBe(false);
   });
 
   it("banner root is wrapped in data-bridge-invisible='true' (auto-register skip)", async () => {
