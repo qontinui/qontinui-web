@@ -23,6 +23,14 @@ const log = createLogger("DeviceStatusStream");
  */
 const MAX_RECONNECT_ATTEMPTS = 5;
 
+/**
+ * Ceiling for the re-seed retry that runs while the socket is live (see
+ * `scheduleSeedRetry`). It starts at `DEVICE_STATUS_POLL_FALLBACK_MS` and
+ * doubles per consecutive failure up to this, so a REST route that stays down
+ * behind a healthy socket costs at most one read a minute.
+ */
+const SEED_RETRY_MAX_MS = 60_000;
+
 export interface UseDeviceStatusStreamResult {
   /** hostname (or device_id) → DeviceStatus map, keyed by
    *  `coordDeviceHostKey`, holding each key's NEWEST row
@@ -33,19 +41,23 @@ export interface UseDeviceStatusStreamResult {
   /** True iff the upstream WS is currently connected. False while
    *  polling fallback is active. */
   connected: boolean;
-  /** The last REST read's error message, or null. Cleared by the next
-   *  successful seed OR the next pushed frame — either proves the map is
-   *  being fed again. Informational only — the hook keeps trying. */
+  /** The last fleet read's (REST seed or poll) error message, or null.
+   *  Cleared ONLY by the next successful fleet read. A pushed frame is one
+   *  device's row, not a fleet read, so it never clears this — a REST route
+   *  that keeps failing behind a working socket stays reported. (The hook
+   *  keeps no WS-connection error text; `connected` carries that.)
+   *  Informational only — the hook keeps trying. */
   error: string | null;
   /** True once the initial REST seed has settled (success OR error).
    *  Lets consumers (`DeviceStatusTile`) distinguish "still loading"
    *  from an honest empty fleet. */
   seeded: boolean;
-  /** True once the map has been fed at least once — a successful REST
-   *  seed or a pushed frame. Unlike `seeded`, a failed read never sets it,
-   *  so `everSeeded && error` means "serving rows from an earlier read, and
-   *  the latest read failed" (possibly stale), while `!everSeeded` means
-   *  nothing was ever read. */
+  /** True once a FLEET read (REST seed or poll) has succeeded at least
+   *  once. Unlike `seeded`, a failed read never sets it, and neither does a
+   *  pushed frame (one device's row is not a read of the fleet). So
+   *  `everSeeded && error` means "serving rows from an earlier fleet read,
+   *  and the latest one failed" (possibly stale), while `!everSeeded` means
+   *  no fleet read has ever succeeded — whatever frames have arrived. */
   everSeeded: boolean;
   /** Force a REST refetch (used by the `Refresh` button on the UI). */
   refetch: () => Promise<void>;
@@ -65,6 +77,9 @@ export interface UseDeviceStatusStreamResult {
  *    the map keyed by hostname (or `device_id` when hostname is null).
  * 4. On WS error/close, exponential-backoff reconnect (5 attempts,
  *    cap 30s). Falls back to 5s polling between attempts.
+ * 5. The socket re-seeds over REST when it opens. If that re-seed fails,
+ *    a single retry timer re-seeds with capped backoff for as long as
+ *    the socket stays the live feed — never alongside polling.
  *
  * Cleanup discipline mirrors the pattern in
  * `realtime-connections-context.tsx`: every async path checks the
@@ -85,6 +100,8 @@ export function useDeviceStatusStream(): UseDeviceStatusStreamResult {
   const pollTimerRef = useRef<NodeJS.Timeout | null>(null);
   const reconnectTimerRef = useRef<NodeJS.Timeout | null>(null);
   const reconnectAttemptsRef = useRef(0);
+  const seedRetryTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const seedRetryAttemptsRef = useRef(0);
   const cleanedUpRef = useRef(false);
 
   // hostname OR device_id as the key, spelled by `coordDeviceHostKey` — the
@@ -93,39 +110,84 @@ export function useDeviceStatusStream(): UseDeviceStatusStreamResult {
   // the same key. device_id is the fallback so a row with no hostname still
   // shows. `mergeDeviceStatusRow` never lets an older row from a different
   // device (the retired half of a re-paired box) displace a newer one.
+  //
+  // A frame is ONE device's row, not a read of the fleet: it neither marks the
+  // stream seeded nor clears a fleet-read failure. Letting it do either would
+  // hide a REST route that keeps failing behind a working socket.
   const applyRow = useCallback((row: DeviceStatus) => {
     setByHostname((prev) => mergeDeviceStatusRow(prev, row));
-    setEverSeeded(true);
-    // A pushed frame proves the stream is feeding the map again, so a failed
-    // earlier re-seed stops being the current state. Cleared here rather than
-    // by restarting polling beside a live socket, which would double the reads.
-    setError(null);
   }, []);
 
-  const seedFromRest = useCallback(async (): Promise<void> => {
+  const clearSeedRetry = useCallback(() => {
+    if (seedRetryTimerRef.current) {
+      clearTimeout(seedRetryTimerRef.current);
+      seedRetryTimerRef.current = null;
+    }
+  }, []);
+
+  /** One fleet read. Resolves `true` iff it succeeded. */
+  const seedFromRest = useCallback(async (): Promise<boolean> => {
     try {
       const resp = await httpClient.fetch(DEVICE_STATUS_API);
       if (!resp.ok) {
         throw new Error(`HTTP ${resp.status}`);
       }
       const data = (await resp.json()) as DeviceStatusResponse;
-      if (cleanedUpRef.current) return;
+      if (cleanedUpRef.current) return false;
       // Newest row per key: coord serves newest-first, and a plain set-loop
       // would leave the OLDEST row under a shared hostname.
       setByHostname(indexDeviceStatusRows(data.devices ?? []));
       setError(null);
       setSeeded(true);
       setEverSeeded(true);
+      // A successful fleet read is what a pending re-seed retry was waiting
+      // for, whichever path produced it.
+      seedRetryAttemptsRef.current = 0;
+      clearSeedRetry();
+      return true;
     } catch (err) {
-      if (cleanedUpRef.current) return;
+      if (cleanedUpRef.current) return false;
       const msg = err instanceof Error ? err.message : "fetch failed";
       log.warn("GET /device-status failed:", msg);
       setError(msg);
       // An error is still an answer — the tile should show its error
       // state, not an indefinite "Loading…".
       setSeeded(true);
+      return false;
     }
-  }, []);
+  }, [clearSeedRetry]);
+
+  /**
+   * Retry a failed re-seed while the socket is the live feed.
+   *
+   * One timer at a time, starting at `DEVICE_STATUS_POLL_FALLBACK_MS` and
+   * doubling per consecutive failure up to {@link SEED_RETRY_MAX_MS}. It stands
+   * down the moment anything else owns re-reading: the socket closing (whose
+   * `onclose` starts polling), polling starting, the tab hiding, unmount, or
+   * any successful seed. So it never runs concurrently with polling.
+   */
+  const scheduleSeedRetry = useCallback(() => {
+    clearSeedRetry();
+    const arm = () => {
+      const delay = Math.min(
+        DEVICE_STATUS_POLL_FALLBACK_MS *
+          Math.pow(2, seedRetryAttemptsRef.current),
+        SEED_RETRY_MAX_MS
+      );
+      seedRetryAttemptsRef.current += 1;
+      seedRetryTimerRef.current = setTimeout(attempt, delay);
+    };
+    const attempt = () => {
+      seedRetryTimerRef.current = null;
+      if (cleanedUpRef.current || document.hidden || wsRef.current === null) {
+        return;
+      }
+      void seedFromRest().then((ok) => {
+        if (!ok && !cleanedUpRef.current && wsRef.current !== null) arm();
+      });
+    };
+    arm();
+  }, [clearSeedRetry, seedFromRest]);
 
   const stopPolling = useCallback(() => {
     if (pollTimerRef.current) {
@@ -136,10 +198,13 @@ export function useDeviceStatusStream(): UseDeviceStatusStreamResult {
 
   const startPolling = useCallback(() => {
     stopPolling();
+    // Polling re-reads the fleet on its own; a re-seed retry beside it would
+    // double the reads.
+    clearSeedRetry();
     pollTimerRef.current = setInterval(() => {
       if (!document.hidden) void seedFromRest();
     }, DEVICE_STATUS_POLL_FALLBACK_MS);
-  }, [seedFromRest, stopPolling]);
+  }, [clearSeedRetry, seedFromRest, stopPolling]);
 
   const closeWs = useCallback(() => {
     if (wsRef.current) {
@@ -204,10 +269,12 @@ export function useDeviceStatusStream(): UseDeviceStatusStreamResult {
       stopPolling();
       // Re-seed once on connect to absorb any updates that landed
       // while we were disconnected — the WS only pushes diffs from
-      // here forward. If this re-seed fails, `error` stays set until the
-      // next pushed frame (`applyRow`) or the next successful seed clears it;
+      // here forward. If this re-seed fails, `error` stays set (frames do
+      // not clear it) and a bounded retry re-reads until one succeeds;
       // polling is NOT restarted beside the live socket.
-      void seedFromRest();
+      void seedFromRest().then((ok) => {
+        if (!ok) scheduleSeedRetry();
+      });
     };
 
     ws.onmessage = (event) => {
@@ -237,6 +304,7 @@ export function useDeviceStatusStream(): UseDeviceStatusStreamResult {
     ws.onclose = () => {
       setConnected(false);
       if (wsRef.current === ws) wsRef.current = null;
+      clearSeedRetry();
       if (cleanedUpRef.current || document.hidden) return;
 
       if (reconnectAttemptsRef.current < MAX_RECONNECT_ATTEMPTS) {
@@ -253,7 +321,15 @@ export function useDeviceStatusStream(): UseDeviceStatusStreamResult {
       // the operator keeps seeing fresh data.
       startPolling();
     };
-  }, [applyRow, closeWs, seedFromRest, startPolling, stopPolling]);
+  }, [
+    applyRow,
+    clearSeedRetry,
+    closeWs,
+    scheduleSeedRetry,
+    seedFromRest,
+    startPolling,
+    stopPolling,
+  ]);
 
   // Mount: seed + open WS.
   useEffect(() => {
@@ -265,8 +341,16 @@ export function useDeviceStatusStream(): UseDeviceStatusStreamResult {
       closeWs();
       stopPolling();
       clearReconnect();
+      clearSeedRetry();
     };
-  }, [seedFromRest, connectWs, closeWs, stopPolling, clearReconnect]);
+  }, [
+    seedFromRest,
+    connectWs,
+    closeWs,
+    stopPolling,
+    clearReconnect,
+    clearSeedRetry,
+  ]);
 
   // Tab visibility — drop the WS while hidden to avoid burning
   // browser-side resources, reconnect on return.
@@ -274,6 +358,7 @@ export function useDeviceStatusStream(): UseDeviceStatusStreamResult {
     const onVisibility = () => {
       if (document.hidden) {
         clearReconnect();
+        clearSeedRetry();
         closeWs();
         stopPolling();
         setConnected(false);
@@ -285,7 +370,18 @@ export function useDeviceStatusStream(): UseDeviceStatusStreamResult {
     };
     document.addEventListener("visibilitychange", onVisibility);
     return () => document.removeEventListener("visibilitychange", onVisibility);
-  }, [clearReconnect, closeWs, stopPolling, seedFromRest, connectWs]);
+  }, [
+    clearReconnect,
+    clearSeedRetry,
+    closeWs,
+    stopPolling,
+    seedFromRest,
+    connectWs,
+  ]);
+
+  const refetch = useCallback(async (): Promise<void> => {
+    await seedFromRest();
+  }, [seedFromRest]);
 
   return {
     byHostname,
@@ -293,6 +389,6 @@ export function useDeviceStatusStream(): UseDeviceStatusStreamResult {
     error,
     seeded,
     everSeeded,
-    refetch: seedFromRest,
+    refetch,
   };
 }
