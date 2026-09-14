@@ -78,6 +78,15 @@ beforeEach(() => {
 });
 
 describe("FixerSpawnToggle — read", () => {
+  it("says the switch does not cover the merge shepherd", async () => {
+    get.mockResolvedValue(DEFAULT_ON);
+    render(<FixerSpawnToggle canEdit />);
+    await tenantText();
+    const copy = screen.getByTestId("fixer-spawn-toggle").textContent ?? "";
+    expect(copy).toContain("does not cover the merge shepherd");
+    expect(copy).toContain("merge_shepherd");
+  });
+
   it("NULL tenant column: Default is selected and the default decides", async () => {
     get.mockResolvedValue(DEFAULT_ON);
     render(<FixerSpawnToggle canEdit />);

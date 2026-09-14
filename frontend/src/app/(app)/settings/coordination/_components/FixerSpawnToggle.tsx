@@ -98,7 +98,10 @@ export function FixerSpawnToggle({
         <p className="text-xs text-muted-foreground">
           Coord may start fixer sessions for your stuck PRs (red CI, conflicts).
           Bounded by the fleet in-flight cap. Individual repos can also opt out
-          with <span className="font-mono">merge.auto_fix_pr: false</span>.
+          with <span className="font-mono">merge.auto_fix_pr: false</span>. This
+          switch does not cover the merge shepherd, which escalates PRs coord
+          cannot land; that is the separate{" "}
+          <span className="font-mono">merge_shepherd</span> agent setting.
         </p>
       </div>
 
