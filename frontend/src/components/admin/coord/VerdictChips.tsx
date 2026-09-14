@@ -31,11 +31,30 @@ import type { ReactNode } from "react";
 import type { DimensionVerdict } from "@/components/admin/coord/landTypes";
 
 /**
+ * The glyph vocabulary, loudest first. EXPORTED because it is the domain of
+ * {@link glyphClass}: a test can enumerate it and assert the R3 clause below
+ * over every member, which a hand-written list of `it(...)` cases cannot
+ * promise to keep total.
+ *
+ * `"?"` is deliberately IN the set. It is the ignorance floor, not the absence
+ * of a glyph — see {@link outcomeGlyph}.
+ */
+export const VERDICT_GLYPHS = ["✕", "!", "~", "✓", "?"] as const;
+
+export type VerdictGlyph = (typeof VERDICT_GLYPHS)[number];
+
+/**
  * Outcome → colourblind-safe glyph. The glyph carries the verdict for a reader
  * who cannot use the hue, and it is the reason this cluster can be this small.
+ *
+ * EXPORTED as of the Wave 2 follow-up. It was module-private, and the cost of
+ * that was two copies: `DeployRow.deployGlyph` re-spelled this ladder verbatim
+ * to prepend one carve-out, so the surface that renders the *same* cluster
+ * derived its glyphs from a second implementation nothing compared to this
+ * one. `deployGlyph` now delegates here and keeps only its carve-out.
  */
-function outcomeGlyph(outcome?: string | null): string {
-  const o = (outcome ?? "").toLowerCase();
+export function outcomeGlyph(outcome?: string | null): VerdictGlyph {
+  const o = (outcome ?? "").trim().toLowerCase();
   if (o === "confirmed") return "✓";
   if (o === "failure" || o === "contradiction") return "✕";
   if (o === "surprise") return "!";
@@ -45,8 +64,23 @@ function outcomeGlyph(outcome?: string | null): string {
   return "?";
 }
 
-/** Glyph → the hue family it is allowed to use (R3). */
-function glyphClass(glyph: string): string {
+/**
+ * Glyph → the hue family it is allowed to use (R3).
+ *
+ * **The one red is `✕`, and it is the only one.** That is the same clause
+ * `paletteDisagreements` enforces for every badge palette in the console
+ * (`console/attention.ts`, clause 4: red ⇔ `✕`); this cluster paints its own
+ * chips rather than going through `StatusBadge`, so the audit table cannot
+ * reach it and the invariant is asserted directly in `VerdictChips.test.tsx`
+ * instead. An unknown glyph falls to the dashed-provisional treatment — the
+ * same "we cannot say" vocabulary `draft` and `UNKNOWN_AMBER` use — never to a
+ * calm or a green.
+ *
+ * EXPORTED for that test. Wave 2 shipped this function and `outcomeGlyph`
+ * untested while deleting the per-dimension ladder's only other oracle, which
+ * that PR recorded as its one real coverage loss.
+ */
+export function glyphClass(glyph: string): string {
   if (glyph === "✕") return "text-red-300 border-red-500/35";
   if (glyph === "✓") return "text-green-300 border-green-500/30";
   if (glyph === "!") return "text-violet-200 border-violet-500/30";

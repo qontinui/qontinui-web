@@ -22,6 +22,7 @@ from __future__ import annotations
 import inspect
 from types import SimpleNamespace
 
+import httpx
 import pytest
 
 from app.api.v1.endpoints import device_bridge_ws
@@ -50,7 +51,10 @@ class _FakeHttpxResponse:
 
     status_code = 200
     content = b"ok"
-    headers: dict[str, str] = {}
+    # A real ``httpx.Headers``, not a dict: the handler reads ``multi_items()``
+    # to keep repeated names (``Set-Cookie``) from collapsing, and only the
+    # real type provides it.
+    headers = httpx.Headers()
 
 
 def _install_fake_httpx(monkeypatch) -> dict[str, str]:

@@ -202,7 +202,14 @@ describe("CoordNotificationsPage", () => {
       expect(httpPost).toHaveBeenCalledWith(
         "/api/v1/operations/notifications/mark-read",
         { notification_ids: [UUID_A] },
-        expect.objectContaining({ noRetryStatuses: [503] })
+        // `mark-read` is a POST behind a user-clicked button, so it takes
+        // NOTIFICATIONS_MARK_READ_OPTIONS, not the GET pollers' options.
+        // `429` because the method rule does not cover that arm and retrying
+        // a deliberate cap would hang the button ~3 minutes; `503` because
+        // the retry is already suppressed by the method rule but the WARN is
+        // not, and it would fire on every click for the whole migration
+        // window.
+        expect.objectContaining({ noRetryStatuses: [429, 503] })
       )
     );
     // snake_case, pinned: `notificationIds` is the natural TypeScript
@@ -253,7 +260,14 @@ describe("CoordNotificationsPage", () => {
       expect(httpPost).toHaveBeenCalledWith(
         "/api/v1/operations/notifications/mark-read",
         { all: true },
-        expect.objectContaining({ noRetryStatuses: [503] })
+        // `mark-read` is a POST behind a user-clicked button, so it takes
+        // NOTIFICATIONS_MARK_READ_OPTIONS, not the GET pollers' options.
+        // `429` because the method rule does not cover that arm and retrying
+        // a deliberate cap would hang the button ~3 minutes; `503` because
+        // the retry is already suppressed by the method rule but the WARN is
+        // not, and it would fire on every click for the whole migration
+        // window.
+        expect.objectContaining({ noRetryStatuses: [429, 503] })
       )
     );
     // The dangerous legacy spelling must never appear on the wire.
@@ -296,7 +310,14 @@ describe("CoordNotificationsPage", () => {
       expect(httpPost).toHaveBeenCalledWith(
         "/api/v1/operations/notifications/mark-read",
         { notification_ids: [UUID_A, UUID_B] },
-        expect.objectContaining({ noRetryStatuses: [503] })
+        // `mark-read` is a POST behind a user-clicked button, so it takes
+        // NOTIFICATIONS_MARK_READ_OPTIONS, not the GET pollers' options.
+        // `429` because the method rule does not cover that arm and retrying
+        // a deliberate cap would hang the button ~3 minutes; `503` because
+        // the retry is already suppressed by the method rule but the WARN is
+        // not, and it would fire on every click for the whole migration
+        // window.
+        expect.objectContaining({ noRetryStatuses: [429, 503] })
       )
     );
     for (const call of httpPost.mock.calls) {

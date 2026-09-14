@@ -75,7 +75,11 @@ class CommentService {
   ): Promise<Comment> {
     const comment = await httpClient.patch<Comment>(
       `${API_BASE}/${commentId}`,
-      data
+      data,
+      {
+        // Safe to re-issue: `update_comment` assigns content/resolved, no toggle.
+        idempotent: true,
+      }
     );
     return comment;
   }

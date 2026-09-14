@@ -92,7 +92,12 @@ export function patchCoordPolicy<TUpdate>(
 ): Promise<unknown> {
   return httpClient.patch(
     `${COORD_POLICIES_API}/${encodeURIComponent(policyId)}`,
-    body
+    body,
+    {
+      // Safe to re-issue: `update_coord_policy` proxies to a plain
+      // `UPDATE ... SET <fields>` in coord; field assignment, no version row.
+      idempotent: true,
+    }
   );
 }
 

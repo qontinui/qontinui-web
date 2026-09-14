@@ -228,6 +228,8 @@ export async function getTrainingEstimate(
     {
       method: "POST",
       body: JSON.stringify(fullConfig),
+      // Safe to re-issue: `estimate_training` is pure arithmetic, no writes.
+      idempotent: true,
     }
   );
 

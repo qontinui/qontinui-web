@@ -13,13 +13,14 @@
  * - R2's fixed slot order and its truncate-don't-wrap treatment (`RecordRow`);
  * - R5's fixed section order and shared border (`RecordDetail`);
  * - the loading / empty / rows trichotomy and one-open-at-a-time (`RecordList`);
- * - R1's level → dot/border mapping and the badge cluster (`HealthStrip`).
+ * - R1's level → dot/border mapping and the badge cluster (`HealthStrip`);
+ * - §6.4's named refresh control, busy only for its own press (`RefreshButton`).
  *
  * See `frontend/docs/console-ui-style-guide.md` §2 and §3.2.
  */
 
 import { describe, expect, it, vi } from "vitest";
-import { fireEvent, render, screen, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, within } from "@testing-library/react";
 
 import { FilterChips } from "./FilterChips";
 import { FilterTabs } from "./FilterTabs";
@@ -27,6 +28,7 @@ import { HealthStrip } from "./HealthStrip";
 import { RecordDetail } from "./RecordDetail";
 import { RecordList } from "./RecordList";
 import { RecordRow } from "./RecordRow";
+import { RefreshButton } from "./RefreshButton";
 import { rowAccentClass } from "./statusRow";
 import { StatCluster } from "./StatCluster";
 
@@ -527,6 +529,148 @@ describe("RecordRow (R2, R4)", () => {
       "qontinui-web#1"
     );
   });
+
+  it("omits data-row-key when nobody supplied one", () => {
+    // Absent, not empty: an empty `data-row-key` would look like an identity a
+    // selector could match on.
+    render(
+      <RecordRow {...base} expanded={false} onToggle={() => {}} data-testid="row" />
+    );
+    expect(screen.getByTestId("row")).not.toHaveAttribute("data-row-key");
+  });
+});
+
+// ----------------------------------------------------------------------------
+// The row's identity is the LIST's key — a row may not derive a second one
+// ----------------------------------------------------------------------------
+
+describe("RecordRow identity inside a RecordList", () => {
+  /** A row that re-derives its own (wrong) key, the way four surfaces did. */
+  function SelfKeyingRow({
+    item,
+    expanded,
+    onToggle,
+  }: {
+    item: { id: string; name: string };
+    expanded: boolean;
+    onToggle: () => void;
+  }) {
+    return (
+      <RecordRow
+        data-testid="row"
+        rowKey={item.name}
+        identity={item.id}
+        label={item.name}
+        expanded={expanded}
+        onToggle={onToggle}
+      />
+    );
+  }
+
+  const items = [
+    { id: "a", name: "shared-subject" },
+    { id: "b", name: "shared-subject" },
+  ];
+
+  it("writes the list's itemKey, not the row's own expression", () => {
+    // The defect this closes: `data-row-key` named something no expansion
+    // state ever held, so a selector could not address the row that opens.
+    render(
+      <RecordList
+        items={items}
+        itemKey={(i, index) => `${i.name}#${index}`}
+        renderRow={(item, ctx) => (
+          <SelfKeyingRow item={item} expanded={ctx.expanded} onToggle={ctx.onToggle} />
+        )}
+        loaded
+      />
+    );
+    const rows = screen.getAllByTestId("row");
+    expect(rows.map((r) => r.getAttribute("data-row-key"))).toEqual([
+      "shared-subject#0",
+      "shared-subject#1",
+    ]);
+  });
+
+  it("keeps two rows with an identical fallback identity distinguishable", () => {
+    // Both rows' own expression yields "shared-subject". The list's index
+    // suffix is the only thing separating them, and the row now carries it.
+    render(
+      <RecordList
+        items={items}
+        itemKey={(i, index) => `${i.name}#${index}`}
+        renderRow={(item, ctx) => (
+          <SelfKeyingRow item={item} expanded={ctx.expanded} onToggle={ctx.onToggle} />
+        )}
+        loaded
+      />
+    );
+    const keys = screen
+      .getAllByTestId("row")
+      .map((r) => r.getAttribute("data-row-key"));
+    expect(new Set(keys).size).toBe(2);
+  });
+
+  it("hands the same key to renderRow, so a row can address it directly", () => {
+    const seen: string[] = [];
+    render(
+      <RecordList
+        items={items}
+        itemKey={(i, index) => `${i.name}#${index}`}
+        renderRow={(item, ctx) => {
+          seen.push(ctx.rowKey);
+          return (
+            <RecordRow
+              data-testid="row"
+              identity={item.id}
+              label={item.name}
+              expanded={ctx.expanded}
+              onToggle={ctx.onToggle}
+            />
+          );
+        }}
+        loaded
+      />
+    );
+    expect(seen).toEqual(["shared-subject#0", "shared-subject#1"]);
+  });
+
+  it("is exactly the key expansion compares against", () => {
+    // The two were allowed to differ before, which is what made the attribute
+    // untrustworthy. Open the second row and assert the OPEN one is the row
+    // whose `data-row-key` matches.
+    render(
+      <RecordList
+        items={items}
+        itemKey={(i, index) => `${i.name}#${index}`}
+        renderRow={(item, ctx) => (
+          <SelfKeyingRow item={item} expanded={ctx.expanded} onToggle={ctx.onToggle} />
+        )}
+        loaded
+        expandedKey="shared-subject#1"
+        onExpandedKeyChange={() => {}}
+      />
+    );
+    const open = screen
+      .getAllByTestId("row")
+      .filter(
+        (r) => within(r).getByRole("button").getAttribute("aria-expanded") === "true"
+      );
+    expect(open).toHaveLength(1);
+    expect(open[0]).toHaveAttribute("data-row-key", "shared-subject#1");
+  });
+
+  it("still honours the prop OUTSIDE a list", () => {
+    // `PlanLibraryList` and the agent-detail log feed hand-roll their `.map`,
+    // so the prop is their only source and must keep working.
+    render(
+      <SelfKeyingRow item={items[0]} expanded={false} onToggle={() => {}} />
+    );
+    expect(screen.getByTestId("row")).toHaveAttribute(
+      "data-row-key",
+      "shared-subject"
+    );
+  });
 });
 
 // ----------------------------------------------------------------------------
@@ -785,5 +929,90 @@ describe("StatCluster (R1)", () => {
     );
     expect(screen.getByTestId("s-a").className).toContain("text-red-200");
     expect(screen.getByTestId("s-b").className).not.toContain("text-red-");
+  });
+});
+
+// ----------------------------------------------------------------------------
+// §6.4 — a refresh control that names itself and acknowledges only its press
+// ----------------------------------------------------------------------------
+
+describe("RefreshButton (§6.4)", () => {
+  function pending() {
+    let resolve!: () => void;
+    let reject!: (e: Error) => void;
+    const promise = new Promise<void>((res, rej) => {
+      resolve = res;
+      reject = rej;
+    });
+    return { promise, resolve, reject };
+  }
+
+  it("is named by its label and titled by its effect, with a decorative icon", () => {
+    render(
+      <RefreshButton
+        onRefresh={() => undefined}
+        label="Refresh widgets"
+        title="Returns to the first page"
+        data-testid="rb"
+      />
+    );
+    const button = screen.getByRole("button", { name: "Refresh widgets" });
+    expect(button).toBe(screen.getByTestId("rb"));
+    expect(button).toHaveAttribute("title", "Returns to the first page");
+    expect(button.querySelector("svg")).toHaveAttribute("aria-hidden", "true");
+    expect(button).not.toHaveAttribute("aria-busy");
+  });
+
+  it("is busy for exactly as long as the read its press returned", async () => {
+    const read = pending();
+    const onRefresh = vi.fn(() => read.promise);
+    render(<RefreshButton onRefresh={onRefresh} label="Refresh" title="t" data-testid="rb" />);
+    const button = screen.getByTestId("rb");
+
+    fireEvent.click(button);
+    expect(onRefresh).toHaveBeenCalledTimes(1);
+    expect(button).toHaveAttribute("aria-busy", "true");
+    expect(button).toHaveAttribute("aria-disabled", "true");
+    // Busy is aria-disabled, never `disabled`: the keyboard user keeps focus.
+    expect(button).not.toBeDisabled();
+    expect(button.querySelector("svg")?.getAttribute("class")).toContain("animate-spin");
+
+    // A second press while busy issues nothing.
+    fireEvent.click(button);
+    expect(onRefresh).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      read.resolve();
+    });
+    expect(button).not.toHaveAttribute("aria-busy");
+    expect(button).not.toHaveAttribute("aria-disabled");
+    expect(button.querySelector("svg")?.getAttribute("class")).not.toContain("animate-spin");
+
+    fireEvent.click(button);
+    expect(onRefresh).toHaveBeenCalledTimes(2);
+  });
+
+  it("ends the busy state when the read fails, too", async () => {
+    const read = pending();
+    render(
+      <RefreshButton onRefresh={() => read.promise} label="Refresh" title="t" data-testid="rb" />
+    );
+    const button = screen.getByTestId("rb");
+    fireEvent.click(button);
+    expect(button).toHaveAttribute("aria-busy", "true");
+
+    await act(async () => {
+      read.reject(new Error("coord unreachable"));
+    });
+    expect(button).not.toHaveAttribute("aria-busy");
+  });
+
+  it("acknowledges nothing when the press returns no read", () => {
+    render(
+      <RefreshButton onRefresh={() => undefined} label="Refresh" title="t" data-testid="rb" />
+    );
+    const button = screen.getByTestId("rb");
+    fireEvent.click(button);
+    expect(button).not.toHaveAttribute("aria-busy");
   });
 });

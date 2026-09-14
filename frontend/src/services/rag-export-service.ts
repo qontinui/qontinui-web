@@ -169,6 +169,8 @@ export class RAGExportService {
       {
         method: "POST",
         body: JSON.stringify(options),
+        // Safe to re-issue: `export_project_as_rag` reads existing data, no commit.
+        idempotent: true,
       }
     );
 
@@ -194,6 +196,8 @@ export class RAGExportService {
       {
         method: "POST",
         body: JSON.stringify(options),
+        // Safe to re-issue: `download_rag_export` is the export as a file, no writes.
+        idempotent: true,
       }
     );
 

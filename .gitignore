@@ -43,6 +43,7 @@ backend/scripts/*
 !backend/scripts/migrate_files_to_object_storage.py
 !backend/scripts/migrate_to_structlog.py
 !backend/scripts/migrate_users_to_uuid.py
+!backend/scripts/seed_claude_accounts.py
 !backend/scripts/setup-elasticache.sh
 !backend/scripts/spec_ci_local_idp.py
 

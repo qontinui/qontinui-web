@@ -1,0 +1,57 @@
+name: no tracked paths collide case-insensitively
+
+# THE GATE LOGIC LIVES IN `scripts/ci/check_path_case_collisions.py`, not here —
+# the shape plan 2026-08-08-ci-tool-registry-and-canonical-configuration-parity
+# Phase 5 established for forbid-public-schema, web-boundary-lint and
+# alembic-single-head, and gitignore-tracked-files followed. Three lanes invoke
+# the one script:
+#
+#   * this workflow, step "Scan the index for case-colliding paths"
+#   * .qontinui/ci.toml, step `path-case-collisions`
+#   * .pre-commit-config.yaml, hook `path-case-collisions`
+#
+# WHY THIS GATE EXISTS. `8f053ba47` (PR #1282) renamed
+# `components/sessions/TranscriptStores.tsx` because the same directory tracked
+# `transcriptStores.ts`. On a case-insensitive box (Windows, macOS — most of
+# this fleet's workstations) `import "./TranscriptStores"` probes the `.ts`
+# spelling first and finds the lowercase module, so `tsc` reported the
+# component's exports missing and the `tsc-typecheck` pre-commit hook refused
+# EVERY frontend commit on such a box, whatever the diff. CI never failed: this
+# runner is Linux and case-sensitive, so the probe missed correctly and both
+# files coexisted. A gate that can only fail on the platform CI does not run on
+# never fails — so the script reads the INDEX (`git ls-files`) and reasons about
+# case itself, which is the same answer on every filesystem.
+#
+# NO `paths:` FILTER, deliberately. A collision is a property of the PAIR of
+# tracked paths: it is created when the second spelling is added, and that
+# commit need not touch anything a filter could name. A path-scoped gate would
+# sit out exactly the change that breaks it — the trap backend-ci.yml's header
+# documents for its own nightly drift check.
+
+on:
+  pull_request:
+    branches: [main, develop]
+  push:
+    # merge-candidate/** refs are pushed by coord's autonomous merge scheduler
+    # (plan 2026-06-06-coord-ci-runner-autonomous-green-merge, Phase 4). This is
+    # a merge gate, so it must run on candidate refs or the proposal hangs in
+    # awaiting-ci. Validation-only (offline scan); no deploy.
+    branches:
+      - main
+      - develop
+      - 'merge-candidate/**'
+      - 'merge-candidate-spec/**'
+      - 'merge-candidate-batch/**'
+
+jobs:
+  path-case-collisions:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Scan the index for case-colliding paths
+        # Exits 1 naming each colliding group (full paths, or TS/JS module
+        # stems), and 2 if the index came back empty or git itself errored — a
+        # scan that proved nothing is an unknown, never a pass.
+        run: python scripts/ci/check_path_case_collisions.py

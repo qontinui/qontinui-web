@@ -57,6 +57,13 @@ function gate(overrides: Partial<GateOverviewRow> = {}): GateOverviewRow {
     continuation_cancelled_at: null,
     continuation_cancelled_by: null,
     continuation_cancel_reason: null,
+    continuation_deferred_at: null,
+    continuation_deferred_reason: null,
+    continuation_deferred_count: 0,
+    continuation_expired_at: null,
+    continuation_expired_reason: null,
+    continuation_action: null,
+    continuation_will_dispatch: null,
     title: "Ship gate",
     measures: "operator approval",
     progress: {
@@ -129,6 +136,33 @@ describe("GateActions", () => {
     expect(
       await screen.findByText("Cancel continuation…"),
     ).toBeInTheDocument();
+  });
+
+  it("does NOT offer cancel on a continuation coord has already expired", async () => {
+    // coord's cancel writer guards on consumed/cancelled being NULL and NOT on
+    // `continuation_expired_at`, so a cancel posted here is ACCEPTED — it
+    // achieves nothing (the continuation was never going to dispatch) and it
+    // is not reversible. The console must not offer it. `continuationStatus`
+    // separately keeps `expired` ahead of `cancelled` so a cancel from another
+    // door cannot erase the expiry from the row either.
+    render(
+      <GateActions
+        gate={gate({
+          continuation_spawn: { initial_prompt: "go" },
+          continuation_dispatched_at: new Date(
+            Date.now() - 700_000_000,
+          ).toISOString(),
+          continuation_expired_at: new Date(Date.now() - 60_000).toISOString(),
+          continuation_expired_reason: "ttl_7d_elapsed",
+        })}
+        onActed={() => {}}
+      />,
+    );
+    await openMenu();
+    // The menu itself opened (another item is present), so this is an absent
+    // ITEM rather than an absent menu.
+    expect(await screen.findByText("Mute")).toBeInTheDocument();
+    expect(screen.queryByText("Cancel continuation…")).toBeNull();
   });
 
   it("force-clear confirm is disabled until a reason is entered", async () => {

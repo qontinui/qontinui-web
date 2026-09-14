@@ -82,6 +82,8 @@ export async function updateScheduledRun(
   const response = await httpClient.fetch(`${API}/scheduled-runs/${id}`, {
     method: "PATCH",
     body: JSON.stringify(data),
+    // Safe to re-issue: `update_scheduled_run` assigns the given fields, no delta.
+    idempotent: true,
   });
   return handleResponse<ScheduledWorkflowRun>(
     response,

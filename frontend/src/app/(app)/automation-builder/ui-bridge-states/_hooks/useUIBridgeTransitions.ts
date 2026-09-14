@@ -58,6 +58,9 @@ export function useUIBridgeTransitions(configId: string | null) {
           {
             method: "PATCH",
             body: JSON.stringify(data),
+            // Safe to re-issue: `update_transition` assigns the supplied fields
+            // and commits — full field assignment, no delta/append.
+            idempotent: true,
           }
         );
         if (res.ok) {

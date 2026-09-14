@@ -58,9 +58,29 @@ const log = createLogger("MergeOrchestrationSettings");
 // policies (a glob classified into a hazard category + disposition), NOT as the
 // raw `escalate_paths` string[] that the PATCH body WRITES. The read/write
 // asymmetry is intentional coord-side: you write raw globs, you read the
-// classified result. Mirrors `EscalatePolicy` in
-// `qontinui-coord/src/pr_merge/settings.rs`.
-type EscalateCategory = "secrets" | "migrations" | "infra" | "other";
+// classified result. Mirrors `EscalateCategory` / `EscalateDisposition` in
+// `qontinui-coord/crates/coord/src/merge_settings_types.rs` — note the path:
+// these moved out of `pr_merge/settings.rs` in the coord workspace split, and
+// that file now only re-exports them.
+//
+// ⚠️ THIS UNION IS A MIRROR OF A RUST ENUM ACROSS A REPO BOUNDARY, so nothing
+// compiles it against its source. It omitted `dependencies` for two days after
+// coord added that variant (coord#2012, 2026-09-07). Nothing broke — TS erases
+// at runtime and this component reads only `policy.glob` — but the type was
+// false against the live wire, and the first lookup keyed on this union would
+// have returned `undefined` for every dependency-gated repo. If you add a
+// variant coord-side, add it here in the same change.
+type EscalateCategory =
+  | "secrets"
+  | "migrations"
+  | "infra"
+  // Dependency manifests and lockfiles (package.json, Cargo.toml,
+  // pyproject.toml, go.mod and their lockfiles). `block_soft` coord-side, which
+  // today blocks identically to `block_hard`; it is a distinct category so a
+  // deliberate dependency gate is not reported as the fail-closed `other`.
+  | "dependencies"
+  // The fail-closed tail: a configured glob that matched no known bucket.
+  | "other";
 type EscalateDisposition =
   | "block_hard"
   | "block_soft"

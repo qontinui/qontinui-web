@@ -69,7 +69,11 @@ export function TreeRow({
   return (
     <RecordRow
       data-testid="coord-tree-card"
-      rowKey={`${tree.device_id ?? "no-device"}:${tree.repo}`}
+      // No `rowKey`: the list publishes the key it opens this row on. The
+      // expression that used to be here — `device_id:repo` — named a
+      // different thing entirely from the page's `itemKey`
+      // (`repo:primary_path`), and collapsed two worktrees of one repo on one
+      // device into a single `data-row-key`.
       expanded={expanded}
       onToggle={onToggle}
       attention={status.attention}

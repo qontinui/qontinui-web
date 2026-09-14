@@ -1226,13 +1226,18 @@ class TestWorkUnitSlugIsExact:
             },
         )
         assert resp.status_code == 200, resp.text
-        assert resp.json() == {
-            "items": [],
-            "count": 0,
-            "total": 0,
-            "offset": 0,
-            "limit": 50,
-        }
+        body = resp.json()
+        assert (
+            body["items"],
+            body["count"],
+            body["total"],
+            body["offset"],
+            body["limit"],
+        ) == ([], 0, 0, 0, 50)
+        # The zero is not the whole answer: the corpus is NOT empty, so this
+        # reads as "no such stem" rather than "no plans at all" (D1 of
+        # 2026-08-27-plan-corpus-read-path-is-dark).
+        assert body["corpus_health"]["plan_count"] == 2
 
     async def test_export_manifest_selects_only_the_exact_stem(
         self, async_db_session: AsyncSession, client: httpx.AsyncClient
@@ -1270,6 +1275,401 @@ class TestWorkUnitSlugIsExact:
         )
         assert manifest["artifacts"] == []
         assert manifest["truncated"] is False
+
+
+class TestSlugFilter:
+    """``?slug=`` — the exact by-stem door that finds a plan whoever wrote it.
+
+    Phase 3 of ``2026-08-27-plan-corpus-read-path-is-dark`` (D4). ``slug`` is
+    the artifact's OWN identifier (part of the unique key, never null); the
+    scanner writes the file stem into it and a hand-``POST`` writes what it
+    sends. ``work_unit_slug`` is the nullable soft link the scanner writes for
+    ``kind=plan`` only — so a hand-``POST``ed row without it was unreachable
+    by stem, and an agent had to page ``?kind=plan&limit=200`` and match the
+    ``slug`` field itself.
+    """
+
+    @staticmethod
+    async def _scanner_and_hand_posted(db: AsyncSession) -> tuple[str, str]:
+        """A scanner-written plan (stem in BOTH columns) and a hand-POSTed
+        one (stem in ``slug`` only). Returns the two stems."""
+        scanned = _slug("2026-09-05-scanned")
+        posted = _slug("2026-09-05-posted")
+        await crud.upsert_artifact(
+            db,
+            org_id=None,
+            user_id=None,
+            kind="plan",
+            slug=scanned,
+            title="scanned",
+            status="VETTED",
+            body="# scanned",
+            source_path=f"plans/{scanned}.md",
+            source_repo="qontinui-dev-notes/plans",
+            work_unit_slug=scanned,
+            repos=[],
+            authored_at=None,
+            captured_by="runner_scan",
+            change_description=None,
+            created_by="scanner",
+            kind_is_heuristic=True,
+        )
+        await _upsert(db, org_id=None, slug=posted, body="# posted")
+        # A prefix neighbour, so exactness is proven rather than assumed.
+        await _upsert(db, org_id=None, slug=f"{posted}-longer", body="# longer")
+        return scanned, posted
+
+    async def test_slug_finds_scanner_written_and_hand_posted_rows(
+        self, async_db_session: AsyncSession, client: httpx.AsyncClient
+    ) -> None:
+        scanned, posted = await self._scanner_and_hand_posted(async_db_session)
+
+        for stem in (scanned, posted):
+            resp = await client.get(API_PREFIX, params={"kind": "plan", "slug": stem})
+            assert resp.status_code == 200, resp.text
+            body = resp.json()
+            assert body["total"] == 1, stem
+            assert [i["slug"] for i in body["items"]] == [stem]
+
+    async def test_work_unit_slug_finds_only_the_scanner_written_row(
+        self, async_db_session: AsyncSession, client: httpx.AsyncClient
+    ) -> None:
+        scanned, posted = await self._scanner_and_hand_posted(async_db_session)
+
+        hit = await client.get(
+            API_PREFIX, params={"kind": "plan", "work_unit_slug": scanned}
+        )
+        assert hit.json()["total"] == 1
+        assert hit.json()["items"][0]["slug"] == scanned
+
+        # The hand-POSTed row declares no work unit, so the soft-link door
+        # cannot see it — which is the gap `slug` closes.
+        miss = await client.get(
+            API_PREFIX, params={"kind": "plan", "work_unit_slug": posted}
+        )
+        assert miss.status_code == 200, miss.text
+        assert miss.json()["total"] == 0
+        assert miss.json()["items"] == []
+
+    async def test_slug_is_exact_not_a_prefix(
+        self, async_db_session: AsyncSession, client: httpx.AsyncClient
+    ) -> None:
+        _, posted = await self._scanner_and_hand_posted(async_db_session)
+        resp = await client.get(API_PREFIX, params={"slug": posted})
+        assert [i["slug"] for i in resp.json()["items"]] == [posted]
+
+        resp = await client.get(API_PREFIX, params={"slug": posted[:-3]})
+        assert resp.json()["total"] == 0
+
+    async def test_export_honours_the_slug_filter(
+        self, async_db_session: AsyncSession, client: httpx.AsyncClient
+    ) -> None:
+        """The export shares ``_apply_filters`` with the list, verbatim."""
+        _, posted = await self._scanner_and_hand_posted(async_db_session)
+        resp = await client.get(f"{API_PREFIX}/export", params={"slug": posted})
+        assert resp.status_code == 200, resp.text
+        assert resp.headers["x-export-artifact-count"] == "1"
+        manifest = json.loads(
+            zipfile.ZipFile(io.BytesIO(resp.content)).read("manifest.json")
+        )
+        assert [a["slug"] for a in manifest["artifacts"]] == [posted]
+
+
+async def _seed_scan_roots(
+    db: AsyncSession, *, behinds: tuple[int, ...], org_id: UUID | None = None
+) -> list[UUID]:
+    """One fresh, exact ``measured`` reading per ``behinds`` entry.
+
+    Written through the real upsert into ``org_id`` — by default the NULL
+    organization bucket, which is where ``api_user`` (no personal
+    organization) reads.
+    """
+    from app.crud import plan_scan_root as scan_root_crud
+
+    now = datetime.now(UTC)
+    device_ids: list[UUID] = []
+    for behind in behinds:
+        device_id = uuid4()
+        await scan_root_crud.upsert_observation(
+            db,
+            org_id=org_id,
+            device_id=device_id,
+            fields={
+                "state": "measured",
+                "plans_dir": "/w/qontinui-dev-notes/plans",
+                "repo_root": "/w/qontinui-dev-notes",
+                "source_repo": "qontinui-dev-notes/plans",
+                "default_ref": "origin/main",
+                "ref_sha": "a" * 40,
+                "head_sha": "b" * 40,
+                "behind": behind,
+                "ahead": 0,
+                "ref_age_secs": 120,
+                "counts_are_floors": False,
+                "detail": None,
+                "observed_at": now,
+            },
+        )
+        device_ids.append(device_id)
+    return device_ids
+
+
+async def _get_scan_roots_route(db: AsyncSession, user) -> dict:
+    """``GET /plan-library/scan-roots`` for ``user``, on its own app.
+
+    Its own app because mounting that router AFTER ``plan_library``'s would
+    let ``GET /{artifact_id}`` swallow the path (see the route-order note in
+    ``plan_library_scan_roots.py``).
+    """
+    from app.api.deps import current_active_user_optional, get_async_db
+    from app.api.v1.endpoints.plan_library_scan_roots import router
+
+    app = FastAPI()
+    app.dependency_overrides[current_active_user_optional] = lambda: user
+
+    async def _db_override():
+        yield db
+
+    app.dependency_overrides[get_async_db] = _db_override
+    app.include_router(router, prefix=API_PREFIX)
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app), base_url="http://test"
+    ) as http_client:
+        resp = await http_client.get(f"{API_PREFIX}/scan-roots")
+    assert resp.status_code == 200, resp.text
+    return resp.json()
+
+
+def _without_request_clock(scan_roots: dict) -> dict:
+    """Drop the one field two reads a moment apart may legitimately differ on."""
+    return {
+        **scan_roots,
+        "rows": [
+            {k: v for k, v in row.items() if k != "observation_age_secs"}
+            for row in scan_roots["rows"]
+        ],
+    }
+
+
+class TestCorpusHealth:
+    """``corpus_health`` rides on every list page (Phase 2 of
+    ``2026-08-27-plan-corpus-read-path-is-dark``, D1).
+
+    The read that was dark: a ``200`` with ``items: []`` from a corpus the
+    body sync had never populated read exactly like "no such plan". With
+    ``plan_count`` beside it, a zero on a frozen corpus and a zero on a real
+    absence are different findings — and ``newest_updated_at`` says how long
+    ago the corpus last moved at all.
+    """
+
+    async def test_empty_corpus_says_so(self, client: httpx.AsyncClient) -> None:
+        resp = await client.get(API_PREFIX, params={"kind": "plan"})
+        assert resp.status_code == 200, resp.text
+        body = resp.json()
+        assert body["items"] == []
+        health = body["corpus_health"]
+        assert health["artifact_count"] == 0
+        assert health["plan_count"] == 0
+        # Empty is null, never an epoch: "frozen since 1970" is a different
+        # (and wrong) claim from "nothing here".
+        assert health["newest_updated_at"] is None
+        # The capture census is the /capture-health shape, zeros included.
+        assert health["capture"]["total"] == 0
+        assert {d["captured_by"] for d in health["capture"]["doors"]} >= {
+            "runner_scan",
+            "agent",
+            "operator",
+        }
+        assert health["capture"]["newest_updated_at"] is None
+
+    async def test_seeded_corpus_reports_counts_and_freshness(
+        self, client: httpx.AsyncClient
+    ) -> None:
+        await client.post(API_PREFIX, json=_payload(kind="plan"))
+        await client.post(API_PREFIX, json=_payload(kind="plan"))
+        newest = await client.post(
+            API_PREFIX, json=_payload(kind="handoff", captured_by="runner_scan")
+        )
+        assert newest.status_code == 201, newest.text
+
+        # A FILTERED page whose filter matches nothing still reports the
+        # unfiltered corpus: the filter is what was asked, the health is what
+        # it was asked of.
+        resp = await client.get(
+            API_PREFIX, params={"kind": "plan", "slug": "nothing-like-this"}
+        )
+        assert resp.status_code == 200, resp.text
+        body = resp.json()
+        assert body["items"] == []
+        health = body["corpus_health"]
+        assert health["artifact_count"] == 3
+        assert health["plan_count"] == 2
+        assert health["newest_updated_at"] == newest.json()["artifact"]["updated_at"]
+        assert health["capture"]["total"] == 3
+        doors = {d["captured_by"]: d for d in health["capture"]["doors"]}
+        assert doors["agent"]["count"] == 2
+        assert doors["runner_scan"]["count"] == 1
+        assert health["capture"]["newest_updated_at"] == health["newest_updated_at"]
+
+    async def test_capture_health_and_list_census_agree(
+        self, client: httpx.AsyncClient
+    ) -> None:
+        """Same query, same numbers — the two reads cannot disagree."""
+        await client.post(API_PREFIX, json=_payload(captured_by="runner_scan"))
+        await client.post(API_PREFIX, json=_payload(captured_by="agent"))
+
+        via_list = (await client.get(API_PREFIX)).json()["corpus_health"]["capture"]
+        via_route = (await client.get(f"{API_PREFIX}/capture-health")).json()
+        assert via_list == via_route
+        assert via_route["newest_updated_at"] is not None
+
+    async def test_scan_roots_is_unknown_when_no_device_has_reported(
+        self, client: httpx.AsyncClient
+    ) -> None:
+        """No readings is UNKNOWN on the list page too, never "all current".
+
+        Plan ``2026-09-11-the-plan-corpus-scan-root-does-not-report-its-own-drift``:
+        a runner whose build predates the report sends nothing, and that
+        silence must not read as a corpus whose feeders are in step.
+        """
+        scan_roots = (await client.get(API_PREFIX)).json()["corpus_health"][
+            "scan_roots"
+        ]
+        assert scan_roots["state"] == "unknown"
+        assert scan_roots["detail"].startswith("no_observation:")
+        assert scan_roots["rows"] == []
+        assert scan_roots["by_source_repo"] == []
+
+    async def test_scan_roots_carries_every_reading_and_the_rollup(
+        self,
+        client: httpx.AsyncClient,
+        async_db_session: AsyncSession,
+        api_user,
+    ) -> None:
+        """Each device's reading rides on the page, folded per scan source.
+
+        And it is ``GET /plan-library/scan-roots`` — the same builder — so
+        the two reads agree on everything but the per-request age.
+        """
+        current, lagging = await _seed_scan_roots(async_db_session, behinds=(3, 254))
+
+        # A filtered page that matches nothing still carries the whole
+        # corpus's feeders: the filter is what was asked, not what of.
+        resp = await client.get(API_PREFIX, params={"slug": "nothing-like-this"})
+        assert resp.status_code == 200, resp.text
+        scan_roots = resp.json()["corpus_health"]["scan_roots"]
+
+        assert scan_roots["state"] == "reported"
+        assert scan_roots["count"] == scan_roots["fresh_count"] == 2
+        assert {r["device_id"] for r in scan_roots["rows"]} == {
+            str(current),
+            str(lagging),
+        }
+        (rollup,) = scan_roots["by_source_repo"]
+        assert rollup["source_repo"] == "qontinui-dev-notes/plans"
+        assert rollup["state"] == "measured"
+        assert rollup["min_behind"] == 3
+        assert rollup["min_behind_is_floor"] is False
+        assert rollup["least_behind_device_ids"] == [str(current)]
+        assert rollup["lagging_device_ids"] == [str(lagging)]
+
+        via_route = await _get_scan_roots_route(async_db_session, api_user)
+        assert _without_request_clock(scan_roots) == _without_request_clock(via_route)
+
+    async def test_scan_roots_never_carries_another_organizations_devices(
+        self, async_db_session: AsyncSession
+    ) -> None:
+        """Device ids, paths and SHAs of another tenant's feeders stay out.
+
+        Every other test here reads as ``api_user``, whose scope IS the NULL
+        bucket, so dropping the org scope from the corpus-health read changes
+        nothing for them. This caller has a real personal organization, and
+        readings sit in BOTH the NULL bucket and a third organization — so an
+        unscoped read shows up here as extra rows. Mutation-proved: passing
+        ``org_id=None`` to the read in ``_load_corpus_health`` fails this test.
+        """
+        from app.models.organization import Organization
+        from app.models.user import User
+
+        user = User(
+            email=f"planlib_org_{uuid4().hex[:8]}@example.com",
+            username=f"planlib_org_{uuid4().hex[:8]}",
+            full_name="Plan Library Org Tester",
+            is_active=True,
+            is_verified=True,
+        )
+        async_db_session.add(user)
+        await async_db_session.commit()
+        await async_db_session.refresh(user)
+        org = Organization(
+            name=f"Personal {uuid4().hex[:6]}",
+            slug=f"personal-{uuid4().hex[:10]}",
+            owner_id=user.id,
+            settings={"is_personal": True},
+        )
+        async_db_session.add(org)
+        await async_db_session.commit()
+        await async_db_session.refresh(org)
+
+        (mine,) = await _seed_scan_roots(async_db_session, behinds=(3,), org_id=org.id)
+        await _seed_scan_roots(async_db_session, behinds=(1,))
+        await _seed_scan_roots(async_db_session, behinds=(2,), org_id=uuid4())
+
+        app = _build_app(db_session=async_db_session, user=user)
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app), base_url="http://test"
+        ) as org_client:
+            resp = await org_client.get(API_PREFIX)
+        assert resp.status_code == 200, resp.text
+        scan_roots = resp.json()["corpus_health"]["scan_roots"]
+
+        assert [r["device_id"] for r in scan_roots["rows"]] == [str(mine)]
+        assert scan_roots["count"] == 1
+        (rollup,) = scan_roots["by_source_repo"]
+        assert rollup["min_behind"] == 3
+
+    async def test_a_failed_scan_root_read_degrades_to_unknown_not_a_500(
+        self,
+        client: httpx.AsyncClient,
+        async_db_session: AsyncSession,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """The drift report is report-only beside the corpus read.
+
+        A failing read of it must neither fail the page nor pass as "no
+        drift": the page is served, its counts intact, and ``scan_roots``
+        says ``read_failed``.
+
+        The failure is a REAL failing statement on the request's session, not a
+        Python exception raised before any SQL: an aborted Postgres transaction
+        rejects every later statement, and that — not the exception — is what
+        the savepoint exists to contain. So the session is used again
+        afterwards. Mutation-proved: removing only ``begin_nested()`` (keeping
+        the ``except``) fails the second request.
+        """
+        from app.api.v1.endpoints import plan_library as endpoint
+
+        await client.post(API_PREFIX, json=_payload(kind="plan"))
+        await _seed_scan_roots(async_db_session, behinds=(3,))
+
+        async def _broken(db: AsyncSession, **_kwargs: object) -> None:
+            await db.execute(text("SELECT 1 / 0"))
+
+        monkeypatch.setattr(endpoint.scan_root_crud, "list_observations", _broken)
+
+        resp = await client.get(API_PREFIX)
+        assert resp.status_code == 200, resp.text
+        health = resp.json()["corpus_health"]
+        assert health["plan_count"] == 1
+        assert health["scan_roots"]["state"] == "unknown"
+        assert health["scan_roots"]["detail"].startswith("read_failed:")
+        assert health["scan_roots"]["rows"] == []
+        assert "division" not in health["scan_roots"]["detail"]
+
+        # The failed statement was contained: the session still answers.
+        again = await client.get(API_PREFIX)
+        assert again.status_code == 200, again.text
+        assert again.json()["corpus_health"]["plan_count"] == 1
 
 
 class TestStrictQueryKeepsEveryDeclaredKey:
@@ -1320,6 +1720,7 @@ class TestStrictQueryKeepsEveryDeclaredKey:
             "q": "strict",
             "since": since,
             "work_unit_slug": "any-stem",
+            "slug": "any-slug",
         }
         sent: dict[str, dict[str, str]] = {
             f"{API_PREFIX}": {

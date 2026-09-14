@@ -221,6 +221,13 @@ function buildMachineGroups(
       // no hostname), and the card's title is an operator alias. The drain
       // control needs the identity coord will act on, not either of those.
       hostname: device.hostname,
+      // Coord's credential verdict for this device, carried through rather
+      // than dropped (plan
+      // `2026-09-12-runner-loads-with-an-expired-coord-credential-and-tells-nobody`
+      // Phase 5). `undefined` here is UNKNOWN and renders as such — it is NOT
+      // normalised to `{dark: false}`, which would be this join inventing a
+      // measurement coord never made.
+      credential_dark: device.credential_dark,
     };
     if (group) {
       group.coordHealth = join;

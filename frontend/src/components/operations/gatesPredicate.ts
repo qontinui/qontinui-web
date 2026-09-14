@@ -11,12 +11,10 @@
 // the web hasn't been taught about still shows up legibly.
 // ============================================================================
 
-// Subpath, not the `@/components/console` barrel: this module is pure (no
-// React, no route catalogue) and `console/time` imports nothing, so the edge
-// costs nothing. The barrel would pull the whole primitive set in behind it.
-import { relativeTime } from "@/components/console/time";
-
-import type { ContinuationSpawn, GatePredicate, GateRow } from "./types";
+// This module stays PURE — no React, no route catalogue, no `console` barrel.
+// Its one former runtime edge (`console/time`'s `relativeTime`) went out with
+// the lifecycle chip deleted at the foot of this file.
+import type { ContinuationSpawn, GatePredicate } from "./types";
 
 /** Max characters of the continuation prompt's first line shown in the summary. */
 const CONTINUATION_PROMPT_MAX = 80;
@@ -262,129 +260,20 @@ export function summarizeContinuation(
 }
 
 // ---------------------------------------------------------------------------
-// Continuation LIFECYCLE chip (honesty: show what actually happened to a
-// dispatched continuation, never an inferred liveness claim)
+// The continuation LIFECYCLE chip USED to live here.
 //
-// Plan `2026-06-07-coord-continuation-cancel-and-outcome.md` Phase 5. Distinct
-// from `summarizeContinuation` above (that is the register-time spawn INTENT);
-// this reads the runtime lifecycle stamps coord Phase 2 adds to the gate row.
+// `summarizeContinuationLifecycle` + `ContinuationLifecycle{,State,Accent}` +
+// `CONTINUATION_PENDING_STALE_MS` were written by plan
+// `2026-06-07-coord-continuation-cancel-and-outcome.md` Phase 5 and **never
+// rendered by anything** — the only importer they ever had was their own unit
+// test. They are DELETED rather than deprecated, and superseded by
+// `app/(app)/admin/coord/gates/continuationStatus.ts`, which is wired into the
+// gates table that operators actually read.
+//
+// The replacement is not a move: the retired version knew four states
+// (`cancelled | spawn_failed | spawned | pending`) out of coord's documented
+// five outcome words, rendered `spawned` as a calm terminal state, and could
+// not see the deferral columns at all — the two blind spots plan
+// `2026-09-09-continuation-dispatch-fails-silently-three-times-in-four` exists
+// to close.
 // ---------------------------------------------------------------------------
-
-/** A pending continuation older than this (ms) renders with a warning accent —
- *  the honest "is it stalled?" signal is age, NOT device liveness (the panel
- *  has no liveness feed). The operator judges; coord never claims "stalled". */
-const CONTINUATION_PENDING_STALE_MS = 15 * 60 * 1_000;
-
-/**
- * The lifecycle state of a dispatched continuation, in precedence order. A gate
- * that never dispatched a continuation yields `null` (no chip at all).
- *
- * - `cancelled`    — withdrawn before a runner consumed it.
- * - `spawn_failed` — the runner consumed it but the terminal/headless session
- *                    failed to open (silently-lost work, surfaced honestly).
- * - `spawned`      — the runner consumed it and the session opened.
- * - `pending`      — dispatched, not yet consumed/cancelled. Carries the
- *                    dispatch age + target device so the operator can judge
- *                    whether it has stalled.
- */
-export type ContinuationLifecycleState =
-  | "cancelled"
-  | "spawn_failed"
-  | "spawned"
-  | "pending";
-
-/** Visual accent for the lifecycle chip — maps to the panel's badge idioms.
- *  `error` for spawn_failed, `warning` for a stale-pending row, `neutral`
- *  otherwise (cancelled/spawned/fresh-pending). */
-export type ContinuationLifecycleAccent = "error" | "warning" | "neutral";
-
-export interface ContinuationLifecycle {
-  state: ContinuationLifecycleState;
-  /** Short chip label, e.g. `cancelled: taken over`, `spawn_failed: <detail>`,
-   *  `spawned`, `pending — dispatched 3m ago, target abcdef12`. */
-  label: string;
-  accent: ContinuationLifecycleAccent;
-}
-
-/** Compact "Ns/Nm/Nh/Nd ago"; `null`/unparseable → "an unknown time ago".
- *
- *  This used to be a local copy of `utils.relativeTime`'s shape, for two stated
- *  reasons: keeping this module free of a `utils` import (that module is the
- *  merge-train route catalogue, with a runtime dependency on `api-config`), and
- *  needing a deterministic `now`. Both now hold against `console/time`, which
- *  imports nothing and takes an injectable clock — so this delegates instead of
- *  duplicating. */
-function relativeAgo(iso: string, now: number): string {
-  return relativeTime(iso, { now, absent: "an unknown time ago" });
-}
-
-/** The lifecycle stamps this reads — a structural subset of `GateRow` so the
- *  function is testable with a minimal object. */
-type ContinuationLifecycleFields = Pick<
-  GateRow,
-  | "continuation_dispatched_at"
-  | "continuation_consumed_at"
-  | "continuation_consumed_outcome"
-  | "continuation_cancelled_at"
-  | "continuation_cancel_reason"
-> & { continuation_spawn?: ContinuationSpawn | null };
-
-/**
- * Reduce a gate's continuation lifecycle stamps to a single chip descriptor in
- * strict precedence: cancelled > spawn_failed > spawned > pending. Returns
- * `null` when the continuation was never dispatched (no chip — a coord that
- * predates Phase 2 omits these fields entirely, so the row degrades silently).
- *
- * Honesty: a pending chip carries the dispatch AGE (warning-accented past ~15m)
- * and the target device's short id — it never asserts the device is online or
- * the continuation "stalled". The operator reads the age and judges.
- *
- * `now` is injectable for deterministic tests; defaults to `Date.now()`.
- */
-export function summarizeContinuationLifecycle(
-  gate: ContinuationLifecycleFields,
-  now: number = Date.now()
-): ContinuationLifecycle | null {
-  // Cancelled wins outright — a withdrawn continuation must never read as
-  // pending/spawned even if a later stamp also landed.
-  if (gate.continuation_cancelled_at) {
-    const reason = gate.continuation_cancel_reason?.trim();
-    return {
-      state: "cancelled",
-      label: reason ? `cancelled: ${reason}` : "cancelled",
-      accent: "neutral",
-    };
-  }
-
-  // No chip at all when the continuation was never dispatched.
-  if (!gate.continuation_dispatched_at) return null;
-
-  const outcome = gate.continuation_consumed_outcome?.trim();
-
-  // spawn_failed — the runner consumed it but the session failed to open. The
-  // outcome is `spawn_failed: <detail>` (coord stores the detail inline); show
-  // it verbatim, error-accented. Match on the prefix so a bare `spawn_failed`
-  // (no detail) still surfaces.
-  if (outcome && outcome.startsWith("spawn_failed")) {
-    return { state: "spawn_failed", label: outcome, accent: "error" };
-  }
-
-  // spawned — consumed and the session opened.
-  if (outcome === "spawned") {
-    return { state: "spawned", label: "spawned", accent: "neutral" };
-  }
-
-  // pending — dispatched, not yet consumed (no outcome) or a pre-outcome ack.
-  // Honest signal = age; warning accent once it's older than the stale window.
-  const ago = relativeAgo(gate.continuation_dispatched_at, now);
-  const target = shortDevice(gate.continuation_spawn?.target_device_id);
-  const dispatchedMs = new Date(gate.continuation_dispatched_at).getTime();
-  const stale =
-    !Number.isNaN(dispatchedMs) &&
-    now - dispatchedMs >= CONTINUATION_PENDING_STALE_MS;
-  return {
-    state: "pending",
-    label: `pending — dispatched ${ago}, target ${target}`,
-    accent: stale ? "warning" : "neutral",
-  };
-}

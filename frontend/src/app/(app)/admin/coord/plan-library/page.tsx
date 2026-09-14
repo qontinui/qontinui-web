@@ -12,7 +12,7 @@
  * are queryable, versioned and linkable instead of living only as markdown in
  * a dozen checkouts.
  *
- * Four sections, in the order an operator uses them:
+ * Five sections, in the order an operator uses them:
  *
  * 1. **Plan capture** — the `plan_capture` fleet-policy toggle, first-class at
  *    the top because it is the one control on this page that changes what the
@@ -20,8 +20,14 @@
  *    written.
  * 2. **Capture health** — which door is feeding the store, so "the agent door
  *    is unused" is visible rather than inferred.
- * 3. **The corpus** — filter, search, and open one artifact in full.
- * 4. **Divergent copies** — where the library holds two versions that
+ * 3. **Scan sources** — how far the working tree behind each device's body
+ *    sync sits from its default branch. Capture health says which door wrote
+ *    the rows; this says how stale what it read was. A sync reporting
+ *    `errors=0` every cycle off a checkout 254 commits behind left the corpus
+ *    54 plans short, and no count on this page could have shown it
+ *    (`2026-09-11-the-plan-corpus-scan-root-does-not-report-its-own-drift`).
+ * 4. **The corpus** — filter, search, and open one artifact in full.
+ * 5. **Divergent copies** — where the library holds two versions that
  *    disagree, on content or on kind.
  *
  * This store is a captured index, **not a backup**. The scan mirrors what is
@@ -60,6 +66,7 @@ import { useState } from "react";
 import { Library } from "lucide-react";
 import { CapturePolicyPanel } from "./_components/CapturePolicyPanel";
 import { CaptureHealthPanel } from "./_components/CaptureHealthPanel";
+import { ScanSourcesPanel } from "./_components/ScanSourcesPanel";
 import { DivergencePanel } from "./_components/DivergencePanel";
 import {
   PlanLibraryList,
@@ -100,6 +107,7 @@ export default function PlanLibraryPage() {
 
       <CapturePolicyPanel />
       <CaptureHealthPanel />
+      <ScanSourcesPanel />
       <PlanLibraryList openRequest={openRequest} />
       <DivergencePanel
         onOpenArtifact={(id) =>

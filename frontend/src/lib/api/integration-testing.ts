@@ -21,6 +21,8 @@ export async function executeMockWorkflow(
   const response = await httpClient.fetch(`${API}/integration-testing/execute`, {
     method: "POST",
     body: JSON.stringify(request),
+    // Safe to re-issue: `execute_mock_workflow` computes a mock result, no writes.
+    idempotent: true,
   });
 
   if (!response.ok) {
@@ -99,6 +101,9 @@ export async function generatePDFReport(
       page_size: options.pageSize ?? "letter",
       title: options.title,
     }),
+    // Safe to re-issue: `generate_pdf_report_endpoint` renders a PDF from the
+    // body; its only side effect is an idempotent mkdir.
+    idempotent: true,
   });
 
   if (!response.ok) {

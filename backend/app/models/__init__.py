@@ -97,6 +97,7 @@ from app.models.organization import (
 from app.models.pair_code import PairCode
 from app.models.path_discovery import PathDiscovery
 from app.models.phase_result import PhaseResult
+from app.models.plan_scan_root import PlanScanRootObservation
 from app.models.project import Project
 from app.models.project_annotation_state import ProjectAnnotationState
 from app.models.project_assets import ProjectImage, ProjectScreenshot
@@ -522,6 +523,8 @@ __all__ = [
     "WorkArtifact",
     "WorkArtifactVersion",
     "WorkArtifactEdge",
+    # Per-device plan-scan-source readings (agent.plan_scan_root_observations)
+    "PlanScanRootObservation",
     # Claude Code Session Repository (agent.session_artifacts — archived
     # sessions; bodies live in the object store, not in a column)
     "SessionArtifact",

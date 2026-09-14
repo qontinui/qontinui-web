@@ -31,6 +31,7 @@ import {
   Trash2,
 } from "lucide-react";
 import { relativeTime } from "@/components/operations/utils";
+import { AutoEnrollPolicyPanel } from "../_components/AutoEnrollPolicyPanel";
 import { CiNodeConfigPanel } from "../_components/CiNodeConfigPanel";
 import { EnrollCodeModal } from "../_components/EnrollCodeModal";
 import { DispatchMachineModal } from "../_components/DispatchMachineModal";
@@ -228,6 +229,18 @@ export default function MachinesPage() {
         </div>
       </div>
 
+      {/* Automatic enrollment. Above the manual form on purpose: a machine
+          that enrolls itself never reaches that form, and the reader deserves
+          to know whether that is happening (and whether it is silently NOT
+          happening) before being handed a way to do it by hand. */}
+      <AutoEnrollPolicyPanel
+        environments={environments}
+        onSaved={() => {
+          setLoading(true);
+          fetchMachines();
+        }}
+      />
+
       {/* Add machine form */}
       <div className="rounded-lg border border-border">
         <div className="px-4 py-3 border-b border-border bg-muted/50">
@@ -344,6 +357,24 @@ export default function MachinesPage() {
                             <Badge variant="success">enrolled</Badge>
                           ) : (
                             <Badge variant="warning">pending</Badge>
+                          )}
+                          {/* Provenance. ONLY `auto` gets a badge: it is the
+                              one origin nobody clicked, so it is the one the
+                              owner has not already seen happen.
+
+                              A null origin means the row predates the column —
+                              UNKNOWN, not manual — and gets NO badge. Labelling
+                              it "manual" would be inventing provenance the
+                              database never observed, on exactly the rows an
+                              owner would most want the truth about. */}
+                          {machine.enrollment_origin === "auto" && (
+                            <Badge
+                              variant="info"
+                              data-testid="machine-origin-auto"
+                              title="Enrolled automatically when this machine connected"
+                            >
+                              auto-enrolled
+                            </Badge>
                           )}
                         </div>
                         <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 mt-0.5 text-xs text-muted-foreground">

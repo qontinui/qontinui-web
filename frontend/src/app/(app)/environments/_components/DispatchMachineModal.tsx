@@ -16,10 +16,22 @@ import {
 } from "@/components/ui/dialog";
 import { runnerService } from "@/services/service-factory";
 import {
+  DevenvApiError,
   dispatchEnroll,
   type Environment,
   type MachineCreated,
 } from "@/services/devenv-api";
+
+/**
+ * The module's established error-surfacing helper (`machines/page.tsx:52`,
+ * `environments/page.tsx:62`, and four more): prefer the server's own sentence,
+ * fall back only when there isn't one.
+ */
+function errMessage(err: unknown, fallback: string): string {
+  if (err instanceof DevenvApiError) return err.message;
+  if (err instanceof Error) return err.message;
+  return fallback;
+}
 
 interface DispatchMachineModalProps {
   open: boolean;
@@ -110,8 +122,16 @@ export function DispatchMachineModal({
         onFallback(res.machine);
         handleClose();
       }
-    } catch {
-      toast.error("Dispatch failed");
+    } catch (err) {
+      // Surface the SERVER's sentence, never a bare "Dispatch failed". Two of
+      // this route's refusals are ones the operator can act on and neither is
+      // guessable from a generic message: a 409 `device_already_has_machine`
+      // ("revoke or delete the existing machine first") and a 404
+      // `device_not_found`. With connect-time auto-enrollment on, that 409 is
+      // the NORMAL outcome of picking a box the engine already enrolled — the
+      // picker still lists it — so swallowing the reason here would reproduce
+      // exactly the unactionable failure the typed 409 was added to replace.
+      toast.error(errMessage(err, "Dispatch failed"));
     } finally {
       setSubmitting(false);
     }

@@ -159,6 +159,11 @@ function AppCard({
           update_strategy: strategy,
           build_command: buildCommand,
           start_command: startCommand,
+        },
+        {
+          // Safe to re-issue: `update_app_config` sets the three fields to
+          // the given values and commits; no versioning, no stamps.
+          idempotent: true,
         }
       );
       setStrategy(updated.update_strategy);
@@ -221,7 +226,13 @@ function AppCard({
       const res = await httpClient.post<FreshHostResponse>(
         `${API}/dispatch/fresh-host?app_id=${encodeURIComponent(
           app.app_id
-        )}&strategy=best_effort`
+        )}&strategy=best_effort`,
+        undefined,
+        {
+          // Safe to re-issue: `resolve_fresh_host` -> `dispatch_to_fresh_host`
+          // only SELECTs a device and returns it; nothing is dispatched.
+          idempotent: true,
+        }
       );
       toast.success(
         `Resolved ${res.device_name} (${res.freshness_status}) for ${app.display_name}`

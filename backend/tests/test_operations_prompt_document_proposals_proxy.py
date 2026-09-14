@@ -10,9 +10,12 @@ a mocked ``httpx.AsyncClient``, so no live coord is needed.
 
 The behaviours that matter here, and why:
 
-* ``decided_by`` is stamped from the SESSION and the client body is reduced to
-  ``decision_note`` alone — a browser must not be able to choose who a decision
-  is attributed to, nor smuggle ``status``/``tenant_id`` past the proxy;
+* the client body is reduced to ``decision_note`` alone and ``decided_by`` is
+  NOT forwarded — coord's ``DecisionRequest`` is ``deny_unknown_fields`` with
+  ``decision_note`` as its only field and stamps the decider itself, so sending
+  ``decided_by`` is a hard ``400`` on every approve/reject. A browser must not be
+  able to choose who a decision is attributed to, nor smuggle
+  ``status``/``tenant_id`` past the proxy;
 * the LIST route degrades to an explicit ``unavailable`` note while coord's
   Phase 5 half is undeployed (its route 404s), because an unreadable queue
   rendered as an empty one is the exact failure the review feed exists to
@@ -222,10 +225,9 @@ class TestDecideProposal:
 
         assert resp.status_code == 200
         forwarded = instance.post.call_args.kwargs["json"]
-        assert forwarded == {
-            "decision_note": "Agreed after review.",
-            "decided_by": TEST_USER_EMAIL,
-        }
+        # Exactly coord's DecisionRequest shape: no ``decided_by`` at all, neither
+        # the forged one nor a session-stamped one (coord 400s on the field).
+        assert forwarded == {"decision_note": "Agreed after review."}
         assert instance.post.call_args.args[0].endswith(f"/{action}")
 
     def test_missing_body_is_allowed(self, auth_client: TestClient):
@@ -237,10 +239,7 @@ class TestDecideProposal:
             resp = auth_client.post(f"{PROPOSALS}/{_proposal()['id']}/reject")
 
         assert resp.status_code == 200
-        assert instance.post.call_args.kwargs["json"] == {
-            "decision_note": None,
-            "decided_by": TEST_USER_EMAIL,
-        }
+        assert instance.post.call_args.kwargs["json"] == {"decision_note": None}
 
     def test_coord_404_does_not_degrade(self, auth_client: TestClient):
         """A decision that silently no-ops would be worse than an error."""
@@ -1378,3 +1377,97 @@ class TestLimitedCaveatReportsDirection:
             "classified is a widening, but 1 write in this feed carries no "
             "verdict either way."
         )
+
+
+class TestWritesCarryDocumentWithdrawal:
+    """A withdrawn decision record's rows say so — as DOCUMENT state.
+
+    Plan ``2026-09-13-decision-records-are-agent-writable-but-policy-says-they-are-not``
+    §7 3.1. Coord serves ``withdrawn`` / ``withdrawn_reason`` on the document
+    list row; the write feed carries them as ``document_withdrawn`` /
+    ``document_withdrawn_reason`` on every row of that document, by membership.
+    """
+
+    @staticmethod
+    def _fetch(auth_client: TestClient, doc_extra: dict) -> dict:
+        documents = {
+            "documents": [
+                {
+                    "kind": "decision_record",
+                    "name": "voided",
+                    "description": "Voided",
+                    "updated_at": "2026-09-13T12:00:00Z",
+                    **doc_extra,
+                }
+            ],
+            "total": 1,
+        }
+        versions = _versions_payload(
+            2,
+            [
+                {
+                    "version_number": 2,
+                    "description": "withdrawn",
+                    "edited_by": "operator:1:ops@example.com",
+                    "created_at": "2026-09-13T12:00:00Z",
+                },
+                {
+                    "version_number": 1,
+                    "description": "created",
+                    "edited_by": "agent:chart",
+                    "created_at": "2026-09-12T12:00:00Z",
+                },
+            ],
+        )
+        with _patch_httpx() as MockClient:
+            instance = AsyncMock()
+            instance.get.side_effect = [
+                _mock_response(json_data=documents),
+                _mock_response(json_data=versions),
+            ]
+            _configure_mock_client(MockClient, instance)
+            resp = auth_client.get(WRITES)
+        assert resp.status_code == 200
+        return resp.json()
+
+    def test_served_withdrawal_reaches_every_row_of_the_document(
+        self, auth_client: TestClient
+    ):
+        body = self._fetch(
+            auth_client,
+            {
+                "status": "withdrawn",
+                "withdrawn": True,
+                "withdrawn_reason": "never decided",
+            },
+        )
+        assert len(body["writes"]) == 2
+        for row in body["writes"]:
+            assert row["document_withdrawn"] is True
+            assert row["document_withdrawn_reason"] == "never decided"
+            # Not renamed-and-duplicated: the unprefixed key would read as
+            # "this VERSION was withdrawn".
+            assert "withdrawn" not in row
+
+    def test_served_false_survives_as_false(self, auth_client: TestClient):
+        body = self._fetch(auth_client, {"withdrawn": False, "withdrawn_reason": None})
+        row = body["writes"][0]
+        assert row["document_withdrawn"] is False
+        assert row["document_withdrawn_reason"] is None
+
+    def test_absent_withdrawal_stays_absent(self, auth_client: TestClient):
+        """An older coord omits the keys — never invent ``false``."""
+        body = self._fetch(auth_client, {})
+        for row in body["writes"]:
+            assert "document_withdrawn" not in row
+            assert "document_withdrawn_reason" not in row
+        assert "partial" not in body
+
+    def test_wrong_typed_withdrawal_is_dropped_not_a_failed_read(
+        self, auth_client: TestClient
+    ):
+        body = self._fetch(auth_client, {"withdrawn": 1, "withdrawn_reason": 7})
+        row = body["writes"][0]
+        assert "document_withdrawn" not in row
+        assert "document_withdrawn_reason" not in row
+        assert "partial" not in body

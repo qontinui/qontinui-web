@@ -2990,6 +2990,7 @@ async def _proxy_coord_post(
     timeout: httpx.Timeout | None = None,
     return_status: bool = False,
     structured_errors: bool = False,
+    non_json_success_as_empty: bool = False,
 ) -> Any:
     """Proxy a POST request to coord and return the JSON body.
 
@@ -3033,6 +3034,12 @@ async def _proxy_coord_post(
     for every other route, invisible to their tests (which run against a bare
     ``FastAPI()`` with no handlers registered), so each route opts in
     knowingly.
+
+    ``non_json_success_as_empty`` — when True, a coord 2xx whose body is not
+    JSON (an empty ``202``, or text) is returned as ``{}`` instead of raising
+    out of ``resp.json()`` as a 500. A success is still a success: the write
+    was accepted, and turning that into a server error would tell the operator
+    it failed. Default False preserves the prior behavior exactly.
     """
     url = f"{settings.COORD_URL}{path}"
     headers = (
@@ -3056,9 +3063,15 @@ async def _proxy_coord_post(
             status_code=resp.status_code,
             detail=_coord_error_detail(resp) if structured_errors else resp.text,
         )
+    try:
+        body = resp.json()
+    except ValueError:
+        if not non_json_success_as_empty:
+            raise
+        body = {}
     if return_status:
-        return resp.json(), resp.status_code
-    return resp.json()
+        return body, resp.status_code
+    return body
 
 
 def _coord_error_detail(resp: httpx.Response) -> Any:
@@ -4708,6 +4721,22 @@ async def get_fleet_resource_samples(
       the threshold and the raw value: a verdict that prints only the
       number it tripped on leaves the next incident's forensics unable to
       ask whether it was work or a leak.
+    * The **readiness** fields (plan
+      ``2026-09-13-drained-runner-never-reaches-idle`` D8) —
+      ``readiness_safe``, ``readiness_reason``, ``readiness_blocking``,
+      ``readiness_finished``, ``wind_down_candidates``,
+      ``wind_down_exit_stuck``, the bounded ``wind_down_sessions`` array
+      (with ``wind_down_sessions_truncated`` when coord cut it), and, on the
+      NEWEST sample per device, the server-computed ``readiness_age_secs`` and
+      ``readiness_state`` (``fresh | stale | absent``). This is the device's
+      restart-readiness verdict, pushed by the runner on the same 30 s sample
+      rather than read through a relay into the runner. There is deliberately
+      no separate readiness route: ``/admin/coord/runners`` reads it here with
+      ``device_id`` and ``history=false``. Passed through untouched, with the
+      NULL rule once more doing real work — ``readiness_safe: null`` is "the
+      runner could not decide", and ``readiness_state`` is coord's freshness
+      verdict so no browser subtracts its own clock from ``sampled_at``. A
+      ``stale`` or ``absent`` row renders UNKNOWN, never the last verdict.
 
     ``schema_pending: true`` means the sibling alembic migration
     (qontinui-web#949) has not reached coord's database yet — coord
@@ -5017,9 +5046,17 @@ async def get_memory_entry(
 # Submit. Coord owns claim acquisition + agent allocation + first-tick
 # prompt delivery; this surface is a thin proxy.
 #
-# Sibling of ``POST /agents/allocate`` (Wave 0 demo-control path). The
-# spawn route is admin-gated because it mints a coord agent and pins
-# device state; allocate stays user-auth (legacy demo entrypoint).
+# Sibling of ``POST /agents/allocate``. Both are admin-gated on
+# ``require_coord_tenant_admin`` — pinned for allocate by
+# ``test_operations_tenant_gate.py::TestAdminGateStillEnforced``, which
+# asserts a 403 ``not_coord_tenant_admin`` for a non-admin caller. This
+# comment used to say allocate
+# "stays user-auth (legacy demo entrypoint)" — wrong on both counts now:
+# the allocate proxy carries the same admin dependency (see its handler),
+# and its original caller, the `/demo-control` page, was deleted when the
+# three `2026-05-18-coordination-layer-demos-feature-*` plans it
+# dispatched against went SUPERSEDED. Allocate is a generic proxy over an
+# opaque caller-supplied ``intent``, with no in-repo caller left.
 #
 # Wire shape (request) — dictated by coord's ``SpawnRequest``, which axum
 # extracts with strict serde, so a mismatch is a hard 422 before any
@@ -6812,6 +6849,174 @@ async def list_coord_sessions(
     }
 
 
+# ---- Per-device session census + operator session control ----------------
+#
+# Plan `2026-09-13-drained-runner-never-reaches-idle` Phase 8 (D9, D10). Both
+# routes back `/admin/coord/runners`, the device-maintenance surface: drain a
+# runner, watch its readiness, and wind down the sessions that keep it from
+# being restartable.
+#
+# **Declared ABOVE ``/sessions/{session_id}`` on purpose.** FastAPI matches in
+# declaration order, and ``fleet`` is a perfectly good path segment for a
+# ``{session_id}`` parameter: declared below it, ``GET /sessions/fleet`` would
+# reach the single-session route and come back as a 422 on a non-UUID id —
+# a dead read with nothing failing at build time.
+#
+# The readiness half of that page is NOT a route here. It rides the existing
+# ``GET /fleet/resource-samples?device_id=`` proxy, which passes coord's rows
+# through untouched — the readiness fields coord adds to them reach the
+# browser with no change on this side (plan D8: "extend that sample, do not
+# add a table or a route").
+
+
+@router.get("/sessions/fleet")
+async def get_coord_sessions_fleet(
+    device_id: UUID | None = Query(
+        default=None,
+        description="Restrict to one coord device. Applied in coord's SQL.",
+    ),
+    state: str | None = Query(
+        default=None,
+        description="Restrict to one coord session state (e.g. active, closed). Forwarded verbatim.",
+    ),
+    include_closed: bool | None = Query(
+        default=None,
+        description="Include closed sessions. Coord defaults to false.",
+    ),
+    limit: int | None = Query(
+        default=None,
+        description=(
+            "Page size. Coord CLAMPS this and echoes the applied value as "
+            "`limit`; deliberately not range-validated here."
+        ),
+    ),
+    cursor: str | None = Query(
+        default=None,
+        description="An opaque `nextCursor` from a previous page of the same scope.",
+    ),
+    tenant_id: UUID = Depends(get_tenant_id),
+) -> Any:
+    """Proxy coord's ``GET /coord/sessions/fleet`` (tenant-scoped).
+
+    The body is coord's ``FleetSessionsResponse``, passed through untouched,
+    and it is **camelCase** — ``sessionId``, ``claudeCodeSessionId``,
+    ``sessionStatus``, ``startedAt``, ``nextCursor`` and the three
+    ``…ColumnPresent`` capability flags. Plan D7 adds ``spawnOrigin``,
+    ``continuationGateId`` and ``dispatchSource`` to each row in the same
+    casing. No ``response_model`` is declared, so nothing here filters a
+    field coord adds, and a coord predating D7 simply omits the three keys —
+    which the page renders as an unknown origin, never as a default one.
+
+    ``nextCursor != null`` is coord's statement that more rows match this
+    scope than it served. The caller must say so rather than present the page
+    as the device's whole census.
+
+    A failure passes through with coord's status (``_proxy_coord_get`` raises
+    on ≥400, and a transport failure is a 502/504). It is never degraded to an
+    empty list here: "coord could not tell us" and "this device runs no
+    sessions" call for opposite next steps.
+    """
+    params: dict[str, Any] = {}
+    if device_id is not None:
+        params["device_id"] = str(device_id)
+    if state is not None:
+        params["state"] = state
+    if include_closed is not None:
+        params["include_closed"] = include_closed
+    if limit is not None:
+        params["limit"] = limit
+    if cursor is not None:
+        params["cursor"] = cursor
+    return await _proxy_coord_get(
+        "/coord/sessions/fleet", params=params or None, tenant_id=tenant_id
+    )
+
+
+class SessionControlRequestBody(BaseModel):
+    """Closed body for ``POST /operations/sessions/{session_id}/control``.
+
+    Assembled into coord's wire body field by field rather than forwarded
+    verbatim, for the same reason the drain body is: the operator's browser
+    never gets to put a key on this write that the contract does not name.
+    In particular there is no ``requested_by`` — coord stamps the author from
+    its authenticated operator context, and an audit row with a
+    client-asserted author is not an audit row.
+
+    ``action`` is a closed vocabulary. ``finish_and_close`` declares the
+    session finished and asks the runner to close it once it is idle (D4/D9 —
+    the operator's click IS the declaration a runner never infers).
+    ``stop_at_boundary`` asks a loop or steward session to stop at its next
+    iteration boundary (D6). Anything else is a local 422 before coord is
+    asked.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    action: Literal["finish_and_close", "stop_at_boundary"]
+    reason: str | None = Field(default=None, max_length=2000)
+
+    @field_validator("reason")
+    @classmethod
+    def _blank_reason_is_no_reason(cls, v: str | None) -> str | None:
+        """A whitespace-only reason is dropped rather than recorded.
+
+        The reason is optional on this write, so a blank one is not a refusal
+        — but it must not reach the audit row as ``"   "`` either, which
+        reads as "the operator wrote something" when they did not.
+        """
+        if v is None:
+            return None
+        stripped = v.strip()
+        return stripped or None
+
+
+@router.post("/sessions/{session_id}/control")
+async def post_coord_session_control(
+    session_id: UUID,
+    body: SessionControlRequestBody,
+    tenant_id: UUID = Depends(require_coord_tenant_admin),
+) -> Any:
+    """Ask the runner holding a session to finish-and-close it, or to stop it
+    at its next iteration boundary.
+
+    Proxies coord's ``POST /coord/sessions/{session_id}/control``. Coord
+    records the request as a durable ``control_request`` session event and
+    publishes it to the device, so a runner that is offline right now still
+    receives it on its next catch-up read (plan D9). The runner acts only on
+    a ``claude_code_session_id`` present in its OWN lifecycle store; nothing
+    here, and nothing in coord, forces a process kill.
+
+    Coord answers ``202`` with ``{event_id, session_id, device_id, action}``
+    and that status is echoed verbatim — a bare JSON return would be wrapped
+    as ``200`` and hide that the request was ACCEPTED, not carried out. A 2xx
+    whose body is not JSON comes back as ``{}`` with coord's status, never as
+    a 500.
+
+    Refusals are typed and pass through with coord's status and body
+    (``structured_errors=True``): ``404 session_not_found``,
+    ``409 session_closed`` and a ``422`` for an action coord does not know.
+    They mean different things — "no such session", "already over" and "this
+    coord predates the action" — and the console tells them apart rather than
+    rendering one "failed".
+
+    Admin-gated here (``require_coord_tenant_admin``) as a UX and
+    defence-in-depth layer; coord re-checks on its own.
+    """
+    wire: dict[str, Any] = {"action": body.action}
+    if body.reason is not None:
+        wire["reason"] = body.reason
+    coord_body, status_code = await _proxy_coord_post(
+        f"/coord/sessions/{session_id}/control",
+        wire,
+        tenant_id=tenant_id,
+        return_status=True,
+        structured_errors=True,
+        # An accepted request whose body does not parse is still accepted.
+        non_json_success_as_empty=True,
+    )
+    return JSONResponse(content=coord_body, status_code=status_code)
+
+
 @router.get("/sessions/{session_id}")
 async def get_coord_session(
     session_id: UUID,
@@ -8463,6 +8668,47 @@ async def restore_prompt_document_version(
     )
 
 
+@router.post("/coord/prompt-documents/{kind}/{name}/withdraw")
+async def withdraw_prompt_document(
+    kind: str,
+    name: str,
+    body: dict[str, Any] | None = None,
+    tenant_id: UUID = Depends(require_coord_tenant_admin),
+) -> Any:
+    """Withdraw a decision record. Tenant-admin only.
+
+    Plan ``2026-09-13-decision-records-are-agent-writable-but-policy-says-they-are-not``
+    §7 (3.1-3.3). The undo for a CREATED record: a v1 has no earlier body, so
+    neither the landed-write feed's Undo (a PATCH of the prior version) nor
+    :func:`restore_prompt_document_version` can reverse it. Coord answers by
+    writing a NEW version that rewrites only the frontmatter ``status`` (to
+    ``withdrawn``) and ``withdrawn_reason`` keys and keeps the body below the
+    fence byte-for-byte. Nothing is deleted — the row and its history remain,
+    and the feed's ordinary head-version Undo reinstates it.
+
+    Only valid for kind ``decision_record``; coord is the authority on that and
+    its 4xx passes through, as do unknown-document and non-admin refusals.
+
+    Body: ``{reason}``. Only ``reason`` is forwarded. The withdrawer is NOT
+    stamped here and never taken from the browser: coord derives it from its own
+    authenticated ``OperatorContext``, for the same reason the version-restore
+    proxy above declines to stamp ``updated_by``. Whether a reason is required
+    (and what counts as blank) is coord's rule, not a second copy of it here.
+    """
+    payload: dict[str, Any] = {}
+    reason = (body or {}).get("reason")
+    if reason is not None:
+        payload["reason"] = reason
+    # Re-encoded for the same reason as the restore proxy: FastAPI hands the
+    # path segments back URL-decoded.
+    return await _proxy_coord_post(
+        f"/coord/prompt-documents/{quote(kind, safe='')}/{quote(name, safe='')}"
+        "/withdraw",
+        payload,
+        tenant_id=tenant_id,
+    )
+
+
 # ---------------------------------------------------------------------------
 # Per-KIND prompt-document authorship tier
 # ---------------------------------------------------------------------------
@@ -9084,6 +9330,50 @@ _WRITE_ANNOTATIONS: tuple[tuple[str, tuple[type, ...]], ...] = (
 )
 
 
+# The DOCUMENT-level withdrawal state coord serves on a ``decision_record`` row
+# (plan ``2026-09-13-decision-records-are-agent-writable-but-policy-says-they-are-not``
+# §7 3.1), keyed by coord's field name → the name it takes on a write row.
+#
+# Renamed on the way through because a write row is a VERSION and these describe
+# the document's CURRENT state: an unprefixed ``withdrawn`` on v1 would read as
+# "this version was withdrawn", when what is true is that the document it belongs
+# to is withdrawn now (by a later version). Same membership rule as
+# ``_WRITE_ANNOTATIONS``: a coord build that predates the state omits the keys,
+# and so does this feed — never ``false``, which would assert every record is
+# live on a server that cannot say.
+_DOCUMENT_STATE_ANNOTATIONS: tuple[tuple[str, str, tuple[type, ...]], ...] = (
+    ("withdrawn", "document_withdrawn", (bool,)),
+    ("withdrawn_reason", "document_withdrawn_reason", (str,)),
+)
+
+
+def _document_state_annotations(doc: dict[str, Any]) -> dict[str, Any]:
+    """The withdrawal keys coord actually served on this document's list row.
+
+    Membership, not ``.get`` — see :func:`_write_annotations` for why a key built
+    with ``.get`` cannot say "not served". A value of the wrong type is dropped
+    and logged rather than forwarded, because the frontend's contract cannot hold
+    it and a numeric ``withdrawn`` would otherwise be truthy-rendered as a
+    withdrawal coord never recorded.
+    """
+    out: dict[str, Any] = {}
+    for source, target, admissible in _DOCUMENT_STATE_ANNOTATIONS:
+        if source not in doc:
+            continue
+        value = doc[source]
+        if value is None or isinstance(value, admissible):
+            out[target] = value
+            continue
+        logger.warning(
+            "prompt_document_state_annotation_wrong_type",
+            kind=doc.get("kind"),
+            name=doc.get("name"),
+            annotation=source,
+            got=type(value).__name__,
+        )
+    return out
+
+
 def _write_annotations(version: dict[str, Any], doc: dict[str, Any]) -> dict[str, Any]:
     """The annotation keys coord actually served on this version row.
 
@@ -9503,23 +9793,30 @@ async def approve_prompt_document_proposal(
     proposal_id: str,
     body: dict[str, Any] | None = None,
     tenant_id: UUID = Depends(require_coord_tenant_admin),
+    # Retained deliberately though its value is now unused: the dependency is
+    # what enforces an authenticated ACTIVE user on this route. Removing it as
+    # "dead" would weaken auth, not tidy the signature.
     current_user: UserModel = Depends(get_current_active_user_async),
 ) -> Any:
     """Approve a pending proposal — coord applies the edit and returns the new
     document version. Tenant-admin only.
 
-    Only ``decision_note`` is taken from the client; ``decided_by`` is stamped
-    from the authenticated session. Coord's 4xx (already decided, stale
-    ``base_version``, unknown id) passes through verbatim — including the 404 you
-    get before coord's Phase 5 deploy, which must stay visible rather than
-    silently no-op.
+    Only ``decision_note`` is forwarded. Coord's ``DecisionRequest`` accepts
+    THAT FIELD ALONE and denies unknown fields, and coord stamps ``decided_by``
+    itself from the operator context the request already carries — so sending it
+    from here is not a redundant belt-and-braces, it is a hard ``400``:
+    ``invalid body: unknown field `decided_by`, expected `decision_note```.
+    That is what this endpoint did until 2026-09-04, which made **every** approve
+    and reject click fail. Do not reintroduce it: identity is coord's to derive,
+    exactly as it is on the agent-notifications door.
+
+    Coord's 4xx (already decided, stale ``base_version``, unknown id) passes
+    through verbatim — including the 404 you get before coord's Phase 5 deploy,
+    which must stay visible rather than silently no-op.
     """
     return await _proxy_coord_post(
         f"{_COORD_PROPOSALS_PATH}/{quote(proposal_id, safe='')}/approve",
-        {
-            "decision_note": (body or {}).get("decision_note"),
-            "decided_by": _editor_identity(current_user),
-        },
+        {"decision_note": (body or {}).get("decision_note")},
         tenant_id=tenant_id,
     )
 
@@ -9529,19 +9826,20 @@ async def reject_prompt_document_proposal(
     proposal_id: str,
     body: dict[str, Any] | None = None,
     tenant_id: UUID = Depends(require_coord_tenant_admin),
+    # Retained for the same reason as on approve: this dependency is the
+    # active-user auth check, not a value the handler reads.
     current_user: UserModel = Depends(get_current_active_user_async),
 ) -> Any:
     """Reject a pending proposal — the edit is never applied. Tenant-admin only.
 
-    Same body reduction and server-side ``decided_by`` stamp as
-    :func:`approve_prompt_document_proposal`.
+    Same body reduction as :func:`approve_prompt_document_proposal`, and the
+    same reason for it: ``decision_note`` is the only field coord's
+    ``DecisionRequest`` accepts, and ``decided_by`` is coord's to stamp from the
+    operator context. Sending it is a ``400``, not a courtesy.
     """
     return await _proxy_coord_post(
         f"{_COORD_PROPOSALS_PATH}/{quote(proposal_id, safe='')}/reject",
-        {
-            "decision_note": (body or {}).get("decision_note"),
-            "decided_by": _editor_identity(current_user),
-        },
+        {"decision_note": (body or {}).get("decision_note")},
         tenant_id=tenant_id,
     )
 
@@ -9651,6 +9949,9 @@ async def list_prompt_document_writes(
             continue
         current_version = result.get("current_version")
         label = doc.get("description") or doc.get("name")
+        # Computed once per document: it is the document's state, identical on
+        # every one of its write rows.
+        doc_state = _document_state_annotations(doc)
         for version in result.get("versions") or []:
             if not isinstance(version, dict):
                 continue
@@ -9668,6 +9969,7 @@ async def list_prompt_document_writes(
                     # fixed literal above is exactly the shape that cannot
                     # express "this key was not served".
                     **_write_annotations(version, doc),
+                    **doc_state,
                 }
             )
 

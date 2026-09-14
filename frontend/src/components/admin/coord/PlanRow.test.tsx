@@ -91,9 +91,102 @@ function rowTimeCell(): HTMLElement {
   return cell;
 }
 
+/**
+ * The identity chip — the mono badge that opens the row, and the position
+ * operators read as the row's DATE.
+ *
+ * It used to fall back to the slug's first two hyphen-segments when the slug
+ * carried no `YYYY-MM-DD` prefix, which put WORDS in that position
+ * (`coordinator-assign`, `qontinui-schemas`) and, for a slug with no hyphen at
+ * all, rendered the chip and the label identically. An operator reported it as
+ * "a non-date value in the date field". Since plan
+ * `2026-09-02-coord-work-units-carry-no-authoring-date` the row has a real
+ * authoring date to show instead, and where even that is missing it admits it.
+ */
+function identityChip(): HTMLElement {
+  // The chip is the first child of the row button: `<Badge>` wrapping the
+  // `<span title>` this row supplies. Queried by structure because it carries
+  // no testid of its own (and D4a freezes the testids that exist).
+  const row = screen.getByTestId("coord-plan-card");
+  const chip = row.querySelector("span[title]");
+  if (!chip) throw new Error("no identity chip rendered");
+  return chip as HTMLElement;
+}
+
+describe("PlanRow identity chip", () => {
+  it("shows the slug's own date prefix when it has one", () => {
+    renderRow({ slug: "2026-08-16-coord-console-ui", status: "draft" });
+    expect(identityChip()).toHaveTextContent("2026-08-16");
+    expect(identityChip()).toHaveAttribute(
+      "title",
+      expect.stringContaining("slug's date prefix")
+    );
+  });
+
+  it("shows coord's authored_at for a slug with no date prefix", () => {
+    // The 108-of-149 case measured against coord 2026-09-13: an undated slug
+    // that nonetheless has a real authoring date recorded.
+    renderRow({
+      slug: "coordinator-assign-task-dispatch-race",
+      status: "draft",
+      authored_at: "2026-07-04T09:30:00Z",
+    });
+    expect(identityChip()).toHaveTextContent("2026-07-04");
+    expect(identityChip()).toHaveAttribute(
+      "title",
+      expect.stringContaining("work_units.authored_at")
+    );
+    // …and the label still carries the WHOLE slug: nothing was stripped off
+    // the front of it, because the date is not a prefix of it.
+    expect(screen.getByTestId("coord-plan-card")).toHaveTextContent(
+      "coordinator-assign-task-dispatch-race"
+    );
+  });
+
+  it("says it has no date rather than printing slug words", () => {
+    // The 41-of-149 case: undated slug, no authored_at. This is the
+    // expectation the old "never returns a blank identity" test protected the
+    // opposite of.
+    renderRow({ slug: "qontinui-schemas-rust-codegen", status: "draft" });
+    const chip = identityChip();
+    expect(chip).toHaveTextContent("\u2014");
+    expect(chip).not.toHaveTextContent(/qontinui/);
+    expect(chip).toHaveAttribute(
+      "title",
+      expect.stringContaining("No authoring date recorded")
+    );
+  });
+
+  it("no longer renders the chip and the label identically (`plans to do`)", () => {
+    // A slug with no hyphen at all: the old fallback returned the whole slug,
+    // so the row read as a date of itself.
+    renderRow({ slug: "plans to do", status: "draft" });
+    const chip = identityChip();
+    expect(chip).toHaveTextContent("\u2014");
+    expect(chip).not.toHaveTextContent(/plans/);
+    expect(screen.getByTestId("coord-plan-card")).toHaveTextContent(
+      "plans to do"
+    );
+  });
+
+  it("prefers the slug prefix over authored_at when both are present", () => {
+    renderRow({
+      slug: "2026-08-16-coord-console-ui",
+      status: "draft",
+      authored_at: "2020-01-01T00:00:00Z",
+    });
+    expect(identityChip()).toHaveTextContent("2026-08-16");
+  });
+});
+
 describe("PlanRow detail (R5) and the frozen testids (D4a)", () => {
+  // UNDATED slug, deliberately: the row's authoring date is the slug prefix
+  // first and coord's column second (`planAuthoredAt`), and these cases are
+  // about the COLUMN arm, so the slug must not supply a date of its own. (A
+  // real dated slug always agrees with its column — measured 0 disagreements
+  // over 1,686 rows — so a fixture where they differ describes no real row.)
   const plan = {
-    slug: "2026-08-16-p-5",
+    slug: "p-5",
     status: "draft",
     title: "A plan with a title",
     authored_at: new Date(Date.now() - 3 * 86400_000).toISOString(),
@@ -130,12 +223,40 @@ describe("PlanRow detail (R5) and the frozen testids (D4a)", () => {
     expect(cell).toHaveAttribute("title", expect.stringMatching(/^Authored /));
   });
 
+  it("times the row on the SLUG's date when coord's column is NULL, matching the chip", () => {
+    // The 29-row case measured 2026-09-13: a dated slug created through the
+    // MCP upsert door with no `authored_at`. The chip shows `2026-08-16`; the
+    // row and the detail must say "authored", not "ingested <a later day>"
+    // beside a chip that contradicts them.
+    const slugDated = {
+      slug: "2026-08-16-p-5a",
+      status: "draft",
+      authored_at: null,
+      created_at: new Date(Date.now() - 3600_000).toISOString(),
+      updated_at: new Date(Date.now() - 60_000).toISOString(),
+    };
+    renderRow(slugDated, true);
+    const cell = rowTimeCell();
+    expect(cell).toHaveAttribute("title", expect.stringMatching(/^Authored /));
+    expect(cell).not.toHaveTextContent(/no date/);
+    const dates = screen.getByTestId("coord-plan-card-dates");
+    // The detail's own title carries the ISO instant, so the DAY is asserted
+    // here rather than through the locale-formatted row-time title.
+    expect(dates).toHaveTextContent(/authored/);
+    expect(
+      dates.querySelector('[title^="Authored 2026-08-16T00:00:00Z"]')
+    ).not.toBeNull();
+    expect(dates).not.toHaveTextContent(/ingested/);
+    expect(dates).toHaveTextContent(/updated 1m ago/);
+  });
+
   it("falls back to the INGEST date under its own name when no authoring date is recorded", () => {
-    // A coord that predates `authored_at`, or an undated slug. `created_at`
-    // is when coord first saw the row — true, so shown — but under
-    // "ingested", never "created" and never "authored".
+    // An UNDATED slug and no coord column. `created_at` is when coord first
+    // saw the row — true, so shown — but under "ingested", never "created"
+    // and never "authored". (The slug must be undated here: a dated one now
+    // supplies the authoring date itself, see the case above.)
     const ingestOnly = {
-      slug: "2026-08-16-p-5b",
+      slug: "p-5b",
       status: "draft",
       created_at: new Date(Date.now() - 3 * 86400_000).toISOString(),
       updated_at: new Date(Date.now() - 3600_000).toISOString(),
@@ -153,7 +274,7 @@ describe("PlanRow detail (R5) and the frozen testids (D4a)", () => {
   it("prefers first_shipped_at over everything else for the row time", () => {
     renderRow(
       {
-        slug: "2026-08-16-p-6",
+        slug: "p-6",
         status: "shipped",
         authored_at: new Date(Date.now() - 12 * 86400_000).toISOString(),
         created_at: new Date(Date.now() - 10 * 86400_000).toISOString(),
@@ -204,7 +325,7 @@ describe("PlanRow detail (R5) and the frozen testids (D4a)", () => {
     const link = screen.getByTestId("coord-plan-card-link");
     expect(link).toHaveAttribute(
       "href",
-      "/admin/coord/plans/2026-08-16-p-5"
+      "/admin/coord/plans/p-5"
     );
     expect(screen.getByTestId("coord-plan-card-spawn-btn")).toBeInTheDocument();
     // The row itself must NOT be an anchor any more — that is the whole point

@@ -195,7 +195,15 @@ export function useClauses(
   const saveAttrs = async (attrs: PromptDocumentAttrs): Promise<boolean> => {
     try {
       setSaving(true);
-      await httpClient.patch(docPath(kind, name), { attrs });
+      await httpClient.patch(
+        docPath(kind, name),
+        { attrs },
+        {
+          // Safe to re-issue: `update_prompt_document` replaces attrs in place
+          // with the merged object; an attrs-only edit creates no version row.
+          idempotent: true,
+        }
+      );
       toast.success("Category settings saved");
       onAttrsSaved?.();
       return true;

@@ -350,6 +350,8 @@ export class RAGBuilderService {
     const response = await this.httpClient.fetch(url, {
       method: "POST",
       body: JSON.stringify(query),
+      // Safe to re-issue: runner `/search` is a text/semantic query, read-only.
+      idempotent: true,
     });
 
     if (!response.ok) {
@@ -456,6 +458,8 @@ export class RAGBuilderService {
     const response = await this.httpClient.fetch(url, {
       method: "POST",
       body: JSON.stringify(request),
+      // Safe to re-issue: runner `/find` is SAM3+CLIP matching, nothing persisted.
+      idempotent: true,
     });
 
     if (!response.ok) {

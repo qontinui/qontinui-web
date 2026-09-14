@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useMemo, useState } from "react";
 import {
   AlertTriangle,
+  Ban,
   ChevronDown,
   ChevronRight,
   MessageSquareText,
@@ -11,6 +12,7 @@ import {
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Textarea } from "@/components/ui/textarea";
 import {
   DIFF_ADDED_COUNT_CLASS,
   DIFF_REMOVED_COUNT_CLASS,
@@ -32,8 +34,10 @@ import {
 } from "../_lib/authorship";
 import {
   LOOSENING_BADGE_CLASS,
+  canWithdraw,
   countLooseningVerdicts,
   hasLooseningVerdict,
+  isDocumentWithdrawn,
   isLoosening,
   notificationHref,
   sortWritesForFeed,
@@ -44,27 +48,39 @@ import type { PromptDocumentWrite } from "../types";
 
 /**
  * The standing limit of this feed, stated whether or not anything went wrong
- * this request.
+ * this request — and stated about the right surface.
  *
- * The feed is assembled from coord's version history, which is written by the
- * same commit as the write — but the operator's *notice* of a write is the
- * post-commit `PolicyDocumentChanged` emit, and that emit is best-effort by
- * design: `notify_document_version_change` logs and raises a
- * `PolicyChangeNotificationEmitFailed` alert rather than failing the write, and
- * is skipped entirely while `coord.notifications` is unprovisioned. That alert
- * kind has no resolver, so a row it opens outlives the fault.
+ * The LIST cannot silently miss a write that had landed when it was read. It is
+ * assembled from each document's version history (the web proxy's
+ * `list_prompt_document_writes` reads `…/versions` per document, not coord's
+ * notification store), and a version is written by the same commit as the write
+ * itself. Every way the proxy can drop a write — a document whose history did
+ * not come back, documents beyond the fan-out ceiling, the page slice — sets a
+ * per-response caveat that renders in this same box, above this one.
  *
- * None of that sets a per-response caveat, so nothing above would say it. A
- * surface that reports what agents changed must not imply it reports ALL of it,
- * and the honest place to say so is beside the caveats that describe the same
- * class of gap.
+ * What is best-effort is the operator's PUSH notice of a write: the post-commit
+ * `PolicyDocumentChanged` emit. Coord reconciles it — a sweep re-emits the
+ * notice for an edited version (`version_number > 1`) inside its lookback
+ * window that has none — with two limits said on screen: nothing is sent, or
+ * re-sent, while `coord.notifications` is unprovisioned (the sweep reports
+ * UNKNOWN then), and creation deliberately never emits. A created document is
+ * announced by the finding its author filed with the write (`notification_ref`,
+ * the row's "Why" link) instead.
+ *
+ * This text used to say the list itself "can be incomplete" because of that
+ * emit, which pointed the operator at the wrong surface: it told them to
+ * distrust the one view that is complete, and said nothing useful about the
+ * channel that was not.
  */
 const COMPLETENESS_CAVEAT =
-  "This list can be incomplete without saying so. Coord announces a write after " +
-  "committing it, on a best-effort path: a failed announcement is logged and " +
-  "alerted rather than retried, and none are sent at all while coord's " +
-  "notification store is unprovisioned. Treat an absent write as unknown, not " +
-  "as one that never happened.";
+  "This list is read from each document's version history, so a write that " +
+  "had landed when the page loaded cannot be missing from it without a note " +
+  "above saying so. The notice coord sends you about a change is separate: it " +
+  "goes out after the write, and coord looks for recent edits whose notice " +
+  "failed to go out and sends it again. While coord's notification store is " +
+  "not set up, no notices go out and none are re-sent. A newly created " +
+  "document sends no notice — it is announced by the reasoning its author " +
+  "filed with it.";
 
 /** DOM id of one row's diff panel — the target of the row's `aria-controls`. */
 function diffPanelId(
@@ -96,6 +112,12 @@ interface LandedWriteFeedProps {
   loading: boolean;
   acting: boolean;
   onRevert: (write: PromptDocumentWrite) => Promise<boolean>;
+  /**
+   * Withdraw the created decision record this head v1 write is. `reason` is
+   * already trimmed and non-empty — the composer will not submit otherwise.
+   * Resolves `true` when the withdrawal landed, which closes the composer.
+   */
+  onWithdraw: (write: PromptDocumentWrite, reason: string) => Promise<boolean>;
   /** Fetch the two bodies behind one row's diff. Lazy — called on expand. */
   onLoadDiff: (write: PromptDocumentWrite) => Promise<void>;
   /** The cached diff state for a row, or `null` if it was never asked for. */
@@ -109,7 +131,7 @@ interface LandedWriteFeedProps {
  * not a constant: coord's `policy_write` dial decides whether a classified
  * loosening — an edit that grants or widens what agents may do — is held as a
  * proposal or lands announced. So this feed does not promise a direction. It
- * promises completeness of what landed (subject to `COMPLETENESS_CAVEAT`), and
+ * promises completeness of what landed (see `COMPLETENESS_CAVEAT`), and
  * it MARKS a loosening rather than assuming none can appear.
  *
  * Monitoring surface, not a supervision queue — plan
@@ -128,6 +150,18 @@ interface LandedWriteFeedProps {
  * head gets the control — undoing an older-than-head write from a flat feed
  * would silently discard every write made since, so those rows show their
  * version and nothing more.
+ *
+ * ## Withdraw — the undo for a CREATED decision record
+ *
+ * Undo cannot reach a v1: there is no earlier body to restore. For most kinds
+ * that is tolerable, but a created `decision_record` is the agent write with the
+ * most reach — `/chart` reads one as a veto — so a head v1 of that kind gets
+ * Withdraw instead (see `canWithdraw` for the exact condition). One click opens
+ * an in-place reason composer (R5: detail expands in place); the reason is
+ * required because a withdrawal with no stated reason is a record voided for
+ * no recorded cause. Coord writes a new version marking the record withdrawn and
+ * keeps its text and history, so the new head then carries the ordinary Undo,
+ * which reinstates it.
  *
  * ## The author filter is the one layer allowed to hide a loosening
  *
@@ -174,11 +208,38 @@ export function LandedWriteFeed({
   loading,
   acting,
   onRevert,
+  onWithdraw,
   onLoadDiff,
   diffFor,
 }: LandedWriteFeedProps) {
   const [authorFilter, setAuthorFilter] = useState<AuthorFilter>("all");
   const [expandedKey, setExpandedKey] = useState<string | null>(null);
+  /** The row whose withdraw composer is open — one at a time, like R5 detail. */
+  const [withdrawingKey, setWithdrawingKey] = useState<string | null>(null);
+  const [withdrawReason, setWithdrawReason] = useState("");
+
+  const openWithdraw = (write: PromptDocumentWrite) => {
+    const key = writeKey(write);
+    // Re-clicking the open row's control closes it; opening another row starts
+    // that row's reason from empty rather than carrying one record's reason
+    // onto a different record.
+    setWithdrawingKey((current) => (current === key ? null : key));
+    setWithdrawReason("");
+  };
+
+  const cancelWithdraw = () => {
+    setWithdrawingKey(null);
+    setWithdrawReason("");
+  };
+
+  const submitWithdraw = async (write: PromptDocumentWrite) => {
+    const reason = withdrawReason.trim();
+    if (!reason) return;
+    const landed = await onWithdraw(write, reason);
+    // A refused or failed withdrawal keeps the composer and its text, so the
+    // operator can retry without retyping; the hook's toast says what failed.
+    if (landed) cancelWithdraw();
+  };
 
   const tally = useMemo(() => tallyAuthors(writes), [writes]);
 
@@ -415,9 +476,12 @@ export function LandedWriteFeed({
 
       {/* Coord genuinely failing gets the amber treatment; "incomplete but
           working" (degraded / partial / truncated) stays muted. The standing
-          completeness caveat rides in the same box — it describes the same
-          class of gap, and hiding it when nothing else went wrong is exactly
-          the implied completeness this surface must not offer. */}
+          completeness caveat rides in the same box, after them, because it
+          says how to read them: those notes are the ONLY way the served list
+          drops a landed write (the author filter hides rows from view, and
+          counts them in its own line), and the separate push notice is what
+          is best-effort. Hiding it when nothing else went wrong would leave the
+          operator guessing which of the two surfaces to trust. */}
       <div
         className={cn(
           "flex items-start gap-2 rounded-lg border px-3 py-2.5",
@@ -479,6 +543,11 @@ export function LandedWriteFeed({
             const flagged = isLoosening(write);
             const authorClass = classifyWriteAuthor(write.edited_by);
             const href = notificationHref(write.notification_ref);
+            const withdrawn = isDocumentWithdrawn(write);
+            const withdrawable = canWithdraw(write);
+            const composing = withdrawable && withdrawingKey === key;
+            const withdrawReasonId = `withdraw-reason-${write.kind}-${write.name}`;
+            const withdrawComposerId = `withdraw-composer-${write.kind}-${write.name}`;
             return (
               <li
                 key={key}
@@ -519,6 +588,24 @@ export function LandedWriteFeed({
                         v{write.version_number}
                         {isHead ? " · current" : ""}
                       </code>
+                      {withdrawn && (
+                        // Only an explicit `true` mints this — a coord that
+                        // predates withdrawal omits the field, and absent must
+                        // not render as "live". Muted, not amber: a withdrawn
+                        // record waits on nobody (R3).
+                        <Badge
+                          variant="outline"
+                          className="text-[10px] text-muted-foreground"
+                          title={
+                            write.document_withdrawn_reason
+                              ? `This record is withdrawn — it no longer counts as a decision. Reason given: ${write.document_withdrawn_reason}`
+                              : "This record is withdrawn — it no longer counts as a decision."
+                          }
+                          data-testid={`write-withdrawn-${write.kind}-${write.name}-${write.version_number}`}
+                        >
+                          Withdrawn
+                        </Badge>
+                      )}
                       {flagged && (
                         // Only an explicit `true` mints this. An absent flag
                         // renders nothing at all — never a "not a loosening"
@@ -587,8 +674,87 @@ export function LandedWriteFeed({
                         </Button>
                       </CoordAdminOnly>
                     )}
+
+                    {withdrawable && (
+                      <CoordAdminOnly
+                        fallback={<ReadOnlyNotice label="Admin only" />}
+                      >
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="gap-1.5"
+                          disabled={acting}
+                          onClick={() => openWithdraw(write)}
+                          aria-expanded={composing}
+                          aria-controls={composing ? withdrawComposerId : undefined}
+                          title="This record was created by this write, so there is no earlier wording to undo to. Withdrawing marks it void and keeps its text and history."
+                          data-testid={`withdraw-${write.kind}-${write.name}`}
+                        >
+                          <Ban className="size-4" />
+                          Withdraw
+                        </Button>
+                      </CoordAdminOnly>
+                    )}
                   </div>
                 </div>
+
+                {composing && (
+                  <CoordAdminOnly>
+                    <div
+                      id={withdrawComposerId}
+                      className="space-y-2 border-t border-border px-3 py-3"
+                      data-testid={withdrawComposerId}
+                    >
+                      <label
+                        className="text-xs font-medium text-muted-foreground"
+                        htmlFor={withdrawReasonId}
+                      >
+                        Why are you withdrawing this record? (required — recorded
+                        with the withdrawal)
+                      </label>
+                      <Textarea
+                        id={withdrawReasonId}
+                        value={withdrawReason}
+                        onChange={(e) => setWithdrawReason(e.target.value)}
+                        rows={2}
+                        required
+                        aria-required="true"
+                        // The composer opens on a deliberate click, so moving
+                        // focus into the one field it asks for is expected.
+                        autoFocus
+                        placeholder="For example: this was never decided — it was recorded from a guess."
+                        data-testid={`withdraw-reason-${write.kind}-${write.name}`}
+                      />
+                      <p className="text-xs text-muted-foreground">
+                        Withdrawing adds a new version marking the record void.
+                        Its text and history stay, it stops counting as a
+                        decision, and Undo on that new version reinstates it.
+                      </p>
+                      <div className="flex flex-wrap justify-end gap-2">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          disabled={acting}
+                          onClick={cancelWithdraw}
+                          data-testid={`withdraw-cancel-${write.kind}-${write.name}`}
+                        >
+                          Cancel
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="gap-1.5"
+                          disabled={acting || withdrawReason.trim() === ""}
+                          onClick={() => void submitWithdraw(write)}
+                          data-testid={`withdraw-confirm-${write.kind}-${write.name}`}
+                        >
+                          <Ban className="size-4" />
+                          Withdraw record
+                        </Button>
+                      </div>
+                    </div>
+                  </CoordAdminOnly>
+                )}
 
                 {expanded && (
                   <WriteDiff

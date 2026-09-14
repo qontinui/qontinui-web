@@ -84,6 +84,7 @@ import {
   PLAN_STATUS_PALETTE,
   derivePlanStatus,
   describePlanStatus,
+  planAuthoredAt,
 } from "@/components/admin/coord/planStatus";
 import { httpClient } from "@/services/service-factory";
 import {
@@ -121,9 +122,11 @@ interface CoordWorkUnit {
    */
   current_phase?: string | null;
   /**
-   * coord `work_units.authored_at` — slug-derived authoring date, NULL when
-   * not recorded (an undated slug, or a coord predating the column). Never
-   * stood in for by `created_at`, which is the ingest time.
+   * coord `work_units.authored_at` — the authoring date coord holds, NULL when
+   * it holds none (an undated slug, a coord predating the column, or a unit
+   * created through the MCP upsert door by a caller that omitted it). Read
+   * through `planAuthoredAt`, which consults the slug's own date prefix first,
+   * never directly. Never stood in for by `created_at`, the ingest time.
    */
   authored_at?: string | null;
   /** coord `work_units.updated_at` — the scanner's last touch, not a plan event. */
@@ -347,16 +350,20 @@ export default function CoordPlanDetailPage() {
               />
               {/* Each time is prefixed with its own word because three sit on
                   one line and a bare "3d ago" would not say which. An absent
-                  authoring date is stated, not filled from `created_at`. */}
+                  authoring date is stated, not filled from `created_at`.
+                  The date is the same EFFECTIVE one `/plans` shows — slug
+                  prefix first, coord's column second (`planAuthoredAt`) — so
+                  a dated slug whose column is NULL does not read "authored
+                  not recorded" here under a list row that shows its date. */}
               <span data-testid="coord-plan-authored">
                 <RowTime
-                  at={plan.authored_at}
+                  at={planAuthoredAt(plan)}
                   verb="Authored"
                   prefix="authored "
                   absent={{
                     label: "authored not recorded",
                     title:
-                      "coord holds no authoring date for this work unit — its slug carries no YYYY-MM-DD prefix, or coord predates the column.",
+                      "No authoring date from either source: this slug carries no YYYY-MM-DD prefix, and coord holds no authored_at for this work unit.",
                   }}
                 />
               </span>

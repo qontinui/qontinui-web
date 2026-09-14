@@ -109,7 +109,13 @@ export async function updateFleetApp(
 ): Promise<FleetApp> {
   const response = await httpClient.fetch(
     `${FLEET_API}/apps/${encodeURIComponent(appId)}`,
-    { method: "PATCH", body: JSON.stringify(body) }
+    {
+      method: "PATCH",
+      body: JSON.stringify(body),
+      // Safe to re-issue: `update_app_config` assigns update_strategy/
+      // build_command/start_command from the body; unset fields unchanged.
+      idempotent: true,
+    }
   );
   return handleResponse<FleetApp>(response, "Failed to update app config");
 }

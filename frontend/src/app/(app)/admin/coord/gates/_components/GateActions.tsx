@@ -125,12 +125,25 @@ export function GateActions({
     (gate.predicate?.kind as string | undefined) === "operator_approval";
   const audience = gate.clearance_audience ?? "operator";
   // A continuation is cancellable while it is armed (register-time spawn present)
-  // or dispatched, and has NOT already been consumed or cancelled.
+  // or dispatched, and has NOT already been consumed, cancelled or EXPIRED.
+  //
+  // The expiry clause is not symmetry for its own sake. coord's cancel writer
+  // (`gates.rs`) guards on `continuation_consumed_at IS NULL` and
+  // `continuation_cancelled_at IS NULL` and NOT on
+  // `continuation_expired_at IS NULL`, so a cancel posted against an expired
+  // row is ACCEPTED. Offering the button there fails two UX gates at once:
+  // it is not reversible (coord has no un-cancel), and it accomplishes
+  // nothing an operator would want — the continuation was already never going
+  // to dispatch, and coord had already raised a durable alert for the expiry.
+  // `continuationStatus.ts` separately orders `expired` above `cancelled` so
+  // a cancel arriving from any other door cannot erase the expiry from the
+  // row's rendering either.
   const hasCancellableContinuation =
     (gate.continuation_spawn != null ||
       gate.continuation_dispatched_at != null) &&
     gate.continuation_consumed_at == null &&
-    gate.continuation_cancelled_at == null;
+    gate.continuation_cancelled_at == null &&
+    gate.continuation_expired_at == null;
 
   // Shared request runner — surfaces coord's error message on failure and
   // refetches on success. Handles POST (default) and PATCH.

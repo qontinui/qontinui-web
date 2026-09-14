@@ -91,7 +91,8 @@ export function selectionIds(selection: MarkReadSelection): string[] | null {
 }
 
 /**
- * `httpClient` options every call to these two routes must pass.
+ * `httpClient` options the three notification POLLERS must pass. The
+ * `mark-read` POST takes NOTIFICATIONS_MARK_READ_OPTIONS below instead.
  *
  * `HttpClient` retries any 5xx with exponential backoff. Coord's
  * `503 schema_migration_pending` is not a transient fault — it is the
@@ -99,19 +100,47 @@ export function selectionIds(selection: MarkReadSelection): string[] | null {
  * and the coord PR deploying, which the plan sequences as *days*.
  *
  * Measured, not estimated (`http-client.test.ts`, "retries a 5xx by default"):
- * the default policy costs **5 requests and ~15s** of wall clock, because the
- * first request happens before `executeWithRetry` is even entered and that
- * helper runs the request once more before its own attempt counter applies.
- * The page's 10s poller would therefore overlap its own retry chain twice
- * over, and the nav badge would multiply the whole thing by every open console
- * tab — all to re-learn an answer that will not change for days.
+ * the default policy costs **5 requests and 7s** (1s + 2s + 4s) of wall clock,
+ * because the first request happens before `executeWithRetry` is even entered
+ * and that helper runs the request once more before its own attempt counter
+ * applies. The page's 10s poller would therefore overlap its own retry chain,
+ * and the nav badge would multiply the whole thing by every open console tab
+ * — all to re-learn an answer that will not change for days.
  *
- * Scoped per-request rather than by lowering `maxRetries`: that option
- * reassigns the client's SHARED `retryStrategy` and would silently disable
- * retries for every other caller in the app.
+ * The three POLLERS below are GETs, so the method-aware rule
+ * (`isRetryableStatus`) leaves their 5xx retry ON — the opt-out is still
+ * needed. Scoped per-request via `noRetryStatuses` rather than
+ * `maxRetries: 0`, which would also suppress the 429 arm this poller wants
+ * kept.
  */
 export const NOTIFICATIONS_REQUEST_OPTIONS: { noRetryStatuses: number[] } = {
   noRetryStatuses: [503],
+};
+
+/**
+ * For the `mark-read` POST, which is NOT a poller and NOT a GET.
+ *
+ * What the method rule does NOT cover is the `429` arm, which stays on for
+ * every method — and this call is behind a user-clicked button, so retrying a
+ * deliberate cap would hang it for ~3 minutes (no `Retry-After` defaults to
+ * 60s, up to four attempts) to re-learn an answer that will not change.
+ * `[429]` is the documented idiom for making a capped call fail fast
+ * (`HttpOptions.noRetryStatuses`).
+ *
+ * `503` is kept beside it even though the method rule ALREADY suppresses this
+ * POST's 5xx retry, so it changes no retry behaviour. It is here for the warn:
+ * `HttpClient.buildRetryPredicate` warns once per request for a 5xx the METHOD
+ * rule suppressed, and deliberately stays quiet for one the CALLER opted out
+ * of. Drop `503` and every operator click prints "pass idempotent: true if
+ * this endpoint is safe to re-issue" for the whole days-long
+ * `503 schema_migration_pending` window — misleading advice on a route whose
+ * 503 is deliberate, and noise on the one surface this file exists to keep
+ * quiet. It also keeps the opt-out correct if anyone later adds
+ * `idempotent: true` here, which would otherwise silently re-enable the very
+ * 503 retry this file argues against.
+ */
+export const NOTIFICATIONS_MARK_READ_OPTIONS: { noRetryStatuses: number[] } = {
+  noRetryStatuses: [429, 503],
 };
 
 /**

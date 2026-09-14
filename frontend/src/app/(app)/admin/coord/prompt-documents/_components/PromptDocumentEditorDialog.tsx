@@ -179,7 +179,7 @@ export function PromptDocumentEditorDialog({
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
-        className="max-h-[90vh] max-w-2xl overflow-y-auto"
+        className="max-h-[90vh] max-w-[84rem] overflow-y-auto"
         data-testid="prompt-document-editor"
       >
         <DialogHeader>

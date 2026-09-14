@@ -403,7 +403,7 @@ export function RuleEditorDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
+      <DialogContent className="max-w-[84rem] max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>
             {rule?.built_in

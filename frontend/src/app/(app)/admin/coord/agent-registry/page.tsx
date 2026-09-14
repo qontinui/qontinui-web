@@ -44,7 +44,11 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ChevronDown, ChevronRight, Loader2, RefreshCw } from "lucide-react";
-import { rowAccentClass as sharedRowAccentClass } from "@/components/console";
+import {
+  INERT,
+  rowAccentClass as sharedRowAccentClass,
+  WAITING_AMBER,
+} from "@/components/console";
 import {
   AgentPrefError,
   listAdminAgentRegistry,
@@ -52,7 +56,7 @@ import {
   type AdminAgentRegistryRow,
 } from "@/lib/api/agent-registry";
 
-// R3 — the colour families, named once and taken verbatim from the guide's
+// R3 — the colour families, IMPORTED. They used to be re-declared here,
 // exemplar (`components/operations/MergePipeline.tsx`) so a second surface
 // cannot pick its own amber.
 //
@@ -61,9 +65,12 @@ import {
 // painting one red is exactly the "trained the eye to ignore red" mistake §4
 // of the style guide exists to prevent. The one red on the page is the
 // load-failure banner, which IS an outage.
-const WAITING_AMBER = "bg-amber-500/15 text-amber-200 border-amber-500/30";
+// `WAITING_AMBER` and `INERT` now come from `console/statusRow` rather than
+// being re-typed here. Copying a constant is how a shared palette drifts: the
+// two spellings were byte-identical, so nothing would have reported it if one
+// of them had later moved. `READY_GREEN` has no exported sibling yet — green
+// is not an R3 attention family — so it stays local.
 const READY_GREEN = "bg-green-500/15 text-green-200 border-green-500/30";
-const INERT = "bg-muted text-muted-foreground border-border";
 
 const LIGHT_CLASS = {
   green: "bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.8)]",

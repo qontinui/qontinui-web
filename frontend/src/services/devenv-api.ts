@@ -14,6 +14,7 @@
 // ============================================================================
 
 import { ApiConfig } from "@/services/api-config";
+import type { HttpOptions } from "@/services/http-client";
 import { httpClient } from "@/services/service-factory";
 
 /** Base URL for the devenv surface. */
@@ -114,8 +115,59 @@ export interface Machine {
    * unambiguous-hostname backfill. Optional: older backends omit it.
    */
   coord_device_id?: string | null;
+  /**
+   * How the row came to exist: an operator registering it by hand
+   * (`manual`), an operator dispatching an enroll to a paired box
+   * (`dispatched`), or the connect-time engine enrolling it on its own
+   * (`auto`).
+   *
+   * `null` means UNKNOWN — the row predates the column, or an older backend
+   * omits the field. Render that as NO badge. It must NEVER be shown as
+   * `manual`: that would invent provenance the database never observed.
+   */
+  enrollment_origin?: "manual" | "dispatched" | "auto" | null;
   created_at: string;
   updated_at: string;
+}
+
+// ---------------------------------------------------------------------------
+// Auto-enrollment policy
+// ---------------------------------------------------------------------------
+
+/**
+ * The owner's connect-time auto-enrollment policy, plus what it actually
+ * resolves to right now.
+ *
+ * `configured: false` means NO row exists — which reads as ENABLED, not
+ * disabled (the server's default). The flag only distinguishes "the owner
+ * chose this" from "the owner has never opened this surface".
+ *
+ * `effective_environment_id` is the environment a new box would really join.
+ * Null with `environment_count > 1` is the ambiguous state: the engine skips
+ * every new machine and only logs. That combination is not a healthy "on" and
+ * the UI must say so — it is the whole reason this shape carries more than the
+ * two stored columns.
+ */
+export interface AutoEnrollPolicy {
+  enabled: boolean;
+  /**
+   * The DEPLOYMENT's auto-enrollment flag, not the owner's. Ships false and is
+   * turned on tenant by tenant, so during the whole rollout window the engine
+   * refuses before reading anything while `enabled` still (truthfully) says the
+   * owner wants it on. Dominates every other field when rendering status.
+   */
+  globally_enabled: boolean;
+  target_environment_id: string | null;
+  configured: boolean;
+  effective_environment_id: string | null;
+  environment_count: number;
+  updated_at: string | null;
+}
+
+/** Whole-row write — never a patch, so a client cannot half-state a policy. */
+export interface AutoEnrollPolicyUpdate {
+  enabled: boolean;
+  target_environment_id: string | null;
 }
 
 /** Machine create/regenerate-enrollment response: includes the ONE-TIME code. */
@@ -454,7 +506,7 @@ async function parseError(res: Response): Promise<DevenvApiError> {
   return new DevenvApiError(res.status, message, code);
 }
 
-async function request<T>(path: string, init?: RequestInit): Promise<T> {
+async function request<T>(path: string, init?: HttpOptions): Promise<T> {
   // `httpClient.fetch` attaches the Bearer token (+ credentials, CSRF, and the
   // 401-refresh / 429-5xx retry). We keep the raw Response so the devenv error
   // envelope (`{detail:{code,message}}` → DevenvApiError) is preserved rather
@@ -500,6 +552,8 @@ export function updateApplication(
   return request<Application>(`/applications/${encodeURIComponent(id)}`, {
     method: "PATCH",
     body: JSON.stringify(payload),
+    // Safe to re-issue: `update_application` assigns exclude_unset fields, no delta.
+    idempotent: true,
   });
 }
 
@@ -562,6 +616,8 @@ export function updateMachine(
   return request<Machine>(`/machines/${encodeURIComponent(id)}`, {
     method: "PATCH",
     body: JSON.stringify(payload),
+    // Safe to re-issue: `update_machine` assigns exclude_unset fields, no delta.
+    idempotent: true,
   });
 }
 
@@ -600,6 +656,29 @@ export function setMachineEnvironment(
 }
 
 // ---------------------------------------------------------------------------
+// Auto-enrollment policy
+// ---------------------------------------------------------------------------
+
+/** Read the owner's auto-enrollment policy. Never creates the row. */
+export function getAutoEnrollPolicy(): Promise<AutoEnrollPolicy> {
+  return request<AutoEnrollPolicy>("/auto-enroll-policy");
+}
+
+/**
+ * Set the owner's auto-enrollment policy. A `target_environment_id` the caller
+ * does not own is a 404 — the server refuses to store a target that would
+ * never resolve.
+ */
+export function setAutoEnrollPolicy(
+  payload: AutoEnrollPolicyUpdate
+): Promise<AutoEnrollPolicy> {
+  return request<AutoEnrollPolicy>("/auto-enroll-policy", {
+    method: "PUT",
+    body: JSON.stringify(payload),
+  });
+}
+
+// ---------------------------------------------------------------------------
 // Environments
 // ---------------------------------------------------------------------------
 
@@ -627,6 +706,8 @@ export function updateEnvironment(
   return request<Environment>(`/environments/${encodeURIComponent(id)}`, {
     method: "PATCH",
     body: JSON.stringify(payload),
+    // Safe to re-issue: `update_environment` assigns exclude_unset fields, no delta.
+    idempotent: true,
   });
 }
 

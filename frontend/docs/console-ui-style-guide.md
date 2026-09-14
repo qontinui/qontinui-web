@@ -1286,6 +1286,7 @@ same table. Every module doc cites its rule number and links this file.
 | `RecordList` | R2, R5 | `{ items, itemKey, renderRow, loaded?, skeletonRows?, empty?, className? }` &plus; a `RecordListExpansion` **union**: either neither of `{expandedKey, onExpandedKeyChange}` or **both** | The loading / empty / rows trichotomy is ONE decision, so it is one component. Unloaded renders skeletons, never an empty list. `empty` is the caller's, because an honest empty state names *which* question came back empty. One open at a time. Expansion state is internal unless hoisted, and the hoisting props are a UNION so supplying one without the other is a type error rather than a silently-ignored prop. |
 | `FilterTabs` | R6 | `{ tabs, active, onChange, testIdPrefix?, query?, onQueryChange?, queryPlaceholder?, queryTestId?, className? }` where `tabs: { id, label, count?, attention?, testId? }[]` | **`count == null` → `–`; `count === 0` → `0`.** The rule lives in the primitive precisely because it is the clause a page author will not think to reproduce. A caller expresses "unknown" by passing `null`, which is what an unfetched value already is. |
 | `FilterChips` | R6 | `{ label, options, selected, onToggle, onClear, allLabel?, maxVisible?, testIdPrefix?, title?, className? }` where `options: { value, label, count?, testId?, title? }[]` | The MULTI-select sibling. **`selected: []` is NO filter, not an option** — a synthetic `"any"` member would be a value the server vocabulary does not have, and every caller would have to strip it before the query string. The `all` chip is a clear action, pressed exactly when nothing is selected and **inert while it is** (`aria-disabled` with no handler, never the real `disabled` attribute, which would drop it out of the tab order on the one interaction it exists for and dim the page's default state) — a caller's `onClear` is a `setState([])`, so a no-op click would hand every selection-keyed `useCallback` a fresh array and refetch, discarding whatever the operator had paged into. Counts are a GROUP decision: a strip where no option carries one renders no count slot, and inside a strip where any does, R6's `–`-not-`0` reading is identical to `FilterTabs`'. `maxVisible` caps a SERVER vocabulary behind a `+N more` disclosure, with every selected option exempt: coord's alert corpus was 43 distinct live kinds on 2026-08-24 against the ~10 the alerts page was written for, and forty-three chips is §5's density budget spent on a control. Split from `FilterTabs` rather than widening `active` to `Id \| Id[]`, which would have given one component two different empty states. |
+| `RefreshButton` | §6.4 (no numbered rule) | `{ onRefresh, label, title, className?, "data-testid"? }` where `onRefresh: () => Promise<unknown> \| void` | The icon-only "re-read now" control. **`label` and `title` are required, not defaulted**: `label` is the accessible name (an icon has none), and `title` names what the press does AND its effect — "returns to the first page", "also refreshes itself every 10 s" — without repeating the label, since it is announced as the description right after the name. **Busy belongs to the press**: the button is busy for exactly as long as the promise ITS click returned is out, so a page's poll — which usually calls the same fetch function — has no path to the state and cannot make it pulse every interval. Busy is `aria-busy` + `aria-disabled` with presses ignored, never the real `disabled` attribute (same reasoning as `FilterChips`' `all` chip: it would blur the button out from under the keyboard user who just pressed it). A rejected read ends busy too — the failure is the page's to render (R6). Added by plan `2026-09-09-coord-plans-page-controls-do-not-acknowledge-or-name-themselves` after 18 of 28 `/admin/coord/*` files rendering `RefreshCw` were found carrying no `aria-label`; adopted on `/plans` first, the other 17 are open. |
 | `CollapsiblePanel` | R7 | unchanged | **Moved** from `operations/CollapsiblePanel.tsx` (D3). Phase 1's re-export shim at the old path is **deleted**: its seven callers were repointed at this barrel in Phase 1's post-merge follow-up. The re-export in `operations/index.ts` stays — that is the barrel, not the shim. |
 | `statusRow` atoms | R2, R3, R4 | see §3.1 | **Moved**, not re-extracted. |
 | `time.ts` | supports R2 | `relativeTime(iso, { absent?, now? }?)`, `absoluteTime(iso)` | Moved out of `operations/utils.ts` so `console/` carries no runtime edge into the merge-train route catalogue. `operations/utils.ts` re-exports `relativeTime` as a binding, so the options parameter travels to its **23** importers and none of them changed. **`absent`** (default `"never"`) is rendered for a timestamp that is missing *or unparseable* — an unparseable one is not `"just now"`, which is reserved for a genuinely negative delta (clock skew). **`now`** (default `Date.now()`) makes a caller's test deterministic. Both exist because their absence was what kept five private copies alive; see §3.1. |
@@ -1496,6 +1497,26 @@ that one object per surface rather than four loose constants, and Phase 1's
 `console/attention.ts` (`paletteDisagreements`) makes the agreement assertion
 itself shared — see §3.2.
 
+**…and it enrols in the registry: add one row to `CONSOLE_PALETTES` in
+`console/consoleSurfaces.ts`**, naming the module that DECLARES the table.
+This is not optional politeness. `consoleSurfaces.test.ts` scans the console's
+source for attention tables and asserts set-equality against that registry in
+both directions, so a surface that skips the row fails CI, and a row pointing
+at a module that was renamed fails too. The registry used to live inside
+`attention.test.ts` and enrolment used to be manual — which is how seven
+palettes across Waves 1 and 2 came to be audited only beside themselves.
+
+**Nothing but `console/statusRow.tsx` may spell an R3 literal.** The same file
+carries a second scan: within `components/console/`, `components/admin/coord/`,
+`components/operations/` and `app/(app)/admin/coord/`, no module may contain a
+string byte-equal to — or an *opacity-drifted near-miss of* — `AUTHOR_RED`,
+`WAITING_AMBER` or `UNKNOWN_AMBER`. Import them. §4.1 always said this; the
+scan is what makes it true, and it found ten violations the first time it ran,
+one of them a genuine `/30`-against-`/35` drift. The near-miss half matters
+most for the two ambers, which differ *only* in a background opacity while
+saying different things — so a hand-spelled amber is a coin flip between two
+claims, not mere duplication.
+
 ### 4.3 Known gap — the palette is not tokenised
 
 The families above are **raw Tailwind literals in one component**.
@@ -1556,6 +1577,7 @@ so each has one home, and this table says plainly which ones actually gate a PR.
 | **Executable** — the primitives every console page composes from | `frontend/src/components/console/` (+ `index.ts` barrel), built on `console/statusRow.tsx` | The type system + unit tests. **This is the real style guide**: a page either uses `<RecordRow>` or it doesn't | **Yes** — `tsc` + `vitest` |
 | **Declarative atoms** — density and palette as CSS-property rules | `frontend/src/config/qontinui-web.styleguide.uibridge.json` (`rules[]`) | **Nothing. There is no evaluator for this file anywhere in the fleet.** | **No** |
 | **CI-enforced atoms** — what actually bites | `frontend/tests/e2e/style-gate/specs/<id>.json` + `baselines/<id>.json`, per route in `routes.json` | The `Style Gate (shadow)` workflow (`.github/workflows/style-gate.yml`), running `vision-audit` pinned by `style-gate.lock` | **Yes, but indirectly** — the workflow is *not* a required check; coord's `ci-not-green` predicate is what holds the PR. See §6.2 |
+| **Lint** — the shapes that must not come back | `frontend/eslint-rules/no-fat-record-card.mjs` (+ its `.test.mjs` fixtures) | ESLint, via the local `@qontinui-web` plugin. Bans a bordered, padded card rendered **per record** under `admin/coord/**` — R2's opposite | **Yes** — `npm run lint --max-warnings 0` |
 
 ### 6.1 The declarative layer has no evaluator — say so, do not imply otherwise
 

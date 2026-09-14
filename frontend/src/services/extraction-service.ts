@@ -171,6 +171,8 @@ export class ExtractionService {
     const response = await this.httpClient.fetch(url, {
       method: "PATCH",
       body: JSON.stringify(data),
+      // Safe to re-issue: `update_extraction_session` setattr's the given fields.
+      idempotent: true,
     });
 
     if (!response.ok) {

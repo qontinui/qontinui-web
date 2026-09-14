@@ -203,10 +203,23 @@ class TestGetMergeProposal:
 
 
 class TestPostAgentsAllocate:
-    """The demo-control page POSTs three allocations in parallel; this
-    endpoint is the per-call proxy. Body shape matches coord's
-    `AllocateRequest`; response shape matches coord's `AllocateResponse`
-    including the per-agent JWT.
+    """Operator-bearer proxy for coord's `POST /agents/allocate`.
+
+    Body shape matches coord's `AllocateRequest`; response shape matches
+    coord's `AllocateResponse` including the per-agent JWT. `intent` is
+    opaque text this proxy forwards without inspecting.
+
+    This used to be described as "the demo-control page POSTs three
+    allocations in parallel". That page is DELETED — it dispatched agents
+    at the three `2026-05-18-coordination-layer-demos-feature-*` plans,
+    which are SUPERSEDED. The endpoint is retained on its own merits:
+    coord's `/agents/allocate` is the fleet's worktree-allocation path and
+    this is the admin-gated proxy in front of it. It now has no in-repo
+    caller. Its regression guards are these tests, which pin the proxy
+    behaviour, and ``test_operations_tenant_gate.py``'s
+    ``TestAdminGateStillEnforced``, which POSTs this same route and pins the
+    403 for a non-admin. Do not read the absent in-repo caller as evidence
+    the route is dead.
     """
 
     _ALLOCATE_PAYLOAD = {

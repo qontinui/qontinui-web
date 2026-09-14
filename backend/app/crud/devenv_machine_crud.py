@@ -240,3 +240,42 @@ async def revoke_machine(db: AsyncSession, machine: Machine) -> None:
 def _ensure_uuid(value: str | UUID) -> UUID:
     """Coerce a str/UUID to UUID (helper for type-narrowing callers)."""
     return value if isinstance(value, UUID) else UUID(str(value))
+
+
+# ---------------------------------------------------------------------------
+# The one-live-row-per-device invariant (devenv_10)
+# ---------------------------------------------------------------------------
+
+# The typed code every writer that would breach ``uq_devenv_machine_active_coord_device``
+# answers with. One code, because the caller's remedy is the same everywhere:
+# the device already has a live machine row, so revoke or delete that one first.
+DEVICE_ALREADY_HAS_MACHINE_CODE: Final[str] = "device_already_has_machine"
+DEVICE_ALREADY_HAS_MACHINE_MESSAGE: Final[str] = (
+    "This device already has an active machine. Revoke or delete it before "
+    "binding another machine to the same device."
+)
+
+
+async def live_machine_for_device(
+    db: AsyncSession,
+    *,
+    coord_device_id: UUID,
+    exclude_machine_id: UUID | None = None,
+) -> UUID | None:
+    """Id of the non-revoked machine already bound to ``coord_device_id``, if any.
+
+    The pre-check every writer that sets ``coord_device_id`` (or un-revokes a row
+    that has one) runs BEFORE its flush, so the normal ordering answers 409 with
+    a typed code instead of an untyped 500 from
+    ``uq_devenv_machine_active_coord_device``. It is a pre-check, not the
+    guarantee: the index remains the authority under concurrency, which is why
+    every one of those writers ALSO handles ``IntegrityError``.
+    """
+    stmt = select(Machine.id).where(
+        Machine.coord_device_id == coord_device_id,
+        Machine.revoked_at.is_(None),
+    )
+    if exclude_machine_id is not None:
+        stmt = stmt.where(Machine.id != exclude_machine_id)
+    found: UUID | None = await db.scalar(stmt)
+    return found

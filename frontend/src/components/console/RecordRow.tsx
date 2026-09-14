@@ -30,11 +30,19 @@
  * be reachable by keyboard, and a div with an onClick is not.
  */
 
-import type { ReactNode } from "react";
+import { createContext, useContext, type ReactNode } from "react";
 import { Badge } from "@/components/ui/badge";
 import { ChevronDown, ChevronRight } from "lucide-react";
 import type { Attention } from "./attention";
 import { rowAccentClass } from "./statusRow";
+
+/**
+ * The key the enclosing `<RecordList>` keyed this row on, or `null` when the
+ * row is rendered outside one.
+ *
+ * `<RecordList>` provides it; `<RecordRow>` reads it. Nothing else should.
+ */
+export const RecordRowKeyContext = createContext<string | null>(null);
 
 export interface RecordRowProps {
   /** Mono identity chip: `repo#123`, a worktree name, a drive letter. */
@@ -81,7 +89,36 @@ export interface RecordRowProps {
    * rounded-b-md`) so the two read as one object.
    */
   children?: ReactNode;
-  /** Written to `data-row-key` — the row's stable identity for e2e/specs. */
+  /**
+   * Written to `data-row-key` — the row's stable identity for e2e/specs.
+   *
+   * **Inside a `<RecordList>` this is IGNORED, and that is the point.** The
+   * list already computed the row's identity, via `itemKey`, and keys both the
+   * React reconciliation and the one-open-at-a-time expansion on it. A row
+   * deriving a second identity from the same record cannot be more right than
+   * the list, and can be — was — wrong: on four surfaces the two expressions
+   * disagreed, so `data-row-key` named something no expansion state ever used.
+   * `/trees` disagreed totally (`device_id:repo` against `repo:primary_path`),
+   * `/alerts` in exactly the collision-prone fallback the index suffix exists
+   * for, `/releases` and `/agents` in one leg of their `??` chains each.
+   *
+   * So the list wins where there is a list, and this prop is the source only
+   * where there is not — `PlanLibraryList`'s hand-rolled `.map` (its expansion
+   * has two anchors, so it deliberately owns no list) and the agent-detail log
+   * feed. Keep supplying it: it is what those surfaces, and a standalone
+   * render in a unit test, have.
+   *
+   * **Thirteen rows inside lists still pass it, and that is not an oversight
+   * to tidy away.** Every one of the thirteen AGREES with its list's
+   * `itemKey` — checked, one by one — so the prop is inert there rather than
+   * wrong, and it is the row's only identity if anyone renders it standalone,
+   * which two unit tests already do (`GapRow.test.tsx`, `PlanRow.test.tsx`).
+   * The three that were DELETED are exactly the three that disagreed and are
+   * list-only, where a dead expression stating a different identity is worse
+   * than none. The rule, then, is not "no row passes `rowKey`" — it is *a row
+   * may pass it, and the list overrides it*, which is what makes the
+   * disagreement unreachable without a fourteen-file sweep.
+   */
   rowKey?: string;
   className?: string;
   "data-testid"?: string;
@@ -105,8 +142,19 @@ export function RecordRow({
   reasonTestId = "row-reason",
 }: RecordRowProps) {
   const Chevron = expanded ? ChevronDown : ChevronRight;
+  // The list's key wins over the prop — see `rowKey`'s doc. `null` is the
+  // context default and means "no enclosing list", so the prop is the only
+  // source there. `??` rather than `||` so that `null` is the ONLY thing that
+  // falls through: with `||`, a list that keyed a row on `""` would silently
+  // hand the decision back to the row's own prop, re-opening the disagreement
+  // this context closes. (An empty key still renders an empty attribute, which
+  // `primitives.test.tsx` treats as a hazard — but that is the LIST's bug to
+  // fix in its `itemKey`, and it should surface there rather than be papered
+  // over here.)
+  const listKey = useContext(RecordRowKeyContext);
+  const resolvedRowKey = listKey ?? rowKey;
   return (
-    <div data-testid={testId} data-row-key={rowKey} className={className}>
+    <div data-testid={testId} data-row-key={resolvedRowKey} className={className}>
       <button
         type="button"
         onClick={onToggle}
