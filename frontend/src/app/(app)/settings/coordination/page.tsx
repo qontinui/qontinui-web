@@ -303,8 +303,10 @@ export default function CoordinationSettingsPage() {
                             className="text-xs text-yellow-500/80"
                             data-testid={`domain-fallback-${domain.decision_domain}`}
                           >
-                            Built-in default, not saved yet: coord has no policy
-                            for this domain. Choose a level and save to apply
+                            Not saved yet: coord has no policy for this domain
+                            and escalates until one is saved. The highlighted
+                            level is only the built-in default — click a level
+                            (including the highlighted one) and save to apply
                             it.
                           </p>
                         )}
