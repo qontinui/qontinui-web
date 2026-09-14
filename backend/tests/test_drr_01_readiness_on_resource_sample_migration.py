@@ -56,7 +56,7 @@ from tests._alembic_harness import (
 # revision's own `down_revision` — the first test below enforces it. If the alembic
 # head moves before landing, re-point BOTH together.
 _REVISION_ID = "drr_01"
-_PARENT_REVISION_ID = "oplog_age_idx_01"
+_PARENT_REVISION_ID = "partdel_01"
 _REVISION_FILENAME = "drr_01_readiness_on_resource_sample.py"
 
 _TABLE = "device_resource_samples"
