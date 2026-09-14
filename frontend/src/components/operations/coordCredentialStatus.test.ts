@@ -34,6 +34,7 @@ import {
   COORD_CREDENTIAL_PALETTE,
   coordDeviceHostKey,
   reportedCoordCredential,
+  reportedCoordCredentialFor,
   resolveCoordCredential,
   summarizeCoordCredentials,
 } from "./coordCredentialStatus";
@@ -330,14 +331,28 @@ describe("coordDeviceHostKey / reportedCoordCredential", () => {
     expect(reportedCoordCredential({ details: null })).toBeUndefined();
     expect(reportedCoordCredential({ details: ["x"] })).toBeUndefined();
   });
+
+  it("reads a row's bag only for the device that row belongs to", () => {
+    const row = {
+      device_id: "d-new",
+      details: { coord_credential: { ok: true } },
+    };
+    expect(reportedCoordCredentialFor("d-new", row)).toEqual({ ok: true });
+    expect(reportedCoordCredentialFor("d-old", row)).toBeUndefined();
+    expect(reportedCoordCredentialFor("d-new", undefined)).toBeUndefined();
+  });
 });
 
 describe("summarizeCoordCredentials", () => {
-  const NO_STREAM = new Map<string, { details?: unknown }>();
+  type StreamRow = { device_id: string; details?: unknown };
+  const NO_STREAM = new Map<string, StreamRow>();
 
-  /** One device-status row carrying `details.coord_credential`. */
-  function streamRow(coordCredential: unknown): { details: unknown } {
-    return { details: { coord_credential: coordCredential } };
+  /** One device-status row, for `deviceId`, carrying `details.coord_credential`. */
+  function streamRow(deviceId: string, coordCredential: unknown): StreamRow {
+    return {
+      device_id: deviceId,
+      details: { coord_credential: coordCredential },
+    };
   }
 
   it("counts unknown separately from ok — never folded into the healthy side", () => {
@@ -382,10 +397,10 @@ describe("summarizeCoordCredentials", () => {
   });
 
   it("reads each device's heartbeat bag: reported healthy → ok, neither source → unknown, dark → needsAction", () => {
-    const stream = new Map<string, { details?: unknown }>([
-      ["healthy", streamRow({ ok: true, reason: null })],
+    const stream = new Map<string, StreamRow>([
+      ["healthy", streamRow("d-1", { ok: true, reason: null })],
       // A device-status row exists but carries no `coord_credential` key.
-      ["silent", { details: { current_task: "x" } }],
+      ["silent", { device_id: "d-2", details: { current_task: "x" } }],
     ]);
     const rollup = summarizeCoordCredentials(
       [
@@ -419,8 +434,8 @@ describe("summarizeCoordCredentials", () => {
   });
 
   it("joins the bag under the same key the rows use — device id when coord serves no hostname", () => {
-    const stream = new Map<string, { details?: unknown }>([
-      ["d-9", streamRow({ ok: true })],
+    const stream = new Map<string, StreamRow>([
+      ["d-9", streamRow("d-9", { ok: true })],
     ]);
     expect(summarizeCoordCredentials([{ device_id: "d-9" }], stream).ok).toBe(
       1
@@ -434,10 +449,10 @@ describe("summarizeCoordCredentials", () => {
   });
 
   it("counts a runner-reported dark or finer author posture as needsAction", () => {
-    const stream = new Map<string, { details?: unknown }>([
-      ["a", streamRow({ ok: false, reason: "no bearer" })],
-      ["b", streamRow({ ok: false, posture: "unrefreshable" })],
-      ["c", streamRow({ ok: true, posture: "expiring" })],
+    const stream = new Map<string, StreamRow>([
+      ["a", streamRow("d-1", { ok: false, reason: "no bearer" })],
+      ["b", streamRow("d-2", { ok: false, posture: "unrefreshable" })],
+      ["c", streamRow("d-3", { ok: true, posture: "expiring" })],
     ]);
     const rollup = summarizeCoordCredentials(
       [
@@ -449,6 +464,36 @@ describe("summarizeCoordCredentials", () => {
     );
     // `expiring` is measured and self-clearing: ok, not needsAction.
     expect(rollup).toMatchObject({ needsAction: 2, ok: 1, unknown: 0 });
+  });
+
+  it("never lets a device borrow another device's report under a shared hostname", () => {
+    // A re-paired box: coord holds the old and the new device record, both
+    // named `msi`. The stream keeps only the last row under `msi`, and that
+    // row is the NEW device's. The old device published nothing of its own.
+    const stream = new Map<string, StreamRow>([
+      ["msi", streamRow("d-new", { ok: true })],
+    ]);
+    const rollup = summarizeCoordCredentials(
+      [
+        {
+          device_id: "d-old",
+          hostname: "msi",
+          credential_dark: { dark: false },
+        },
+        {
+          device_id: "d-new",
+          hostname: "msi",
+          credential_dark: { dark: false },
+        },
+      ],
+      stream
+    );
+    expect(rollup).toMatchObject({
+      total: 2,
+      ok: 1,
+      unknown: 1,
+      needsAction: 0,
+    });
   });
 
   it("passes coord's scrape flag through verbatim — undefined is not false", () => {

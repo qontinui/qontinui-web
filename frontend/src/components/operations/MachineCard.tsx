@@ -35,6 +35,7 @@ import { StatusBadge } from "@/components/console";
 import {
   COORD_CREDENTIAL_PALETTE,
   reportedCoordCredential,
+  reportedCoordCredentialFor,
   resolveCoordCredential,
 } from "./coordCredentialStatus";
 import { CiRunnerBadge } from "./CiRunnerBadge";
@@ -571,8 +572,16 @@ export function MachineCard({
    * health read, an absent verdict is an absence of the READ, and the card says
    * nothing rather than claiming this machine's credential is unknown.
    */
-  // The same read the health strip's rollup performs.
-  const reportedCredential = reportedCoordCredential(machine.currentActivity);
+  // The same read the health strip's rollup performs. On a row matched to a
+  // coord device, the stream row's report counts only if it is THAT device's
+  // (`device_id` equal): two coord devices sharing a hostname fold onto one
+  // row, and the row must not borrow a report from the one it is not showing.
+  const reportedCredential = machine.coordHealth?.matched
+    ? reportedCoordCredentialFor(
+        machine.coordHealth.device_id,
+        machine.currentActivity
+      )
+    : reportedCoordCredential(machine.currentActivity);
   const credential =
     machine.coordHealth || reportedCredential !== undefined
       ? resolveCoordCredential({

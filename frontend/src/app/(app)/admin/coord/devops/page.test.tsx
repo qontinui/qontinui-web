@@ -62,16 +62,25 @@ vi.mock("@/services/service-factory", () => ({
 // `deviceStatusStream.byHostname` is swappable: the real hook REPLACES its Map
 // on every update, and a test that needs to prove the page re-derives on a new
 // identity assigns a fresh Map here and re-renders.
+// `error` and `seeded` are settable too, for the tests that prove a failed or
+// pending stream read is named as its own cause rather than as the runners'
+// silence.
 const deviceStatusRows = new Map<string, unknown>();
-const deviceStatusStream: { byHostname: Map<string, unknown> } = {
+const deviceStatusStream: {
+  byHostname: Map<string, unknown>;
+  error: string | null;
+  seeded: boolean;
+} = {
   byHostname: deviceStatusRows,
+  error: null,
+  seeded: true,
 };
 vi.mock("@/components/operations/useDeviceStatusStream", () => ({
   useDeviceStatusStream: () => ({
     byHostname: deviceStatusStream.byHostname,
     connected: false,
-    error: null,
-    seeded: true,
+    error: deviceStatusStream.error,
+    seeded: deviceStatusStream.seeded,
     refetch: vi.fn(),
   }),
 }));
@@ -1584,8 +1593,45 @@ describe("/admin/coord/devops — the coord-credential axis", () => {
     routerPush.mockReset();
     deviceStatusRows.clear();
     deviceStatusStream.byHostname = deviceStatusRows;
+    deviceStatusStream.error = null;
+    deviceStatusStream.seeded = true;
     window.localStorage.clear();
   });
+
+  it.each([
+    ["has failed", "HTTP 500", true, "HTTP 500"],
+    ["has not seeded yet", null, false, "not loaded yet"],
+  ])(
+    "names a device-status stream that %s as its own cause, not as the runners' silence",
+    async (_name, error, seeded, cause) => {
+      deviceStatusStream.error = error;
+      deviceStatusStream.seeded = seeded;
+      mockRoutes({
+        devices: [
+          coordDevice("d-1", "msi", "healthy", {
+            credential_dark: { dark: false },
+          }),
+        ],
+        runners: [runner("msi")],
+        samples: [],
+        healthExtras: { credential_dark_scrape_up: true },
+      });
+
+      render(<CoordDevOpsPage />);
+
+      const strip = await screen.findByTestId(
+        "coord-devops-credential-unknown-badge"
+      );
+      // The count stands — the machine really is unmeasured on this read…
+      expect(strip).toHaveTextContent("credential unknown 1");
+      // …but the tooltip says the READ failed, not that the runner was silent.
+      const title = strip.getAttribute("title") ?? "";
+      expect(title).toContain(
+        `The runner credential reports could not be read (device-status stream: ${cause})`
+      );
+      expect(title).not.toMatch(/Neither coord's dark scan nor/);
+    }
+  );
 
   /** The credential badge on one machine's row, or null. */
   function credentialBadge(hostname: string): HTMLElement | null {
