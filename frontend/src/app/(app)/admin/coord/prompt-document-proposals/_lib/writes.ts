@@ -137,7 +137,12 @@ export function notificationHref(
 ): string | null {
   const trimmed = (ref ?? "").trim();
   if (!trimmed) return null;
-  return `/admin/coord/notifications?ref=${encodeURIComponent(trimmed)}`;
+  return notificationsFeedHref(trimmed);
+}
+
+/** The `?ref=` deep link for a ref already known to be non-blank. */
+function notificationsFeedHref(ref: string): string {
+  return `/admin/coord/notifications?ref=${encodeURIComponent(ref)}`;
 }
 
 /**
@@ -149,7 +154,8 @@ export function notificationHref(
  *   `PolicyDocumentChanged` event for it (or the reconciler re-emitted one)
  *   whose payload carries this same `notification_ref`, so the notifications
  *   feed's `?ref=` deep link finds the event and the reasoning beside it.
- * - `finding_only`: the write CREATED the document (`version_number === 1`).
+ * - `finding_only`: the write CREATED the document (`version_number <= 1` —
+ *   the exact complement of the Undo gate's `> 1`).
  *   Creation deliberately never emits — coord's `notify_document_version_change`
  *   says why: a tenant's first boot would otherwise announce values nobody
  *   changed — and the reconciler excludes v1 for the same reason. The
@@ -173,10 +179,7 @@ export function reasoningRef(
   const findingId = (write.notification_ref ?? "").trim();
   if (!findingId) return null;
   if (write.version_number <= 1) return { kind: "finding_only", findingId };
-  const href = notificationHref(findingId);
-  // `notificationHref` returns null only for a blank ref, excluded above.
-  if (!href) return null;
-  return { kind: "notice", href, findingId };
+  return { kind: "notice", href: notificationsFeedHref(findingId), findingId };
 }
 
 /**
