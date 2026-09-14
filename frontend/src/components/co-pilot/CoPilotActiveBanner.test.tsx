@@ -17,6 +17,7 @@
 import React from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  act,
   fireEvent,
   render,
   screen,
@@ -25,6 +26,7 @@ import {
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
 import { CoPilotActiveBanner } from "./CoPilotActiveBanner";
+import { CO_PILOT_PREFERENCE_QUERY_KEY } from "@/hooks/useCoPilotPreference";
 import {
   __CO_PILOT_SESSION_CONSENT_KEY__,
 } from "@/hooks/useCoPilotSessionConsent";
@@ -59,10 +61,9 @@ function activityResponse(items: Array<{ occurred_at: string }>): Response {
   return jsonResponse({ items });
 }
 
-function renderBanner() {
-  const qc = new QueryClient({
-    defaultOptions: { queries: { retry: false } },
-  });
+function renderBanner(
+  qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+) {
   return render(
     <QueryClientProvider client={qc}>
       <CoPilotActiveBanner />
@@ -131,7 +132,9 @@ describe("<CoPilotActiveBanner>", () => {
 
   it("lights on loopback dev with preference off and no session decision (auto-grant)", async () => {
     // The relay listener is live under the loopback auto-grant, so the
-    // "AI in control" banner — and its Stop button — must be too.
+    // "AI in control" banner — and its Stop button — must be too. The
+    // account opt-out is hidden: the auto-grant never reads the preference,
+    // so flipping it could not keep a new tab from going live.
     gates.loopbackDev = true;
     const recent = new Date(Date.now() - 2_000).toISOString();
     fetchMock.mockImplementation((url: string) => {
@@ -145,6 +148,9 @@ describe("<CoPilotActiveBanner>", () => {
       expect(screen.queryByTestId("co-pilot-active-banner")).not.toBeNull();
       expect(screen.queryByTestId("co-pilot-active-banner-stop")).not.toBeNull();
     });
+    expect(
+      screen.queryByTestId("co-pilot-active-banner-disable-account")
+    ).toBeNull();
   });
 
   it("stays dark on loopback dev after an explicit revoke", async () => {
@@ -157,12 +163,21 @@ describe("<CoPilotActiveBanner>", () => {
       }
       return Promise.resolve(activityResponse([{ occurred_at: recent }]));
     });
-    renderBanner();
-    await waitFor(() => {
-      expect(
-        screen.queryByTestId("co-pilot-active-banner-hidden")
-      ).not.toBeNull();
+    const qc = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
     });
+    renderBanner(qc);
+    // Wait for preference=true to actually LAND before asserting: the hidden
+    // placeholder is already there on the first render, while
+    // preference.enabled is still false, which would let a preference-path
+    // bug that ignores the revoke slip through.
+    await waitFor(() => {
+      expect(qc.getQueryData(CO_PILOT_PREFERENCE_QUERY_KEY)).toBeDefined();
+    });
+    await act(async () => {});
+    expect(
+      screen.queryByTestId("co-pilot-active-banner-hidden")
+    ).not.toBeNull();
     // Revoked means no polling at all, not just a hidden banner.
     expect(
       fetchMock.mock.calls.some(

@@ -17,7 +17,7 @@
  * Cross-link: plans/2026-05-28-production-safe-ui-bridge-design.md §4.5.
  */
 
-import { useEffect, useState } from "react";
+import { useSyncExternalStore } from "react";
 import type { CoPilotSessionConsentState } from "@/hooks/useCoPilotSessionConsent";
 
 const isDev = process.env.NODE_ENV === "development";
@@ -65,17 +65,31 @@ export function isLoopbackHostname(hostname: string): boolean {
  * binding the server to 127.0.0.1, which is the change that actually closes
  * the relay to the LAN.
  *
- * Returns false during SSR and on the first client render, then flips after
- * mount — deliberately, to avoid a hydration mismatch.
+ * A `useSyncExternalStore` read rather than useState + useEffect: the server
+ * snapshot is `false`, so hydration never mismatches, while every component
+ * mounted AFTER hydration (a client-side navigation to /prompt-home) reads
+ * the real value on its first render instead of flashing the opt-in card or
+ * mounting the consent modal for a frame. The hostname cannot change without
+ * a full reload, so there is nothing to subscribe to.
  */
 export function useIsLoopbackDev(): boolean {
-  const [isLoopback, setIsLoopback] = useState(false);
-  useEffect(() => {
-    if (!isDev) return;
-    if (typeof window === "undefined") return;
-    setIsLoopback(isLoopbackHostname(window.location.hostname));
-  }, []);
-  return isLoopback;
+  return useSyncExternalStore(
+    subscribeNever,
+    getLoopbackDevSnapshot,
+    getServerLoopbackDevSnapshot
+  );
+}
+
+function subscribeNever(): () => void {
+  return () => {};
+}
+
+function getLoopbackDevSnapshot(): boolean {
+  return isDev && isLoopbackHostname(window.location.hostname);
+}
+
+function getServerLoopbackDevSnapshot(): boolean {
+  return false;
 }
 
 export interface CoPilotConsentInputs {
