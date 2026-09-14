@@ -8,16 +8,18 @@
  */
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 
 const get = vi.fn();
+const put = vi.fn();
 
 vi.mock("@/services/service-factory", () => ({
   httpClient: {
     get: (...args: unknown[]) => get(...args),
     patch: vi.fn(),
     post: vi.fn(),
-    put: vi.fn(),
+    put: (...args: unknown[]) => put(...args),
     delete: vi.fn(),
   },
 }));
@@ -65,7 +67,10 @@ function nextStepSettings(
   };
 }
 
-beforeEach(() => get.mockReset());
+beforeEach(() => {
+  get.mockReset();
+  put.mockReset();
+});
 
 function checkedAttr(value: "default" | "on" | "off"): string | null {
   return screen
@@ -124,5 +129,61 @@ describe("CoordinationSettingsPage — fixer spawn switch placement", () => {
       (screen.getByTestId("fixer-spawn-off") as HTMLButtonElement).disabled
     ).toBe(true);
     expect(screen.getByTestId("fixer-spawn-rights-unknown")).toBeTruthy();
+  });
+});
+
+describe("CoordinationSettingsPage — a code-fallback domain can be saved", () => {
+  it("clicking the already-highlighted level enables Save and PUTs the domain", async () => {
+    const fallback = {
+      master_enabled: true,
+      can_edit: true,
+      domains: [
+        {
+          ...nextStepSettings("not_effective").domains[0],
+          autonomy_level: "auto_decide",
+          autonomy_level_source: "code_fallback",
+          effective: false,
+        },
+      ],
+    };
+    get.mockImplementation((url: unknown) =>
+      String(url ?? "").includes("next-step-settings")
+        ? Promise.resolve(fallback)
+        : String(url ?? "").includes("pr-merge/settings")
+          ? Promise.resolve(DIAL)
+          : Promise.resolve({})
+    );
+    put.mockResolvedValue({
+      ...fallback,
+      domains: [
+        { ...fallback.domains[0], autonomy_level_source: "policy_row" },
+      ],
+    });
+    const user = userEvent.setup();
+    render(<CoordinationSettingsPage />);
+
+    await user.click(
+      await screen.findByText("Advanced: per-decision behavior")
+    );
+    expect(await screen.findByTestId("domain-fallback-pr_fix")).toBeTruthy();
+    const save = screen.getByRole("button", { name: /Save changes/ });
+    expect((save as HTMLButtonElement).disabled).toBe(true);
+
+    const row = screen
+      .getByText("Automatic fixer for stuck PRs", { selector: "span" })
+      .closest("div.flex.items-start") as HTMLElement;
+    await user.click(within(row).getByRole("button", { name: "Auto" }));
+    await waitFor(() =>
+      expect((save as HTMLButtonElement).disabled).toBe(false)
+    );
+
+    await user.click(save);
+    await waitFor(() => expect(put).toHaveBeenCalledTimes(1));
+    expect(put).toHaveBeenCalledWith(
+      "/api/v1/operations/coord/next-step-settings",
+      {
+        domains: [{ decision_domain: "pr_fix", autonomy_level: "auto_decide" }],
+      }
+    );
   });
 });
