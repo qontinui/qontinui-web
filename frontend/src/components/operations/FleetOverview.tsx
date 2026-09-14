@@ -364,6 +364,14 @@ export interface FleetOverviewProps {
    * nothing would render every row's activity and credential report as absent.
    */
   deviceStatus: UseDeviceStatusStreamResult;
+  /**
+   * The page's ticking clock (epoch ms), handed to each row's credential
+   * resolution. A runner report goes stale by time alone, so the rows must
+   * re-resolve on a tick rather than only when a read lands — and on the SAME
+   * clock as the strip's rollup, or the two could disagree for up to a tick.
+   * Required for the same reason `deviceStatus` is.
+   */
+  nowMs: number;
 }
 
 export function FleetOverview({
@@ -371,6 +379,7 @@ export function FleetOverview({
   ciMachines,
   drain,
   deviceStatus,
+  nowMs,
 }: FleetOverviewProps) {
   const [fleet, setFleet] = useState<FleetStatus | null>(null);
   const [tasks, setTasks] = useState<AggregatedTaskRuns | null>(null);
@@ -698,6 +707,7 @@ export function FleetOverview({
                   <MachineCard
                     key={group.hostname}
                     machine={group}
+                    nowMs={nowMs}
                     onRenamed={fetchData}
                     // The drain join, resolved here from the page's ONE read.
                     // Two values rather than one because they answer different

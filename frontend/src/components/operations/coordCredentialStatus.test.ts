@@ -37,11 +37,39 @@ import {
   reportedCoordCredentialFor,
   resolveCoordCredential,
   summarizeCoordCredentials,
+  COORD_CREDENTIAL_FALLBACK_STALE_AFTER_SECS,
+  type CoordCredentialInput,
 } from "./coordCredentialStatus";
+
+/** The injected clock every staleness decision below is measured against. */
+const NOW = Date.parse("2026-09-14T12:00:00Z");
+/** An ISO stamp `secs` seconds before {@link NOW}. */
+function secondsAgo(secs: number): string {
+  return new Date(NOW - secs * 1_000).toISOString();
+}
+/** A report comfortably inside every bound these tests use. */
+const FRESH_AT = secondsAgo(30);
+
+/**
+ * `resolveCoordCredential` for a bag reported {@link FRESH_AT} — the tests
+ * that are about what a bag SAYS, not how old it is. An explicit `reportedAt`
+ * or `now` in `input` wins.
+ */
+function resolveFresh(input: CoordCredentialInput) {
+  return resolveCoordCredential({ reportedAt: FRESH_AT, now: NOW, ...input });
+}
+
+/** `summarizeCoordCredentials` on the injected clock. */
+function summarizeFresh(
+  ...args: Parameters<typeof summarizeCoordCredentials>
+) {
+  const [devices, stream, scrapeUp] = args;
+  return summarizeCoordCredentials(devices, stream, scrapeUp, NOW);
+}
 
 describe("resolveCoordCredential", () => {
   it("reads a device that PUBLISHED a healthy credential as live", () => {
-    const status = resolveCoordCredential({
+    const status = resolveFresh({
       credentialDark: { dark: false },
       reported: { ok: true },
     });
@@ -65,7 +93,7 @@ describe("resolveCoordCredential", () => {
   ])(
     "refuses to read coord's `dark: false` as live for %s",
     (_name, reported) => {
-      const status = resolveCoordCredential({
+      const status = resolveFresh({
         credentialDark: { dark: false },
         reported,
       });
@@ -81,7 +109,7 @@ describe("resolveCoordCredential", () => {
   );
 
   it("reads coord's dark join as an author-action posture, carrying the runner's reason", () => {
-    const status = resolveCoordCredential({
+    const status = resolveFresh({
       credentialDark: { dark: true, reason: "tier not QontinuiAccount" },
     });
     expect(status.kind).toBe("dark");
@@ -97,7 +125,7 @@ describe("resolveCoordCredential", () => {
     ["a heartbeat bag with nothing recognisable in it", { reported: {} }],
     ["a non-object bag", { reported: "healthy" }],
   ])("renders %s as UNKNOWN and never as live", (_name, input) => {
-    const status = resolveCoordCredential(input);
+    const status = resolveFresh(input);
     expect(status.kind).toBe("unknown");
     expect(status.kind).not.toBe("live");
     expect(status.measured).toBe(false);
@@ -114,11 +142,11 @@ describe("resolveCoordCredential", () => {
     // separating them is the presence of the runner's own bag — which is
     // exactly the discriminator, and the reason coord's join alone cannot
     // answer this question.
-    const measured = resolveCoordCredential({
+    const measured = resolveFresh({
       credentialDark: { dark: false },
       reported: { ok: true },
     });
-    const unmeasured = resolveCoordCredential({
+    const unmeasured = resolveFresh({
       credentialDark: { dark: false },
     });
     expect(measured.kind).toBe("live");
@@ -129,7 +157,7 @@ describe("resolveCoordCredential", () => {
   });
 
   it("prefers a published posture over coord's boolean join, and carries its `since`", () => {
-    const status = resolveCoordCredential({
+    const status = resolveFresh({
       // Coord's join has not caught up (or the scan ran before the runner
       // went dark); the runner's own report is the finer, fresher fact.
       credentialDark: { dark: false },
@@ -146,10 +174,10 @@ describe("resolveCoordCredential", () => {
   });
 
   it("distinguishes expired from unrefreshable — the two the boolean wire cannot", () => {
-    const expired = resolveCoordCredential({
+    const expired = resolveFresh({
       reported: { posture: "expired" },
     });
-    const unrefreshable = resolveCoordCredential({
+    const unrefreshable = resolveFresh({
       reported: { posture: "unrefreshable" },
     });
     expect(expired.kind).toBe("expired");
@@ -166,7 +194,7 @@ describe("resolveCoordCredential", () => {
   it("treats `expiring` as self-clearing, not as an emergency", () => {
     // The runner's whole design is that it re-mints without the user. Paging
     // an operator for the normal case is what teaches them to ignore red.
-    const status = resolveCoordCredential({
+    const status = resolveFresh({
       reported: { posture: "expiring" },
     });
     expect(status.attention).toBe("waiting");
@@ -178,7 +206,7 @@ describe("resolveCoordCredential", () => {
   it("ignores a posture string it does not know rather than trusting it", () => {
     // A newer runner inventing a posture must not render as an unstyled badge
     // or, worse, fall through to something calm.
-    const status = resolveCoordCredential({
+    const status = resolveFresh({
       reported: { posture: "vibes", ok: false, reason: "who knows" },
     });
     expect(status.kind).toBe("dark");
@@ -186,10 +214,10 @@ describe("resolveCoordCredential", () => {
   });
 
   it("falls back to the runner's bare `ok` when coord served no join", () => {
-    expect(resolveCoordCredential({ reported: { ok: true } }).kind).toBe(
+    expect(resolveFresh({ reported: { ok: true } }).kind).toBe(
       "live"
     );
-    expect(resolveCoordCredential({ reported: { ok: false } }).kind).toBe(
+    expect(resolveFresh({ reported: { ok: false } }).kind).toBe(
       "dark"
     );
   });
@@ -198,7 +226,7 @@ describe("resolveCoordCredential", () => {
     // The correction for C5 must not cost the dark arm anything. Coord's
     // `dark: true` is a real measurement of ill-health and outranks a bag
     // that may simply be a staler read of the same fact.
-    const status = resolveCoordCredential({
+    const status = resolveFresh({
       credentialDark: { dark: true, reason: "no bearer" },
       reported: { ok: true },
     });
@@ -209,13 +237,142 @@ describe("resolveCoordCredential", () => {
 });
 
 /**
+ * Plan `2026-09-14-credential-posture-second-residuals` Phase 4: a runner's
+ * report is evidence only while it is younger than its staleness bound. A
+ * runner offline for days still has its last `ok: true` on its device-status
+ * row, and that must not read `live` on its row or count `ok` on the strip.
+ */
+describe("resolveCoordCredential — a report past its staleness bound", () => {
+  const STALE_AT = secondsAgo(COORD_CREDENTIAL_FALLBACK_STALE_AFTER_SECS + 60);
+
+  it.each([
+    ["a live posture", { ok: true, posture: "live" }],
+    ["a bare ok: true", { ok: true }],
+  ])("reads %s reported past the bound as UNKNOWN, naming its age", (_n, bag) => {
+    const status = resolveCoordCredential({
+      credentialDark: { dark: false },
+      reported: bag,
+      reportedAt: STALE_AT,
+      now: NOW,
+    });
+    expect(status.kind).toBe("unknown");
+    expect(status.measured).toBe(false);
+    expect(status.attention).toBe("waiting");
+    expect(status.since).toBeUndefined();
+    // 960 s → "16m ago": the reason says how old the report is.
+    expect(status.reason).toMatch(/last credential report was 16m ago/);
+    expect(status.reason).toMatch(/900s staleness bound/);
+  });
+
+  it("reads the same bag inside the bound as live", () => {
+    const status = resolveCoordCredential({
+      reported: { ok: true, posture: "live" },
+      reportedAt: secondsAgo(COORD_CREDENTIAL_FALLBACK_STALE_AFTER_SECS - 60),
+      now: NOW,
+    });
+    expect(status.kind).toBe("live");
+    expect(status.measured).toBe(true);
+  });
+
+  it("still honours coord's own dark verdict when the bag is stale", () => {
+    const status = resolveCoordCredential({
+      credentialDark: { dark: true, reason: "no bearer" },
+      reported: { ok: true, posture: "live" },
+      reportedAt: STALE_AT,
+      now: NOW,
+    });
+    expect(status.kind).toBe("dark");
+    expect(status.reason).toBe("no bearer");
+    expect(status.measured).toBe(true);
+  });
+
+  it("does not let a stale author posture render either — its age makes it unknown too", () => {
+    const status = resolveCoordCredential({
+      reported: { ok: false, posture: "unrefreshable" },
+      reportedAt: STALE_AT,
+      now: NOW,
+    });
+    expect(status.kind).toBe("unknown");
+    expect(status.measured).toBe(false);
+  });
+
+  it("reads the runner's own `stale_after_secs`: 60 is fresh at 59s and stale at 61s", () => {
+    const bag = { ok: true, posture: "live", stale_after_secs: 60 };
+    const at59 = resolveCoordCredential({
+      reported: bag,
+      reportedAt: secondsAgo(59),
+      now: NOW,
+    });
+    const at61 = resolveCoordCredential({
+      reported: bag,
+      reportedAt: secondsAgo(61),
+      now: NOW,
+    });
+    expect(at59.kind).toBe("live");
+    expect(at61.kind).toBe("unknown");
+    expect(at61.reason).toMatch(/was 1m ago, past its 60s staleness bound/);
+  });
+
+  it.each([
+    ["zero", 0],
+    ["negative", -5],
+    ["a string", "60"],
+    ["NaN", Number.NaN],
+  ])(
+    "falls back to the 900s bound when `stale_after_secs` is %s",
+    (_n, declared) => {
+      const bag = { ok: true, stale_after_secs: declared };
+      // 61 s would be stale under a 60 s bound; under the fallback it is fresh.
+      expect(
+        resolveCoordCredential({
+          reported: bag,
+          reportedAt: secondsAgo(61),
+          now: NOW,
+        }).kind
+      ).toBe("live");
+      expect(
+        resolveCoordCredential({
+          reported: bag,
+          reportedAt: secondsAgo(901),
+          now: NOW,
+        }).kind
+      ).toBe("unknown");
+    }
+  );
+
+  it.each([
+    ["no reportedAt", undefined],
+    ["an unparseable reportedAt", "not a timestamp"],
+  ])("treats a bag with %s as stale, not live", (_n, reportedAt) => {
+    const status = resolveCoordCredential({
+      reported: { ok: true },
+      reportedAt,
+      now: NOW,
+    });
+    expect(status.kind).toBe("unknown");
+    expect(status.measured).toBe(false);
+    expect(status.reason).toMatch(/carries no usable timestamp/);
+    // No age was measured, so the reason must not claim a bound was passed.
+    expect(status.reason).not.toMatch(/past its/);
+  });
+
+  it("keeps the no-report reason for a device with no bag at all", () => {
+    const noBag = resolveCoordCredential({ reportedAt: STALE_AT, now: NOW });
+    expect(noBag.kind).toBe("unknown");
+    expect(noBag.reason).toMatch(/No coord-credential verdict/);
+    expect(noBag.reason).not.toMatch(/staleness bound/);
+  });
+});
+
+/**
  * The cross-repo wire contract for `details.coord_credential`, pinned here so
  * a rename or a type change on the `qontinui-runner` side fails in this repo's
  * test suite rather than silently on an operator's console.
  *
  * Agreed shape:
  * `{ ok: bool, reason: string|null, posture: string, since: ISO-8601 string,
- *    tenant_id: string|null, exp: unix seconds|null }`
+ *    tenant_id: string|null, exp: unix seconds|null,
+ *    stale_after_secs: seconds (positive number) }`
  *
  * The two spellings that would break this consumer silently are `state`
  * instead of `posture` (the badge would fall back to the coarse boolean and
@@ -236,8 +393,27 @@ describe("the details.coord_credential wire contract", () => {
       since: "2026-09-12T03:54:26Z",
       tenant_id: "11111111-2222-3333-4444-555555555555",
       exp: 1789000000,
+      stale_after_secs: 900,
     };
   }
+
+  it("reads `stale_after_secs` as a number of seconds off the contract bag", () => {
+    const contract = { ...bag("live", true), stale_after_secs: 120 };
+    expect(
+      resolveCoordCredential({
+        reported: contract,
+        reportedAt: secondsAgo(119),
+        now: NOW,
+      }).kind
+    ).toBe("live");
+    expect(
+      resolveCoordCredential({
+        reported: contract,
+        reportedAt: secondsAgo(121),
+        now: NOW,
+      }).kind
+    ).toBe("unknown");
+  });
 
   it.each([
     ["live", true, "none"],
@@ -249,7 +425,7 @@ describe("the details.coord_credential wire contract", () => {
   ] as const)(
     "reads posture %s off the contract bag and carries its ISO `since`",
     (posture, ok, attention) => {
-      const status = resolveCoordCredential({
+      const status = resolveFresh({
         // Coord's join is whatever it is; the published posture is finer and
         // wins. `ok:false` is also what keeps coord's dark scan selecting
         // these devices, so both arms are exercised here.
@@ -272,24 +448,24 @@ describe("the details.coord_credential wire contract", () => {
     delete renamed.posture;
     // A producer that regressed to `state` gets the coarse boolean arm, never
     // a synthesised posture — and this assertion is what says so out loud.
-    expect(resolveCoordCredential({ reported: renamed }).kind).toBe("dark");
+    expect(resolveFresh({ reported: renamed }).kind).toBe("dark");
     expect(
-      resolveCoordCredential({ reported: bag("unrefreshable", false) }).kind
+      resolveFresh({ reported: bag("unrefreshable", false) }).kind
     ).toBe("unrefreshable");
   });
 
   it("requires `since` to be an ISO-8601 string, not unix seconds", () => {
     const numeric = { ...bag("expired", false), since: 1789000000 };
-    expect(resolveCoordCredential({ reported: numeric }).since).toBeUndefined();
+    expect(resolveFresh({ reported: numeric }).since).toBeUndefined();
     expect(
-      resolveCoordCredential({ reported: bag("expired", false) }).since
+      resolveFresh({ reported: bag("expired", false) }).since
     ).toBe("2026-09-12T03:54:26Z");
   });
 
   it("ignores the fields it does not render rather than failing on them", () => {
     // `tenant_id` and `exp` ride the bag for the producing side's benefit.
     // This module renders a posture, not a credential's contents.
-    const status = resolveCoordCredential({ reported: bag("live", true) });
+    const status = resolveFresh({ reported: bag("live", true) });
     expect(status.kind).toBe("live");
     expect(status).not.toHaveProperty("tenant_id");
     expect(status).not.toHaveProperty("exp");
@@ -299,7 +475,7 @@ describe("the details.coord_credential wire contract", () => {
     // The runner half is in flight; every deployed runner publishes only the
     // first two keys. Rung 3 must keep reading them, or this correction would
     // turn the whole fleet UNKNOWN on the day it deployed.
-    const status = resolveCoordCredential({
+    const status = resolveFresh({
       credentialDark: { dark: false },
       reported: { ok: true, reason: null },
     });
@@ -321,42 +497,96 @@ describe("coordDeviceHostKey / reportedCoordCredential", () => {
     );
   });
 
-  it("reads the bag verbatim and yields undefined for every absence", () => {
+  it("reads the bag verbatim, with the row's updated_at, and yields undefined for every absence", () => {
     const bag = { ok: true, reason: null };
-    expect(
-      reportedCoordCredential({ details: { coord_credential: bag } })
-    ).toBe(bag);
-    expect(reportedCoordCredential(undefined)).toBeUndefined();
-    expect(reportedCoordCredential({ details: {} })).toBeUndefined();
-    expect(reportedCoordCredential({ details: null })).toBeUndefined();
-    expect(reportedCoordCredential({ details: ["x"] })).toBeUndefined();
+    const found = reportedCoordCredential({
+      details: { coord_credential: bag },
+      updated_at: FRESH_AT,
+    });
+    expect(found.reported).toBe(bag);
+    expect(found.reportedAt).toBe(FRESH_AT);
+    expect(reportedCoordCredential(undefined)).toEqual({
+      reported: undefined,
+      reportedAt: undefined,
+    });
+    for (const details of [{}, null, ["x"]]) {
+      expect(
+        reportedCoordCredential({ details, updated_at: FRESH_AT }).reported
+      ).toBeUndefined();
+    }
   });
 
   it("reads a row's bag only for the device that row belongs to", () => {
     const row = {
       device_id: "d-new",
       details: { coord_credential: { ok: true } },
+      updated_at: FRESH_AT,
     };
-    expect(reportedCoordCredentialFor("d-new", row)).toEqual({ ok: true });
-    expect(reportedCoordCredentialFor("d-old", row)).toBeUndefined();
-    expect(reportedCoordCredentialFor("d-new", undefined)).toBeUndefined();
+    expect(reportedCoordCredentialFor("d-new", row)).toEqual({
+      reported: { ok: true },
+      reportedAt: FRESH_AT,
+    });
+    // Another device's row lends neither its bag nor its age.
+    expect(reportedCoordCredentialFor("d-old", row)).toEqual({
+      reported: undefined,
+      reportedAt: undefined,
+    });
+    expect(reportedCoordCredentialFor("d-new", undefined).reported).toBe(
+      undefined
+    );
   });
 });
 
 describe("summarizeCoordCredentials", () => {
-  type StreamRow = { device_id: string; details?: unknown };
+  type StreamRow = { device_id: string; details?: unknown; updated_at: string };
   const NO_STREAM = new Map<string, StreamRow>();
 
   /** One device-status row, for `deviceId`, carrying `details.coord_credential`. */
-  function streamRow(deviceId: string, coordCredential: unknown): StreamRow {
+  function streamRow(
+    deviceId: string,
+    coordCredential: unknown,
+    updatedAt: string = FRESH_AT
+  ): StreamRow {
     return {
       device_id: deviceId,
       details: { coord_credential: coordCredential },
+      updated_at: updatedAt,
     };
   }
 
+  it("counts a device whose report is past its bound as unknown, not ok", () => {
+    const stream = new Map<string, StreamRow>([
+      ["fresh", streamRow("d-1", { ok: true, posture: "live" })],
+      [
+        "offline",
+        streamRow(
+          "d-2",
+          { ok: true, posture: "live" },
+          secondsAgo(3 * 24 * 60 * 60)
+        ),
+      ],
+    ]);
+    const rollup = summarizeFresh(
+      [
+        { device_id: "d-1", hostname: "fresh", credential_dark: { dark: false } },
+        {
+          device_id: "d-2",
+          hostname: "offline",
+          credential_dark: { dark: false },
+        },
+      ],
+      stream
+    );
+    expect(rollup).toMatchObject({
+      total: 2,
+      ok: 1,
+      unknown: 1,
+      needsAction: 0,
+    });
+  });
+
   it("counts unknown separately from ok — never folded into the healthy side", () => {
-    const rollup = summarizeCoordCredentials(
+    const rollup = summarizeFresh(
       [
         { device_id: "d-1", hostname: "a", credential_dark: { dark: false } },
         {
@@ -384,7 +614,7 @@ describe("summarizeCoordCredentials", () => {
     // Under-claiming is the fallback where no bag is present: coord's join
     // concludes only `dark`, so without a runner report there is no source for
     // an affirmative verdict. A non-zero `ok` here could only come from guessing.
-    const rollup = summarizeCoordCredentials(
+    const rollup = summarizeFresh(
       [
         { device_id: "d-1", hostname: "a", credential_dark: { dark: false } },
         { device_id: "d-2", hostname: "b", credential_dark: { dark: false } },
@@ -400,9 +630,16 @@ describe("summarizeCoordCredentials", () => {
     const stream = new Map<string, StreamRow>([
       ["healthy", streamRow("d-1", { ok: true, reason: null })],
       // A device-status row exists but carries no `coord_credential` key.
-      ["silent", { device_id: "d-2", details: { current_task: "x" } }],
+      [
+        "silent",
+        {
+          device_id: "d-2",
+          details: { current_task: "x" },
+          updated_at: FRESH_AT,
+        },
+      ],
     ]);
-    const rollup = summarizeCoordCredentials(
+    const rollup = summarizeFresh(
       [
         {
           device_id: "d-1",
@@ -437,13 +674,13 @@ describe("summarizeCoordCredentials", () => {
     const stream = new Map<string, StreamRow>([
       ["d-9", streamRow("d-9", { ok: true })],
     ]);
-    expect(summarizeCoordCredentials([{ device_id: "d-9" }], stream).ok).toBe(
+    expect(summarizeFresh([{ device_id: "d-9" }], stream).ok).toBe(
       1
     );
     // A hostname that matches no stream row is not rescued by an id match:
     // the row for this device would not find the bag either.
     expect(
-      summarizeCoordCredentials([{ device_id: "d-9", hostname: "msi" }], stream)
+      summarizeFresh([{ device_id: "d-9", hostname: "msi" }], stream)
         .unknown
     ).toBe(1);
   });
@@ -454,7 +691,7 @@ describe("summarizeCoordCredentials", () => {
       ["b", streamRow("d-2", { ok: false, posture: "unrefreshable" })],
       ["c", streamRow("d-3", { ok: true, posture: "expiring" })],
     ]);
-    const rollup = summarizeCoordCredentials(
+    const rollup = summarizeFresh(
       [
         { device_id: "d-1", hostname: "a", credential_dark: { dark: false } },
         { device_id: "d-2", hostname: "b" },
@@ -473,7 +710,7 @@ describe("summarizeCoordCredentials", () => {
     const stream = new Map<string, StreamRow>([
       ["msi", streamRow("d-new", { ok: true })],
     ]);
-    const rollup = summarizeCoordCredentials(
+    const rollup = summarizeFresh(
       [
         {
           device_id: "d-old",
@@ -498,15 +735,15 @@ describe("summarizeCoordCredentials", () => {
 
   it("passes coord's scrape flag through verbatim — undefined is not false", () => {
     expect(
-      summarizeCoordCredentials([], NO_STREAM, undefined).scrapeUp
+      summarizeFresh([], NO_STREAM, undefined).scrapeUp
     ).toBeUndefined();
-    expect(summarizeCoordCredentials([], NO_STREAM, false).scrapeUp).toBe(
+    expect(summarizeFresh([], NO_STREAM, false).scrapeUp).toBe(
       false
     );
   });
 
   it("reports an empty fleet as nothing to say, not as an all-clear", () => {
-    const rollup = summarizeCoordCredentials([], NO_STREAM);
+    const rollup = summarizeFresh([], NO_STREAM);
     expect(rollup.total).toBe(0);
     expect(rollup.needsAction).toBe(0);
     expect(rollup.unknown).toBe(0);

@@ -1265,3 +1265,126 @@ describe("HttpClient reactive refresh on 401", () => {
     expect(onExpired).not.toHaveBeenCalled();
   });
 });
+
+/**
+ * A caller `AbortSignal` (plan `2026-09-14-credential-posture-second-residuals`
+ * Phase 5, W2). `fetch` used to spread `options` and then overwrite `signal`
+ * with its own controller's, so a caller could abandon a stalled body but
+ * never cancel it. The caller's signal is now linked into that controller,
+ * and stays linked after the headers resolve.
+ */
+describe("HttpClient honours a caller AbortSignal", () => {
+  beforeEach(() => {
+    vi.restoreAllMocks();
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+  });
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.useRealTimers();
+  });
+
+  /**
+   * A `fetch` stub that behaves like the platform's on abort: the request
+   * signal erroring the body stream (after headers) or rejecting the fetch
+   * (before them). It records the signal the client actually passed down.
+   */
+  function stallingBodyFetch(): { signal: () => AbortSignal | undefined } {
+    let seen: AbortSignal | undefined;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (_url: string, init: RequestInit) => {
+        const signal = init.signal ?? undefined;
+        seen = signal;
+        if (signal?.aborted) {
+          throw new DOMException("The operation was aborted.", "AbortError");
+        }
+        const body = new ReadableStream<Uint8Array>({
+          start(controller) {
+            // Headers arrive; the body never does — until the signal aborts.
+            signal?.addEventListener("abort", () =>
+              controller.error(
+                new DOMException("The operation was aborted.", "AbortError")
+              )
+            );
+          },
+        });
+        return new Response(body, { status: 200 });
+      })
+    );
+    return { signal: () => seen };
+  }
+
+  it("cancels the in-flight body read when the caller aborts after the headers", async () => {
+    const stub = stallingBodyFetch();
+    const client = new HttpClient(
+      makeTokenManager() as unknown as TokenManager
+    );
+    const caller = new AbortController();
+
+    const response = await client.fetch("https://api.test/api/v1/x", {
+      signal: caller.signal,
+    });
+    expect(response.status).toBe(200);
+    // The client ran the request on its own signal, not the caller's…
+    expect(stub.signal()).toBeDefined();
+    expect(stub.signal()).not.toBe(caller.signal);
+    expect(stub.signal()?.aborted).toBe(false);
+
+    const body = response.text();
+    caller.abort();
+
+    // …but the caller's abort reached it, so the body read is cancelled
+    // rather than left holding its connection.
+    expect(stub.signal()?.aborted).toBe(true);
+    await expect(body).rejects.toThrow(/aborted/i);
+  });
+
+  it("aborts at once, and says so, for a signal that is already aborted", async () => {
+    const stub = stallingBodyFetch();
+    const client = new HttpClient(
+      makeTokenManager() as unknown as TokenManager
+    );
+    const caller = new AbortController();
+    caller.abort();
+
+    const pending = client.fetch("https://api.test/api/v1/x", {
+      signal: caller.signal,
+      maxRetries: 0,
+    });
+    await expect(pending).rejects.toThrow(/aborted/i);
+    // A caller's abort is not reported as the header timeout.
+    await expect(pending).rejects.not.toThrow(/Request timeout/);
+    expect(stub.signal()?.aborted).toBe(true);
+  });
+
+  it("keeps the header timeout for a caller signal that never aborts", async () => {
+    let seen: AbortSignal | undefined;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        (_url: string, init: RequestInit) =>
+          new Promise<Response>((_resolve, reject) => {
+            seen = init.signal ?? undefined;
+            seen?.addEventListener("abort", () =>
+              reject(new DOMException("aborted", "AbortError"))
+            );
+          })
+      )
+    );
+    const client = new HttpClient(
+      makeTokenManager() as unknown as TokenManager
+    );
+    const caller = new AbortController();
+
+    vi.useFakeTimers();
+    const pending = client.fetch("https://api.test/api/v1/x", {
+      signal: caller.signal,
+      timeoutMs: 1_000,
+    });
+    const settled = expect(pending).rejects.toThrow(/Request timeout/);
+    await vi.advanceTimersByTimeAsync(1_000);
+    await settled;
+    expect(seen?.aborted).toBe(true);
+    expect(caller.signal.aborted).toBe(false);
+  });
+});

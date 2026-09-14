@@ -637,11 +637,36 @@ export class HttpClient {
     // place of the real backend error body).
     const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
+    // Honour a caller `signal`. The request below must run on `controller`'s
+    // signal (the header timeout aborts through it), so the caller's is LINKED
+    // into it rather than passed through — spreading `options` and then
+    // setting `signal` used to drop it silently. Composed by hand, not with
+    // `AbortSignal.any`, which would add an undeclared browser floor (Chrome
+    // 116 / Safari 17.4).
+    //
+    // The listener deliberately stays attached after the headers arrive: this
+    // method returns the `Response` and never learns when its body has been
+    // read, and a caller aborting AFTER the headers is exactly how a stalled
+    // body gets cancelled rather than merely abandoned. `once` detaches it on
+    // the abort; otherwise it lives as long as the caller's signal does — so
+    // pass a per-request signal, not one long-lived signal shared across
+    // many requests.
+    const callerSignal = options.signal ?? undefined;
+    const forwardCallerAbort = () => controller.abort(callerSignal?.reason);
+    if (callerSignal?.aborted) {
+      forwardCallerAbort();
+    } else {
+      callerSignal?.addEventListener("abort", forwardCallerAbort, {
+        once: true,
+      });
+    }
+
     try {
       const response = await fetch(url, {
         ...options,
         headers,
         credentials: "include",
+        // Carries the header timeout AND the caller's abort (linked above).
         signal: controller.signal,
       });
 
@@ -656,6 +681,19 @@ export class HttpClient {
       return response;
     } catch (error: unknown) {
       clearTimeout(timeoutId);
+      // No response, so no body left to cancel.
+      callerSignal?.removeEventListener("abort", forwardCallerAbort);
+
+      // A caller's own abort is not a timeout: hand it back as it came, not
+      // as "backend may be starting up". Compare the reason, not just
+      // `aborted`: if the header timeout fired first and the caller aborted
+      // in the same tick, `controller` carries the timeout's reason.
+      if (
+        callerSignal?.aborted &&
+        controller.signal.reason === callerSignal.reason
+      ) {
+        throw error;
+      }
 
       if ((error as Error).name === "AbortError") {
         throw new Error(
