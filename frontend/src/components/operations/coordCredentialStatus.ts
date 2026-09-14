@@ -84,6 +84,24 @@ import {
   UNKNOWN_AMBER,
   WAITING_AMBER,
 } from "@/components/console/statusRow";
+// Imported from its pure home rather than the `./utils` shim, which is the
+// route catalogue: this module fetches nothing and should not pull it in.
+import { relativeTime } from "@/components/console/time";
+
+/**
+ * How old a runner's `coord_credential` report may be and still count as
+ * evidence, when the report does not declare its own `stale_after_secs`.
+ *
+ * The runner owns this cadence and publishes the bound inside the bag
+ * (`stale_after_secs`, the fleet-health `sample_stale_after_secs` pattern), so
+ * a cadence change needs no web deploy. This constant is only the fallback for
+ * runner builds that predate that field. It mirrors runner
+ * `REFRESH_CHECK_INTERVAL` (300 s, `src-tauri/src/mcp/device_jwt_refresher.rs:85`)
+ * × 3: the refresher publishes once per pass, and three passes tolerates one
+ * skipped pass plus backoff jitter. It also matches `DeviceStatusTile`'s own
+ * 15-minute `stale` line.
+ */
+export const COORD_CREDENTIAL_FALLBACK_STALE_AFTER_SECS = 900;
 
 /**
  * Coord's per-device credential join, verbatim from `DeviceCredentialDark`
@@ -267,7 +285,8 @@ export interface CoordCredentialInput {
    *   "posture": "live",
    *   "since": "2026-09-12T03:54:26Z",
    *   "tenant_id": "…",
-   *   "exp": 1789000000
+   *   "exp": 1789000000,
+   *   "stale_after_secs": 900
    * }
    * ```
    *
@@ -276,13 +295,42 @@ export interface CoordCredentialInput {
    * `live`/`expiring`, which is what keeps coord's existing dark scan
    * selecting those devices. `tenant_id` and `exp` are carried for the
    * operator's benefit on the producing side and are not read here — this
-   * module renders a posture, not a credential's contents. Today's shipped
+   * module renders a posture, not a credential's contents.
+   * `stale_after_secs` is the runner's own statement of how long this report
+   * stays evidence (`3 × REFRESH_CHECK_INTERVAL`); it is read here, and a bag
+   * without a positive one falls back to
+   * {@link COORD_CREDENTIAL_FALLBACK_STALE_AFTER_SECS}. Today's shipped
    * runners publish the `{ ok, reason? }` prefix of that shape, which rung 3
    * of {@link resolveCoordCredential} still reads exactly.
    * `coordCredentialStatus.test.ts` pins the whole shape so a drift on either
    * side fails here rather than on the console.
    */
   reported?: unknown;
+  /**
+   * The device-status row's `updated_at` (ISO-8601) — the age of
+   * {@link reported}. Coord's status upsert replaces `details` wholesale and
+   * stamps `updated_at = now()` in the same write, so a row that still carries
+   * a `coord_credential` bag was last written by the report that wrote it.
+   *
+   * **Absent or unparseable ⇒ the bag is treated as stale.** Every real row
+   * carries one; a bag whose age cannot be established is not evidence.
+   */
+  reportedAt?: string;
+  /** The clock, in epoch milliseconds. Defaults to `Date.now()`; injectable so
+   *  a staleness decision renders deterministically under test. */
+  now?: number;
+}
+
+/**
+ * The runner's credential report off one device-status row, as the resolver's
+ * two row-sourced inputs: the bag and its age. Spread straight into
+ * {@link CoordCredentialInput}.
+ */
+export interface ReportedCoordCredential {
+  /** The verbatim `details.coord_credential` bag, or `undefined`. */
+  reported: unknown;
+  /** The row's `updated_at`, or `undefined` when there is no row. */
+  reportedAt: string | undefined;
 }
 
 /** Narrow an unknown to a plain object without asserting anything about it. */
@@ -341,11 +389,31 @@ const POSTURE_REASON: Record<CoordCredentialPosture, string> = {
  *    `coord_credential` bag, which before this rung existed was the fleet
  *    console's own version of the incident: an unmeasured machine wearing a
  *    calm `credential live` badge.
+ *
+ * **A bag older than its staleness bound is not evidence.** Rungs 1 and 3 read
+ * the runner's bag, and a runner offline for days still has its last `ok: true`
+ * sitting on its device-status row. So a bag whose `reportedAt` is further back
+ * than its bound ({@link coordCredentialStaleAfterSecs}), or cannot be read, is
+ * skipped by both. Rung 2 still applies: coord's `dark: true` is coord's own
+ * measurement. The fallback then says how old the last report is, rather than
+ * the no-report reason, so a machine that went quiet and one that never spoke
+ * do not look alike. The decision lives here, not in the callers, so the
+ * machine rows and the devops strip hold one rule.
  */
 export function resolveCoordCredential(
   input: CoordCredentialInput
 ): CoordCredentialStatus {
-  const reported = asRecord(input.reported);
+  const bag = asRecord(input.reported);
+  const now = input.now ?? Date.now();
+  const staleAfterSecs = coordCredentialStaleAfterSecs(bag);
+  const reportedAtMs =
+    input.reportedAt === undefined ? NaN : Date.parse(input.reportedAt);
+  const fresh =
+    bag !== null &&
+    Number.isFinite(reportedAtMs) &&
+    now - reportedAtMs <= staleAfterSecs * 1_000;
+  // Only a fresh bag is evidence; every rung below reads `reported`.
+  const reported = fresh ? bag : null;
   const since = asString(reported?.since);
   const reportedReason =
     asString(reported?.reason) ?? asString(reported?.cause);
@@ -375,8 +443,50 @@ export function resolveCoordCredential(
     return status(kind, reportedReason ?? POSTURE_REASON[kind], since, true);
   }
 
-  // 4 — nothing measured this.
+  // 4 — nothing measured this. A bag that is present but past its bound says
+  // so, naming its age: the machine did report, just not recently enough.
+  if (bag !== null && !fresh) {
+    return status(
+      "unknown",
+      staleReportReason(input.reportedAt, staleAfterSecs, now),
+      undefined,
+      false
+    );
+  }
   return status("unknown", POSTURE_REASON.unknown, undefined, false);
+}
+
+/**
+ * How many seconds a `coord_credential` bag stays evidence: the runner's own
+ * `stale_after_secs` when it is a positive finite number, else
+ * {@link COORD_CREDENTIAL_FALLBACK_STALE_AFTER_SECS}.
+ */
+export function coordCredentialStaleAfterSecs(
+  bag: Record<string, unknown> | null
+): number {
+  const declared = bag?.stale_after_secs;
+  return typeof declared === "number" &&
+    Number.isFinite(declared) &&
+    declared > 0
+    ? declared
+    : COORD_CREDENTIAL_FALLBACK_STALE_AFTER_SECS;
+}
+
+function staleReportReason(
+  reportedAt: string | undefined,
+  staleAfterSecs: number,
+  now: number
+): string {
+  const age = relativeTime(reportedAt, { absent: "", now });
+  const heard =
+    age === ""
+      ? "This runner's last credential report carries no usable timestamp"
+      : `This runner's last credential report was ${age}`;
+  return (
+    `${heard}, past its ${staleAfterSecs}s staleness bound, so it is not ` +
+    "evidence of this machine's credential now. UNKNOWN, not healthy: the " +
+    "runner may be offline, or something else overwrote its status since."
+  );
 }
 
 function status(
@@ -448,17 +558,28 @@ export function coordDeviceHostKey(device: {
 
 /**
  * The runner's own `details.coord_credential` bag off one device-status row,
- * verbatim — the {@link CoordCredentialInput.reported} input. `undefined` when
+ * verbatim, together with that row's `updated_at` — the
+ * {@link CoordCredentialInput.reported} and
+ * {@link CoordCredentialInput.reportedAt} inputs, returned as one value so no
+ * caller can pass the bag without its age. `reported` is `undefined` when
  * there is no row, the row's `details` is not an object, or the runner
  * published no such key. Shared by `MachineCard` and
  * {@link summarizeCoordCredentials}, for the same reason as
  * {@link coordDeviceHostKey}.
  */
 export function reportedCoordCredential(
-  row: { details?: unknown } | undefined
-): unknown {
-  return asRecord(row?.details)?.coord_credential;
+  row: { details?: unknown; updated_at: string } | undefined
+): ReportedCoordCredential {
+  return {
+    reported: asRecord(row?.details)?.coord_credential,
+    reportedAt: row?.updated_at,
+  };
 }
+
+const NO_REPORT: ReportedCoordCredential = {
+  reported: undefined,
+  reportedAt: undefined,
+};
 
 /**
  * {@link reportedCoordCredential}, but only when the device-status row belongs
@@ -475,9 +596,9 @@ export function reportedCoordCredential(
  */
 export function reportedCoordCredentialFor(
   deviceId: string,
-  row: { device_id: string; details?: unknown } | undefined
-): unknown {
-  return row?.device_id === deviceId ? reportedCoordCredential(row) : undefined;
+  row: { device_id: string; details?: unknown; updated_at: string } | undefined
+): ReportedCoordCredential {
+  return row?.device_id === deviceId ? reportedCoordCredential(row) : NO_REPORT;
 }
 
 /**
@@ -507,6 +628,8 @@ export function reportedCoordCredentialFor(
  *   all). It is never folded into `ok`. Coord's `dark: false` alone still
  *   lands here, because it is a roster stamp rather than a verdict (module
  *   header) — under-claiming stays the fallback wherever no bag is present.
+ * * A report past its staleness bound counts as `unknown`, never `ok` — the
+ *   resolver's rule, so the strip and the rows cannot disagree about it.
  * * `total` is coord's device roster. A device-status-only host with no coord
  *   device record gets a row but is not counted: this strip reports on the
  *   machines coord knows.
@@ -519,9 +642,10 @@ export function summarizeCoordCredentials(
   }>,
   deviceStatusByHostname: ReadonlyMap<
     string,
-    { device_id: string; details?: unknown }
+    { device_id: string; details?: unknown; updated_at: string }
   >,
-  scrapeUp?: boolean
+  scrapeUp?: boolean,
+  now?: number
 ): CoordCredentialRollup {
   let needsAction = 0;
   let ok = 0;
@@ -529,10 +653,11 @@ export function summarizeCoordCredentials(
   for (const device of devices) {
     const resolved = resolveCoordCredential({
       credentialDark: device.credential_dark,
-      reported: reportedCoordCredentialFor(
+      ...reportedCoordCredentialFor(
         device.device_id,
         deviceStatusByHostname.get(coordDeviceHostKey(device))
       ),
+      now,
     });
     if (!resolved.measured) unknown += 1;
     else if (resolved.attention === "author") needsAction += 1;

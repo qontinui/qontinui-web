@@ -576,6 +576,8 @@ export function MachineCard({
   // coord device, the stream row's report counts only if it is THAT device's
   // (`device_id` equal): two coord devices sharing a hostname fold onto one
   // row, and the row must not borrow a report from the one it is not showing.
+  // The lookup hands back the bag WITH the row's `updated_at`, so a report
+  // past its staleness bound reads `unknown` here exactly as on the strip.
   const reportedCredential = machine.coordHealth?.matched
     ? reportedCoordCredentialFor(
         machine.coordHealth.device_id,
@@ -583,12 +585,12 @@ export function MachineCard({
       )
     : reportedCoordCredential(machine.currentActivity);
   const credential =
-    machine.coordHealth || reportedCredential !== undefined
+    machine.coordHealth || reportedCredential.reported !== undefined
       ? resolveCoordCredential({
           credentialDark: machine.coordHealth?.matched
             ? machine.coordHealth.credential_dark
             : undefined,
-          reported: reportedCredential,
+          ...reportedCredential,
         })
       : null;
   /**
