@@ -57,10 +57,10 @@ function baseGroup(overrides: Partial<MachineGroup> = {}): MachineGroup {
   };
 }
 
-function renderCard(group: MachineGroup) {
+function renderCard(group: MachineGroup, nowMs?: number) {
   return render(
     <TooltipProvider>
-      <MachineCard machine={group} />
+      <MachineCard machine={group} nowMs={nowMs} />
     </TooltipProvider>
   );
 }
@@ -547,5 +547,20 @@ describe("MachineCard — a stale coord-credential report", () => {
       baseGroup({ currentActivity: activity(new Date().toISOString()) })
     );
     expect(credentialBadge(container)).toHaveTextContent("credential live");
+  });
+
+  // The Dev Ops Overview hands every row its ticking clock, so staleness is
+  // judged on the page's clock and not on whatever `Date.now()` reads at
+  // render — the strip uses that same clock, and the two must agree.
+  it("judges staleness on the nowMs it is given, not on Date.now()", () => {
+    const justNow = new Date().toISOString();
+    const { container } = renderCard(
+      baseGroup({ currentActivity: activity(justNow) }),
+      Date.parse(justNow) + 901_000
+    );
+    expect(credentialBadge(container)).toHaveAttribute(
+      "data-operations-coord-credential",
+      "unknown"
+    );
   });
 });

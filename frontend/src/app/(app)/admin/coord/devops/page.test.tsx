@@ -1737,6 +1737,9 @@ describe("/admin/coord/devops — the coord-credential axis", () => {
   // clock: here the stream stays silent and fleet-health starts failing (which
   // pins `devices`), and the only thing that moves is time.
   it("flips a healthy report to UNKNOWN once it ages past its bound, with no new data", async () => {
+    // `setTimeout` stays real so `waitFor`'s timeout still fires. Faking
+    // `setInterval` stops `waitFor`'s own polling, so every `waitFor` below
+    // settles through its MutationObserver: only wait on DOM changes here.
     vi.useFakeTimers({
       toFake: ["Date", "setInterval", "clearInterval"],
     });

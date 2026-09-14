@@ -612,7 +612,7 @@ export function MachineCard({
    * under a red badge is the kind of precision an operator acts on.
    */
   const credentialSince = credential?.since
-    ? relativeTime(credential.since)
+    ? relativeTime(credential.since, { now: nowMs })
     : null;
 
   // Pick OS from first runner
