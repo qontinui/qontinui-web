@@ -29,11 +29,27 @@ function docKey(kind: string, name: string): string {
 }
 
 /**
- * The `error_code` coord answers (409) when a withdrawal's `expected_version`
- * is no longer the record's live version. The operations proxy passes coord's
- * body through as the error text, so the code is matched in the message.
+ * Whether a failed withdraw POST is coord's `409 withdraw_stale` refusal (the
+ * record's live version is no longer the `expected_version` sent), and the
+ * version coord says it is now at.
+ *
+ * The operations proxy passes coord's JSON body through as a string, which the
+ * backend's error envelope then JSON-escapes into its `message`, and
+ * `httpClient` folds the whole response text into the Error message. So the
+ * code is matched as the `error_code` KEY/VALUE pair, tolerating that one
+ * level of escaping — never as a bare substring, which a record whose name
+ * (it is in the request URL the message also carries) contained the token
+ * would satisfy on every unrelated failure.
  */
-const WITHDRAW_STALE = "withdraw_stale";
+const WITHDRAW_STALE_CODE = /error_code\\*"\s*:\s*\\*"withdraw_stale\\*"/;
+const STALE_CURRENT_VERSION = /current_version\\*"\s*:\s*(\d+)/;
+
+function withdrawStale(err: unknown): { stale: boolean; now: number | null } {
+  const text = message(err, "");
+  if (!WITHDRAW_STALE_CODE.test(text)) return { stale: false, now: null };
+  const match = STALE_CURRENT_VERSION.exec(text);
+  return { stale: true, now: match ? Number(match[1]) : null };
+}
 
 function message(err: unknown, fallback: string): string {
   return err instanceof Error ? err.message : fallback;
@@ -266,9 +282,13 @@ export function usePromptDocumentProposals() {
       const previousVersion = write.version_number - 1;
       try {
         const [current, previous] = await Promise.all([
-          httpClient.get<VersionSnapshot>(`${path}/versions/${write.version_number}`),
+          httpClient.get<VersionSnapshot>(
+            `${path}/versions/${write.version_number}`
+          ),
           previousVersion >= 1
-            ? httpClient.get<VersionSnapshot>(`${path}/versions/${previousVersion}`)
+            ? httpClient.get<VersionSnapshot>(
+                `${path}/versions/${previousVersion}`
+              )
             : Promise.resolve({ body: "" }),
         ]);
         setWriteDiffs((prev) => {
@@ -430,7 +450,9 @@ export function usePromptDocumentProposals() {
    * narrowed: the POST carries the version just re-read as `expected_version`,
    * and coord compares it under its row lock, answering `409 withdraw_stale`
    * when a peer write landed between the re-read and the POST. That refusal is
-   * reported as the same "changed since" outcome and the feed reloads.
+   * reported as the same "changed since" outcome and the feed reloads. (A coord
+   * predating that check ignores the field, and the window is then only
+   * narrowed to one request; nothing breaks either way.)
    */
   const withdrawWrite = useCallback(
     async (write: PromptDocumentWrite, reason: string): Promise<boolean> => {
@@ -468,9 +490,11 @@ export function usePromptDocumentProposals() {
             expected_version: live.current_version,
           });
         } catch (err) {
-          if (message(err, "").includes(WITHDRAW_STALE)) {
+          const { stale, now } = withdrawStale(err);
+          if (stale) {
+            const version = now === null ? "" : ` (now v${now})`;
             toast.error(
-              `${write.label} changed while you were withdrawing it. Nothing was withdrawn. Refreshed — review the newer write first.`
+              `${write.label} changed while you were withdrawing it${version}. Nothing was withdrawn. Refreshed — review the newer write first.`
             );
             await reload();
             return false;

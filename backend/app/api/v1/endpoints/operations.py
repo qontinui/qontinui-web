@@ -8699,8 +8699,10 @@ async def withdraw_prompt_document(
     ``expected_version`` is the ``current_version`` the feed re-read before
     posting. Coord compares it under its row lock and answers ``409
     withdraw_stale`` (passed through) when the record moved in between, so the
-    re-read→POST window is closed rather than narrowed. Its type is coord's to
-    validate, like ``reason``'s.
+    re-read→POST window is closed rather than narrowed — on a coord that
+    carries that check. An older coord ignores the unknown key, and the window
+    is then only narrowed, as before. Its type is coord's to validate, like
+    ``reason``'s.
     """
     payload: dict[str, Any] = {}
     reason = (body or {}).get("reason")
