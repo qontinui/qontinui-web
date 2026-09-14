@@ -196,9 +196,9 @@ export function useSessionRepository() {
    * Monotonic id of the newest list request. EVERY write below is gated on
    * still owning it — an ungated late failure paints "couldn't load" over
    * rows that are in fact fresh, and an ungated late success clears a banner
-   * that was telling the truth. `AbortController` cannot do this job here:
-   * `http-client.ts` overwrites the caller's signal with its own timeout
-   * controller, so the abort never reaches the request.
+   * that was telling the truth. Cancelling the superseded request would not do
+   * this job: `http-client.ts` honours a caller's signal, but an abort stops a
+   * read from running rather than deciding which settled read owns the state.
    */
   const requestIdRef = useRef(0);
 

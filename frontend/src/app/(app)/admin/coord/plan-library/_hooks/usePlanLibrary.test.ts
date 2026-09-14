@@ -214,10 +214,9 @@ describe("usePlanLibrary — overlapping loads must not race", () => {
 
   // `load` is recreated on [applied, offset] and fired by an effect, so two
   // of it are in flight whenever the operator pages or retypes faster than
-  // the backend answers. An AbortController cannot fix this — `http-client`
-  // overwrites the caller's `signal` with its own timeout controller — so the
-  // hook carries a generation counter, and each of these tests pins one of
-  // its four writes.
+  // the backend answers. The hook passes no abort signal, so both settle and
+  // it carries a generation counter; each of these tests pins one of its four
+  // writes.
 
   it("drops a superseded page response instead of painting it", async () => {
     const first = deferred<unknown>();

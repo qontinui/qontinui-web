@@ -122,10 +122,10 @@ export function usePlanLibrary() {
    * * `finally { setLoading(false) }` re-enables the pager while the live
    *   request is still out.
    *
-   * An `AbortController` cannot do this job here: `http-client.ts` overwrites
-   * the caller's `signal` with its own timeout controller, so the abort never
-   * reaches the request. This is the same counter pattern
-   * `ArtifactDetailDialog` uses, for the same reason.
+   * Cancelling the superseded request would not do this job: `http-client.ts`
+   * honours a caller's `signal`, but aborting stops a read from running, while
+   * these writes need to know which settled read still owns the state. This is
+   * the same counter pattern `ArtifactDetailDialog` uses.
    */
   const requestIdRef = useRef(0);
 
