@@ -215,7 +215,8 @@ function buildMachineGroups(
     // (`summarizeCoordCredentials`) resolves each device's heartbeat bag
     // through the same function, so the strip and these rows agree for every
     // device keyed the same way. Two coord devices sharing a hostname fold
-    // onto one row here, but the rollup counts both.
+    // onto one row here (last writer wins), but the rollup counts both; each
+    // side reads a stream report only when its `device_id` matches.
     const hostname = coordDeviceHostKey(device);
     const group = byHost.get(hostname);
     const join = {

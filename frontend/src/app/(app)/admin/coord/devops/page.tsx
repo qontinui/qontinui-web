@@ -247,8 +247,10 @@ export default function CoordDevOpsPage() {
    *
    * **The strip and the machine rows resolve each device from the same two
    * sources, so they agree for every device they both key the same way.**
-   * One pre-existing gap remains: two coord devices sharing a hostname are
-   * counted twice here but share one machine row. Coord's fleet-health join
+   * A device reads a stream report only when the row's `device_id` is its
+   * own, so two coord devices sharing a hostname never borrow each other's
+   * report; the one gap left is that they are counted twice here but share
+   * one machine row. Coord's fleet-health join
    * alone can conclude
    * `dark` and nothing else: its `dark: false` is a roster stamp for "the
    * scan did not name this device", which pools the healthy with the
@@ -280,25 +282,42 @@ export default function CoordDevOpsPage() {
         label: `credential dark ${credentials.needsAction}`,
         tone: "attention",
         title:
-          "Machines whose coord credential needs a person: coord's dark scan named them, or their own runner reported a dark posture (expired, absent, unrefreshable). Sessions spawned on them work without coord and do not know it. Opens the alerts list, where coord raises a critical runner_coord_credentials_missing alert for each machine its scan names.",
+          "Machines whose coord credential needs a person: coord's dark scan named them, or their own runner reported a dark posture (dark, expired, absent, unrefreshable). Sessions spawned on them work without coord and do not know it. Opens the alerts list, where coord raises a critical runner_coord_credentials_missing alert for each machine its scan names.",
         onClick: () => router.push(ALERTS_HREF),
         "data-testid": "coord-devops-credential-dark-badge",
       });
     }
     if (credentials.unknown > 0) {
+      // WHY nothing measured them, worded per cause. A failed read on either
+      // side is not the machines' silence, and the tooltip must not blame the
+      // runners for a read this page could not make. The count stands in every
+      // case: those machines really are unmeasured on this read.
+      const streamUnread =
+        deviceStatus.error ?? (deviceStatus.seeded ? null : "not loaded yet");
+      const causes: string[] = [];
+      if (credentials.scrapeUp === false) {
+        causes.push(
+          "Coord could not read the per-device credential join on this poll. This is not 'their credentials are fine' — it is no measurement."
+        );
+      }
+      if (streamUnread !== null) {
+        causes.push(
+          `The runner credential reports could not be read (device-status stream: ${streamUnread}), so machines coord did not name dark are UNKNOWN — not healthy.`
+        );
+      }
       badges.push({
         key: "credential-unknown",
         label: `credential unknown ${credentials.unknown}`,
         tone: "muted",
         title:
-          credentials.scrapeUp === false
-            ? "Coord could not read the per-device credential join on this poll. This is not 'their credentials are fine' — it is no measurement."
+          causes.length > 0
+            ? causes.join(" ")
             : "Neither coord's dark scan nor the machine's own runner reported a credential verdict for these machines. UNKNOWN, not healthy — go look at the machine.",
         "data-testid": "coord-devops-credential-unknown-badge",
       });
     }
     return badges;
-  }, [credentials, router]);
+  }, [credentials, deviceStatus.error, deviceStatus.seeded, router]);
 
   return (
     // `overflow-x-auto`: the resource strip is wide, and it must scroll rather

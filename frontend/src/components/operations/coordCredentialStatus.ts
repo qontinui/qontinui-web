@@ -461,6 +461,25 @@ export function reportedCoordCredential(
 }
 
 /**
+ * {@link reportedCoordCredential}, but only when the device-status row belongs
+ * to THIS coord device.
+ *
+ * The stream is keyed by hostname, and two coord devices can share one — a
+ * re-paired box that came back with a new `device_id`. The map holds only the
+ * last row written under that hostname, so without this guard both devices
+ * would resolve against one runner's report and the older device would borrow
+ * a `live` it never published. A row whose `device_id` differs is treated as
+ * no report at all, which lands that device on `unknown` unless coord named it
+ * dark.
+ */
+export function reportedCoordCredentialFor(
+  deviceId: string,
+  row: { device_id: string; details?: unknown } | undefined
+): unknown {
+  return row?.device_id === deviceId ? reportedCoordCredential(row) : undefined;
+}
+
+/**
  * Roll a device list up for the strip.
  *
  * Takes the RAW fleet-health rows AND the device-status stream's `byHostname`
@@ -471,9 +490,13 @@ export function reportedCoordCredential(
  * every device they both key the same way: a device whose runner published
  * `ok: true` counts as `ok` here and reads `live` on its row.
  *
- * One pre-existing gap, named rather than hidden: two coord devices that share
- * a hostname are counted twice here, but `FleetOverview` folds them onto one
- * machine row.
+ * Two coord devices that share a hostname (a re-paired box with a new
+ * `device_id`) are each counted, and each reads the stream row under that
+ * hostname only if the row's `device_id` is its own
+ * ({@link reportedCoordCredentialFor}) — so neither borrows the other's
+ * report. One gap remains, named rather than hidden: `FleetOverview` folds
+ * such devices onto ONE machine row (last writer wins), so the strip counts
+ * two devices where the list shows one row.
  *
  * The rules this holds:
  *
@@ -493,7 +516,10 @@ export function summarizeCoordCredentials(
     hostname?: string | null;
     credential_dark?: DeviceCredentialDark | null;
   }>,
-  deviceStatusByHostname: ReadonlyMap<string, { details?: unknown }>,
+  deviceStatusByHostname: ReadonlyMap<
+    string,
+    { device_id: string; details?: unknown }
+  >,
   scrapeUp?: boolean
 ): CoordCredentialRollup {
   let needsAction = 0;
@@ -502,7 +528,8 @@ export function summarizeCoordCredentials(
   for (const device of devices) {
     const resolved = resolveCoordCredential({
       credentialDark: device.credential_dark,
-      reported: reportedCoordCredential(
+      reported: reportedCoordCredentialFor(
+        device.device_id,
         deviceStatusByHostname.get(coordDeviceHostKey(device))
       ),
     });
