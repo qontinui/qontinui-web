@@ -250,14 +250,14 @@ export default function CoordDevOpsPage() {
    * A device reads a stream report only when the row's `device_id` is its
    * own, so two coord devices sharing a hostname never borrow each other's
    * report; the one gap left is that they are counted twice here but share
-   * one machine row. Coord's fleet-health join
-   * alone can conclude
+   * one machine row. Coord's fleet-health join alone can conclude
    * `dark` and nothing else: its `dark: false` is a roster stamp for "the
    * scan did not name this device", which pools the healthy with the
    * never-reported. The affirmative half comes from the runner's own
    * `coord_credential` bag on the device-status stream — the one subscription
    * above, which `FleetOverview` also receives — joined per device exactly as
-   * each row joins it (`coordDeviceHostKey` + `reportedCoordCredential`). So a
+   * each row joins it (`coordDeviceHostKey` + `reportedCoordCredentialFor`,
+   * which is what a row matched to a coord device uses). So a
    * machine whose runner reported `ok: true` is counted measured here and
    * reads `live` on its row, and `credential unknown N` counts only the
    * machines nothing measured. Counting those as healthy is what an earlier
@@ -292,17 +292,25 @@ export default function CoordDevOpsPage() {
       // side is not the machines' silence, and the tooltip must not blame the
       // runners for a read this page could not make. The count stands in every
       // case: those machines really are unmeasured on this read.
-      const streamUnread =
-        deviceStatus.error ?? (deviceStatus.seeded ? null : "not loaded yet");
+      //
+      // The stream has two failure shapes and they are different claims:
+      // NEVER fed (no rows were ever read — "could not be read"), and fed
+      // earlier but the latest read failed (rows are being served, possibly
+      // stale — "may be stale"). A single failed re-seed while frames keep
+      // arriving must not read as "unreadable".
       const causes: string[] = [];
       if (credentials.scrapeUp === false) {
         causes.push(
           "Coord could not read the per-device credential join on this poll. This is not 'their credentials are fine' — it is no measurement."
         );
       }
-      if (streamUnread !== null) {
+      if (!deviceStatus.everSeeded) {
         causes.push(
-          `The runner credential reports could not be read (device-status stream: ${streamUnread}), so machines coord did not name dark are UNKNOWN — not healthy.`
+          `The runner credential reports could not be read (device-status stream: ${deviceStatus.error ?? "not loaded yet"}), so machines coord did not name dark are UNKNOWN — not healthy.`
+        );
+      } else if (deviceStatus.error !== null) {
+        causes.push(
+          `The last device-status read failed (${deviceStatus.error}); runner reports may be stale, so a machine counted here may have reported since.`
         );
       }
       badges.push({
@@ -317,7 +325,7 @@ export default function CoordDevOpsPage() {
       });
     }
     return badges;
-  }, [credentials, deviceStatus.error, deviceStatus.seeded, router]);
+  }, [credentials, deviceStatus.error, deviceStatus.everSeeded, router]);
 
   return (
     // `overflow-x-auto`: the resource strip is wide, and it must scroll rather
