@@ -1,7 +1,7 @@
 """coord.device_resource_samples — restart readiness and drain wind-down
 
 Revision ID: drr_01
-Revises: oplog_age_idx_01
+Revises: partdel_01
 Create Date: 2026-09-13
 
 Phase 5 of plan
@@ -187,7 +187,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "drr_01"
-down_revision: str | Sequence[str] | None = "oplog_age_idx_01"  # fmt: skip
+down_revision: str | Sequence[str] | None = "partdel_01"  # fmt: skip
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
