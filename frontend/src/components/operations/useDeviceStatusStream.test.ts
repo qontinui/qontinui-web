@@ -1,23 +1,30 @@
 /**
  * `useDeviceStatusStream` — what marks the stream seeded, what clears a
- * fleet-read failure, and who owns the retry.
+ * fleet-read failure, how reads are ordered, who owns the retry, and who owns
+ * the socket.
  *
- * Two rules under test:
+ * Rules under test:
  *
  * 1. Only a FLEET read (the REST seed or poll) sets `everSeeded` or clears
  *    `error`. A pushed WebSocket frame is one device's row; if it could do
  *    either, a REST route that keeps failing behind a working socket would
  *    vanish from the devops strip's tooltip and `DeviceStatusTile`'s badge.
- * 2. Reads are SEQUENCED and the retry is owned by ONE generation. A response
- *    that lands after a newer read started is discarded; the CURRENT read's
- *    failure arms the retry whichever path it came from, but only while the
- *    socket is the live feed; and no retry timer outlives its chain, its
- *    socket, polling taking over, or unmount.
+ * 2. Reads are ordered by LANDING. A response is discarded only when a newer
+ *    read already landed (or the hook unmounted) — so a route slower than the
+ *    poll interval still lands every read, while a stale read that loses the
+ *    race cannot overwrite a newer result. Polling starts no read while one is
+ *    in flight.
+ * 3. The retry is owned by ONE generation: an applied failure arms it whichever
+ *    path it came from, only while the socket is the live feed, and no retry
+ *    timer outlives its chain, its socket, polling taking over, or unmount.
+ * 4. The hook owns ONE socket. A connect attempt overtaken while awaiting its
+ *    token creates nothing, and a socket the hook no longer owns cannot reach
+ *    state — under StrictMode's double-invoked effects and after a reconnect.
  *
  * Driven through the real hook: `httpClient.fetch` answers from a queue (a
- * queued promise is a slow response the test resolves later), `WebSocket` is a
- * fake the test opens, closes and pushes frames through, and timers are faked
- * so retry, poll and reconnect timers can be counted with `vi.getTimerCount()`.
+ * queued promise or thunk is a slow response), `WebSocket` is a fake the test
+ * opens, closes and pushes frames through, and timers are faked so retry, poll
+ * and reconnect timers can be counted with `vi.getTimerCount()`.
  */
 
 import { act, renderHook } from "@testing-library/react";
@@ -39,9 +46,12 @@ import { DEVICE_STATUS_POLL_FALLBACK_MS } from "./utils";
 class FakeWebSocket {
   static readonly CONNECTING = 0;
   static readonly OPEN = 1;
+  static readonly CLOSING = 2;
   static readonly CLOSED = 3;
   static instances: FakeWebSocket[] = [];
   readyState = FakeWebSocket.CONNECTING;
+  /** Set when the HOOK closed this socket (as opposed to the server). */
+  closedByClient = false;
   onopen: (() => void) | null = null;
   onmessage: ((event: { data: string }) => void) | null = null;
   onerror: (() => void) | null = null;
@@ -50,6 +60,7 @@ class FakeWebSocket {
     FakeWebSocket.instances.push(this);
   }
   close() {
+    this.closedByClient = true;
     this.readyState = FakeWebSocket.CLOSED;
   }
   open() {
@@ -96,6 +107,11 @@ function fail(status = 503): Resp {
   return { ok: false, status, json: async () => ({}) };
 }
 
+/** A response that lands `ms` later (on the faked clock). */
+function after(ms: number, resp: () => Resp): () => Promise<Resp> {
+  return () => new Promise<Resp>((r) => setTimeout(() => r(resp()), ms));
+}
+
 function deferred<T>() {
   let resolve!: (value: T) => void;
   const promise = new Promise<T>((r) => (resolve = r));
@@ -103,11 +119,12 @@ function deferred<T>() {
 }
 
 /**
- * The fetch queue: each read takes the next entry. An entry may be a promise —
- * a response that lands only when the test resolves it. An exhausted queue
- * answers `HTTP 599`, so an unexpected extra read shows up as a failure.
+ * The fetch queue: each read takes the next entry. An entry may be a promise or
+ * a thunk — a response that lands later. An exhausted queue answers from
+ * `fallback`, which defaults to `HTTP 599` so an unexpected read shows up.
  */
-let queue: Array<Resp | Promise<Resp>> = [];
+let queue: Array<Resp | Promise<Resp> | (() => Promise<Resp>)> = [];
+let fallback: () => Resp | Promise<Resp> = () => fail(599);
 let calls = 0;
 
 /** Let pending fetch/json promise chains and React updates settle. */
@@ -127,8 +144,8 @@ async function advance(ms: number) {
 }
 
 /** Mount the hook and let the mount seed settle. */
-async function mount() {
-  const hook = renderHook(() => useDeviceStatusStream());
+async function mount(options?: { reactStrictMode?: boolean }) {
+  const hook = renderHook(() => useDeviceStatusStream(), options);
   await flush();
   return hook;
 }
@@ -144,6 +161,11 @@ async function openLatestSocket() {
   return ws;
 }
 
+/** Sockets the hook created and has not closed. */
+function unclosedSockets() {
+  return FakeWebSocket.instances.filter((s) => !s.closedByClient);
+}
+
 describe("useDeviceStatusStream", () => {
   beforeEach(() => {
     vi.useFakeTimers({
@@ -152,12 +174,15 @@ describe("useDeviceStatusStream", () => {
     FakeWebSocket.instances = [];
     vi.stubGlobal("WebSocket", FakeWebSocket);
     queue = [];
+    fallback = () => fail(599);
     calls = 0;
     httpFetch.mockReset();
     httpFetch.mockImplementation(async () => {
       calls += 1;
       const next = queue.shift();
-      return next === undefined ? fail(599) : await next;
+      if (next === undefined) return await fallback();
+      if (typeof next === "function") return await next();
+      return await next;
     });
     getWebSocketToken.mockReset();
     getWebSocketToken.mockResolvedValue("token");
@@ -166,6 +191,7 @@ describe("useDeviceStatusStream", () => {
   afterEach(() => {
     vi.unstubAllGlobals();
     vi.useRealTimers();
+    Reflect.deleteProperty(document, "hidden");
   });
 
   describe("only a fleet read seeds the stream or clears its failure", () => {
@@ -205,6 +231,97 @@ describe("useDeviceStatusStream", () => {
       await flush();
       expect(hook.result.current.error).toBe("HTTP 502");
       expect(hook.result.current.everSeeded).toBe(true);
+      hook.unmount();
+    });
+  });
+
+  describe("reads are ordered by landing", () => {
+    it("(F) a poll route slower than the interval still lands its rows", async () => {
+      getWebSocketToken.mockResolvedValue(null); // polling mode
+      fallback = after(6_000, () => ok([deviceRow("d-1", "msi")]));
+      const hook = await mount();
+
+      await advance(60_000);
+      expect(hook.result.current.seeded).toBe(true);
+      expect(hook.result.current.everSeeded).toBe(true);
+      expect(hook.result.current.byHostname.get("msi")?.device_id).toBe("d-1");
+      expect(hook.result.current.error).toBeNull();
+      // One read in flight at a time from polling: a 6s read spans a 5s tick,
+      // so ticks are skipped rather than stacking reads (13 without the skip).
+      expect(calls).toBeLessThanOrEqual(7);
+      hook.unmount();
+    });
+
+    it("(F2) a poll route that fails slower than the interval still reports its error", async () => {
+      getWebSocketToken.mockResolvedValue(null);
+      fallback = after(6_000, () => fail(503));
+      const hook = await mount();
+
+      await advance(60_000);
+      expect(hook.result.current.seeded).toBe(true);
+      expect(hook.result.current.everSeeded).toBe(false);
+      expect(hook.result.current.error).toBe("HTTP 503");
+      hook.unmount();
+    });
+
+    it("(G1) a slow poll overtaken by a failing Refresh is discarded, and the next poll recovers", async () => {
+      getWebSocketToken.mockResolvedValue(null);
+      const slowPoll = deferred<Resp>();
+      queue = [
+        ok(),
+        slowPoll.promise,
+        fail(500),
+        ok([deviceRow("d-9", "late")]),
+      ];
+      const hook = await mount();
+
+      await advance(DEVICE_STATUS_POLL_FALLBACK_MS); // poll starts, pending
+      await act(async () => {
+        await hook.result.current.refetch();
+      });
+      await flush();
+      await act(async () => {
+        slowPoll.resolve(ok([deviceRow("d-2", "poll")]));
+      });
+      await flush();
+      expect(hook.result.current.error).toBe("HTTP 500");
+      expect(hook.result.current.byHostname.has("poll")).toBe(false);
+
+      await advance(DEVICE_STATUS_POLL_FALLBACK_MS);
+      expect(hook.result.current.error).toBeNull();
+      expect(hook.result.current.byHostname.has("late")).toBe(true);
+      hook.unmount();
+    });
+
+    it("(G2) a slow retry overtaken by a failing Refresh is discarded, and the re-armed retry recovers", async () => {
+      const slowRetry = deferred<Resp>();
+      queue = [
+        ok(),
+        fail(503),
+        slowRetry.promise,
+        fail(500),
+        ok([deviceRow("d-3", "recovered")]),
+      ];
+      const hook = await mount();
+      await openLatestSocket();
+      await advance(DEVICE_STATUS_POLL_FALLBACK_MS); // retry fires, pending
+
+      await act(async () => {
+        await hook.result.current.refetch();
+      });
+      await flush();
+      await act(async () => {
+        slowRetry.resolve(ok([deviceRow("d-2", "retry")]));
+      });
+      await flush();
+      expect(hook.result.current.error).toBe("HTTP 500");
+      expect(vi.getTimerCount()).toBe(1);
+
+      await advance(2 * DEVICE_STATUS_POLL_FALLBACK_MS);
+      expect(hook.result.current.error).toBeNull();
+      expect(hook.result.current.byHostname.has("recovered")).toBe(true);
+      expect(hook.result.current.byHostname.has("retry")).toBe(false);
+      expect(vi.getTimerCount()).toBe(0);
       hook.unmount();
     });
   });
@@ -288,7 +405,8 @@ describe("useDeviceStatusStream", () => {
       });
       await flush();
 
-      // The older read was overtaken: it sets no error and arms no retry.
+      // A newer read already landed: the older one sets no error and arms no
+      // retry.
       expect(hook.result.current.error).toBeNull();
       expect(hook.result.current.everSeeded).toBe(true);
       expect(hook.result.current.byHostname.get("msi")?.device_id).toBe("d-1");
@@ -326,7 +444,7 @@ describe("useDeviceStatusStream", () => {
       // Polling stopped on open; exactly the one retry is armed.
       expect(vi.getTimerCount()).toBe(1);
 
-      // The retry read from ws1's chain finally fails — it was overtaken.
+      // The retry read from ws1's chain finally fails — a newer read landed.
       await act(async () => {
         staleRetry.resolve(fail(503));
       });
@@ -383,6 +501,142 @@ describe("useDeviceStatusStream", () => {
       expect(vi.getTimerCount()).toBe(1);
       hook.unmount();
       expect(vi.getTimerCount()).toBe(0);
+    });
+  });
+
+  describe("the hook owns exactly one socket", () => {
+    it("under StrictMode's mount → unmount → mount, one socket survives and no other reaches state", async () => {
+      fallback = () => ok();
+      const hook = await mount({ reactStrictMode: true });
+
+      // The first effect pass's connect was overtaken while awaiting its token.
+      expect(unclosedSockets()).toHaveLength(1);
+      const live = unclosedSockets()[0];
+
+      for (const s of FakeWebSocket.instances) {
+        await act(async () => {
+          s.open();
+        });
+        await flush();
+      }
+      expect(hook.result.current.connected).toBe(true);
+
+      queue = [fail(500)];
+      await act(async () => {
+        await hook.result.current.refetch();
+      });
+      await flush();
+      expect(vi.getTimerCount()).toBe(1); // the live socket's retry
+
+      // Anything else the hook created must not reach state.
+      for (const s of FakeWebSocket.instances.filter((x) => x !== live)) {
+        await act(async () => {
+          s.push(deviceRow("orphan", "orphan-host"));
+          s.serverClose();
+        });
+        await flush();
+      }
+      expect(hook.result.current.byHostname.has("orphan-host")).toBe(false);
+      expect(hook.result.current.connected).toBe(true);
+      expect(vi.getTimerCount()).toBe(1);
+      expect(live.closedByClient).toBe(false);
+
+      hook.unmount();
+      await flush();
+      expect(
+        FakeWebSocket.instances.filter(
+          (s) => s.readyState === FakeWebSocket.OPEN && !s.closedByClient
+        )
+      ).toHaveLength(0);
+      expect(vi.getTimerCount()).toBe(0);
+    });
+
+    it("a frame from a socket that was replaced after a reconnect is not applied", async () => {
+      fallback = () => ok();
+      const hook = await mount();
+      const ws1 = await openLatestSocket();
+      await act(async () => {
+        ws1.serverClose();
+      });
+      await flush();
+      await advance(1_000); // reconnect → ws2
+      const ws2 = await openLatestSocket();
+      expect(ws2).not.toBe(ws1);
+
+      await act(async () => {
+        ws1.push(deviceRow("stale", "stale-host"));
+        ws2.push(deviceRow("d-1", "msi"));
+      });
+      await flush();
+      expect(hook.result.current.byHostname.has("stale-host")).toBe(false);
+      expect(hook.result.current.byHostname.get("msi")?.device_id).toBe("d-1");
+      hook.unmount();
+    });
+
+    it("a late close from a replaced socket starts no polling, keeps the live retry, and never closes the live socket", async () => {
+      // mount ok · ws1 on-open ok · ws2 on-open fails → retry armed on ws2
+      queue = [ok(), ok(), fail(503)];
+      const hook = await mount();
+      const ws1 = await openLatestSocket();
+      await act(async () => {
+        ws1.serverClose();
+      });
+      await flush();
+      await advance(1_000); // reconnect → ws2
+      const ws2 = await openLatestSocket();
+      expect(hook.result.current.connected).toBe(true);
+      expect(vi.getTimerCount()).toBe(1);
+
+      await act(async () => {
+        ws1.serverClose(); // a duplicate close event from the old socket
+      });
+      await flush();
+      expect(hook.result.current.connected).toBe(true);
+      expect(vi.getTimerCount()).toBe(1);
+
+      const sockets = FakeWebSocket.instances.length;
+      await advance(1_200); // past any reconnect it might have scheduled
+      expect(FakeWebSocket.instances).toHaveLength(sockets);
+      expect(ws2.closedByClient).toBe(false);
+      hook.unmount();
+      expect(ws2.closedByClient).toBe(true);
+    });
+
+    it("a hide and show while the token fetch is pending leaves at most one socket, and none after unmount", async () => {
+      fallback = () => ok();
+      const tokens: Array<(value: string) => void> = [];
+      getWebSocketToken.mockImplementation(
+        () => new Promise<string>((resolve) => tokens.push(resolve))
+      );
+      let hidden = false;
+      Object.defineProperty(document, "hidden", {
+        configurable: true,
+        get: () => hidden,
+      });
+
+      const hook = await mount();
+      hidden = true;
+      await act(async () => {
+        document.dispatchEvent(new Event("visibilitychange"));
+      });
+      hidden = false;
+      await act(async () => {
+        document.dispatchEvent(new Event("visibilitychange"));
+      });
+      await flush();
+
+      for (const resolve of tokens) {
+        await act(async () => {
+          resolve("token");
+        });
+      }
+      await flush();
+      expect(tokens.length).toBeGreaterThanOrEqual(2);
+      expect(FakeWebSocket.instances.length).toBeLessThanOrEqual(1);
+
+      hook.unmount();
+      await flush();
+      expect(unclosedSockets()).toHaveLength(0);
     });
   });
 });
