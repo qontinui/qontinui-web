@@ -32,6 +32,8 @@ import { paletteDisagreements } from "@/components/console";
 import {
   COORD_CREDENTIAL_ATTENTION_BY_POSTURE,
   COORD_CREDENTIAL_PALETTE,
+  coordDeviceHostKey,
+  reportedCoordCredential,
   resolveCoordCredential,
   summarizeCoordCredentials,
 } from "./coordCredentialStatus";
@@ -306,18 +308,55 @@ describe("the details.coord_credential wire contract", () => {
   });
 });
 
+describe("coordDeviceHostKey / reportedCoordCredential", () => {
+  it("keys a coord device by hostname, falling back to its device id", () => {
+    // The same expression `useDeviceStatusStream` keys its map with.
+    expect(coordDeviceHostKey({ device_id: "d-1", hostname: "msi" })).toBe(
+      "msi"
+    );
+    expect(coordDeviceHostKey({ device_id: "d-1" })).toBe("d-1");
+    expect(coordDeviceHostKey({ device_id: "d-1", hostname: null })).toBe(
+      "d-1"
+    );
+  });
+
+  it("reads the bag verbatim and yields undefined for every absence", () => {
+    const bag = { ok: true, reason: null };
+    expect(
+      reportedCoordCredential({ details: { coord_credential: bag } })
+    ).toBe(bag);
+    expect(reportedCoordCredential(undefined)).toBeUndefined();
+    expect(reportedCoordCredential({ details: {} })).toBeUndefined();
+    expect(reportedCoordCredential({ details: null })).toBeUndefined();
+    expect(reportedCoordCredential({ details: ["x"] })).toBeUndefined();
+  });
+});
+
 describe("summarizeCoordCredentials", () => {
+  const NO_STREAM = new Map<string, { details?: unknown }>();
+
+  /** One device-status row carrying `details.coord_credential`. */
+  function streamRow(coordCredential: unknown): { details: unknown } {
+    return { details: { coord_credential: coordCredential } };
+  }
+
   it("counts unknown separately from ok — never folded into the healthy side", () => {
-    const rollup = summarizeCoordCredentials([
-      { credential_dark: { dark: false } },
-      { credential_dark: { dark: true, reason: "no bearer" } },
-      { credential_dark: null },
-      {},
-    ]);
-    // `dark: false`, an explicit null and a missing field are three different
-    // routes to the same honest answer: this view did not measure them.
-    // `needsAction` stays exact — the strip's red count is the one number
-    // here that is a measurement.
+    const rollup = summarizeCoordCredentials(
+      [
+        { device_id: "d-1", hostname: "a", credential_dark: { dark: false } },
+        {
+          device_id: "d-2",
+          hostname: "b",
+          credential_dark: { dark: true, reason: "no bearer" },
+        },
+        { device_id: "d-3", hostname: "c", credential_dark: null },
+        { device_id: "d-4", hostname: "d" },
+      ],
+      NO_STREAM
+    );
+    // With no heartbeat bag anywhere, `dark: false`, an explicit null and a
+    // missing field are three different routes to the same honest answer:
+    // nothing measured them. `needsAction` stays exact.
     expect(rollup).toMatchObject({
       total: 4,
       ok: 0,
@@ -327,25 +366,102 @@ describe("summarizeCoordCredentials", () => {
   });
 
   it("reports ok: 0 from coord's join alone — it cannot measure health", () => {
-    // Not an accident and not a TODO: coord's join concludes only `dark`, so
-    // a rollup over fleet-health rows has no source for an affirmative
-    // verdict. A non-zero `ok` here could only come from having guessed.
-    const rollup = summarizeCoordCredentials([
-      { credential_dark: { dark: false } },
-      { credential_dark: { dark: false } },
-    ]);
+    // Under-claiming is the fallback where no bag is present: coord's join
+    // concludes only `dark`, so without a runner report there is no source for
+    // an affirmative verdict. A non-zero `ok` here could only come from guessing.
+    const rollup = summarizeCoordCredentials(
+      [
+        { device_id: "d-1", hostname: "a", credential_dark: { dark: false } },
+        { device_id: "d-2", hostname: "b", credential_dark: { dark: false } },
+      ],
+      NO_STREAM
+    );
     expect(rollup.ok).toBe(0);
     expect(rollup.unknown).toBe(2);
     expect(rollup.needsAction).toBe(0);
   });
 
+  it("reads each device's heartbeat bag: reported healthy → ok, neither source → unknown, dark → needsAction", () => {
+    const stream = new Map<string, { details?: unknown }>([
+      ["healthy", streamRow({ ok: true, reason: null })],
+      // A device-status row exists but carries no `coord_credential` key.
+      ["silent", { details: { current_task: "x" } }],
+    ]);
+    const rollup = summarizeCoordCredentials(
+      [
+        {
+          device_id: "d-1",
+          hostname: "healthy",
+          credential_dark: { dark: false },
+        },
+        {
+          device_id: "d-2",
+          hostname: "silent",
+          credential_dark: { dark: false },
+        },
+        { device_id: "d-3", hostname: "nobody" },
+        {
+          device_id: "d-4",
+          hostname: "dead",
+          credential_dark: { dark: true, reason: "expired" },
+        },
+      ],
+      stream,
+      true
+    );
+    expect(rollup).toEqual({
+      total: 4,
+      ok: 1,
+      unknown: 2,
+      needsAction: 1,
+      scrapeUp: true,
+    });
+  });
+
+  it("joins the bag under the same key the rows use — device id when coord serves no hostname", () => {
+    const stream = new Map<string, { details?: unknown }>([
+      ["d-9", streamRow({ ok: true })],
+    ]);
+    expect(summarizeCoordCredentials([{ device_id: "d-9" }], stream).ok).toBe(
+      1
+    );
+    // A hostname that matches no stream row is not rescued by an id match:
+    // the row for this device would not find the bag either.
+    expect(
+      summarizeCoordCredentials([{ device_id: "d-9", hostname: "msi" }], stream)
+        .unknown
+    ).toBe(1);
+  });
+
+  it("counts a runner-reported dark or finer author posture as needsAction", () => {
+    const stream = new Map<string, { details?: unknown }>([
+      ["a", streamRow({ ok: false, reason: "no bearer" })],
+      ["b", streamRow({ ok: false, posture: "unrefreshable" })],
+      ["c", streamRow({ ok: true, posture: "expiring" })],
+    ]);
+    const rollup = summarizeCoordCredentials(
+      [
+        { device_id: "d-1", hostname: "a", credential_dark: { dark: false } },
+        { device_id: "d-2", hostname: "b" },
+        { device_id: "d-3", hostname: "c" },
+      ],
+      stream
+    );
+    // `expiring` is measured and self-clearing: ok, not needsAction.
+    expect(rollup).toMatchObject({ needsAction: 2, ok: 1, unknown: 0 });
+  });
+
   it("passes coord's scrape flag through verbatim — undefined is not false", () => {
-    expect(summarizeCoordCredentials([], undefined).scrapeUp).toBeUndefined();
-    expect(summarizeCoordCredentials([], false).scrapeUp).toBe(false);
+    expect(
+      summarizeCoordCredentials([], NO_STREAM, undefined).scrapeUp
+    ).toBeUndefined();
+    expect(summarizeCoordCredentials([], NO_STREAM, false).scrapeUp).toBe(
+      false
+    );
   });
 
   it("reports an empty fleet as nothing to say, not as an all-clear", () => {
-    const rollup = summarizeCoordCredentials([]);
+    const rollup = summarizeCoordCredentials([], NO_STREAM);
     expect(rollup.total).toBe(0);
     expect(rollup.needsAction).toBe(0);
     expect(rollup.unknown).toBe(0);

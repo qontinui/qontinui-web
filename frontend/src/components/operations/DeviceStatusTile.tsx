@@ -142,10 +142,10 @@ function StalledBadge({
 
 /**
  * Bottom-of-page device-status list. Renders the SAME tenant-scoped
- * stream `FleetOverview` already holds (`useDeviceStatusStream` —
+ * stream the Dev Ops page holds (`useDeviceStatusStream` —
  * authenticated REST seed via `/api/v1/operations/device-status` +
- * the coord WS bridge), passed down as a prop so the page keeps one
- * stream/WS instance.
+ * the coord WS bridge), passed down through `FleetOverview` as a prop
+ * so the page keeps one stream/WS instance.
  *
  * History: this tile used to fetch coord's `GET /coord/status` directly
  * through the `/coord-api/*` Next rewrite with `credentials: "omit"`,
