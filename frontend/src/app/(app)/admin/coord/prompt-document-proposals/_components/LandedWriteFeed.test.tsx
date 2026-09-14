@@ -317,6 +317,65 @@ describe("LandedWriteFeed — the linked reasoning", () => {
     expect(
       screen.queryByTestId("write-reasoning-policy-operating-rules-6")
     ).toBeNull();
+    expect(
+      screen.queryByTestId("write-reasoning-finding-policy-operating-rules-6")
+    ).toBeNull();
+  });
+
+  it("shows a CREATED document's reasoning as a finding reference, never as a link into the notifications feed", () => {
+    // Creation never emits a notice and the reconciler skips v1 — the caveat
+    // on this very page says so. A link would send the operator to an event
+    // that cannot exist, where the `?ref=` banner reports it as one that "may
+    // be older than these".
+    renderFeed({
+      writes: [
+        write({
+          kind: "decision_record",
+          name: "escalate-path-clearance-is-agent-work",
+          version_number: 1,
+          current_version: 1,
+          notification_ref: "fec41291-67ed-4cf8-b331-888ad1126b45",
+        }),
+      ],
+    });
+    expect(
+      screen.queryByTestId(
+        "write-reasoning-decision_record-escalate-path-clearance-is-agent-work-1"
+      )
+    ).toBeNull();
+    const ref = screen.getByTestId(
+      "write-reasoning-finding-decision_record-escalate-path-clearance-is-agent-work-1"
+    );
+    expect(ref.tagName).not.toBe("A");
+    expect(ref.querySelector("a")).toBeNull();
+    expect(ref).toHaveTextContent("finding fec41291");
+    expect(ref).toHaveAttribute(
+      "title",
+      expect.stringContaining("fec41291-67ed-4cf8-b331-888ad1126b45")
+    );
+    expect(ref).toHaveAttribute(
+      "title",
+      expect.stringMatching(/sends no notice/i)
+    );
+  });
+
+  it("still links a v2 edit of that same document into the notifications feed", () => {
+    renderFeed({
+      writes: [
+        write({
+          kind: "decision_record",
+          name: "escalate-path-clearance-is-agent-work",
+          version_number: 2,
+          current_version: 2,
+          notification_ref: "ref-2",
+        }),
+      ],
+    });
+    expect(
+      screen.getByTestId(
+        "write-reasoning-decision_record-escalate-path-clearance-is-agent-work-2"
+      )
+    ).toHaveAttribute("href", "/admin/coord/notifications?ref=ref-2");
   });
 });
 
