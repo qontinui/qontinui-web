@@ -58,10 +58,17 @@ vi.mock("@/services/service-factory", () => ({
 // of plan `2026-09-12-runner-loads-with-an-expired-coord-credential-and-…`
 // arrives. Tests that do not seed it get exactly the empty stream this stub
 // always was.
+//
+// `deviceStatusStream.byHostname` is swappable: the real hook REPLACES its Map
+// on every update, and a test that needs to prove the page re-derives on a new
+// identity assigns a fresh Map here and re-renders.
 const deviceStatusRows = new Map<string, unknown>();
+const deviceStatusStream: { byHostname: Map<string, unknown> } = {
+  byHostname: deviceStatusRows,
+};
 vi.mock("@/components/operations/useDeviceStatusStream", () => ({
   useDeviceStatusStream: () => ({
-    byHostname: deviceStatusRows,
+    byHostname: deviceStatusStream.byHostname,
     connected: false,
     error: null,
     seeded: true,
@@ -1576,6 +1583,7 @@ describe("/admin/coord/devops — the coord-credential axis", () => {
     httpFetch.mockReset();
     routerPush.mockReset();
     deviceStatusRows.clear();
+    deviceStatusStream.byHostname = deviceStatusRows;
     window.localStorage.clear();
   });
 
@@ -1871,6 +1879,50 @@ describe("/admin/coord/devops — the coord-credential axis", () => {
     expect(
       screen.getByTestId("coord-devops-credential-unknown-badge")
     ).toHaveTextContent("credential unknown 1");
+    expect(
+      screen.queryByTestId("coord-devops-credential-dark-badge")
+    ).not.toBeInTheDocument();
+  });
+
+  it("re-derives the strip when the stream delivers a NEW map after mount", async () => {
+    // The hook replaces its Map on every update. The strip's rollup is a
+    // `useMemo` keyed on that identity, so a report that arrives AFTER the
+    // first render must move the count — the fleet-health read has not
+    // changed, and a memo that ignored `byHostname` would stay stale here.
+    mockRoutes({
+      devices: [
+        coordDevice("d-1", "msi", "healthy", {
+          credential_dark: { dark: false },
+        }),
+      ],
+      runners: [runner("msi")],
+      samples: [],
+      healthExtras: { credential_dark_scrape_up: true },
+    });
+
+    const { rerender } = render(<CoordDevOpsPage />);
+
+    expect(
+      await screen.findByTestId("coord-devops-credential-unknown-badge")
+    ).toHaveTextContent("credential unknown 1");
+
+    deviceStatusStream.byHostname = new Map<string, unknown>([
+      [
+        "msi",
+        deviceStatusRow("d-1", "msi", { coord_credential: { ok: true } }),
+      ],
+    ]);
+    rerender(<CoordDevOpsPage />);
+
+    await waitFor(() =>
+      expect(
+        screen.queryByTestId("coord-devops-credential-unknown-badge")
+      ).not.toBeInTheDocument()
+    );
+    expect(credentialBadge("msi")).toHaveAttribute(
+      "data-operations-coord-credential",
+      "live"
+    );
     expect(
       screen.queryByTestId("coord-devops-credential-dark-badge")
     ).not.toBeInTheDocument();

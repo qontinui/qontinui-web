@@ -9,6 +9,7 @@ import {
   deviceStatusWsUrl,
 } from "./utils";
 import type { DeviceStatus, DeviceStatusResponse } from "./types";
+import { coordDeviceHostKey } from "./coordCredentialStatus";
 
 const log = createLogger("DeviceStatusStream");
 
@@ -20,8 +21,10 @@ const log = createLogger("DeviceStatusStream");
 const MAX_RECONNECT_ATTEMPTS = 5;
 
 export interface UseDeviceStatusStreamResult {
-  /** hostname → DeviceStatus map. Updates in-place as the WS pushes
-   *  diffs; consumers should re-read on every render. */
+  /** hostname (or device_id) → DeviceStatus map, keyed by
+   *  `coordDeviceHostKey`. REPLACED with a new Map on every REST seed and
+   *  every pushed diff, never mutated in place — consumers' `useMemo`s key
+   *  on its identity, so that is load-bearing. */
   byHostname: Map<string, DeviceStatus>;
   /** True iff the upstream WS is currently connected. False while
    *  polling fallback is active. */
@@ -72,24 +75,18 @@ export function useDeviceStatusStream(): UseDeviceStatusStreamResult {
   const reconnectAttemptsRef = useRef(0);
   const cleanedUpRef = useRef(false);
 
-  // hostname OR device_id as the key — hostname is preferred so we
-  // can join cleanly to the existing MachineCard hostname grouping.
-  // device_id is the fallback so a row with no hostname still shows.
-  const keyOf = useCallback(
-    (row: DeviceStatus): string => row.hostname ?? row.device_id,
-    []
-  );
-
-  const applyRow = useCallback(
-    (row: DeviceStatus) => {
-      setByHostname((prev) => {
-        const next = new Map(prev);
-        next.set(keyOf(row), row);
-        return next;
-      });
-    },
-    [keyOf]
-  );
+  // hostname OR device_id as the key, spelled by `coordDeviceHostKey` — the
+  // one key `FleetOverview`'s machine grouping and the devops strip's
+  // credential rollup also use, so every consumer finds a device's row under
+  // the same key. device_id is the fallback so a row with no hostname still
+  // shows.
+  const applyRow = useCallback((row: DeviceStatus) => {
+    setByHostname((prev) => {
+      const next = new Map(prev);
+      next.set(coordDeviceHostKey(row), row);
+      return next;
+    });
+  }, []);
 
   const seedFromRest = useCallback(async (): Promise<void> => {
     try {
@@ -101,7 +98,7 @@ export function useDeviceStatusStream(): UseDeviceStatusStreamResult {
       if (cleanedUpRef.current) return;
       const next = new Map<string, DeviceStatus>();
       for (const row of data.devices ?? []) {
-        next.set(row.hostname ?? row.device_id, row);
+        next.set(coordDeviceHostKey(row), row);
       }
       setByHostname(next);
       setError(null);

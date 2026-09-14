@@ -571,7 +571,7 @@ export function MachineCard({
    * health read, an absent verdict is an absence of the READ, and the card says
    * nothing rather than claiming this machine's credential is unknown.
    */
-  // The same read the health strip's rollup performs, so the two agree.
+  // The same read the health strip's rollup performs.
   const reportedCredential = reportedCoordCredential(machine.currentActivity);
   const credential =
     machine.coordHealth || reportedCredential !== undefined

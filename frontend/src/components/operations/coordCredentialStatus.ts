@@ -436,8 +436,8 @@ export interface CoordCredentialRollup {
  *
  * `useDeviceStatusStream` keys its map `hostname ?? device_id`, and
  * `FleetOverview` groups coord's devices onto machine rows by the same
- * expression. Spelled ONCE, here, so the strip's rollup and the rows resolve a
- * device's heartbeat bag through one join and cannot drift apart.
+ * expression. Spelled ONCE, here, so the stream, the strip's rollup and the
+ * rows all resolve a device's heartbeat bag through one join key.
  */
 export function coordDeviceHostKey(device: {
   device_id: string;
@@ -467,9 +467,13 @@ export function reportedCoordCredential(
  * map — the one subscription the page owns and hands to `FleetOverview` — and
  * resolves each device from both sources, exactly as its machine row does:
  * coord's `credential_dark` join, plus the runner's own `coord_credential` bag
- * found under {@link coordDeviceHostKey}. So the strip and the rows agree by
- * construction: a device whose runner published `ok: true` counts as `ok` here
- * and reads `live` on its row.
+ * found under {@link coordDeviceHostKey}. So the strip and the rows agree for
+ * every device they both key the same way: a device whose runner published
+ * `ok: true` counts as `ok` here and reads `live` on its row.
+ *
+ * One pre-existing gap, named rather than hidden: two coord devices that share
+ * a hostname are counted twice here, but `FleetOverview` folds them onto one
+ * machine row.
  *
  * The rules this holds:
  *

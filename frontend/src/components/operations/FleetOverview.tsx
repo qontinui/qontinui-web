@@ -213,7 +213,9 @@ function buildMachineGroups(
   for (const device of coordDevices) {
     // The one spelling of this join key — the strip's credential rollup
     // (`summarizeCoordCredentials`) resolves each device's heartbeat bag
-    // through the same function, so the strip and these rows agree.
+    // through the same function, so the strip and these rows agree for every
+    // device keyed the same way. Two coord devices sharing a hostname fold
+    // onto one row here, but the rollup counts both.
     const hostname = coordDeviceHostKey(device);
     const group = byHost.get(hostname);
     const join = {

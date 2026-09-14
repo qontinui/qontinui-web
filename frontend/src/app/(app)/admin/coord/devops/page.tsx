@@ -246,7 +246,10 @@ export default function CoordDevOpsPage() {
    *   about (`[policy: silent-empty-is-unknown]`).
    *
    * **The strip and the machine rows resolve each device from the same two
-   * sources, so they agree.** Coord's fleet-health join alone can conclude
+   * sources, so they agree for every device they both key the same way.**
+   * One pre-existing gap remains: two coord devices sharing a hostname are
+   * counted twice here but share one machine row. Coord's fleet-health join
+   * alone can conclude
    * `dark` and nothing else: its `dark: false` is a roster stamp for "the
    * scan did not name this device", which pools the healthy with the
    * never-reported. The affirmative half comes from the runner's own
@@ -277,7 +280,7 @@ export default function CoordDevOpsPage() {
         label: `credential dark ${credentials.needsAction}`,
         tone: "attention",
         title:
-          "Machines that reported no usable coord device JWT. Sessions spawned on them work without coord and do not know it. Opens the alerts list, where each one has a critical runner_coord_credentials_missing alert.",
+          "Machines whose coord credential needs a person: coord's dark scan named them, or their own runner reported a dark posture (expired, absent, unrefreshable). Sessions spawned on them work without coord and do not know it. Opens the alerts list, where coord raises a critical runner_coord_credentials_missing alert for each machine its scan names.",
         onClick: () => router.push(ALERTS_HREF),
         "data-testid": "coord-devops-credential-dark-badge",
       });
@@ -290,7 +293,7 @@ export default function CoordDevOpsPage() {
         title:
           credentials.scrapeUp === false
             ? "Coord could not read the per-device credential join on this poll. This is not 'their credentials are fine' — it is no measurement."
-            : "These machines carry no coord-credential verdict on this read. Coord's join only names machines that reported a DEAD credential, so a machine missing from it may be fine or may have reported nothing at all — this strip cannot tell, and each machine's own row below can. UNKNOWN, not healthy.",
+            : "Neither coord's dark scan nor the machine's own runner reported a credential verdict for these machines. UNKNOWN, not healthy — go look at the machine.",
         "data-testid": "coord-devops-credential-unknown-badge",
       });
     }
