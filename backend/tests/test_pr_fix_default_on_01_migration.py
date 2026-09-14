@@ -56,7 +56,7 @@ from tests._alembic_harness import (
 )
 
 _REVISION_ID = "pr_fix_default_on_01"
-_PARENT_REVISION_ID = "remote_create_01"
+_PARENT_REVISION_ID = "coord_displaced_pr_rows_01"
 _REVISION_FILENAME = "pr_fix_default_on_01_system_policy_auto_decide.py"
 
 # Literals the revision must write. Spelled out here, never imported from the

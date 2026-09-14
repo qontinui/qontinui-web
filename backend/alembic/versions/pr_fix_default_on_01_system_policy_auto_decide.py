@@ -1,7 +1,7 @@
 """coord policy_rules — the SYSTEM pr_fix default becomes auto_decide
 
 Revision ID: pr_fix_default_on_01
-Revises: remote_create_01
+Revises: coord_displaced_pr_rows_01
 Create Date: 2026-09-13
 
 Plan ``2026-09-12-pr-fixer-spawns-default-on-bounded-and-coordinated-with-the-author``
@@ -145,7 +145,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "pr_fix_default_on_01"
-down_revision: str | Sequence[str] | None = "remote_create_01"
+down_revision: str | Sequence[str] | None = "coord_displaced_pr_rows_01"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
