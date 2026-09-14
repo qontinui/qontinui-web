@@ -504,8 +504,15 @@ describe("useDeviceStatusStream", () => {
     });
 
     it("is idempotent: a second failure while a retry is pending neither re-arms it nor steps the backoff", async () => {
-      // mount ok · on-open fails (arms at 5s) · Refresh fails before it fires
-      queue = [ok(), fail(503), fail(500), ok([deviceRow("d-1", "msi")])];
+      // mount ok · on-open fails (arms step 1, 5s) · Refresh fails while it is
+      // pending · the 5s retry fails (arms step 2) · the step-2 retry succeeds
+      queue = [
+        ok(),
+        fail(503),
+        fail(500),
+        fail(502),
+        ok([deviceRow("d-1", "msi")]),
+      ];
       const hook = await mount();
       await openLatestSocket();
       expect(vi.getTimerCount()).toBe(1);
@@ -522,8 +529,23 @@ describe("useDeviceStatusStream", () => {
       // 10s from the Refresh.
       await advance(DEVICE_STATUS_POLL_FALLBACK_MS - 2_000);
       expect(calls).toBe(4);
+      expect(hook.result.current.error).toBe("HTTP 502");
+      expect(vi.getTimerCount()).toBe(1);
+
+      // The duplicate failure did not step the backoff either: after two
+      // counted failures the next retry is step 2 (10s), NOT step 3 (20s),
+      // which is where a failure bumping the attempt count on its way out of
+      // the "already pending" early return would put it.
+      await advance(2 * DEVICE_STATUS_POLL_FALLBACK_MS - 1_000);
+      expect(calls).toBe(4);
+      await advance(1_000);
+      expect(calls).toBe(5);
       expect(hook.result.current.error).toBeNull();
       expect(vi.getTimerCount()).toBe(0);
+
+      // And nothing is still waiting to fire at the 20s mark.
+      await advance(2 * DEVICE_STATUS_POLL_FALLBACK_MS);
+      expect(calls).toBe(5);
       hook.unmount();
     });
   });
@@ -563,6 +585,79 @@ describe("useDeviceStatusStream", () => {
       expect(hook.result.current.error).toBeNull();
       expect(hook.result.current.byHostname.get("msi")?.device_id).toBe("d-1");
       hook.unmount();
+      expect(vi.getTimerCount()).toBe(0);
+    });
+
+    /** The signal the hook handed `httpClient.fetch` on its `n`th read (1-based). */
+    function signalOfRead(n: number): AbortSignal | undefined {
+      const options = httpFetch.mock.calls[n - 1]?.[1] as
+        | { signal?: AbortSignal }
+        | undefined;
+      return options?.signal;
+    }
+
+    it("aborts the underlying request when the body misses its deadline, not merely abandons it", async () => {
+      getWebSocketToken.mockResolvedValue(null); // polling mode
+      const stalledBody: Resp = {
+        ok: true,
+        status: 200,
+        json: () => new Promise<unknown>(() => {}),
+      };
+      queue = [ok(), stalledBody];
+      const hook = await mount();
+
+      await act(async () => {
+        void hook.result.current.refetch();
+      });
+      await flush();
+      expect(calls).toBe(2);
+      const signal = signalOfRead(2);
+      expect(signal).toBeInstanceOf(AbortSignal);
+      expect(signal?.aborted).toBe(false);
+
+      await advance(59_000); // inside the 60s body deadline
+      expect(signal?.aborted).toBe(false);
+
+      await advance(2_000); // past it
+      expect(hook.result.current.error).toBe(
+        "device-status response body timed out"
+      );
+      expect(signal?.aborted).toBe(true);
+      // A read that completed on time is never aborted.
+      expect(signalOfRead(1)?.aborted).toBe(false);
+      hook.unmount();
+    });
+
+    it("on unmount, clears a pending body deadline and aborts the request", async () => {
+      getWebSocketToken.mockResolvedValue(null); // polling mode
+      const stalledBody: Resp = {
+        ok: true,
+        status: 200,
+        json: () => new Promise<unknown>(() => {}),
+      };
+      queue = [stalledBody];
+      const hook = await mount();
+      expect(calls).toBe(1);
+      const signal = signalOfRead(1);
+      expect(signal?.aborted).toBe(false);
+      // The body deadline plus the poll interval.
+      expect(vi.getTimerCount()).toBe(2);
+
+      hook.unmount();
+      expect(vi.getTimerCount()).toBe(0);
+      expect(signal?.aborted).toBe(true);
+    });
+
+    it("on unmount, aborts a request still waiting for its headers", async () => {
+      getWebSocketToken.mockResolvedValue(null); // polling mode
+      const headers = deferred<Resp>();
+      queue = [headers.promise];
+      const hook = await mount();
+      const signal = signalOfRead(1);
+      expect(signal?.aborted).toBe(false);
+
+      hook.unmount();
+      expect(signal?.aborted).toBe(true);
       expect(vi.getTimerCount()).toBe(0);
     });
   });

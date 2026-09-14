@@ -25,24 +25,47 @@ const log = createLogger("DeviceStatusStream");
  */
 const BODY_READ_TIMEOUT_MS = DEFAULT_REQUEST_TIMEOUT_MS;
 
-/** `resp.json()`, rejecting if it has not settled within `ms`. */
+/**
+ * One fleet read's cancellables, held by the hook so unmount can reach them:
+ * the request's `AbortController` (its signal is handed to `httpClient.fetch`)
+ * and the body-deadline timer while one is armed.
+ */
+interface InFlightRequest {
+  controller: AbortController;
+  deadline?: ReturnType<typeof setTimeout>;
+  /** Set when the HOOK cancelled this read (unmount), so its rejection is
+   *  discarded rather than reported as a failed read. */
+  cancelled: boolean;
+}
+
+/**
+ * `resp.json()`, rejecting if it has not settled within `ms` — and then
+ * ABORTING the request, so a stalled body is cancelled and its connection
+ * released, not merely abandoned.
+ */
 async function readJsonWithDeadline(
   resp: { json: () => Promise<unknown> },
-  ms: number
+  ms: number,
+  request: InFlightRequest
 ): Promise<unknown> {
-  let timer: ReturnType<typeof setTimeout> | undefined;
   try {
     return await Promise.race([
       resp.json(),
       new Promise<never>((_, reject) => {
-        timer = setTimeout(
-          () => reject(new Error("device-status response body timed out")),
-          ms
-        );
+        request.deadline = setTimeout(() => {
+          request.deadline = undefined;
+          // Reject first, so the race settles on the deadline's own error
+          // rather than on the body read's abort rejection.
+          reject(new Error("device-status response body timed out"));
+          request.controller.abort();
+        }, ms);
       }),
     ]);
   } finally {
-    if (timer !== undefined) clearTimeout(timer);
+    if (request.deadline !== undefined) {
+      clearTimeout(request.deadline);
+      request.deadline = undefined;
+    }
   }
 }
 
@@ -158,6 +181,10 @@ export function useDeviceStatusStream(): UseDeviceStatusStreamResult {
   const readSeqRef = useRef(0);
   const appliedSeqRef = useRef(0);
   const readsInFlightRef = useRef(0);
+  // Every fleet read still in flight — a Set, because a Refresh can overlap a
+  // poll or the on-open read. Unmount clears their body deadlines and aborts
+  // their requests.
+  const inFlightRequestsRef = useRef(new Set<InFlightRequest>());
   // The seed retry: at most one timer, owned by one generation.
   // `clearSeedRetry` bumps the generation, so a timer from an older chain
   // acts on nothing.
@@ -203,21 +230,36 @@ export function useDeviceStatusStream(): UseDeviceStatusStreamResult {
   const seedFromRest = useCallback(async (): Promise<FleetReadOutcome> => {
     const seq = ++readSeqRef.current;
     readsInFlightRef.current += 1;
+    const request: InFlightRequest = {
+      controller: new AbortController(),
+      cancelled: false,
+    };
+    inFlightRequestsRef.current.add(request);
     const claimLanding = (): boolean => {
-      if (cleanedUpRef.current || seq < appliedSeqRef.current) return false;
+      if (
+        request.cancelled ||
+        cleanedUpRef.current ||
+        seq < appliedSeqRef.current
+      ) {
+        return false;
+      }
       appliedSeqRef.current = seq;
       return true;
     };
     try {
-      const resp = await httpClient.fetch(DEVICE_STATUS_API);
+      const resp = await httpClient.fetch(DEVICE_STATUS_API, {
+        signal: request.controller.signal,
+      });
       if (!resp.ok) {
         throw new Error(`HTTP ${resp.status}`);
       }
-      // A stalled body is a failed read (its message lands in `error`), and
-      // the `finally` below still takes this read out of flight.
+      // A stalled body is a failed read (its message lands in `error`) whose
+      // request is aborted, and the `finally` below still takes this read out
+      // of flight.
       const data = (await readJsonWithDeadline(
         resp,
-        BODY_READ_TIMEOUT_MS
+        BODY_READ_TIMEOUT_MS,
+        request
       )) as DeviceStatusResponse;
       if (!claimLanding()) return "superseded_or_unmounted";
       // Newest row per key: coord serves newest-first, and a plain set-loop
@@ -243,8 +285,23 @@ export function useDeviceStatusStream(): UseDeviceStatusStreamResult {
       return "failed";
     } finally {
       readsInFlightRef.current -= 1;
+      inFlightRequestsRef.current.delete(request);
     }
   }, [clearSeedRetry]);
+
+  /** Unmount: no body deadline outlives the hook, and no request it started
+   *  keeps its connection open. */
+  const cancelInFlightReads = useCallback(() => {
+    for (const request of inFlightRequestsRef.current) {
+      request.cancelled = true;
+      if (request.deadline !== undefined) {
+        clearTimeout(request.deadline);
+        request.deadline = undefined;
+      }
+      request.controller.abort();
+    }
+    inFlightRequestsRef.current.clear();
+  }, []);
 
   /**
    * Arm the seed retry after an applied fleet read failed — but only while the
@@ -474,6 +531,7 @@ export function useDeviceStatusStream(): UseDeviceStatusStreamResult {
       stopPolling();
       clearReconnect();
       clearSeedRetry();
+      cancelInFlightReads();
     };
   }, [
     seedFromRest,
@@ -482,6 +540,7 @@ export function useDeviceStatusStream(): UseDeviceStatusStreamResult {
     stopPolling,
     clearReconnect,
     clearSeedRetry,
+    cancelInFlightReads,
   ]);
 
   // Tab visibility — drop the WS while hidden to avoid burning
