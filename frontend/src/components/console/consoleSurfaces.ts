@@ -164,6 +164,11 @@ import {
   STATUS_BADGE_CLASS as AGENT_TEXT_UNIT_STATUS_CLASS,
 } from "@/app/(app)/admin/coord/_agent-text-units/_lib/unitRows";
 import {
+  RUNNER_SESSION_ATTENTION_BY_KIND,
+  RUNNER_SESSION_AUTHOR_GLYPH_KINDS,
+  RUNNER_SESSION_BADGE_CLASS,
+} from "@/components/operations/runnerStatus";
+import {
   COORD_CREDENTIAL_ATTENTION_BY_POSTURE,
   COORD_CREDENTIAL_AUTHOR_GLYPH_KINDS,
   COORD_CREDENTIAL_BADGE_CLASS,
@@ -408,6 +413,20 @@ export const CONSOLE_PALETTES: ReadonlyArray<ConsoleSurface> = [
       badgeClass: COORD_CREDENTIAL_BADGE_CLASS,
       authorGlyphKinds:
         COORD_CREDENTIAL_AUTHOR_GLYPH_KINDS as ReadonlySet<string>,
+    },
+  },
+  {
+    // One row per session on a runner being wound down. `unknown` is amber BY
+    // FLOOR and rendered, not skipped: a session whose readiness report is
+    // stale may still be blocking the rebuild the operator is waiting on
+    // (plan `2026-09-13-drained-runner-never-reaches-idle` Phase 8).
+    surface: "runner wind-down (/admin/coord/runners)",
+    module: "components/operations/runnerStatus.ts",
+    attentionByKind: RUNNER_SESSION_ATTENTION_BY_KIND,
+    palette: {
+      badgeClass: RUNNER_SESSION_BADGE_CLASS,
+      authorGlyphKinds:
+        RUNNER_SESSION_AUTHOR_GLYPH_KINDS as ReadonlySet<string>,
     },
   },
   // --- the consolidated sessions console ------------------------------------

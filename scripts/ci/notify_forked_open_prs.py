@@ -31,8 +31,13 @@ This script closes it at the one moment the information exists: the land.
 For each open PR that touches the versions dir it rebuilds the chain that PR
 would have after this land (``main``'s revision files with the PR's own
 overlaid — the exact simulation, not a prediction), and when that chain has
-more than one head it comments the **exact ``down_revision`` token to
-adopt**, which was the entire fix in 3 of 3 recorded cases.
+more than one head it comments the **exact re-point**: the ``down_revision``
+token to adopt, which was the core of the fix in 3 of 3 recorded cases, plus
+the two sites that must move with it — the module docstring's ``Revises:``
+line and the ``_PARENT_REVISION_ID`` pin in the revision's migration test.
+Advice naming only the token turned a red head count into a red test suite
+on #1216, because several of those tests assert the pin equals
+``down_revision``.
 
 ## What it deliberately does NOT do
 
@@ -58,7 +63,10 @@ the sweep is exhaustive.
 
 Cost is one API call per open PR (its file list), plus a blob per changed
 revision file and a comment listing per PR that actually carries one, plus a
-single search for PRs holding a stale notice. With 16 open PRs that is ~20
+single search for PRs holding a stale notice. A PR that needs a re-point
+reuses that same file list and adds one blob per CANDIDATE test file under
+``backend/tests/`` — an added file whose patch never mentions
+``_PARENT_REVISION_ID`` is not downloaded. With 16 open PRs that is ~20
 calls; ``GITHUB_TOKEN``'s budget is 1,000/hour/repo. It scales linearly with
 open PRs, so on a repo with hundreds, watch it.
 
@@ -105,6 +113,7 @@ current land's correctness depends on it, and the next land retries.
 from __future__ import annotations
 
 import argparse
+import http.client
 import json
 import os
 import sys
@@ -116,10 +125,16 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from _alembic_graph import (  # noqa: E402
+    TESTS_DIR,
     VERSIONS_DIR,
+    RepointSites,
     Scan,
+    computed_pin_text,
     duplicate_groups,
+    mismatched_pin_text,
+    no_pin_found_text,
     plan_remediation,
+    plan_repoint_sites,
     read_dir_sources,
     safe_id,
     scan_dir,
@@ -138,7 +153,14 @@ API_ROOT = os.environ.get("GITHUB_API_URL", "https://api.github.com")
 
 
 class ApiError(RuntimeError):
-    """A GitHub API call failed. Always fatal — never swallowed into a pass."""
+    """A GitHub API call failed. Never swallowed into a pass.
+
+    Every raise is recorded as a FAILURE that makes the sweep exit 2 — with ONE
+    exception. A failed read of a PR's test files (:func:`pr_test_sources`) is
+    used only to word the ``_PARENT_REVISION_ID`` advice, not to decide
+    anything, so it is recorded as a finding: the notice still posts and says
+    the pin search is UNKNOWN, and the exit code does not move.
+    """
 
 
 def _request(
@@ -181,6 +203,12 @@ def _request(
         ) from exc
     except urllib.error.URLError as exc:  # pragma: no cover - network path
         raise ApiError(f"{method} {url} -> {exc.reason}") from exc
+    except (OSError, http.client.HTTPException) as exc:
+        # The body read can fail AFTER `urlopen` returned: a `TimeoutError` or
+        # `ConnectionResetError` (both `OSError`) or `http.client.IncompleteRead`.
+        # Unwrapped, any of them escaped every `except ApiError` in `main` and
+        # crashed the sweep instead of being recorded against one PR.
+        raise ApiError(f"{method} {url} -> {type(exc).__name__}: {exc}") from exc
     if accept.endswith("raw"):
         return raw.decode("utf-8", errors="replace"), headers
     return (json.loads(raw) if raw else None), headers
@@ -216,7 +244,14 @@ def _in_versions_dir(name: str) -> bool:
     )
 
 
-def pr_version_files(repo: str, number: int, token: str) -> list[dict]:
+def pr_files(repo: str, number: int, token: str) -> list[dict]:
+    """EVERY file this PR changes. Listed ONCE per PR and filtered by callers."""
+    return _paginate(
+        f"{API_ROOT}/repos/{repo}/pulls/{number}/files?per_page=100", token
+    )
+
+
+def pr_version_files(files: list[dict]) -> list[dict]:
     """This PR's changes to files the GATE would actually scan.
 
     The filter must match ``scan_dir``'s ``glob("*.py")`` exactly — directly
@@ -225,9 +260,6 @@ def pr_version_files(repo: str, number: int, token: str) -> list[dict]:
     passes it green, i.e. tell an author their required check is red when it
     is not. Disagreeing with the gate is the one thing this must never do.
     """
-    files = _paginate(
-        f"{API_ROOT}/repos/{repo}/pulls/{number}/files?per_page=100", token
-    )
     return [f for f in files if _in_versions_dir(str(f.get("filename", "")))]
 
 
@@ -237,6 +269,63 @@ def blob_at(repo: str, path: str, ref: str, token: str) -> str:
     text, _ = _request(url, token, accept="application/vnd.github.raw")
     assert isinstance(text, str)
     return text
+
+
+def _in_tests_dir(name: str) -> bool:
+    """A ``.py`` file anywhere under ``TESTS_DIR``."""
+    return name.startswith(f"{TESTS_DIR}/") and name.endswith(".py")
+
+
+#: GitHub's "list pull request files" endpoint returns at most this many files,
+#: however it is paginated. A listing that reaches it may be missing the very
+#: test file that holds a pin, so the pin search is UNKNOWN there.
+PR_FILES_LISTING_CAP = 3000
+
+
+def _worth_downloading(entry: dict) -> bool:
+    """Could this changed test file hold a ``_PARENT_REVISION_ID`` pin?
+
+    Skipped ONLY when that is certain: an ADDED file whose ``patch`` is present
+    is the whole file, so a patch never mentioning the constant proves the file
+    has none. A modified file's patch shows only hunks — the pin can sit
+    outside them — and GitHub omits ``patch`` on large diffs, so both of those
+    are downloaded rather than guessed at.
+    """
+    name = str(entry.get("filename", ""))
+    if not _in_tests_dir(name) or entry.get("status") == "removed":
+        return False
+    patch = entry.get("patch")
+    # ASSUMPTION this skip rests on: for a diff too large to render, GitHub
+    # OMITS `patch` rather than truncating it, so a present patch on an added
+    # file is the whole file. If GitHub ever truncated instead, a pin past the
+    # cut would be skipped and read as "no pin found". Separately, the listing
+    # itself stops at PR_FILES_LISTING_CAP files; `main` checks that before
+    # this runs.
+    if entry.get("status") == "added" and isinstance(patch, str):
+        return "_PARENT_REVISION_ID" in patch
+    return True
+
+
+def pr_test_sources(
+    repo: str, pr: dict, files: list[dict], token: str
+) -> dict[Path, str]:
+    """``{path: text at the PR head}`` for the test files this PR changes.
+
+    Where a forked revision's ``_PARENT_REVISION_ID`` pin lives: the revision
+    is unlanded, so its migration test arrives in the same PR. ``files`` is the
+    PR's listing that ``main`` already fetched with :func:`pr_files`, so this
+    costs one blob per candidate test file and no second listing. Called only
+    for a PR with a revision to re-point. Raises :class:`ApiError`; the caller
+    records that as a finding and an UNKNOWN pin search.
+    """
+    head_sha = pr["head"]["sha"]
+    return {
+        REPO_ROOT / str(entry["filename"]): blob_at(
+            repo, str(entry["filename"]), head_sha, token
+        )
+        for entry in files
+        if _worth_downloading(entry)
+    }
 
 
 def simulate(
@@ -297,29 +386,149 @@ def _roots_block(remediation) -> list[str]:
         ],
         "",
         "Those are the files to edit — not the heads, which travel along",
-        "unchanged.",
+        "unchanged. Re-pointing any of them is **three** edits: its",
+        "`down_revision`, its module docstring's `Revises:` line, and the",
+        f"`_PARENT_REVISION_ID` pin in its migration test under `{TESTS_DIR}/`.",
         "",
     ]
 
 
-def _edit_lines(remediation) -> list[str]:
-    """The `set this token in these files` block, shared by two branches."""
-    return [
-        "```python",
-        f'down_revision: str | Sequence[str] | None = "{safe_id(remediation.target or "")}"',
-        "```",
+def _fence_safe(text: str) -> str:
+    """One physical line, for a line placed inside a fenced code block.
+
+    Every line this module fences starts with ``-``, ``+`` or ``#``, so no
+    line can close the fence; the only remaining escape is an embedded
+    newline, which a file path from a PR could carry.
+    """
+    return text.replace("\r", " ").replace("\n", " ")
+
+
+def _site_block(
+    revision: str,
+    path: Path | None,
+    target: str,
+    sites: RepointSites | None,
+    pin_scope: str | None,
+) -> list[str]:
+    """The three edit sites for re-pointing ONE revision, as markdown.
+
+    ``sites is None`` means nobody read the file or searched for a pin, so the
+    before-lines are named rather than quoted and the pin search is UNKNOWN.
+    """
+    where = _pretty_path(revision, path)
+    rev = safe_id(revision)
+    new = safe_id(target)
+    fenced_where = _fence_safe(where)
+    down_before = sites.down_revision[0] if sites else None
+    down_after = (
+        sites.down_revision[1]
+        if sites
+        else f'down_revision: str | Sequence[str] | None = "{new}"'
+    )
+    lines = [
+        f"**`{where}`** (revision `{rev}`) — three edits:",
         "",
-        "in:",
-        "",
-        *[
-            f"- `{_pretty_path(revision, path)}`"
-            for revision, path in remediation.edits
-        ],
-        "",
-        "(that is the shallowest **unlanded** revision on the forked chain —",
-        "anything stacked above it travels along unchanged and must not be",
-        "touched), and update its `Revises:` docstring line to match.",
+        "```diff",
+        f"# 1. the down_revision assignment — {fenced_where}",
+        f"- {_fence_safe(down_before)}"
+        if down_before is not None
+        else "# (its current down_revision line)",
+        f"+ {_fence_safe(down_after)}",
     ]
+    if sites is not None and sites.parent_unparsed:
+        lines.append(
+            "# (no parent literal parsed from down_revision — check it by hand)"
+        )
+    if sites is not None and sites.revises is None:
+        lines.append(
+            f"# 2. the module docstring has no Revises: line — {fenced_where}"
+            " — nothing to change there"
+        )
+    else:
+        revises_before = sites.revises[0] if sites and sites.revises else None
+        lines += [
+            f"# 2. the module docstring's Revises: line — {fenced_where}",
+            f"- {_fence_safe(revises_before)}"
+            if revises_before is not None
+            else "# (its current Revises: line)",
+            f"+ Revises: {new}",
+        ]
+    pins = sites.pins if sites else ()
+    computed = sites.computed_pins if sites else ()
+    for pin in pins:
+        lines += [
+            f"# 3. the test pin — {_fence_safe(repo_relative(pin.path))}:{pin.lineno}",
+            f"- {_fence_safe(pin.before)}",
+            f"+ {_fence_safe(pin.after)}",
+        ]
+    mismatched = sites.mismatched_pins if sites else ()
+    for computed_pin in computed:
+        lines += [
+            f"# 3. the test pin — {_fence_safe(repo_relative(computed_pin.path))}:"
+            f"{computed_pin.lineno} — computed, not literal: check it by hand",
+            f"# {_fence_safe(computed_pin.line)}",
+        ]
+    for other in mismatched:
+        lines += [
+            f"# 3. the test pin — {_fence_safe(repo_relative(other.path))}:"
+            f"{other.lineno} — names another parent: check it",
+            f"# {_fence_safe(other.line)}",
+        ]
+    if not pins and not computed and not mismatched:
+        lines.append("# 3. the test pin — see below")
+    lines += ["```", ""]
+    if computed:
+        lines += [f"3. **Test pin:** {computed_pin_text()}.", ""]
+    old_parent = sites.old_parent if sites else None
+    for other in mismatched:
+        location = _fence_safe(repo_relative(other.path)).replace("`", "")
+        text = mismatched_pin_text(
+            f"`{location}:{other.lineno}`",
+            safe_id(other.value),
+            safe_id(old_parent) if old_parent is not None else None,
+            new_parent=new,
+            parent_unparsed=bool(sites and sites.parent_unparsed),
+        )
+        lines += [f"3. **Test pin:** {text}.", ""]
+    if not pins and not computed and not mismatched:
+        if sites is None or pin_scope is None:
+            lines += [
+                "3. **Test pin: UNKNOWN** — the pin search did not complete. Look under",
+                f"   `{TESTS_DIR}/` for this revision's migration test and set its",
+                f'   `_PARENT_REVISION_ID` to `"{new}"` too; several of those tests',
+                "   assert it equals `down_revision`.",
+                "",
+            ]
+        else:
+            lines += [
+                f"3. **Test pin:** {no_pin_found_text(f'`{rev}`')}.",
+                f"   (Searched: {pin_scope}.)",
+                "",
+            ]
+    return lines
+
+
+def _edit_lines(
+    remediation,
+    sites: dict[str, RepointSites] | None = None,
+    pin_scope: str | None = None,
+) -> list[str]:
+    """The re-point block, shared by two branches — all three edit sites."""
+    target = remediation.target or ""
+    lines = [
+        f"Re-point onto the landed head `{safe_id(target)}`. Each revision below",
+        "is the shallowest **unlanded** revision on its forked chain — anything",
+        "stacked above it travels along unchanged and must not be touched.",
+        "",
+        "A re-point is **three** edits. Skipping the test pin turns this red",
+        "head count into a red test suite.",
+        "",
+    ]
+    for revision, path in remediation.edits:
+        lines += _site_block(
+            revision, path, target, (sites or {}).get(revision), pin_scope
+        )
+    return lines
 
 
 BLOCK_ADVICE = {
@@ -335,7 +544,21 @@ BLOCK_ADVICE = {
 }
 
 
-def render_comment(heads: tuple[str, ...], remediation, landed_sha: str) -> str:
+def render_comment(
+    heads: tuple[str, ...],
+    remediation,
+    landed_sha: str,
+    *,
+    sites: dict[str, RepointSites] | None = None,
+    pin_scope: str | None = None,
+) -> str:
+    """The fork notice for one PR.
+
+    ``sites`` carries the exact before -> after lines per re-pointed revision,
+    and ``pin_scope`` names what the pin search looked at. ``pin_scope is
+    None`` means the search did not run, and the comment says UNKNOWN rather
+    than implying the test has no pin.
+    """
     lines = [
         MARKER,
         "### ⚠️ A land on `main` just forked this PR's alembic chain",
@@ -356,25 +579,29 @@ def render_comment(heads: tuple[str, ...], remediation, landed_sha: str) -> str:
         "",
     ]
     if remediation.kind == "repoint":
-        lines += ["**Fix — one token.** Set", "", *_edit_lines(remediation), ""]
         lines += [
-            "Then update this branch onto `main` and push.",
+            "**Fix — a three-site re-point.**",
+            "",
+            *_edit_lines(remediation, sites, pin_scope),
+        ]
+        lines += [
+            "Then update this branch onto `main`, run the revision's migration",
+            "test, and push.",
             "",
             "**Do not run `alembic merge` for this.** A merge revision is correct",
             "only when both heads have already landed; the forked revision here is",
-            "unlanded, so re-pointing costs one token and leaves nothing behind,",
-            "while a merge revision would be permanent bookkeeping in the chain.",
+            "unlanded, so a re-point leaves nothing behind, while a merge revision",
+            "would be permanent bookkeeping in the chain.",
         ]
     elif remediation.kind == "blocked":
         # Name BOTH halves. Degrading the whole answer and mentioning only the
         # blocked chain left the author never told that the other fork did
-        # have a one-token fix, so it took two rounds instead of one.
+        # have a plain re-point, so it took two rounds instead of one.
         if remediation.edits and remediation.target:
             lines += [
-                "**Part of this is one token.** Set",
+                "**Part of this is a plain re-point.**",
                 "",
-                *_edit_lines(remediation),
-                "",
+                *_edit_lines(remediation, sites, pin_scope),
             ]
         elif remediation.edits:
             lines += _roots_block(remediation)
@@ -524,6 +751,12 @@ def sweep_exit_code(failures: list[str], findings: list[str]) -> int:
     reported and exit 0. ``findings`` is accepted rather than ignored so the
     asymmetry is stated in the signature instead of being implied by an
     absence.
+
+    ONE ``findings`` class is not a verdict about a PR's tree: a failed read of
+    the PR's test files (:func:`pr_test_sources`). That read only words the
+    ``_PARENT_REVISION_ID`` advice — the fork verdict was already reached and
+    the notice still posts, saying the pin search is UNKNOWN — so it is the
+    single :class:`ApiError` that does not count as a failure.
     """
     return EXIT_VACUOUS if failures else 0
 
@@ -731,10 +964,13 @@ def main() -> int:
     for pr in prs:
         number = int(pr["number"])
         try:
-            touched = pr_version_files(args.repo, number, token)
+            # Listed ONCE: the versions-dir filter and, for a PR that needs a
+            # re-point, the test-file pin search both read this same list.
+            files = pr_files(args.repo, number, token)
         except ApiError as exc:
             failures.append(f"#{number}: could not list files: {exc}")
             continue
+        touched = pr_version_files(files)
 
         if not touched:
             # Nothing to check — but it may still be carrying a notice from an
@@ -824,7 +1060,42 @@ def main() -> int:
 
         forked += 1
         remediation = plan_remediation(scan, landed)
-        body = render_comment(scan.heads, remediation, args.sha or "main")
+        sites: dict[str, RepointSites] = {}
+        pin_scope: str | None = None
+        if remediation.target is not None and remediation.edits:
+            # No `edits` (a `blocked` remedy whose only chain has no one-token
+            # site) means no revision to re-point: no pin to find, no fetch,
+            # and no "pin search is UNKNOWN" finding for a notice without one.
+            test_sources: dict[Path, str] = {}
+            if len(files) >= PR_FILES_LISTING_CAP:
+                # The listing may be truncated, so a pin file can be missing
+                # from it: leave `pin_scope` None and the notice says UNKNOWN,
+                # never "no pin found".
+                note(
+                    f"#{number}: file listing reached GitHub's "
+                    f"{PR_FILES_LISTING_CAP}-file cap — pin search is UNKNOWN."
+                )
+            else:
+                try:
+                    test_sources = pr_test_sources(args.repo, pr, files, token)
+                    pin_scope = f"the files this PR changes under `{TESTS_DIR}/`"
+                except ApiError as exc:
+                    # A FINDING, not a failure: the fork verdict and the
+                    # comment still stand, and the comment says the pin search
+                    # is UNKNOWN (`pin_scope is None`) rather than implying
+                    # there is no pin.
+                    findings.append(
+                        f"#{number}: could not read its test files, so its notice "
+                        f"says the `_PARENT_REVISION_ID` pin search is UNKNOWN: {exc}"
+                    )
+            sites = plan_repoint_sites(scan, remediation, sources, test_sources)
+        body = render_comment(
+            scan.heads,
+            remediation,
+            args.sha or "main",
+            sites=sites,
+            pin_scope=pin_scope,
+        )
         try:
             found = find_marker_comments(args.repo, number, token)
             existing = found[0] if found else None
@@ -857,12 +1128,14 @@ def main() -> int:
     if findings:
         # Deliberately says nothing about WHAT was found or what to do about
         # it: `findings` holds unrelated classes (an un-adviseable tree, a
-        # second marker comment) whose remedies differ, and each message
-        # carries its own. All this line may state is the one property they
-        # share — none of them is a failure of the sweep.
+        # second marker comment, a failed read of a PR's test files) whose
+        # remedies differ, and each message carries its own. All this line may
+        # state is the one property they share — none of them is a failure of
+        # the sweep.
         err(
             f"{len(findings)} finding(s) recorded. None of them redden this "
-            "lane: each is a defect in a PR, not in `main`."
+            "lane: each is a defect in a PR rather than in `main`, or a failed "
+            "read of a PR's test files that only words its pin advice."
         )
     if failures:
         for failure in failures:

@@ -22,6 +22,7 @@
  * | `FilterTabs` | R6 — live counts, and `–`-not-`0` for an unfetched one |
  * | `FilterChips` | R6 — the same strip where the filter is MULTI-select |
  * | `CollapsiblePanel` | R7 — collapses, keeps its signal, unmounts children |
+ * | `RefreshButton` | §6.4 — a named refresh control that acknowledges only its own click |
  * | `statusRow` atoms | R2, R3, R4 — the badge, the accent, the timestamp |
  * | `attention` | R3 — the severity vocabulary and its palette invariant |
  * | `time` | supports R2 — `relativeTime` / `absoluteTime` |
@@ -85,6 +86,9 @@ export { FilterChips } from "./FilterChips";
 export type { FilterChipOption, FilterChipsProps } from "./FilterChips";
 
 export { CollapsiblePanel } from "./CollapsiblePanel";
+
+export { RefreshButton } from "./RefreshButton";
+export type { RefreshButtonProps } from "./RefreshButton";
 
 export {
   AUTHOR_GLYPH_KINDS,

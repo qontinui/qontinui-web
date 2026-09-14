@@ -389,3 +389,103 @@ class TestRestoreVersion:
             resp = auth_client.post(self._PATH, json={"change_note": "x"})
 
         assert resp.status_code == 404
+
+
+def test_withdraw_non_admin_gets_403_before_any_coord_call() -> None:
+    """The web tier gates withdraw on ``require_coord_tenant_admin`` itself.
+
+    Coord re-checks, but a proxy that forwarded a developer's request would make
+    coord the only gate. Every other test in this file overrides the admin
+    dependency to pass, so without this case swapping it for ``get_tenant_id``
+    would stay green.
+    """
+    from fastapi import HTTPException
+
+    from app.api.v1.endpoints.operations import require_coord_tenant_admin
+
+    def _deny() -> None:
+        raise HTTPException(status_code=403, detail="not_coord_tenant_admin")
+
+    app = _build_test_app()
+    app.dependency_overrides[require_coord_tenant_admin] = _deny
+    with _patch_httpx() as MockClient:
+        instance = AsyncMock()
+        _configure_mock_client(MockClient, instance)
+        resp = TestClient(app).post(
+            f"{API_PREFIX}/coord/prompt-documents/decision_record/x/withdraw",
+            json={"reason": "r"},
+        )
+
+    assert resp.status_code == 403
+    instance.post.assert_not_called()
+
+
+class TestWithdrawDecisionRecord:
+    """``POST …/prompt-documents/{kind}/{name}/withdraw`` — plan
+    ``2026-09-13-decision-records-are-agent-writable-but-policy-says-they-are-not``
+    §7 3.3. The feed's one-click undo for a CREATED decision record, which the
+    version-restore route cannot reach because a v1 has no earlier version.
+    """
+
+    _PATH = f"{API_PREFIX}/coord/prompt-documents/decision_record/no-cross-tenant-reads/withdraw"
+
+    def test_forwards_reason_only_to_the_operator_withdraw_route(
+        self, auth_client: TestClient
+    ):
+        with _patch_httpx() as MockClient:
+            instance = AsyncMock()
+            instance.post.return_value = _mock_response(
+                json_data={"current_version": 2, "withdrawn": True}
+            )
+            _configure_mock_client(MockClient, instance)
+
+            resp = auth_client.post(
+                self._PATH,
+                json={
+                    "reason": "never decided",
+                    # A client-asserted withdrawer must not ride along: coord
+                    # stamps the editor from its own operator context.
+                    "updated_by": "attacker@example.com",
+                    "edited_by": "attacker@example.com",
+                },
+            )
+
+        assert resp.status_code == 200
+        assert resp.json() == {"current_version": 2, "withdrawn": True}
+        called_url = instance.post.call_args.args[0]
+        assert called_url.endswith(
+            "/coord/prompt-documents/decision_record/no-cross-tenant-reads/withdraw"
+        )
+        assert instance.post.call_args.kwargs["json"] == {"reason": "never decided"}
+
+    def test_path_segments_are_re_encoded(self, auth_client: TestClient):
+        """A decoded ``/`` in a name must not reshape the upstream path."""
+        with _patch_httpx() as MockClient:
+            instance = AsyncMock()
+            instance.post.return_value = _mock_response(json_data={})
+            _configure_mock_client(MockClient, instance)
+
+            resp = auth_client.post(
+                f"{API_PREFIX}/coord/prompt-documents/decision_record/a%3Fb/withdraw",
+                json={"reason": "x"},
+            )
+
+        assert resp.status_code == 200
+        called_url = instance.post.call_args.args[0]
+        assert called_url.endswith(
+            "/coord/prompt-documents/decision_record/a%3Fb/withdraw"
+        )
+
+    def test_coord_refusal_passes_through(self, auth_client: TestClient):
+        """Coord owns the kind rule and the reason rule; its 4xx reaches the page."""
+        with _patch_httpx() as MockClient:
+            instance = AsyncMock()
+            instance.post.return_value = _mock_response(
+                status_code=400, text="withdraw is only valid for decision_record"
+            )
+            _configure_mock_client(MockClient, instance)
+
+            resp = auth_client.post(self._PATH, json={})
+
+        assert resp.status_code == 400
+        assert instance.post.call_args.kwargs["json"] == {}

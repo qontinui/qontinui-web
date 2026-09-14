@@ -491,6 +491,24 @@ export interface PromptDocumentSummary {
    * `false`, because it must not offer an update it cannot prove exists.
    */
   update_available?: boolean;
+  /**
+   * The record's frontmatter `status`, parsed SERVER-SIDE by coord — for a
+   * `decision_record`, `proposed | accepted | superseded | withdrawn` (plan
+   * `2026-09-13-decision-records-are-agent-writable-but-policy-says-they-are-not`,
+   * §7 3.1). Served the way `unedited_seed` is, so no console parses markdown.
+   *
+   * Typed `string`: a cast over `JSON.parse`, not a check. `null` when the body
+   * carries no status; absent from a coord that predates the field, which is
+   * UNKNOWN.
+   */
+  status?: string | null;
+  /**
+   * `true` when coord says this record is withdrawn. Only an explicit `true`
+   * is rendered — absent (an older coord) is UNKNOWN, never "live".
+   */
+  withdrawn?: boolean | null;
+  /** The reason recorded with the withdrawal, when there is one. */
+  withdrawn_reason?: string | null;
   updated_by: string | null;
   updated_at: string;
 }

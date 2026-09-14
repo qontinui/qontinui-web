@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { httpClient } from "@/services/service-factory";
-import { writeKey } from "../_lib/writes";
+import { canWithdraw, writeKey } from "../_lib/writes";
 import { isUnavailableSevere } from "../types";
 import type {
   ListProposalsResponse,
@@ -403,6 +403,73 @@ export function usePromptDocumentProposals() {
     [reload]
   );
 
+  /**
+   * Withdraw a CREATED decision record — the undo `revertWrite` cannot offer,
+   * because a v1 has no earlier body (plan
+   * `2026-09-13-decision-records-are-agent-writable-but-policy-says-they-are-not`,
+   * §7 3.3).
+   *
+   * Calls coord's operator `…/withdraw` route through the tenant proxy. Coord
+   * writes a NEW version marking the record withdrawn and keeps its text and
+   * history, so nothing is deleted and the new head carries the ordinary Undo.
+   * The withdrawer is stamped by coord from the authenticated operator, never
+   * sent from here.
+   *
+   * Same double head check as `revertWrite`, for the same reason: the feed's
+   * `current_version` is a page-load snapshot. If a peer edited or already
+   * withdrew the record since, it is no longer the v1 this control was offered
+   * on, and withdrawing on the strength of a stale row would act on a document
+   * the operator has not seen. As with `revertWrite`, the window is narrowed to
+   * one request, not closed: a peer write can still land between the re-read
+   * and the POST, because coord's withdraw route takes no version
+   * precondition. The damage is bounded — a withdrawal is itself undoable.
+   */
+  const withdrawWrite = useCallback(
+    async (write: PromptDocumentWrite, reason: string): Promise<boolean> => {
+      const trimmed = reason.trim();
+      if (!canWithdraw(write)) {
+        toast.error(
+          "Only a newly created decision record can be withdrawn from here. Use Undo on a later write."
+        );
+        return false;
+      }
+      if (!trimmed) {
+        toast.error("Say why you are withdrawing this record.");
+        return false;
+      }
+      try {
+        setActing(true);
+        const path = docPath(write.kind, write.name);
+        const live = await httpClient.get<{ current_version?: number }>(
+          `${path}/versions`
+        );
+        if (live.current_version !== write.version_number) {
+          const now =
+            typeof live.current_version === "number"
+              ? `now v${live.current_version}`
+              : "its current version could not be read";
+          toast.error(
+            `${write.label} has changed since this page loaded (${now}). Refreshed — review the newer write before withdrawing anything.`
+          );
+          await reload();
+          return false;
+        }
+        await httpClient.post(`${path}/withdraw`, { reason: trimmed });
+        toast.success(
+          `Withdrew ${write.label}. It no longer counts as a decision; Undo on the new version reinstates it.`
+        );
+        await reload();
+        return true;
+      } catch (err) {
+        toast.error(message(err, "Failed to withdraw this record"));
+        return false;
+      } finally {
+        setActing(false);
+      }
+    },
+    [reload]
+  );
+
   return {
     proposals,
     writes,
@@ -420,5 +487,6 @@ export function usePromptDocumentProposals() {
     reload,
     decide,
     revertWrite,
+    withdrawWrite,
   };
 }

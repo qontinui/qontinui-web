@@ -376,3 +376,137 @@ describe("usePromptDocumentProposals — the landed-write diff", () => {
     expect(result.current.writeDiffFor(HEAD_WRITE)).toBeNull();
   });
 });
+
+const CREATED_RECORD: PromptDocumentWrite = {
+  kind: "decision_record",
+  name: "no-cross-tenant-reads",
+  label: "No cross-tenant reads",
+  version_number: 1,
+  change_note: "recorded an operator ruling",
+  edited_by: "agent:chart",
+  created_at: "2026-09-13T10:00:00Z",
+  current_version: 1,
+};
+
+describe("usePromptDocumentProposals — withdrawing a created decision record", () => {
+  it("POSTs the trimmed reason to the operator withdraw route after a live head check", async () => {
+    getMock.mockImplementation((url: string) => {
+      if (url.endsWith("/versions")) {
+        return Promise.resolve({ current_version: 1, versions: [] });
+      }
+      return routeInitial({})(url);
+    });
+    postMock.mockResolvedValue({ current_version: 2, withdrawn: true });
+
+    const { result } = renderHook(() => usePromptDocumentProposals());
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
+    let outcome: boolean | undefined;
+    await act(async () => {
+      outcome = await result.current.withdrawWrite(
+        CREATED_RECORD,
+        "  never decided — recorded from a guess  "
+      );
+    });
+
+    expect(outcome).toBe(true);
+    expect(postMock).toHaveBeenCalledTimes(1);
+    const [url, body] = postMock.mock.calls[0];
+    expect(url).toBe(
+      "/api/v1/operations/coord/prompt-documents/decision_record/no-cross-tenant-reads/withdraw"
+    );
+    // Only the reason — the withdrawer is coord's to stamp, never the browser's.
+    expect(body).toEqual({ reason: "never decided — recorded from a guess" });
+    // No PATCH: a withdrawal is not an undo-by-body.
+    expect(patchMock).not.toHaveBeenCalled();
+  });
+
+  it("aborts when the record moved since page load — nothing is written", async () => {
+    getMock.mockImplementation((url: string) => {
+      if (url.endsWith("/versions")) {
+        return Promise.resolve({ current_version: 2, versions: [] });
+      }
+      return routeInitial({})(url);
+    });
+
+    const { result } = renderHook(() => usePromptDocumentProposals());
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
+    let outcome: boolean | undefined;
+    await act(async () => {
+      outcome = await result.current.withdrawWrite(CREATED_RECORD, "a reason");
+    });
+
+    expect(outcome).toBe(false);
+    expect(postMock).not.toHaveBeenCalled();
+    expect(toastError).toHaveBeenCalledWith(expect.stringContaining("now v2"));
+  });
+
+  it("refuses a blank reason without any round trip", async () => {
+    getMock.mockImplementation(routeInitial({}));
+
+    const { result } = renderHook(() => usePromptDocumentProposals());
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    getMock.mockClear();
+
+    let outcome: boolean | undefined;
+    await act(async () => {
+      outcome = await result.current.withdrawWrite(CREATED_RECORD, "   ");
+    });
+
+    expect(outcome).toBe(false);
+    expect(getMock).not.toHaveBeenCalled();
+    expect(postMock).not.toHaveBeenCalled();
+  });
+
+  it("refuses a kind other than decision_record, and a v > 1 write", async () => {
+    getMock.mockImplementation(routeInitial({}));
+
+    const { result } = renderHook(() => usePromptDocumentProposals());
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    getMock.mockClear();
+
+    const outcomes: boolean[] = [];
+    await act(async () => {
+      outcomes.push(
+        await result.current.withdrawWrite(
+          { ...CREATED_RECORD, kind: "initiative" },
+          "a reason"
+        )
+      );
+      outcomes.push(
+        await result.current.withdrawWrite(
+          { ...CREATED_RECORD, version_number: 3, current_version: 3 },
+          "a reason"
+        )
+      );
+    });
+
+    expect(outcomes).toEqual([false, false]);
+    expect(getMock).not.toHaveBeenCalled();
+    expect(postMock).not.toHaveBeenCalled();
+  });
+
+  it("reports a refused withdrawal and keeps the caller's composer open", async () => {
+    getMock.mockImplementation((url: string) => {
+      if (url.endsWith("/versions")) {
+        return Promise.resolve({ current_version: 1, versions: [] });
+      }
+      return routeInitial({})(url);
+    });
+    postMock.mockRejectedValue(new Error("HTTP 403: not a tenant admin"));
+
+    const { result } = renderHook(() => usePromptDocumentProposals());
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
+    let outcome: boolean | undefined;
+    await act(async () => {
+      outcome = await result.current.withdrawWrite(CREATED_RECORD, "a reason");
+    });
+
+    expect(outcome).toBe(false);
+    expect(toastError).toHaveBeenCalledWith(
+      expect.stringContaining("not a tenant admin")
+    );
+  });
+});
