@@ -648,7 +648,9 @@ export class HttpClient {
     // method returns the `Response` and never learns when its body has been
     // read, and a caller aborting AFTER the headers is exactly how a stalled
     // body gets cancelled rather than merely abandoned. `once` detaches it on
-    // the abort; otherwise it lives as long as the caller's signal does.
+    // the abort; otherwise it lives as long as the caller's signal does — so
+    // pass a per-request signal, not one long-lived signal shared across
+    // many requests.
     const callerSignal = options.signal ?? undefined;
     const forwardCallerAbort = () => controller.abort(callerSignal?.reason);
     if (callerSignal?.aborted) {
@@ -683,8 +685,13 @@ export class HttpClient {
       callerSignal?.removeEventListener("abort", forwardCallerAbort);
 
       // A caller's own abort is not a timeout: hand it back as it came, not
-      // as "backend may be starting up".
-      if (callerSignal?.aborted) {
+      // as "backend may be starting up". Compare the reason, not just
+      // `aborted`: if the header timeout fired first and the caller aborted
+      // in the same tick, `controller` carries the timeout's reason.
+      if (
+        callerSignal?.aborted &&
+        controller.signal.reason === callerSignal.reason
+      ) {
         throw error;
       }
 

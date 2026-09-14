@@ -478,14 +478,18 @@ function staleReportReason(
   now: number
 ): string {
   const age = relativeTime(reportedAt, { absent: "", now });
+  // Only a MEASURED age may be said to be past the bound; an unreadable
+  // timestamp establishes no age at all.
   const heard =
     age === ""
-      ? "This runner's last credential report carries no usable timestamp"
-      : `This runner's last credential report was ${age}`;
+      ? "This runner's last credential report carries no usable timestamp, " +
+        "so its age cannot be established"
+      : `This runner's last credential report was ${age}, past its ` +
+        `${staleAfterSecs}s staleness bound`;
   return (
-    `${heard}, past its ${staleAfterSecs}s staleness bound, so it is not ` +
-    "evidence of this machine's credential now. UNKNOWN, not healthy: the " +
-    "runner may be offline, or something else overwrote its status since."
+    `${heard}, so it is not evidence of this machine's credential now. ` +
+    "UNKNOWN, not healthy: the runner may be offline, or something else " +
+    "overwrote its status since."
   );
 }
 

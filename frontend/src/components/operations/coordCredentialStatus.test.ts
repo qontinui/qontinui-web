@@ -352,6 +352,8 @@ describe("resolveCoordCredential — a report past its staleness bound", () => {
     expect(status.kind).toBe("unknown");
     expect(status.measured).toBe(false);
     expect(status.reason).toMatch(/carries no usable timestamp/);
+    // No age was measured, so the reason must not claim a bound was passed.
+    expect(status.reason).not.toMatch(/past its/);
   });
 
   it("keeps the no-report reason for a device with no bag at all", () => {

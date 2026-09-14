@@ -145,8 +145,10 @@ export default function CoordPlansListPage() {
    *     race window.
    *
    * Same shape as `/notifications`' `queryGen`, `/questions`' three `*Seq`
-   * refs and `usePlanLibrary`'s counter. An `AbortController` cannot do this
-   * job here — `http-client.ts` overwrites the caller's `signal`.
+   * refs and `usePlanLibrary`'s counter. `http-client.ts` now honours a
+   * caller's `signal`, but cancelling a superseded read would not replace
+   * these counters: they decide which settled read may land, not which reads
+   * run.
    *
    * **TWO counters, because the two things being gated are not one question.**
    * A single per-request counter silences a read in every arm at once, and

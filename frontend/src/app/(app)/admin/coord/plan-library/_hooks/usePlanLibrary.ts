@@ -290,9 +290,9 @@ export function useDivergentArtifacts() {
  * Built on the console's `useRetainedValue` rather than a private newest-id
  * guard, which is what each hook carried before. Reads DO overlap, even with a
  * panel's Refresh disabled while one is out: React StrictMode runs the mount
- * effect twice in development, and nothing stops a second caller. And
- * `http-client.ts` overwrites the caller's AbortController signal, so an
- * overlapping read cannot be cancelled and BOTH will settle. A newest-id guard
+ * effect twice in development, and nothing stops a second caller. No read
+ * here passes an AbortController signal (which `http-client.ts` now honours),
+ * so overlapping reads BOTH settle. A newest-id guard
  * handles two of the three orderings and loses the third: read A is out, a
  * newer read B FAILS, then A answers with real data — and is thrown away,
  * leaving the panel saying nothing could be read although something was.
