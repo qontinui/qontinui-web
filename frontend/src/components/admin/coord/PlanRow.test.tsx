@@ -180,8 +180,13 @@ describe("PlanRow identity chip", () => {
 });
 
 describe("PlanRow detail (R5) and the frozen testids (D4a)", () => {
+  // UNDATED slug, deliberately: the row's authoring date is the slug prefix
+  // first and coord's column second (`planAuthoredAt`), and these cases are
+  // about the COLUMN arm, so the slug must not supply a date of its own. (A
+  // real dated slug always agrees with its column — measured 0 disagreements
+  // over 1,686 rows — so a fixture where they differ describes no real row.)
   const plan = {
-    slug: "2026-08-16-p-5",
+    slug: "p-5",
     status: "draft",
     title: "A plan with a title",
     authored_at: new Date(Date.now() - 3 * 86400_000).toISOString(),
@@ -218,12 +223,40 @@ describe("PlanRow detail (R5) and the frozen testids (D4a)", () => {
     expect(cell).toHaveAttribute("title", expect.stringMatching(/^Authored /));
   });
 
+  it("times the row on the SLUG's date when coord's column is NULL, matching the chip", () => {
+    // The 29-row case measured 2026-09-13: a dated slug created through the
+    // MCP upsert door with no `authored_at`. The chip shows `2026-08-16`; the
+    // row and the detail must say "authored", not "ingested <a later day>"
+    // beside a chip that contradicts them.
+    const slugDated = {
+      slug: "2026-08-16-p-5a",
+      status: "draft",
+      authored_at: null,
+      created_at: new Date(Date.now() - 3600_000).toISOString(),
+      updated_at: new Date(Date.now() - 60_000).toISOString(),
+    };
+    renderRow(slugDated, true);
+    const cell = rowTimeCell();
+    expect(cell).toHaveAttribute("title", expect.stringMatching(/^Authored /));
+    expect(cell).not.toHaveTextContent(/no date/);
+    const dates = screen.getByTestId("coord-plan-card-dates");
+    // The detail's own title carries the ISO instant, so the DAY is asserted
+    // here rather than through the locale-formatted row-time title.
+    expect(dates).toHaveTextContent(/authored/);
+    expect(
+      dates.querySelector('[title^="Authored 2026-08-16T00:00:00Z"]')
+    ).not.toBeNull();
+    expect(dates).not.toHaveTextContent(/ingested/);
+    expect(dates).toHaveTextContent(/updated 1m ago/);
+  });
+
   it("falls back to the INGEST date under its own name when no authoring date is recorded", () => {
-    // A coord that predates `authored_at`, or an undated slug. `created_at`
-    // is when coord first saw the row — true, so shown — but under
-    // "ingested", never "created" and never "authored".
+    // An UNDATED slug and no coord column. `created_at` is when coord first
+    // saw the row — true, so shown — but under "ingested", never "created"
+    // and never "authored". (The slug must be undated here: a dated one now
+    // supplies the authoring date itself, see the case above.)
     const ingestOnly = {
-      slug: "2026-08-16-p-5b",
+      slug: "p-5b",
       status: "draft",
       created_at: new Date(Date.now() - 3 * 86400_000).toISOString(),
       updated_at: new Date(Date.now() - 3600_000).toISOString(),
@@ -241,7 +274,7 @@ describe("PlanRow detail (R5) and the frozen testids (D4a)", () => {
   it("prefers first_shipped_at over everything else for the row time", () => {
     renderRow(
       {
-        slug: "2026-08-16-p-6",
+        slug: "p-6",
         status: "shipped",
         authored_at: new Date(Date.now() - 12 * 86400_000).toISOString(),
         created_at: new Date(Date.now() - 10 * 86400_000).toISOString(),
@@ -292,7 +325,7 @@ describe("PlanRow detail (R5) and the frozen testids (D4a)", () => {
     const link = screen.getByTestId("coord-plan-card-link");
     expect(link).toHaveAttribute(
       "href",
-      "/admin/coord/plans/2026-08-16-p-5"
+      "/admin/coord/plans/p-5"
     );
     expect(screen.getByTestId("coord-plan-card-spawn-btn")).toBeInTheDocument();
     // The row itself must NOT be an anchor any more — that is the whole point

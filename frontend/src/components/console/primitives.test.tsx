@@ -13,13 +13,14 @@
  * - R2's fixed slot order and its truncate-don't-wrap treatment (`RecordRow`);
  * - R5's fixed section order and shared border (`RecordDetail`);
  * - the loading / empty / rows trichotomy and one-open-at-a-time (`RecordList`);
- * - R1's level → dot/border mapping and the badge cluster (`HealthStrip`).
+ * - R1's level → dot/border mapping and the badge cluster (`HealthStrip`);
+ * - §6.4's named refresh control, busy only for its own press (`RefreshButton`).
  *
  * See `frontend/docs/console-ui-style-guide.md` §2 and §3.2.
  */
 
 import { describe, expect, it, vi } from "vitest";
-import { fireEvent, render, screen, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, within } from "@testing-library/react";
 
 import { FilterChips } from "./FilterChips";
 import { FilterTabs } from "./FilterTabs";
@@ -27,6 +28,7 @@ import { HealthStrip } from "./HealthStrip";
 import { RecordDetail } from "./RecordDetail";
 import { RecordList } from "./RecordList";
 import { RecordRow } from "./RecordRow";
+import { RefreshButton } from "./RefreshButton";
 import { rowAccentClass } from "./statusRow";
 import { StatCluster } from "./StatCluster";
 
@@ -927,5 +929,90 @@ describe("StatCluster (R1)", () => {
     );
     expect(screen.getByTestId("s-a").className).toContain("text-red-200");
     expect(screen.getByTestId("s-b").className).not.toContain("text-red-");
+  });
+});
+
+// ----------------------------------------------------------------------------
+// §6.4 — a refresh control that names itself and acknowledges only its press
+// ----------------------------------------------------------------------------
+
+describe("RefreshButton (§6.4)", () => {
+  function pending() {
+    let resolve!: () => void;
+    let reject!: (e: Error) => void;
+    const promise = new Promise<void>((res, rej) => {
+      resolve = res;
+      reject = rej;
+    });
+    return { promise, resolve, reject };
+  }
+
+  it("is named by its label and titled by its effect, with a decorative icon", () => {
+    render(
+      <RefreshButton
+        onRefresh={() => undefined}
+        label="Refresh widgets"
+        title="Returns to the first page"
+        data-testid="rb"
+      />
+    );
+    const button = screen.getByRole("button", { name: "Refresh widgets" });
+    expect(button).toBe(screen.getByTestId("rb"));
+    expect(button).toHaveAttribute("title", "Returns to the first page");
+    expect(button.querySelector("svg")).toHaveAttribute("aria-hidden", "true");
+    expect(button).not.toHaveAttribute("aria-busy");
+  });
+
+  it("is busy for exactly as long as the read its press returned", async () => {
+    const read = pending();
+    const onRefresh = vi.fn(() => read.promise);
+    render(<RefreshButton onRefresh={onRefresh} label="Refresh" title="t" data-testid="rb" />);
+    const button = screen.getByTestId("rb");
+
+    fireEvent.click(button);
+    expect(onRefresh).toHaveBeenCalledTimes(1);
+    expect(button).toHaveAttribute("aria-busy", "true");
+    expect(button).toHaveAttribute("aria-disabled", "true");
+    // Busy is aria-disabled, never `disabled`: the keyboard user keeps focus.
+    expect(button).not.toBeDisabled();
+    expect(button.querySelector("svg")?.getAttribute("class")).toContain("animate-spin");
+
+    // A second press while busy issues nothing.
+    fireEvent.click(button);
+    expect(onRefresh).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      read.resolve();
+    });
+    expect(button).not.toHaveAttribute("aria-busy");
+    expect(button).not.toHaveAttribute("aria-disabled");
+    expect(button.querySelector("svg")?.getAttribute("class")).not.toContain("animate-spin");
+
+    fireEvent.click(button);
+    expect(onRefresh).toHaveBeenCalledTimes(2);
+  });
+
+  it("ends the busy state when the read fails, too", async () => {
+    const read = pending();
+    render(
+      <RefreshButton onRefresh={() => read.promise} label="Refresh" title="t" data-testid="rb" />
+    );
+    const button = screen.getByTestId("rb");
+    fireEvent.click(button);
+    expect(button).toHaveAttribute("aria-busy", "true");
+
+    await act(async () => {
+      read.reject(new Error("coord unreachable"));
+    });
+    expect(button).not.toHaveAttribute("aria-busy");
+  });
+
+  it("acknowledges nothing when the press returns no read", () => {
+    render(
+      <RefreshButton onRefresh={() => undefined} label="Refresh" title="t" data-testid="rb" />
+    );
+    const button = screen.getByTestId("rb");
+    fireEvent.click(button);
+    expect(button).not.toHaveAttribute("aria-busy");
   });
 });

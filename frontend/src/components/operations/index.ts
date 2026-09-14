@@ -30,6 +30,13 @@ export { indexMachinesByCoordDevice, resolveCiCapacity } from "./ciCapacity";
 export type { CiCapacityJoin, DevenvMachinesRead } from "./ciCapacity";
 export { useDevenvMachines } from "./useDevenvMachines";
 export { CiStatusPanel } from "./CiStatusPanel";
+export {
+  DevicePicker,
+  deviceStateLabel,
+  findRosterDevice,
+  normalizeDeviceId,
+} from "./DevicePicker";
+export type { DevicePickerProps } from "./DevicePicker";
 export { DeviceDrainControl } from "./DeviceDrainControl";
 export type { DeviceDrainControlProps } from "./DeviceDrainControl";
 export {

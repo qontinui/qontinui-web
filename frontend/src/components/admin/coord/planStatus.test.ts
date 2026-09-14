@@ -6,6 +6,7 @@ import {
   describePlanStatus,
   planIdentity,
   planIdentityTitle,
+  planAuthoredAt,
   planRest,
   planRowTime,
   PLAN_ATTENTION_BY_TONE,
@@ -224,6 +225,21 @@ describe("planIdentity / planRest", () => {
     );
   });
 
+  it("rejects a slug prefix that is date-SHAPED but not a real day, like the runner does", () => {
+    // Parity with the two writers of `authored_at`: the runner's
+    // `authored_at_from_stem` (`NaiveDate::from_ymd_opt`) and the alembic
+    // backfill both classify `2026-02-30-bogus` as UNDATED and store NULL.
+    // The chip must not be the one consumer asserting "Authored 2026-02-30".
+    expect(planIdentity("2026-02-30-bogus")).toBe(PLAN_IDENTITY_ABSENT);
+    expect(planIdentity("2026-13-01-bogus")).toBe(PLAN_IDENTITY_ABSENT);
+    // ...and with no valid prefix, coord's column is the next source.
+    expect(planIdentity("2026-02-30-bogus", "2026-03-01T00:00:00Z")).toBe(
+      "2026-03-01"
+    );
+    // The label keeps the whole slug: an invalid prefix is not stripped.
+    expect(planRest("2026-02-30-bogus")).toBe("2026-02-30-bogus");
+  });
+
   it("keeps the WHOLE slug when the identity is not a slug prefix", () => {
     // `planRest` strips only a prefix it can actually see in the slug, so an
     // authored_at-derived or absent identity removes nothing.
@@ -248,16 +264,94 @@ describe("planIdentity / planRest", () => {
   });
 });
 
+describe("planAuthoredAt", () => {
+  // The ONE effective-authoring-date derivation the chip, the row time, the
+  // detail dates, the `authored_*` sorts and the "undated" caveat all read.
+  it("reads a dated slug as midnight UTC of that day", () => {
+    expect(planAuthoredAt({ slug: "2026-08-16-coord-console-ui" })).toBe(
+      "2026-08-16T00:00:00Z"
+    );
+  });
+
+  it("prefers the slug prefix over the column, which derives from it", () => {
+    // Measured 2026-09-13: 0 of 1,686 dated slugs disagree with their column
+    // by DAY, so this never changes a day — it only guarantees the chip and
+    // the row agree by construction. The column carries a time of day here so
+    // the assertion can tell the two arms apart: slug-first yields midnight,
+    // column-first would yield 09:30.
+    expect(
+      planAuthoredAt({
+        slug: "2026-08-16-coord-console-ui",
+        authored_at: "2026-08-16T09:30:00Z",
+      })
+    ).toBe("2026-08-16T00:00:00Z");
+  });
+
+  it("accepts a year below 100, as both writers do", () => {
+    // `Date.UTC` maps 0–99 onto 1900–1999; the round-trip must not use it.
+    expect(planAuthoredAt({ slug: "0050-06-15-antique" })).toBe(
+      "0050-06-15T00:00:00Z"
+    );
+  });
+
+  it("dates a slug whose coord column is NULL — the MCP-created-unit case", () => {
+    // 29 dated slugs on 2026-09-13, every one created since 2026-09-10 through
+    // `coord_work_unit_upsert` by a caller that omitted `authored_at`. Their
+    // chip showed the date; their row said "Ingested"; the default sort sank
+    // the newest plans in the corpus to the bottom. This is the arm that fixes
+    // all three at once.
+    expect(
+      planAuthoredAt({
+        slug: "2026-09-12-read-surface-tsv-drops-keys-and-the-sweep-livelocks",
+        authored_at: null,
+      })
+    ).toBe("2026-09-12T00:00:00Z");
+  });
+
+  it("returns coord's column VERBATIM for an undated slug, keeping its time of day", () => {
+    expect(
+      planAuthoredAt({
+        slug: "coordinator-assign-task-dispatch-race",
+        authored_at: "2026-07-04T09:30:00Z",
+      })
+    ).toBe("2026-07-04T09:30:00Z");
+  });
+
+  it("is null when neither source is a real date, and never reads created_at", () => {
+    expect(planAuthoredAt({ slug: "plans to do" })).toBeNull();
+    expect(
+      planAuthoredAt({ slug: "adhoc-cleanup", authored_at: null })
+    ).toBeNull();
+    expect(
+      planAuthoredAt({
+        slug: "adhoc-cleanup",
+        authored_at: "2026-13-45T00:00:00Z",
+      })
+    ).toBeNull();
+    expect(planAuthoredAt({ slug: "2026-02-30-bogus" })).toBeNull();
+    expect(
+      planAuthoredAt({
+        slug: "adhoc-cleanup",
+        authored_at: null,
+        created_at: "2026-06-28T00:00:00Z",
+      } as Parameters<typeof planAuthoredAt>[0])
+    ).toBeNull();
+  });
+});
+
 describe("planRowTime", () => {
   // Plan 2026-09-02-coord-work-units-carry-no-authoring-date: the row's time
   // is shipped → authored → ingested, and `updated_at` — a scanner touch every
   // ~68 s — is never a candidate. Each fixture sets `updated_at` to the NEWEST
-  // instant so a chain that still consulted it would be caught.
+  // instant so a chain that still consulted it would be caught. Slugs are
+  // UNDATED unless the case is about the slug arm, so the column is the only
+  // authoring source in play.
   const updated_at = "2026-09-02T12:00:00Z";
 
   it("reports the first shipped transition over everything else", () => {
     expect(
       planRowTime({
+        slug: "p-1",
         first_shipped_at: "2026-08-01T00:00:00Z",
         authored_at: "2026-05-01T00:00:00Z",
         created_at: "2026-06-28T00:00:00Z",
@@ -269,6 +363,7 @@ describe("planRowTime", () => {
   it("reports the authoring date for an unshipped plan", () => {
     expect(
       planRowTime({
+        slug: "p-2",
         authored_at: "2026-05-01T00:00:00Z",
         created_at: "2026-06-28T00:00:00Z",
         updated_at,
@@ -276,14 +371,31 @@ describe("planRowTime", () => {
     ).toEqual({ at: "2026-05-01T00:00:00Z", verb: "Authored" });
   });
 
+  it("reports the SLUG's date as authored when coord's column is NULL", () => {
+    // The chip already shows `2026-09-12` for this row; the time cell must not
+    // say "Ingested <a later date>" beside it.
+    expect(
+      planRowTime({
+        slug: "2026-09-12-p-3",
+        authored_at: null,
+        created_at: "2026-09-13T10:00:00Z",
+        updated_at,
+      })
+    ).toEqual({ at: "2026-09-12T00:00:00Z", verb: "Authored" });
+  });
+
   it("falls back to the INGEST date under its own name, never as 'Authored' or 'Created'", () => {
     expect(
-      planRowTime({ created_at: "2026-06-28T00:00:00Z", updated_at })
+      planRowTime({
+        slug: "p-4",
+        created_at: "2026-06-28T00:00:00Z",
+        updated_at,
+      })
     ).toEqual({ at: "2026-06-28T00:00:00Z", verb: "Ingested" });
   });
 
   it("reports NO time rather than the scanner touch when nothing else is recorded", () => {
-    expect(planRowTime({ updated_at }).at).toBeNull();
-    expect(planRowTime({}).at).toBeNull();
+    expect(planRowTime({ slug: "p-5", updated_at }).at).toBeNull();
+    expect(planRowTime({ slug: "p-6" }).at).toBeNull();
   });
 });

@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useMemo, useState } from "react";
 import {
   AlertTriangle,
+  Ban,
   ChevronDown,
   ChevronRight,
   MessageSquareText,
@@ -11,6 +12,7 @@ import {
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Textarea } from "@/components/ui/textarea";
 import {
   DIFF_ADDED_COUNT_CLASS,
   DIFF_REMOVED_COUNT_CLASS,
@@ -32,8 +34,10 @@ import {
 } from "../_lib/authorship";
 import {
   LOOSENING_BADGE_CLASS,
+  canWithdraw,
   countLooseningVerdicts,
   hasLooseningVerdict,
+  isDocumentWithdrawn,
   isLoosening,
   notificationHref,
   sortWritesForFeed,
@@ -108,6 +112,12 @@ interface LandedWriteFeedProps {
   loading: boolean;
   acting: boolean;
   onRevert: (write: PromptDocumentWrite) => Promise<boolean>;
+  /**
+   * Withdraw the created decision record this head v1 write is. `reason` is
+   * already trimmed and non-empty — the composer will not submit otherwise.
+   * Resolves `true` when the withdrawal landed, which closes the composer.
+   */
+  onWithdraw: (write: PromptDocumentWrite, reason: string) => Promise<boolean>;
   /** Fetch the two bodies behind one row's diff. Lazy — called on expand. */
   onLoadDiff: (write: PromptDocumentWrite) => Promise<void>;
   /** The cached diff state for a row, or `null` if it was never asked for. */
@@ -140,6 +150,18 @@ interface LandedWriteFeedProps {
  * head gets the control — undoing an older-than-head write from a flat feed
  * would silently discard every write made since, so those rows show their
  * version and nothing more.
+ *
+ * ## Withdraw — the undo for a CREATED decision record
+ *
+ * Undo cannot reach a v1: there is no earlier body to restore. For most kinds
+ * that is tolerable, but a created `decision_record` is the agent write with the
+ * most reach — `/chart` reads one as a veto — so a head v1 of that kind gets
+ * Withdraw instead (see `canWithdraw` for the exact condition). One click opens
+ * an in-place reason composer (R5: detail expands in place); the reason is
+ * required because a withdrawal with no stated reason is a record voided for
+ * no recorded cause. Coord writes a new version marking the record withdrawn and
+ * keeps its text and history, so the new head then carries the ordinary Undo,
+ * which reinstates it.
  *
  * ## The author filter is the one layer allowed to hide a loosening
  *
@@ -186,11 +208,38 @@ export function LandedWriteFeed({
   loading,
   acting,
   onRevert,
+  onWithdraw,
   onLoadDiff,
   diffFor,
 }: LandedWriteFeedProps) {
   const [authorFilter, setAuthorFilter] = useState<AuthorFilter>("all");
   const [expandedKey, setExpandedKey] = useState<string | null>(null);
+  /** The row whose withdraw composer is open — one at a time, like R5 detail. */
+  const [withdrawingKey, setWithdrawingKey] = useState<string | null>(null);
+  const [withdrawReason, setWithdrawReason] = useState("");
+
+  const openWithdraw = (write: PromptDocumentWrite) => {
+    const key = writeKey(write);
+    // Re-clicking the open row's control closes it; opening another row starts
+    // that row's reason from empty rather than carrying one record's reason
+    // onto a different record.
+    setWithdrawingKey((current) => (current === key ? null : key));
+    setWithdrawReason("");
+  };
+
+  const cancelWithdraw = () => {
+    setWithdrawingKey(null);
+    setWithdrawReason("");
+  };
+
+  const submitWithdraw = async (write: PromptDocumentWrite) => {
+    const reason = withdrawReason.trim();
+    if (!reason) return;
+    const landed = await onWithdraw(write, reason);
+    // A refused or failed withdrawal keeps the composer and its text, so the
+    // operator can retry without retyping; the hook's toast says what failed.
+    if (landed) cancelWithdraw();
+  };
 
   const tally = useMemo(() => tallyAuthors(writes), [writes]);
 
@@ -494,6 +543,11 @@ export function LandedWriteFeed({
             const flagged = isLoosening(write);
             const authorClass = classifyWriteAuthor(write.edited_by);
             const href = notificationHref(write.notification_ref);
+            const withdrawn = isDocumentWithdrawn(write);
+            const withdrawable = canWithdraw(write);
+            const composing = withdrawable && withdrawingKey === key;
+            const withdrawReasonId = `withdraw-reason-${write.kind}-${write.name}`;
+            const withdrawComposerId = `withdraw-composer-${write.kind}-${write.name}`;
             return (
               <li
                 key={key}
@@ -534,6 +588,24 @@ export function LandedWriteFeed({
                         v{write.version_number}
                         {isHead ? " · current" : ""}
                       </code>
+                      {withdrawn && (
+                        // Only an explicit `true` mints this — a coord that
+                        // predates withdrawal omits the field, and absent must
+                        // not render as "live". Muted, not amber: a withdrawn
+                        // record waits on nobody (R3).
+                        <Badge
+                          variant="outline"
+                          className="text-[10px] text-muted-foreground"
+                          title={
+                            write.document_withdrawn_reason
+                              ? `This record is withdrawn — it no longer counts as a decision. Reason given: ${write.document_withdrawn_reason}`
+                              : "This record is withdrawn — it no longer counts as a decision."
+                          }
+                          data-testid={`write-withdrawn-${write.kind}-${write.name}-${write.version_number}`}
+                        >
+                          Withdrawn
+                        </Badge>
+                      )}
                       {flagged && (
                         // Only an explicit `true` mints this. An absent flag
                         // renders nothing at all — never a "not a loosening"
@@ -602,8 +674,87 @@ export function LandedWriteFeed({
                         </Button>
                       </CoordAdminOnly>
                     )}
+
+                    {withdrawable && (
+                      <CoordAdminOnly
+                        fallback={<ReadOnlyNotice label="Admin only" />}
+                      >
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="gap-1.5"
+                          disabled={acting}
+                          onClick={() => openWithdraw(write)}
+                          aria-expanded={composing}
+                          aria-controls={composing ? withdrawComposerId : undefined}
+                          title="This record was created by this write, so there is no earlier wording to undo to. Withdrawing marks it void and keeps its text and history."
+                          data-testid={`withdraw-${write.kind}-${write.name}`}
+                        >
+                          <Ban className="size-4" />
+                          Withdraw
+                        </Button>
+                      </CoordAdminOnly>
+                    )}
                   </div>
                 </div>
+
+                {composing && (
+                  <CoordAdminOnly>
+                    <div
+                      id={withdrawComposerId}
+                      className="space-y-2 border-t border-border px-3 py-3"
+                      data-testid={withdrawComposerId}
+                    >
+                      <label
+                        className="text-xs font-medium text-muted-foreground"
+                        htmlFor={withdrawReasonId}
+                      >
+                        Why are you withdrawing this record? (required — recorded
+                        with the withdrawal)
+                      </label>
+                      <Textarea
+                        id={withdrawReasonId}
+                        value={withdrawReason}
+                        onChange={(e) => setWithdrawReason(e.target.value)}
+                        rows={2}
+                        required
+                        aria-required="true"
+                        // The composer opens on a deliberate click, so moving
+                        // focus into the one field it asks for is expected.
+                        autoFocus
+                        placeholder="For example: this was never decided — it was recorded from a guess."
+                        data-testid={`withdraw-reason-${write.kind}-${write.name}`}
+                      />
+                      <p className="text-xs text-muted-foreground">
+                        Withdrawing adds a new version marking the record void.
+                        Its text and history stay, it stops counting as a
+                        decision, and Undo on that new version reinstates it.
+                      </p>
+                      <div className="flex flex-wrap justify-end gap-2">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          disabled={acting}
+                          onClick={cancelWithdraw}
+                          data-testid={`withdraw-cancel-${write.kind}-${write.name}`}
+                        >
+                          Cancel
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="gap-1.5"
+                          disabled={acting || withdrawReason.trim() === ""}
+                          onClick={() => void submitWithdraw(write)}
+                          data-testid={`withdraw-confirm-${write.kind}-${write.name}`}
+                        >
+                          <Ban className="size-4" />
+                          Withdraw record
+                        </Button>
+                      </div>
+                    </div>
+                  </CoordAdminOnly>
+                )}
 
                 {expanded && (
                   <WriteDiff

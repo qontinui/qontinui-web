@@ -140,6 +140,58 @@ export function notificationHref(
   return `/admin/coord/notifications?ref=${encodeURIComponent(trimmed)}`;
 }
 
+/**
+ * The one kind a withdrawal exists for. Coord refuses `…/withdraw` on every
+ * other kind (plan
+ * `2026-09-13-decision-records-are-agent-writable-but-policy-says-they-are-not`,
+ * §7 3.1: `initiative` retires through `status: closed`, and no other kind has a
+ * consumer that reads the state), so offering the control elsewhere would only
+ * mint a button that always fails.
+ */
+export const WITHDRAWABLE_KIND = "decision_record";
+
+/**
+ * Whether the document this write belongs to is withdrawn — an explicit
+ * `true` only. Absent (a coord predating withdrawal) and `null` are not a
+ * verdict that the record is live, so they mark nothing.
+ */
+export function isDocumentWithdrawn(
+  write: Pick<PromptDocumentWrite, "document_withdrawn">
+): boolean {
+  return write.document_withdrawn === true;
+}
+
+/**
+ * Whether a row gets the one-click Withdraw control.
+ *
+ * Exactly the gap the Undo leaves: Undo appends the PRIOR body, so it renders on
+ * a head write with `version_number > 1` and never on v1, which has none. A
+ * CREATED decision record is therefore the one agent write the feed could not
+ * reverse — and `/chart` reads a decision record as a veto. So Withdraw renders
+ * on a head **v1** `decision_record` and nowhere else:
+ *
+ * - not on v > 1, where Undo already reverses the latest write (including a
+ *   withdrawal, since withdrawing writes a new version whose prior body is the
+ *   live record);
+ * - not on a non-head row, for the same reason Undo is head-only — acting on
+ *   an older write from a flat feed would ignore every write since;
+ * - not on any other kind (see `WITHDRAWABLE_KIND`);
+ * - not on a record coord already says is withdrawn.
+ */
+export function canWithdraw(
+  write: Pick<
+    PromptDocumentWrite,
+    "kind" | "version_number" | "current_version" | "document_withdrawn"
+  >
+): boolean {
+  return (
+    write.kind === WITHDRAWABLE_KIND &&
+    write.version_number === 1 &&
+    write.version_number === write.current_version &&
+    !isDocumentWithdrawn(write)
+  );
+}
+
 /** The document address, used as a stable React key and testid suffix. */
 export function writeKey(
   write: Pick<PromptDocumentWrite, "kind" | "name" | "version_number">

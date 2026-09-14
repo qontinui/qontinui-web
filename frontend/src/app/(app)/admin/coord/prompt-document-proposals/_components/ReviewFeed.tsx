@@ -51,6 +51,7 @@ export function ReviewFeed() {
     reload,
     decide,
     revertWrite,
+    withdrawWrite,
   } = usePromptDocumentProposals();
 
   // A pre-deploy 404 is expected and benign. An UNLABELLED unavailable is also
@@ -195,6 +196,7 @@ export function ReviewFeed() {
         loading={loading}
         acting={acting}
         onRevert={revertWrite}
+        onWithdraw={withdrawWrite}
         onLoadDiff={loadWriteDiff}
         diffFor={writeDiffFor}
       />
