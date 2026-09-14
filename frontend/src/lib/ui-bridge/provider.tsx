@@ -16,7 +16,7 @@
  * - 'http': Use HTTP polling only
  */
 
-import React, { useCallback, useEffect, useRef } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import { useMutation } from "@tanstack/react-query";
 import {
   UIBridgeProvider,
@@ -87,6 +87,51 @@ function commandRelayRegistrationMetadata():
 }
 
 const isDev = process.env.NODE_ENV === "development";
+
+/**
+ * Loopback-dev auto-grant for the co-pilot consent layer.
+ *
+ * On a developer's own machine the developer IS the operator, so the
+ * per-user preference + per-session consent handshake (§4.5) is pure
+ * friction: it must be re-granted every session before any `/control/*`
+ * command can reach the tab, and with the preference off NO modal renders
+ * at all, so the bridge is silently absent with no affordance explaining
+ * why.
+ *
+ * WHY THE CHECK IS `window.location.hostname` AND NOT `isDev` ALONE.
+ * The dev server binds `--hostname 0.0.0.0` (package.json `dev`), so it is
+ * reachable from the LAN, and `UI_BRIDGE_REQUIRE_AUTH` is default-off — a
+ * registered tab is drivable by anyone who can reach the relay. Keying on
+ * the ORIGIN THE BROWSER ADDRESSED means a LAN visitor (who reaches the app
+ * by IP, never by `localhost`) does not auto-grant, so this never creates a
+ * takeover-able tab for a non-local caller. It is not a substitute for
+ * binding the server to 127.0.0.1, which is the change that actually closes
+ * the relay to the LAN.
+ *
+ * Returns false during SSR and on the first client render, then flips after
+ * mount — deliberately, to avoid a hydration mismatch. The listener mounts
+ * one tick later, which is invisible.
+ */
+const LOOPBACK_HOSTNAMES = new Set(["localhost", "127.0.0.1", "::1", "[::1]"]);
+
+/**
+ * Exported for test: is this hostname the loopback interface? Asserted
+ * against literal hostnames rather than against LOOPBACK_HOSTNAMES itself,
+ * so widening the set reddens the test rather than silently passing.
+ */
+export function isLoopbackHostname(hostname: string): boolean {
+  return LOOPBACK_HOSTNAMES.has(hostname);
+}
+
+function useIsLoopbackDev(): boolean {
+  const [isLoopback, setIsLoopback] = useState(false);
+  useEffect(() => {
+    if (!isDev) return;
+    if (typeof window === "undefined") return;
+    setIsLoopback(isLoopbackHostname(window.location.hostname));
+  }, []);
+  return isLoopback;
+}
 
 // Production opt-in for the UI Bridge command relay. When this env var is
 // set at build time (e.g. for staging deploys driven by /manual-test-coord),
@@ -207,10 +252,14 @@ export function UIBridgeWrapper({
   // resolves enabled=false on error), keeping the listener off.
   const userPreference = useCoPilotPreference();
   const sessionConsent = useCoPilotSessionConsent();
+  const isLoopbackDev = useIsLoopbackDev();
+  // On loopback dev the handshake is auto-granted, but an EXPLICIT revoke
+  // still wins: auto-grant is a default, never an override of a decision
+  // the developer actually made.
   const enableRemoteCommands =
     envEnableRemoteCommands &&
-    userPreference.enabled === true &&
-    sessionConsent.state === "granted";
+    ((isLoopbackDev && sessionConsent.state !== "revoked") ||
+      (userPreference.enabled === true && sessionConsent.state === "granted"));
 
   const bufferRef = useRef<BridgeEvent[]>([]);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
