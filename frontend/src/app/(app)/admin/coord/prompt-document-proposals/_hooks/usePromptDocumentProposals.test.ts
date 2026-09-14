@@ -415,8 +415,13 @@ describe("usePromptDocumentProposals — withdrawing a created decision record",
     expect(url).toBe(
       "/api/v1/operations/coord/prompt-documents/decision_record/no-cross-tenant-reads/withdraw"
     );
-    // Only the reason — the withdrawer is coord's to stamp, never the browser's.
-    expect(body).toEqual({ reason: "never decided — recorded from a guess" });
+    // The reason and the version just re-read — the withdrawer is coord's to
+    // stamp, never the browser's; the version lets coord refuse a withdrawal
+    // that a peer write overtook between the re-read and this POST.
+    expect(body).toEqual({
+      reason: "never decided — recorded from a guess",
+      expected_version: 1,
+    });
     // No PATCH: a withdrawal is not an undo-by-body.
     expect(patchMock).not.toHaveBeenCalled();
   });
@@ -440,6 +445,43 @@ describe("usePromptDocumentProposals — withdrawing a created decision record",
     expect(outcome).toBe(false);
     expect(postMock).not.toHaveBeenCalled();
     expect(toastError).toHaveBeenCalledWith(expect.stringContaining("now v2"));
+  });
+
+  it("reports coord's stale refusal as a moved record and reloads", async () => {
+    getMock.mockImplementation((url: string) => {
+      if (url.endsWith("/versions")) {
+        return Promise.resolve({ current_version: 1, versions: [] });
+      }
+      return routeInitial({})(url);
+    });
+    postMock.mockRejectedValue(
+      new Error(
+        'POST /withdraw failed: 409 - {"detail":"{\\"error_code\\":\\"withdraw_stale\\",\\"current_version\\":2}"}'
+      )
+    );
+
+    const { result } = renderHook(() => usePromptDocumentProposals());
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    const loadsBefore = getMock.mock.calls.filter(([u]) =>
+      String(u).includes("prompt-document-writes")
+    ).length;
+
+    let outcome: boolean | undefined;
+    await act(async () => {
+      outcome = await result.current.withdrawWrite(CREATED_RECORD, "a reason");
+    });
+
+    expect(outcome).toBe(false);
+    expect(postMock).toHaveBeenCalledTimes(1);
+    expect(postMock.mock.calls[0][1]).toMatchObject({ expected_version: 1 });
+    expect(toastError).toHaveBeenCalledWith(
+      expect.stringContaining("changed while you were withdrawing it")
+    );
+    expect(toastSuccess).not.toHaveBeenCalled();
+    const loadsAfter = getMock.mock.calls.filter(([u]) =>
+      String(u).includes("prompt-document-writes")
+    ).length;
+    expect(loadsAfter).toBeGreaterThan(loadsBefore);
   });
 
   it("refuses a blank reason without any round trip", async () => {

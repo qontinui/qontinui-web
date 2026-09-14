@@ -28,6 +28,13 @@ function docKey(kind: string, name: string): string {
   return `${kind}/${name}`;
 }
 
+/**
+ * The `error_code` coord answers (409) when a withdrawal's `expected_version`
+ * is no longer the record's live version. The operations proxy passes coord's
+ * body through as the error text, so the code is matched in the message.
+ */
+const WITHDRAW_STALE = "withdraw_stale";
+
 function message(err: unknown, fallback: string): string {
   return err instanceof Error ? err.message : fallback;
 }
@@ -419,10 +426,11 @@ export function usePromptDocumentProposals() {
    * `current_version` is a page-load snapshot. If a peer edited or already
    * withdrew the record since, it is no longer the v1 this control was offered
    * on, and withdrawing on the strength of a stale row would act on a document
-   * the operator has not seen. As with `revertWrite`, the window is narrowed to
-   * one request, not closed: a peer write can still land between the re-read
-   * and the POST, because coord's withdraw route takes no version
-   * precondition. The damage is bounded — a withdrawal is itself undoable.
+   * the operator has not seen. Unlike `revertWrite`, the window is CLOSED, not
+   * narrowed: the POST carries the version just re-read as `expected_version`,
+   * and coord compares it under its row lock, answering `409 withdraw_stale`
+   * when a peer write landed between the re-read and the POST. That refusal is
+   * reported as the same "changed since" outcome and the feed reloads.
    */
   const withdrawWrite = useCallback(
     async (write: PromptDocumentWrite, reason: string): Promise<boolean> => {
@@ -454,7 +462,21 @@ export function usePromptDocumentProposals() {
           await reload();
           return false;
         }
-        await httpClient.post(`${path}/withdraw`, { reason: trimmed });
+        try {
+          await httpClient.post(`${path}/withdraw`, {
+            reason: trimmed,
+            expected_version: live.current_version,
+          });
+        } catch (err) {
+          if (message(err, "").includes(WITHDRAW_STALE)) {
+            toast.error(
+              `${write.label} changed while you were withdrawing it. Nothing was withdrawn. Refreshed — review the newer write first.`
+            );
+            await reload();
+            return false;
+          }
+          throw err;
+        }
         toast.success(
           `Withdrew ${write.label}. It no longer counts as a decision; Undo on the new version reinstates it.`
         );
