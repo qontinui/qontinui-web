@@ -34,6 +34,7 @@ import {
 import { StatusBadge } from "@/components/console";
 import {
   COORD_CREDENTIAL_PALETTE,
+  reportedCoordCredential,
   resolveCoordCredential,
 } from "./coordCredentialStatus";
 import { CiRunnerBadge } from "./CiRunnerBadge";
@@ -570,9 +571,8 @@ export function MachineCard({
    * health read, an absent verdict is an absence of the READ, and the card says
    * nothing rather than claiming this machine's credential is unknown.
    */
-  const reportedCredential = (
-    machine.currentActivity?.details as Record<string, unknown> | undefined
-  )?.coord_credential;
+  // The same read the health strip's rollup performs, so the two agree.
+  const reportedCredential = reportedCoordCredential(machine.currentActivity);
   const credential =
     machine.coordHealth || reportedCredential !== undefined
       ? resolveCoordCredential({

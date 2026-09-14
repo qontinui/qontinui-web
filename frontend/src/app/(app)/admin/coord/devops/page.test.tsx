@@ -46,10 +46,12 @@ vi.mock("@/services/service-factory", () => ({
   },
 }));
 
-// The two live streams `FleetOverview` holds are out of scope here (they have
-// their own tests) and one of them opens a WebSocket. Stubbed to a seeded,
-// empty stream so the machine list under test is built from the fleet payload
-// and coord's device list alone.
+// The two live streams are out of scope here (they have their own tests) and
+// one of them opens a WebSocket. The device-status stream is subscribed by the
+// PAGE and handed to `FleetOverview` and the strip's credential rollup; the
+// symbol-claims stream is held inside `FleetOverview`. Both are stubbed to a
+// seeded, empty stream so the machine list under test is built from the fleet
+// payload and coord's device list alone.
 //
 // The device-status half is seedable rather than permanently empty: its rows
 // carry the runner's own `details` bag, which is where the credential posture
@@ -1625,6 +1627,13 @@ describe("/admin/coord/devops — the coord-credential axis", () => {
     expect(
       screen.queryByTestId("coord-devops-credential-dark-badge")
     ).not.toBeInTheDocument();
+    // …and the strip AGREES with the row: the rollup resolves `msi` from the
+    // same heartbeat bag, so it is counted measured-and-ok — not `credential
+    // unknown 1`, which is what the strip said while it could see coord's join
+    // alone.
+    expect(
+      screen.queryByTestId("coord-devops-credential-unknown-badge")
+    ).not.toBeInTheDocument();
   });
 
   // C5. Coord's `{dark: false}` is a roster stamp, not a measurement:
@@ -1853,14 +1862,17 @@ describe("/admin/coord/devops — the coord-credential axis", () => {
       "data-operations-coord-credential",
       "live"
     );
-    // The strip and the rows disagree here ON PURPOSE, and this is the
-    // assertion that pins it: the rollup sees fleet-health rows only, where
-    // `msi`'s affirmative report does not appear, so it counts BOTH machines
-    // as unmeasured. The strip under-claims; it never over-claims. Wiring the
-    // device-status stream into this page would close the gap — and would
-    // cost a second subscription the page does not otherwise need.
+    // The strip and the rows AGREE. The page owns the one device-status
+    // subscription and hands it to both, so the rollup sees `msi`'s
+    // affirmative report exactly as its row does: `msi` is measured (ok), and
+    // only `ghost` — which nothing measured — is counted unknown. This used to
+    // read `credential unknown 2`, the strip under-claiming a machine its own
+    // row showed live.
     expect(
       screen.getByTestId("coord-devops-credential-unknown-badge")
-    ).toHaveTextContent("credential unknown 2");
+    ).toHaveTextContent("credential unknown 1");
+    expect(
+      screen.queryByTestId("coord-devops-credential-dark-badge")
+    ).not.toBeInTheDocument();
   });
 });

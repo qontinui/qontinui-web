@@ -91,6 +91,7 @@ import type { HealthBadge } from "@/components/console";
 import { FleetOverview, FleetResourcesSection } from "@/components/operations";
 import { summarizeCoordCredentials } from "@/components/operations/coordCredentialStatus";
 import { summarizeFleetLiveness } from "@/components/operations/fleetLiveness";
+import { useDeviceStatusStream } from "@/components/operations/useDeviceStatusStream";
 import { useDevenvMachines } from "@/components/operations/useDevenvMachines";
 import { useFleetDrain } from "@/components/operations/useFleetDrain";
 import { useFleetHealth } from "@/components/operations/useFleetHealth";
@@ -123,6 +124,11 @@ export default function CoordDevOpsPage() {
   // rows can disagree about what is drained. Its `refresh` is handed down so a
   // drain or undrain is visible immediately rather than on the next tick.
   const drain = useFleetDrain();
+  // The live device-status stream. The hook opens a REST seed and a WebSocket
+  // PER CALL, so it is subscribed exactly once, here, and shared: the machine
+  // list and its tile read it through `FleetOverview`, and the strip's
+  // credential rollup below reads the same `details` bag the rows do.
+  const deviceStatus = useDeviceStatusStream();
   const devices = fleet.data?.devices ?? EMPTY_DEVICES;
 
   // R1: derived from data already on the page, never a second fetch. The
@@ -228,8 +234,9 @@ export default function CoordDevOpsPage() {
    * it. The only thing that made it visible was a critical alert whose COUNT
    * was on this page and whose MACHINE was not.
    *
-   * Derived from the devices already polled (R1, never a second fetch). Both
-   * badges are conditional, and the two are deliberately separate counts:
+   * Derived from data already on the page (R1, never a second fetch or
+   * subscription). Both badges are conditional, and the two are deliberately
+   * separate counts:
    *
    * * `credential dark N` — measured, and someone must go and fix those
    *   machines. The only badge here that borrows red besides `unreachable`.
@@ -238,23 +245,28 @@ export default function CoordDevOpsPage() {
    *   `alerts unknown` badge above follows and the rule this whole plan is
    *   about (`[policy: silent-empty-is-unknown]`).
    *
-   * **Expect `credential unknown` to count most of the fleet, and read it as
-   * the honest number it is.** This strip sees the fleet-health rows only —
-   * the runner's own `coord_credential` bag rides the device-status stream,
-   * which is subscribed one level down in `FleetOverview` and is what the
-   * per-machine badge resolves against. Coord's join alone can conclude
+   * **The strip and the machine rows resolve each device from the same two
+   * sources, so they agree.** Coord's fleet-health join alone can conclude
    * `dark` and nothing else: its `dark: false` is a roster stamp for "the
    * scan did not name this device", which pools the healthy with the
-   * never-reported. So `credential dark N` is exact, and every other device
-   * is unmeasured *by this view*. Counting them as healthy instead is what an
-   * earlier cut of `coordCredentialStatus` did, and it put a calm
-   * `credential live` badge on precisely the machines the plan was written
-   * about.
+   * never-reported. The affirmative half comes from the runner's own
+   * `coord_credential` bag on the device-status stream — the one subscription
+   * above, which `FleetOverview` also receives — joined per device exactly as
+   * each row joins it (`coordDeviceHostKey` + `reportedCoordCredential`). So a
+   * machine whose runner reported `ok: true` is counted measured here and
+   * reads `live` on its row, and `credential unknown N` counts only the
+   * machines nothing measured. Counting those as healthy is what an earlier
+   * cut of `coordCredentialStatus` did, and it put a calm `credential live`
+   * badge on precisely the machines the plan was written about.
    */
   const credentials = useMemo(
     () =>
-      summarizeCoordCredentials(devices, fleet.data?.credential_dark_scrape_up),
-    [devices, fleet.data?.credential_dark_scrape_up]
+      summarizeCoordCredentials(
+        devices,
+        deviceStatus.byHostname,
+        fleet.data?.credential_dark_scrape_up
+      ),
+    [devices, deviceStatus.byHostname, fleet.data?.credential_dark_scrape_up]
   );
 
   const credentialBadges = useMemo<HealthBadge[]>(() => {
@@ -426,8 +438,14 @@ export default function CoordDevOpsPage() {
           4. CI capacity rides on each row as a collapsed disclosure, resolved
           from `ciMachines` — one read, no per-row fetch. Each row also carries
           its drain state and the Drain/Undrain lever, resolved from `drain` —
-          the one read, again, never one per card. */}
-      <FleetOverview health={fleet} ciMachines={ciMachines} drain={drain} />
+          the one read, again, never one per card. `deviceStatus` is the page's
+          one device-status subscription, shared with the strip above. */}
+      <FleetOverview
+        health={fleet}
+        ciMachines={ciMachines}
+        drain={drain}
+        deviceStatus={deviceStatus}
+      />
 
       {/* 2. Resources and 3. CI occupancy, over the section's own single
           poll of /fleet/resource-samples. `devices` is the spine: a machine

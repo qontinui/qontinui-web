@@ -413,8 +413,9 @@ export interface CoordCredentialRollup {
   /**
    * Devices with a measured, healthy-or-self-clearing posture.
    *
-   * Structurally 0 for the coord-join-only caller below; a device is only
-   * counted here when something affirmatively measured it.
+   * A device is only counted here when something affirmatively measured it —
+   * in practice, its runner's own `coord_credential` bag on the device-status
+   * row, since coord's join can conclude only `dark`.
    */
   ok: number;
   /** Devices nothing measured. Never counted as `ok`. */
@@ -431,24 +432,64 @@ export interface CoordCredentialRollup {
 }
 
 /**
- * Roll a device list up for the strip. Takes the RAW fleet-health rows: the
- * strip has no access to the device-status stream (that hook lives inside
- * `FleetOverview`, and a second subscription here would break R1), so this is
- * deliberately the coord-join-only view.
+ * The key a coord fleet-health device joins the device-status stream under.
  *
- * **Consequence, stated rather than hidden: `ok` is 0 for every fleet.**
- * Coord's join can only conclude `dark` (see the module header), so from these
- * rows alone every device that is not dark is `unknown` — including the ones
- * whose runners are publishing `ok: true` perfectly well, whose report the
- * per-card resolver can see and this one cannot. The strip therefore reports
- * a large `credential unknown N` until either the strip gains the bag or coord
- * serves a positive verdict, and that is the honest reading: `needsAction` is
- * exact, `unknown` is "this view did not measure it", and neither is a claim
- * of health. Counting those devices as `ok` is precisely the defect this
- * module was corrected for.
+ * `useDeviceStatusStream` keys its map `hostname ?? device_id`, and
+ * `FleetOverview` groups coord's devices onto machine rows by the same
+ * expression. Spelled ONCE, here, so the strip's rollup and the rows resolve a
+ * device's heartbeat bag through one join and cannot drift apart.
+ */
+export function coordDeviceHostKey(device: {
+  device_id: string;
+  hostname?: string | null;
+}): string {
+  return device.hostname ?? device.device_id;
+}
+
+/**
+ * The runner's own `details.coord_credential` bag off one device-status row,
+ * verbatim — the {@link CoordCredentialInput.reported} input. `undefined` when
+ * there is no row, the row's `details` is not an object, or the runner
+ * published no such key. Shared by `MachineCard` and
+ * {@link summarizeCoordCredentials}, for the same reason as
+ * {@link coordDeviceHostKey}.
+ */
+export function reportedCoordCredential(
+  row: { details?: unknown } | undefined
+): unknown {
+  return asRecord(row?.details)?.coord_credential;
+}
+
+/**
+ * Roll a device list up for the strip.
+ *
+ * Takes the RAW fleet-health rows AND the device-status stream's `byHostname`
+ * map — the one subscription the page owns and hands to `FleetOverview` — and
+ * resolves each device from both sources, exactly as its machine row does:
+ * coord's `credential_dark` join, plus the runner's own `coord_credential` bag
+ * found under {@link coordDeviceHostKey}. So the strip and the rows agree by
+ * construction: a device whose runner published `ok: true` counts as `ok` here
+ * and reads `live` on its row.
+ *
+ * The rules this holds:
+ *
+ * * `needsAction` is exact — every `author` posture, from either source.
+ * * `unknown` is "nothing measured this device": coord did not name it dark
+ *   AND its runner published no usable bag (or has no device-status row at
+ *   all). It is never folded into `ok`. Coord's `dark: false` alone still
+ *   lands here, because it is a roster stamp rather than a verdict (module
+ *   header) — under-claiming stays the fallback wherever no bag is present.
+ * * `total` is coord's device roster. A device-status-only host with no coord
+ *   device record gets a row but is not counted: this strip reports on the
+ *   machines coord knows.
  */
 export function summarizeCoordCredentials(
-  devices: ReadonlyArray<{ credential_dark?: DeviceCredentialDark | null }>,
+  devices: ReadonlyArray<{
+    device_id: string;
+    hostname?: string | null;
+    credential_dark?: DeviceCredentialDark | null;
+  }>,
+  deviceStatusByHostname: ReadonlyMap<string, { details?: unknown }>,
   scrapeUp?: boolean
 ): CoordCredentialRollup {
   let needsAction = 0;
@@ -457,6 +498,9 @@ export function summarizeCoordCredentials(
   for (const device of devices) {
     const resolved = resolveCoordCredential({
       credentialDark: device.credential_dark,
+      reported: reportedCoordCredential(
+        deviceStatusByHostname.get(coordDeviceHostKey(device))
+      ),
     });
     if (!resolved.measured) unknown += 1;
     else if (resolved.attention === "author") needsAction += 1;
