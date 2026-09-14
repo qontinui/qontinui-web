@@ -465,10 +465,11 @@ export function reportedCoordCredential(
  * to THIS coord device.
  *
  * The stream is keyed by hostname, and two coord devices can share one — a
- * re-paired box that came back with a new `device_id`. The map holds only the
- * last row written under that hostname, so without this guard both devices
- * would resolve against one runner's report and the older device would borrow
- * a `live` it never published. A row whose `device_id` differs is treated as
+ * re-paired box that came back with a new `device_id`. The map holds ONE row
+ * per hostname — the newest by `updated_at` (`deviceStatusRows.ts`; coord
+ * serves newest-first) — so without this guard both devices would resolve
+ * against that one runner's report, and the retired device would borrow a
+ * `live` only its replacement published. A row whose `device_id` differs is treated as
  * no report at all, which lands that device on `unknown` unless coord named it
  * dark.
  */

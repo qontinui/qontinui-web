@@ -9,7 +9,10 @@ import {
   deviceStatusWsUrl,
 } from "./utils";
 import type { DeviceStatus, DeviceStatusResponse } from "./types";
-import { coordDeviceHostKey } from "./coordCredentialStatus";
+import {
+  indexDeviceStatusRows,
+  mergeDeviceStatusRow,
+} from "./deviceStatusRows";
 
 const log = createLogger("DeviceStatusStream");
 
@@ -22,20 +25,28 @@ const MAX_RECONNECT_ATTEMPTS = 5;
 
 export interface UseDeviceStatusStreamResult {
   /** hostname (or device_id) → DeviceStatus map, keyed by
-   *  `coordDeviceHostKey`. REPLACED with a new Map on every REST seed and
-   *  every pushed diff, never mutated in place — consumers' `useMemo`s key
+   *  `coordDeviceHostKey`, holding each key's NEWEST row
+   *  (`deviceStatusRows.ts`). REPLACED with a new Map on every REST seed and
+   *  every applied diff, never mutated in place — consumers' `useMemo`s key
    *  on its identity, so that is load-bearing. */
   byHostname: Map<string, DeviceStatus>;
   /** True iff the upstream WS is currently connected. False while
    *  polling fallback is active. */
   connected: boolean;
-  /** Last fetch / WS error message, or null. Informational only —
-   *  the hook keeps trying. */
+  /** The last REST read's error message, or null. Cleared by the next
+   *  successful seed OR the next pushed frame — either proves the map is
+   *  being fed again. Informational only — the hook keeps trying. */
   error: string | null;
   /** True once the initial REST seed has settled (success OR error).
    *  Lets consumers (`DeviceStatusTile`) distinguish "still loading"
    *  from an honest empty fleet. */
   seeded: boolean;
+  /** True once the map has been fed at least once — a successful REST
+   *  seed or a pushed frame. Unlike `seeded`, a failed read never sets it,
+   *  so `everSeeded && error` means "serving rows from an earlier read, and
+   *  the latest read failed" (possibly stale), while `!everSeeded` means
+   *  nothing was ever read. */
+  everSeeded: boolean;
   /** Force a REST refetch (used by the `Refresh` button on the UI). */
   refetch: () => Promise<void>;
 }
@@ -68,6 +79,7 @@ export function useDeviceStatusStream(): UseDeviceStatusStreamResult {
   const [connected, setConnected] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [seeded, setSeeded] = useState(false);
+  const [everSeeded, setEverSeeded] = useState(false);
 
   const wsRef = useRef<WebSocket | null>(null);
   const pollTimerRef = useRef<NodeJS.Timeout | null>(null);
@@ -79,13 +91,15 @@ export function useDeviceStatusStream(): UseDeviceStatusStreamResult {
   // one key `FleetOverview`'s machine grouping and the devops strip's
   // credential rollup also use, so every consumer finds a device's row under
   // the same key. device_id is the fallback so a row with no hostname still
-  // shows.
+  // shows. `mergeDeviceStatusRow` never lets an older row from a different
+  // device (the retired half of a re-paired box) displace a newer one.
   const applyRow = useCallback((row: DeviceStatus) => {
-    setByHostname((prev) => {
-      const next = new Map(prev);
-      next.set(coordDeviceHostKey(row), row);
-      return next;
-    });
+    setByHostname((prev) => mergeDeviceStatusRow(prev, row));
+    setEverSeeded(true);
+    // A pushed frame proves the stream is feeding the map again, so a failed
+    // earlier re-seed stops being the current state. Cleared here rather than
+    // by restarting polling beside a live socket, which would double the reads.
+    setError(null);
   }, []);
 
   const seedFromRest = useCallback(async (): Promise<void> => {
@@ -96,13 +110,12 @@ export function useDeviceStatusStream(): UseDeviceStatusStreamResult {
       }
       const data = (await resp.json()) as DeviceStatusResponse;
       if (cleanedUpRef.current) return;
-      const next = new Map<string, DeviceStatus>();
-      for (const row of data.devices ?? []) {
-        next.set(coordDeviceHostKey(row), row);
-      }
-      setByHostname(next);
+      // Newest row per key: coord serves newest-first, and a plain set-loop
+      // would leave the OLDEST row under a shared hostname.
+      setByHostname(indexDeviceStatusRows(data.devices ?? []));
       setError(null);
       setSeeded(true);
+      setEverSeeded(true);
     } catch (err) {
       if (cleanedUpRef.current) return;
       const msg = err instanceof Error ? err.message : "fetch failed";
@@ -191,7 +204,9 @@ export function useDeviceStatusStream(): UseDeviceStatusStreamResult {
       stopPolling();
       // Re-seed once on connect to absorb any updates that landed
       // while we were disconnected — the WS only pushes diffs from
-      // here forward.
+      // here forward. If this re-seed fails, `error` stays set until the
+      // next pushed frame (`applyRow`) or the next successful seed clears it;
+      // polling is NOT restarted beside the live socket.
       void seedFromRest();
     };
 
@@ -277,6 +292,7 @@ export function useDeviceStatusStream(): UseDeviceStatusStreamResult {
     connected,
     error,
     seeded,
+    everSeeded,
     refetch: seedFromRest,
   };
 }
