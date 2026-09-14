@@ -348,15 +348,12 @@ describe("LandedWriteFeed — the linked reasoning", () => {
     );
     expect(ref.tagName).not.toBe("A");
     expect(ref.querySelector("a")).toBeNull();
-    expect(ref).toHaveTextContent("finding fec41291");
-    expect(ref).toHaveAttribute(
-      "title",
-      expect.stringContaining("fec41291-67ed-4cf8-b331-888ad1126b45")
-    );
-    expect(ref).toHaveAttribute(
-      "title",
-      expect.stringMatching(/sends no notice/i)
-    );
+    // Accessible TEXT, not a `title`: the explanation and the FULL id are
+    // what a keyboard or screen-reader operator gets, and the id is the only
+    // handle on the reasoning the console offers, so it must be readable and
+    // copyable rather than hover-only.
+    expect(ref).toHaveTextContent(/no notice sent/i);
+    expect(ref).toHaveTextContent("fec41291-67ed-4cf8-b331-888ad1126b45");
   });
 
   it("still links a v2 edit of that same document into the notifications feed", () => {
@@ -376,6 +373,12 @@ describe("LandedWriteFeed — the linked reasoning", () => {
         "write-reasoning-decision_record-escalate-path-clearance-is-agent-work-2"
       )
     ).toHaveAttribute("href", "/admin/coord/notifications?ref=ref-2");
+    // And NOT the finding-only reference as well — the two arms are exclusive.
+    expect(
+      screen.queryByTestId(
+        "write-reasoning-finding-decision_record-escalate-path-clearance-is-agent-work-2"
+      )
+    ).toBeNull();
   });
 });
 
