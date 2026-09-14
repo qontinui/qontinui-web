@@ -141,6 +141,45 @@ export function notificationHref(
 }
 
 /**
+ * Where one row's reasoning can actually be read from — the two shapes a
+ * `notification_ref` resolves to, decided by whether a NOTICE for the write
+ * exists to be linked to.
+ *
+ * - `notice`: the write was an EDIT (`version_number > 1`). Coord emitted a
+ *   `PolicyDocumentChanged` event for it (or the reconciler re-emitted one)
+ *   whose payload carries this same `notification_ref`, so the notifications
+ *   feed's `?ref=` deep link finds the event and the reasoning beside it.
+ * - `finding_only`: the write CREATED the document (`version_number === 1`).
+ *   Creation deliberately never emits — coord's `notify_document_version_change`
+ *   says why: a tenant's first boot would otherwise announce values nobody
+ *   changed — and the reconciler excludes v1 for the same reason. The
+ *   reasoning exists, as the finding the author filed with the write, but no
+ *   notification carries it. Linking such a row into the notifications feed
+ *   sends the operator to an event that cannot exist, where the `?ref=`
+ *   banner then reports it "may be older than these — load more": an UNKNOWN
+ *   rendered over a certainty. The feed's own completeness caveat states the
+ *   rule in operator language ("a newly created document sends no notice"),
+ *   so a v1 row must not contradict it with a link.
+ *
+ * `null` for an absent ref, as `notificationHref`: no ref, no control.
+ */
+export type ReasoningRef =
+  | { kind: "notice"; href: string; findingId: string }
+  | { kind: "finding_only"; findingId: string };
+
+export function reasoningRef(
+  write: Pick<PromptDocumentWrite, "version_number" | "notification_ref">
+): ReasoningRef | null {
+  const findingId = (write.notification_ref ?? "").trim();
+  if (!findingId) return null;
+  if (write.version_number <= 1) return { kind: "finding_only", findingId };
+  const href = notificationHref(findingId);
+  // `notificationHref` returns null only for a blank ref, excluded above.
+  if (!href) return null;
+  return { kind: "notice", href, findingId };
+}
+
+/**
  * The one kind a withdrawal exists for. Coord refuses `…/withdraw` on every
  * other kind (plan
  * `2026-09-13-decision-records-are-agent-writable-but-policy-says-they-are-not`,
