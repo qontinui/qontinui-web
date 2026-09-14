@@ -19,12 +19,18 @@ Without a database (always runs):
 3. Both directions are pure ``op.execute`` with static SQL, which is what the
    coord merge-train classifier can read and what offline ``--sql`` mode needs.
 
-With a database (skipped when none is reachable; a skip proves nothing, so
-point it at a live instance with ``QONTINUI_TEST_PG=host:port``):
+With a database (skipped when none is reachable; a skip proves nothing). The
+harness connects with ``DATABASE_URL``, but under pytest ``conftest.py``
+overwrites that variable at import time from ``QONTINUI_TEST_PG``, so point the
+tests at a live instance with ``QONTINUI_TEST_PG=host:port``:
 
-4. Every carried column has EXACTLY the type of the same-named
-   ``coord.repo_branches`` column, read from the same database rather than
-   from a copy of the types. A drift here is a UNION type error inside coord.
+4. At THIS revision, every carried column has exactly the type of the
+   same-named ``coord.repo_branches`` column, read from the same database
+   rather than from a copy of the types. A drift here is a UNION type error
+   inside coord.
+4b. The same comparison at ``heads``. Test 4 stops at this revision, so it
+    cannot see a LATER revision that alters a carried column on
+    ``repo_branches`` without altering it here too; this one can.
 5. The key is ``(repo, pr_number)``, ``source`` accepts exactly its two values,
    the carried columns are nullable with no default, and the two timestamps
    default to ``now()``.
@@ -66,12 +72,18 @@ import check_coord_column_drops as guard  # noqa: E402
 _REVISION_ID = "coord_displaced_pr_rows_01"
 _REVISION_FILENAME = "coord_displaced_pr_rows_01_create.py"
 
+# Pinned as a literal, not read back from the module, so a re-point of
+# down_revision is a deliberate two-file change. Whoever re-points the revision
+# onto a moved head updates this line, the assignment, and the Revises header.
+_PARENT_REVISION_ID = "coord_prepaid_balances_01"
+
 _SCHEMA = "coord"
 _TABLE = "displaced_pr_rows"
 
 # The columns copied from coord.repo_branches. Their types are NOT pinned here:
-# the live test reads them off repo_branches in the same database, so the
-# archive cannot drift from its source even if repo_branches is later altered.
+# the live tests read them off repo_branches in the same database. The shape
+# test compares them at this revision; the heads test compares them after the
+# whole chain, which is the one that catches a later repo_branches alteration.
 _CARRIED_COLUMNS = (
     "branch",
     "base_branch",
@@ -107,7 +119,10 @@ _COMMENTED_COLUMNS = (
 
 _needs_pg = pytest.mark.skipif(
     not can_connect(admin_database_url()),
-    reason="test Postgres unreachable (set QONTINUI_TEST_PG=host:port)",
+    reason=(
+        "test Postgres unreachable via DATABASE_URL (under pytest, conftest.py "
+        "derives DATABASE_URL from QONTINUI_TEST_PG=host:port, so set that)"
+    ),
 )
 
 
@@ -126,12 +141,6 @@ def _revision_source() -> str:
 
 def _revision_module():
     return load_revision_module(_revision_path(), f"_test_{_REVISION_ID}")
-
-
-def _parent_revision_id() -> str:
-    parent = _revision_module().down_revision
-    assert isinstance(parent, str) and parent, "down_revision must name ONE parent"
-    return parent
 
 
 def _tree() -> ast.Module:
@@ -165,8 +174,11 @@ def _sql_literals(fn: ast.FunctionDef) -> list[str]:
 def test_revision_ids_are_wired_and_the_parent_is_a_real_sibling() -> None:
     module = _revision_module()
     assert module.revision == _REVISION_ID
-    parent = _parent_revision_id()
-    assert parent != "head", "down_revision must be a concrete revision id"
+    assert module.down_revision == _PARENT_REVISION_ID, (
+        f"down_revision is {module.down_revision!r}; if the revision was "
+        "re-pointed onto a moved head, _PARENT_REVISION_ID was not updated with it"
+    )
+    parent = _PARENT_REVISION_ID
 
     versions_dir = backend_root() / "alembic" / "versions"
     pattern = re.compile(
@@ -187,10 +199,11 @@ def test_revision_ids_are_wired_and_the_parent_is_a_real_sibling() -> None:
 
 
 def test_docstring_header_matches_the_identifiers() -> None:
-    # coord re-points down_revision at land time; the header must move with it.
+    # The author re-points down_revision when main moves before landing; the
+    # Revises header must move with it.
     source = _revision_source()
     assert re.search(rf"^Revision ID: {re.escape(_REVISION_ID)}$", source, re.M)
-    assert re.search(rf"^Revises: {re.escape(_parent_revision_id())}$", source, re.M)
+    assert re.search(rf"^Revises: {re.escape(_PARENT_REVISION_ID)}$", source, re.M)
 
 
 # ---------------------------------------------------------------------------
@@ -304,6 +317,20 @@ def _row_count(engine: Engine) -> int:
     return value
 
 
+def _assert_carried_types_match(
+    archive: dict[str, tuple[str, str, bool, str | None]],
+    live: dict[str, tuple[str, str, bool, str | None]],
+) -> None:
+    """Each carried column has the same (data_type, udt_name) in both tables."""
+    for name in _CARRIED_COLUMNS:
+        assert name in live, f"coord.repo_branches has no {name} column"
+        assert name in archive, f"coord.{_TABLE} is missing {name}"
+        assert archive[name][:2] == live[name][:2], (
+            f"{name}: archive type {archive[name][:2]} != "
+            f"repo_branches type {live[name][:2]}; coord UNIONs the two"
+        )
+
+
 @_needs_pg
 def test_table_shape_matches_repo_branches_and_the_contract() -> None:
     with ephemeral_database(admin_database_url(), "dpr01_shape") as (engine, db_url):
@@ -312,13 +339,8 @@ def test_table_shape_matches_repo_branches_and_the_contract() -> None:
         archive = _columns(engine, _TABLE)
         live = _columns(engine, "repo_branches")
 
+        _assert_carried_types_match(archive, live)
         for name in _CARRIED_COLUMNS:
-            assert name in live, f"coord.repo_branches has no {name} column"
-            assert name in archive, f"coord.{_TABLE} is missing {name}"
-            assert archive[name][:2] == live[name][:2], (
-                f"{name}: archive type {archive[name][:2]} != "
-                f"repo_branches type {live[name][:2]}; coord UNIONs the two"
-            )
             assert archive[name][2] is True, f"{name} must be nullable"
             assert archive[name][3] is None, (
                 f"{name} must have no default (NULL is NOT RECORDED), "
@@ -431,7 +453,7 @@ def test_upgrade_is_idempotent() -> None:
         run_alembic(backend_root(), db_url, "upgrade", _REVISION_ID)
         _insert(engine)
 
-        run_alembic(backend_root(), db_url, "stamp", _parent_revision_id())
+        run_alembic(backend_root(), db_url, "stamp", _PARENT_REVISION_ID)
         run_alembic(backend_root(), db_url, "upgrade", _REVISION_ID)
 
         assert table_exists(engine, _SCHEMA, _TABLE)
@@ -444,7 +466,7 @@ def test_up_down_up_leaves_no_residue() -> None:
         run_alembic(backend_root(), db_url, "upgrade", _REVISION_ID)
         _insert(engine)
 
-        run_alembic(backend_root(), db_url, "downgrade", _parent_revision_id())
+        run_alembic(backend_root(), db_url, "downgrade", _PARENT_REVISION_ID)
         assert not table_exists(engine, _SCHEMA, _TABLE)
         assert table_exists(engine, _SCHEMA, "repo_branches"), (
             "downgrade touched the table this one archives"
@@ -453,3 +475,23 @@ def test_up_down_up_leaves_no_residue() -> None:
         run_alembic(backend_root(), db_url, "upgrade", _REVISION_ID)
         assert table_exists(engine, _SCHEMA, _TABLE)
         assert _row_count(engine) == 0, "the table comes back empty, not restored"
+
+
+@_needs_pg
+def test_carried_types_still_match_repo_branches_at_heads() -> None:
+    """Type parity after the WHOLE chain, not only up to this revision.
+
+    The shape test stops at this revision, so a later revision that alters a
+    carried column on coord.repo_branches (and not here) never runs in it. coord
+    UNIONs the two tables, so that drift is a runtime type error in the
+    realizations read. Walking to ``heads`` is what makes it visible here.
+    """
+    with ephemeral_database(admin_database_url(), "dpr01_heads") as (engine, db_url):
+        run_alembic(backend_root(), db_url, "upgrade", "heads")
+        assert table_exists(engine, _SCHEMA, _TABLE), (
+            "upgrade heads did not produce the table; the comparison below would "
+            "be vacuous"
+        )
+        _assert_carried_types_match(
+            _columns(engine, _TABLE), _columns(engine, "repo_branches")
+        )
