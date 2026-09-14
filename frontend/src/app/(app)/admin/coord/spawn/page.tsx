@@ -68,8 +68,13 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Filter, Plus, RefreshCw } from "lucide-react";
-import { HealthStrip, RecordList, readIsUnknown } from "@/components/console";
+import { Filter, Plus } from "lucide-react";
+import {
+  HealthStrip,
+  RecordList,
+  RefreshButton,
+  readIsUnknown,
+} from "@/components/console";
 import { CoordAdminOnly } from "@/components/admin/coord/CoordAdminOnly";
 import { SpawnModal } from "@/components/admin/coord/SpawnModal";
 import { SpawnPlanRow } from "@/components/admin/coord/SpawnPlanRow";
@@ -174,6 +179,27 @@ export default function CoordSpawnPage() {
     };
   }, [fetchData]);
 
+  /**
+   * The refresh button's read — the operator's, never the poll's. Returns the
+   * read's promise so `<RefreshButton>` acknowledges the press for exactly as
+   * long as that read is out, and takes `pollInFlight` when the lock is free
+   * so a tick due while a manual read is out skips instead of stacking a
+   * second read of the same question on top of it. See `/plans`' copy on its
+   * own `refresh` for the full reasoning — this is the same fix for the same
+   * defect (plan `2026-09-09-coord-plans-page-controls-do-not-acknowledge-or-name-themselves`
+   * F1), applied here where it was left unchanged.
+   */
+  const refresh = useCallback(() => {
+    const tookLock = !pollInFlight.current;
+    if (tookLock) pollInFlight.current = true;
+    const question = questionGen.current;
+    return fetchData().finally(() => {
+      if (tookLock && question === questionGen.current) {
+        pollInFlight.current = false;
+      }
+    });
+  }, [fetchData]);
+
   const plans = useMemo(() => data?.work_units ?? data?.plans ?? [], [data]);
   const loaded = data !== null;
   // R6 — "not fetched" includes "fetched and FAILED", and every surface derived
@@ -214,14 +240,16 @@ export default function CoordSpawnPage() {
             ))}
           </SelectContent>
         </Select>
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={fetchData}
+        {/* Keyed on the question, same reason as `/plans`': a press whose read
+            was superseded by a filter change must not leave the NEW
+            question's control busy for up to the 60s request timeout. */}
+        <RefreshButton
+          key={status}
+          onRefresh={refresh}
+          label="Refresh plans"
+          title={`Re-reads the plan list now; it also refreshes itself every ${POLL_INTERVAL_MS / 1000} s`}
           data-testid="coord-spawn-refresh"
-        >
-          <RefreshCw className="h-3 w-3" />
-        </Button>
+        />
         <CoordAdminOnly>
           <Button
             size="sm"
