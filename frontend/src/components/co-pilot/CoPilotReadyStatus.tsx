@@ -10,19 +10,22 @@
  * "enabled it but nothing happened" can see exactly which gate is unmet.
  *
  * Composes the gates that feed ``enableRemoteCommands`` in
- * ``lib/ui-bridge/provider.tsx`` — previously this badge showed green from
- * preference + consent ALONE, so it claimed "ready" even when the relay was
- * never going to connect because the build-time env gate was off. That masked
- * a "co-pilot silently no-ops" bug. The badge now ALSO requires the env gate,
- * mirroring the provider's expression exactly so the two can't drift:
+ * ``lib/ui-bridge/provider.tsx`` from the shared ``co-pilot-gates`` module —
+ * previously this badge showed green from preference + consent ALONE, so it
+ * claimed "ready" even when the relay was never going to connect because the
+ * build-time env gate was off, and later claimed consent was missing while a
+ * loopback-dev auto-grant had the relay live. Reading the one predicate is
+ * what keeps the two from drifting:
  *
- *   - the build-time env gate
- *     (``isDev || NEXT_PUBLIC_UI_BRIDGE_REMOTE_COMMANDS === "1"``).
+ *   - {@link isRemoteCommandsEnvEnabled} — the build-time env gate.
+ *   - {@link useIsLoopbackDev} — loopback dev auto-grants consent.
  *   - {@link useCoPilotPreference} — the durable per-user opt-in.
  *   - {@link useCoPilotSessionConsent} — the transient per-session consent.
  *
  * Rendered states:
  *   - env gate OFF                          → "⚠ Co-pilot unavailable here"
+ *   - loopback dev, not revoked (no explicit grant) → "✓ Auto-granted on localhost"
+ *   - loopback dev, revoked this session    → "⚠ Revoked this session"
  *   - preference OFF                        → "⚠ Co-pilot disabled" (→ settings)
  *   - preference ON, consent !granted       → "⚠ Enabled, consent not granted this session"
  *   - env + preference + consent granted    → "✓ Enabled & consented this session"
@@ -35,21 +38,16 @@ import { Loader2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { useCoPilotPreference } from "@/hooks/useCoPilotPreference";
 import { useCoPilotSessionConsent } from "@/hooks/useCoPilotSessionConsent";
-
-/**
- * Build-time / env-level enablement of the command relay — the OUTER gate that
- * composes with the per-user preference + per-session consent. Mirrors the
- * exact expression used for ``enableRemoteCommands`` in
- * ``lib/ui-bridge/provider.tsx`` (``isDev || remoteCommandsOptIn``) so the
- * badge can never claim "ready" on a build where the relay can't connect.
- */
-const isDev = process.env.NODE_ENV === "development";
-const isRemoteCommandsEnvEnabled =
-  isDev || process.env.NEXT_PUBLIC_UI_BRIDGE_REMOTE_COMMANDS === "1";
+import {
+  isLoopbackAutoGrant,
+  isRemoteCommandsEnvEnabled,
+  useIsLoopbackDev,
+} from "@/lib/ui-bridge/co-pilot-gates";
 
 export function CoPilotReadyStatus() {
   const { enabled, isLoading } = useCoPilotPreference();
   const { state } = useCoPilotSessionConsent();
+  const loopbackDev = useIsLoopbackDev();
 
   if (isLoading) {
     return (
@@ -73,6 +71,37 @@ export function CoPilotReadyStatus() {
         data-status="env-disabled"
       >
         ⚠ Co-pilot unavailable here
+      </Badge>
+    );
+  }
+
+  // ---- loopback dev: consent auto-granted unless explicitly revoked ----
+  if (
+    isLoopbackAutoGrant({
+      loopbackDev,
+      preferenceEnabled: enabled,
+      consentState: state,
+    })
+  ) {
+    return (
+      <Badge
+        variant="success"
+        data-testid="co-pilot-ready-status"
+        data-status="loopback-auto-granted"
+      >
+        ✓ Auto-granted on localhost
+      </Badge>
+    );
+  }
+
+  if (loopbackDev && state === "revoked") {
+    return (
+      <Badge
+        variant="warning"
+        data-testid="co-pilot-ready-status"
+        data-status="revoked"
+      >
+        ⚠ Revoked this session
       </Badge>
     );
   }
