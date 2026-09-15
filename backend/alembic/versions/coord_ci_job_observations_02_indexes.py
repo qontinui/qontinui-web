@@ -21,12 +21,14 @@ per-job rows for every repo with a self-hosted registration:
 * ``ix_ci_job_obs_completed`` on ``(completed_at)`` — the 24h
   ``coord_ci_job_observations_total{outcome}`` gauge recompute on every
   ``/metrics`` scrape on every replica (``completed_at > now() - 24h``), and
-  the ``completed_at < cutoff`` arm of the 30-day retention delete. That
-  delete must be written as index-able arms on the coord side —
-  ``completed_at < $cutoff OR (completed_at IS NULL AND observed_at < $cutoff)``
-  — because a btree on a column cannot serve a predicate over
-  ``COALESCE(completed_at, observed_at)``; the coord PR of the same plan
-  carries that rewrite, and nothing here pretends to serve the COALESCE form.
+  the ``completed_at < cutoff`` arm of the 30-day retention delete — but
+  ONLY once the coord side writes that delete as index-able arms,
+  ``completed_at < $cutoff OR (completed_at IS NULL AND observed_at < $cutoff)``.
+  As of coord ``657a378e`` (the Phase 1b commit, unlanded when this was
+  written) the delete still predicates on ``COALESCE(completed_at,
+  observed_at)``, which a btree on a column cannot serve, so it seq-scans
+  regardless of this index until that rewrite lands. Nothing here pretends
+  to serve the COALESCE form.
 
 ``ix_ci_job_obs_key (repo, head_sha, job_name)`` shares only its leading
 ``repo`` with the first, and the partial ``ix_ci_job_obs_runner_completed
