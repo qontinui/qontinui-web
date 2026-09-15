@@ -28,6 +28,13 @@ What is asserted here
    ``not_scanning``, over-cap or over-long stems, non-strict types, a missing
    digest, a digest that disagrees with its stems, duplicate stems, and both
    truncation-coherence errors.
+6. **All three spellings of "no census" are one state** — key omitted, ``[]``,
+   and an explicit ``null``. The last is the runner's stated wire discipline
+   for this struct, so refusing it would mute a conforming device forever.
+7. **The documented sort is ENFORCED.** ``slugs`` is stored sorted, because the
+   digest is over the sorted form and so could never catch the drift.
+8. **The census JSON is DEFERRED** on ``list_observations``, which rides every
+   plan-library list page and renders no stem.
 
 Layering matches ``tests/test_plan_library_scan_roots.py``.
 """
@@ -236,6 +243,55 @@ class TestNoCensusIsTheCurrentFleet:
 
     def test_the_field_is_optional_on_the_schema_itself(self) -> None:
         assert ScanRootReport(**_reading()).censuses == []
+
+    def test_all_three_spellings_of_no_census_are_one_state(self) -> None:
+        """Key omitted, ``[]``, and an explicit ``null`` — one stored state.
+
+        The third is not a convenience. The runner's own ``ScanRootReport``
+        struct doc states the discipline for this exact wire — *"Every optional
+        field serializes as an explicit ``null`` rather than being omitted"* —
+        and all twelve of its optional fields are ``Option<T>`` with no
+        ``skip_serializing_if``. A Phase 2 author who follows the spec ships
+        ``Option<Vec<PlanSlugCensus>>`` = ``None`` on every idle cycle, so a
+        422 here would silence that device on every idle cycle, FOREVER: the
+        report body is built from its configuration, so it never recovers.
+        That is the exact permanent mute the deploy-ordering gate exists to
+        prevent, in the one field the gate was built for.
+        """
+        assert ScanRootReport(**_reading(censuses=None)).censuses == []
+        assert ScanRootReport(**_reading(censuses=[])).censuses == []
+        assert ScanRootReport(**_reading()).censuses == []
+
+    async def test_an_explicit_null_census_list_is_accepted_over_the_wire(
+        self, app_no_cognito: FastAPI, async_db_session: AsyncSession
+    ) -> None:
+        """The same, end to end, because ``extra="forbid"`` makes every
+        rejection on this route a permanent mute rather than a retryable
+        error."""
+        async with _client(app_no_cognito) as client:
+            first = await client.post(SCAN_ROOTS, json=_reading(censuses=None))
+            second = await client.post(
+                SCAN_ROOTS, json=_reading(behind=3, censuses=None)
+            )
+        assert first.status_code == 201, first.text
+        assert second.status_code == 200, second.text
+        row = await _row(async_db_session)
+        # Null is "no census", which is UNKNOWN — not an empty side.
+        assert (row.ref_census, row.work_tree_census) == (None, None)
+        assert row.census_observed_at is None
+
+    async def test_an_explicit_null_clears_a_stored_census(
+        self, app_no_cognito: FastAPI, async_db_session: AsyncSession
+    ) -> None:
+        """``null`` is the same whole-snapshot state as ``[]`` — an idle cycle
+        after a scanning one leaves UNKNOWN, never the previous cycle's set."""
+        async with _client(app_no_cognito) as client:
+            await client.post(SCAN_ROOTS, json=_with_censuses())
+            resp = await client.post(SCAN_ROOTS, json=_reading(censuses=None))
+        assert resp.status_code == 200, resp.text
+        row = await _row(async_db_session)
+        assert (row.ref_census, row.work_tree_census) == (None, None)
+        assert (row.ref_census_digest, row.work_tree_census_digest) == (None, None)
 
 
 # ===========================================================================
@@ -545,8 +601,23 @@ class TestCensusValidation:
             )
 
     def test_not_scanning_may_carry_no_census(self) -> None:
-        """Nothing was enumerated, so a census there is a count nobody took —
-        the web-side backstop for the runner's three idle arms."""
+        """Nothing is scanned at all, so a census there is a count nobody took.
+
+        Scope, stated precisely because the claim this docstring used to make
+        was false: this covers the ``not_scanning`` STATE ONLY. It is **not**
+        the web-side backstop for the runner's three idle arms.
+        ``report_while_idle`` posts the CACHED ``ScanDivergence``, and only the
+        plans-dir-cleared arm (``trigger.rs:2614``) yields ``not_scanning``;
+        the publishes-nothing arm (``:2668``) and the scan-task-FAILED arm
+        (``:2697``) post the last reading, normally ``state: "measured"`` — so
+        this rule does not reach the arm the plan calls the one that matters
+        most, where the enumeration did not happen at all.
+
+        It is also a NEW cross-field rejection, not in Phase 1's spec, and
+        every new rejection on this route is a permanent-mute hazard. Phase 2
+        must therefore know the rule rather than discover it as a 422: a
+        ``not_scanning`` report must carry ``censuses: []``.
+        """
         with pytest.raises(ValidationError, match="carries no census"):
             ScanRootReport(
                 **_reading(
@@ -564,8 +635,26 @@ class TestCensusValidation:
         with pytest.raises(ValidationError):
             ScanRootReport(**_reading(censuses=[bad]))
 
+    def test_a_stem_the_write_door_would_accept_is_not_refused_here(self) -> None:
+        """The bound is the door a stem actually has to pass.
+
+        ``agent.work_artifacts.slug`` is ``Text`` — unbounded — and
+        ``WorkArtifactUpsert.slug`` caps it at 512; the 255 this schema used to
+        carry is ``work_unit_slug``'s bound, a DIFFERENT column. A 256-512
+        character stem is a legal artifact slug, and refusing it would 422 the
+        WHOLE report, permanently, for any device whose stem list comes from a
+        directory listing.
+        """
+        for length in (256, 512):
+            stem = "x" * length
+            census = _census("ref", [stem])
+            parsed = ScanRootReport(**_reading(censuses=[census]))
+            assert parsed.censuses[0].slugs == [stem]
+
     def test_an_over_long_stem_is_refused(self) -> None:
-        bad = _census("ref", ["x" * 256])
+        """Past the write door's own 512 the stem could never become an
+        artifact, so accepting it would store a member of no set."""
+        bad = _census("ref", ["x" * 513])
         with pytest.raises(ValidationError):
             ScanRootReport(**_reading(censuses=[bad]))
 
@@ -630,3 +719,106 @@ class TestDigestDefinition:
     def test_the_empty_set_has_a_digest_of_its_own(self) -> None:
         """A side that really holds no plans is a reading, not a silence."""
         assert slug_census_digest([]) == hashlib.sha256(b"").hexdigest()
+
+
+# ===========================================================================
+# The documented sort is ENFORCED, not merely asserted
+# ===========================================================================
+
+
+class TestStemsAreSortedAsStored:
+    def test_an_unsorted_list_is_normalized_rather_than_stored_unsorted(
+        self,
+    ) -> None:
+        """``slugs`` documents itself "sorted" and the digest is taken over
+        ``sorted()``, so an unsorted list with a CORRECT digest passed every
+        check and was stored in whatever order it arrived — the one invariant
+        this module stated and did not enforce, on a cross-repo contract
+        field."""
+        unsorted = ["c-gamma", "a-alpha", "b-beta"]
+        census = _census("ref", None, _digest_over=unsorted)
+        census["slugs"] = unsorted
+        census["count"] = len(unsorted)
+        parsed = ScanRootReport(**_reading(censuses=[census]))
+        assert parsed.censuses[0].slugs == sorted(unsorted)
+
+    async def test_the_stored_stems_are_sorted(
+        self, app_no_cognito: FastAPI, async_db_session: AsyncSession
+    ) -> None:
+        unsorted = ["c-gamma", "a-alpha", "b-beta"]
+        census = _census("ref", None, _digest_over=unsorted)
+        census["slugs"] = unsorted
+        census["count"] = len(unsorted)
+        async with _client(app_no_cognito) as client:
+            resp = await client.post(SCAN_ROOTS, json=_reading(censuses=[census]))
+        assert resp.status_code == 201, resp.text
+        row = await _row(async_db_session)
+        assert row.ref_census["slugs"] == sorted(unsorted)
+
+
+# ===========================================================================
+# The census JSON is DEFERRED on the list read that rides every page
+# ===========================================================================
+
+
+class TestCensusJsonIsNotDraggedOntoEveryListPage:
+    async def test_list_observations_defers_both_census_columns(
+        self, async_db_session: AsyncSession
+    ) -> None:
+        """``list_observations`` is not only the scan-roots route's.
+
+        ``_load_corpus_health`` calls it, and that block rides EVERY
+        ``GET /plan-library`` list page and ``/plan-library/candidates``, while
+        ``plan_scan_root_health.render_row`` renders no stem — so every stored
+        stem was detoasted, transferred, decoded and discarded on every page.
+        Measured: 1837 stems ≈ 103.6 KB per census, ≈ 208 KB per device for
+        both; the accepted cap allows ≈ 1.3 MB per census. It is also the exact
+        cost the coverage design decision refused to pay ("an anti-join over
+        ~1800 slugs on every list request"), arriving by another route.
+
+        ⚠️ Phase 3's coverage read must UNDEFER them rather than touch a
+        deferred attribute per row.
+        """
+        from sqlalchemy import inspect as sa_inspect
+
+        from app.crud.plan_scan_root import list_observations
+
+        async_db_session.add(
+            PlanScanRootObservation(
+                organization_id=None,
+                device_id=DEVICE_A,
+                state="measured",
+                plans_dir="/p/plans",
+                repo_root="/p",
+                source_repo="p/plans",
+                default_ref="origin/main",
+                ref_sha="a" * 40,
+                head_sha="b" * 40,
+                behind=1,
+                ahead=0,
+                ref_age_secs=10,
+                counts_are_floors=False,
+                detail=None,
+                observed_at=datetime.now(UTC),
+                received_at=datetime.now(UTC),
+                last_report_applied=True,
+                last_report_observed_at=datetime.now(UTC),
+                ref_census={"source": "ref", "slugs": sorted(REF_STEMS)},
+                ref_census_digest=slug_census_digest(REF_STEMS),
+                work_tree_census={"source": "work_tree", "slugs": sorted(TREE_STEMS)},
+                work_tree_census_digest=slug_census_digest(TREE_STEMS),
+            )
+        )
+        await async_db_session.commit()
+        async_db_session.expunge_all()
+
+        rows = await list_observations(async_db_session, org_id=None)
+        assert len(rows) == 1
+        unloaded = sa_inspect(rows[0]).unloaded
+        assert {"ref_census", "work_tree_census"} <= unloaded, (
+            "both census JSON columns must be deferred on this read — it rides "
+            "every plan-library list page and renders none of them"
+        )
+        # The small columns a reader needs to know a census EXISTS stay loaded.
+        assert "ref_census_digest" not in unloaded
+        assert "census_observed_at" not in unloaded

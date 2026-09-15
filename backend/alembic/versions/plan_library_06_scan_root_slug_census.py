@@ -51,6 +51,16 @@ moment this lands no runner sends a census at all; an idle or failed scan cycle
 sends none either. A reader that takes NULL for "this side holds no plans"
 manufactures exactly the false-coverage reading the plan exists to remove.
 
+That sentence is a claim about SQL NULL, and the DDL alone does not secure it:
+SQLAlchemy's JSON types serialize a Python ``None`` as the JSON DOCUMENT
+``null`` unless the column says ``JSONB(none_as_null=True)``, which would leave
+``ref_census IS NULL`` FALSE and ``jsonb_typeof(ref_census)`` = ``'null'`` for
+every UNKNOWN row — and a later ``WHERE ref_census IS NOT NULL`` meaning "this
+device has a census" true for all of them. The model declares
+``none_as_null=True`` for exactly that reason, and the migration test asserts
+both predicates in raw SQL, which is the only place the two encodings are
+distinguishable (JSONB ``null`` deserializes to Python ``None``).
+
 No CHECK constraint is added. The census shape is the request schema's contract
 (``app.schemas.plan_library_scan_roots``), which verifies the digest against the
 stems it was computed over; a Postgres CHECK over JSON structure would be a

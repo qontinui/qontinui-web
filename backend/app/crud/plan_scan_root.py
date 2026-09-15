@@ -59,7 +59,11 @@ it is the integrity property the coverage signal rests on:
   to remove. The next report carrying stems restores it.
 * A source the report omits entirely sets that column to NULL, under the same
   whole-snapshot rule as every other reported column. NULL is UNKNOWN, never
-  an empty side.
+  an empty side — **SQL NULL**, which is a property of the MODEL
+  (``JSONB(none_as_null=True)``) and not of this module: with SQLAlchemy's
+  default a Python ``None`` lands as the JSON document ``null``, so
+  ``ref_census IS NULL`` reads false and :func:`_resolved_census`'s first arm
+  can never fire. See the model's own note.
 
 None of it applies to a report that was not applied: an out-of-order report
 leaves the census exactly as the newer reading left it.
@@ -77,6 +81,7 @@ from uuid import UUID
 from sqlalchemy import ColumnElement, case, func, literal_column, select, text
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import defer
 from sqlalchemy.sql.dml import ReturningInsert
 
 from app.models.plan_scan_root import IDENTITY_ORG_SQL, PlanScanRootObservation
@@ -132,7 +137,15 @@ def census_fields(report: dict[str, Any]) -> dict[str, Any]:
     ``report`` is the request model's ``model_dump()``. A source the report
     does not carry maps to ``None`` for both of its columns — UNKNOWN, which
     is what a build predating the census, an idle cycle and a failed scan all
-    report, and which must never be read as an empty side.
+    report, and which must never be read as an empty side. That ``None``
+    reaches Postgres as SQL NULL only because the model declares
+    ``JSONB(none_as_null=True)``; see the note beside those columns.
+
+    ``censuses`` is read with ``or []`` because the request model accepts the
+    key omitted, ``[]`` and an explicit ``null`` as one state (the runner's
+    wire discipline serializes every optional field as an explicit ``null``),
+    and because this function is also called with a raw dict by the migration
+    test.
 
     ``census_observed_at`` is the report's own ``observed_at`` whenever ANY
     census rode along, and ``None`` otherwise: the device re-enumerates every
@@ -161,7 +174,14 @@ def _resolved_census(
 
     Four arms, in order:
 
-    1. the report carries no census for this source → ``NULL`` (UNKNOWN);
+    1. the report carries no census for this source → ``NULL`` (UNKNOWN).
+       This arm is live only because the column is ``JSONB(none_as_null=True)``:
+       with the SQLAlchemy default the bound ``None`` is the JSON document
+       ``null``, ``incoming.is_(None)`` is false, and the whole ``case``'s
+       safety — including never handing ``jsonb_set`` a scalar — rests instead
+       on the digest column happening to be SQL NULL so arm 3 is NULL-false.
+       The right answer emerged from an undocumented coupling rather than from
+       the guard written for it;
     2. it carries the stems → store them;
     3. it withholds them (``slugs: null``) and its digest equals the stored
        one → carry the stored stems forward into this cycle's census;
@@ -335,9 +355,33 @@ async def upsert_observation(
 async def list_observations(
     db: AsyncSession, *, org_id: UUID | None
 ) -> list[PlanScanRootObservation]:
-    """Every device's latest reading for ``org_id``, most recently received first."""
+    """Every device's latest reading for ``org_id``, most recently received first.
+
+    ⚠️ **The two census JSON columns are DEFERRED, and Phase 3's coverage read
+    must undefer them** (``.options(undefer(...))`` on its own select, or a
+    separate query) — a deferred attribute touched on a loaded row emits one
+    extra SELECT per row, which is worse than not deferring at all.
+
+    Why they are deferred: this function is not only the scan-roots route's.
+    ``_load_corpus_health`` calls it, and that block rides EVERY
+    ``GET /plan-library`` list page and ``/plan-library/candidates``, while
+    ``plan_scan_root_health.render_row`` renders no stem at all — so every
+    stored stem was detoasted, transferred, decoded and discarded on every
+    page. Measured: 1837 stems ≈ 103.6 KB per census, ≈ 208 KB per device for
+    both, and the accepted cap allows ≈ 1.3 MB per census. That is also the
+    cost the coverage design decision explicitly refused to pay ("would put an
+    anti-join over ~1800 slugs on every list request"), arriving by another
+    route.
+
+    The digests, ``census_ref_sha`` and ``census_observed_at`` stay loaded:
+    they are small, and they are what a reader needs to know a census EXISTS.
+    """
     stmt = (
         select(PlanScanRootObservation)
+        .options(
+            defer(PlanScanRootObservation.ref_census),
+            defer(PlanScanRootObservation.work_tree_census),
+        )
         .where(_org_scope(org_id))
         .order_by(
             PlanScanRootObservation.received_at.desc(),

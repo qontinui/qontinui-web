@@ -192,6 +192,36 @@ class PlanScanRootObservation(Base):
     # either. The enumerated set is what a coverage set difference is taken
     # against, so a NULL here must never be read as an empty side.
     #
+    # ⚠️ ``JSONB(none_as_null=True)`` is LOAD-BEARING on the two JSON columns,
+    # and the default (``False``) silently broke that sentence. SQLAlchemy's
+    # JSON types serialize a Python ``None`` as the JSON DOCUMENT ``null`` by
+    # default, so "absent census" stored a JSONB scalar ``null``:
+    # ``ref_census IS NULL`` read FALSE and ``jsonb_typeof(ref_census)`` read
+    # ``'null'``. Three things that costs, all real:
+    #
+    #   * ``_resolved_census``'s first arm (``incoming.is_(None)``) can never
+    #     fire — it tests SQL NULL against a JSONB null. The right census still
+    #     emerged, but only because the DIGEST column really is SQL NULL, so a
+    #     later arm's comparison was NULL-false and control fell to ``else_``.
+    #     The guard written for the case, including keeping ``jsonb_set`` off a
+    #     scalar, was resting on an undocumented coupling.
+    #   * A Phase 3 ``WHERE ref_census IS NOT NULL`` meaning "this device has a
+    #     census" would be TRUE for every UNKNOWN row — one ``COALESCE(…, 0)``
+    #     from the false zero this whole plan exists to delete.
+    #   * Two encodings of UNKNOWN would coexist: rows from
+    #     ``ALTER TABLE ADD COLUMN`` hold real SQL NULL, rows written after it
+    #     held JSONB ``null``.
+    #
+    # No test could see any of it: JSONB ``null`` deserializes to Python
+    # ``None``, so ``row.ref_census is None`` passes either way. The migration
+    # test now asserts ``ref_census IS NULL`` and ``jsonb_typeof(ref_census)``
+    # in raw SQL, which is the only place the two are distinguishable.
+    #
+    # This says nothing about ``slugs`` INSIDE a stored census: that really is
+    # a JSON ``null`` when the device withheld the stems (``none_as_null``
+    # governs the top-level value only), and ``_resolved_census`` reads it with
+    # ``jsonb_typeof`` for exactly that reason.
+    #
     # Each census column holds the whole ``PlanSlugCensus`` object as the
     # device sent it (``source``, ``ref_sha``, ``count``, ``digest``,
     # ``slugs``, ``truncated``), with ONE resolution applied by the upsert:
@@ -200,7 +230,9 @@ class PlanScanRootObservation(Base):
     # does not. See ``app.crud.plan_scan_root``.
 
     #: The stems listed at ``default_ref``, the side the work-unit half reads.
-    ref_census: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    ref_census: Mapped[dict | None] = mapped_column(
+        JSONB(none_as_null=True), nullable=True
+    )
     #: ``ref_census``'s digest, lifted out so the upsert can compare a withheld
     #: set's claim against what is stored without unpacking the JSON.
     ref_census_digest: Mapped[str | None] = mapped_column(Text, nullable=True)
@@ -208,7 +240,9 @@ class PlanScanRootObservation(Base):
     #: The stems listed in the scanned WORKING TREE — the side the body sync
     #: reads, and therefore the only side that bounds what the corpus could
     #: possibly have captured.
-    work_tree_census: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    work_tree_census: Mapped[dict | None] = mapped_column(
+        JSONB(none_as_null=True), nullable=True
+    )
     #: ``work_tree_census``'s digest, for the same reason.
     work_tree_census_digest: Mapped[str | None] = mapped_column(Text, nullable=True)
 

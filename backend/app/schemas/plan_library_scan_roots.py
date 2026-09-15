@@ -85,6 +85,16 @@ What it carries and why each rule is a 422 rather than a stored value:
   is why ``not_scanning`` (nothing is scanned at all) may carry no census.
 * **At most one census per ``source``**, and therefore at most two: two
   listings of the same side leave "which one is stored" to statement order.
+* **All three spellings of "no census" are accepted, and are one state**: the
+  key omitted, ``[]``, and an explicit ``censuses: null``. The third is the
+  runner's stated discipline for this very struct — *"Every optional field
+  serializes as an explicit ``null`` rather than being omitted"* — so refusing
+  it would 422 the whole report of a conforming device on every idle cycle,
+  forever. Coercing a null to a value is otherwise wrong on this route; it is
+  right for THIS container because "absent" and "empty" already denote the
+  same state here (the field is *"OPTIONAL, and empty by default"*). The
+  absent-never-empty rule above is enforced **per ENTRY** — a source whose
+  enumeration did not run sends no entry — and is untouched by it.
 """
 
 import hashlib
@@ -139,8 +149,17 @@ SLUG_CENSUS_MAX = 5000
 #: The most censuses one report may carry — one per :data:`SlugCensusSource`.
 SLUG_CENSUS_MAX_PER_REPORT = 2
 
-#: A plan stem is a slug, and ``agent.work_artifacts.slug`` is 255.
-_SLUG_MAX = 255
+#: A plan stem is a slug, and the bound is **the one a stem actually has to
+#: pass**: the plan-library write door caps ``slug`` at 512
+#: (``WorkArtifactUpsert.slug`` in ``app.schemas.plan_library``). The stored
+#: column itself is ``Text`` — unbounded (``app.models.work_artifact``) — and
+#: the 255 this constant used to carry is ``work_unit_slug``'s bound, a
+#: DIFFERENT column. A 256-512 character stem is therefore a legal artifact
+#: slug, and refusing it here would 422 the whole report of any device whose
+#: stem list comes from a directory listing — permanently, since that body is
+#: built from its configuration. (Longest stem on ``qontinui-dev-notes``
+#: ``origin/main`` measured 2026-09-15: 135 characters.)
+_SLUG_MAX = 512
 
 #: ``sha256`` renders as 64 lowercase hex characters.
 _SHA256_HEX_RE = re.compile(r"\A[0-9a-f]{64}\Z")
@@ -197,8 +216,12 @@ class PlanSlugCensus(BaseModel):
     #: :func:`slug_census_digest`. Required even when ``slugs`` is withheld:
     #: it is what a withheld set is re-asserted BY.
     digest: str = Field(..., min_length=64, max_length=64)
-    #: The stems, sorted. ``null`` is not "no stems" — it is "unchanged since
-    #: my last report, and ``digest`` says which set I mean".
+    #: The stems. SORTED as stored — :meth:`_census_is_coherent` sorts them, so
+    #: the documented order is ENFORCED rather than merely asserted. The digest
+    #: is over the sorted form either way, so an unsorted list with a correct
+    #: digest is normalized rather than refused. ``null`` is not "no stems" —
+    #: it is "unchanged since my last report, and ``digest`` says which set I
+    #: mean".
     slugs: list[SlugCensusStem] | None = Field(None, max_length=SLUG_CENSUS_MAX)
     #: ``True`` when the device had more than :data:`SLUG_CENSUS_MAX` stems and
     #: sent the sorted prefix. The set is then a FLOOR in the sense
@@ -253,7 +276,23 @@ class PlanSlugCensus(BaseModel):
                 "'truncated: true' if the set really was cut, so a reader "
                 "treats it as a floor rather than as the whole side."
             )
+        # Normalize to the order this field documents and the digest is taken
+        # over. It was the one invariant this module stated and did not
+        # enforce, on a cross-repo contract field: "sorted" by convention alone
+        # drifts, and the digest cannot catch the drift because it is computed
+        # over ``sorted()`` on both sides.
+        self.slugs = sorted(self.slugs)
         return self
+
+
+#: The census list, with its per-report cap carried on the ANNOTATION rather
+#: than on the field. That is what lets ``ScanRootReport.censuses`` be
+#: NULLABLE — a constraint on a union is not applicable, and the nullability is
+#: required: an explicit ``censuses: null`` is the runner's own wire discipline
+#: for this struct.
+CensusList = Annotated[
+    list[PlanSlugCensus], Field(max_length=SLUG_CENSUS_MAX_PER_REPORT)
+]
 
 
 class ScanRootReport(BaseModel):
@@ -294,9 +333,41 @@ class ScanRootReport(BaseModel):
     #: :data:`SlugCensusSource`. OPTIONAL, and empty by default: a runner that
     #: sends none is the entire current fleet and must keep succeeding. An
     #: enumeration that did not run sends no entry, never a zero.
-    censuses: list[PlanSlugCensus] = Field(
-        default_factory=list, max_length=SLUG_CENSUS_MAX_PER_REPORT
-    )
+    #:
+    #: **All three spellings of "no census" are accepted and are the same
+    #: stored state**: the key omitted, ``[]``, and an explicit ``null``. The
+    #: last one is not a convenience — it is the runner's stated wire
+    #: discipline for this very struct: *"Every optional field serializes as an
+    #: explicit ``null`` rather than being omitted"*
+    #: (``ScanRootReport`` in ``plan_workunit_adapter/body_push.rs``, where all
+    #: twelve optional fields are ``Option<T>`` with no ``skip_serializing_if``).
+    #: A runner half that follows it ships ``Option<Vec<PlanSlugCensus>>`` =
+    #: ``None`` on every idle cycle, and refusing that spelling would 422 the
+    #: WHOLE report of such a device on every idle cycle, forever — the exact
+    #: permanent mute the deploy-ordering gate exists to prevent, in the one
+    #: field the gate was built for.
+    censuses: CensusList | None = Field(default_factory=list)
+
+    @field_validator("censuses", mode="before")
+    @classmethod
+    def _absent_census_list_is_empty(cls, value: object) -> object:
+        """Map an explicit ``censuses: null`` onto the empty list.
+
+        Coercing ``null`` to a value is normally the wrong move on this route —
+        every other rule here is a 422 rather than a defaulted value, because a
+        count nobody measured must not be invented. It is right **here
+        specifically**, and only because of what this container is: "no census"
+        and "empty census list" are the SAME state by the module docstring's
+        own rule (the field is *"OPTIONAL, and empty by default"*), so nothing
+        is being invented — the two spellings already denote one state.
+
+        The absent-never-empty rule the module enforces is a rule about an
+        ENTRY, not about this container: a SOURCE whose enumeration did not run
+        sends no entry for that source, and ``census_fields`` stores that as
+        NULL/UNKNOWN. That per-entry rule is untouched here, and a
+        ``not_scanning`` report still may carry no entry at all.
+        """
+        return [] if value is None else value
 
     @field_validator("observed_at")
     @classmethod
@@ -360,7 +431,10 @@ class ScanRootReport(BaseModel):
                 f"state '{self.state}' must carry a non-empty 'detail' naming "
                 "why — an unexplained unknown is a dead end for the reader."
             )
-        sources = [census.source for census in self.censuses]
+        # ``censuses`` is normalized to a list by ``_absent_census_list_is_empty``
+        # above; the ``or []`` is what says so to a type checker.
+        censuses = self.censuses or []
+        sources = [census.source for census in censuses]
         repeated = sorted({s for s in sources if sources.count(s) > 1})
         if repeated:
             raise ValueError(
@@ -368,7 +442,7 @@ class ScanRootReport(BaseModel):
                 f"{', '.join(repeated)}. Two listings of one side leave which "
                 "is stored to statement order."
             )
-        if self.state == "not_scanning" and self.censuses:
+        if self.state == "not_scanning" and censuses:
             raise ValueError(
                 "state 'not_scanning' carries no census: nothing was "
                 f"enumerated, so {', '.join(sources)} would be a count nobody "

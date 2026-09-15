@@ -32505,7 +32505,7 @@
             "anyOf": [
               {
                 "items": {
-                  "maxLength": 255,
+                  "maxLength": 512,
                   "minLength": 1,
                   "type": "string"
                 },
@@ -38828,12 +38828,19 @@
             "title": "Behind"
           },
           "censuses": {
-            "items": {
-              "$ref": "#/components/schemas/PlanSlugCensus"
-            },
-            "maxItems": 2,
-            "title": "Censuses",
-            "type": "array"
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/PlanSlugCensus"
+                },
+                "maxItems": 2,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Censuses"
           },
           "counts_are_floors": {
             "title": "Counts Are Floors",

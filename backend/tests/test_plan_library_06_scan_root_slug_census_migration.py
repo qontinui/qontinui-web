@@ -13,9 +13,13 @@ the crud's EXACT statement (:func:`app.crud.plan_scan_root.upsert_statement`)
 against the alembic-built table, through both directions of the withheld-set
 rule.
 
-Also asserted: the six columns land nullable and with the right types, the
-table's constraints are UNCHANGED (this revision adds none), and
-head → downgrade → head leaves no residue.
+Also asserted: the six columns land nullable and with the right types, that an
+absent census stores **SQL NULL rather than the JSONB scalar ``null``** on all
+three write paths (the no-census INSERT, the source-omitted UPDATE and the
+idle-cycle UPDATE) — a distinction no Python-side assertion in this suite can
+see, because JSONB ``null`` deserializes to ``None`` — the table's constraints
+are UNCHANGED (this revision adds none), and head → downgrade → head leaves no
+residue.
 
 Substrate is ``tests/_alembic_harness``. ⚠️ A skip proves nothing — point it at
 a live instance with ``QONTINUI_TEST_PG=localhost:<port>`` when 5432 is not the
@@ -171,6 +175,37 @@ def _upsert(
     return bool(inserted)
 
 
+def _null_encoding(engine: Engine, device_id: uuid.UUID, column: str):
+    """``(<col> IS NULL, jsonb_typeof(<col>))`` — the ONLY probe that can tell
+    SQL NULL from the JSONB scalar ``null``.
+
+    Every Python-side assertion in this suite (``row.ref_census is None``) is
+    blind to the difference: JSONB ``null`` deserializes to Python ``None``, so
+    it passes against both. SQLAlchemy's JSON types serialize a Python ``None``
+    as the JSON DOCUMENT ``null`` unless the column says
+    ``none_as_null=True``, which is why "absent census stores SQL NULL" needs a
+    raw-SQL check to be a pinned property rather than a belief:
+
+    * ``_resolved_census``'s first arm (``incoming.is_(None)``) can only fire
+      against a real SQL NULL;
+    * a Phase 3 ``WHERE ref_census IS NOT NULL`` meaning "this device has a
+      census" is true for every UNKNOWN row otherwise — one ``COALESCE(…, 0)``
+      from the false zero this plan exists to delete;
+    * and the two encodings would coexist, since rows predating
+      ``ALTER TABLE ADD COLUMN`` hold real SQL NULL.
+    """
+    with engine.connect() as conn:
+        return tuple(
+            conn.execute(
+                text(
+                    f"SELECT {column} IS NULL, jsonb_typeof({column}) "
+                    f"FROM agent.{_TABLE} WHERE device_id = :d"
+                ),
+                {"d": device_id},
+            ).one()
+        )
+
+
 def _census_row(engine: Engine, device_id: uuid.UUID) -> dict[str, object]:
     with engine.connect() as conn:
         row = conn.execute(
@@ -223,6 +258,12 @@ def test_upgrade_census_upsert_downgrade_upgrade_round_trip() -> None:
         stored = _census_row(engine, device)
         assert stored["ref_census"] is None
         assert stored["census_observed_at"] is None
+        # ... and "absent" is SQL NULL, not the JSONB scalar ``null``. On the
+        # no-census INSERT path.
+        for column in ("ref_census", "work_tree_census"):
+            assert _null_encoding(engine, device, column) == (True, None), (
+                f"{column} must be SQL NULL for an absent census — see _null_encoding"
+            )
 
         # 2. A census with stems is stored whole, digest lifted out.
         _upsert(
@@ -236,6 +277,10 @@ def test_upgrade_census_upsert_downgrade_upgrade_round_trip() -> None:
         assert stored["ref_census_digest"] == slug_census_digest(_REF_STEMS)
         assert stored["census_ref_sha"] == "a" * 40
         assert stored["census_observed_at"] is not None
+        # The source this report OMITS goes to SQL NULL on the UPDATE path —
+        # the whole-snapshot rule, in the encoding a Phase 3 ``IS NOT NULL``
+        # will actually read.
+        assert _null_encoding(engine, device, "work_tree_census") == (True, None)
 
         # 3. The heartbeat form: stems withheld, digest MATCHES -> kept, and
         #    the rest of the census refreshed from this cycle. This is the
@@ -261,6 +306,21 @@ def test_upgrade_census_upsert_downgrade_upgrade_round_trip() -> None:
         stored = _census_row(engine, device)
         assert stored["ref_census"]["slugs"] is None
         assert stored["ref_census_digest"] == slug_census_digest(_MOVED_STEMS)
+        # The stored census is a real object whose ``slugs`` KEY is JSON null —
+        # a different thing from the column being NULL, and the distinction
+        # ``_resolved_census``'s ``jsonb_typeof`` arm turns on.
+        assert _null_encoding(engine, device, "ref_census") == (False, "object")
+        with engine.connect() as conn:
+            assert (
+                conn.execute(
+                    text(
+                        "SELECT jsonb_typeof(ref_census -> 'slugs') FROM "
+                        f"agent.{_TABLE} WHERE device_id = :d"
+                    ),
+                    {"d": device},
+                ).scalar()
+                == "null"
+            )
 
         # 5. An out-of-order report changes no census.
         _upsert(
@@ -273,6 +333,17 @@ def test_upgrade_census_upsert_downgrade_upgrade_round_trip() -> None:
         stored = _census_row(engine, device)
         assert stored["work_tree_census"] is None
         assert stored["ref_census_digest"] == slug_census_digest(_MOVED_STEMS)
+
+        # 6. A later report that omits a source sets that column back to SQL
+        #    NULL — the UPDATE path, which is where the JSONB-null encoding bit
+        #    hardest: the row already exists, so every idle cycle rewrote it.
+        _upsert(engine, org_id=org, device_id=device)
+        for column in ("ref_census", "work_tree_census"):
+            assert _null_encoding(engine, device, column) == (True, None), (
+                f"{column} must go back to SQL NULL on an idle cycle — an "
+                "UNKNOWN that reads as NOT NULL is the false zero this plan "
+                "exists to delete"
+            )
 
         run_alembic(root, db_url, "downgrade", _PARENT_REVISION_ID)
         remaining = _columns(engine)
