@@ -14,6 +14,8 @@ import {
   CoordAdminOnly,
   ReadOnlyNotice,
 } from "@/components/admin/coord/CoordAdminOnly";
+import { isSelfDecided } from "../_lib/authorship";
+import { formatWhen } from "../_lib/format";
 import { DIRECTION_META, TIER_DESCRIPTIONS } from "../types";
 import type { PromptDocumentProposal, ProposalTier } from "../types";
 import {
@@ -84,7 +86,10 @@ function TierChip({ tier }: { tier: ProposalTier | null }) {
  * Every authored `data-testid` is carried across unchanged (D4a):
  * `proposal-<id>`, `proposal-direction`, `proposal-tier-change`,
  * `proposal-content`, `proposal-stale`, `proposal-decision-note`,
- * `proposal-reject`, `proposal-approve`.
+ * `proposal-reject`, `proposal-approve`. `proposal-decided-by` was added by
+ * plan `2026-09-13-policy-proposals-agent-decidable-dial-driven-self-retiring`
+ * Phase 4 and carries `data-self-decided`, the machine-readable half of the
+ * author-decided line.
  */
 export function ProposalCard({
   proposal,
@@ -106,9 +111,32 @@ export function ProposalCard({
   };
   const status = deriveProposalStatus(proposal, liveVersion);
 
-  // Stale = the document moved since the edit was authored, so the wording this
-  // proposal assumed is no longer what is deployed.
-  const stale = liveVersion !== null && liveVersion > proposal.base_version;
+  /*
+   * Stale = the document moved since the edit was authored, so the wording this
+   * proposal assumed is no longer what is deployed.
+   *
+   * coord's TERMINAL retirement is excluded deliberately. The warning panel
+   * below tells the reader to re-read the document *before approving*, and a
+   * retired proposal cannot be approved by anyone — repeating an instruction
+   * about an action that no longer exists is noise, and the row's own badge
+   * already says `retired` (`../proposalStatus.ts`).
+   */
+  const stale =
+    proposal.status !== "stale" &&
+    liveVersion !== null &&
+    liveVersion > proposal.base_version;
+
+  /*
+   * INFORMATION, not a warning. Ownership stopped being a criterion for
+   * deciding a proposal, so the proposer deciding its own is a permitted and
+   * expected outcome — it is stated in the provenance line, in the same muted
+   * chrome as everything else there, with no badge, colour or icon. Styling it
+   * as a caution would re-assert by design what the fleet deliberately removed.
+   *
+   * Coord's `self_decided` wins over the string comparison when it is served;
+   * `isSelfDecided` owns that precedence and the conservative blank handling.
+   */
+  const selfDecided = isSelfDecided(proposal);
 
   return (
     <RecordRow
@@ -269,22 +297,41 @@ export function ProposalCard({
           </CoordAdminOnly>
         }
         history={
-          <p className="text-xs text-muted-foreground">
-            Proposed by{" "}
-            <span className="font-medium text-foreground">
-              {proposal.proposed_by}
-            </span>{" "}
-            · authored against v{proposal.base_version}
-            {/* A load in flight is not a failed lookup — say nothing until it
-                settles rather than flashing "could not be read". */}
-            {liveVersion === null
-              ? loading
-                ? ""
-                : " · the document's current version could not be read"
-              : liveVersion === proposal.base_version
-                ? " · still the current version"
-                : ""}
-          </p>
+          <div className="space-y-1">
+            <p className="text-xs text-muted-foreground">
+              Proposed by{" "}
+              <span className="font-medium text-foreground">
+                {proposal.proposed_by}
+              </span>{" "}
+              · authored against v{proposal.base_version}
+              {/* A load in flight is not a failed lookup — say nothing until it
+                  settles rather than flashing "could not be read". */}
+              {liveVersion === null
+                ? loading
+                  ? ""
+                  : " · the document's current version could not be read"
+                : liveVersion === proposal.base_version
+                  ? " · still the current version"
+                  : ""}
+            </p>
+            {proposal.decided_by && (
+              <p
+                className="text-xs text-muted-foreground"
+                data-testid="proposal-decided-by"
+                data-self-decided={selfDecided ? "true" : "false"}
+              >
+                Decided by{" "}
+                <span className="font-medium text-foreground">
+                  {proposal.decided_by}
+                </span>
+                {selfDecided ? " — decided by its author" : ""}
+                {proposal.decided_at
+                  ? ` · ${formatWhen(proposal.decided_at)}`
+                  : ""}
+                {proposal.decision_note ? ` · ${proposal.decision_note}` : ""}
+              </p>
+            )}
+          </div>
         }
         raw={
           <div className="font-mono text-[10px] text-muted-foreground/60 break-all">

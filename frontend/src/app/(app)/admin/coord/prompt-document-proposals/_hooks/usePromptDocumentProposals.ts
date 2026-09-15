@@ -18,6 +18,13 @@ const PROPOSALS = `${API}/coord/prompt-document-proposals`;
 const WRITES = `${API}/coord/prompt-document-writes`;
 const DOCUMENTS = `${API}/coord/prompt-documents`;
 
+/**
+ * How many retired proposals the collapsed section asks for. Small on purpose:
+ * it is a "this did not silently vanish" receipt for recent retirements, not an
+ * archive — the section's own heading says "recently".
+ */
+const STALE_LIMIT = 20;
+
 /** `/coord/prompt-documents/:kind/:name`, each segment encoded. */
 function docPath(kind: string, name: string): string {
   return `${DOCUMENTS}/${encodeURIComponent(kind)}/${encodeURIComponent(name)}`;
@@ -75,6 +82,13 @@ export type WriteDiffState =
  * the page renders separately. Neither is collapsed into an empty queue: "no
  * pending proposals" is a claim this page only makes when it actually knows.
  *
+ * The retired read (`?status=stale`) carries its OWN pair of those states —
+ * `staleUnavailable` and `staleRead` — and deliberately shares neither with the
+ * pending queue. It reads a status coord may not have shipped yet, so its
+ * failure is routine and local; folding it into `error` would let a section
+ * that does not exist yet report the working queue above it as broken. See
+ * `loadStaleProposals`.
+ *
  * ## Why undo is a PATCH, not a coord `restore` call
  *
  * coord has no revert-to-version route. Its `restore-default` re-seeds from the
@@ -86,6 +100,22 @@ export type WriteDiffState =
  */
 export function usePromptDocumentProposals() {
   const [proposals, setProposals] = useState<PromptDocumentProposal[]>([]);
+  /** Proposals coord retired itself — the terminal `stale` status. */
+  const [staleProposals, setStaleProposals] = useState<PromptDocumentProposal[]>(
+    []
+  );
+  /**
+   * Why the retired section could not be read, or `null` when it was read
+   * fine. Non-null ⇒ the section renders UNKNOWN; it must never render as
+   * "none retired recently", which would be a claim we cannot make.
+   */
+  const [staleUnavailable, setStaleUnavailable] = useState<string | null>(null);
+  /**
+   * Has the retired read ever COMPLETED (either way)? Distinct from `loading`,
+   * which goes false as soon as the batch settles — before the first paint the
+   * section knows nothing, and "nothing read yet" is not "nothing retired".
+   */
+  const [staleRead, setStaleRead] = useState(false);
   const [writes, setWrites] = useState<PromptDocumentWrite[]>([]);
   /** `(kind/name) → current_version` for staleness checks. */
   const [liveVersions, setLiveVersions] = useState<Map<string, number>>(
@@ -144,6 +174,55 @@ export function usePromptDocumentProposals() {
       setError(message(err, "Failed to load proposals"));
       setUnavailable(null);
       setUnavailableKind(null);
+    }
+  }, []);
+
+  /**
+   * The retired queue — proposals coord closed itself when their target
+   * document moved (`status='stale'`).
+   *
+   * ## Deploy-order tolerance is the point of this function's shape
+   *
+   * Vercel and ECS deploy independently, so a console carrying this read will
+   * run against a coord that predates the `stale` status. That coord's
+   * `get_list` rejects the value outright — `400 invalid status` — which the
+   * web proxy forwards verbatim (it re-encodes no vocabulary, deliberately).
+   *
+   * Every failure here is therefore recorded as "this SECTION is unavailable"
+   * and NOTHING else:
+   *
+   * * it never touches `error`, which drives the pending queue's banner. A
+   *   400 on a section that does not exist yet must not make the working queue
+   *   above it look broken — that false alarm is precisely what made the plan
+   *   prefer the tolerant read over waiting for coord's deploy;
+   * * it never leaves a failed read looking empty. `staleUnavailable` is set
+   *   and the section says so [`verification-and-evidence`
+   *   `silent-empty-is-unknown` — an unreadable surface rendered as "none" is
+   *   the defect being avoided].
+   *
+   * The consequence is that this read has no ordering dependency on coord at
+   * all: against an older coord the section reads "cannot be read"; against a
+   * newer one it fills.
+   */
+  const loadStaleProposals = useCallback(async () => {
+    try {
+      const data = await httpClient.get<ListProposalsResponse>(
+        `${PROPOSALS}?status=stale&limit=${STALE_LIMIT}`
+      );
+      setStaleProposals(data.proposals ?? []);
+      // `unavailable` is coord's own "I could not answer" note — an empty list
+      // beside it means "cannot see", exactly as on the pending queue.
+      setStaleUnavailable(data.unavailable ?? null);
+    } catch (err) {
+      // Includes the pre-deploy `400 invalid status`. Drop any rows from a
+      // previous good read rather than showing them under an UNKNOWN heading:
+      // a list we can no longer confirm is not a list we should keep asserting.
+      setStaleProposals([]);
+      setStaleUnavailable(
+        message(err, "Retired proposals could not be read from coord")
+      );
+    } finally {
+      setStaleRead(true);
     }
   }, []);
 
@@ -214,9 +293,14 @@ export function usePromptDocumentProposals() {
 
   const reload = useCallback(async () => {
     setLoading(true);
-    await Promise.all([loadProposals(), loadWrites(), loadLiveVersions()]);
+    await Promise.all([
+      loadProposals(),
+      loadStaleProposals(),
+      loadWrites(),
+      loadLiveVersions(),
+    ]);
     setLoading(false);
-  }, [loadProposals, loadWrites, loadLiveVersions]);
+  }, [loadProposals, loadStaleProposals, loadWrites, loadLiveVersions]);
 
   useEffect(() => {
     reload();
@@ -472,6 +556,9 @@ export function usePromptDocumentProposals() {
 
   return {
     proposals,
+    staleProposals,
+    staleUnavailable,
+    staleRead,
     writes,
     loading,
     acting,

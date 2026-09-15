@@ -19,16 +19,22 @@ const ALL: ProposalKind[] = [
   "loosening",
   "unclassifiable",
   "stale",
+  "retired",
   "unrecognised",
 ];
 
-function proposal(
-  over: Partial<PromptDocumentProposal> = {}
-): Pick<PromptDocumentProposal, "direction" | "base_version"> {
-  return { direction: "loosening", base_version: 3, ...over } as Pick<
-    PromptDocumentProposal,
-    "direction" | "base_version"
-  >;
+type DerivableProposal = Pick<
+  PromptDocumentProposal,
+  "direction" | "base_version"
+> &
+  Partial<Pick<PromptDocumentProposal, "status">>;
+
+function proposal(over: Partial<PromptDocumentProposal> = {}): DerivableProposal {
+  return {
+    direction: "loosening",
+    base_version: 3,
+    ...over,
+  } as DerivableProposal;
 }
 
 describe("proposal palette", () => {
@@ -107,5 +113,70 @@ describe("the two judgements the palette audit cannot make", () => {
     expect(deriveProposalStatus(proposal({ base_version: 4 }), 4).kind).toBe(
       "loosening"
     );
+  });
+});
+
+/**
+ * coord's TERMINAL `stale` status (plan
+ * `2026-09-13-policy-proposals-agent-decidable-dial-driven-self-retiring`,
+ * Phase 1) versus the DERIVED `stale` kind this module has always had.
+ *
+ * The two are easy to conflate — same word, and the derived one fires on
+ * exactly the condition that produces the terminal one — but they ask opposite
+ * things of the reader, so the difference is pinned here rather than left to
+ * the module doc.
+ */
+describe("a proposal coord already retired", () => {
+  it("reads as `retired`, and asks nothing of anyone", () => {
+    const s = deriveProposalStatus(
+      proposal({ base_version: 3, status: "stale" }),
+      9
+    );
+    expect(s.kind).toBe("retired");
+    // NOT `author`. coord closed it; there is no decision left to make, and a
+    // red row would be demanding an action that no longer exists.
+    expect(s.attention).toBe("none");
+    expect(PROPOSAL_ATTENTION_BY_KIND.retired).toBe("none");
+    expect(/\bbg-(red|amber)-/.test(PROPOSAL_KIND_CLASS.retired)).toBe(false);
+    expect(s.reason).toMatch(/retired/i);
+    expect(s.reason).toContain("v9");
+  });
+
+  it("does NOT need a readable live version to be known dead", () => {
+    // The whole reason the terminal arm sits above the version comparison:
+    // `liveVersion === null` is UNKNOWN for staleness we would have to DERIVE,
+    // but coord's own verdict is not a derivation. A retired row that fell
+    // through to `loosening` here would render as approvable.
+    const s = deriveProposalStatus(
+      proposal({ base_version: 3, status: "stale" }),
+      null
+    );
+    expect(s.kind).toBe("retired");
+    expect(s.reason).toMatch(/can no longer be approved/i);
+  });
+
+  it("outranks the direction, `unrecognised` included", () => {
+    expect(
+      deriveProposalStatus(
+        proposal({
+          direction: "sideways" as PromptDocumentProposal["direction"],
+          status: "stale",
+        }),
+        9
+      ).kind
+    ).toBe("retired");
+  });
+
+  it("leaves the derived race-window kind intact for a PENDING row", () => {
+    // The derived kind is not made redundant by the terminal one: coord retires
+    // inside the document write, while this page holds a list fetched before
+    // it. In that window the row is still `pending` on screen and the only
+    // evidence is the version comparison — which must still go red.
+    const s = deriveProposalStatus(
+      proposal({ base_version: 3, status: "pending" }),
+      7
+    );
+    expect(s.kind).toBe("stale");
+    expect(s.attention).toBe("author");
   });
 });
