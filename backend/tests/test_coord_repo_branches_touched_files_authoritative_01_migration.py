@@ -8,8 +8,9 @@ coord's citation re-enrich pass stamps as its durable skip rule. What is pinned:
 2. ``upgrade()`` adds exactly that column (no default, no backfill) plus its
    comment, idempotently; ``downgrade()`` drops exactly that column;
 3. live: the column exists nullable with no default and carries the comment
-   the source authors, existing rows read NULL, and up/down/up leaves no
-   residue.
+   the source authors, and up/down/up leaves no residue. "No backfill" is
+   pinned structurally (upgrade() has exactly the ADD COLUMN and the COMMENT,
+   no UPDATE); the fresh test database has no rows to read back.
 
 Structural tests always run; the live ones self-skip without a test Postgres
 (``QONTINUI_TEST_PG=host:port``) and REPORT the skip.
@@ -23,7 +24,6 @@ from pathlib import Path
 
 import pytest
 from sqlalchemy import text
-from sqlalchemy.engine import Engine
 
 from tests._alembic_harness import (
     admin_database_url,
@@ -154,14 +154,6 @@ def test_comment_states_the_skip_contract() -> None:
 # ---------------------------------------------------------------------------
 
 
-def _count_non_null(engine: Engine) -> int:
-    with engine.connect() as conn:
-        value = conn.execute(
-            text(f"SELECT count(*) FROM {_SCHEMA}.{_TABLE} WHERE {_COLUMN} IS NOT NULL")
-        ).scalar_one()
-    return int(value)
-
-
 @_needs_pg
 def test_column_shape_and_comment_after_upgrade() -> None:
     with ephemeral_database(admin_database_url(), "rbtfa01_shape") as (engine, db_url):
@@ -174,7 +166,6 @@ def test_column_shape_and_comment_after_upgrade() -> None:
         assert column_comment(engine, _TABLE, _COLUMN) == comment_body_from_source(
             _revision_source(), f"{_SCHEMA}.{_TABLE}.{_COLUMN}"
         )
-        assert _count_non_null(engine) == 0, "no backfill"
 
 
 @_needs_pg
