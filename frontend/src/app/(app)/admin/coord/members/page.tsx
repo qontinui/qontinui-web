@@ -1689,6 +1689,177 @@ function CognitoGroupMembers({
 const HOME_GROUP_SUFFIX = "-home";
 
 /**
+ * What deleting one Cognito group would take down, POOL-WIDE — the delete's
+ * own verdict, read ahead of the click from
+ * `GET /coord/cognito/groups/{name}/blast-radius`.
+ *
+ * Partial by design: slugs are named for the caller's OWN tenant only and
+ * every other tenant is an integer, so the two `*_total` fields are the honest
+ * sizes and the lists never are. A reader that renders a list as "everything
+ * affected" is reading it wrong.
+ */
+interface BlastRadiusVerdict {
+  group_name: string;
+  /** ROW count, pool-wide. */
+  mapped_total: number;
+  /** Own-tenant slugs, sorted + deduplicated by the backend. */
+  mapped_own_tenant: string[];
+  /** ROWS in tenants the caller does not administer. */
+  mapped_other_tenant_rows: number;
+  /** ROWS whose tenant is not materialised yet. */
+  mapped_unmaterialized_rows: number;
+  /** Distinct TENANTS the delete would leave with no admin at all. */
+  strands_total: number;
+  strands_own_tenant: string[];
+  strands_other_tenant_count: number;
+}
+
+/**
+ * A short cause for a failed blast-radius PREVIEW read.
+ *
+ * The backend's 502 detail is structured (`{error, coord_status, message}`)
+ * and its `message` is the delete's own refusal sentence. For a preview the
+ * useful part is the code and coord's status — "mapping_check_unavailable,
+ * coord answered 404" tells an operator the route is not deployed yet; the
+ * message's "Nothing was deleted" tells them about a click they never made.
+ * Anything not in that shape falls back to `backendErrorMessage`.
+ */
+async function blastRadiusReadCause(res: Response): Promise<string> {
+  const text = await res.text();
+  try {
+    const detail = (JSON.parse(text) as { detail?: unknown })?.detail;
+    if (detail && typeof detail === "object") {
+      const { error, coord_status, reason } = detail as {
+        error?: unknown;
+        coord_status?: unknown;
+        reason?: unknown;
+      };
+      if (typeof error === "string" && error) {
+        // Three shapes, and ABSENT is not `null`. `mapping_check_unavailable`
+        // always carries `coord_status` — a number for coord's own answer,
+        // `null` when coord never completed one. `mapping_check_unreadable`
+        // carries no `coord_status` at all, deliberately: coord DID answer,
+        // with a body that is not the verdict, and it carries a `reason`
+        // instead. Reading absent as `null` would tell the operator coord
+        // never answered in exactly the case where it did.
+        if (typeof coord_status === "number") {
+          return `${error}, coord answered ${coord_status}`;
+        }
+        if (coord_status === null) {
+          return `${error}, coord never completed an answer`;
+        }
+        return typeof reason === "string" && reason
+          ? `${error}: ${reason}`
+          : error;
+      }
+    }
+  } catch {
+    // Not JSON — fall through to the generic reader, which returns the raw
+    // body when it is a plain-text gateway sentence.
+  }
+  return messageFromErrorBody(text, res.status);
+}
+
+/**
+ * The dialog's read of the verdict. `idle` while the dialog is closed;
+ * `error` is UNKNOWN — a failed, refused or unreadable read — and is never
+ * rendered as "breaks nothing".
+ */
+type BlastRadiusRead =
+  | { state: "idle" }
+  | { state: "loading" }
+  | { state: "error"; message: string }
+  | { state: "ok"; verdict: BlastRadiusVerdict };
+
+function isCount(v: unknown): v is number {
+  // `typeof true === "boolean"`, so a boolean never passes — but say it
+  // anyway: the backend refuses a boolean count for the same reason
+  // (`isinstance(True, int)` in Python), and the two sides should read alike.
+  return typeof v === "number" && Number.isInteger(v) && v >= 0;
+}
+
+function isSlugList(v: unknown): v is string[] {
+  return Array.isArray(v) && v.every((s) => typeof s === "string" && s !== "");
+}
+
+/**
+ * The verdict out of a 200 body — or `null` when the body is not one.
+ *
+ * A successful STATUS is not a successful READ. The backend has already
+ * validated coord's answer field by field and would have answered 502 rather
+ * than pass a malformed one through, so this is a shape check on OUR proxy's
+ * body, not a re-run of coord's contract. It matters for the same reason the
+ * section's `requireRows` does: `?? 0` on a missing count would fabricate
+ * exactly the all-clear the dialog exists to stop fabricating.
+ */
+function parseBlastRadiusVerdict(body: unknown): BlastRadiusVerdict | null {
+  if (!body || typeof body !== "object") return null;
+  const b = body as Record<string, unknown>;
+  if (
+    typeof b.group_name !== "string" ||
+    !isCount(b.mapped_total) ||
+    !isSlugList(b.mapped_own_tenant) ||
+    !isCount(b.mapped_other_tenant_rows) ||
+    !isCount(b.mapped_unmaterialized_rows) ||
+    !isCount(b.strands_total) ||
+    !isSlugList(b.strands_own_tenant) ||
+    !isCount(b.strands_other_tenant_count)
+  ) {
+    return null;
+  }
+  return {
+    group_name: b.group_name,
+    mapped_total: b.mapped_total,
+    mapped_own_tenant: b.mapped_own_tenant,
+    mapped_other_tenant_rows: b.mapped_other_tenant_rows,
+    mapped_unmaterialized_rows: b.mapped_unmaterialized_rows,
+    strands_total: b.strands_total,
+    strands_own_tenant: b.strands_own_tenant,
+    strands_other_tenant_count: b.strands_other_tenant_count,
+  };
+}
+
+function pluralNoun(n: number, noun: string): string {
+  return `${noun}${n === 1 ? "" : "s"}`;
+}
+
+function plural(n: number, noun: string): string {
+  return `${n} ${pluralNoun(n, noun)}`;
+}
+
+/**
+ * Name what may be named and COUNT the rest — the same discipline as the
+ * backend's `_render_affected`, so the preview and the 409 it previews say
+ * the same thing about the same verdict. `unit` is explicit because guard 1
+ * counts ROWS (one group holds several rows in one tenant) and guard 3 counts
+ * TENANTS; "3 other tenants" over a row count would be false in the one
+ * sentence the operator acts on.
+ */
+function renderAffected(
+  named: string[],
+  other: number,
+  unit: "mapping" | "tenant",
+  unmaterialized = 0
+): string {
+  const parts: string[] = [];
+  if (named.length) parts.push(named.join(", "));
+  if (other) {
+    const more = named.length ? "further " : "";
+    parts.push(
+      unit === "mapping"
+        ? `${other} ${more}${pluralNoun(other, "mapping")} in tenants you do not administer`
+        : `${other} ${more}${pluralNoun(other, "tenant")} you do not administer`
+    );
+  }
+  if (unmaterialized) {
+    parts.push(
+      `${plural(unmaterialized, "mapping")} into tenants that do not exist yet`
+    );
+  }
+  return parts.length ? parts.join(" and ") : "a tenant";
+}
+
+/**
  * The human sentence out of a backend error response.
  *
  * The group-delete guards answer 409 with a STRUCTURED detail
@@ -1704,7 +1875,12 @@ const HOME_GROUP_SUFFIX = "-home";
  * gateway or proxy error IS the sentence, so that one is returned as-is.
  */
 async function backendErrorMessage(res: Response): Promise<string> {
-  const text = await res.text();
+  return messageFromErrorBody(await res.text(), res.status);
+}
+
+/** The body-level half of {@link backendErrorMessage}, for callers that
+ * have already consumed `res.text()`. */
+function messageFromErrorBody(text: string, status: number): string {
   try {
     const parsed = JSON.parse(text) as { detail?: unknown };
     const detail = parsed?.detail;
@@ -1718,12 +1894,12 @@ async function backendErrorMessage(res: Response): Promise<string> {
     // or a brace-blob where the operator expects a reason, which is the same
     // defect as `[object Object]` one shape along. The status is at least true,
     // and it is what these call sites showed before they were routed here.
-    return `HTTP ${res.status}`;
+    return `HTTP ${status}`;
   } catch {
     // Not JSON — a plain-text gateway or proxy body IS the message, so fall
     // through to the raw body rather than discarding it for the status.
   }
-  return text.trim() || `HTTP ${res.status}`;
+  return text.trim() || `HTTP ${status}`;
 }
 
 /**
@@ -1744,6 +1920,18 @@ async function backendErrorMessage(res: Response): Promise<string> {
  *  - **Delete goes through {@link ConfirmDestructiveDialog}** and requires
  *    typing the group name. `DestructiveButton` alone only blocks synthetic
  *    clicks; it never asked a human anything.
+ *  - **The confirmation shows the delete's OWN verdict.** Opening the dialog
+ *    reads `GET /coord/cognito/groups/{name}/blast-radius` — the pool-wide
+ *    verdict the backend's guards are derived from — rather than the section's
+ *    `group-tenant-roles` read, which is TENANT-SCOPED and so can say "no
+ *    mappings" about a group mapped into another tenant. Until this the
+ *    dialog under-reported exactly as the guards once did (plan
+ *    `2026-08-28-pool-wide-blast-radius-read-for-group-delete`, open question
+ *    2): it said nothing referenced the group and the delete then 409'd.
+ *    The row badges still come from the section's read — it is one call for
+ *    every group and correct for what it names, the caller's own tenant —
+ *    which is why their copy says "in your tenant" rather than claiming the
+ *    pool.
  */
 function CognitoGroupItem({
   group,
@@ -1781,6 +1969,9 @@ function CognitoGroupItem({
   const [deleting, setDeleting] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [allowHomeGroup, setAllowHomeGroup] = useState(false);
+  const [blastRadius, setBlastRadius] = useState<BlastRadiusRead>({
+    state: "idle",
+  });
   // Bump to force the members sub-list to refetch after an add.
   const [membersKey, setMembersKey] = useState(0);
 
@@ -1788,6 +1979,67 @@ function CognitoGroupItem({
   const homeTenantSlug = isHomeGroup
     ? group.group_name.slice(0, -HOME_GROUP_SUFFIX.length)
     : null;
+
+  // ONE read, at the moment of decision. Opening the dialog is what asks; the
+  // blast-radius route is per-group, so reading it for every row on the
+  // section's behalf would be N calls for a preview nobody has opened. A
+  // close resets to `idle` so a re-open reads again — the operator's usual
+  // path past a mapped refusal is "remove the mapping, re-open", and a cached
+  // verdict would show them the refusal they just cleared.
+  useEffect(() => {
+    if (!confirmOpen) {
+      // Functional so a row that is already idle (every row, at mount) does
+      // not re-render over a fresh-but-equal object.
+      setBlastRadius((prev) => (prev.state === "idle" ? prev : { state: "idle" }));
+      return;
+    }
+    let cancelled = false;
+    setBlastRadius({ state: "loading" });
+    void (async () => {
+      try {
+        const res = await httpClient.fetch(
+          `${OPERATIONS_API}/coord/cognito/groups/${encodeURIComponent(
+            group.group_name
+          )}/blast-radius`
+        );
+        // A 502 here is the backend's own `mapping_check_unavailable` /
+        // `mapping_check_unreadable` — coord could not say, so neither can
+        // we. Render the CAUSE (`error` + coord's status), not the detail's
+        // `message`: that prose is the DELETE's refusal ("Refused … Nothing
+        // was deleted …"), written for the moment after a click, and in a
+        // preview nothing was attempted.
+        if (!res.ok) throw new Error(await blastRadiusReadCause(res));
+        const verdict = parseBlastRadiusVerdict(await res.json());
+        if (verdict === null) {
+          throw new Error("the blast-radius body is not a verdict");
+        }
+        if (!cancelled) setBlastRadius({ state: "ok", verdict });
+      } catch (err) {
+        log.warn("read cognito group blast radius failed", err);
+        if (!cancelled) {
+          setBlastRadius({
+            state: "error",
+            message: err instanceof Error ? err.message : String(err),
+          });
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [confirmOpen, group.group_name]);
+
+  // A verdict the backend is CERTAIN to refuse: guard 1 (mapped; the
+  // dashboard sends no `allow_mapped`) or guard 3 (stranded; no override
+  // exists). Same reasoning as the `-home` gate below — a confirm that is
+  // guaranteed to 409 teaches operators to click through and read the toast.
+  // Unknown (`error`) deliberately does NOT disable: the backend re-runs the
+  // check and refuses on its own if coord still cannot answer, so blocking
+  // here would only turn a recoverable delete into a dead end.
+  const verdictRefuses =
+    blastRadius.state === "ok" &&
+    (blastRadius.verdict.mapped_total > 0 ||
+      blastRadius.verdict.strands_total > 0);
 
   const addUser = useCallback(async () => {
     const email = addEmail.trim();
@@ -1930,12 +2182,16 @@ function CognitoGroupItem({
                 reading tenant mappings…
               </Badge>
             ) : mappings.length === 0 ? (
+              // "in your tenant", not "no tenant mappings": the section's read
+              // is coord's TENANT-SCOPED list, so this badge cannot speak for
+              // the pool. The confirmation dialog reads the pool-wide verdict
+              // and is where the un-scoped sentence lives.
               <Badge
                 variant="outline"
                 className="text-[0.7rem] font-normal text-muted-foreground"
                 data-testid={`cognito-group-unmapped-${group.group_name}`}
               >
-                no tenant mappings
+                no mappings in your tenant
               </Badge>
             ) : (
               mappings.map((m) => (
@@ -2008,8 +2264,9 @@ function CognitoGroupItem({
         // The `-home` acknowledgement is a HARD gate in the UI, not a hint:
         // the backend refuses without `allow_home_group`, and shipping a
         // confirm that is guaranteed to 409 would teach operators to click
-        // through the dialog and read the toast instead.
-        confirmDisabled={isHomeGroup && !allowHomeGroup}
+        // through the dialog and read the toast instead. `verdictRefuses` is
+        // the same rule applied to the two guards the dialog can now SEE.
+        confirmDisabled={(isHomeGroup && !allowHomeGroup) || verdictRefuses}
         onConfirm={() => void deleteGroup()}
         extra={
           isHomeGroup ? (
@@ -2043,60 +2300,90 @@ function CognitoGroupItem({
                     memberCount === 1 ? "" : "s"
                   } lose this group at their next login.`}
           </li>
-          {mappingsError ? (
+          {blastRadius.state === "error" ? (
             // The bullet that would otherwise say "nothing references this
             // group" is the one an operator reads as permission to proceed.
             // When the read failed we do not know that, so we say so — and we
             // name the guard that DOES know, so "unknown" does not read as
             // "unguarded". The confirm stays enabled deliberately: the backend
-            // re-runs this check server-side and answers 502
-            // `mapping_check_unavailable` if IT cannot read the table either,
-            // so blocking here would only convert a recoverable delete into a
+            // re-runs this same check and answers 502
+            // `mapping_check_unavailable` if IT cannot read coord either, so
+            // blocking here would only convert a recoverable delete into a
             // dead end while implying the dashboard is the guard.
             <li
               className="text-amber-700 dark:text-amber-400"
               data-testid={`cognito-delete-confirm-mappings-${group.group_name}`}
             >
-              coord&apos;s tenant mappings could not be read — treat this as
-              unknown, not as &ldquo;none&rdquo;. The delete is still checked
-              server-side and will be refused if any mapping exists.
+              coord&apos;s blast radius could not be read (
+              {blastRadius.message}) — treat it as unknown, not as
+              &ldquo;none&rdquo;. The delete is still checked server-side and
+              will be refused if coord cannot answer there either.
             </li>
-          ) : mappings === null ? (
+          ) : blastRadius.state !== "ok" ? (
             <li
               data-testid={`cognito-delete-confirm-mappings-${group.group_name}`}
             >
-              Reading coord&apos;s tenant mappings…
+              Reading coord&apos;s pool-wide blast radius…
             </li>
-          ) : mappings.length === 0 ? (
+          ) : blastRadius.verdict.mapped_total === 0 ? (
+            // Now a TRUE sentence: this is coord's pool-wide answer, not the
+            // caller's own tenant's slice of it.
             <li
               data-testid={`cognito-delete-confirm-mappings-${group.group_name}`}
             >
-              No coord tenant mappings reference this group.
+              No coord tenant mappings reference this group — pool-wide, not
+              only in your tenant.
             </li>
           ) : (
-            // The SAME testid rides every arm, this one included, so a query
-            // for it is total over the state space. Leaving it off here would
-            // make `queryByTestId(...) === null` mean "there ARE mappings" —
-            // the opposite of what a reader assumes, and a way for a future
-            // `toBeNull()` assertion to pass vacuously on the mapped path.
-            //
-            // NOTE for tests: this arm is the ONLY one that can render the id
-            // more than once (one `<li>` per mapping), and `getByTestId`
-            // THROWS on multiple matches. A test that reaches the mapped path
-            // with more than one mapping must use `getAllByTestId`. The other
-            // three arms are always single, which is why the singular query is
-            // safe there.
-            mappings.map((m) => (
-              <li
-                key={`${m.tenant_slug}:${m.role}`}
-                data-testid={`cognito-delete-confirm-mappings-${group.group_name}`}
-              >
-                Grants <strong>{tierLabel(m.role)}</strong> in{" "}
-                <span className="font-mono">{m.tenant_slug}</span> — the backend
-                will refuse this delete until that mapping is removed above.
-              </li>
-            ))
+            // The SAME testid rides every arm, so a query for it is total over
+            // the state space; `queryByTestId(...) === null` never means
+            // "there ARE mappings".
+            <li
+              data-testid={`cognito-delete-confirm-mappings-${group.group_name}`}
+            >
+              Mapped to{" "}
+              <strong>
+                {renderAffected(
+                  blastRadius.verdict.mapped_own_tenant,
+                  blastRadius.verdict.mapped_other_tenant_rows,
+                  "mapping",
+                  blastRadius.verdict.mapped_unmaterialized_rows
+                )}
+              </strong>{" "}
+              in coord&apos;s group → tenant → role table (
+              {plural(blastRadius.verdict.mapped_total, "mapping")} in all).
+              The backend will refuse this delete until those mappings are
+              removed
+              {blastRadius.verdict.mapped_own_tenant.length
+                ? " — the ones in your tenant, above"
+                : " — by an administrator of the tenants they are in"}
+              .
+            </li>
           )}
+          {blastRadius.state === "ok" &&
+          blastRadius.verdict.strands_total > 0 ? (
+            // Guard 3 has NO override, so this is the one bullet that is not
+            // "remove something first, then come back": the fix is to grant
+            // another group admin on the tenant. Named separately from the
+            // mapping bullet because it counts TENANTS, not rows.
+            <li
+              className="text-amber-700 dark:text-amber-400"
+              data-testid={`cognito-delete-confirm-strands-${group.group_name}`}
+            >
+              The only thing conferring admin on{" "}
+              <strong>
+                {renderAffected(
+                  blastRadius.verdict.strands_own_tenant,
+                  blastRadius.verdict.strands_other_tenant_count,
+                  "tenant"
+                )}
+              </strong>{" "}
+              ({plural(blastRadius.verdict.strands_total, "tenant")} in all).
+              Deleting it would leave nobody able to repair the mapping; the
+              backend refuses this with no override. Grant another group admin
+              on them first.
+            </li>
+          ) : null}
           {isHomeGroup ? (
             <li>
               Pins its members&apos; home tenant to{" "}
