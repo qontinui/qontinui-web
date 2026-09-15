@@ -316,3 +316,107 @@ describe("ProposalCard — a typed note is not lost on collapse", () => {
     );
   });
 });
+
+/**
+ * Plan `2026-09-13-policy-proposals-agent-decidable-dial-driven-self-retiring`,
+ * Phase 4 — the two things that changed under this card.
+ *
+ * Both are the same class of failure if they regress: the row keeps rendering,
+ * and says something untrue quietly. A retired proposal that still shows an
+ * "approve before it moves" warning invites an action that cannot happen; an
+ * author-decided row painted as a caution re-asserts an ownership rule the
+ * fleet deliberately removed.
+ */
+describe("ProposalCard — coord's terminal `stale`", () => {
+  it("badges a retired proposal calm, and drops the pre-approval warning", () => {
+    renderCard(proposal({ status: "stale", base_version: 4 }), {
+      liveVersion: 9,
+    });
+    const badge = screen.getByTestId("proposal-direction");
+    expect(badge.textContent ?? "").toMatch(/retired/i);
+    expect(badge.innerHTML).not.toMatch(/\bbg-(red|amber)-/);
+
+    toggleRow();
+    // The panel's text is "read the current wording BEFORE approving". Nobody
+    // can approve this one — coord closed it — so repeating the instruction
+    // would be noise attached to an action that no longer exists.
+    expect(screen.queryByTestId("proposal-stale")).toBeNull();
+    // The raw comparator verdict stays machine-readable either way.
+    expect(badge.getAttribute("data-direction")).toBe("loosening");
+  });
+
+  it("still warns on a PENDING row the document has moved past", () => {
+    // The race window the derived kind exists for — the same fixture minus
+    // coord's verdict. Without this, "retired drops the warning" could be
+    // satisfied by dropping the warning entirely.
+    renderCard(proposal({ status: "pending", base_version: 4 }), {
+      liveVersion: 9,
+    });
+    toggleRow();
+    expect(screen.getByTestId("proposal-stale")).toBeTruthy();
+  });
+});
+
+describe("ProposalCard — a proposal decided by its own author", () => {
+  it("says so plainly, as information rather than a caution", () => {
+    renderCard(
+      proposal({
+        status: "approved",
+        decided_by: "merge-train-steward",
+        decided_at: "2026-09-14T09:00:00Z",
+        decision_note: "second opinion from a fresh-context subagent",
+      })
+    );
+    toggleRow();
+    const line = screen.getByTestId("proposal-decided-by");
+    expect(line.textContent ?? "").toMatch(/decided by its author/i);
+    expect(line.getAttribute("data-self-decided")).toBe("true");
+    // Ownership is no longer a criterion for deciding a proposal, so this is a
+    // permitted outcome stated in the provenance line — no alarm chrome, no
+    // icon, no colour.
+    expect(line.className).not.toMatch(/\b(text|bg|border)-(red|amber)-/);
+    expect(line.innerHTML).not.toMatch(/\b(bg|text)-(red|amber)-/);
+    expect(line.querySelector("svg")).toBeNull();
+    // coord's note travels with the decision rather than being dropped.
+    expect(line.textContent ?? "").toMatch(/fresh-context subagent/);
+  });
+
+  it("does not claim self-decision when a DIFFERENT actor decided", () => {
+    renderCard(
+      proposal({
+        status: "approved",
+        decided_by: "operator:josh@qontinui.io",
+        decided_at: "2026-09-14T09:00:00Z",
+      })
+    );
+    toggleRow();
+    const line = screen.getByTestId("proposal-decided-by");
+    expect(line.getAttribute("data-self-decided")).toBe("false");
+    expect(line.textContent ?? "").not.toMatch(/its author/i);
+  });
+
+  it("prefers coord's `self_decided` over comparing the two strings", () => {
+    // One principal can reach coord under two spellings, and coord computed the
+    // answer from the identities it actually stamped. A string comparison that
+    // silently overruled the server's verdict would report the WRONG fact with
+    // full confidence.
+    renderCard(
+      proposal({
+        status: "approved",
+        proposed_by: "session:aaaa",
+        decided_by: "agent:aaaa",
+        self_decided: true,
+      })
+    );
+    toggleRow();
+    expect(
+      screen.getByTestId("proposal-decided-by").getAttribute("data-self-decided")
+    ).toBe("true");
+  });
+
+  it("shows no decided line at all while the proposal is pending", () => {
+    renderCard(proposal({ status: "pending" }));
+    toggleRow();
+    expect(screen.queryByTestId("proposal-decided-by")).toBeNull();
+  });
+});

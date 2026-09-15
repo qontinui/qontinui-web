@@ -9821,9 +9821,24 @@ async def list_prompt_document_proposals(
     """List the tenant's policy-edit proposals, newest first. Any tenant member.
 
     ``status`` is forwarded verbatim (coord owns the ``pending`` | ``approved`` |
-    ``rejected`` vocabulary — the web tier deliberately does not re-encode it, so
-    a coord-side vocabulary addition needs no web change). Coord returns
-    ``{"proposals": [...]}``.
+    ``rejected`` | ``stale`` vocabulary — the web tier deliberately does not
+    re-encode it, so a coord-side vocabulary addition needs no web change).
+    Coord returns ``{"proposals": [...]}``.
+
+    ``stale`` is coord's TERMINAL self-retirement: coord closes a pending
+    proposal inside the same transaction that bumps its target document's
+    version, stamping ``decided_by='system:proposal-staleness'`` and a
+    ``decision_note`` (plan
+    ``2026-09-13-policy-proposals-agent-decidable-dial-driven-self-retiring``).
+    It was added to this sentence, and to nothing else, on purpose: forwarding
+    verbatim is what made the vocabulary addition a docstring change rather than
+    a code one, and re-encoding the set here would turn every future one into a
+    deploy-ordered edit.
+
+    A coord older than that change rejects ``?status=stale`` with ``400 invalid
+    status``, which passes through unaltered — the console reads that as "the
+    retired section is unavailable" and leaves the pending queue alone, so the
+    two tiers have no deploy-order dependency in either direction.
 
     Degrades rather than 502s while coord's Phase 5 half is undeployed: the
     response then carries an empty list plus an ``unavailable`` note (and its

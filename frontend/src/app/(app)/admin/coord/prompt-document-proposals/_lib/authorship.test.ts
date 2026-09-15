@@ -21,6 +21,7 @@ import { describe, it, expect } from "vitest";
 import {
   classifyWriteAuthor,
   isAgentAuthored,
+  isSelfDecided,
   tallyAuthors,
 } from "./authorship";
 
@@ -112,5 +113,72 @@ describe("tallyAuthors", () => {
     // so hidden + shown always equals the input.
     const total = tally.agent + tally.operator + tally.system + tally.unknown;
     expect(total).toBe(6);
+  });
+});
+
+/**
+ * Plan `2026-09-13-policy-proposals-agent-decidable-dial-driven-self-retiring`.
+ *
+ * Ownership stopped being a criterion for DECIDING a proposal, so this module
+ * gained the one question the console now has to answer about a decision: was
+ * the decider the proposer? It is stated as information — which only works if
+ * the answer is right, and the two ways to get it wrong are both quiet.
+ */
+describe("coord's self-retirement actor", () => {
+  it("classifies as `system`, not as an agent and not as an operator", () => {
+    // Load-bearing for the retired section: a proposal coord closed itself must
+    // not be attributed to a person or to an agent anywhere on the page. This
+    // falls out of the existing `system:` allowlist entry rather than needing an
+    // arm of its own — which is exactly why it is pinned, so a future
+    // re-spelling of the allowlist cannot refile a machine decision as a human
+    // one without a red test.
+    expect(classifyWriteAuthor("system:proposal-staleness")).toBe("system");
+    expect(isAgentAuthored({ edited_by: "system:proposal-staleness" })).toBe(
+      false
+    );
+  });
+});
+
+describe("isSelfDecided", () => {
+  const base = { proposed_by: "session:aaaa" };
+
+  it("is true when the same identity proposed and decided", () => {
+    expect(isSelfDecided({ ...base, decided_by: "session:aaaa" })).toBe(true);
+  });
+
+  it("is false for a different decider, coord's retirement included", () => {
+    expect(
+      isSelfDecided({ ...base, decided_by: "operator:josh@qontinui.io" })
+    ).toBe(false);
+    // The retirement actor is never the proposer, so a self-retired proposal is
+    // not a self-decided one.
+    expect(
+      isSelfDecided({ ...base, decided_by: "system:proposal-staleness" })
+    ).toBe(false);
+  });
+
+  it("prefers coord's `self_decided` over the string comparison, both ways", () => {
+    // Coord computed it from the identities it actually stamped; one principal
+    // can reach it under two spellings, and the reverse (a shared label that is
+    // NOT the same principal) is just as possible. Overruling the server here
+    // would state a wrong fact confidently.
+    expect(
+      isSelfDecided({ ...base, decided_by: "agent:bbbb", self_decided: true })
+    ).toBe(true);
+    expect(
+      isSelfDecided({
+        ...base,
+        decided_by: "session:aaaa",
+        self_decided: false,
+      })
+    ).toBe(false);
+  });
+
+  it("never asserts self-decision from a blank or missing side", () => {
+    // UNKNOWN must not render as a claim about who decided what.
+    expect(isSelfDecided({ ...base })).toBe(false);
+    expect(isSelfDecided({ ...base, decided_by: null })).toBe(false);
+    expect(isSelfDecided({ ...base, decided_by: "   " })).toBe(false);
+    expect(isSelfDecided({ proposed_by: "", decided_by: "" })).toBe(false);
   });
 });

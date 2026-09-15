@@ -39,7 +39,7 @@
  * write is always a counted write.
  */
 
-import type { PromptDocumentWrite } from "../types";
+import type { PromptDocumentProposal, PromptDocumentWrite } from "../types";
 
 /**
  * What kind of actor wrote a version.
@@ -61,7 +61,17 @@ const AGENT_PREFIXES = ["session:", "agent:", "device:"] as const;
 /** Operator spellings — both the three-segment and the two-segment producer. */
 const OPERATOR_PREFIX = "operator:";
 
-/** The shipped defaults coord seeds a tenant with. Nobody authored these. */
+/**
+ * The shipped defaults coord seeds a tenant with. Nobody authored these.
+ *
+ * This prefix also covers coord's self-retirement actor,
+ * `system:proposal-staleness` (plan
+ * `2026-09-13-policy-proposals-agent-decidable-dial-driven-self-retiring`), so
+ * a proposal coord retired itself classifies as `system` — not as an agent and
+ * not as an operator. That fell out of the existing allowlist rather than
+ * needing a new arm, and `authorship.test.ts` pins it so a future re-spelling
+ * of the allowlist cannot quietly refile a machine decision as a human one.
+ */
 const SYSTEM_PREFIX = "system:";
 
 /** Classify one actor label. Absent/blank ⇒ `unknown`, never `agent`. */
@@ -112,3 +122,37 @@ export const AUTHOR_CLASS_LABEL: Record<WriteAuthorClass, string> = {
   system: "coord's shipped default",
   unknown: "unrecognised author",
 };
+
+/**
+ * Did the proposer decide its own proposal?
+ *
+ * **This is INFORMATION, never a warning.** Ownership was removed as a
+ * criterion for deciding a proposal (plan
+ * `2026-09-13-policy-proposals-agent-decidable-dial-driven-self-retiring`, §1
+ * operator decision 1): an agent may now approve, reject or withdraw any
+ * proposal, its own included, and authority comes from the document's write
+ * tier and the tenant's `policy_write` dial instead. So a row that says
+ * "decided by its author" is stating a permitted, expected fact — the page
+ * renders it in the same calm chrome as the rest of the provenance line and
+ * gives it no badge, colour or icon.
+ *
+ * Coord's own `self_decided` boolean WINS when it is present: it is computed
+ * server-side from the identities coord stamped, and it can be right where a
+ * string comparison is not (one principal reaching coord under two spellings).
+ * The comparison is the fallback for a build that predates the field, and it is
+ * deliberately conservative — a blank on either side is `false`, because
+ * "unknown" must not render as an assertion about who decided what.
+ *
+ * `system:proposal-staleness` never matches: coord's retirement actor is not
+ * the proposer, so a self-retired proposal is not a self-decided one.
+ */
+export function isSelfDecided(
+  proposal: Pick<PromptDocumentProposal, "proposed_by"> &
+    Partial<Pick<PromptDocumentProposal, "decided_by" | "self_decided">>
+): boolean {
+  if (typeof proposal.self_decided === "boolean") return proposal.self_decided;
+  const decided = (proposal.decided_by ?? "").trim();
+  const proposed = (proposal.proposed_by ?? "").trim();
+  if (!decided || !proposed) return false;
+  return decided === proposed;
+}
