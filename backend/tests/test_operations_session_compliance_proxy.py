@@ -458,6 +458,54 @@ class TestWithdrawDecisionRecord:
         )
         assert instance.post.call_args.kwargs["json"] == {"reason": "never decided"}
 
+    def test_forwards_expected_version_when_sent(self, auth_client: TestClient):
+        """The feed's re-read version rides along so coord can refuse a stale
+        withdrawal under its row lock; nothing else joins it."""
+        with _patch_httpx() as MockClient:
+            instance = AsyncMock()
+            instance.post.return_value = _mock_response(
+                json_data={"current_version": 2, "withdrawn": True}
+            )
+            _configure_mock_client(MockClient, instance)
+
+            resp = auth_client.post(
+                self._PATH,
+                json={
+                    "reason": "never decided",
+                    "expected_version": 1,
+                    "updated_by": "attacker@example.com",
+                },
+            )
+
+        assert resp.status_code == 200
+        assert instance.post.call_args.kwargs["json"] == {
+            "reason": "never decided",
+            "expected_version": 1,
+        }
+
+    def test_passes_a_stale_withdrawal_409_through(self, auth_client: TestClient):
+        """Coord's ``409 withdraw_stale`` reaches the browser as a 409 carrying
+        the code, so the feed can tell a moved record from any other refusal."""
+        with _patch_httpx() as MockClient:
+            instance = AsyncMock()
+            instance.post.return_value = _mock_response(
+                status_code=409,
+                json_data={
+                    "error": "moved since it was read",
+                    "error_code": "withdraw_stale",
+                    "expected_version": 1,
+                    "current_version": 2,
+                },
+            )
+            _configure_mock_client(MockClient, instance)
+
+            resp = auth_client.post(
+                self._PATH, json={"reason": "never decided", "expected_version": 1}
+            )
+
+        assert resp.status_code == 409
+        assert "withdraw_stale" in resp.text
+
     def test_path_segments_are_re_encoded(self, auth_client: TestClient):
         """A decoded ``/`` in a name must not reshape the upstream path."""
         with _patch_httpx() as MockClient:
