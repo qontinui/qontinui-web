@@ -13,7 +13,10 @@ import {
   Send,
 } from "lucide-react";
 import { usePromptDocuments } from "../_hooks/usePromptDocuments";
-import { usePromptDocumentPublications } from "../_hooks/usePromptDocumentPublications";
+import {
+  usePromptDocumentPublications,
+  type UpstreamDecisionOutcome,
+} from "../_hooks/usePromptDocumentPublications";
 import { PromptDocumentCreateDialog } from "./PromptDocumentCreateDialog";
 import { PromptDocumentEditorDialog } from "./PromptDocumentEditorDialog";
 import { PromptDocumentHistoryDialog } from "./PromptDocumentHistoryDialog";
@@ -24,6 +27,8 @@ import { AgentWriteAccessControl } from "./AgentWriteAccessControl";
 import { upstreamBadge } from "../_lib/upstreamStatus";
 import type {
   AgentWriteTier,
+  ClauseConflictChoice,
+  Publication,
   PromptDocument,
   PromptDocumentKind,
   PromptDocumentSummary,
@@ -90,6 +95,11 @@ export function PromptDocumentList() {
     publishUnavailable,
     fetchPublication,
     publish,
+    deciding,
+    adoptUpstream,
+    keepMine,
+    fetchMergePreview,
+    applyMerge,
   } = usePromptDocumentPublications();
 
   const [createOpen, setCreateOpen] = useState(false);
@@ -145,6 +155,79 @@ export function PromptDocumentList() {
     setUpstreamOpen(true);
     await loadFull(doc);
   };
+
+  /**
+   * The three decisions the upstream dialog offers (plan
+   * `2026-09-04-cross-tenant-policy-publishing` D4 / Phase 7). Each carries
+   * the open document's `current_version` as the concurrency check, and on
+   * success re-reads the list — every one of them moves the tracked version,
+   * so the badge state on the row is stale the moment coord answers — and
+   * closes the dialog, because the comparison it was showing no longer
+   * describes the document.
+   */
+  const settleDecision = async (
+    doc: PromptDocument,
+    outcome: UpstreamDecisionOutcome<unknown>
+  ): Promise<boolean> => {
+    if (outcome.ok) {
+      setUpstreamOpen(false);
+      await reload();
+      return true;
+    }
+    // The decision was made against a version that is no longer current.
+    // Retrying with the same number would refuse forever, so put the LIVE
+    // document in front of the operator: re-reading it re-runs the dialog's
+    // comparison against the version coord actually holds.
+    if (outcome.refusal === "document_moved") {
+      const full = await fetchDocument(doc.kind, doc.name);
+      if (full) setEditing(full);
+    }
+    return false;
+  };
+
+  const handleAdoptUpstream = async (
+    doc: PromptDocument,
+    publication: Publication
+  ): Promise<boolean> =>
+    settleDecision(
+      doc,
+      await adoptUpstream(
+        doc.kind,
+        doc.name,
+        publication.publication_version,
+        doc.current_version
+      )
+    );
+
+  const handleKeepMine = async (
+    doc: PromptDocument,
+    publication: Publication
+  ): Promise<boolean> =>
+    settleDecision(
+      doc,
+      await keepMine(
+        doc.kind,
+        doc.name,
+        publication.publication_version,
+        doc.current_version
+      )
+    );
+
+  const handleMergeClauses = async (
+    doc: PromptDocument,
+    publication: Publication,
+    resolutions: Record<string, ClauseConflictChoice>
+  ): Promise<boolean> =>
+    settleDecision(
+      doc,
+      await applyMerge(
+        doc.kind,
+        doc.name,
+        publication.publication_version,
+        doc.current_version,
+        resolutions
+      )
+    );
 
   /**
    * Publishing needs no body here: coord promotes the document's own current
@@ -447,6 +530,11 @@ export function PromptDocumentList() {
         doc={editing}
         loadingBody={loadingBody}
         fetchPublication={fetchPublication}
+        onAdoptUpstream={handleAdoptUpstream}
+        onKeepMine={handleKeepMine}
+        fetchMergePreview={fetchMergePreview}
+        onMergeClauses={handleMergeClauses}
+        saving={deciding}
       />
 
       <ClauseManagerDialog
