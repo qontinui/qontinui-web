@@ -40,6 +40,30 @@ Two clocks, two jobs:
   ``received_at`` alone. Stamping only applied writes let a single future-dated
   report freeze the row and age a live device out to ``unknown``.
 
+The slug census (Phase 1 of
+``2026-09-15-captured-vs-authored-coverage-is-a-set-difference``) is stored by
+the same statement, with ONE departure from the whole-snapshot rule above, and
+it is the integrity property the coverage signal rests on:
+
+* A census the device sends WITH ``slugs`` replaces the stored one outright.
+* A census the device sends with ``slugs: null`` is the heartbeat form —
+  *"unchanged since my last report, and ``digest`` says which set I mean"*.
+  The stored stems are KEPT when the incoming digest equals the stored digest,
+  and the rest of the census (``count``, ``truncated``, ``ref_sha``) is
+  refreshed from the report, because those are this cycle's readings.
+* A census with ``slugs: null`` whose digest DOES NOT match what is stored
+  **clears the stored stems to UNKNOWN** (``slugs`` stays ``null``). The
+  asymmetry is deliberate: the device is asserting a set this server has never
+  seen, so keeping the old stems would publish a set difference against stems
+  nobody claims any more — exactly the false-coverage reading this plan exists
+  to remove. The next report carrying stems restores it.
+* A source the report omits entirely sets that column to NULL, under the same
+  whole-snapshot rule as every other reported column. NULL is UNKNOWN, never
+  an empty side.
+
+None of it applies to a report that was not applied: an out-of-order report
+leaves the census exactly as the newer reading left it.
+
 Not done here: pruning. A decommissioned device's row persists and simply
 reads ``unknown`` (``observation_stale``) forever; removing it is a follow-up.
 """
@@ -50,7 +74,7 @@ from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import ColumnElement, case, func, literal_column, select
+from sqlalchemy import ColumnElement, case, func, literal_column, select, text
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.sql.dml import ReturningInsert
@@ -76,6 +100,94 @@ REPORTED_COLUMNS: tuple[str, ...] = (
     "detail",
     "observed_at",
 )
+
+
+#: The stored census columns, per :data:`CENSUS_SOURCE_COLUMNS`' source, plus
+#: the two the report itself supplies. Written by every report — nulls
+#: included — under the same whole-snapshot rule as :data:`REPORTED_COLUMNS`,
+#: except that the two JSON columns resolve a withheld set (see the module
+#: docstring and :func:`_resolved_census`).
+CENSUS_SOURCE_COLUMNS: dict[str, tuple[str, str]] = {
+    "ref": ("ref_census", "ref_census_digest"),
+    "work_tree": ("work_tree_census", "work_tree_census_digest"),
+}
+
+#: The census columns a report supplies directly, with no per-source
+#: resolution: written like any other reported column.
+CENSUS_SCALAR_COLUMNS: tuple[str, ...] = ("census_ref_sha", "census_observed_at")
+
+#: JSON ``null`` as a JSONB value — what ``census -> 'slugs'`` holds when the
+#: device withheld the stems, and what a carried-forward set falls back to when
+#: there is nothing stored to carry. SQL NULL is a different thing: passing one
+#: to ``jsonb_set`` returns NULL and would wipe the census.
+_JSONB_NULL = text("'null'::jsonb")
+
+#: ``jsonb_set``'s path argument: the census object's ``slugs`` key.
+_SLUGS_PATH = text("'{slugs}'::text[]")
+
+
+def census_fields(report: dict[str, Any]) -> dict[str, Any]:
+    """Flatten a report's ``censuses`` list into its stored columns.
+
+    ``report`` is the request model's ``model_dump()``. A source the report
+    does not carry maps to ``None`` for both of its columns — UNKNOWN, which
+    is what a build predating the census, an idle cycle and a failed scan all
+    report, and which must never be read as an empty side.
+
+    ``census_observed_at`` is the report's own ``observed_at`` whenever ANY
+    census rode along, and ``None`` otherwise: the device re-enumerates every
+    cycle, so even a census whose stems were withheld was taken then.
+    """
+    by_source = {census["source"]: census for census in (report.get("censuses") or [])}
+    fields: dict[str, Any] = {}
+    for source, (json_column, digest_column) in CENSUS_SOURCE_COLUMNS.items():
+        census = by_source.get(source)
+        fields[json_column] = census
+        fields[digest_column] = census["digest"] if census else None
+    ref_census = by_source.get("ref")
+    fields["census_ref_sha"] = ref_census["ref_sha"] if ref_census else None
+    fields["census_observed_at"] = report.get("observed_at") if by_source else None
+    return fields
+
+
+def _resolved_census(
+    *,
+    json_column: str,
+    digest_column: str,
+    excluded: Any,
+    table: Any,
+) -> ColumnElement[Any]:
+    """The census to store when an incoming report is applied.
+
+    Four arms, in order:
+
+    1. the report carries no census for this source → ``NULL`` (UNKNOWN);
+    2. it carries the stems → store them;
+    3. it withholds them (``slugs: null``) and its digest equals the stored
+       one → carry the stored stems forward into this cycle's census;
+    4. it withholds them and the digest does NOT match → store the census with
+       ``slugs`` still ``null``, clearing the stored set to UNKNOWN rather
+       than vouching for stems the device no longer claims.
+    """
+    incoming = excluded[json_column]
+    stored = table.c[json_column]
+    return case(
+        (incoming.is_(None), text("NULL::jsonb")),
+        # ``jsonb_typeof``, not a NULL test: ``census -> 'slugs'`` is JSON
+        # ``null`` when the device withheld the stems, which is a VALUE, not
+        # SQL NULL. Conflating the two would store a withheld set as a real
+        # one.
+        (func.jsonb_typeof(incoming["slugs"]) == "array", incoming),
+        (
+            excluded[digest_column] == table.c[digest_column],
+            func.jsonb_set(
+                incoming,
+                _SLUGS_PATH,
+                func.coalesce(stored["slugs"], _JSONB_NULL),
+            ),
+        ),
+        else_=incoming,
+    )
 
 
 def _org_scope(org_id: UUID | None) -> ColumnElement[bool]:
@@ -106,11 +218,16 @@ def upsert_statement(
     Keys of ``fields`` outside :data:`REPORTED_COLUMNS` are dropped rather than
     trusted, so nothing a caller supplies can move the key. Every reported
     column is overwritten, nulls included: a reading is a whole snapshot, and a
-    field the runner no longer reports must not survive from an older one.
+    field the runner no longer reports must not survive from an older one. The
+    census columns are derived from ``fields["censuses"]`` by
+    :func:`census_fields` and follow the same rule, with the one withheld-set
+    resolution the module docstring states.
     """
     reported = {name: fields.get(name) for name in REPORTED_COLUMNS}
+    census = census_fields(fields)
     values: dict[str, Any] = {
         **reported,
+        **census,
         "organization_id": org_id,
         "device_id": device_id,
         "received_at": received_at,
@@ -140,7 +257,32 @@ def upsert_statement(
                     (incoming_is_newer, insert_stmt.excluded[name]),
                     else_=table.c[name],
                 )
-                for name in REPORTED_COLUMNS
+                for name in (*REPORTED_COLUMNS, *CENSUS_SCALAR_COLUMNS)
+            },
+            # The stem census. Same out-of-order guard; the applied arm
+            # resolves a withheld set against the stored digest rather than
+            # taking the incoming value whole.
+            **{
+                digest_column: case(
+                    (incoming_is_newer, insert_stmt.excluded[digest_column]),
+                    else_=table.c[digest_column],
+                )
+                for _json_column, digest_column in CENSUS_SOURCE_COLUMNS.values()
+            },
+            **{
+                json_column: case(
+                    (
+                        incoming_is_newer,
+                        _resolved_census(
+                            json_column=json_column,
+                            digest_column=digest_column,
+                            excluded=insert_stmt.excluded,
+                            table=table,
+                        ),
+                    ),
+                    else_=table.c[json_column],
+                )
+                for json_column, digest_column in CENSUS_SOURCE_COLUMNS.values()
             },
             # Liveness: stamped whether or not the reading was applied.
             "received_at": insert_stmt.excluded.received_at,
