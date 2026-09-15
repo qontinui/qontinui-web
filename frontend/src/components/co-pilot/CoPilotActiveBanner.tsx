@@ -10,10 +10,10 @@
  *     (the relay listener un-mounts within the next React render);
  *   - a "Disable for this account" link that ALSO flips the per-user
  *     durable preference back to false so a fresh session won't re-prompt.
- *     Hidden while consent stands only on the loopback-dev auto-grant: that
- *     grant never consults the preference, so the link could not deliver the
- *     durable opt-out it promises (a new tab would be live again). Stop still
- *     revokes for the session.
+ *     Hidden on loopback dev: every new tab there is auto-granted without
+ *     consulting the preference, so the link could not deliver the durable
+ *     opt-out it promises (a new tab would be live again) — whatever holds
+ *     THIS tab open. Stop still revokes for the session.
  *
  * # data-bridge-invisible="true" (interactive subtree only)
  *
@@ -65,7 +65,6 @@ import { useCoPilotPreference } from "@/hooks/useCoPilotPreference";
 import { useCoPilotSessionConsent } from "@/hooks/useCoPilotSessionConsent";
 import {
   isCoPilotConsentSatisfied,
-  isLoopbackAutoGrant,
   useIsLoopbackDev,
 } from "@/lib/ui-bridge/co-pilot-gates";
 
@@ -116,15 +115,13 @@ export function CoPilotActiveBanner() {
   // lights the banner (and its Stop button) too. Opting out of polling
   // while the consent layer is closed avoids unnecessary load on the
   // audit-log endpoint for the 99% of users who haven't opted in.
-  const consentInputs = {
+  const pollingEnabled = isCoPilotConsentSatisfied({
     loopbackDev,
     preferenceEnabled: preference.enabled,
     consentState: consent.state,
-  };
-  const pollingEnabled = isCoPilotConsentSatisfied(consentInputs);
-  // The account opt-out only means something when the preference is what
-  // holds the gate open — see the header.
-  const showAccountOptOut = !isLoopbackAutoGrant(consentInputs);
+  });
+  // The account opt-out cannot be durable on loopback dev — see the header.
+  const showAccountOptOut = !loopbackDev;
   const { isActive, lastActionAt } = useCoPilotActivity({
     enabled: pollingEnabled,
   });

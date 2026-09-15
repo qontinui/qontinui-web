@@ -6,8 +6,8 @@
  * consent is missing while a loopback-dev auto-grant has the relay live,
  * nor claim "ready" after the developer explicitly revoked.
  *
- * The env gate and loopback detection are module-level / effect-driven
- * (NODE_ENV is "test" under vitest), so both are stubbed here.
+ * The env gate and loopback detection both read `isDev`, which is fixed at
+ * import time (NODE_ENV is "test" under vitest), so both are stubbed here.
  */
 
 import React from "react";
