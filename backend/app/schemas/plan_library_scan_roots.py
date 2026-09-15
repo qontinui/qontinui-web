@@ -340,7 +340,9 @@ class ScanRootReport(BaseModel):
     #: discipline for this very struct: *"Every optional field serializes as an
     #: explicit ``null`` rather than being omitted"*
     #: (``ScanRootReport`` in ``plan_workunit_adapter/body_push.rs``, where all
-    #: twelve optional fields are ``Option<T>`` with no ``skip_serializing_if``).
+    #: TEN optional fields are ``Option<T>`` with no ``skip_serializing_if`` —
+    #: 13 fields in all; ``state``, ``counts_are_floors`` and ``observed_at``
+    #: are not optional).
     #: A runner half that follows it ships ``Option<Vec<PlanSlugCensus>>`` =
     #: ``None`` on every idle cycle, and refusing that spelling would 422 the
     #: WHOLE report of such a device on every idle cycle, forever — the exact

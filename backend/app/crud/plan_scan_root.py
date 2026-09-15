@@ -359,8 +359,14 @@ async def list_observations(
 
     ⚠️ **The two census JSON columns are DEFERRED, and Phase 3's coverage read
     must undefer them** (``.options(undefer(...))`` on its own select, or a
-    separate query) — a deferred attribute touched on a loaded row emits one
-    extra SELECT per row, which is worse than not deferring at all.
+    separate query) — a deferred attribute touched on a loaded row RAISES
+    ``sqlalchemy.exc.MissingGreenlet`` here — it is a lazy load, and on the
+    ``AsyncSession`` every caller uses there is no greenlet context to run the
+    IO in. Not one extra SELECT per row: an unhandled 500. It matters most in
+    ``_load_corpus_health``, where ``scan_roots_health`` runs AFTER the
+    ``async with db.begin_nested()`` block has exited, so a Phase 3 edit that
+    reaches a census there takes down every ``GET /plan-library`` page and
+    ``/plan-library/candidates`` rather than merely slowing them.
 
     Why they are deferred: this function is not only the scan-roots route's.
     ``_load_corpus_health`` calls it, and that block rides EVERY
@@ -368,7 +374,10 @@ async def list_observations(
     ``plan_scan_root_health.render_row`` renders no stem at all — so every
     stored stem was detoasted, transferred, decoded and discarded on every
     page. Measured: 1837 stems ≈ 103.6 KB per census, ≈ 208 KB per device for
-    both, and the accepted cap allows ≈ 1.3 MB per census. That is also the
+    both. At the measured average stem length (53.9 chars) the realistic
+    ceiling is ≈ 0.27 MB per census; the schema's WORST case is 5000 × 512,
+    ≈ 2.46 MB. (An earlier revision of this comment said ≈ 1.3 MB, which was
+    5000 × 255 — the ``_SLUG_MAX`` this same commit raised to 512.) That is also the
     cost the coverage design decision explicitly refused to pay ("would put an
     anti-join over ~1800 slugs on every list request"), arriving by another
     route.

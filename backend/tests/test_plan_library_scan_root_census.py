@@ -250,8 +250,9 @@ class TestNoCensusIsTheCurrentFleet:
         The third is not a convenience. The runner's own ``ScanRootReport``
         struct doc states the discipline for this exact wire — *"Every optional
         field serializes as an explicit ``null`` rather than being omitted"* —
-        and all twelve of its optional fields are ``Option<T>`` with no
-        ``skip_serializing_if``. A Phase 2 author who follows the spec ships
+        and all TEN of its optional fields are ``Option<T>`` with no
+        ``skip_serializing_if`` (the struct has 13 fields; ``state``,
+        ``counts_are_floors`` and ``observed_at`` are not optional). A Phase 2 author who follows the spec ships
         ``Option<Vec<PlanSlugCensus>>`` = ``None`` on every idle cycle, so a
         422 here would silence that device on every idle cycle, FOREVER: the
         report body is built from its configuration, so it never recovers.
@@ -772,12 +773,15 @@ class TestCensusJsonIsNotDraggedOntoEveryListPage:
         ``plan_scan_root_health.render_row`` renders no stem — so every stored
         stem was detoasted, transferred, decoded and discarded on every page.
         Measured: 1837 stems ≈ 103.6 KB per census, ≈ 208 KB per device for
-        both; the accepted cap allows ≈ 1.3 MB per census. It is also the exact
+        both. At the measured average stem length (53.9 chars) the realistic
+        ceiling is ≈ 0.27 MB per census; the schema's WORST case is
+        5000 × 512, ≈ 2.46 MB. It is also the exact
         cost the coverage design decision refused to pay ("an anti-join over
         ~1800 slugs on every list request"), arriving by another route.
 
-        ⚠️ Phase 3's coverage read must UNDEFER them rather than touch a
-        deferred attribute per row.
+        ⚠️ Phase 3's coverage read must UNDEFER them. Touching a deferred
+        attribute on a row loaded through an ``AsyncSession`` raises
+        ``sqlalchemy.exc.MissingGreenlet``, not an extra SELECT.
         """
         from sqlalchemy import inspect as sa_inspect
 
