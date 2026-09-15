@@ -38,8 +38,8 @@ vi.mock("@/services/service-factory", () => ({
 vi.mock("@/services/api-config", () => ({
   ApiConfig: { API_BASE_URL: "" },
 }));
-// Loopback detection is effect-driven and dev-only (NODE_ENV is "test"
-// here), so stub it; the consent predicate itself stays real.
+// Loopback detection is dev-only and `isDev` is fixed at import time
+// (NODE_ENV is "test" here), so stub it; the consent predicate stays real.
 const gates = vi.hoisted(() => ({ loopbackDev: false }));
 vi.mock("@/lib/ui-bridge/co-pilot-gates", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/ui-bridge/co-pilot-gates")>()),
@@ -148,6 +148,33 @@ describe("<CoPilotActiveBanner>", () => {
       expect(screen.queryByTestId("co-pilot-active-banner")).not.toBeNull();
       expect(screen.queryByTestId("co-pilot-active-banner-stop")).not.toBeNull();
     });
+    expect(
+      screen.queryByTestId("co-pilot-active-banner-disable-account")
+    ).toBeNull();
+  });
+
+  it("hides the account opt-out on loopback dev even when preference + grant hold the gate", async () => {
+    // A new tab on loopback is auto-granted regardless of the preference, so
+    // "Disable for this account" could never keep it off — hide it for every
+    // loopback state, not only the auto-grant-only one.
+    gates.loopbackDev = true;
+    window.sessionStorage.setItem(__CO_PILOT_SESSION_CONSENT_KEY__, "granted");
+    const recent = new Date(Date.now() - 2_000).toISOString();
+    fetchMock.mockImplementation((url: string) => {
+      if (typeof url === "string" && url.includes("/preferences")) {
+        return Promise.resolve(preferenceResponse(true));
+      }
+      return Promise.resolve(activityResponse([{ occurred_at: recent }]));
+    });
+    const qc = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    renderBanner(qc);
+    await waitFor(() => {
+      expect(qc.getQueryData(CO_PILOT_PREFERENCE_QUERY_KEY)).toBeDefined();
+      expect(screen.queryByTestId("co-pilot-active-banner-stop")).not.toBeNull();
+    });
+    await act(async () => {});
     expect(
       screen.queryByTestId("co-pilot-active-banner-disable-account")
     ).toBeNull();

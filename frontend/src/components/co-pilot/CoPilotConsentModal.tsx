@@ -15,7 +15,8 @@
  *     "Allow". Defaulting to allow would defeat consent.
  *   - ESC = same as "Not now" (revoke). Closing the modal without an
  *     explicit grant must NEVER enable the relay listener.
- *   - The grant button is the ONLY path to ``state === "granted"``.
+ *   - The grant button is this modal's ONLY path to ``state === "granted"``
+ *     (outside it, only CoPilotHome's ``?bridgeDebug=1`` debug grant sets it).
  *
  * Cross-link: plans/2026-05-28-production-safe-ui-bridge-design.md §4.5.
  */
