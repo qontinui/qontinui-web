@@ -31886,6 +31886,73 @@
         "title": "PlanCandidateResponse",
         "type": "object"
       },
+      "PlanSlugCensus": {
+        "additionalProperties": false,
+        "description": "One side's plan-stem listing, as the device that scans enumerated it.\n\nThis is the denominator the plan corpus has never had. Every shipped\ncapture surface counts a numerator; none owns a denominator, so the fleet\nhas never been able to answer *\"of the plans that exist, how many did the\ncorpus capture?\"* \u2014 and the naive answers computed off a single git ref\nhave read 76.5% and 101.8% for the same corpus. The set the device\nenumerated, carried per ``source`` and joined by ``source_repo``, is what\nmakes the answer a SET DIFFERENCE instead.\n\nRead the module docstring for the four rules (digest, the withheld-set\nheartbeat, the truncation floor, and absent-never-empty) and why each is a\n422 rather than a coerced value.",
+        "properties": {
+          "count": {
+            "maximum": 9.223372036854776e+18,
+            "minimum": 0.0,
+            "title": "Count",
+            "type": "integer"
+          },
+          "digest": {
+            "maxLength": 64,
+            "minLength": 64,
+            "title": "Digest",
+            "type": "string"
+          },
+          "ref_sha": {
+            "anyOf": [
+              {
+                "maxLength": 64,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ref Sha"
+          },
+          "slugs": {
+            "anyOf": [
+              {
+                "items": {
+                  "maxLength": 512,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "maxItems": 5000,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Slugs"
+          },
+          "source": {
+            "enum": [
+              "ref",
+              "work_tree"
+            ],
+            "title": "Source",
+            "type": "string"
+          },
+          "truncated": {
+            "title": "Truncated",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "source",
+          "count",
+          "digest",
+          "truncated"
+        ],
+        "title": "PlanSlugCensus",
+        "type": "object"
+      },
       "PopularPackageResponse": {
         "description": "Response for popular packages.",
         "properties": {
@@ -37990,6 +38057,21 @@
               }
             ],
             "title": "Behind"
+          },
+          "censuses": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/PlanSlugCensus"
+                },
+                "maxItems": 2,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Censuses"
           },
           "counts_are_floors": {
             "title": "Counts Are Floors",
