@@ -10,19 +10,23 @@ Phase 1a). That revision is already applied in production, so it is frozen:
 an index added to its ``upgrade()`` would never be created on the table that
 already exists. These two live here instead.
 
-The pre-PR review of the coord sampler (Phase 1b) found three reads that the
+The pre-PR review of the coord sampler (Phase 1b) found reads that the
 ``_01`` indexes do not serve, and that seq-scan a table holding 30 days of
-per-job rows (roughly 1 500 runs a day across the tenant's repos, ~10 jobs
-each):
+per-job rows for every repo with a self-hosted registration:
 
 * ``ix_ci_job_obs_run`` on ``(repo, run_id, run_attempt)`` — the sampler's
   work-queue anti-join, ``NOT EXISTS`` an observation for ``(repo, run_id,
   COALESCE(run_attempt, 1))`` of a completed ``coord.ci_runs`` row. Three
   equality columns, run once per tick per repo.
-* ``ix_ci_job_obs_completed`` on ``(completed_at)`` — the 30-day retention
-  delete (``completed_at < now() - 30 days``, every tick) and the 24h
+* ``ix_ci_job_obs_completed`` on ``(completed_at)`` — the 24h
   ``coord_ci_job_observations_total{outcome}`` gauge recompute on every
-  ``/metrics`` scrape on every replica.
+  ``/metrics`` scrape on every replica (``completed_at > now() - 24h``), and
+  the ``completed_at < cutoff`` arm of the 30-day retention delete. That
+  delete must be written as index-able arms on the coord side —
+  ``completed_at < $cutoff OR (completed_at IS NULL AND observed_at < $cutoff)``
+  — because a btree on a column cannot serve a predicate over
+  ``COALESCE(completed_at, observed_at)``; the coord PR of the same plan
+  carries that rewrite, and nothing here pretends to serve the COALESCE form.
 
 ``ix_ci_job_obs_key (repo, head_sha, job_name)`` shares only its leading
 ``repo`` with the first, and the partial ``ix_ci_job_obs_runner_completed
@@ -62,7 +66,7 @@ def upgrade() -> None:
             ON coord.ci_job_observations (repo, run_id, run_attempt)
         """
     )
-    # Retention (completed_at older than 30 days) and the 24h scrape read.
+    # The 24h scrape read, and the completed_at arm of the retention delete.
     op.execute(
         """
         CREATE INDEX IF NOT EXISTS ix_ci_job_obs_completed

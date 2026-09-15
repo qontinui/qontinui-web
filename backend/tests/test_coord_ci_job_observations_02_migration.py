@@ -196,6 +196,8 @@ def test_every_statement_is_a_static_literal() -> None:
                 assert len(node.args) == 1 and isinstance(node.args[0], ast.Constant), (
                     f"op.execute at line {node.lineno} must take one static SQL literal"
                 )
+    # This count is the fence against a stray non-index statement (SET LOCAL,
+    # INSERT, ...) that the verb regexes in the two tests above do not name.
     assert seen == 4, f"expected 2 creates + 2 drops, found {seen} op.execute calls"
 
 
@@ -269,7 +271,12 @@ def test_up_down_up_leaves_no_residue_and_spares_the_01_objects() -> None:
         run_alembic(backend_root(), db_url, "upgrade", _REVISION_ID)
         for index in _INDEXES:
             assert index_exists(engine, index), index
-        # Re-running the same upgrade is a no-op by construction (IF NOT EXISTS).
-        run_alembic(backend_root(), db_url, "upgrade", _REVISION_ID)
+        # IF NOT EXISTS is exercised for real: the module's own upgrade() SQL
+        # run a second time against the already-indexed table must not raise.
+        # (A second `alembic upgrade <rev>` would execute nothing, since
+        # alembic_version already names the revision.)
+        for sql in _sql_literals(_function(_tree(), "upgrade")):
+            with engine.begin() as conn:
+                conn.execute(text(sql))
         for index in _INDEXES:
             assert index_exists(engine, index), index
