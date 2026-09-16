@@ -1,7 +1,7 @@
 /**
  * ReviewFeed — the two collapsed sections below the pending queue ("Retired as
- * stale" and "Recently approved"), and the deploy-order tolerance that lets
- * them ship before coord does.
+ * stale" and "Recently proposed & approved"), and the deploy-order tolerance
+ * that lets them ship before coord does.
  *
  * Plan `2026-09-13-policy-proposals-agent-decidable-dial-driven-self-retiring`,
  * Phase 4. coord retires a pending proposal inside the same transaction that
@@ -110,6 +110,30 @@ const RETIRED_2: PromptDocumentProposal = {
 };
 
 /**
+ * The document-version rows the page reads to derive staleness.
+ *
+ * **Not `[]`, deliberately.** This fallback used to answer every
+ * `/coord/prompt-documents` read with an empty list, which made
+ * `liveVersionFor` return `null` for every row on the page — and `null`
+ * short-circuits the whole staleness comparison. So the end-to-end test never
+ * exercised the live-version path at all, and an approved row rendering as a
+ * red act-now `stale` alarm was invisible here as well as in the card's own
+ * unit tests.
+ *
+ * `security-and-autonomy` is at v9, past `SELF_APPROVED.base_version` (6) —
+ * which is not a contrivance but what approving DOES: the approval applied the
+ * edit as a new version, so a decided row whose document has not moved past its
+ * base is the shape that cannot occur.
+ */
+const DOCUMENTS = {
+  documents: [
+    { kind: "policy", name: "security-and-autonomy", current_version: 9 },
+    { kind: "policy", name: "escalation-bar", current_version: 9 },
+    { kind: "policy", name: "operating-rules", current_version: 3 },
+  ],
+};
+
+/**
  * Route the five reads the page makes. Each status is overridable; whatever is
  * not overridden answers benignly, so a failure in one test can only be about
  * the section that test names.
@@ -133,7 +157,7 @@ function routes(
       )();
     if (url.includes("prompt-document-writes"))
       return Promise.resolve({ writes: [], total: 0 });
-    return Promise.resolve({ documents: [] });
+    return Promise.resolve(DOCUMENTS);
   });
 }
 
@@ -344,8 +368,8 @@ describe("ReviewFeed — the retired section, not yet read", () => {
 });
 
 /**
- * "Recently approved" — and the one assertion the `ProposalCard` unit tests
- * cannot make.
+ * "Recently proposed & approved" — and the one assertion the `ProposalCard`
+ * unit tests cannot make.
  *
  * Those four tests construct a decided proposal and hand it straight to the
  * card. That proves the card RENDERS the provenance line; it cannot prove
@@ -395,7 +419,7 @@ describe("ReviewFeed — a self-approved proposal reaches the card", () => {
     );
 
     await user.click(
-      screen.getByRole("button", { name: /recently approved/i })
+      screen.getByRole("button", { name: /recently proposed & approved/i })
     );
     // The row is a real `<ProposalCard>` — expand it for the provenance block.
     const row = await screen.findByTestId(`proposal-${SELF_APPROVED.id}`);
@@ -413,6 +437,75 @@ describe("ReviewFeed — a self-approved proposal reaches the card", () => {
     expect(line.querySelector("svg")).toBeNull();
   });
 
+  it("does not paint the approved row as a red act-now `stale` alarm", async () => {
+    /*
+     * The regression, at the layer it shipped on — and the reason it hid.
+     *
+     * `routes()`'s fallback used to answer the document read with
+     * `{ documents: [] }`, so `liveVersionFor` returned `null` for every row
+     * and the staleness comparison never ran in this file at all. It now serves
+     * `policy/security-and-autonomy` at v9, past this fixture's
+     * `base_version: 6` — which is what APPROVING did: the approval applied the
+     * edit as a new version. Every approved row therefore satisfies
+     * `liveVersion > base_version` by construction, and before the fix every
+     * one of them rendered `AUTHOR_RED` with a `✕` and a red panel telling the
+     * reader to "read the current wording before approving" the thing they had
+     * just approved.
+     */
+    routes(NO_RETIREMENTS, {
+      approved: () => Promise.resolve({ proposals: [SELF_APPROVED], total: 1 }),
+    });
+    const user = userEvent.setup();
+    render(<ReviewFeed />);
+
+    await user.click(
+      await screen.findByRole("button", {
+        name: /recently proposed & approved/i,
+      })
+    );
+    const row = await screen.findByTestId(`proposal-${SELF_APPROVED.id}`);
+
+    const badge = row.querySelector<HTMLElement>(
+      '[data-testid="proposal-direction"]'
+    )!;
+    expect(badge.textContent ?? "").toMatch(/approved/i);
+    expect(badge.innerHTML).not.toMatch(/\bbg-red-/);
+    expect(badge.textContent ?? "").not.toContain("✕");
+
+    await user.click(row.querySelector("button")!);
+    // Expanded, so the absence below is a real absence and not a collapse.
+    expect(await screen.findByTestId("proposal-content")).toBeTruthy();
+    expect(screen.queryByTestId("proposal-stale")).toBeNull();
+  });
+
+  it("still goes red on a PENDING row the live version has moved past", async () => {
+    // The guard on the fixture itself: with the SAME document map in play, a
+    // pending proposal against v6 of a v9 document must still raise the alarm.
+    // Without this, the assertion above could be satisfied by a document read
+    // that silently went back to serving nothing.
+    routes(NO_RETIREMENTS, {
+      pending: () =>
+        Promise.resolve({
+          proposals: [
+            { ...SELF_APPROVED, id: "p-pending-1", status: "pending" },
+          ],
+          total: 1,
+        }),
+    });
+    const user = userEvent.setup();
+    render(<ReviewFeed />);
+
+    const row = await screen.findByTestId("proposal-p-pending-1");
+    const badge = row.querySelector<HTMLElement>(
+      '[data-testid="proposal-direction"]'
+    )!;
+    await waitFor(() => expect(badge.textContent ?? "").toMatch(/stale/i));
+    expect(badge.innerHTML).toMatch(/\bbg-red-/);
+
+    await user.click(row.querySelector("button")!);
+    expect(await screen.findByTestId("proposal-stale")).toBeTruthy();
+  });
+
   it("offers no decision composer on a row coord already closed", async () => {
     routes(NO_RETIREMENTS, {
       approved: () => Promise.resolve({ proposals: [SELF_APPROVED], total: 1 }),
@@ -421,7 +514,7 @@ describe("ReviewFeed — a self-approved proposal reaches the card", () => {
     render(<ReviewFeed />);
 
     await user.click(
-      await screen.findByRole("button", { name: /recently approved/i })
+      await screen.findByRole("button", { name: /recently proposed & approved/i })
     );
     const row = await screen.findByTestId(`proposal-${SELF_APPROVED.id}`);
     await user.click(row.querySelector("button")!);
@@ -444,10 +537,10 @@ describe("ReviewFeed — a self-approved proposal reaches the card", () => {
     await waitFor(() =>
       expect(header.textContent ?? "").toMatch(/could not be read/i)
     );
-    expect(header.textContent ?? "").not.toMatch(/none approved recently/i);
+    expect(header.textContent ?? "").not.toMatch(/none approved yet/i);
 
     await user.click(
-      screen.getByRole("button", { name: /recently approved/i })
+      screen.getByRole("button", { name: /recently proposed & approved/i })
     );
     expect(await screen.findByTestId("decided-unknown")).toBeTruthy();
     expect(screen.queryByTestId("decided-empty")).toBeNull();
@@ -466,10 +559,10 @@ describe("ReviewFeed — a self-approved proposal reaches the card", () => {
 
     const header = await screen.findByTestId("decided-summary");
     await waitFor(() =>
-      expect(header.textContent ?? "").toMatch(/none approved recently/i)
+      expect(header.textContent ?? "").toMatch(/none approved yet/i)
     );
     await user.click(
-      screen.getByRole("button", { name: /recently approved/i })
+      screen.getByRole("button", { name: /recently proposed & approved/i })
     );
     expect(await screen.findByTestId("decided-empty")).toBeTruthy();
     expect(screen.queryByTestId("decided-unknown")).toBeNull();
@@ -496,5 +589,119 @@ describe("ReviewFeed — the collapsed sections ask for a bounded page", () => {
     const urls = getMock.mock.calls.map((c) => String(c[0]));
     expect(urls.some((u) => /status=stale&limit=\d+/.test(u))).toBe(true);
     expect(urls.some((u) => /status=approved&limit=\d+/.test(u))).toBe(true);
+  });
+});
+
+/**
+ * The window the "Recently proposed & approved" section actually serves, and
+ * the header that used to overstate it.
+ *
+ * coord's route is `WHERE tenant_id = $1 AND status = $2 ORDER BY created_at
+ * DESC LIMIT $3` — `created_at` is the PROPOSAL date and there is no
+ * `decided_at` ordering to ask for. A panel headed "Recently approved" over
+ * that query claims a recency the query cannot deliver: a proposal authored
+ * months ago and approved a minute ago ranks by the old date and can fall out
+ * of the page entirely. Since this section is the only surface for the
+ * compensating audit control that replaced the ownership rule, the decision
+ * most worth seeing is exactly the one the ordering can drop — so the page says
+ * what it is showing instead.
+ */
+describe("ReviewFeed — the decided section states its own window", () => {
+  it("names the ordering in the heading and in the intro", async () => {
+    routes(NO_RETIREMENTS, {
+      approved: () => Promise.resolve({ proposals: [], total: 0 }),
+    });
+    const user = userEvent.setup();
+    render(<ReviewFeed />);
+
+    // The heading no longer says "recently approved" on its own.
+    const header = await screen.findByRole("button", {
+      name: /recently proposed & approved/i,
+    });
+    expect(header.textContent ?? "").not.toMatch(/^recently approved/i);
+
+    await user.click(header);
+    const note = await screen.findByTestId("decided-window-note");
+    const text = note.textContent ?? "";
+    expect(text).toMatch(/20 most recently/i);
+    expect(text).toMatch(/proposal date, not decision date/i);
+  });
+
+  it("does not claim 'recently' in the empty state either", async () => {
+    // Zero rows back from `?status=approved` is not a window artefact — a
+    // LIMIT cannot manufacture an empty page — so the honest claim is the
+    // stronger one, and it must not re-import the recency the ordering cannot
+    // support.
+    routes(NO_RETIREMENTS);
+    const user = userEvent.setup();
+    render(<ReviewFeed />);
+
+    const header = await screen.findByTestId("decided-summary");
+    await waitFor(() =>
+      expect(header.textContent ?? "").toMatch(/none approved yet/i)
+    );
+    expect(header.textContent ?? "").not.toMatch(/none approved recently/i);
+
+    await user.click(
+      screen.getByRole("button", { name: /recently proposed & approved/i })
+    );
+    const empty = await screen.findByTestId("decided-empty");
+    expect(empty.textContent ?? "").toMatch(/none approved yet/i);
+    expect(empty.textContent ?? "").not.toMatch(/recently/i);
+  });
+});
+
+/**
+ * The UNKNOWN box's pre-deploy sentence, per section.
+ *
+ * Its closing clause used to be the constant "Nothing above is affected.",
+ * which is true of the RETIRED section — reached on `not_deployed` by a `400
+ * invalid status` from a coord that serves every other query fine — and false
+ * of the decided one. `?status=approved` is original vocabulary, so the only
+ * route to `not_deployed` there is the proxy's 404 mapping: the whole proposal
+ * surface absent (`operations.py` `_coord_unavailable`), which takes the
+ * pending queue down with it. Reassuring the operator that nothing above is
+ * affected while the queue is dark is the same confident-wrong-answer defect
+ * the `preDeploy` split exists to remove.
+ */
+describe("ReviewFeed — the pre-deploy sentence is per-section", () => {
+  it("tells the decided section's reader that the queue above is out too", async () => {
+    routes(NO_RETIREMENTS, {
+      approved: () => Promise.reject(new Error("400: not found")),
+    });
+    const user = userEvent.setup();
+    render(<ReviewFeed />);
+
+    await user.click(
+      await screen.findByRole("button", {
+        name: /recently proposed & approved/i,
+      })
+    );
+    const cause = await screen.findByTestId("decided-unknown-cause");
+    expect(cause.getAttribute("data-cause")).toBe("not-deployed");
+    expect(cause.textContent ?? "").toMatch(
+      /the pending queue above reports the same outage/i
+    );
+    expect(cause.textContent ?? "").not.toMatch(/nothing above is affected/i);
+    // ...and the sentence no longer says "query" twice ("it does not recognise
+    // this query yet and refuses the query").
+    expect((cause.textContent ?? "").match(/\bquery\b/gi)?.length ?? 0).toBe(1);
+  });
+
+  it("keeps 'Nothing above is affected' on the retired section, where it is true", async () => {
+    // The other arm. Without it, the fix could be satisfied by deleting the
+    // reassurance everywhere — including from the one section whose pre-deploy
+    // failure genuinely leaves the queue untouched.
+    routes(() => Promise.reject(new Error("400: invalid status")));
+    const user = userEvent.setup();
+    render(<ReviewFeed />);
+
+    await user.click(
+      await screen.findByRole("button", { name: /retired as stale/i })
+    );
+    const cause = await screen.findByTestId("retired-unknown-cause");
+    expect(cause.getAttribute("data-cause")).toBe("not-deployed");
+    expect(cause.textContent ?? "").toMatch(/nothing above is affected/i);
+    expect(cause.textContent ?? "").toMatch(/the retired status/i);
   });
 });

@@ -20,6 +20,7 @@ const ALL: ProposalKind[] = [
   "unclassifiable",
   "stale",
   "retired",
+  "decided",
   "unrecognised",
 ];
 
@@ -172,6 +173,74 @@ describe("a proposal coord already retired", () => {
     // inside the document write, while this page holds a list fetched before
     // it. In that window the row is still `pending` on screen and the only
     // evidence is the version comparison — which must still go red.
+    const s = deriveProposalStatus(
+      proposal({ base_version: 3, status: "pending" }),
+      7
+    );
+    expect(s.kind).toBe("stale");
+    expect(s.attention).toBe("author");
+  });
+});
+
+/**
+ * The regression this suite did not catch, and could not have.
+ *
+ * Every derived-staleness case above pairs `status: "pending"` (or an absent
+ * status) with a moved document. An APPROVED row is the opposite pairing, and
+ * it is not a corner case — **approving a proposal APPLIES the edit as a new
+ * document version**, so `liveVersion > base_version` holds for every approved
+ * row by construction. Falling through to the derived comparison therefore did
+ * not mis-file an occasional row: it filed the ENTIRE "Recently proposed &
+ * approved" section as `attention: "author"`, in `AUTHOR_RED` with the `✕`
+ * glyph, demanding the reader act on a decision already taken.
+ */
+describe("a proposal coord already decided", () => {
+  it("reads as `decided` and asks nothing, even though the document HAS moved", () => {
+    // The exact shape approving produces: base v3, document now at v7 because
+    // the approval is what moved it.
+    const s = deriveProposalStatus(
+      proposal({ base_version: 3, status: "approved" }),
+      7
+    );
+    expect(s.kind).toBe("decided");
+    expect(s.label).toBe("approved");
+    expect(s.attention).toBe("none");
+    expect(s.reason).toMatch(/closed this/i);
+  });
+
+  it("files a REJECTED row the same way", () => {
+    const s = deriveProposalStatus(
+      proposal({ base_version: 3, status: "rejected" }),
+      7
+    );
+    expect(s.kind).toBe("decided");
+    expect(s.label).toBe("rejected");
+    expect(s.attention).toBe("none");
+  });
+
+  it("paints `decided` calm — never the act-now red the derived kind uses", () => {
+    expect(PROPOSAL_ATTENTION_BY_KIND.decided).toBe("none");
+    expect(/\bbg-(red|amber)-/.test(PROPOSAL_KIND_CLASS.decided)).toBe(false);
+    // ...and it carries no `✕`, which the palette derives from `author`.
+    expect(PROPOSAL_AUTHOR_GLYPH_KINDS.has("decided")).toBe(false);
+  });
+
+  it("outranks the direction, `unrecognised` included", () => {
+    expect(
+      deriveProposalStatus(
+        proposal({
+          direction: "sideways" as PromptDocumentProposal["direction"],
+          status: "approved",
+        }),
+        7
+      ).kind
+    ).toBe("decided");
+  });
+
+  it("still lets a PENDING row with the same numbers go red", () => {
+    // The guard against over-correcting: if `decided` were reached by anything
+    // but the two closed statuses, the race-window warning would vanish with
+    // it and this file would still be green.
     const s = deriveProposalStatus(
       proposal({ base_version: 3, status: "pending" }),
       7
