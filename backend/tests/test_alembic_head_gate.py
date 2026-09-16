@@ -183,15 +183,21 @@ def test_down_re_annotation_cannot_borrow_the_next_lines_value() -> None:
 
 
 def test_a_comment_after_a_tuple_contributes_no_phantom_parent() -> None:
+    """``zz`` must be a REAL revision or this arm cannot fail.
+
+    With ``zz`` absent, admitting it as a phantom parent changes no head (it is
+    in no head set to begin with) and ``"zz" not in scan.revisions`` is true by
+    construction — so the assertions passed under the old line-oriented pattern
+    too, which scrapes it. Giving ``zz`` its own file is what makes the phantom
+    visible: scraped, it stops being a head; not scraped, it stays one.
+    """
     sources = {
-        **_tree(("a", None), ("b", "a"), ("c", "a")),
+        **_tree(("a", None), ("b", "a"), ("c", "a"), ("zz", "a")),
         Path("m.py"): (
             'revision: str = "m"\ndown_revision = ("b", "c")  # superseded "zz"\n'
         ),
     }
-    scan = scan_sources(sources)
-    assert scan.heads == ("m",)
-    assert "zz" not in scan.revisions
+    assert scan_sources(sources).heads == ("m", "zz")
 
 
 def test_a_wrapped_revision_id_is_still_parsed() -> None:
@@ -214,6 +220,51 @@ def test_a_wrapped_revision_id_is_still_parsed() -> None:
     scan = scan_sources(sources)
     assert scan.heads == ("b",)
     assert set(scan.revisions) == {"a", "b"}
+
+
+def test_a_docstring_cannot_supply_a_revisions_parent() -> None:
+    """Column-0 anchoring alone did NOT close this; masking does.
+
+    A revision's own docstring routinely explains its ``down_revision`` in
+    prose, and five files in this tree already put the word at column 0 inside
+    one. A docstring line that also carries an ``=`` would beat the real
+    assignment and silently re-point the graph at whatever the prose named —
+    the unmasked read was correct only because no such line exists today.
+    ``parse_source`` now reads the masked text, the same discipline the pin
+    matchers use.
+    """
+    sources = {
+        **_tree(("a", None), ("stale", None)),
+        Path("b.py"): (
+            '"""b\n\n'
+            "Once revised `stale`; the line below is PROSE, at column 0:\n"
+            'down_revision: str | Sequence[str] | None = "stale"\n'
+            '"""\n\n'
+            'revision: str = "b"\n'
+            'down_revision: str | Sequence[str] | None = "a"\n'
+        ),
+    }
+    scan = scan_sources(sources)
+    assert scan.revisions["b"] == '"a"'
+    # `stale` keeps its own head; it never became b's parent.
+    assert scan.heads == ("b", "stale")
+
+
+def test_a_docstring_cannot_supply_a_revision_id_either() -> None:
+    """The same mask, on ``REV_RE``: prose must not name the file's revision."""
+    sources = {
+        Path("a.py"): (
+            '"""a\n\n'
+            "This file explains another revision at column 0:\n"
+            'revision: str = "impostor"\n'
+            '"""\n\n'
+            'revision: str = "a"\n'
+            "down_revision: str | Sequence[str] | None = None\n"
+        ),
+    }
+    scan = scan_sources(sources)
+    assert set(scan.revisions) == {"a"}
+    assert scan.heads == ("a",)
 
 
 def test_a_close_paren_inside_a_comment_is_the_documented_reach_limit() -> None:

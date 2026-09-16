@@ -28,7 +28,6 @@ one accepting the test credentials.
 
 from __future__ import annotations
 
-import re
 import sys
 import uuid
 from datetime import UTC, datetime, timedelta
@@ -47,16 +46,22 @@ from tests._alembic_harness import (
     run_alembic,
 )
 
-# THE GATE'S OWN PARSER, not a third spelling of it. ``_alembic_graph`` exists
-# so the head computation has exactly one home (its module docstring says so),
-# and a private regex here would be free to drift away from the lane that
-# actually blocks. Importing it also buys the two properties a hand-rolled
-# pattern kept getting wrong: ``DOWN_RE`` is anchored at column 0, so a
-# ``down_revision`` written about inside this file's 87-line docstring or in a
-# trailing comment cannot win over the assignment; and ``PARENT_REF_RE``
-# returns EVERY literal in the right-hand side, which is what lets
-# :func:`_parent_revision_id` refuse a merge tuple instead of silently taking
-# its first element.
+# THE GATE'S OWN PARSER, not a private spelling of it. ``_alembic_graph``
+# exists so the head computation has exactly one home (its module docstring
+# says so), and a regex kept here would be free to drift away from the lane
+# that actually blocks. Importing it also buys the three properties a
+# hand-rolled pattern kept getting wrong, about the revision file this test
+# reads — ``plan_library_06_scan_root_slug_census.py``, whose own docstring
+# runs 87 lines and discusses its ``down_revision`` in prose:
+#
+#   1. ``parse_source`` reads from the MASKED text, so nothing inside a
+#      docstring can beat the real assignment — the half column-0 anchoring
+#      alone did NOT close.
+#   2. ``DOWN_RE`` is anchored at column 0, so a trailing ``# ...`` comment
+#      line cannot supply a parent either.
+#   3. ``PARENT_REF_RE`` returns EVERY literal in the right-hand side, which
+#      is what lets :func:`_parent_revision_id` refuse a merge tuple instead
+#      of silently taking its first element.
 _SCRIPTS_CI = backend_root().parent / "scripts" / "ci"
 sys.path.insert(0, str(_SCRIPTS_CI))
 
@@ -107,7 +112,13 @@ def _parent_revision_id() -> str:
     """The single revision this one revises, read from its source at runtime."""
     parsed = parse_source(_revision_source())
     assert parsed is not None, f"{_REVISION_FILENAME} declares no parseable revision id"
-    parents = PARENT_REF_RE.findall(parsed[1])
+    # Drop a trailing comment before counting literals. ``DOWN_RE``'s
+    # single-line fallback captures to end of line, so a perfectly ordinary
+    # `down_revision = "x"  # was "y"` would otherwise read as TWO parents and
+    # trip the exactly-one rule below — at import time, taking every test in
+    # this file down as a collection error rather than a named failure.
+    # ``_alembic_graph.repoint_sites`` guards the same way.
+    parents = PARENT_REF_RE.findall(parsed[1].partition("#")[0])
     assert len(parents) == 1, (
         f"{_REVISION_FILENAME} must declare exactly ONE parent so the "
         f"downgrade arm below has one place to stop; parsed {parents!r} from "
@@ -145,11 +156,8 @@ def test_the_revision_id_is_unique_in_the_chain() -> None:
     same_id = [
         path.name
         for path in versions.glob("*.py")
-        if re.search(
-            rf'^revision[^=]*=\s*["\']{re.escape(_REVISION_ID)}["\']',
-            path.read_text(encoding="utf-8"),
-            re.MULTILINE,
-        )
+        for parsed in [parse_source(path.read_text(encoding="utf-8"))]
+        if parsed is not None and parsed[0] == _REVISION_ID
     ]
     assert same_id == [_REVISION_FILENAME], (
         f"revision id {_REVISION_ID!r} is claimed by {same_id}"

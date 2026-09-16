@@ -159,11 +159,32 @@ def parse_source(source: str) -> tuple[str, str] | None:
 
     Returns ``None`` when the file holds no ``revision = ...`` assignment
     (``__init__.py``, a helper module dropped in the dir, and so on).
+
+    Read from the MASKED text, the same discipline the pin matchers below
+    already use (:func:`_qualifying_sources`). Column-0 anchoring alone is not
+    enough: a revision's own docstring routinely explains its ``down_revision``,
+    and a docstring line that happens to start at column 0 and carry an ``=``
+    would beat the real assignment — silently re-pointing the graph at whatever
+    the prose named. Five revision files already put ``down_revision`` at
+    column 0 inside a docstring; none carries an ``=`` on that line TODAY, which
+    is the only reason the unmasked read was correct rather than lucky.
+
+    Direction of the change, stated because it is the risky one: masking can
+    only REMOVE text, so it can only lose parents, which can only GROW the head
+    set — a PASS could in principle become a FAIL. It does not here: replayed
+    over all 566 revision files, masked and unmasked agree on every revision id
+    and every parent. A real assignment cannot live inside a string, so the
+    only thing masking can take away is prose.
+
+    Offsets are preserved by the mask, and a tokenizer refusal degrades to the
+    regex rather than aborting, so an unparseable file still parses as well as
+    it did before.
     """
-    match = REV_RE.search(source)
+    masked = _mask_triple_quoted(source)
+    match = REV_RE.search(masked)
     if not match:
         return None
-    down_match = DOWN_RE.search(source)
+    down_match = DOWN_RE.search(masked)
     down = down_match.group(1).strip() if down_match else "None"
     return match.group(1), down
 
