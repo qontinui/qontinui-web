@@ -78,9 +78,9 @@ export interface ClearanceRuleListProps {
  * reading of "inactive".
  *
  * **R3, and the split it makes.** The list painted every not-in-play rule with
- * one amber `inactive` badge. Two of `inertReason`'s five answers are a CHOICE
+ * one amber `inactive` badge. Two of `inertReason`'s six answers are a CHOICE
  * (`disabled`, `expired` — an off switch that is off, an expiry that lapsed as
- * asked) and three are a DEFECT (`repo-scoped`, `no-class`,
+ * asked) and four are a DEFECT (`repo-scoped`, `empty-repo`, `no-class`,
  * `unknown-authority` — a rule coord's resolver can never match, while the
  * operator believes it is governing the class). Only the second group is red.
  *
@@ -427,7 +427,11 @@ function RuleRow({
             policy_id: {rule.policy_id}
             {gateClass ? ` · gate_class: ${gateClass}` : ""}
             {` · band: ${rule.built_in ? "system" : "tenant"}`}
-            {rule.repo ? ` · repo: ${rule.repo}` : ""}
+            {rule.repo === ""
+              ? " · repo: (empty string)"
+              : rule.repo
+                ? ` · repo: ${rule.repo}`
+                : ""}
             {rule.expires_at ? ` · expires_at: ${rule.expires_at}` : ""}
           </div>
         }

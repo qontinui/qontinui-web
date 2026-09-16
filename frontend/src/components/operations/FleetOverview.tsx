@@ -18,8 +18,9 @@ import {
 import { MachineCard } from "./MachineCard";
 import { DeviceStatusTile } from "./DeviceStatusTile";
 import { TaskRunCard } from "./TaskRunCard";
-import { useDeviceStatusStream } from "./useDeviceStatusStream";
+import type { UseDeviceStatusStreamResult } from "./useDeviceStatusStream";
 import { useSymbolClaimsStream } from "./useSymbolClaimsStream";
+import { coordDeviceHostKey } from "./coordCredentialStatus";
 import { httpClient } from "@/services/service-factory";
 import {
   FLEET_VOLUMES_API,
@@ -210,7 +211,13 @@ function buildMachineGroups(
   // matches no coord device gets `{matched: false}`, which renders `unknown`
   // too, and says why.
   for (const device of coordDevices) {
-    const hostname = device.hostname ?? device.device_id;
+    // The one spelling of this join key — the strip's credential rollup
+    // (`summarizeCoordCredentials`) resolves each device's heartbeat bag
+    // through the same function, so the strip and these rows agree for every
+    // device keyed the same way. Two coord devices sharing a hostname fold
+    // onto one row here (last writer wins), but the rollup counts both; each
+    // side reads a stream report only when its `device_id` matches.
+    const hostname = coordDeviceHostKey(device);
     const group = byHost.get(hostname);
     const join = {
       matched: true as const,
@@ -221,6 +228,13 @@ function buildMachineGroups(
       // no hostname), and the card's title is an operator alias. The drain
       // control needs the identity coord will act on, not either of those.
       hostname: device.hostname,
+      // Coord's credential verdict for this device, carried through rather
+      // than dropped (plan
+      // `2026-09-12-runner-loads-with-an-expired-coord-credential-and-tells-nobody`
+      // Phase 5). `undefined` here is UNKNOWN and renders as such — it is NOT
+      // normalised to `{dark: false}`, which would be this join inventing a
+      // measurement coord never made.
+      credential_dark: device.credential_dark,
     };
     if (group) {
       group.coordHealth = join;
@@ -333,12 +347,39 @@ export interface FleetOverviewProps {
    * that an idle-looking row is a healthy one.
    */
   drain: UseFleetDrainResult;
+  /**
+   * The live `coord.device_status` stream (`useDeviceStatusStream`) — each
+   * machine's current activity and the runner's own `details` bag, including
+   * its `coord_credential` report.
+   *
+   * Owned by the page and passed down, exactly like `health`, `ciMachines` and
+   * `drain`. The hook opens a REST seed and a WebSocket PER CALL, so the page
+   * holds the one subscription and hands it to every consumer: this list, the
+   * `DeviceStatusTile` inside it, and the health strip's credential rollup,
+   * which must see the same bag these rows resolve against or the strip and
+   * the rows disagree about which machines are measured.
+   *
+   * Required, and deliberately not optional: a mount that called the hook here
+   * again would be a second socket on the same page, and one that passed
+   * nothing would render every row's activity and credential report as absent.
+   */
+  deviceStatus: UseDeviceStatusStreamResult;
+  /**
+   * The page's ticking clock (epoch ms), handed to each row's credential
+   * resolution. A runner report goes stale by time alone, so the rows must
+   * re-resolve on a tick rather than only when a read lands — and on the SAME
+   * clock as the strip's rollup, or the two could disagree for up to a tick.
+   * Required for the same reason `deviceStatus` is.
+   */
+  nowMs: number;
 }
 
 export function FleetOverview({
   health,
   ciMachines,
   drain,
+  deviceStatus,
+  nowMs,
 }: FleetOverviewProps) {
   const [fleet, setFleet] = useState<FleetStatus | null>(null);
   const [tasks, setTasks] = useState<AggregatedTaskRuns | null>(null);
@@ -452,7 +493,6 @@ export function FleetOverview({
     return () => clearInterval(interval);
   }, [fetchData]);
 
-  const deviceStatus = useDeviceStatusStream();
   const symbolClaims = useSymbolClaimsStream();
 
   // Stable identity: `?? []` would allocate a fresh array every render and
@@ -667,6 +707,7 @@ export function FleetOverview({
                   <MachineCard
                     key={group.hostname}
                     machine={group}
+                    nowMs={nowMs}
                     onRenamed={fetchData}
                     // The drain join, resolved here from the page's ONE read.
                     // Two values rather than one because they answer different

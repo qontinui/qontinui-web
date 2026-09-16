@@ -137,7 +137,101 @@ export function notificationHref(
 ): string | null {
   const trimmed = (ref ?? "").trim();
   if (!trimmed) return null;
-  return `/admin/coord/notifications?ref=${encodeURIComponent(trimmed)}`;
+  return notificationsFeedHref(trimmed);
+}
+
+/** The `?ref=` deep link for a ref already known to be non-blank. */
+function notificationsFeedHref(ref: string): string {
+  return `/admin/coord/notifications?ref=${encodeURIComponent(ref)}`;
+}
+
+/**
+ * Where one row's reasoning can actually be read from — the two shapes a
+ * `notification_ref` resolves to, decided by whether a NOTICE for the write
+ * exists to be linked to.
+ *
+ * - `notice`: the write was an EDIT (`version_number > 1`). Coord emitted a
+ *   `PolicyDocumentChanged` event for it (or the reconciler re-emitted one)
+ *   whose payload carries this same `notification_ref`, so the notifications
+ *   feed's `?ref=` deep link finds the event and the reasoning beside it.
+ * - `finding_only`: the write CREATED the document (`version_number <= 1` —
+ *   the exact complement of the Undo gate's `> 1`).
+ *   Creation deliberately never emits — coord's `notify_document_version_change`
+ *   says why: a tenant's first boot would otherwise announce values nobody
+ *   changed — and the reconciler excludes v1 for the same reason. The
+ *   reasoning exists, as the finding the author filed with the write, but no
+ *   notification carries it. Linking such a row into the notifications feed
+ *   sends the operator to an event that cannot exist, where the `?ref=`
+ *   banner then reports it "may be older than these — load more": an UNKNOWN
+ *   rendered over a certainty. The feed's own completeness caveat states the
+ *   rule in operator language ("a newly created document sends no notice"),
+ *   so a v1 row must not contradict it with a link.
+ *
+ * `null` for an absent ref, as `notificationHref`: no ref, no control.
+ */
+export type ReasoningRef =
+  | { kind: "notice"; href: string; findingId: string }
+  | { kind: "finding_only"; findingId: string };
+
+export function reasoningRef(
+  write: Pick<PromptDocumentWrite, "version_number" | "notification_ref">
+): ReasoningRef | null {
+  const findingId = (write.notification_ref ?? "").trim();
+  if (!findingId) return null;
+  if (write.version_number <= 1) return { kind: "finding_only", findingId };
+  return { kind: "notice", href: notificationsFeedHref(findingId), findingId };
+}
+
+/**
+ * The one kind a withdrawal exists for. Coord refuses `…/withdraw` on every
+ * other kind (plan
+ * `2026-09-13-decision-records-are-agent-writable-but-policy-says-they-are-not`,
+ * §7 3.1: `initiative` retires through `status: closed`, and no other kind has a
+ * consumer that reads the state), so offering the control elsewhere would only
+ * mint a button that always fails.
+ */
+export const WITHDRAWABLE_KIND = "decision_record";
+
+/**
+ * Whether the document this write belongs to is withdrawn — an explicit
+ * `true` only. Absent (a coord predating withdrawal) and `null` are not a
+ * verdict that the record is live, so they mark nothing.
+ */
+export function isDocumentWithdrawn(
+  write: Pick<PromptDocumentWrite, "document_withdrawn">
+): boolean {
+  return write.document_withdrawn === true;
+}
+
+/**
+ * Whether a row gets the one-click Withdraw control.
+ *
+ * Exactly the gap the Undo leaves: Undo appends the PRIOR body, so it renders on
+ * a head write with `version_number > 1` and never on v1, which has none. A
+ * CREATED decision record is therefore the one agent write the feed could not
+ * reverse — and `/chart` reads a decision record as a veto. So Withdraw renders
+ * on a head **v1** `decision_record` and nowhere else:
+ *
+ * - not on v > 1, where Undo already reverses the latest write (including a
+ *   withdrawal, since withdrawing writes a new version whose prior body is the
+ *   live record);
+ * - not on a non-head row, for the same reason Undo is head-only — acting on
+ *   an older write from a flat feed would ignore every write since;
+ * - not on any other kind (see `WITHDRAWABLE_KIND`);
+ * - not on a record coord already says is withdrawn.
+ */
+export function canWithdraw(
+  write: Pick<
+    PromptDocumentWrite,
+    "kind" | "version_number" | "current_version" | "document_withdrawn"
+  >
+): boolean {
+  return (
+    write.kind === WITHDRAWABLE_KIND &&
+    write.version_number === 1 &&
+    write.version_number === write.current_version &&
+    !isDocumentWithdrawn(write)
+  );
 }
 
 /** The document address, used as a stable React key and testid suffix. */

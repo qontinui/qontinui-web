@@ -278,11 +278,16 @@ describe("CoordNav", () => {
       "href",
       "/admin/coord/migrations"
     );
-    // Overview, then the eleven operator-only members.
-    expect(screen.getAllByRole("menuitem")).toHaveLength(12);
+    // The per-runner maintenance surface (drained-runner Phase 8).
+    expect(screen.getByTestId("coord-nav-runners")).toHaveAttribute(
+      "href",
+      "/admin/coord/runners"
+    );
+    // Overview, then the twelve operator-only members.
+    expect(screen.getAllByRole("menuitem")).toHaveLength(13);
   });
 
-  it("orders the Dev Ops group Overview · Trees · Spawn · Test Targets · Migrations", async () => {
+  it("orders the Dev Ops group Overview · Trees · Spawn · Runners · Test Targets · Migrations", async () => {
     isSuperuser = true;
     const user = userEvent.setup();
     render(<CoordNav />);
@@ -290,10 +295,11 @@ describe("CoordNav", () => {
     await user.click(screen.getByTestId("coord-nav-group-devops"));
     await screen.findByTestId("coord-nav-devops-overview");
     const items = screen.getAllByRole("menuitem");
-    expect(items.slice(0, 5).map((el) => el.textContent)).toEqual([
+    expect(items.slice(0, 6).map((el) => el.textContent)).toEqual([
       "Overview",
       "Trees",
       "Spawn",
+      "Runners",
       "Test Targets",
       "Migrations",
     ]);
@@ -315,6 +321,7 @@ describe("CoordNav", () => {
     for (const [path, testId, label] of [
       ["/admin/coord/devops", "coord-nav-devops-overview", "Overview"],
       ["/admin/coord/trees", "coord-nav-trees", "Trees"],
+      ["/admin/coord/runners", "coord-nav-runners", "Runners"],
       ["/admin/coord/test-targets", "coord-nav-test-targets", "Test Targets"],
       ["/admin/coord/migrations", "coord-nav-migrations", "Migrations"],
       ["/admin/coord/releases", "coord-nav-releases", "Releases"],

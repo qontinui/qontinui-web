@@ -7,7 +7,7 @@ instead of living only as markdown in a dozen checkouts.
 
 Routes
 ------
-``GET   /plan-library``            list + filter (kind/status/repo/q/since/work_unit/intent_ref)
+``GET   /plan-library``            list + filter (kind/status/repo/q/since/work_unit/intent_ref/slug) + corpus_health
 ``GET   /plan-library/divergent``  same (kind, slug) differing digests + kind forks
 ``GET   /plan-library/reconciliation`` three-way plan-status agreement (Phase 4)
 ``GET   /plan-library/capture-health`` corpus census by capture door (Phase 5)
@@ -117,7 +117,7 @@ import io
 import json
 import re
 import zipfile
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import get_args
@@ -134,6 +134,7 @@ from fastapi import (
     Response,
     status,
 )
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import (
@@ -150,6 +151,7 @@ from app.api.v1.endpoints.operations import (
     capture_caller_bearer,
     get_tenant_id,
 )
+from app.crud import plan_scan_root as scan_root_crud
 from app.crud import work_artifact as crud
 from app.models.user import User
 from app.models.work_artifact import (
@@ -167,6 +169,7 @@ from app.schemas.plan_library import (
     CapturedBy,
     CaptureDoorHealth,
     CaptureHealthResponse,
+    CorpusHealth,
     DivergentGroup,
     DivergentResponse,
     DivergentVariant,
@@ -197,6 +200,10 @@ from app.schemas.plan_library import (
 )
 from app.services import plan_status
 from app.services.permissions import resolve_personal_organization
+from app.services.plan_scan_root_health import (
+    scan_roots_health,
+    scan_roots_read_failed,
+)
 
 logger = structlog.get_logger(__name__)
 
@@ -2192,7 +2199,17 @@ async def list_work_artifacts(
     work_unit_slug: str | None = Query(
         None,
         description="Soft link to a coord work unit. Not resolved; a slug "
-        "with no matching work unit simply returns its artifacts.",
+        "with no matching work unit simply returns its artifacts. The "
+        "scanner writes it for kind=plan only and a hand-POSTed row may "
+        "carry none — for a by-stem lookup that must find the row whoever "
+        "wrote it, use `slug`.",
+    ),
+    slug: str | None = Query(
+        None,
+        description="Exact match on the artifact's OWN slug — part of its "
+        "identity, never null, written by every door (the scanner writes "
+        "the file stem). Distinct from `work_unit_slug`, the nullable soft "
+        "link; `q` does not search identifiers.",
     ),
     intent_ref: str | None = Query(
         None,
@@ -2205,6 +2222,25 @@ async def list_work_artifacts(
     db: AsyncSession = Depends(get_async_db),
     current_user: User = Depends(get_audit_actor_user),
 ) -> WorkArtifactListResponse:
+    """A filtered page, with the health of the corpus it came from.
+
+    ``corpus_health`` (design decision D1 of
+    ``2026-08-27-plan-corpus-read-path-is-dark``) rides on every page so that
+    ``items: []`` is never the whole answer: ``plan_count: 0`` beside it says
+    "the corpus holds no plans", which is a different sentence from "no such
+    plan". Its ``capture`` block is ``/capture-health``'s census from the
+    same query and builder, and its ``scan_roots`` block is
+    ``GET /plan-library/scan-roots`` rendered by the same builder (two reads
+    can still differ by when they happen):
+    how far behind its default branch each device's scan source is, so a page
+    drawn from a stale corpus can say so. Two extra reads per list call — one
+    aggregate, and one over a table of one row per device inside a savepoint
+    (four round trips in all).
+
+    ``slug`` is a QUERY key, not a path segment: this adds no route, so the
+    literal-before-pattern ordering below (``/divergent``, ``/capture-health``
+    … declared before ``/{artifact_id}``) is untouched.
+    """
     org_id = await _resolve_org_id(db, current_user)
     rows, total = await crud.list_artifacts(
         db,
@@ -2216,6 +2252,7 @@ async def list_work_artifacts(
         since=since,
         work_unit_slug=work_unit_slug,
         intent_ref=intent_ref,
+        slug=slug,
         offset=offset,
         limit=limit,
     )
@@ -2226,6 +2263,94 @@ async def list_work_artifacts(
         total=total,
         offset=offset,
         limit=limit,
+        corpus_health=await _load_corpus_health(db, org_id=org_id),
+    )
+
+
+def _capture_health_response(
+    census: Sequence[crud.CaptureDoorCensus],
+) -> CaptureHealthResponse:
+    """Fold the crud census onto the schema vocabulary — zeros included.
+
+    Every door in :data:`CapturedBy` appears, an unused one as an explicit
+    ``0``; a door the CHECK constraint allows but this build does not
+    recognise is appended with ``known: false`` rather than swallowed.
+    Shared by ``/capture-health`` and the list page's ``corpus_health`` so
+    the two renderings of one census are one function.
+    """
+    known_doors: tuple[str, ...] = get_args(CapturedBy)
+    observed = {row.captured_by: row for row in census}
+
+    doors = []
+    for door in known_doors:
+        row = observed.get(door)
+        doors.append(
+            CaptureDoorHealth(
+                captured_by=door,
+                count=row.count if row else 0,
+                known=True,
+                first_at=row.first_at if row else None,
+                last_touched_at=row.last_touched_at if row else None,
+            )
+        )
+    doors.extend(
+        CaptureDoorHealth(
+            captured_by=row.captured_by,
+            count=row.count,
+            known=False,
+            first_at=row.first_at,
+            last_touched_at=row.last_touched_at,
+        )
+        for row in census
+        if row.captured_by not in known_doors
+    )
+    _, _, newest = crud.corpus_totals(census)
+    return CaptureHealthResponse(
+        total=sum(d.count for d in doors),
+        doors=doors,
+        newest_updated_at=newest,
+    )
+
+
+async def _load_corpus_health(db: AsyncSession, *, org_id: UUID | None) -> CorpusHealth:
+    """The ``corpus_health`` block for ``org_id`` — list pages and ``/candidates``.
+
+    One function so the two routes that carry the block cannot drift: the
+    capture census is ``/capture-health``'s, and ``scan_roots`` is
+    ``GET /plan-library/scan-roots``'s, each through that route's own builder.
+    UNFILTERED by any page query, org-scoped like the page.
+
+    The scan-root read is REPORT-ONLY beside a corpus read, so its failure
+    must not fail the page: it runs in a savepoint (a failed statement would
+    otherwise poison the request's transaction for everything after it) and
+    degrades to ``scan_roots_read_failed`` — ``state: "unknown"``, never an
+    empty list that reads as "no drift". ``GET /plan-library/scan-roots``
+    itself does not degrade: the readings are its whole answer.
+    """
+    census = await crud.capture_health(db, org_id=org_id)
+    try:
+        async with db.begin_nested():
+            observations = await scan_root_crud.list_observations(db, org_id=org_id)
+    except SQLAlchemyError as exc:
+        # The page names only the class; the log carries the traceback, so a
+        # missing migration and a timeout stay distinguishable to an operator —
+        # and so does a session-misuse bug this broad catch would otherwise
+        # hide as a report-only degradation.
+        logger.warning(
+            "plan_library.corpus_health_scan_roots_read_failed",
+            error=type(exc).__name__,
+            exc_info=True,
+        )
+        scan_roots = scan_roots_read_failed(exc)
+    else:
+        scan_roots = scan_roots_health(observations, now=datetime.now(UTC))
+    artifact_count, plan_count, newest = crud.corpus_totals(census)
+    return CorpusHealth(
+        artifact_count=artifact_count,
+        plan_count=plan_count,
+        newest_updated_at=newest,
+        capture=_capture_health_response(census),
+        scan_roots=scan_roots,
     )
 
 
@@ -2920,37 +3045,7 @@ async def get_capture_health(
     does not recognise; it is surfaced rather than swallowed.
     """
     org_id = await _resolve_org_id(db, current_user)
-    rows = await crud.capture_health(db, org_id=org_id)
-    known_doors: tuple[str, ...] = get_args(CapturedBy)
-    observed = {door: (count, first, touched) for door, count, first, touched in rows}
-
-    doors = []
-    for door in known_doors:
-        count, first, touched = observed.get(door, (0, None, None))
-        doors.append(
-            CaptureDoorHealth(
-                captured_by=door,
-                count=count,
-                known=True,
-                first_at=first,
-                last_touched_at=touched,
-            )
-        )
-    doors.extend(
-        CaptureDoorHealth(
-            captured_by=door,
-            count=count,
-            known=False,
-            first_at=first,
-            last_touched_at=touched,
-        )
-        for door, count, first, touched in rows
-        if door not in known_doors
-    )
-    return CaptureHealthResponse(
-        total=sum(d.count for d in doors),
-        doors=doors,
-    )
+    return _capture_health_response(await crud.capture_health(db, org_id=org_id))
 
 
 @router.get(
@@ -2971,6 +3066,9 @@ async def export_corpus(
     q: str | None = Query(None),
     since: datetime | None = Query(None),
     work_unit_slug: str | None = Query(None),
+    slug: str | None = Query(
+        None, description="Exact match on the artifact's own slug (see the list route)."
+    ),
     limit: int = Query(
         _EXPORT_MAX_ARTIFACTS,
         ge=1,
@@ -3026,6 +3124,7 @@ async def export_corpus(
         q=q,
         since=since,
         work_unit_slug=work_unit_slug,
+        slug=slug,
         limit=limit,
     )
 
@@ -3174,6 +3273,12 @@ async def list_plan_candidates(
     not an artifact and has no id to be a candidate with; folding it into
     ``items`` would mean inventing one. ``items`` is unchanged.
 
+    ``corpus_health`` is the block every list page carries — the corpus's
+    counts, capture census, and each feeding device's scan-source drift — so
+    a consumer ranking these candidates can see, in the same read, whether
+    the corpus they were drawn from is stale. Report-only: a stale corpus is
+    still the best available answer, and nothing here refuses to serve it.
+
     Two principals reach this route (module docstring, invariant 7) and the
     coord half is fetched with whichever bearer they presented, so the coord
     reads follow the credential to the door tier that accepts it — the
@@ -3314,6 +3419,28 @@ async def list_plan_candidates(
             )
         )
 
+    # Report-only on THIS route: before it carried the block, /candidates read
+    # neither the capture census nor the scan-root table, so a failure in
+    # either must not take the candidates down. A savepoint contains the failed
+    # statement; the block is then null with the reason beside it — UNKNOWN,
+    # never a healthy-looking default.
+    corpus_health: CorpusHealth | None = None
+    corpus_health_unavailable_reason: str | None = None
+    try:
+        async with db.begin_nested():
+            corpus_health = await _load_corpus_health(db, org_id=org_id)
+    except SQLAlchemyError as exc:
+        logger.warning(
+            "plan_library.candidates_corpus_health_read_failed",
+            error=type(exc).__name__,
+            exc_info=True,
+        )
+        corpus_health_unavailable_reason = (
+            f"read_failed: the corpus health block could not be read "
+            f"({type(exc).__name__}); the candidates are unaffected, and a null "
+            "block is UNKNOWN, not healthy."
+        )
+
     return PlanCandidateResponse(
         items=items,
         count=len(items),
@@ -3329,6 +3456,8 @@ async def list_plan_candidates(
             _open_followup(edge, origin, now) for edge, origin in followup_rows
         ],
         open_followup_total=followup_total,
+        corpus_health=corpus_health,
+        corpus_health_unavailable_reason=corpus_health_unavailable_reason,
     )
 
 

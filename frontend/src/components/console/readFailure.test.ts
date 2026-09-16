@@ -80,4 +80,10 @@ describe("staleDetail", () => {
       "Last refresh failed — these counts are stale. 4 rows in the fetched window"
     );
   });
+
+  it("stands alone, with no dangling separator, when there is nothing else to say", () => {
+    // A strip whose counts all live in its badges has no window sentence left;
+    // the qualifier must still render, and must not end in a stray space.
+    expect(staleDetail("")).toBe("Last refresh failed — these counts are stale.");
+  });
 });

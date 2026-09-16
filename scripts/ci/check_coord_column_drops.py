@@ -99,6 +99,14 @@ name (its ``INTENTIONALLY_UNRESOLVED`` waiver); its third field carries
 ``<file>: <reason>``, and a drop on that table is UNKNOWN — exit 2 naming the
 file and the reason, never a pass.
 
+A named row's third field, ``source``, is coord's provenance string — a bare
+source file relative to ``crates/coord/src`` (``sessions.rs``), or
+``<file>:<CONST>`` for an allowlist-declared read
+(``schema_readiness.rs:REQUIRED_COLUMNS``). It carries no line number (plan
+``2026-09-07-read-surface-manifest-keyed-by-line-reds-every-sql-touching-coord-pr``),
+and this gate prints it verbatim and never parses it. Only a wildcard row's
+``source`` is split, once, at ``": "`` to quote the waiver reason.
+
 Either half may be served as ``null``, and each then carries its own reason
 beside it: ``deployed_unavailable_reason`` (the serving build compiled in no
 40-hex ``BUILD_SHA``, so coord declines to fabricate one) and

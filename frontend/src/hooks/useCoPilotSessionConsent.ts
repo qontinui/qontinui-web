@@ -7,7 +7,9 @@
  * Even with the per-user durable preference ON, every NEW browser session
  * shows a one-time modal before the relay listener mounts. The decision
  * lives in ``sessionStorage`` — closing the tab or opening a new one
- * re-prompts.
+ * re-prompts. On loopback dev no modal is shown: a ``null`` decision is
+ * auto-granted, and only an explicit ``revoked`` keeps the relay off
+ * (``lib/ui-bridge/co-pilot-gates.ts``).
  *
  * State machine:
  *   - ``null``     — no decision yet for this session (modal should render).

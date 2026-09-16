@@ -18,7 +18,11 @@
  * ## Three timestamps, three different questions
  *
  * `authored_at` is when the plan was WRITTEN (slug-derived, nullable — plan
- * `2026-09-02-coord-work-units-carry-no-authoring-date`); `created_at` is
+ * `2026-09-02-coord-work-units-carry-no-authoring-date`), read through
+ * `planAuthoredAt` so that a dated slug whose coord column is NULL — a unit
+ * created through the MCP upsert door, 29 of them on 2026-09-13, all the
+ * NEWEST in the corpus — sorts by the date its slug carries instead of
+ * sinking to the bottom as "undated" under the default sort; `created_at` is
  * when coord first INGESTED the row, which for most of the corpus is a bulk
  * backfill date; `updated_at` is the scanner's last touch (~68 s cadence). The
  * `created_*` keys were labelled "created" until that plan and defaulted the
@@ -27,7 +31,10 @@
  * still a real question; they just no longer answer "what is newest".
  */
 
-import type { CoordPlanRow } from "@/components/admin/coord/planStatus";
+import {
+  planAuthoredAt,
+  type CoordPlanRow,
+} from "@/components/admin/coord/planStatus";
 
 export type SortKey =
   | "authored_desc"
@@ -48,13 +55,19 @@ export const SORTS: { value: SortKey; label: string }[] = [
   { value: "slug_asc", label: "Slug A→Z" },
 ];
 
-type TimeField = "authored_at" | "created_at" | "updated_at";
-
-/** The row column a time-keyed sort reads. `slug_asc` never gets here. */
-function timeFieldFor(key: Exclude<SortKey, "slug_asc">): TimeField {
-  if (key.startsWith("authored")) return "authored_at";
-  if (key.startsWith("created")) return "created_at";
-  return "updated_at";
+/**
+ * The instant a time-keyed sort reads off a row. `slug_asc` never gets here.
+ * The `authored_*` keys read the EFFECTIVE authoring date (slug prefix, then
+ * coord's column — `planAuthoredAt`), never the bare column, so the sort
+ * agrees with the identity chip on which rows are dated.
+ */
+function timeValueFor(
+  row: CoordPlanRow,
+  key: Exclude<SortKey, "slug_asc">
+): string | null | undefined {
+  if (key.startsWith("authored")) return planAuthoredAt(row);
+  if (key.startsWith("created")) return row.created_at;
+  return row.updated_at;
 }
 
 /**
@@ -62,7 +75,7 @@ function timeFieldFor(key: Exclude<SortKey, "slug_asc">): TimeField {
  *
  * Rows whose sort timestamp is missing or unparseable sink to the bottom in
  * BOTH directions, tie-broken by slug for a stable order. That asymmetry is
- * deliberate: an absent `authored_at` (or `created_at`) is UNKNOWN, and
+ * deliberate: an absent authoring date (or `created_at`) is UNKNOWN, and
  * "oldest authored" must not be answered with a row whose authoring date we do
  * not have. Treating missing as epoch-zero would put exactly the least-known
  * rows at the top — and with a coord that predates the `authored_at` column
@@ -73,11 +86,10 @@ export function sortPlans(rows: CoordPlanRow[], key: SortKey): CoordPlanRow[] {
   if (key === "slug_asc") {
     return out.sort((a, b) => a.slug.localeCompare(b.slug));
   }
-  const field = timeFieldFor(key);
   const asc = key.endsWith("_asc");
   return out.sort((a, b) => {
-    const ta = Date.parse(a[field] ?? "");
-    const tb = Date.parse(b[field] ?? "");
+    const ta = Date.parse(timeValueFor(a, key) ?? "");
+    const tb = Date.parse(timeValueFor(b, key) ?? "");
     const aBad = Number.isNaN(ta);
     const bBad = Number.isNaN(tb);
     if (aBad && bBad) return a.slug.localeCompare(b.slug);

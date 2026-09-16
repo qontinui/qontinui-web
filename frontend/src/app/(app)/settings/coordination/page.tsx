@@ -24,6 +24,7 @@ import {
   type AutonomyLevel,
 } from "./_hooks/useNextStepSettings";
 import { PrioritySetsSection } from "./_components/PrioritySetsSection";
+import { FixerSpawnToggle } from "./_components/FixerSpawnToggle";
 
 // ---- helpers ----------------------------------------------------------------
 
@@ -116,13 +117,18 @@ export default function CoordinationSettingsPage() {
     (d) => d.decision_domain === "next_step"
   );
   const primaryOn = draft["next_step"] === "auto_decide";
+  const prFixDomain = settings?.domains.find(
+    (d) => d.decision_domain === "pr_fix"
+  );
 
   return (
     <div className="p-6">
       <div className="max-w-2xl space-y-6">
         {/* Header */}
         <div>
-          <h2 className="text-lg font-semibold">Coordination &amp; automation</h2>
+          <h2 className="text-lg font-semibold">
+            Coordination &amp; automation
+          </h2>
           <p className="text-sm text-muted-foreground">
             Control how coordination handles autonomous next-step work when your
             interactive session goes stale.
@@ -157,7 +163,7 @@ export default function CoordinationSettingsPage() {
         )}
 
         {/* Read-only notice */}
-        {!canEdit && (
+        {settings !== null && !canEdit && (
           <div className="rounded-lg border border-border px-4 py-3">
             <p className="text-xs text-muted-foreground">
               You have read-only access to these settings. A coord-tenant admin
@@ -292,6 +298,18 @@ export default function CoordinationSettingsPage() {
                         <p className="text-xs text-muted-foreground truncate">
                           {domain.description}
                         </p>
+                        {domain.autonomy_level_source === "code_fallback" && (
+                          <p
+                            className="text-xs text-yellow-500/80"
+                            data-testid={`domain-fallback-${domain.decision_domain}`}
+                          >
+                            Not saved yet: coord has no policy for this domain
+                            and escalates until one is saved. The highlighted
+                            level is only the built-in default — click a level
+                            (including the highlighted one) and save to apply
+                            it.
+                          </p>
+                        )}
                         <p className="text-xs text-muted-foreground">
                           Effective:{" "}
                           {effectiveBlocked ? (
@@ -334,6 +352,18 @@ export default function CoordinationSettingsPage() {
             </CollapsibleContent>
           </Collapsible>
         </section>
+
+        <div className="border-t border-border" />
+
+        {/* PR fixer spawn off-switch. Its own section, outside the Advanced
+            disclosure and independent of the next-step settings load: it is a
+            different endpoint, and policy requires it to be reachable. It
+            pairs with the "Automatic fixer for stuck PRs" autonomy row. */}
+        <FixerSpawnToggle
+          canEdit={canEdit}
+          editRightsKnown={settings !== null}
+          autonomyState={prFixDomain?.effective_state}
+        />
 
         <div className="border-t border-border" />
 

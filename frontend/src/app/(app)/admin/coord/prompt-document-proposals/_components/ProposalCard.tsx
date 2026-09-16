@@ -14,6 +14,8 @@ import {
   CoordAdminOnly,
   ReadOnlyNotice,
 } from "@/components/admin/coord/CoordAdminOnly";
+import { selfDecidedOrUnknown } from "../_lib/authorship";
+import { formatWhen } from "../_lib/format";
 import { DIRECTION_META, TIER_DESCRIPTIONS } from "../types";
 import type { PromptDocumentProposal, ProposalTier } from "../types";
 import {
@@ -84,7 +86,23 @@ function TierChip({ tier }: { tier: ProposalTier | null }) {
  * Every authored `data-testid` is carried across unchanged (D4a):
  * `proposal-<id>`, `proposal-direction`, `proposal-tier-change`,
  * `proposal-content`, `proposal-stale`, `proposal-decision-note`,
- * `proposal-reject`, `proposal-approve`.
+ * `proposal-reject`, `proposal-approve`. `proposal-decided-by` was added by
+ * plan `2026-09-13-policy-proposals-agent-decidable-dial-driven-self-retiring`
+ * Phase 4 and carries `data-self-decided`, the machine-readable half of the
+ * author-decided line — TRI-STATE (`true` / `false` / `unknown`), so "coord
+ * says somebody else decided it" and "we cannot tell" stay different answers.
+ * `proposal-self-decided` is the line itself; `proposal-closed` replaces the
+ * decision composer on a row coord has already closed.
+ *
+ * ## This card renders DECIDED rows too
+ *
+ * It used to see nothing but `?status=pending`, which made the provenance
+ * block's decided half unreachable: coord filters the list by status, so every
+ * row that reached here had `decided_by: null`. `ReviewFeed`'s "Recently
+ * proposed & approved" section now feeds approved rows through this same
+ * component, which is what gives the self-decided line — the compensating audit
+ * control for ownership no longer gating a decision — a surface it can actually
+ * appear on.
  */
 export function ProposalCard({
   proposal,
@@ -106,9 +124,57 @@ export function ProposalCard({
   };
   const status = deriveProposalStatus(proposal, liveVersion);
 
-  // Stale = the document moved since the edit was authored, so the wording this
-  // proposal assumed is no longer what is deployed.
-  const stale = liveVersion !== null && liveVersion > proposal.base_version;
+  /*
+   * The composer is offered only on a row that can still be decided.
+   *
+   * Defence in depth, not the enforcement: coord refuses a decision on a closed
+   * proposal server-side, and it is the authority. But the card already reasons
+   * this way one block down — the pre-approval staleness warning is dropped on a
+   * closed row because "repeating an instruction about an action that no
+   * longer exists is noise" — and leaving two enabled buttons under that same
+   * argument offers the action while the text says it is impossible. Now that
+   * decided rows reach this card through the "Recently proposed & approved"
+   * section, that is a live state rather than a hypothetical one.
+   */
+  const decidable = proposal.status === "pending";
+
+  /*
+   * Stale = the document moved since the edit was authored, so the wording this
+   * proposal assumed is no longer what is deployed.
+   *
+   * Gated on `decidable` — the SAME predicate the composer uses, and
+   * deliberately so. The panel below tells the reader to re-read the document
+   * *before approving*, which is an instruction only a row that can still be
+   * approved can act on. Excluding coord's terminal `stale` alone was not
+   * enough: APPROVING a proposal applies the edit as a new document version, so
+   * `liveVersion > base_version` is true of every approved row by construction,
+   * and every "Recently proposed & approved" row rendered the red panel telling
+   * its reader to read the current wording before doing the thing they had
+   * already done. `../proposalStatus.ts` makes the matching correction to the
+   * badge, so the row still says exactly one thing.
+   */
+  const stale =
+    decidable && liveVersion !== null && liveVersion > proposal.base_version;
+
+  /*
+   * INFORMATION, not a warning — and the audit affordance that REPLACED a rule.
+   *
+   * Ownership stopped being a criterion for deciding a proposal, and
+   * `self_decided` plus a required decision note is the compensating control
+   * that took its place. A loosening approved by its own author is therefore a
+   * permitted outcome the console has to be able to SHOW — a control that is
+   * stored but never surfaced is not a control. So the line is given weight
+   * (its own row, the fact in `font-medium` foreground rather than buried
+   * mid-sentence) while staying in the page's calm chrome: no red, no amber, no
+   * alert icon. Styling it as a caution would re-assert by design exactly the
+   * ownership rule the fleet deliberately removed.
+   *
+   * `selfDecidedOrUnknown` owns the precedence (coord's `self_decided` over the
+   * string comparison) and keeps UNKNOWN distinct from `false`. The text only
+   * speaks for `true`; the tri-state travels in `data-self-decided`.
+   */
+  const selfDecidedVerdict = selfDecidedOrUnknown(proposal);
+  const selfDecided = selfDecidedVerdict === true;
 
   return (
     <RecordRow
@@ -224,67 +290,121 @@ export function ProposalCard({
           </div>
         }
         actions={
-          <CoordAdminOnly
-            fallback={
-              <ReadOnlyNotice label="Only administrators can decide proposals" />
-            }
-          >
-            <div className="space-y-2 border-t border-border pt-3">
-              <label
-                className="text-xs font-medium text-muted-foreground"
-                htmlFor={`decision-note-${proposal.id}`}
-              >
-                Decision note (optional — recorded with your decision)
-              </label>
-              <Textarea
-                id={`decision-note-${proposal.id}`}
-                value={note}
-                onChange={(e) => setNote(e.target.value)}
-                rows={2}
-                placeholder="Why you approved or rejected this."
-                data-testid="proposal-decision-note"
-              />
-              <div className="flex flex-wrap justify-end gap-2">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  disabled={acting}
-                  onClick={() => onDecide(proposal, "reject", note)}
-                  data-testid="proposal-reject"
+          !decidable ? (
+            <p
+              className="border-t border-border pt-3 text-xs text-muted-foreground"
+              data-testid="proposal-closed"
+            >
+              coord closed this; no decision is possible.
+            </p>
+          ) : (
+            <CoordAdminOnly
+              fallback={
+                <ReadOnlyNotice label="Only administrators can decide proposals" />
+              }
+            >
+              <div className="space-y-2 border-t border-border pt-3">
+                <label
+                  className="text-xs font-medium text-muted-foreground"
+                  htmlFor={`decision-note-${proposal.id}`}
                 >
-                  Reject
-                </Button>
-                <Button
-                  size="sm"
-                  className="gap-1.5"
-                  disabled={acting}
-                  onClick={() => onDecide(proposal, "approve", note)}
-                  data-testid="proposal-approve"
-                >
-                  <ShieldAlert className="size-4" />
-                  Approve &amp; apply
-                </Button>
+                  Decision note (optional — recorded with your decision)
+                </label>
+                <Textarea
+                  id={`decision-note-${proposal.id}`}
+                  value={note}
+                  onChange={(e) => setNote(e.target.value)}
+                  rows={2}
+                  placeholder="Why you approved or rejected this."
+                  data-testid="proposal-decision-note"
+                />
+                <div className="flex flex-wrap justify-end gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={acting}
+                    onClick={() => onDecide(proposal, "reject", note)}
+                    data-testid="proposal-reject"
+                  >
+                    Reject
+                  </Button>
+                  <Button
+                    size="sm"
+                    className="gap-1.5"
+                    disabled={acting}
+                    onClick={() => onDecide(proposal, "approve", note)}
+                    data-testid="proposal-approve"
+                  >
+                    <ShieldAlert className="size-4" />
+                    Approve &amp; apply
+                  </Button>
+                </div>
               </div>
-            </div>
-          </CoordAdminOnly>
+            </CoordAdminOnly>
+          )
         }
         history={
-          <p className="text-xs text-muted-foreground">
-            Proposed by{" "}
-            <span className="font-medium text-foreground">
-              {proposal.proposed_by}
-            </span>{" "}
-            · authored against v{proposal.base_version}
-            {/* A load in flight is not a failed lookup — say nothing until it
-                settles rather than flashing "could not be read". */}
-            {liveVersion === null
-              ? loading
-                ? ""
-                : " · the document's current version could not be read"
-              : liveVersion === proposal.base_version
-                ? " · still the current version"
-                : ""}
-          </p>
+          <div className="space-y-1">
+            <p className="text-xs text-muted-foreground">
+              Proposed by{" "}
+              <span className="font-medium text-foreground">
+                {proposal.proposed_by}
+              </span>{" "}
+              · authored against v{proposal.base_version}
+              {/* A load in flight is not a failed lookup — say nothing until it
+                  settles rather than flashing "could not be read". */}
+              {liveVersion === null
+                ? loading
+                  ? ""
+                  : " · the document's current version could not be read"
+                : liveVersion === proposal.base_version
+                  ? " · still the current version"
+                  : ""}
+            </p>
+            {proposal.decided_by && (
+              <div
+                className="whitespace-pre-wrap break-words text-xs text-muted-foreground"
+                data-testid="proposal-decided-by"
+                /*
+                 * TRI-STATE, deliberately. `"false"` is an assertion — coord
+                 * answered and the decider was somebody else — so it is not
+                 * also spent on "we could not tell", which is what
+                 * `"unknown"` is for (no `self_decided` flag and a blank on one
+                 * of the two identities). The rendered text below speaks only
+                 * for `true`; this attribute is the channel a UI-Bridge or
+                 * spec-CI assertion reads, and it is the one that has to keep
+                 * absence and zero apart.
+                 */
+                data-self-decided={
+                  selfDecidedVerdict === null
+                    ? "unknown"
+                    : selfDecidedVerdict
+                      ? "true"
+                      : "false"
+                }
+              >
+                <p>
+                  Decided by{" "}
+                  <span className="font-medium text-foreground">
+                    {proposal.decided_by}
+                  </span>
+                  {proposal.decided_at
+                    ? ` · ${formatWhen(proposal.decided_at)}`
+                    : ""}
+                  {proposal.decision_note ? ` · ${proposal.decision_note}` : ""}
+                </p>
+                {selfDecided && (
+                  <p
+                    className="mt-1 border-l-2 border-border pl-2 font-medium text-foreground"
+                    data-testid="proposal-self-decided"
+                  >
+                    Decided by its author — the proposer approved or rejected
+                    its own edit.
+                  </p>
+                )}
+              </div>
+            )}
+          </div>
         }
         raw={
           <div className="font-mono text-[10px] text-muted-foreground/60 break-all">

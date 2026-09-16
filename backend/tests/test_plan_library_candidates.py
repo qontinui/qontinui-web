@@ -536,6 +536,146 @@ def _coord_ok(work_unit: dict[str, Any], citations: list[dict[str, Any]]):
     return AsyncMock(side_effect=_fake)
 
 
+class TestCandidatesCarryCorpusHealth:
+    """``/candidates`` carries the list page's ``corpus_health`` block.
+
+    Plan ``2026-09-11-the-plan-corpus-scan-root-does-not-report-its-own-drift``,
+    the deferred ``CorpusHealth`` fold-in: a consumer ranking candidates must
+    be able to tell, in the SAME read, whether the corpus they came from is
+    fed by current checkouts — without a second request it has no reason to
+    think of making.
+    """
+
+    async def test_the_block_is_the_whole_corpus_and_names_its_feeders(
+        self, client: httpx.AsyncClient, async_db_session: AsyncSession
+    ) -> None:
+        from app.crud import plan_scan_root as scan_root_crud
+
+        await _plan(async_db_session, org_id=None, slug=_slug("health-a"))
+        await _plan(async_db_session, org_id=None, slug=_slug("health-b"))
+        device_id = uuid4()
+        await scan_root_crud.upsert_observation(
+            async_db_session,
+            org_id=None,
+            device_id=device_id,
+            fields={
+                "state": "measured",
+                "source_repo": "qontinui-dev-notes/plans",
+                "default_ref": "origin/main",
+                # A known ref, so the floor below comes from the ref's AGE
+                # alone — a null ref_sha would force a floor by itself.
+                "ref_sha": "a" * 40,
+                "behind": 41,
+                "ahead": 0,
+                "ref_age_secs": None,
+                "counts_are_floors": True,
+                "observed_at": datetime.now(UTC),
+            },
+        )
+
+        # A page past the end: no items, but the block still describes the
+        # whole corpus rather than this (empty) page.
+        resp = await client.get(
+            CANDIDATES,
+            params={"limit": 1, "offset": 50, "include_coord": "false"},
+        )
+        assert resp.status_code == 200, resp.text
+        body = resp.json()
+        assert body["items"] == []
+        health = body["corpus_health"]
+        assert health["plan_count"] == 2
+
+        listed = await client.get(API_PREFIX)
+        assert health["plan_count"] == listed.json()["corpus_health"]["plan_count"]
+
+        scan_roots = health["scan_roots"]
+        assert scan_roots["state"] == "reported"
+        assert [r["device_id"] for r in scan_roots["rows"]] == [str(device_id)]
+        (rollup,) = scan_roots["by_source_repo"]
+        # "At least 41 behind": its ref is of unknown age, so the minimum is a
+        # floor, and the roll-up says so rather than presenting 41 as exact.
+        assert rollup["min_behind"] == 41
+        assert rollup["min_behind_is_floor"] is True
+
+    async def test_no_reading_is_unknown_on_candidates_too(
+        self, client: httpx.AsyncClient
+    ) -> None:
+        resp = await client.get(CANDIDATES, params={"include_coord": "false"})
+        assert resp.status_code == 200, resp.text
+        body = resp.json()
+        assert body["corpus_health_unavailable_reason"] is None
+        scan_roots = body["corpus_health"]["scan_roots"]
+        assert scan_roots["state"] == "unknown"
+        assert scan_roots["by_source_repo"] == []
+
+    async def test_a_failed_corpus_health_read_does_not_fail_candidates(
+        self,
+        client: httpx.AsyncClient,
+        async_db_session: AsyncSession,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """The block is report-only here: ``/candidates`` read neither the
+        capture census nor the scan-root table before it carried the block, so
+        a failure in either must not take the candidates down with it.
+
+        The failure is a REAL failing statement on the request's session (the
+        census read), so containment is proved by the session still answering
+        the next request, not merely by an exception being caught.
+        """
+        from sqlalchemy import text
+
+        from app.api.v1.endpoints import plan_library as endpoint
+
+        await _plan(async_db_session, org_id=None, slug=_slug("still-served"))
+
+        async def _broken(db: AsyncSession, **_kwargs: object) -> None:
+            await db.execute(text("SELECT 1 / 0"))
+
+        monkeypatch.setattr(endpoint.crud, "capture_health", _broken)
+
+        resp = await client.get(CANDIDATES, params={"include_coord": "false"})
+        assert resp.status_code == 200, resp.text
+        body = resp.json()
+        assert body["total"] >= 1
+        assert body["corpus_health"] is None
+        reason = body["corpus_health_unavailable_reason"]
+        assert reason.startswith("read_failed:")
+        assert "division" not in reason
+
+        again = await client.get(CANDIDATES, params={"include_coord": "false"})
+        assert again.status_code == 200, again.text
+        assert again.json()["total"] >= 1
+
+    async def test_a_failed_scan_root_read_on_candidates_degrades_only_that_block(
+        self,
+        client: httpx.AsyncClient,
+        async_db_session: AsyncSession,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """The INNER savepoint: a scan-root read failure inside the corpus-health
+        load degrades just ``scan_roots`` to ``read_failed``, and the census
+        beside it — and the candidates — are still served."""
+        from sqlalchemy import text
+
+        from app.api.v1.endpoints import plan_library as endpoint
+
+        await _plan(async_db_session, org_id=None, slug=_slug("inner"))
+
+        async def _broken(db: AsyncSession, **_kwargs: object) -> None:
+            await db.execute(text("SELECT 1 / 0"))
+
+        monkeypatch.setattr(endpoint.scan_root_crud, "list_observations", _broken)
+
+        resp = await client.get(CANDIDATES, params={"include_coord": "false"})
+        assert resp.status_code == 200, resp.text
+        body = resp.json()
+        assert body["corpus_health_unavailable_reason"] is None
+        health = body["corpus_health"]
+        assert health["plan_count"] == 1
+        assert health["scan_roots"]["state"] == "unknown"
+        assert health["scan_roots"]["detail"].startswith("read_failed:")
+
+
 class TestCandidatesHttp:
     async def test_returns_the_local_signals(
         self, client: httpx.AsyncClient, async_db_session: AsyncSession, api_user

@@ -829,15 +829,22 @@ async def runner_proxy(
 
     try:
         body = await request.body()
-        headers = {
-            k: v
+        # A LIST of pairs, not a dict: Starlette's ``Headers.items()`` yields
+        # every raw pair, repeats included, and a dict comprehension keeps
+        # only the last value of a repeated name — the request-side twin of
+        # the ``multi_items()`` point on the response below. httpx accepts a
+        # pair sequence and sends each pair, so the lossless form costs
+        # nothing here.
+        headers = [
+            (k, v)
             for k, v in request.headers.items()
             if k.lower() not in _LOCAL_PROXY_EXCLUDED_REQUEST_HEADERS
-        }
+        ]
         # Set, not forwarded — httpx merges its own ``accept-encoding`` default
         # into ``headers=``, so dropping the caller's key above does not by
-        # itself ask the runner for identity. This does.
-        headers.update(_LOCAL_PROXY_FORCED_REQUEST_HEADERS)
+        # itself ask the runner for identity. This does (httpx's merge lets an
+        # explicit pair override the client default).
+        headers.extend(_LOCAL_PROXY_FORCED_REQUEST_HEADERS.items())
         # ``httpx.AsyncClient`` rather than ``urllib.request.urlopen``: the
         # latter is a SYNCHRONOUS call on the event loop, so a slow or hung
         # runner stalled EVERY other request served by this worker for up to

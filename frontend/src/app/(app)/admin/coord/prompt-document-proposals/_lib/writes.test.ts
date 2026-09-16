@@ -11,11 +11,14 @@
 
 import { describe, it, expect } from "vitest";
 import {
+  canWithdraw,
+  isDocumentWithdrawn,
   isLoosening,
   countLooseningVerdicts,
   hasLooseningVerdict,
   looseningClassificationPresent,
   notificationHref,
+  reasoningRef,
   sortWritesForFeed,
 } from "./writes";
 
@@ -162,5 +165,74 @@ describe("notificationHref", () => {
     expect(notificationHref("a&b#c")).toBe(
       "/admin/coord/notifications?ref=a%26b%23c"
     );
+  });
+});
+
+describe("reasoningRef", () => {
+  it("is null for an absent or blank ref, whatever the version", () => {
+    expect(reasoningRef({ version_number: 1 })).toBeNull();
+    expect(reasoningRef({ version_number: 6, notification_ref: null })).toBeNull();
+    expect(reasoningRef({ version_number: 6, notification_ref: "  " })).toBeNull();
+  });
+
+  it("links an EDIT to the notice that announced it", () => {
+    expect(
+      reasoningRef({ version_number: 2, notification_ref: "abc-123" })
+    ).toEqual({
+      kind: "notice",
+      href: "/admin/coord/notifications?ref=abc-123",
+      findingId: "abc-123",
+    });
+  });
+
+  it("gives a CREATE the finding only — no notice exists to link to", () => {
+    // Creation never emits, and the reconciler excludes v1, so the deep link
+    // would land on an event that cannot exist.
+    expect(
+      reasoningRef({ version_number: 1, notification_ref: " abc-123 " })
+    ).toEqual({ kind: "finding_only", findingId: "abc-123" });
+  });
+});
+
+describe("canWithdraw", () => {
+  const created = {
+    kind: "decision_record",
+    version_number: 1,
+    current_version: 1,
+  };
+
+  it("offers Withdraw on a head v1 decision record", () => {
+    expect(canWithdraw(created)).toBe(true);
+  });
+
+  it("does not offer it on any other kind", () => {
+    for (const kind of ["initiative", "policy", "product_intent", "Decision_Record"]) {
+      expect(canWithdraw({ ...created, kind })).toBe(false);
+    }
+  });
+
+  it("does not offer it past v1 — Undo covers those", () => {
+    expect(
+      canWithdraw({ ...created, version_number: 2, current_version: 2 })
+    ).toBe(false);
+  });
+
+  it("does not offer it on a v1 that is no longer head", () => {
+    expect(canWithdraw({ ...created, current_version: 2 })).toBe(false);
+  });
+
+  it("does not offer it on a record coord already says is withdrawn", () => {
+    expect(canWithdraw({ ...created, document_withdrawn: true })).toBe(false);
+    // Absent or null is not a verdict either way — still offered.
+    expect(canWithdraw({ ...created, document_withdrawn: null })).toBe(true);
+  });
+});
+
+describe("isDocumentWithdrawn", () => {
+  it("marks only an explicit true", () => {
+    expect(isDocumentWithdrawn({ document_withdrawn: true })).toBe(true);
+    expect(isDocumentWithdrawn({ document_withdrawn: false })).toBe(false);
+    expect(isDocumentWithdrawn({ document_withdrawn: null })).toBe(false);
+    expect(isDocumentWithdrawn({})).toBe(false);
   });
 });
