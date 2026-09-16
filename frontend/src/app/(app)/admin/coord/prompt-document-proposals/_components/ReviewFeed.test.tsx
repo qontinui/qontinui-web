@@ -1,6 +1,7 @@
 /**
- * ReviewFeed — the "Retired as stale" section, and the deploy-order tolerance
- * that lets it ship before coord does.
+ * ReviewFeed — the two collapsed sections below the pending queue ("Retired as
+ * stale" and "Recently approved"), and the deploy-order tolerance that lets
+ * them ship before coord does.
  *
  * Plan `2026-09-13-policy-proposals-agent-decidable-dial-driven-self-retiring`,
  * Phase 4. coord retires a pending proposal inside the same transaction that
@@ -31,6 +32,19 @@
  *     therefore where "could not be read" has to live (R7 — secondary material
  *     collapses, its signal does not), and that is asserted with the panel
  *     SHUT.
+ *
+ *  4. **A decided row actually reaches `<ProposalCard>`.** The card's own unit
+ *     tests construct a decided proposal and hand it to the card, which proves
+ *     rendering and nothing about reachability — and for the whole life of this
+ *     page nothing reached it, because the only read was `?status=pending` and
+ *     coord filters by status. The self-decided provenance line was unreachable
+ *     code wearing a passing test. That assertion has to be made through the
+ *     real hook and the real feed, and it is, below.
+ *
+ *  5. **The UNKNOWN box does not diagnose what it has not observed.** It is
+ *     reached by a pre-deploy 400, by coord being down, by a timeout and by a
+ *     parse error; only the first is a deploy window. Both arms are pinned,
+ *     because a one-sided test is satisfied by a constant.
  *
  * The hook is deliberately NOT mocked: the branch under test is a `catch` in
  * the hook talking to a `?:` chain in the component, and a mocked hook would
@@ -81,20 +95,50 @@ const RETIRED: PromptDocumentProposal = {
 };
 
 /**
- * Route the four reads the page makes. `stale` is the one under test; the other
- * three answer benignly so a failure here can only be about the retired
- * section.
+ * A second retirement. Present so the per-row decision-note testid is actually
+ * EXERCISED: with one row, a repeated constant testid and a per-row one are
+ * indistinguishable, which is why the previous single-row fixture let a
+ * `getByTestId` that throws on any real two-retirement page stay green.
  */
-function routes(staleResult: () => Promise<unknown>) {
+const RETIRED_2: PromptDocumentProposal = {
+  ...RETIRED,
+  id: "p-stale-2",
+  doc_name: "operating-rules",
+  clause_id: null,
+  base_version: 2,
+  decision_note: "the document moved to v3 while this was pending",
+};
+
+/**
+ * Route the five reads the page makes. Each status is overridable; whatever is
+ * not overridden answers benignly, so a failure in one test can only be about
+ * the section that test names.
+ */
+function routes(
+  staleResult: () => Promise<unknown>,
+  opts: {
+    approved?: () => Promise<unknown>;
+    pending?: () => Promise<unknown>;
+  } = {}
+) {
   getMock.mockImplementation((url: string) => {
     if (url.includes("status=stale")) return staleResult();
+    if (url.includes("status=approved"))
+      return (
+        opts.approved ?? (() => Promise.resolve({ proposals: [], total: 0 }))
+      )();
     if (url.includes("prompt-document-proposals"))
-      return Promise.resolve({ proposals: [], total: 0 });
+      return (
+        opts.pending ?? (() => Promise.resolve({ proposals: [], total: 0 }))
+      )();
     if (url.includes("prompt-document-writes"))
       return Promise.resolve({ writes: [], total: 0 });
     return Promise.resolve({ documents: [] });
   });
 }
+
+/** A clean stale read — for tests whose subject is some other section. */
+const NO_RETIREMENTS = () => Promise.resolve({ proposals: [], total: 0 });
 
 beforeEach(() => {
   getMock.mockReset();
@@ -116,11 +160,13 @@ async function summary(): Promise<string> {
 
 describe("ReviewFeed — the retired section, populated", () => {
   it("counts the retirements in the header and lists each one on open", async () => {
-    routes(() => Promise.resolve({ proposals: [RETIRED], total: 1 }));
+    routes(() =>
+      Promise.resolve({ proposals: [RETIRED, RETIRED_2], total: 2 })
+    );
     const user = userEvent.setup();
     render(<ReviewFeed />);
 
-    await waitFor(async () => expect(await summary()).toMatch(/1 proposal\b/));
+    await waitFor(async () => expect(await summary()).toMatch(/2 proposals\b/));
 
     // Closed by default: a retirement asks nothing of anyone.
     expect(screen.queryByTestId(`retired-proposal-${RETIRED.id}`)).toBeNull();
@@ -134,8 +180,18 @@ describe("ReviewFeed — the retired section, populated", () => {
     expect(text).toMatch(/escalation-closed-list/);
     expect(text).toMatch(/v4/);
     expect(text).toMatch(/moved to v9/);
-    expect(screen.getByTestId("retired-decision-note")).toBeTruthy();
     expect(text).toMatch(/Retired /);
+
+    // Scoped per row, and asserted with TWO retirements on screen. A shared
+    // constant testid would make `getByTestId` throw here — which is exactly
+    // what it did on any page with more than one retirement, while this test
+    // stayed green on a one-row fixture.
+    expect(
+      screen.getByTestId(`retired-decision-note-${RETIRED.id}`).textContent
+    ).toMatch(/moved to v9/);
+    expect(
+      screen.getByTestId(`retired-decision-note-${RETIRED_2.id}`).textContent
+    ).toMatch(/moved to v3/);
   });
 });
 
@@ -175,6 +231,11 @@ describe("ReviewFeed — the retired section, unreadable", () => {
     expect(box.textContent ?? "").toMatch(/unknown/i);
     expect(box.textContent ?? "").toMatch(/not empty/i);
     expect(box.textContent ?? "").toMatch(/invalid status/);
+    // The 400 IS the pre-deploy evidence, so this is the one failure allowed to
+    // name that cause.
+    const cause = screen.getByTestId("retired-unknown-cause");
+    expect(cause.getAttribute("data-cause")).toBe("not-deployed");
+    expect(cause.textContent ?? "").toMatch(/older than this page/i);
     // Never the reassuring empty state on an unreadable read.
     expect(screen.queryByTestId("retired-empty")).toBeNull();
   });
@@ -196,5 +257,244 @@ describe("ReviewFeed — the retired section, unreadable", () => {
     expect(screen.getByTestId("proposal-queue").textContent ?? "").toMatch(
       /No proposals waiting/i
     );
+  });
+});
+
+/**
+ * The UNKNOWN box used to print ONE explanation for every failure: "Expected
+ * while coord is older than this page…". That sentence is a diagnosis, and the
+ * box is reached by at least four faults — coord's pre-deploy 400, coord down
+ * (a 502/504 the proxy turns into a 200 carrying `unavailable`), a timeout, a
+ * parse error. Three of them are not a deploy window, and reassuring an
+ * operator that coord is merely behind while it is actually unreachable is a
+ * confident wrong answer in the calmest chrome on the page.
+ *
+ * Both arms are pinned, because a one-sided test is satisfied by a constant.
+ */
+describe("ReviewFeed — the UNKNOWN box only claims a cause it has evidence for", () => {
+  it("does NOT claim a deploy window on a timeout", async () => {
+    routes(() => Promise.reject(new Error("Request timed out")));
+    const user = userEvent.setup();
+    render(<ReviewFeed />);
+
+    await waitFor(async () =>
+      expect(await summary()).toMatch(/could not be read/i)
+    );
+    await user.click(screen.getByRole("button", { name: /retired as stale/i }));
+
+    const cause = await screen.findByTestId("retired-unknown-cause");
+    expect(cause.getAttribute("data-cause")).toBe("undiagnosed");
+    expect(cause.textContent ?? "").not.toMatch(/older than this page/i);
+    expect(cause.textContent ?? "").toMatch(/could not be reached/i);
+    // The neutral sentence still has to say what IS known — the queue above was
+    // read on its own request, so its state is not implicated.
+    expect(cause.textContent ?? "").toMatch(/read separately/i);
+  });
+
+  it("does NOT claim a deploy window when coord is down behind a 200", async () => {
+    // The proxy's degrade path: a 502/504 comes back as HTTP 200 with a note
+    // and `unavailable_kind: "unreachable"`. Nothing throws, so a catch-arm
+    // heuristic cannot see this one at all — the kind has to be carried.
+    routes(() =>
+      Promise.resolve({
+        proposals: [],
+        total: 0,
+        unavailable: "coord did not answer",
+        unavailable_kind: "unreachable",
+      })
+    );
+    const user = userEvent.setup();
+    render(<ReviewFeed />);
+
+    await waitFor(async () =>
+      expect(await summary()).toMatch(/could not be read/i)
+    );
+    await user.click(screen.getByRole("button", { name: /retired as stale/i }));
+
+    const cause = await screen.findByTestId("retired-unknown-cause");
+    expect(cause.getAttribute("data-cause")).toBe("undiagnosed");
+    expect(cause.textContent ?? "").not.toMatch(/older than this page/i);
+  });
+});
+
+/**
+ * The third leg of the `staleRead` distinction, which had no test at all.
+ *
+ * "Not read yet" is neither "empty" nor "unreadable", and it is the state the
+ * section is in for the whole of its first paint. A regression that made it
+ * render as `retired-empty` would show a reassuring "none retired recently" on
+ * every page load, before anything had been asked — the one failure that looks
+ * completely normal.
+ */
+describe("ReviewFeed — the retired section, not yet read", () => {
+  it("says 'reading…' and claims neither empty nor unknown", async () => {
+    // Never settles: the read is in flight for the lifetime of the test.
+    routes(() => new Promise<never>(() => {}));
+    const user = userEvent.setup();
+    render(<ReviewFeed />);
+
+    await waitFor(async () => expect(await summary()).toMatch(/reading…/i));
+    expect(await summary()).not.toMatch(/none retired recently/i);
+    expect(await summary()).not.toMatch(/could not be read/i);
+
+    await user.click(screen.getByRole("button", { name: /retired as stale/i }));
+    expect(screen.queryByTestId("retired-empty")).toBeNull();
+    expect(screen.queryByTestId("retired-unknown")).toBeNull();
+  });
+});
+
+/**
+ * "Recently approved" — and the one assertion the `ProposalCard` unit tests
+ * cannot make.
+ *
+ * Those four tests construct a decided proposal and hand it straight to the
+ * card. That proves the card RENDERS the provenance line; it cannot prove
+ * anything reaches the card with `decided_by` set, and for the whole life of
+ * this page nothing did: `ProposalCard`'s only caller was fed by
+ * `?status=pending`, and coord filters the list by status, so every row the
+ * card ever saw had `decided_by: null`. The self-decided line — the
+ * compensating audit control for ownership no longer gating a decision — was
+ * unreachable code wearing a passing test.
+ *
+ * So this drives the REAL hook and the REAL feed: coord's answer goes in as a
+ * routed HTTP response, and the assertion is made on what the operator would
+ * see after clicking.
+ */
+describe("ReviewFeed — a self-approved proposal reaches the card", () => {
+  const SELF_APPROVED: PromptDocumentProposal = {
+    id: "p-approved-1",
+    doc_kind: "policy",
+    doc_name: "security-and-autonomy",
+    clause_id: "implement-tier",
+    proposed_content: "Agents may draft security-surface changes.",
+    direction: "loosening",
+    from_tier: "ask-first",
+    to_tier: "proceed",
+    rationale: "The tier gate costs a round trip on every security touch.",
+    proposed_by: "session:bdaaeba8",
+    base_version: 6,
+    status: "approved",
+    created_at: "2026-09-14T08:00:00Z",
+    decided_by: "session:bdaaeba8",
+    decided_at: "2026-09-14T09:00:00Z",
+    decision_note: "second opinion from a fresh-context subagent",
+    self_decided: true,
+  };
+
+  it("surfaces the self-decided provenance line through the real hook and feed", async () => {
+    routes(NO_RETIREMENTS, {
+      approved: () => Promise.resolve({ proposals: [SELF_APPROVED], total: 1 }),
+    });
+    const user = userEvent.setup();
+    render(<ReviewFeed />);
+
+    // The count is in the header, visible while the panel is still shut.
+    const header = await screen.findByTestId("decided-summary");
+    await waitFor(() =>
+      expect(header.textContent ?? "").toMatch(/1 proposal\b/)
+    );
+
+    await user.click(
+      screen.getByRole("button", { name: /recently approved/i })
+    );
+    // The row is a real `<ProposalCard>` — expand it for the provenance block.
+    const row = await screen.findByTestId(`proposal-${SELF_APPROVED.id}`);
+    await user.click(row.querySelector("button")!);
+
+    const line = await screen.findByTestId("proposal-decided-by");
+    expect(line.getAttribute("data-self-decided")).toBe("true");
+    expect(
+      screen.getByTestId("proposal-self-decided").textContent ?? ""
+    ).toMatch(/decided by its author/i);
+    // coord's decision note is the other half of the control — it travels.
+    expect(line.textContent ?? "").toMatch(/fresh-context subagent/);
+    // INFORMATION, not an alarm: no red/amber chrome and no icon on the line.
+    expect(line.innerHTML).not.toMatch(/\b(bg|text|border)-(red|amber)-/);
+    expect(line.querySelector("svg")).toBeNull();
+  });
+
+  it("offers no decision composer on a row coord already closed", async () => {
+    routes(NO_RETIREMENTS, {
+      approved: () => Promise.resolve({ proposals: [SELF_APPROVED], total: 1 }),
+    });
+    const user = userEvent.setup();
+    render(<ReviewFeed />);
+
+    await user.click(
+      await screen.findByRole("button", { name: /recently approved/i })
+    );
+    const row = await screen.findByTestId(`proposal-${SELF_APPROVED.id}`);
+    await user.click(row.querySelector("button")!);
+
+    // Asserted with the row OPEN, so a null means "gated", never "collapsed".
+    expect(await screen.findByTestId("proposal-closed")).toBeTruthy();
+    expect(screen.queryByTestId("proposal-approve")).toBeNull();
+    expect(screen.queryByTestId("proposal-reject")).toBeNull();
+    expect(screen.queryByTestId("proposal-decision-note")).toBeNull();
+  });
+
+  it("reads UNKNOWN, never empty, when the decided read fails", async () => {
+    routes(NO_RETIREMENTS, {
+      approved: () => Promise.reject(new Error("503: coord unavailable")),
+    });
+    const user = userEvent.setup();
+    render(<ReviewFeed />);
+
+    const header = await screen.findByTestId("decided-summary");
+    await waitFor(() =>
+      expect(header.textContent ?? "").toMatch(/could not be read/i)
+    );
+    expect(header.textContent ?? "").not.toMatch(/none approved recently/i);
+
+    await user.click(
+      screen.getByRole("button", { name: /recently approved/i })
+    );
+    expect(await screen.findByTestId("decided-unknown")).toBeTruthy();
+    expect(screen.queryByTestId("decided-empty")).toBeNull();
+    // A 503 is not a vocabulary refusal, so no deploy-window claim.
+    expect(
+      screen.getByTestId("decided-unknown-cause").getAttribute("data-cause")
+    ).toBe("undiagnosed");
+    // And, as with the retired section, it never reaches the pending queue.
+    expect(screen.queryByTestId("proposals-error")).toBeNull();
+  });
+
+  it("says 'none approved recently' only after a read that succeeded", async () => {
+    routes(NO_RETIREMENTS);
+    const user = userEvent.setup();
+    render(<ReviewFeed />);
+
+    const header = await screen.findByTestId("decided-summary");
+    await waitFor(() =>
+      expect(header.textContent ?? "").toMatch(/none approved recently/i)
+    );
+    await user.click(
+      screen.getByRole("button", { name: /recently approved/i })
+    );
+    expect(await screen.findByTestId("decided-empty")).toBeTruthy();
+    expect(screen.queryByTestId("decided-unknown")).toBeNull();
+  });
+});
+
+/**
+ * The bound the collapsed sections ask for is only honoured because the web
+ * proxy DECLARES `limit`; FastAPI discards an undeclared query parameter, and
+ * coord then falls back to its own `unwrap_or(100)`. That is a backend fix, but
+ * the client half — actually sending the bound on both section reads — is
+ * pinned here so a future refactor cannot drop it silently and leave the page
+ * quietly reading five times what its own constants document.
+ */
+describe("ReviewFeed — the collapsed sections ask for a bounded page", () => {
+  it("sends a limit on both the retired and the decided read", async () => {
+    routes(NO_RETIREMENTS);
+    render(<ReviewFeed />);
+
+    await waitFor(async () =>
+      expect(await summary()).toMatch(/none retired recently/i)
+    );
+
+    const urls = getMock.mock.calls.map((c) => String(c[0]));
+    expect(urls.some((u) => /status=stale&limit=\d+/.test(u))).toBe(true);
+    expect(urls.some((u) => /status=approved&limit=\d+/.test(u))).toBe(true);
   });
 });

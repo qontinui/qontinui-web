@@ -22,6 +22,7 @@ import {
   classifyWriteAuthor,
   isAgentAuthored,
   isSelfDecided,
+  selfDecidedOrUnknown,
   tallyAuthors,
 } from "./authorship";
 
@@ -126,12 +127,13 @@ describe("tallyAuthors", () => {
  */
 describe("coord's self-retirement actor", () => {
   it("classifies as `system`, not as an agent and not as an operator", () => {
-    // Load-bearing for the retired section: a proposal coord closed itself must
-    // not be attributed to a person or to an agent anywhere on the page. This
-    // falls out of the existing `system:` allowlist entry rather than needing an
-    // arm of its own — which is exactly why it is pinned, so a future
-    // re-spelling of the allowlist cannot refile a machine decision as a human
-    // one without a red test.
+    // DEFENSIVE — no caller today. `classifyWriteAuthor` is called from exactly
+    // one place (`LandedWriteFeed.tsx`, on a landed write's `edited_by`), and
+    // the retired section classifies no author at all: it renders coord's
+    // decision note directly. This is pinned anyway because the day a surface
+    // DOES classify a proposal's `decided_by`, the answer must already be
+    // right — a future re-spelling of the allowlist must not be able to refile
+    // a machine decision as a human one without a red test.
     expect(classifyWriteAuthor("system:proposal-staleness")).toBe("system");
     expect(isAgentAuthored({ edited_by: "system:proposal-staleness" })).toBe(
       false
@@ -157,11 +159,14 @@ describe("isSelfDecided", () => {
     ).toBe(false);
   });
 
-  it("prefers coord's `self_decided` over the string comparison, both ways", () => {
-    // Coord computed it from the identities it actually stamped; one principal
-    // can reach it under two spellings, and the reverse (a shared label that is
-    // NOT the same principal) is just as possible. Overruling the server here
-    // would state a wrong fact confidently.
+  it("the server's field is the contract, even where it disagrees with the strings", () => {
+    // Today's coord derives `self_decided` as exactly `decided_by ==
+    // proposed_by`, so these two fixtures are shapes it cannot currently
+    // produce — which is the point. The precedence is pinned against the
+    // CONTRACT, not against the current derivation: if coord ever normalizes
+    // identities (one principal under two spellings) or stops deriving this at
+    // all, the console must report the server's answer rather than a second
+    // one computed here.
     expect(
       isSelfDecided({ ...base, decided_by: "agent:bbbb", self_decided: true })
     ).toBe(true);
@@ -180,5 +185,68 @@ describe("isSelfDecided", () => {
     expect(isSelfDecided({ ...base, decided_by: null })).toBe(false);
     expect(isSelfDecided({ ...base, decided_by: "   " })).toBe(false);
     expect(isSelfDecided({ proposed_by: "", decided_by: "" })).toBe(false);
+  });
+});
+
+/**
+ * `isSelfDecided` folds UNKNOWN into `false`, which is right for a SENTENCE —
+ * there is nothing to say about an unanswerable case. It is wrong for an
+ * attribute, where `false` is an assertion. `selfDecidedOrUnknown` is the
+ * three-answer version the `data-self-decided` attribute is rendered from.
+ */
+describe("selfDecidedOrUnknown", () => {
+  const base = { proposed_by: "session:aaaa" };
+
+  it("answers null — not false — when the question cannot be answered", () => {
+    expect(selfDecidedOrUnknown({ ...base })).toBeNull();
+    expect(selfDecidedOrUnknown({ ...base, decided_by: null })).toBeNull();
+    expect(selfDecidedOrUnknown({ ...base, decided_by: "   " })).toBeNull();
+    expect(
+      selfDecidedOrUnknown({ proposed_by: "", decided_by: "operator:a@b.c" })
+    ).toBeNull();
+  });
+
+  it("answers false only when the identities were both present and differed", () => {
+    // The distinction the attribute exists for: this `false` is a claim, and
+    // the nulls above are not.
+    expect(
+      selfDecidedOrUnknown({ ...base, decided_by: "operator:josh@qontinui.io" })
+    ).toBe(false);
+    expect(
+      selfDecidedOrUnknown({ ...base, decided_by: "system:proposal-staleness" })
+    ).toBe(false);
+  });
+
+  it("answers true on a match, and defers to coord's field over both", () => {
+    expect(selfDecidedOrUnknown({ ...base, decided_by: "session:aaaa" })).toBe(
+      true
+    );
+    // Coord's answer wins even where it would be unanswerable from the strings.
+    expect(selfDecidedOrUnknown({ ...base, self_decided: true })).toBe(true);
+    expect(
+      selfDecidedOrUnknown({
+        ...base,
+        decided_by: "session:aaaa",
+        self_decided: false,
+      })
+    ).toBe(false);
+  });
+
+  it("agrees with `isSelfDecided` everywhere except on UNKNOWN", () => {
+    // Pins the relationship rather than leaving two predicates to drift: the
+    // boolean one is exactly this one with null collapsed to false.
+    const cases = [
+      { ...base, decided_by: "session:aaaa" },
+      { ...base, decided_by: "operator:josh@qontinui.io" },
+      { ...base },
+      { ...base, decided_by: "  " },
+      { ...base, decided_by: "agent:bbbb", self_decided: true },
+    ];
+    for (const c of cases) {
+      expect(isSelfDecided(c)).toBe(selfDecidedOrUnknown(c) === true);
+    }
+    // And the collapse is real — at least one case genuinely differs.
+    expect(selfDecidedOrUnknown({ ...base })).toBeNull();
+    expect(isSelfDecided({ ...base })).toBe(false);
   });
 });
