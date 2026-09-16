@@ -9816,6 +9816,7 @@ async def _fetch_versions_bulk(
 @router.get("/coord/prompt-document-proposals")
 async def list_prompt_document_proposals(
     status: str = "pending",
+    limit: int = Query(default=100, ge=1, le=500),
     tenant_id: UUID = Depends(get_tenant_id),
 ) -> Any:
     """List the tenant's policy-edit proposals, newest first. Any tenant member.
@@ -9840,6 +9841,17 @@ async def list_prompt_document_proposals(
     retired section is unavailable" and leaves the pending queue alone, so the
     two tiers have no deploy-order dependency in either direction.
 
+    ``limit`` IS declared, unlike ``status``'s vocabulary — because an
+    undeclared query parameter is not forwarded, it is DISCARDED. FastAPI only
+    binds what the signature names, so a caller's ``?limit=20`` used to vanish
+    here and coord fell back to its own ``unwrap_or(100)`` — five times the
+    bound the caller asked for, while the caller's own constant documented 20 as
+    honoured. Declaring it is safe in both deploy directions: coord has accepted
+    ``limit`` on this route since before the proposal console existed, and the
+    default is coord's own ``100``, so the pending queue's behaviour is
+    unchanged. The collapsed sections that DO pass a smaller bound (the retired
+    and recently-decided reads) now get the page size they ask for.
+
     Degrades rather than 502s while coord's Phase 5 half is undeployed: the
     response then carries an empty list plus an ``unavailable`` note (and its
     ``unavailable_kind``, so the page can style a benign pre-deploy window
@@ -9848,7 +9860,9 @@ async def list_prompt_document_proposals(
     """
     try:
         return await _proxy_coord_get(
-            _COORD_PROPOSALS_PATH, params={"status": status}, tenant_id=tenant_id
+            _COORD_PROPOSALS_PATH,
+            params={"status": status, "limit": limit},
+            tenant_id=tenant_id,
         )
     except HTTPException as exc:
         if exc.status_code in _COORD_ABSENT_STATUSES:

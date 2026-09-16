@@ -152,6 +152,15 @@ export interface PromptDocumentProposal {
    * back to `decided_by === proposed_by` (`_lib/authorship.ts`
    * `isSelfDecided`).
    *
+   * The preference is NOT because the server knows something the comparison
+   * cannot see: coord derives this field as exactly `decided_by == proposed_by`
+   * with no normalization (`with_derived_self_decided()`), so on today's builds
+   * the two agree by construction. It is preferred because it is coord's
+   * ANSWER: the console should report the server's verdict rather than compute
+   * a second one that drifts independently, and a future coord that does start
+   * normalizing (one principal reaching it under two spellings) changes what
+   * this page says without a web deploy.
+   *
    * This is INFORMATION, not a warning: the fleet removed ownership as a
    * decision criterion deliberately, so the page states the fact plainly and
    * never paints it as a caution.

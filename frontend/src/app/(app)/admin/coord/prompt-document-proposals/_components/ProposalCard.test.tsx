@@ -420,3 +420,80 @@ describe("ProposalCard — a proposal decided by its own author", () => {
     expect(screen.queryByTestId("proposal-decided-by")).toBeNull();
   });
 });
+
+/**
+ * The machine-readable half of the provenance line, and the affordance that
+ * must not outlive the decision.
+ *
+ * Both are the same class of defect as the four above: the page keeps rendering
+ * and quietly says something it does not know, or offers something that cannot
+ * happen.
+ */
+describe("ProposalCard — `data-self-decided` keeps UNKNOWN out of `false`", () => {
+  it("reports `unknown` when the question is unanswerable", () => {
+    // No `self_decided` from coord, and one of the two identities blank — so
+    // there is no answer to give. `"false"` here would be an assertion ("coord
+    // answered, and somebody else decided it"), which is precisely the
+    // absence-is-not-zero conflation the rest of this page works to avoid, left
+    // open in the one channel a UI-Bridge or spec-CI check actually reads.
+    renderCard(
+      proposal({
+        status: "approved",
+        proposed_by: "   ",
+        decided_by: "operator:josh@qontinui.io",
+        decided_at: "2026-09-14T09:00:00Z",
+      })
+    );
+    toggleRow();
+    const line = screen.getByTestId("proposal-decided-by");
+    expect(line.getAttribute("data-self-decided")).toBe("unknown");
+    // The rendered TEXT is unchanged by this: it only ever spoke for `true`.
+    expect(line.textContent ?? "").not.toMatch(/its author/i);
+    expect(screen.queryByTestId("proposal-self-decided")).toBeNull();
+  });
+
+  it("still reports a plain `false` when coord answered no", () => {
+    // The other side of the distinction — without this, "unknown" could be
+    // satisfied by never emitting `false` at all.
+    renderCard(
+      proposal({
+        status: "approved",
+        proposed_by: "session:aaaa",
+        decided_by: "operator:josh@qontinui.io",
+        decided_at: "2026-09-14T09:00:00Z",
+      })
+    );
+    toggleRow();
+    expect(
+      screen.getByTestId("proposal-decided-by").getAttribute("data-self-decided")
+    ).toBe("false");
+  });
+});
+
+describe("ProposalCard — the decision composer is offered only where a decision is possible", () => {
+  it("replaces it with a one-line explanation on a closed row", () => {
+    // Defence in depth — coord refuses a decision on a closed proposal
+    // server-side and is the authority. But this card already drops the
+    // pre-approval staleness warning on a retired row because the action no
+    // longer exists; leaving two enabled buttons under that same argument
+    // offers the action while the text says it is impossible.
+    renderCard(proposal({ status: "stale" }));
+    toggleRow();
+    // Asserted with the row OPEN — a null means gated, never merely collapsed.
+    expect(screen.getByTestId("proposal-closed").textContent ?? "").toMatch(
+      /no decision is possible/i
+    );
+    expect(screen.queryByTestId("proposal-approve")).toBeNull();
+    expect(screen.queryByTestId("proposal-reject")).toBeNull();
+    expect(screen.queryByTestId("proposal-decision-note")).toBeNull();
+  });
+
+  it("still offers it on a pending row", () => {
+    // Without this, "gated on closed" could be satisfied by gating everything.
+    renderCard(proposal({ status: "pending" }));
+    toggleRow();
+    expect(screen.getByTestId("proposal-approve")).toBeTruthy();
+    expect(screen.getByTestId("proposal-reject")).toBeTruthy();
+    expect(screen.queryByTestId("proposal-closed")).toBeNull();
+  });
+});

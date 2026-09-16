@@ -25,6 +25,19 @@ const DOCUMENTS = `${API}/coord/prompt-documents`;
  */
 const STALE_LIMIT = 20;
 
+/**
+ * How many recently DECIDED proposals the collapsed section asks for. Same
+ * reasoning and same number as `STALE_LIMIT`: a receipt for recent decisions,
+ * not an archive.
+ *
+ * Both bounds are only honoured because the web proxy DECLARES `limit`
+ * (`operations.py` `list_prompt_document_proposals`). FastAPI discards an
+ * undeclared query parameter, so before that declaration this constant
+ * documented a page size nothing applied and coord fell back to its own
+ * `unwrap_or(100)`.
+ */
+const DECIDED_LIMIT = 20;
+
 /** `/coord/prompt-documents/:kind/:name`, each segment encoded. */
 function docPath(kind: string, name: string): string {
   return `${DOCUMENTS}/${encodeURIComponent(kind)}/${encodeURIComponent(name)}`;
@@ -37,6 +50,77 @@ function docKey(kind: string, name: string): string {
 
 function message(err: unknown, fallback: string): string {
   return err instanceof Error ? err.message : fallback;
+}
+
+/**
+ * Did coord REFUSE the query, or merely fail to answer it?
+ *
+ * Only a `400` is evidence of the first. That is coord's `get_list` rejecting a
+ * status value it has never heard of — the pre-deploy window, and the one case
+ * the section may describe as "coord is older than this page". Everything else
+ * that lands in a `catch` here is a different fault with the same shape: a
+ * timeout, a parse error, or coord genuinely down (a 502/504 that the proxy
+ * turns into a 200-with-`unavailable`, but a raw one if the proxy itself is the
+ * thing that failed). Claiming the benign cause for those would be diagnosing
+ * from the box rather than from the evidence.
+ *
+ * The test is on the message text because that is all there is: `HttpClient`
+ * throws a plain `Error` spelled `GET <url> failed: <status> - <body>` and
+ * carries no status field. The word-boundary match is deliberately narrow — a
+ * body containing "400" would false-positive, which downgrades an alarm to a
+ * calm note and never the reverse.
+ */
+function isQueryRefusal(err: unknown): boolean {
+  const text = err instanceof Error ? err.message : String(err ?? "");
+  return /\b400\b/.test(text);
+}
+
+/** One collapsed proposal section's read, failure included. */
+interface SectionOutcome {
+  proposals: PromptDocumentProposal[];
+  /** Why it could not be read, or `null` on a clean read. */
+  unavailable: string | null;
+  /** Severity/cause when known — `null` means the cause was NOT diagnosed. */
+  unavailableKind: UnavailableKind | null;
+}
+
+/**
+ * Read one status-filtered proposal section, tolerating every failure locally.
+ *
+ * Shared by the retired (`stale`) and recently-decided (`approved`) sections
+ * because they need the identical contract, and two hand-written copies of it
+ * would drift: never throw, never let a failure reach the pending queue's
+ * `error`, never render an unread section as an empty one, and carry the CAUSE
+ * out so the caller's UNKNOWN box can say what it actually knows rather than
+ * asserting the friendliest explanation.
+ *
+ * A failed read returns NO rows on purpose. Rows from an earlier good read are
+ * dropped rather than left under an UNKNOWN heading: a list we can no longer
+ * confirm is not a list we should keep asserting.
+ */
+async function readProposalSection(
+  status: string,
+  limit: number,
+  fallbackNote: string
+): Promise<SectionOutcome> {
+  try {
+    const data = await httpClient.get<ListProposalsResponse>(
+      `${PROPOSALS}?status=${encodeURIComponent(status)}&limit=${limit}`
+    );
+    return {
+      proposals: data.proposals ?? [],
+      // `unavailable` is coord's own "I could not answer" note — an empty list
+      // beside it means "cannot see", exactly as on the pending queue.
+      unavailable: data.unavailable ?? null,
+      unavailableKind: data.unavailable_kind ?? null,
+    };
+  } catch (err) {
+    return {
+      proposals: [],
+      unavailable: message(err, fallbackNote),
+      unavailableKind: isQueryRefusal(err) ? "not_deployed" : null,
+    };
+  }
 }
 
 /** Shape of the document-list rows this hook needs (bodies omitted upstream). */
@@ -82,12 +166,19 @@ export type WriteDiffState =
  * the page renders separately. Neither is collapsed into an empty queue: "no
  * pending proposals" is a claim this page only makes when it actually knows.
  *
- * The retired read (`?status=stale`) carries its OWN pair of those states —
- * `staleUnavailable` and `staleRead` — and deliberately shares neither with the
- * pending queue. It reads a status coord may not have shipped yet, so its
+ * The two COLLAPSED sections each carry their own triple of those states —
+ * `staleUnavailable` / `staleUnavailableKind` / `staleRead`, and
+ * `decidedUnavailable` / `decidedUnavailableKind` / `decidedRead` — and
+ * deliberately share none of them with the pending queue or with each other.
+ * The retired read asks for a status coord may not have shipped yet, so its
  * failure is routine and local; folding it into `error` would let a section
  * that does not exist yet report the working queue above it as broken. See
- * `loadStaleProposals`.
+ * `readProposalSection`.
+ *
+ * The `*UnavailableKind` half is what keeps the UNKNOWN boxes honest about
+ * CAUSE. `null` there means the cause was not diagnosed, and the section then
+ * says only that coord could not be reached — it does not reach for the
+ * friendliest available explanation.
  *
  * ## Why undo is a PATCH, not a coord `restore` call
  *
@@ -111,11 +202,41 @@ export function usePromptDocumentProposals() {
    */
   const [staleUnavailable, setStaleUnavailable] = useState<string | null>(null);
   /**
+   * WHY it could not be read, when that was established — `null` is "we did not
+   * diagnose it", not "benign". The section's UNKNOWN box only makes the
+   * pre-deploy claim on `not_deployed`; on `null` it says coord could not be
+   * reached and stops there.
+   */
+  const [staleUnavailableKind, setStaleUnavailableKind] =
+    useState<UnavailableKind | null>(null);
+  /**
    * Has the retired read ever COMPLETED (either way)? Distinct from `loading`,
    * which goes false as soon as the batch settles — before the first paint the
    * section knows nothing, and "nothing read yet" is not "nothing retired".
    */
   const [staleRead, setStaleRead] = useState(false);
+  /**
+   * Proposals that have been DECIDED — coord's `?status=approved`.
+   *
+   * Its own triple, mirroring the retired read's exactly rather than sharing
+   * it: the two sections fail independently, and folding them together would
+   * let one section's 400 report the other as unknown.
+   *
+   * This read is why the card's decided-provenance block exists on a real
+   * surface at all. coord filters the list by status, so the pending read can
+   * only ever serve rows with `decided_by: null` — and a self-approved
+   * loosening, the compensating control for ownership no longer gating a
+   * decision, was therefore stored and unauditable.
+   */
+  const [decidedProposals, setDecidedProposals] = useState<
+    PromptDocumentProposal[]
+  >([]);
+  const [decidedUnavailable, setDecidedUnavailable] = useState<string | null>(
+    null
+  );
+  const [decidedUnavailableKind, setDecidedUnavailableKind] =
+    useState<UnavailableKind | null>(null);
+  const [decidedRead, setDecidedRead] = useState(false);
   const [writes, setWrites] = useState<PromptDocumentWrite[]>([]);
   /** `(kind/name) → current_version` for staleness checks. */
   const [liveVersions, setLiveVersions] = useState<Map<string, number>>(
@@ -203,27 +324,45 @@ export function usePromptDocumentProposals() {
    * The consequence is that this read has no ordering dependency on coord at
    * all: against an older coord the section reads "cannot be read"; against a
    * newer one it fills.
+   *
+   * The tolerance itself now lives in `readProposalSection`, shared with the
+   * decided read — this function distributes the outcome and nothing else.
    */
   const loadStaleProposals = useCallback(async () => {
-    try {
-      const data = await httpClient.get<ListProposalsResponse>(
-        `${PROPOSALS}?status=stale&limit=${STALE_LIMIT}`
-      );
-      setStaleProposals(data.proposals ?? []);
-      // `unavailable` is coord's own "I could not answer" note — an empty list
-      // beside it means "cannot see", exactly as on the pending queue.
-      setStaleUnavailable(data.unavailable ?? null);
-    } catch (err) {
-      // Includes the pre-deploy `400 invalid status`. Drop any rows from a
-      // previous good read rather than showing them under an UNKNOWN heading:
-      // a list we can no longer confirm is not a list we should keep asserting.
-      setStaleProposals([]);
-      setStaleUnavailable(
-        message(err, "Retired proposals could not be read from coord")
-      );
-    } finally {
-      setStaleRead(true);
-    }
+    // `readProposalSection` absorbs every failure — including the pre-deploy
+    // `400 invalid status` — and hands back the cause, so this only distributes.
+    const out = await readProposalSection(
+      "stale",
+      STALE_LIMIT,
+      "Retired proposals could not be read from coord"
+    );
+    setStaleProposals(out.proposals);
+    setStaleUnavailable(out.unavailable);
+    setStaleUnavailableKind(out.unavailableKind);
+    setStaleRead(true);
+  }, []);
+
+  /**
+   * The recently DECIDED queue — `?status=approved`.
+   *
+   * Same shape and same tolerance as `loadStaleProposals`, for the same reason
+   * stated there, with one addition worth naming: `approved` is in coord's
+   * ORIGINAL status vocabulary, so unlike `stale` this read is not expected to
+   * fail against an older coord at all. Its failures are therefore more likely
+   * to be coord actually being unreachable — which is precisely why the cause
+   * is carried through instead of every failure inheriting the retired
+   * section's pre-deploy explanation.
+   */
+  const loadDecidedProposals = useCallback(async () => {
+    const out = await readProposalSection(
+      "approved",
+      DECIDED_LIMIT,
+      "Recently approved proposals could not be read from coord"
+    );
+    setDecidedProposals(out.proposals);
+    setDecidedUnavailable(out.unavailable);
+    setDecidedUnavailableKind(out.unavailableKind);
+    setDecidedRead(true);
   }, []);
 
   const loadWrites = useCallback(async () => {
@@ -293,14 +432,31 @@ export function usePromptDocumentProposals() {
 
   const reload = useCallback(async () => {
     setLoading(true);
-    await Promise.all([
-      loadProposals(),
-      loadStaleProposals(),
-      loadWrites(),
-      loadLiveVersions(),
-    ]);
-    setLoading(false);
-  }, [loadProposals, loadStaleProposals, loadWrites, loadLiveVersions]);
+    try {
+      // `allSettled`, not `all`: every loader is written to absorb its own
+      // failure, but that is a property each one has to keep. A `Promise.all`
+      // makes one future regression — a throw outside a loader's `try`, an
+      // `httpClient` that rejects before entering one — reject the whole batch,
+      // and the `finally` is what stops that from pinning the page on "Loading
+      // review feed…" forever. The loaders report their own faults; this layer
+      // only guarantees the spinner ends.
+      await Promise.allSettled([
+        loadProposals(),
+        loadStaleProposals(),
+        loadDecidedProposals(),
+        loadWrites(),
+        loadLiveVersions(),
+      ]);
+    } finally {
+      setLoading(false);
+    }
+  }, [
+    loadProposals,
+    loadStaleProposals,
+    loadDecidedProposals,
+    loadWrites,
+    loadLiveVersions,
+  ]);
 
   useEffect(() => {
     reload();
@@ -558,7 +714,12 @@ export function usePromptDocumentProposals() {
     proposals,
     staleProposals,
     staleUnavailable,
+    staleUnavailableKind,
     staleRead,
+    decidedProposals,
+    decidedUnavailable,
+    decidedUnavailableKind,
+    decidedRead,
     writes,
     loading,
     acting,

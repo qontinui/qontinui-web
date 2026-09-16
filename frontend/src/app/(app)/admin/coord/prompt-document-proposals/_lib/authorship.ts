@@ -136,9 +136,16 @@ export const AUTHOR_CLASS_LABEL: Record<WriteAuthorClass, string> = {
  * renders it in the same calm chrome as the rest of the provenance line and
  * gives it no badge, colour or icon.
  *
- * Coord's own `self_decided` boolean WINS when it is present: it is computed
- * server-side from the identities coord stamped, and it can be right where a
- * string comparison is not (one principal reaching coord under two spellings).
+ * Coord's own `self_decided` boolean WINS when it is present — but not because
+ * it is a cleverer test. Coord derives it as exactly `decided_by ==
+ * proposed_by`, with no normalization
+ * (`with_derived_self_decided()`), so against today's coord it and the
+ * comparison below cannot disagree. It wins because it is the SERVER'S answer:
+ * the console reports coord's verdict rather than maintaining a second one that
+ * drifts independently of it, and a coord that later starts normalizing (one
+ * principal reaching it under two spellings) changes what this page says with
+ * no web deploy at all.
+ *
  * The comparison is the fallback for a build that predates the field, and it is
  * deliberately conservative — a blank on either side is `false`, because
  * "unknown" must not render as an assertion about who decided what.
@@ -150,9 +157,33 @@ export function isSelfDecided(
   proposal: Pick<PromptDocumentProposal, "proposed_by"> &
     Partial<Pick<PromptDocumentProposal, "decided_by" | "self_decided">>
 ): boolean {
+  return selfDecidedOrUnknown(proposal) === true;
+}
+
+/**
+ * The same question as `isSelfDecided`, but with UNKNOWN kept as its own answer
+ * instead of folded into `false`.
+ *
+ * `null` means the question is unanswerable from what coord served: no
+ * `self_decided` flag, and at least one of the two identities blank or absent.
+ * `isSelfDecided` collapses that to `false` on purpose — the rendered sentence
+ * has nothing to say about an unanswerable case, so saying nothing is right.
+ *
+ * A MACHINE-READABLE channel cannot collapse it the same way. `false` there is
+ * an assertion ("coord answered, and the decider was somebody else"), and
+ * spending it on "we could not tell" is the absence-is-not-zero defect this
+ * page's `staleRead`/`unavailable` distinctions exist to avoid — left open in
+ * the one channel a UI-Bridge or spec-CI assertion actually reads. So the
+ * `data-self-decided` attribute is tri-state and this function is what fills
+ * it.
+ */
+export function selfDecidedOrUnknown(
+  proposal: Pick<PromptDocumentProposal, "proposed_by"> &
+    Partial<Pick<PromptDocumentProposal, "decided_by" | "self_decided">>
+): boolean | null {
   if (typeof proposal.self_decided === "boolean") return proposal.self_decided;
   const decided = (proposal.decided_by ?? "").trim();
   const proposed = (proposal.proposed_by ?? "").trim();
-  if (!decided || !proposed) return false;
+  if (!decided || !proposed) return null;
   return decided === proposed;
 }
