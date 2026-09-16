@@ -14,9 +14,11 @@ const withBundleAnalyzer = bundleAnalyzer({
 const BACKEND_URL = process.env.BACKEND_URL || process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
 // qontinui-coord URL — separate axum service (default port 9870). The
-// browser proxies REST through Next.js to avoid CORS; WebSocket
-// connections still go direct via NEXT_PUBLIC_COORD_WS_URL since
-// rewrites don't proxy ws:// upgrades.
+// browser proxies REST through Next.js to avoid CORS. The browser opens
+// NO socket to coord: coord's `/ws` is authenticated and the browser holds
+// no coord credential, so live events ride the web backend's bridges
+// (`/api/v1/operations/{device-status,ci-status,coord-events}/ws`), which
+// mint the coord service token server-side.
 const COORD_URL = process.env.COORD_URL || 'http://localhost:9870';
 
 // Composed cloud build. `@qontinui/cloud-control` is an OPTIONAL sibling
