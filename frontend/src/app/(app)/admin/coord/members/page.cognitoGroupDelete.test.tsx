@@ -947,6 +947,233 @@ describe("/admin/coord/members — Cognito group delete", () => {
       expect(bullet).not.toHaveTextContent(/Nothing was deleted/i);
     });
 
+    /**
+     * The same two refusals AS PRODUCTION SENDS THEM.
+     *
+     * Every fixture above nests the cause under `detail`, which is FastAPI's
+     * own shape and what a test app that registers no middleware produces. A
+     * DEPLOYED backend runs `middleware/error_handler.http_exception_handler`,
+     * which splices a dict detail to the TOP LEVEL and emits **no `detail` key
+     * at all** — so `blastRadiusReadCause` matched nothing on the one shape
+     * real operators see, and fell through to the generic reader, which
+     * returns the delete's own refusal prose.
+     *
+     * That prose says "Nothing was deleted", and in a PREVIEW it describes a
+     * click nobody has made. A 300-character ceiling in the generic reader hid
+     * it by refusing the sentence for its length; the backend's real copy
+     * starts at 425 characters and has no upper bound (guards 1 and 3
+     * interpolate an unbounded tenant list), so bounding rather than
+     * refusing on length is what exposed this.
+     */
+    describe("the shapes a DEPLOYED backend sends, and the one a test app does", () => {
+      /** A dict detail as `http_exception_handler` actually emits it: `error`
+       * promoted, every other key spliced beside it, `message` carrying the
+       * delete's refusal, and no `detail`. */
+      function spliced(extra: Record<string, unknown>, message: string) {
+        return {
+          // `...extra` FIRST: spreading it last let an `extra.message`
+          // silently override the parameter, which is a fixture that lies.
+          ...extra,
+          error: String(extra.error ?? ""),
+          message,
+          timestamp: 1758055642.1234,
+          path: "https://app.qontinui.io/api/v1/operations/coord/cognito/groups/acme-devs/blast-radius",
+        };
+      }
+
+      it("reads the cause out of the spliced envelope, not the refusal prose", async () => {
+        state.blastRadius = {
+          mode: "error",
+          status: 502,
+          body: spliced(
+            { error: "mapping_check_unavailable", coord_status: 404 },
+            "Refused: coord could not tell us what deleting this group would " +
+              "break (coord answered 404), so there is no way to know. " +
+              "Nothing was deleted. A 403 here means the caller holds no " +
+              "coord admin role; a 404 means coord has not yet deployed the " +
+              "blast-radius read; anything else means coord is unreachable."
+          ),
+        };
+        const user_ = userEvent.setup();
+        render(<MembersPage />);
+        await openConfirm(user_);
+
+        const bullet = await screen.findByTestId(
+          "cognito-delete-confirm-mappings-acme-devs"
+        );
+        await waitFor(() =>
+          expect(bullet).toHaveTextContent(/could not be read/i)
+        );
+        expect(bullet).toHaveTextContent(
+          /mapping_check_unavailable, coord answered 404/
+        );
+        expect(bullet).not.toHaveTextContent(/Nothing was deleted/i);
+      });
+
+      it("reads an UNREADABLE verdict's reason out of the spliced envelope too", async () => {
+        state.blastRadius = {
+          mode: "error",
+          status: 502,
+          body: spliced(
+            {
+              error: "mapping_check_unreadable",
+              reason: "the body carries no mapped_total",
+            },
+            // Byte-for-byte `_raise_mapping_check_unreadable`'s sentence for
+            // this reason (457 characters) — the copy the raised ceiling now
+            // admits, and so the copy that would leak into the preview.
+            "Refused: coord answered without an error status, but the body " +
+              "is not its group blast-radius verdict (the body carries no " +
+              "mapped_total), so there is no way to tell what this delete " +
+              "would break. Nothing was deleted. An unreadable answer is " +
+              "UNKNOWN, not 'this group has no mappings' — treating it as " +
+              "the latter would let the delete through with every guard " +
+              "unchecked. Something answered where coord should have, so " +
+              "check coord's route AND anything proxying it."
+          ),
+        };
+        const user_ = userEvent.setup();
+        render(<MembersPage />);
+        await openConfirm(user_);
+
+        const bullet = await screen.findByTestId(
+          "cognito-delete-confirm-mappings-acme-devs"
+        );
+        await waitFor(() =>
+          expect(bullet).toHaveTextContent(/could not be read/i)
+        );
+        expect(bullet).toHaveTextContent(
+          /mapping_check_unreadable: the body carries no mapped_total/
+        );
+        expect(bullet).not.toHaveTextContent(/Nothing was deleted/i);
+        expect(bullet).not.toHaveTextContent(/never completed/i);
+      });
+
+      it("bounds the cause's `reason`, which coord's echoed group_id can inflate", async () => {
+        // `reason` is `_raise_mapping_check_unreadable`'s argument, and
+        // `_verdict_is_about` interpolates coord's ECHOED `group_id` into it.
+        // `_is_attributable` checks that value for printability and
+        // non-emptiness and NOT for length, so this string is body-controlled.
+        // The bullet prints the cause LAST, after its safety instruction, so
+        // the instruction cannot be pushed off-screen by any length of cause.
+        // The bound is what keeps everything BELOW the bullet reachable: this
+        // renders into an `AlertDialogContent` that is `fixed`, vertically
+        // centred and carries neither `max-h` nor `overflow-y-auto`, so an
+        // over-long cause takes the type-to-confirm input and both buttons out
+        // of the viewport with no way to scroll back.
+        const huge = "Z".repeat(9000);
+        state.blastRadius = {
+          mode: "error",
+          status: 502,
+          body: {
+            detail: {
+              error: "mapping_check_unreadable",
+              reason: `the verdict is about '${huge}', not 'acme-devs'`,
+            },
+          },
+        };
+        const user_ = userEvent.setup();
+        render(<MembersPage />);
+        await openConfirm(user_);
+
+        const bullet = await screen.findByTestId(
+          "cognito-delete-confirm-mappings-acme-devs"
+        );
+        await waitFor(() =>
+          expect(bullet).toHaveTextContent(/could not be read/i)
+        );
+        const text = bullet.textContent ?? "";
+        expect(text).not.toContain(huge);
+        // Pin the BOUND, not merely "shorter than the fixture". `not.toContain`
+        // alone passes at any ceiling below 9000, so raising the cap would red
+        // nothing — and this surface has its own cap precisely because the
+        // toast's is too generous for a dialog that cannot scroll.
+        const cause = /\(([^)]*)\)\s*$/.exec(text.trim());
+        expect(cause).not.toBeNull();
+        expect((cause?.[1] ?? "").length).toBeLessThanOrEqual(201);
+        // The instruction the operator acts on comes BEFORE the cause, so no
+        // length of cause can push it out of the dialog.
+        expect(text.indexOf("treat it as unknown")).toBeLessThan(
+          text.indexOf("mapping_check_unreadable")
+        );
+      });
+
+      it("applies the dialog's cap to the GENERIC reader's answer too", async () => {
+        // `blastRadiusReadCause` has two operator-facing returns and both land
+        // in this same `<li>`, so the surface argument covers both. Capping
+        // only the cause-code arm was the same half-a-fix as bounding one half
+        // of a composition.
+        //
+        // No production body reaches this arm long today; a DEV backend does,
+        // since `general_exception_handler` returns `str(exc)` unbounded under
+        // `ENVIRONMENT == "development"`.
+        state.blastRadius = {
+          mode: "error",
+          status: 500,
+          body: {
+            error: "INTERNAL_SERVER_ERROR",
+            message: "q".repeat(4000),
+            timestamp: 1758055642.1234,
+            path: "https://app.qontinui.io/api/v1/operations/coord/x",
+          },
+        };
+        const user_ = userEvent.setup();
+        render(<MembersPage />);
+        await openConfirm(user_);
+
+        const bullet = await screen.findByTestId(
+          "cognito-delete-confirm-mappings-acme-devs"
+        );
+        await waitFor(() =>
+          expect(bullet).toHaveTextContent(/could not be read/i)
+        );
+        const text = bullet.textContent ?? "";
+        const cause = /\(([^)]*)\)\s*$/.exec(text.trim());
+        expect(cause).not.toBeNull();
+        expect((cause?.[1] ?? "").length).toBeLessThanOrEqual(201);
+      });
+
+      it("hands a refusal it does not own to the generic reader, both arms", async () => {
+        // The by-code test is what makes the two arms one rule. This helper
+        // speaks for exactly two codes; anything else on this route — an auth
+        // refusal, say — has a `message` written for a person, and reducing it
+        // to its bare code throws that away. The `detail` arm used to match on
+        // the mere PRESENCE of an `error`, so on a backend running no
+        // middleware it did exactly that.
+        //
+        // BOTH shapes, because "both arms" is the claim: the middleware-less
+        // `{detail: {…}}` and the spliced production envelope. An earlier
+        // revision of this test asserted the name and exercised one.
+        const sentence = "You are not an administrator of this tenant.";
+        const shapes: Record<string, unknown>[] = [
+          { detail: { error: "not_coord_tenant_admin", message: sentence } },
+          {
+            error: "not_coord_tenant_admin",
+            message: sentence,
+            timestamp: 1758055642.1234,
+            path: "https://app.qontinui.io/api/v1/operations/coord/x",
+          },
+        ];
+        for (const body of shapes) {
+          vi.clearAllMocks();
+          window.localStorage.clear();
+          state.blastRadius = { mode: "error", status: 403, body };
+          const user_ = userEvent.setup();
+          const view = render(<MembersPage />);
+          await openConfirm(user_);
+
+          const bullet = await screen.findByTestId(
+            "cognito-delete-confirm-mappings-acme-devs"
+          );
+          await waitFor(() =>
+            expect(bullet).toHaveTextContent(/could not be read/i)
+          );
+          expect(bullet.textContent ?? "").toContain(sentence);
+          view.unmount();
+        }
+      });
+    });
+
     it("treats a 200 that is not a verdict as unknown, never as 'none'", async () => {
       // The status-only trap again: `res.ok`, and no counts. `?? 0` on a
       // missing `mapped_total` would print the all-clear this whole change

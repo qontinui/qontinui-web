@@ -484,7 +484,7 @@ describe("Section reads — the error paragraph carries the reason", () => {
     expect(screen.queryByText("No members yet.")).toBeNull();
   });
 
-  it("refuses gateway HTML that arrives NESTED, which is the likelier level", async () => {
+  it("refuses gateway HTML that arrives NESTED and falls through to the code", async () => {
     // The level that actually happens. `_proxy_coord_get` sets
     // `detail=resp.text` for any coord status >= 400, so a proxy in front of
     // coord answering 502 with an HTML page puts that HTML inside the
@@ -495,6 +495,14 @@ describe("Section reads — the error paragraph carries the reason", () => {
     // Guarding only the top level refuses the HTML that is hard to reach and
     // passes the HTML that is easy to, which is why this case exists
     // separately from the one above.
+    //
+    // What it shows once the HTML is refused is the rung BELOW: the envelope
+    // always carries a machine `error` beside its human `message`, so a
+    // refused `message` is a fact about that value and not about the body.
+    // Here the code is `get_default_error_code(502)`, no more informative than
+    // the status — but the same fallthrough is what turns a 500 whose
+    // `message` is a gateway page into `cognito_pool_misconfigured` instead of
+    // `HTTP 500`, and the rule has to be one rule.
     responses["GET /coord/members"] = {
       status: 502,
       body: {
@@ -509,8 +517,9 @@ describe("Section reads — the error paragraph carries the reason", () => {
     };
     render(<MembersPage />);
 
-    expect(await screen.findByText("HTTP 502")).toBeTruthy();
+    expect(await screen.findByText("BAD_GATEWAY")).toBeTruthy();
     expect(screen.queryByText(/nginx/)).toBeNull();
+    expect(screen.queryByText(/<html/)).toBeNull();
     expect(screen.queryByText("No members yet.")).toBeNull();
   });
 
@@ -520,10 +529,27 @@ describe("Section reads — the error paragraph carries the reason", () => {
     // single quotes, therefore not JSON, therefore it would fall through the
     // recursion's parse and out of the catch arm as "text". That is the exact
     // leak `_readable_coord_refusal` exists to stop server-side.
+    //
+    // As with the nested-HTML case above, the refused `message` falls through
+    // to the envelope's `error` rather than ending the search at the status.
+    //
+    // `error` is coord's OWN code here rather than a generic `FORBIDDEN`,
+    // because that is the shape this rung exists for: asserting `FORBIDDEN`
+    // would assert `403` spelled out and undersell the fix.
+    //
+    // The two CAN co-occur, and an earlier revision of this comment claimed
+    // they could not. `http_exception_handler`'s dict branch is gated on
+    // `isinstance(dict) and "error" in detail_value`, so a dict detail with NO
+    // `error` key falls to the `else`, which sets a generic code from the
+    // status AND a repr `message` from `str(exc.detail)`. `_coord_error_detail`
+    // passes any coord JSON object through verbatim, and coord is not obliged
+    // to send an `error`. That body is handled correctly too — the repr is
+    // refused and rung 5 answers the generic code — it is just not the shape
+    // worth pinning here.
     responses["GET /coord/members"] = {
       status: 403,
       body: {
-        error: "FORBIDDEN",
+        error: "not_admin_in_target_tenant",
         message: "{'error': 'not_admin_in_target_tenant'}",
         timestamp: 1758055642.1234,
         path: "https://app.qontinui.io/api/v1/operations/coord/members",
@@ -531,8 +557,10 @@ describe("Section reads — the error paragraph carries the reason", () => {
     };
     render(<MembersPage />);
 
-    expect(await screen.findByText("HTTP 403")).toBeTruthy();
+    expect(await screen.findByText("not_admin_in_target_tenant")).toBeTruthy();
     expect(screen.queryByText(/'error'/)).toBeNull();
+    expect(screen.queryByText(/\{/)).toBeNull();
+    expect(screen.queryByText("HTTP 403")).toBeNull();
   });
 
   it("still shows a legitimate sentence that merely BEGINS with a brace", async () => {
@@ -597,5 +625,616 @@ describe("Section reads — the error paragraph carries the reason", () => {
 
     expect(await screen.findByText("HTTP 500")).toBeTruthy();
     expect(screen.queryByText("No members yet.")).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// A REFUSED candidate falls through to the next rung, never straight to the
+// status — and the guard reaches every rung, including the one `details` takes
+// ---------------------------------------------------------------------------
+
+/**
+ * Follow-up to web #1378, which introduced the `plainSentence` guard and then
+ * treated its refusal as the END of extraction rather than as a fact about one
+ * value. Three shapes lost information the previous code delivered, and a
+ * fourth kept leaking through the one branch the guard did not reach.
+ *
+ * The first is a REGRESSION, measured against `9d639412b^`: the backend
+ * composes operator prose on purpose, and the 300-character ceiling sat below
+ * its own sentences.
+ */
+describe("A refused candidate falls through to the next rung", () => {
+  /**
+   * Byte-for-byte the 502 sentence `_raise_mapping_check_unreadable` composes
+   * (`operations.py`), with `reason` set to `the body carries no mapped_total`
+   * — one of the strings `_verdict_count` actually passes it.
+   *
+   * **457 characters**, and the template is 425 with an empty `reason`, so
+   * every producible form of this sentence was refused wholesale by the
+   * 300-character ceiling.
+   *
+   * Spelled out rather than generated because the test is about THIS backend's
+   * real copy: a synthetic `"x".repeat(400)` would pin the number and not the
+   * reason, and the number is the thing that was wrong. Transcribe it from the
+   * backend if that copy moves — an earlier revision of this fixture invented
+   * its closing clause while claiming to be byte-for-byte, which is the defect
+   * this comment exists to stop repeating.
+   */
+  const REAL_BACKEND_SENTENCE =
+    "Refused: coord answered without an error status, but the body is not " +
+    "its group blast-radius verdict (the body carries no mapped_total), so " +
+    "there is no way to tell what this delete would break. Nothing was " +
+    "deleted. An unreadable answer is UNKNOWN, not 'this group has no " +
+    "mappings' — treating it as the latter would let the delete through with " +
+    "every guard unchecked. Something answered where coord should have, so " +
+    "check coord's route AND anything proxying it.";
+
+  const GATEWAY_HTML =
+    "<html><head><title>502 Bad Gateway</title></head><body>" +
+    "<center><h1>502 Bad Gateway</h1></center><hr>" +
+    "<center>nginx</center></body></html>";
+
+  it("shows a 457-character backend sentence, which the 300 ceiling ate", async () => {
+    // REGRESSION GUARD. Before #1378 this sentence reached the operator
+    // verbatim; after it, every message over 300 characters rendered as the
+    // bare status — including on the delete-group refusals, which are the
+    // page's most consequential messages and the longest it composes.
+    // Pin the LENGTH, not just "over 300". The comment above asks the next
+    // author to re-transcribe this if the backend copy moves; without an exact
+    // assertion it asks them for a favour instead of failing when they skip it.
+    expect(REAL_BACKEND_SENTENCE).toHaveLength(457);
+    responses["GET /coord/members"] = {
+      status: 502,
+      body: {
+        // The code the backend actually emits: `http_exception_handler`
+        // promotes the dict detail's own `error`, which is lowercase.
+        error: "mapping_check_unreadable",
+        message: REAL_BACKEND_SENTENCE,
+        timestamp: 1758055642.1234,
+        path: "https://app.qontinui.io/api/v1/operations/coord/members",
+      },
+    };
+    render(<MembersPage />);
+
+    expect(await screen.findByText(/Nothing was deleted\./)).toBeTruthy();
+    expect(screen.queryByText("HTTP 502")).toBeNull();
+    expect(screen.queryByText("No members yet.")).toBeNull();
+  });
+
+  it("BOUNDS an over-long body instead of refusing it", async () => {
+    // The counterpart to the sentence above, and the reason length is not in
+    // the refusal list. Guards 1 and 3 interpolate `_render_affected`, a
+    // `", ".join(named)` over a tenant list with NO upper bound, so no ceiling
+    // can be "big enough — and refusing on length loses a real refusal for a
+    // heavily-mapped group. Truncating keeps the beginning  — where the
+    // tenants and the instruction are  — and still bounds the toast.
+    responses["GET /coord/members"] = {
+      status: 500,
+      body: {
+        error: "INTERNAL_SERVER_ERROR",
+        message: "a".repeat(3000),
+        timestamp: 1758055642.1234,
+        path: "https://app.qontinui.io/api/v1/operations/coord/members",
+      },
+    };
+    render(<MembersPage />);
+
+    const shown = await screen.findByText(/a{50}/);
+    // `.trim()` because the element's text node carries the surrounding
+    // markup's whitespace; the assertion is about the VALUE, not the layout.
+    const text = (shown.textContent ?? "").trim();
+    // Bounded, and visibly cut. 2001 is the ceiling plus the ellipsis.
+    expect(text).toHaveLength(2001);
+    expect(text.endsWith("…")).toBe(true);
+    expect(text.startsWith("a".repeat(100))).toBe(true);
+  });
+
+  it("reaches the real code when the sentence beside it is a gateway page", async () => {
+    // The case the fallthrough exists for. `_cognito_http_error` raises a dict
+    // detail whose `error` is a genuine diagnostic, so when a proxy replaces
+    // the sentence with an HTML page the code one key over is still the true
+    // answer — and `HTTP 500` was not.
+    responses["POST /coord/members/op-1/roles"] = {
+      status: 500,
+      body: {
+        error: "cognito_pool_misconfigured",
+        message: GATEWAY_HTML,
+        timestamp: 1758055642.1234,
+        path: "https://app.qontinui.io/api/v1/operations/coord/members/op-1/roles",
+      },
+    };
+    const user_ = userEvent.setup();
+    render(<MembersPage />);
+
+    await user_.click(await screen.findByTestId("grant-op-1"));
+
+    await waitFor(() => expect(vi.mocked(toast.error)).toHaveBeenCalled());
+    const text = lastErrorToast();
+    expect(text).toContain("cognito_pool_misconfigured");
+    expect(text).not.toContain("nginx");
+    expectNoEnvelopeScaffolding(text);
+  });
+
+  it("guards the `details` branch too, which returned its value verbatim", async () => {
+    // #1378's round 2 found the guard sitting one level too shallow and moved
+    // it into the unwrap arm — but the 422 arm composed `${sentence}: ${field}`
+    // from a value that had ALREADY fallen back to the raw `message`, so a
+    // refused body walked straight out through the one branch carrying a
+    // `details` array. A guard has to hold on every path out, not on most.
+    responses["POST /coord/members/op-1/roles"] = {
+      status: 422,
+      body: {
+        error: "VALIDATION_ERROR",
+        message: GATEWAY_HTML,
+        details: [{ field: "body.role", message: "not a valid tier" }],
+        timestamp: 1758055642.1234,
+        path: "https://app.qontinui.io/api/v1/operations/coord/members/op-1/roles",
+      },
+    };
+    const user_ = userEvent.setup();
+    render(<MembersPage />);
+
+    await user_.click(await screen.findByTestId("grant-op-1"));
+
+    await waitFor(() => expect(vi.mocked(toast.error)).toHaveBeenCalled());
+    const text = lastErrorToast();
+    expect(text).not.toContain("<html");
+    expect(text).not.toContain("nginx");
+    // Rung 5 answered, with the field decorating it: `VALIDATION_ERROR:
+    // body.role — not a valid tier`. The field standing ALONE is rung 6, which
+    // this body does not reach because it carries an `error` — see the
+    // FastAPI-422 test below, which does.
+    expect(text).toContain("VALIDATION_ERROR");
+    expect(text).toContain("body.role — not a valid tier");
+  });
+
+  it("refuses a JSON ARRAY body, the brace-blob one bracket along", async () => {
+    // `_proxy_coord_get` sets `detail=resp.text`, so coord answering with a
+    // JSON array puts that array in the slot a sentence belongs in. The brace
+    // guard did not match it, and it printed raw.
+    responses["POST /coord/members/op-1/roles"] = {
+      status: 422,
+      body: {
+        detail: JSON.stringify([
+          { loc: ["body", "role"], msg: "field required", type: "missing" },
+        ]),
+      },
+    };
+    const user_ = userEvent.setup();
+    render(<MembersPage />);
+
+    await user_.click(await screen.findByTestId("grant-op-1"));
+
+    await waitFor(() => expect(vi.mocked(toast.error)).toHaveBeenCalled());
+    const text = lastErrorToast();
+    expect(text).not.toContain("loc");
+    expect(text).not.toContain("[{");
+    expect(text).toContain("HTTP 422");
+  });
+
+  it("still shows a legitimate sentence that merely BEGINS with a bracket", async () => {
+    // The control for the array guard. It decides by PARSING, so anything that
+    // is not a valid JSON array is prose — including a sentence that opens
+    // with a bracketed token. Two earlier spellings of this guard were pattern
+    // matches, and each was wrong in one direction: `[` plus a quote or brace
+    // let `[]` through, and "closing bracket then whitespace" refused
+    // `[admin]: not a valid tier` and a Cognito group legitimately named
+    // `[acme]-home`.
+    responses["GET /coord/members"] = {
+      status: 400,
+      body: {
+        error: "BAD_REQUEST",
+        message: "[admin] is not a valid tier",
+        timestamp: 1758055642.1234,
+        path: "https://app.qontinui.io/api/v1/operations/coord/members",
+      },
+    };
+    render(<MembersPage />);
+
+    expect(await screen.findByText("[admin] is not a valid tier")).toBeTruthy();
+  });
+
+  it("guards coord's `hint`, the second path out that faced no guard", async () => {
+    // `_readable_coord_refusal` composes `<code> — <hint|reason|detail>` and
+    // this rung mirrors it, so `hint` is coord's own string and arrives the
+    // same way every other value here does " through `detail=resp.text`. It
+    // was returned unguarded, so all four refusal classes walked out through
+    // it, and an unbounded `hint` defeated the ceiling on the ordinary
+    // coord-proxy path.
+    responses["POST /coord/members/op-1/roles"] = {
+      status: 502,
+      body: {
+        error: "BAD_GATEWAY",
+        message: JSON.stringify({
+          error: "repo_has_no_remote",
+          hint:
+            "<html><head><title>502 Bad Gateway</title></head><body>" +
+            "<center>nginx</center></body></html>",
+          reason: "add a remote first",
+        }),
+        timestamp: 1758055642.1234,
+        path: "https://app.qontinui.io/api/v1/operations/coord/members/op-1/roles",
+      },
+    };
+    const user_ = userEvent.setup();
+    render(<MembersPage />);
+
+    await user_.click(await screen.findByTestId("grant-op-1"));
+
+    await waitFor(() => expect(vi.mocked(toast.error)).toHaveBeenCalled());
+    const text = lastErrorToast();
+    expect(text).not.toContain("<html");
+    expect(text).not.toContain("nginx");
+    // A refused `hint` falls through to `reason` rather than ending the rung,
+    // so the actionable half still reaches the operator.
+    expect(text).toContain(`repo_has_no_remote — add a remote first`);
+  });
+
+  it("guards coord's `status` on a 2xx the build does not recognise", async () => {
+    // `POST /coord/tenant-members` proxies coord's body through, so a 200 with
+    // an arm this build does not know reports coord's `status` string. It is
+    // body-controlled and used to face only `typeof === "string"`, so an HTML
+    // or oversized value rendered whole into BOTH a paragraph and a toast.
+    responses["POST /coord/tenant-members"] = {
+      status: 200,
+      body: { status: "<html><center>nginx</center></html>" },
+    };
+    const user_ = userEvent.setup();
+    render(<MembersPage />);
+
+    await user_.type(
+      await screen.findByTestId("add-member-email"),
+      "colleague@example.com"
+    );
+    await user_.click(screen.getByTestId("add-member-submit"));
+
+    await waitFor(() => expect(vi.mocked(toast.error)).toHaveBeenCalled());
+    const text = lastErrorToast();
+    expect(text).not.toContain("<html");
+    expect(text).not.toContain("nginx");
+    // `unreadable`, not `missing`: a value that was SENT and could not be
+    // shown is a different fact from one that never arrived, and an operator
+    // grepping coord's logs for a dropped field should not be sent after one
+    // that was there.
+    expect(text).toContain("status: unreadable");
+  });
+
+  it("says `missing` only when coord really sent no status", async () => {
+    // The other half of the distinction above.
+    responses["POST /coord/tenant-members"] = { status: 200, body: {} };
+    const user_ = userEvent.setup();
+    render(<MembersPage />);
+
+    await user_.type(
+      await screen.findByTestId("add-member-email"),
+      "colleague@example.com"
+    );
+    await user_.click(screen.getByTestId("add-member-submit"));
+
+    await waitFor(() => expect(vi.mocked(toast.error)).toHaveBeenCalled());
+    expect(lastErrorToast()).toContain("status: missing");
+  });
+
+  it("prefers the COMPOSED message over a coord `detail` beside it", async () => {
+    // `http_exception_handler` splices every key except `error` and `message`
+    // to the top level, and `detail` is NOT reserved among them: it is one of
+    // the three keys `_readable_coord_refusal` reads from coord
+    // (`for key in ("hint", "reason", "detail")`). So a composed envelope can
+    // carry a sibling `detail` that is coord's metadata rather than FastAPI's
+    // detail, and ranking it first returned the least useful of the three
+    // strings and dropped the error code with it.
+    responses["POST /coord/members/op-1/roles"] = {
+      status: 409,
+      body: {
+        error: "role_not_grantable",
+        message:
+          "coord refused this (409): role_not_grantable — grant admin first",
+        hint: "grant admin first",
+        detail: "tenant_id=7f3a1c20-0000-4000-8000-000000000000",
+        timestamp: 1758055642.1234,
+        path: "https://app.qontinui.io/api/v1/operations/coord/members/op-1/roles",
+      },
+    };
+    const user_ = userEvent.setup();
+    render(<MembersPage />);
+
+    await user_.click(await screen.findByTestId("grant-op-1"));
+
+    await waitFor(() => expect(vi.mocked(toast.error)).toHaveBeenCalled());
+    const text = lastErrorToast();
+    expect(text).toContain("role_not_grantable");
+    expect(text).toContain("grant admin first");
+    expect(text).not.toContain("tenant_id=7f3a1c20");
+  });
+
+  it("still reads a bare `detail` when there is no composed envelope", async () => {
+    // The control: FastAPI's own default handler sends `detail` and nothing
+    // else, and that is still rung 1. The envelope test above must not be
+    // read as "a `detail` is never a sentence".
+    responses["POST /coord/members/op-1/roles"] = {
+      status: 409,
+      body: { detail: "A tenant must keep one administrator." },
+    };
+    const user_ = userEvent.setup();
+    render(<MembersPage />);
+
+    await user_.click(await screen.findByTestId("grant-op-1"));
+
+    await waitFor(() => expect(vi.mocked(toast.error)).toHaveBeenCalled());
+    expect(lastErrorToast()).toContain("A tenant must keep one administrator.");
+  });
+
+  it("composes coord's `hint` under `detail` as it does when spliced", async () => {
+    // One body, two backends: a deployed one splices `hint` beside `error` at
+    // the top level and rung 5 composes `<code> — <hint>`; a middleware-less
+    // one (a test app, a local dev server) leaves it under `detail`. That arm
+    // read only `message`/`error` and dropped the actionable half, so the same
+    // refusal answered two different ways depending on which backend ran.
+    responses["POST /coord/members/op-1/roles"] = {
+      status: 409,
+      body: {
+        detail: { error: "repo_has_no_remote", hint: "add a remote first" },
+      },
+    };
+    const user_ = userEvent.setup();
+    render(<MembersPage />);
+
+    await user_.click(await screen.findByTestId("grant-op-1"));
+
+    await waitFor(() => expect(vi.mocked(toast.error)).toHaveBeenCalled());
+    expect(lastErrorToast()).toContain(
+      `repo_has_no_remote — add a remote first`
+    );
+  });
+
+  it("shows prose that opens AND closes with a bracket but is not JSON", async () => {
+    // The control that pins the PARSE rather than the `startsWith`/`endsWith`
+    // pre-filter. Both other bracket controls end in a word or a full stop, so
+    // they never reach `JSON.parse` — a pure pattern match would pass them and
+    // the whole suite with them, which is exactly the spelling this guard was
+    // changed away from twice.
+    responses["GET /coord/members"] = {
+      status: 502,
+      body: {
+        error: "BAD_GATEWAY",
+        message:
+          "[error] connection refused by upstream [dial tcp 10.0.0.1:443]",
+        timestamp: 1758055642.1234,
+        path: "https://app.qontinui.io/api/v1/operations/coord/members",
+      },
+    };
+    render(<MembersPage />);
+
+    expect(
+      await screen.findByText(
+        "[error] connection refused by upstream [dial tcp 10.0.0.1:443]"
+      )
+    ).toBeTruthy();
+  });
+
+  it("does not cut a surrogate pair in half when it truncates", async () => {
+    // `slice` counts UTF-16 code units, so a cut landing between the halves of
+    // an astral character leaves an orphan that renders as a replacement
+    // glyph, and `trimEnd()` will not remove it because it is not whitespace.
+    // 1999 ASCII characters put the boundary exactly inside the emoji.
+    responses["GET /coord/members"] = {
+      status: 500,
+      body: {
+        error: "INTERNAL_SERVER_ERROR",
+        message: "a".repeat(1999) + "\u{1F600}" + "b".repeat(100),
+        timestamp: 1758055642.1234,
+        path: "https://app.qontinui.io/api/v1/operations/coord/members",
+      },
+    };
+    render(<MembersPage />);
+
+    const shown = await screen.findByText(/a{50}/);
+    const text = (shown.textContent ?? "").trim();
+    // No unpaired surrogate, in either direction, survived the cut.
+    expect(text).not.toMatch(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])/);
+    expect(text).not.toMatch(/(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/);
+  });
+
+  it("bounds a SENTENCE and a FIELD composed together, not just each half", async () => {
+    // Each half is capped at the ceiling independently, so their composition
+    // reaches twice it unless the composed return is bounded too. Pins the
+    // `bounded(...)` on rung 4 specifically: with the halves at 1500 each,
+    // every per-half guard is satisfied and only the outer one can cut it.
+    responses["POST /coord/members/op-1/roles"] = {
+      status: 422,
+      body: {
+        error: "VALIDATION_ERROR",
+        message: "p".repeat(1500),
+        details: [{ field: "f".repeat(700), message: "m".repeat(700) }],
+        timestamp: 1758055642.1234,
+        path: "https://app.qontinui.io/api/v1/operations/coord/members/op-1/roles",
+      },
+    };
+    const user_ = userEvent.setup();
+    render(<MembersPage />);
+
+    await user_.click(await screen.findByTestId("grant-op-1"));
+
+    await waitFor(() => expect(vi.mocked(toast.error)).toHaveBeenCalled());
+    // "Grant failed: " is the call site's own prefix; the VALUE is what this
+    // bounds, so strip it before measuring.
+    const value = lastErrorToast().replace(/^Grant failed: /, "");
+    expect(value.length).toBeLessThanOrEqual(2001);
+  });
+
+  it("bounds the validation field when it answers ALONE", async () => {
+    // Rung 6, reached because this body carries no `error` and no `message`.
+    // `firstValidationDetail` composes `${name} — ${reason}` from two halves
+    // that are each already capped, so it bounds its own composition rather
+    // than leaving three call sites to remember.
+    responses["POST /coord/members/op-1/roles"] = {
+      status: 422,
+      body: {
+        detail: [{ loc: ["b".repeat(1500)], msg: "m".repeat(1500) }],
+      },
+    };
+    const user_ = userEvent.setup();
+    render(<MembersPage />);
+
+    await user_.click(await screen.findByTestId("grant-op-1"));
+
+    await waitFor(() => expect(vi.mocked(toast.error)).toHaveBeenCalled());
+    const value = lastErrorToast().replace(/^Grant failed: /, "");
+    expect(value.length).toBeLessThanOrEqual(2001);
+    expect(value.startsWith("b".repeat(100))).toBe(true);
+  });
+
+  it("names the orphaned group BEFORE the reason, not after it", async () => {
+    // A create-then-map partial failure leaves a pool-wide Cognito group a
+    // non-superuser cannot even see. While an over-long reason collapsed to
+    // `HTTP 500` the ordering did not matter; now that a long one is truncated
+    // rather than refused, a trailing clean-up instruction would sit behind up
+    // to 2000 characters in a toast.
+    responses["POST /coord/cognito/groups"] = {
+      status: 200,
+      body: { ok: true },
+    };
+    responses["POST /coord/group-tenant-roles"] = {
+      status: 500,
+      body: {
+        error: "INTERNAL_SERVER_ERROR",
+        message: "z".repeat(1800),
+        timestamp: 1758055642.1234,
+        path: "https://app.qontinui.io/api/v1/operations/coord/group-tenant-roles",
+      },
+    };
+    const user_ = userEvent.setup();
+    render(<MembersPage />);
+    await openAdvanced(user_);
+    await user_.click(
+      await screen.findByRole("button", {
+        name: /group . tenant . role mappings/i,
+      })
+    );
+
+    await user_.type(await screen.findByTestId("map-group-id"), "acme-devs");
+    await user_.type(screen.getByTestId("map-tenant-slug"), "acme");
+    const alsoCreate = screen.getByTestId("map-also-create-group");
+    if (alsoCreate.getAttribute("data-state") !== "checked") {
+      await user_.click(alsoCreate);
+    }
+    await user_.click(screen.getByTestId("map-submit"));
+
+    await waitFor(() => expect(vi.mocked(toast.error)).toHaveBeenCalled());
+    const text = lastErrorToast();
+    const orphan = text.indexOf("WAS created and is now unmapped");
+    const reason = text.indexOf("zzzzzzzzzz");
+    expect(orphan).toBeGreaterThan(-1);
+    expect(reason).toBeGreaterThan(-1);
+    expect(orphan).toBeLessThan(reason);
+  });
+
+  it("names the field on FastAPI's OWN 422, which a dev backend answers", async () => {
+    // `validation_exception_handler` composes `{field, message}` into a
+    // top-level `details`; FastAPI's default handler — what a test app and a
+    // local dev backend run — puts `{loc, msg}` straight into `detail`. #1378
+    // read only the first, so the second rendered as a bare `HTTP 422` on the
+    // arm the reader had just been extended to cover.
+    responses["POST /coord/members/op-1/roles"] = {
+      status: 422,
+      body: {
+        detail: [
+          { loc: ["body", "role"], msg: "field required", type: "missing" },
+        ],
+      },
+    };
+    const user_ = userEvent.setup();
+    render(<MembersPage />);
+
+    await user_.click(await screen.findByTestId("grant-op-1"));
+
+    await waitFor(() => expect(vi.mocked(toast.error)).toHaveBeenCalled());
+    const text = lastErrorToast();
+    expect(text).toContain("body.role — field required");
+    expect(text).not.toContain("HTTP 422");
+  });
+
+  it("refuses an empty or scalar JSON array, not only an array of objects", async () => {
+    // The first spelling of this guard matched a bracket followed by `{`, a
+    // quote or another bracket, so `[]` and `[1,2,3]` walked through it — the
+    // blob one shape further along again, which is the whole argument the
+    // guard was added on.
+    for (const body of ["[]", "[1,2,3]", '["a","b"]']) {
+      vi.clearAllMocks();
+      installRouter();
+      responses["POST /coord/members/op-1/roles"] = {
+        status: 502,
+        body: { detail: body },
+      };
+      const user_ = userEvent.setup();
+      const view = render(<MembersPage />);
+
+      await user_.click(await screen.findByTestId("grant-op-1"));
+
+      await waitFor(() => expect(vi.mocked(toast.error)).toHaveBeenCalled());
+      const text = lastErrorToast();
+      expect(text, `body ${body}`).not.toContain(body);
+      expect(text, `body ${body}`).toContain("HTTP 502");
+      view.unmount();
+    }
+  });
+
+  it("shows prose that a pattern-matching array guard wrongly refused", async () => {
+    // A Cognito group name may legally begin with `[`:
+    // `invalid_group_name_reason` bars whitespace, control characters and
+    // >128 length, and nothing else. So Guard 2's refusal for a group named
+    // `[acme]-home` opens with a bracket and is ordinary prose. The
+    // "closing bracket then whitespace" spelling of this guard refused it and
+    // left the operator without the instruction that unblocks them.
+    responses["GET /coord/members"] = {
+      status: 409,
+      body: {
+        error: "home_group_requires_override",
+        message:
+          "[acme]-home pins its members' home tenant to '[acme]'. Pass " +
+          "allow_home_group=true to proceed anyway.",
+        timestamp: 1758055642.1234,
+        path: "https://app.qontinui.io/api/v1/operations/coord/members",
+      },
+    };
+    render(<MembersPage />);
+
+    expect(
+      await screen.findByText(/^\[acme\]-home pins its members/)
+    ).toBeTruthy();
+  });
+
+  it("guards the validation FIELD, the one path out that was never guarded", async () => {
+    // `field` is composed from values this file does not control — a `msg`
+    // from pydantic, a `message` from `validation_exception_handler` — and it
+    // leaves `sentenceFromErrorText` by three separate routes. It was the only
+    // returned value that never faced `plainSentence`, and the `loc`/`msg` arm
+    // added in this change widened that surface rather than narrowing it.
+    responses["POST /coord/members/op-1/roles"] = {
+      status: 422,
+      body: {
+        detail: [
+          {
+            loc: ["body", "role"],
+            msg: "<html><center>nginx</center></html>",
+            type: "value_error",
+          },
+        ],
+      },
+    };
+    const user_ = userEvent.setup();
+    render(<MembersPage />);
+
+    await user_.click(await screen.findByTestId("grant-op-1"));
+
+    await waitFor(() => expect(vi.mocked(toast.error)).toHaveBeenCalled());
+    const text = lastErrorToast();
+    expect(text).not.toContain("<html");
+    expect(text).not.toContain("nginx");
+    // The halves are guarded SEPARATELY, so the refused reason is dropped and
+    // the field name — which is safe, and is the specific thing the body knows
+    // — still answers. Guarding only the composed string would have passed
+    // `body.role — <html>…</html>` whole, because it starts with `body.role`.
+    expect(text).toContain("body.role");
   });
 });

@@ -1110,11 +1110,20 @@ function AddTenantMemberForm({ onAdded }: { onAdded: () => void }) {
       }
       // A 2xx with no arm this build knows. Rendering it as success would
       // claim access that may not exist; the status is at least true.
+      //
+      // `status` is coord's, proxied through `post_coord_tenant_member`, so it
+      // is body-controlled and faces the same guard as every other value this
+      // page shows — a 200 carrying `{"status": "<html>…</html>"}` or 50 KB
+      // of it would otherwise render whole into a paragraph AND a toast. A
+      // A refused one reads as `unreadable` rather than `missing`: the two are
+      // different facts about the body, and an operator grepping coord's logs
+      // for a dropped `status` would otherwise be sent after a field that was
+      // sent.
+      const raw = typeof json?.status === "string" ? json.status : "";
+      const reported = raw ? plainSentence(raw) : null;
       throw new Error(
         `Unexpected response from the server (status: ${
-          typeof json?.status === "string" && json.status
-            ? json.status
-            : "missing"
+          reported ?? (raw ? "unreadable" : "missing")
         }).`
       );
     } catch (err) {
@@ -1354,9 +1363,15 @@ function GroupTenantRolesSection({ isSuperuser }: { isSuperuser: boolean }) {
         // A partial failure LEAVES A POOL-WIDE GROUP BEHIND. Reporting only
         // the mapping failure hides an orphan that a non-superuser cannot even
         // see, let alone clean up — so the message has to name it.
+        //
+        // The orphan comes FIRST. It used to trail the backend's reason, which
+        // was harmless while an over-long reason collapsed to `HTTP 500`, and
+        // is not now that a long one is truncated rather than refused: the
+        // clean-up instruction would sit behind up to 2000 characters in a
+        // toast. The consequence the operator has to act on outranks the cause.
         throw new Error(
           groupCreated
-            ? `${reason} — the Cognito group "${gid}" WAS created and is now unmapped. Delete it in the Cognito Groups section below if you are not about to retry.`
+            ? `The Cognito group "${gid}" WAS created and is now unmapped — delete it in the Cognito Groups section below if you are not about to retry. The mapping failed because: ${reason}`
             : reason
         );
       }
@@ -1812,6 +1827,25 @@ interface BlastRadiusVerdict {
   strands_other_tenant_count: number;
 }
 
+/** The two codes `_coord_group_blast_radius` raises when the PREVIEW read
+ * fails. Named rather than inferred, because at the level this now reads them
+ * every error body has an `error` key — see {@link blastRadiusReadCause}. */
+const BLAST_RADIUS_CAUSE_CODES = [
+  "mapping_check_unavailable",
+  "mapping_check_unreadable",
+] as const;
+
+/** Whether `value` is one of the two codes {@link blastRadiusReadCause} speaks
+ * for. A type guard rather than a bare `includes`, so both arms narrow. */
+function isBlastRadiusCauseCode(
+  value: unknown
+): value is (typeof BLAST_RADIUS_CAUSE_CODES)[number] {
+  return (
+    typeof value === "string" &&
+    (BLAST_RADIUS_CAUSE_CODES as readonly string[]).includes(value)
+  );
+}
+
 /**
  * A short cause for a failed blast-radius PREVIEW read.
  *
@@ -1821,18 +1855,44 @@ interface BlastRadiusVerdict {
  * coord answered 404" tells an operator the route is not deployed yet; the
  * message's "Nothing was deleted" tells them about a click they never made.
  * Anything not in that shape falls back to `backendErrorMessage`.
+ *
+ * ## It has to read the ENVELOPE too, not only `detail`
+ *
+ * This read `detail` alone, which is FastAPI's own shape and what a test app
+ * produces. In PRODUCTION `http_exception_handler` splices a dict detail to
+ * the TOP LEVEL and emits no `detail` key at all (`error_handler.py`), so on a
+ * deployed backend the branch never matched and the whole thing fell through
+ * to `messageFromErrorBody` — which returns the refusal sentence. The 300
+ * ceiling hid that by refusing the sentence for its length; raising the
+ * ceiling to fit the backend's real copy exposed it, and the dialog would have
+ * told an operator "Nothing was deleted." about a delete they never clicked.
+ *
+ * Recognition is by CODE rather than by "an `error` key is present", because
+ * at the top level every error body has one and matching on presence would
+ * capture bodies this helper has nothing to say about. The SAME test applies
+ * to the `detail` arm, which used to match on presence alone: without it, a
+ * backend running no middleware (a test app, a local dev server — the exact
+ * configuration the rest of this file goes out of its way to serve) had any
+ * `{"detail": {"error": …}}` refusal on this route reduced to its bare code
+ * with its sentence discarded, while production rendered the sentence. One
+ * rule, both arms.
  */
 async function blastRadiusReadCause(res: Response): Promise<string> {
   const text = await res.text();
   try {
-    const detail = (JSON.parse(text) as { detail?: unknown })?.detail;
+    const parsed = JSON.parse(text) as { detail?: unknown };
+    // `detail` when the middleware did not run, the body ITSELF when it did.
+    // No second code test guards this choice: the one below decides, and it
+    // reaches the same verdict on either shape, so a test here would read like
+    // a guard while being a no-op.
+    const detail = parsed?.detail ?? parsed;
     if (detail && typeof detail === "object") {
       const { error, coord_status, reason } = detail as {
         error?: unknown;
         coord_status?: unknown;
         reason?: unknown;
       };
-      if (typeof error === "string" && error) {
+      if (isBlastRadiusCauseCode(error)) {
         // Three shapes, and ABSENT is not `null`. `mapping_check_unavailable`
         // always carries `coord_status` — a number for coord's own answer,
         // `null` when coord never completed one. `mapping_check_unreadable`
@@ -1846,8 +1906,32 @@ async function blastRadiusReadCause(res: Response): Promise<string> {
         if (coord_status === null) {
           return `${error}, coord never completed an answer`;
         }
-        return typeof reason === "string" && reason
-          ? `${error}: ${reason}`
+        // GUARDED, and bounded to THIS SURFACE rather than to the toast's
+        // ceiling. `reason` is `_raise_mapping_check_unreadable`'s argument,
+        // and one of its thirteen call sites is `_verdict_is_about`, which
+        // interpolates coord's ECHOED `group_id` — a value
+        // `_is_attributable` checks for printability and non-emptiness but NOT
+        // for length. So this is a body-controlled string.
+        //
+        // It lands in `ConfirmDestructiveDialog`, which renders into an
+        // `AlertDialogContent` that is `fixed`, vertically centred, and
+        // carries no `max-h` and no `overflow-y-auto`. A value at the toast's
+        // 2000-character ceiling is ~33 lines at `max-w-lg`, which pushes the
+        // type-to-confirm input and BOTH BUTTONS out of the viewport with no
+        // way to scroll to them — on an irreversible pool-wide delete.
+        // Bounding to the toast's ceiling is not enough here; the surface
+        // decides the bound, and this one is a diagnostic code plus a short
+        // clause, never prose.
+        const safeReason =
+          typeof reason === "string" && reason
+            ? plainSentence(reason, MAX_CAUSE_LENGTH)
+            : null;
+        // The COMPOSITION is what the dialog receives, so that is what the
+        // surface cap applies to — bounding only the half leaves the code and
+        // its separator on top of it, which is the composed-return mistake
+        // this file already made once at the rung level.
+        return safeReason
+          ? bounded(`${error}: ${safeReason}`, MAX_CAUSE_LENGTH)
           : error;
       }
     }
@@ -1855,7 +1939,18 @@ async function blastRadiusReadCause(res: Response): Promise<string> {
     // Not JSON — fall through to the generic reader, which returns the raw
     // body when it is a plain-text gateway sentence.
   }
-  return messageFromErrorBody(text, res.status);
+  // The SURFACE bound, on this return too. Both of this function's
+  // operator-facing returns land in the same dialog `<li>`, so an argument
+  // about that `<li>` covers both; bounding one of them was the same
+  // half-a-fix as bounding one half of a composition.
+  //
+  // No production body reaches here long today — every refusal this route
+  // raises is a cause code or a short sentence. A DEV backend does:
+  // `general_exception_handler` returns `str(exc)` unbounded under
+  // `ENVIRONMENT == "development"`. Passing the limit costs one argument and
+  // removes the need to re-derive that reachability argument every time a
+  // refusal is added to the route.
+  return messageFromErrorBody(text, res.status, MAX_CAUSE_LENGTH);
 }
 
 /**
@@ -2017,40 +2112,151 @@ async function backendErrorMessage(res: Response): Promise<string> {
 
 /** The body-level half of {@link backendErrorMessage}, for callers that
  * have already consumed `res.text()`. */
-function messageFromErrorBody(text: string, status: number): string {
-  const sentence = sentenceFromErrorText(text, 0);
+function messageFromErrorBody(
+  text: string,
+  status: number,
+  limit: number = MAX_SENTENCE_LENGTH
+): string {
+  const sentence = sentenceFromErrorText(text, 0, limit);
   if (sentence !== null) return sentence;
-  // Parsed as JSON and carries no sentence — `{}`, or a shape this does not
-  // know. The raw JSON is NOT a message: printing it puts `{}` or a brace-blob
-  // where the operator expects a reason, which is the same defect as
-  // `[object Object]` one shape along. The status is at least true, and it is
-  // what these call sites showed before they were routed here.
+  // Parsed as JSON and carries no READABLE candidate on any rung — `{}`, a
+  // shape this does not know, or a body whose every candidate was refused. The
+  // raw JSON is NOT a message: printing it puts `{}` or a brace-blob where the
+  // operator expects a reason, which is the same defect as `[object Object]`
+  // one shape along. The status is at least true, and it is what these call
+  // sites showed before they were routed here.
   return `HTTP ${status}`;
 }
 
 /**
- * `"<field> — <reason>"` from the first entry of a `validation_exception_handler`
- * `details` array, or `null` when the value is not that shape.
+ * `"<field> — <reason>"` from the first entry of a validation-error list, or
+ * `null` when the value is not that shape.
+ *
+ * TWO shapes, because two handlers produce one: `validation_exception_handler`
+ * composes `{field, message, type}` and puts the list in a top-level `details`
+ * beside the generic `message`, while FastAPI's OWN default handler — what a
+ * test app that does not register the middleware runs, and what a local dev
+ * backend answers — puts `{loc, msg, type}` straight into `detail`. Reading
+ * only the first left the second rendering as a bare `HTTP 422`, on the arm the
+ * envelope reader was extended to cover in the first place.
  */
-function firstValidationDetail(details: unknown): string | null {
+function firstValidationDetail(
+  details: unknown,
+  limit: number = MAX_SENTENCE_LENGTH
+): string | null {
   if (!Array.isArray(details) || details.length === 0) return null;
   const first = details[0];
   if (first === null || typeof first !== "object") return null;
-  const { field, message } = first as { field?: unknown; message?: unknown };
-  const hasField = typeof field === "string" && field;
-  const hasMessage = typeof message === "string" && message;
-  if (hasField && hasMessage) return `${field} — ${message}`;
-  if (hasMessage) return message;
-  if (hasField) return field;
-  return null;
+  const {
+    field,
+    message,
+    loc,
+    msg: msgRaw,
+  } = first as {
+    field?: unknown;
+    message?: unknown;
+    loc?: unknown;
+    msg?: unknown;
+  };
+  // `loc` is a path — `["body", "role"]` — and `body.role` is how the composed
+  // handler spells the same thing, so the two shapes render identically.
+  const locField = Array.isArray(loc)
+    ? loc
+        .filter((part) => typeof part === "string" || typeof part === "number")
+        .join(".")
+    : "";
+  // Each HALF faces `plainSentence` on its own, before composition. Guarding
+  // only the composed string does not work and was the first attempt here:
+  // `body.role — <html>…</html>` starts with `body.role`, so it passes every
+  // shape test while carrying a gateway page through the middle of itself.
+  // These are values this file does not control — a `msg` from pydantic, a
+  // `message` from `validation_exception_handler` — so a refused half is
+  // dropped and the other half still answers.
+  const name = plainSentence(
+    (typeof field === "string" && field) || locField || "",
+    limit
+  );
+  const reason = plainSentence(
+    (typeof message === "string" && message) ||
+      (typeof msgRaw === "string" && msgRaw) ||
+      "",
+    limit
+  );
+  // BOUNDED here rather than at each use. Both halves are separately capped,
+  // so their composition can reach twice the ceiling, and `field` leaves
+  // `sentenceFromErrorText` by three different returns — bounding at the
+  // source is one place instead of three, and cannot be forgotten at a fourth.
+  if (name && reason) return bounded(`${name} — ${reason}`, limit);
+  return reason || name || null;
 }
 
 /**
+ * How much of a sentence {@link plainSentence} will show. Longer values are
+ * TRUNCATED, not refused — see below for why that asymmetry is the whole point.
+ *
+ * ## Length is not a shape, and this backend has no upper bound
+ *
+ * The other three tests in `plainSentence` reject the wrong KIND of thing: an
+ * HTML page, a Python repr, a JSON array. Length is different — it describes
+ * the right kind of thing, and too much of it — so refusing on it throws away
+ * a message that was genuinely prose.
+ *
+ * That was not academic. Measured against `operations.py` at this sha:
+ *
+ *  - `_raise_mapping_check_unreadable` composes **425** characters with an
+ *    empty `reason`. Its thirteen call sites add 15-48 more BEFORE their
+ *    interpolations, so the shortest producible form is ~440. One of them,
+ *    `_verdict_is_about`, interpolates coord's ECHOED `group_id`, which
+ *    `_is_attributable` does not length-check at all — so that arm has no
+ *    bound either. (Its other half, `group_name`, is Cognito-validated at 128.)
+ *  - `home_group_requires_override` is **297** with both placeholders empty.
+ *    Guard 2 fires on `endswith(HOME_GROUP_SUFFIX)`, so the shortest group it
+ *    can fire for is `-home` itself, with an empty slug: **302**. Every longer
+ *    name adds twice over, since the group appears whole and again stripped.
+ *  - Guards 1 and 3 (`group_is_mapped`, `last_admin_mapping`) interpolate
+ *    `_render_affected`, which is a `", ".join(named)` over a deduplicated
+ *    tenant list. **There is no upper bound at all.**
+ *
+ * So no ceiling can be "big enough". At the 300 this started life as, every
+ * one of those refused and the operator was told `HTTP 409` about a delete the
+ * backend had just explained in full; at 2000 the same thing happens to a
+ * heavily-mapped group, just less often. Truncating keeps the beginning —
+ * which is where `_render_affected` puts the tenants and where the guards put
+ * the instruction — and bounds the toast, which is what the ceiling was
+ * really for.
+ *
+ * A dump truncated is still visibly a dump, and no more harmful than one
+ * refused. A refusal sentence truncated still says what to do.
+ *
+ * Length was never what caught a gateway page anyway: the nginx 502 body is
+ * ~150 characters, and the `<` test is what refuses it.
+ */
+const MAX_SENTENCE_LENGTH = 2000;
+
+/**
+ * The bound for a value going into the delete-confirmation dialog rather than
+ * a toast.
+ *
+ * A toast is its own box and scrolls with the page; `AlertDialogContent` is
+ * `fixed`, vertically centred, and carries neither `max-h` nor
+ * `overflow-y-auto`, so everything below an over-long child — including the
+ * type-to-confirm input and both buttons — leaves the viewport unreachably.
+ * The value bounded by this is a cause: a code plus a short clause, never
+ * prose, so a tight bound costs nothing and the surface cannot be blown out.
+ *
+ * Giving `AlertDialogContent` a `max-h`/`overflow-y-auto` is worth doing too,
+ * and is NOT a substitute: it would make the buttons reachable by scrolling
+ * rather than keeping the safety instruction on screen.
+ */
+const MAX_CAUSE_LENGTH = 200;
+
+/**
  * A candidate string, if it is something an operator can actually read —
- * otherwise `null`, so the caller falls back to the status.
+ * otherwise `null`, so the caller tries the NEXT candidate and only then the
+ * status.
  *
  * Applied at EVERY level, not just the top: a plain-text gateway or proxy body
- * IS the sentence, but three things that arrive in the same slot are not, and
+ * IS the sentence, but four things that arrive in the same slot are not, and
  * each is the brace-blob defect one shape further along.
  *
  *  - **An HTML error page.** `<html><head><title>502 Bad Gateway</title>…
@@ -2064,15 +2270,76 @@ function firstValidationDetail(details: unknown): string | null {
  *    to stop server-side. The pattern deliberately matches only a brace
  *    followed by a QUOTE, so a legitimate sentence like
  *    `{role} is not a valid tier` still passes.
- *  - **Something merely enormous.** Same argument, by length.
+ *  - **A JSON ARRAY.** The same argument one bracket along, and it is the shape
+ *    FastAPI's own 422 handler emits: `[{"loc": ["body", "role"], "msg": …}]`
+ *    pasted into a toast is no more readable than `{…}` was. Decided by
+ *    PARSING rather than by a pattern, because every pattern tried here was
+ *    wrong in one direction or the other: matching `[` plus a quote or brace
+ *    let `[]` and `[1,2,3]` through, and requiring whitespace after the
+ *    closing bracket refused `[admin]: not a valid tier` and
+ *    `[acme]-home pins its members' home tenant …` — which is reachable,
+ *    since `invalid_group_name_reason` lets a Cognito group name begin with a
+ *    bracket. "Does this parse as a JSON array?" is the actual question, and
+ *    it has no false positives: prose that opens with a bracketed token is not
+ *    valid JSON.
+ *
+ * Length is NOT in that list. It bounds rather than refuses — see
+ * {@link MAX_SENTENCE_LENGTH}, where the reason is that this backend composes
+ * some messages with no upper bound at all.
  */
-function plainSentence(value: string): string | null {
+function plainSentence(
+  value: string,
+  limit: number = MAX_SENTENCE_LENGTH
+): string | null {
   const raw = value.trim();
   if (!raw) return null;
   if (raw.startsWith("<")) return null;
   if (/^\{\s*['"]/.test(raw)) return null;
-  if (raw.length > 300) return null;
-  return raw;
+  if (isJsonArray(raw)) return null;
+  return bounded(raw, limit);
+}
+
+/** Whether `raw` is a JSON array document rather than prose. See the
+ * JSON-ARRAY bullet on {@link plainSentence} for why this parses instead of
+ * matching a pattern. */
+function isJsonArray(raw: string): boolean {
+  // Both ends before any parse. `raw` is already trimmed, so a JSON array must
+  // close with `]` — which means the two cases this guard exists to keep
+  // (`[admin] is not a valid tier`, a group named `[acme]-home`) never reach
+  // `JSON.parse` at all. Without it, any body-controlled string merely STARTING
+  // with `[` was parsed and materialised in full, which the old length test had
+  // refused for nothing.
+  if (!raw.startsWith("[") || !raw.endsWith("]")) return false;
+  try {
+    return Array.isArray(JSON.parse(raw));
+  } catch {
+    // Not JSON, so it is prose that merely opens with a bracketed token —
+    // `[admin] is not a valid tier`, or a group name starting with `[`.
+    return false;
+  }
+}
+
+/** `value`, cut to `limit` with an ellipsis when it is longer.
+ *
+ * Called on every COMPOSITION this file builds from two already-bounded halves,
+ * since two of them reach twice the bound: the four composed returns in
+ * {@link sentenceFromErrorText} (the detail-arm hint/reason, rung 4, rung 5's
+ * hint/reason, rung 5 plus the field), {@link firstValidationDetail}'s own
+ * `name — reason`, and {@link blastRadiusReadCause}'s `code: reason`. Single
+ * values are bounded by {@link plainSentence}, which calls this itself.
+ *
+ * `limit` is the SURFACE's, not the module's — see {@link MAX_CAUSE_LENGTH}.
+ *
+ * `slice` counts UTF-16 code units, so the cut can land between a surrogate
+ * pair and leave an orphan that renders as a replacement glyph. The check is
+ * on the LEADING (high) surrogate: a trailing one at `end - 1` always has its
+ * leading half at `end - 2` and so is already whole. */
+function bounded(value: string, limit: number = MAX_SENTENCE_LENGTH): string {
+  if (value.length <= limit) return value;
+  let end = limit;
+  const last = value.charCodeAt(end - 1);
+  if (last >= 0xd800 && last <= 0xdbff) end -= 1;
+  return `${value.slice(0, end).trimEnd()}…`;
 }
 
 /** How many times {@link sentenceFromErrorText} will unwrap a body-in-a-body.
@@ -2112,18 +2379,33 @@ const MAX_ERROR_UNWRAP = 2;
  * helper each one happens to use, and it needs no change to helpers whose
  * pass-through-verbatim contract other suites pin by exact equality.
  *
+ * ## Rungs, and what a REFUSED rung means
+ *
  * Order within one object: a string `detail`, a structured `detail.message`,
- * then `detail.error`, then the envelope's `message`, then its `error`.
+ * then `detail.error`, then the envelope's `message`, then its `error`, then
+ * the offending field of a validation error.
+ *
+ * A rung whose value `plainSentence` refuses does NOT end the search. That is a
+ * fact about one value — this string is HTML, a repr, an array, a dump — and
+ * not about the body, which on this backend always carries a machine `error`
+ * beside its human `message`. Returning on the first refusal threw that code
+ * away and answered `HTTP <status>` on exactly the bodies this reader exists
+ * for. So the first rung that SURVIVES wins, and the status is reached only
+ * when none does.
  */
-function sentenceFromErrorText(text: string, depth: number): string | null {
+function sentenceFromErrorText(
+  text: string,
+  depth: number,
+  limit: number = MAX_SENTENCE_LENGTH
+): string | null {
   let parsed: unknown;
   try {
     parsed = JSON.parse(text);
   } catch {
     // Not JSON — so this is either a real sentence or something that only
     // looks like one. `plainSentence` decides, and it is the SAME predicate
-    // the unwrap arm below uses.
-    return plainSentence(text);
+    // every rung below uses.
+    return plainSentence(text, limit);
   }
   if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
     return null;
@@ -2136,7 +2418,7 @@ function sentenceFromErrorText(text: string, depth: number): string | null {
   // exists to stop. Anything else is a candidate sentence and faces the same
   // `plainSentence` test as a non-JSON top-level body.
   //
-  // Both arms are guarded, and that is the whole point. An extracted value is
+  // Every rung is guarded, and that is the whole point. An extracted value is
   // ONE LEVEL IN, which for seven of the nine call sites is where the real
   // body lives — `_proxy_coord_get` sets `detail=resp.text` for any coord
   // status >= 400, so when a proxy in front of coord answers 502 with an HTML
@@ -2145,62 +2427,169 @@ function sentenceFromErrorText(text: string, depth: number): string | null {
   // and pass the HTML that is easy to.
   const unwrap = (value: string): string | null =>
     depth < MAX_ERROR_UNWRAP && value.trimStart().startsWith("{")
-      ? sentenceFromErrorText(value, depth + 1)
-      : plainSentence(value);
+      ? sentenceFromErrorText(value, depth + 1, limit)
+      : plainSentence(value, limit);
 
-  const detail = obj.detail;
-  if (typeof detail === "string" && detail) return unwrap(detail);
-  if (detail !== null && typeof detail === "object" && !Array.isArray(detail)) {
+  /** A non-empty string, or `null` — `""` is not a sentence. */
+  const str = (value: unknown): string | null =>
+    typeof value === "string" && value ? value : null;
+
+  // A body carrying BOTH `error` and `message` is the production envelope, so
+  // a sibling `detail` on it is coord's METADATA rather than FastAPI's detail.
+  // Declared here because the validation-field read below needs it too.
+  const isComposedEnvelope =
+    str(obj.error) !== null && str(obj.message) !== null;
+  const detail = isComposedEnvelope ? undefined : obj.detail;
+
+  // The specific half of a validation error, from either handler's spelling.
+  // Read once, because it decorates the `message` rung AND stands alone as the
+  // last rung when nothing else survived.
+  //
+  // Already guarded and bounded by `firstValidationDetail`, which tests each
+  // half and caps their composition. It was one of THREE values that could
+  // leave this file without facing `plainSentence`; the others were the
+  // `hint`/`reason` rung below and `blastRadiusReadCause`'s `reason` arm, each
+  // found by a later round of the same review. "The guard holds on every path
+  // out" is a claim about an enumeration, and it was wrong twice before the
+  // enumeration was actually done.
+  const field =
+    firstValidationDetail(obj.details, limit) ??
+    firstValidationDetail(detail, limit);
+
+  // ## A REFUSED candidate falls through; it does not end the search
+  //
+  // Each rung below asks `unwrap`, and a `null` back means "this value is not
+  // something an operator can read" — HTML, a repr, a JSON array, a dump. That
+  // is a fact about THAT VALUE, not about the body, and the production envelope
+  // always carries a machine `error` code beside its human `message`. Returning
+  // on the first refusal threw that code away and answered `HTTP <status>` on
+  // exactly the bodies this reader exists for: a 500 whose `message` is a
+  // gateway page still says `cognito_pool_misconfigured` one key over.
+  //
+  // So: first candidate that SURVIVES wins, and the status is reached only when
+  // none does.
+
+  // Rung 1-3 — `detail`, which is FastAPI's own default-handler shape.
+  //
+  // It is NOT true that production never sends one, and this file said so in
+  // three places. `http_exception_handler` splices every key except `error`
+  // and `message` to the top level, and `detail` is not reserved among them —
+  // `_readable_coord_refusal` names it as one of the three keys coord may send
+  // (`for key in ("hint", "reason", "detail")`), and other coord modules emit
+  // `{"error", "detail"}` bodies routinely. So a composed envelope can carry a
+  // sibling `detail` that is coord's METADATA, not FastAPI's detail.
+  //
+  // Which is why the envelope is recognised before this rung is taken: a body
+  // carrying BOTH `error` and `message` is the production envelope, its
+  // `message` is what `_readable_coord_refusal` composed, and its `detail` is
+  // a field beside it. Ranking that `detail` first returned the least useful
+  // of the three strings and dropped the error code with it.
+  const detailStr = str(detail);
+  if (detailStr) {
+    const sentence = unwrap(detailStr);
+    if (sentence) return sentence;
+  } else if (
+    detail !== null &&
+    typeof detail === "object" &&
+    !Array.isArray(detail)
+  ) {
     const d = detail as Record<string, unknown>;
-    if (typeof d.message === "string" && d.message) return unwrap(d.message);
-    // The structured coord refusal as FastAPI's own default handler renders it
-    // — `{"detail": {"error": "not_admin_in_target_tenant"}}`, with no
-    // `message` unless `_readable_coord_refusal` composed one. Reading `error`
-    // here is what makes a test app (which does not register the production
-    // middleware) answer the same sentence a deployed backend does.
-    if (typeof d.error === "string" && d.error) return unwrap(d.error);
+    // `detail.message` first, then `detail.error`: the structured coord refusal
+    // as FastAPI renders it is `{"detail": {"error": "…"}}`, with no `message`
+    // unless `_readable_coord_refusal` composed one. Reading `error` here is
+    // what makes a test app (which does not register the production middleware)
+    // answer the same sentence a deployed backend does.
+    for (const key of ["message", "error"] as const) {
+      const value = str(d[key]);
+      if (!value) continue;
+      const sentence = unwrap(value);
+      if (!sentence) continue;
+      // The SAME `<code> — <hint|reason>` composition rung 5 applies to a
+      // spliced envelope. Without it one body answers two ways: a deployed
+      // backend splices `hint` to the top level and rung 5 composes it, while
+      // a middleware-less one (a test app, a local dev server) leaves it under
+      // `detail` and this arm dropped it — the asymmetry
+      // `blastRadiusReadCause` was just corrected for, in the other direction.
+      if (key === "error") {
+        for (const extraKey of ["hint", "reason"] as const) {
+          const extra = str(d[extraKey]);
+          if (!extra) continue;
+          const safeExtra = plainSentence(extra, limit);
+          if (!safeExtra) continue;
+          return bounded(`${sentence} — ${safeExtra}`, limit);
+        }
+      }
+      return sentence;
+    }
   }
-  // The production envelope: no `detail`, a human `message` and a machine
-  // `error` beside it.
-  if (typeof obj.message === "string" && obj.message) {
+
+  // Rung 4 — the production envelope's human `message`.
+  const messageStr = str(obj.message);
+  if (messageStr) {
+    const sentence = unwrap(messageStr);
     // `validation_exception_handler` puts the SAME generic `message` on every
     // 422 ("Invalid request data") and the only specific thing it knows in a
     // sibling `details` array. Returning the generic half alone would tell an
     // operator a field is wrong without saying which.
-    const field = firstValidationDetail(obj.details);
-    // `unwrap` first even on this arm. Not reachable against the real backend
-    // (a `details` array only reaches the top level through the metadata
-    // splice, which runs on a DICT detail, whose `message` is a sentence —
-    // while a STRING detail is what nests a body and leaves the metadata
-    // empty), so this is belt and braces rather than a fix.
-    const sentence = unwrap(obj.message) ?? obj.message;
-    return field ? `${sentence}: ${field}` : unwrap(obj.message);
+    if (sentence)
+      return bounded(field ? `${sentence}: ${field}` : sentence, limit);
   }
-  // No sentence, but a code. `not_admin_in_target_tenant` is a poor sentence
-  // and a far better answer than `HTTP 403`.
-  if (typeof obj.error === "string" && obj.error) {
-    // Mirror `_readable_coord_refusal` (`operations.py`), which composes
-    // `<code> — <hint|reason|detail>` from exactly these three keys in this
-    // order. The whole point of the recursion is to do client-side what that
-    // helper does server-side, so the two paths should not disagree about
-    // which half of coord's body is worth showing: dropping a `hint` that
-    // says "add a remote first" and keeping only `repo_has_no_remote` throws
-    // away the actionable half.
-    //
-    // That helper's third key, `detail`, is absent here on purpose rather than
-    // by oversight: a string `detail` is the FIRST rung of this function, so a
-    // body carrying one returned several branches ago and can never arrive
-    // here. Listing it would be a dead arm that reads like coverage.
-    const code = unwrap(obj.error) ?? obj.error;
-    for (const key of ["hint", "reason"] as const) {
-      const extra = obj[key];
-      if (typeof extra === "string" && extra.trim()) {
-        return `${code} — ${extra.trim()}`;
+
+  // Rung 5 — no readable sentence, but a code. `not_admin_in_target_tenant` is
+  // a poor sentence and a far better answer than `HTTP 403`.
+  //
+  // KNOWN TRADE-OFF, decided rather than defaulted. `error` is coord's own
+  // code only when the exception carried a DICT detail; for a string detail
+  // `http_exception_handler` stamps `get_default_error_code(status)`, which is
+  // a pure status synonym (502 -> `BAD_GATEWAY`). So on a body whose sentence
+  // was refused, this rung answers `BAD_GATEWAY` where the status fallback
+  // would have answered `HTTP 502`: the same information, minus the number an
+  // operator greps by. Composing `HTTP <status> - <code>` here would keep both,
+  // and is deliberately NOT done: it would put envelope scaffolding back into
+  // the answer on the common path, where the code IS a real diagnostic and the
+  // status adds nothing, to recover a number only on the uncommon one. The
+  // terminal `HTTP ${status}` in `messageFromErrorBody` still carries it
+  // whenever no rung survives at all.
+  const errorStr = str(obj.error);
+  if (errorStr) {
+    const code = unwrap(errorStr);
+    if (code) {
+      // Mirror `_readable_coord_refusal` (`operations.py`), which composes
+      // `<code> — <hint|reason|detail>` from exactly these three keys in this
+      // order. The whole point of the recursion is to do client-side what that
+      // helper does server-side, so the two paths should not disagree about
+      // which half of coord's body is worth showing: dropping a `hint` that
+      // says "add a remote first" and keeping only `repo_has_no_remote` throws
+      // away the actionable half.
+      //
+      // That helper's third key, `detail`, is absent here on purpose rather
+      // than by oversight: a string `detail` is the FIRST rung of this
+      // function, so a body carrying one was tried several branches ago.
+      // GUARDED, and a refused one falls through to the next key rather than
+      // ending the rung. `hint` and `reason` are coord's strings, reaching
+      // here through `detail=resp.text` like everything else, so all four
+      // refusal classes arrive in them: an HTML `hint` from a proxy, a repr,
+      // an array, or something unbounded. This was the second value that could
+      // leave this function without facing `plainSentence`, and it defeated
+      // the ceiling on the very path the ceiling was raised for.
+      for (const key of ["hint", "reason"] as const) {
+        const extra = str(obj[key]);
+        if (!extra) continue;
+        const safeExtra = plainSentence(extra, limit);
+        if (!safeExtra) continue;
+        return bounded(`${code} — ${safeExtra}`, limit);
       }
+      // A validation field decorates this rung exactly as it decorates the
+      // `message` one above. It is reached when a 422's generic sentence was
+      // refused, and `VALIDATION_ERROR` without the field names the class of
+      // problem while withholding the only specific thing the body knows.
+      return bounded(field ? `${code}: ${field}` : code, limit);
     }
-    return code;
   }
-  return null;
+
+  // Rung 6 — the offending field alone. Reached when a 422's `message` was
+  // refused, where naming the field still beats `HTTP 422`.
+  return field;
 }
 
 /**
@@ -2615,10 +3004,14 @@ function CognitoGroupItem({
               className="text-amber-700 dark:text-amber-400"
               data-testid={`cognito-delete-confirm-mappings-${group.group_name}`}
             >
-              coord&apos;s blast radius could not be read (
-              {blastRadius.message}) — treat it as unknown, not as
-              &ldquo;none&rdquo;. The delete is still checked server-side and
-              will be refused if coord cannot answer there either.
+              {/* The INSTRUCTION first, the cause last. The same ordering
+                  the create-then-map orphan warning uses, and for the same
+                  reason: what the operator must do outranks why, and only the
+                  cause can be long. */}
+              coord&apos;s blast radius could not be read — treat it as
+              unknown, not as &ldquo;none&rdquo;. The delete is still checked
+              server-side and will be refused if coord cannot answer there
+              either. ({blastRadius.message})
             </li>
           ) : blastRadius.state !== "ok" ? (
             <li
