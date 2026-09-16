@@ -62,6 +62,7 @@ heads over a collapsed graph — is exactly as useless as a gate that did.
 from __future__ import annotations
 
 import argparse
+import re
 import sys
 from pathlib import Path
 
@@ -164,11 +165,30 @@ def _where(revision: str, path: Path | None) -> str:
     return repo_relative(path, f"<file for {revision}>")
 
 
+def _flatten(text: str) -> str:
+    """One line, so a quoted site cannot break the indented block it sits in.
+
+    A ``down_revision`` right-hand side that ruff-format wrapped in parentheses
+    reaches here spanning three physical lines, which would leave the ``after:``
+    label attached to a bare ``)`` and the rest hanging at column 0. It became
+    reachable when ``_alembic_graph.DOWN_RE`` learned the wrapped form — before
+    that a wrapped assignment matched nothing and could not be quoted at all.
+    ``notify_forked_open_prs._fence_safe`` already does this for the markdown
+    lane; this is the same treatment for the plain-text one.
+
+    NEWLINES ONLY. ``" ".join(text.split())`` would also collapse runs of
+    spaces WITHIN a line, and the pin sites quoted through this same helper
+    carry them deliberately — ``_PARENT_REVISION_ID = "a"  # MUST equal
+    down_revision`` is pasteable only with its two spaces before the comment.
+    """
+    return re.sub(r"[ \t]*\n[ \t]*", " ", text)
+
+
 def _before_after(before: str | None, after: str, unread: str) -> list[str]:
     """``before:`` / ``after:`` lines; ``unread`` names a line nobody quoted."""
     return [
-        f"             before: {before if before is not None else unread}",
-        f"             after:  {after}",
+        f"             before: {_flatten(before) if before is not None else unread}",
+        f"             after:  {_flatten(after)}",
     ]
 
 

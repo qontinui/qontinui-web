@@ -191,12 +191,14 @@ down_revision: str | Sequence[str] | None = "partdel_01"  # fmt: skip
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
-# `# fmt: skip` above is load-bearing, not style. The head gate in
-# `scripts/ci/_alembic_graph.py` reads `DOWN_RE` one line at a time (see its
-# KNOWN PARSE LIMIT note), and ruff format wraps an over-88-column assignment in
-# parentheses, which that regex reads as NO parent, so `alembic-heads-pr` then
-# reports two heads. Today the parent id is short enough not to wrap; the marker
-# stays so a re-point onto a longer head id cannot silently break the gate.
+# `# fmt: skip` above is NO LONGER load-bearing, and is kept only because
+# removing it would be a no-op edit to a landed revision. `DOWN_RE` in
+# `scripts/ci/_alembic_graph.py` used to read one line at a time, so the
+# parenthesised form ruff format produces for an over-88-column assignment
+# parsed as NO parent and `alembic-heads-pr` reported a phantom second head.
+# That limit was CLOSED (see the "FORMER PARSE LIMIT, now closed" note there);
+# the gate now parses the wrapped form, so a re-point onto a longer head id is
+# safe with or without this marker.
 
 # down_revision is the LOCAL CHAIN HEAD at authoring time
 # (`scripts/ci/count_alembic_heads.py` -> HEAD_COUNT=1), not `lasac_01`, whose

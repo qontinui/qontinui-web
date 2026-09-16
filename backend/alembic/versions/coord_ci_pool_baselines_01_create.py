@@ -161,11 +161,12 @@ down_revision: str | Sequence[str] | None = "pr_fix_default_on_01"  # fmt: skip
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
-# The fmt skip marker above is load-bearing, not style. The head gate in
-# scripts/ci/_alembic_graph.py reads DOWN_RE one line at a time, and ruff format
-# wraps an over-88-column assignment in parentheses, which that regex reads as
-# NO parent. The marker keeps a re-point onto a longer head id from silently
-# breaking the gate.
+# The fmt skip marker above is NO LONGER load-bearing, and is kept only because
+# removing it would be a no-op edit to a landed revision. DOWN_RE in
+# scripts/ci/_alembic_graph.py used to read one line at a time, so the
+# parenthesised form ruff format produces for an over-88-column assignment
+# parsed as NO parent. That limit was closed, so the gate now reads the wrapped
+# form and a re-point onto a longer head id is safe either way.
 #
 # Every SQL string below is a STATIC literal. The coord merge-train migration
 # classifier extracts string literals from each execute call and rejects a call

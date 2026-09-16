@@ -37,7 +37,19 @@ GIT_TIMEOUT_SECONDS = 60
 # syntaxes. The colon-prefixed type annotation can contain letters (e.g.
 # `: str = `, `: str | None = `), so `[: ]+` is too narrow — use an optional
 # `:<non-eq chars>` segment between the keyword and the `=`.
-REV_RE = re.compile(r'^revision\s*(?::[^=]*)?\s*=\s*["\'](.+?)["\']', re.M)
+#
+# `[^=\n]*` rather than `[^=]*`, and the same paren alternative `DOWN_RE`
+# carries, for the SAME two reasons — this side is 13 characters of revision id
+# away from the same incident with a quieter failure mode. A `revision` line
+# ruff-format wrapped would match NOTHING here, and `parse_source` then returns
+# `None`: the file drops out of `revisions` entirely, its parent silently
+# becomes a head, and `file_count` still counts the file, so nothing reports it.
+# Today's margin: `revision: str = "<id>"` wraps at an id length of 71, and the
+# longest id in the tree is 57.
+REV_RE = re.compile(
+    r'^revision\s*(?::[^=\n]*)?\s*=\s*\(?\s*["\'](.+?)["\']',
+    re.M,
+)
 DOWN_RE = re.compile(
     r"^down_revision\s*(?::[^=\n]*)?\s*=\s*(\([^)]*\)|[^\n]+)",
     re.M,
@@ -72,6 +84,18 @@ SAFE_ID_RE = re.compile(r"[^0-9A-Za-z._-]")
 # scalar and the wrapped merge tuple, while the fallback ``[^\n]+`` keeps the
 # single-line forms parsing exactly as before. A right-hand side that nests
 # parentheses is still out of reach, and no alembic revision writes one.
+#
+# THE SECOND CHANGE HERE IS NOT MONOTONE, and saying so is the point: the
+# annotation segment narrowed from ``[^=]*`` to ``[^=\n]*``. ``[^=]*`` crossed
+# newlines, so a bare ``down_revision: str | Sequence[str] | None`` with no
+# value could reach forward and borrow the NEXT line's assignment, and a
+# ``# merged "zz" in`` comment could contribute a phantom parent. Removing
+# those can LOSE a parent and therefore GROW the head set — a PASS could in
+# principle become a FAIL. It does not on this tree: replaying both patterns
+# over all 566 revision files, the set of parents present under the old
+# pattern and absent under the new one is EMPTY. The forms it drops are
+# old-pattern bugs, and ``PIN_REVISION_RE``/``PIN_PARENT_RE`` below already
+# carry exactly this narrowing for exactly this reason.
 
 
 @dataclass(frozen=True)

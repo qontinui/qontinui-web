@@ -29,6 +29,7 @@ one accepting the test credentials.
 from __future__ import annotations
 
 import re
+import sys
 import uuid
 from datetime import UTC, datetime, timedelta
 
@@ -46,23 +47,22 @@ from tests._alembic_harness import (
     run_alembic,
 )
 
+# THE GATE'S OWN PARSER, not a third spelling of it. ``_alembic_graph`` exists
+# so the head computation has exactly one home (its module docstring says so),
+# and a private regex here would be free to drift away from the lane that
+# actually blocks. Importing it also buys the two properties a hand-rolled
+# pattern kept getting wrong: ``DOWN_RE`` is anchored at column 0, so a
+# ``down_revision`` written about inside this file's 87-line docstring or in a
+# trailing comment cannot win over the assignment; and ``PARENT_REF_RE``
+# returns EVERY literal in the right-hand side, which is what lets
+# :func:`_parent_revision_id` refuse a merge tuple instead of silently taking
+# its first element.
+_SCRIPTS_CI = backend_root().parent / "scripts" / "ci"
+sys.path.insert(0, str(_SCRIPTS_CI))
+
+from _alembic_graph import PARENT_REF_RE, parse_source  # noqa: E402
+
 _REVISION_ID = "plan_library_06_scan_root_slug_census"
-#: Parsed from the revision source at RUNTIME, never pinned to a literal.
-#: ``alembic-heads-pr`` serialises alembic PRs by construction, so any PR that
-#: sits open past another revision's land WILL re-fork and its author WILL
-#: re-point ``down_revision``. A hardcoded parent is worse than stale then: the
-#: downgrade arm below would walk back to the wrong revision and assert against
-#: the wrong "clean" database instead of failing loudly. In-repo precedent:
-#: ``tests/test_memory_links_migration.py``.
-#:
-#: The pattern tolerates the PARENTHESISED form as well as the bare one —
-#: ruff-format wraps ``down_revision: str | Sequence[str] | None = "<id>"`` in
-#: parentheses once the line passes 88 columns, which is exactly what a long
-#: parent id does. The ``\s*`` between ``(`` and the literal is what crosses
-#: the newline; no ``re.DOTALL`` is needed because the pattern holds no ``.``.
-_DOWN_REVISION_RE = re.compile(
-    r'down_revision\s*(?::[^=\n]*)?=\s*\(?\s*["\'](?P<parent>[^"\']+)["\']'
-)
 _REVISION_FILENAME = "plan_library_06_scan_root_slug_census.py"
 _TABLE = "plan_scan_root_observations"
 
@@ -91,39 +91,52 @@ def _revision_source() -> str:
 # ---------------------------------------------------------------------------
 
 
+#: Read from the revision source at RUNTIME, never pinned to a literal —
+#: but kept under the name ``_alembic_graph.read_test_sources`` looks for, so
+#: the gate's re-point advice still says "a ``_PARENT_REVISION_ID`` is
+#: computed, not literal — check it by hand" instead of "no pin found". Same
+#: shape as ``tests/test_coordtouch_01_operator_touches_migration.py``, which
+#: ``_alembic_graph`` cites by name as the form it handles.
+#:
+#: Why not a literal: ``alembic-heads-pr`` serialises alembic PRs by
+#: construction, so any PR that sits open past another revision's land WILL
+#: re-fork and its author WILL re-point ``down_revision``. A stale pin is worse
+#: than wrong — the downgrade arm below would walk back to the wrong revision
+#: and assert against the wrong "clean" database instead of failing loudly.
 def _parent_revision_id() -> str:
-    """The revision this one revises, read from its source at runtime."""
-    match = _DOWN_REVISION_RE.search(_revision_source())
-    assert match is not None, (
-        f"{_REVISION_FILENAME} must declare a scalar down_revision"
+    """The single revision this one revises, read from its source at runtime."""
+    parsed = parse_source(_revision_source())
+    assert parsed is not None, f"{_REVISION_FILENAME} declares no parseable revision id"
+    parents = PARENT_REF_RE.findall(parsed[1])
+    assert len(parents) == 1, (
+        f"{_REVISION_FILENAME} must declare exactly ONE parent so the "
+        f"downgrade arm below has one place to stop; parsed {parents!r} from "
+        f"down_revision. A merge revision (a tuple) needs its own downgrade "
+        f"target chosen deliberately, not the tuple's first element."
     )
-    return match.group("parent")
+    return parents[0]
+
+
+_PARENT_REVISION_ID = _parent_revision_id()
 
 
 def test_down_revision_names_a_revision_that_exists_in_the_chain() -> None:
     """The parent is whatever the source says — but it must BE a revision.
 
     Deliberately not an equality check against a constant: see
-    :data:`_DOWN_REVISION_RE`. What still has to hold after any re-point is
+    :func:`_parent_revision_id`. What still has to hold after any re-point is
     that the named parent is a real revision in this tree, which is the half a
     typo breaks and a re-point does not.
     """
-    parent = _parent_revision_id()
     versions = backend_root() / "alembic" / "versions"
     declared = {
-        match.group(1)
+        parsed[0]
         for path in versions.glob("*.py")
-        for match in [
-            re.search(
-                r'^revision\s*(?::[^=\n]*)?=\s*["\']([^"\']+)["\']',
-                path.read_text(encoding="utf-8"),
-                re.MULTILINE,
-            )
-        ]
-        if match
+        for parsed in [parse_source(path.read_text(encoding="utf-8"))]
+        if parsed is not None
     }
-    assert parent in declared, (
-        f"down_revision {parent!r} names no revision in {versions}"
+    assert _PARENT_REVISION_ID in declared, (
+        f"down_revision {_PARENT_REVISION_ID!r} names no revision in {versions}"
     )
 
 
@@ -387,7 +400,7 @@ def test_upgrade_census_upsert_downgrade_upgrade_round_trip() -> None:
                 "exists to delete"
             )
 
-        run_alembic(root, db_url, "downgrade", _parent_revision_id())
+        run_alembic(root, db_url, "downgrade", _PARENT_REVISION_ID)
         remaining = _columns(engine)
         assert not (set(_EXPECTED_COLUMNS) & set(remaining)), (
             "the downgrade left census columns behind"

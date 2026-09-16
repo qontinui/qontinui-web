@@ -156,6 +156,87 @@ def test_a_wrapped_merge_tuple_still_names_both_parents() -> None:
     assert scan_sources(sources).heads == ("m",)
 
 
+def test_down_re_annotation_cannot_borrow_the_next_lines_value() -> None:
+    """The NON-monotone half of the widening, pinned on ``DOWN_RE``.
+
+    The existing ``test_an_annotation_cannot_borrow_the_next_lines_value``
+    below pins the same property on the PIN matchers; this is the head-graph
+    side, which only acquired it in this change.
+
+    ``[^=]*`` in the annotation segment crossed newlines, so a bare
+    ``down_revision: <annotation>`` with no value of its own reached forward and
+    took the next assignment's literal — a phantom parent. ``[^=\n]*`` stops
+    that, which can LOSE a parent and therefore GROW the head set. It loses none
+    on this tree (verified over all 566 revision files), and the same narrowing
+    is already carried by ``PIN_REVISION_RE``/``PIN_PARENT_RE``.
+    """
+    sources = {
+        **_tree(("a", None)),
+        Path("b.py"): (
+            'revision: str = "b"\n'
+            "down_revision: str | Sequence[str] | None\n"
+            'some_other_name = "a"\n'
+        ),
+    }
+    # "a" is NOT b's parent, so both are heads.
+    assert scan_sources(sources).heads == ("a", "b")
+
+
+def test_a_comment_after_a_tuple_contributes_no_phantom_parent() -> None:
+    sources = {
+        **_tree(("a", None), ("b", "a"), ("c", "a")),
+        Path("m.py"): (
+            'revision: str = "m"\ndown_revision = ("b", "c")  # superseded "zz"\n'
+        ),
+    }
+    scan = scan_sources(sources)
+    assert scan.heads == ("m",)
+    assert "zz" not in scan.revisions
+
+
+def test_a_wrapped_revision_id_is_still_parsed() -> None:
+    """The quieter half of the same defect, on ``REV_RE``.
+
+    A wrapped ``revision`` line used to match nothing, so ``parse_source``
+    returned ``None``, the file left the graph entirely, and its parent became
+    a head with ``file_count`` still counting the file — no duplicate, no zero
+    scan, nothing to report it.
+    """
+    sources = {
+        **_tree(("a", None)),
+        Path("b.py"): (
+            "revision: str = (\n"
+            '    "b"\n'
+            ")\n"
+            'down_revision: str | Sequence[str] | None = "a"\n'
+        ),
+    }
+    scan = scan_sources(sources)
+    assert scan.heads == ("b",)
+    assert set(scan.revisions) == {"a", "b"}
+
+
+def test_a_close_paren_inside_a_comment_is_the_documented_reach_limit() -> None:
+    """Pinned as a LIMIT, not as correct behaviour.
+
+    ``[^)]*`` stops at the first ``)``, so a comment holding one truncates the
+    right-hand side and the parents are lost. Both the old and the new pattern
+    read this as no parents, so it is not a regression — it is the boundary the
+    module comment states, and a test is what keeps the statement honest.
+    """
+    sources = {
+        **_tree(("a", None), ("b", "a")),
+        Path("m.py"): (
+            'revision: str = "m"\n'
+            "down_revision = (  # see build_chain(x)\n"
+            '    "a",\n'
+            '    "b",\n'
+            ")\n"
+        ),
+    }
+    assert scan_sources(sources).heads == ("b", "m")
+
+
 def test_a_single_line_down_revision_with_a_trailing_comment_is_unchanged() -> None:
     """The widening must not move the single-line forms it did not target."""
     sources = {
