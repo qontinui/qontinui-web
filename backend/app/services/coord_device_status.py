@@ -39,6 +39,7 @@ tokens would be more complex than re-minting on each WS attach
 
 from __future__ import annotations
 
+import json
 from typing import Any
 from uuid import UUID
 
@@ -232,9 +233,56 @@ def _coord_ws_base() -> str:
 # bus. Widening this set is a deliberate exposure decision, not a config
 # change: every name here must also be in coord's map, or the upstream
 # refuses 403 ``unknown_subscription``.
-COORD_EVENTS_SUBSCRIPTIONS: frozenset[str] = frozenset(
-    {"strategy", "merge", "claims", "branches"}
-)
+#: Subscription name → the channel FAMILY it is entitled to, spelled the way
+#: coord resolves it: a trailing ``.`` means "prefix" (``events.strategy.*``
+#: → every ``events.strategy.<anything>``), no trailing ``.`` means the exact
+#: channel. The bridge enforces this on EVERY relayed frame
+#: (:func:`channel_in_family`), not only at the upgrade: against a coord that
+#: predates the ``?subscribe=`` half (``WsParams { pattern }`` defaulting to
+#: ``events.*`` with unknown query params ignored) the upstream socket would
+#: otherwise carry the ENTIRE bus — including the
+#: ``events.agent.spawn_requested.<device>`` frames whose JWT payloads this
+#: plan exists to take off it — into every operator's browser.
+COORD_EVENTS_FAMILIES: dict[str, str] = {
+    "strategy": "events.strategy.",
+    "merge": "events.merge.",
+    "claims": "events.claims",
+    "branches": "events.branches",
+}
+
+COORD_EVENTS_SUBSCRIPTIONS: frozenset[str] = frozenset(COORD_EVENTS_FAMILIES)
+
+
+def channel_in_family(subscribe: str, channel: str) -> bool:
+    """True when ``channel`` is one the ``subscribe`` name is entitled to.
+
+    A prefix family (trailing ``.``) admits any channel that starts with it;
+    an exact family admits only the identical channel. An unknown
+    ``subscribe`` admits nothing.
+    """
+    family = COORD_EVENTS_FAMILIES.get(subscribe)
+    if family is None:
+        return False
+    if family.endswith("."):
+        return channel.startswith(family)
+    return channel == family
+
+
+def envelope_channel(message: str) -> str | None:
+    """The ``channel`` of a coord ``{"channel","payload"}`` envelope, or None.
+
+    None for anything that is not a JSON object carrying a string
+    ``channel`` — the bridge drops such frames rather than relaying bytes it
+    cannot classify.
+    """
+    try:
+        envelope = json.loads(message)
+    except ValueError:
+        return None
+    if not isinstance(envelope, dict):
+        return None
+    channel = envelope.get("channel")
+    return channel if isinstance(channel, str) else None
 
 
 def build_coord_events_ws_url(token: str, subscribe: str) -> str:
