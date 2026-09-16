@@ -357,6 +357,56 @@ describe("ProposalCard — coord's terminal `stale`", () => {
   });
 });
 
+/**
+ * coord's OTHER two terminal statuses — `approved` and `rejected` — and the
+ * regression that reached production because no fixture in this file combined
+ * one of them with a readable live version.
+ */
+describe("ProposalCard — a row coord already decided", () => {
+  it("badges an APPROVED row calm too, with the live version actually supplied", () => {
+    /*
+     * The fixture that was missing, and the reason every "Recently proposed &
+     * approved" row rendered a red act-now alarm while this file stayed green.
+     *
+     * Approving a proposal APPLIES the edit as a new document version, so
+     * `liveVersion > base_version` is true of an approved row BY CONSTRUCTION —
+     * it is the receipt for the approval, not a decayed premise. Every
+     * `status: "approved"` fixture in this file took `renderCard`'s
+     * `liveVersion` default of `null`, which short-circuits the comparison, so
+     * no test in the suite combined the two. This one does: v4 authored, v9
+     * live.
+     */
+    renderCard(proposal({ status: "approved", base_version: 4 }), {
+      liveVersion: 9,
+    });
+    const badge = screen.getByTestId("proposal-direction");
+    expect(badge.textContent ?? "").toMatch(/approved/i);
+    expect(badge.innerHTML).not.toMatch(/\bbg-red-/);
+    // Red ⇔ the `✕` glyph, so its absence is the second half of "not an alarm".
+    expect(badge.textContent ?? "").not.toContain("✕");
+
+    toggleRow();
+    // "Read the current wording before approving" — addressed to a reader who
+    // already approved it.
+    expect(screen.queryByTestId("proposal-stale")).toBeNull();
+    // The row IS reached and expanded, so the null above is a real absence.
+    expect(screen.getByTestId("proposal-content")).toBeTruthy();
+  });
+
+  it("badges a REJECTED row calm on the same evidence", () => {
+    // Same closed-status arm, the other outcome. Without it, "approved is calm"
+    // could be satisfied by special-casing one word.
+    renderCard(proposal({ status: "rejected", base_version: 4 }), {
+      liveVersion: 9,
+    });
+    const badge = screen.getByTestId("proposal-direction");
+    expect(badge.textContent ?? "").toMatch(/rejected/i);
+    expect(badge.innerHTML).not.toMatch(/\bbg-red-/);
+    toggleRow();
+    expect(screen.queryByTestId("proposal-stale")).toBeNull();
+  });
+});
+
 describe("ProposalCard — a proposal decided by its own author", () => {
   it("says so plainly, as information rather than a caution", () => {
     renderCard(
@@ -396,10 +446,17 @@ describe("ProposalCard — a proposal decided by its own author", () => {
   });
 
   it("prefers coord's `self_decided` over comparing the two strings", () => {
-    // One principal can reach coord under two spellings, and coord computed the
-    // answer from the identities it actually stamped. A string comparison that
-    // silently overruled the server's verdict would report the WRONG fact with
-    // full confidence.
+    // The fixture is DELIBERATELY SYNTHETIC — coord cannot emit it. It derives
+    // `self_decided` as exactly `decided_by == proposed_by` with no
+    // normalization (`with_derived_self_decided()`), so against today's coord
+    // the flag and the comparison can never disagree, and this row's
+    // `session:aaaa` / `agent:aaaa` pair carrying `self_decided: true` is a
+    // shape no server produces. It is constructed that way on purpose: it is
+    // the only way to make the precedence OBSERVABLE, and precedence is what
+    // matters — coord's answer is the SERVER's, so a coord that later starts
+    // normalizing changes what this page says with no web deploy, while a
+    // client-side comparison quietly overruling the flag would not.
+    // See `../_lib/authorship.ts` on `selfDecidedOrUnknown`.
     renderCard(
       proposal({
         status: "approved",

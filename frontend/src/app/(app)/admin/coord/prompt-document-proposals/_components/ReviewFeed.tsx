@@ -38,10 +38,10 @@ import { ProposalCard } from "./ProposalCard";
  * `silent-empty-is-unknown`; `ux-priorities` — honesty about uncertainty /
  * no-surprise].
  *
- * Beside it sits RECENTLY APPROVED, on the same three-state contract and for a
- * sharper reason: it is the only read on this page that can serve a DECIDED
- * row, and therefore the only place `<ProposalCard>`'s self-decided provenance
- * line can appear. See `DecidedProposals`.
+ * Beside it sits RECENTLY PROPOSED & APPROVED, on the same three-state
+ * contract and for a sharper reason: it is the only read on this page that can
+ * serve a DECIDED row, and therefore the only place `<ProposalCard>`'s
+ * self-decided provenance line can appear. See `DecidedProposals`.
  */
 export function ReviewFeed() {
   /**
@@ -52,10 +52,10 @@ export function ReviewFeed() {
    */
   const [openProposal, setOpenProposal] = useState<string | null>(null);
   /**
-   * The open row in the "Recently approved" section — its OWN key, not shared
-   * with the queue above. Ids are unique across the two lists, but sharing one
-   * key would make opening a decided row collapse whatever was open in the
-   * queue, which is a surprise with no purpose behind it.
+   * The open row in the "Recently proposed & approved" section — its OWN key,
+   * not shared with the queue above. Ids are unique across the two lists, but
+   * sharing one key would make opening a decided row collapse whatever was open
+   * in the queue, which is a surprise with no purpose behind it.
    */
   const [openDecided, setOpenDecided] = useState<string | null>(null);
   const {
@@ -259,8 +259,27 @@ export function ReviewFeed() {
 interface SectionUnknownProps {
   /** Subject of the "X could not be read" sentence. */
   what: string;
-  /** What an older coord would not recognise — only used on the pre-deploy arm. */
+  /**
+   * What an older coord would not recognise — only used on the pre-deploy arm,
+   * and a NOUN PHRASE naming the thing, never the word "query": the sentence
+   * already ends "…and refuses the query", so `"this query"` rendered as *"it
+   * does not recognise this query yet and refuses the query"*.
+   */
   refusalHint: string;
+  /**
+   * How the pre-deploy arm ends — what this section's outage implies for the
+   * REST of the page. A prop rather than the constant it used to be, because
+   * the constant ("Nothing above is affected.") is only true of the retired
+   * section. That section is reached on `not_deployed` by a `400 invalid
+   * status` from a coord that serves the proposal routes perfectly well; the
+   * decided section has no such vocabulary refusal, so its only route to
+   * `not_deployed` is the proxy's 404 mapping — the whole proposal surface
+   * absent (`operations.py` `_coord_unavailable`), which takes the pending
+   * queue above down with it. Telling the operator nothing above is affected
+   * while the queue is dark is the same class of confident wrong answer the
+   * `preDeploy` split itself exists to remove.
+   */
+  preDeployClosing: string;
   /** The note carried out of the failed read. */
   note: string;
   /** The diagnosed cause, or `null` when it was NOT diagnosed. */
@@ -294,6 +313,7 @@ interface SectionUnknownProps {
 function SectionUnknown({
   what,
   refusalHint,
+  preDeployClosing,
   note,
   kind,
   testId,
@@ -313,7 +333,7 @@ function SectionUnknown({
         data-cause={preDeploy ? "not-deployed" : "undiagnosed"}
       >
         {preDeploy
-          ? `Expected while coord is older than this page: it does not recognise ${refusalHint} yet and refuses the query. Nothing above is affected.`
+          ? `Expected while coord is older than this page: it does not recognise ${refusalHint} yet and refuses the query. ${preDeployClosing}`
           : "coord could not be reached for this section — the pending queue above was read separately."}
       </p>
     </div>
@@ -414,6 +434,10 @@ function RetiredProposals({
         <SectionUnknown
           what="Retired proposals"
           refusalHint="the retired status"
+          // True HERE and only here: this section's pre-deploy arm is a coord
+          // that rejects `?status=stale` while serving every other query on
+          // the page, so the queue above is genuinely untouched.
+          preDeployClosing="Nothing above is affected."
           note={unavailable}
           kind={unavailableKind}
           testId="retired-unknown"
@@ -506,8 +530,28 @@ interface DecidedProposalsProps {
 }
 
 /**
- * "Recently approved" — the decided proposals, rendered through the SAME
- * `<ProposalCard>` the queue uses.
+ * "Recently proposed & approved" — the decided proposals, rendered through the
+ * SAME `<ProposalCard>` the queue uses.
+ *
+ * ## Why the heading is not "Recently approved"
+ *
+ * Because coord does not order this list by decision date and cannot be asked
+ * to. Its route is
+ * `WHERE tenant_id = $1 AND status = $2 ORDER BY created_at DESC LIMIT $3`
+ * (`coord/src/policy_proposals.rs`) — `created_at` is the PROPOSAL date, and
+ * there is no `decided_at` ordering to select. So the 20 rows this section asks
+ * for are the 20 approved proposals with the newest AUTHORING dates, and a
+ * proposal written a month ago and approved five minutes ago ranks by the month
+ * and can fall outside the window entirely while the header says "20
+ * proposals".
+ *
+ * That gap matters more here than anywhere else on the page: this section is
+ * the only surface for the compensating audit control that replaced the
+ * ownership rule, so the decision most worth seeing — the newest one — is
+ * exactly the one the ordering can drop. The honest fix available client-side
+ * is to stop making the claim: the heading names both dates, and the intro says
+ * which one orders the list. Narrowing the page to a truthful 20 is not
+ * something the console can do without a coord-side `decided_at` ordering.
  *
  * ## Why this section exists
  *
@@ -537,8 +581,14 @@ interface DecidedProposalsProps {
  * R7 — closed by default (nothing here waits on anyone), with the state in the
  * HEADER summary because `<CollapsibleContent>` unmounts its children and a
  * "could not be read" that hides behind a click is not stated at all. Count /
- * "none approved recently" / UNKNOWN, and the third is never rendered as the
- * second [`verification-and-evidence` `silent-empty-is-unknown`].
+ * "none approved yet" / UNKNOWN, and the third is never rendered as the second
+ * [`verification-and-evidence` `silent-empty-is-unknown`].
+ *
+ * The empty state deliberately drops "recently" too, for the opposite reason to
+ * the heading: coord's `LIMIT` cannot manufacture an empty page, so zero rows
+ * back from `?status=approved` means the tenant has no approved proposal at
+ * all — a stronger claim than "none lately", and the one that is actually
+ * supported.
  */
 function DecidedProposals({
   decided,
@@ -557,12 +607,12 @@ function DecidedProposals({
     : !read
       ? "reading…"
       : decided.length === 0
-        ? "none approved recently"
+        ? "none approved yet"
         : plural(decided.length, "proposal");
 
   return (
     <CollapsiblePanel
-      title="Recently approved"
+      title="Recently proposed & approved"
       summary={
         <span
           className="text-xs font-normal normal-case tracking-normal text-muted-foreground"
@@ -581,11 +631,29 @@ function DecidedProposals({
         that happened the row says so, and coord&apos;s decision note is the
         record of why. Open a row for the full provenance.
       </p>
+      {/* The window, stated rather than implied. coord serves this list
+          `ORDER BY created_at DESC LIMIT 20` and offers no `decided_at`
+          ordering, so an old proposal approved moments ago ranks by its
+          authoring date — and can sit outside the page entirely. Saying so is
+          the only honest option available on this side of the wire. */}
+      <p
+        className="mb-3 text-xs text-muted-foreground"
+        data-testid="decided-window-note"
+      >
+        This is the 20 most recently <em>proposed</em> approved edits — coord
+        orders this list by proposal date, not decision date, so an older
+        proposal approved just now may not appear here.
+      </p>
 
       {unavailable ? (
         <SectionUnknown
           what="Recently approved proposals"
-          refusalHint="this query"
+          // `?status=approved` is not new vocabulary — coord has always
+          // accepted it — so a vocabulary refusal cannot produce this arm here.
+          // `not_deployed` reaches this section only from the proxy's 404
+          // mapping, which means the proposal ROUTES are absent entirely.
+          refusalHint="the proposal routes"
+          preDeployClosing="the pending queue above reports the same outage."
           note={unavailable}
           kind={unavailableKind}
           testId="decided-unknown"
@@ -599,9 +667,7 @@ function DecidedProposals({
           className="rounded-lg border border-dashed border-border py-8 text-center"
           data-testid="decided-empty"
         >
-          <p className="text-sm text-muted-foreground">
-            none approved recently
-          </p>
+          <p className="text-sm text-muted-foreground">none approved yet</p>
         </div>
       ) : (
         <RecordList

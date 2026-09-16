@@ -69,6 +69,23 @@
  * So: `retired` = coord has closed it, nothing to do. `stale` = we believe it
  * is about to be closed and you must re-read the document before acting. The
  * attention table says the same thing in colour.
+ *
+ * ## …and why the derived `stale` must not reach a DECIDED row either
+ *
+ * The derived comparison is evidence of staleness only on a row that can still
+ * be decided. On an APPROVED one it is evidence of nothing, because approving a
+ * proposal APPLIES the edit as a new document version: `liveVersion >
+ * base_version` is then not a decayed premise, it is the receipt for the
+ * approval itself, and it is true of every approved row by construction. Left
+ * to fall through, the "Recently proposed & approved" section would paint its
+ * entire contents red with `attention: "author"` — a page-wide act-now alarm
+ * raised by the act having already been taken.
+ *
+ * `rejected` is the same shape one step removed: the edit did not land, but
+ * nothing about a closed record is resolved by re-reading the document either.
+ * Both therefore get their own terminal kind, `decided`, which sits beside
+ * `retired` — coord closed it, the outcome is recorded, nobody is asked for
+ * anything.
  */
 
 import type { Attention } from "@/components/console/attention";
@@ -91,6 +108,7 @@ export type ProposalKind =
   | "unclassifiable"
   | "stale"
   | "retired"
+  | "decided"
   | "unrecognised";
 
 /**
@@ -103,6 +121,7 @@ export type ProposalKind =
  * | `unclassifiable` | `none` | Same. It reads more alarming and is not: coord already refused to apply it. Colour encodes who must act, not how alarming the word sounds. |
  * | `stale` | `author` | The target document moved, so the wording this edit assumed is not what is deployed. Nothing but a human re-reading the current document resolves that, and approving it anyway applies an edit against text that is gone. |
  * | `retired` | `none` | coord already closed it (`status='stale'`). It cannot be approved, nobody is waiting, and nothing decays further — the terminal counterpart of the row above. Painting a closed record red would be the false alarm R3 exists to stop. |
+ * | `decided` | `none` | coord closed it with an OUTCOME (`approved` / `rejected`). Nothing is asked of anyone, and in particular the derived staleness above must not reach it: approving APPLIES the edit as a new version, so `liveVersion > base_version` is true of every approved row by construction and would make the whole "Recently proposed & approved" section an act-now alarm about an act already taken. |
  * | `unrecognised` | `waiting` | A `direction` token this build has no meaning for. R3's ignorance floor — only a human extending the vocabulary clears it, and painting ignorance calm is `silent-empty-is-unknown` with a badge attached. |
  */
 export const PROPOSAL_ATTENTION_BY_KIND: Record<ProposalKind, Attention> = {
@@ -110,6 +129,7 @@ export const PROPOSAL_ATTENTION_BY_KIND: Record<ProposalKind, Attention> = {
   unclassifiable: "none",
   stale: "author",
   retired: "none",
+  decided: "none",
   unrecognised: "waiting",
 };
 
@@ -123,6 +143,9 @@ export const PROPOSAL_KIND_CLASS: Record<ProposalKind, string> = {
   // Closed and inert. Deliberately the same calm chrome as `loosening`: the
   // edit did not land and never will, which is a finished state, not an alarm.
   retired: INERT,
+  // Closed WITH an outcome. Same chrome for the same reason — the badge's job
+  // here is to carry the word (`approved` / `rejected`), not a severity.
+  decided: INERT,
   unrecognised: UNKNOWN_AMBER,
 };
 
@@ -169,6 +192,22 @@ export function deriveProposalStatus(
           ? `coord retired this when the document moved to v${liveVersion} — it was written against v${proposal.base_version} and can no longer be approved`
           : `coord retired this when the document moved past v${proposal.base_version} — it can no longer be approved`,
       attention: PROPOSAL_ATTENTION_BY_KIND.retired,
+    };
+  }
+  // The other two terminal statuses, and they sit here for the same reason the
+  // arm above does — but with a sharper edge. An APPROVED proposal has had its
+  // edit applied as a new document version, so `liveVersion > base_version`
+  // holds for every approved row by construction: falling through to the
+  // comparison below would file the entire "Recently proposed & approved"
+  // section as `attention: "author"` and paint it red, demanding that the
+  // reader re-read the document "before approving" something they already
+  // approved.
+  if (proposal.status === "approved" || proposal.status === "rejected") {
+    return {
+      kind: "decided",
+      label: proposal.status,
+      reason: "coord has closed this; the edit was decided",
+      attention: PROPOSAL_ATTENTION_BY_KIND.decided,
     };
   }
   if (liveVersion !== null && liveVersion > proposal.base_version) {

@@ -35,6 +35,16 @@ const STALE_LIMIT = 20;
  * undeclared query parameter, so before that declaration this constant
  * documented a page size nothing applied and coord fell back to its own
  * `unwrap_or(100)`.
+ *
+ * **What this bound selects, precisely.** coord serves the list
+ * `ORDER BY created_at DESC LIMIT $3` (`coord/src/policy_proposals.rs`) and has
+ * no `decided_at` ordering to offer, so this is the 20 approved proposals with
+ * the newest AUTHORING dates — not the 20 most recently decided. A proposal
+ * written long ago and approved a minute ago ranks by the old date and can sit
+ * outside the page. Honouring the bound therefore narrowed a window that is
+ * already ordered by the wrong column, which is why `<DecidedProposals>` states
+ * the ordering in its heading and intro rather than implying a recency it
+ * cannot deliver.
  */
 const DECIDED_LIMIT = 20;
 

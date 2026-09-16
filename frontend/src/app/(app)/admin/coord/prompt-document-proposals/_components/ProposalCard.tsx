@@ -99,9 +99,10 @@ function TierChip({ tier }: { tier: ProposalTier | null }) {
  * It used to see nothing but `?status=pending`, which made the provenance
  * block's decided half unreachable: coord filters the list by status, so every
  * row that reached here had `decided_by: null`. `ReviewFeed`'s "Recently
- * approved" section now feeds approved rows through this same component, which
- * is what gives the self-decided line — the compensating audit control for
- * ownership no longer gating a decision — a surface it can actually appear on.
+ * proposed & approved" section now feeds approved rows through this same
+ * component, which is what gives the self-decided line — the compensating audit
+ * control for ownership no longer gating a decision — a surface it can actually
+ * appear on.
  */
 export function ProposalCard({
   proposal,
@@ -124,19 +125,36 @@ export function ProposalCard({
   const status = deriveProposalStatus(proposal, liveVersion);
 
   /*
+   * The composer is offered only on a row that can still be decided.
+   *
+   * Defence in depth, not the enforcement: coord refuses a decision on a closed
+   * proposal server-side, and it is the authority. But the card already reasons
+   * this way one block down — the pre-approval staleness warning is dropped on a
+   * closed row because "repeating an instruction about an action that no
+   * longer exists is noise" — and leaving two enabled buttons under that same
+   * argument offers the action while the text says it is impossible. Now that
+   * decided rows reach this card through the "Recently proposed & approved"
+   * section, that is a live state rather than a hypothetical one.
+   */
+  const decidable = proposal.status === "pending";
+
+  /*
    * Stale = the document moved since the edit was authored, so the wording this
    * proposal assumed is no longer what is deployed.
    *
-   * coord's TERMINAL retirement is excluded deliberately. The warning panel
-   * below tells the reader to re-read the document *before approving*, and a
-   * retired proposal cannot be approved by anyone — repeating an instruction
-   * about an action that no longer exists is noise, and the row's own badge
-   * already says `retired` (`../proposalStatus.ts`).
+   * Gated on `decidable` — the SAME predicate the composer uses, and
+   * deliberately so. The panel below tells the reader to re-read the document
+   * *before approving*, which is an instruction only a row that can still be
+   * approved can act on. Excluding coord's terminal `stale` alone was not
+   * enough: APPROVING a proposal applies the edit as a new document version, so
+   * `liveVersion > base_version` is true of every approved row by construction,
+   * and every "Recently proposed & approved" row rendered the red panel telling
+   * its reader to read the current wording before doing the thing they had
+   * already done. `../proposalStatus.ts` makes the matching correction to the
+   * badge, so the row still says exactly one thing.
    */
   const stale =
-    proposal.status !== "stale" &&
-    liveVersion !== null &&
-    liveVersion > proposal.base_version;
+    decidable && liveVersion !== null && liveVersion > proposal.base_version;
 
   /*
    * INFORMATION, not a warning — and the audit affordance that REPLACED a rule.
@@ -157,20 +175,6 @@ export function ProposalCard({
    */
   const selfDecidedVerdict = selfDecidedOrUnknown(proposal);
   const selfDecided = selfDecidedVerdict === true;
-
-  /*
-   * The composer is offered only on a row that can still be decided.
-   *
-   * Defence in depth, not the enforcement: coord refuses a decision on a closed
-   * proposal server-side, and it is the authority. But the card already reasons
-   * this way one block up — the pre-approval staleness warning is dropped on a
-   * retired row because "repeating an instruction about an action that no
-   * longer exists is noise" — and leaving two enabled buttons under that same
-   * argument offers the action while the text says it is impossible. Now that
-   * decided rows reach this card through the "Recently approved" section, that
-   * is a live state rather than a hypothetical one.
-   */
-  const decidable = proposal.status === "pending";
 
   return (
     <RecordRow
