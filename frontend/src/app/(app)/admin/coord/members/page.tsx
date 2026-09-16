@@ -1039,6 +1039,23 @@ type AddMemberOutcome =
  * to its own sentinel `granted_by` (`auth_sso.rs:1328`), so a role granted
  * directly is never revoked by the group sync.
  *
+ * ## Why the `added` arm does not promise a row in the table
+ *
+ * The grant and the table answer two different questions. `GET /coord/members`
+ * proxies coord's `GET /admin/coord/operators`, which lists operators by their
+ * HOME tenant (`WHERE o.tenant_id = $1`) — not by role membership — and the
+ * upsert behind this form deliberately never moves `tenant_id` on conflict, so
+ * a colleague who already has an operator row homed elsewhere is granted the
+ * role and still does not appear below. That is a real gap in the listing, not
+ * in the grant, and closing it is coord's to do.
+ *
+ * Until it is closed the copy has to be true: the notice states the grant, and
+ * says a member homed in another tenant may not show up in the list. It does
+ * not say "they are in the table now", which the refetch below cannot
+ * guarantee. The refetch stays — for the common case (a colleague homed here,
+ * or already listed and being re-tiered) the row genuinely does appear, and a
+ * table that needed a manual reload would be its own defect.
+ *
  * ## Why the outcome is inline and not only a toast
  *
  * Two of the three arms are not one-liners. `invite_required` has to say that
@@ -1086,7 +1103,7 @@ function AddTenantMemberForm({ onAdded }: { onAdded: () => void }) {
       const json = (await res.json()) as TenantMemberAddResponse;
       if (json?.status === "added") {
         setOutcome({ kind: "added", email: addr, role });
-        toast.success(`Added ${addr} — they have access now`);
+        toast.success(`Granted ${tierLabel(role)} access to ${addr}`);
         setEmail("");
         onAdded();
         return;
@@ -1165,11 +1182,17 @@ function AddTenantMemberForm({ onAdded }: { onAdded: () => void }) {
       {outcome !== null && (
         <div data-testid="add-member-outcome">
           {outcome.kind === "added" ? (
-            <p className="flex items-center gap-1.5 text-sm text-muted-foreground">
-              <ShieldCheck className="h-4 w-4 shrink-0" />
-              Added {outcome.email} — they have access now as{" "}
-              {tierLabel(outcome.role)}.
-            </p>
+            <div className="space-y-1">
+              <p className="flex items-center gap-1.5 text-sm text-muted-foreground">
+                <ShieldCheck className="h-4 w-4 shrink-0" />
+                Granted {tierLabel(outcome.role)} access to {outcome.email}.
+              </p>
+              <p className="text-xs text-muted-foreground">
+                The list below is by home tenant, so someone whose home tenant
+                is a different one may not appear in it. Their access is granted
+                either way.
+              </p>
+            </div>
           ) : outcome.kind === "error" ? (
             <p className="flex items-center gap-1.5 text-sm text-destructive">
               <AlertTriangle className="h-4 w-4 shrink-0" />
@@ -1952,9 +1975,22 @@ function renderAffected(
  * `[object Object]` at the one place an operator most needs to read the reason
  * is exactly the failure this helper exists to prevent.
  *
- * Three sources, in order: a string `detail`, a structured `detail.message`,
- * then the status. A JSON body carrying neither falls back to the STATUS, not
- * to its own source text — `{}` printed as `{}` is the same non-message as
+ * Sources, in order: a string `detail`, a structured `detail.message`, the
+ * production envelope's `message`, then its `error` code, then the status.
+ *
+ * The envelope pair is not belt-and-braces — in production it is the ONLY
+ * source there is. `app/main.py` registers
+ * `middleware/error_handler.http_exception_handler` for every
+ * `StarletteHTTPException`, and it rewrites the body into
+ * `{error, message, timestamp, path, …}` with **no `detail` key at all**. A
+ * `detail`-only reader therefore finds nothing on every deployed error and
+ * renders `HTTP 403` where the backend sent `not_admin_in_target_tenant` —
+ * the exact sentence a route opts into `structured_errors=True` to deliver.
+ * `detail` is still read FIRST because FastAPI's own default handler (and so
+ * every test app that does not register that middleware) still produces it.
+ *
+ * A JSON body carrying none of them falls back to the STATUS, not to its own
+ * source text — `{}` printed as `{}` is the same non-message as
  * `[object Object]`. A body that is not JSON at all is different: a plain-text
  * gateway or proxy error IS the sentence, so that one is returned as-is.
  */
@@ -1966,13 +2002,28 @@ async function backendErrorMessage(res: Response): Promise<string> {
  * have already consumed `res.text()`. */
 function messageFromErrorBody(text: string, status: number): string {
   try {
-    const parsed = JSON.parse(text) as { detail?: unknown };
+    const parsed = JSON.parse(text) as {
+      detail?: unknown;
+      message?: unknown;
+      error?: unknown;
+    };
     const detail = parsed?.detail;
     if (typeof detail === "string" && detail) return detail;
     if (detail && typeof detail === "object") {
-      const message = (detail as { message?: unknown }).message;
-      if (typeof message === "string" && message) return message;
+      const detailMessage = (detail as { message?: unknown }).message;
+      if (typeof detailMessage === "string" && detailMessage) {
+        return detailMessage;
+      }
     }
+    // The production envelope: no `detail`, a human `message` and a machine
+    // `error` beside it.
+    const message = parsed?.message;
+    if (typeof message === "string" && message) return message;
+    // No sentence, but a code. `not_admin_in_target_tenant` is a poor sentence
+    // and a far better answer than `HTTP 403`: it is the string an operator
+    // searches for, and the one the backend chose to send.
+    const error = parsed?.error;
+    if (typeof error === "string" && error) return error;
     // Parsed as JSON and carries no sentence — `{}`, or a `detail` in a shape
     // this does not know. The raw JSON is NOT a message: printing it puts `{}`
     // or a brace-blob where the operator expects a reason, which is the same

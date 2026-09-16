@@ -202,7 +202,7 @@ describe("Add a member by email — the request", () => {
 // ---------------------------------------------------------------------------
 
 describe("Add a member by email — the `added` arm", () => {
-  it("says they have access now, and reloads the members table", async () => {
+  it("names the grant and the tier, and reloads the members table", async () => {
     const user_ = userEvent.setup();
     render(<MembersPage />);
     await waitFor(() => expect(memberReads().length).toBeGreaterThan(0));
@@ -211,12 +211,14 @@ describe("Add a member by email — the `added` arm", () => {
     await submitEmail(user_, "colleague@example.com");
 
     const outcome = await screen.findByTestId("add-member-outcome");
-    await waitFor(() =>
-      expect(outcome.textContent ?? "").toMatch(/have access now/i)
-    );
+    await waitFor(() => expect(outcome.textContent ?? "").toMatch(/granted/i));
     expect(outcome.textContent ?? "").toMatch(/colleague@example\.com/);
+    // The tier is part of the sentence: "granted access" without it does not
+    // say WHAT they can do.
+    expect(outcome.textContent ?? "").toMatch(/developer/i);
     expect(toastSuccess).toHaveBeenCalled();
-    // The row it just created must not require a manual refresh to appear.
+    // The refetch stays — for a colleague homed in this tenant the row does
+    // appear, and needing a manual reload would be its own defect.
     await waitFor(() =>
       expect(memberReads().length).toBeGreaterThan(readsBefore)
     );
@@ -225,6 +227,31 @@ describe("Add a member by email — the `added` arm", () => {
     expect(
       (screen.getByTestId("add-member-email") as HTMLInputElement).value
     ).toBe("");
+  });
+
+  it("does not promise a row in a table that lists by HOME tenant", async () => {
+    // `GET /coord/members` proxies coord's operator list, which is
+    // `WHERE o.tenant_id = $1` — the operator's HOME tenant, not their role
+    // memberships — and the upsert behind this form never moves `tenant_id`
+    // on conflict. So a colleague already homed in another tenant IS granted
+    // the role and does NOT appear below. Copy that says otherwise sends the
+    // administrator hunting for a row that will never render, and the honest
+    // arm is the one that survives that case.
+    const user_ = userEvent.setup();
+    render(<MembersPage />);
+    await submitEmail(user_, "colleague@example.com");
+
+    const outcome = await screen.findByTestId("add-member-outcome");
+    await waitFor(() => expect(outcome.textContent ?? "").toMatch(/granted/i));
+    const text = outcome.textContent ?? "";
+    // The caveat is present and says which way the list is scoped.
+    expect(text).toMatch(/home tenant/i);
+    expect(text).toMatch(/may not appear/i);
+    // And it is not alarming: the grant worked, and the copy says so.
+    expect(text).toMatch(/granted either way/i);
+    // The wording it must never go back to — a flat claim of presence.
+    expect(text).not.toMatch(/they are (now )?in the (list|table)/i);
+    expect(text).not.toMatch(/appears? below/i);
   });
 });
 
@@ -348,6 +375,50 @@ describe("Add a member by email — responses that are neither arm", () => {
     );
     expect(outcome.textContent ?? "").not.toMatch(/HTTP 403/);
     expect(toastSuccess).not.toHaveBeenCalled();
+  });
+
+  it("reads the PRODUCTION error envelope, which has no `detail` key", async () => {
+    // What a browser actually receives. `app/main.py` registers
+    // `middleware/error_handler.http_exception_handler` for every
+    // `StarletteHTTPException`, and it rewrites the body into
+    // `{error, message, timestamp, path}` — there is NO `detail`. A reader
+    // that only knows `detail` rendered `HTTP 403` here, which is precisely
+    // the reason this route opted into `structured_errors=True` in the first
+    // place: to get `not_admin_in_target_tenant` in front of the operator.
+    addResponse = {
+      status: 403,
+      body: {
+        error: "not_admin_in_target_tenant",
+        message: "coord refused this (403): not_admin_in_target_tenant",
+        timestamp: 1_760_000_000,
+        path: "http://localhost/api/v1/operations/coord/tenant-members",
+      },
+    };
+    const user_ = userEvent.setup();
+    render(<MembersPage />);
+    await submitEmail(user_, "colleague@example.com");
+
+    const outcome = await screen.findByTestId("add-member-outcome");
+    await waitFor(() =>
+      expect(outcome.textContent ?? "").toMatch(/not_admin_in_target_tenant/i)
+    );
+    expect(outcome.textContent ?? "").not.toMatch(/HTTP 403/);
+    expect(toastSuccess).not.toHaveBeenCalled();
+  });
+
+  it("falls back to the envelope's `error` code when it carries no message", async () => {
+    // A code is a poor sentence and a far better answer than a bare status:
+    // it is the string an operator searches for.
+    addResponse = { status: 502, body: { error: "coord_unreachable" } };
+    const user_ = userEvent.setup();
+    render(<MembersPage />);
+    await submitEmail(user_, "colleague@example.com");
+
+    const outcome = await screen.findByTestId("add-member-outcome");
+    await waitFor(() =>
+      expect(outcome.textContent ?? "").toMatch(/coord_unreachable/)
+    );
+    expect(outcome.textContent ?? "").not.toMatch(/HTTP 502/);
   });
 
   it("refuses to render a 2xx with no known status as a success", async () => {

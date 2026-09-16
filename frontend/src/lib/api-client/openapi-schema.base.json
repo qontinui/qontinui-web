@@ -54776,6 +54776,31 @@
         "title": "_GroupMemberBody",
         "type": "object"
       },
+      "_TenantMemberAddBody": {
+        "additionalProperties": false,
+        "description": "Body for ``POST /coord/tenant-members``: an email and a role. Period.\n\n``extra=\"forbid\"`` is load-bearing, not tidiness. The whole point of this\nroute is that the CALLER never supplies identity-provider fields \u2014 the\nserver resolves them. Accepting an ``sso_subject`` or ``sso_provider``\nhere (even ignored) would re-open the surface where a client decides\nwhich Cognito identity a tenant grant lands on, which is exactly the\ndefect this route exists to remove. A body carrying either is a 422.\n\n``role`` is the two-value set a tenant admin actually grants. Coord's\nrole enum is wider (``operator|agent_supervisor|admin|owner``); the extra\ntwo are fleet/ownership concerns that do not belong on a \"add my\ncolleague\" form, and coord re-validates whatever is sent regardless.\n\n``email`` is a plain string rather than ``EmailStr`` on purpose: Cognito\nis the authority on what its own pool accepts, and it answers a filter it\ncannot parse with an ``InvalidParameterException`` that\n``_invalid_parameter_http`` turns into a 400 carrying AWS's real reason.\nA pydantic pre-validation would replace that specific answer with a\ngeneric one, and would reject addresses Cognito accepts.",
+        "properties": {
+          "email": {
+            "minLength": 1,
+            "title": "Email",
+            "type": "string"
+          },
+          "role": {
+            "enum": [
+              "admin",
+              "operator"
+            ],
+            "title": "Role",
+            "type": "string"
+          }
+        },
+        "required": [
+          "email",
+          "role"
+        ],
+        "title": "_TenantMemberAddBody",
+        "type": "object"
+      },
       "app__api__v1__endpoints__batch_import__FileInfo": {
         "description": "Information about a file to import.",
         "properties": {
@@ -84724,6 +84749,55 @@
           }
         },
         "summary": "List Session Compliance Sessions",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
+    "/api/v1/operations/coord/tenant-members": {
+      "post": {
+        "description": "Add a person to the caller's tenant by EMAIL \u2014 no IdP fields.\n\nResolves the email against the Cognito pool, then composes coord's two\nexisting operator writes:\n\n1. ``POST /admin/coord/operators`` with the resolved ``sub`` \u2014 an upsert\n   on ``(sso_provider, sso_subject)`` that never touches ``tenant_id`` on\n   conflict, so it is safe for somebody who already exists in another\n   tenant. It is sent with NO ``roles``: the upsert guarantees the row\n   exists, it does not grant.\n2. ``POST /admin/coord/operators/{id}/roles`` with the requested role and\n   an explicit ``target_tenant_id``, which coord re-checks the caller is\n   admin in (``403 not_admin_in_target_tenant``).\n\nThree answers:\n\n* ``{\"status\": \"added\", \"operator_id\", \"role\"}`` \u2014 they had a Cognito\n  account and now hold ``role`` in this tenant.\n* ``{\"status\": \"invite_required\"}`` \u2014 no Cognito account for that email.\n  NOTHING is written: no operator row, no role, no email. Real invitation\n  is a later phase, and answering \"invited\" here would be a lie the\n  operator only discovers when their colleague never arrives.\n* ``409`` \u2014 the email matches more than one pool user, so picking one\n  would be guessing which human gets access to the tenant.\n\nCoord's own refusals pass through with their status and typed body\nintact (``structured_errors=True``) rather than collapsing into a 500 \u2014\n``not_admin_in_target_tenant`` is an answer the dashboard can render. It\nreaches the dashboard through :func:`_proxy_coord_post_readable`, which\nadds the human ``message`` the production error envelope otherwise fills\nwith a Python ``repr`` of coord's dict.\n\nRate-limited per caller \u2014 see ``_TENANT_MEMBER_ADD_RATE_LIMIT``.",
+        "operationId": "api_v1_operations_coord_tenant_members_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/_TenantMemberAddBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Post Coord Tenant Member Api V1 Operations Coord Tenant Members Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Post Coord Tenant Member",
         "tags": [
           "operations"
         ]

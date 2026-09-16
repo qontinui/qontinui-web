@@ -16,15 +16,26 @@ silently drop it).
 """
 
 from unittest.mock import AsyncMock, MagicMock, patch
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import httpx
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
+from slowapi.errors import RateLimitExceeded
+from starlette.exceptions import HTTPException as StarletteHTTPException
+
+from app.middleware.error_handler import http_exception_handler
+from app.middleware.rate_limit import rate_limit_exceeded_handler, user_limiter
 
 
-def _build_test_app(*, server_tenant=None, authenticated: bool = True) -> FastAPI:
+def _build_test_app(
+    *,
+    server_tenant=None,
+    authenticated: bool = True,
+    override_target_gate: bool = True,
+    real_error_envelope: bool = False,
+) -> FastAPI:
     from app.api.deps import get_current_active_user_async
     from app.api.v1.endpoints.operations import (
         require_coord_tenant_admin,
@@ -46,11 +57,40 @@ def _build_test_app(*, server_tenant=None, authenticated: bool = True) -> FastAP
         # to find the EFFECTIVE tenant, which would reach coord over its own
         # httpx client (in `app.services.coord_identity`, not the one these
         # tests patch). Overriding it keeps the proxy path under test.
-        test_app.dependency_overrides[require_coord_tenant_admin_target] = lambda: (
-            resolved
-        )
+        #
+        # It also DEFEATS the thing that gate exists for, which is why
+        # `override_target_gate=False` exists: with both gates pinned to one
+        # uuid, "the write targeted the effective tenant" is an assertion
+        # about the override and would pass byte-identically against the
+        # `Depends(require_coord_tenant_admin)` bug the gate replaced. The
+        # tests in `TestTheGrantTargetsTheEffectiveTenant` turn it off and
+        # patch `get_coord_identity` instead, so home and effective differ.
+        if override_target_gate:
+            test_app.dependency_overrides[require_coord_tenant_admin_target] = (
+                lambda: resolved
+            )
+    # Rate-limited routes raise `RateLimitExceeded`; without its handler a
+    # throttled call is a 500 that says nothing about the limit.
+    test_app.add_exception_handler(RateLimitExceeded, rate_limit_exceeded_handler)
+    if real_error_envelope:
+        # What a BROWSER receives. `app/main.py` registers this over FastAPI's
+        # default handler, and it rewrites every `HTTPException` into
+        # `{error, message, timestamp, path, …}` — with no `detail` key at
+        # all. Every other test here builds a bare `FastAPI()` and so sees the
+        # default `{"detail": …}` shape, which is not what ships.
+        test_app.add_exception_handler(StarletteHTTPException, http_exception_handler)
     test_app.include_router(operations_router, prefix="/api/v1/operations")
     return test_app
+
+
+@pytest.fixture(autouse=True)
+def _fresh_rate_limit_bucket():
+    """One budget per test. `POST /coord/tenant-members` is rate-limited per
+    caller, and every test here presents the same (absent) credential, so an
+    unreset bucket would leak one test's calls into the next one's."""
+    user_limiter.reset()
+    yield
+    user_limiter.reset()
 
 
 @pytest.fixture()
@@ -420,7 +460,16 @@ class TestAddTenantMemberByEmail:
             )
 
         assert resp.status_code == 403
-        assert resp.json()["detail"] == {"error": "not_admin_in_target_tenant"}
+        detail = resp.json()["detail"]
+        # Coord's typed key survives the hop unchanged — the dashboard
+        # branches on it.
+        assert detail["error"] == "not_admin_in_target_tenant"
+        # …and a human sentence rides along. Without it the production error
+        # envelope renders `str(detail)` — a Python `repr` of this dict — in
+        # the one field the operator reads. See
+        # `TestTenantMemberErrorsReachTheBrowser`.
+        assert "not_admin_in_target_tenant" in detail["message"]
+        assert not detail["message"].startswith("{")
 
     def test_tenant_member_coord_upsert_without_operator_id_is_502(self):
         from app.services.cognito_admin import CognitoIdentity
@@ -515,3 +564,428 @@ class TestTenantMemberBodyRefusesIdpFields:
         assert empty.status_code == 422
         assert whitespace.status_code == 400
         resolver.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# The shape a BROWSER receives, and the pace bound on the route
+# ---------------------------------------------------------------------------
+
+
+class TestTenantMemberErrorsReachTheBrowser:
+    """Every refusal on this route, as a browser actually receives it.
+
+    Every other test in this file builds a bare ``FastAPI()``, which uses
+    FastAPI's default handler and renders ``{"detail": ...}``. The deployed
+    app does NOT: ``app/main.py`` registers
+    ``app.middleware.error_handler.http_exception_handler`` for every
+    ``StarletteHTTPException``, and it rewrites the body into
+    ``{"error", "message", "timestamp", "path", ...}`` — **there is no**
+    ``detail`` **key in a production error body at all**.
+
+    That matters more here than on a route that only answers strings: this
+    one opted into ``structured_errors=True`` precisely so coord's
+    ``403 not_admin_in_target_tenant`` would reach the dashboard. A dict
+    detail with no ``message`` key makes that handler fall back to
+    ``str(detail_value)`` — a Python ``repr`` of a dict — in the single field
+    the operator reads.
+    """
+
+    TENANT = uuid4()
+
+    def _client(self) -> TestClient:
+        return TestClient(
+            _build_test_app(server_tenant=self.TENANT, real_error_envelope=True)
+        )
+
+    @staticmethod
+    def _patch_resolver(**kwargs):
+        return patch(
+            "app.services.cognito_admin.resolve_identity_for_email",
+            MagicMock(**kwargs),
+        )
+
+    def _post_with_coord_refusal(self, refusal):
+        from app.services.cognito_admin import CognitoIdentity
+
+        with (
+            self._patch_resolver(
+                return_value=CognitoIdentity(username="u1", sub="s-1")
+            ),
+            _patch_httpx() as MockClient,
+        ):
+            instance = AsyncMock()
+            instance.post.side_effect = [
+                _mock_response(json_data={"operator_id": "op-1"}),
+                refusal,
+            ]
+            _configure_mock_client(MockClient, instance)
+            return self._client().post(
+                f"{API_PREFIX}/coord/tenant-members",
+                json={"email": "u1@x.io", "role": "admin"},
+            )
+
+    def test_a_coord_typed_refusal_carries_a_readable_message(self):
+        resp = self._post_with_coord_refusal(
+            _mock_response(
+                status_code=403,
+                json_data={"error": "not_admin_in_target_tenant"},
+                text='{"error":"not_admin_in_target_tenant"}',
+            )
+        )
+
+        assert resp.status_code == 403
+        body = resp.json()
+        # The envelope, not FastAPI's default.
+        assert "detail" not in body
+        # coord's typed code is spliced to the top level, for the branch...
+        assert body["error"] == "not_admin_in_target_tenant"
+        # ...and the sentence beside it names the refusal. The two defects
+        # this pins are precise: a Python repr of coord's dict reaching the
+        # operator, and the frontend finding no sentence and printing a bare
+        # `HTTP 403`.
+        assert "not_admin_in_target_tenant" in body["message"]
+        assert not body["message"].startswith("{")
+        assert "'error'" not in body["message"]
+
+    def test_a_coord_hint_is_appended_to_the_sentence(self):
+        resp = self._post_with_coord_refusal(
+            _mock_response(
+                status_code=409,
+                json_data={
+                    "error": "role_already_granted",
+                    "hint": "revoke it first",
+                },
+                text="{}",
+            )
+        )
+
+        assert resp.status_code == 409
+        body = resp.json()
+        assert "role_already_granted" in body["message"]
+        assert "revoke it first" in body["message"]
+        # The typed fields still ride along for a machine reader.
+        assert body["hint"] == "revoke it first"
+
+    def test_coords_own_message_is_never_overwritten(self):
+        """A coord that grew a ``message`` knows more than anything composed
+        on this side, so the composed sentence must not replace it."""
+        resp = self._post_with_coord_refusal(
+            _mock_response(
+                status_code=403,
+                json_data={
+                    "error": "not_admin_in_target_tenant",
+                    "message": "You administer acme, not globex.",
+                },
+                text="{}",
+            )
+        )
+
+        assert resp.json()["message"] == "You administer acme, not globex."
+
+    def test_the_blank_email_400_reaches_the_browser_as_a_sentence(self):
+        with (
+            patch("app.services.cognito_admin.resolve_identity_for_email") as resolver,
+            _patch_httpx() as MockClient,
+        ):
+            _configure_mock_client(MockClient, AsyncMock())
+            resp = self._client().post(
+                f"{API_PREFIX}/coord/tenant-members",
+                json={"email": "   ", "role": "admin"},
+            )
+
+        assert resp.status_code == 400
+        assert resp.json()["message"] == "email must not be blank"
+        resolver.assert_not_called()
+
+    def test_the_missing_operator_id_502_reaches_the_browser_as_a_sentence(self):
+        from app.services.cognito_admin import CognitoIdentity
+
+        with (
+            self._patch_resolver(
+                return_value=CognitoIdentity(username="u1", sub="s-1")
+            ),
+            _patch_httpx() as MockClient,
+        ):
+            instance = AsyncMock()
+            instance.post.side_effect = [_mock_response(json_data={"ok": True})]
+            _configure_mock_client(MockClient, instance)
+            resp = self._client().post(
+                f"{API_PREFIX}/coord/tenant-members",
+                json={"email": "u1@x.io", "role": "admin"},
+            )
+
+        assert resp.status_code == 502
+        assert "operator_id" in resp.json()["message"]
+
+
+class TestTenantMemberAddIsRateLimited:
+    """The pace bound on the widest-gated Cognito fan-out on this router.
+
+    One call resolves an email through ``ListUsers``, which walks up to
+    ``cognito_admin._LIST_USERS_MAX_PAGES`` (25) sequential AWS round-trips
+    inside a worker thread. The two sibling routes doing the same lookup are
+    ``require_admin`` (platform superuser) and still carry a 30/min bucket;
+    this one is gated on TENANT ADMIN, so its caller population is every
+    tenant's administrator — and its two answers differ on whether the
+    address EXISTS in the pool (``added`` vs ``invite_required``), which
+    makes an unbounded caller an email-existence oracle over the whole pool.
+    """
+
+    TENANT = uuid4()
+    AUTH = {"Authorization": "Bearer operator-one"}
+    ROUTE_KEY = "app.api.v1.endpoints.operations.post_coord_tenant_member"
+
+    def _client(self) -> TestClient:
+        return TestClient(_build_test_app(server_tenant=self.TENANT))
+
+    @staticmethod
+    def _patch_resolver():
+        # `invite_required` — the arm that writes nothing, so a burst of 30
+        # of these needs no coord mock at all.
+        return patch(
+            "app.services.cognito_admin.resolve_identity_for_email",
+            MagicMock(return_value=None),
+        )
+
+    def _post(self, client: TestClient, headers=None):
+        return client.post(
+            f"{API_PREFIX}/coord/tenant-members",
+            json={"email": "u1@x.io", "role": "admin"},
+            headers=self.AUTH if headers is None else headers,
+        )
+
+    def test_the_thirty_first_call_in_a_minute_is_throttled(self):
+        client = self._client()
+        with self._patch_resolver():
+            codes = [self._post(client).status_code for _ in range(31)]
+
+        assert codes[:30] == [200] * 30
+        assert codes[30] == 429
+
+    def test_a_throttled_call_never_reaches_cognito(self):
+        """The limit is checked BEFORE the handler, or it would only be
+        counting an AWS fan-out it had already paid for."""
+        client = self._client()
+        with patch(
+            "app.services.cognito_admin.resolve_identity_for_email",
+            MagicMock(return_value=None),
+        ) as resolver:
+            for _ in range(33):
+                self._post(client)
+
+        assert resolver.call_count == 30
+
+    def test_the_bucket_is_per_caller_not_per_ip(self):
+        """Behind Vercel/ALB every operator arrives from a handful of source
+        IPs, so an IP key would let one tenant admin throttle every other."""
+        client = self._client()
+        with self._patch_resolver():
+            for _ in range(30):
+                self._post(client)
+            exhausted = self._post(client)
+            other = self._post(client, headers={"Authorization": "Bearer operator-two"})
+
+        assert exhausted.status_code == 429
+        assert other.status_code == 200, other.text
+
+    def test_the_route_carries_its_own_named_scope(self):
+        """``shared_limit`` buckets per named scope. Its own scope — rather
+        than the Cognito group routes' — keeps an operator's group work from
+        throttling their member adds and vice versa: two different routes
+        with two different limits to reason about."""
+        from app.api.v1.endpoints import operations
+
+        limits = user_limiter._route_limits[self.ROUTE_KEY]
+
+        assert [limit.scope for limit in limits] == ["coord-tenant-member-add"]
+        assert operations._TENANT_MEMBER_ADD_RATE_LIMIT == "30 per minute"
+        # Same ceiling as the sibling member routes, deliberately.
+        assert (
+            operations._TENANT_MEMBER_ADD_RATE_LIMIT
+            == operations._GROUP_MEMBER_RATE_LIMIT
+        )
+
+    def test_the_kill_switch_exempts_the_route(self):
+        """``user_limiter`` is built without ``enabled=``, so the decorator
+        reads ``RATE_LIMIT_ENABLED`` per request instead — the same
+        operational off-ramp every other limited route in this app has."""
+        from app.core.config import settings
+
+        client = self._client()
+        with (
+            self._patch_resolver(),
+            patch.object(settings, "RATE_LIMIT_ENABLED", False),
+        ):
+            codes = [self._post(client).status_code for _ in range(33)]
+
+        assert codes == [200] * 33
+
+
+# ---------------------------------------------------------------------------
+# The gate itself — NOT the override every other test in this file installs
+# ---------------------------------------------------------------------------
+#
+# `_build_test_app` overrides BOTH `require_coord_tenant_admin` and
+# `require_coord_tenant_admin_target` to one uuid, which is what keeps the
+# proxy path testable without a live coord — and which also means that
+# "the write named the effective tenant" is, in those tests, an assertion
+# about the override. It would pass byte-identically against the
+# `Depends(require_coord_tenant_admin)` bug this commit fixed.
+#
+# These tests exercise the real thing. The unit half follows the pattern in
+# `tests/test_active_tenant_transport.py` (`_effective_tenant_id` against a
+# synthetic `CoordIdentity`, no HTTP); the route half turns the override off
+# so home and effective genuinely differ, and reads the tenant id off the
+# coord write.
+
+_HOME_TENANT = UUID("11111111-1111-1111-1111-111111111111")
+_SELECTED_TENANT = UUID("22222222-2222-2222-2222-222222222222")
+_STRANGER_TENANT = UUID("33333333-3333-3333-3333-333333333333")  # not a member
+ACTIVE_TENANT_HEADER = "X-Qontinui-Active-Tenant"
+
+
+def _coord_identity():
+    """Operator: admin of the home tenant AND of one other they may switch to."""
+    from app.services.coord_identity import CoordIdentity, CoordTenant
+
+    return CoordIdentity(
+        operator_id=UUID("99999999-9999-9999-9999-999999999999"),
+        home_tenant_id=_HOME_TENANT,
+        email="operator@example.com",
+        roles=("admin",),
+        tenants=(
+            CoordTenant(tenant_id=_HOME_TENANT, slug="home-tenant", roles=("admin",)),
+            CoordTenant(
+                tenant_id=_SELECTED_TENANT, slug="other-tenant", roles=("admin",)
+            ),
+        ),
+        is_admin=True,
+    )
+
+
+def _identity_request(active_tenant: str | None) -> MagicMock:
+    req = MagicMock()
+    req.headers = {} if active_tenant is None else {ACTIVE_TENANT_HEADER: active_tenant}
+    return req
+
+
+def _patch_identity():
+    return patch(
+        "app.api.v1.endpoints.operations.get_coord_identity",
+        AsyncMock(return_value=_coord_identity()),
+    )
+
+
+class TestTheGrantTargetsTheEffectiveTenant:
+    """``require_coord_tenant_admin_target`` — the gate, not its override.
+
+    ``require_coord_tenant_admin`` checks admin in the EFFECTIVE tenant and
+    returns the HOME one. For a pass-through proxy that mismatch is harmless;
+    for this route, which NAMES the tenant in the body it writes, it meant an
+    operator viewing tenant B could grant into tenant A.
+    """
+
+    @pytest.mark.asyncio
+    async def test_a_member_selection_wins(self):
+        from app.api.v1.endpoints.operations import require_coord_tenant_admin_target
+
+        with _patch_identity():
+            target = await require_coord_tenant_admin_target(
+                request=_identity_request(str(_SELECTED_TENANT)),
+                home_tenant_id=_HOME_TENANT,
+            )
+
+        assert target == _SELECTED_TENANT
+
+    @pytest.mark.asyncio
+    async def test_a_non_member_selection_degrades_to_home(self):
+        """Mirrors coord's own ``apply_active_tenant_override``: a selection
+        the operator does not belong to degrades to home, never widens."""
+        from app.api.v1.endpoints.operations import require_coord_tenant_admin_target
+
+        with _patch_identity():
+            target = await require_coord_tenant_admin_target(
+                request=_identity_request(str(_STRANGER_TENANT)),
+                home_tenant_id=_HOME_TENANT,
+            )
+
+        assert target == _HOME_TENANT
+
+    @pytest.mark.asyncio
+    async def test_no_header_is_home(self):
+        from app.api.v1.endpoints.operations import require_coord_tenant_admin_target
+
+        with _patch_identity():
+            target = await require_coord_tenant_admin_target(
+                request=_identity_request(None),
+                home_tenant_id=_HOME_TENANT,
+            )
+
+        assert target == _HOME_TENANT
+
+    def test_the_grant_names_the_switched_tenant_not_the_home_one(self):
+        """End to end over the real gate: the tenant on the wire is the one
+        the operator is LOOKING AT. Reverting the route to
+        ``Depends(require_coord_tenant_admin)`` fails here and nowhere else
+        in this file."""
+        from app.services.cognito_admin import CognitoIdentity
+
+        client = TestClient(
+            _build_test_app(server_tenant=_HOME_TENANT, override_target_gate=False)
+        )
+        with (
+            _patch_identity(),
+            patch(
+                "app.services.cognito_admin.resolve_identity_for_email",
+                MagicMock(return_value=CognitoIdentity(username="u1", sub="s-1")),
+            ),
+            _patch_httpx() as MockClient,
+        ):
+            instance = AsyncMock()
+            instance.post.side_effect = [
+                _mock_response(json_data={"operator_id": "op-7"}),
+                _mock_response(json_data={"ok": True}),
+            ]
+            _configure_mock_client(MockClient, instance)
+            resp = client.post(
+                f"{API_PREFIX}/coord/tenant-members",
+                json={"email": "u1@x.io", "role": "admin"},
+                headers={ACTIVE_TENANT_HEADER: str(_SELECTED_TENANT)},
+            )
+
+        assert resp.status_code == 200, resp.text
+        grant = instance.post.call_args_list[1]
+        assert grant.kwargs["json"]["target_tenant_id"] == str(_SELECTED_TENANT)
+        assert grant.kwargs["json"]["target_tenant_id"] != str(_HOME_TENANT)
+
+    def test_a_non_member_selection_grants_into_the_home_tenant(self):
+        """The degrade arm, on the wire: a selection the operator does not
+        belong to must not name itself in a grant."""
+        from app.services.cognito_admin import CognitoIdentity
+
+        client = TestClient(
+            _build_test_app(server_tenant=_HOME_TENANT, override_target_gate=False)
+        )
+        with (
+            _patch_identity(),
+            patch(
+                "app.services.cognito_admin.resolve_identity_for_email",
+                MagicMock(return_value=CognitoIdentity(username="u1", sub="s-1")),
+            ),
+            _patch_httpx() as MockClient,
+        ):
+            instance = AsyncMock()
+            instance.post.side_effect = [
+                _mock_response(json_data={"operator_id": "op-8"}),
+                _mock_response(json_data={"ok": True}),
+            ]
+            _configure_mock_client(MockClient, instance)
+            resp = client.post(
+                f"{API_PREFIX}/coord/tenant-members",
+                json={"email": "u1@x.io", "role": "admin"},
+                headers={ACTIVE_TENANT_HEADER: str(_STRANGER_TENANT)},
+            )
+
+        assert resp.status_code == 200, resp.text
+        grant = instance.post.call_args_list[1]
+        assert grant.kwargs["json"]["target_tenant_id"] == str(_HOME_TENANT)

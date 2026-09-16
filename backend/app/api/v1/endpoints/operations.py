@@ -10329,8 +10329,116 @@ class _TenantMemberAddBody(BaseModel):
     role: Literal["admin", "operator"]
 
 
+def _rate_limiting_disabled() -> bool:
+    """Honour the ``RATE_LIMIT_ENABLED`` kill switch on these decorators.
+
+    ``user_limiter`` is built without ``enabled=`` (unlike ``auth_limiter``
+    / ``api_limiter``), so it does not read the switch itself. Reading it
+    here — per request, not at import — keeps these routes the same
+    operational off-ramp every other limited route in this app has.
+
+    Defined here rather than beside the Cognito-group limits further down
+    because a decorator is evaluated at IMPORT time, in file order, and the
+    route below is the first limited one in this module.
+    """
+    return not settings.RATE_LIMIT_ENABLED
+
+
+#: Pace ceiling for ``POST /coord/tenant-members`` — the same 30/min the two
+#: Cognito group member-by-email routes carry (``_GROUP_MEMBER_RATE_LIMIT``,
+#: whose reasoning block sizes every limit in this module), and the same
+#: reason: one call here resolves an email through ``ListUsers``, which walks
+#: up to ``cognito_admin._LIST_USERS_MAX_PAGES`` (25) sequential AWS
+#: round-trips inside a worker thread. Onboarding a team by hand is a dozen
+#: calls; a loop is hundreds.
+#:
+#: Two things make it MORE load-bearing here than on those siblings, not
+#: less, which is why it is not an optional nicety on a route that "only"
+#: composes two coord writes:
+#:
+#:  * they are ``require_admin`` (platform superuser); this one is gated on
+#:    tenant admin, so the caller population is every tenant's administrator
+#:    rather than fleet staff;
+#:  * its two answers differ on whether the email EXISTS in the pool
+#:    (``added`` vs ``invite_required``), so an unbounded caller can walk an
+#:    address list and read membership of the whole Cognito pool out of it.
+#:
+#: Its own ``scope`` for the reason the block below spells out: ``shared_limit``
+#: buckets per named scope, and sharing one with the group routes would let an
+#: operator's legitimate group-member work throttle their member adds (and vice
+#: versa) for no reason — they are different routes with different limits to
+#: reason about.
+_TENANT_MEMBER_ADD_RATE_LIMIT = "30 per minute"
+
+
+def _readable_coord_refusal(exc: HTTPException) -> HTTPException:
+    """A structured coord refusal, with a ``message`` a human can read.
+
+    ``structured_errors=True`` hands coord's typed body through as the
+    ``HTTPException`` detail — ``{"error": "not_admin_in_target_tenant"}``.
+    That is the right thing for a machine and, in PRODUCTION, invisible to a
+    person: ``app/main.py`` registers
+    ``app.middleware.error_handler.http_exception_handler`` for every
+    ``StarletteHTTPException``, and it renders a dict detail as
+    ``{"error": …, "message": detail.get("message", str(detail)), …}``. With
+    no ``message`` key in coord's body that fallback is ``str(dict)`` — a
+    Python ``repr`` (``{'error': 'not_admin_in_target_tenant'}``) in the one
+    field the dashboard shows the operator.
+
+    So compose one. The error CODE stays the sentence's subject because it is
+    the diagnostic an operator quotes; a coord ``hint``/``reason``/``detail``
+    string is appended when there is one. Coord's own ``message`` is never
+    overwritten — a coord that grew one is more specific than anything
+    composed here.
+
+    Scoped to this route rather than folded into ``_coord_error_detail``
+    deliberately: that helper's contract is "coord's body, verbatim", and
+    several suites pin the passed-through dict by exact equality.
+    """
+    detail = exc.detail
+    if not isinstance(detail, dict):
+        return exc
+    existing = detail.get("message")
+    if isinstance(existing, str) and existing.strip():
+        return exc
+    error = detail.get("error")
+    if not isinstance(error, str) or not error:
+        return exc
+    sentence = f"coord refused this ({exc.status_code}): {error}"
+    for key in ("hint", "reason", "detail"):
+        extra = detail.get(key)
+        if isinstance(extra, str) and extra.strip():
+            sentence = f"{sentence} — {extra.strip()}"
+            break
+    return HTTPException(
+        status_code=exc.status_code,
+        detail={**detail, "message": sentence},
+        headers=exc.headers,
+    )
+
+
+async def _proxy_coord_post_readable(
+    path: str, body: dict[str, Any], *, tenant_id: UUID
+) -> Any:
+    """``_proxy_coord_post(structured_errors=True)`` whose refusals carry a
+    sentence — see :func:`_readable_coord_refusal`."""
+    try:
+        return await _proxy_coord_post(
+            path, body, tenant_id=tenant_id, structured_errors=True
+        )
+    except HTTPException as exc:
+        raise _readable_coord_refusal(exc) from exc
+
+
 @router.post("/coord/tenant-members")
+@user_limiter.shared_limit(
+    _TENANT_MEMBER_ADD_RATE_LIMIT,
+    scope="coord-tenant-member-add",
+    key_func=get_authorization_identifier,
+    exempt_when=_rate_limiting_disabled,
+)
 async def post_coord_tenant_member(
+    request: Request,
     body: _TenantMemberAddBody,
     tenant_id: UUID = Depends(require_coord_tenant_admin_target),
 ) -> dict[str, Any]:
@@ -10361,7 +10469,12 @@ async def post_coord_tenant_member(
 
     Coord's own refusals pass through with their status and typed body
     intact (``structured_errors=True``) rather than collapsing into a 500 —
-    ``not_admin_in_target_tenant`` is an answer the dashboard can render.
+    ``not_admin_in_target_tenant`` is an answer the dashboard can render. It
+    reaches the dashboard through :func:`_proxy_coord_post_readable`, which
+    adds the human ``message`` the production error envelope otherwise fills
+    with a Python ``repr`` of coord's dict.
+
+    Rate-limited per caller — see ``_TENANT_MEMBER_ADD_RATE_LIMIT``.
     """
     email = body.email.strip()
     if not email:
@@ -10388,7 +10501,7 @@ async def post_coord_tenant_member(
         logger.info("tenant_member_add_invite_required", tenant_id=str(tenant_id))
         return {"status": "invite_required"}
 
-    created = await _proxy_coord_post(
+    created = await _proxy_coord_post_readable(
         "/admin/coord/operators",
         {
             "email": email,
@@ -10396,7 +10509,6 @@ async def post_coord_tenant_member(
             "sso_provider": "cognito",
         },
         tenant_id=tenant_id,
-        structured_errors=True,
     )
     operator_id = created.get("operator_id") if isinstance(created, dict) else None
     if not isinstance(operator_id, str) or not operator_id:
@@ -10406,11 +10518,10 @@ async def post_coord_tenant_member(
             detail="coord accepted the operator upsert but returned no operator_id",
         )
 
-    await _proxy_coord_post(
+    await _proxy_coord_post_readable(
         f"/admin/coord/operators/{quote(operator_id, safe='')}/roles",
         {"role": body.role, "target_tenant_id": str(tenant_id)},
         tenant_id=tenant_id,
-        structured_errors=True,
     )
     logger.info(
         "tenant_member_add_ok",
@@ -10568,16 +10679,10 @@ _DELETE_GROUP_RATE_LIMIT = "5 per minute"
 _CREATE_GROUP_RATE_LIMIT = "10 per minute"
 _GROUP_MEMBER_RATE_LIMIT = "30 per minute"
 
-
-def _rate_limiting_disabled() -> bool:
-    """Honour the ``RATE_LIMIT_ENABLED`` kill switch on these decorators.
-
-    ``user_limiter`` is built without ``enabled=`` (unlike ``auth_limiter``
-    / ``api_limiter``), so it does not read the switch itself. Reading it
-    here — per request, not at import — keeps these routes the same
-    operational off-ramp every other limited route in this app has.
-    """
-    return not settings.RATE_LIMIT_ENABLED
+# ``_rate_limiting_disabled`` — the ``RATE_LIMIT_ENABLED`` kill switch these
+# decorators share — is defined ABOVE, with the tenant-member add route: a
+# decorator is evaluated at import time in file order, and that route is the
+# first limited one in this module.
 
 
 # ---- Group-name validation on the PATH parameter -------------------------
