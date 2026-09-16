@@ -49,7 +49,7 @@
  * strands the socket: the next flap presents a live one.
  */
 
-import { useEffect, useMemo, useRef } from "react";
+import { useEffect, useRef } from "react";
 import { httpClient } from "@/services/service-factory";
 import { coordEventsWsUrl } from "@/components/operations/utils";
 
@@ -94,15 +94,26 @@ function globToRegExp(pattern: string): RegExp {
   return new RegExp(source + "$");
 }
 
+/** Compiled patterns, keyed by source. Bounded by the number of distinct
+ *  patterns a page mounts (a handful), so it never needs eviction. */
+const compiledPatterns = new Map<string, RegExp>();
+
 /**
  * Does `channel` match the Redis-style `pattern`? The client-side stand-in
- * for the PSUBSCRIBE filter coord used to apply per socket.
+ * for the PSUBSCRIBE filter coord used to apply per socket — and the ONE
+ * function the hook routes every frame through, so what the unit tests
+ * pin is what runs.
  */
 export function matchesChannelPattern(
   pattern: string,
   channel: string,
 ): boolean {
-  return globToRegExp(pattern).test(channel);
+  let re = compiledPatterns.get(pattern);
+  if (!re) {
+    re = globToRegExp(pattern);
+    compiledPatterns.set(pattern, re);
+  }
+  return re.test(channel);
 }
 
 interface UseStrategyWebSocketOptions {
@@ -157,9 +168,8 @@ export function useStrategyWebSocket(
   // reconnecting (the subscription is the same either way).
   const handlerRef = useRef<StrategyMessageHandler>(onMessage);
   handlerRef.current = onMessage;
-  const filter = useMemo(() => globToRegExp(pattern), [pattern]);
-  const filterRef = useRef<RegExp>(filter);
-  filterRef.current = filter;
+  const patternRef = useRef<string>(pattern);
+  patternRef.current = pattern;
   const getTokenRef = useRef<() => Promise<string | null>>(
     getToken ?? defaultGetToken,
   );
@@ -227,7 +237,9 @@ export function useStrategyWebSocket(
           if (typeof envelope.channel !== "string") return;
           // The bridge delivers every `events.strategy.*` frame; the
           // caller's pattern is applied here.
-          if (!filterRef.current.test(envelope.channel)) return;
+          if (!matchesChannelPattern(patternRef.current, envelope.channel)) {
+            return;
+          }
           // `ws.rs` always sends payload as a JSON string; parse it once
           // so subscribers see structured data.
           let parsed: unknown;

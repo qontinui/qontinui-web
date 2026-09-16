@@ -97,6 +97,8 @@ from app.services.coord_device_status import (
     CoordDeviceStatusMintFailedError,
     build_coord_events_ws_url,
     build_device_status_ws_url,
+    channel_in_family,
+    envelope_channel,
     fetch_device_status,
     mint_device_status_token,
 )
@@ -6053,13 +6055,22 @@ async def websocket_coord_events(
        verifies the token and resolves the name to its fixed pattern
        server-side (`strategy` → `events.strategy.*`, `merge` →
        `events.merge.*`, …).
-    6. Every `{"channel": "...", "payload": "<json string>"}` frame is
-       forwarded verbatim; the browser parses it (`payload` is a JSON
-       STRING, per coord's `ws.rs`).
+    6. Every `{"channel": "...", "payload": "<json string>"}` frame whose
+       `channel` is in the subscription's FAMILY (`channel_in_family`:
+       `strategy` → `events.strategy.*`, `merge` → `events.merge.*`,
+       `claims` → exactly `events.claims`, `branches` → exactly
+       `events.branches`) is forwarded verbatim; the browser parses it
+       (`payload` is a JSON STRING, per coord's `ws.rs`). Anything else is
+       DROPPED and counted, never relayed — the subscription is enforced
+       here as well as at coord's upgrade, because a coord that predates
+       `?subscribe=` ignores the param and PSUBSCRIBEs `events.*`, which
+       would otherwise hand every operator browser the whole bus,
+       spawn-request JWTs included.
 
     Disconnect / failure handling matches the device-status bridge:
-    browser drop → close upstream; coord drop → close browser 1011 so the
-    hook reconnects with backoff; mint / connect failure → 1011 + an error
+    browser drop → close upstream (browser gets the normal 1000); coord
+    drop → close browser 1011 `Upstream coord WS closed` so the hook
+    reconnects with backoff; mint / connect failure → 1011 + an error
     frame. An upstream that REFUSES the upgrade (coord answering 401/403
     to the minted token, or 403 `unknown_subscription` for a name coord
     does not map) is reported with its HTTP status rather than as
@@ -6163,6 +6174,9 @@ async def websocket_coord_events(
 
     # --- Upstream bridge --------------------------------------------------
     upstream: Any = None
+    # What the browser is closed with when the bridge ends: a browser-
+    # initiated end is the normal 1000; an upstream-initiated one is 1011.
+    close_code, close_reason = 1000, ""
     try:
         try:
             upstream = await websockets_connect(upstream_url, open_timeout=10)
@@ -6189,11 +6203,15 @@ async def websocket_coord_events(
             await safe_close(websocket, 1011, reason="Upstream WS refused")
             return
         except Exception as exc:  # noqa: BLE001
+            # `type(exc).__name__` and the query-stripped URL only — never
+            # `str(exc)`: `websockets.exceptions.InvalidURI.__str__` embeds
+            # the full URI, `?token=<minted>` included.
             logger.warning(
                 "coord_events_ws_upstream_connect_failed",
                 user_id=str(user.id),
                 subscribe=subscribe,
-                error=str(exc),
+                error_type=type(exc).__name__,
+                upstream=upstream_url.split("?", 1)[0],
             )
             await safe_send_json(
                 websocket, {"type": "error", "error": "Upstream coord WS unreachable"}
@@ -6204,15 +6222,33 @@ async def websocket_coord_events(
         # No in-band subscribe: coord's generic `/ws` took the subscription
         # from the query string at the upgrade and starts relaying at once.
 
+        # Frames outside the subscription's family. Counted per connection
+        # and logged ONCE at WARN (with the channel, never the payload): a
+        # non-zero count is the signature of an upstream that ignored
+        # `?subscribe=` and is fanning out the whole bus.
+        dropped = 0
+
         async def pump_upstream_to_browser() -> None:
+            nonlocal dropped
             try:
                 async for message in upstream:
                     if websocket.client_state != WebSocketState.CONNECTED:
                         break
-                    # Coord sends Text frames; forward verbatim — the
-                    # browser parses the `{"channel","payload"}` envelope.
                     if isinstance(message, bytes):
                         message = message.decode("utf-8")
+                    channel = envelope_channel(message)
+                    if channel is None or not channel_in_family(subscribe, channel):
+                        dropped += 1
+                        if dropped == 1:
+                            logger.warning(
+                                "coord_events_ws_frame_outside_subscription",
+                                user_id=str(user.id),
+                                subscribe=subscribe,
+                                channel=channel,
+                            )
+                        continue
+                    # Coord sends Text frames; forward verbatim — the
+                    # browser parses the `{"channel","payload"}` envelope.
                     await websocket.send_text(message)
             except websockets.exceptions.ConnectionClosed:
                 pass
@@ -6259,6 +6295,18 @@ async def websocket_coord_events(
                     user_id=str(user.id),
                     error=str(exc),
                 )
+        if upstream_task in done:
+            # Coord ended the stream (or its pump died) while the browser
+            # is still here: 1011, so the hook reconnects on its backoff
+            # ladder instead of reading a clean 1000 as "done".
+            close_code, close_reason = 1011, "Upstream coord WS closed"
+        if dropped:
+            logger.warning(
+                "coord_events_ws_frames_dropped",
+                user_id=str(user.id),
+                subscribe=subscribe,
+                dropped=dropped,
+            )
     finally:
         if upstream is not None:
             try:
@@ -6267,7 +6315,7 @@ async def websocket_coord_events(
                 logger.debug("coord_events_ws_upstream_close_failed", error=str(exc))
         if websocket.client_state == WebSocketState.CONNECTED:
             try:
-                await websocket.close()
+                await websocket.close(code=close_code, reason=close_reason)
             except Exception as exc:  # noqa: BLE001
                 logger.debug("coord_events_ws_close_failed", error=str(exc))
 
