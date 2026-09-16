@@ -98,4 +98,25 @@ describe("<CoPilotReadyStatus>", () => {
       expect(await renderedStatus()).toBe(expected);
     }
   );
+
+  // The "revoked" badge is a dead end without this: on loopback dev the
+  // ONLY way to clear a revoke is CoPilotHome's "Grant consent" affordance
+  // at /prompt-home (no modal is mounted there to re-prompt). Mirrors the
+  // "disabled" badge's existing link to /settings/co-pilot.
+  it("links the revoked badge to /prompt-home", async () => {
+    gates.envEnabled = true;
+    gates.loopbackDev = true;
+    window.sessionStorage.setItem(__CO_PILOT_SESSION_CONSENT_KEY__, "revoked");
+    fetchMock.mockResolvedValue(preferenceResponse(false));
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={qc}>
+        <CoPilotReadyStatus />
+      </QueryClientProvider>
+    );
+    const link = await screen.findByRole("link", {
+      name: /revoked this session/i,
+    });
+    expect(link).toHaveAttribute("href", "/prompt-home");
+  });
 });
