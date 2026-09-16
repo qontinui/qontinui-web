@@ -94,8 +94,11 @@ function globToRegExp(pattern: string): RegExp {
   return new RegExp(source + "$");
 }
 
-/** Compiled patterns, keyed by source. Bounded by the number of distinct
- *  patterns a page mounts (a handful), so it never needs eviction. */
+/** Compiled patterns, keyed by source. Patterns embed doc and user ids, so
+ *  a long SPA session accumulates one entry per distinct doc visited; the
+ *  cap keeps that growth bounded — on overflow the map is cleared, which
+ *  costs one recompile per live pattern and nothing else. */
+const COMPILED_PATTERN_CAP = 64;
 const compiledPatterns = new Map<string, RegExp>();
 
 /**
@@ -111,6 +114,7 @@ export function matchesChannelPattern(
   let re = compiledPatterns.get(pattern);
   if (!re) {
     re = globToRegExp(pattern);
+    if (compiledPatterns.size >= COMPILED_PATTERN_CAP) compiledPatterns.clear();
     compiledPatterns.set(pattern, re);
   }
   return re.test(channel);
