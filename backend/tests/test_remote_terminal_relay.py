@@ -1042,6 +1042,7 @@ async def test_frame_naming_the_expired_grant_is_refused_as_expired(
     claims = await _attached(relay, ws, manager, terminal_id="t1")
     session = relay._sessions[id(ws)]
     session.grants[claims["jti"]].exp = int(time.time()) - 1
+    manager.send_terminal.reset_mock()
 
     await _send(
         relay,
@@ -1056,6 +1057,13 @@ async def test_frame_naming_the_expired_grant_is_refused_as_expired(
         },
     )
 
+    # The keystroke must NOT reach the target on an expired grant: the teardown
+    # detach is the only frame. Since expiry is checked before anything else in
+    # ``_authorize``, its ``return`` is the whole of that guarantee — a relay
+    # that refused and then carried on would forward ``terminal_input`` here.
+    assert [c.args[1]["type"] for c in manager.send_terminal.await_args_list] == [
+        "terminal_detach"
+    ]
     assert ws.of_type("remote_terminal_error") == []
     assert ws.of_type("error") == [
         {
@@ -3255,7 +3263,323 @@ async def test_a_create_grant_is_single_use(relay: RemoteTerminalRelay) -> None:
     await _create(relay, ws, manager, claims, request_id="req-create-2")
     errors = ws.of_type("error")
     assert len(errors) == 1, ws.sent
-    assert errors[0]["code"] == "attach_grant_consumed"
+    # A create's refusal names a CREATE grant, never an attach one.
+    assert errors[0]["code"] == "create_grant_consumed"
+
+
+async def test_a_create_grant_held_on_another_socket_is_consumed(
+    relay: RemoteTerminalRelay,
+) -> None:
+    """The cross-socket arm of single use: the Redis claim, not this socket."""
+    manager = _manager()
+    claims = _create_claims()
+    first = _FakeWS()
+    await _create(relay, first, manager, claims)
+    # A FAILED first create also leaves its claim behind, so without this the
+    # test would pass against a relay that never forwarded anything.
+    assert first.of_type("error") == [], first.sent
+
+    other = _FakeWS()
+    await _create(relay, other, manager, claims, request_id="req-create-2")
+
+    assert [e["code"] for e in other.of_type("error")] == ["create_grant_consumed"]
+    await relay.release_source(first)
+    await relay.release_source(other)
+
+
+async def test_an_unanswered_create_is_reaped_as_an_expired_create_grant(
+    relay: RemoteTerminalRelay, redis: _FakeRedis
+) -> None:
+    """A create the target never answers expires in its OWN vocabulary.
+
+    The sweep used to evict every grant as ``attach_grant_expired``, so the
+    source's create waiter — correlated by the create's request id — was told
+    an ATTACH grant had lapsed, which is the confusion the separate
+    ``create_grant_*`` spelling exists to prevent.
+    """
+    ws = _FakeWS()
+    manager = _manager()
+    claims = _create_claims()
+    await _create(relay, ws, manager, claims)
+    session = relay._sessions[id(ws)]
+    session.grants[claims["jti"]].exp = int(time.time()) - 1
+    manager.send_terminal.reset_mock()
+
+    await _send(
+        relay,
+        ws,
+        manager,
+        {"type": "remote_terminal_input", "grant_jti": "other", "data": "x"},
+    )
+
+    assert session.grants == {}
+    assert session.pending_create == {}
+    assert session.listeners == {}
+    assert ws.of_type("remote_terminal_error") == [
+        {
+            "type": "remote_terminal_error",
+            "grant_jti": claims["jti"],
+            "code": "create_grant_expired",
+            "message": "grant expired",
+            "request_id": "req-create-1",
+        }
+    ]
+    # A create bound no terminal, so there is nothing to detach on the target.
+    assert [c.args[1]["type"] for c in manager.send_terminal.await_args_list] == []
+    _assert_only_the_create_claim_survives(redis, claims)
+    await relay.release_source(ws)
+
+
+async def test_detaching_an_expired_create_grant_is_refused_as_create_expired(
+    relay: RemoteTerminalRelay,
+) -> None:
+    """``_authorize``'s expiry arm speaks the grant's kind too."""
+    ws = _FakeWS()
+    manager = _manager()
+    claims = _create_claims()
+    await _create(relay, ws, manager, claims)
+    session = relay._sessions[id(ws)]
+    session.grants[claims["jti"]].exp = int(time.time()) - 1
+
+    await _send(
+        relay,
+        ws,
+        manager,
+        {
+            "type": "remote_terminal_detach",
+            "request_id": "req-detach",
+            "grant_jti": claims["jti"],
+        },
+    )
+
+    # A detach ABANDONS the create, so its waiter is not told — the same as a
+    # live detach, which tells it nothing.
+    assert ws.of_type("remote_terminal_error") == []
+    assert ws.of_type("error") == [
+        {
+            "type": "error",
+            "code": "create_grant_expired",
+            "message": "grant expired",
+            "request_id": "req-detach",
+            "grant_jti": claims["jti"],
+        }
+    ]
+    assert session.grants == {}
+    await relay.release_source(ws)
+
+
+async def test_an_expired_create_grant_is_refused_as_expired_not_wrong_kind(
+    relay: RemoteTerminalRelay, redis: _FakeRedis
+) -> None:
+    """Expiry is decided before capability, so the stale grant is also DROPPED.
+
+    ``_authorize`` used to check the kind first: a session-scoped frame naming
+    an expired create grant read ``grant_wrong_kind`` and the grant stayed
+    registered, holding its listener, until another frame's sweep found it.
+    """
+    ws = _FakeWS()
+    manager = _manager()
+    claims = _create_claims()
+    await _create(relay, ws, manager, claims)
+    session = relay._sessions[id(ws)]
+    session.grants[claims["jti"]].exp = int(time.time()) - 1
+    manager.send_terminal.reset_mock()
+
+    await _send(
+        relay,
+        ws,
+        manager,
+        {
+            "type": "remote_terminal_input",
+            "request_id": "req-abuse",
+            "grant_jti": claims["jti"],
+            "terminal_id": "t1",
+            "data": "eA==",
+        },
+    )
+
+    # Exactly one refusal — expiry — and no second ``grant_wrong_kind``.
+    assert [e["code"] for e in ws.of_type("error")] == ["create_grant_expired"]
+    # The still-pending create's waiter hears about it under its own id.
+    assert [
+        (e["code"], e["request_id"]) for e in ws.of_type("remote_terminal_error")
+    ] == [("create_grant_expired", "req-create-1")]
+    # Nothing reaches the target: no input, and no detach for a create.
+    assert manager.send_terminal.await_args_list == []
+    assert session.grants == {}
+    assert session.listeners == {}
+    _assert_only_the_create_claim_survives(redis, claims)
+    await relay.release_source(ws)
+
+
+class _YieldingWS(_FakeWS):
+    """A socket whose send yields once, as a real one does."""
+
+    async def send_json(self, payload: dict[str, Any]) -> None:
+        await asyncio.sleep(0)
+        self.sent.append(payload)
+
+
+@pytest.mark.parametrize("kind", ["attach", "create"])
+async def test_an_expiring_waiter_is_told_once_despite_a_concurrent_sweep(
+    relay: RemoteTerminalRelay, redis: _FakeRedis, kind: str
+) -> None:
+    """``_authorize``'s expiry arm and the listener's sweep race for one grant.
+
+    The arm used to await its notice while the grant was still registered, so
+    a target frame's sweep running on the listener task found it and ``_evict``
+    told the same waiter again. Both paths now claim the grant before awaiting.
+    Parametrised over both kinds so an attach waiter is pinned as well.
+    """
+    ws = _YieldingWS()
+    manager = _manager()
+    if kind == "attach":
+        claims = _claims()
+        await _attach(relay, ws, manager, claims)
+        waiter = "req-attach-1"
+    else:
+        claims = _create_claims()
+        await _create(relay, ws, manager, claims)
+        waiter = "req-create-1"
+    session = relay._sessions[id(ws)]
+    session.grants[claims["jti"]].exp = int(time.time()) - 1
+
+    # ``gather`` starts the source frame first, so this pins the interleaving
+    # where ``_authorize`` claims the grant and the sweep then finds nothing. The
+    # reverse order is ``_evict`` first, covered by ``_evict``'s own claim.
+    await asyncio.gather(
+        relay.handle_source_frame(
+            {
+                "type": "remote_terminal_input",
+                "request_id": "in-1",
+                "grant_jti": claims["jti"],
+                "terminal_id": "t1",
+                "data": "x",
+            },
+            SOURCE_DEVICE,
+            manager,
+            ws,
+        ),
+        relay.route_target_frame(
+            session, TARGET_DEVICE, {"type": "terminal_output", "terminal_id": "zz"}
+        ),
+    )
+
+    notices = [f for f in ws.sent if f.get("request_id") == waiter]
+    assert [f["type"] for f in notices] == ["remote_terminal_error"], ws.sent
+    assert [e["request_id"] for e in ws.of_type("error")] == ["in-1"], ws.sent
+    # Teardown actually ran — ``session.grants == {}`` alone would hold after the
+    # early claim whether or not it did.
+    assert session.pending_attach == {}
+    assert session.pending_create == {}
+    assert session.listeners == {}
+    if kind == "attach":
+        assert redis.empty()
+    else:
+        _assert_only_the_create_claim_survives(redis, claims)
+    await relay.release_source(ws)
+
+
+async def test_a_frame_under_the_waiters_own_id_gets_one_refusal_not_two(
+    relay: RemoteTerminalRelay,
+) -> None:
+    """When the expiring frame IS the waiter's id, the refusal settles it."""
+    ws = _FakeWS()
+    manager = _manager()
+    claims = _claims()
+    await _attach(relay, ws, manager, claims)
+    session = relay._sessions[id(ws)]
+    session.grants[claims["jti"]].exp = int(time.time()) - 1
+
+    await _send(
+        relay,
+        ws,
+        manager,
+        {
+            "type": "remote_terminal_input",
+            "request_id": "req-attach-1",
+            "grant_jti": claims["jti"],
+            "terminal_id": "t1",
+            "data": "x",
+        },
+    )
+
+    assert ws.of_type("remote_terminal_error") == []
+    assert [(e["code"], e["request_id"]) for e in ws.of_type("error")] == [
+        ("attach_grant_expired", "req-attach-1")
+    ]
+
+
+async def test_an_attached_grants_expiry_notice_carries_no_request_id(
+    relay: RemoteTerminalRelay,
+) -> None:
+    """A BOUND attach's request id is never echoed at expiry.
+
+    Its waiter was settled when the terminal bound, so echoing that id would hand
+    it a second, contradictory answer. The outstanding scrollback request is a
+    regression guard: it keeps a ``pending_buffer`` entry naming the grant, so a
+    future "is a waiter pending" check that wrongly counted scrollback would
+    fail here.
+    """
+    ws = _FakeWS()
+    manager = _manager()
+    claims = await _attached(relay, ws, manager, terminal_id="t1")
+    session = relay._sessions[id(ws)]
+    await _send(
+        relay,
+        ws,
+        manager,
+        {
+            "type": "remote_terminal_buffer",
+            "request_id": "buf-1",
+            "grant_jti": claims["jti"],
+            "terminal_id": "t1",
+            "from_offset": 0,
+            "to_offset": 4,
+        },
+    )
+    assert session.pending_buffer, ws.sent
+    session.grants[claims["jti"]].exp = int(time.time()) - 1
+
+    await _send(
+        relay,
+        ws,
+        manager,
+        {"type": "remote_terminal_input", "request_id": "in-1", "grant_jti": "other"},
+    )
+
+    notices = ws.of_type("remote_terminal_error")
+    assert [n["code"] for n in notices] == ["attach_grant_expired"], ws.sent
+    assert "request_id" not in notices[0]
+    await relay.release_source(ws)
+
+
+async def test_detaching_an_expired_unanswered_attach_tells_no_waiter(
+    relay: RemoteTerminalRelay,
+) -> None:
+    """The detach exemption holds for an ATTACH grant, not only a create."""
+    ws = _FakeWS()
+    manager = _manager()
+    claims = _claims()
+    await _attach(relay, ws, manager, claims)
+    session = relay._sessions[id(ws)]
+    session.grants[claims["jti"]].exp = int(time.time()) - 1
+
+    await _send(
+        relay,
+        ws,
+        manager,
+        {
+            "type": "remote_terminal_detach",
+            "request_id": "req-detach",
+            "grant_jti": claims["jti"],
+        },
+    )
+
+    assert ws.of_type("remote_terminal_error") == []
+    assert [e["code"] for e in ws.of_type("error")] == ["attach_grant_expired"]
+    assert session.grants == {}
+    await relay.release_source(ws)
 
 
 async def test_remote_terminal_create_is_a_source_frame() -> None:

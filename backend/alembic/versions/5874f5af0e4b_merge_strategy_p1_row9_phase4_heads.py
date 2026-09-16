@@ -17,12 +17,14 @@ from collections.abc import Sequence
 
 # revision identifiers, used by Alembic.
 revision: str = "5874f5af0e4b"
-# Single physical line is intentional: the `alembic-graph-pr.yml`
-# gate's offline parser regex is `^down_revision...=(.+)$` with re.M
-# but NOT re.S, so a multi-line tuple is read as just "(" → zero
-# parents recorded → the gate spuriously reports an orphan head.
-# Real alembic parses Python and is unaffected; this collapse is
-# semantically null. See [[feedback_alembic_merge_revision_single_line_tuple]].
+# Single physical line WAS required: the `alembic-graph-pr.yml` gate's
+# offline parser was `^down_revision...=(.+)$` with re.M but NOT re.S,
+# so a multi-line tuple read as just "(" → zero parents recorded → the
+# gate spuriously reported an orphan head. That limit is now CLOSED —
+# `_alembic_graph.DOWN_RE` carries a parenthesised alternative and a
+# wrapped tuple names both parents — so the single line is no longer
+# load-bearing, only harmless. Real alembic parses Python and was
+# never affected. See [[feedback_alembic_merge_revision_single_line_tuple]].
 down_revision: str | None = ("row_9_phase_4_01_coord_alerts", "strategy_p1_02_seed")
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None

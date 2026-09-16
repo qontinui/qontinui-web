@@ -408,6 +408,7 @@ test.describe("Admin - Coord operator console", () => {
   for (const { path, testId } of [
     { path: "/admin/coord/pipeline", testId: "coord-pipeline-page" },
     { path: "/admin/coord/trees", testId: "coord-trees-page" },
+    { path: "/admin/coord/runners", testId: "coord-runners-page" },
     { path: "/admin/coord/plans", testId: "coord-plans-page" },
     { path: "/admin/coord/questions", testId: "coord-questions-page" },
     { path: "/admin/coord/agents", testId: "coord-agents-page" },

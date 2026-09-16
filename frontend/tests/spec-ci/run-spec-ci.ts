@@ -974,6 +974,11 @@ function routeForSpec(
     // canned rows so the populated TreeCard/badge states render. Not gated, so
     // no ?project= is appended after the existing query string.
     "coord-trees": "/admin/coord/trees?device_id=c1c1c1c1-0000-4000-8000-000000000001",
+    // Coord runners (drain, readiness, wind-down). Every read on the page is
+    // per machine and keyed on `?device=`, so a sentinel device is seeded;
+    // metadata.routeStubs fulfills the roster, drain, resource-sample and
+    // session-census reads so the populated strip and rows render.
+    "coord-runners": "/admin/coord/runners?device=c1c1c1c1-0000-4000-8000-000000000001",
     // Coord pull-decisions feed. Auto-fetches GET /coord/pull-decisions with no
     // filter; metadata.routeStubs fulfills it with canned resolution rows so the
     // populated feed renders deterministically (prod's real feed is empty).

@@ -336,6 +336,23 @@ def test_every_verdict_detail_names_its_rule_with_a_known_prefix() -> None:
     assert not NO_OBSERVATION_DETAIL.startswith(VERDICT_PREFIXES)
 
 
+def test_the_rollup_zero_floor_details_name_their_cause() -> None:
+    """A roll-up's zero-floor reason is chosen by CAUSE, and each cause has
+    its own prefix. ``ref_stale:`` is kept for one shared stale ref;
+    ``refs_not_shared:`` must never start with it, because the panel's tense
+    rule keys on ``ref_stale:`` for rows and a copy-edit that folded the two
+    together would put staleness back on a roll-up whose refs may be fresh."""
+    from app.services.plan_scan_root_health import (
+        REFS_NOT_SHARED_ZERO_MINIMUM_DETAIL,
+        ZERO_FLOOR_MINIMUM_DETAIL,
+    )
+
+    assert ZERO_FLOOR_MINIMUM_DETAIL.startswith(FRONTEND_REF_STALE_PREFIX)
+    assert REFS_NOT_SHARED_ZERO_MINIMUM_DETAIL.startswith("refs_not_shared:")
+    assert not REFS_NOT_SHARED_ZERO_MINIMUM_DETAIL.startswith(VERDICT_PREFIXES)
+    assert "ref_stale" not in REFS_NOT_SHARED_ZERO_MINIMUM_DETAIL
+
+
 def _row(**overrides: object) -> PlanScanRootObservation:
     """An in-memory observation row. No session, no database, no skip."""
     now = datetime(2026, 9, 12, 5, 0, tzinfo=UTC)

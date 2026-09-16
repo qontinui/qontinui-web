@@ -122,10 +122,10 @@ export function usePlanLibrary() {
    * * `finally { setLoading(false) }` re-enables the pager while the live
    *   request is still out.
    *
-   * An `AbortController` cannot do this job here: `http-client.ts` overwrites
-   * the caller's `signal` with its own timeout controller, so the abort never
-   * reaches the request. This is the same counter pattern
-   * `ArtifactDetailDialog` uses, for the same reason.
+   * Cancelling the superseded request would not do this job: `http-client.ts`
+   * honours a caller's `signal`, but aborting stops a read from running, while
+   * these writes need to know which settled read still owns the state. This is
+   * the same counter pattern `ArtifactDetailDialog` uses.
    */
   const requestIdRef = useRef(0);
 
@@ -290,9 +290,9 @@ export function useDivergentArtifacts() {
  * Built on the console's `useRetainedValue` rather than a private newest-id
  * guard, which is what each hook carried before. Reads DO overlap, even with a
  * panel's Refresh disabled while one is out: React StrictMode runs the mount
- * effect twice in development, and nothing stops a second caller. And
- * `http-client.ts` overwrites the caller's AbortController signal, so an
- * overlapping read cannot be cancelled and BOTH will settle. A newest-id guard
+ * effect twice in development, and nothing stops a second caller. No read
+ * here passes an AbortController signal (which `http-client.ts` now honours),
+ * so overlapping reads BOTH settle. A newest-id guard
  * handles two of the three orderings and loses the third: read A is out, a
  * newer read B FAILS, then A answers with real data — and is thrown away,
  * leaving the panel saying nothing could be read although something was.

@@ -32,8 +32,9 @@
  *
  * ## Which date (plan `2026-09-02-coord-work-units-carry-no-authoring-date`)
  *
- * The default sort is `authored_desc` on coord's slug-derived `authored_at`,
- * and the "undated" caveat counts rows WITHOUT one. It used to be
+ * The default sort is `authored_desc` on the plan's EFFECTIVE authoring date
+ * (`planAuthoredAt`: the slug's date prefix, else coord's `authored_at`), and
+ * the "undated" caveat counts rows with NEITHER. It used to be
  * `created_desc` on `created_at` — the INGEST time, a bulk-backfill date for
  * most of the corpus — under the label "Newest created", so a plan written in
  * May sorted as a June plan. With a coord that predates the column every row
@@ -50,7 +51,6 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Button } from "@/components/ui/button";
 import {
   Select,
   SelectContent,
@@ -58,15 +58,19 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { ArrowDownUp, Filter, RefreshCw, TriangleAlert } from "lucide-react";
+import { ArrowDownUp, Filter, TriangleAlert } from "lucide-react";
 import {
   CollapsiblePanel,
   HealthStrip,
   RecordList,
+  RefreshButton,
   readIsUnknown,
 } from "@/components/console";
 import { PlanRow } from "@/components/admin/coord/PlanRow";
-import type { CoordPlanRow } from "@/components/admin/coord/planStatus";
+import {
+  planAuthoredAt,
+  type CoordPlanRow,
+} from "@/components/admin/coord/planStatus";
 import { httpClient } from "@/services/service-factory";
 import { sortPlans, SORTS, type SortKey } from "./planSort";
 import { derivePlansHealth, SHEPHERD_SLUG_PREFIX } from "./plansHealth";
@@ -141,8 +145,10 @@ export default function CoordPlansListPage() {
    *     race window.
    *
    * Same shape as `/notifications`' `queryGen`, `/questions`' three `*Seq`
-   * refs and `usePlanLibrary`'s counter. An `AbortController` cannot do this
-   * job here — `http-client.ts` overwrites the caller's `signal`.
+   * refs and `usePlanLibrary`'s counter. `http-client.ts` now honours a
+   * caller's `signal`, but cancelling a superseded read would not replace
+   * these counters: they decide which settled read may land, not which reads
+   * run.
    *
    * **TWO counters, because the two things being gated are not one question.**
    * A single per-request counter silences a read in every arm at once, and
@@ -171,7 +177,11 @@ export default function CoordPlansListPage() {
    * FAILURE landing after a fresh success shows a banner the newest read
    * disagrees with. That fails safe — it over-reports trouble — where the
    * opposite silences it. `pollInFlight` keeps same-question ticks from
-   * overlapping in the first place, so the window is the refresh button.
+   * overlapping in the first place, and a refresh CLICK takes the same lock
+   * when it is free (`refresh` below), so no tick can stack on a manual read
+   * either. What remains is one narrower window: a click made while a poll
+   * or the first read is already out still issues its own read, which is the
+   * overlap `filterWindowReset.test.tsx` pins as guarded by the two counters.
    */
   const questionGen = useRef(0);
   const reqGen = useRef(0);
@@ -257,6 +267,36 @@ export default function CoordPlansListPage() {
     };
   }, [fetchData]);
 
+  /**
+   * The refresh button's read — the operator's, never the poll's.
+   *
+   * It returns the read's promise so `<RefreshButton>` acknowledges the press
+   * for exactly as long as that read is out; the poll calls `fetchData`
+   * directly and has no path to that state, so the control never pulses on a
+   * tick (plan `2026-09-09-coord-plans-page-controls-do-not-acknowledge-or-name-themselves`
+   * F1).
+   *
+   * It TAKES `pollInFlight` when the lock is free, so the ticks that come due
+   * while a manual read is out skip instead of stacking a second read of the
+   * same question on top of it. When a poll already holds the lock the click
+   * still issues its own read rather than waiting for or joining that one:
+   * the operator asked for a read now, and the resulting overlap is exactly
+   * what `questionGen`/`reqGen` above are for. The release is question-scoped
+   * for the same reason as the effect's `releaseLock`: a filter change while
+   * this read is out hands the lock to the new question's read, which this
+   * one must not free.
+   */
+  const refresh = useCallback(() => {
+    const tookLock = !pollInFlight.current;
+    if (tookLock) pollInFlight.current = true;
+    const question = questionGen.current;
+    return fetchData().finally(() => {
+      if (tookLock && question === questionGen.current) {
+        pollInFlight.current = false;
+      }
+    });
+  }, [fetchData]);
+
   const plans = useMemo(
     () => data?.work_units ?? data?.plans ?? [],
     [data]
@@ -266,9 +306,13 @@ export default function CoordPlansListPage() {
   // than we sorted. Say so: with the list capped at `updated_at DESC`, an
   // "oldest authored" answer drawn from this window can be wrong.
   const truncated = plans.length >= FETCH_LIMIT;
-  // No `authored_at` — an undated slug, or a coord that predates the column.
-  // UNKNOWN either way: these rows sink in the sort and the caveat says so.
-  const missingAuthored = plans.filter((p) => !p.authored_at).length;
+  // No authoring date from EITHER source — the slug carries no date prefix
+  // AND coord holds no `authored_at` (`planAuthoredAt`, the deriver the chip,
+  // the row time and the sort all read). Counting the bare column here would
+  // call a dated slug with a NULL column "undated" while its own chip shows
+  // the date. UNKNOWN either way: these rows sink in the sort and the caveat
+  // says so.
+  const missingAuthored = plans.filter((p) => !planAuthoredAt(p)).length;
   const loaded = data !== null;
   // R6 — "not fetched" includes "fetched and FAILED". The shared deriver grew
   // this arm for `/spawn`; this route reads the same list from the same
@@ -329,14 +373,16 @@ export default function CoordPlansListPage() {
             ))}
           </SelectContent>
         </Select>
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={fetchData}
+        {/* Keyed on the question: a press whose read was superseded by a filter
+            change must not leave the NEW question's control busy for up to the
+            60s request timeout, over a read whose answer will be discarded. */}
+        <RefreshButton
+          key={status}
+          onRefresh={refresh}
+          label="Refresh plans"
+          title={`Re-reads the work-unit list now; it also refreshes itself every ${POLL_INTERVAL_MS / 1000} s`}
           data-testid="coord-plans-refresh"
-        >
-          <RefreshCw className="h-3 w-3" />
-        </Button>
+        />
       </div>
 
       {/* R7 — the window caveats are infrastructural, so they collapse; the
@@ -378,8 +424,9 @@ export default function CoordPlansListPage() {
               className="text-xs text-muted-foreground"
               data-testid="coord-plans-missing-authored-notice"
             >
-              {missingAuthored} of {plans.length} have no authoring date
-              recorded; they sort last rather than being treated as oldest.
+              {missingAuthored} of {plans.length} have no authoring date —
+              no date prefix on the slug and no authored_at in coord; they
+              sort last rather than being treated as oldest.
             </p>
           )}
         </CollapsiblePanel>

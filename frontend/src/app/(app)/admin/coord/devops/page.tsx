@@ -82,7 +82,7 @@
  * points one implementation instead of a fork.
  */
 
-import { useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ExternalLink } from "lucide-react";
@@ -91,6 +91,7 @@ import type { HealthBadge } from "@/components/console";
 import { FleetOverview, FleetResourcesSection } from "@/components/operations";
 import { summarizeCoordCredentials } from "@/components/operations/coordCredentialStatus";
 import { summarizeFleetLiveness } from "@/components/operations/fleetLiveness";
+import { useDeviceStatusStream } from "@/components/operations/useDeviceStatusStream";
 import { useDevenvMachines } from "@/components/operations/useDevenvMachines";
 import { useFleetDrain } from "@/components/operations/useFleetDrain";
 import { useFleetHealth } from "@/components/operations/useFleetHealth";
@@ -123,7 +124,25 @@ export default function CoordDevOpsPage() {
   // rows can disagree about what is drained. Its `refresh` is handed down so a
   // drain or undrain is visible immediately rather than on the next tick.
   const drain = useFleetDrain();
+  // The live device-status stream. The hook opens a REST seed and a WebSocket
+  // PER CALL, so it is subscribed exactly once, here, and shared: the machine
+  // list and its tile read it through `FleetOverview`, and the strip's
+  // credential rollup below reads the same `details` bag the rows do.
+  const deviceStatus = useDeviceStatusStream();
   const devices = fleet.data?.devices ?? EMPTY_DEVICES;
+  // The page's clock, advanced independently of every read. A runner's
+  // `coord_credential` report goes stale by TIME alone
+  // (`resolveCoordCredential`), and the runner that stopped reporting is
+  // exactly the one that sends no frame to re-render anything — so without
+  // this tick a quiet stream, or a fleet-health outage that pins `devices`,
+  // would keep counting that machine `ok` on the strip and `live` on its row.
+  // 15 s is well under the 900 s staleness bound, so the transition can't be
+  // missed. Same tick `FleetResourceStrip` keeps for its row ages.
+  const [nowMs, setNowMs] = useState(() => Date.now());
+  useEffect(() => {
+    const t = setInterval(() => setNowMs(Date.now()), 15_000);
+    return () => clearInterval(t);
+  }, []);
 
   // R1: derived from data already on the page, never a second fetch. The
   // derivation itself is pure and unit-tested (`fleetLiveness.ts`).
@@ -228,8 +247,9 @@ export default function CoordDevOpsPage() {
    * it. The only thing that made it visible was a critical alert whose COUNT
    * was on this page and whose MACHINE was not.
    *
-   * Derived from the devices already polled (R1, never a second fetch). Both
-   * badges are conditional, and the two are deliberately separate counts:
+   * Derived from data already on the page (R1, never a second fetch or
+   * subscription). Both badges are conditional, and the two are deliberately
+   * separate counts:
    *
    * * `credential dark N` — measured, and someone must go and fix those
    *   machines. The only badge here that borrows red besides `unreachable`.
@@ -238,23 +258,39 @@ export default function CoordDevOpsPage() {
    *   `alerts unknown` badge above follows and the rule this whole plan is
    *   about (`[policy: silent-empty-is-unknown]`).
    *
-   * **Expect `credential unknown` to count most of the fleet, and read it as
-   * the honest number it is.** This strip sees the fleet-health rows only —
-   * the runner's own `coord_credential` bag rides the device-status stream,
-   * which is subscribed one level down in `FleetOverview` and is what the
-   * per-machine badge resolves against. Coord's join alone can conclude
+   * **The strip and the machine rows resolve each device from the same two
+   * sources, so they agree for every device they both key the same way.**
+   * A device reads a stream report only when the row's `device_id` is its
+   * own, so two coord devices sharing a hostname never borrow each other's
+   * report; the one gap left is that they are counted twice here but share
+   * one machine row. Coord's fleet-health join alone can conclude
    * `dark` and nothing else: its `dark: false` is a roster stamp for "the
    * scan did not name this device", which pools the healthy with the
-   * never-reported. So `credential dark N` is exact, and every other device
-   * is unmeasured *by this view*. Counting them as healthy instead is what an
-   * earlier cut of `coordCredentialStatus` did, and it put a calm
-   * `credential live` badge on precisely the machines the plan was written
-   * about.
+   * never-reported. The affirmative half comes from the runner's own
+   * `coord_credential` bag on the device-status stream — the one subscription
+   * above, which `FleetOverview` also receives — joined per device exactly as
+   * each row joins it (`coordDeviceHostKey` + `reportedCoordCredentialFor`,
+   * which is what a row matched to a coord device uses). So a
+   * machine whose runner reported `ok: true` is counted measured here and
+   * reads `live` on its row, and `credential unknown N` counts only the
+   * machines nothing measured. Counting those as healthy is what an earlier
+   * cut of `coordCredentialStatus` did, and it put a calm `credential live`
+   * badge on precisely the machines the plan was written about.
    */
   const credentials = useMemo(
     () =>
-      summarizeCoordCredentials(devices, fleet.data?.credential_dark_scrape_up),
-    [devices, fleet.data?.credential_dark_scrape_up]
+      summarizeCoordCredentials(
+        devices,
+        deviceStatus.byHostname,
+        fleet.data?.credential_dark_scrape_up,
+        nowMs
+      ),
+    [
+      devices,
+      deviceStatus.byHostname,
+      fleet.data?.credential_dark_scrape_up,
+      nowMs,
+    ]
   );
 
   const credentialBadges = useMemo<HealthBadge[]>(() => {
@@ -265,25 +301,51 @@ export default function CoordDevOpsPage() {
         label: `credential dark ${credentials.needsAction}`,
         tone: "attention",
         title:
-          "Machines that reported no usable coord device JWT. Sessions spawned on them work without coord and do not know it. Opens the alerts list, where each one has a critical runner_coord_credentials_missing alert.",
+          "Machines whose coord credential needs a person: coord's dark scan named them, or their own runner reported a dark posture (dark, expired, absent, unrefreshable). Sessions spawned on them work without coord and do not know it. Opens the alerts list, where coord raises a critical runner_coord_credentials_missing alert for each machine its scan names.",
         onClick: () => router.push(ALERTS_HREF),
         "data-testid": "coord-devops-credential-dark-badge",
       });
     }
     if (credentials.unknown > 0) {
+      // WHY nothing measured them, worded per cause. A failed read on either
+      // side is not the machines' silence, and the tooltip must not blame the
+      // runners for a read this page could not make. The count stands in every
+      // case: those machines really are unmeasured on this read.
+      //
+      // The stream has two failure shapes and they are different claims:
+      // no FULL fleet read has succeeded yet (rows may still have arrived one
+      // device at a time by frame, so they may be incomplete), and a full read
+      // succeeded earlier but the latest one failed (rows are being served,
+      // possibly stale). A single failed re-seed behind a working socket must
+      // read as "may be stale", never as "nothing was read".
+      const causes: string[] = [];
+      if (credentials.scrapeUp === false) {
+        causes.push(
+          "Coord could not read the per-device credential join on this poll. This is not 'their credentials are fine' — it is no measurement."
+        );
+      }
+      if (!deviceStatus.everSeeded) {
+        causes.push(
+          `No full device-status read has succeeded yet (${deviceStatus.error ?? "not loaded yet"}); runner reports that arrived since may be incomplete, so machines coord did not name dark are UNKNOWN — not healthy.`
+        );
+      } else if (deviceStatus.error !== null) {
+        causes.push(
+          `The last device-status read failed (${deviceStatus.error}); runner reports may be stale, so a machine counted here may have reported since.`
+        );
+      }
       badges.push({
         key: "credential-unknown",
         label: `credential unknown ${credentials.unknown}`,
         tone: "muted",
         title:
-          credentials.scrapeUp === false
-            ? "Coord could not read the per-device credential join on this poll. This is not 'their credentials are fine' — it is no measurement."
-            : "These machines carry no coord-credential verdict on this read. Coord's join only names machines that reported a DEAD credential, so a machine missing from it may be fine or may have reported nothing at all — this strip cannot tell, and each machine's own row below can. UNKNOWN, not healthy.",
+          causes.length > 0
+            ? causes.join(" ")
+            : "Neither coord's dark scan nor the machine's own runner reported a credential verdict for these machines. UNKNOWN, not healthy — go look at the machine.",
         "data-testid": "coord-devops-credential-unknown-badge",
       });
     }
     return badges;
-  }, [credentials, router]);
+  }, [credentials, deviceStatus.error, deviceStatus.everSeeded, router]);
 
   return (
     // `overflow-x-auto`: the resource strip is wide, and it must scroll rather
@@ -426,8 +488,15 @@ export default function CoordDevOpsPage() {
           4. CI capacity rides on each row as a collapsed disclosure, resolved
           from `ciMachines` — one read, no per-row fetch. Each row also carries
           its drain state and the Drain/Undrain lever, resolved from `drain` —
-          the one read, again, never one per card. */}
-      <FleetOverview health={fleet} ciMachines={ciMachines} drain={drain} />
+          the one read, again, never one per card. `deviceStatus` is the page's
+          one device-status subscription, shared with the strip above. */}
+      <FleetOverview
+        health={fleet}
+        ciMachines={ciMachines}
+        drain={drain}
+        deviceStatus={deviceStatus}
+        nowMs={nowMs}
+      />
 
       {/* 2. Resources and 3. CI occupancy, over the section's own single
           poll of /fleet/resource-samples. `devices` is the spine: a machine

@@ -5,10 +5,10 @@ D6 / transport B1. A SOURCE device (a runner whose operator clicked *Attach*
 on a fleet session) speaks the ``remote_terminal_*`` family on its existing
 ``WS /api/v1/devices/ws`` socket. This module:
 
-1. **verifies the attach grant** coord minted — the same JWKS verifier
+1. **verifies the grant** coord minted — the same JWKS verifier
    ``devices_ws`` uses for the device token itself — and refuses with a typed
-   ``error`` code when the grant is not an ``attach_grant``, is expired, or
-   was minted for a different source device;
+   ``error`` code when the grant is not the kind the frame needs, is expired,
+   or was minted for a different source device;
 2. **claims and registers the attachment** in Redis (multi-replica): the grant
    is claimed atomically (``SET NX EXAT``) so one grant admits ONE live
    attachment on ONE socket, and once the target names the terminal the
@@ -61,6 +61,27 @@ record of who holds which terminal, expiring with the grant.
 ``release_source`` deletes all three, so a source that reconnects re-presents
 its grant successfully once the old socket has torn down; a re-presentation
 that races the teardown reads ``attach_grant_consumed`` and retries.
+
+Remote CREATE
+-------------
+Plan ``2026-09-11-headless-runner-parity-from-a-headed-runner`` adds a second
+capability on the same socket: ``remote_terminal_create``, presented with a
+``create_grant`` (addressed by target DEVICE, carrying no session) and
+forwarded as ``terminal_create`` with ``remote.kind = "create"``. The target
+answers ``terminal_created`` on the ordinary response channel, correlated by
+the minted ``request_id``; the relay forwards it as ``remote_terminal_created``
+with a declared ``coord_session_id`` and drops the grant, so driving the new
+terminal needs a separate attach grant. A create grant admits no
+session-scoped frame (``grant_wrong_kind``). Every refusal about a create
+grant ITSELF — invalid, expired, wrong source, consumed — is spelled
+``create_grant_*``. Other refusals a create can receive keep their shared
+spellings — among them ``grant_wrong_kind``, ``attach_not_registered`` (a frame
+naming a create grant this socket no longer holds),
+``attach_verifier_unavailable``, ``attach_registry_unavailable``,
+``target_not_connected`` and ``listener_lost``; that list is illustrative, not
+exhaustive, so match on the code, not the prefix. Unlike attach, a create's
+claim key is NOT deleted
+on release — it expires with the grant, which is what single use means.
 
 Forward direction is replica-local
 ----------------------------------
@@ -161,6 +182,10 @@ CODE_TARGET_NOT_CONNECTED = "target_not_connected"
 CODE_CREATE_GRANT_INVALID = "create_grant_invalid"
 CODE_CREATE_GRANT_EXPIRED = "create_grant_expired"
 CODE_CREATE_GRANT_WRONG_SOURCE = "create_grant_wrong_source"
+# Single use, for a create: the grant was already presented on this socket, or
+# its claim is held. The attach twin is ``attach_grant_consumed``; the rule
+# above applies to it and to expiry alike — see ``_Attachment.expired_code``.
+CODE_CREATE_GRANT_CONSUMED = "create_grant_consumed"
 # A grant presented for frames of the other kind: a create grant driving a PTY,
 # or an attach grant asking for a spawn. The capability, not the token, is what
 # is wrong.
@@ -521,6 +546,19 @@ class _Attachment:
     def expired(self, now: float | None = None) -> bool:
         return (now if now is not None else time.time()) >= self.exp
 
+    def expired_code(self) -> str:
+        """The refusal code for THIS grant having expired.
+
+        Every relay site that REPORTS an expiry after admission (the sweep and
+        ``_authorize``) goes through here, so a create that times out unanswered
+        is not reported to its waiter as an expired ATTACH grant.
+        """
+        return (
+            CODE_CREATE_GRANT_EXPIRED
+            if self.kind == KIND_CREATE
+            else CODE_GRANT_EXPIRED
+        )
+
     def remote_block(self) -> dict[str, Any]:
         block: dict[str, Any] = {
             "source_device_id": self.source_device_id,
@@ -818,7 +856,11 @@ class RemoteTerminalRelay:
             # target never answered, and stranding that grant until expiry
             # would be the only alternative.
             att = await self._authorize(
-                session, msg, require_bound=False, require_attach_kind=False
+                session,
+                msg,
+                require_bound=False,
+                require_attach_kind=False,
+                settle_waiter=False,
             )
             if att is not None:
                 await self._detach_target(session, att, att.terminal_id)
@@ -1122,7 +1164,7 @@ class RemoteTerminalRelay:
         if jti in session.grants:
             await self._refuse(
                 session,
-                CODE_GRANT_CONSUMED,
+                CODE_CREATE_GRANT_CONSUMED,
                 "grant already presented on this socket",
                 request_id=request_id,
                 grant_jti=jti,
@@ -1170,8 +1212,11 @@ class RemoteTerminalRelay:
         if not claimed:
             await self._refuse(
                 session,
-                CODE_GRANT_CONSUMED,
-                "grant is already held by a live attachment",
+                CODE_CREATE_GRANT_CONSUMED,
+                # Not "held by a live attachment": a create's claim outlives
+                # the create on purpose (``_release_registry``), so nothing
+                # need be live for this to fire.
+                "grant already spent — a create grant is single use",
                 request_id=request_id,
                 grant_jti=jti,
             )
@@ -1224,8 +1269,13 @@ class RemoteTerminalRelay:
         *,
         require_bound: bool = True,
         require_attach_kind: bool = True,
+        settle_waiter: bool = True,
     ) -> _Attachment | None:
         """Admit a post-attach frame only for a registered, live grant.
+
+        ``settle_waiter`` (the default) lets the expiry arm tell a still-pending
+        attach or create waiter its grant lapsed. The detach door clears it: a
+        source that detaches has abandoned that waiter.
 
         With ``require_bound`` (the default) the TARGET must also have
         answered ``terminal_attached`` and the frame must name that terminal;
@@ -1252,6 +1302,55 @@ class RemoteTerminalRelay:
                 terminal_id=terminal_id,
             )
             return None
+        # Expiry BEFORE kind. The other order answered an expired create grant
+        # ``grant_wrong_kind`` and left it registered — holding its claim record
+        # and per-target listener — until some later frame's sweep reached it.
+        if att.expired():
+            # Claimed out of ``session.grants`` BEFORE the first await, exactly
+            # as ``_evict`` claims it: the listener task's sweep runs
+            # concurrently and would otherwise evict this same grant during the
+            # send below, telling the waiter a second time.
+            session.grants.pop(att.grant_jti, None)
+            # The frame that tripped expiry is not necessarily the one WAITING
+            # on this grant: an attach or create the target never answered has
+            # its own waiter under ``att.request_id``, and dropping the grant
+            # clears that correlation silently — so settle it, on the same
+            # predicate ``_evict`` uses, rather than leave it to the source's
+            # client-side timeout. That predicate errs toward telling a waiter
+            # that was already answered — the source finds no waiter under that
+            # id and routes by ``grant_jti``, which names no live pane for a grant
+            # that never bound — never toward silence. Not for a detach: a live
+            # detach tells an abandoned waiter nothing, and an expired one must
+            # not either.
+            if (
+                settle_waiter
+                and not att.attached
+                and att.request_id is not None
+                and att.request_id != request_id
+            ):
+                await self._send_to_source(
+                    session,
+                    {
+                        "type": "remote_terminal_error",
+                        "grant_jti": att.grant_jti,
+                        "code": att.expired_code(),
+                        "message": "grant expired",
+                        "request_id": att.request_id,
+                    },
+                )
+            # Same two-sided teardown as ``_evict``: the target learns the
+            # grant is gone rather than holding a detached subscriber.
+            await self._detach_target(session, att, att.terminal_id)
+            await self._drop_attachment(session, att)
+            await self._refuse(
+                session,
+                att.expired_code(),
+                "grant expired",
+                request_id=request_id,
+                grant_jti=att.grant_jti,
+                terminal_id=terminal_id,
+            )
+            return None
         if require_attach_kind and att.kind != KIND_ATTACH:
             # A create grant holds no session and no terminal: it bought one
             # spawn and nothing else. Refused HERE rather than falling through
@@ -1262,20 +1361,6 @@ class RemoteTerminalRelay:
                 CODE_GRANT_WRONG_KIND,
                 "a create grant does not attach to a terminal — mint an attach "
                 "grant for the session it created",
-                request_id=request_id,
-                grant_jti=att.grant_jti,
-                terminal_id=terminal_id,
-            )
-            return None
-        if att.expired():
-            # Same two-sided teardown as ``_evict``: the target learns the
-            # grant is gone rather than holding a detached subscriber.
-            await self._detach_target(session, att, att.terminal_id)
-            await self._drop_attachment(session, att)
-            await self._refuse(
-                session,
-                CODE_GRANT_EXPIRED,
-                "grant expired",
                 request_id=request_id,
                 grant_jti=att.grant_jti,
                 terminal_id=terminal_id,
@@ -1523,7 +1608,7 @@ class RemoteTerminalRelay:
                 attached=att.attached,
             )
             await self._evict(
-                session, att, code=CODE_GRANT_EXPIRED, message="grant expired"
+                session, att, code=att.expired_code(), message="grant expired"
             )
 
     # ------------------------------------------------------------------

@@ -10,6 +10,10 @@
  *     (the relay listener un-mounts within the next React render);
  *   - a "Disable for this account" link that ALSO flips the per-user
  *     durable preference back to false so a fresh session won't re-prompt.
+ *     Hidden on loopback dev: every new tab there is auto-granted without
+ *     consulting the preference, so the link could not deliver the durable
+ *     opt-out it promises (a new tab would be live again) — whatever holds
+ *     THIS tab open. Stop still revokes for the session.
  *
  * # data-bridge-invisible="true" (interactive subtree only)
  *
@@ -59,6 +63,10 @@ import { ApiConfig } from "@/services/api-config";
 import { useCoPilotActivity } from "@/hooks/useCoPilotActivity";
 import { useCoPilotPreference } from "@/hooks/useCoPilotPreference";
 import { useCoPilotSessionConsent } from "@/hooks/useCoPilotSessionConsent";
+import {
+  isCoPilotConsentSatisfied,
+  useIsLoopbackDev,
+} from "@/lib/ui-bridge/co-pilot-gates";
 
 const REVOCATION_AUDIT_URL = `${ApiConfig.API_BASE_URL}/api/v1/users/me/co-pilot/activity`;
 
@@ -101,11 +109,19 @@ function recordRevocation(reason: "stop_button" | "disable_for_account") {
 export function CoPilotActiveBanner() {
   const preference = useCoPilotPreference();
   const consent = useCoPilotSessionConsent();
-  // Only poll when the listener is actually live — opting out of polling
+  const loopbackDev = useIsLoopbackDev();
+  // Only poll when the listener is actually live — the SAME consent
+  // predicate the provider mounts the relay on, so a loopback-dev auto-grant
+  // lights the banner (and its Stop button) too. Opting out of polling
   // while the consent layer is closed avoids unnecessary load on the
   // audit-log endpoint for the 99% of users who haven't opted in.
-  const pollingEnabled =
-    preference.enabled && consent.state === "granted";
+  const pollingEnabled = isCoPilotConsentSatisfied({
+    loopbackDev,
+    preferenceEnabled: preference.enabled,
+    consentState: consent.state,
+  });
+  // The account opt-out cannot be durable on loopback dev — see the header.
+  const showAccountOptOut = !loopbackDev;
   const { isActive, lastActionAt } = useCoPilotActivity({
     enabled: pollingEnabled,
   });
@@ -183,14 +199,16 @@ export function CoPilotActiveBanner() {
           )}
         </div>
         <div className="flex items-center gap-3 shrink-0">
-          <button
-            type="button"
-            onClick={handleDisableForAccount}
-            className="text-xs underline underline-offset-2 hover:text-white"
-            data-testid="co-pilot-active-banner-disable-account"
-          >
-            Disable for this account
-          </button>
+          {showAccountOptOut && (
+            <button
+              type="button"
+              onClick={handleDisableForAccount}
+              className="text-xs underline underline-offset-2 hover:text-white"
+              data-testid="co-pilot-active-banner-disable-account"
+            >
+              Disable for this account
+            </button>
+          )}
           <button
             type="button"
             onClick={handleStop}

@@ -39,6 +39,11 @@ import { tokenStorage } from "@/services/service-factory";
 import { useCoPilotPreference } from "@/hooks/useCoPilotPreference";
 import { useCoPilotSessionConsent } from "@/hooks/useCoPilotSessionConsent";
 import { CoPilotConsentModal } from "@/components/co-pilot/CoPilotConsentModal";
+import {
+  isCoPilotConsentSatisfied,
+  isRemoteCommandsEnvEnabled,
+  useIsLoopbackDev,
+} from "./co-pilot-gates";
 
 /**
  * Auth-header hook for the SDK's CommandRelayListener (SDK ≥ 0.10.0).
@@ -87,14 +92,6 @@ function commandRelayRegistrationMetadata():
 }
 
 const isDev = process.env.NODE_ENV === "development";
-
-// Production opt-in for the UI Bridge command relay. When this env var is
-// set at build time (e.g. for staging deploys driven by /manual-test-coord),
-// the CommandRelayListener mounts even though NODE_ENV is "production".
-// Without it, production tabs never register with the bridge and any
-// /control/* command fails with "No browser connected".
-const remoteCommandsOptIn =
-  process.env.NEXT_PUBLIC_UI_BRIDGE_REMOTE_COMMANDS === "1";
 
 /**
  * Feature configuration for UI Bridge
@@ -192,25 +189,29 @@ interface UIBridgeWrapperProps {
  */
 export function UIBridgeWrapper({
   children,
-  enableRemoteCommands: envEnableRemoteCommands = isDev || remoteCommandsOptIn,
+  enableRemoteCommands: envEnableRemoteCommands = isRemoteCommandsEnvEnabled,
 }: UIBridgeWrapperProps) {
-  // §4.5 consent layer — compose the env-level gate with the per-user
-  // durable preference AND the per-session transient consent. The
-  // CommandRelayListener only mounts when ALL THREE are positive:
+  // §4.5 consent layer — compose the env-level gate with the consent
+  // predicate from ./co-pilot-gates, which the active banner, readiness
+  // badge and co-pilot home read too, so they all agree with this mount:
   //
-  //     (envEnableRemoteCommands)            // dev OR build-time opt-in
-  //   && userPreference.enabled              // toggled in /settings/co-pilot
-  //   && sessionConsent.state === "granted"  // explicit per-session OK
+  //     (envEnableRemoteCommands)                  // dev OR build-time opt-in
+  //   && ( (loopbackDev && consent !== "revoked")  // loopback dev auto-grant
+  //     || (preference && consent === "granted"))  // explicit opt-in + OK
   //
-  // The per-user preference is a single GET; in OSS/loopback or when the
-  // user is unauthenticated it returns false (the hook gracefully
-  // resolves enabled=false on error), keeping the listener off.
+  // The per-user preference is a single GET; when the user is
+  // unauthenticated it returns false (the hook gracefully resolves
+  // enabled=false on error), so off loopback dev the listener stays off.
   const userPreference = useCoPilotPreference();
   const sessionConsent = useCoPilotSessionConsent();
+  const isLoopbackDev = useIsLoopbackDev();
   const enableRemoteCommands =
     envEnableRemoteCommands &&
-    userPreference.enabled === true &&
-    sessionConsent.state === "granted";
+    isCoPilotConsentSatisfied({
+      loopbackDev: isLoopbackDev,
+      preferenceEnabled: userPreference.enabled,
+      consentState: sessionConsent.state,
+    });
 
   const bufferRef = useRef<BridgeEvent[]>([]);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -370,8 +371,11 @@ export function UIBridgeWrapper({
             so the modal's Switch/Buttons get the usual auto-register
             treatment (the SDK already skips ``data-bridge-invisible``
             subtrees; the modal itself is not invisible since it IS the
-            user surfacing the consent decision). */}
-        {envEnableRemoteCommands && userPreference.enabled && (
+            user surfacing the consent decision). Not on loopback dev:
+            consent is already auto-granted there, so asking would put
+            back the per-session friction the auto-grant removes (and its
+            "Not now" would silently revoke a live relay). */}
+        {envEnableRemoteCommands && userPreference.enabled && !isLoopbackDev && (
           <CoPilotConsentModal />
         )}
         <RouteAwarenessProvider>

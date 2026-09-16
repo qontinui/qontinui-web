@@ -23,6 +23,7 @@ import io
 import re
 import subprocess
 import tarfile
+import tokenize
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -36,8 +37,23 @@ GIT_TIMEOUT_SECONDS = 60
 # syntaxes. The colon-prefixed type annotation can contain letters (e.g.
 # `: str = `, `: str | None = `), so `[: ]+` is too narrow — use an optional
 # `:<non-eq chars>` segment between the keyword and the `=`.
-REV_RE = re.compile(r'^revision\s*(?::[^=]*)?\s*=\s*["\'](.+?)["\']', re.M)
-DOWN_RE = re.compile(r"^down_revision\s*(?::[^=]*)?\s*=\s*(.+)$", re.M)
+#
+# `[^=\n]*` rather than `[^=]*`, and the same paren alternative `DOWN_RE`
+# carries, for the SAME two reasons — this side is 13 characters of revision id
+# away from the same incident with a quieter failure mode. A `revision` line
+# ruff-format wrapped would match NOTHING here, and `parse_source` then returns
+# `None`: the file drops out of `revisions` entirely, its parent silently
+# becomes a head, and `file_count` still counts the file, so nothing reports it.
+# Today's margin: `revision: str = "<id>"` wraps at an id length of 71, and the
+# longest id in the tree is 57.
+REV_RE = re.compile(
+    r'^revision\s*(?::[^=\n]*)?\s*=\s*\(?\s*["\'](.+?)["\']',
+    re.M,
+)
+DOWN_RE = re.compile(
+    r"^down_revision\s*(?::[^=\n]*)?\s*=\s*(\([^)]*\)|[^\n]+)",
+    re.M,
+)
 PARENT_REF_RE = re.compile(r'["\'](\w[\w]*)["\']')
 
 #: Revision ids are interpolated into PR comments, so anything outside this
@@ -46,13 +62,40 @@ PARENT_REF_RE = re.compile(r'["\'](\w[\w]*)["\']')
 #: a markdown code span and fire an @mention from a bot-authored comment.
 SAFE_ID_RE = re.compile(r"[^0-9A-Za-z._-]")
 
-# KNOWN PARSE LIMIT, deliberately unchanged: ``DOWN_RE`` is line-anchored, so
-# a ``down_revision`` tuple wrapped across lines by a formatter parses as no
-# parents at all and its children read as heads. Widening it would move the
-# gate's PASS/FAIL condition — a currently-failing tree would start passing —
-# which is out of scope for the advice work this module exists for. The
-# repo's revisions are all single-line today. If that changes, fix it as its
-# own change, with its own reasoning about the verdict move.
+# FORMER PARSE LIMIT, now closed: ``DOWN_RE`` used to be line-anchored, so a
+# ``down_revision`` right-hand side wrapped across lines by a formatter parsed
+# as NO parents at all and its children read as heads. That stopped being
+# hypothetical the moment a parent id grew long enough that
+# ``down_revision: str | Sequence[str] | None = "<id>"`` exceeded the repo's
+# 88-column ruff budget: ruff-format wraps the value in parentheses, and the
+# gate then reported a fork that alembic itself did not see
+# (qontinui-web #1370, parent ``coord_repo_branches_touched_files_authoritative_01``).
+#
+# The widening is MONOTONE and therefore safe to land on its own: the paren
+# alternative can only make PARENT_REF_RE find MORE parents, and more parents
+# can only SHRINK the head set. So it can turn a FAIL into a PASS — which is
+# the point, those failures were false — and can never turn a PASS into a
+# FAIL. The one head count it cannot reach is zero: a tree whose every
+# revision has a parent is a cycle, which the callers already classify
+# separately.
+#
+# Still line-oriented on purpose: ``[^)]*`` inside the paren alternative
+# crosses newlines (a negated class always does), which covers the wrapped
+# scalar and the wrapped merge tuple, while the fallback ``[^\n]+`` keeps the
+# single-line forms parsing exactly as before. A right-hand side that nests
+# parentheses is still out of reach, and no alembic revision writes one.
+#
+# THE SECOND CHANGE HERE IS NOT MONOTONE, and saying so is the point: the
+# annotation segment narrowed from ``[^=]*`` to ``[^=\n]*``. ``[^=]*`` crossed
+# newlines, so a bare ``down_revision: str | Sequence[str] | None`` with no
+# value could reach forward and borrow the NEXT line's assignment, and a
+# ``# merged "zz" in`` comment could contribute a phantom parent. Removing
+# those can LOSE a parent and therefore GROW the head set — a PASS could in
+# principle become a FAIL. It does not on this tree: replaying both patterns
+# over all 566 revision files, the set of parents present under the old
+# pattern and absent under the new one is EMPTY. The forms it drops are
+# old-pattern bugs, and ``PIN_REVISION_RE``/``PIN_PARENT_RE`` below already
+# carry exactly this narrowing for exactly this reason.
 
 
 @dataclass(frozen=True)
@@ -116,11 +159,32 @@ def parse_source(source: str) -> tuple[str, str] | None:
 
     Returns ``None`` when the file holds no ``revision = ...`` assignment
     (``__init__.py``, a helper module dropped in the dir, and so on).
+
+    Read from the MASKED text, the same discipline the pin matchers below
+    already use (:func:`_qualifying_sources`). Column-0 anchoring alone is not
+    enough: a revision's own docstring routinely explains its ``down_revision``,
+    and a docstring line that happens to start at column 0 and carry an ``=``
+    would beat the real assignment — silently re-pointing the graph at whatever
+    the prose named. Five revision files already put ``down_revision`` at
+    column 0 inside a docstring; none carries an ``=`` on that line TODAY, which
+    is the only reason the unmasked read was correct rather than lucky.
+
+    Direction of the change, stated because it is the risky one: masking can
+    only REMOVE text, so it can only lose parents, which can only GROW the head
+    set — a PASS could in principle become a FAIL. It does not here: replayed
+    over all 566 revision files, masked and unmasked agree on every revision id
+    and every parent. A real assignment cannot live inside a string, so the
+    only thing masking can take away is prose.
+
+    Offsets are preserved by the mask, and a tokenizer refusal degrades to the
+    regex rather than aborting, so an unparseable file still parses as well as
+    it did before.
     """
-    match = REV_RE.search(source)
+    masked = _mask_triple_quoted(source)
+    match = REV_RE.search(masked)
     if not match:
         return None
-    down_match = DOWN_RE.search(source)
+    down_match = DOWN_RE.search(masked)
     down = down_match.group(1).strip() if down_match else "None"
     return match.group(1), down
 
@@ -410,3 +474,516 @@ def plan_remediation(scan: Scan, landed: set[str] | None) -> Remediation:
     # chain. Dropping them made the caller say "no single landed head" and
     # nothing else, when the exact files to edit were already computed.
     return Remediation("chain", landed_heads, unlanded_heads, None, edits)
+
+
+# ---------------------------------------------------------------------------
+# The three edit sites of a re-point
+# ---------------------------------------------------------------------------
+#
+# Re-pointing an unlanded revision is NOT a one-token edit, and advice that
+# says it is turns a red head count into a red test suite (qontinui-web #1216).
+# A re-point touches three sites:
+#
+#   1. the ``down_revision`` assignment;
+#   2. the module docstring's ``Revises: <parent>`` line;
+#   3. the ``_PARENT_REVISION_ID = "<parent>"`` pin in the revision's migration
+#      test under ``backend/tests/``. Dozens of those tests declare the pin and
+#      several assert it equals ``down_revision`` — as a regex group, as
+#      ``module.down_revision``, or as a literal f-string searched for in the
+#      source — so leaving it stale fails the suite. The rest use it as an
+#      ``alembic upgrade``/``downgrade`` target, which is silently wrong.
+#
+# Everything below is pure: callers hand in file text, so the local gate (which
+# reads a checkout) and the post-land notifier (which fetches a PR's files at
+# its head) share one matcher and cannot disagree about what a pin is.
+
+#: Where the migration tests that pin a revision's parent live.
+TESTS_DIR = "backend/tests"
+
+# Every class here is `[ \t]`, never `\s`, and the optional annotation is
+# `[^=\n]*`: a pattern that can cross a newline pairs a bare annotation
+# (`_PARENT_REVISION_ID: str`) with the NEXT line's `= "x"` and reports a pin
+# that is not there. Leading indentation, either quote style, a trailing
+# `# comment` and a CRLF line end are all real spellings and all match.
+PIN_REVISION_RE = re.compile(
+    r'^[ \t]*_REVISION_ID[ \t]*(?::[^=\n]*)?=[ \t]*(["\'])([^"\'\n]*)\1', re.M
+)
+PIN_PARENT_RE = re.compile(
+    r"^[ \t]*_PARENT_REVISION_ID[ \t]*(?::[^=\n]*)?=[ \t]*"
+    r'(["\'])(?P<value>[^"\'\n]*)\1[ \t]*(?:#[^\n]*)?$',
+    re.M,
+)
+#: The LEFT-hand side of any `_PARENT_REVISION_ID` assignment, `==` excluded.
+#: :func:`find_computed_parent_pins` matches it in MASKED text and reads the
+#: value from the original line, so a pin whose value is itself a string
+#: masking blanks (`= _parent_revision_id()`, `= \"\"\"a\"\"\"`) is never lost.
+PIN_PARENT_ASSIGN_RE = re.compile(
+    r"^[ \t]*_PARENT_REVISION_ID[ \t]*(?::[^=\n]*)?=(?!=)", re.M
+)
+REVISES_RE = re.compile(r"^Revises:[^\n]*$", re.M)
+#: FALLBACK ONLY, for text :mod:`tokenize` refuses. It opens a mask at any
+#: triple quote — including one inside ``'"""'``, a comment, or behind a
+#: backslash — so it can blank a real declaration.
+TRIPLE_QUOTED_RE = re.compile(r'("""|\'\'\')(?:.|\n)*?\1')
+_STRING_PREFIX_RE = re.compile(r"^[A-Za-z]*")
+#: ``(start, end)`` token-type pairs delimiting an f-/t-string on Pythons whose
+#: tokenizer splits them (3.12+ and 3.14+); absent names are skipped.
+_SPLIT_STRING_TOKENS = tuple(
+    (getattr(tokenize, start), getattr(tokenize, end))
+    for start, end in (
+        ("FSTRING_START", "FSTRING_END"),
+        ("TSTRING_START", "TSTRING_END"),
+    )
+    if hasattr(tokenize, start) and hasattr(tokenize, end)
+)
+
+
+def _is_triple_quoted(token_text: str) -> bool:
+    """Does a string token (or an f-string start) open with a triple quote?"""
+    return _STRING_PREFIX_RE.sub("", token_text, count=1).startswith(('"""', "'''"))
+
+
+def _string_spans(text: str) -> list[tuple[int, int]]:
+    """``(start, end)`` offsets of every triple-quoted or multi-line string.
+
+    Read with :mod:`tokenize`, which knows what a string IS: a triple quote
+    inside a single-quoted literal, a comment, or behind a backslash escape is
+    not a delimiter. Single-line single-quoted strings are left alone — a
+    pin's own value is one. Raises whatever :mod:`tokenize` raises.
+    """
+    line_starts = [0]
+    for line in text.split("\n")[:-1]:
+        line_starts.append(line_starts[-1] + len(line) + 1)
+
+    def offset(position: tuple[int, int]) -> int:
+        row, col = position
+        return line_starts[row - 1] + col
+
+    starts = {start: end for start, end in _SPLIT_STRING_TOKENS}
+    ends = set(starts.values())
+    spans: list[tuple[int, int]] = []
+    opened: list[tuple[tuple[int, int], bool]] = []
+    for token in tokenize.generate_tokens(io.StringIO(text).readline):
+        if token.type == tokenize.STRING:
+            if _is_triple_quoted(token.string) or token.start[0] != token.end[0]:
+                spans.append((offset(token.start), offset(token.end)))
+        elif token.type in starts:
+            opened.append((token.start, _is_triple_quoted(token.string)))
+        elif token.type in ends and opened:
+            start, triple = opened.pop()
+            if triple or start[0] != token.end[0]:
+                spans.append((offset(start), offset(token.end)))
+    return spans
+
+
+def _mask_triple_quoted(source: str) -> str:
+    """``source`` with every triple-quoted string blanked, offsets preserved.
+
+    A docstring quoting ANOTHER revision's ``_REVISION_ID = "x"`` line — which
+    is how these tests explain themselves — would otherwise qualify the file
+    for the wrong revision, and a quoted pin line would be listed as a pin.
+    Newlines are kept and every other character becomes a space, so a match
+    offset in the masked text is the same offset in the original.
+
+    String spans come from :mod:`tokenize`. Only when it refuses the text (a
+    half-written file) does this fall back to :data:`TRIPLE_QUOTED_RE`, whose
+    known misreads are named on the pattern.
+    """
+    text = source.replace("\r", " ")
+    try:
+        spans = _string_spans(text)
+    except Exception:
+        # Bare `Exception`, deliberately. The input is a PR author's test file,
+        # and the tokenizer does not confine itself to TokenError /
+        # IndentationError / SyntaxError: on stock CPython 3.12.14 and 3.13.5,
+        # `" }\n\x00"` (a space, `}`, newline, NUL) makes `generate_tokens`
+        # raise SystemError — while the near-misses `"' }\n\x00"` and
+        # `"}\n\x00"` raise TokenError. SystemError escaped the narrower clause
+        # and crashed the notifier's whole sweep (exit 1, no comments posted). Masking only chooses advice WORDING, so any
+        # failure must degrade to the regex rather than abort the run.
+        #
+        # Known fallback misread, accepted: an unterminated `"""` is not masked
+        # by the regex, so a pin line quoted after it can surface as a phantom
+        # mismatched pin. It is named for a human, never rewritten.
+        return TRIPLE_QUOTED_RE.sub(lambda m: re.sub(r"[^\n]", " ", m.group(0)), text)
+    chars = list(text)
+    for start, end in spans:
+        for index in range(start, end):
+            if chars[index] != "\n":
+                chars[index] = " "
+    return "".join(chars)
+
+
+def _line_at(source: str, start: int, end: int) -> str:
+    """The original text of ``source[start:end]``, CR stripped."""
+    return source[start:end].replace("\r", "")
+
+
+@dataclass(frozen=True)
+class ParentPin:
+    """One ``_PARENT_REVISION_ID`` line that must move with the re-point."""
+
+    path: Path
+    lineno: int
+    before: str
+    after: str
+
+
+@dataclass(frozen=True)
+class ComputedPin:
+    """A ``_PARENT_REVISION_ID`` computed at runtime — a human must check it."""
+
+    path: Path
+    lineno: int
+    line: str
+
+
+@dataclass(frozen=True)
+class RepointSites:
+    """The exact before -> after lines for re-pointing ONE revision.
+
+    ``down_revision`` and ``revises`` are ``(before, after)``. ``before`` is
+    ``None`` when the revision's source was not available to read, and
+    ``revises`` is ``None`` when the source was read and holds no ``Revises:``
+    line — two different statements, which renderers must not merge.
+
+    ``pins`` empty is NOT proof the test has no pin: the matcher only knows the
+    ``_PARENT_REVISION_ID`` spelling, and it only saw the files it was handed.
+    Renderers must say that rather than stay silent.
+    """
+
+    revision: str
+    path: Path | None
+    old_parent: str | None
+    new_parent: str
+    down_revision: tuple[str | None, str]
+    revises: tuple[str | None, str] | None
+    pins: tuple[ParentPin, ...]
+    computed_pins: tuple[ComputedPin, ...] = ()
+    """Pins in this revision's test that are not literals; checked by hand."""
+    mismatched_pins: tuple[MismatchedPin, ...] = ()
+    """Literal pins in this revision's test naming something OTHER than
+    ``old_parent``. Not rewritten, but named — "no pin found" would be false."""
+    parent_unparsed: bool = False
+    """``down_revision``'s right-hand side held no parent literal (``= PARENT``).
+
+    Distinct from a true chain root, whose right-hand side IS ``None``: both
+    leave ``old_parent`` as ``None``, but only a root may be described that way.
+    """
+
+
+def _qualifying_sources(
+    test_sources: dict[Path, str], revision: str
+) -> list[tuple[Path, str, str]]:
+    """``(path, original, masked)`` for files that DECLARE ``revision``.
+
+    The declaration is read from the masked text, so a docstring quoting some
+    other test's ``_REVISION_ID = "x"`` line qualifies nothing.
+    """
+    out: list[tuple[Path, str, str]] = []
+    for path in sorted(test_sources):
+        source = test_sources[path]
+        masked = _mask_triple_quoted(source)
+        declared = {m.group(2) for m in PIN_REVISION_RE.finditer(masked)}
+        if revision in declared:
+            out.append((path, source, masked))
+    return out
+
+
+def find_parent_pins(
+    test_sources: dict[Path, str],
+    revision: str,
+    old_parent: str | None,
+    new_parent: str,
+) -> tuple[ParentPin, ...]:
+    """Every ``_PARENT_REVISION_ID`` pin that names ``old_parent`` for ``revision``.
+
+    A file qualifies only when it declares ``_REVISION_ID = "<revision>"`` —
+    a pin in some other revision's test is not this re-point's business — and
+    a pin line is listed only when its literal IS ``old_parent``. A pin that
+    already names something else is deliberately not listed: rewriting it
+    would assert a parent this graph never showed it had.
+
+    ``after`` changes only the literal: indentation, quote style, annotation
+    and any trailing ``# comment`` are kept, so the advice never tells an
+    author to delete something they wrote.
+
+    ``old_parent is None`` (a chain root, ``down_revision = None``) matches
+    nothing, because no string pin can name ``None``.
+    """
+    if old_parent is None:
+        return ()
+    found: list[ParentPin] = []
+    for path, source, masked in _qualifying_sources(test_sources, revision):
+        for match in PIN_PARENT_RE.finditer(masked):
+            # Value read from the ORIGINAL text, exactly as the mismatched
+            # finder does, so the two buckets cannot disagree about one line.
+            value = source[match.start("value") : match.end("value")]
+            if value != old_parent:
+                continue
+            line = _line_at(source, match.start(), match.end()).rstrip()
+            if not PIN_PARENT_RE.fullmatch(line):
+                # ONE predicate for "a plain literal pin", shared with the
+                # computed finder. `= "a" \"\"\"b\"\"\"` matches on the MASKED line
+                # (the triple-quoted half is blanked) but is not a plain literal
+                # on the original, so it belongs to computed — never to both.
+                continue
+            offset = match.start("value") - match.start()
+            after = line[:offset] + new_parent + line[offset + len(old_parent) :]
+            lineno = source.count("\n", 0, match.start()) + 1
+            found.append(ParentPin(path, lineno, line, after))
+    return tuple(found)
+
+
+def find_computed_parent_pins(
+    test_sources: dict[Path, str], revision: str
+) -> tuple[ComputedPin, ...]:
+    """``_PARENT_REVISION_ID`` assignments in ``revision``'s test that are NOT literals.
+
+    ``_PARENT_REVISION_ID = _parent_revision_id()`` is on ``main`` today. It
+    cannot be rewritten and usually follows ``down_revision`` by itself, but
+    that is a property of the function this cannot read — so it is named for a
+    human rather than silently counted as "no pin".
+    """
+    found: list[ComputedPin] = []
+    for path, source, masked in _qualifying_sources(test_sources, revision):
+        # The LEFT-hand side is found in the MASKED text, so a pin line quoted
+        # inside a docstring is ignored. The RIGHT-hand side is judged on the
+        # ORIGINAL line: masking blanks every triple-quoted string, including
+        # one that IS the pin's value (`_PARENT_REVISION_ID = """a"""`), and
+        # judging the blanked text reported such a pin as nothing at all —
+        # "no pin found" about a file that has one.
+        for match in PIN_PARENT_ASSIGN_RE.finditer(masked):
+            line_end = source.find("\n", match.start())
+            line = _line_at(
+                source, match.start(), len(source) if line_end == -1 else line_end
+            ).rstrip()
+            rhs = line[match.end() - match.start() :].strip()
+            if not rhs or PIN_PARENT_RE.fullmatch(line):
+                continue  # no value, or a plain literal the other finders own
+            lineno = source.count("\n", 0, match.start()) + 1
+            found.append(ComputedPin(path, lineno, line))
+    return tuple(found)
+
+
+def no_pin_found_text(revision: str) -> str:
+    """The ONE wording for "the matcher found no pin" — never read as absent."""
+    return (
+        f"no `_PARENT_REVISION_ID` pin found for {revision} — if its test pins "
+        "the parent under another name, update it too"
+    )
+
+
+def computed_pin_text() -> str:
+    """The ONE wording for a pin this matcher cannot rewrite."""
+    return "a `_PARENT_REVISION_ID` is computed, not literal — check it by hand"
+
+
+@dataclass(frozen=True)
+class MismatchedPin:
+    """A literal ``_PARENT_REVISION_ID`` naming something other than the old parent."""
+
+    path: Path
+    lineno: int
+    line: str
+    value: str
+
+
+def find_mismatched_parent_pins(
+    test_sources: dict[Path, str], revision: str, old_parent: str | None
+) -> tuple[MismatchedPin, ...]:
+    """Literal pins in ``revision``'s test whose value is NOT ``old_parent``.
+
+    :func:`find_parent_pins` deliberately does not rewrite these. They are
+    still reported, because a renderer that saw no rewrite would otherwise say
+    "no pin found" about a file that plainly has one — it is stale already, or
+    pins something this graph does not show, and either way a human decides.
+    With ``old_parent is None`` (a chain root) every literal pin is listed.
+    """
+    found: list[MismatchedPin] = []
+    for path, source, masked in _qualifying_sources(test_sources, revision):
+        for match in PIN_PARENT_RE.finditer(masked):
+            value = source[match.start("value") : match.end("value")]
+            if value == old_parent:
+                continue
+            line = _line_at(source, match.start(), match.end()).rstrip()
+            if not PIN_PARENT_RE.fullmatch(line):
+                continue  # not a plain literal on the original line: computed's
+            lineno = source.count("\n", 0, match.start()) + 1
+            found.append(MismatchedPin(path, lineno, line, value))
+    return tuple(found)
+
+
+def mismatched_pin_text(
+    location: str,
+    value: str,
+    old_parent: str | None,
+    *,
+    new_parent: str | None = None,
+    parent_unparsed: bool = False,
+) -> str:
+    """The ONE wording for a literal pin that does not name the old parent.
+
+    Three different statements, kept apart because each asks something else of
+    the reader:
+
+    * the pin ALREADY names ``new_parent`` — nothing to change there;
+    * ``down_revision`` had no parent literal to read (``= PARENT``), so there
+      is no old parent to compare against — printing ``not None`` would claim
+      a chain root nobody declared;
+    * otherwise the pin names a parent other than the old one.
+    """
+    if new_parent is not None and value == new_parent:
+        return (
+            f'`_PARENT_REVISION_ID` in {location} already names the target "{value}"'
+            " — nothing to change there"
+        )
+    if parent_unparsed:
+        return (
+            f'`_PARENT_REVISION_ID` in {location} names "{value}"; no parent literal'
+            " parsed from `down_revision` — check it by hand"
+        )
+    old = f'"{old_parent}"' if old_parent is not None else "None"
+    return f'`_PARENT_REVISION_ID` in {location} names "{value}", not {old} — check it'
+
+
+def read_test_sources(
+    tests_dir: Path, unreadable: list[Path] | None = None
+) -> dict[Path, str] | None:
+    """``{path: text}`` for every ``*.py`` under ``tests_dir`` naming a pin.
+
+    Only files that contain ``_PARENT_REVISION_ID`` at all are kept, so the
+    dict stays small; :func:`find_parent_pins` does the real matching.
+    ``None`` — not ``{}`` — when the directory does not exist, because "could
+    not search" must not render as "searched and found nothing".
+
+    A file that cannot be read is appended to ``unreadable`` when given. A
+    caller seeing it non-empty must treat the search as INCOMPLETE — the pin
+    may be in exactly that file — and say UNKNOWN, not "no pin found".
+    """
+    if not tests_dir.is_dir():
+        return None
+    found: dict[Path, str] = {}
+    for path in sorted(tests_dir.rglob("*.py")):
+        try:
+            # INSIDE the `try`, deliberately. `Path.is_file()` swallows only
+            # ENOENT/ENOTDIR/EBADF/ELOOP: for a file in a directory that can be
+            # listed but not entered (mode 0600) it RAISES PermissionError,
+            # which outside the `try` crashed the counter instead of marking
+            # that file unreadable.
+            if not path.is_file():
+                # A directory or dangling symlink named `*.py` holds no pin, and
+                # counting it unreadable would make EVERY run's search UNKNOWN.
+                continue
+            text = path.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            if unreadable is not None:
+                unreadable.append(path)
+            continue
+        if "_PARENT_REVISION_ID" in text:
+            found[path] = text
+    return found
+
+
+def old_parent_of(scan: Scan, revision: str) -> str | None:
+    """The single parent ``revision`` currently declares, or ``None``.
+
+    A fork root is never a merge revision (those are ``blocked``), so there is
+    at most one string literal to read.
+    """
+    parents = PARENT_REF_RE.findall(scan.revisions.get(revision, ""))
+    return parents[0] if len(parents) == 1 else None
+
+
+def repoint_sites(
+    scan: Scan,
+    revision: str,
+    new_parent: str,
+    revision_source: str | None,
+    test_sources: dict[Path, str],
+) -> RepointSites:
+    """All three edit sites for re-pointing ``revision`` onto ``new_parent``."""
+    old_parent = old_parent_of(scan, revision)
+    # `old_parent is None` has two causes that must not share wording: a true
+    # chain root (the right-hand side IS `None`) and a right-hand side holding
+    # no string literal at all (`down_revision = PARENT`).
+    declared_rhs = scan.revisions.get(revision, "None").partition("#")[0].strip()
+    parent_unparsed = old_parent is None and declared_rhs != "None"
+    down_before: str | None = None
+    down_after = f'down_revision: str | Sequence[str] | None = "{new_parent}"'
+    revises: tuple[str | None, str] | None = (None, f"Revises: {new_parent}")
+    if revision_source is not None:
+        down_match = DOWN_RE.search(revision_source)
+        if down_match:
+            down_before = down_match.group(0).replace("\r", "").rstrip()
+            # Keep the author's own left-hand side (annotated or legacy) AND
+            # any trailing `# comment`: only the parent literal changes, so the
+            # advice never tells an author to delete what they wrote.
+            lhs = down_before[: down_match.start(1) - down_match.start(0)]
+            rhs = down_before[len(lhs) :]
+            value, hash_sign, comment = rhs.partition("#")
+            literal = (
+                re.search(r"([\"'])" + re.escape(old_parent) + r"\1", value)
+                if old_parent is not None
+                else None
+            )
+            if literal:
+                quote = literal.group(1)
+                new_value = (
+                    value[: literal.start()]
+                    + f"{quote}{new_parent}{quote}"
+                    + value[literal.end() :]
+                )
+            else:
+                # `None` (a chain root) or no readable literal: write the
+                # target, keeping whatever spacing preceded a comment.
+                trailing = value[len(value.rstrip()) :]
+                new_value = f'"{new_parent}"' + trailing
+            down_after = lhs + new_value + hash_sign + comment
+        revises_match = REVISES_RE.search(revision_source)
+        revises = (
+            (
+                revises_match.group(0).replace("\r", "").rstrip(),
+                f"Revises: {new_parent}",
+            )
+            if revises_match
+            else None
+        )
+    return RepointSites(
+        revision=revision,
+        path=scan.paths.get(revision),
+        old_parent=old_parent,
+        new_parent=new_parent,
+        down_revision=(down_before, down_after),
+        revises=revises,
+        pins=find_parent_pins(test_sources, revision, old_parent, new_parent),
+        computed_pins=find_computed_parent_pins(test_sources, revision),
+        mismatched_pins=find_mismatched_parent_pins(test_sources, revision, old_parent),
+        parent_unparsed=parent_unparsed,
+    )
+
+
+def plan_repoint_sites(
+    scan: Scan,
+    remediation: Remediation,
+    sources: dict[Path, str],
+    test_sources: dict[Path, str],
+) -> dict[str, RepointSites]:
+    """``{revision: RepointSites}`` for every edit a single-target remedy names.
+
+    Empty when the remedy has no single ``target`` — the ``chain`` and
+    target-less ``blocked`` arms name roots but no parent to adopt, and this
+    will not invent one.
+    """
+    if remediation.target is None:
+        return {}
+    return {
+        revision: repoint_sites(
+            scan,
+            revision,
+            remediation.target,
+            sources.get(path) if path is not None else None,
+            test_sources,
+        )
+        for revision, path in remediation.edits
+    }

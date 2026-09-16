@@ -48,10 +48,60 @@ Validation rules, and why each is a 422 rather than a stored value:
 Clocks: this server's clock is the only one trusted for LIVENESS. Freshness is
 judged from ``received_at`` alone; ``observed_at`` only orders readings and is
 shown beside ``observed_skew_secs`` so a skewed runner clock is visible.
+
+The slug census (Phase 1 of
+``2026-09-15-captured-vs-authored-coverage-is-a-set-difference``)
+=================================================================
+
+``censuses`` is OPTIONAL and defaults to empty, because a runner that sends no
+census is the ENTIRE CURRENT FLEET and must keep succeeding. It is accepted
+here before anything sends it on purpose: ``extra="forbid"`` turns an unknown
+key into a 422 that refuses the WHOLE report, and the runner's report body is
+built from its configuration, so such a 422 would silence that device on every
+attempt, forever. The web half therefore lands, and deploys, first.
+
+What it carries and why each rule is a 422 rather than a stored value:
+
+* **``digest`` is ``sha256`` over the SORTED, NEWLINE-JOINED stems**
+  (:func:`slug_census_digest`) — a cross-repo wire contract, recomputed here.
+  A ``slugs`` list that disagrees with its own ``digest`` is a 422: storing a
+  set this server cannot vouch for is the same class of defect as storing a
+  count nobody measured.
+* **``slugs: null`` with a ``digest`` means "unchanged since my last report".**
+  The stems are ~100 KB and the report is a per-cycle heartbeat, so the device
+  re-sends them only when the digest moves. The stored set is KEPT when the
+  digest matches what is stored, and **cleared to UNKNOWN when it does not** —
+  see ``app.crud.plan_scan_root``. That asymmetry is the integrity property.
+* **Past :data:`SLUG_CENSUS_MAX` stems the census is TRUNCATED, and a truncated
+  census is a FLOOR in exactly the sense ``counts_are_floors`` already means on
+  this report**: what it names is a lower bound, and an absence from it
+  establishes nothing. No second word is minted for this. The fleet already
+  landed one honesty vocabulary (``min_behind``, ``min_behind_is_floor``,
+  ``counts_are_floors``, ``observation_fresh``); a synonym for an idea that
+  already has a name is the defect this plan family exists to stop.
+* **A census is ABSENT, never empty, when the enumeration did not run.** An
+  idle or failed scan cycle sends no entry for that source. ``count: 0`` is the
+  claim that the side really holds no plans — a reading, not a silence — which
+  is why ``not_scanning`` (nothing is scanned at all) may carry no census.
+* **At most one census per ``source``**, and therefore at most two: two
+  listings of the same side leave "which one is stored" to statement order.
+* **All three spellings of "no census" are accepted, and are one state**: the
+  key omitted, ``[]``, and an explicit ``censuses: null``. The third is the
+  runner's stated discipline for this very struct — *"Every optional field
+  serializes as an explicit ``null`` rather than being omitted"* — so refusing
+  it would 422 the whole report of a conforming device on every idle cycle,
+  forever. Coercing a null to a value is otherwise wrong on this route; it is
+  right for THIS container because "absent" and "empty" already denote the
+  same state here (the field is *"OPTIONAL, and empty by default"*). The
+  absent-never-empty rule above is enforced **per ENTRY** — a source whose
+  enumeration did not run sends no entry — and is untouched by it.
 """
 
+import hashlib
+import re
+from collections.abc import Iterable
 from datetime import UTC, datetime
-from typing import Literal, Self
+from typing import Annotated, Literal, Self
 from uuid import UUID
 
 from pydantic import (
@@ -80,6 +130,169 @@ _SHA_MAX = 64
 #: absorbs ordinary NTP drift; anything more is a broken runner clock, and
 #: storing it would let that reading outrank every honest report after it.
 MAX_FUTURE_SKEW_SECS = 300
+
+#: The two sides a stem census can be listed from, as the runner serializes
+#: them. ``ref`` is the fetched default branch the plan adapter's WORK-UNIT
+#: half reads (``read_ref_dir`` in ``plan_workunit_adapter/ref_scan.rs``);
+#: ``work_tree`` is the directory its BODY SYNC half reads (``scan_one_root``
+#: in ``plan_workunit_adapter/body_push.rs``) — the half that fills the corpus
+#: this census exists to measure. They are deliberately two sources: the halves
+#: scan different things, which is why one device holds both answers and
+#: nothing else in the fleet holds either.
+SlugCensusSource = Literal["ref", "work_tree"]
+
+#: The most stems one census may carry on the wire. The corpus is ~1826 stems
+#: today, so this is headroom rather than a trim; a device past it sends the
+#: first ``SLUG_CENSUS_MAX`` in sorted order and says ``truncated: true``.
+SLUG_CENSUS_MAX = 5000
+
+#: The most censuses one report may carry — one per :data:`SlugCensusSource`.
+SLUG_CENSUS_MAX_PER_REPORT = 2
+
+#: A plan stem is a slug, and the bound is **the one a stem actually has to
+#: pass**: the plan-library write door caps ``slug`` at 512
+#: (``WorkArtifactUpsert.slug`` in ``app.schemas.plan_library``). The stored
+#: column itself is ``Text`` — unbounded (``app.models.work_artifact``) — and
+#: the 255 this constant used to carry is ``work_unit_slug``'s bound, a
+#: DIFFERENT column. A 256-512 character stem is therefore a legal artifact
+#: slug, and refusing it here would 422 the whole report of any device whose
+#: stem list comes from a directory listing — permanently, since that body is
+#: built from its configuration. (Longest stem on ``qontinui-dev-notes``
+#: ``origin/main`` measured 2026-09-15: 135 characters.)
+_SLUG_MAX = 512
+
+#: ``sha256`` renders as 64 lowercase hex characters.
+_SHA256_HEX_RE = re.compile(r"\A[0-9a-f]{64}\Z")
+
+#: One stem, as the device listed it.
+SlugCensusStem = Annotated[str, Field(min_length=1, max_length=_SLUG_MAX)]
+
+
+def slug_census_digest(slugs: Iterable[str]) -> str:
+    """The census digest, defined ONCE for both repos.
+
+    ``sha256`` over the stems **sorted and joined with a single ``\\n``**, no
+    trailing newline, encoded UTF-8. The sort is by code point — Python's
+    default and Rust's ``[String]::sort`` (byte order over UTF-8 is code-point
+    order) — so the runner and this server agree byte for byte.
+
+    The digest covers the stems **as sent**: a truncated census digests the
+    prefix it transmitted, not the set it enumerated. That is what lets this
+    server verify exactly what it stored rather than take the device's word for
+    it, which :class:`PlanSlugCensus` does on every census carrying ``slugs``.
+    """
+    return hashlib.sha256("\n".join(sorted(slugs)).encode("utf-8")).hexdigest()
+
+
+class PlanSlugCensus(BaseModel):
+    """One side's plan-stem listing, as the device that scans enumerated it.
+
+    This is the denominator the plan corpus has never had. Every shipped
+    capture surface counts a numerator; none owns a denominator, so the fleet
+    has never been able to answer *"of the plans that exist, how many did the
+    corpus capture?"* — and the naive answers computed off a single git ref
+    have read 76.5% and 101.8% for the same corpus. The set the device
+    enumerated, carried per ``source`` and joined by ``source_repo``, is what
+    makes the answer a SET DIFFERENCE instead.
+
+    Read the module docstring for the four rules (digest, the withheld-set
+    heartbeat, the truncation floor, and absent-never-empty) and why each is a
+    422 rather than a coerced value.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    #: Which side this listing is of. At most one census per source per report.
+    source: SlugCensusSource
+    #: What ``default_ref`` pointed at when a ``ref`` census was listed. Null
+    #: for a ``work_tree`` census, whose HEAD the report already carries as
+    #: ``head_sha``.
+    ref_sha: str | None = Field(None, max_length=_SHA_MAX)
+    #: How many stems the device ENUMERATED on this side — exact, and not
+    #: bounded by :data:`SLUG_CENSUS_MAX`. When ``truncated``, it exceeds
+    #: ``len(slugs)``: it is the SET that is a floor, not this number.
+    count: StrictInt = Field(..., ge=0, le=_BIGINT_MAX)
+    #: ``sha256`` over the sorted, newline-joined ``slugs`` AS SENT — see
+    #: :func:`slug_census_digest`. Required even when ``slugs`` is withheld:
+    #: it is what a withheld set is re-asserted BY.
+    digest: str = Field(..., min_length=64, max_length=64)
+    #: The stems. SORTED as stored — :meth:`_census_is_coherent` sorts them, so
+    #: the documented order is ENFORCED rather than merely asserted. The digest
+    #: is over the sorted form either way, so an unsorted list with a correct
+    #: digest is normalized rather than refused. ``null`` is not "no stems" —
+    #: it is "unchanged since my last report, and ``digest`` says which set I
+    #: mean".
+    slugs: list[SlugCensusStem] | None = Field(None, max_length=SLUG_CENSUS_MAX)
+    #: ``True`` when the device had more than :data:`SLUG_CENSUS_MAX` stems and
+    #: sent the sorted prefix. The set is then a FLOOR in the sense
+    #: ``counts_are_floors`` already means: membership proves existence,
+    #: absence proves nothing.
+    truncated: StrictBool
+
+    @field_validator("digest")
+    @classmethod
+    def _digest_is_lowercase_sha256(cls, value: str) -> str:
+        if not _SHA256_HEX_RE.match(value):
+            raise ValueError(
+                "digest must be 64 lowercase hex characters (sha256 over the "
+                "sorted, newline-joined stems). An unparseable digest cannot "
+                "be compared with the stored one, so a withheld set could "
+                "neither be kept nor honestly cleared."
+            )
+        return value
+
+    @model_validator(mode="after")
+    def _census_is_coherent(self) -> Self:
+        if self.slugs is None:
+            # A withheld set is re-asserted by its digest alone; nothing below
+            # is decidable without the stems.
+            return self
+        if len(set(self.slugs)) != len(self.slugs):
+            duplicates = sorted({s for s in self.slugs if self.slugs.count(s) > 1})[:5]
+            raise ValueError(
+                f"a census is a SET of stems; these repeat: "
+                f"{', '.join(duplicates)}. A duplicate makes 'count' and the "
+                "digest disagree about what was enumerated."
+            )
+        expected = slug_census_digest(self.slugs)
+        if self.digest != expected:
+            raise ValueError(
+                f"digest {self.digest} does not match the stems sent "
+                f"(sha256 over the sorted, newline-joined slugs is {expected}). "
+                "The digest is the cross-repo wire contract this server "
+                "verifies rather than trusts."
+            )
+        if self.truncated:
+            if self.count <= len(self.slugs):
+                raise ValueError(
+                    f"a truncated census must have enumerated more stems than "
+                    f"it sent; count {self.count} with {len(self.slugs)} slugs "
+                    "claims a truncation that did not happen."
+                )
+        elif self.count != len(self.slugs):
+            raise ValueError(
+                f"an untruncated census must send every stem it counted: "
+                f"count {self.count}, {len(self.slugs)} slugs. Set "
+                "'truncated: true' if the set really was cut, so a reader "
+                "treats it as a floor rather than as the whole side."
+            )
+        # Normalize to the order this field documents and the digest is taken
+        # over. It was the one invariant this module stated and did not
+        # enforce, on a cross-repo contract field: "sorted" by convention alone
+        # drifts, and the digest cannot catch the drift because it is computed
+        # over ``sorted()`` on both sides.
+        self.slugs = sorted(self.slugs)
+        return self
+
+
+#: The census list, with its per-report cap carried on the ANNOTATION rather
+#: than on the field. That is what lets ``ScanRootReport.censuses`` be
+#: NULLABLE — a constraint on a union is not applicable, and the nullability is
+#: required: an explicit ``censuses: null`` is the runner's own wire discipline
+#: for this struct.
+CensusList = Annotated[
+    list[PlanSlugCensus], Field(max_length=SLUG_CENSUS_MAX_PER_REPORT)
+]
 
 
 class ScanRootReport(BaseModel):
@@ -116,6 +329,47 @@ class ScanRootReport(BaseModel):
     #: When the runner took the reading (RFC 3339, with an offset). The
     #: ordering key between reports; never used to judge liveness.
     observed_at: AwareDatetime
+    #: The stem listings this cycle enumerated — at most one per
+    #: :data:`SlugCensusSource`. OPTIONAL, and empty by default: a runner that
+    #: sends none is the entire current fleet and must keep succeeding. An
+    #: enumeration that did not run sends no entry, never a zero.
+    #:
+    #: **All three spellings of "no census" are accepted and are the same
+    #: stored state**: the key omitted, ``[]``, and an explicit ``null``. The
+    #: last one is not a convenience — it is the runner's stated wire
+    #: discipline for this very struct: *"Every optional field serializes as an
+    #: explicit ``null`` rather than being omitted"*
+    #: (``ScanRootReport`` in ``plan_workunit_adapter/body_push.rs``, where all
+    #: TEN optional fields are ``Option<T>`` with no ``skip_serializing_if`` —
+    #: 13 fields in all; ``state``, ``counts_are_floors`` and ``observed_at``
+    #: are not optional).
+    #: A runner half that follows it ships ``Option<Vec<PlanSlugCensus>>`` =
+    #: ``None`` on every idle cycle, and refusing that spelling would 422 the
+    #: WHOLE report of such a device on every idle cycle, forever — the exact
+    #: permanent mute the deploy-ordering gate exists to prevent, in the one
+    #: field the gate was built for.
+    censuses: CensusList | None = Field(default_factory=list)
+
+    @field_validator("censuses", mode="before")
+    @classmethod
+    def _absent_census_list_is_empty(cls, value: object) -> object:
+        """Map an explicit ``censuses: null`` onto the empty list.
+
+        Coercing ``null`` to a value is normally the wrong move on this route —
+        every other rule here is a 422 rather than a defaulted value, because a
+        count nobody measured must not be invented. It is right **here
+        specifically**, and only because of what this container is: "no census"
+        and "empty census list" are the SAME state by the module docstring's
+        own rule (the field is *"OPTIONAL, and empty by default"*), so nothing
+        is being invented — the two spellings already denote one state.
+
+        The absent-never-empty rule the module enforces is a rule about an
+        ENTRY, not about this container: a SOURCE whose enumeration did not run
+        sends no entry for that source, and ``census_fields`` stores that as
+        NULL/UNKNOWN. That per-entry rule is untouched here, and a
+        ``not_scanning`` report still may carry no entry at all.
+        """
+        return [] if value is None else value
 
     @field_validator("observed_at")
     @classmethod
@@ -178,6 +432,23 @@ class ScanRootReport(BaseModel):
             raise ValueError(
                 f"state '{self.state}' must carry a non-empty 'detail' naming "
                 "why — an unexplained unknown is a dead end for the reader."
+            )
+        # ``censuses`` is normalized to a list by ``_absent_census_list_is_empty``
+        # above; the ``or []`` is what says so to a type checker.
+        censuses = self.censuses or []
+        sources = [census.source for census in censuses]
+        repeated = sorted({s for s in sources if sources.count(s) > 1})
+        if repeated:
+            raise ValueError(
+                f"at most one census per source; these repeat: "
+                f"{', '.join(repeated)}. Two listings of one side leave which "
+                "is stored to statement order."
+            )
+        if self.state == "not_scanning" and censuses:
+            raise ValueError(
+                "state 'not_scanning' carries no census: nothing was "
+                f"enumerated, so {', '.join(sources)} would be a count nobody "
+                "took. An enumeration that did not run is ABSENT, never zero."
             )
         return self
 
@@ -298,7 +569,9 @@ class ScanRootSourceRollup(BaseModel):
     #: fewest commits behind is a FLOOR of 0 — "at least 0 behind" establishes
     #: no distance, and must never read as "measured, 0 behind".
     state: ScanRootRollupState
-    #: A ``no_comparable_reading:`` or ``ref_stale:`` line when ``unknown``;
+    #: A ``no_comparable_reading:``, ``ref_stale:`` (a zero floor on one shared
+    #: ref that is stale or of unknown age) or ``refs_not_shared:`` (a zero
+    #: floor across different or unidentified refs) line when ``unknown``;
     #: null when ``measured``.
     detail: str | None
     #: Every device whose stored reading names this ``source_repo``.
@@ -331,7 +604,7 @@ class ScanRootSourceRollup(BaseModel):
     #: ESTABLISHED, never "none lagging".
     lagging_device_ids: list[UUID]
     #: Comparable devices the readings do not order: EVERY one of them when
-    #: they counted against different or unknown refs, or against one stale ref
+    #: they counted against different or unidentified refs, or against one stale ref
     #: while some device reports anything but ``ahead == 0`` (commits of its
     #: own, or no ``ahead`` at all). Empty when ordered.
     lag_unknown_device_ids: list[UUID]

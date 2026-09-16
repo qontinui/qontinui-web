@@ -31,7 +31,7 @@
  * 1.3 and was deliberately deleted.
  */
 
-import { useEffect, useState } from "react";
+import { memo, useEffect, useState } from "react";
 import { CiRunPanel } from "./CiRunPanel";
 import { FleetResourceStrip } from "./FleetResourceStrip";
 import { useFleetResourceSamples } from "./useFleetResourceSamples";
@@ -42,7 +42,15 @@ export interface FleetResourcesSectionProps {
   devices: FleetDeviceRef[];
 }
 
-export function FleetResourcesSection({
+/**
+ * Memoised because the Dev Ops page owns the live device-status stream, so
+ * every WebSocket frame re-renders that page. This section reads none of it:
+ * its one prop, `devices`, is the page's `fleet.data?.devices ?? EMPTY_DEVICES`,
+ * whose identity changes only when the fleet-health poll lands a new body. Its
+ * own poll and clock still re-render it through state, which `memo` does not
+ * block.
+ */
+export const FleetResourcesSection = memo(function FleetResourcesSection({
   devices,
 }: FleetResourcesSectionProps) {
   // This section owns the one poll and passes the SAME rows to both children.
@@ -75,4 +83,4 @@ export function FleetResourcesSection({
       />
     </div>
   );
-}
+});

@@ -34,7 +34,7 @@ vi.mock("@/contexts/auth-context", () => ({
 }));
 
 vi.mock("@/components/operations/useDeviceStatusStream", () => ({
-  useDeviceStatusStream: () => ({ byHostname: new Map() }),
+  useDeviceStatusStream: () => ({ byHostname: new Map(), everSeeded: true }),
 }));
 
 const resolveAgentSession = vi.fn();
