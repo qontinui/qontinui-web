@@ -424,7 +424,7 @@ function MyTenantsCard() {
     setError(null);
     try {
       const res = await httpClient.fetch(`${OPERATIONS_API}/coord/my-tenants`);
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      if (!res.ok) throw new Error(await backendErrorMessage(res));
       const json = (await res.json()) as MyTenantsResponse | null;
       // This read is cast straight into state with no check at all. A `null`
       // body — legal JSON, and what a proxy returns when it has nothing —
@@ -614,7 +614,7 @@ function MembersTable({
     setError(null);
     try {
       const res = await httpClient.fetch(`${OPERATIONS_API}/coord/members`);
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      if (!res.ok) throw new Error(await backendErrorMessage(res));
       const json = (await res.json()) as MembersResponse;
       // The third sibling. A malformed 200 here fabricates "No members yet." —
       // and, through `stats` below, the four-count headline `members 0 ·
@@ -660,10 +660,7 @@ function MembersTable({
           )}/roles`,
           { method: "POST", body: JSON.stringify({ role }) }
         );
-        if (!res.ok) {
-          const text = await res.text();
-          throw new Error(`HTTP ${res.status} ${text}`.trim());
-        }
+        if (!res.ok) throw new Error(await backendErrorMessage(res));
         toast.success(`Granted ${tierLabel(role)}`);
         await load();
         onChanged();
@@ -689,10 +686,7 @@ function MembersTable({
           )}/roles`,
           { method: "DELETE", body: JSON.stringify({ role }) }
         );
-        if (!res.ok) {
-          const text = await res.text();
-          throw new Error(`HTTP ${res.status} ${text}`.trim());
-        }
+        if (!res.ok) throw new Error(await backendErrorMessage(res));
         toast.success(`Revoked ${tierLabel(role)}`);
         await load();
         onChanged();
@@ -1262,7 +1256,7 @@ function GroupTenantRolesSection({ isSuperuser }: { isSuperuser: boolean }) {
       const res = await httpClient.fetch(
         `${OPERATIONS_API}/coord/group-tenant-roles`
       );
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      if (!res.ok) throw new Error(await backendErrorMessage(res));
       const json = (await res.json()) as GroupTenantRolesResponse;
       // A successful STATUS is not a successful READ — the same rule the
       // blast-radius read of this SAME endpoint applies below. `?? []` is dead
@@ -1413,10 +1407,7 @@ function GroupTenantRolesSection({ isSuperuser }: { isSuperuser: boolean }) {
             }),
           }
         );
-        if (!res.ok) {
-          const text = await res.text();
-          throw new Error(`HTTP ${res.status} ${text}`.trim());
-        }
+        if (!res.ok) throw new Error(await backendErrorMessage(res));
         toast.success("Mapping deleted");
         await load();
       } catch (err) {
@@ -1989,6 +1980,32 @@ function renderAffected(
  * `detail` is still read FIRST because FastAPI's own default handler (and so
  * every test app that does not register that middleware) still produces it.
  *
+ * ## Every `!res.ok` that FORMATS A MESSAGE comes through here
+ *
+ * The envelope reader above was added for the add-by-email form and then left
+ * unreached by most of the page: nine call sites still threw their own
+ * `HTTP ${res.status}` — six reads discarding the backend's sentence outright,
+ * and the three mutations (grant role, revoke role, delete mapping) appending
+ * the RAW body instead, which in production is the whole envelope pasted into a
+ * toast: `Grant failed: HTTP 403 {"error":"INSUFFICIENT_PERMISSIONS","message":
+ * "{\"error\":\"not_admin_in_target_tenant\"}","timestamp":1758…,"path":"https://…
+ * /roles"}`. A float and a URL in an error toast is the same defect as
+ * `[object Object]`, one shape along, and it landed on the two controls that
+ * change who has access.
+ *
+ * So this is the page's single door for a REASON. A new fetch that renders why
+ * a call failed reads `!res.ok` through `backendErrorMessage` (or
+ * `messageFromErrorBody`, when the body is already consumed) and never formats
+ * a status itself — the status fallback lives INSIDE, where it is reached only
+ * once nothing better exists.
+ *
+ * Two deliberate exceptions, named so a later reader does not "fix" them:
+ * a `res.status === 404 / 409` arm that returns its own sentence about a
+ * KNOWN condition and never needs the body (the ambiguous-email 409, the
+ * group-already-gone 404), and `blastRadiusReadCause`, a separate reader whose
+ * job is to classify a failed read rather than quote it. Both consume the
+ * status BEFORE this door and neither competes with it.
+ *
  * A JSON body carrying none of them falls back to the STATUS, not to its own
  * source text — `{}` printed as `{}` is the same non-message as
  * `[object Object]`. A body that is not JSON at all is different: a plain-text
@@ -2001,40 +2018,189 @@ async function backendErrorMessage(res: Response): Promise<string> {
 /** The body-level half of {@link backendErrorMessage}, for callers that
  * have already consumed `res.text()`. */
 function messageFromErrorBody(text: string, status: number): string {
+  const sentence = sentenceFromErrorText(text, 0);
+  if (sentence !== null) return sentence;
+  // Parsed as JSON and carries no sentence — `{}`, or a shape this does not
+  // know. The raw JSON is NOT a message: printing it puts `{}` or a brace-blob
+  // where the operator expects a reason, which is the same defect as
+  // `[object Object]` one shape along. The status is at least true, and it is
+  // what these call sites showed before they were routed here.
+  return `HTTP ${status}`;
+}
+
+/**
+ * `"<field> — <reason>"` from the first entry of a `validation_exception_handler`
+ * `details` array, or `null` when the value is not that shape.
+ */
+function firstValidationDetail(details: unknown): string | null {
+  if (!Array.isArray(details) || details.length === 0) return null;
+  const first = details[0];
+  if (first === null || typeof first !== "object") return null;
+  const { field, message } = first as { field?: unknown; message?: unknown };
+  const hasField = typeof field === "string" && field;
+  const hasMessage = typeof message === "string" && message;
+  if (hasField && hasMessage) return `${field} — ${message}`;
+  if (hasMessage) return message;
+  if (hasField) return field;
+  return null;
+}
+
+/**
+ * A candidate string, if it is something an operator can actually read —
+ * otherwise `null`, so the caller falls back to the status.
+ *
+ * Applied at EVERY level, not just the top: a plain-text gateway or proxy body
+ * IS the sentence, but three things that arrive in the same slot are not, and
+ * each is the brace-blob defect one shape further along.
+ *
+ *  - **An HTML error page.** `<html><head><title>502 Bad Gateway</title>…
+ *    <center>nginx</center></html>` in a section's error paragraph is prose to
+ *    nobody. This is the common shape from a load balancer.
+ *  - **A Python `repr` of a dict.** `http_exception_handler` emits
+ *    `str(detail_value)` when a dict detail carries `error` but no `message`,
+ *    so `{'error': 'not_admin_in_target_tenant'}` — single quotes, not JSON,
+ *    so the recursion's own parse fails and it would otherwise fall through
+ *    here as "text". That is exactly the leak `_readable_coord_refusal` exists
+ *    to stop server-side. The pattern deliberately matches only a brace
+ *    followed by a QUOTE, so a legitimate sentence like
+ *    `{role} is not a valid tier` still passes.
+ *  - **Something merely enormous.** Same argument, by length.
+ */
+function plainSentence(value: string): string | null {
+  const raw = value.trim();
+  if (!raw) return null;
+  if (raw.startsWith("<")) return null;
+  if (/^\{\s*['"]/.test(raw)) return null;
+  if (raw.length > 300) return null;
+  return raw;
+}
+
+/** How many times {@link sentenceFromErrorText} will unwrap a body-in-a-body.
+ * Two is the deepest shape that exists (the envelope's `message` holding
+ * coord's body); the bound is what stops a pathological nest looping. */
+const MAX_ERROR_UNWRAP = 2;
+
+/**
+ * The operator-facing sentence inside one error body, or `null` when it has
+ * none. `text` may be JSON or plain text.
+ *
+ * ## Why this recurses, and why it is not over-engineering
+ *
+ * A web-backend error can carry ANOTHER error body inside a string field, and
+ * on this page that is the ORDINARY case rather than an exotic one. Only
+ * `POST /coord/tenant-members` goes through `_proxy_coord_post_readable`, which
+ * composes a human sentence; every other route here is a plain coord proxy, and
+ * all three of those helpers raise `HTTPException(detail=resp.text)` — coord's
+ * WHOLE response body as one string (`operations.py`, `_proxy_coord_get` /
+ * `_proxy_coord_post` with `structured_errors=False` / `_proxy_coord_delete`).
+ * `http_exception_handler` then copies a string detail into `message` untouched,
+ * so what actually arrives on a failed grant is:
+ *
+ * ```
+ * {"error":"INSUFFICIENT_PERMISSIONS",
+ *  "message":"{\"error\":\"not_admin_in_target_tenant\"}",
+ *  "timestamp":1758055642.1,"path":"https://…/roles"}
+ * ```
+ *
+ * A reader that stops at `message` hands the operator
+ * `{"error":"not_admin_in_target_tenant"}` — braces and all. Unwrapping one
+ * more level yields `not_admin_in_target_tenant`, which is the string the
+ * backend actually chose to send and the one an operator searches for.
+ *
+ * Doing it here rather than in the backend is deliberate: it makes the sentence
+ * correct for every route on this page at once, regardless of which proxy
+ * helper each one happens to use, and it needs no change to helpers whose
+ * pass-through-verbatim contract other suites pin by exact equality.
+ *
+ * Order within one object: a string `detail`, a structured `detail.message`,
+ * then `detail.error`, then the envelope's `message`, then its `error`.
+ */
+function sentenceFromErrorText(text: string, depth: number): string | null {
+  let parsed: unknown;
   try {
-    const parsed = JSON.parse(text) as {
-      detail?: unknown;
-      message?: unknown;
-      error?: unknown;
-    };
-    const detail = parsed?.detail;
-    if (typeof detail === "string" && detail) return detail;
-    if (detail && typeof detail === "object") {
-      const detailMessage = (detail as { message?: unknown }).message;
-      if (typeof detailMessage === "string" && detailMessage) {
-        return detailMessage;
+    parsed = JSON.parse(text);
+  } catch {
+    // Not JSON — so this is either a real sentence or something that only
+    // looks like one. `plainSentence` decides, and it is the SAME predicate
+    // the unwrap arm below uses.
+    return plainSentence(text);
+  }
+  if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
+    return null;
+  }
+  const obj = parsed as Record<string, unknown>;
+
+  // A string that is itself a JSON object is a nested BODY, not a sentence, so
+  // recurse into it; its extraction result is authoritative either way, since
+  // returning the raw braces when the nest carries nothing is the defect this
+  // exists to stop. Anything else is a candidate sentence and faces the same
+  // `plainSentence` test as a non-JSON top-level body.
+  //
+  // Both arms are guarded, and that is the whole point. An extracted value is
+  // ONE LEVEL IN, which for seven of the nine call sites is where the real
+  // body lives — `_proxy_coord_get` sets `detail=resp.text` for any coord
+  // status >= 400, so when a proxy in front of coord answers 502 with an HTML
+  // page, that HTML is coord's response text and arrives inside `message`.
+  // Guarding only the top level would refuse the HTML that is hard to reach
+  // and pass the HTML that is easy to.
+  const unwrap = (value: string): string | null =>
+    depth < MAX_ERROR_UNWRAP && value.trimStart().startsWith("{")
+      ? sentenceFromErrorText(value, depth + 1)
+      : plainSentence(value);
+
+  const detail = obj.detail;
+  if (typeof detail === "string" && detail) return unwrap(detail);
+  if (detail !== null && typeof detail === "object" && !Array.isArray(detail)) {
+    const d = detail as Record<string, unknown>;
+    if (typeof d.message === "string" && d.message) return unwrap(d.message);
+    // The structured coord refusal as FastAPI's own default handler renders it
+    // — `{"detail": {"error": "not_admin_in_target_tenant"}}`, with no
+    // `message` unless `_readable_coord_refusal` composed one. Reading `error`
+    // here is what makes a test app (which does not register the production
+    // middleware) answer the same sentence a deployed backend does.
+    if (typeof d.error === "string" && d.error) return unwrap(d.error);
+  }
+  // The production envelope: no `detail`, a human `message` and a machine
+  // `error` beside it.
+  if (typeof obj.message === "string" && obj.message) {
+    // `validation_exception_handler` puts the SAME generic `message` on every
+    // 422 ("Invalid request data") and the only specific thing it knows in a
+    // sibling `details` array. Returning the generic half alone would tell an
+    // operator a field is wrong without saying which.
+    const field = firstValidationDetail(obj.details);
+    // `unwrap` first even on this arm. Not reachable against the real backend
+    // (a `details` array only reaches the top level through the metadata
+    // splice, which runs on a DICT detail, whose `message` is a sentence —
+    // while a STRING detail is what nests a body and leaves the metadata
+    // empty), so this is belt and braces rather than a fix.
+    const sentence = unwrap(obj.message) ?? obj.message;
+    return field ? `${sentence}: ${field}` : unwrap(obj.message);
+  }
+  // No sentence, but a code. `not_admin_in_target_tenant` is a poor sentence
+  // and a far better answer than `HTTP 403`.
+  if (typeof obj.error === "string" && obj.error) {
+    // Mirror `_readable_coord_refusal` (`operations.py`), which composes
+    // `<code> — <hint|reason|detail>` from exactly these three keys in this
+    // order. The whole point of the recursion is to do client-side what that
+    // helper does server-side, so the two paths should not disagree about
+    // which half of coord's body is worth showing: dropping a `hint` that
+    // says "add a remote first" and keeping only `repo_has_no_remote` throws
+    // away the actionable half.
+    //
+    // That helper's third key, `detail`, is absent here on purpose rather than
+    // by oversight: a string `detail` is the FIRST rung of this function, so a
+    // body carrying one returned several branches ago and can never arrive
+    // here. Listing it would be a dead arm that reads like coverage.
+    const code = unwrap(obj.error) ?? obj.error;
+    for (const key of ["hint", "reason"] as const) {
+      const extra = obj[key];
+      if (typeof extra === "string" && extra.trim()) {
+        return `${code} — ${extra.trim()}`;
       }
     }
-    // The production envelope: no `detail`, a human `message` and a machine
-    // `error` beside it.
-    const message = parsed?.message;
-    if (typeof message === "string" && message) return message;
-    // No sentence, but a code. `not_admin_in_target_tenant` is a poor sentence
-    // and a far better answer than `HTTP 403`: it is the string an operator
-    // searches for, and the one the backend chose to send.
-    const error = parsed?.error;
-    if (typeof error === "string" && error) return error;
-    // Parsed as JSON and carries no sentence — `{}`, or a `detail` in a shape
-    // this does not know. The raw JSON is NOT a message: printing it puts `{}`
-    // or a brace-blob where the operator expects a reason, which is the same
-    // defect as `[object Object]` one shape along. The status is at least true,
-    // and it is what these call sites showed before they were routed here.
-    return `HTTP ${status}`;
-  } catch {
-    // Not JSON — a plain-text gateway or proxy body IS the message, so fall
-    // through to the raw body rather than discarding it for the status.
+    return code;
   }
-  return text.trim() || `HTTP ${status}`;
+  return null;
 }
 
 /**
@@ -2657,7 +2823,7 @@ function CognitoGroupsSection({ isSuperuser }: { isSuperuser: boolean }) {
       const res = await httpClient.fetch(
         `${OPERATIONS_API}/coord/cognito/groups`
       );
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      if (!res.ok) throw new Error(await backendErrorMessage(res));
       const json = (await res.json()) as CognitoGroupsResponse;
       // Same rule as the two `group-tenant-roles` reads: a 200 whose body is
       // not the list is UNKNOWN, not "no groups". `?? []` would render "No
@@ -2687,7 +2853,7 @@ function CognitoGroupsSection({ isSuperuser }: { isSuperuser: boolean }) {
         const res = await httpClient.fetch(
           `${OPERATIONS_API}/coord/group-tenant-roles`
         );
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        if (!res.ok) throw new Error(await backendErrorMessage(res));
         const json = (await res.json()) as GroupTenantRolesResponse;
         // A successful STATUS is not a successful READ. `group_tenant_roles`
         // is declared non-optional, so a `?? []` here is dead per the types
@@ -2744,7 +2910,7 @@ function CognitoGroupsSection({ isSuperuser }: { isSuperuser: boolean }) {
                 g.group_name
               )}/users`
             );
-            if (!res.ok) throw new Error(`HTTP ${res.status}`);
+            if (!res.ok) throw new Error(await backendErrorMessage(res));
             const json = (await res.json()) as CognitoGroupUsersResponse;
             // `memberErrors` is the mechanism #1111 held up as the model — a
             // failed probe becomes "members unknown" rather than a count. But
