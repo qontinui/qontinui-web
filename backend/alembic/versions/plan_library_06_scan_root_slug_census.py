@@ -92,9 +92,30 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "plan_library_06_scan_root_slug_census"
-down_revision: str | Sequence[str] | None = (
-    "coord_repo_branches_touched_files_authoritative_01"
-)
+# KEEP THIS ASSIGNMENT ON ONE LINE — and short enough that a formatter run
+# cannot re-wrap it, which is why the annotation its three siblings carry is
+# absent here (the annotated spelling is 96 columns, past ruff's 88, and ruff
+# wraps the value in parentheses; `[tool.ruff] exclude` spares this tree only
+# when ruff is invoked with `--force-exclude`, as the pre-commit hook is, so a
+# direct `ruff format <file>` still rewraps it).
+#
+# This repo's own head gate accepts the wrapped spelling — scripts/ci/
+# _alembic_graph.py was widened for it in #1370, and its comment there is the
+# authority on why. The reader that CANNOT is coord's, which derives the
+# alembic graph from its mirror of this branch: its parser is line-scoped, so a
+# parenthesised continuation yields no parent at all, this revision's parent
+# then belongs to no revision's parent set, coord counts it as a second
+# authored head, and deploy-coord.yml's drift gate blocks every coord deploy
+# after its 10-minute hold (absent an operator `force_deploy` override). That
+# is what happened on 2026-09-16, hours after this revision landed: three
+# blocked deploys, while alembic itself read the graph as a healthy single head
+# ("DB already at head — no-op").
+#
+# The durable fix is in coord's parser (qontinui-coord crates/coord/src/
+# enrichment.rs). Until a coord build carrying it is SERVING, this line is what
+# keeps the deployed parser right; re-wrapping it before then re-blocks every
+# coord deploy.
+down_revision = "coord_repo_branches_touched_files_authoritative_01"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
