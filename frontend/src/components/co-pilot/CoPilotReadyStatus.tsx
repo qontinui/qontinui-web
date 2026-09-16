@@ -25,7 +25,7 @@
  * Rendered states:
  *   - env gate OFF                          → "⚠ Co-pilot unavailable here"
  *   - loopback dev, not revoked (no explicit grant) → "✓ Auto-granted on localhost"
- *   - loopback dev, revoked this session    → "⚠ Revoked this session"
+ *   - loopback dev, revoked this session    → "⚠ Revoked this session" (→ prompt-home, where the auto-grant can be restored)
  *   - preference OFF                        → "⚠ Co-pilot disabled" (→ settings)
  *   - preference ON, consent !granted       → "⚠ Enabled, consent not granted this session"
  *   - env + preference + consent granted    → "✓ Enabled & consented this session"
@@ -97,11 +97,12 @@ export function CoPilotReadyStatus() {
   if (loopbackDev && state === "revoked") {
     return (
       <Badge
+        asChild
         variant="warning"
         data-testid="co-pilot-ready-status"
         data-status="revoked"
       >
-        ⚠ Revoked this session
+        <Link href="/prompt-home">⚠ Revoked this session</Link>
       </Badge>
     );
   }
