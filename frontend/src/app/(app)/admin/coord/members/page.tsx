@@ -10,15 +10,40 @@
  * the page body. The backend ALSO enforces admin on every mutating endpoint
  * (403), so this gate is the UX layer keeping the surface honest.
  *
- * Four sections:
- *  a. Your tenant + roles      — GET  /coord/my-tenants
+ * Sections, in render order:
+ *  c. Add a member by email    — POST /coord/tenant-members
+ *     (the PRIMARY write, unfolded and first)
  *  b. Members table            — GET  /coord/members
  *                                POST /coord/members/{operator_id}/roles
  *                                DELETE /coord/members/{operator_id}/roles
- *  c. Invite / pre-provision   — POST /coord/members
- *  d. Group → tenant → role    — GET  /coord/group-tenant-roles
+ *  a. Your tenant + roles      — GET  /coord/my-tenants   (folded)
+ *  "Advanced: auto-provision by SSO group" (folded) holding two panels:
+ *   d. Group → tenant → role   — GET  /coord/group-tenant-roles
  *                                POST /coord/group-tenant-roles
  *                                DELETE /coord/group-tenant-roles
+ *   e. Cognito groups          — GET/POST/DELETE /coord/cognito/groups*
+ *                                (superuser-only, gated inside the section)
+ *
+ * The letters are the sections' historical names, kept so the banner comments
+ * further down this file still resolve; they are no longer the order.
+ *
+ * ## One task, one form (plan `2026-09-15-simplify-tenant-member-add-by-email`)
+ *
+ * Section c used to be `InviteForm`, a "invite / pre-provision" panel asking
+ * the administrator to hand-type a Cognito **subject (`sub`)** and an **SSO
+ * provider**. Its own on-page copy conceded it only worked for somebody who
+ * had already signed up and whose `sub` you already knew out-of-band — there
+ * was no invitation behind it, and both fields are internal vocabulary on a
+ * primary surface (**R8**). It is deleted, not deprecated: `AddTenantMemberForm`
+ * takes an email and a tier, and the backend decides whether the account exists
+ * (`added`) or does not (`invite_required`, an honest not-built-yet notice
+ * until Phase 3 of that plan ships a real invitation).
+ *
+ * Sections d and e were the other two ways to "add somebody", each framed in
+ * IdP plumbing. They now sit together under one folded **Advanced** panel that
+ * says what they are actually for — pre-authorizing an entire IdP group's
+ * current *and future* members — so they read as a rarer, different tool
+ * rather than as two more routes to the thing the top form does.
  *
  * PRODUCT TIER ↔ coord role mapping (tier labels shown in UI, coord roles sent
  * to the API): Administrator ↔ `admin`, Developer ↔ `operator`. (A future
@@ -963,155 +988,214 @@ function MemberDetail({
 }
 
 // ===========================================================================
-// Section c — Invite / pre-provision
+// Section c — Add a member by email (the page's PRIMARY write)
 // ===========================================================================
 
-function InviteForm({ onInvited }: { onInvited: () => void }) {
+/**
+ * The success body of `POST /coord/tenant-members`.
+ *
+ * `status` is declared optional against the wire even though the backend
+ * always sends it: a 2xx that carries no arm is a body this component cannot
+ * describe, and the only honest rendering of it is the error arm (see
+ * `submit`), not a silent success.
+ */
+interface TenantMemberAddResponse {
+  status?: string;
+  operator_id?: string;
+  role?: string;
+}
+
+/** What the last submit produced, rendered inline beneath the form. */
+type AddMemberOutcome =
+  | { kind: "added"; email: string; role: CoordRole }
+  | { kind: "invite_required"; email: string }
+  | { kind: "error"; message: string };
+
+/**
+ * ONE form for the one thing an administrator comes to this page to do: give a
+ * colleague access. Two inputs — an email and a tier — and the backend decides
+ * whether that email already has an account (add them now) or does not
+ * (`invite_required`).
+ *
+ * ## Why there is no "group" field (plan Design decision 1)
+ *
+ * The form it replaces (`InviteForm`) asked for a raw Cognito **subject** and
+ * **SSO provider**, and its own copy admitted it only worked for someone who
+ * had already signed up and whose `sub` the administrator knew out-of-band —
+ * i.e. it was never an invitation. Both fields are internal vocabulary on a
+ * primary surface, which is exactly what console style guide **R8** forbids
+ * (`docs/console-ui-style-guide.md:1060`); internal ids belong in `MemberDetail`'s
+ * `raw` slot, and nowhere else on this page.
+ *
+ * The tier selector reuses {@link TIER_OPTIONS} rather than offering a Cognito
+ * group, because a **role** is a first-class product concept this console
+ * already renders (`tierLabel`, `MemberDetail`) while a **group** is plumbing
+ * for a different feature — pre-authorizing an entire IdP group's current *and
+ * future* members. That feature is not removed; it is one panel down, under
+ * "Advanced: auto-provision by SSO group".
+ *
+ * Skipping groups costs nothing durability-wise: coord's login-time
+ * `reconcile_group_memberships` scopes its `DELETE FROM coord.operator_roles`
+ * to its own sentinel `granted_by` (`auth_sso.rs:1328`), so a role granted
+ * directly is never revoked by the group sync.
+ *
+ * ## Why the outcome is inline and not only a toast
+ *
+ * Two of the three arms are not one-liners. `invite_required` has to say that
+ * **nothing happened and no email was sent** — the single most misreadable
+ * state on the page, since every other product's "invite by email" does send
+ * one — and then say what the administrator can do instead. A toast that
+ * disappears in four seconds is the wrong host for that, so the arm renders
+ * into a notice that stays until the next submit. Toasts still fire for the
+ * short arms, matching the rest of this page.
+ */
+function AddTenantMemberForm({ onAdded }: { onAdded: () => void }) {
   const [email, setEmail] = useState("");
-  const [displayName, setDisplayName] = useState("");
-  const [ssoSubject, setSsoSubject] = useState("");
-  const [ssoProvider, setSsoProvider] = useState("cognito");
-  const [role, setRole] = useState<CoordRole>("admin");
+  // Developer, not Administrator: the old form defaulted to `admin`, which
+  // makes the most privileged grant the one a distracted click produces. A
+  // tier is one click to change and a mis-grant is a revoke plus an apology.
+  const [role, setRole] = useState<CoordRole>("operator");
   const [submitting, setSubmitting] = useState(false);
+  const [outcome, setOutcome] = useState<AddMemberOutcome | null>(null);
 
   const submit = useCallback(async () => {
-    if (!email.trim() || !ssoSubject.trim()) {
-      toast.error("Email and Cognito subject are required.");
+    const addr = email.trim();
+    if (!addr) {
+      toast.error("Enter an email address.");
       return;
     }
     setSubmitting(true);
+    setOutcome(null);
     try {
-      const body: Record<string, unknown> = {
-        email: email.trim(),
-        sso_subject: ssoSubject.trim(),
-        sso_provider: ssoProvider.trim() || "cognito",
-        roles: [role],
-      };
-      if (displayName.trim()) body.display_name = displayName.trim();
-      const res = await httpClient.fetch(`${OPERATIONS_API}/coord/members`, {
-        method: "POST",
-        body: JSON.stringify(body),
-      });
-      if (!res.ok) {
-        const text = await res.text();
-        throw new Error(`HTTP ${res.status} ${text}`.trim());
-      }
-      toast.success(`Invited ${email.trim()}`);
-      setEmail("");
-      setDisplayName("");
-      setSsoSubject("");
-      setSsoProvider("cognito");
-      setRole("admin");
-      onInvited();
-    } catch (err) {
-      log.warn("invite failed", err);
-      toast.error(
-        `Invite failed: ${err instanceof Error ? err.message : String(err)}`
+      const res = await httpClient.fetch(
+        `${OPERATIONS_API}/coord/tenant-members`,
+        { method: "POST", body: JSON.stringify({ email: addr, role }) }
       );
+      // 409 is the resolver's ambiguity verdict (more than one Cognito user
+      // carries this email), NOT a generic conflict — same wording the Cognito
+      // group member add already uses, because it is the same condition and an
+      // operator who has read one should recognise the other.
+      if (res.status === 409) {
+        const message =
+          "Ambiguous email — more than one Cognito user matches. Resolve in Cognito first.";
+        setOutcome({ kind: "error", message });
+        toast.error(message);
+        return;
+      }
+      if (!res.ok) throw new Error(await backendErrorMessage(res));
+      const json = (await res.json()) as TenantMemberAddResponse;
+      if (json?.status === "added") {
+        setOutcome({ kind: "added", email: addr, role });
+        toast.success(`Added ${addr} — they have access now`);
+        setEmail("");
+        onAdded();
+        return;
+      }
+      if (json?.status === "invite_required") {
+        // Deliberately NOT a success toast and NOT a cleared field: nothing
+        // was created, so the administrator's input is still the live thing.
+        setOutcome({ kind: "invite_required", email: addr });
+        return;
+      }
+      // A 2xx with no arm this build knows. Rendering it as success would
+      // claim access that may not exist; the status is at least true.
+      throw new Error(
+        `Unexpected response from the server (status: ${
+          typeof json?.status === "string" && json.status
+            ? json.status
+            : "missing"
+        }).`
+      );
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      log.warn("add tenant member failed", err);
+      setOutcome({ kind: "error", message });
+      toast.error(`Add failed: ${message}`);
     } finally {
       setSubmitting(false);
     }
-  }, [email, displayName, ssoSubject, ssoProvider, role, onInvited]);
+  }, [email, role, onAdded]);
 
   return (
-    // R7 — a WRITE form is the clearest case of secondary material: it
-    // is never what an administrator is reading, only what they came to
-    // do occasionally, and it cost ~330px above the group/Cognito
-    // sections on every visit. Testid on the wrapper — see MyTenantsCard.
-    <div data-testid="coord-members-invite">
-    <CollapsiblePanel
-      title="Invite / pre-provision a member"
-      icon={<UserPlus className="h-4 w-4" />}
-      titleAs="h2"
-      defaultOpen={false}
-      storageKey="coord-members-invite"
-      contentClassName="space-y-4"
-    >
-      <>
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          <div className="space-y-1">
-            <Label htmlFor="invite-email">Email</Label>
-            <Input
-              id="invite-email"
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              placeholder="person@example.com"
-              data-testid="invite-email"
-            />
-          </div>
-          <div className="space-y-1">
-            <Label htmlFor="invite-display-name">Display name (optional)</Label>
-            <Input
-              id="invite-display-name"
-              value={displayName}
-              onChange={(e) => setDisplayName(e.target.value)}
-              placeholder="Jane Doe"
-              data-testid="invite-display-name"
-            />
-          </div>
-          <div className="space-y-1">
-            <Label htmlFor="invite-sso-subject">Cognito subject (sub)</Label>
-            <Input
-              id="invite-sso-subject"
-              value={ssoSubject}
-              onChange={(e) => setSsoSubject(e.target.value)}
-              placeholder="e.g. 9f2c…-uuid"
-              data-testid="invite-sso-subject"
-            />
-          </div>
-          <div className="space-y-1">
-            <Label htmlFor="invite-sso-provider">SSO provider</Label>
-            <Input
-              id="invite-sso-provider"
-              value={ssoProvider}
-              onChange={(e) => setSsoProvider(e.target.value)}
-              placeholder="cognito"
-              data-testid="invite-sso-provider"
-            />
-          </div>
-          <div className="space-y-1">
-            <Label htmlFor="invite-tier">Initial tier</Label>
-            <Select
-              value={role}
-              onValueChange={(v) => setRole(v as CoordRole)}
+    <div className="space-y-2" data-testid="coord-members-add">
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
+        <div className="flex-1 space-y-1">
+          <Label htmlFor="add-member-email">Add a member by email</Label>
+          <Input
+            id="add-member-email"
+            type="email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && !submitting) void submit();
+            }}
+            placeholder="colleague@example.com"
+            data-testid="add-member-email"
+          />
+        </div>
+        <div className="space-y-1 sm:w-52">
+          <Label htmlFor="add-member-role">Role</Label>
+          <Select value={role} onValueChange={(v) => setRole(v as CoordRole)}>
+            <SelectTrigger
+              id="add-member-role"
+              className="w-full"
+              data-testid="add-member-role"
             >
-              <SelectTrigger
-                id="invite-tier"
-                className="w-full"
-                data-testid="invite-tier"
-              >
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {TIER_OPTIONS.map((t) => (
-                  <SelectItem key={t.role} value={t.role}>
-                    {t.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {TIER_OPTIONS.map((t) => (
+                <SelectItem key={t.role} value={t.role}>
+                  {t.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
-        <p className="text-xs text-muted-foreground">
-          The user must sign up in Cognito first — the{" "}
-          <span className="font-medium">Cognito subject</span> is their Cognito{" "}
-          <code className="text-[0.7rem]">sub</code> claim. Pre-provisioning here
-          binds that subject to a tenant member + initial role so they have
-          access the moment they sign in.
-        </p>
-        <div className="flex justify-end">
-          <Button
-            onClick={submit}
-            disabled={submitting}
-            data-testid="invite-submit"
-          >
-            <UserPlus className="h-4 w-4" />
-            Invite
-          </Button>
+        <Button
+          onClick={submit}
+          disabled={submitting}
+          data-testid="add-member-submit"
+        >
+          <UserPlus className="h-4 w-4" />
+          {submitting ? "Adding…" : "Add"}
+        </Button>
+      </div>
+
+      {outcome !== null && (
+        <div data-testid="add-member-outcome">
+          {outcome.kind === "added" ? (
+            <p className="flex items-center gap-1.5 text-sm text-muted-foreground">
+              <ShieldCheck className="h-4 w-4 shrink-0" />
+              Added {outcome.email} — they have access now as{" "}
+              {tierLabel(outcome.role)}.
+            </p>
+          ) : outcome.kind === "error" ? (
+            <p className="flex items-center gap-1.5 text-sm text-destructive">
+              <AlertTriangle className="h-4 w-4 shrink-0" />
+              {outcome.message}
+            </p>
+          ) : (
+            <div className="space-y-1 rounded-md border border-border bg-muted/30 p-3">
+              <p className="text-sm font-medium">
+                No Qontinui account exists for {outcome.email} yet — nothing was
+                added, and no invitation email was sent.
+              </p>
+              <p className="text-xs text-muted-foreground">
+                Inviting a brand-new account by email is not built yet. What
+                works today: ask them to sign up themselves, then add them here
+                with this same form — the grant lands immediately once the
+                account exists. To pre-authorize a whole identity-provider group
+                at once instead, use{" "}
+                <span className="font-medium">
+                  Advanced: auto-provision by SSO group
+                </span>{" "}
+                below.
+              </p>
+            </div>
+          )}
         </div>
-      </>
-    </CollapsiblePanel>
+      )}
     </div>
   );
 }
@@ -2886,18 +2970,63 @@ export default function MembersPage() {
       className="p-3 sm:p-6 space-y-4 max-w-5xl"
       data-testid="coord-members-page"
     >
-      {/* R7 — the members table FIRST and unconditional; the four secondary
-          sections below it and folded. Ordering matters as much as folding:
-          "Your tenant & roles" used to sit ABOVE the table, so an
-          administrator arriving to change somebody's access read their own
-          roles first. Each panel keeps its signal on the header while closed
-          (the home tenant's name, the mapping count, the group count), which
-          is R7's actual contract — the panel folds, its signal does not. */}
+      {/* The add form FIRST, then the members table, then everything else
+          folded below. R7's ordering argument ("the read an administrator came
+          for goes first, write forms fold away") held while the write form was
+          a five-field pre-provisioning panel costing ~330px. It is now two
+          inputs and one button — and it is the task this page exists for, so
+          burying it under a members list that grows without bound would cost
+          the primary action a scroll on exactly the tenants that have the most
+          people in them. Everything R7 was actually protecting against is
+          unchanged: nothing secondary sits above the table. */}
+      <AddTenantMemberForm onAdded={bump} />
+      {/* R7 — the members table unconditional; the secondary sections below it
+          and folded. Ordering matters as much as folding: "Your tenant & roles"
+          used to sit ABOVE the table, so an administrator arriving to change
+          somebody's access read their own roles first. Each panel keeps its
+          signal on the header while closed (the home tenant's name, the mapping
+          count, the group count), which is R7's actual contract — the panel
+          folds, its signal does not. */}
       <MembersTable refreshKey={refreshKey} onChanged={bump} />
       <MyTenantsCard />
-      <InviteForm onInvited={bump} />
-      <GroupTenantRolesSection isSuperuser={user?.is_superuser === true} />
-      <CognitoGroupsSection isSuperuser={user?.is_superuser === true} />
+      {/* R7 + the plan's Design decision 1 — the SSO-group machinery is one
+          tool for a different job (pre-authorizing an entire IdP group's
+          current and future members), not a second way to do what the form at
+          the top does. Two sibling panels read as two more options; ONE
+          labelled "Advanced" panel with a sentence of its own reads as the
+          rarer tool it is.
+
+          The cost, named rather than glossed: R7's "the panel folds, its
+          signal does not" now holds one level down. The mapping count and the
+          group count still sit on their own collapsed headers, but those
+          headers are themselves unmounted until this wrapper is opened, so
+          neither number is visible on arrival. That is acceptable HERE and
+          only here — both are inventory counts of a bulk-provisioning tool,
+          not a health signal: nothing about them is ever the thing an
+          administrator must act on now. The one signal that IS (a member
+          holding no access at all) lives in the members table's own
+          StatCluster, which is unconditional and above this. */}
+      <CollapsiblePanel
+        title="Advanced: auto-provision by SSO group"
+        icon={<Users className="h-4 w-4" />}
+        titleAs="h2"
+        defaultOpen={false}
+        storageKey="coord-members-advanced-sso"
+        contentClassName="space-y-4"
+        data-testid="coord-members-advanced"
+      >
+        <>
+          <p className="text-xs text-muted-foreground">
+            Bulk provisioning. Map an identity-provider group to a tenant role
+            and every member of that group — the ones in it today and the ones
+            added to it later — gets that role automatically when they sign in.
+            To give one colleague access, use the form at the top of this page
+            instead.
+          </p>
+          <GroupTenantRolesSection isSuperuser={user?.is_superuser === true} />
+          <CognitoGroupsSection isSuperuser={user?.is_superuser === true} />
+        </>
+      </CollapsiblePanel>
     </div>
   );
 }

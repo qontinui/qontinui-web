@@ -314,6 +314,33 @@ def _effective_tenant_id(
     return identity.home_tenant_id
 
 
+async def require_coord_tenant_admin_target(
+    request: Request,
+    home_tenant_id: UUID = Depends(require_coord_tenant_admin),
+) -> UUID:
+    """The tenant a tenant-admin write LANDS IN — the EFFECTIVE tenant.
+
+    :func:`require_coord_tenant_admin` checks admin in the effective tenant
+    (the switcher selection when the operator is a member of it, else home)
+    but returns the HOME tenant id. For a pass-through proxy that mismatch is
+    harmless: nothing names a tenant, and coord re-scopes the operator on the
+    forwarded ``X-Qontinui-Active-Tenant`` header. For a route that NAMES the
+    target tenant in a body it writes, it is not — an operator viewing tenant
+    B would be admin-checked in B and then written into A, which is either a
+    silent grant in the wrong tenant (when they are admin of both) or a coord
+    ``not_admin_in_target_tenant`` 403 about a tenant they never chose.
+
+    Adds no coord round-trip: ``get_coord_identity`` memoizes the parsed
+    ``/admin/coord/me`` payload on ``request.state``, and the gate above has
+    already paid for it.
+    """
+    identity = await get_coord_identity(request)
+    effective = _effective_tenant_id(
+        identity, request.headers.get(ACTIVE_TENANT_HEADER)
+    )
+    return effective if effective is not None else home_tenant_id
+
+
 def _tenant_headers(tenant_id: UUID | None) -> dict[str, str]:
     """Build the request-headers dict forwarded to coord.
 
@@ -10262,6 +10289,136 @@ async def delete_coord_member_role(
         body=body,
         tenant_id=tenant_id,
     )
+
+
+# ---- Add a tenant member BY EMAIL ---------------------------------------
+#
+# The route above (``POST /coord/members``) is the raw coord proxy: it takes
+# an ``sso_subject`` + ``sso_provider``, which a tenant admin adding one
+# colleague has no way to know. Hand-typing a Cognito ``sub`` is not a
+# workflow; it is a lookup the server can do. This route is that lookup plus
+# the grant, so the dashboard asks for an email and a role and nothing else.
+
+
+class _TenantMemberAddBody(BaseModel):
+    """Body for ``POST /coord/tenant-members``: an email and a role. Period.
+
+    ``extra="forbid"`` is load-bearing, not tidiness. The whole point of this
+    route is that the CALLER never supplies identity-provider fields — the
+    server resolves them. Accepting an ``sso_subject`` or ``sso_provider``
+    here (even ignored) would re-open the surface where a client decides
+    which Cognito identity a tenant grant lands on, which is exactly the
+    defect this route exists to remove. A body carrying either is a 422.
+
+    ``role`` is the two-value set a tenant admin actually grants. Coord's
+    role enum is wider (``operator|agent_supervisor|admin|owner``); the extra
+    two are fleet/ownership concerns that do not belong on a "add my
+    colleague" form, and coord re-validates whatever is sent regardless.
+
+    ``email`` is a plain string rather than ``EmailStr`` on purpose: Cognito
+    is the authority on what its own pool accepts, and it answers a filter it
+    cannot parse with an ``InvalidParameterException`` that
+    ``_invalid_parameter_http`` turns into a 400 carrying AWS's real reason.
+    A pydantic pre-validation would replace that specific answer with a
+    generic one, and would reject addresses Cognito accepts.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    email: str = Field(..., min_length=1)
+    role: Literal["admin", "operator"]
+
+
+@router.post("/coord/tenant-members")
+async def post_coord_tenant_member(
+    body: _TenantMemberAddBody,
+    tenant_id: UUID = Depends(require_coord_tenant_admin_target),
+) -> dict[str, Any]:
+    """Add a person to the caller's tenant by EMAIL — no IdP fields.
+
+    Resolves the email against the Cognito pool, then composes coord's two
+    existing operator writes:
+
+    1. ``POST /admin/coord/operators`` with the resolved ``sub`` — an upsert
+       on ``(sso_provider, sso_subject)`` that never touches ``tenant_id`` on
+       conflict, so it is safe for somebody who already exists in another
+       tenant. It is sent with NO ``roles``: the upsert guarantees the row
+       exists, it does not grant.
+    2. ``POST /admin/coord/operators/{id}/roles`` with the requested role and
+       an explicit ``target_tenant_id``, which coord re-checks the caller is
+       admin in (``403 not_admin_in_target_tenant``).
+
+    Three answers:
+
+    * ``{"status": "added", "operator_id", "role"}`` — they had a Cognito
+      account and now hold ``role`` in this tenant.
+    * ``{"status": "invite_required"}`` — no Cognito account for that email.
+      NOTHING is written: no operator row, no role, no email. Real invitation
+      is a later phase, and answering "invited" here would be a lie the
+      operator only discovers when their colleague never arrives.
+    * ``409`` — the email matches more than one pool user, so picking one
+      would be guessing which human gets access to the tenant.
+
+    Coord's own refusals pass through with their status and typed body
+    intact (``structured_errors=True``) rather than collapsing into a 500 —
+    ``not_admin_in_target_tenant`` is an answer the dashboard can render.
+    """
+    email = body.email.strip()
+    if not email:
+        raise HTTPException(status_code=400, detail="email must not be blank")
+
+    try:
+        identity = await asyncio.to_thread(
+            cognito_admin.resolve_identity_for_email, email
+        )
+    except CognitoAmbiguousEmailError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except CognitoInvalidParameterError as exc:
+        # Ordering is load-bearing — see `_invalid_parameter_http`.
+        raise _invalid_parameter_http(exc) from exc
+    except CognitoAdminError as exc:
+        raise _cognito_http_error(
+            exc,
+            log_event="tenant_member_email_resolve_failed",
+            fallback_detail="Could not resolve user by email.",
+            email=email,
+        ) from exc
+
+    if identity is None:
+        logger.info("tenant_member_add_invite_required", tenant_id=str(tenant_id))
+        return {"status": "invite_required"}
+
+    created = await _proxy_coord_post(
+        "/admin/coord/operators",
+        {
+            "email": email,
+            "sso_subject": identity.sub,
+            "sso_provider": "cognito",
+        },
+        tenant_id=tenant_id,
+        structured_errors=True,
+    )
+    operator_id = created.get("operator_id") if isinstance(created, dict) else None
+    if not isinstance(operator_id, str) or not operator_id:
+        logger.error("tenant_member_add_no_operator_id", response=created)
+        raise HTTPException(
+            status_code=502,
+            detail="coord accepted the operator upsert but returned no operator_id",
+        )
+
+    await _proxy_coord_post(
+        f"/admin/coord/operators/{quote(operator_id, safe='')}/roles",
+        {"role": body.role, "target_tenant_id": str(tenant_id)},
+        tenant_id=tenant_id,
+        structured_errors=True,
+    )
+    logger.info(
+        "tenant_member_add_ok",
+        tenant_id=str(tenant_id),
+        operator_id=operator_id,
+        role=body.role,
+    )
+    return {"status": "added", "operator_id": operator_id, "role": body.role}
 
 
 @router.get("/coord/group-tenant-roles")

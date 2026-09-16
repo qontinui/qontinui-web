@@ -27,7 +27,7 @@ from __future__ import annotations
 import json
 import unicodedata
 from collections.abc import Iterator
-from typing import Any
+from typing import Any, NamedTuple
 
 import boto3
 import structlog
@@ -848,14 +848,34 @@ def list_users_in_group(group_name: str) -> list[dict[str, Any]]:
     return users
 
 
-def resolve_username_for_email(email: str) -> str | None:
-    """Resolve the pool ``Username`` for a verified-or-not account ``email``.
+class CognitoIdentity(NamedTuple):
+    """The pool identity behind an email: its ``Username`` AND its ``sub``.
+
+    Both halves are needed by different callers and they are NOT
+    interchangeable in this pool — see :func:`resolve_username_for_sub`.
+    ``Username`` addresses the Cognito admin API (group membership,
+    ``AdminGetUser``); ``sub`` is the opaque, immutable key coord stores as
+    ``sso_subject``.
+    """
+
+    username: str
+    sub: str
+
+
+def _resolve_single_user_for_email(email: str) -> dict[str, Any] | None:
+    """The one ``ListUsers`` user record matching ``email``, or ``None``.
+
+    The shared core of :func:`resolve_username_for_email` and
+    :func:`resolve_identity_for_email` — so both read the SAME result set
+    under the SAME paging and ambiguity rules, and neither can drift from
+    the other.
 
     Filters ``ListUsers`` by the ``email`` attribute across ALL pages.
-    Returns the single match's ``Username``; returns ``None`` when zero users
-    match; raises :class:`CognitoAmbiguousEmailError` (→ 409/422) when more
-    than one user matches (the email is not a unique key in every pool
-    config, so the caller must disambiguate rather than guess).
+    Returns the single match's raw page entry (``{Username, Attributes,
+    ...}``); returns ``None`` when zero users match; raises
+    :class:`CognitoAmbiguousEmailError` (→ 409/422) when more than one user
+    matches (the email is not a unique key in every pool config, so the
+    caller must disambiguate rather than guess).
 
     It used to pass ``Limit=2`` and read only the first page. ``Limit`` is a
     per-page cap, so an empty first page — routine for a filtered query —
@@ -887,10 +907,63 @@ def resolve_username_for_email(email: str) -> str | None:
             raise CognitoAmbiguousEmailError(f"Multiple users match email: {email}")
     if not matched:
         return None
-    username = matched[0].get("Username")
+    return matched[0]
+
+
+def _username_of(user: dict[str, Any]) -> str | None:
+    """The non-empty ``Username`` of a ``ListUsers`` entry, else ``None``."""
+    username = user.get("Username")
     if not isinstance(username, str) or not username:
         return None
     return username
+
+
+def resolve_username_for_email(email: str) -> str | None:
+    """Resolve the pool ``Username`` for a verified-or-not account ``email``.
+
+    Returns the single match's ``Username``; ``None`` when zero users match.
+    Paging and whole-result-set ambiguity semantics live in
+    :func:`_resolve_single_user_for_email` — read them there.
+    """
+    user = _resolve_single_user_for_email(email)
+    if user is None:
+        return None
+    return _username_of(user)
+
+
+def resolve_identity_for_email(email: str) -> CognitoIdentity | None:
+    """Resolve BOTH the ``Username`` and the ``sub`` for ``email``.
+
+    Same door as :func:`resolve_username_for_email` — same filter, same full
+    paging, same whole-result-set ambiguity check — and it costs the SAME
+    number of AWS calls: ``ListUsers`` already returns each user's
+    ``Attributes``, so the ``sub`` comes out of the page data already in
+    hand rather than a second ``AdminGetUser`` round-trip. (This is the
+    pattern :func:`list_users_in_group` already uses on its own raw pages.)
+
+    Returns ``None`` when no user matches, or when the matched entry has no
+    usable ``Username``. Raises :class:`CognitoAmbiguousEmailError` on >1
+    match, and :class:`CognitoAdminError` when the matched user carries no
+    ``sub`` attribute — a pool returning a user without its own primary key
+    is a broken upstream, and reporting it to the caller as "no such user"
+    would be a lie about somebody who exists.
+    """
+    user = _resolve_single_user_for_email(email)
+    if user is None:
+        return None
+    username = _username_of(user)
+    if username is None:
+        return None
+    attributes = user.get("Attributes")
+    sub = _attributes_to_dict(attributes if isinstance(attributes, list) else []).get(
+        "sub", ""
+    )
+    if not sub:
+        logger.error("cognito_user_without_sub", username=username)
+        raise CognitoAdminError(
+            f"Cognito returned user {username!r} with no 'sub' attribute"
+        )
+    return CognitoIdentity(username=username, sub=sub)
 
 
 def add_user_to_group(username: str, group_name: str) -> None:

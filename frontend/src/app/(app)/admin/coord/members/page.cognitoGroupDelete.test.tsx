@@ -290,6 +290,23 @@ function user(username: string) {
 }
 
 /**
+ * Open the "Advanced: auto-provision by SSO group" wrapper panel.
+ *
+ * Plan `2026-09-15-simplify-tenant-member-add-by-email` Phase 2 moved both
+ * SSO-group sections inside it. It is `defaultOpen={false}` and Radix unmounts
+ * a closed panel's content, so the inner panel's own trigger does not exist
+ * until this one is open. Idempotent via the Radix trigger's `data-state`.
+ */
+async function openAdvanced(
+  user_: ReturnType<typeof userEvent.setup>
+): Promise<void> {
+  const outer = await screen.findByRole("button", {
+    name: /advanced: auto-provision by sso group/i,
+  });
+  if (outer.getAttribute("data-state") !== "open") await user_.click(outer);
+}
+
+/**
  * Open the folded "Cognito Groups" section and wait for its table to mount.
  *
  * The panel persists its open/closed choice to `localStorage`, so `beforeEach`
@@ -299,6 +316,7 @@ function user(username: string) {
 async function openGroupsPanel(
   user_: ReturnType<typeof userEvent.setup>
 ): Promise<void> {
+  await openAdvanced(user_);
   await user_.click(
     await screen.findByRole("button", { name: /cognito groups/i })
   );
