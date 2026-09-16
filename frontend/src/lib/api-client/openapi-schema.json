@@ -85068,7 +85068,7 @@
     },
     "/api/v1/operations/coord/prompt-document-proposals": {
       "get": {
-        "description": "List the tenant's policy-edit proposals, newest first. Any tenant member.\n\n``status`` is forwarded verbatim (coord owns the ``pending`` | ``approved`` |\n``rejected`` vocabulary \u2014 the web tier deliberately does not re-encode it, so\na coord-side vocabulary addition needs no web change). Coord returns\n``{\"proposals\": [...]}``.\n\nDegrades rather than 502s while coord's Phase 5 half is undeployed: the\nresponse then carries an empty list plus an ``unavailable`` note (and its\n``unavailable_kind``, so the page can style a benign pre-deploy window\ndifferently from coord actually being down), so an unreadable queue is never\ndisplayed as an empty one.",
+        "description": "List the tenant's policy-edit proposals, newest first. Any tenant member.\n\n``status`` is forwarded verbatim (coord owns the ``pending`` | ``approved`` |\n``rejected`` | ``stale`` vocabulary \u2014 the web tier deliberately does not\nre-encode it, so a coord-side vocabulary addition needs no web change).\nCoord returns ``{\"proposals\": [...]}``.\n\n``stale`` is coord's TERMINAL self-retirement: coord closes a pending\nproposal inside the same transaction that bumps its target document's\nversion, stamping ``decided_by='system:proposal-staleness'`` and a\n``decision_note`` (plan\n``2026-09-13-policy-proposals-agent-decidable-dial-driven-self-retiring``).\nIt was added to this sentence, and to nothing else, on purpose: forwarding\nverbatim is what made the vocabulary addition a docstring change rather than\na code one, and re-encoding the set here would turn every future one into a\ndeploy-ordered edit.\n\nA coord older than that change rejects ``?status=stale`` with ``400 invalid\nstatus``, which passes through unaltered \u2014 the console reads that as \"the\nretired section is unavailable\" and leaves the pending queue alone, so the\ntwo tiers have no deploy-order dependency in either direction.\n\n``limit`` IS declared, unlike ``status``'s vocabulary \u2014 because an\nundeclared query parameter is not forwarded, it is DISCARDED. FastAPI only\nbinds what the signature names, so a caller's ``?limit=20`` used to vanish\nhere and coord fell back to its own ``unwrap_or(100)`` \u2014 five times the\nbound the caller asked for, while the caller's own constant documented 20 as\nhonoured. Declaring it is safe in both deploy directions: coord has accepted\n``limit`` on this route since before the proposal console existed, and the\ndefault is coord's own ``100``, so the pending queue's behaviour is\nunchanged. The collapsed sections that DO pass a smaller bound (the retired\nand recently-decided reads) now get the page size they ask for.\n\nDegrades rather than 502s while coord's Phase 5 half is undeployed: the\nresponse then carries an empty list plus an ``unavailable`` note (and its\n``unavailable_kind``, so the page can style a benign pre-deploy window\ndifferently from coord actually being down), so an unreadable queue is never\ndisplayed as an empty one.",
         "operationId": "api_v1_operations_coord_prompt_document_proposals_get",
         "parameters": [
           {
@@ -85079,6 +85079,18 @@
               "default": "pending",
               "title": "Status",
               "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 100,
+              "maximum": 500,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
             }
           }
         ],
