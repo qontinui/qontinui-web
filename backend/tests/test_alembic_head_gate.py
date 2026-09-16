@@ -120,6 +120,51 @@ def test_merge_revision_tuple_names_both_parents() -> None:
     assert scan_sources(sources).heads == ("m",)
 
 
+def test_a_down_revision_wrapped_by_the_formatter_still_names_its_parent() -> None:
+    """ruff-format wraps a long right-hand side; that is not a fork.
+
+    ``down_revision: str | Sequence[str] | None = "<id>"`` passes the repo's
+    88-column budget once the parent id is long enough, and ruff-format then
+    parenthesises the value onto its own line. The line-anchored pattern this
+    gate used to carry read that as NO parent, so the child became a head and
+    the gate reported a fork alembic itself did not see — qontinui-web #1370,
+    parent ``coord_repo_branches_touched_files_authoritative_01``.
+    """
+    sources = {
+        **_tree(("a", None)),
+        Path("b.py"): (
+            'revision: str = "b"\n'
+            "down_revision: str | Sequence[str] | None = (\n"
+            '    "a"\n'
+            ")\n"
+        ),
+    }
+    assert scan_sources(sources).heads == ("b",)
+
+
+def test_a_wrapped_merge_tuple_still_names_both_parents() -> None:
+    sources = {
+        **_tree(("a", None), ("b", "a"), ("c", "a")),
+        Path("m.py"): (
+            'revision: str = "m"\n'
+            "down_revision: str | Sequence[str] | None = (\n"
+            '    "b",\n'
+            '    "c",\n'
+            ")\n"
+        ),
+    }
+    assert scan_sources(sources).heads == ("m",)
+
+
+def test_a_single_line_down_revision_with_a_trailing_comment_is_unchanged() -> None:
+    """The widening must not move the single-line forms it did not target."""
+    sources = {
+        Path("a.py"): 'revision = "a"\ndown_revision = None  # chain root\n',
+        Path("b.py"): 'revision = "b"\ndown_revision = "a"  # re-pointed 2026-09-15\n',
+    }
+    assert scan_sources(sources).heads == ("b",)
+
+
 def test_a_file_without_a_revision_assignment_is_counted_but_not_parsed() -> None:
     sources = {**_tree(("a", None)), Path("__init__.py"): "# not a revision\n"}
     scan = scan_sources(sources)

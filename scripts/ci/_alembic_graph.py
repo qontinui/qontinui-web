@@ -38,7 +38,10 @@ GIT_TIMEOUT_SECONDS = 60
 # `: str = `, `: str | None = `), so `[: ]+` is too narrow — use an optional
 # `:<non-eq chars>` segment between the keyword and the `=`.
 REV_RE = re.compile(r'^revision\s*(?::[^=]*)?\s*=\s*["\'](.+?)["\']', re.M)
-DOWN_RE = re.compile(r"^down_revision\s*(?::[^=]*)?\s*=\s*(.+)$", re.M)
+DOWN_RE = re.compile(
+    r"^down_revision\s*(?::[^=\n]*)?\s*=\s*(\([^)]*\)|[^\n]+)",
+    re.M,
+)
 PARENT_REF_RE = re.compile(r'["\'](\w[\w]*)["\']')
 
 #: Revision ids are interpolated into PR comments, so anything outside this
@@ -47,13 +50,28 @@ PARENT_REF_RE = re.compile(r'["\'](\w[\w]*)["\']')
 #: a markdown code span and fire an @mention from a bot-authored comment.
 SAFE_ID_RE = re.compile(r"[^0-9A-Za-z._-]")
 
-# KNOWN PARSE LIMIT, deliberately unchanged: ``DOWN_RE`` is line-anchored, so
-# a ``down_revision`` tuple wrapped across lines by a formatter parses as no
-# parents at all and its children read as heads. Widening it would move the
-# gate's PASS/FAIL condition — a currently-failing tree would start passing —
-# which is out of scope for the advice work this module exists for. The
-# repo's revisions are all single-line today. If that changes, fix it as its
-# own change, with its own reasoning about the verdict move.
+# FORMER PARSE LIMIT, now closed: ``DOWN_RE`` used to be line-anchored, so a
+# ``down_revision`` right-hand side wrapped across lines by a formatter parsed
+# as NO parents at all and its children read as heads. That stopped being
+# hypothetical the moment a parent id grew long enough that
+# ``down_revision: str | Sequence[str] | None = "<id>"`` exceeded the repo's
+# 88-column ruff budget: ruff-format wraps the value in parentheses, and the
+# gate then reported a fork that alembic itself did not see
+# (qontinui-web #1370, parent ``coord_repo_branches_touched_files_authoritative_01``).
+#
+# The widening is MONOTONE and therefore safe to land on its own: the paren
+# alternative can only make PARENT_REF_RE find MORE parents, and more parents
+# can only SHRINK the head set. So it can turn a FAIL into a PASS — which is
+# the point, those failures were false — and can never turn a PASS into a
+# FAIL. The one head count it cannot reach is zero: a tree whose every
+# revision has a parent is a cycle, which the callers already classify
+# separately.
+#
+# Still line-oriented on purpose: ``[^)]*`` inside the paren alternative
+# crosses newlines (a negated class always does), which covers the wrapped
+# scalar and the wrapped merge tuple, while the fallback ``[^\n]+`` keeps the
+# single-line forms parsing exactly as before. A right-hand side that nests
+# parentheses is still out of reach, and no alembic revision writes one.
 
 
 @dataclass(frozen=True)
