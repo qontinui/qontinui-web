@@ -26,13 +26,15 @@ vi.mock("sonner", () => ({
 vi.mock("@/contexts/auth-context", () => ({
   useAuth: () => ({
     isCoordAdmin: true,
-    user: { is_superuser: false },
+    // Superuser, so the Cognito groups panel (whose mapping chips carry
+    // slugs) loads too.
+    user: { is_superuser: true },
     loading: false,
   }),
 }));
 
 vi.mock("@/contexts/tenant-context", () => ({
-  useTenant: () => ({ refresh: vi.fn().mockResolvedValue(undefined) }),
+  useTenant: () => ({ refresh: vi.fn().mockResolvedValue(true) }),
 }));
 
 vi.mock("@qontinui/ui-bridge", () => ({
@@ -61,13 +63,27 @@ function jsonResponse(status: number, body: unknown): Response {
   } as unknown as Response;
 }
 
+let renameAnswer: Record<string, unknown>;
+
 beforeEach(() => {
   // `CollapsiblePanel` persists open/closed under its `storageKey`, so a
   // panel one test opened would start open in the next and the click close it.
   localStorage.clear();
   vi.clearAllMocks();
-  fetchMock.mockImplementation(async (url: string) => {
+  renameAnswer = {
+    tenant_id: ADMIN_TENANT,
+    slug: "acme-renamed",
+    display_name: "Acme Corp",
+    previous: { slug: "acme", display_name: "Acme Corp" },
+    changed: true,
+    group_mappings_moved: 0,
+    home_group_to_migrate: "acme-home",
+  };
+  fetchMock.mockImplementation(async (url: string, init?: RequestInit) => {
     const path = url.replace(/^https?:\/\/[^/]+/, "");
+    if (init?.method === "PATCH" && path.endsWith(`/tenants/${ADMIN_TENANT}`)) {
+      return jsonResponse(200, renameAnswer);
+    }
     if (path.endsWith("/coord/my-tenants")) {
       return jsonResponse(200, {
         home_tenant_id: ADMIN_TENANT,
@@ -111,9 +127,10 @@ describe("Rename action on 'Your tenant & roles'", () => {
     const open = within(card).getByTestId(
       `coord-tenant-rename-open-${ADMIN_TENANT}`
     );
+    // Suffixed with the tenant id: one page can offer several.
     expect(open).toHaveAttribute(
       "data-ui-bridge-id",
-      "coord.tenant-rename.open"
+      `coord.tenant-rename.open.${ADMIN_TENANT}`
     );
   });
 
@@ -144,5 +161,68 @@ describe("Rename action on 'Your tenant & roles'", () => {
     ) as HTMLInputElement;
     expect(name.value).toBe("Acme Corp");
     expect(slug.value).toBe("acme");
+  });
+});
+
+describe("a slug change re-reads every slug-bearing panel", () => {
+  /** How many times `/coord/group-tenant-roles` has been read so far. */
+  function mappingReads(): number {
+    return fetchMock.mock.calls.filter(([url, init]) => {
+      const method = (init as RequestInit | undefined)?.method ?? "GET";
+      return (
+        method === "GET" && String(url).endsWith("/coord/group-tenant-roles")
+      );
+    }).length;
+  }
+
+  async function renameVia(
+    edit: (user: ReturnType<typeof userEvent.setup>) => Promise<void>
+  ) {
+    const { user, card } = await openTenantPanel();
+    // Mount both readers of the mappings: the mapping list itself, and the
+    // Cognito groups panel whose per-group chips name tenants by slug.
+    await user.click(
+      await screen.findByRole("button", {
+        name: /advanced: auto-provision by sso group/i,
+      })
+    );
+    await user.click(
+      await screen.findByRole("button", { name: /cognito groups/i })
+    );
+    await waitFor(() => expect(mappingReads()).toBe(2));
+
+    await user.click(
+      within(card).getByTestId(`coord-tenant-rename-open-${ADMIN_TENANT}`)
+    );
+    await edit(user);
+    await user.click(screen.getByTestId("coord-tenant-rename-submit"));
+    await screen.findByTestId("coord-tenant-rename-success");
+  }
+
+  it("a renamed slug re-reads the mapping list and the Cognito mapping chips", async () => {
+    await renameVia(async (user) => {
+      const slug = screen.getByTestId("coord-tenant-rename-slug");
+      await user.clear(slug);
+      await user.type(slug, "acme-renamed");
+    });
+    await waitFor(() => expect(mappingReads()).toBe(4));
+  });
+
+  it("a name-only rename re-reads neither", async () => {
+    renameAnswer = {
+      ...renameAnswer,
+      slug: "acme",
+      display_name: "Acme Inc",
+      previous: { slug: "acme", display_name: "Acme Corp" },
+      home_group_to_migrate: null,
+    };
+    await renameVia(async (user) => {
+      const name = screen.getByTestId("coord-tenant-rename-display-name");
+      await user.clear(name);
+      await user.type(name, "Acme Inc");
+    });
+    // Give any (wrong) refetch the chance to fire before asserting its absence.
+    await new Promise((r) => setTimeout(r, 50));
+    expect(mappingReads()).toBe(2);
   });
 });
