@@ -38,7 +38,7 @@ from fastapi import (
     WebSocketDisconnect,
 )
 from fastapi.responses import JSONResponse, StreamingResponse
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 from qontinui_schemas.generated.per_type.memory_restore_request import (
     MemoryRestoreRequest,
 )
@@ -1214,6 +1214,7 @@ async def _proxy_coord_patch(
     body: Any,
     *,
     tenant_id: UUID | None = None,
+    forward_bearer: bool = False,
 ) -> Any:
     """Proxy a PATCH request to coord. Returns the JSON body.
 
@@ -1222,9 +1223,18 @@ async def _proxy_coord_patch(
     Same posture as ``_proxy_coord_post`` — tenant header,
     timeout/connect-error mapping. Sticking to the existing httpx
     pattern keeps the proxy footprint minimal.
+
+    ``forward_bearer`` — forward the captured caller bearer EVEN WHEN
+    ``tenant_id is None``, exactly as on ``_proxy_coord_post``. The tenant
+    rename (``PATCH /tenants/{tenant_id}``) authorizes on the operator's
+    own identity coord-side and resolves no home tenant web-side, so it
+    needs the bearer without the resolution. Default False preserves the
+    prior behavior exactly.
     """
     url = f"{settings.COORD_URL}{path}"
-    headers = _tenant_headers(tenant_id) if tenant_id is not None else None
+    headers = (
+        _tenant_headers(tenant_id) if tenant_id is not None or forward_bearer else None
+    )
     async with httpx.AsyncClient(timeout=_COORD_TIMEOUT) as client:
         try:
             resp = await client.patch(url, json=body, headers=headers)
@@ -8451,7 +8461,8 @@ async def list_user_tenants(
 
     Wire shape::
 
-        { "tenants": [ { "id": "<uuid>", "slug": "<str>", "name": "<str>" } ],
+        { "tenants": [ { "id": "<uuid>", "slug": "<str>", "name": "<str>",
+                         "roles": ["<role>", ...] } ],
           "active_tenant_id": "<uuid>" }
     """
     identity = await get_coord_identity(request)
@@ -8460,7 +8471,7 @@ async def list_user_tenants(
         raise HTTPException(status_code=403, detail="tenant_not_resolved")
 
     by_id = {t.tenant_id: t for t in identity.tenants}
-    tenants_out: list[dict[str, str]] = []
+    tenants_out: list[dict[str, Any]] = []
     for tid in ordered_ids:
         member = by_id.get(tid)
         slug = member.slug if member is not None else ""
@@ -8473,6 +8484,12 @@ async def list_user_tenants(
                 # tenant; the slug otherwise (older coord, or an
                 # SSO-auto-provisioned tenant that never got a name).
                 "name": display_name or slug,
+                # The caller's roles IN THIS tenant (coord's per-tenant
+                # `tenants[].roles`, never a union across tenants). The UI
+                # gates per-tenant controls on it — the Rename action
+                # renders only where this contains exactly `admin`, which
+                # is what coord's `is_tenant_admin` accepts.
+                "roles": list(member.roles) if member is not None else [],
             }
         )
     return {
@@ -8498,6 +8515,49 @@ class TenantCreateIn(BaseModel):
     """
 
     display_name: str = Field(min_length=1, max_length=120)
+
+
+#: Coord's canonical slug shape (``slugify_user_tenant_name``'s output):
+#: ``[a-z0-9-]``, starting and ending alphanumeric, no doubled hyphen. The
+#: 3..=63 length bound rides ``Field`` below. Checked with Python ``re``
+#: rather than ``Field(pattern=)`` because pydantic-core's Rust regex engine
+#: has no lookahead.
+_TENANT_SLUG_RE = re.compile(r"^[a-z0-9](?:[a-z0-9]|-(?!-))*[a-z0-9]$")
+
+
+class TenantRenameIn(BaseModel):
+    """Body for ``PATCH /operations/tenants/{tenant_id}`` — a partial rename.
+
+    Both fields are optional and at least one must be present (a body with
+    neither is a 422 here, before any coord round-trip; coord would answer
+    ``400 empty_patch``). Only the fields the caller sent are forwarded, so a
+    display-name-only rename never pays coord's slug validation.
+
+    Unlike ``TenantCreateIn`` the slug IS supplied by the caller, and it is
+    canonical-or-refused (plan ``2026-09-17-tenant-rename`` D4): these bounds
+    mirror coord's so an obviously malformed slug costs no round-trip, but
+    coord stays the authority — it also runs the reserved-name, historical,
+    pinned and group-mapped checks nothing here can mirror.
+    """
+
+    display_name: str | None = Field(default=None, min_length=1, max_length=200)
+    slug: str | None = Field(default=None, min_length=3, max_length=63)
+
+    @field_validator("slug")
+    @classmethod
+    def _slug_is_canonical(cls, value: str | None) -> str | None:
+        if value is not None and not _TENANT_SLUG_RE.fullmatch(value):
+            raise ValueError(
+                "slug must be lowercase letters, digits and single hyphens, "
+                "starting and ending with a letter or digit"
+            )
+        return value
+
+    @model_validator(mode="after")
+    def _at_least_one_field(self) -> "TenantRenameIn":
+        if self.display_name is None and self.slug is None:
+            raise ValueError("empty_patch: send display_name, slug, or both")
+        return self
 
 
 @router.post("/tenants")
@@ -13086,3 +13146,236 @@ async def remove_cognito_group_user(
         target_username=username,
     )
     return {"ok": True, "username": username}
+
+
+# ---- Tenant RENAME (plan 2026-09-17-tenant-rename, Phases C + D5) --------
+#
+# Defined HERE, at the end of the module, rather than beside
+# ``create_user_tenant``: the route is rate-limited with the same
+# ``user_limiter.shared_limit`` wrapper the Cognito group routes carry, and a
+# decorator is evaluated at import time in file order — so it must sit below
+# ``_rate_limiting_disabled`` and ``_CREATE_GROUP_RATE_LIMIT``. Its body model,
+# ``TenantRenameIn``, stays beside ``TenantCreateIn``.
+
+#: One rename can CREATE a Cognito group and add every member of the old home
+#: group to it (the D5 follow-through below), so it is paced like the group
+#: create route it may perform — never looser than the most expensive thing it
+#: can do.
+_TENANT_RENAME_RATE_LIMIT = _CREATE_GROUP_RATE_LIMIT
+
+HomeGroupMigrationStatus = Literal[
+    "migrated", "requires_superuser", "target_exists", "absent", "failed"
+]
+
+
+def _home_group_outcome(
+    status: HomeGroupMigrationStatus,
+    detail: str,
+    *,
+    old_group: str,
+    new_group: str,
+    members_copied: int = 0,
+) -> dict[str, Any]:
+    return {
+        "status": status,
+        "detail": detail,
+        "old_group": old_group,
+        "new_group": new_group,
+        "members_copied": members_copied,
+    }
+
+
+async def _migrate_home_group(
+    db: AsyncSession | None,
+    *,
+    current_user: UserModel,
+    old_group: str,
+    new_group: str,
+) -> dict[str, Any]:
+    """Carry ``<old>-home`` to ``<new>-home`` after a coord slug rename (D5).
+
+    Never raises and never rolls the coord rename back: the rename is already
+    committed coord-side, and coord's slug history makes a stale home group
+    harmless (it still resolves to the renamed tenant), so this is hygiene
+    whose outcome is REPORTED rather than enforced.
+
+    Four rules, each a refusal to widen what a tenant admin can do:
+
+    * **Superuser only.** Web's Cognito group routes are ``require_admin``
+      (``is_superuser``); a tenant-admin rename must not side-step that gate by
+      reaching the same pool through this route. A non-superuser gets
+      ``requires_superuser`` and no AWS call is made at all.
+    * **Never delete ``<old>-home``.** Delete is the one irreversible Cognito
+      act (no undelete) and has its own blast-radius guards on its own route.
+    * **Never touch an existing ``<new>-home``.** The pool is SHARED; a group
+      by that name may already belong to someone else — ``target_exists``.
+    * **Through the same audited helpers** the group routes use: every
+      ``create_group`` / ``add_user_to_group`` that lands writes its
+      ``auth.cognito_group_admin_events`` row via
+      ``_write_cognito_group_audit``.
+    """
+    if not getattr(current_user, "is_superuser", False):
+        return _home_group_outcome(
+            "requires_superuser",
+            f"Cognito group “{old_group}” was not moved: moving a home group "
+            "needs a platform superuser. The rename is complete and the old "
+            "group still resolves to this tenant.",
+            old_group=old_group,
+            new_group=new_group,
+        )
+
+    copied = 0
+    try:
+        groups = await asyncio.to_thread(cognito_admin.list_groups)
+        names = {g.get("group_name") for g in groups}
+        if old_group not in names:
+            return _home_group_outcome(
+                "absent",
+                f"No Cognito group “{old_group}” exists, so there was nothing to move.",
+                old_group=old_group,
+                new_group=new_group,
+            )
+        if new_group in names:
+            return _home_group_outcome(
+                "target_exists",
+                f"Cognito group “{new_group}” already exists, so it was left "
+                f"untouched and “{old_group}” was not copied into it.",
+                old_group=old_group,
+                new_group=new_group,
+            )
+        try:
+            await asyncio.to_thread(
+                cognito_admin.create_group,
+                new_group,
+                f"Home group (moved from {old_group} by a tenant rename)",
+            )
+        except CognitoGroupExistsError:
+            # Created between the list and the create — somebody else's now.
+            return _home_group_outcome(
+                "target_exists",
+                f"Cognito group “{new_group}” was created by someone else "
+                "while this rename ran, so it was left untouched.",
+                old_group=old_group,
+                new_group=new_group,
+            )
+        await _write_cognito_group_audit(
+            db,
+            actor_user_id=current_user.id,
+            action="create_group",
+            group_name=new_group,
+            details={"reason": "tenant_rename_home_group", "from": old_group},
+        )
+        users = await asyncio.to_thread(cognito_admin.list_users_in_group, old_group)
+        for user in users:
+            username = user.get("username")
+            if not username:
+                continue
+            await asyncio.to_thread(
+                cognito_admin.add_user_to_group, username, new_group
+            )
+            copied += 1
+            await _write_cognito_group_audit(
+                db,
+                actor_user_id=current_user.id,
+                action="add_user_to_group",
+                group_name=new_group,
+                target_email=user.get("email"),
+                target_username=username,
+                details={"reason": "tenant_rename_home_group", "from": old_group},
+            )
+    except CognitoAdminError as exc:
+        logger.warning(
+            "tenant_rename_home_group_migration_failed",
+            old_group=old_group,
+            new_group=new_group,
+            members_copied=copied,
+            error=str(exc),
+        )
+        return _home_group_outcome(
+            "failed",
+            f"Moving “{old_group}” to “{new_group}” failed after {copied} "
+            f"member(s) were copied: {exc}. The rename itself is complete; "
+            f"“{old_group}” was not deleted.",
+            old_group=old_group,
+            new_group=new_group,
+            members_copied=copied,
+        )
+    return _home_group_outcome(
+        "migrated",
+        f"Created “{new_group}” and copied {copied} member(s) from "
+        f"“{old_group}”. “{old_group}” was kept — delete it from the Cognito "
+        "groups panel once nothing depends on it.",
+        old_group=old_group,
+        new_group=new_group,
+        members_copied=copied,
+    )
+
+
+@router.patch("/tenants/{tenant_id}")
+@user_limiter.shared_limit(
+    _TENANT_RENAME_RATE_LIMIT,
+    scope="tenant-rename",
+    key_func=get_authorization_identifier,
+    exempt_when=_rate_limiting_disabled,
+)
+async def rename_user_tenant(
+    request: Request,
+    tenant_id: UUID,
+    body: TenantRenameIn,
+    current_user: UserModel = Depends(get_current_active_user_async),
+    db: AsyncSession = Depends(get_async_db),
+) -> Any:
+    """Rename a tenant ("Project") — its display name, its slug, or both.
+
+    A thin bearer-forwarding proxy to coord's ``PATCH /coord/tenants/:tenant_id``
+    (plan ``2026-09-17-tenant-rename`` D1), plus the D5 home-group
+    follow-through. Authorization is coord's, and two-layer there: the admin
+    SSO router's ``require_role("admin")`` for the ACTIVE tenant, then
+    ``path tenant_id == active tenant`` and ``is_tenant_admin`` under the row
+    lock. So the active-tenant header is set to the PATH tenant here — the
+    operator is renaming that tenant, whatever the switcher currently shows.
+
+    Only the fields the caller sent cross the wire. Coord answers::
+
+        { "tenant_id", "slug", "display_name",
+          "previous": {"slug", "display_name"}, "changed",
+          "group_mappings_moved", "home_group_to_migrate" }
+
+    forwarded verbatim, with ``home_group_migration`` merged in whenever coord
+    names a ``home_group_to_migrate`` (see ``_migrate_home_group``). Coord's
+    4xx answers pass through with coord's body as ``detail``:
+    ``400 empty_patch|invalid_name|invalid_slug|reserved_name``,
+    ``403 tenant_mismatch|not_admin_in_target_tenant``,
+    ``404 tenant_not_found``,
+    ``409 slug_taken|slug_pinned|concurrent_group_mapping``; ``502`` when coord
+    is unreachable.
+
+    ``request`` is also required by the slowapi limiter.
+    """
+    # Captured INLINE, deliberately NOT as ``Depends(capture_caller_bearer)``
+    # — the same trap ``create_user_tenant`` documents: FastAPI runs a sync
+    # dependency in a threadpool with a COPIED context, so its
+    # ``ContextVar.set()`` never reaches this coroutine and coord would answer
+    # ``401 missing operator Bearer token``. Do not "tidy" it into a Depends.
+    capture_caller_bearer(request)
+    # The rename targets the PATH tenant, so coord's role check must evaluate
+    # that tenant rather than whatever the switcher header carried. Set after
+    # the capture, which would otherwise overwrite it with the header value.
+    _caller_active_tenant.set(str(tenant_id))
+    result = await _proxy_coord_patch(
+        f"/coord/tenants/{tenant_id}",
+        body.model_dump(exclude_none=True),
+        forward_bearer=True,
+    )
+
+    if isinstance(result, dict):
+        old_home = result.get("home_group_to_migrate")
+        new_slug = result.get("slug")
+        if isinstance(old_home, str) and old_home and isinstance(new_slug, str):
+            result["home_group_migration"] = await _migrate_home_group(
+                db,
+                current_user=current_user,
+                old_group=old_home,
+                new_group=f"{new_slug}-home",
+            )
+    return result
