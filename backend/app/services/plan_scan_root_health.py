@@ -241,20 +241,27 @@ def no_census_detail(device_count: int) -> str:
 
 
 def census_truncated_detail(sources: Sequence[str]) -> str:
-    """A coverage entry's ``detail`` when a chosen census sent only a prefix.
+    """A coverage entry's ``detail`` when a chosen census holds only a prefix.
 
     A truncated census is a floor in the sense ``counts_are_floors`` already
     means — membership proves existence, absence proves nothing — so no second
     word is minted for it. What it costs here is the DIFFERENCE, not just the
     count: stems beyond the prefix would read as captured-but-not-authored,
     which is precisely the shape that produced the impossible 101.8%.
+
+    Two causes, one verdict, and the sentence names both because the entry
+    cannot tell them apart and neither is establishable: the device said it
+    truncated, or its ``count`` disagrees with the stems the server actually
+    holds for it (:func:`_census_side`) — the withheld-set arm, where the
+    write door validated the digest and not the count.
     """
     return (
-        f"census_truncated: the chosen device sent only a sorted PREFIX of its "
-        f"{', '.join(sources)} stem listing, so absence from it proves nothing "
-        "and a set difference taken over it would count stems beyond the "
-        "prefix as captured-but-not-authored. How much of what exists the "
-        "corpus holds is not established — not 0 and not 100%"
+        f"census_truncated: the chosen device's {', '.join(sources)} stem "
+        "listing holds only a sorted PREFIX of what it counted — it said so, "
+        "or its count disagrees with the stems this server holds — so absence "
+        "from it proves nothing and a set difference taken over it would count "
+        "stems beyond the prefix as captured-but-not-authored. How much of "
+        "what exists the corpus holds is not established — not 0 and not 100%"
     )
 
 
@@ -518,29 +525,65 @@ def rollup_by_source_repo(rows: Sequence[ScanRootRow]) -> list[ScanRootSourceRol
 
 
 def _census_with_stems(observation: PlanScanRootObservation, source: str) -> Any:
-    """The stored census for ``source``, only when it carries its stems.
+    """The stored census for ``source``, only when it carries a WHOLE shape.
 
-    ``None`` for all three UNKNOWNs, which a caller must not tell apart from
-    each other and must never read as an empty side: the column is SQL NULL (a
+    ``None`` for every UNKNOWN, which a caller must not tell apart from each
+    other and must never read as an empty side: the column is SQL NULL (a
     build predating the census, an idle or failed cycle, or a later report that
     carried none), or the stored census withheld its stems and the upsert could
     not carry a set forward because the digest no longer matched. The stems are
     JSON ``null`` in that last case — a VALUE, not SQL NULL — which is why this
     tests the list rather than the column.
+
+    ``count``, ``truncated`` and ``digest`` are checked here as well, and for
+    the same reason: :func:`_census_side` reads all four with ``[]`` and would
+    otherwise raise on a stored dict missing one — a ``KeyError`` is a 500 on
+    the route, where every sibling absence in this module degrades to an
+    ``unknown`` entry. A corrupt or partial census establishes nothing, which
+    is precisely what ``unknown`` says.
     """
-    census = (
-        observation.ref_census if source == "ref" else observation.work_tree_census
-    )
+    census = observation.ref_census if source == "ref" else observation.work_tree_census
     if not isinstance(census, dict):
         return None
     if not isinstance(census.get("slugs"), list):
+        return None
+    # ``bool`` is an ``int`` subclass, so ``count`` is tested against it
+    # explicitly: a stored ``true`` is corrupt, not the number 1.
+    count = census.get("count")
+    if not isinstance(count, int) or isinstance(count, bool):
+        return None
+    if not isinstance(census.get("truncated"), bool):
+        return None
+    if not isinstance(census.get("digest"), str):
         return None
     return census
 
 
 def _census_side(census: Any, source: str, row: ScanRootRow) -> PlanCensusSide:
-    """One stored census, rendered as the side of the difference it is."""
+    """One stored census, rendered as the side of the difference it is.
+
+    ``truncated`` is DERIVED rather than copied. The device's own flag is one
+    of the two things the write door does not verify on a census that withheld
+    its stems: :meth:`PlanSlugCensus._census_is_coherent` returns early when
+    ``slugs is None``, so ``count`` and ``truncated`` are unvalidated on that
+    arm, and the upsert then stores them beside the CARRIED-FORWARD stems. A
+    device could therefore re-assert a 2-stem set by digest while claiming
+    ``count: 9999, truncated: false`` and have the set difference taken over
+    the 2 stems under a denominator of 9999 — stems that ARE authored counted
+    as ``captured_not_authored``, which is the exact shape that produced the
+    impossible 101.8%.
+
+    So the floor is taken from the SET, which this server verified, rather
+    than from the flag, which it did not: a side whose ``count`` disagrees with
+    the stems it actually holds is truncated whatever the flag says, and the
+    entry reads ``unknown``. That keeps the documented invariant — ``count``
+    exceeds ``listed_count`` exactly when ``truncated`` — true on the wire
+    instead of merely asserted, and keeps an unverifiable side an UNKNOWN
+    rather than a number.
+    """
     slugs: list[str] = census["slugs"]
+    listed_count = len(slugs)
+    count = int(census["count"])
     return PlanCensusSide(
         source=source,  # type: ignore[arg-type]  # the two stored sources
         ref_sha=census.get("ref_sha"),
@@ -548,9 +591,9 @@ def _census_side(census: Any, source: str, row: ScanRootRow) -> PlanCensusSide:
         # its stems were listed at, and the report carries how old that fetch
         # was.
         ref_age_secs=row.ref_age_secs,
-        count=int(census["count"]),
-        listed_count=len(slugs),
-        truncated=bool(census["truncated"]),
+        count=count,
+        listed_count=listed_count,
+        truncated=bool(census["truncated"]) or count != listed_count,
         digest=census["digest"],
     )
 
