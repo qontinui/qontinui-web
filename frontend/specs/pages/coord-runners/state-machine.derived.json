@@ -137,7 +137,7 @@
     {
       "id": "coord-runners-shell",
       "name": "Coord console shell",
-      "description": "The persistent coord operator-console chrome on every /admin/coord/* route once the superuser gate passes: the h1 title, the grouped coord-nav, and the Runners wayfinding crumb on the Dev Ops group trigger.",
+      "description": "The persistent coord operator-console chrome on every /admin/coord/* route once the superuser gate passes: the h1 title, the coord-nav status row, and the Runner Drain wayfinding crumb in the console header.",
       "isInitial": true,
       "assertions": [
         {
@@ -177,7 +177,7 @@
         },
         {
           "id": "coord-runners-shell-elem-2",
-          "description": "'Runners' wayfinding crumb (data-testid coord-nav-runners-active) on the Dev Ops group trigger.",
+          "description": "'Runner Drain' wayfinding crumb (data-testid coord-nav-runners-active) in the console header.",
           "category": "navigation",
           "severity": "warning",
           "assertionType": "exists",
@@ -186,7 +186,7 @@
             "criteria": {
               "id": "coord-nav-runners-active"
             },
-            "label": "Runners wayfinding crumb"
+            "label": "Runner Drain wayfinding crumb"
           },
           "source": "ai-generated",
           "reviewed": false,
@@ -194,16 +194,16 @@
         },
         {
           "id": "coord-runners-shell-elem-3",
-          "description": "The 'Dev Ops' nav group trigger (data-testid coord-nav-group-devops), the group the Runners leaf lives in.",
+          "description": "The console header's wayfinding crumb (data-testid coord-nav-crumb) — 'Dev Ops · Runner Drain'.",
           "category": "navigation",
           "severity": "warning",
           "assertionType": "exists",
           "target": {
             "type": "search",
             "criteria": {
-              "id": "coord-nav-group-devops"
+              "id": "coord-nav-crumb"
             },
-            "label": "Dev Ops group"
+            "label": "Wayfinding crumb"
           },
           "source": "ai-generated",
           "reviewed": false,
