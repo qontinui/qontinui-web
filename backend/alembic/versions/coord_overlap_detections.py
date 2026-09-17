@@ -1,7 +1,7 @@
 """coord.overlap_detections (durable PG sink for events.coord.overlap.detected)
 
 Revision ID: coord_overlap_detections
-Revises: coord_system_tenant_rename_qontinui
+Revises: coord_agent_worktrees_credentialed_at_01
 Create Date: 2026-09-17
 
 Phase 1 of ``2026-09-17-coord-overlap-detections-durable-sink.md``.
@@ -82,10 +82,14 @@ table leaves the gate open rather than failed — the safe direction, and the
 reason the migration still lands first (an open gate on a query that has never
 once succeeded is indistinguishable from one that is genuinely measuring).
 
-Chains off ``coord_system_tenant_rename_qontinui``, the single live head of the
-alembic chain read with the repo's own head gate at authoring time. If a
-concurrent head-race moves ``main``'s head before this lands, re-point
-``down_revision`` onto the new head.
+Chains off ``coord_agent_worktrees_credentialed_at_01``, the single live head of
+``origin/main``'s alembic chain. This revision was first written against
+``coord_system_tenant_rename_qontinui`` (2026-09-17), which was the head at
+authoring time; ``coord_agent_worktrees_credentialed_at_01`` landed on top of it
+hours later and forked the chain. A parent that has landed but is no longer the
+head forks exactly as a never-landed one does. If a concurrent head-race moves
+``main``'s head again before this lands, re-point ``down_revision`` onto the new
+head.
 """
 
 from collections.abc import Sequence
@@ -95,7 +99,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "coord_overlap_detections"
-down_revision: str | Sequence[str] | None = "coord_system_tenant_rename_qontinui"
+down_revision: str | Sequence[str] | None = "coord_agent_worktrees_credentialed_at_01"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
