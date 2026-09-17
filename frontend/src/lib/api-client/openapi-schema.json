@@ -31510,7 +31510,7 @@
         "type": "object"
       },
       "PairCliRequest": {
-        "description": "Request body for ``POST /api/v1/devices/pair-cli``.\n\nHeadless analogue of the browser-mediated pair-confirm flow: the\nrunner authenticates with its existing user access token (no browser\nredirect) and asks the web backend to mint a device-token JWT via\ncoord. The backend resolves the calling user's ``tenant_id`` and\nproxies the request to coord's ``POST /coord/devices/pair-cli``.\n\nThe runner sends the same ``(device_id, hostname, name)`` triple it\nused to send directly to coord; ``tenant_id`` and ``user_id`` are\ninjected server-side so the runner never has to know about tenancy.",
+        "description": "Request body for ``POST /api/v1/devices/pair-cli``.\n\nHeadless analogue of the browser-mediated pair-confirm flow: the\nrunner authenticates with its existing user access token (no browser\nredirect) and asks the web backend to mint a device-token JWT via\ncoord. The backend proxies the request to coord's\n``POST /coord/devices/pair-cli``, forwarding the caller's operator\nbearer and injecting ``user_id`` server-side.\n\n``tenant_id`` is an optional HINT, not an authority: when a real tenant\nis supplied it is forwarded and coord validates it\n(``authorize_pairing_tenant`` refuses a tenant the principal cannot\npair). When it is absent, coord derives the tenant from the operator\nbearer. The nil UUID is treated as absent \u2014 runner UI sign-in sends it\nas a placeholder on every first pairing, and forwarding it would fail\ncoord's membership check. A refresh MUST send the tenant its credential\nis for, or coord's derivation silently re-points the device at the\nuser's home tenant (plan\n``2026-09-17-device-jwt-refresh-drops-the-requested-tenant-and-coord-mints-the-home-tenant``).",
         "properties": {
           "device_id": {
             "description": "Stable device UUID the runner generated on first launch.",
@@ -31537,6 +31537,19 @@
             ],
             "description": "Optional display name; defaults to hostname server-side.",
             "title": "Name"
+          },
+          "tenant_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Optional tenant the device JWT should be minted for. Coord validates membership; absent or the nil UUID means coord derives the tenant from the operator bearer.",
+            "title": "Tenant Id"
           }
         },
         "required": [
@@ -71682,7 +71695,7 @@
     },
     "/api/v1/devices/pair-cli": {
       "post": {
-        "description": "Headless analogue of :func:`pair_confirm`.\n\nThe runner POSTs here with its existing user access-token in\n``Authorization: Bearer \u2026`` (the same token it just exchanged via\n``/api/v1/auth/jwt/login``) and the ``(device_id, hostname, name)``\ntriple it already knows.\n\nThe backend forwards the caller's **Cognito operator bearer** (cookie\n``access_token`` or ``Authorization: Bearer``) straight through to\ncoord's ``POST /coord/devices/pair-cli``. Coord's mounted\n``resolve_operator_optional`` middleware builds an ``OperatorContext``\nfrom that bearer and DERIVES ``tenant_id`` itself when the body omits\nit \u2014 so web no longer resolves or sends a ``tenant_id``. The\n``X-Qontinui-User-Id`` header is still sent; coord now cross-checks it\nagainst the operator's OWN ``auth.users`` row (matched by Cognito\nsubject) and refuses ``user_mismatch`` if it names anyone else \u2014 it is\nan assertion coord verifies, not an identity coord trusts.\n\nSee follow-up #1 of plan\n``D:/qontinui-root/plans/2026-05-30-coord-operator-resolver-removal.md``.\nCoord already accepts the optional ``tenant_id`` + derives it from the\noperator bearer (``routes_phase3.rs::post_pair_cli``); this change just\nforwards the right credential.",
+        "description": "Headless analogue of :func:`pair_confirm`.\n\nThe runner POSTs here with its existing user access-token in\n``Authorization: Bearer \u2026`` (the same token it just exchanged via\n``/api/v1/auth/jwt/login``) and the ``(device_id, hostname, name)``\ntriple it already knows.\n\nThe backend forwards the caller's **Cognito operator bearer** (cookie\n``access_token`` or ``Authorization: Bearer``) straight through to\ncoord's ``POST /coord/devices/pair-cli``. Coord's mounted\n``resolve_operator_optional`` middleware builds an ``OperatorContext``\nfrom that bearer. The ``X-Qontinui-User-Id`` header is still sent;\ncoord cross-checks it against the operator's OWN ``auth.users`` row\n(matched by Cognito subject) and refuses ``user_mismatch`` if it names\nanyone else \u2014 it is an assertion coord verifies, not an identity coord\ntrusts.\n\nTenant: web never RESOLVES a tenant, but it FORWARDS a real\ncaller-supplied ``tenant_id``. Coord validates it\n(``authorize_pairing_tenant``) and derives the tenant from the operator\nbearer (``principal.home_tenant()``) only when the body names none.\nPlan ``2026-05-30-coord-operator-resolver-removal`` (follow-up #1)\nstopped forwarding ``tenant_id`` altogether; plan\n``2026-09-17-device-jwt-refresh-drops-the-requested-tenant-and-coord-mints-the-home-tenant``\nrestores forwarding of a real one, because a runner's device-JWT\nrefresh after expiry otherwise gets the user's HOME tenant minted \u2014\nand coord records that pairing, silently re-pointing the device.\n\nThe nil UUID is treated as absent and is NOT forwarded: runner UI\nsign-in sends ``tenant_id = 00000000-\u2026`` as a placeholder on every\nfirst pairing, and forwarding it would 403 at coord's membership check\n(surfacing here as a 502) and break every sign-in.",
         "operationId": "api_v1_devices_pair_cli_post",
         "requestBody": {
           "content": {

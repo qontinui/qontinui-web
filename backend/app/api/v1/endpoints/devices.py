@@ -78,6 +78,10 @@ logger = structlog.get_logger(__name__)
 
 router = APIRouter()
 
+# The nil UUID is a "no tenant" placeholder runner UI sign-in sends on first
+# pairing; ``pair_cli`` treats it as absent rather than forwarding it.
+_NIL_UUID = UUID(int=0)
+
 
 def _extract_caller_token(request: Request) -> str | None:
     """Pull the caller's bearer token from the ``access_token`` cookie or
@@ -679,18 +683,27 @@ async def pair_cli(
     ``access_token`` or ``Authorization: Bearer``) straight through to
     coord's ``POST /coord/devices/pair-cli``. Coord's mounted
     ``resolve_operator_optional`` middleware builds an ``OperatorContext``
-    from that bearer and DERIVES ``tenant_id`` itself when the body omits
-    it — so web no longer resolves or sends a ``tenant_id``. The
-    ``X-Qontinui-User-Id`` header is still sent; coord now cross-checks it
-    against the operator's OWN ``auth.users`` row (matched by Cognito
-    subject) and refuses ``user_mismatch`` if it names anyone else — it is
-    an assertion coord verifies, not an identity coord trusts.
+    from that bearer. The ``X-Qontinui-User-Id`` header is still sent;
+    coord cross-checks it against the operator's OWN ``auth.users`` row
+    (matched by Cognito subject) and refuses ``user_mismatch`` if it names
+    anyone else — it is an assertion coord verifies, not an identity coord
+    trusts.
 
-    See follow-up #1 of plan
-    ``D:/qontinui-root/plans/2026-05-30-coord-operator-resolver-removal.md``.
-    Coord already accepts the optional ``tenant_id`` + derives it from the
-    operator bearer (``routes_phase3.rs::post_pair_cli``); this change just
-    forwards the right credential.
+    Tenant: web never RESOLVES a tenant, but it FORWARDS a real
+    caller-supplied ``tenant_id``. Coord validates it
+    (``authorize_pairing_tenant``) and derives the tenant from the operator
+    bearer (``principal.home_tenant()``) only when the body names none.
+    Plan ``2026-05-30-coord-operator-resolver-removal`` (follow-up #1)
+    stopped forwarding ``tenant_id`` altogether; plan
+    ``2026-09-17-device-jwt-refresh-drops-the-requested-tenant-and-coord-mints-the-home-tenant``
+    restores forwarding of a real one, because a runner's device-JWT
+    refresh after expiry otherwise gets the user's HOME tenant minted —
+    and coord records that pairing, silently re-pointing the device.
+
+    The nil UUID is treated as absent and is NOT forwarded: runner UI
+    sign-in sends ``tenant_id = 00000000-…`` as a placeholder on every
+    first pairing, and forwarding it would 403 at coord's membership check
+    (surfacing here as a 502) and break every sign-in.
     """
     if not strategy_client.enabled:
         raise HTTPException(
@@ -724,6 +737,9 @@ async def pair_cli(
         "name": payload.name or payload.hostname,
         "user_id": str(current_user.id),
     }
+    # Forward a real tenant hint only; absent or nil → coord derives it.
+    if payload.tenant_id is not None and payload.tenant_id != _NIL_UUID:
+        body["tenant_id"] = str(payload.tenant_id)
 
     # See pair_confirm: retries deploy-window transport failures, 503 +
     # Retry-After when coord stays unavailable.
