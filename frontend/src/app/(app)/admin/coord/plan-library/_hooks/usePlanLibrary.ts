@@ -398,3 +398,39 @@ export function useScanRoots() {
     "Failed to load scan sources"
   );
 }
+
+/**
+ * What the corpus HOLDS against what EXISTS, per scan source — the coverage
+ * set difference.
+ *
+ * Reads the same route as [`useScanRoots`] and is deliberately a separate
+ * hook rather than a second consumer of one shared read, which costs a second
+ * GET of `/scan-roots` per mount. That cost is real — the coverage block is
+ * an anti-join over every authored stem, which is exactly why the backend
+ * computes it on this route ONLY and never on the `corpus_health` rendering
+ * that rides every list page (design decision D2). It is paid deliberately:
+ *
+ * * The two panels are siblings on one page, each with its own Refresh, and
+ *   `useRetainedRead` has no cross-hook cache to share. Lifting the read into
+ *   the page would mean `ScanSourcesPanel` taking its data as a prop —
+ *   changing a component with an open pull request against it (#1332) for a
+ *   reason that has nothing to do with either change.
+ * * Sharing one read would also share one Refresh, so re-asking "how much is
+ *   missing" would silently re-ask "how far behind is each feeder" and vice
+ *   versa. The panels state different things about different moments; one
+ *   `fetchedAt` for both would make one of the two stamps a lie.
+ *
+ * The honest fix is an HTTP-layer cache or a page-level provider, and neither
+ * is this phase's. If a third consumer of `/scan-roots` ever appears, build
+ * that instead of adding a third read.
+ *
+ * `data` carries the WHOLE response — `coverage` plus the `coverage_detail`
+ * that says why it is empty — because an empty `coverage` is not "nothing is
+ * missing" and the panel cannot tell the difference without the detail.
+ */
+export function usePlanCoverage() {
+  return useRetainedRead<ScanRootListResponse>(
+    `${API}/scan-roots`,
+    "Failed to load plan coverage"
+  );
+}
