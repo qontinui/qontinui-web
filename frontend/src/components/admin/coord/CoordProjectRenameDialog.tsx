@@ -109,9 +109,9 @@ export function renameSlugProblem(slug: string): string | null {
  */
 export function renameErrorMessage(err: unknown): string {
   if (!(err instanceof TenantRenameError)) {
-    return err instanceof Error
-      ? err.message
-      : "Could not reach the server to rename the project.";
+    // Not an HTTP answer at all (a TypeError from a dropped connection, an
+    // AbortError): the request may already have gone, so it is UNKNOWN.
+    return RENAME_OUTCOME_UNKNOWN_MESSAGE;
   }
   const code = err.code ?? "";
   const reason = err.reason;
@@ -185,7 +185,7 @@ export function renameErrorMessage(err: unknown): string {
   // `isRenameOutcomeUnknown`. Claiming "not renamed" after coord may have
   // committed would invite a retry judged against the NEW slug.
   if (isRenameOutcomeUnknown(err)) {
-    return "Coord didn't answer cleanly, so the rename may have been applied. The project list is being reloaded to check — look for the new name before trying again. No home-group move was attempted; check the Cognito groups panel if the short id did change.";
+    return RENAME_OUTCOME_UNKNOWN_MESSAGE;
   }
   if (err.status === 502) {
     return "Coord could not be reached, so the rename was not applied. Try again.";
@@ -209,10 +209,15 @@ export const PROXY_NOT_REACHABLE_DETAIL = "coord is not reachable";
  * one coord forwarded, carries no such proof and is unknown too.
  */
 export function isRenameOutcomeUnknown(err: unknown): boolean {
-  if (!(err instanceof TenantRenameError)) return false;
+  // Anything that is not an HTTP answer — the request may already have gone.
+  if (!(err instanceof TenantRenameError)) return true;
   if (err.status === 502) return err.detail !== PROXY_NOT_REACHABLE_DETAIL;
-  return err.status === 500 || err.status === 503 || err.status === 504;
+  // Every other 5xx, including a CDN's 520/524: none of them is a refusal.
+  return err.status >= 500;
 }
+
+const RENAME_OUTCOME_UNKNOWN_MESSAGE =
+  "Coord didn't answer cleanly, so the rename may have been applied. The project list is being reloaded to check — look for the new name before trying again. No home-group move was attempted; check the Cognito groups panel if the short id did change.";
 
 /** One line on what happened to the `<old-id>-home` Cognito group. */
 export function homeGroupHeadline(outcome: HomeGroupMigration): string {
@@ -335,7 +340,8 @@ export function CoordProjectRenameDialog({
       });
       if (isRenameOutcomeUnknown(err)) {
         // Coord may have committed: re-read, so the answer is visible.
-        void refresh();
+        // Never an unhandled rejection: the message already says "unknown".
+        void refresh().catch(() => false);
         onOutcomeUnknown?.();
       }
       throw err;
@@ -413,7 +419,7 @@ export function CoordProjectRenameDialog({
               data-testid="coord-tenant-rename-result-slug"
             >
               {result.slug}
-              {result.previous.slug !== result.slug
+              {result.previous && result.previous.slug !== result.slug
                 ? ` · was ${result.previous.slug}`
                 : ""}
             </p>

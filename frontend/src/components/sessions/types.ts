@@ -363,7 +363,9 @@ export interface TenantRenameResponse {
   tenant_id: string;
   slug: string;
   display_name: string | null;
-  previous: { slug: string; display_name: string | null };
+  /** Optional on the wire as far as this client is concerned: every reader
+   *  treats its absence as "the previous slug is unknown". */
+  previous?: { slug: string; display_name: string | null };
   changed: boolean;
   group_mappings_moved: number;
   home_group_to_migrate: string | null;

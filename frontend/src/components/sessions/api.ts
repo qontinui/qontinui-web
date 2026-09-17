@@ -475,12 +475,19 @@ export function parseTenantCreateError(rawBody: string): {
  * validation list) — `text` is its JSON. Otherwise `text` is the detail string
  * and `inner` is coord's parsed object when that string was a JSON object.
  */
-function unwrapProxiedCoordError(
-  rawBody: string
-):
-  | { kind: "non_string"; text: string }
-  | { kind: "string"; text: string; inner: Record<string, unknown> | null } {
+function unwrapProxiedCoordError(rawBody: string):
+  | { kind: "non_string"; text: string; envelopeCode: string | null }
+  | {
+      kind: "string";
+      text: string;
+      inner: Record<string, unknown> | null;
+      envelopeCode: string | null;
+    } {
   let detail: unknown = rawBody;
+  // The production envelope's own status token (`CONFLICT`, `BAD_GATEWAY`).
+  // Kept apart from coord's code on purpose: it is a fallback label for the
+  // STATUS, and reporting it as coord's code would claim coord said it.
+  let envelopeCode: string | null = null;
   try {
     const outer: unknown = JSON.parse(rawBody);
     if (outer && typeof outer === "object" && "detail" in outer) {
@@ -495,13 +502,16 @@ function unwrapProxiedCoordError(
         typeof envelope.message === "string"
       ) {
         detail = envelope.message;
+        if (typeof envelope.error === "string" && envelope.error !== "") {
+          envelopeCode = envelope.error;
+        }
       }
     }
   } catch {
     // Not JSON at all — keep the raw text.
   }
   if (typeof detail !== "string") {
-    return { kind: "non_string", text: JSON.stringify(detail) };
+    return { kind: "non_string", text: JSON.stringify(detail), envelopeCode };
   }
   let inner: Record<string, unknown> | null = null;
   try {
@@ -512,7 +522,7 @@ function unwrapProxiedCoordError(
   } catch {
     // coord answered plain text.
   }
-  return { kind: "string", text: detail, inner };
+  return { kind: "string", text: detail, inner, envelopeCode };
 }
 
 /**
@@ -533,12 +543,16 @@ export class TenantRenameError extends Error {
   detail: string;
   /** The slug coord named, when it named one (`slug_taken`). */
   slug?: string;
+  /** The production error envelope's status token (`BAD_GATEWAY`, …), when
+   *  the body came through it — the fallback label when coord sent no code. */
+  envelopeCode: string | null;
   constructor(
     status: number,
     code: string | null,
     reason: string | null,
     detail: string,
-    slug?: string
+    slug?: string,
+    envelopeCode: string | null = null
   ) {
     super(detail || `PATCH tenant failed: ${status}`);
     this.status = status;
@@ -546,6 +560,7 @@ export class TenantRenameError extends Error {
     this.reason = reason;
     this.detail = detail;
     this.slug = slug;
+    this.envelopeCode = envelopeCode;
     this.name = "TenantRenameError";
   }
 }
@@ -560,6 +575,7 @@ export function parseTenantRenameError(rawBody: string): {
   reason: string | null;
   detail: string;
   slug?: string;
+  envelopeCode: string | null;
 } {
   const { code, detail, slug } = parseTenantCreateError(rawBody);
   const unwrapped = unwrapProxiedCoordError(rawBody);
@@ -567,7 +583,7 @@ export function parseTenantRenameError(rawBody: string): {
     unwrapped.kind === "string" ? unwrapped.inner?.reason : undefined;
   const reason =
     typeof rawReason === "string" && rawReason !== "" ? rawReason : null;
-  return { code, reason, detail, slug };
+  return { code, reason, detail, slug, envelopeCode: unwrapped.envelopeCode };
 }
 
 /**
@@ -676,8 +692,16 @@ export async function renameTenant(
   });
   if (!res.ok) {
     const raw = await res.text().catch(() => "");
-    const { code, reason, detail, slug } = parseTenantRenameError(raw);
-    throw new TenantRenameError(res.status, code, reason, detail, slug);
+    const { code, reason, detail, slug, envelopeCode } =
+      parseTenantRenameError(raw);
+    throw new TenantRenameError(
+      res.status,
+      code,
+      reason,
+      detail,
+      slug,
+      envelopeCode
+    );
   }
   return (await res.json()) as TenantRenameResponse;
 }

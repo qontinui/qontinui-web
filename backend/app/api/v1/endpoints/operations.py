@@ -1163,58 +1163,50 @@ async def get_migrations_queue(
 # tenant resolution before forwarding.
 
 
-async def _proxy_coord_patch(
+async def _proxy_coord_write(
+    method: Literal["patch", "put"],
     path: str,
     body: Any,
     *,
-    tenant_id: UUID | None = None,
-    forward_bearer: bool = False,
+    headers: dict[str, str] | None,
 ) -> Any:
-    """Proxy a PATCH request to coord. Returns the JSON body.
+    """Send one PATCH/PUT to coord and say honestly what came back.
 
-    Used by the PR Merge Orchestrator Phase 2 settings endpoints
-    (``PATCH /pr-merge/settings`` + ``PATCH /pr-merge/repos/:repo/profile``).
-    Same posture as ``_proxy_coord_post`` — tenant header,
-    timeout/connect-error mapping. Sticking to the existing httpx
-    pattern keeps the proxy footprint minimal.
-
-    ``forward_bearer`` — forward the captured caller bearer EVEN WHEN
-    ``tenant_id is None``, exactly as on ``_proxy_coord_post``. The tenant
-    rename (``PATCH /tenants/{tenant_id}``) authorizes on the operator's
-    own identity coord-side and resolves no home tenant web-side, so it
-    needs the bearer without the resolution. Default False preserves the
-    prior behavior exactly.
-
-    **502 means "not applied"; 504 means "unknown".** A PATCH is a write, so
-    the status has to say whether coord may have applied it:
+    The single implementation behind ``_proxy_coord_patch`` and
+    ``_proxy_coord_put``, so the two cannot drift. Both are WRITES, so the
+    status has to say whether coord may have applied the change:
 
     * ``ConnectError`` → **502** ``coord is not reachable``: no connection was
       made, so coord never saw the request. The only arm that is safe to
       report as "nothing changed".
     * a timeout, any OTHER transport failure after the request may have been
       sent (``ReadError``, ``RemoteProtocolError`` — a load balancer cutting
-      the response), or a 2xx whose body is not JSON → **504**: coord may well
-      have committed, and only a re-read can tell. Before this, the last two
-      escaped as a bare 500.
+      the response), or a 2xx whose body is PRESENT but not JSON → **504**:
+      coord may well have committed, and only a re-read can tell. Each is
+      logged, because a 504 the operator retries is otherwise invisible.
+    * a coord ≥400 → coord's own status with ``detail=resp.text``.
+    * a 204, or any 2xx with an empty body → ``None``: a success that carries
+      nothing to return is still a success.
     """
     url = f"{settings.COORD_URL}{path}"
-    headers = (
-        _tenant_headers(tenant_id) if tenant_id is not None or forward_bearer else None
-    )
+    event = f"coord_{method}_answer_lost"
     async with httpx.AsyncClient(timeout=_COORD_TIMEOUT) as client:
+        send = client.patch if method == "patch" else client.put
         try:
-            resp = await client.patch(url, json=body, headers=headers)
+            resp = await send(url, json=body, headers=headers)
         except httpx.ConnectError:
             raise HTTPException(
                 status_code=502,
                 detail="coord is not reachable",
             )
-        except httpx.TimeoutException:
+        except httpx.TimeoutException as exc:
+            logger.warning(event, path=path, exc_type=type(exc).__name__)
             raise HTTPException(
                 status_code=504,
                 detail="timeout waiting for coord",
-            )
+            ) from exc
         except httpx.HTTPError as exc:
+            logger.warning(event, path=path, exc_type=type(exc).__name__)
             raise HTTPException(
                 status_code=504,
                 detail=(
@@ -1224,9 +1216,19 @@ async def _proxy_coord_patch(
             ) from exc
     if resp.status_code >= 400:
         raise HTTPException(status_code=resp.status_code, detail=resp.text)
+    if resp.status_code == 204 or not resp.content:
+        return None
     try:
         return resp.json()
     except (json.JSONDecodeError, UnicodeDecodeError) as exc:
+        logger.warning(
+            event,
+            path=path,
+            exc_type=type(exc).__name__,
+            status=resp.status_code,
+            # `getattr`: a log line on an error path must never raise itself.
+            content_type=getattr(resp, "headers", {}).get("content-type"),
+        )
         raise HTTPException(
             status_code=504,
             detail=(
@@ -1236,38 +1238,51 @@ async def _proxy_coord_patch(
         ) from exc
 
 
+async def _proxy_coord_patch(
+    path: str,
+    body: Any,
+    *,
+    tenant_id: UUID | None = None,
+    forward_bearer: bool = False,
+) -> Any:
+    """Proxy a PATCH request to coord. Returns the JSON body (``None`` for an
+    empty 2xx).
+
+    Used by the PR Merge Orchestrator Phase 2 settings endpoints
+    (``PATCH /pr-merge/settings`` + ``PATCH /pr-merge/repos/:repo/profile``)
+    and every other PATCH proxy here. Same posture as ``_proxy_coord_post`` —
+    tenant header, timeout/connect-error mapping; the status contract (502 is
+    "not applied", 504 is "unknown") is ``_proxy_coord_write``'s.
+
+    ``forward_bearer`` — forward the captured caller bearer EVEN WHEN
+    ``tenant_id is None``, exactly as on ``_proxy_coord_post``. The tenant
+    rename (``PATCH /tenants/{tenant_id}``) authorizes on the operator's
+    own identity coord-side and resolves no home tenant web-side, so it
+    needs the bearer without the resolution. Default False preserves the
+    prior behavior exactly.
+    """
+    headers = (
+        _tenant_headers(tenant_id) if tenant_id is not None or forward_bearer else None
+    )
+    return await _proxy_coord_write("patch", path, body, headers=headers)
+
+
 async def _proxy_coord_put(
     path: str,
     body: Any,
     *,
     tenant_id: UUID | None = None,
 ) -> Any:
-    """Proxy a PUT request to coord. Returns the JSON body.
+    """Proxy a PUT request to coord. Returns the JSON body (``None`` for an
+    empty 2xx).
 
-    Clone of ``_proxy_coord_patch`` for HTTP PUT semantics. Used by the
-    decision-engine next-step-settings endpoint (§5.3 of plan
-    ``2026-05-30-decision-engine-tenant-ui.md``) where coord expects a
-    full-replacement PUT rather than a partial PATCH. Same posture:
-    tenant header, timeout/connect-error mapping.
+    The PUT twin of ``_proxy_coord_patch`` — same ``_proxy_coord_write``, so
+    the two cannot drift. Used by the decision-engine next-step-settings
+    endpoint (§5.3 of plan ``2026-05-30-decision-engine-tenant-ui.md``) where
+    coord expects a full-replacement PUT rather than a partial PATCH.
     """
-    url = f"{settings.COORD_URL}{path}"
     headers = _tenant_headers(tenant_id) if tenant_id is not None else None
-    async with httpx.AsyncClient(timeout=_COORD_TIMEOUT) as client:
-        try:
-            resp = await client.put(url, json=body, headers=headers)
-        except httpx.ConnectError:
-            raise HTTPException(
-                status_code=502,
-                detail="coord is not reachable",
-            )
-        except httpx.TimeoutException:
-            raise HTTPException(
-                status_code=504,
-                detail="timeout waiting for coord",
-            )
-    if resp.status_code >= 400:
-        raise HTTPException(status_code=resp.status_code, detail=resp.text)
-    return resp.json()
+    return await _proxy_coord_write("put", path, body, headers=headers)
 
 
 @router.get("/pr-merge/settings")
