@@ -140,7 +140,24 @@ export function notEstablishedSentence(entry: PlanCoverage): string {
     );
   }
   const { prose } = splitDetail(entry.detail);
-  return `How much of what exists the corpus holds is not established here, because ${prose.charAt(0).toLowerCase()}${prose.slice(1)}`;
+  return `How much of what exists the corpus holds is not established here, because ${uncapitalise(prose)}`;
+}
+
+/**
+ * Lower-case an opening word that is ORDINARY PROSE, and nothing else.
+ *
+ * Every `detail` today opens lower-case already, so this only ever fires on a
+ * reason not yet written. Blindly lowering the first character would then
+ * mangle exactly the openings worth preserving — a sha, an identifier, an
+ * acronym (`SHA`, `POST`), a `source_repo` — and the clause is spliced after
+ * "because", where a mangled token is both wrong and ungreppable. So the
+ * transform applies only to a capitalised word followed by a lower-case
+ * letter, which no identifier or acronym matches.
+ */
+function uncapitalise(prose: string): string {
+  return /^[A-Z][a-z]/.test(prose)
+    ? `${prose.charAt(0).toLowerCase()}${prose.slice(1)}`
+    : prose;
 }
 
 /** `n` rendered with its noun pluralised. */
@@ -148,9 +165,30 @@ function plural(n: number, noun: string): string {
   return `${n} ${noun}${n === 1 ? "" : "s"}`;
 }
 
-/** A share, to one decimal — used ONLY by [`denominatorSentence`]. */
+/**
+ * A share, to one decimal, that NEVER rounds into a claim it cannot make —
+ * used ONLY by [`denominatorSentence`].
+ *
+ * A bare `toFixed(1)` is wrong in both directions at the ends of the range,
+ * and both errors are the exact class this feature exists to delete:
+ *
+ * * **9999 of 10000 rounds to `100.0%`**, printed inside the same sentence
+ *   that asserts the share cannot exceed 100% and directly above a missing
+ *   count of 1. Full coverage, rendered for an incomplete corpus.
+ * * **1 of 10000 rounds to `0.0%`**, which reads as "the corpus holds none of
+ *   it" when it holds some — absence-is-not-zero, one level down.
+ *
+ * So the two ends are reserved for the EXACT cases and everything between
+ * them is hedged with `>` or `<`, the same shape `shortDuration`'s `+` gives
+ * an age. `100%` and `0%` are then load-bearing: they mean exactly that.
+ */
 function share(numerator: number, denominator: number): string {
-  return `${((numerator / denominator) * 100).toFixed(1)}%`;
+  if (numerator === denominator) return "100%";
+  if (numerator === 0) return "0%";
+  const rounded = ((numerator / denominator) * 100).toFixed(1);
+  if (rounded === "100.0") return ">99.9%";
+  if (rounded === "0.0") return "<0.1%";
+  return `${rounded}%`;
 }
 
 /**
@@ -304,6 +342,39 @@ export function distanceSentence(entry: PlanCoverage): string {
 }
 
 /**
+ * That the distance above is about a DIFFERENT DEVICE than the numbers are.
+ *
+ * `min_behind` is the roll-up's — the least-behind COMPARABLE feeder — while
+ * every count came from `census_device_id`, which the backend picks by
+ * freshest ref age, not by least behind (`_census_sort_key`). With more than
+ * one device on a source those are routinely two different boxes, and two
+ * figures side by side are read as being about one. The
+ * `"Least-behind comparable feeder:"` prefix is doing that work alone, which
+ * is too much weight for a prefix.
+ *
+ * `counts_are_floors` is the census device's OWN qualification, and it is the
+ * one served field this panel would otherwise never render: `true` means that
+ * device's distance counts are lower bounds. It qualifies the device the
+ * stems came from, not the stem listings themselves — a truncated listing is
+ * a separate rule that has already made the whole entry `unknown`.
+ */
+export function censusQualificationSentence(
+  entry: PlanCoverage
+): string | null {
+  const parts: string[] = [];
+  if (entry.device_count > 1 && entry.census_device_id) {
+    parts.push(
+      `The stems were enumerated by the device with the freshest ref, which ` +
+        `among these ${entry.device_count} is not necessarily that feeder.`
+    );
+  }
+  if (entry.counts_are_floors) {
+    parts.push("That device's own distance counts are lower bounds.");
+  }
+  return parts.length ? parts.join(" ") : null;
+}
+
+/**
  * Which ref the authored side was enumerated at, and how old that fetch was.
  *
  * Two different shas can be in play and they are not interchangeable: the
@@ -311,6 +382,13 @@ export function distanceSentence(entry: PlanCoverage): string {
  * the ref sha the device REPORTED. They normally agree; when they do not, both
  * are shown, because a difference between them is exactly the kind of thing a
  * single rendered sha would hide.
+ *
+ * ⚠️ **The age belongs to the REPORTED ref, not to the listed one.**
+ * `_census_side` copies `ref_age_secs` from the READING, not from the census
+ * object. While the two shas agree that distinction is invisible, and in the
+ * one branch this function exists to surface — they disagree — attaching the
+ * age to the listed sha states an age nothing measured for it. So the age
+ * moves onto whichever sha it is actually about.
  */
 export function refSentence(
   entry: PlanCoverage,
@@ -320,15 +398,25 @@ export function refSentence(
   const reported = entry.ref_sha;
   const sha = listedAt ?? reported;
   if (!sha) return null;
+  const secs = side?.ref_age_secs ?? null;
+  const disagree = Boolean(listedAt && reported && listedAt !== reported);
+
+  if (disagree) {
+    const age =
+      secs == null
+        ? "whose age was not measured"
+        : `which was ${shortDuration(secs)} old at that reading`;
+    return (
+      `Differenced against ${listedAt}, whose own age at that reading was ` +
+      `not reported. The reading itself reported ref ${reported}, ${age}.`
+    );
+  }
+
   const age =
-    side?.ref_age_secs == null
+    secs == null
       ? " Its age at that reading was not measured."
-      : ` It was ${shortDuration(side.ref_age_secs)} old at that reading.`;
-  const disagree =
-    listedAt && reported && listedAt !== reported
-      ? ` The reading itself reported ref ${reported}.`
-      : "";
-  return `Differenced against ${sha}.${age}${disagree}`;
+      : ` It was ${shortDuration(secs)} old at that reading.`;
+  return `Differenced against ${sha}.${age}`;
 }
 
 /** Device ids, in full — a prefix can be shared, so it is never shortened. */
@@ -406,24 +494,55 @@ function MissingSample({ entry }: { entry: PlanCoverage }) {
 }
 
 /**
+ * "heard 30s ago" / "silent 2m" — or neither, when freshness was not served.
+ *
+ * Three values, not two. `observation_fresh` is independently nullable on the
+ * wire, and `!null` is `false`, so a two-valued read prints "silent" — an
+ * assertion that the device went quiet — off a field that established
+ * nothing. The age itself is still worth showing, so the third arm states the
+ * age and withholds the verdict.
+ */
+export function ageLabel(entry: PlanCoverage): string | null {
+  if (entry.observation_age_secs == null) return null;
+  const age = shortDuration(entry.observation_age_secs);
+  if (entry.observation_fresh == null) {
+    return `reading ${age} old; freshness not established`;
+  }
+  return entry.observation_fresh ? `heard ${age} ago` : `silent ${age}`;
+}
+
+/**
  * One scan source's coverage.
  *
- * Keys every number on `state`. On `unknown` the count cluster is not
- * rendered at all — not even as `–` badges beside a sibling key's real
- * integers, which is read at a glance as small numbers — and the
- * "not established, because …" sentence takes its place. What survives an
- * `unknown` verdict is what does not come from the census: the device
- * identity, and the roll-up's distance.
+ * The count cluster is gated on TWO things, not one. `state === "measured"`
+ * is necessary and not sufficient: every count on a `PlanCoverage` is
+ * independently nullable, so a measured entry missing a census side would
+ * otherwise render three integers with no denominator named anywhere on the
+ * panel — the exact claim this feature deletes — or three `–` badges and no
+ * sentence at all, which is the empty-panel shape one level down. So the
+ * numbers appear only when [`denominatorSentence`] can name both sides, and
+ * the shape that cannot says so in words.
+ *
+ * On `unknown` nothing is rendered as a count — not even a `–` badge beside a
+ * sibling key's real integers, which is read at a glance as a small number —
+ * and the "not established, because …" sentence takes its place. What
+ * survives an `unknown` verdict is what does not come from the census: the
+ * device identity, and the roll-up's distance.
  */
 function CoverageEntryView({ entry }: { entry: PlanCoverage }) {
   const key = coverageKey(entry.source_repo);
   const id = (role: string) => `plan-coverage-${role}:${key}`;
-  const measured = entry.state === "measured";
   const denominators = denominatorSentence(entry);
+  // A measured verdict whose denominators are unserved is neither arm the
+  // backend documents, so it gets its own: no counts, and a sentence.
+  const measured = entry.state === "measured" && denominators != null;
+  const denominatorsUnserved = entry.state === "measured" && !denominators;
   const missing = missingSentence(entry);
   const extra = capturedNotAuthoredSentence(entry);
   const outOfScope = outOfScopeSentence(entry);
   const ref = refSentence(entry, entry.authored_at_ref);
+  const qualification = censusQualificationSentence(entry);
+  const age = ageLabel(entry);
 
   return (
     <div
@@ -432,7 +551,7 @@ function CoverageEntryView({ entry }: { entry: PlanCoverage }) {
     >
       <div className="flex flex-wrap items-center gap-2">
         <Badge
-          variant={measured ? "outline" : "warning"}
+          variant={entry.state === "measured" ? "outline" : "warning"}
           className="shrink-0"
           data-testid={id("state")}
         >
@@ -441,14 +560,12 @@ function CoverageEntryView({ entry }: { entry: PlanCoverage }) {
         <span className="min-w-0 break-all text-muted-foreground">
           {entry.source_repo ?? "scan source not named"}
         </span>
-        {entry.observation_age_secs != null && (
+        {age && (
           <span
             className="ml-auto shrink-0 text-muted-foreground"
             data-testid={id("age")}
           >
-            {entry.observation_fresh
-              ? `heard ${shortDuration(entry.observation_age_secs)} ago`
-              : `silent ${shortDuration(entry.observation_age_secs)}`}
+            {age}
           </span>
         )}
       </div>
@@ -527,6 +644,16 @@ function CoverageEntryView({ entry }: { entry: PlanCoverage }) {
 
           <MissingSample entry={entry} />
         </>
+      ) : denominatorsUnserved ? (
+        <p
+          className="mt-2 text-[11px] text-amber-700 dark:text-amber-300"
+          data-testid={id("denominators-unserved")}
+        >
+          This scan source reports a measured verdict, but the response carries
+          no stem listing for one or both sides — so the counts have no
+          denominator to be read against and none of them is shown. That is not
+          0 captured and not full coverage.
+        </p>
       ) : (
         <p
           className="mt-2 text-[11px] text-amber-700 dark:text-amber-300"
@@ -550,6 +677,7 @@ function CoverageEntryView({ entry }: { entry: PlanCoverage }) {
       >
         {distanceSentence(entry)}
         {ref ? ` ${ref}` : ""}
+        {qualification ? ` ${qualification}` : ""}
       </p>
 
       {entry.census_device_id && (
@@ -569,27 +697,71 @@ function CoverageEntryView({ entry }: { entry: PlanCoverage }) {
 }
 
 /**
+ * "Read at …" — the moment every age on this panel was measured.
+ *
+ * Every age here is a SERVER-COMPUTED DELTA frozen when the request left
+ * (`observation_age_secs`, `ref_age_secs`), and this panel does not poll, so
+ * without a stamp a console left open overnight keeps reading "heard 30s ago"
+ * — a stale reading rendered as current, which is the defect this whole
+ * feature exists to remove, reappearing at the panel instead of the row.
+ *
+ * It is also what the second GET of `/scan-roots` was paid for:
+ * `usePlanCoverage` keeps its own read precisely so this stamp belongs to
+ * THESE numbers and not to the ones in the panel above.
+ *
+ * The DATE appears whenever the read was not today. A bare
+ * `toLocaleTimeString` cannot express the overnight case, which is the one
+ * case the stamp exists for.
+ */
+function ReadAt({ at }: { at: Date | null }) {
+  if (!at) return null;
+  const today = new Date().toDateString() === at.toDateString();
+  return (
+    <span data-testid="plan-coverage-read-at">
+      {" "}
+      Read at {today ? at.toLocaleTimeString() : at.toLocaleString()}; the ages
+      above are as of then.
+    </span>
+  );
+}
+
+/**
  * The coverage set difference, per scan source.
  *
  * Sits directly beneath `Scan sources`, whose question it completes: that
  * panel says how far behind the tree each feeder scans is, and this says what
  * that distance COST the corpus — which stems exist and are not held.
  *
- * Four absences it refuses to render as full coverage, each mirroring a
+ * Five absences it refuses to render as full coverage, each mirroring a
  * backend rule:
  *
- * * **An empty `coverage`** is `coverage_detail`'s sentence, never an empty
- *   panel. Three different reasons produce it and only one of them is about
- *   this organization's data at all.
+ * * **An empty — or absent — `coverage`** is `coverage_detail`'s sentence,
+ *   never an empty panel. Three different reasons produce an empty one and
+ *   only one of them is about this organization's data at all; an ABSENT one
+ *   is a backend predating Phase 3, and it lands in the same branch with no
+ *   detail to quote, where the fallback sentence says UNKNOWN.
  * * **An `unknown` entry** is a "not established, because …" sentence, never
  *   a zero. Its numbers are `null` and the panel prints none of them.
+ * * **A measured entry with no census side served** prints no counts either:
+ *   integers with no denominator anywhere are the claim this panel exists to
+ *   delete.
  * * **A failed read** leaves the previous entries on screen, says they may be
  *   stale, and does not blank them into a false zero.
  * * **No percentage anywhere but beside both denominators**, for the reason
  *   the module docstring gives at length.
+ *
+ * And every age is stamped with the moment it was read, because none of them
+ * is recomputed after the response lands.
  */
 export function PlanCoveragePanel() {
-  const { data, loading, error, reload } = usePlanCoverage();
+  const { data, fetchedAt, loading, error, reload } = usePlanCoverage();
+  // `?? []` is not a default value here — it is the pre-Phase-3 backend and
+  // the front/back deploy skew, where the field is absent rather than empty.
+  // Both land in the same branch below, and `coverage_detail` is absent there
+  // too, so the branch's own fallback sentence says UNKNOWN rather than
+  // inventing a reason. Reading `.length` off `undefined` would instead throw
+  // and take down the whole route segment.
+  const entries = data?.coverage ?? [];
 
   return (
     <section
@@ -640,26 +812,39 @@ export function PlanCoveragePanel() {
           className="mt-4 h-20 w-full"
           data-testid="plan-coverage-loading"
         />
-      ) : data == null ? null : data.coverage.length === 0 ? (
+      ) : data == null ? null : entries.length === 0 ? (
         <p
           className="mt-3 text-xs text-muted-foreground"
           data-testid="plan-coverage-none"
         >
           {data.coverage_detail ??
             "No coverage was served and no reason was given, so how much of what exists the corpus holds is not established. An empty answer is not “nothing is missing”."}
+          <ReadAt at={fetchedAt} />
         </p>
       ) : (
-        <div
-          className="mt-3 overflow-hidden rounded-md border border-border bg-background"
-          data-testid="plan-coverage-entries"
-        >
-          {data.coverage.map((entry) => (
-            <CoverageEntryView
-              key={coverageKey(entry.source_repo)}
-              entry={entry}
-            />
-          ))}
-        </div>
+        <>
+          <div
+            className="mt-3 overflow-hidden rounded-md border border-border bg-background"
+            data-testid="plan-coverage-entries"
+          >
+            {entries.map((entry) => (
+              <CoverageEntryView
+                key={coverageKey(entry.source_repo)}
+                entry={entry}
+              />
+            ))}
+          </div>
+          <p
+            className="mt-2 text-[11px] text-muted-foreground"
+            data-testid="plan-coverage-summary"
+          >
+            {/* Not "differenced": an `unknown` entry is listed and was NOT
+                differenced, so a summary claiming otherwise would assert the
+                measurement the entry below it refuses to make. */}
+            {plural(entries.length, "scan source")} in this reading.
+            <ReadAt at={fetchedAt} />
+          </p>
+        </>
       )}
     </section>
   );
