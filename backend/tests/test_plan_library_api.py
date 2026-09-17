@@ -1451,6 +1451,26 @@ def _without_request_clock(scan_roots: dict) -> dict:
     }
 
 
+def _without_coverage(scan_roots: dict) -> dict:
+    """Drop the pair the two renderings DELIBERATELY differ on.
+
+    D2 of ``2026-09-15-captured-vs-authored-coverage-is-a-set-difference``: the
+    dedicated ``GET /plan-library/scan-roots`` computes the coverage set
+    difference and the ``corpus_health`` rendering does not, because that block
+    rides every ``/plan-library`` list page and ``/candidates`` — an anti-join
+    over every authored stem would be charged to each of them.
+
+    Before coverage existed the two blocks were identical and the test asserted
+    exactly that. They are still identical in every reading and every roll-up;
+    they differ in this pair alone. This helper removes it from the equality so
+    the caller can pin the divergence EXPLICITLY rather than let a blanket
+    comparison hide which fields moved and why.
+    """
+    return {
+        k: v for k, v in scan_roots.items() if k not in ("coverage", "coverage_detail")
+    }
+
+
 class TestCorpusHealth:
     """``corpus_health`` rides on every list page (Phase 2 of
     ``2026-08-27-plan-corpus-read-path-is-dark``, D1).
@@ -1574,7 +1594,34 @@ class TestCorpusHealth:
         assert rollup["lagging_device_ids"] == [str(lagging)]
 
         via_route = await _get_scan_roots_route(async_db_session, api_user)
-        assert _without_request_clock(scan_roots) == _without_request_clock(via_route)
+
+        # The two renderings agree on every reading and every roll-up...
+        assert _without_coverage(
+            _without_request_clock(scan_roots)
+        ) == _without_coverage(_without_request_clock(via_route))
+
+        # ...and differ on exactly the coverage pair, by D2. Pinned here rather
+        # than dropped silently, because "the corpus-health block does not
+        # compute coverage" and "coverage came back empty" are different facts
+        # and the whole feature exists to stop an empty reading being mistaken
+        # for a complete one.
+        assert scan_roots["coverage"] == []
+        assert scan_roots["coverage_detail"] is not None
+        assert scan_roots["coverage_detail"].startswith("not_computed_here:")
+
+        # The dedicated route DOES compute it. These feeders carry no census,
+        # so the entry is `unknown` with a reason — never a zero, and never an
+        # omitted key.
+        assert via_route["coverage_detail"] is None
+        assert [e["source_repo"] for e in via_route["coverage"]] == [
+            "qontinui-dev-notes/plans"
+        ]
+        (entry,) = via_route["coverage"]
+        assert entry["state"] == "unknown"
+        assert entry["detail"] is not None and entry["detail"].startswith("no_census:")
+        assert entry["captured"] is None
+        assert entry["authored_not_captured"] is None
+        assert entry["out_of_scope_artifact_count"] is None
 
     async def test_scan_roots_never_carries_another_organizations_devices(
         self, async_db_session: AsyncSession
