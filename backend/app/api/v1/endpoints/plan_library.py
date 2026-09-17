@@ -2326,6 +2326,17 @@ async def _load_corpus_health(db: AsyncSession, *, org_id: UUID | None) -> Corpu
     degrades to ``scan_roots_read_failed`` — ``state: "unknown"``, never an
     empty list that reads as "no drift". ``GET /plan-library/scan-roots``
     itself does not degrade: the readings are its whole answer.
+
+    The block's ``coverage`` is deliberately EMPTY here, with
+    ``coverage_detail`` saying so — design decision D2 of
+    ``2026-09-15-captured-vs-authored-coverage-is-a-set-difference``. This
+    function rides every ``GET /plan-library`` page and ``/candidates``
+    including the runner's loopback search, and the coverage set difference is
+    an anti-join over every authored stem; it belongs to the one route whose
+    whole answer the readings are. That is also why the read below is the
+    DEFERRED ``list_observations``: the stem columns are never rendered here,
+    and touching one after this savepoint has exited would raise
+    ``MissingGreenlet`` and take down the page rather than degrade.
     """
     census = await crud.capture_health(db, org_id=org_id)
     try:

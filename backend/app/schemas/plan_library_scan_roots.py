@@ -617,6 +617,184 @@ class ScanRootSourceRollup(BaseModel):
     unmeasured_device_ids: list[UUID]
 
 
+#: The most stems a coverage entry samples into ``missing_sample``. A sample,
+#: not the set: the whole difference can be thousands of stems, and a coverage
+#: block rides a page an operator reads. ``sample_truncated`` says when the
+#: list was cut, so an operator never reads a 50-stem sample as the whole
+#: backlog.
+COVERAGE_MISSING_SAMPLE_MAX = 50
+
+
+#: A coverage entry's verdict. ``measured`` only when ONE device's fresh,
+#: applied reading carried BOTH stem listings WHOLE (neither truncated) for a
+#: NAMED ``source_repo``; otherwise ``unknown``, with a ``detail`` naming which
+#: of those the readings failed. There is no third state, and no zero: a key
+#: with no usable census establishes nothing about how much of what exists the
+#: corpus holds.
+PlanCoverageState = Literal["measured", "unknown"]
+
+
+class PlanCensusSide(BaseModel):
+    """One side of the set difference, as the device that scans enumerated it.
+
+    A coverage entry carries TWO of these, and they answer DIFFERENT questions
+    -- which is the whole reason this block emits no ratio:
+
+    * ``authored_at_ref`` is **what exists**: the stems the device listed at
+      ``ref_sha`` on its ``default_ref``.
+    * ``visible_to_scanner`` is **what the body sync could possibly have
+      seen**: the stems the device enumerated in the WORKING TREE it scans.
+
+    A checkout behind its default branch makes the second a strict subset of
+    the first, and a plan missing from the corpus because of that gap is
+    checkout freshness, not a capture defect. One number over two denominators
+    would hide exactly that distinction.
+    """
+
+    #: Which side this listing is of -- ``ref`` for ``authored_at_ref``,
+    #: ``work_tree`` for ``visible_to_scanner``.
+    source: SlugCensusSource
+    #: What ``default_ref`` pointed at when a ``ref`` census was listed;
+    #: ``null`` for the ``work_tree`` side, whose HEAD the reading carries as
+    #: ``head_sha``.
+    ref_sha: str | None
+    #: Seconds since the device last knew ``default_ref`` refreshed, from the
+    #: READING that carried this census; ``null`` = unknown age. Carried on
+    #: both sides because it dates the whole report, and a reader comparing the
+    #: two sides needs to know how old the ref half is.
+    ref_age_secs: int | None
+    #: How many stems the device ENUMERATED on this side -- exact, and not
+    #: bounded by :data:`SLUG_CENSUS_MAX`. Exceeds ``listed_count`` exactly
+    #: when ``truncated``.
+    count: int
+    #: How many stems it actually SENT, and therefore how many the set
+    #: difference was taken over.
+    listed_count: int
+    #: ``True`` when the device had more than :data:`SLUG_CENSUS_MAX` stems and
+    #: sent the sorted prefix. The set is then a floor in the sense
+    #: ``counts_are_floors`` already means -- membership proves existence,
+    #: absence proves nothing -- so the entry reads ``unknown`` rather than
+    #: serving differences taken over a prefix.
+    truncated: bool
+    #: ``sha256`` over the sorted, newline-joined stems as sent
+    #: (:func:`slug_census_digest`). What a reader re-derives to confirm the
+    #: set the numbers were taken over.
+    digest: str
+
+
+class PlanCoverage(BaseModel):
+    """What the corpus holds, against what exists -- as a SET DIFFERENCE.
+
+    One entry per ``source_repo`` key any device reports, **never omitted and
+    never zeroed**: a key with no usable census reads ``unknown`` with a
+    ``detail``, because "we cannot see the authored side" and "the corpus holds
+    none of it" are different answers and only one of them is actionable.
+
+    **There is no ratio field here, and that is the point.** A percentage is
+    one number over two denominators that answer different questions
+    (:class:`PlanCensusSide`), and computed off a single git ref the naive
+    answers for one corpus have read 76.5% and 101.8% -- the second impossible,
+    and produced by counting corpus rows written under a DIFFERENT
+    ``source_repo`` against one key's authored set.
+    ``out_of_scope_artifact_count`` names those rows instead, which is what
+    makes the >100% reading unconstructible from anything served here. A
+    presentation layer may compute a ratio only beside BOTH denominators.
+
+    Every entry carries the honesty vocabulary the readings already have --
+    ``min_behind``, ``min_behind_is_floor``, ``observation_age_secs``,
+    ``observation_fresh``, ``counts_are_floors``, ``ref_sha`` -- so a reader
+    never has to join this block to ``by_source_repo`` to know whether the
+    numbers mean anything. No second vocabulary is minted for coverage.
+    """
+
+    #: The scan source these numbers are about, in the artifact upsert's
+    #: ``source_repo`` form. The ``null`` group always reads ``unknown``: a
+    #: corpus row with no ``source_repo`` is out of scope for every key by
+    #: definition, so there is nothing to join a null key's census against.
+    source_repo: str | None
+    #: ``measured`` only when one device's fresh, applied reading carried both
+    #: stem listings whole for a named key; otherwise ``unknown``.
+    state: PlanCoverageState
+    #: Why ``state`` is ``unknown`` -- a ``no_census:``, ``census_truncated:``
+    #: or ``source_repo_unnamed:`` line in the same shape as the roll-up's
+    #: ``no_comparable_reading:``. ``null`` when ``measured``.
+    detail: str | None
+    #: Every device whose stored reading names this ``source_repo`` -- the same
+    #: population as the roll-up's ``device_count``.
+    device_count: int
+    #: The device whose census these numbers were taken from: among the devices
+    #: with a usable census, the one whose ref is FRESHEST (least
+    #: ``ref_age_secs``; an unknown age sorts last), ties broken by the
+    #: least-stale reading and then by ``device_id`` so two reads of the same
+    #: rows pick the same device. ``null`` when no device had one.
+    census_device_id: UUID | None
+    #: The other devices reporting this key that ALSO had a usable census and
+    #: were not chosen. They may have enumerated a different set -- a second
+    #: checkout at a different commit -- so a reader that needs agreement must
+    #: ask them; this block states one device's reading, not a consensus.
+    other_census_device_ids: list[UUID]
+    #: **Denominator 1 -- what exists.** ``null`` when ``unknown``.
+    authored_at_ref: PlanCensusSide | None
+    #: **Denominator 2 -- what the body sync could possibly have seen.**
+    #: ``null`` when ``unknown``.
+    visible_to_scanner: PlanCensusSide | None
+    #: Corpus rows with ``kind == 'plan'`` AND exactly this ``source_repo``.
+    #: ``null`` when ``unknown`` -- NOT 0.
+    captured: int | None
+    #: ``|captured INTERSECT authored_at_ref|``. ``null`` when ``unknown``.
+    both: int | None
+    #: ``|authored_at_ref MINUS captured|`` -- stems that exist at the ref and
+    #: have no corpus row under this key. ``null`` when ``unknown``.
+    authored_not_captured: int | None
+    #: ``|captured MINUS authored_at_ref|`` -- corpus rows under this key whose
+    #: stem is not at the ref: a plan deleted or renamed upstream, or captured
+    #: from a checkout carrying commits the ref lacks. NOT a coverage defect,
+    #: and never subtracted from anything. ``null`` when ``unknown``.
+    captured_not_authored: int | None
+    #: **The attribution field.** The subset of ``authored_not_captured`` that
+    #: is ALSO absent from ``visible_to_scanner``: stems the body sync could
+    #: not have captured because they are not in the tree it scans. That is
+    #: CHECKOUT FRESHNESS, not a capture defect, and
+    #: ``authored_not_captured - authored_not_captured_but_invisible`` is the
+    #: number an operator can act on. ``null`` when ``unknown``.
+    authored_not_captured_but_invisible: int | None
+    #: Corpus ``kind == 'plan'`` rows whose ``source_repo`` is a DIFFERENT key
+    #: or ``null``. Naming these is what makes a >100% reading impossible: they
+    #: are the rows a naive numerator swept in. ``null`` when ``unknown``.
+    out_of_scope_artifact_count: int | None
+    #: Up to :data:`COVERAGE_MISSING_SAMPLE_MAX` stems from
+    #: ``authored_not_captured``, sorted. Empty when ``unknown`` -- which is
+    #: not "nothing is missing".
+    missing_sample: list[str]
+    #: ``True`` when ``authored_not_captured`` exceeds the sample cap, so the
+    #: sample is a prefix rather than the backlog.
+    sample_truncated: bool
+    #: The ROLL-UP's fewest commits behind for this key, over its comparison
+    #: set -- copied from ``by_source_repo`` so a reader need not join. It is
+    #: not the census device's own ``behind``: another device may be less
+    #: behind. ``null`` when the roll-up established no distance.
+    min_behind: int | None
+    #: The roll-up's own floor flag, copied for the same reason. ``null``
+    #: exactly when ``min_behind`` is.
+    min_behind_is_floor: bool | None
+    #: The CENSUS DEVICE's reading age (``now - received_at``), ``null`` when
+    #: no device was chosen.
+    observation_age_secs: int | None
+    #: Whether that device is within ``fresh_within_secs``. Always ``True`` on
+    #: a ``measured`` entry -- a stale device's census is never used -- and
+    #: ``null`` when no device was chosen.
+    observation_fresh: bool | None
+    #: The census device's own ``counts_are_floors``: whether ITS commit counts
+    #: are lower bounds. It says nothing about the stem sets, whose floor is
+    #: each side's ``truncated``. ``null`` when no device was chosen.
+    counts_are_floors: bool | None
+    #: The census device's reading ``ref_sha`` -- what its ``behind`` /
+    #: ``ahead`` were counted against. May differ from
+    #: ``authored_at_ref.ref_sha``, which is what the STEMS were listed at.
+    #: ``null`` when no device was chosen.
+    ref_sha: str | None
+
+
 class ScanRootListResponse(BaseModel):
     """Every device's latest reading for the caller's organization.
 
@@ -643,6 +821,37 @@ class ScanRootListResponse(BaseModel):
     #: in order, then the ``null`` group. Empty exactly when ``rows`` is, and
     #: then ``state`` is ``unknown``: an empty roll-up is not "no drift".
     by_source_repo: list[ScanRootSourceRollup]
+    #: What the corpus holds against what exists, per scan source — a SET
+    #: DIFFERENCE, never a ratio (:class:`PlanCoverage`).
+    #:
+    #: **Populated by ``GET /plan-library/scan-roots`` ONLY, and deliberately
+    #: EMPTY on ``corpus_health.scan_roots``** (design decision D2 of
+    #: ``2026-09-15-captured-vs-authored-coverage-is-a-set-difference``):
+    #: ``CorpusHealth`` embeds this whole response and rides EVERY
+    #: ``GET /plan-library`` page including the runner's loopback search, so an
+    #: anti-join over the fleet's ~1800 stems would be charged to every list
+    #: request. The two stem columns are deferred on the read that block uses
+    #: for the same reason.
+    #:
+    #: Empty is therefore NOT "full coverage" and not "no scan source" —
+    #: ``coverage_detail`` states which of the three reasons produced it (this
+    #: surface does not compute it, the readings could not be read, or no
+    #: device has reported), and is ``null`` exactly when ``coverage`` is
+    #: non-empty.
+    #:
+    #: REQUIRED on the wire, with no default, like every other field of this
+    #: model. The plan's Phase 3 brief spelled it ``= []``; a default would
+    #: drop the field from the schema's ``required`` list, and the console's
+    #: contract test asserts that every served property is required
+    #: (``frontend/src/app/(app)/admin/coord/plan-library/types.wire.test.ts``
+    #: — "requires every field, as the interface does"). A field an operator
+    #: console may find absent is a field it will default, which is how an
+    #: empty coverage block becomes a zero.
+    coverage: list[PlanCoverage]
+    #: Why ``coverage`` is empty; ``null`` when it is not. Never absent when it
+    #: is empty: an unexplained empty coverage block is the false zero this
+    #: whole plan exists to delete.
+    coverage_detail: str | None
 
 
 class ScanRootReportResponse(BaseModel):
