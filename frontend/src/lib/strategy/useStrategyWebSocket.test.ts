@@ -192,6 +192,35 @@ describe("useStrategyWebSocket", () => {
     });
   });
 
+  it("ignores the bridge's channel-less keepalive frame", async () => {
+    // Finding 67329129: the bridge sends `{"type":"keepalive"}` on an idle
+    // upstream. It carries no `channel`, so `typeof envelope.channel !==
+    // "string"` must return before the pattern filter — never call
+    // `onMessage`, never throw.
+    const onMessage = vi.fn();
+    renderHook(() =>
+      useStrategyWebSocket({
+        pattern: "events.strategy.*",
+        onMessage,
+        WebSocketImpl: WS,
+        getToken: token,
+      }),
+    );
+    await flush();
+    const ws = MockWebSocket.instances[0];
+    act(() => ws.open());
+
+    act(() => {
+      ws.onmessage?.(
+        new MessageEvent("message", {
+          data: JSON.stringify({ type: "keepalive" }),
+        }),
+      );
+    });
+
+    expect(onMessage).not.toHaveBeenCalled();
+  });
+
   it("delivers a per-user mention frame only to that user's subscriber", async () => {
     // Two hooks, two patterns, one bridge subscription each. The bridge
     // fans out EVERY events.strategy.* frame to both sockets — the
