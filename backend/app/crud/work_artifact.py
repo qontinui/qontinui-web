@@ -1229,6 +1229,80 @@ async def capture_health(
     ]
 
 
+@dataclass(frozen=True)
+class CapturedPlanCorpus:
+    """The CORPUS side of the coverage set difference, for one organization.
+
+    Phase 3 of ``2026-09-15-captured-vs-authored-coverage-is-a-set-difference``.
+    Two facts, and the second is what makes a >100% coverage reading
+    unconstructible:
+
+    * ``slugs_by_source_repo`` — the ``kind == 'plan'`` stems the corpus holds
+      under each ``source_repo`` key that was ASKED for. A key with no rows is
+      present with an empty set, so a caller never has to tell "no rows" from
+      "not asked".
+    * ``plan_row_count`` — EVERY ``kind == 'plan'`` row in the organization,
+      whatever its ``source_repo`` (including ``null``). A key's out-of-scope
+      count is this minus that key's own, which names the rows a naive
+      numerator swept in rather than letting them inflate a ratio.
+
+    The stems come back as sets rather than counts because the answer the plan
+    needs is a set DIFFERENCE: how many stems that exist have no row is not
+    derivable from two totals.
+    """
+
+    slugs_by_source_repo: dict[str, frozenset[str]]
+    plan_row_count: int
+
+
+async def captured_plan_corpus(
+    db: AsyncSession, *, org_id: UUID | None, source_repos: Iterable[str]
+) -> CapturedPlanCorpus:
+    """The plan stems this organization's corpus holds, per asked-for key.
+
+    ``source_repos`` is the set of keys a coverage read has a denominator for
+    — the scan sources devices reported. Only those are enumerated: the stem
+    query is the expensive half (the fleet's corpus is ~1800 plan rows), and a
+    key nobody can measure against needs no set.
+
+    ``plan_row_count`` is counted over the WHOLE organization in a separate,
+    aggregate-only statement, so it stays correct when ``source_repos`` is
+    empty — which is exactly the case where an out-of-scope count matters most
+    and a caller deriving the total by summing the returned sets would get 0.
+
+    Matching is on ``source_repo`` EXACTLY, including case: it is the
+    scanner's own two-component form (``<repo>/<dir relative to the repo
+    root>``), and a near-miss key is a different row that belongs in the
+    out-of-scope count rather than being folded in.
+    """
+    wanted = sorted(set(source_repos))
+
+    total = (
+        await db.execute(
+            select(func.count())
+            .select_from(WorkArtifact)
+            .where(_org_scope(org_id), WorkArtifact.kind == "plan")
+        )
+    ).scalar_one()
+
+    slugs: dict[str, set[str]] = {key: set() for key in wanted}
+    if wanted:
+        stmt = select(WorkArtifact.source_repo, WorkArtifact.slug).where(
+            _org_scope(org_id),
+            WorkArtifact.kind == "plan",
+            WorkArtifact.source_repo.in_(wanted),
+        )
+        for row in (await db.execute(stmt)).all():
+            # ``source_repo`` cannot be NULL here — ``IN`` never matches one —
+            # so the bucket always exists.
+            slugs[row.source_repo].add(row.slug)
+
+    return CapturedPlanCorpus(
+        slugs_by_source_repo={key: frozenset(value) for key, value in slugs.items()},
+        plan_row_count=int(total),
+    )
+
+
 async def find_divergent(
     db: AsyncSession,
     *,

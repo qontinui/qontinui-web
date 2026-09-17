@@ -31,6 +31,10 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import {
+  PLAN_CENSUS_SIDE_NULLABLE,
+  PLAN_CENSUS_SOURCES,
+  PLAN_COVERAGE_NULLABLE,
+  PLAN_COVERAGE_STATES,
   SCAN_ROOT_LIST_NULLABLE,
   SCAN_ROOT_LIST_STATES,
   SCAN_ROOT_ROLLUP_NULLABLE,
@@ -110,6 +114,8 @@ describe.each(SNAPSHOTS)("the scan-root wire contract, against %s", (file) => {
   const list = component(file, "ScanRootListResponse");
   const rollup = component(file, "ScanRootSourceRollup");
   const corpus = component(file, "CorpusHealth");
+  const coverage = component(file, "PlanCoverage");
+  const side = component(file, "PlanCensusSide");
 
   it("the row's verdict admits exactly SCAN_ROOT_STATES", () => {
     expect(enumOf(row, "state")).toEqual(sorted(SCAN_ROOT_STATES));
@@ -145,10 +151,40 @@ describe.each(SNAPSHOTS)("the scan-root wire contract, against %s", (file) => {
     ).toBe("#/components/schemas/ScanRootListResponse");
   });
 
+  it("the list's coverage entries are the coverage schema pinned here", () => {
+    expect(list.properties.coverage?.items?.$ref).toBe(
+      "#/components/schemas/PlanCoverage"
+    );
+  });
+
+  it("a coverage entry's verdict admits exactly PLAN_COVERAGE_STATES", () => {
+    expect(enumOf(coverage, "state")).toEqual(sorted(PLAN_COVERAGE_STATES));
+  });
+
+  it("a census side names exactly PLAN_CENSUS_SOURCES", () => {
+    expect(enumOf(side, "source")).toEqual(sorted(PLAN_CENSUS_SOURCES));
+  });
+
+  it("coverage emits NO ratio — the whole point of the set difference", () => {
+    // Structural, not a list of the names we thought of: a percentage over one
+    // of two denominators read 101.8% in production, and the way that reaches
+    // an operator again is a field nobody meant to publish. A ratio would have
+    // to be a `number` that is not an integer count, so pin both halves: no
+    // field named like one, and no non-integer numeric type on the wire.
+    const forbidden = /ratio|percent|pct|fraction|rate|score/i;
+    for (const [name, prop] of Object.entries(coverage.properties)) {
+      expect(name).not.toMatch(forbidden);
+      const arms = [prop.type, ...(prop.anyOf ?? []).map((a) => a.type)];
+      expect(arms).not.toContain("number");
+    }
+  });
+
   describe.each([
     ["ScanRootRow", row, SCAN_ROOT_ROW_NULLABLE],
     ["ScanRootListResponse", list, SCAN_ROOT_LIST_NULLABLE],
     ["ScanRootSourceRollup", rollup, SCAN_ROOT_ROLLUP_NULLABLE],
+    ["PlanCoverage", coverage, PLAN_COVERAGE_NULLABLE],
+    ["PlanCensusSide", side, PLAN_CENSUS_SIDE_NULLABLE],
   ] as const)("%s", (_name, schema, witness) => {
     it("names exactly the fields the backend serves", () => {
       expect(sorted(Object.keys(witness))).toEqual(

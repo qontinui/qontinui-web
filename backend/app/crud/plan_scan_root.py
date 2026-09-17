@@ -81,7 +81,7 @@ from uuid import UUID
 from sqlalchemy import ColumnElement, case, func, literal_column, select, text
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import defer
+from sqlalchemy.orm import defer, undefer
 from sqlalchemy.sql.dml import ReturningInsert
 
 from app.models.plan_scan_root import IDENTITY_ORG_SQL, PlanScanRootObservation
@@ -391,6 +391,47 @@ async def list_observations(
             defer(PlanScanRootObservation.ref_census),
             defer(PlanScanRootObservation.work_tree_census),
         )
+        .where(_org_scope(org_id))
+        .order_by(
+            PlanScanRootObservation.received_at.desc(),
+            PlanScanRootObservation.device_id,
+        )
+    )
+    result = await db.execute(stmt)
+    return list(result.scalars().all())
+
+
+async def list_observations_with_censuses(
+    db: AsyncSession, *, org_id: UUID | None
+) -> list[PlanScanRootObservation]:
+    """:func:`list_observations`, with the two census JSON columns LOADED.
+
+    Phase 3 of ``2026-09-15-captured-vs-authored-coverage-is-a-set-difference``
+    — the coverage set difference needs the stems, and touching a deferred
+    attribute on the ``AsyncSession`` every caller uses raises
+    ``MissingGreenlet`` rather than emitting a lazy SELECT. That is why this is
+    a SEPARATE function rather than a flag on the one above: the coverage read
+    is ``GET /plan-library/scan-roots``'s alone (design decision D2), and the
+    deferred read stays the default so ``corpus_health.scan_roots`` — which
+    rides every ``GET /plan-library`` page and ``/candidates`` — keeps paying
+    nothing for stems it renders none of.
+
+    ``populate_existing`` is LOAD-BEARING, not defensive. The two functions can
+    run in one request (the scan-roots route does not build a corpus block
+    today, but nothing stops a later caller), and SQLAlchemy returns the
+    identity map's existing object for a row already loaded — still carrying
+    the DEFERRED attribute, so the undefer would be silently discarded and the
+    stem access would raise the very ``MissingGreenlet`` this function exists
+    to avoid. ``populate_existing`` re-populates the loaded instance from this
+    statement's own columns instead.
+    """
+    stmt = (
+        select(PlanScanRootObservation)
+        .options(
+            undefer(PlanScanRootObservation.ref_census),
+            undefer(PlanScanRootObservation.work_tree_census),
+        )
+        .execution_options(populate_existing=True)
         .where(_org_scope(org_id))
         .order_by(
             PlanScanRootObservation.received_at.desc(),

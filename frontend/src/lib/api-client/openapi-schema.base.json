@@ -31886,6 +31886,316 @@
         "title": "PlanCandidateResponse",
         "type": "object"
       },
+      "PlanCensusSide": {
+        "description": "One side of the set difference, as the device that scans enumerated it.\n\nA coverage entry carries TWO of these, and they answer DIFFERENT questions\n-- which is the whole reason this block emits no ratio:\n\n* ``authored_at_ref`` is **what exists**: the stems the device listed at\n  ``ref_sha`` on its ``default_ref``.\n* ``visible_to_scanner`` is **what the body sync could possibly have\n  seen**: the stems the device enumerated in the WORKING TREE it scans.\n\nA checkout behind its default branch makes the second a strict subset of\nthe first, and a plan missing from the corpus because of that gap is\ncheckout freshness, not a capture defect. One number over two denominators\nwould hide exactly that distinction.",
+        "properties": {
+          "count": {
+            "title": "Count",
+            "type": "integer"
+          },
+          "digest": {
+            "title": "Digest",
+            "type": "string"
+          },
+          "listed_count": {
+            "title": "Listed Count",
+            "type": "integer"
+          },
+          "ref_age_secs": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ref Age Secs"
+          },
+          "ref_sha": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ref Sha"
+          },
+          "source": {
+            "enum": [
+              "ref",
+              "work_tree"
+            ],
+            "title": "Source",
+            "type": "string"
+          },
+          "truncated": {
+            "title": "Truncated",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "source",
+          "ref_sha",
+          "ref_age_secs",
+          "count",
+          "listed_count",
+          "truncated",
+          "digest"
+        ],
+        "title": "PlanCensusSide",
+        "type": "object"
+      },
+      "PlanCoverage": {
+        "description": "What the corpus holds, against what exists -- as a SET DIFFERENCE.\n\nOne entry per ``source_repo`` key any device reports, **never omitted and\nnever zeroed**: a key with no usable census reads ``unknown`` with a\n``detail``, because \"we cannot see the authored side\" and \"the corpus holds\nnone of it\" are different answers and only one of them is actionable.\n\n**There is no ratio field here, and that is the point.** A percentage is\none number over two denominators that answer different questions\n(:class:`PlanCensusSide`), and computed off a single git ref the naive\nanswers for one corpus have read 76.5% and 101.8% -- the second impossible,\nand produced by counting corpus rows written under a DIFFERENT\n``source_repo`` against one key's authored set.\n``out_of_scope_artifact_count`` names those rows instead, which is what\nmakes the >100% reading unconstructible from anything served here. A\npresentation layer may compute a ratio only beside BOTH denominators.\n\nEvery entry carries the honesty vocabulary the readings already have --\n``min_behind``, ``min_behind_is_floor``, ``observation_age_secs``,\n``observation_fresh``, ``counts_are_floors``, ``ref_sha`` -- so a reader\nnever has to join this block to ``by_source_repo`` to know whether the\nnumbers mean anything. No second vocabulary is minted for coverage.",
+        "properties": {
+          "authored_at_ref": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PlanCensusSide"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "authored_not_captured": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Authored Not Captured"
+          },
+          "authored_not_captured_but_invisible": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Authored Not Captured But Invisible"
+          },
+          "both": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Both"
+          },
+          "captured": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Captured"
+          },
+          "captured_not_authored": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Captured Not Authored"
+          },
+          "census_device_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Census Device Id"
+          },
+          "counts_are_floors": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Counts Are Floors"
+          },
+          "detail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Detail"
+          },
+          "device_count": {
+            "title": "Device Count",
+            "type": "integer"
+          },
+          "min_behind": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Min Behind"
+          },
+          "min_behind_is_floor": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Min Behind Is Floor"
+          },
+          "missing_sample": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Missing Sample",
+            "type": "array"
+          },
+          "observation_age_secs": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Observation Age Secs"
+          },
+          "observation_fresh": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Observation Fresh"
+          },
+          "other_census_device_ids": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "title": "Other Census Device Ids",
+            "type": "array"
+          },
+          "out_of_scope_artifact_count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Out Of Scope Artifact Count"
+          },
+          "ref_sha": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ref Sha"
+          },
+          "sample_truncated": {
+            "title": "Sample Truncated",
+            "type": "boolean"
+          },
+          "source_repo": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Repo"
+          },
+          "state": {
+            "enum": [
+              "measured",
+              "unknown"
+            ],
+            "title": "State",
+            "type": "string"
+          },
+          "visible_to_scanner": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PlanCensusSide"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "source_repo",
+          "state",
+          "detail",
+          "device_count",
+          "census_device_id",
+          "other_census_device_ids",
+          "authored_at_ref",
+          "visible_to_scanner",
+          "captured",
+          "both",
+          "authored_not_captured",
+          "captured_not_authored",
+          "authored_not_captured_but_invisible",
+          "out_of_scope_artifact_count",
+          "missing_sample",
+          "sample_truncated",
+          "min_behind",
+          "min_behind_is_floor",
+          "observation_age_secs",
+          "observation_fresh",
+          "counts_are_floors",
+          "ref_sha"
+        ],
+        "title": "PlanCoverage",
+        "type": "object"
+      },
       "PlanSlugCensus": {
         "additionalProperties": false,
         "description": "One side's plan-stem listing, as the device that scans enumerated it.\n\nThis is the denominator the plan corpus has never had. Every shipped\ncapture surface counts a numerator; none owns a denominator, so the fleet\nhas never been able to answer *\"of the plans that exist, how many did the\ncorpus capture?\"* \u2014 and the naive answers computed off a single git ref\nhave read 76.5% and 101.8% for the same corpus. The set the device\nenumerated, carried per ``source`` and joined by ``source_repo``, is what\nmakes the answer a SET DIFFERENCE instead.\n\nRead the module docstring for the four rules (digest, the withheld-set\nheartbeat, the truncation floor, and absent-never-empty) and why each is a\n422 rather than a coerced value.",
@@ -37981,6 +38291,24 @@
             "title": "Count",
             "type": "integer"
           },
+          "coverage": {
+            "items": {
+              "$ref": "#/components/schemas/PlanCoverage"
+            },
+            "title": "Coverage",
+            "type": "array"
+          },
+          "coverage_detail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Coverage Detail"
+          },
           "detail": {
             "anyOf": [
               {
@@ -38023,7 +38351,9 @@
           "count",
           "fresh_count",
           "rows",
-          "by_source_repo"
+          "by_source_repo",
+          "coverage",
+          "coverage_detail"
         ],
         "title": "ScanRootListResponse",
         "type": "object"
@@ -92894,7 +93224,7 @@
     },
     "/api/v1/plan-library/scan-roots": {
       "get": {
-        "description": "The caller's organization's readings, one per reporting device.\n\nSame credentials as the plan-library list (an operator session or a device\ntoken). Each row carries its age and a ``state`` VERDICT that is\n``unknown`` when the device has not reported within ``fresh_within_secs``\n(by ``received_at``; ``observation_stale:``), when its latest report was\nobserved before the stored reading (``reading_superseded:``), or when its\nreading is 0 behind a stale ref (``ref_stale:``) \u2014 in that order of\nprecedence: ``observation_stale`` > ``reading_superseded`` >\n``ref_stale``. The device's own values stay in ``reported_state`` /\n``reported_detail``. An organization with no rows answers\n``state: \"unknown\"``, never an empty \"all current\".\n\n``by_source_repo`` folds the rows per scan source over its comparison set \u2014\nreadings that are fresh, applied and carry a count, including a\n``ref_stale`` 0-behind floor: the fewest commits behind, whether that is a\nfloor, and which devices the readings order as least behind or lagging,\ncannot order (``lag_unknown``), or have no comparable reading\n(``unmeasured``). A roll-up whose fewest commits behind is a floor of 0\nreads ``unknown`` with a null minimum \u2014 \"at least 0\" is no distance \u2014 and a\ndetail naming the cause: ``ref_stale:`` when every comparable reading\ncounted against one ref that is stale or of unknown age,\n``refs_not_shared:`` when they counted against different or unidentified\nrefs. Its lists keep whatever order the readings establish. The same builder renders the ``corpus_health.scan_roots``\nblock the list and ``/candidates`` carry, so both apply the same rules to\nthe same rows; two reads can still differ by when they happen (ages, and a\nverdict that flips at the freshness boundary), and the block degrades a\nfailed read to ``read_failed`` where this route, whose whole answer the\nreadings are, lets it surface as an error.",
+        "description": "The caller's organization's readings, one per reporting device.\n\nSame credentials as the plan-library list (an operator session or a device\ntoken). Each row carries its age and a ``state`` VERDICT that is\n``unknown`` when the device has not reported within ``fresh_within_secs``\n(by ``received_at``; ``observation_stale:``), when its latest report was\nobserved before the stored reading (``reading_superseded:``), or when its\nreading is 0 behind a stale ref (``ref_stale:``) \u2014 in that order of\nprecedence: ``observation_stale`` > ``reading_superseded`` >\n``ref_stale``. The device's own values stay in ``reported_state`` /\n``reported_detail``. An organization with no rows answers\n``state: \"unknown\"``, never an empty \"all current\".\n\n``by_source_repo`` folds the rows per scan source over its comparison set \u2014\nreadings that are fresh, applied and carry a count, including a\n``ref_stale`` 0-behind floor: the fewest commits behind, whether that is a\nfloor, and which devices the readings order as least behind or lagging,\ncannot order (``lag_unknown``), or have no comparable reading\n(``unmeasured``). A roll-up whose fewest commits behind is a floor of 0\nreads ``unknown`` with a null minimum \u2014 \"at least 0\" is no distance \u2014 and a\ndetail naming the cause: ``ref_stale:`` when every comparable reading\ncounted against one ref that is stale or of unknown age,\n``refs_not_shared:`` when they counted against different or unidentified\nrefs. Its lists keep whatever order the readings establish. The same builder renders the ``corpus_health.scan_roots``\nblock the list and ``/candidates`` carry, so both apply the same rules to\nthe same rows; two reads can still differ by when they happen (ages, and a\nverdict that flips at the freshness boundary), and the block degrades a\nfailed read to ``read_failed`` where this route, whose whole answer the\nreadings are, lets it surface as an error.\n\n``coverage`` is computed HERE AND NOWHERE ELSE (design decision D2 of\n``2026-09-15-captured-vs-authored-coverage-is-a-set-difference``): it is a\nset difference between the stems a device enumerated at its default ref and\nthe corpus rows under that ``source_repo``, and ``corpus_health.scan_roots``\n\u2014 the same response object \u2014 rides every ``GET /plan-library`` page\nincluding the runner's loopback search, which must not pay for an anti-join\nover every authored stem. There it is empty with ``coverage_detail`` saying\nwhich of the three reasons produced the empty list.\n\n**No ratio is served.** The entry carries two denominators (what exists at\nthe ref, and what the scanned working tree could possibly have shown the\nbody sync), the corpus rows under OTHER keys as\n``out_of_scope_artifact_count``, and the attribution field\n``authored_not_captured_but_invisible`` \u2014 a lagging checkout's plans are\nnot a capture defect. A percentage over one of those denominators read\n101.8% in production for a real corpus; nothing served here can express\nthat number. A key with no usable census reads ``unknown`` with a detail,\nnever a zero and never an omitted key.",
         "operationId": "api_v1_plan_library_scan_roots_get",
         "responses": {
           "200": {
