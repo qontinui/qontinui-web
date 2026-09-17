@@ -14,16 +14,14 @@
  *    of the two wanted ones — a body carrying all four would otherwise pass.
  *
  * 2. **The three response arms render distinctly.** `added` says access
- *    exists; `invite_required` says — in words — that NOTHING happened and no
- *    email was sent, because Phase 3 has not shipped and every other product's
- *    "invite by email" does send one; `409` says the email is ambiguous, in the
- *    wording the Cognito group member-add already uses for the same condition.
+ *    exists; `invited` (Phase 4) says an email with a temporary password is on
+ *    its way; `409` says the email is ambiguous, in the wording the Cognito
+ *    group member-add already uses for the same condition.
  *
- * 3. **The `invite_required` arm does not lie.** Asserting that its copy
- *    *contains* an honest sentence is not enough — a panel that said "no
- *    invitation email was sent yet, we'll email them shortly" would pass that.
- *    The test also asserts the reassuring vocabulary is ABSENT and that no
- *    success toast fired.
+ * 3. **The `invited` arm does not overclaim.** Access starts only when the
+ *    invitee signs in, so the copy must not say they have access now — and it
+ *    must name the recovery (add them again) for an invitation that never
+ *    arrived, since nothing else on the page can re-send one.
  *
  * 4. **The primary form is not inside the Advanced panel**, and that panel is
  *    folded on arrival. The whole change is worthless if the one form an
@@ -256,65 +254,60 @@ describe("Add a member by email — the `added` arm", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Arm 2 — invite_required (honest placeholder; Phase 3 is not in this pass)
+// Arm 2 — invited (Phase 3 creates the account; Phase 4 is this copy)
 // ---------------------------------------------------------------------------
 
-describe("Add a member by email — the `invite_required` arm", () => {
+describe("Add a member by email — the `invited` arm", () => {
   beforeEach(() => {
-    addResponse = { status: 200, body: { status: "invite_required" } };
+    addResponse = {
+      status: 200,
+      body: { status: "invited", operator_id: "op-new", role: "operator" },
+    };
   });
 
-  it("says nothing happened and no email was sent", async () => {
+  it("says who was invited, at which tier, and what they will receive", async () => {
     const user_ = userEvent.setup();
     render(<MembersPage />);
     await submitEmail(user_, "newbie@example.com");
 
     const outcome = await screen.findByTestId("add-member-outcome");
     await waitFor(() =>
-      expect(outcome.textContent ?? "").toMatch(/no invitation email was sent/i)
+      expect(outcome.textContent ?? "").toMatch(/invited newbie@example\.com/i)
     );
     const text = outcome.textContent ?? "";
-    expect(text).toMatch(/newbie@example\.com/);
-    expect(text).toMatch(/nothing was added/i);
-    expect(text).toMatch(/not built yet/i);
-    // It must not read as a success.
-    expect(toastSuccess).not.toHaveBeenCalled();
+    expect(text).toMatch(/developer/i);
+    expect(text).toMatch(/temporary password/i);
+    expect(toastSuccess).toHaveBeenCalledWith(
+      "Invitation sent to newbie@example.com"
+    );
   });
 
-  it("does not imply an invitation is on its way", async () => {
+  it("does not claim they have access before they sign in", async () => {
     const user_ = userEvent.setup();
     render(<MembersPage />);
     await submitEmail(user_, "newbie@example.com");
 
     const outcome = await screen.findByTestId("add-member-outcome");
     await waitFor(() =>
-      expect(outcome.textContent ?? "").toMatch(/no invitation email was sent/i)
+      expect(outcome.textContent ?? "").toMatch(/access starts when they sign in/i)
     );
     const text = outcome.textContent ?? "";
-    // The vocabulary of a flow that DID send something. "no invitation email
-    // was sent" passes a naive contains-check for honesty; these do not.
-    expect(text).not.toMatch(/check (their|your) inbox/i);
-    expect(text).not.toMatch(/we('ve| have)? (just )?emailed/i);
-    expect(text).not.toMatch(/invitation sent/i);
-    expect(text).not.toMatch(/shortly/i);
+    expect(text).not.toMatch(/granted/i);
+    expect(text).not.toMatch(/have access now/i);
   });
 
-  it("points the administrator at what does work today", async () => {
+  it("names the recovery for an invitation that never arrived", async () => {
     const user_ = userEvent.setup();
     render(<MembersPage />);
     await submitEmail(user_, "newbie@example.com");
 
     const outcome = await screen.findByTestId("add-member-outcome");
     await waitFor(() =>
-      expect(outcome.textContent ?? "").toMatch(/sign up/i)
-    );
-    // And names the other door, by the label it actually carries on the page.
-    expect(outcome.textContent ?? "").toMatch(
-      /advanced: auto-provision by sso group/i
+      expect(outcome.textContent ?? "").toMatch(/add them again/i)
     );
   });
 
-  it("keeps the typed address, because nothing was created", async () => {
+  it("clears the field, because the invitation was created", async () => {
     const user_ = userEvent.setup();
     render(<MembersPage />);
     await submitEmail(user_, "newbie@example.com");
@@ -322,7 +315,27 @@ describe("Add a member by email — the `invite_required` arm", () => {
     await screen.findByTestId("add-member-outcome");
     expect(
       (screen.getByTestId("add-member-email") as HTMLInputElement).value
-    ).toBe("newbie@example.com");
+    ).toBe("");
+  });
+
+  it("renders the unsent-invitation 502 as the server's sentence", async () => {
+    addResponse = {
+      status: 502,
+      body: {
+        error: "invitation_not_sent",
+        message:
+          "newbie@example.com was given access, but the invitation email could not be sent, so they have no way to sign in yet. Add them again to retry sending it.",
+      },
+    };
+    const user_ = userEvent.setup();
+    render(<MembersPage />);
+    await submitEmail(user_, "newbie@example.com");
+
+    const outcome = await screen.findByTestId("add-member-outcome");
+    await waitFor(() =>
+      expect(outcome.textContent ?? "").toMatch(/was given access, but the invitation email could not be sent/i)
+    );
+    expect(toastSuccess).not.toHaveBeenCalled();
   });
 });
 

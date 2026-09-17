@@ -20,6 +20,7 @@ IAM actions the web task role needs on the pool ARN
 * ``cognito-idp:AdminLinkProviderForUser``     (link_provider)
 * ``cognito-idp:AdminDisableProviderForUser``  (unlink_provider)
 * ``cognito-idp:AdminDeleteUser``        (delete_federated_user — takeover-clean only)
+* ``cognito-idp:AdminCreateUser``        (create_invited_user, send_invitation)
 """
 
 from __future__ import annotations
@@ -86,6 +87,15 @@ class CognitoAmbiguousEmailError(CognitoAdminError):
 
     Distinct subclass so the endpoint layer can map it to HTTP 409/422
     rather than silently picking one of several matching pool users.
+    """
+
+
+class CognitoUserExistsError(CognitoAdminError):
+    """``AdminCreateUser`` found the username already taken.
+
+    Distinct so the invite path can re-resolve the account a concurrent
+    request just created, instead of reporting a failure for a person who
+    now exists.
     """
 
 
@@ -860,6 +870,15 @@ class CognitoIdentity(NamedTuple):
 
     username: str
     sub: str
+    #: Cognito ``UserStatus`` (``CONFIRMED``, ``FORCE_CHANGE_PASSWORD``, …),
+    #: or ``None`` when the page entry carried none. ``FORCE_CHANGE_PASSWORD``
+    #: is an invitation nobody has accepted yet — see :func:`send_invitation`.
+    status: str | None = None
+
+
+#: ``UserStatus`` of an account created by ``AdminCreateUser`` whose owner has
+#: not yet signed in with the temporary password.
+INVITATION_PENDING_STATUS = "FORCE_CHANGE_PASSWORD"
 
 
 def _resolve_single_user_for_email(email: str) -> dict[str, Any] | None:
@@ -951,6 +970,20 @@ def resolve_identity_for_email(email: str) -> CognitoIdentity | None:
     user = _resolve_single_user_for_email(email)
     if user is None:
         return None
+    return _identity_of(user)
+
+
+def _identity_of(user: dict[str, Any]) -> CognitoIdentity | None:
+    """Build a :class:`CognitoIdentity` from a Cognito ``UserType`` dict.
+
+    ``ListUsers`` entries and ``AdminCreateUser``'s ``User`` share this shape
+    (``Username``, ``Attributes``, ``UserStatus``). ``AdminGetUser`` does NOT
+    — it names the list ``UserAttributes`` — so do not pass its response here.
+
+    Returns ``None`` for an entry with no usable ``Username``; raises
+    :class:`CognitoAdminError` for one with no ``sub`` (see
+    :func:`resolve_identity_for_email`).
+    """
     username = _username_of(user)
     if username is None:
         return None
@@ -963,7 +996,97 @@ def resolve_identity_for_email(email: str) -> CognitoIdentity | None:
         raise CognitoAdminError(
             f"Cognito returned user {username!r} with no 'sub' attribute"
         )
-    return CognitoIdentity(username=username, sub=sub)
+    status = user.get("UserStatus")
+    return CognitoIdentity(
+        username=username,
+        sub=sub,
+        status=status if isinstance(status, str) and status else None,
+    )
+
+
+def create_invited_user(email: str) -> CognitoIdentity:
+    """Create a pool account for ``email`` WITHOUT sending anything.
+
+    ``AdminCreateUser`` with ``MessageAction="SUPPRESS"``: the account exists
+    (status ``FORCE_CHANGE_PASSWORD``) and has a ``sub``, but no email has
+    gone out. The invitation is sent separately by :func:`send_invitation`,
+    so a caller can grant access FIRST and only then tell the person they
+    have it — an invite for a grant that then failed would be a promise the
+    product breaks on the invitee's first sign-in.
+
+    ``email_verified`` is set ``true`` because the only way to use the
+    account is the temporary password delivered to that address. It is also
+    what lets the pool's PreSignUp autolink trigger merge a later Google /
+    Microsoft sign-in into this account once it is ``CONFIRMED``; without it
+    that sign-in would mint a second, grant-less user.
+
+    Raises :class:`CognitoUserExistsError` (→ the caller re-resolves: another
+    request created it between our lookup and this call),
+    :class:`CognitoInvalidParameterError` (→ 400, AWS's own reason — e.g. an
+    address the pool will not accept), or :class:`CognitoAdminError`.
+    """
+    client = _get_client()
+    try:
+        response = client.admin_create_user(
+            UserPoolId=_pool_id(),
+            Username=email,
+            UserAttributes=[
+                {"Name": "email", "Value": email},
+                {"Name": "email_verified", "Value": "true"},
+            ],
+            MessageAction="SUPPRESS",
+        )
+    except (BotoCoreError, ClientError) as exc:
+        if _aws_error_code(exc) == "UsernameExistsException":
+            logger.info("cognito_create_user_exists")
+            raise CognitoUserExistsError(
+                f"A Cognito user already exists for {email}"
+            ) from exc
+        _raise_if_invalid_parameter(exc, operation="AdminCreateUser")
+        logger.error("cognito_create_user_failed", error=str(exc))
+        raise _wrap_aws_error(exc, f"AdminCreateUser failed: {exc}") from exc
+
+    user = response.get("User") if isinstance(response, dict) else None
+    identity = _identity_of(user) if isinstance(user, dict) else None
+    if identity is None:
+        logger.error("cognito_create_user_no_identity")
+        raise CognitoAdminError("AdminCreateUser returned no usable user")
+    if identity.status is None:
+        # Created this instant by this call: it is pending by construction,
+        # whether or not AWS echoed the status.
+        identity = identity._replace(status=INVITATION_PENDING_STATUS)
+    logger.info("cognito_create_user_ok", username=identity.username)
+    return identity
+
+
+def send_invitation(email: str, username: str) -> None:
+    """Email the invitation for a ``FORCE_CHANGE_PASSWORD`` account.
+
+    ``AdminCreateUser`` with ``MessageAction="RESEND"`` and
+    ``DesiredDeliveryMediums=["EMAIL"]``: Cognito issues a NEW temporary
+    password, restarts the pool's unused-account validity window, and sends
+    the pool's invite template. That makes it right both for the first send
+    after :func:`create_invited_user` and for re-inviting somebody whose
+    earlier invitation expired or was lost.
+
+    Only valid while the account is still pending; Cognito refuses a RESEND
+    for a ``CONFIRMED`` user, which surfaces here as
+    :class:`CognitoAdminError` rather than being swallowed.
+    """
+    client = _get_client()
+    try:
+        client.admin_create_user(
+            UserPoolId=_pool_id(),
+            Username=username,
+            UserAttributes=[{"Name": "email", "Value": email}],
+            MessageAction="RESEND",
+            DesiredDeliveryMediums=["EMAIL"],
+        )
+    except (BotoCoreError, ClientError) as exc:
+        _raise_if_invalid_parameter(exc, operation="AdminCreateUser:RESEND")
+        logger.error("cognito_send_invitation_failed", error=str(exc))
+        raise _wrap_aws_error(exc, f"Sending the invitation failed: {exc}") from exc
+    logger.info("cognito_send_invitation_ok", username=username)
 
 
 def add_user_to_group(username: str, group_name: str) -> None:

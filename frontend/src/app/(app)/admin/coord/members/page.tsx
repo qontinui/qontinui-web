@@ -36,8 +36,8 @@
  * was no invitation behind it, and both fields are internal vocabulary on a
  * primary surface (**R8**). It is deleted, not deprecated: `AddTenantMemberForm`
  * takes an email and a tier, and the backend decides whether the account exists
- * (`added`) or does not (`invite_required`, an honest not-built-yet notice
- * until Phase 3 of that plan ships a real invitation).
+ * (`added`) or does not (`invited` — it creates the account, grants the tier,
+ * and only then emails a temporary password).
  *
  * Sections d and e were the other two ways to "add somebody", each framed in
  * IdP plumbing. They now sit together under one folded **Advanced** panel that
@@ -113,6 +113,7 @@ import {
   ChevronRight,
   KeyRound,
   Lock,
+  Mail,
   Plus,
   ShieldCheck,
   Trash2,
@@ -1002,14 +1003,14 @@ interface TenantMemberAddResponse {
 /** What the last submit produced, rendered inline beneath the form. */
 type AddMemberOutcome =
   | { kind: "added"; email: string; role: CoordRole }
-  | { kind: "invite_required"; email: string }
+  | { kind: "invited"; email: string; role: CoordRole }
   | { kind: "error"; message: string };
 
 /**
  * ONE form for the one thing an administrator comes to this page to do: give a
  * colleague access. Two inputs — an email and a tier — and the backend decides
  * whether that email already has an account (add them now) or does not
- * (`invite_required`).
+ * (`invited`: the account is created, the tier granted, then the email sent).
  *
  * ## Why there is no "group" field (plan Design decision 1)
  *
@@ -1052,13 +1053,12 @@ type AddMemberOutcome =
  *
  * ## Why the outcome is inline and not only a toast
  *
- * Two of the three arms are not one-liners. `invite_required` has to say that
- * **nothing happened and no email was sent** — the single most misreadable
- * state on the page, since every other product's "invite by email" does send
- * one — and then say what the administrator can do instead. A toast that
- * disappears in four seconds is the wrong host for that, so the arm renders
- * into a notice that stays until the next submit. Toasts still fire for the
- * short arms, matching the rest of this page.
+ * Two of the three arms are not one-liners. `invited` has to say what the
+ * invitee will receive, that access starts only once they sign in with it, and
+ * how to recover an invitation that never arrived or expired — adding them
+ * again re-sends it. A toast that disappears in four seconds is the wrong host
+ * for that, so the arm renders into a notice that stays until the next submit.
+ * Toasts still fire for every success arm, matching the rest of this page.
  */
 function AddTenantMemberForm({ onAdded }: { onAdded: () => void }) {
   const [email, setEmail] = useState("");
@@ -1102,10 +1102,11 @@ function AddTenantMemberForm({ onAdded }: { onAdded: () => void }) {
         onAdded();
         return;
       }
-      if (json?.status === "invite_required") {
-        // Deliberately NOT a success toast and NOT a cleared field: nothing
-        // was created, so the administrator's input is still the live thing.
-        setOutcome({ kind: "invite_required", email: addr });
+      if (json?.status === "invited") {
+        setOutcome({ kind: "invited", email: addr, role });
+        toast.success(`Invitation sent to ${addr}`);
+        setEmail("");
+        onAdded();
         return;
       }
       // A 2xx with no arm this build knows. Rendering it as success would
@@ -1203,20 +1204,15 @@ function AddTenantMemberForm({ onAdded }: { onAdded: () => void }) {
             </p>
           ) : (
             <div className="space-y-1 rounded-md border border-border bg-muted/30 p-3">
-              <p className="text-sm font-medium">
-                No Qontinui account exists for {outcome.email} yet — nothing was
-                added, and no invitation email was sent.
+              <p className="flex items-center gap-1.5 text-sm font-medium">
+                <Mail className="h-4 w-4 shrink-0" />
+                Invited {outcome.email} as {tierLabel(outcome.role)}.
               </p>
               <p className="text-xs text-muted-foreground">
-                Inviting a brand-new account by email is not built yet. What
-                works today: ask them to sign up themselves, then add them here
-                with this same form — the grant lands immediately once the
-                account exists. To pre-authorize a whole identity-provider group
-                at once instead, use{" "}
-                <span className="font-medium">
-                  Advanced: auto-provision by SSO group
-                </span>{" "}
-                below.
+                An email with a temporary password is on its way to them. Their
+                access starts when they sign in with it and choose their own
+                password. If the email does not arrive, or the temporary
+                password expires, add them again here to send a new one.
               </p>
             </div>
           )}
