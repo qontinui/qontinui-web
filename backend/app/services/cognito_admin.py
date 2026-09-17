@@ -21,7 +21,6 @@ IAM actions the web task role needs on the pool ARN
 * ``cognito-idp:AdminDisableProviderForUser``  (unlink_provider)
 * ``cognito-idp:AdminDeleteUser``        (delete_federated_user — takeover-clean only)
 * ``cognito-idp:AdminCreateUser``        (create_invited_user, send_invitation)
-* ``cognito-idp:AdminDeleteUser`` also serves delete_unsent_invitation
 """
 
 from __future__ import annotations
@@ -343,12 +342,10 @@ def _iter_list_users(
     for _ in range(max_pages):
         kwargs: dict[str, Any] = {
             "UserPoolId": pool_id,
+            # Cognito ListUsers Filter syntax: attribute = "value".
+            "Filter": filter_expression,
             "Limit": _LIST_USERS_PAGE_SIZE,
         }
-        if filter_expression:
-            # Cognito ListUsers Filter syntax: attribute = "value". An empty
-            # expression means "every user"; AWS refuses ``Filter=""``.
-            kwargs["Filter"] = filter_expression
         if token:
             kwargs["PaginationToken"] = token
         try:
@@ -1007,41 +1004,6 @@ def _identity_of(user: dict[str, Any]) -> CognitoIdentity | None:
     )
 
 
-def find_identities_for_email_any_case(email: str) -> list[CognitoIdentity]:
-    """Every pool account whose ``email`` equals ``email`` ignoring case.
-
-    ``ListUsers`` offers no case-insensitive equality filter, and this pool
-    predates Cognito's case-insensitive usernames, so an exact-match miss for
-    ``stefan@x.io`` says nothing about an existing ``Stefan@X.io`` — typical
-    of a Microsoft Entra account, which keeps the directory's casing. Creating
-    an account on that miss would give the grant to a second identity the
-    real person never signs in as, and make the address ambiguous (409) for
-    every later add.
-
-    So this reads the WHOLE pool, unfiltered, and compares case-folded. That
-    is affordable only because the pool is small, and the cost is bounded the
-    same way every other scan here is: a pool too large to finish within
-    ``_LIST_USERS_MAX_PAGES`` raises rather than answering ``[]``, because an
-    unfinished scan is UNKNOWN and must never authorize a create.
-    """
-    wanted = email.casefold()
-    if not wanted:
-        return []
-    matches: list[CognitoIdentity] = []
-    for users in _iter_list_users("", log_event="cognito_list_users_any_case_failed"):
-        for user in users:
-            attributes = user.get("Attributes")
-            stored = _attributes_to_dict(
-                attributes if isinstance(attributes, list) else []
-            ).get("email", "")
-            if stored.casefold() != wanted:
-                continue
-            identity = _identity_of(user)
-            if identity is not None:
-                matches.append(identity)
-    return matches
-
-
 def create_invited_user(email: str) -> CognitoIdentity:
     """Create a pool account for ``email`` WITHOUT sending anything.
 
@@ -1107,8 +1069,9 @@ def send_invitation(username: str) -> None:
     after :func:`create_invited_user` and for re-inviting somebody whose
     earlier invitation expired or was lost.
 
-    No ``UserAttributes`` are sent: Cognito delivers to the account's STORED
-    ``email``, and passing one on a RESEND could only disagree with it.
+    No ``UserAttributes`` are sent. The account's ``email`` was set when it
+    was created, and a RESEND is a delivery, not an attribute update; sending
+    one could only disagree with it.
 
     Only valid while the account is still pending; Cognito refuses a RESEND
     for an account that has since been accepted with
@@ -1129,31 +1092,6 @@ def send_invitation(username: str) -> None:
         logger.error("cognito_send_invitation_failed", error=str(exc))
         raise _wrap_aws_error(exc, f"Sending the invitation failed: {exc}") from exc
     logger.info("cognito_send_invitation_ok", username=username)
-
-
-def delete_unsent_invitation(username: str) -> None:
-    """Delete an account :func:`create_invited_user` made moments ago.
-
-    Called only when the coord grant that account was created for failed, so
-    nothing was ever sent for it and nobody can know its password. Leaving it
-    would keep a pending, grant-less account for that address in the pool —
-    the state a later Google or Microsoft sign-in turns into a second
-    identity and a permanent 409.
-
-    Best effort by contract: the caller is already reporting the grant
-    failure, which is the fact the admin needs, so a delete failure is logged
-    rather than raised over it.
-    """
-    try:
-        _get_client().admin_delete_user(UserPoolId=_pool_id(), Username=username)
-    except (BotoCoreError, ClientError, CognitoAdminError) as exc:
-        logger.error(
-            "cognito_delete_unsent_invitation_failed",
-            username=username,
-            error=str(exc),
-        )
-        return
-    logger.info("cognito_delete_unsent_invitation_ok", username=username)
 
 
 def add_user_to_group(username: str, group_name: str) -> None:
