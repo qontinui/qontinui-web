@@ -561,6 +561,41 @@ class TestUnknownIsFirstClass:
         assert entry.detail is not None
         assert entry.detail.startswith("no_census:")
 
+    @pytest.mark.parametrize(
+        "stems",
+        [
+            pytest.param([1, 2], id="ints"),
+            pytest.param([{"a": 1}], id="dicts_unhashable"),
+            pytest.param([None], id="nulls"),
+        ],
+    )
+    def test_a_census_whose_stems_are_not_strings_degrades(
+        self, stems: list[object]
+    ) -> None:
+        """A non-string stem is UNKNOWN, not a 500 — same rule as the scalars.
+
+        ``coverage_for_source`` takes ``frozenset(census["slugs"])`` and the
+        response model declares ``missing_sample: list[str]``, so before this
+        check ``[{"a": 1}]`` raised ``TypeError: unhashable type: 'dict'`` at
+        the frozenset and ``[1]`` / ``[None]`` raised a pydantic
+        ``ValidationError`` — both 500s out of a route that degrades every
+        other absence to ``unknown``.
+
+        The write door validating ``list[SlugCensusStem]`` is not a reason to
+        skip this: it validates ``count``/``truncated``/``digest`` just as
+        strictly, and those ARE checked. Leaving the elements out made the
+        threat model inconsistent rather than the risk smaller.
+        """
+        obs = _obs(authored=_stems("01-a"), visible=_stems("01-a"))
+        assert obs.ref_census is not None
+        obs.ref_census = {**obs.ref_census, "slugs": stems}
+
+        entry = _only([obs], _corpus(under_key=_stems("01-a")))
+
+        _assert_establishes_nothing(entry)
+        assert entry.detail is not None
+        assert entry.detail.startswith("no_census:")
+
     def test_a_census_whose_count_is_not_a_number_degrades(self) -> None:
         """``true`` is not the number 1: a corrupt count establishes nothing."""
         obs = _obs(authored=_stems("01-a"), visible=_stems("01-a"))

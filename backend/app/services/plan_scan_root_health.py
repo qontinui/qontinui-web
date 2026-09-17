@@ -545,7 +545,19 @@ def _census_with_stems(observation: PlanScanRootObservation, source: str) -> Any
     census = observation.ref_census if source == "ref" else observation.work_tree_census
     if not isinstance(census, dict):
         return None
-    if not isinstance(census.get("slugs"), list):
+    slugs = census.get("slugs")
+    if not isinstance(slugs, list):
+        return None
+    # The ELEMENTS too, and for the same reason as the three scalars below.
+    # ``coverage_for_source`` takes ``frozenset(census["slugs"])`` and the
+    # response model declares ``list[str]``, so a non-string stem is a 500 on
+    # the route rather than an ``unknown`` entry: ``[{"a": 1}]`` raises
+    # ``TypeError: unhashable type: 'dict'`` at the frozenset, and ``[1]`` /
+    # ``[None]`` raise a pydantic ``ValidationError`` on ``missing_sample``.
+    # The write door validates ``list[SlugCensusStem]``, which is equally true
+    # of ``count``/``truncated``/``digest`` — so leaving this one unchecked
+    # would make the threat model inconsistent rather than the risk smaller.
+    if not all(isinstance(stem, str) for stem in slugs):
         return None
     # ``bool`` is an ``int`` subclass, so ``count`` is tested against it
     # explicitly: a stored ``true`` is corrupt, not the number 1.
