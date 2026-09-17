@@ -10,7 +10,7 @@
  */
 
 import { describe, expect, it, vi, beforeEach } from "vitest";
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
 const fetchMock = vi.fn();
@@ -64,12 +64,14 @@ function jsonResponse(status: number, body: unknown): Response {
 }
 
 let renameAnswer: Record<string, unknown>;
+let renameStatus: number;
 
 beforeEach(() => {
   // `CollapsiblePanel` persists open/closed under its `storageKey`, so a
   // panel one test opened would start open in the next and the click close it.
   localStorage.clear();
   vi.clearAllMocks();
+  renameStatus = 200;
   renameAnswer = {
     tenant_id: ADMIN_TENANT,
     slug: "acme-renamed",
@@ -82,7 +84,9 @@ beforeEach(() => {
   fetchMock.mockImplementation(async (url: string, init?: RequestInit) => {
     const path = url.replace(/^https?:\/\/[^/]+/, "");
     if (init?.method === "PATCH" && path.endsWith(`/tenants/${ADMIN_TENANT}`)) {
-      return jsonResponse(200, renameAnswer);
+      return renameStatus === 200
+        ? jsonResponse(200, renameAnswer)
+        : jsonResponse(renameStatus, { detail: "timeout waiting for coord" });
     }
     if (path.endsWith("/coord/my-tenants")) {
       return jsonResponse(200, {
@@ -165,22 +169,24 @@ describe("Rename action on 'Your tenant & roles'", () => {
 });
 
 describe("a slug change re-reads every slug-bearing panel", () => {
-  /** How many times `/coord/group-tenant-roles` has been read so far. */
-  function mappingReads(): number {
+  /** How many GETs of a path (by suffix) have been made so far. */
+  function reads(suffix: string): number {
     return fetchMock.mock.calls.filter(([url, init]) => {
       const method = (init as RequestInit | undefined)?.method ?? "GET";
-      return (
-        method === "GET" && String(url).endsWith("/coord/group-tenant-roles")
-      );
+      return method === "GET" && String(url).endsWith(suffix);
     }).length;
   }
+  const mappingReads = () => reads("/coord/group-tenant-roles");
+  const groupListReads = () => reads("/coord/cognito/groups");
+  const myTenantReads = () => reads("/coord/my-tenants");
 
   async function renameVia(
-    edit: (user: ReturnType<typeof userEvent.setup>) => Promise<void>
+    edit: (user: ReturnType<typeof userEvent.setup>) => Promise<void>,
+    settledTestId = "coord-tenant-rename-success"
   ) {
     const { user, card } = await openTenantPanel();
-    // Mount both readers of the mappings: the mapping list itself, and the
-    // Cognito groups panel whose per-group chips name tenants by slug.
+    // Mount every slug-bearing reader: the mapping list, and the Cognito
+    // groups panel (its group list, and the mapping chips on each group).
     await user.click(
       await screen.findByRole("button", {
         name: /advanced: auto-provision by sso group/i,
@@ -190,22 +196,34 @@ describe("a slug change re-reads every slug-bearing panel", () => {
       await screen.findByRole("button", { name: /cognito groups/i })
     );
     await waitFor(() => expect(mappingReads()).toBe(2));
+    await waitFor(() => expect(groupListReads()).toBe(1));
 
     await user.click(
       within(card).getByTestId(`coord-tenant-rename-open-${ADMIN_TENANT}`)
     );
     await edit(user);
     await user.click(screen.getByTestId("coord-tenant-rename-submit"));
-    await screen.findByTestId("coord-tenant-rename-success");
+    await screen.findByTestId(settledTestId);
   }
 
-  it("a renamed slug re-reads the mapping list and the Cognito mapping chips", async () => {
-    await renameVia(async (user) => {
-      const slug = screen.getByTestId("coord-tenant-rename-slug");
-      await user.clear(slug);
-      await user.type(slug, "acme-renamed");
-    });
+  const changeSlug = async (user: ReturnType<typeof userEvent.setup>) => {
+    const slug = screen.getByTestId("coord-tenant-rename-slug");
+    await user.clear(slug);
+    await user.type(slug, "acme-renamed");
+  };
+
+  it("a renamed slug re-reads the mapping list, the Cognito group list and its mapping chips", async () => {
+    await renameVia(changeSlug);
     await waitFor(() => expect(mappingReads()).toBe(4));
+    // The group list too: a migrated `<new>-home` must appear in it.
+    await waitFor(() => expect(groupListReads()).toBe(2));
+  });
+
+  it("a 504 (outcome unknown) re-reads them as well", async () => {
+    renameStatus = 504;
+    await renameVia(changeSlug, "coord-tenant-rename-error");
+    await waitFor(() => expect(mappingReads()).toBe(4));
+    await waitFor(() => expect(groupListReads()).toBe(2));
   });
 
   it("a name-only rename re-reads neither", async () => {
@@ -216,13 +234,21 @@ describe("a slug change re-reads every slug-bearing panel", () => {
       previous: { slug: "acme", display_name: "Acme Corp" },
       home_group_to_migrate: null,
     };
+    const tenantReadsBefore = { n: 0 };
     await renameVia(async (user) => {
+      tenantReadsBefore.n = myTenantReads();
       const name = screen.getByTestId("coord-tenant-rename-display-name");
       await user.clear(name);
       await user.type(name, "Acme Inc");
     });
-    // Give any (wrong) refetch the chance to fire before asserting its absence.
-    await new Promise((r) => setTimeout(r, 50));
+    // The tenant card re-reads in the SAME callback that would have bumped the
+    // slug panels, so once that read is visible the decision has been made;
+    // `act` then flushes the effects a bump would have scheduled.
+    await waitFor(() => expect(myTenantReads()).toBe(tenantReadsBefore.n + 1));
+    await act(async () => {
+      await Promise.resolve();
+    });
     expect(mappingReads()).toBe(2);
+    expect(groupListReads()).toBe(1);
   });
 });

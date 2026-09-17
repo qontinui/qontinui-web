@@ -60,6 +60,7 @@ import type {
   TenantRenameResponse,
 } from "@/components/sessions/types";
 import { useTenant } from "@/contexts/tenant-context";
+import { createLogger } from "@/lib/logger";
 import {
   isProjectSlugReason,
   MAX_DISPLAY_NAME_CHARS,
@@ -67,6 +68,8 @@ import {
   projectSlugProblemMessage,
   slugifyProjectName,
 } from "./projectSlug";
+
+const log = createLogger("CoordProjectRenameDialog");
 
 /** The tenant being renamed, as the caller currently sees it. */
 export interface RenameTarget {
@@ -178,13 +181,11 @@ export function renameErrorMessage(err: unknown): string {
     return "Only an administrator of this project can rename it.";
   }
   if (err.status === 404) return "This project no longer exists.";
-  // The two statuses the web proxy INVENTS, and they mean opposite things.
-  // 504 is a statement about our clock, not about coord's transaction: coord
-  // may well have committed, so claiming "not renamed" would be false — and
-  // the dialog re-reads the project list (`isRenameOutcomeUnknown`). 502 is a
-  // connect failure: the request never reached coord, so nothing changed.
+  // A 5xx is never a refusal, and only ONE 5xx proves nothing changed — see
+  // `isRenameOutcomeUnknown`. Claiming "not renamed" after coord may have
+  // committed would invite a retry judged against the NEW slug.
   if (isRenameOutcomeUnknown(err)) {
-    return "Coord didn't answer in time, so the rename may have been applied. The project list was reloaded to check — look for the new name before trying again.";
+    return "Coord didn't answer cleanly, so the rename may have been applied. The project list is being reloaded to check — look for the new name before trying again. No home-group move was attempted; check the Cognito groups panel if the short id did change.";
   }
   if (err.status === 502) {
     return "Coord could not be reached, so the rename was not applied. Try again.";
@@ -194,9 +195,23 @@ export function renameErrorMessage(err: unknown): string {
     : `Could not rename the project (${err.status}).`;
 }
 
-/** A failure after which the rename may or may not have been applied. */
+/** The web proxy's exact detail for a connect failure — the one 5xx that
+ *  proves coord never saw the request (`_proxy_coord_patch`). */
+export const PROXY_NOT_REACHABLE_DETAIL = "coord is not reachable";
+
+/**
+ * A failure after which the rename may or may not have been applied.
+ *
+ * 500, 503 and 504 are unknown: coord's own 5xx, an intermediary's, or the
+ * proxy's timeout / lost answer can all follow a commit. A 502 is "not
+ * applied" ONLY when it is the proxy's own connect failure, recognised by its
+ * exact detail — a 502 from a load balancer in front of the web backend, or
+ * one coord forwarded, carries no such proof and is unknown too.
+ */
 export function isRenameOutcomeUnknown(err: unknown): boolean {
-  return err instanceof TenantRenameError && err.status === 504;
+  if (!(err instanceof TenantRenameError)) return false;
+  if (err.status === 502) return err.detail !== PROXY_NOT_REACHABLE_DETAIL;
+  return err.status === 500 || err.status === 503 || err.status === 504;
 }
 
 /** One line on what happened to the `<old-id>-home` Cognito group. */
@@ -309,15 +324,9 @@ export function CoordProjectRenameDialog({
     if (slugChanged) body.slug = trimmedSlug;
     setSubmitting(true);
     setError(null);
+    let renamed: TenantRenameResponse;
     try {
-      const renamed = await renameTenant(tenant.id, body);
-      setResult(renamed);
-      // The switcher and header chip read the provider's list, which is
-      // otherwise fetched once on mount. A failed refresh does not undo the
-      // rename — it only means the list is stale — so it never throws here.
-      setListRefreshed(await refresh());
-      onRenamed?.(renamed);
-      return renamed;
+      renamed = await renameTenant(tenant.id, body);
     } catch (err) {
       setError({
         name: trimmedName,
@@ -333,6 +342,24 @@ export function CoordProjectRenameDialog({
     } finally {
       setSubmitting(false);
     }
+    // From here on the rename HAS happened. Nothing below may turn it into a
+    // reported failure: not a stale list, and not a throwing caller callback.
+    setResult(renamed);
+    // The switcher and header chip read the provider's list, which is
+    // otherwise fetched once on mount.
+    let refreshed = false;
+    try {
+      refreshed = await refresh();
+    } catch {
+      refreshed = false;
+    }
+    setListRefreshed(refreshed);
+    try {
+      onRenamed?.(renamed);
+    } catch (callbackErr) {
+      log.warn("onRenamed threw after a successful rename", callbackErr);
+    }
+    return renamed;
   };
 
   useUIComponent({
@@ -432,20 +459,24 @@ export function CoordProjectRenameDialog({
                 autoComplete="off"
                 disabled={submitting}
                 aria-invalid={nameEmpty}
-                aria-describedby={
-                  nameEmpty ? "coord-tenant-rename-name-problem" : undefined
-                }
+                aria-describedby="coord-tenant-rename-name-note"
               />
-              {nameEmpty ? (
-                <p
-                  id="coord-tenant-rename-name-problem"
-                  className="text-xs text-destructive"
-                  data-testid="coord-tenant-rename-name-problem"
-                  aria-live="polite"
-                >
-                  The name can&apos;t be blank.
-                </p>
-              ) : null}
+              {/* The live region is ALWAYS mounted and only its content
+                  changes: a region inserted together with its message is not
+                  reliably announced, because assistive tech starts watching it
+                  only after it exists. */}
+              <p
+                id="coord-tenant-rename-name-note"
+                className="text-xs text-destructive"
+                data-testid="coord-tenant-rename-name-live"
+                aria-live="polite"
+              >
+                {nameEmpty ? (
+                  <span data-testid="coord-tenant-rename-name-problem">
+                    The name can&apos;t be blank.
+                  </span>
+                ) : null}
+              </p>
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="coord-tenant-rename-slug">Short id</Label>
@@ -467,18 +498,21 @@ export function CoordProjectRenameDialog({
                 id="coord-tenant-rename-slug-note"
                 className="text-xs text-muted-foreground"
               >
-                {/* `aria-live` rides the PROBLEM only: the preview below changes
-                    on every keystroke, and announcing it would talk over the
-                    operator while they type. */}
-                {slugProblem !== null ? (
-                  <span
-                    className="text-destructive"
-                    data-testid="coord-tenant-rename-slug-problem"
-                    aria-live="polite"
-                  >
-                    {slugProblem}
-                  </span>
-                ) : (
+                {/* An always-mounted live region holds the PROBLEM only: the
+                    preview beside it changes on every keystroke, and announcing
+                    it would talk over the operator while they type. */}
+                <span
+                  className="text-destructive"
+                  data-testid="coord-tenant-rename-slug-live"
+                  aria-live="polite"
+                >
+                  {slugProblem !== null ? (
+                    <span data-testid="coord-tenant-rename-slug-problem">
+                      {slugProblem}
+                    </span>
+                  ) : null}
+                </span>
+                {slugProblem !== null ? null : (
                   <>
                     The short id is an identifier: SSO group mappings and the{" "}
                     <span

@@ -645,7 +645,8 @@ function MyTenantsCard({ onSlugChanged }: { onSlugChanged: () => void }) {
         // The rows above show what this section's read returned, so re-read.
         onRenamed={(result) => {
           void load();
-          if (result.previous.slug !== result.slug) onSlugChanged();
+          // `previous` absent is UNKNOWN, so it reloads rather than not.
+          if (result.previous?.slug !== result.slug) onSlugChanged();
         }}
         onOutcomeUnknown={() => {
           void load();
@@ -3360,9 +3361,11 @@ function CognitoGroupsSection({
     }
   }, []);
 
+  // `refreshKey` too: a slug rename can create `<new>-home`, which this list
+  // must then show.
   useEffect(() => {
     if (isSuperuser) void load();
-  }, [load, isSuperuser]);
+  }, [load, isSuperuser, refreshKey]);
 
   // coord's group -> tenant -> role mappings. Read here as well as in the
   // section above: this is the reason the backend refuses a delete, so the
