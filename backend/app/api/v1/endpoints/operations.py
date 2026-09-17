@@ -10472,8 +10472,8 @@ async def post_coord_tenant_member(
       grant is made; nothing is sent, since sending is a superuser act.
     * ``{"status": "invite_required"}`` — a tenant admin named an email with
       no account. NOTHING is written or sent.
-    * ``409`` — more than one account matches the email, ignoring case, so
-      picking one would be guessing which human gets access.
+    * ``409`` — more than one account matches the email, so picking one
+      would be guessing which human gets access.
 
     **Why creating an account is superuser-only.** Qontinui is invite-only:
     self sign-up is disabled on the pool and its PreSignUp trigger enforces an
@@ -10496,27 +10496,26 @@ async def post_coord_tenant_member(
     may_invite = getattr(current_user, "is_superuser", False) is True
 
     identity = await _resolve_member_identity(email)
-    created = False
     if identity is None:
         if not may_invite:
             logger.info("tenant_member_add_invite_required", tenant_id=str(tenant_id))
             return {"status": "invite_required"}
-        identity, created = await _create_invited_identity(email)
+        # New accounts are stored lowercase, and coord gets the same form.
+        email = email.lower()
+        identity = await _create_invited_identity(email)
     # Decided by the account's STATE, not by which branch produced it: a
     # raced create can hand back a colleague who has already accepted, and
     # Cognito refuses to re-send to them.
     pending = identity.status == cognito_admin.INVITATION_PENDING_STATUS
 
-    try:
-        operator_id = await _grant_tenant_member(
-            email=email, sub=identity.sub, role=body.role, tenant_id=tenant_id
-        )
-    except HTTPException:
-        if created:
-            await asyncio.to_thread(
-                cognito_admin.delete_unsent_invitation, identity.username
-            )
-        raise
+    # No cleanup if this fails after a create. A pending account with no
+    # grant is inert — nobody knows its password, and the autolink only
+    # targets CONFIRMED accounts — and a retry converges on it. Deleting it
+    # instead could remove an account a concurrent request had just invited,
+    # or orphan a grant coord committed before its response was lost.
+    operator_id = await _grant_tenant_member(
+        email=email, sub=identity.sub, role=body.role, tenant_id=tenant_id
+    )
 
     status = "added"
     if pending and not may_invite:
@@ -10540,21 +10539,16 @@ async def post_coord_tenant_member(
 
 
 async def _resolve_member_identity(email: str) -> cognito_admin.CognitoIdentity | None:
-    """The one account for ``email`` — exact match first, then any case.
+    """The one account for ``email``, or ``None``; more than one is a ``409``.
 
-    The exact ``ListUsers`` filter is indexed and cheap; the any-case scan
-    reads the whole pool and runs only on a miss. ``None`` means neither
-    found anybody. More than one match either way is a ``409``.
+    Case needs no second lookup: measured 2026-09-17 against the live pool,
+    the ``ListUsers`` ``email =`` filter matched a stored lowercase address
+    queried in upper case. A case-variant twin therefore surfaces here as two
+    matches — ambiguity — rather than as a miss that would create a duplicate.
+    (Only that direction was measurable: no stored address had mixed case.)
     """
     try:
-        identity = await asyncio.to_thread(
-            cognito_admin.resolve_identity_for_email, email
-        )
-        if identity is not None:
-            return identity
-        matches = await asyncio.to_thread(
-            cognito_admin.find_identities_for_email_any_case, email
-        )
+        return await asyncio.to_thread(cognito_admin.resolve_identity_for_email, email)
     except CognitoAmbiguousEmailError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     except CognitoInvalidParameterError as exc:
@@ -10567,45 +10561,32 @@ async def _resolve_member_identity(email: str) -> cognito_admin.CognitoIdentity 
             fallback_detail="Could not resolve user by email.",
             email=email,
         ) from exc
-    if len(matches) > 1:
-        logger.warning("tenant_member_email_ambiguous_any_case", count=len(matches))
-        raise HTTPException(
-            status_code=409,
-            detail=f"Multiple users match email (ignoring case): {email}",
-        )
-    return matches[0] if matches else None
 
 
-async def _create_invited_identity(
-    email: str,
-) -> tuple[cognito_admin.CognitoIdentity, bool]:
+async def _create_invited_identity(email: str) -> cognito_admin.CognitoIdentity:
     """Create the account for an email nobody holds — sending nothing.
 
-    Returns the identity and whether THIS call created it (``False`` when a
-    concurrent request won the race, so a later grant failure does not delete
-    somebody else's account).
+    ``email`` arrives lowercased: this pool predates Cognito's
+    case-insensitive usernames, so one stored form keeps a later exact
+    username lookup predictable.
 
-    The new account's email and username are lowercased: this pool predates
-    Cognito's case-insensitive usernames, and the any-case check has already
-    established no variant exists.
+    A ``UsernameExistsException`` means a concurrent request created the
+    account between the lookup and the create, so it is resolved again
+    rather than reported as a failure.
     """
-    normalized = email.lower()
     try:
         try:
-            identity = await asyncio.to_thread(
-                cognito_admin.create_invited_user, normalized
-            )
-            return identity, True
+            return await asyncio.to_thread(cognito_admin.create_invited_user, email)
         except CognitoUserExistsError:
             raced = await asyncio.to_thread(
-                cognito_admin.resolve_identity_for_email, normalized
+                cognito_admin.resolve_identity_for_email, email
             )
             if raced is None:
                 raise CognitoAdminError(
                     "Cognito reported the account exists but no account "
-                    f"carries the email {normalized}"
+                    f"carries the email {email}"
                 ) from None
-            return raced, False
+            return raced
     except CognitoAmbiguousEmailError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     except CognitoInvalidParameterError as exc:

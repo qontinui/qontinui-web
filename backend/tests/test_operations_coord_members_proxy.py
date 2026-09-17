@@ -51,8 +51,9 @@ def _build_test_app(
         mock_user.email = "admin@example.com"
         mock_user.is_active = True
         mock_user.is_verified = True
-        # Set explicitly: a bare MagicMock attribute is truthy, which would
-        # make every caller a superuser and every invite test vacuous.
+        # Set explicitly. The route reads `is_superuser is True`, so a bare
+        # MagicMock attribute would make every caller a NON-superuser and the
+        # superuser tests would fail for the wrong reason.
         mock_user.is_superuser = superuser
         test_app.dependency_overrides[get_current_active_user_async] = lambda: mock_user
         resolved = server_tenant if server_tenant is not None else uuid4()
@@ -409,10 +410,8 @@ class TestAddTenantMemberByEmail:
         self,
         *,
         resolver,
-        any_case=None,
         create=None,
         send=None,
-        delete=None,
         coord=None,
         email="new@x.io",
         superuser=True,
@@ -427,12 +426,10 @@ class TestAddTenantMemberByEmail:
         order: list[str] = []
         mocks = SimpleNamespace(
             resolver=resolver,
-            any_case=any_case or MagicMock(return_value=[]),
             create=create or MagicMock(return_value=self._pending()),
             send=send or MagicMock(return_value=None),
-            delete=delete or MagicMock(return_value=None),
         )
-        for name in ("create", "send", "delete"):
+        for name in ("create", "send"):
             mock = getattr(mocks, name)
             mock.side_effect = _recording(order, name, mock)
         coord_responses = list(
@@ -447,13 +444,8 @@ class TestAddTenantMemberByEmail:
                 "app.services.cognito_admin.resolve_identity_for_email",
                 mocks.resolver,
             ),
-            patch(
-                "app.services.cognito_admin.find_identities_for_email_any_case",
-                mocks.any_case,
-            ),
             patch("app.services.cognito_admin.create_invited_user", mocks.create),
             patch("app.services.cognito_admin.send_invitation", mocks.send),
-            patch("app.services.cognito_admin.delete_unsent_invitation", mocks.delete),
             _patch_httpx() as MockClient,
         ):
             instance = AsyncMock()
@@ -540,32 +532,6 @@ class TestAddTenantMemberByEmail:
         assert upsert.kwargs["json"]["sso_subject"] == "cognito-assigned"
         assert "roles" not in upsert.kwargs["json"]
 
-    def test_refused_grant_deletes_the_new_account_and_sends_nothing(self):
-        refusal = _mock_response(
-            status_code=403, json_data={"error": "not_admin_in_target_tenant"}
-        )
-        r = self._post_with(
-            resolver=MagicMock(return_value=None),
-            create=MagicMock(return_value=self._pending(username="made-now")),
-            coord=[_mock_response(json_data={"operator_id": "op-new"}), refusal],
-        )
-
-        assert r.resp.status_code == 403
-        r.send.assert_not_called()
-        r.delete.assert_called_once_with("made-now")
-
-    def test_refused_grant_never_deletes_an_account_it_did_not_create(self):
-        refusal = _mock_response(
-            status_code=403, json_data={"error": "not_admin_in_target_tenant"}
-        )
-        r = self._post_with(
-            resolver=MagicMock(return_value=self._pending(username="older")),
-            coord=[_mock_response(json_data={"operator_id": "op-new"}), refusal],
-        )
-
-        assert r.resp.status_code == 403
-        r.delete.assert_not_called()
-
     def test_pending_invite_is_regranted_and_resent(self):
         """Adding somebody again before they accept is how an admin recovers
         a lost or expired invitation: no second account, and a fresh send."""
@@ -588,53 +554,6 @@ class TestAddTenantMemberByEmail:
         r.create.assert_not_called()
         r.send.assert_not_called()
 
-    def test_a_new_account_is_lowercased(self):
-        resolver = MagicMock(return_value=None)
-        r = self._post_with(resolver=resolver, email="Stefan@X.io")
-
-        assert r.resp.status_code == 200
-        resolver.assert_called_once_with("Stefan@X.io")
-        r.any_case.assert_called_once_with("Stefan@X.io")
-        r.create.assert_called_once_with("stefan@x.io")
-
-    def test_an_any_case_twin_is_found_not_duplicated(self):
-        """The exact filter misses ``Stefan@X.io`` for ``stefan@x.io``; the
-        person still exists, so no account may be created for them."""
-        r = self._post_with(
-            resolver=MagicMock(return_value=None),
-            any_case=MagicMock(return_value=[self._confirmed(sub="s-entra")]),
-            email="stefan@x.io",
-        )
-
-        assert r.resp.status_code == 200
-        assert r.resp.json()["status"] == "added"
-        assert r.coord.post.call_args_list[0].kwargs["json"]["sso_subject"] == "s-entra"
-        r.create.assert_not_called()
-
-    def test_two_any_case_twins_are_ambiguous(self):
-        r = self._post_with(
-            resolver=MagicMock(return_value=None),
-            any_case=MagicMock(
-                return_value=[self._confirmed(sub="a"), self._confirmed(sub="b")]
-            ),
-        )
-
-        assert r.resp.status_code == 409
-        r.create.assert_not_called()
-        r.coord.post.assert_not_called()
-
-    def test_an_unfinished_any_case_scan_creates_nothing(self):
-        from app.services.cognito_admin import CognitoAdminError
-
-        r = self._post_with(
-            resolver=MagicMock(return_value=None),
-            any_case=MagicMock(side_effect=CognitoAdminError("did not terminate")),
-        )
-
-        assert r.resp.status_code == 502
-        r.create.assert_not_called()
-        r.coord.post.assert_not_called()
-
     def test_concurrent_create_resolves_the_raced_account(self):
         from app.services.cognito_admin import CognitoUserExistsError
 
@@ -646,6 +565,65 @@ class TestAddTenantMemberByEmail:
         assert r.resp.status_code == 200
         assert r.coord.post.call_args_list[0].kwargs["json"]["sso_subject"] == "s-r"
         r.send.assert_called_once_with("raced")
+
+    def test_refused_grant_after_a_create_sends_nothing_and_keeps_the_account(
+        self,
+    ):
+        """Nothing is sent, and nothing is deleted: the pending account is
+        inert, and a retry converges on it (see the next test)."""
+        refusal = _mock_response(
+            status_code=403, json_data={"error": "not_admin_in_target_tenant"}
+        )
+        with patch("app.services.cognito_admin._get_client") as get_client:
+            r = self._post_with(
+                resolver=MagicMock(return_value=None),
+                coord=[_mock_response(json_data={"operator_id": "op-new"}), refusal],
+            )
+
+        assert r.resp.status_code == 403
+        r.send.assert_not_called()
+        get_client.assert_not_called()
+
+    def test_a_retry_after_a_refused_grant_converges(self):
+        r = self._post_with(resolver=MagicMock(return_value=self._pending("kept")))
+
+        assert r.resp.status_code == 200
+        assert r.resp.json()["status"] == "invited"
+        r.create.assert_not_called()
+        r.send.assert_called_once_with("kept")
+
+    def test_a_new_account_and_its_coord_row_are_lowercase(self):
+        resolver = MagicMock(return_value=None)
+        r = self._post_with(resolver=resolver, email="Stefan@X.io")
+
+        assert r.resp.status_code == 200
+        resolver.assert_called_once_with("Stefan@X.io")
+        r.create.assert_called_once_with("stefan@x.io")
+        assert r.coord.post.call_args_list[0].kwargs["json"]["email"] == "stefan@x.io"
+
+    def test_a_race_that_returns_an_accepted_account_is_added(self):
+        from app.services.cognito_admin import CognitoUserExistsError
+
+        r = self._post_with(
+            resolver=MagicMock(side_effect=[None, self._confirmed("won", "s-w")]),
+            create=MagicMock(side_effect=CognitoUserExistsError("exists")),
+        )
+
+        assert r.resp.status_code == 200
+        assert r.resp.json()["status"] == "added"
+        r.send.assert_not_called()
+
+    def test_a_race_whose_account_cannot_be_found_is_502(self):
+        from app.services.cognito_admin import CognitoUserExistsError
+
+        r = self._post_with(
+            resolver=MagicMock(side_effect=[None, None]),
+            create=MagicMock(side_effect=CognitoUserExistsError("exists")),
+        )
+
+        assert r.resp.status_code == 502
+        r.coord.post.assert_not_called()
+        r.send.assert_not_called()
 
     def test_create_failure_writes_nothing(self):
         from app.services.cognito_admin import CognitoAdminError
@@ -672,7 +650,6 @@ class TestAddTenantMemberByEmail:
 
         assert r.resp.status_code == 502
         assert r.coord.post.call_count == 2
-        r.delete.assert_not_called()
         detail = r.resp.json()["detail"]
         assert detail["error"] == "invitation_not_sent"
         assert "given access" in detail["message"]

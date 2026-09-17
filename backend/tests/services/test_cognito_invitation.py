@@ -157,8 +157,8 @@ class TestSendInvitation:
         assert call["UserPoolId"] == "pool-xyz"
 
     def test_it_sends_no_attributes(self, install):
-        """Cognito delivers to the STORED email. An attribute on a RESEND
-        could only disagree with it — or rewrite it and clear
+        """The email was set at create. An attribute on a RESEND could only
+        disagree with it — and if applied, rewrite it and risk clearing
         ``email_verified``, which the autolink depends on."""
         client = install(_CreateClient(response=_created()))
 
@@ -172,110 +172,6 @@ class TestSendInvitation:
         with pytest.raises(CognitoAdminError) as info:
             cognito_admin.send_invitation("u")
         assert info.value.aws_error_code == "UnsupportedUserStateException"
-
-
-class _DeleteClient:
-    def __init__(self, error: Exception | None = None) -> None:
-        self._error = error
-        self.calls: list[dict[str, Any]] = []
-
-    def admin_delete_user(self, **kwargs: Any) -> None:
-        self.calls.append(kwargs)
-        if self._error is not None:
-            raise self._error
-
-
-class TestDeleteUnsentInvitation:
-    def test_it_deletes_by_username(self, monkeypatch):
-        client = _DeleteClient()
-        monkeypatch.setattr(cognito_admin, "_get_client", lambda: client)
-        monkeypatch.setattr(settings, "COGNITO_USER_POOL_ID", "pool-xyz")
-
-        cognito_admin.delete_unsent_invitation("made-now")
-
-        assert client.calls == [{"UserPoolId": "pool-xyz", "Username": "made-now"}]
-
-    def test_a_failure_is_logged_not_raised(self, monkeypatch):
-        """The caller is already reporting the grant failure — the fact the
-        admin needs. A cleanup error must not replace it."""
-        client = _DeleteClient(error=_client_error("InternalErrorException"))
-        monkeypatch.setattr(cognito_admin, "_get_client", lambda: client)
-        monkeypatch.setattr(settings, "COGNITO_USER_POOL_ID", "pool-xyz")
-
-        cognito_admin.delete_unsent_invitation("made-now")
-
-        assert len(client.calls) == 1
-
-
-class _ScanClient:
-    def __init__(self, pages: list[dict[str, Any]]) -> None:
-        self._pages = pages
-        self.calls: list[dict[str, Any]] = []
-
-    def list_users(self, **kwargs: Any) -> dict[str, Any]:
-        self.calls.append(kwargs)
-        return self._pages[len(self.calls) - 1]
-
-
-def _row(username: str, email: str, sub: str) -> dict[str, Any]:
-    return {
-        "Username": username,
-        "UserStatus": "CONFIRMED",
-        "Attributes": [
-            {"Name": "sub", "Value": sub},
-            {"Name": "email", "Value": email},
-        ],
-    }
-
-
-class TestFindIdentitiesForEmailAnyCase:
-    def _install(self, monkeypatch, pages):
-        client = _ScanClient(pages)
-        monkeypatch.setattr(cognito_admin, "_get_client", lambda: client)
-        monkeypatch.setattr(settings, "COGNITO_USER_POOL_ID", "pool-xyz")
-        return client
-
-    def test_it_matches_across_case_and_reads_every_page(self, monkeypatch):
-        client = self._install(
-            monkeypatch,
-            [
-                {"Users": [_row("a", "other@x.io", "s-a")], "PaginationToken": "p2"},
-                {"Users": [_row("MicrosoftEntra_1", "Stefan.Muller@X.io", "s-e")]},
-            ],
-        )
-
-        found = cognito_admin.find_identities_for_email_any_case("stefan.muller@x.io")
-
-        assert [i.sub for i in found] == ["s-e"]
-        assert len(client.calls) == 2
-
-    def test_it_sends_no_filter(self, monkeypatch):
-        """AWS refuses ``Filter=""``; an unfiltered scan omits the key."""
-        client = self._install(monkeypatch, [{"Users": []}])
-
-        cognito_admin.find_identities_for_email_any_case("x@x.io")
-
-        assert "Filter" not in client.calls[0]
-
-    def test_it_returns_every_match_for_the_caller_to_judge(self, monkeypatch):
-        self._install(
-            monkeypatch,
-            [{"Users": [_row("a", "Dup@x.io", "s-1"), _row("b", "dup@X.io", "s-2")]}],
-        )
-
-        found = cognito_admin.find_identities_for_email_any_case("dup@x.io")
-
-        assert {i.sub for i in found} == {"s-1", "s-2"}
-
-    def test_an_unfinished_scan_raises_rather_than_answering_empty(self, monkeypatch):
-        self._install(
-            monkeypatch,
-            [{"Users": [], "PaginationToken": "more"}]
-            * cognito_admin._LIST_USERS_MAX_PAGES,
-        )
-
-        with pytest.raises(CognitoAdminError, match="did not terminate"):
-            cognito_admin.find_identities_for_email_any_case("x@x.io")
 
 
 class TestResolverCarriesStatus:
