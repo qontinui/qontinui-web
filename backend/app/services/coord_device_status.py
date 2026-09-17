@@ -5,7 +5,7 @@ Phase 1.3. Provides the web backend's view of coord's
 ``coord.device_status`` surface so the operations dashboard can render
 a live "currently doing" sub-line on each `MachineCard`.
 
-Two pieces ship here:
+Three pieces ship here:
 
 1. :func:`fetch_device_status` — tenant-scoped REST proxy to
    ``GET /coord/status?tenant_id=<uuid>``. Used by the
@@ -14,8 +14,13 @@ Two pieces ship here:
 2. :func:`mint_device_status_token` — mints a coord-issued service
    JWT carrying the operator's resolved ``tenant_id`` claim, scoped
    for the dashboard's WS subscription. Used by the WS-bridge
-   endpoint to authenticate upstream to coord's
-   ``/ws/device-status``.
+   endpoints to authenticate upstream to coord's
+   ``/ws/device-status`` — and, since the generic ``/ws`` went
+   authenticated, to coord's ``/ws?subscribe=<name>`` too.
+3. :data:`COORD_EVENTS_SUBSCRIPTIONS` + :func:`build_coord_events_ws_url`
+   — the closed set of named ``/ws`` subscriptions the
+   ``/api/v1/operations/coord-events/ws`` bridge will forward, and the
+   upstream URL for one of them.
 
 The mint path requires `COORD_ADMIN_SECRET` to be set; without it the
 device-status surface returns 503 (same posture as
@@ -34,6 +39,7 @@ tokens would be more complex than re-minting on each WS attach
 
 from __future__ import annotations
 
+import json
 from typing import Any
 from uuid import UUID
 
@@ -188,15 +194,108 @@ def build_device_status_ws_url(token: str) -> str:
     headers on WS upgrades, and coord's handler reads
     `?token=<jwt>` accordingly).
 
-    Translates the configured ``COORD_URL`` scheme:
+    """
+    return f"{_coord_ws_base()}/ws/device-status?token={token}"
+
+
+def _coord_ws_base() -> str:
+    """``COORD_URL`` with its scheme translated for a WS upgrade.
+
     `http://` → `ws://`, `https://` → `wss://`. Falls back to `ws://`
     for any other (defensive — we don't expect another scheme).
     """
     base = settings.COORD_URL.rstrip("/")
     if base.startswith("https://"):
-        ws_base = "wss://" + base[len("https://") :]
-    elif base.startswith("http://"):
-        ws_base = "ws://" + base[len("http://") :]
-    else:
-        ws_base = "ws://" + base
-    return f"{ws_base}/ws/device-status?token={token}"
+        return "wss://" + base[len("https://") :]
+    if base.startswith("http://"):
+        return "ws://" + base[len("http://") :]
+    return "ws://" + base
+
+
+# The subscription names the coord-events bridge will forward to coord's
+# generic ``/ws``. Coord's ``/ws`` takes a CLOSED set of named
+# subscriptions (``?subscribe=<name>``, each mapped server-side to a fixed
+# pattern the principal is entitled to; a caller-supplied ``?pattern=`` is
+# refused) — plan
+# 2026-09-13-coord-publishes-agent-jwts-on-a-redis-channel-fronted-by-an-unauthenticated-ws-firehose
+# Phase 2. These four are the ones a tenant-scoped service token (the web
+# backend's identity) is admitted to:
+#
+#   strategy → events.strategy.*   (presence + mentions on /strategy)
+#   merge    → events.merge.*      (the merge-pipeline hero's refetch trigger)
+#   claims   → events.claims
+#   branches → events.branches
+#
+# ``device`` and ``device_ci`` are deliberately ABSENT: those resolve to the
+# token's own ``device_id`` claim (``events.agent.spawn_requested.<device>``
+# and friends) and are runner-only — a service token has no device, and the
+# spawn channel is the one whose contents this plan exists to take off the
+# bus. Widening this set is a deliberate exposure decision, not a config
+# change: every name here must also be in coord's map, or the upstream
+# refuses 403 ``unknown_subscription``.
+#: Subscription name → the channel FAMILY it is entitled to, spelled the way
+#: coord resolves it: a trailing ``.`` means "prefix" (``events.strategy.*``
+#: → every ``events.strategy.<anything>``), no trailing ``.`` means the exact
+#: channel. The bridge enforces this on EVERY relayed frame
+#: (:func:`channel_in_family`), not only at the upgrade: against a coord that
+#: predates the ``?subscribe=`` half (``WsParams { pattern }`` defaulting to
+#: ``events.*`` with unknown query params ignored) the upstream socket would
+#: otherwise carry the ENTIRE bus — including the
+#: ``events.agent.spawn_requested.<device>`` frames whose JWT payloads this
+#: plan exists to take off it — into every operator's browser.
+COORD_EVENTS_FAMILIES: dict[str, str] = {
+    "strategy": "events.strategy.",
+    "merge": "events.merge.",
+    "claims": "events.claims",
+    "branches": "events.branches",
+}
+
+COORD_EVENTS_SUBSCRIPTIONS: frozenset[str] = frozenset(COORD_EVENTS_FAMILIES)
+
+
+def channel_in_family(subscribe: str, channel: str) -> bool:
+    """True when ``channel`` is one the ``subscribe`` name is entitled to.
+
+    A prefix family (trailing ``.``) admits any channel that starts with it;
+    an exact family admits only the identical channel. An unknown
+    ``subscribe`` admits nothing.
+    """
+    family = COORD_EVENTS_FAMILIES.get(subscribe)
+    if family is None:
+        return False
+    if family.endswith("."):
+        return channel.startswith(family)
+    return channel == family
+
+
+def envelope_channel(message: str) -> str | None:
+    """The ``channel`` of a coord ``{"channel","payload"}`` envelope, or None.
+
+    None for anything that is not a JSON object carrying a string
+    ``channel`` — the bridge drops such frames rather than relaying bytes it
+    cannot classify.
+    """
+    try:
+        envelope = json.loads(message)
+    except ValueError:
+        return None
+    if not isinstance(envelope, dict):
+        return None
+    channel = envelope.get("channel")
+    return channel if isinstance(channel, str) else None
+
+
+def build_coord_events_ws_url(token: str, subscribe: str) -> str:
+    """Build the upstream URL for coord's authenticated generic ``/ws``.
+
+    ``wss?://<coord-host>/ws?token=<jwt>&subscribe=<name>``. The token
+    rides the query string for the same reason as the device-status
+    bridge (coord verifies it in-handler before ``on_upgrade``); the
+    subscription name is validated against
+    :data:`COORD_EVENTS_SUBSCRIPTIONS` here as well as by the caller, so
+    an unknown name never reaches coord even from a future call site
+    that forgets the check.
+    """
+    if subscribe not in COORD_EVENTS_SUBSCRIPTIONS:
+        raise ValueError(f"unknown coord-events subscription: {subscribe!r}")
+    return f"{_coord_ws_base()}/ws?token={token}&subscribe={subscribe}"
