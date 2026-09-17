@@ -1,7 +1,7 @@
 """coord.agent_worktrees.credentialed_at — the single-shot credential stamp
 
 Revision ID: coord_agent_worktrees_credentialed_at_01
-Revises: plan_library_06_scan_root_slug_census
+Revises: coord_system_tenant_rename_qontinui
 Create Date: 2026-09-16
 
 Phase 3 (web half) of
@@ -75,7 +75,7 @@ revision: str = "coord_agent_worktrees_credentialed_at_01"
 # this branch feeds deploy-coord.yml's drift gate) is line-scoped, so a
 # formatter-wrapped `down_revision = (\n "..."\n)` yields no parent at all and
 # counts as a second head — see plan_library_06_scan_root_slug_census.py.
-down_revision: str | Sequence[str] | None = "plan_library_06_scan_root_slug_census"
+down_revision: str | Sequence[str] | None = "coord_system_tenant_rename_qontinui"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

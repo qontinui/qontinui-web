@@ -55,7 +55,7 @@ from tests._alembic_harness import (
 # `test_the_pinned_parent_matches_the_revisions_down_revision` below enforces
 # it.
 _REVISION_ID = "coord_agent_worktrees_credentialed_at_01"
-_PARENT_REVISION_ID = "plan_library_06_scan_root_slug_census"
+_PARENT_REVISION_ID = "coord_system_tenant_rename_qontinui"
 _REVISION_FILENAME = (
     "coord_agent_worktrees_credentialed_at_01_single_shot_credential.py"
 )
