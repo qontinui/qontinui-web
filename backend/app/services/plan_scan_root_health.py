@@ -193,6 +193,23 @@ COVERAGE_NOT_COMPUTED_DETAIL = (
     "difference. The empty list is not 'nothing is missing'."
 )
 
+#: ``coverage_detail`` when the CALLER of ``GET /plan-library/scan-roots``
+#: itself opted out with ``?coverage=false``. Distinct from
+#: :data:`COVERAGE_NOT_COMPUTED_DETAIL`, whose text names this very route as
+#: where to read coverage instead — reusing it here, on this route, under an
+#: explicit opt-out would be self-referential and wrong. The follow-up to
+#: ``2026-09-15-captured-vs-authored-coverage-is-a-set-difference`` that added
+#: the parameter: ``useScanRoots`` does not render a single coverage field, so
+#: mounting the console page paid the census-load and the corpus anti-join
+#: TWICE per mount before this existed.
+COVERAGE_NOT_REQUESTED_DETAIL = (
+    "not_requested: this read passed coverage=false, which skips the stem "
+    "census load and the corpus anti-join for a caller that only needs the "
+    "per-device readings and roll-up. Pass coverage=true (the default) or "
+    "omit the parameter to get the coverage set difference. The empty list "
+    "is not 'nothing is missing'."
+)
+
 #: ``coverage_detail`` when the readings could not be read at all.
 COVERAGE_READ_FAILED_DETAIL = (
     "read_failed: the readings the coverage set difference is taken from could "
@@ -851,6 +868,7 @@ def scan_roots_health(
     *,
     now: datetime,
     captured: CapturedPlanCorpus | None = None,
+    coverage_requested: bool = True,
 ) -> ScanRootListResponse:
     """Every device's reading, judged, plus the per-source roll-up.
 
@@ -866,6 +884,16 @@ def scan_roots_health(
     would be exactly the false zero this plan exists to delete. Design decision
     D2 on :attr:`ScanRootListResponse.coverage` has the reasoning.
 
+    ``coverage_requested`` distinguishes WHY ``captured`` is ``None``, purely
+    for which ``coverage_detail`` string is chosen: the ``corpus_health`` path
+    never asks (default ``True`` is a misnomer there — it never sees this
+    branch outside the no-rows case, where it still means "not this
+    rendering's job") and reads :data:`COVERAGE_NOT_COMPUTED_DETAIL`; the
+    dedicated ``GET /plan-library/scan-roots`` route passes ``False`` when the
+    CALLER itself opted out with ``?coverage=false``, and reads
+    :data:`COVERAGE_NOT_REQUESTED_DETAIL` instead — reusing the other string
+    there would tell the caller to read the very route it just asked to skip.
+
     ⚠️ Passing ``captured`` makes this function READ the two deferred census
     columns, so the observations must come from
     ``crud.plan_scan_root.list_observations_with_censuses``. On the deferred
@@ -873,6 +901,11 @@ def scan_roots_health(
     ``corpus_health`` path would run AFTER its savepoint has exited and take
     down every list page rather than degrading.
     """
+    not_computed_detail = (
+        COVERAGE_NOT_COMPUTED_DETAIL
+        if coverage_requested
+        else COVERAGE_NOT_REQUESTED_DETAIL
+    )
     rows = [render_row(obs, now=now) for obs in observations]
     if not rows:
         return ScanRootListResponse(
@@ -887,7 +920,7 @@ def scan_roots_health(
             coverage_detail=(
                 COVERAGE_NO_OBSERVATION_DETAIL
                 if captured is not None
-                else COVERAGE_NOT_COMPUTED_DETAIL
+                else not_computed_detail
             ),
         )
     rollups = rollup_by_source_repo(rows)
@@ -913,5 +946,5 @@ def scan_roots_health(
         # With rows, the roll-up is non-empty and so is the coverage list
         # whenever it was computed at all — so an empty one here means only
         # that this rendering does not compute it, and says so.
-        coverage_detail=None if coverage else COVERAGE_NOT_COMPUTED_DETAIL,
+        coverage_detail=None if coverage else not_computed_detail,
     )
