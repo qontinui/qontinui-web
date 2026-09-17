@@ -165,7 +165,11 @@ function response(
   overrides: Partial<ScanRootListResponse> = {}
 ): ScanRootListResponse {
   return {
-    state: "measured",
+    // The LIST response's vocabulary is ["reported", "unknown"] — a coverage
+    // ENTRY's is ["measured", "unknown"], and the two are different enums on
+    // different models. `measured` here is a shape the route cannot emit, and
+    // this file's own contract is that every fixture is one it can.
+    state: "reported",
     detail: null,
     fresh_within_secs: 2700,
     count: 1,

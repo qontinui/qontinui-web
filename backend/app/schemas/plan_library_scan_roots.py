@@ -246,6 +246,16 @@ class PlanSlugCensus(BaseModel):
         if self.slugs is None:
             # A withheld set is re-asserted by its digest alone; nothing below
             # is decidable without the stems.
+            #
+            # ⚠️ ``count`` and ``truncated`` therefore arrive UNVERIFIED on
+            # this arm, and the upsert stores them beside the carried-forward
+            # stems. They cannot be checked here — the set they describe is
+            # not in this payload — so the reader derives the truncation flag
+            # from the stems it holds instead (``PlanCensusSide.truncated``).
+            # Without that, a device could re-assert a 2-stem set by digest,
+            # claim ``count: 9999, truncated: false``, and have a coverage
+            # entry read ``measured`` with the difference taken over 2 stems
+            # under a denominator of 9999.
             return self
         if len(set(self.slugs)) != len(self.slugs):
             duplicates = sorted({s for s in self.slugs if self.slugs.count(s) > 1})[:5]
@@ -665,16 +675,27 @@ class PlanCensusSide(BaseModel):
     ref_age_secs: int | None
     #: How many stems the device ENUMERATED on this side -- exact, and not
     #: bounded by :data:`SLUG_CENSUS_MAX`. Exceeds ``listed_count`` exactly
-    #: when ``truncated``.
+    #: when ``truncated``, which is ENFORCED rather than asserted: see that
+    #: field.
     count: int
-    #: How many stems it actually SENT, and therefore how many the set
-    #: difference was taken over.
+    #: How many stems this server actually HOLDS for the side, and therefore
+    #: how many the set difference was taken over.
     listed_count: int
-    #: ``True`` when the device had more than :data:`SLUG_CENSUS_MAX` stems and
-    #: sent the sorted prefix. The set is then a floor in the sense
-    #: ``counts_are_floors`` already means -- membership proves existence,
-    #: absence proves nothing -- so the entry reads ``unknown`` rather than
-    #: serving differences taken over a prefix.
+    #: ``True`` when the side is a FLOOR: the device had more than
+    #: :data:`SLUG_CENSUS_MAX` stems and sent the sorted prefix, **or** its
+    #: ``count`` disagrees with the stems stored for it. The second arm is not
+    #: hypothetical -- a census that withholds its stems (``slugs: null``,
+    #: re-asserting a set by digest) skips :meth:`PlanSlugCensus.
+    #: _census_is_coherent`'s count/truncation checks entirely, so ``count``
+    #: and ``truncated`` arrive unverified and are stored beside the
+    #: CARRIED-FORWARD stems. The reader derives this flag from the stems it
+    #: verified rather than from the flag it did not, which is what keeps the
+    #: invariant above true on the wire.
+    #:
+    #: The set is then a floor in the sense ``counts_are_floors`` already
+    #: means -- membership proves existence, absence proves nothing -- so the
+    #: entry reads ``unknown`` rather than serving differences taken over a
+    #: prefix.
     truncated: bool
     #: ``sha256`` over the sorted, newline-joined stems as sent
     #: (:func:`slug_census_digest`). What a reader re-derives to confirm the
@@ -705,6 +726,30 @@ class PlanCoverage(BaseModel):
     ``observation_fresh``, ``counts_are_floors``, ``ref_sha`` -- so a reader
     never has to join this block to ``by_source_repo`` to know whether the
     numbers mean anything. No second vocabulary is minted for coverage.
+
+    ⚠️ **What a ``measured`` entry does NOT establish: that the two sides
+    agree about what ``source_repo`` MEANS.** The join is on that string
+    exactly, and it is written independently on the two sides -- the device
+    reports it on its reading, the artifact upsert stores it on every row. The
+    scanner's form is two components (``<repo>/<dir relative to the repo
+    root>``, e.g. ``qontinui-dev-notes/plans``); a hand-``POST``ed row under
+    the bare ``qontinui-dev-notes`` is a DIFFERENT key. So a device reporting
+    a key the corpus spells differently is measured with perfect confidence
+    and reads ``captured: 0``, ``authored_not_captured`` equal to every stem
+    that exists, and ``both: 0`` -- the shape of a total capture failure.
+
+    **This is deliberately not given an arm of its own**, because no rule here
+    can tell a form mismatch from a genuinely uncaptured source: both are "the
+    corpus holds no row under this key", and inventing a fuzzy match would
+    reintroduce exactly the near-miss folding that
+    ``out_of_scope_artifact_count`` exists to forbid. What the entry does
+    instead is SERVE THE TELL: on a mismatch, ``out_of_scope_artifact_count``
+    is the whole plan corpus (every row is under some other key), which beside
+    a zero ``captured`` is the signature to read. A genuinely uncaptured
+    source shows the same zero beside an out-of-scope count that accounts only
+    for OTHER keys' rows. A reader seeing ``captured: 0`` with an out-of-scope
+    count at or near the organization's plan-row total should compare the two
+    spellings before concluding the sync is broken.
     """
 
     #: The scan source these numbers are about, in the artifact upsert's

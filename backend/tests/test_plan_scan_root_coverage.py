@@ -28,44 +28,67 @@ What is asserted, and why each is a separate claim
    production reading (56 plan rows against 55 authored stems = 101.8%) made
    unconstructible from what is served.
 4. **UNKNOWN is first-class and never a zero.** No census, a truncated census,
-   and an unnamed ``source_repo`` each read ``state: "unknown"`` with their own
-   ``detail`` and EVERY number null — and the key is still emitted, because an
-   omitted key reads as "no such scan source".
+   a census whose stored shape is partial or corrupt, a census re-asserted by
+   digest while claiming a ``count`` it did not send, and an unnamed
+   ``source_repo`` each read ``state: "unknown"`` with their own ``detail`` and
+   EVERY number null — and the key is still emitted, because an omitted key
+   reads as "no such scan source".
 5. **A silent or contradicted device's census is not used**, by the same rule
    its counts are not: it establishes nothing about now.
 6. **The freshest ref wins, deterministically, and the others are named.**
 7. **The honesty vocabulary is carried onto the entry**, not left to be joined
    out of ``by_source_repo``.
 8. **Design decision D2**: coverage is computed on the dedicated route only.
-   The ``corpus_health`` rendering leaves it empty *with a stated reason*, and
-   the route reads the observations through the CENSUS-LOADING crud function —
-   the deferred one would raise ``MissingGreenlet`` on a stem.
+   Asserted from BOTH sides, because each can regress alone: the route reads
+   the observations through the CENSUS-LOADING crud function (the deferred one
+   would raise ``MissingGreenlet`` on a stem), and the ``corpus_health``
+   rendering leaves the block empty *with a stated reason* while touching
+   neither the corpus side nor the census-loading read.
+9. **The corpus side is read at ONE snapshot.** Two statements on one session
+   are two READ COMMITTED snapshots, and a plan row inserted between them made
+   a key's captured set exceed the organization's whole plan-row count — which
+   the entry served as a NEGATIVE ``out_of_scope_artifact_count`` on a
+   ``measured`` verdict. Pinned structurally, on the number of statements,
+   because no fixture can reproduce a race.
 
 Each rule was mutation-proved when written: dropping ``- visible`` from the
 attribution (fails 1), emitting ``captured / authored`` as a field (fails 2),
 counting every plan row as the numerator instead of the key's own (fails 3's
 ``captured``/``out_of_scope`` pair), serving 0 instead of null on a missing
 census (fails 4), omitting a key with no census (fails 4's key list), accepting
-a truncated census (fails 4's truncation case), dropping ``observation_fresh``
-or ``last_report_applied`` from the usable filter (fails 5), sorting an unknown
-``ref_age_secs`` as 0 (fails 6), copying the census device's ``behind`` in
-place of the roll-up's ``min_behind`` (fails 7), and passing ``captured`` from
-the corpus-health path (fails 8).
+a truncated census (fails 4's truncation case), taking a side's ``truncated``
+from the device's flag instead of deriving it from the stems the server holds
+(fails 4's withheld-count case), dropping the three stored-shape checks from
+``_census_with_stems`` (fails 4's partial-census cases), dropping
+``observation_fresh`` or ``last_report_applied`` from the usable filter (fails
+5), sorting an unknown ``ref_age_secs`` as 0 (fails 6), copying the census
+device's ``behind`` in place of the roll-up's ``min_behind`` (fails 7),
+passing ``captured`` from the corpus-health path (fails 8), and splitting the
+corpus side back into a count statement and a stem statement (fails 9).
+
+Rule 1's case carries a further property worth stating: **every number in it
+is distinct** (8, 6, 7, 3, 5, 4, 2), so transposing any two fields in the
+builder fails it. It did not always: ``captured``, ``both`` and
+``authored_not_captured`` were all 2, and a ``captured``/``both``
+transposition left the case green.
 """
 
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
-from typing import Any
+from types import SimpleNamespace
+from typing import Any, NamedTuple
 from uuid import UUID, uuid4
 
 import pytest
+from sqlalchemy.dialects import postgresql
 
-from app.crud.work_artifact import CapturedPlanCorpus
+from app.crud.work_artifact import CapturedPlanCorpus, captured_plan_corpus
 from app.models.plan_scan_root import PlanScanRootObservation
 from app.schemas.plan_library_scan_roots import (
     COVERAGE_MISSING_SAMPLE_MAX,
     PlanCoverage,
+    PlanSlugCensus,
     slug_census_digest,
 )
 from app.services.plan_scan_root_health import (
@@ -186,13 +209,46 @@ def _stems(*names: str) -> list[str]:
 
 class TestTheSetDifference:
     def test_the_two_denominators_and_the_attribution(self) -> None:
-        # Four plans exist at the ref. The scanned tree is behind and holds
-        # only three of them. The corpus captured two.
-        authored = _stems("01-alpha", "02-beta", "03-gamma", "04-delta")
-        visible = _stems("01-alpha", "02-beta", "03-gamma")
+        """Every number here is DISTINCT, so a transposition cannot pass.
+
+        The earlier shape of this case had ``captured``, ``both`` and
+        ``authored_not_captured`` all equal to 2, which left it green under
+        any transposition of the three — the same permutation-blindness the
+        frontend fixture was already fixed for. The eight authored stems, six
+        visible, seven captured below give seven pairwise-distinct readings
+        (8, 6, 7, 3, 5, 4, 2), and the sample is asserted by CONTENT as well,
+        so swapping two fields fails on the value and not only on a count.
+        """
+        # Eight plans exist at the ref. The scanned tree is behind and holds
+        # six of them. The corpus captured seven rows under this key — three
+        # of the authored stems, plus four whose stem is not at the ref.
+        authored = _stems(
+            "01-alpha",
+            "02-beta",
+            "03-gamma",
+            "04-delta",
+            "05-epsilon",
+            "06-zeta",
+            "07-eta",
+            "08-theta",
+        )
+        visible = _stems(
+            "01-alpha",
+            "02-beta",
+            "03-gamma",
+            "04-delta",
+            "05-epsilon",
+            "06-zeta",
+        )
+        captured = _stems("01-alpha", "02-beta", "03-gamma") + _stems(
+            "00-retired-one",
+            "00-retired-two",
+            "00-retired-three",
+            "00-retired-four",
+        )
         entry = _only(
             [_obs(authored=authored, visible=visible)],
-            _corpus(under_key=_stems("01-alpha", "02-beta")),
+            _corpus(under_key=captured),
         )
 
         assert entry.state == "measured"
@@ -200,19 +256,36 @@ class TestTheSetDifference:
         assert entry.authored_at_ref is not None
         assert entry.visible_to_scanner is not None
         # Denominator 1: what EXISTS. Denominator 2: what the sync could see.
-        assert (entry.authored_at_ref.count, entry.visible_to_scanner.count) == (4, 3)
+        assert (entry.authored_at_ref.count, entry.visible_to_scanner.count) == (8, 6)
         assert entry.authored_at_ref.source == "ref"
         assert entry.visible_to_scanner.source == "work_tree"
-        assert entry.captured == 2
-        assert entry.both == 2
-        assert entry.captured_not_authored == 0
-        assert entry.authored_not_captured == 2
-        # gamma is in the tree and was not captured -> a real capture gap.
-        # delta is not in the tree at all -> checkout freshness.
-        assert entry.authored_not_captured_but_invisible == 1
-        assert entry.authored_not_captured - entry.authored_not_captured_but_invisible == 1
-        assert entry.missing_sample == sorted(_stems("03-gamma", "04-delta"))
+        assert entry.captured == 7
+        assert entry.both == 3
+        assert entry.captured_not_authored == 4
+        assert entry.authored_not_captured == 5
+        # delta, epsilon and zeta are in the tree and were not captured -> a
+        # real capture gap. eta and theta are not in the tree at all ->
+        # checkout freshness.
+        assert entry.authored_not_captured_but_invisible == 2
+        assert (
+            entry.authored_not_captured - entry.authored_not_captured_but_invisible == 3
+        )
+        assert entry.missing_sample == sorted(
+            _stems("04-delta", "05-epsilon", "06-zeta", "07-eta", "08-theta")
+        )
         assert entry.sample_truncated is False
+        # Stated once, so a future edit that re-flattens the case fails here
+        # rather than silently restoring the permutation blindness.
+        readings = [
+            entry.authored_at_ref.count,
+            entry.visible_to_scanner.count,
+            entry.captured,
+            entry.both,
+            entry.authored_not_captured,
+            entry.captured_not_authored,
+            entry.authored_not_captured_but_invisible,
+        ]
+        assert len(set(readings)) == len(readings), readings
 
     def test_a_captured_stem_absent_from_the_ref_is_named_not_subtracted(self) -> None:
         """A plan deleted or renamed upstream is not a coverage defect."""
@@ -230,7 +303,9 @@ class TestTheSetDifference:
         assert entry.authored_at_ref.count == 1
 
     def test_the_missing_sample_is_capped_and_says_so(self) -> None:
-        authored = [f"2026-09-{i:04d}-plan" for i in range(COVERAGE_MISSING_SAMPLE_MAX + 7)]
+        authored = [
+            f"2026-09-{i:04d}-plan" for i in range(COVERAGE_MISSING_SAMPLE_MAX + 7)
+        ]
         entry = _only(
             [_obs(authored=authored, visible=authored)],
             _corpus(under_key=[]),
@@ -384,9 +459,7 @@ class TestUnknownIsFirstClass:
         read as a capture defect when it may be pure checkout freshness.
         """
         stems = _stems("01-a", "02-b")
-        obs = (
-            _obs(visible=stems) if missing == "ref" else _obs(authored=stems)
-        )
+        obs = _obs(visible=stems) if missing == "ref" else _obs(authored=stems)
         entry = _only([obs], _corpus(under_key=[]))
 
         _assert_establishes_nothing(entry)
@@ -419,6 +492,84 @@ class TestUnknownIsFirstClass:
         # which box to look at.
         assert entry.census_device_id == obs.device_id
         assert entry.observation_fresh is True
+
+    def test_a_withheld_census_cannot_claim_a_count_it_did_not_send(self) -> None:
+        """The write door verifies the digest and NOT the count. The reader does.
+
+        ``PlanSlugCensus._census_is_coherent`` returns early on ``slugs is
+        None``, so a census that re-asserts its set by digest carries an
+        unvalidated ``count`` and ``truncated``. The upsert's carry-forward arm
+        then stores those two beside the STORED stems, and this is the row that
+        lands: two carried stems, ``count: 9999``, ``truncated: false``.
+
+        Without the reader-side derivation that is a ``measured`` entry whose
+        ``authored_at_ref.count`` says 9999 while the difference was taken over
+        2 stems — and every authored stem past the prefix would read as
+        ``captured_not_authored``, which is the exact shape of the impossible
+        101.8%.
+        """
+        carried = _stems("01-a", "02-b")
+        # Exactly what the device may POST today: the schema accepts it.
+        wire = PlanSlugCensus(
+            source="ref",
+            ref_sha=REF,
+            digest=slug_census_digest(carried),
+            count=9999,
+            truncated=False,
+            slugs=None,
+        )
+        assert wire.count == 9999 and wire.truncated is False
+
+        # And exactly what ``_resolved_census`` arm 3 stores for it: the
+        # device's unvalidated count and flag, beside the carried-forward set.
+        stored = {
+            "source": "ref",
+            "ref_sha": REF,
+            "count": wire.count,
+            "digest": wire.digest,
+            "slugs": sorted(carried),
+            "truncated": wire.truncated,
+        }
+        entry = _only(
+            [_obs(visible=carried, ref_census=stored, ref_census_digest=wire.digest)],
+            _corpus(under_key=carried),
+        )
+
+        _assert_establishes_nothing(entry)
+        assert entry.detail is not None
+        assert entry.detail.startswith("census_truncated:")
+        assert "ref" in entry.detail
+
+    @pytest.mark.parametrize("key", ["count", "truncated", "digest"])
+    def test_a_census_missing_a_field_degrades_instead_of_raising(
+        self, key: str
+    ) -> None:
+        """A partial stored census is UNKNOWN, not a 500.
+
+        ``_census_side`` reads ``count``, ``truncated`` and ``digest`` with
+        ``[]``. A stored dict missing one used to raise ``KeyError`` out of the
+        route while every sibling absence in the module degraded to an
+        ``unknown`` entry.
+        """
+        obs = _obs(authored=_stems("01-a"), visible=_stems("01-a"))
+        assert obs.ref_census is not None
+        obs.ref_census = {k: v for k, v in obs.ref_census.items() if k != key}
+
+        entry = _only([obs], _corpus(under_key=_stems("01-a")))
+
+        _assert_establishes_nothing(entry)
+        assert entry.detail is not None
+        assert entry.detail.startswith("no_census:")
+
+    def test_a_census_whose_count_is_not_a_number_degrades(self) -> None:
+        """``true`` is not the number 1: a corrupt count establishes nothing."""
+        obs = _obs(authored=_stems("01-a"), visible=_stems("01-a"))
+        assert obs.ref_census is not None
+        obs.ref_census = {**obs.ref_census, "count": True}
+
+        entry = _only([obs], _corpus(under_key=_stems("01-a")))
+
+        _assert_establishes_nothing(entry)
 
     def test_the_null_source_repo_group_is_unknown_with_its_own_detail(self) -> None:
         stems = _stems("01-a")
@@ -469,7 +620,10 @@ class TestUnknownIsFirstClass:
             [named, bare, unnamed],
             now=NOW,
             captured=CapturedPlanCorpus(
-                slugs_by_source_repo={SOURCE: frozenset(stems), OTHER_SOURCE: frozenset()},
+                slugs_by_source_repo={
+                    SOURCE: frozenset(stems),
+                    OTHER_SOURCE: frozenset(),
+                },
                 plan_row_count=1,
             ),
         )
@@ -652,9 +806,7 @@ class TestTheRouteReadsTheStems:
                 "the coverage route must not use the census-DEFERRED read"
             )
 
-        async def _loading(
-            _db: Any, *, org_id: Any
-        ) -> list[PlanScanRootObservation]:
+        async def _loading(_db: Any, *, org_id: Any) -> list[PlanScanRootObservation]:
             asked["org_id"] = org_id
             return observations
 
@@ -678,3 +830,198 @@ class TestTheRouteReadsTheStems:
         assert response.coverage[0].captured == 1
         assert response.coverage[0].authored_not_captured == 1
         assert response.coverage_detail is None
+
+    async def test_corpus_health_computes_no_coverage_at_all(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """D2's OTHER half, where it can actually regress.
+
+        The guarantee is not only that ``scan_roots_health`` leaves
+        ``coverage`` empty when ``captured`` is omitted — it is that the
+        ``corpus_health`` path never PAYS for coverage: it must not read the
+        corpus side at all, and it must take the census-DEFERRED read, because
+        a stem touched after its savepoint has exited raises
+        ``MissingGreenlet`` and takes down every list page rather than
+        degrading.
+
+        Both are asserted by making the forbidden calls fail. The observations
+        below are fresh and carry both stem listings, so a regression that
+        passed ``captured`` through would produce a ``measured`` entry here —
+        the assertion on the empty block would catch it even if the two
+        monkeypatched refusals were somehow satisfied.
+        """
+        from app.api.v1.endpoints import plan_library as page
+
+        live = datetime.now(UTC)
+        stems = _stems("01-a", "02-b")
+        observations = [
+            _obs(
+                authored=stems,
+                visible=stems,
+                observed_at=live,
+                received_at=live,
+                last_report_observed_at=live,
+            )
+        ]
+        took: list[str] = []
+
+        async def _capture_health(_db: Any, *, org_id: Any) -> list[Any]:
+            return []
+
+        async def _deferred(_db: Any, *, org_id: Any) -> list[PlanScanRootObservation]:
+            took.append("list_observations")
+            return observations
+
+        async def _loading(*_a: Any, **_kw: Any) -> list[PlanScanRootObservation]:
+            raise AssertionError(
+                "corpus_health must take the census-DEFERRED read: the stem "
+                "columns are never rendered here and loading them charges "
+                "every list page for a block it does not serve"
+            )
+
+        async def _captured(*_a: Any, **_kw: Any) -> Any:
+            raise AssertionError(
+                "corpus_health must not read the corpus side — D2: coverage "
+                "is computed on GET /plan-library/scan-roots ONLY"
+            )
+
+        monkeypatch.setattr(page.crud, "capture_health", _capture_health)
+        monkeypatch.setattr(page.crud, "captured_plan_corpus", _captured)
+        monkeypatch.setattr(page.scan_root_crud, "list_observations", _deferred)
+        monkeypatch.setattr(
+            page.scan_root_crud, "list_observations_with_censuses", _loading
+        )
+
+        health = await page._load_corpus_health(_NoSavepointSession(), org_id=None)
+
+        assert took == ["list_observations"]
+        assert health.scan_roots.coverage == []
+        # Empty AND explained — an unexplained empty block is the false zero
+        # this phase deletes.
+        assert health.scan_roots.coverage_detail == COVERAGE_NOT_COMPUTED_DETAIL
+        # The readings themselves still render, so the block is not degraded.
+        assert health.scan_roots.count == 1
+
+
+class _NoSavepointSession:
+    """Just enough ``AsyncSession`` for ``_load_corpus_health``'s savepoint.
+
+    Every real call it would make is monkeypatched, so the session only has to
+    supply ``begin_nested()`` as an async context manager.
+    """
+
+    def begin_nested(self) -> _NoSavepointSession:
+        return self
+
+    async def __aenter__(self) -> _NoSavepointSession:
+        return self
+
+    async def __aexit__(self, *_exc: Any) -> bool:
+        return False
+
+
+class _CorpusRow(NamedTuple):
+    """One row of the single corpus statement — the total on every one of them."""
+
+    plan_row_count: int
+    source_repo: str | None
+    slug: str | None
+
+
+class _OneStatementSession:
+    """Records every ``execute`` and answers each with the same rows."""
+
+    def __init__(self, rows: list[_CorpusRow]) -> None:
+        self.rows = rows
+        self.statements: list[Any] = []
+
+    async def execute(self, statement: Any) -> Any:
+        self.statements.append(statement)
+        return SimpleNamespace(all=lambda: self.rows)
+
+
+@pytest.mark.asyncio
+class TestTheCorpusSideIsOneSnapshot:
+    """The corpus side is read at ONE snapshot, so it cannot tear.
+
+    Under the default READ COMMITTED isolation two statements on one session
+    get two snapshots. The corpus side used to be exactly that — an org-wide
+    ``COUNT(*) WHERE kind = 'plan'`` and then a per-key stem select — and the
+    runner's body sync inserts plan rows continuously (a ~68 s cycle, in bulk
+    on a first-start backfill). A row landing between the two made the key's
+    stem set LARGER than the organization's whole plan-row count, and the
+    coverage entry then served
+    ``out_of_scope_artifact_count = plan_row_count - len(captured)`` as a
+    NEGATIVE number on a ``measured`` verdict. The panel renders it verbatim.
+
+    It is fixed at the source rather than clamped: ``max(0, ...)`` converts an
+    impossible number into a plausible wrong one, which is the zero-conflation
+    this whole feature deletes.
+    """
+
+    async def test_both_facts_come_from_one_statement(self) -> None:
+        db = _OneStatementSession(
+            [
+                _CorpusRow(56, SOURCE, "2026-09-01-a"),
+                _CorpusRow(56, SOURCE, "2026-09-02-b"),
+            ]
+        )
+
+        corpus = await captured_plan_corpus(db, org_id=None, source_repos=[SOURCE])
+
+        # THE assertion. Two statements are two snapshots; this fails against
+        # the count-then-select version whatever the rows say.
+        assert len(db.statements) == 1
+        assert corpus.plan_row_count == 56
+        assert corpus.slugs_by_source_repo == {
+            SOURCE: frozenset({"2026-09-01-a", "2026-09-02-b"})
+        }
+        # The property the negative reading violated.
+        assert corpus.plan_row_count >= len(corpus.slugs_by_source_repo[SOURCE])
+
+    async def test_the_total_survives_a_key_with_no_rows(self) -> None:
+        """The LEFT JOIN's no-match row still carries the count.
+
+        This is why the total is not a second statement and not an aggregate
+        over the returned sets: an organization whose every plan row sits
+        under ANOTHER key is exactly when ``out_of_scope_artifact_count``
+        matters, and summing the sets would answer 0.
+        """
+        db = _OneStatementSession([_CorpusRow(56, None, None)])
+
+        corpus = await captured_plan_corpus(db, org_id=None, source_repos=[SOURCE])
+
+        assert len(db.statements) == 1
+        assert corpus.plan_row_count == 56
+        # Present with an EMPTY set — "asked for, holds none" — not absent.
+        assert corpus.slugs_by_source_repo == {SOURCE: frozenset()}
+
+    async def test_no_key_asked_for_still_reads_the_total(self) -> None:
+        db = _OneStatementSession([_CorpusRow(56, None, None)])
+
+        corpus = await captured_plan_corpus(db, org_id=None, source_repos=[])
+
+        assert len(db.statements) == 1
+        assert corpus.plan_row_count == 56
+        assert corpus.slugs_by_source_repo == {}
+
+    async def test_the_statement_is_a_left_join_that_keeps_the_aggregate(
+        self,
+    ) -> None:
+        """Compiled against Postgres, because no database is reachable here.
+
+        The single-snapshot property rests on the join TYPE: an inner join
+        would drop the aggregate's row whenever no stem matched, and the total
+        would silently go missing in the one case it matters most.
+        """
+        db = _OneStatementSession([_CorpusRow(0, None, None)])
+        await captured_plan_corpus(db, org_id=None, source_repos=[SOURCE])
+
+        sql = str(
+            db.statements[0].compile(
+                dialect=postgresql.dialect(),
+                compile_kwargs={"literal_binds": True},
+            )
+        )
+        assert "LEFT OUTER JOIN" in sql
+        assert "plan_row_total" in sql

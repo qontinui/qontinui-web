@@ -74,6 +74,7 @@ from sqlalchemy import (
     or_,
     select,
     text,
+    true,
 )
 from sqlalchemy.dialects.postgresql import ARRAY
 from sqlalchemy.exc import IntegrityError
@@ -1265,10 +1266,31 @@ async def captured_plan_corpus(
     query is the expensive half (the fleet's corpus is ~1800 plan rows), and a
     key nobody can measure against needs no set.
 
-    ``plan_row_count`` is counted over the WHOLE organization in a separate,
-    aggregate-only statement, so it stays correct when ``source_repos`` is
-    empty — which is exactly the case where an out-of-scope count matters most
-    and a caller deriving the total by summing the returned sets would get 0.
+    ``plan_row_count`` is counted over the WHOLE organization, so it stays
+    correct when ``source_repos`` is empty — which is exactly the case where
+    an out-of-scope count matters most and a caller deriving the total by
+    summing the returned sets would get 0.
+
+    ⚠️ **Both facts come from ONE statement, and that is a correctness
+    requirement rather than a round-trip saving.** The two used to be separate
+    ``execute`` calls on one session, and under the default READ COMMITTED
+    isolation each got its OWN snapshot. The runner's body sync inserts plan
+    rows continuously (a ~68 s cycle, and in bulk on a first-start backfill),
+    so a row landing between the two reads made
+    ``len(slugs_by_source_repo[key])`` exceed ``plan_row_count`` — and the
+    caller's ``plan_row_count - len(captured)`` then served a NEGATIVE
+    ``out_of_scope_artifact_count`` on a ``measured`` coverage entry, with
+    "captured" larger than every plan row the organization has. That is the
+    same class of impossible number (the 101.8%) this whole feature exists to
+    make unconstructible, so it is fixed at the source rather than clamped:
+    ``max(0, ...)`` would turn an impossible number into a plausible wrong one
+    and hide the torn read entirely.
+
+    The single statement is a ``count(*)`` CTE LEFT JOINed to the stem select
+    ``ON true``. The join preserves the aggregate's one row when no stem
+    matches (including when ``source_repos`` is empty), so the total is always
+    present, and both facts are read at one snapshot by construction rather
+    than by isolation level.
 
     Matching is on ``source_repo`` EXACTLY, including case: it is the
     scanner's own two-component form (``<repo>/<dir relative to the repo
@@ -1277,29 +1299,50 @@ async def captured_plan_corpus(
     """
     wanted = sorted(set(source_repos))
 
-    total = (
-        await db.execute(
-            select(func.count())
-            .select_from(WorkArtifact)
-            .where(_org_scope(org_id), WorkArtifact.kind == "plan")
+    total_cte = (
+        select(func.count().label("plan_row_count"))
+        .select_from(WorkArtifact)
+        .where(_org_scope(org_id), WorkArtifact.kind == "plan")
+        .cte("plan_row_total")
+    )
+    stems = (
+        select(
+            WorkArtifact.source_repo.label("source_repo"),
+            WorkArtifact.slug.label("slug"),
         )
-    ).scalar_one()
-
-    slugs: dict[str, set[str]] = {key: set() for key in wanted}
-    if wanted:
-        stmt = select(WorkArtifact.source_repo, WorkArtifact.slug).where(
+        .where(
             _org_scope(org_id),
             WorkArtifact.kind == "plan",
+            # An empty ``wanted`` renders as a false constant, so the join
+            # contributes no rows and the aggregate's row survives alone.
             WorkArtifact.source_repo.in_(wanted),
         )
-        for row in (await db.execute(stmt)).all():
-            # ``source_repo`` cannot be NULL here — ``IN`` never matches one —
-            # so the bucket always exists.
+        .subquery("captured_stems")
+    )
+    stmt = select(
+        total_cte.c.plan_row_count,
+        stems.c.source_repo,
+        stems.c.slug,
+    ).select_from(total_cte.outerjoin(stems, true()))
+
+    rows = (await db.execute(stmt)).all()
+    if not rows:  # pragma: no cover — ``count(*)`` always yields exactly one row
+        raise RuntimeError(
+            "captured_plan_corpus read no rows: a count(*) aggregate always "
+            "yields one, and the LEFT JOIN preserves it. Returning 0 here "
+            "would publish an unmeasured total as a measured one."
+        )
+
+    slugs: dict[str, set[str]] = {key: set() for key in wanted}
+    for row in rows:
+        # ``source_repo`` is NULL only on the join's no-match row — ``IN``
+        # never matches a NULL key — so the bucket always exists.
+        if row.source_repo is not None:
             slugs[row.source_repo].add(row.slug)
 
     return CapturedPlanCorpus(
         slugs_by_source_repo={key: frozenset(value) for key, value in slugs.items()},
-        plan_row_count=int(total),
+        plan_row_count=int(rows[0].plan_row_count),
     )
 
 
