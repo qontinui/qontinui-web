@@ -118,14 +118,16 @@ def _patch_httpx():
 
 def _recording(order, name, mock):
     """A ``side_effect`` that logs ``name`` into ``order``, then behaves the
-    way ``mock`` was configured (its original ``side_effect`` exception, or
-    its ``return_value``)."""
+    way ``mock`` was configured: its original ``side_effect`` exception or
+    function, else its ``return_value``."""
     original = mock.side_effect
 
     def _call(*args, **kwargs):
         order.append(name)
         if isinstance(original, BaseException):
             raise original
+        if callable(original):
+            return original(*args, **kwargs)
         return mock.return_value
 
     return _call
@@ -477,7 +479,7 @@ class TestAddTenantMemberByEmail:
             "role": "operator",
         }
         r.create.assert_called_once_with("new@x.io")
-        # Addressed by pool Username alone: Cognito sends to the STORED email.
+        # Addressed by pool Username alone — no attributes on a RESEND.
         r.send.assert_called_once_with("new@x.io")
         # Account first (it mints the sub), grant second, email LAST: an
         # invitation must never go out for access that was then refused.
@@ -581,16 +583,80 @@ class TestAddTenantMemberByEmail:
             )
 
         assert r.resp.status_code == 403
+        r.create.assert_called_once()
         r.send.assert_not_called()
         get_client.assert_not_called()
 
-    def test_a_retry_after_a_refused_grant_converges(self):
-        r = self._post_with(resolver=MagicMock(return_value=self._pending("kept")))
+    def test_a_retry_after_a_refused_grant_converges_on_the_same_account(self):
+        """Two requests against one pool: the first creates and is refused,
+        the second finds that account pending and completes it — same sub,
+        no second account."""
+        made = self._pending(username="kept", sub="s-kept")
+        pool: list = []
 
-        assert r.resp.status_code == 200
-        assert r.resp.json()["status"] == "invited"
-        r.create.assert_not_called()
-        r.send.assert_called_once_with("kept")
+        def resolve(_email):
+            return pool[0] if pool else None
+
+        def create(_email):
+            pool.append(made)
+            return made
+
+        refusal = _mock_response(
+            status_code=403, json_data={"error": "not_admin_in_target_tenant"}
+        )
+        first = self._post_with(
+            resolver=MagicMock(side_effect=resolve),
+            create=MagicMock(side_effect=create),
+            coord=[_mock_response(json_data={"operator_id": "op-k"}), refusal],
+        )
+        second = self._post_with(
+            resolver=MagicMock(side_effect=resolve),
+            create=MagicMock(side_effect=create),
+            coord=[
+                _mock_response(json_data={"operator_id": "op-k"}),
+                _mock_response(json_data={"ok": True}),
+            ],
+        )
+
+        assert first.resp.status_code == 403
+        assert second.resp.status_code == 200
+        assert second.resp.json()["status"] == "invited"
+        second.create.assert_not_called()
+        assert len(pool) == 1
+        upserted = second.coord.post.call_args_list[0].kwargs["json"]["sso_subject"]
+        assert upserted == "s-kept"
+        second.send.assert_called_once_with("kept")
+
+    def test_a_race_that_finds_two_accounts_is_409(self):
+        from app.services.cognito_admin import (
+            CognitoAmbiguousEmailError,
+            CognitoUserExistsError,
+        )
+
+        r = self._post_with(
+            resolver=MagicMock(side_effect=[None, CognitoAmbiguousEmailError("two")]),
+            create=MagicMock(side_effect=CognitoUserExistsError("exists")),
+        )
+
+        assert r.resp.status_code == 409
+        r.coord.post.assert_not_called()
+        r.send.assert_not_called()
+
+    def test_an_address_cognito_rejects_on_create_is_400(self):
+        from app.services.cognito_admin import CognitoInvalidParameterError
+
+        r = self._post_with(
+            resolver=MagicMock(return_value=None),
+            create=MagicMock(
+                side_effect=CognitoInvalidParameterError(
+                    "Invalid email address format."
+                )
+            ),
+        )
+
+        assert r.resp.status_code == 400
+        assert "Invalid email address format" in str(r.resp.json())
+        r.coord.post.assert_not_called()
 
     def test_a_new_account_and_its_coord_row_are_lowercase(self):
         resolver = MagicMock(return_value=None)

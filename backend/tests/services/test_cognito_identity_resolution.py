@@ -264,9 +264,9 @@ class TestItStillRaisesOnAmbiguity:
 class TestMalformedPoolRows:
     def test_a_user_with_no_sub_raises_rather_than_reading_as_absent(self, paging):
         """A pool row without its own primary key is a broken upstream. The
-        one answer that must NOT come back is ``None``: the route turns that
-        into an invitation, creating a second account for a colleague the
-        pool just returned."""
+        one answer that must NOT come back is ``None``: for a superuser the
+        route turns that into an invitation, creating a second account for a
+        colleague the pool just returned."""
         paging([{"Users": [{"Username": "u1", "Attributes": []}]}])
 
         with pytest.raises(CognitoAdminError, match="no 'sub' attribute"):

@@ -1013,8 +1013,9 @@ type AddMemberOutcome =
 /**
  * ONE form for the one thing an administrator comes to this page to do: give a
  * colleague access. Two inputs — an email and a tier — and the backend decides
- * whether that email already has an account (add them now) or does not
- * (`invited`: the account is created, the tier granted, then the email sent).
+ * whether that email already has an account (add them now) or does not. For
+ * one that does not, a superuser gets `invited` (the account is created, the
+ * tier granted, then the email sent) and a tenant admin gets `invite_required`.
  *
  * ## Why there is no "group" field (plan Design decision 1)
  *
@@ -1057,12 +1058,14 @@ type AddMemberOutcome =
  *
  * ## Why the outcome is inline and not only a toast
  *
- * Two of the three arms are not one-liners. `invited` has to say what the
- * invitee will receive, that access starts only once they sign in with it, and
- * how to recover an invitation that never arrived or expired — adding them
- * again re-sends it. A toast that disappears in four seconds is the wrong host
- * for that, so the arm renders into a notice that stays until the next submit.
- * Toasts still fire for every success arm, matching the rest of this page.
+ * Three of the outcomes are not one-liners. `invited` has to say what the
+ * invitee will receive and how to recover an invitation that never arrived;
+ * `invitation_pending` has to say the account is not activated without
+ * claiming an email exists (the backend cannot tell sent from never-sent);
+ * `invite_required` has to say nothing happened and who can invite. A toast
+ * that disappears in four seconds is the wrong host for that, so each renders
+ * into a notice that stays until the next submit. Toasts still fire for every
+ * success arm, matching the rest of this page.
  */
 function AddTenantMemberForm({ onAdded }: { onAdded: () => void }) {
   const [email, setEmail] = useState("");
@@ -1246,10 +1249,10 @@ function AddTenantMemberForm({ onAdded }: { onAdded: () => void }) {
                 Granted {tierLabel(outcome.role)} access to {outcome.email}.
               </p>
               <p className="text-xs text-muted-foreground">
-                They have a Qontinui invitation they have not accepted yet, so
-                they can use this access once they sign in with the temporary
-                password from that email. Only a Qontinui administrator can
-                send a new invitation.
+                Their Qontinui account has not been activated yet, so they can
+                use this access once they sign in for the first time. If they
+                have no invitation email, or it has expired, ask a Qontinui
+                administrator to add them again, which sends a new one.
               </p>
             </div>
           ) : (
