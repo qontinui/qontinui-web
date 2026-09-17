@@ -40,7 +40,9 @@ vi.mock("../_hooks/usePlanLibrary", () => ({
 
 import {
   PlanCoveragePanel,
+  ageLabel,
   capturedNotAuthoredSentence,
+  censusQualificationSentence,
   coverageKey,
   coverageStateLabel,
   denominatorSentence,
@@ -75,7 +77,18 @@ function side(overrides: Partial<PlanCensusSide> = {}): PlanCensusSide {
   };
 }
 
-/** A `measured` entry, in the shape `coverage_for_source` builds. */
+/**
+ * A `measured` entry, in the shape `coverage_for_source` builds.
+ *
+ * **Every count is a DIFFERENT integer, deliberately.** With the three
+ * rendered numbers all `2`, the assertions below pass under any permutation
+ * of `both` / `authored_not_captured` / `captured` — and a transposition is
+ * precisely the defect this panel cannot afford. These satisfy the backend's
+ * own arithmetic, so they are a shape it can really emit:
+ * `captured = |captured_slugs| = 4`, `both = |captured ∩ authored| = 3`,
+ * `captured_not_authored = 4 - 3 = 1`, `authored_not_captured = 5 - 3 = 2`
+ * against an authored side of 5, and `missing_sample` holds those 2.
+ */
 function measured(overrides: Partial<PlanCoverage> = {}): PlanCoverage {
   return {
     source_repo: SOURCE,
@@ -84,18 +97,18 @@ function measured(overrides: Partial<PlanCoverage> = {}): PlanCoverage {
     device_count: 1,
     census_device_id: DEVICE,
     other_census_device_ids: [],
-    authored_at_ref: side(),
+    authored_at_ref: side({ count: 5, listed_count: 5 }),
     visible_to_scanner: side({
       source: "work_tree",
       ref_sha: null,
-      count: 3,
-      listed_count: 3,
+      count: 4,
+      listed_count: 4,
       digest: "9ef6",
     }),
-    captured: 2,
-    both: 2,
+    captured: 4,
+    both: 3,
     authored_not_captured: 2,
-    captured_not_authored: 0,
+    captured_not_authored: 1,
     authored_not_captured_but_invisible: 1,
     out_of_scope_artifact_count: 3,
     missing_sample: ["2026-09-03-gamma", "2026-09-04-delta"],
@@ -194,21 +207,23 @@ describe("PlanCoveragePanel — the three numbers", () => {
     const counts = screen.getByTestId(`plan-coverage-counts:${KEY}`);
     expect(
       within(counts).getByTestId(`plan-coverage-both:${KEY}`)
-    ).toHaveTextContent(/At the ref and captured\s*2/);
+    ).toHaveTextContent(/At the ref and captured\s*3/);
     expect(
       within(counts).getByTestId(`plan-coverage-missing:${KEY}`)
     ).toHaveTextContent(/At the ref, not captured\s*2/);
+    // The three integers are distinct, so a transposition of the fields
+    // behind them fails here instead of passing silently.
     expect(
       within(counts).getByTestId(`plan-coverage-extra:${KEY}`)
-    ).toHaveTextContent(/Captured, not at the ref\s*0/);
+    ).toHaveTextContent(/Captured, not at the ref\s*1/);
   });
 
   it("names BOTH denominators, and says which side each is", () => {
     mountWith([measured()]);
     const line = screen.getByTestId(`plan-coverage-denominators:${KEY}`);
-    expect(line).toHaveTextContent("4 stems exist at the ref");
+    expect(line).toHaveTextContent("5 stems exist at the ref");
     expect(line).toHaveTextContent(
-      "3 stems were visible in the working tree the body sync scans"
+      "4 stems were visible in the working tree the body sync scans"
     );
   });
 
@@ -247,8 +262,8 @@ describe("PlanCoveragePanel — the percentage rule", () => {
     );
     expect(everythingElse).not.toContain("%");
     // And the one that IS allowed says which side it is over.
-    expect(denominators).toHaveTextContent("50.0% of THAT side");
-    expect(denominators).toHaveTextContent("not a share of the 3");
+    expect(denominators).toHaveTextContent("60.0% of THAT side");
+    expect(denominators).toHaveTextContent("not a share of the 4");
   });
 
   it("states that the permitted share cannot exceed 100%", () => {
@@ -264,6 +279,9 @@ describe("PlanCoveragePanel — the percentage rule", () => {
       both: 0,
       authored_not_captured: 0,
       authored_not_captured_but_invisible: 0,
+      // With nothing at the ref, every captured row is captured-not-authored.
+      captured_not_authored: 4,
+      missing_sample: [],
     });
     expect(denominatorSentence(entry)).toContain("no share to state");
     expect(denominatorSentence(entry)).toContain("0 of 0 is not full coverage");
@@ -284,8 +302,11 @@ describe("PlanCoveragePanel — the percentage rule", () => {
     // denominator from another, which is the original defect in miniature.
     const entry = measured({
       authored_at_ref: side({ count: 10, listed_count: 4 }),
+      both: 3,
+      authored_not_captured: 1,
+      missing_sample: ["2026-09-03-gamma"],
     });
-    expect(denominatorSentence(entry)).toContain("50.0%");
+    expect(denominatorSentence(entry)).toContain("75.0%");
     expect(denominatorSentence(entry)).toContain("4 stems exist at the ref");
   });
 });
@@ -429,9 +450,16 @@ describe("PlanCoveragePanel — the missing sample", () => {
   });
 
   it("renders nothing when nothing is missing", () => {
+    // Internally consistent: nothing missing means `both` EQUALS the authored
+    // side. Leaving it at 3 of 5 renders "The corpus holds 3 of the 5 that
+    // exist" beside "Every stem ... is in the corpus" — two sentences that
+    // cannot both be true, in a fixture claiming to be the backend's shape.
     mountWith([
       measured({
         missing_sample: [],
+        both: 5,
+        captured: 6,
+        captured_not_authored: 1,
         authored_not_captured: 0,
         authored_not_captured_but_invisible: 0,
       }),
@@ -510,7 +538,10 @@ describe("the sentence builders", () => {
     );
     expect(sentence).toContain("Not a coverage defect");
     expect(sentence).toContain("never subtracted");
-    expect(capturedNotAuthoredSentence(measured())).toBeNull();
+    // Absent entirely when the two sides agree — a 0 here is not worth a line.
+    expect(
+      capturedNotAuthoredSentence(measured({ captured_not_authored: 0 }))
+    ).toBeNull();
   });
 
   it("says every row is in scope when none is out of it", () => {
@@ -525,9 +556,18 @@ describe("the sentence builders", () => {
       "not established"
     );
     expect(distanceSentence(measured({ min_behind: null }))).not.toContain("0");
+    // A FLOOR of 0 is unreachable by construction: `rollup_source` nulls BOTH
+    // `min_behind` and `min_behind_is_floor` on a zero floor, because "at
+    // least 0 behind" establishes nothing. So the floor arm is pinned at a
+    // distance the backend can actually report.
     expect(
-      distanceSentence(measured({ min_behind: 0, min_behind_is_floor: true }))
-    ).toContain("at least 0 behind");
+      distanceSentence(measured({ min_behind: 7, min_behind_is_floor: true }))
+    ).toContain("at least 7 behind");
+    expect(
+      distanceSentence(
+        measured({ min_behind: null, min_behind_is_floor: null })
+      )
+    ).toContain("not established");
   });
 
   it("names BOTH shas when the census and the reading disagree", () => {
@@ -579,5 +619,230 @@ describe("the sentence builders", () => {
     expect(coverageKey(null)).toBe("null");
     expect(coverageKey("null")).toBe("repo=null");
     expect(coverageKey(SOURCE)).toBe(KEY);
+  });
+});
+
+/**
+ * The rounding hedge. A share is the panel's ONE permitted number, so the two
+ * ends of its range are the two places it can still assert something false —
+ * and `toFixed(1)` asserts both of them.
+ */
+describe("the share never rounds into a claim it cannot make", () => {
+  function shareOf(both: number, authored: number): string {
+    return (
+      denominatorSentence(
+        measured({
+          both,
+          authored_at_ref: side({ count: authored, listed_count: authored }),
+          authored_not_captured: authored - both,
+          authored_not_captured_but_invisible: 0,
+          missing_sample: [],
+        })
+      ) ?? ""
+    );
+  }
+
+  it("does not round an incomplete corpus up to 100%", () => {
+    const sentence = shareOf(9999, 10000);
+    // `toFixed(1)` gives "100.0%" here — full coverage, printed beside a
+    // missing count of 1, inside a sentence asserting it cannot exceed 100%.
+    expect(sentence).toContain(">99.9% of THAT side");
+    expect(sentence).not.toContain("100.0%");
+  });
+
+  it("does not round a non-empty overlap down to 0%", () => {
+    const sentence = shareOf(1, 10000);
+    // `toFixed(1)` gives "0.0%" — the corpus holds some and this says none.
+    expect(sentence).toContain("<0.1% of THAT side");
+    expect(sentence).not.toContain("0.0%");
+  });
+
+  it("keeps 100% and 0% for the EXACT cases, so they stay load-bearing", () => {
+    expect(shareOf(5, 5)).toContain("100% of THAT side");
+    expect(shareOf(5, 5)).not.toContain(">99.9%");
+    expect(shareOf(0, 5)).toContain("0% of THAT side");
+    expect(shareOf(0, 5)).not.toContain("<0.1%");
+  });
+});
+
+/**
+ * A measured verdict is NECESSARY but not sufficient for printing a number.
+ * Every count is independently nullable on the wire, so the counts have to be
+ * gated on the denominators actually being there.
+ */
+describe("counts never render without a denominator named", () => {
+  it("suppresses the counts when a census side is missing", () => {
+    mountWith([measured({ visible_to_scanner: null })]);
+    // Three integers with no denominator anywhere is the claim this panel
+    // deletes; three "-" badges with no sentence is the empty-panel shape.
+    expect(
+      screen.queryByTestId(`plan-coverage-counts:${KEY}`)
+    ).not.toBeInTheDocument();
+    const line = screen.getByTestId(
+      `plan-coverage-denominators-unserved:${KEY}`
+    );
+    expect(line).toHaveTextContent("no stem listing for one or both sides");
+    expect(line).toHaveTextContent("not 0 captured and not full coverage");
+  });
+
+  it("suppresses them when the overlap itself was not served", () => {
+    mountWith([measured({ both: null })]);
+    expect(
+      screen.queryByTestId(`plan-coverage-counts:${KEY}`)
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByTestId(`plan-coverage-denominators-unserved:${KEY}`)
+    ).toBeInTheDocument();
+  });
+
+  it("MUTATION: with both sides served, the counts come back", () => {
+    mountWith([measured()]);
+    expect(
+      screen.getByTestId(`plan-coverage-counts:${KEY}`)
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByTestId(`plan-coverage-denominators-unserved:${KEY}`)
+    ).not.toBeInTheDocument();
+  });
+});
+
+/** Every age here is a server-computed delta frozen at fetch time. */
+describe("the ages are stamped with the moment they were read", () => {
+  it("renders a read-at stamp beside the entries", () => {
+    mountWith([measured()]);
+    expect(screen.getByTestId("plan-coverage-read-at")).toHaveTextContent(
+      "the ages above are as of then"
+    );
+  });
+
+  it("renders one on the no-coverage branch too", () => {
+    usePlanCoverageMock.mockReturnValue({
+      data: response([]),
+      fetchedAt: new Date(),
+      loading: false,
+      error: null,
+      reload: vi.fn(),
+    });
+    render(<PlanCoveragePanel />);
+    expect(screen.getByTestId("plan-coverage-read-at")).toBeInTheDocument();
+  });
+
+  it("renders none when the hook has no fetch time", () => {
+    usePlanCoverageMock.mockReturnValue({
+      data: response([measured()]),
+      fetchedAt: null,
+      loading: false,
+      error: null,
+      reload: vi.fn(),
+    });
+    render(<PlanCoveragePanel />);
+    expect(
+      screen.queryByTestId("plan-coverage-read-at")
+    ).not.toBeInTheDocument();
+  });
+
+  it("never reads a null freshness as SILENT", () => {
+    // `!null` is `false`, so a two-valued read asserts the device went quiet
+    // off a field that established nothing.
+    expect(ageLabel(measured({ observation_fresh: null }))).toBe(
+      "reading 30s old; freshness not established"
+    );
+    expect(ageLabel(measured())).toBe("heard 30s ago");
+    expect(ageLabel(measured({ observation_fresh: false }))).toBe("silent 30s");
+    expect(ageLabel(measured({ observation_age_secs: null }))).toBeNull();
+  });
+});
+
+/**
+ * The distance is about the least-behind feeder; the numbers are about the
+ * device with the freshest ref. With more than one device those are routinely
+ * different boxes, and two figures side by side read as one.
+ */
+describe("the census device is not the device the distance is about", () => {
+  it("says so when more than one device feeds the source", () => {
+    const sentence = censusQualificationSentence(measured({ device_count: 3 }));
+    expect(sentence).toContain("freshest ref");
+    expect(sentence).toContain("not necessarily that feeder");
+  });
+
+  it("renders the census device's own floor qualification", () => {
+    // `counts_are_floors` is otherwise the one served field nothing renders.
+    expect(
+      censusQualificationSentence(measured({ counts_are_floors: true }))
+    ).toContain("lower bounds");
+    expect(censusQualificationSentence(measured())).toBeNull();
+  });
+
+  it("puts it on the panel beside the distance", () => {
+    mountWith([measured({ device_count: 2, counts_are_floors: true })]);
+    expect(
+      screen.getByTestId(`plan-coverage-distance:${KEY}`)
+    ).toHaveTextContent("lower bounds");
+  });
+});
+
+describe("a response with no coverage FIELD at all", () => {
+  it("renders the unknown sentence rather than throwing", () => {
+    // A backend predating Phase 3, or a front/back deploy skew. Reading
+    // `.length` off `undefined` takes down the whole route segment.
+    const full = response([]);
+    const withoutCoverage = { ...full, coverage_detail: null } as Omit<
+      ScanRootListResponse,
+      "coverage"
+    > &
+      Partial<Pick<ScanRootListResponse, "coverage">>;
+    delete withoutCoverage.coverage;
+    usePlanCoverageMock.mockReturnValue({
+      data: withoutCoverage,
+      fetchedAt: new Date(),
+      loading: false,
+      error: null,
+      reload: vi.fn(),
+    });
+    expect(() => render(<PlanCoveragePanel />)).not.toThrow();
+    expect(screen.getByTestId("plan-coverage-none")).toHaveTextContent(
+      "no reason was given"
+    );
+  });
+});
+
+describe("refSentence attributes the age to the ref it belongs to", () => {
+  it("does not hang the reading's age on the census sha", () => {
+    // `_census_side` copies `ref_age_secs` from the READING, so in the one
+    // branch where the two shas disagree the age is about the reported ref.
+    const entry = measured({ ref_sha: "bbb2222" });
+    const sentence = refSentence(entry, entry.authored_at_ref) ?? "";
+    expect(sentence).toContain(
+      "Differenced against aaa1111, whose own age at that reading was not reported"
+    );
+    expect(sentence).toContain(
+      "reported ref bbb2222, which was 2m old at that reading"
+    );
+  });
+
+  it("keeps the simple form when the two agree", () => {
+    const entry = measured();
+    expect(refSentence(entry, entry.authored_at_ref)).toBe(
+      "Differenced against aaa1111. It was 2m old at that reading."
+    );
+  });
+});
+
+describe("notEstablishedSentence lower-cases prose and nothing else", () => {
+  it("leaves an identifier, sha or acronym alone", () => {
+    for (const opening of ["SHA aaa1111 was", "POST failed", "aaa1111 was"]) {
+      const sentence = notEstablishedSentence(
+        unknown({ detail: `future_reason: ${opening} unreadable` })
+      );
+      expect(sentence).toContain(`because ${opening} unreadable`);
+    }
+  });
+
+  it("lower-cases an ordinary capitalised word", () => {
+    expect(
+      notEstablishedSentence(
+        unknown({ detail: "future_reason: Nothing was sent" })
+      )
+    ).toContain("because nothing was sent");
   });
 });
