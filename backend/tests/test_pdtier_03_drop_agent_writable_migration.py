@@ -73,13 +73,13 @@ from tests._alembic_harness import (
 # (#1216) — which LANDED, and did not help, because `main` moved three further
 # revisions past it before this PR could follow.
 #
-# Consequence: until #1272 lands, this pin names a revision that exists in no
-# tree, so alembic cannot build its revision map and the harness tests below are
-# RED BY CONSTRUCTION — along with `alembic-heads-pr` and Spec CI's
-# `Run database migrations`. They clear together, with no further edit, as the
-# revisions ahead land.
+# 2026-09-17: re-pointed onto `coord_agent_worktrees_credentialed_at_01`,
+# `origin/main`'s single live head. The revisions this pin used to chain behind
+# have all landed, so the old parent `oplog_age_idx_01` is on `main` but is no
+# longer the head — which forks the chain exactly as a never-landed parent does.
+# See the matching comment on `down_revision` in the revision module.
 _REVISION_ID = "pdtier_03"
-_PARENT_REVISION_ID = "oplog_age_idx_01"
+_PARENT_REVISION_ID = "coord_agent_worktrees_credentialed_at_01"
 _REVISION_FILENAME = "pdtier_03_drop_agent_writable.py"
 
 _PARENT_TABLE = "prompt_documents"

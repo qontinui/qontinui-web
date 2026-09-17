@@ -153,29 +153,37 @@ revision: str = "pdtier_03"
 # which must be re-verified against whatever coord is live when it lands; last
 # position gives that the longest runway without holding four peers' PRs.
 #
-# Separately, and NOT fixed by this re-point: `coord-column-drop-guard` is red
-# on its own terms here - `scripts/ci/check_coord_column_drops.py` cannot
-# statically resolve the templated `ALTER TABLE {table}` below and wants a
-# module-level `COORD_SCHEMA_DROPS` declaration. That is an independent defect,
-# not a fork symptom, and it is deliberately left to this PR's author.
+# 2026-09-17 RE-POINT. The paragraph that stood here said "do NOT re-point at
+# the live head; that dissolves the chain and restores the five-way fork", and
+# it was correct on the day it was written. Its stated precondition has since
+# been met, so it no longer applies: every revision that chain was serialising
+# has landed. `oplog_age_idx_01` is on `origin/main` (commit `fa5002c70`, which
+# carried #1272 and was merged as #1350), as are `policy_rules_tombstone_01` and
+# the rest. There is no five-way fork left to restore, and no dangling parent to
+# protect against - the parent now EXISTS on `main`, it is simply no longer the
+# head, because `coord_agent_worktrees_credentialed_at_01` landed on top of it.
 #
-# Until #1272 lands the parent named exists in no tree, so alembic cannot build
-# its revision map here at all (`KeyError: 'oplog_age_idx_01'`). That reds MORE
-# than the head counter, and for THIS PR the extra reds are new: before this
-# re-point the parent was on `main`, so only the head COUNT was wrong. Now
-# `alembic-heads-pr`, Spec CI's `Run database migrations` (`alembic upgrade
-# heads`) and the `_needs_pg` harness tests go red TOGETHER, BY CONSTRUCTION,
-# and go green together, with no further edit, as the four ahead of it land.
-# (`migration-reversal.yml` is unaffected: it detects the unresolvable-parent
-# shape and skips-and-passes.) That red is the safety property: it is
-# what stops an out-of-order land leaving `main` with a dangling
-# `down_revision`. Do NOT "fix" it by re-pointing at the live head; that
-# dissolves the chain and restores the five-way fork.
+# A parent that has landed but is no longer the head forks the chain exactly as
+# a never-landed one does, which is why `alembic-heads-pr` reported
+# HEAD_COUNT=2 (`coord_agent_worktrees_credentialed_at_01` + `pdtier_03`). The
+# same two heads are also what red the five `Run Tests` shards: every
+# `alembic upgrade head` in the `_needs_pg` harness exits 255 because alembic
+# refuses to disambiguate. One re-point clears both.
+#
+# This revision still deliberately wants LAST position - it is the only one here
+# that drops a column or can `RAISE EXCEPTION` mid-upgrade, and the only one
+# gated on a DEPLOY precondition (its last reader must be gone from the deployed
+# coord build; see the docstring), which must be re-verified against whatever
+# coord is live when it lands. qontinui-web #1387 (`coord_overlap_detections`)
+# is the other open revision pointing at this same parent, and alembic's
+# single-head invariant is a TOTAL ORDER, so only one of the two can land
+# unchanged. If #1387 lands first this revision re-forks and re-points onto
+# `coord_overlap_detections`; that is the expected, and preferred, order.
 #
 # A re-point here is THREE edits, not one: this assignment, this comment, and
 # `_PARENT_REVISION_ID` in `backend/tests/test_pdtier_03_drop_agent_writable_migration.py`,
 # whose first test asserts the two agree.
-down_revision: str | Sequence[str] | None = "oplog_age_idx_01"
+down_revision: str | Sequence[str] | None = "coord_agent_worktrees_credentialed_at_01"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
@@ -186,6 +194,28 @@ _TABLES = ("coord.prompt_documents", "coord.prompt_document_versions")
 
 _LEGACY_COLUMN = "agent_writable"
 _TIER_COLUMN = "agent_write_tier"
+
+# `coord-column-drop-guard` reads DROP/RENAME sites statically and cannot resolve
+# the one that matters here: the `ALTER TABLE {table} DROP COLUMN IF EXISTS
+# {legacy}` inside `_RECONCILE_AND_DROP`, whose table and column arrive through
+# `.format()` at call time (`upgrade()`, the `for table in _TABLES` loop). An
+# unresolvable DROP site is a VIOLATION on its own terms, so the surfaces this
+# revision removes are declared here instead. They are exactly the cross-product
+# of `_TABLES` and `_LEGACY_COLUMN` above, which is what the gate cross-checks
+# them against.
+#
+# Declaring ACTIVATES the gate's manifest phase, and that is the point rather
+# than a cost: the phase asks coord's own `GET /coord/schema/read-surfaces`
+# whether any deployed or on-`main` coord build still READS these two columns.
+# That is precisely the DEPLOY precondition this revision's docstring states in
+# prose and that nothing has so far checked mechanically — the last reader must
+# be gone from the live coord build before the column goes. Both halves of that
+# manifest were served non-null when this declaration was added (2026-09-17), so
+# the phase can decide rather than abstain.
+COORD_SCHEMA_DROPS: list[tuple[str, str]] = [
+    ("prompt_documents", "agent_writable"),
+    ("prompt_document_versions", "agent_writable"),
+]
 
 # `pdaw_01`'s comment bodies, restored by `downgrade()` with the column so the
 # catalog reads the same as it did before this revision took them with the DROP.
