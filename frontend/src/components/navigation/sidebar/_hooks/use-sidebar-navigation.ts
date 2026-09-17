@@ -49,6 +49,25 @@ const WEB_ADVANCED_IDS = new Set<string>([
   "observations",
 ]);
 
+// WEB_REMOVED_SHARED_IDS — shared-registry items web never shows, whatever
+// the advanced toggle says.
+//
+// - `prompt-home` ("Home", the co-pilot command surface) is hidden for now.
+//   The route stays registered; removing the id brings the menu entry back.
+// - `ai-dev-coordination` routes to /admin/coord, whose sections are already
+//   the web-local Coord menu — listing it again would be a duplicate.
+// - `runners` and `sessions` are replaced by web-local items with the same
+//   routes, placed in the Fleet and Sessions sections.
+//
+// Filtered here rather than in @qontinui/navigation: that package is shared
+// with the runner, where these items are all still wanted.
+const WEB_REMOVED_SHARED_IDS = new Set<string>([
+  "prompt-home",
+  "ai-dev-coordination",
+  "runners",
+  "sessions",
+]);
+
 export function useSidebarNavigation() {
   const router = useRouter();
   const pathname = usePathname();
@@ -96,7 +115,9 @@ export function useSidebarNavigation() {
   const allItems = useMemo(() => {
     setProductMode(productMode);
     setShowHiddenItems(showAdvancedAutomation);
-    const shared = getWebNavItems();
+    const shared = getWebNavItems().filter(
+      (item) => !WEB_REMOVED_SHARED_IDS.has(item.id)
+    );
     // Cloud-deployment entries (Organizations, Billing). `@cloud/nav-items`
     // is resolved at BUILD time — the real module in a composed cloud build,
     // an empty array in an OSS one (next.config.mjs's `@cloud` alias) — so
@@ -104,7 +125,17 @@ export function useSidebarNavigation() {
     // They join `devNavItems` rather than the shared registry because
     // @qontinui/navigation is published to npm and shared with the runner,
     // which has no cloud surface at all.
-    const local = [...devNavItems, ...cloudNavItems];
+    //
+    // Both belong to the visual-automation menu: an organization groups
+    // automation projects and collaborators and has no relationship to a
+    // coord tenant (the sidebar's Project selector), and billing is billed per
+    // organization. Tagged here rather than in cloud-control so the product
+    // mode — a web concept — stays decided in web.
+    const visualCloudItems = cloudNavItems.map((item) => ({
+      ...item,
+      productMode: "visual" as const,
+    }));
+    const local = [...devNavItems, ...visualCloudItems];
     // Insert them before SYSTEM so mode-specific items appear above
     // Settings/Help. Admin goes after SYSTEM (always last).
     const systemIdx = shared.findIndex((item) => item.group === "SYSTEM");
@@ -127,7 +158,10 @@ export function useSidebarNavigation() {
 
   const isRouteActive = useCallback(
     (route: string, item: NavItem): boolean => {
-      const checkRouteMatch = (routeToCheck: string): boolean => {
+      const checkRouteMatch = (
+        routeToCheck: string,
+        matchPrefix = false
+      ): boolean => {
         if (routeToCheck.includes("?")) {
           const [basePath, query] = routeToCheck.split("?");
           const queryParams = new URLSearchParams(query);
@@ -138,6 +172,12 @@ export function useSidebarNavigation() {
           const tabMatch = queryParams.get("tab") === currentParams.get("tab");
           return baseMatch && categoryMatch && tabMatch;
         } else {
+          if (matchPrefix) {
+            return (
+              pathname === routeToCheck ||
+              pathname.startsWith(routeToCheck + "/")
+            );
+          }
           const currentHasParams = searchParams.toString().length > 0;
           return pathname === routeToCheck && !currentHasParams;
         }
@@ -146,13 +186,15 @@ export function useSidebarNavigation() {
       if (item.children && item.children.length > 0) {
         return item.children.some(
           (child) =>
-            checkRouteMatch(child.route) ||
+            checkRouteMatch(child.route, child.matchPrefix) ||
             (child.children &&
-              child.children.some((gc) => checkRouteMatch(gc.route)))
+              child.children.some((gc) =>
+                checkRouteMatch(gc.route, gc.matchPrefix)
+              ))
         );
       }
 
-      return checkRouteMatch(route);
+      return checkRouteMatch(route, item.matchPrefix);
     },
     [pathname, searchParams]
   );
