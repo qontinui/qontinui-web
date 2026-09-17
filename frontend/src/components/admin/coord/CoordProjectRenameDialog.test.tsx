@@ -57,6 +57,7 @@ vi.mock("@qontinui/ui-bridge", () => ({
 import {
   CoordProjectRenameDialog,
   homeGroupHeadline,
+  isRenameOutcomeUnknown,
   renameErrorMessage,
   renameSlugProblem,
 } from "./CoordProjectRenameDialog";
@@ -326,22 +327,10 @@ describe("coord refusals — one sentence each", () => {
       "An SSO group mapping for this project changed at the same moment, so nothing was renamed. Try again.",
     ],
     [
-      "502 — the proxy never reached coord: not applied",
-      502,
-      { error: "coord_unreachable" },
-      "Coord could not be reached, so the rename was not applied. Try again.",
-    ],
-    [
-      "504 — coord did not answer in time: may have been applied",
-      504,
-      { error: "timeout" },
-      "Coord didn't answer in time, so the rename may have been applied. The project list was reloaded to check \u2014 look for the new name before trying again.",
-    ],
-    [
       "an unknown code is verbatim",
-      500,
+      400,
       { error: "something_new", message: "boom" },
-      "Could not rename the project (500): boom",
+      "Could not rename the project (400): boom",
     ],
   ];
 
@@ -535,6 +524,148 @@ describe("smaller contracts", () => {
   it("target_mapped has its own headline", () => {
     expect(homeGroupHeadline({ status: "target_mapped", detail: "" })).toBe(
       "Home group not moved \u2014 its new name is already mapped"
+    );
+  });
+});
+
+describe("5xx outcome honesty", () => {
+  /** The body the web proxy sends for a string detail, bare or enveloped. */
+  function proxyStringError(status: number, detail: string, envelope = false) {
+    const raw = envelope
+      ? JSON.stringify({
+          error: "BAD_GATEWAY",
+          message: detail,
+          timestamp: 1,
+          path: "http://x/api/v1/operations/tenants/t",
+        })
+      : JSON.stringify({ detail });
+    const parsed = parseTenantRenameError(raw);
+    return new TenantRenameError(
+      status,
+      parsed.code,
+      parsed.reason,
+      parsed.detail,
+      parsed.slug
+    );
+  }
+
+  const UNKNOWN = "__UNKNOWN__";
+
+  it.each([
+    [500, "coord blew up", UNKNOWN],
+    [503, "service unavailable", UNKNOWN],
+    [504, "timeout waiting for coord", UNKNOWN],
+    [
+      504,
+      "coord's answer was lost in transit (ReadError); the change may have been applied",
+      UNKNOWN,
+    ],
+    [502, "Bad Gateway", UNKNOWN],
+    [
+      502,
+      "coord is not reachable",
+      "Coord could not be reached, so the rename was not applied. Try again.",
+    ],
+  ])("%i %s", (status, detail, expected) => {
+    const err = proxyStringError(status, detail);
+    const want =
+      expected === UNKNOWN
+        ? "Coord didn't answer cleanly, so the rename may have been applied. The project list is being reloaded to check \u2014 look for the new name before trying again. No home-group move was attempted; check the Cognito groups panel if the short id did change."
+        : expected;
+    expect(renameErrorMessage(err)).toBe(want);
+    expect(isRenameOutcomeUnknown(err)).toBe(expected === UNKNOWN);
+  });
+
+  it("reads the proxy detail out of the PRODUCTION envelope too", () => {
+    const err = proxyStringError(502, "coord is not reachable", true);
+    expect(err.detail).toBe("coord is not reachable");
+    expect(isRenameOutcomeUnknown(err)).toBe(false);
+  });
+
+  it("reads coord's code and reason out of the production envelope", () => {
+    const raw = JSON.stringify({
+      error: "CONFLICT",
+      message: JSON.stringify({
+        error: "slug_pinned",
+        reason: "configured_default_tenant",
+      }),
+      timestamp: 1,
+      path: "http://x/api/v1/operations/tenants/t",
+    });
+    const parsed = parseTenantRenameError(raw);
+    expect(parsed.code).toBe("slug_pinned");
+    expect(parsed.reason).toBe("configured_default_tenant");
+  });
+
+  it("a 500 re-reads the tenant list like a 504", async () => {
+    const user = userEvent.setup();
+    renameTenantMock.mockRejectedValue(proxyStringError(500, "boom"));
+    const { onOutcomeUnknown } = renderDialog();
+    await user.clear(slugInput());
+    await user.type(slugInput(), "new-pizzeria");
+    await user.click(submitButton());
+    await screen.findByTestId("coord-tenant-rename-error");
+    expect(refreshMock).toHaveBeenCalledTimes(1);
+    expect(onOutcomeUnknown).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("a throwing onRenamed cannot turn a rename into a failure", () => {
+  it("still shows success in the dialog", async () => {
+    const user = userEvent.setup();
+    const onRenamed = vi.fn(() => {
+      throw new Error("caller bug");
+    });
+    renderDialog(onRenamed);
+    await user.clear(slugInput());
+    await user.type(slugInput(), "new-pizzeria");
+    await user.click(submitButton());
+
+    expect(
+      await screen.findByTestId("coord-tenant-rename-success")
+    ).toBeInTheDocument();
+    expect(onRenamed).toHaveBeenCalledTimes(1);
+    expect(screen.queryByTestId("coord-tenant-rename-error")).toBeNull();
+  });
+
+  it("still resolves the bridge action with the result", async () => {
+    const user = userEvent.setup();
+    const result = renameResult();
+    renameTenantMock.mockResolvedValue(result);
+    renderDialog(
+      vi.fn(() => {
+        throw new Error("caller bug");
+      })
+    );
+    await user.clear(slugInput());
+    await user.type(slugInput(), "new-pizzeria");
+    let resolved: unknown;
+    await act(async () => {
+      resolved = await renameAction().handler();
+    });
+    expect(resolved).toEqual(result);
+  });
+});
+
+describe("live regions are mounted before their messages", () => {
+  it("both problem regions exist, empty, while there is no problem", () => {
+    renderDialog();
+    const nameLive = screen.getByTestId("coord-tenant-rename-name-live");
+    const slugLive = screen.getByTestId("coord-tenant-rename-slug-live");
+    expect(nameLive).toHaveAttribute("aria-live", "polite");
+    expect(slugLive).toHaveAttribute("aria-live", "polite");
+    expect(nameLive.textContent).toBe("");
+    expect(slugLive.textContent).toBe("");
+  });
+
+  it("a problem renders INSIDE the pre-mounted region", async () => {
+    const user = userEvent.setup();
+    renderDialog();
+    const slugLive = screen.getByTestId("coord-tenant-rename-slug-live");
+    await user.clear(slugInput());
+    await user.type(slugInput(), "ab");
+    expect(slugLive).toContainElement(
+      screen.getByTestId("coord-tenant-rename-slug-problem")
     );
   });
 });

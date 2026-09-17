@@ -1230,6 +1230,18 @@ async def _proxy_coord_patch(
     own identity coord-side and resolves no home tenant web-side, so it
     needs the bearer without the resolution. Default False preserves the
     prior behavior exactly.
+
+    **502 means "not applied"; 504 means "unknown".** A PATCH is a write, so
+    the status has to say whether coord may have applied it:
+
+    * ``ConnectError`` → **502** ``coord is not reachable``: no connection was
+      made, so coord never saw the request. The only arm that is safe to
+      report as "nothing changed".
+    * a timeout, any OTHER transport failure after the request may have been
+      sent (``ReadError``, ``RemoteProtocolError`` — a load balancer cutting
+      the response), or a 2xx whose body is not JSON → **504**: coord may well
+      have committed, and only a re-read can tell. Before this, the last two
+      escaped as a bare 500.
     """
     url = f"{settings.COORD_URL}{path}"
     headers = (
@@ -1248,9 +1260,26 @@ async def _proxy_coord_patch(
                 status_code=504,
                 detail="timeout waiting for coord",
             )
+        except httpx.HTTPError as exc:
+            raise HTTPException(
+                status_code=504,
+                detail=(
+                    f"coord's answer was lost in transit ({type(exc).__name__}); "
+                    "the change may have been applied"
+                ),
+            ) from exc
     if resp.status_code >= 400:
         raise HTTPException(status_code=resp.status_code, detail=resp.text)
-    return resp.json()
+    try:
+        return resp.json()
+    except (json.JSONDecodeError, UnicodeDecodeError) as exc:
+        raise HTTPException(
+            status_code=504,
+            detail=(
+                f"coord answered {resp.status_code} with a body that is not "
+                "JSON; the change may have been applied"
+            ),
+        ) from exc
 
 
 async def _proxy_coord_put(

@@ -688,6 +688,49 @@ class TestRenameUserTenant:
         assert operations._TENANT_RENAME_RATE_LIMIT == "10 per minute"
 
 
+class TestRenameOutcomeHonesty:
+    """502 must mean "coord never saw it"; everything after the request may
+    have been sent is 504 — the rename may have been applied."""
+
+    def test_connect_error_is_502_not_reachable(self, client: TestClient):
+        with _patch_httpx() as MockClient:
+            instance = MagicMock()
+            instance.patch = AsyncMock(side_effect=httpx.ConnectError("refused"))
+            _configure_mock_client(MockClient, instance)
+            resp = _patch_rename(client, {"display_name": "X"})
+        assert resp.status_code == 502
+        assert resp.json()["detail"] == "coord is not reachable"
+
+    @pytest.mark.parametrize(
+        "exc",
+        [
+            httpx.ReadError("connection reset"),
+            httpx.RemoteProtocolError("server disconnected"),
+            httpx.ReadTimeout("slow"),
+        ],
+    )
+    def test_a_lost_answer_is_504(self, client: TestClient, exc: Exception):
+        with _patch_httpx() as MockClient:
+            instance = MagicMock()
+            instance.patch = AsyncMock(side_effect=exc)
+            _configure_mock_client(MockClient, instance)
+            resp = _patch_rename(client, {"display_name": "X"})
+        assert resp.status_code == 504
+
+    def test_a_non_json_2xx_is_504(self, client: TestClient):
+        import json
+
+        mock_resp = _mock_response(status_code=200, text="<html>ok</html>")
+        mock_resp.json.side_effect = json.JSONDecodeError("Expecting value", "", 0)
+        with _patch_httpx() as MockClient:
+            instance = MagicMock()
+            instance.patch = AsyncMock(return_value=mock_resp)
+            _configure_mock_client(MockClient, instance)
+            resp = _patch_rename(client, {"display_name": "X"})
+        assert resp.status_code == 504
+        assert "may have been applied" in resp.json()["detail"]
+
+
 class _FakeCognito:
     """Stands in for the four ``cognito_admin`` helpers the follow-through
     uses, recording every call — including any delete, which must never
@@ -769,12 +812,14 @@ def _run_rename_with_cognito(
     *,
     home_group_to_migrate: str = "my-pizzeria-home",
     blast_radius: Any = None,
+    drop_keys: tuple[str, ...] = (),
 ) -> tuple[Any, MagicMock]:
     from app.services import cognito_admin
 
-    mock_resp = _mock_response(
-        json_data=_rename_payload(home_group_to_migrate=home_group_to_migrate)
-    )
+    payload = _rename_payload(home_group_to_migrate=home_group_to_migrate)
+    for key in drop_keys:
+        payload.pop(key)
+    mock_resp = _mock_response(json_data=payload)
     audit = AsyncMock()
     radius = (
         blast_radius
@@ -990,3 +1035,18 @@ class TestRenameHomeGroupMigration:
         assert outcome["status"] == "failed"
         assert "was not created" in outcome["detail"]
         assert fake.created == []
+
+    def test_an_answer_without_previous_fails_closed(self, admin_client: TestClient):
+        """Without `previous`, `home_group_to_migrate` cannot be checked against
+        the old slug — so nothing is written on its say-so."""
+        fake = _FakeCognito(groups=["my-pizzeria-home"], members=self._MEMBERS)
+        resp, audit = _run_rename_with_cognito(
+            admin_client, fake, drop_keys=("previous",)
+        )
+
+        assert resp.status_code == 200
+        outcome = resp.json()["home_group_migration"]
+        assert outcome["status"] == "failed"
+        assert fake.list_calls == 0
+        assert fake.created == [] and fake.added == [] and fake.deleted == []
+        audit.assert_not_awaited()

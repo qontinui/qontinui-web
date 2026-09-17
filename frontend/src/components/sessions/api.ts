@@ -459,8 +459,16 @@ export function parseTenantCreateError(rawBody: string): {
  * The two-layer unwrap shared by every tenant write's error parser.
  *
  * Two envelopes, because there are two hops:
- *   1. FastAPI's `{ "detail": <x> }` from the web proxy's `HTTPException`;
- *   2. coord's own JSON, which arrives as a STRING inside that `detail`
+ *   1. the web proxy's `HTTPException`, in EITHER of its two shapes:
+ *      - FastAPI's bare `{ "detail": <x> }` (what a router mounted without
+ *        the app's handlers — every unit test — returns), or
+ *      - the app's standardized envelope `{ "error": <STATUS_CODE_NAME>,
+ *        "message": <x>, "timestamp", "path" }`, which is what production
+ *        serves: `app/main.py` registers `http_exception_handler` for every
+ *        route, and it moves a string `detail` into `message`. Reading only
+ *        `detail` would take the envelope's generic status token for coord's
+ *        code and never reach coord's body;
+ *   2. coord's own JSON, which arrives as a STRING inside that layer
  *      (the proxies pass `resp.text`, not `resp.json()`).
  *
  * `kind: "non_string"` is a detail that was not a string at all (a FastAPI 422
@@ -477,6 +485,17 @@ function unwrapProxiedCoordError(
     const outer: unknown = JSON.parse(rawBody);
     if (outer && typeof outer === "object" && "detail" in outer) {
       detail = (outer as { detail: unknown }).detail;
+    } else if (outer && typeof outer === "object") {
+      const envelope = outer as Record<string, unknown>;
+      // The production envelope — see above. `path` is what distinguishes it
+      // from coord's own `{error, message}` body arriving unwrapped.
+      if (
+        "error" in envelope &&
+        "path" in envelope &&
+        typeof envelope.message === "string"
+      ) {
+        detail = envelope.message;
+      }
     }
   } catch {
     // Not JSON at all — keep the raw text.
