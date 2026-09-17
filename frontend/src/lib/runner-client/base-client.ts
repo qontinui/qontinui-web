@@ -5,6 +5,11 @@
  * Sub-clients receive a BaseClient instance via constructor injection.
  */
 
+import {
+  describeRunnerOriginRefusal,
+  parseRunnerOriginRefusalText,
+} from "@/lib/runner/origin-refusal";
+
 // Default runner URL - can be overridden via environment variable
 // Use 127.0.0.1 instead of localhost to force IPv4 (runner only listens on IPv4)
 export const RUNNER_BASE_URL =
@@ -43,6 +48,16 @@ export class BaseClient {
 
       if (!response.ok) {
         const errorText = await response.text();
+        const refusal =
+          response.status === 403
+            ? parseRunnerOriginRefusalText(errorText)
+            : null;
+        if (refusal) {
+          return {
+            success: false,
+            error: describeRunnerOriginRefusal(refusal),
+          };
+        }
         return {
           success: false,
           error: `Command failed: ${response.status} - ${errorText}`,
