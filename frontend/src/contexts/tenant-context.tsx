@@ -45,6 +45,9 @@ export interface Tenant {
   id: string;
   slug: string;
   name: string;
+  /** The caller's roles in THIS tenant. Absent on a web backend that predates
+   *  plan `2026-09-17-tenant-rename` Phase C — treat absent as unknown. */
+  roles?: string[];
 }
 
 interface TenantContextValue {
@@ -60,6 +63,13 @@ interface TenantContextValue {
   error: string | null;
   /** Switch the active tenant id (persisted in localStorage). */
   setActiveTenantId: (id: string) => void;
+  /**
+   * Re-fetch `/tenants` in place. The list is otherwise fetched once on mount,
+   * so a write that changes a tenant's name or slug (the rename dialog) calls
+   * this instead of reloading the page. Resolves once the fetch settles; a
+   * failure lands in `error` exactly as the mount fetch's does.
+   */
+  refresh: () => Promise<void>;
 }
 
 const TenantContext = createContext<TenantContextValue | undefined>(undefined);
@@ -77,47 +87,49 @@ export function TenantProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  const load = useCallback(async (signal?: AbortSignal) => {
+    try {
+      const data: TenantListResponse = await listTenants(signal);
+      setTenants(data.tenants);
+
+      // Reconcile localStorage selection against the server's
+      // membership view. If the persisted id is not in the
+      // tenant list (e.g. operator was removed from the tenant),
+      // fall back to the server-side active_tenant_id.
+      setActiveTenantIdState((prev) => {
+        if (prev && data.tenants.some((t) => t.id === prev)) {
+          return prev;
+        }
+        // No prior selection or stale selection: use the server's
+        // hint. This is the "one-time forced selection on first
+        // multi-tenant launch" per plan §D12 — for now the
+        // server only knows one tenant per operator, so this is
+        // a no-op write.
+        if (typeof window !== "undefined") {
+          try {
+            localStorage.setItem(STORAGE_KEY, data.active_tenant_id);
+          } catch {
+            // ignore quota / private-mode errors
+          }
+        }
+        return data.active_tenant_id;
+      });
+      setError(null);
+    } catch (err) {
+      if ((err as { name?: string })?.name === "AbortError") return;
+      setError(err instanceof Error ? err.message : "failed to load tenants");
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
   useEffect(() => {
     const ctrl = new AbortController();
-    void (async () => {
-      try {
-        const data: TenantListResponse = await listTenants(ctrl.signal);
-        setTenants(data.tenants);
-
-        // Reconcile localStorage selection against the server's
-        // membership view. If the persisted id is not in the
-        // tenant list (e.g. operator was removed from the tenant),
-        // fall back to the server-side active_tenant_id.
-        setActiveTenantIdState((prev) => {
-          if (prev && data.tenants.some((t) => t.id === prev)) {
-            return prev;
-          }
-          // No prior selection or stale selection: use the server's
-          // hint. This is the "one-time forced selection on first
-          // multi-tenant launch" per plan §D12 — for now the
-          // server only knows one tenant per operator, so this is
-          // a no-op write.
-          if (typeof window !== "undefined") {
-            try {
-              localStorage.setItem(STORAGE_KEY, data.active_tenant_id);
-            } catch {
-              // ignore quota / private-mode errors
-            }
-          }
-          return data.active_tenant_id;
-        });
-        setError(null);
-      } catch (err) {
-        if ((err as { name?: string })?.name === "AbortError") return;
-        setError(
-          err instanceof Error ? err.message : "failed to load tenants"
-        );
-      } finally {
-        setLoading(false);
-      }
-    })();
+    void load(ctrl.signal);
     return () => ctrl.abort();
-  }, []);
+  }, [load]);
+
+  const refresh = useCallback(() => load(), [load]);
 
   const setActiveTenantId = useCallback((id: string) => {
     setActiveTenantIdState(id);
@@ -138,8 +150,9 @@ export function TenantProvider({ children }: { children: ReactNode }) {
       loading,
       error,
       setActiveTenantId,
+      refresh,
     }),
-    [tenants, activeTenantId, loading, error, setActiveTenantId]
+    [tenants, activeTenantId, loading, error, setActiveTenantId, refresh]
   );
 
   return (

@@ -289,7 +289,13 @@ export interface RegisteredReposResponse {
 
 /** Wire shape from `GET /api/v1/operations/tenants`. */
 export interface TenantListResponse {
-  tenants: { id: string; slug: string; name: string }[];
+  /**
+   * `roles` is the caller's roles IN THAT tenant (coord's per-tenant
+   * `tenants[].roles`, never a union). Optional because a web backend that
+   * predates plan `2026-09-17-tenant-rename` Phase C does not send it —
+   * absent means UNKNOWN, and a control gated on it must stay hidden.
+   */
+  tenants: { id: string; slug: string; name: string; roles?: string[] }[];
   active_tenant_id: string;
 }
 
@@ -312,6 +318,51 @@ export interface TenantCreateResponse {
   tenant_id: string;
   slug: string;
   display_name: string;
+}
+
+/**
+ * Body for `PATCH /api/v1/operations/tenants/{tenant_id}` — a partial rename
+ * (plan `2026-09-17-tenant-rename`). Send only the fields that CHANGED: an
+ * absent field is left alone, and a display-name-only rename never pays
+ * coord's slug validation. The slug is canonical-or-refused — coord never
+ * slugifies it on the caller's behalf.
+ */
+export interface TenantRenameRequest {
+  display_name?: string;
+  slug?: string;
+}
+
+/** What the web backend did with the tenant's `<old-slug>-home` Cognito group
+ *  after a slug change (D5). Never a delete. */
+export type HomeGroupMigrationStatus =
+  | "migrated"
+  | "requires_superuser"
+  | "target_exists"
+  | "absent"
+  | "failed";
+
+export interface HomeGroupMigration {
+  status: HomeGroupMigrationStatus;
+  detail: string;
+  old_group?: string;
+  new_group?: string;
+  members_copied?: number;
+}
+
+/**
+ * Success body from `PATCH /api/v1/operations/tenants/{tenant_id}` — coord's
+ * answer forwarded verbatim, plus `home_group_migration` whenever coord named a
+ * `home_group_to_migrate` (i.e. on a slug change).
+ */
+export interface TenantRenameResponse {
+  tenant_id: string;
+  slug: string;
+  display_name: string | null;
+  previous: { slug: string; display_name: string | null };
+  changed: boolean;
+  group_mappings_moved: number;
+  home_group_to_migrate: string | null;
+  home_group_migration?: HomeGroupMigration;
 }
 
 /** A single claim from `coord.claims`. */

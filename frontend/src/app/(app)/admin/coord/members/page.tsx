@@ -136,6 +136,10 @@ import {
   rowAccentProps,
   type Stat,
 } from "@/components/console";
+import {
+  CoordProjectRenameDialog,
+  type RenameTarget,
+} from "@/components/admin/coord/CoordProjectRenameDialog";
 import { deriveMemberStatus, MEMBER_STATUS_PALETTE } from "./memberStatus";
 
 const log = createLogger("CoordMembersPage");
@@ -247,7 +251,26 @@ interface TenantRoleEntry {
   /** coord `/admin/coord/me` returns the slug here; `tenant_slug` is a fallback. */
   slug?: string;
   tenant_slug?: string;
+  /** The tenant's human-chosen name; null/absent for a tenant that never got one. */
+  display_name?: string | null;
   roles?: string[];
+}
+
+/**
+ * The rename target for a "Your tenant & roles" row, or `null` when the row
+ * gets no Rename action.
+ *
+ * Offered only where the caller holds `admin` IN THAT tenant — the one role
+ * coord's `is_tenant_admin` accepts for `PATCH /coord/tenants/:tenant_id`
+ * (plan `2026-09-17-tenant-rename` D1/D6). `owner` is deliberately not enough:
+ * a control coord would refuse is a control that lies. A row with no id or
+ * slug cannot be addressed or pre-filled, so it gets none either.
+ */
+function renameTargetFor(t: TenantRoleEntry): RenameTarget | null {
+  const slug = t.slug ?? t.tenant_slug;
+  if (!t.tenant_id || !slug) return null;
+  if (!(t.roles ?? []).includes("admin")) return null;
+  return { id: t.tenant_id, slug, name: t.display_name || slug };
 }
 
 interface MyTenantsResponse {
@@ -421,6 +444,10 @@ function MyTenantsCard() {
   const [data, setData] = useState<MyTenantsResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  // The row whose Rename dialog is open. The dialog is MOUNTED only while this
+  // is set, so the rest of the page never pays for its tenant-context and UI
+  // Bridge hooks.
+  const [renaming, setRenaming] = useState<RenameTarget | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -555,21 +582,36 @@ function MyTenantsCard() {
             </div>
             {data.tenants && data.tenants.length > 0 ? (
               <div className="space-y-1.5">
-                {data.tenants.map((t, i) => (
-                  <div
-                    key={t.tenant_id ?? t.slug ?? t.tenant_slug ?? i}
-                    className="flex flex-wrap items-center gap-2"
-                  >
-                    <span className="font-medium">{tenantName(t)}</span>
-                    <span className="flex flex-wrap gap-1">
-                      {(t.roles ?? []).map((r) => (
-                        <Badge key={r} variant="secondary">
-                          {tierLabel(r)}
-                        </Badge>
-                      ))}
-                    </span>
-                  </div>
-                ))}
+                {data.tenants.map((t, i) => {
+                  const renameTarget = renameTargetFor(t);
+                  return (
+                    <div
+                      key={t.tenant_id ?? t.slug ?? t.tenant_slug ?? i}
+                      className="flex flex-wrap items-center gap-2"
+                    >
+                      <span className="font-medium">{tenantName(t)}</span>
+                      <span className="flex flex-wrap gap-1">
+                        {(t.roles ?? []).map((r) => (
+                          <Badge key={r} variant="secondary">
+                            {tierLabel(r)}
+                          </Badge>
+                        ))}
+                      </span>
+                      {renameTarget ? (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="h-7"
+                          onClick={() => setRenaming(renameTarget)}
+                          data-testid={`coord-tenant-rename-open-${renameTarget.id}`}
+                          data-ui-bridge-id="coord.tenant-rename.open"
+                        >
+                          Rename
+                        </Button>
+                      ) : null}
+                    </div>
+                  );
+                })}
               </div>
             ) : data.roles && data.roles.length > 0 ? (
               <div className="flex flex-wrap items-center gap-2">
@@ -587,6 +629,17 @@ function MyTenantsCard() {
         ) : null}
       </>
     </CollapsiblePanel>
+    {renaming ? (
+      <CoordProjectRenameDialog
+        open
+        tenant={renaming}
+        onOpenChange={(open) => {
+          if (!open) setRenaming(null);
+        }}
+        // The rows above show what this section's read returned, so re-read.
+        onRenamed={() => void load()}
+      />
+    ) : null}
     </div>
   );
 }
