@@ -133,14 +133,25 @@ export async function runnerFetch<T>(
       );
     }
     throw error;
-  } finally {
-    clearTimeout(timeoutId);
   }
 
   if (!response.ok) {
     // A typed origin-guard refusal is not a broken runner — say what was
-    // refused and how to admit it (see ./origin-refusal).
-    const refusal = await readRunnerOriginRefusal(response);
+    // refused and how to admit it (see ./origin-refusal). Only a 403 can be
+    // that refusal, so only a 403's body is read, and the abort timer stays
+    // armed across the read: a runner that sends headers and then stalls the
+    // body cannot hang the caller. An aborted read degrades to the generic
+    // message below.
+    let refusal: RunnerOriginRefusal | null = null;
+    if (response.status === 403) {
+      try {
+        refusal = await readRunnerOriginRefusal(response);
+      } finally {
+        clearTimeout(timeoutId);
+      }
+    } else {
+      clearTimeout(timeoutId);
+    }
     if (refusal) {
       throw new RunnerApiError(
         response.status,
@@ -153,6 +164,7 @@ export async function runnerFetch<T>(
       `Runner API error: ${response.status} ${response.statusText}`
     );
   }
+  clearTimeout(timeoutId);
 
   const text = await response.text();
   if (!text) return undefined as T;
@@ -289,7 +301,8 @@ export function useRunnerQuery<T>(
   // lift the gate without a remount.
   const [apiBase, setApiBase] = useState(getRunnerApiBase);
   useEffect(() => onRunnerApiBaseChange(setApiBase), []);
-  const unreachableFromOrigin = isLoopbackBase(apiBase) && !isRunnerReachable();
+  const unreachableFromOrigin =
+    isLoopbackBase(apiBase) && !isRunnerReachable();
 
   // Build a stable cache key from path + poll interval.
   // Multiple hooks with the same path but different intervals get the fastest interval.
@@ -393,14 +406,7 @@ export function useRunnerQuery<T>(
         }
       }
     };
-  }, [
-    cacheKey,
-    pollInterval,
-    enabled,
-    applyResult,
-    path,
-    unreachableFromOrigin,
-  ]);
+  }, [cacheKey, pollInterval, enabled, applyResult, path, unreachableFromOrigin]);
 
   const refetch = useCallback(async () => {
     if (!path) return;

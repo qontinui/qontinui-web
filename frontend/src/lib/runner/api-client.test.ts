@@ -133,6 +133,52 @@ describe("runnerFetch origin-guard refusal", () => {
     expect(apiErr.message).not.toContain("Runner API error: 403");
   });
 
+  it("aborts a 403 whose body stalls instead of hanging", async () => {
+    stubOrigin("http://localhost:3001");
+    // Headers arrive, the body never does — the stream only ends when the
+    // request's abort signal fires, which is how a real fetch body behaves.
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockImplementation((_url: string, init?: RequestInit) => {
+        const body = new ReadableStream<Uint8Array>({
+          start(controller) {
+            init?.signal?.addEventListener("abort", () =>
+              controller.error(new DOMException("aborted", "AbortError"))
+            );
+          },
+        });
+        return Promise.resolve(
+          new Response(body, { status: 403, statusText: "Forbidden" })
+        );
+      })
+    );
+
+    const started = Date.now();
+    const err = (await runnerFetch("/x", { timeoutMs: 50 }).catch(
+      (e: unknown) => e
+    )) as RunnerApiError;
+    expect(err).toBeInstanceOf(RunnerApiError);
+    expect(err.status).toBe(403);
+    expect(err.message).toBe("Runner API error: 403 Forbidden");
+    expect(Date.now() - started).toBeLessThan(2000);
+  }, 3000);
+
+  it("does not read the body of a non-403 error", async () => {
+    stubOrigin("http://localhost:3001");
+    const resp = new Response(
+      JSON.stringify({ success: false, code: CROSS_ORIGIN_REFUSED }),
+      { status: 500, statusText: "Internal Server Error" }
+    );
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(resp));
+
+    const err = (await runnerFetch("/x").catch(
+      (e: unknown) => e
+    )) as RunnerApiError;
+    expect(err.message).toBe("Runner API error: 500 Internal Server Error");
+    expect(err.code).toBeUndefined();
+    expect(resp.bodyUsed).toBe(false);
+  });
+
   it("keeps the generic message for an unrelated 403", async () => {
     stubOrigin("http://localhost:3001");
     vi.stubGlobal(

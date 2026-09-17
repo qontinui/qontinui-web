@@ -23,23 +23,30 @@ from unittest.mock import AsyncMock, MagicMock
 
 import httpx
 import pytest
+from starlette.datastructures import Headers
 
 from app.api.v1.endpoints import device_bridge_ws
 
 DEVICE_ID = "11111111-1111-1111-1111-111111111111"
 USER_ID = "22222222-2222-2222-2222-222222222222"
 
-# Exactly what a browser adds that the runner's origin guard reads (``origin``,
+# What a browser adds that the runner's origin guard reads (``origin``,
 # ``sec-fetch-site``) plus the rest of the Fetch Metadata family, which carries
-# no meaning on a server-to-server hop.
+# no meaning on a server-to-server hop. ``Sec-Fetch-Storage-Access`` is a newer
+# member no fixed name list anticipated — it pins that the WHOLE ``sec-fetch-``
+# prefix is stripped, not a snapshot of today's names.
 BROWSER_HEADERS = {
     "Origin": "https://app.qontinui.io",
     "Sec-Fetch-Site": "cross-site",
     "Sec-Fetch-Mode": "cors",
     "Sec-Fetch-Dest": "empty",
     "Sec-Fetch-User": "?1",
+    "Sec-Fetch-Storage-Access": "active",
 }
-BROWSER_HEADER_NAMES = {k.lower() for k in BROWSER_HEADERS}
+
+
+def _browser_named(names) -> set[str]:
+    return {n for n in names if n == "origin" or n.startswith("sec-fetch-")}
 
 
 class _FakeURL:
@@ -48,9 +55,12 @@ class _FakeURL:
 
 
 class _FakeRequest:
+    """Starlette-Request stand-in carrying a REAL ``Headers`` (case-insensitive,
+    lowercased on iteration) — the type the handler actually receives."""
+
     def __init__(self, *, headers: dict[str, str], body: bytes = b"") -> None:
         self.method = "POST" if body else "GET"
-        self.headers = headers
+        self.headers = Headers(headers=headers)
         self.cookies: dict[str, str] = {}
         self.url = _FakeURL()
         self.state = SimpleNamespace()
@@ -113,7 +123,7 @@ async def test_local_proxy_hop_does_not_forward_browser_origin(monkeypatch):
 
     names = {k for k, _ in sent}
     assert names, "the capturing client saw no request at all"
-    leaked = names & BROWSER_HEADER_NAMES
+    leaked = _browser_named(names)
     assert not leaked, f"browser provenance headers reached the runner: {leaked}"
     # The strip is targeted: an ordinary header still goes through.
     assert ("content-type", "application/json") in sent
@@ -170,14 +180,22 @@ async def test_relay_frame_does_not_forward_browser_origin(monkeypatch):
 
     assert dispatch.await_count == 1
     envelope = dispatch.await_args.args[1]
-    leaked = set(envelope["headers"]) & BROWSER_HEADER_NAMES
+    leaked = _browser_named(envelope["headers"])
     assert not leaked, f"browser provenance headers crossed the relay: {leaked}"
     assert envelope["headers"]["content-type"] == "application/json"
 
 
-def test_both_filters_share_the_browser_provenance_set():
-    """Neither filter can drift from the other on what counts as browser context."""
-    browser = device_bridge_ws._BROWSER_PROVENANCE_REQUEST_HEADERS
-    assert {"origin", "sec-fetch-site"} <= browser
-    assert browser <= device_bridge_ws._RELAY_EXCLUDED_REQUEST_HEADERS
-    assert browser <= device_bridge_ws._LOCAL_PROXY_EXCLUDED_REQUEST_HEADERS
+def test_browser_provenance_predicate_covers_the_whole_sec_fetch_prefix():
+    """One predicate decides for BOTH filters, and it is prefix-based."""
+    is_browser = device_bridge_ws._is_browser_provenance_header
+    for name in (
+        "origin",
+        "Origin",
+        "sec-fetch-site",
+        "Sec-Fetch-Mode",
+        "sec-fetch-storage-access",
+        "sec-fetch-some-future-member",
+    ):
+        assert is_browser(name), name
+    for name in ("content-type", "x-qontinui-device-id", "referer", "sec-ch-ua"):
+        assert not is_browser(name), name
