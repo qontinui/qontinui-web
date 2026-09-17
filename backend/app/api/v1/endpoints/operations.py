@@ -10361,7 +10361,7 @@ def _rate_limiting_disabled() -> bool:
 #:    tenant admin, so the caller population is every tenant's administrator
 #:    rather than fleet staff;
 #:  * its two answers differ on whether the email EXISTS in the pool
-#:    (``added`` vs ``invited``), so an unbounded caller can walk an
+#:    (``added`` vs ``invite_required``), so an unbounded caller can walk an
 #:    address list and read membership of the whole Cognito pool out of it.
 #:
 #: Its own ``scope`` for the reason the block below spells out: ``shared_limit``
@@ -10442,6 +10442,7 @@ async def post_coord_tenant_member(
     request: Request,
     body: _TenantMemberAddBody,
     tenant_id: UUID = Depends(require_coord_tenant_admin_target),
+    current_user: UserModel = Depends(get_current_active_user_async),
 ) -> dict[str, Any]:
     """Add a person to the caller's tenant by EMAIL — no IdP fields.
 
@@ -10457,39 +10458,102 @@ async def post_coord_tenant_member(
        an explicit ``target_tenant_id``, which coord re-checks the caller is
        admin in (``403 not_admin_in_target_tenant``).
 
-    Three answers:
+    Answers:
 
-    * ``{"status": "added", "operator_id", "role"}`` — they had a Cognito
-      account and now hold ``role`` in this tenant.
-    * ``{"status": "invited", "operator_id", "role"}`` — they had no account
-      (or had one from an invitation they never accepted). The account is
-      created with nothing sent, the grant is made, and only THEN does the
-      invitation email go out — see :func:`_invite_identity`. Adding the same
-      person again before they accept re-sends it with a fresh temporary
-      password, which is how an admin recovers a lost or expired invite.
-    * ``409`` — the email matches more than one pool user, so picking one
-      would be guessing which human gets access to the tenant.
+    * ``{"status": "added", "operator_id", "role"}`` — they had an account
+      and now hold ``role`` in this tenant.
+    * ``{"status": "invited", "operator_id", "role"}`` — SUPERUSER ONLY. They
+      had no account (or an unaccepted invitation): the account is created
+      with nothing sent, the grant is made, and only then is the invitation
+      emailed. Re-adding a pending invitee re-sends it, which is how an admin
+      recovers a lost or expired one.
+    * ``{"status": "invitation_pending", "operator_id", "role"}`` — a tenant
+      admin added somebody holding an invitation they have not accepted. The
+      grant is made; nothing is sent, since sending is a superuser act.
+    * ``{"status": "invite_required"}`` — a tenant admin named an email with
+      no account. NOTHING is written or sent.
+    * ``409`` — more than one account matches the email, ignoring case, so
+      picking one would be guessing which human gets access.
+
+    **Why creating an account is superuser-only.** Qontinui is invite-only:
+    self sign-up is disabled on the pool and its PreSignUp trigger enforces an
+    allowlist — for every trigger EXCEPT ``AdminCreateUser``. Every signed-in
+    user is admin of their own personal tenant, so letting any tenant admin
+    reach ``AdminCreateUser`` would let anybody already inside hand out
+    accounts to arbitrary addresses, and send email from the product's sender
+    identity to them. Operator decision, 2026-09-17: tenant admins add people
+    who already have an account; creating one is a platform admin's act.
 
     A grant that landed without its email is a ``502`` whose ``message`` says
     exactly that, and a retry converges: the account then resolves as a
     pending invitation, the grant is idempotent, and the email is re-sent.
-
-    Coord's own refusals pass through with their status and typed body
-    intact (``structured_errors=True``) rather than collapsing into a 500 —
-    ``not_admin_in_target_tenant`` is an answer the dashboard can render. It
-    reaches the dashboard through :func:`_proxy_coord_post_readable`, which
-    adds the human ``message`` the production error envelope otherwise fills
-    with a Python ``repr`` of coord's dict.
 
     Rate-limited per caller — see ``_TENANT_MEMBER_ADD_RATE_LIMIT``.
     """
     email = body.email.strip()
     if not email:
         raise HTTPException(status_code=400, detail="email must not be blank")
+    may_invite = getattr(current_user, "is_superuser", False) is True
 
+    identity = await _resolve_member_identity(email)
+    created = False
+    if identity is None:
+        if not may_invite:
+            logger.info("tenant_member_add_invite_required", tenant_id=str(tenant_id))
+            return {"status": "invite_required"}
+        identity, created = await _create_invited_identity(email)
+    # Decided by the account's STATE, not by which branch produced it: a
+    # raced create can hand back a colleague who has already accepted, and
+    # Cognito refuses to re-send to them.
+    pending = identity.status == cognito_admin.INVITATION_PENDING_STATUS
+
+    try:
+        operator_id = await _grant_tenant_member(
+            email=email, sub=identity.sub, role=body.role, tenant_id=tenant_id
+        )
+    except HTTPException:
+        if created:
+            await asyncio.to_thread(
+                cognito_admin.delete_unsent_invitation, identity.username
+            )
+        raise
+
+    status = "added"
+    if pending and not may_invite:
+        status = "invitation_pending"
+    elif pending:
+        status = await _send_member_invitation(
+            email=email,
+            username=identity.username,
+            tenant_id=tenant_id,
+            operator_id=operator_id,
+        )
+
+    logger.info(
+        "tenant_member_add_ok",
+        tenant_id=str(tenant_id),
+        operator_id=operator_id,
+        role=body.role,
+        outcome=status,
+    )
+    return {"status": status, "operator_id": operator_id, "role": body.role}
+
+
+async def _resolve_member_identity(email: str) -> cognito_admin.CognitoIdentity | None:
+    """The one account for ``email`` — exact match first, then any case.
+
+    The exact ``ListUsers`` filter is indexed and cheap; the any-case scan
+    reads the whole pool and runs only on a miss. ``None`` means neither
+    found anybody. More than one match either way is a ``409``.
+    """
     try:
         identity = await asyncio.to_thread(
             cognito_admin.resolve_identity_for_email, email
+        )
+        if identity is not None:
+            return identity
+        matches = await asyncio.to_thread(
+            cognito_admin.find_identities_for_email_any_case, email
         )
     except CognitoAmbiguousEmailError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
@@ -10503,108 +10567,45 @@ async def post_coord_tenant_member(
             fallback_detail="Could not resolve user by email.",
             email=email,
         ) from exc
-
-    if identity is None:
-        identity = await _invite_identity(email)
-    # Decided by the account's STATE, not by which branch produced it: a
-    # lowercase-form or raced lookup inside `_invite_identity` can return a
-    # colleague who already accepted, and re-sending to a CONFIRMED account
-    # is refused by Cognito.
-    invited = identity.status == cognito_admin.INVITATION_PENDING_STATUS
-
-    created = await _proxy_coord_post_readable(
-        "/admin/coord/operators",
-        {
-            "email": email,
-            "sso_subject": identity.sub,
-            "sso_provider": "cognito",
-        },
-        tenant_id=tenant_id,
-    )
-    operator_id = created.get("operator_id") if isinstance(created, dict) else None
-    if not isinstance(operator_id, str) or not operator_id:
-        logger.error("tenant_member_add_no_operator_id", response=created)
+    if len(matches) > 1:
+        logger.warning("tenant_member_email_ambiguous_any_case", count=len(matches))
         raise HTTPException(
-            status_code=502,
-            detail="coord accepted the operator upsert but returned no operator_id",
+            status_code=409,
+            detail=f"Multiple users match email (ignoring case): {email}",
         )
-
-    await _proxy_coord_post_readable(
-        f"/admin/coord/operators/{quote(operator_id, safe='')}/roles",
-        {"role": body.role, "target_tenant_id": str(tenant_id)},
-        tenant_id=tenant_id,
-    )
-    if invited:
-        try:
-            await asyncio.to_thread(
-                cognito_admin.send_invitation, email, identity.username
-            )
-        except CognitoAdminError as exc:
-            logger.error(
-                "tenant_member_invitation_not_sent",
-                tenant_id=str(tenant_id),
-                operator_id=operator_id,
-                error=str(exc),
-            )
-            raise HTTPException(
-                status_code=502,
-                detail={
-                    "error": "invitation_not_sent",
-                    "message": (
-                        f"{email} was given access, but the invitation email "
-                        "could not be sent, so they have no way to sign in "
-                        "yet. Add them again to retry sending it."
-                    ),
-                },
-            ) from exc
-
-    logger.info(
-        "tenant_member_add_ok",
-        tenant_id=str(tenant_id),
-        operator_id=operator_id,
-        role=body.role,
-        invited=invited,
-    )
-    return {
-        "status": "invited" if invited else "added",
-        "operator_id": operator_id,
-        "role": body.role,
-    }
+    return matches[0] if matches else None
 
 
-async def _invite_identity(email: str) -> cognito_admin.CognitoIdentity:
-    """Create the pool account for an email nobody holds — sending nothing.
+async def _create_invited_identity(
+    email: str,
+) -> tuple[cognito_admin.CognitoIdentity, bool]:
+    """Create the account for an email nobody holds — sending nothing.
 
-    The new account's email and username are LOWERCASED. This pool predates
-    Cognito's case-insensitive-username option, so ``Stefan@x.io`` and
-    ``stefan@x.io`` would be two accounts; the lowercase form is resolved
-    first so a colleague already holding it is found rather than duplicated.
+    Returns the identity and whether THIS call created it (``False`` when a
+    concurrent request won the race, so a later grant failure does not delete
+    somebody else's account).
 
-    A ``UsernameExistsException`` means a concurrent request created the
-    account between the lookup and the create, so the account is resolved
-    again rather than reported as a failure.
+    The new account's email and username are lowercased: this pool predates
+    Cognito's case-insensitive usernames, and the any-case check has already
+    established no variant exists.
     """
     normalized = email.lower()
     try:
-        if normalized != email:
-            existing = await asyncio.to_thread(
-                cognito_admin.resolve_identity_for_email, normalized
-            )
-            if existing is not None:
-                return existing
         try:
-            return await asyncio.to_thread(
+            identity = await asyncio.to_thread(
                 cognito_admin.create_invited_user, normalized
             )
+            return identity, True
         except CognitoUserExistsError:
             raced = await asyncio.to_thread(
                 cognito_admin.resolve_identity_for_email, normalized
             )
             if raced is None:
                 raise CognitoAdminError(
-                    "Cognito reported the account exists but it could not be found"
+                    "Cognito reported the account exists but no account "
+                    f"carries the email {normalized}"
                 ) from None
-            return raced
+            return raced, False
     except CognitoAmbiguousEmailError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     except CognitoInvalidParameterError as exc:
@@ -10616,6 +10617,67 @@ async def _invite_identity(email: str) -> cognito_admin.CognitoIdentity:
             fallback_detail="Could not create the invited account.",
             email=email,
         ) from exc
+
+
+async def _grant_tenant_member(
+    *, email: str, sub: str, role: str, tenant_id: UUID
+) -> str:
+    """Coord's operator upsert and role grant; returns the ``operator_id``."""
+    created = await _proxy_coord_post_readable(
+        "/admin/coord/operators",
+        {"email": email, "sso_subject": sub, "sso_provider": "cognito"},
+        tenant_id=tenant_id,
+    )
+    operator_id = created.get("operator_id") if isinstance(created, dict) else None
+    if not isinstance(operator_id, str) or not operator_id:
+        logger.error("tenant_member_add_no_operator_id", response=created)
+        raise HTTPException(
+            status_code=502,
+            detail="coord accepted the operator upsert but returned no operator_id",
+        )
+    await _proxy_coord_post_readable(
+        f"/admin/coord/operators/{quote(operator_id, safe='')}/roles",
+        {"role": role, "target_tenant_id": str(tenant_id)},
+        tenant_id=tenant_id,
+    )
+    return operator_id
+
+
+async def _send_member_invitation(
+    *, email: str, username: str, tenant_id: UUID, operator_id: str
+) -> str:
+    """Send the invitation for a granted, pending account; return the status.
+
+    ``added`` when Cognito says the invitation was accepted between the
+    lookup and the send — the person is in, and telling the admin otherwise
+    would send them chasing an email nobody needs.
+    """
+    try:
+        await asyncio.to_thread(cognito_admin.send_invitation, username)
+    except CognitoAdminError as exc:
+        if exc.aws_error_code == "UnsupportedUserStateException":
+            logger.info(
+                "tenant_member_invitation_already_accepted", operator_id=operator_id
+            )
+            return "added"
+        logger.error(
+            "tenant_member_invitation_not_sent",
+            tenant_id=str(tenant_id),
+            operator_id=operator_id,
+            error=str(exc),
+        )
+        raise HTTPException(
+            status_code=502,
+            detail={
+                "error": "invitation_not_sent",
+                "message": (
+                    f"{email} was given access, but the invitation email "
+                    "could not be sent, so they have no way to sign in "
+                    "yet. Add them again to retry sending it."
+                ),
+            },
+        ) from exc
+    return "invited"
 
 
 @router.get("/coord/group-tenant-roles")
