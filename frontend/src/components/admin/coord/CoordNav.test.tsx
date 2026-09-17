@@ -1,50 +1,34 @@
 /**
- * CoordNav — grouped console navigation.
+ * CoordNav — the Coord Console header's status row.
  *
- * Contracts under test (nav redesign):
- *  - five direct tabs; everything else inside persona dropdown groups
- *  - operator gating: operator-only items (Merge Settings, and every `Dev Ops`
- *    member except `Overview`) never render for a plain member. The GROUP
- *    flag and the ITEM flag are independent: `Dev Ops ▾` opens for a member
- *    carrying exactly one entry, which is the regression test for the
- *    resolved Q3 of
- *    `2026-08-25-coord-console-intent-and-devops-sections`
- *  - `Intent ▾` holds the prompt-document cluster (Prompt Documents /
- *    Policies / Policy Edit Review), member-visible trigger and items alike,
- *    and `Merge ▾` no longer does — while `Gate Clearance` stays in `Merge`,
- *    because a gate is merge-chain machinery (Phase 3 / resolved Q2 of
- *    `2026-08-25-coord-console-intent-and-devops-sections`)
- *  - wayfinding crumb: the group trigger of the active page highlights and
- *    exposes `<testid>-active` — asserted for every leaf that changed groups,
- *    since the testids are unchanged and Spec-CI keys on them
+ * The console's page structure (groups, membership, operator gating) is
+ * pinned in `coordNavModel.test.ts`, and the sidebar that renders it in
+ * `navigation/sidebar/nav-items.test.ts`. Contracts under test here:
+ *  - wayfinding crumb: the current page's group and label, exposing
+ *    `<testid>-active` for every console page, since Spec-CI keys on it
  *  - live Alerts badge from the unresolved-alerts rollup
  *  - live Notifications badge from the server's `unread_count` SCALAR —
  *    never the returned page length (plan
  *    `2026-08-05-coord-notifications-type-and-tab.md`, Change 4)
- *  - the FLEET ALARM on the `Dev Ops ▾` trigger (Verification 7 of
+ *  - the FLEET ALARM on the Dev Ops link (Verification 7 of
  *    `2026-08-25-coord-console-intent-and-devops-sections`), including the
- *    `unknown` count, which is the one that must survive: a trigger that
- *    showed only breaches would render a fleet whose telemetry has gone dark
- *    exactly like a healthy one
+ *    `unknown` count, which is the one that must survive: a link that showed
+ *    only breaches would render a fleet whose telemetry has gone dark exactly
+ *    like a healthy one
  *  - ...and that the alarm's RETAINED counts say they are retained — the same
  *    four channels the two tab badges carry, per axis, plus the retained-zero
- *    marker this trigger needs more than they do because here an all-clear is
+ *    marker this link needs more than they do because here an all-clear is
  *    rendered as silence
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, render, screen, waitFor, within } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
 
 let pathname = "/admin/coord/pipeline";
 vi.mock("next/navigation", () => ({
   usePathname: () => pathname,
 }));
 
-let isSuperuser = false;
-vi.mock("@/contexts/auth-context", () => ({
-  useAuth: () => ({ user: { is_superuser: isSuperuser } }),
-}));
 
 const httpGet = vi.fn();
 vi.mock("@/services/service-factory", () => ({
@@ -54,326 +38,79 @@ vi.mock("@/services/service-factory", () => ({
 }));
 
 import CoordNav from "./CoordNav";
+import { DIRECT_TABS, GROUPS } from "./coordNavModel";
 
 describe("CoordNav", () => {
   beforeEach(() => {
     httpGet.mockReset();
     httpGet.mockResolvedValue({ alerts: [], total_count: 0 });
     pathname = "/admin/coord/pipeline";
-    isSuperuser = false;
   });
 
-  it("renders five direct tabs and every member group, Dev Ops included", async () => {
-    const user = userEvent.setup();
+  it("renders a direct tab's crumb with no group", () => {
     render(<CoordNav />);
 
-    // The tab has read "Pipeline" since 2026-07-14; Phase 4 of
-    // `2026-08-25-coord-console-intent-and-devops-sections` finally made the
-    // route and the testid say so too (`coord-nav-fleet` →
-    // `coord-nav-pipeline`, `/admin/coord/fleet` → `/admin/coord/pipeline`).
-    const pipeline = screen.getByTestId("coord-nav-pipeline");
-    expect(pipeline).toHaveTextContent("Pipeline");
-    expect(pipeline).toHaveAttribute("href", "/admin/coord/pipeline");
-    expect(screen.queryByTestId("coord-nav-fleet")).not.toBeInTheDocument();
-    expect(screen.getByTestId("coord-nav-prs")).toBeInTheDocument();
-    expect(screen.getByTestId("coord-nav-gates")).toBeInTheDocument();
-    expect(screen.getByTestId("coord-nav-alerts")).toBeInTheDocument();
-    const notifications = screen.getByTestId("coord-nav-notifications");
-    expect(notifications).toHaveTextContent("Notifications");
-    expect(notifications).toHaveAttribute("href", "/admin/coord/notifications");
-
-    expect(screen.getByTestId("coord-nav-group-work")).toBeInTheDocument();
-    expect(screen.getByTestId("coord-nav-group-merge")).toBeInTheDocument();
-    expect(screen.getByTestId("coord-nav-group-intent")).toBeInTheDocument();
-    expect(screen.getByTestId("coord-nav-group-access")).toBeInTheDocument();
-
-    // `Infra ▾` is gone, and the group that replaced it is NOT hidden from a
-    // member: the group flag moved onto the items (resolved Q3). This test
-    // used to assert the opposite — a plain member seeing no infra group at
-    // all — which is exactly what the rename changes.
-    expect(
-      screen.queryByTestId("coord-nav-group-infra")
-    ).not.toBeInTheDocument();
-    const devops = screen.getByTestId("coord-nav-group-devops");
-    expect(devops).toHaveTextContent("Dev Ops");
-
-    // …and it carries EXACTLY one entry for a member.
-    await user.click(devops);
-    const overview = await screen.findByTestId("coord-nav-devops-overview");
-    expect(overview).toBeVisible();
-    expect(overview).toHaveAttribute("href", "/admin/coord/devops");
-    expect(screen.getAllByRole("menuitem")).toHaveLength(1);
-  });
-
-  it("hides operator-only items inside member-visible groups", async () => {
-    const user = userEvent.setup();
-    render(<CoordNav />);
-
-    await user.click(screen.getByTestId("coord-nav-group-merge"));
-    expect(
-      await screen.findByTestId("coord-nav-automation-rules")
-    ).toBeVisible();
-    expect(screen.getByTestId("coord-nav-pull-decisions")).toBeVisible();
-    expect(
-      screen.queryByTestId("coord-nav-merge-settings")
-    ).not.toBeInTheDocument();
-  });
-
-  // --------------------------------------------------------------------------
-  // `Intent ▾` — the prompt-document cluster, moved out of `Merge ▾`
-  // (`2026-08-25-coord-console-intent-and-devops-sections` Phase 3, Gap 1).
-  // None of the three is read by the merge train, gates a PR, or appears in a
-  // merge decision; `Gate Clearance` is the one that stayed, because what it
-  // authors rows about is who may clear a GATE (resolved Q2).
-  // --------------------------------------------------------------------------
-
-  it("shows the Intent group to a plain member with exactly its four entries", async () => {
-    const user = userEvent.setup();
-    render(<CoordNav />);
-
-    const trigger = screen.getByTestId("coord-nav-group-intent");
-    expect(trigger).toHaveTextContent("Intent");
-
-    await user.click(trigger);
-    const promptDocuments = await screen.findByTestId(
-      "coord-nav-prompt-documents"
+    const crumb = screen.getByTestId("coord-nav-crumb");
+    expect(crumb).toHaveTextContent(/^Pipeline$/);
+    expect(crumb).toContainElement(
+      screen.getByTestId("coord-nav-pipeline-active")
     );
-    expect(promptDocuments).toBeVisible();
-    expect(promptDocuments).toHaveAttribute(
-      "href",
-      "/admin/coord/prompt-documents"
-    );
-    expect(screen.getByTestId("coord-nav-policies")).toHaveAttribute(
-      "href",
-      "/admin/coord/policies"
-    );
-    expect(
-      screen.getByTestId("coord-nav-prompt-document-proposals")
-    ).toHaveAttribute("href", "/admin/coord/prompt-document-proposals");
-    // The v2 decision-domain editor (plan
-    // `2026-09-06-decision-policy-rows-are-operator-only-to-create` Phase 3a).
-    // Filed here beside Policies — which is the READ-ONLY half of the same
-    // store — not in `Merge ▾`, and not operator-gated: every mutating control
-    // on the page is `CoordAdminOnly`, and the coord proxy enforces
-    // tenant-admin server-side, so a member may READ which frame coord serves.
-    expect(
-      screen.getByTestId("coord-nav-decision-policies")
-    ).toHaveAttribute("href", "/admin/coord/decision-policies");
-
-    // Exactly four — nothing else drifted in, and none of them is
-    // operator-gated, so the member sees the whole group.
-    expect(screen.getAllByRole("menuitem")).toHaveLength(4);
   });
 
-  it("sits Intent between Merge and Dev Ops", () => {
-    render(<CoordNav />);
-
-    const triggers = Array.from(
-      screen
-        .getByTestId("coord-nav")
-        .querySelectorAll("[data-testid^='coord-nav-group-']")
-    ).map((el) => el.getAttribute("data-testid"));
-    expect(triggers).toEqual([
-      "coord-nav-group-work",
-      "coord-nav-group-merge",
-      "coord-nav-group-intent",
-      "coord-nav-group-devops",
-      "coord-nav-group-access",
-    ]);
-  });
-
-  it("leaves Merge with the merge chain only — the three moved out, Gate Clearance stayed", async () => {
-    isSuperuser = true;
-    const user = userEvent.setup();
-    render(<CoordNav />);
-
-    await user.click(screen.getByTestId("coord-nav-group-merge"));
-    await screen.findByTestId("coord-nav-pull-decisions");
-
-    const menu = screen.getByRole("menu");
-    for (const moved of [
-      "coord-nav-prompt-documents",
-      "coord-nav-policies",
-      "coord-nav-prompt-document-proposals",
-    ]) {
-      expect(within(menu).queryByTestId(moved)).not.toBeInTheDocument();
-    }
-    expect(within(menu).getByTestId("coord-nav-gate-clearance")).toBeVisible();
-
-    // Pull Decisions · Automation Rules · Gate Clearance · Merge Settings°.
-    expect(screen.getAllByRole("menuitem")).toHaveLength(4);
-  });
-
-  it("keeps the wayfinding crumb contract for every moved Intent leaf", () => {
-    // Same nav-level contract as the Dev Ops sweep below: the crumb has to
-    // hold with the dropdown CLOSED, because the menu items unmount and
-    // Spec-CI's "active section" selectors match `coord-nav-<x>-active` on
-    // the group trigger. Every leaf that changed groups is asserted here.
-    for (const [path, testId, label] of [
-      [
-        "/admin/coord/prompt-documents",
-        "coord-nav-prompt-documents",
-        "Prompt Documents",
-      ],
-      ["/admin/coord/policies", "coord-nav-policies", "Policies"],
-      [
-        "/admin/coord/prompt-document-proposals",
-        "coord-nav-prompt-document-proposals",
-        "Policy Edit Review",
-      ],
-      [
-        "/admin/coord/decision-policies",
-        "coord-nav-decision-policies",
-        "Decision Policies",
-      ],
-    ] as const) {
-      pathname = path;
-      const view = render(<CoordNav />);
-      const trigger = within(view.container).getByTestId(
-        "coord-nav-group-intent"
-      );
-      const crumb = within(view.container).getByTestId(`${testId}-active`);
-      expect(crumb).toHaveTextContent(label);
-      expect(trigger).toContainElement(crumb);
-      // …and the group they left does not claim them.
-      expect(
-        within(view.container).getByTestId("coord-nav-group-merge")
-      ).toHaveTextContent(/^Merge$/);
-      view.unmount();
-    }
-  });
-
-  it("offers Gate Clearance in the Merge group and links it", async () => {
-    const user = userEvent.setup();
-    render(<CoordNav />);
-
-    await user.click(screen.getByTestId("coord-nav-group-merge"));
-    const item = await screen.findByTestId("coord-nav-gate-clearance");
-    expect(item).toBeVisible();
-    expect(item).toHaveAttribute("href", "/admin/coord/gate-clearance");
-  });
-
-  it("shows the Dev Ops group with all its items for operators", async () => {
-    isSuperuser = true;
-    const user = userEvent.setup();
-    render(<CoordNav />);
-
-    const trigger = screen.getByTestId("coord-nav-group-devops");
-    await user.click(trigger);
-    expect(
-      await screen.findByTestId("coord-nav-devops-overview")
-    ).toBeVisible();
-    expect(screen.getByTestId("coord-nav-trees")).toBeVisible();
-    expect(screen.getByTestId("coord-nav-git-ops")).toBeVisible();
-    expect(screen.getByTestId("coord-nav-onboarding-status")).toBeVisible();
-    // Runner releases dashboard lives beside Deploys in the Dev Ops group.
-    expect(screen.getByTestId("coord-nav-releases")).toBeVisible();
-    // The two routes Phase 4 created out of panels that were buried two
-    // disclosures deep inside the pipeline page.
-    expect(screen.getByTestId("coord-nav-test-targets")).toHaveAttribute(
-      "href",
-      "/admin/coord/test-targets"
-    );
-    expect(screen.getByTestId("coord-nav-migrations")).toHaveAttribute(
-      "href",
-      "/admin/coord/migrations"
-    );
-    // The per-runner maintenance surface (drained-runner Phase 8).
-    expect(screen.getByTestId("coord-nav-runners")).toHaveAttribute(
-      "href",
-      "/admin/coord/runners"
-    );
-    // Overview, then the twelve operator-only members.
-    expect(screen.getAllByRole("menuitem")).toHaveLength(13);
-  });
-
-  it("orders the Dev Ops group Overview · Trees · Spawn · Runners · Test Targets · Migrations", async () => {
-    isSuperuser = true;
-    const user = userEvent.setup();
-    render(<CoordNav />);
-
-    await user.click(screen.getByTestId("coord-nav-group-devops"));
-    await screen.findByTestId("coord-nav-devops-overview");
-    const items = screen.getAllByRole("menuitem");
-    expect(items.slice(0, 6).map((el) => el.textContent)).toEqual([
-      "Overview",
-      "Trees",
-      "Spawn",
-      "Runners",
-      "Test Targets",
-      "Migrations",
-    ]);
-  });
-
-  it("hides the Releases Dev Ops tab from a plain member", () => {
-    // Unchanged in meaning by the rename: `Releases` keeps `operatorOnly`.
-    // Paired with the member seeing `Dev Ops ▾` above, this IS the Q3
-    // regression test — the group opens, the cross-tenant members do not.
-    render(<CoordNav />);
-    expect(screen.queryByTestId("coord-nav-releases")).not.toBeInTheDocument();
-  });
-
-  it("keeps the wayfinding crumb contract for every moved Dev Ops leaf", () => {
-    // The crumb is a nav-level contract, not a menu-open one: every assertion
-    // below holds with the dropdown closed, which is the point — Spec-CI's
-    // "active section" selectors match `coord-nav-<x>-active` on the trigger.
-    isSuperuser = true;
-    for (const [path, testId, label] of [
-      ["/admin/coord/devops", "coord-nav-devops-overview", "Overview"],
-      ["/admin/coord/trees", "coord-nav-trees", "Trees"],
-      ["/admin/coord/runners", "coord-nav-runners", "Runners"],
-      ["/admin/coord/test-targets", "coord-nav-test-targets", "Test Targets"],
-      ["/admin/coord/migrations", "coord-nav-migrations", "Migrations"],
-      ["/admin/coord/releases", "coord-nav-releases", "Releases"],
-      ["/admin/coord/git-ops", "coord-nav-git-ops", "Git Ops"],
-      ["/admin/coord/memory", "coord-nav-memory", "Memory"],
-      [
-        "/admin/coord/onboarding-status",
-        "coord-nav-onboarding-status",
-        "Onboarding Status",
-      ],
-    ] as const) {
-      pathname = path;
-      const view = render(<CoordNav />);
-      const trigger = within(view.container).getByTestId(
-        "coord-nav-group-devops"
-      );
-      const crumb = within(view.container).getByTestId(`${testId}-active`);
-      expect(crumb).toHaveTextContent(label);
-      expect(trigger).toContainElement(crumb);
-      view.unmount();
-    }
-  });
-
-  it("surfaces the active page as a crumb on its group trigger", () => {
+  it("names the group and the page for a grouped page", () => {
     pathname = "/admin/coord/lands";
     render(<CoordNav />);
 
-    const trigger = screen.getByTestId("coord-nav-group-work");
-    expect(trigger).toHaveTextContent("Work");
-    const crumb = screen.getByTestId("coord-nav-lands-active");
-    expect(crumb).toHaveTextContent("Lands");
-    expect(trigger).toContainElement(crumb);
-    // Sibling groups stay idle — no crumb.
-    expect(screen.getByTestId("coord-nav-group-merge")).toHaveTextContent(
-      /^Merge$/
+    const crumb = screen.getByTestId("coord-nav-crumb");
+    expect(crumb).toHaveTextContent("Work·Lands");
+    expect(screen.getByTestId("coord-nav-lands-active")).toHaveTextContent(
+      "Lands"
     );
   });
 
-  it("cross-links live in the Access group with external hrefs", async () => {
-    const user = userEvent.setup();
+  it("keeps the crumb on a page's detail routes", () => {
+    pathname = "/admin/coord/plans/some-plan-slug";
     render(<CoordNav />);
 
-    await user.click(screen.getByTestId("coord-nav-group-access"));
-    const claims = await screen.findByTestId("coord-nav-claims");
-    expect(claims).toHaveAttribute("href", "/admin/agent-claims");
-    expect(screen.getByTestId("coord-nav-sessions")).toHaveAttribute(
-      "href",
-      "/sessions"
+    expect(screen.getByTestId("coord-nav-plans-active")).toHaveTextContent(
+      "Plans"
     );
-    expect(screen.getByTestId("coord-nav-members")).toHaveAttribute(
+  });
+
+  it("exposes a `-active` crumb for every console page, whatever the role", () => {
+    // Spec-CI's "active section" selectors match `coord-nav-<x>-active`. The
+    // crumb describes where you ARE, so it needs no role: it holds for
+    // operator-only pages too.
+    for (const leaf of [...DIRECT_TABS, ...GROUPS.flatMap((g) => g.items)]) {
+      pathname = leaf.href;
+      const view = render(<CoordNav />);
+      expect(
+        within(view.container).getByTestId(`${leaf.testId}-active`)
+      ).toHaveTextContent(leaf.label);
+      view.unmount();
+    }
+  });
+
+  it("renders no crumb off the console's pages", () => {
+    pathname = "/admin/coord";
+    render(<CoordNav />);
+    expect(screen.queryByTestId("coord-nav-crumb")).not.toBeInTheDocument();
+  });
+
+  it("links the two event surfaces and the Dev Ops overview", () => {
+    render(<CoordNav />);
+
+    expect(screen.getByTestId("coord-nav-alerts")).toHaveAttribute(
       "href",
-      "/admin/coord/members"
+      "/admin/coord/alerts"
+    );
+    expect(screen.getByTestId("coord-nav-notifications")).toHaveAttribute(
+      "href",
+      "/admin/coord/notifications"
+    );
+    expect(screen.getByTestId("coord-nav-devops-alarm")).toHaveAttribute(
+      "href",
+      "/admin/coord/devops"
     );
   });
 
@@ -891,89 +628,6 @@ describe("CoordNav", () => {
   });
 
 
-  // ---------------------------------------------------------------------------
-  // Agent Commands / Agent Skills — plan `2026-08-20-fleet-served-agent-skills`,
-  // Phase 3. Both live in WORK beside Agents, not in Merge: filing agent tooling
-  // under a group labelled "Merge" fails the discoverability gate.
-  // ---------------------------------------------------------------------------
-
-
-  // ---------------------------------------------------------------------------
-  // Agent Commands / Agent Skills — plan `2026-08-20-fleet-served-agent-skills`,
-  // Phase 3. Both live in WORK beside Agents, not in Merge: filing agent tooling
-  // under a group labelled "Merge" fails the discoverability gate.
-  // ---------------------------------------------------------------------------
-
-  it("offers Agent Commands and Agent Skills in the Work group, beside Agents", async () => {
-    const user = userEvent.setup();
-    render(<CoordNav />);
-
-    await user.click(screen.getByTestId("coord-nav-group-work"));
-    const commands = await screen.findByTestId("coord-nav-agent-commands");
-    expect(commands).toBeVisible();
-    expect(commands).toHaveTextContent("Agent Commands");
-    expect(commands).toHaveAttribute("href", "/admin/coord/agent-commands");
-
-    const skills = screen.getByTestId("coord-nav-agent-skills");
-    expect(skills).toBeVisible();
-    expect(skills).toHaveTextContent("Agent Skills");
-    expect(skills).toHaveAttribute("href", "/admin/coord/agent-skills");
-
-    // Beside the existing Agents item, in the same group.
-    expect(screen.getByTestId("coord-nav-agents")).toBeVisible();
-  });
-
-
-  it("keeps agent tooling out of the Merge group", async () => {
-    const user = userEvent.setup();
-    render(<CoordNav />);
-
-    await user.click(screen.getByTestId("coord-nav-group-merge"));
-    // Control: prove the Merge group actually OPENED, so the two absence
-    // assertions below mean "not in Merge" rather than "nothing rendered yet".
-    // This was `coord-nav-policies` when the test was written; plan
-    // `2026-08-25-coord-console-intent-and-devops-sections` Phase 3 moved
-    // Policies into the new Intent group, so the control now names an item
-    // that is still in Merge.
-    await screen.findByTestId("coord-nav-pull-decisions");
-    expect(
-      screen.queryByTestId("coord-nav-agent-commands")
-    ).not.toBeInTheDocument();
-    expect(
-      screen.queryByTestId("coord-nav-agent-skills")
-    ).not.toBeInTheDocument();
-  });
-
-
-  it("shows both agent-tooling items to a plain member", async () => {
-    const user = userEvent.setup();
-    render(<CoordNav />);
-
-    await user.click(screen.getByTestId("coord-nav-group-work"));
-    // The corpus is READABLE by any member; only a fleet-layer WRITE is
-    // superuser-gated, and that gate lives on the page, not on the nav.
-    expect(await screen.findByTestId("coord-nav-agent-commands")).toBeVisible();
-    expect(screen.getByTestId("coord-nav-agent-skills")).toBeVisible();
-  });
-
-
-  // A FOURTH `/admin/coord/agent*` href landed on main while this branch was
-  // open (`agent-registry`, in ACCESS not Work). It shares the same string
-  // prefix as the Work trio and is the exact shape the test above exists to
-  // catch, so it gets pinned rather than assumed: no Work crumb may claim it.
-  it("leaves every Work crumb alone on /admin/coord/agent-registry", () => {
-    pathname = "/admin/coord/agent-registry";
-    render(<CoordNav />);
-
-    for (const id of [
-      "coord-nav-agents-active",
-      "coord-nav-agent-commands-active",
-      "coord-nav-agent-skills-active",
-    ]) {
-      expect(screen.queryByTestId(id)).not.toBeInTheDocument();
-    }
-  });
-
   describe("polling is gated on tab visibility", () => {
     /**
      * The nav renders on every console page, so these two badges are the
@@ -1400,7 +1054,7 @@ describe("CoordNav", () => {
   });
 
   // --------------------------------------------------------------------------
-  // The fleet alarm on the `Dev Ops ▾` trigger — Verification 7.
+  // The fleet alarm on the Dev Ops link — Verification 7.
   //
   // These five counts used to live on the pipeline page's collapsed
   // `System details` header, kept alive by two page polls that ran whether or
@@ -1493,7 +1147,7 @@ describe("CoordNav", () => {
       );
       render(<CoordNav />);
 
-      const trigger = screen.getByTestId("coord-nav-group-devops");
+      const trigger = screen.getByTestId("coord-nav-devops-alarm");
       await waitFor(() =>
         expect(
           screen.getByTestId("coord-nav-devops-breach-badge")
@@ -1559,7 +1213,7 @@ describe("CoordNav", () => {
       render(<CoordNav />);
 
       await waitFor(() => expect(httpGet).toHaveBeenCalled());
-      const trigger = screen.getByTestId("coord-nav-group-devops");
+      const trigger = screen.getByTestId("coord-nav-devops-alarm");
       expect(trigger).toHaveTextContent(/^Dev Ops$/);
       for (const id of [
         "coord-nav-devops-breach-badge",
@@ -1589,7 +1243,7 @@ describe("CoordNav", () => {
       expect(
         screen.queryByTestId("coord-nav-devops-retained-all-clear-badge")
       ).not.toBeInTheDocument();
-      expect(screen.getByTestId("coord-nav-group-devops")).toHaveTextContent(
+      expect(screen.getByTestId("coord-nav-devops-alarm")).toHaveTextContent(
         /^Dev Ops$/
       );
     });

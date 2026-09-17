@@ -149,8 +149,9 @@ test.describe("Admin - Coord questions inbox", () => {
     }
 
     // Questions lives in the Work group — open the menu, then navigate.
-    await page.getByTestId("coord-nav-group-work").click();
-    await page.getByTestId("coord-nav-questions").click();
+    const sidebar = page.locator('aside[data-sidebar="true"]');
+    await sidebar.locator('[data-nav-id="coord-group-work"]').click();
+    await sidebar.locator('[data-nav-id="coord-questions"]').click();
     await page.waitForURL(/\/admin\/coord\/questions/);
     await expect(page.getByTestId("coord-questions-page")).toBeVisible();
   });

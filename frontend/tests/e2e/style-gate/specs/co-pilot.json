@@ -13,13 +13,15 @@
     "baseline on a flaky route would be a future false-gate source. Add layout-shift",
     "for co-pilot only after the relay-attach burn-in lands a deterministic capture.",
     "",
+    "The Home nav item and the AI Dev / Visual mode switcher are gone from the",
+    "sidebar, so the overlap checks that named button-home-0 / button-ai-dev-0 /",
+    "button-visual-1 were removed with them.",
+    "",
     "contrast_meets_wcag is on button-search-k only (the one element with declared",
     "fg+bg colors; sampled-color elements would fail spuriously)."
   ],
   "assertions": [
     { "type": "no_clipping" },
-    { "type": "no_overlap", "elements": ["button-search-k", "button-home-0"] },
-    { "type": "no_overlap", "elements": ["button-ai-dev-0", "button-visual-1"] },
     { "type": "text_fits_container", "element": "button-search-k" },
     { "type": "contrast_meets_wcag", "element": "button-search-k", "level": "aa" }
   ]
