@@ -15,6 +15,18 @@ import { ApiConfig } from "@/services/api-config";
 
 export type ProductMode = "ai" | "visual";
 
+/**
+ * Whether the visual GUI-automation product mode is offered at all.
+ *
+ * `false` for now: web is AI Dev only, so the mode switcher is gone from the
+ * sidebar and every user sees the AI Dev menu. The visual menu, its items and
+ * the stored per-user preference are all kept intact — flipping this back to
+ * `true` (and restoring a switcher) brings the mode back. While it is `false`
+ * a stored `"visual"` preference is ignored rather than rewritten, so nobody
+ * is stranded in a mode with no way out.
+ */
+export const VISUAL_MODE_AVAILABLE = false;
+
 const STORAGE_KEY = "qontinui-product-mode";
 const API_BASE = `${ApiConfig.API_BASE_URL}/api/v1/users/me/preferences`;
 
@@ -76,7 +88,9 @@ export function ProductModeProvider({
   const [serverMode, setServerMode] = useState<ProductMode | null>(null);
   const syncedUserIdRef = useRef<string | null>(null);
 
-  const mode = initialMode ?? serverMode ?? storedMode;
+  const mode: ProductMode = VISUAL_MODE_AVAILABLE
+    ? (initialMode ?? serverMode ?? storedMode)
+    : "ai";
 
   // Sync from server when user identity changes
   useEffect(() => {
@@ -130,7 +144,7 @@ export function useProductMode() {
 }
 
 export function getStoredProductMode(): ProductMode {
-  if (typeof window === "undefined") return "ai";
+  if (!VISUAL_MODE_AVAILABLE || typeof window === "undefined") return "ai";
   const stored = localStorage.getItem(STORAGE_KEY);
   return stored === "visual" ? "visual" : "ai";
 }

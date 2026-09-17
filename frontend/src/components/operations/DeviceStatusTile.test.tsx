@@ -37,6 +37,7 @@ function mockStream(rows: DeviceStatus[]): UseDeviceStatusStreamResult {
     connected: true,
     error: null,
     seeded: true,
+    everSeeded: true,
     refetch: async () => {},
   } as unknown as UseDeviceStatusStreamResult;
 }

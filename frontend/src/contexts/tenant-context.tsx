@@ -17,7 +17,8 @@
  *   First load triggers a one-time selection persisted as
  *   `qontinui.active_tenant_id`.
  *
- * The COORD-CONSOLE switcher (`CoordTenantSwitcher.tsx`) no longer follows
+ * The SIDEBAR project selector (`navigation/sidebar/_components/ProjectSelector.tsx`,
+ * formerly the coord console's `CoordTenantSwitcher`) no longer follows
  * that rule: it renders unconditionally, because it also carries the
  * "+ New" project-create action, and the single-project operator is exactly
  * the one who needs it (plan

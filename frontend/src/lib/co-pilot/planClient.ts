@@ -229,11 +229,11 @@ export async function requestPlan(
 
   const pageCatalog = buildPageCatalog();
 
-  // Hard client-side deadline. The shared httpClient owns its own AbortController
-  // (and overwrites any caller-supplied signal), so we can't hand it one; instead
-  // we race the fetch against a timer. On timeout we abort our local controller
-  // (best-effort cancellation of any in-flight retry the httpClient is doing) and
-  // throw a structured `runner-unreachable` so `run()` reaches the error phase.
+  // Hard client-side deadline. `clientAbort.signal` is passed to httpClient,
+  // which links it into its own controller, so on timeout aborting it cancels
+  // the in-flight request. The race settles the call on the timer at once,
+  // whatever the aborted fetch then rejects with, and throws a structured
+  // `runner-unreachable` so `run()` reaches the error phase.
   const clientAbort = new AbortController();
   let timeoutHandle: ReturnType<typeof setTimeout> | undefined;
   const timeoutPromise = new Promise<typeof PLAN_TIMEOUT_SENTINEL>((resolve) => {

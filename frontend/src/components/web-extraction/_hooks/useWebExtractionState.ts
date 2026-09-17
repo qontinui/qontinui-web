@@ -223,10 +223,11 @@ export function useWebExtractionState() {
 
     try {
       // First check if runner is available
-      const runnerAvailable = await runnerClient.isAvailable();
-      if (!runnerAvailable) {
+      const runner = await runnerClient.getAvailability();
+      if (!runner.available) {
         toast.error(
-          "Desktop Runner is not connected. Please start the qontinui-runner application to perform web extraction."
+          runner.refusalMessage ??
+            "Desktop Runner is not connected. Please start the qontinui-runner application to perform web extraction."
         );
         return;
       }

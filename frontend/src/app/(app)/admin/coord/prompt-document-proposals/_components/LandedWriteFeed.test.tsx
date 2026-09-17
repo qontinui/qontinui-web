@@ -317,6 +317,99 @@ describe("LandedWriteFeed — the linked reasoning", () => {
     expect(
       screen.queryByTestId("write-reasoning-policy-operating-rules-6")
     ).toBeNull();
+    expect(
+      screen.queryByTestId("write-reasoning-finding-policy-operating-rules-6")
+    ).toBeNull();
+  });
+
+  it("shows a CREATED document's reasoning as a finding reference, never as a link into the notifications feed", () => {
+    // Creation never emits a notice and the reconciler skips v1 — the caveat
+    // on this very page says so. A link would send the operator to an event
+    // that cannot exist, where the `?ref=` banner reports it as one that "may
+    // be older than these".
+    renderFeed({
+      writes: [
+        write({
+          kind: "decision_record",
+          name: "escalate-path-clearance-is-agent-work",
+          version_number: 1,
+          current_version: 1,
+          notification_ref: "fec41291-67ed-4cf8-b331-888ad1126b45",
+        }),
+      ],
+    });
+    expect(
+      screen.queryByTestId(
+        "write-reasoning-decision_record-escalate-path-clearance-is-agent-work-1"
+      )
+    ).toBeNull();
+    const ref = screen.getByTestId(
+      "write-reasoning-finding-decision_record-escalate-path-clearance-is-agent-work-1"
+    );
+    expect(ref.tagName).not.toBe("A");
+    expect(ref.querySelector("a")).toBeNull();
+    // Accessible TEXT, not a `title`: the explanation is what a keyboard or
+    // screen-reader operator gets. The row stays short (the cluster it sits
+    // in never shrinks), and says where the id is.
+    expect(ref).toHaveTextContent(/no notice sent/i);
+    expect(ref).toHaveTextContent(/expand this row/i);
+    // The FULL id lives in the expanded detail (R8), as selectable text: it
+    // is the only handle on the reasoning the console offers, so it must be
+    // complete and copyable, never truncated or hover-only — and present
+    // whether or not the diff bodies came back.
+    const idTestId =
+      "write-reasoning-finding-id-decision_record-escalate-path-clearance-is-agent-work-1";
+    expect(screen.queryByTestId(idTestId)).toBeNull();
+    fireEvent.click(
+      screen.getByTestId(
+        "write-toggle-decision_record-escalate-path-clearance-is-agent-work-1"
+      )
+    );
+    expect(screen.getByTestId(idTestId)).toHaveTextContent(
+      "fec41291-67ed-4cf8-b331-888ad1126b45"
+    );
+  });
+
+  it("still links a v2 edit of that same document into the notifications feed", () => {
+    renderFeed({
+      writes: [
+        write({
+          kind: "decision_record",
+          name: "escalate-path-clearance-is-agent-work",
+          version_number: 2,
+          current_version: 2,
+          notification_ref: "ref-2",
+        }),
+      ],
+    });
+    expect(
+      screen.getByTestId(
+        "write-reasoning-decision_record-escalate-path-clearance-is-agent-work-2"
+      )
+    ).toHaveAttribute("href", "/admin/coord/notifications?ref=ref-2");
+    // The tooltip names the finding the notice carries.
+    expect(
+      screen.getByTestId(
+        "write-reasoning-decision_record-escalate-path-clearance-is-agent-work-2"
+      )
+    ).toHaveAttribute("title", expect.stringContaining("ref-2"));
+    // And NOT the finding-only reference as well — the two arms are exclusive,
+    // in the row and in the expanded detail.
+    expect(
+      screen.queryByTestId(
+        "write-reasoning-finding-decision_record-escalate-path-clearance-is-agent-work-2"
+      )
+    ).toBeNull();
+    fireEvent.click(
+      screen.getByTestId(
+        "write-toggle-decision_record-escalate-path-clearance-is-agent-work-2"
+      )
+    );
+    expect(
+      screen.queryByTestId(
+        "write-reasoning-finding-id-decision_record-escalate-path-clearance-is-agent-work-2"
+      )
+    ).toBeNull();
   });
 });
 

@@ -35,130 +35,228 @@ import {
   ListChecks,
   Coins,
   Archive,
+  Users,
+  ShieldCheck,
 } from "lucide-react";
 import type { NavItem } from "./types";
+import {
+  DIRECT_TABS as COORD_DIRECT_TABS,
+  GROUPS as COORD_GROUPS,
+  type NavGroup,
+  type NavLeaf,
+} from "@/components/admin/coord/coordNavModel";
 
 // =============================================================================
-// Dev-only and admin-only navigation items.
+// Web-local navigation items.
 //
-// Production items come from qontinui-navigation shared package
-// via shared-nav-adapter.ts. Only dev-only and admin items remain here.
+// Items shared with the runner come from the @qontinui/navigation package via
+// shared-nav-adapter.ts. Everything web-specific lives here: the Coord,
+// Sessions, Fleet and Access sections, the (hidden) visual-automation menu,
+// and the admin items.
 // =============================================================================
+
+const COORD_COLOR = "#10B981";
+const FLEET_COLOR = "#6366F1";
+
+/** Sidebar id for a console page, from its model `testId`
+ *  (`coord-nav-plans` → `coord-plans`). */
+function coordItemId(leaf: NavLeaf): string {
+  return leaf.testId.replace(/^coord-nav-/, "coord-");
+}
+
+function coordLeafItem(leaf: NavLeaf, group?: string): NavItem {
+  return {
+    id: coordItemId(leaf),
+    label: leaf.label,
+    icon: React.createElement(leaf.icon, {
+      className: group ? "size-5" : "size-4",
+    }),
+    route: leaf.href,
+    color: COORD_COLOR,
+    // Console pages have detail routes (`/admin/coord/plans/<slug>`) that
+    // should keep their section highlighted. No two console hrefs prefix one
+    // another, so this cannot double-highlight.
+    matchPrefix: true,
+    adminOnly: leaf.operatorOnly,
+    group,
+  };
+}
+
+/** A console group as one collapsible sidebar item. Operator-only leaves map
+ *  to `adminOnly` (both mean `is_superuser`), and the sidebar filter drops a
+ *  parent whose children are all filtered out. */
+function coordModelGroup(id: CoordGroupId): NavGroup {
+  const model = COORD_GROUPS.find((g) => g.id === id);
+  if (!model) throw new Error(`coordNavModel has no group "${id}"`);
+  return model;
+}
+
+function coordGroupItem(id: CoordGroupId, group: string): NavItem {
+  const model = coordModelGroup(id);
+  const first = model.items[0];
+  if (!first) throw new Error(`coordNavModel group "${id}" is empty`);
+  return {
+    id: `coord-group-${model.id}`,
+    label: model.label,
+    icon: React.createElement(model.icon, { className: "size-5" }),
+    route: first.href,
+    color: COORD_COLOR,
+    adminOnly: model.operatorOnly,
+    group,
+    children: model.items.map((leaf) => coordLeafItem(leaf)),
+  };
+}
+
+type CoordGroupId = "work" | "merge" | "intent" | "devops" | "access";
 
 export const devNavItems: NavItem[] = [
-  // ===========================================================================
-  // NOTE: there is no local "Co-Pilot" nav item. Home IS the co-pilot — the
-  // shared `@qontinui/navigation` registry's `prompt-home` item ("Home", route
-  // `/prompt-home`) renders the co-pilot command surface directly, matching the
-  // runner (where prompt-home/Home IS the co-pilot). `/co-pilot` redirects to
-  // `/prompt-home` for legacy bookmarks.
-  // ===========================================================================
+  // NOTE: there is no local "Co-Pilot" or "Home" nav item. The shared
+  // `@qontinui/navigation` registry's `prompt-home` item ("Home", the co-pilot
+  // command surface) is hidden on web for now — see `WEB_REMOVED_SHARED_IDS`
+  // in `_hooks/use-sidebar-navigation.ts`. The `/prompt-home` route itself is
+  // kept so the surface can come back by removing that one id.
 
   // ===========================================================================
-  // Runners (production-visible). The unified /runners page covers online
-  // runners, session history, and auth tokens — Phase 4B folded the old
-  // /runners/fleet page into here.
-  // ===========================================================================
-  {
-    id: "runner-fleet",
-    label: "Runners",
-    description: "Online runners, session history, and auth tokens",
-    icon: React.createElement(Server, { className: "size-5" }),
-    route: "/runners",
-    color: "#10B981",
-    group: "Coordination",
-  },
-
-  // Download the Qontinui Runner desktop app. Points at the in-app /download
-  // page (resolves the latest release dynamically). The public marketing
-  // header links /runner/download; the app shell had no download entry until
-  // this item, so a logged-in user could not reach the installer from the menu.
-  {
-    id: "download-runner",
-    label: "Download Runner",
-    description: "Download the Qontinui Runner desktop app",
-    icon: React.createElement(Download, { className: "size-5" }),
-    route: "/download",
-    color: "#10B981",
-    group: "Coordination",
-  },
-
-  // ===========================================================================
-  // Session Repository — the PERMANENT archive of Claude Code sessions
-  // (`agent.session_artifacts` + the object store), plan
-  // `2026-08-26-claude-code-session-repository-in-qontinui-web` Phase 5.
+  // Coord — the Coord Console is the heart of qontinui-web, so its sections
+  // ARE the top of the menu rather than one "Coord Console" entry leading to a
+  // second, in-page menu. Structure comes from `coordNavModel.ts`, which the
+  // console header's wayfinding crumb reads too.
   //
-  // A FIRST-CLASS entry rather than an /admin/coord/* sub-page, and that is
-  // the plan's call, not a styling preference: the corpus answers questions an
-  // ordinary operator asks daily ("which sessions did I never close out?",
-  // "what was that tab doing before the rebuild?"), and burying it in the
-  // coordination console would make "where did my sessions go" tribal
-  // knowledge. It sits beside the shared registry's live /sessions view — that
-  // one is coord's, bounded by a 7-day GC; this one keeps them.
-  //
-  // Visible to all authenticated users: reads are member-visible and
-  // tenant-scoped server-side, with the relaunch/transfer mutation gated by
-  // <CoordAdminOnly> on the detail page and by the backend behind it.
-  // ===========================================================================
-  {
-    id: "session-repository",
-    label: "Session Repository",
-    description: "Archived Claude Code sessions — search, review, relaunch",
-    icon: React.createElement(Archive, { className: "size-5" }),
-    route: "/sessions/repository",
-    color: "#10B981",
-    group: "Coordination",
-  },
-  // NOTE: there is no top-level "Operations" item. The cross-machine fleet
-  // view + operations panels were merged into the Coord Console; /operations
-  // redirects to its Pipeline tab (/admin/coord/pipeline), and the machine
-  // half now lives on the console's Dev Ops Overview (/admin/coord/devops).
-  {
-    id: "commits",
-    label: "Commits",
-    description: "Which session produced which commit",
-    icon: React.createElement(GitCommitHorizontal, { className: "size-5" }),
-    route: "/commits",
-    color: "#10B981",
-    group: "Coordination",
-  },
-  // Coord Console — the coordination-layer surface (fleet, trees, pull
-  // decisions, plans; the old Operations fleet view folded into its Fleet tab).
   // VISIBLE TO ALL authenticated users: the /admin/coord pages are viewable by
-  // any tenant member (layout guard relaxed in 5a02ee3d), with mutation
-  // controls gated per-control via <CoordAdminOnly>. Not adminOnly, so it sits
-  // in the Coordination block (pre-SYSTEM) and stays a single group header.
-  {
-    id: "admin-coord",
-    label: "Coord Console",
-    description: "Coordination layer — fleet, trees, pull decisions, plans",
-    icon: React.createElement(Network, { className: "size-5" }),
-    route: "/admin/coord",
-    color: "#10B981",
-    group: "Coordination",
-  },
-  // Scheduled Runs — cron-style workflow dispatches. Advanced/automation (gated
-  // behind the "Show advanced automation features" toggle on web); kept out of
-  // the Coordination block so it never splits that group's header.
-  {
-    id: "scheduled-runs",
-    label: "Scheduled Runs",
-    description: "Cron-style workflow dispatches",
-    icon: React.createElement(CalendarClock, { className: "size-5" }),
-    route: "/scheduled-runs",
-    color: "#0EA5E9",
-    group: "Automation",
-  },
-  // Regression Tests — condition groups (natural-language checks) run on demand
-  // or on a schedule against a target URL. Visible to any authenticated user;
-  // talks to the always-registered httpClient via the `/api/v1/conditions/*`
-  // backend proxy.
+  // any tenant member, with mutation controls gated per-control via
+  // <CoordAdminOnly>. Operator-infrastructure pages are `adminOnly`.
+  // ===========================================================================
+  ...COORD_DIRECT_TABS.map((leaf) => coordLeafItem(leaf, "Coord")),
+  coordGroupItem("work", "Coord"),
+  coordGroupItem("merge", "Coord"),
+  coordGroupItem("intent", "Coord"),
+  // Regression Tests — condition groups (natural-language checks) run on
+  // demand or on a schedule against a target URL. Coord-backed: the
+  // `/api/v1/conditions/*` backend proxies to coord's condition-group routes,
+  // scoped to the caller's tenant.
   {
     id: "conditions",
     label: "Regression Tests",
     description: "Condition groups run on demand or on a schedule",
     icon: React.createElement(ListChecks, { className: "size-5" }),
     route: "/conditions",
+    color: COORD_COLOR,
+    group: "Coord",
+  },
+
+  // ===========================================================================
+  // Sessions — the live coord view (/sessions, bounded by a 7-day GC), the
+  // PERMANENT archive beside it, and what the sessions produced and held.
+  // ===========================================================================
+  {
+    id: "sessions",
+    label: "Sessions",
+    description: "Live and recent agent sessions",
+    icon: React.createElement(Users, { className: "size-5" }),
+    route: "/sessions",
+    color: COORD_COLOR,
+    group: "Sessions",
+  },
+  // Session Repository — the permanent archive of Claude Code sessions
+  // (`agent.session_artifacts` + the object store), plan
+  // `2026-08-26-claude-code-session-repository-in-qontinui-web` Phase 5.
+  // Reads are member-visible and tenant-scoped server-side; relaunch/transfer
+  // is gated by <CoordAdminOnly> on the detail page and by the backend.
+  {
+    id: "session-repository",
+    label: "Session Repository",
+    description: "Archived Claude Code sessions — search, review, relaunch",
+    icon: React.createElement(Archive, { className: "size-5" }),
+    route: "/sessions/repository",
+    color: COORD_COLOR,
+    group: "Sessions",
+  },
+  {
+    id: "commits",
+    label: "Commits",
+    description: "Which session produced which commit",
+    icon: React.createElement(GitCommitHorizontal, { className: "size-5" }),
+    route: "/commits",
+    color: COORD_COLOR,
+    group: "Sessions",
+  },
+  {
+    id: "agent-claims",
+    label: "Claims",
+    description: "Resources agent sessions currently hold",
+    icon: React.createElement(ShieldCheck, { className: "size-5" }),
+    route: "/admin/agent-claims",
+    color: COORD_COLOR,
+    group: "Sessions",
+  },
+
+  // ===========================================================================
+  // Fleet — the machines the work runs on.
+  // ===========================================================================
+  // Runners — the ONE runners entry. The unified /runners page covers online
+  // runners, session history, and auth tokens; the shared registry's own
+  // `runners` item (same route) is hidden on web so it is not listed twice.
+  // The console's drain-and-rebuild page is "Runner Drain" under Dev Ops.
+  {
+    id: "runner-fleet",
+    label: "Runners",
+    description: "Online runners, session history, and auth tokens",
+    icon: React.createElement(Server, { className: "size-5" }),
+    route: "/runners",
+    color: FLEET_COLOR,
+    group: "Fleet",
+  },
+  coordGroupItem("devops", "Fleet"),
+  // Environments — register applications + machines, define environments,
+  // designate a CANONICAL machine, and view per-machine config DRIFT vs
+  // canonical. User-JWT scoped (devenv API).
+  {
+    id: "environments",
+    label: "Environments",
+    description: "Applications, machines, and config drift vs canonical",
+    icon: React.createElement(Server, { className: "size-5" }),
+    route: "/environments",
+    color: FLEET_COLOR,
+    group: "Fleet",
+  },
+  // Digital Twin — completeness matrix over the coordination-layer observers
+  // and the per-observer credibility envelope agents receive.
+  {
+    id: "digital-twin",
+    label: "Digital Twin",
+    description: "Twin completeness + observer credibility",
+    icon: React.createElement(Boxes, { className: "size-5" }),
+    route: "/digital-twin",
+    color: FLEET_COLOR,
+    group: "Fleet",
+  },
+  // Download the Qontinui Runner desktop app (the in-app /download page
+  // resolves the latest release dynamically).
+  {
+    id: "download-runner",
+    label: "Download Runner",
+    description: "Download the Qontinui Runner desktop app",
+    icon: React.createElement(Download, { className: "size-5" }),
+    route: "/download",
+    color: FLEET_COLOR,
+    group: "Fleet",
+  },
+
+  // ===========================================================================
+  // Access — who is in the project, and which agents they get by default.
+  // ===========================================================================
+  ...coordModelGroup("access").items.map((leaf) =>
+    coordLeafItem(leaf, "Access")
+  ),
+
+  // Scheduled Runs — cron-style workflow dispatches. Advanced/automation (gated
+  // behind the "Show advanced automation features" toggle on web).
+  {
+    id: "scheduled-runs",
+    label: "Scheduled Runs",
+    description: "Cron-style workflow dispatches",
+    icon: React.createElement(CalendarClock, { className: "size-5" }),
+    route: "/scheduled-runs",
     color: "#0EA5E9",
     group: "Automation",
   },
@@ -175,36 +273,6 @@ export const devNavItems: NavItem[] = [
     route: "/model-cost-comparison",
     color: "#F59E0B",
     group: "Tools",
-  },
-
-  // ===========================================================================
-  // Digital Twin — completeness matrix over the coordination-layer observers.
-  // Visualizes how complete the twin is + the per-observer credibility envelope
-  // (the same information AI agents receive). Coord-backed like Operations.
-  // ===========================================================================
-  {
-    id: "digital-twin",
-    label: "Digital Twin",
-    description: "Twin completeness + observer credibility",
-    icon: React.createElement(Boxes, { className: "size-5" }),
-    route: "/digital-twin",
-    color: "#6366F1",
-    group: "Runners",
-  },
-
-  // ===========================================================================
-  // Environments — digital-twin management surface. Register applications +
-  // machines, define environments, designate a CANONICAL machine, and view
-  // per-machine config DRIFT vs canonical. User-JWT scoped (devenv API).
-  // ===========================================================================
-  {
-    id: "environments",
-    label: "Environments",
-    description: "Applications, machines, and config drift vs canonical",
-    icon: React.createElement(Server, { className: "size-5" }),
-    route: "/environments",
-    color: "#6366F1",
-    group: "Runners",
   },
 
   // ===========================================================================
@@ -702,9 +770,6 @@ export const devNavItems: NavItem[] = [
         color: "#FF6B6B",
         adminOnly: true,
       },
-      // (Coord Console moved out to a top-level Coordination item, visible to
-      // all — see above. Its pages are viewable by any tenant member; mutations
-      // stay admin-gated via <CoordAdminOnly>.)
     ],
   },
 ];

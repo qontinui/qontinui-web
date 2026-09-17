@@ -34,9 +34,9 @@ vi.mock("@/lib/extension-slots", () => ({
   useSlotComponent: vi.fn(),
 }));
 
-// Not under test here, and it reads the product-mode context.
-vi.mock("./ProductModeSwitcher", () => ({
-  ProductModeSwitcher: () => <div data-testid="product-mode" />,
+// Not under test here, and it reads the tenant context.
+vi.mock("./ProjectSelector", () => ({
+  ProjectSelector: () => <div data-testid="project-selector" />,
 }));
 
 const mockUseSlotComponent = vi.mocked(useSlotComponent);
@@ -61,10 +61,11 @@ const props = {
   switcherCurrentOrg: null,
   onOrganizationChange: () => {},
   onCreateOrganization: () => {},
+  showOrganizationSwitcher: true,
 };
 
 /**
- * The switcher's wrapper and the product-mode row carry the SAME class list,
+ * The switcher's wrapper and the project-selector row carry the SAME class list,
  * so presence is counted rather than matched: one such container means the
  * switcher section is absent, two means it is present.
  */
@@ -92,6 +93,18 @@ describe("SidebarHeader — organizationSwitcher slot", () => {
     const { container } = render(<SidebarHeader {...props} />);
 
     expect(screen.queryByTestId("switcher")).not.toBeInTheDocument();
+    expect(borderedSections(container)).toBe(1);
+  });
+
+  it("renders no switcher section outside the visual product mode", () => {
+    mockUseSlotComponent.mockReturnValue(() => <div data-testid="switcher" />);
+
+    const { container } = render(
+      <SidebarHeader {...props} showOrganizationSwitcher={false} />
+    );
+
+    expect(screen.queryByTestId("switcher")).not.toBeInTheDocument();
+    expect(screen.getByTestId("project-selector")).toBeInTheDocument();
     expect(borderedSections(container)).toBe(1);
   });
 

@@ -34,6 +34,8 @@ import {
 import { StatusBadge } from "@/components/console";
 import {
   COORD_CREDENTIAL_PALETTE,
+  reportedCoordCredential,
+  reportedCoordCredentialFor,
   resolveCoordCredential,
 } from "./coordCredentialStatus";
 import { CiRunnerBadge } from "./CiRunnerBadge";
@@ -87,6 +89,13 @@ interface MachineCardProps {
   drainState?: DeviceDrainState;
   /** Forced re-read of the drain map after a successful drain/undrain. */
   onDrainActed?: () => void;
+  /**
+   * The clock (epoch ms) the credential report's staleness is judged against.
+   * The Dev Ops Overview passes its ticking clock so a report that ages past
+   * its bound flips to `unknown` without waiting for a read; `undefined` falls
+   * back to `Date.now()` at render.
+   */
+  nowMs?: number;
 }
 
 function OsIcon({ os }: { os: string }) {
@@ -366,6 +375,7 @@ export function MachineCard({
   drainTarget,
   drainState,
   onDrainActed,
+  nowMs,
 }: MachineCardProps) {
   const { hostname, displayName, runners, claudeSessions } = machine;
 
@@ -570,16 +580,26 @@ export function MachineCard({
    * health read, an absent verdict is an absence of the READ, and the card says
    * nothing rather than claiming this machine's credential is unknown.
    */
-  const reportedCredential = (
-    machine.currentActivity?.details as Record<string, unknown> | undefined
-  )?.coord_credential;
+  // The same read the health strip's rollup performs. On a row matched to a
+  // coord device, the stream row's report counts only if it is THAT device's
+  // (`device_id` equal): two coord devices sharing a hostname fold onto one
+  // row, and the row must not borrow a report from the one it is not showing.
+  // The lookup hands back the bag WITH the row's `updated_at`, so a report
+  // past its staleness bound reads `unknown` here exactly as on the strip.
+  const reportedCredential = machine.coordHealth?.matched
+    ? reportedCoordCredentialFor(
+        machine.coordHealth.device_id,
+        machine.currentActivity
+      )
+    : reportedCoordCredential(machine.currentActivity);
   const credential =
-    machine.coordHealth || reportedCredential !== undefined
+    machine.coordHealth || reportedCredential.reported !== undefined
       ? resolveCoordCredential({
           credentialDark: machine.coordHealth?.matched
             ? machine.coordHealth.credential_dark
             : undefined,
-          reported: reportedCredential,
+          ...reportedCredential,
+          now: nowMs,
         })
       : null;
   /**
@@ -592,7 +612,7 @@ export function MachineCard({
    * under a red badge is the kind of precision an operator acts on.
    */
   const credentialSince = credential?.since
-    ? relativeTime(credential.since)
+    ? relativeTime(credential.since, { now: nowMs })
     : null;
 
   // Pick OS from first runner

@@ -45,10 +45,13 @@ export class ClickCaptureClient {
       clearTimeout(timeoutId);
 
       if (!response.ok) {
-        const errorText = await response.text();
+        const message = await this.base.failureMessage(
+          response,
+          "Failed to start click capture"
+        );
         return {
           success: false,
-          error: `Failed to start click capture: ${response.status} - ${errorText}`,
+          error: message,
         };
       }
 
@@ -91,10 +94,13 @@ export class ClickCaptureClient {
       clearTimeout(timeoutId);
 
       if (!response.ok) {
-        const errorText = await response.text();
+        const message = await this.base.failureMessage(
+          response,
+          "Failed to stop click capture"
+        );
         return {
           success: false,
-          error: `Failed to stop click capture: ${response.status} - ${errorText}`,
+          error: message,
         };
       }
 
@@ -133,9 +139,16 @@ export class ClickCaptureClient {
       });
 
       if (!response.ok) {
+        const message = await this.base.failureMessage(
+          response,
+          "Failed to get click capture status",
+          {
+            includeBody: false,
+          }
+        );
         return {
           success: false,
-          error: `Failed to get click capture status: ${response.status}`,
+          error: message,
         };
       }
 

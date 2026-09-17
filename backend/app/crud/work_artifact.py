@@ -74,6 +74,7 @@ from sqlalchemy import (
     or_,
     select,
     text,
+    true,
 )
 from sqlalchemy.dialects.postgresql import ARRAY
 from sqlalchemy.exc import IntegrityError
@@ -1227,6 +1228,122 @@ async def capture_health(
         )
         for row in (await db.execute(stmt)).all()
     ]
+
+
+@dataclass(frozen=True)
+class CapturedPlanCorpus:
+    """The CORPUS side of the coverage set difference, for one organization.
+
+    Phase 3 of ``2026-09-15-captured-vs-authored-coverage-is-a-set-difference``.
+    Two facts, and the second is what makes a >100% coverage reading
+    unconstructible:
+
+    * ``slugs_by_source_repo`` — the ``kind == 'plan'`` stems the corpus holds
+      under each ``source_repo`` key that was ASKED for. A key with no rows is
+      present with an empty set, so a caller never has to tell "no rows" from
+      "not asked".
+    * ``plan_row_count`` — EVERY ``kind == 'plan'`` row in the organization,
+      whatever its ``source_repo`` (including ``null``). A key's out-of-scope
+      count is this minus that key's own, which names the rows a naive
+      numerator swept in rather than letting them inflate a ratio.
+
+    The stems come back as sets rather than counts because the answer the plan
+    needs is a set DIFFERENCE: how many stems that exist have no row is not
+    derivable from two totals.
+    """
+
+    slugs_by_source_repo: dict[str, frozenset[str]]
+    plan_row_count: int
+
+
+async def captured_plan_corpus(
+    db: AsyncSession, *, org_id: UUID | None, source_repos: Iterable[str]
+) -> CapturedPlanCorpus:
+    """The plan stems this organization's corpus holds, per asked-for key.
+
+    ``source_repos`` is the set of keys a coverage read has a denominator for
+    — the scan sources devices reported. Only those are enumerated: the stem
+    query is the expensive half (the fleet's corpus is ~1800 plan rows), and a
+    key nobody can measure against needs no set.
+
+    ``plan_row_count`` is counted over the WHOLE organization, so it stays
+    correct when ``source_repos`` is empty — which is exactly the case where
+    an out-of-scope count matters most and a caller deriving the total by
+    summing the returned sets would get 0.
+
+    ⚠️ **Both facts come from ONE statement, and that is a correctness
+    requirement rather than a round-trip saving.** The two used to be separate
+    ``execute`` calls on one session, and under the default READ COMMITTED
+    isolation each got its OWN snapshot. The runner's body sync inserts plan
+    rows continuously (a ~68 s cycle, and in bulk on a first-start backfill),
+    so a row landing between the two reads made
+    ``len(slugs_by_source_repo[key])`` exceed ``plan_row_count`` — and the
+    caller's ``plan_row_count - len(captured)`` then served a NEGATIVE
+    ``out_of_scope_artifact_count`` on a ``measured`` coverage entry, with
+    "captured" larger than every plan row the organization has. That is the
+    same class of impossible number (the 101.8%) this whole feature exists to
+    make unconstructible, so it is fixed at the source rather than clamped:
+    ``max(0, ...)`` would turn an impossible number into a plausible wrong one
+    and hide the torn read entirely.
+
+    The single statement is a ``count(*)`` CTE LEFT JOINed to the stem select
+    ``ON true``. The join preserves the aggregate's one row when no stem
+    matches (including when ``source_repos`` is empty), so the total is always
+    present, and both facts are read at one snapshot by construction rather
+    than by isolation level.
+
+    Matching is on ``source_repo`` EXACTLY, including case: it is the
+    scanner's own two-component form (``<repo>/<dir relative to the repo
+    root>``), and a near-miss key is a different row that belongs in the
+    out-of-scope count rather than being folded in.
+    """
+    wanted = sorted(set(source_repos))
+
+    total_cte = (
+        select(func.count().label("plan_row_count"))
+        .select_from(WorkArtifact)
+        .where(_org_scope(org_id), WorkArtifact.kind == "plan")
+        .cte("plan_row_total")
+    )
+    stems = (
+        select(
+            WorkArtifact.source_repo.label("source_repo"),
+            WorkArtifact.slug.label("slug"),
+        )
+        .where(
+            _org_scope(org_id),
+            WorkArtifact.kind == "plan",
+            # An empty ``wanted`` renders as a false constant, so the join
+            # contributes no rows and the aggregate's row survives alone.
+            WorkArtifact.source_repo.in_(wanted),
+        )
+        .subquery("captured_stems")
+    )
+    stmt = select(
+        total_cte.c.plan_row_count,
+        stems.c.source_repo,
+        stems.c.slug,
+    ).select_from(total_cte.outerjoin(stems, true()))
+
+    rows = (await db.execute(stmt)).all()
+    if not rows:  # pragma: no cover — ``count(*)`` always yields exactly one row
+        raise RuntimeError(
+            "captured_plan_corpus read no rows: a count(*) aggregate always "
+            "yields one, and the LEFT JOIN preserves it. Returning 0 here "
+            "would publish an unmeasured total as a measured one."
+        )
+
+    slugs: dict[str, set[str]] = {key: set() for key in wanted}
+    for row in rows:
+        # ``source_repo`` is NULL only on the join's no-match row — ``IN``
+        # never matches a NULL key — so the bucket always exists.
+        if row.source_repo is not None:
+            slugs[row.source_repo].add(row.slug)
+
+    return CapturedPlanCorpus(
+        slugs_by_source_repo={key: frozenset(value) for key, value in slugs.items()},
+        plan_row_count=int(rows[0].plan_row_count),
+    )
 
 
 async def find_divergent(

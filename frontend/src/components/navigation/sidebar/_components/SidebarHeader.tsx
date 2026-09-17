@@ -6,7 +6,7 @@ import type {
   OrganizationSwitcherProps,
   SwitcherOrganization,
 } from "@/lib/cloud-component-slots";
-import { ProductModeSwitcher } from "./ProductModeSwitcher";
+import { ProjectSelector } from "./ProjectSelector";
 
 type SwitcherOrg = SwitcherOrganization;
 
@@ -18,6 +18,13 @@ interface SidebarHeaderProps {
   switcherCurrentOrg: SwitcherOrg | null;
   onOrganizationChange: (orgId: string) => void;
   onCreateOrganization: () => void;
+  /**
+   * Organizations belong to the visual-automation side (automation projects,
+   * collaboration) and have no relationship to coord tenants, so the
+   * organization switcher renders only in the visual product mode. The
+   * header's always-on selector is the Project (tenant) one.
+   */
+  showOrganizationSwitcher: boolean;
 }
 
 export function SidebarHeader({
@@ -28,6 +35,7 @@ export function SidebarHeader({
   switcherCurrentOrg,
   onOrganizationChange,
   onCreateOrganization,
+  showOrganizationSwitcher,
 }: SidebarHeaderProps) {
   // Resolves to cloud-control's real switcher in composed deploys, or
   // `undefined` in OSS-only — in which case the entire wrapper section
@@ -87,10 +95,19 @@ export function SidebarHeader({
           isCollapsed && "flex justify-center"
         )}
       >
-        <ProductModeSwitcher isCollapsed={isCollapsed} />
+        {mounted ? (
+          <ProjectSelector isCollapsed={isCollapsed} />
+        ) : (
+          <div
+            className={cn(
+              "h-8 rounded-md bg-surface-raised/50 animate-pulse",
+              isCollapsed ? "w-8" : "w-full"
+            )}
+          />
+        )}
       </div>
 
-      {!isCollapsed && OrganizationSwitcher && (
+      {showOrganizationSwitcher && !isCollapsed && OrganizationSwitcher && (
         // The boundary wraps the WRAPPER, not just the switcher: a throw
         // then leaves no empty bordered container, which is the same shape
         // the OSS-only build renders. The fallback must be a truthy node —

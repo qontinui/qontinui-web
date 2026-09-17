@@ -141,7 +141,10 @@ class TestListProposals:
         assert instance.get.call_args.args[0].endswith(
             "/coord/prompt-document-proposals"
         )
-        assert instance.get.call_args.kwargs["params"] == {"status": "approved"}
+        assert instance.get.call_args.kwargs["params"] == {
+            "status": "approved",
+            "limit": 100,
+        }
 
     def test_defaults_to_pending(self, auth_client: TestClient):
         with _patch_httpx() as MockClient:
@@ -153,7 +156,49 @@ class TestListProposals:
 
             auth_client.get(PROPOSALS)
 
-        assert instance.get.call_args.kwargs["params"] == {"status": "pending"}
+        # The default is coord's OWN ``unwrap_or(100)``, restated here rather
+        # than left implicit: declaring ``limit`` must not change what the
+        # pending queue asks for, only make a caller-supplied bound reach coord.
+        assert instance.get.call_args.kwargs["params"] == {
+            "status": "pending",
+            "limit": 100,
+        }
+
+    def test_forwards_a_caller_supplied_limit(self, auth_client: TestClient):
+        """The bug this pins: an UNDECLARED query parameter is not forwarded,
+        it is discarded.
+
+        The console's collapsed sections ask for ``?limit=20``. Before ``limit``
+        was declared on this handler FastAPI dropped it, the proxy sent coord
+        only ``status``, and coord fell back to its own ``unwrap_or(100)`` — five
+        times the bound the caller asked for, while the caller's own constant
+        documented 20 as honoured. Nothing failed; the page simply read more
+        than it said it did.
+        """
+        with _patch_httpx() as MockClient:
+            instance = AsyncMock()
+            instance.get.return_value = _mock_response(
+                json_data={"proposals": [], "total": 0}
+            )
+            _configure_mock_client(MockClient, instance)
+
+            resp = auth_client.get(f"{PROPOSALS}?status=stale&limit=20")
+
+        assert resp.status_code == 200
+        assert instance.get.call_args.kwargs["params"] == {
+            "status": "stale",
+            "limit": 20,
+        }
+
+    def test_rejects_a_limit_outside_the_declared_bounds(self, auth_client: TestClient):
+        """``ge=1, le=500`` is enforced by FastAPI, not passed through to coord.
+
+        Without the bounds a declared parameter is just a wider hole than the
+        discarded one: ``?limit=0`` and ``?limit=100000`` would both reach coord
+        verbatim.
+        """
+        assert auth_client.get(f"{PROPOSALS}?limit=0").status_code == 422
+        assert auth_client.get(f"{PROPOSALS}?limit=501").status_code == 422
 
     def test_coord_404_degrades_to_unavailable_not_empty_queue(
         self, auth_client: TestClient

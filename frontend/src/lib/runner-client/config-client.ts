@@ -1,9 +1,14 @@
 /**
  * Config, status, and screenshot operations for the runner client.
  *
- * Handles loadConfig, getMonitors, isAvailable, getStatus, and captureScreenshot.
+ * Handles loadConfig, getMonitors, getAvailability/isAvailable, getStatus, and
+ * captureScreenshot.
  */
 
+import {
+  describeRunnerOriginRefusal,
+  parseRunnerOriginRefusalText,
+} from "@/lib/runner/origin-refusal";
 import { BaseClient } from "./base-client";
 import type {
   MonitorsResponse,
@@ -12,6 +17,15 @@ import type {
   CaptureScreenshotRequest,
   CaptureScreenshotResponse,
 } from "./types";
+
+export interface RunnerAvailability {
+  available: boolean;
+  /**
+   * Set only when the runner answered but refused this page's origin — the
+   * runner IS running, so callers must show this instead of "not connected".
+   */
+  refusalMessage: string | null;
+}
 
 export class ConfigClient {
   private base: BaseClient;
@@ -42,10 +56,13 @@ export class ConfigClient {
       clearTimeout(timeoutId);
 
       if (!response.ok) {
-        const errorText = await response.text();
+        const message = await this.base.failureMessage(
+          response,
+          "Failed to load config"
+        );
         return {
           success: false,
-          error: `Failed to load config: ${response.status} - ${errorText}`,
+          error: message,
         };
       }
 
@@ -84,10 +101,11 @@ export class ConfigClient {
       clearTimeout(timeoutId);
 
       if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(
-          `Failed to fetch monitors: ${response.status} - ${errorText}`
+        const message = await this.base.failureMessage(
+          response,
+          "Failed to fetch monitors"
         );
+        throw new Error(message);
       }
 
       return response.json();
@@ -98,9 +116,16 @@ export class ConfigClient {
   }
 
   /**
-   * Check if the runner is available
+   * Check whether the runner is reachable AND answers this page.
+   *
+   * A runner that refuses this page's origin (the typed `CROSS_ORIGIN_REFUSED`
+   * 403, plan `2026-09-17-runner-loopback-api-accepts-any-origin`) is running
+   * — reporting it as "not connected" would send the operator to start a
+   * runner that is already up. So that case comes back with `refusalMessage`
+   * set, naming the route, the origin and how to admit it. The whole check,
+   * the 403 body read included, stays under the 2s abort.
    */
-  async isAvailable(): Promise<boolean> {
+  async getAvailability(): Promise<RunnerAvailability> {
     try {
       const response = await fetch(`${this.base.baseUrl}/status`, {
         method: "GET",
@@ -110,10 +135,28 @@ export class ConfigClient {
         // Short timeout for availability check
         signal: AbortSignal.timeout(2000),
       });
-      return response.ok;
+      if (response.ok) return { available: true, refusalMessage: null };
+      if (response.status === 403) {
+        const refusal = parseRunnerOriginRefusalText(await response.text());
+        if (refusal) {
+          return {
+            available: false,
+            refusalMessage: describeRunnerOriginRefusal(refusal),
+          };
+        }
+      }
+      return { available: false, refusalMessage: null };
     } catch {
-      return false;
+      return { available: false, refusalMessage: null };
     }
+  }
+
+  /**
+   * Check if the runner is available. Use {@link getAvailability} where the
+   * caller renders a message: this boolean cannot say WHY it is false.
+   */
+  async isAvailable(): Promise<boolean> {
+    return (await this.getAvailability()).available;
   }
 
   /**
@@ -128,10 +171,11 @@ export class ConfigClient {
     });
 
     if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(
-        `Failed to fetch runner status: ${response.status} - ${errorText}`
+      const message = await this.base.failureMessage(
+        response,
+        "Failed to fetch runner status"
       );
+      throw new Error(message);
     }
 
     return response.json();
@@ -161,10 +205,13 @@ export class ConfigClient {
       clearTimeout(timeoutId);
 
       if (!response.ok) {
-        const errorText = await response.text();
+        const message = await this.base.failureMessage(
+          response,
+          "Failed to capture screenshot"
+        );
         return {
           success: false,
-          error: `Failed to capture screenshot: ${response.status} - ${errorText}`,
+          error: message,
         };
       }
 

@@ -120,6 +120,183 @@ def test_merge_revision_tuple_names_both_parents() -> None:
     assert scan_sources(sources).heads == ("m",)
 
 
+def test_a_down_revision_wrapped_by_the_formatter_still_names_its_parent() -> None:
+    """ruff-format wraps a long right-hand side; that is not a fork.
+
+    ``down_revision: str | Sequence[str] | None = "<id>"`` passes the repo's
+    88-column budget once the parent id is long enough, and ruff-format then
+    parenthesises the value onto its own line. The line-anchored pattern this
+    gate used to carry read that as NO parent, so the child became a head and
+    the gate reported a fork alembic itself did not see — qontinui-web #1370,
+    parent ``coord_repo_branches_touched_files_authoritative_01``.
+    """
+    sources = {
+        **_tree(("a", None)),
+        Path("b.py"): (
+            'revision: str = "b"\n'
+            "down_revision: str | Sequence[str] | None = (\n"
+            '    "a"\n'
+            ")\n"
+        ),
+    }
+    assert scan_sources(sources).heads == ("b",)
+
+
+def test_a_wrapped_merge_tuple_still_names_both_parents() -> None:
+    sources = {
+        **_tree(("a", None), ("b", "a"), ("c", "a")),
+        Path("m.py"): (
+            'revision: str = "m"\n'
+            "down_revision: str | Sequence[str] | None = (\n"
+            '    "b",\n'
+            '    "c",\n'
+            ")\n"
+        ),
+    }
+    assert scan_sources(sources).heads == ("m",)
+
+
+def test_down_re_annotation_cannot_borrow_the_next_lines_value() -> None:
+    """The NON-monotone half of the widening, pinned on ``DOWN_RE``.
+
+    The existing ``test_an_annotation_cannot_borrow_the_next_lines_value``
+    below pins the same property on the PIN matchers; this is the head-graph
+    side, which only acquired it in this change.
+
+    ``[^=]*`` in the annotation segment crossed newlines, so a bare
+    ``down_revision: <annotation>`` with no value of its own reached forward and
+    took the next assignment's literal — a phantom parent. ``[^=\n]*`` stops
+    that, which can LOSE a parent and therefore GROW the head set. It loses none
+    on this tree (verified over all 566 revision files), and the same narrowing
+    is already carried by ``PIN_REVISION_RE``/``PIN_PARENT_RE``.
+    """
+    sources = {
+        **_tree(("a", None)),
+        Path("b.py"): (
+            'revision: str = "b"\n'
+            "down_revision: str | Sequence[str] | None\n"
+            'some_other_name = "a"\n'
+        ),
+    }
+    # "a" is NOT b's parent, so both are heads.
+    assert scan_sources(sources).heads == ("a", "b")
+
+
+def test_a_comment_after_a_tuple_contributes_no_phantom_parent() -> None:
+    """``zz`` must be a REAL revision or this arm cannot fail.
+
+    With ``zz`` absent, admitting it as a phantom parent changes no head (it is
+    in no head set to begin with) and ``"zz" not in scan.revisions`` is true by
+    construction — so the assertions passed under the old line-oriented pattern
+    too, which scrapes it. Giving ``zz`` its own file is what makes the phantom
+    visible: scraped, it stops being a head; not scraped, it stays one.
+    """
+    sources = {
+        **_tree(("a", None), ("b", "a"), ("c", "a"), ("zz", "a")),
+        Path("m.py"): (
+            'revision: str = "m"\ndown_revision = ("b", "c")  # superseded "zz"\n'
+        ),
+    }
+    assert scan_sources(sources).heads == ("m", "zz")
+
+
+def test_a_wrapped_revision_id_is_still_parsed() -> None:
+    """The quieter half of the same defect, on ``REV_RE``.
+
+    A wrapped ``revision`` line used to match nothing, so ``parse_source``
+    returned ``None``, the file left the graph entirely, and its parent became
+    a head with ``file_count`` still counting the file — no duplicate, no zero
+    scan, nothing to report it.
+    """
+    sources = {
+        **_tree(("a", None)),
+        Path("b.py"): (
+            "revision: str = (\n"
+            '    "b"\n'
+            ")\n"
+            'down_revision: str | Sequence[str] | None = "a"\n'
+        ),
+    }
+    scan = scan_sources(sources)
+    assert scan.heads == ("b",)
+    assert set(scan.revisions) == {"a", "b"}
+
+
+def test_a_docstring_cannot_supply_a_revisions_parent() -> None:
+    """Column-0 anchoring alone did NOT close this; masking does.
+
+    A revision's own docstring routinely explains its ``down_revision`` in
+    prose, and five files in this tree already put the word at column 0 inside
+    one. A docstring line that also carries an ``=`` would beat the real
+    assignment and silently re-point the graph at whatever the prose named —
+    the unmasked read was correct only because no such line exists today.
+    ``parse_source`` now reads the masked text, the same discipline the pin
+    matchers use.
+    """
+    sources = {
+        **_tree(("a", None), ("stale", None)),
+        Path("b.py"): (
+            '"""b\n\n'
+            "Once revised `stale`; the line below is PROSE, at column 0:\n"
+            'down_revision: str | Sequence[str] | None = "stale"\n'
+            '"""\n\n'
+            'revision: str = "b"\n'
+            'down_revision: str | Sequence[str] | None = "a"\n'
+        ),
+    }
+    scan = scan_sources(sources)
+    assert scan.revisions["b"] == '"a"'
+    # `stale` keeps its own head; it never became b's parent.
+    assert scan.heads == ("b", "stale")
+
+
+def test_a_docstring_cannot_supply_a_revision_id_either() -> None:
+    """The same mask, on ``REV_RE``: prose must not name the file's revision."""
+    sources = {
+        Path("a.py"): (
+            '"""a\n\n'
+            "This file explains another revision at column 0:\n"
+            'revision: str = "impostor"\n'
+            '"""\n\n'
+            'revision: str = "a"\n'
+            "down_revision: str | Sequence[str] | None = None\n"
+        ),
+    }
+    scan = scan_sources(sources)
+    assert set(scan.revisions) == {"a"}
+    assert scan.heads == ("a",)
+
+
+def test_a_close_paren_inside_a_comment_is_the_documented_reach_limit() -> None:
+    """Pinned as a LIMIT, not as correct behaviour.
+
+    ``[^)]*`` stops at the first ``)``, so a comment holding one truncates the
+    right-hand side and the parents are lost. Both the old and the new pattern
+    read this as no parents, so it is not a regression — it is the boundary the
+    module comment states, and a test is what keeps the statement honest.
+    """
+    sources = {
+        **_tree(("a", None), ("b", "a")),
+        Path("m.py"): (
+            'revision: str = "m"\n'
+            "down_revision = (  # see build_chain(x)\n"
+            '    "a",\n'
+            '    "b",\n'
+            ")\n"
+        ),
+    }
+    assert scan_sources(sources).heads == ("b", "m")
+
+
+def test_a_single_line_down_revision_with_a_trailing_comment_is_unchanged() -> None:
+    """The widening must not move the single-line forms it did not target."""
+    sources = {
+        Path("a.py"): 'revision = "a"\ndown_revision = None  # chain root\n',
+        Path("b.py"): 'revision = "b"\ndown_revision = "a"  # re-pointed 2026-09-15\n',
+    }
+    assert scan_sources(sources).heads == ("b",)
+
+
 def test_a_file_without_a_revision_assignment_is_counted_but_not_parsed() -> None:
     sources = {**_tree(("a", None)), Path("__init__.py"): "# not a revision\n"}
     scan = scan_sources(sources)

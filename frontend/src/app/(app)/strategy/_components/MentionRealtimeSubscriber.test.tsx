@@ -5,6 +5,10 @@
  * drives a mock WebSocket, and asserts that the unread-mentions
  * query cache is invalidated when an `events.strategy.mention.created.<me>`
  * frame arrives. Confirms cross-user frames are ignored.
+ *
+ * The hook opens its socket through the web backend's coord-events
+ * bridge, which needs a session token first — `httpClient` is mocked to
+ * supply one, and `setup` flushes that fetch before returning.
  */
 
 import React from "react";
@@ -13,6 +17,12 @@ import { act, render } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
 import { MentionRealtimeSubscriber } from "./MentionRealtimeSubscriber";
+
+vi.mock("@/services/service-factory", () => ({
+  httpClient: {
+    getWebSocketToken: vi.fn(async () => "test-session-token"),
+  },
+}));
 
 const ME = "me-uuid";
 const OTHER = "other-uuid";
@@ -44,7 +54,7 @@ class MockWebSocket {
   }
 }
 
-function setup(userId: string | null) {
+async function setup(userId: string | null) {
   const qc = new QueryClient({
     defaultOptions: {
       queries: { retry: false },
@@ -60,6 +70,8 @@ function setup(userId: string | null) {
       />
     </QueryClientProvider>
   );
+  // The socket opens only after the token fetch settles.
+  await act(async () => {});
   return { qc, spy, ui };
 }
 
@@ -68,22 +80,27 @@ describe("<MentionRealtimeSubscriber>", () => {
     MockWebSocket.instances = [];
   });
 
-  it("does not open a WebSocket when userId is null", () => {
-    setup(null);
+  it("does not open a WebSocket when userId is null", async () => {
+    await setup(null);
     expect(MockWebSocket.instances).toHaveLength(0);
   });
 
-  it("opens a tightly-scoped pattern when userId is set", () => {
-    setup(ME);
+  it("opens the bridge's strategy subscription when userId is set", async () => {
+    await setup(ME);
     expect(MockWebSocket.instances).toHaveLength(1);
     const url = MockWebSocket.instances[0].url;
-    expect(url).toContain(
-      encodeURIComponent(`events.strategy.mention.created.${ME}`)
-    );
+    // One `strategy` subscription through the backend bridge; the per-user
+    // scoping is the hook's client-side filter, not a socket-level glob —
+    // the bridge's closed set has no per-user names.
+    expect(url).toContain("/api/v1/operations/coord-events/ws?");
+    expect(url).toContain("subscribe=strategy");
+    expect(url).toContain("token=test-session-token");
+    expect(url).not.toContain("pattern=");
+    expect(url).not.toContain(ME);
   });
 
-  it("invalidates the unread-mentions cache on a matching frame", () => {
-    const { spy } = setup(ME);
+  it("invalidates the unread-mentions cache on a matching frame", async () => {
+    const { spy } = await setup(ME);
     const ws = MockWebSocket.instances[0];
     act(() =>
       ws.emit(`events.strategy.mention.created.${ME}`, {
@@ -98,9 +115,11 @@ describe("<MentionRealtimeSubscriber>", () => {
     });
   });
 
-  it("ignores frames addressed to a different user", () => {
-    const { spy } = setup(ME);
+  it("ignores frames addressed to a different user", async () => {
+    const { spy } = await setup(ME);
     const ws = MockWebSocket.instances[0];
+    // The bridge delivers every events.strategy.* frame to this socket, so
+    // this is exactly the frame the hook's filter must drop.
     act(() =>
       ws.emit(`events.strategy.mention.created.${OTHER}`, {
         mention_id: "m-2",

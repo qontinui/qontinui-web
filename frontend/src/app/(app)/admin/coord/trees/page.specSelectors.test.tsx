@@ -29,7 +29,7 @@
  * ## What it deliberately does NOT cover
  *
  * The four `coord-trees-shell` assertions (`h1` "Coord operator console",
- * `coord-nav`, `coord-nav-trees-active`, `coord-nav-group-merge`) belong to
+ * `coord-nav`, `coord-nav-trees-active`, `coord-nav-crumb`) belong to
  * `admin/coord/layout.tsx` and `CoordNav`, which this wave does not touch and
  * which are not mounted by rendering the page in isolation. They are filtered
  * out below by name rather than silently missed.

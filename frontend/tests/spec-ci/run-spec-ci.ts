@@ -997,6 +997,10 @@ function routeForSpec(
     "testing-run-detail": "/testing/runs/spec-ci-sentinel-run",
     "qa-dashboard-run-detail": "/qa-dashboard/runs/spec-ci-sentinel-run",
     "marketplace-detail": "/marketplace/spec-ci-sentinel-pkg",
+    // The dashboard spec captures the visual-automation projects landing.
+    // `/dashboard` only redirects there in visual product mode, which the app
+    // no longer offers, so the spec goes to the surface directly.
+    dashboard: "/tools/visual-automation",
     // Nested slug → path overrides (default /${specId} maps to single segment).
     "configure-finding-rules": "/configure/finding-rules",
     "configure-hooks": "/configure/hooks",
@@ -1487,17 +1491,20 @@ async function main(): Promise<number> {
     await applyHermeticStubs(context);
   }
 
-  // Force the product mode (default "visual") so Spec CI evaluates every spec
+  // Force the product mode (default "ai") so Spec CI evaluates every spec
   // against the canonical product surface rather than whatever the test
-  // account happens to be set to. Mode resolution in the app is
+  // account happens to be set to. While `VISUAL_MODE_AVAILABLE` is false in
+  // `contexts/product-mode-context.tsx` the app renders "ai" whatever is
+  // seeded here; visual-mode pages are still reached by their own routes
+  // (see the `dashboard` override in `routeForSpec`). Mode resolution in the app is
   // `initialMode ?? serverMode ?? storedMode`, where `serverMode` comes from
   // GET /api/v1/users/me/preferences (`product_mode`) and outranks the
   // localStorage value — so we pin BOTH: seed localStorage for the pre-fetch
   // render, and intercept the prefs GET to return `product_mode: <mode>`.
   // The intercept preserves any other preference fields and leaves the staging
-  // account unmutated (no PUT). Override with SPEC_CI_PRODUCT_MODE=ai.
+  // account unmutated (no PUT). Override with SPEC_CI_PRODUCT_MODE=visual.
   const productMode: "ai" | "visual" =
-    process.env.SPEC_CI_PRODUCT_MODE === "ai" ? "ai" : "visual";
+    process.env.SPEC_CI_PRODUCT_MODE === "visual" ? "visual" : "ai";
   // Product-mode seed only — NO `is_authenticated` here (that is seeded
   // separately on the authed context below). Sharing this init lets us reuse
   // the same product-mode pin on the unauth lane without authenticating it.

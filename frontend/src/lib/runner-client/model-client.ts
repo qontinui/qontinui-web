@@ -30,11 +30,14 @@ export class ModelClient {
       });
 
       if (!response.ok) {
-        const errorText = await response.text();
+        const message = await this.base.failureMessage(
+          response,
+          "Failed to list models"
+        );
         return {
           success: false,
           models: [],
-          error: `Failed to list models: ${response.status} - ${errorText}`,
+          error: message,
         };
       }
 
@@ -82,10 +85,13 @@ export class ModelClient {
       clearTimeout(timeoutId);
 
       if (!response.ok) {
-        const errorText = await response.text();
+        const message = await this.base.failureMessage(
+          response,
+          "Failed to download model"
+        );
         return {
           success: false,
-          error: `Failed to download model: ${response.status} - ${errorText}`,
+          error: message,
         };
       }
 
@@ -121,10 +127,13 @@ export class ModelClient {
       });
 
       if (!response.ok) {
-        const errorText = await response.text();
+        const message = await this.base.failureMessage(
+          response,
+          "Failed to delete model"
+        );
         return {
           success: false,
-          error: `Failed to delete model: ${response.status} - ${errorText}`,
+          error: message,
         };
       }
 
@@ -153,14 +162,17 @@ export class ModelClient {
       });
 
       if (!response.ok) {
-        const errorText = await response.text();
+        const message = await this.base.failureMessage(
+          response,
+          "Failed to get model status"
+        );
         return {
           success: false,
           model_id: modelId,
           available: false,
           path: null,
           info: null,
-          error: `Failed to get model status: ${response.status} - ${errorText}`,
+          error: message,
         };
       }
 
@@ -193,13 +205,16 @@ export class ModelClient {
       });
 
       if (!response.ok) {
-        const errorText = await response.text();
+        const message = await this.base.failureMessage(
+          response,
+          "Failed to get disk usage"
+        );
         return {
           success: false,
           total_bytes: 0,
           models: {},
           models_dir: "",
-          error: `Failed to get disk usage: ${response.status} - ${errorText}`,
+          error: message,
         };
       }
 

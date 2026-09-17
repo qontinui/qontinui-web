@@ -29,6 +29,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  act,
   fireEvent,
   render,
   screen,
@@ -46,23 +47,44 @@ vi.mock("@/services/service-factory", () => ({
   },
 }));
 
-// The two live streams `FleetOverview` holds are out of scope here (they have
-// their own tests) and one of them opens a WebSocket. Stubbed to a seeded,
-// empty stream so the machine list under test is built from the fleet payload
-// and coord's device list alone.
+// The two live streams are out of scope here (they have their own tests) and
+// one of them opens a WebSocket. The device-status stream is subscribed by the
+// PAGE and handed to `FleetOverview` and the strip's credential rollup; the
+// symbol-claims stream is held inside `FleetOverview`. Both are stubbed to a
+// seeded, empty stream so the machine list under test is built from the fleet
+// payload and coord's device list alone.
 //
 // The device-status half is seedable rather than permanently empty: its rows
 // carry the runner's own `details` bag, which is where the credential posture
 // of plan `2026-09-12-runner-loads-with-an-expired-coord-credential-and-…`
 // arrives. Tests that do not seed it get exactly the empty stream this stub
 // always was.
+//
+// `deviceStatusStream.byHostname` is swappable: the real hook REPLACES its Map
+// on every update, and a test that needs to prove the page re-derives on a new
+// identity assigns a fresh Map here and re-renders.
+// `error` and `seeded` are settable too, for the tests that prove a failed or
+// pending stream read is named as its own cause rather than as the runners'
+// silence.
 const deviceStatusRows = new Map<string, unknown>();
+const deviceStatusStream: {
+  byHostname: Map<string, unknown>;
+  error: string | null;
+  seeded: boolean;
+  everSeeded: boolean;
+} = {
+  byHostname: deviceStatusRows,
+  error: null,
+  seeded: true,
+  everSeeded: true,
+};
 vi.mock("@/components/operations/useDeviceStatusStream", () => ({
   useDeviceStatusStream: () => ({
-    byHostname: deviceStatusRows,
+    byHostname: deviceStatusStream.byHostname,
     connected: false,
-    error: null,
-    seeded: true,
+    error: deviceStatusStream.error,
+    seeded: deviceStatusStream.seeded,
+    everSeeded: deviceStatusStream.everSeeded,
     refetch: vi.fn(),
   }),
 }));
@@ -1574,7 +1596,83 @@ describe("/admin/coord/devops — the coord-credential axis", () => {
     httpFetch.mockReset();
     routerPush.mockReset();
     deviceStatusRows.clear();
+    deviceStatusStream.byHostname = deviceStatusRows;
+    deviceStatusStream.error = null;
+    deviceStatusStream.seeded = true;
+    deviceStatusStream.everSeeded = true;
     window.localStorage.clear();
+  });
+
+  it.each([
+    ["has failed", "HTTP 500", true, "HTTP 500"],
+    ["has not seeded yet", null, false, "not loaded yet"],
+  ])(
+    "names a device-status stream that %s (no full read ever succeeded) as its own cause, not as the runners' silence",
+    async (_name, error, seeded, cause) => {
+      deviceStatusStream.error = error;
+      deviceStatusStream.seeded = seeded;
+      deviceStatusStream.everSeeded = false;
+      mockRoutes({
+        devices: [
+          coordDevice("d-1", "msi", "healthy", {
+            credential_dark: { dark: false },
+          }),
+        ],
+        runners: [runner("msi")],
+        samples: [],
+        healthExtras: { credential_dark_scrape_up: true },
+      });
+
+      render(<CoordDevOpsPage />);
+
+      const strip = await screen.findByTestId(
+        "coord-devops-credential-unknown-badge"
+      );
+      // The count stands — the machine really is unmeasured on this read…
+      expect(strip).toHaveTextContent("credential unknown 1");
+      // …but the tooltip says the READ failed, not that the runner was silent.
+      const title = strip.getAttribute("title") ?? "";
+      expect(title).toContain(
+        `No full device-status read has succeeded yet (${cause}); runner reports that arrived since may be incomplete`
+      );
+      expect(title).not.toMatch(/Neither coord's dark scan nor/);
+      expect(title).not.toMatch(/may be stale/);
+    }
+  );
+
+  it("says a stream that WAS fed but whose latest read failed may be stale, not unreadable", async () => {
+    // Rows are being served from an earlier read; one re-seed then failed.
+    // `msi` still reports nothing of its own, so it stays counted unknown —
+    // but "no full read has succeeded" would be false, because one did.
+    deviceStatusRows.set(
+      "msi",
+      deviceStatusRow("d-1", "msi", { current_task: "x" })
+    );
+    deviceStatusStream.error = "HTTP 502";
+    deviceStatusStream.seeded = true;
+    deviceStatusStream.everSeeded = true;
+    mockRoutes({
+      devices: [
+        coordDevice("d-1", "msi", "healthy", {
+          credential_dark: { dark: false },
+        }),
+      ],
+      runners: [runner("msi")],
+      samples: [],
+      healthExtras: { credential_dark_scrape_up: true },
+    });
+
+    render(<CoordDevOpsPage />);
+
+    const strip = await screen.findByTestId(
+      "coord-devops-credential-unknown-badge"
+    );
+    expect(strip).toHaveTextContent("credential unknown 1");
+    const title = strip.getAttribute("title") ?? "";
+    expect(title).toContain(
+      "The last device-status read failed (HTTP 502); runner reports may be stale"
+    );
+    expect(title).not.toMatch(/No full device-status read/);
   });
 
   /** The credential badge on one machine's row, or null. */
@@ -1625,6 +1723,79 @@ describe("/admin/coord/devops — the coord-credential axis", () => {
     expect(
       screen.queryByTestId("coord-devops-credential-dark-badge")
     ).not.toBeInTheDocument();
+    // …and the strip AGREES with the row: the rollup resolves `msi` from the
+    // same heartbeat bag, so it is counted measured-and-ok — not `credential
+    // unknown 1`, which is what the strip said while it could see coord's join
+    // alone.
+    expect(
+      screen.queryByTestId("coord-devops-credential-unknown-badge")
+    ).not.toBeInTheDocument();
+  });
+
+  // A report goes stale by TIME alone, and the runner that stopped reporting is
+  // the one that sends no frame. So the strip must re-resolve on the page's own
+  // clock: here the stream stays silent and fleet-health starts failing (which
+  // pins `devices`), and the only thing that moves is time.
+  it("flips a healthy report to UNKNOWN once it ages past its bound, with no new data", async () => {
+    // `setTimeout` stays real so `waitFor`'s timeout still fires. Faking
+    // `setInterval` stops `waitFor`'s own polling, so every `waitFor` below
+    // settles through its MutationObserver: only wait on DOM changes here.
+    vi.useFakeTimers({
+      toFake: ["Date", "setInterval", "clearInterval"],
+    });
+    try {
+      vi.setSystemTime(new Date("2026-09-14T12:00:00Z"));
+      deviceStatusRows.set(
+        "msi",
+        deviceStatusRow("d-1", "msi", { coord_credential: { ok: true } })
+      );
+      mockRoutes({
+        devices: [
+          coordDevice("d-1", "msi", "healthy", {
+            credential_dark: { dark: false },
+          }),
+        ],
+        runners: [runner("msi")],
+        samples: [],
+        healthExtras: { credential_dark_scrape_up: true },
+      });
+
+      render(<CoordDevOpsPage />);
+
+      await waitFor(() =>
+        expect(credentialBadge("msi")).toHaveAttribute(
+          "data-operations-coord-credential",
+          "live"
+        )
+      );
+      expect(
+        screen.queryByTestId("coord-devops-credential-unknown-badge")
+      ).not.toBeInTheDocument();
+
+      // Coord's health read goes down: `devices` keeps its last identity.
+      httpGet.mockImplementation((url: unknown) =>
+        String(url).includes("fleet/health")
+          ? Promise.reject(new Error("HTTP 503"))
+          : Promise.resolve({ latest: [], history: [] })
+      );
+
+      // Past the 900 s fallback bound, by the page's 15 s tick.
+      await act(async () => {
+        vi.advanceTimersByTime(915_000);
+      });
+
+      await waitFor(() =>
+        expect(
+          screen.getByTestId("coord-devops-credential-unknown-badge")
+        ).toHaveTextContent("credential unknown 1")
+      );
+      expect(credentialBadge("msi")).toHaveAttribute(
+        "data-operations-coord-credential",
+        "unknown"
+      );
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   // C5. Coord's `{dark: false}` is a roster stamp, not a measurement:
@@ -1853,14 +2024,97 @@ describe("/admin/coord/devops — the coord-credential axis", () => {
       "data-operations-coord-credential",
       "live"
     );
-    // The strip and the rows disagree here ON PURPOSE, and this is the
-    // assertion that pins it: the rollup sees fleet-health rows only, where
-    // `msi`'s affirmative report does not appear, so it counts BOTH machines
-    // as unmeasured. The strip under-claims; it never over-claims. Wiring the
-    // device-status stream into this page would close the gap — and would
-    // cost a second subscription the page does not otherwise need.
+    // The strip and the rows AGREE. The page owns the one device-status
+    // subscription and hands it to both, so the rollup sees `msi`'s
+    // affirmative report exactly as its row does: `msi` is measured (ok), and
+    // only `ghost` — which nothing measured — is counted unknown. This used to
+    // read `credential unknown 2`, the strip under-claiming a machine its own
+    // row showed live.
     expect(
       screen.getByTestId("coord-devops-credential-unknown-badge")
-    ).toHaveTextContent("credential unknown 2");
+    ).toHaveTextContent("credential unknown 1");
+    expect(
+      screen.queryByTestId("coord-devops-credential-dark-badge")
+    ).not.toBeInTheDocument();
+  });
+
+  it("re-derives the strip when the stream delivers a NEW map after mount", async () => {
+    // The hook replaces its Map on every update. The strip's rollup is a
+    // `useMemo` keyed on that identity, so a report that arrives AFTER the
+    // first render must move the count — the fleet-health read has not
+    // changed, and a memo that ignored `byHostname` would stay stale here.
+    mockRoutes({
+      devices: [
+        coordDevice("d-1", "msi", "healthy", {
+          credential_dark: { dark: false },
+        }),
+      ],
+      runners: [runner("msi")],
+      samples: [],
+      healthExtras: { credential_dark_scrape_up: true },
+    });
+
+    const { rerender } = render(<CoordDevOpsPage />);
+
+    expect(
+      await screen.findByTestId("coord-devops-credential-unknown-badge")
+    ).toHaveTextContent("credential unknown 1");
+
+    deviceStatusStream.byHostname = new Map<string, unknown>([
+      [
+        "msi",
+        deviceStatusRow("d-1", "msi", { coord_credential: { ok: true } }),
+      ],
+    ]);
+    rerender(<CoordDevOpsPage />);
+
+    await waitFor(() =>
+      expect(
+        screen.queryByTestId("coord-devops-credential-unknown-badge")
+      ).not.toBeInTheDocument()
+    );
+    expect(credentialBadge("msi")).toHaveAttribute(
+      "data-operations-coord-credential",
+      "live"
+    );
+    expect(
+      screen.queryByTestId("coord-devops-credential-dark-badge")
+    ).not.toBeInTheDocument();
+  });
+
+  it("does not let a row borrow the report of a different device sharing its hostname", async () => {
+    // A re-paired box: coord holds `d-new` and `d-old`, both `msi`. The stream
+    // row under `msi` is `d-new`'s, and it reports healthy. The machine row's
+    // coord join is last-writer-wins, so with this order it shows `d-old` —
+    // which published nothing, and must not wear `d-new`'s `live`.
+    deviceStatusRows.set(
+      "msi",
+      deviceStatusRow("d-new", "msi", { coord_credential: { ok: true } })
+    );
+    mockRoutes({
+      devices: [
+        coordDevice("d-new", "msi", "healthy", {
+          credential_dark: { dark: false },
+        }),
+        coordDevice("d-old", "msi", "healthy", {
+          credential_dark: { dark: false },
+        }),
+      ],
+      runners: [runner("msi")],
+      samples: [],
+      healthExtras: { credential_dark_scrape_up: true },
+    });
+
+    render(<CoordDevOpsPage />);
+
+    await waitFor(() => expect(credentialBadge("msi")).not.toBeNull());
+    expect(credentialBadge("msi")).toHaveAttribute(
+      "data-operations-coord-credential",
+      "unknown"
+    );
+    // The strip counts both devices: `d-new` measured, `d-old` not.
+    expect(
+      screen.getByTestId("coord-devops-credential-unknown-badge")
+    ).toHaveTextContent("credential unknown 1");
   });
 });

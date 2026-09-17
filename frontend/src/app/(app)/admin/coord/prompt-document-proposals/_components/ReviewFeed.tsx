@@ -3,10 +3,12 @@
 import { useState } from "react";
 import { AlertTriangle, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { RecordList } from "@/components/console";
 import { cn } from "@/lib/utils";
+import { CollapsiblePanel, RecordList } from "@/components/console";
 import { usePromptDocumentProposals } from "../_hooks/usePromptDocumentProposals";
+import { formatWhen, plural } from "../_lib/format";
 import { isUnavailableSevere } from "../types";
+import type { PromptDocumentProposal, UnavailableKind } from "../types";
 import { LandedWriteFeed } from "./LandedWriteFeed";
 import { ProposalCard } from "./ProposalCard";
 
@@ -25,6 +27,21 @@ import { ProposalCard } from "./ProposalCard";
  *                     window before its Phase 5 half deploys). An empty list
  *                     here means "cannot see", not "nothing pending".
  *   • genuinely empty — the only case that gets a reassuring message.
+ *
+ * Below the queue sits the RETIRED section — proposals coord closed itself when
+ * their target document moved (plan
+ * `2026-09-13-policy-proposals-agent-decidable-dial-driven-self-retiring`,
+ * Phase 4). It exists so a retirement is VISIBLE rather than a row silently
+ * disappearing from the queue between two refreshes, and it repeats the same
+ * three-state honesty one level down: populated, "none retired recently", and
+ * UNKNOWN when the read failed [policy `verification-and-evidence`
+ * `silent-empty-is-unknown`; `ux-priorities` — honesty about uncertainty /
+ * no-surprise].
+ *
+ * Beside it sits RECENTLY PROPOSED & APPROVED, on the same three-state
+ * contract and for a sharper reason: it is the only read on this page that can
+ * serve a DECIDED row, and therefore the only place `<ProposalCard>`'s
+ * self-decided provenance line can appear. See `DecidedProposals`.
  */
 export function ReviewFeed() {
   /**
@@ -34,8 +51,23 @@ export function ReviewFeed() {
    * component to clear it.
    */
   const [openProposal, setOpenProposal] = useState<string | null>(null);
+  /**
+   * The open row in the "Recently proposed & approved" section — its OWN key,
+   * not shared with the queue above. Ids are unique across the two lists, but
+   * sharing one key would make opening a decided row collapse whatever was open
+   * in the queue, which is a surprise with no purpose behind it.
+   */
+  const [openDecided, setOpenDecided] = useState<string | null>(null);
   const {
     proposals,
+    staleProposals,
+    staleUnavailable,
+    staleUnavailableKind,
+    staleRead,
+    decidedProposals,
+    decidedUnavailable,
+    decidedUnavailableKind,
+    decidedRead,
     writes,
     loading,
     acting,
@@ -188,6 +220,26 @@ export function ReviewFeed() {
         )}
       </section>
 
+      <RetiredProposals
+        retired={staleProposals}
+        unavailable={staleUnavailable}
+        unavailableKind={staleUnavailableKind}
+        read={staleRead}
+      />
+
+      <DecidedProposals
+        decided={decidedProposals}
+        unavailable={decidedUnavailable}
+        unavailableKind={decidedUnavailableKind}
+        read={decidedRead}
+        loading={loading}
+        acting={acting}
+        openKey={openDecided}
+        onOpenKeyChange={setOpenDecided}
+        liveVersionFor={liveVersionFor}
+        onDecide={decide}
+      />
+
       <LandedWriteFeed
         writes={writes}
         notices={writesNotices}
@@ -201,5 +253,442 @@ export function ReviewFeed() {
         diffFor={writeDiffFor}
       />
     </div>
+  );
+}
+
+interface SectionUnknownProps {
+  /** Subject of the "X could not be read" sentence. */
+  what: string;
+  /**
+   * What an older coord would not recognise — only used on the pre-deploy arm,
+   * and a NOUN PHRASE naming the thing, never the word "query": the sentence
+   * already ends "…and refuses the query", so `"this query"` rendered as *"it
+   * does not recognise this query yet and refuses the query"*.
+   */
+  refusalHint: string;
+  /**
+   * How the pre-deploy arm ends — what this section's outage implies for the
+   * REST of the page. A prop rather than the constant it used to be, because
+   * the constant ("Nothing above is affected.") is only true of the retired
+   * section. That section is reached on `not_deployed` by a `400 invalid
+   * status` from a coord that serves the proposal routes perfectly well; the
+   * decided section has no such vocabulary refusal, so its only route to
+   * `not_deployed` is the proxy's 404 mapping — the whole proposal surface
+   * absent (`operations.py` `_coord_unavailable`), which takes the pending
+   * queue above down with it. Telling the operator nothing above is affected
+   * while the queue is dark is the same class of confident wrong answer the
+   * `preDeploy` split itself exists to remove.
+   */
+  preDeployClosing: string;
+  /** The note carried out of the failed read. */
+  note: string;
+  /** The diagnosed cause, or `null` when it was NOT diagnosed. */
+  kind: UnavailableKind | null;
+  testId: string;
+}
+
+/**
+ * A collapsed section's UNKNOWN box — and the reason it is a component rather
+ * than two copies of a paragraph.
+ *
+ * The second line USED to be a constant: "Expected while coord is older than
+ * this page…". That sentence is a DIAGNOSIS, and it was printed for failures
+ * that had not been diagnosed at all. The box is reached by at least four
+ * different faults — coord's pre-deploy `400 invalid status`, coord genuinely
+ * down (a 502/504 the proxy converts into a 200 carrying `unavailable`), a
+ * timeout, a parse error — and three of them are not a deploy window. Telling
+ * an operator that coord is merely behind, while coord is in fact unreachable,
+ * is a confident wrong answer in the calmest chrome on the page.
+ *
+ * So the claim is made only where the evidence supports it: `not_deployed`,
+ * which the proxy labels, or a `400` the hook recognised in its catch arm.
+ * Everything else gets the neutral sentence, which says what IS known — this
+ * section could not be read, and the pending queue above was read separately,
+ * so its state is not implicated either way.
+ *
+ * Still muted chrome in both arms: neither case asks anything of anyone, and
+ * the severity distinction the queue above draws with amber is about an
+ * unreadable PENDING queue, which is a different stake.
+ */
+function SectionUnknown({
+  what,
+  refusalHint,
+  preDeployClosing,
+  note,
+  kind,
+  testId,
+}: SectionUnknownProps) {
+  const preDeploy = kind === "not_deployed";
+  return (
+    <div
+      className="rounded-md border border-border bg-muted/50 px-3 py-2.5"
+      data-testid={testId}
+    >
+      <p className="text-sm text-muted-foreground">
+        {what} could not be read, so this section is unknown — not empty. {note}
+      </p>
+      <p
+        className="mt-1 text-xs text-muted-foreground"
+        data-testid={`${testId}-cause`}
+        data-cause={preDeploy ? "not-deployed" : "undiagnosed"}
+      >
+        {preDeploy
+          ? `Expected while coord is older than this page: it does not recognise ${refusalHint} yet and refuses the query. ${preDeployClosing}`
+          : "coord could not be reached for this section — the pending queue above was read separately."}
+      </p>
+    </div>
+  );
+}
+
+interface RetiredProposalsProps {
+  /** The rows coord served for `?status=stale`. Empty is only "none" when `read`. */
+  retired: PromptDocumentProposal[];
+  /** Why the read failed, or `null` when it succeeded. Non-null ⇒ UNKNOWN. */
+  unavailable: string | null;
+  /** The diagnosed cause, or `null` when it was not diagnosed. */
+  unavailableKind: UnavailableKind | null;
+  /** Has the read completed at all? Before it has, the section knows nothing. */
+  read: boolean;
+}
+
+/**
+ * "Retired as stale" — the proposals coord closed itself.
+ *
+ * ## Why this section exists at all
+ *
+ * coord retires a pending proposal inside the transaction that bumps its target
+ * document's version. Without a surface for the result, the operator's
+ * experience of that is a row that was in the queue on one refresh and gone on
+ * the next, with nothing anywhere saying what happened to it — a proposal
+ * appearing to have been decided by nobody. The section is the receipt.
+ *
+ * ## Collapsed, but its signal is not
+ *
+ * R7. Closed by default because a retirement asks nothing of anyone; the header
+ * summary carries the state whether or not the panel is open, so the one thing
+ * that must not hide behind a click — *we could not read this* — never does.
+ * `<CollapsibleContent>` unmounts its children when closed, which is exactly
+ * why the summary and not the body is where the state is stated.
+ *
+ * ## Three states, and the one that is easy to get wrong
+ *
+ * * populated — a count, and per row the target document, the version it was
+ *   written against, coord's decision note and when it was decided;
+ * * empty — "none retired recently", a claim only made after a read that
+ *   actually succeeded;
+ * * unreadable — UNKNOWN, never empty. An older coord answers `?status=stale`
+ *   with `400 invalid status` and a section that rendered that as "none
+ *   retired recently" would be asserting something it does not know
+ *   [`verification-and-evidence` `silent-empty-is-unknown`].
+ *
+ * Nothing here is styled as an alarm. A retirement is a closed record, and the
+ * unreadable arm is a routine deploy window — both are stated in muted chrome,
+ * in words.
+ */
+function RetiredProposals({
+  retired,
+  unavailable,
+  unavailableKind,
+  read,
+}: RetiredProposalsProps) {
+  const summary = unavailable
+    ? "could not be read"
+    : !read
+      ? "reading…"
+      : retired.length === 0
+        ? "none retired recently"
+        : plural(retired.length, "proposal");
+
+  return (
+    <CollapsiblePanel
+      title="Retired as stale"
+      summary={
+        <span
+          className="text-xs font-normal normal-case tracking-normal text-muted-foreground"
+          data-testid="retired-summary"
+        >
+          {summary}
+        </span>
+      }
+      defaultOpen={false}
+      storageKey="coord.proposals.retired-stale"
+      data-testid="retired-proposals"
+    >
+      <p className="mb-3 text-xs text-muted-foreground">
+        coord closes a proposal the moment its target document moves past the
+        version the edit was written against — in the same write, so it cannot
+        be approved afterwards. These are listed here rather than left to vanish
+        from the queue. Re-read the current document and propose again if the
+        change is still wanted.
+      </p>
+
+      {/* `unavailable` WINS over rows that were read. coord can answer 200 with
+          both — some rows plus an "I could not answer fully" note — and this
+          branch then hides the rows it did get. That is deliberate: a partial
+          list under a "recently retired" heading is a claim about
+          completeness that the note has just withdrawn, and UNKNOWN is the
+          honest reading of a list we cannot vouch for. The cost is real
+          (readable rows go unshown) and is accepted because this section is a
+          receipt, not an archive — nothing here is the only copy of anything. */}
+      {unavailable ? (
+        <SectionUnknown
+          what="Retired proposals"
+          refusalHint="the retired status"
+          // True HERE and only here: this section's pre-deploy arm is a coord
+          // that rejects `?status=stale` while serving every other query on
+          // the page, so the queue above is genuinely untouched.
+          preDeployClosing="Nothing above is affected."
+          note={unavailable}
+          kind={unavailableKind}
+          testId="retired-unknown"
+        />
+      ) : !read ? (
+        <p className="py-6 text-center text-sm text-muted-foreground">
+          Reading retired proposals…
+        </p>
+      ) : retired.length === 0 ? (
+        <div
+          className="rounded-lg border border-dashed border-border py-8 text-center"
+          data-testid="retired-empty"
+        >
+          <p className="text-sm text-muted-foreground">none retired recently</p>
+        </div>
+      ) : (
+        <RecordList
+          items={retired}
+          itemKey={(p) => p.id}
+          empty={null}
+          renderRow={(proposal) => (
+            <div
+              className="space-y-1 border-b border-border/60 px-1 py-2.5 last:border-b-0"
+              data-testid={`retired-proposal-${proposal.id}`}
+            >
+              <p className="text-sm">
+                <span className="text-muted-foreground">
+                  {proposal.doc_kind}/
+                </span>
+                <span className="font-medium">{proposal.doc_name}</span>
+                {proposal.clause_id && (
+                  <span className="text-muted-foreground">
+                    {" "}
+                    · {proposal.clause_id}
+                  </span>
+                )}
+                <span className="text-muted-foreground">
+                  {" "}
+                  · written against v{proposal.base_version}
+                </span>
+              </p>
+              <p
+                className="whitespace-pre-wrap break-words text-xs text-muted-foreground"
+                /*
+                 * Per-ROW, not a constant. A constant repeats for every
+                 * retirement, so `getByTestId` throws the moment there is more
+                 * than one — and the assertion that used it was green only
+                 * because the fixture happened to carry exactly one row.
+                 */
+                data-testid={`retired-decision-note-${proposal.id}`}
+              >
+                {proposal.decision_note || (
+                  <span className="italic">
+                    coord recorded no note with this retirement
+                  </span>
+                )}
+              </p>
+              <p className="text-xs text-muted-foreground">
+                {proposal.decided_at
+                  ? `Retired ${formatWhen(proposal.decided_at)}`
+                  : "Retirement time not reported by coord"}
+              </p>
+            </div>
+          )}
+        />
+      )}
+    </CollapsiblePanel>
+  );
+}
+
+interface DecidedProposalsProps {
+  /** The rows coord served for `?status=approved`. Empty is only "none" when `read`. */
+  decided: PromptDocumentProposal[];
+  /** Why the read failed, or `null` when it succeeded. Non-null ⇒ UNKNOWN. */
+  unavailable: string | null;
+  /** The diagnosed cause, or `null` when it was not diagnosed. */
+  unavailableKind: UnavailableKind | null;
+  /** Has the read completed at all? Before it has, the section knows nothing. */
+  read: boolean;
+  loading: boolean;
+  acting: boolean;
+  openKey: string | null;
+  onOpenKeyChange: (key: string | null) => void;
+  liveVersionFor: (kind: string, name: string) => number | null;
+  onDecide: (
+    proposal: PromptDocumentProposal,
+    action: "approve" | "reject",
+    decisionNote: string
+  ) => Promise<boolean>;
+}
+
+/**
+ * "Recently proposed & approved" — the decided proposals, rendered through the
+ * SAME `<ProposalCard>` the queue uses.
+ *
+ * ## Why the heading is not "Recently approved"
+ *
+ * Because coord does not order this list by decision date and cannot be asked
+ * to. Its route is
+ * `WHERE tenant_id = $1 AND status = $2 ORDER BY created_at DESC LIMIT $3`
+ * (`coord/src/policy_proposals.rs`) — `created_at` is the PROPOSAL date, and
+ * there is no `decided_at` ordering to select. So the 20 rows this section asks
+ * for are the 20 approved proposals with the newest AUTHORING dates, and a
+ * proposal written a month ago and approved five minutes ago ranks by the month
+ * and can fall outside the window entirely while the header says "20
+ * proposals".
+ *
+ * That gap matters more here than anywhere else on the page: this section is
+ * the only surface for the compensating audit control that replaced the
+ * ownership rule, so the decision most worth seeing — the newest one — is
+ * exactly the one the ordering can drop. The honest fix available client-side
+ * is to stop making the claim: the heading names both dates, and the intro says
+ * which one orders the list. Narrowing the page to a truthful 20 is not
+ * something the console can do without a coord-side `decided_at` ordering.
+ *
+ * ## Why this section exists
+ *
+ * Not for completeness. Ownership was removed as a criterion for deciding a
+ * policy proposal, and `self_decided` plus a required decision note is the
+ * compensating audit control that replaced it. coord filters its proposal list
+ * by status, so the console's only read — `?status=pending` — could serve
+ * nothing but rows with `decided_by: null`: the card's provenance block had a
+ * decided half that no data path could reach. A control that is stored and
+ * never displayable is not a control, and "was this loosening approved by the
+ * agent that proposed it?" is exactly the question the removed rule used to
+ * answer. This read is what makes it answerable on the surface built to answer
+ * it.
+ *
+ * ## Through the card, deliberately
+ *
+ * The retired section below renders its own compact row, which is right for a
+ * machine retirement — there is no author, no rationale and nothing to judge.
+ * A DECISION is the opposite: who decided, against which version, on what
+ * rationale, with what note. Re-rendering a second, thinner version of that
+ * would put the provenance line back out of reach in a new way, so these rows
+ * go through `<ProposalCard>` and inherit every block it already renders —
+ * including the composer's replacement, since a decided row is not decidable.
+ *
+ * ## Collapsed, three states, same rules as the retired section
+ *
+ * R7 — closed by default (nothing here waits on anyone), with the state in the
+ * HEADER summary because `<CollapsibleContent>` unmounts its children and a
+ * "could not be read" that hides behind a click is not stated at all. Count /
+ * "none approved yet" / UNKNOWN, and the third is never rendered as the second
+ * [`verification-and-evidence` `silent-empty-is-unknown`].
+ *
+ * The empty state deliberately drops "recently" too, for the opposite reason to
+ * the heading: coord's `LIMIT` cannot manufacture an empty page, so zero rows
+ * back from `?status=approved` means the tenant has no approved proposal at
+ * all — a stronger claim than "none lately", and the one that is actually
+ * supported.
+ */
+function DecidedProposals({
+  decided,
+  unavailable,
+  unavailableKind,
+  read,
+  loading,
+  acting,
+  openKey,
+  onOpenKeyChange,
+  liveVersionFor,
+  onDecide,
+}: DecidedProposalsProps) {
+  const summary = unavailable
+    ? "could not be read"
+    : !read
+      ? "reading…"
+      : decided.length === 0
+        ? "none approved yet"
+        : plural(decided.length, "proposal");
+
+  return (
+    <CollapsiblePanel
+      title="Recently proposed & approved"
+      summary={
+        <span
+          className="text-xs font-normal normal-case tracking-normal text-muted-foreground"
+          data-testid="decided-summary"
+        >
+          {summary}
+        </span>
+      }
+      defaultOpen={false}
+      storageKey="coord.proposals.recently-approved"
+      data-testid="decided-proposals"
+    >
+      <p className="mb-3 text-xs text-muted-foreground">
+        Proposals that were approved and applied. Ownership is no longer a
+        criterion for deciding one, so an agent may approve its own edit — where
+        that happened the row says so, and coord&apos;s decision note is the
+        record of why. Open a row for the full provenance.
+      </p>
+      {/* The window, stated rather than implied. coord serves this list
+          `ORDER BY created_at DESC LIMIT 20` and offers no `decided_at`
+          ordering, so an old proposal approved moments ago ranks by its
+          authoring date — and can sit outside the page entirely. Saying so is
+          the only honest option available on this side of the wire. */}
+      <p
+        className="mb-3 text-xs text-muted-foreground"
+        data-testid="decided-window-note"
+      >
+        This is the 20 most recently <em>proposed</em> approved edits — coord
+        orders this list by proposal date, not decision date, so an older
+        proposal approved just now may not appear here.
+      </p>
+
+      {unavailable ? (
+        <SectionUnknown
+          what="Recently approved proposals"
+          // `?status=approved` is not new vocabulary — coord has always
+          // accepted it — so a vocabulary refusal cannot produce this arm here.
+          // `not_deployed` reaches this section only from the proxy's 404
+          // mapping, which means the proposal ROUTES are absent entirely.
+          refusalHint="the proposal routes"
+          preDeployClosing="the pending queue above reports the same outage."
+          note={unavailable}
+          kind={unavailableKind}
+          testId="decided-unknown"
+        />
+      ) : !read ? (
+        <p className="py-6 text-center text-sm text-muted-foreground">
+          Reading recently approved proposals…
+        </p>
+      ) : decided.length === 0 ? (
+        <div
+          className="rounded-lg border border-dashed border-border py-8 text-center"
+          data-testid="decided-empty"
+        >
+          <p className="text-sm text-muted-foreground">none approved yet</p>
+        </div>
+      ) : (
+        <RecordList
+          items={decided}
+          itemKey={(p) => p.id}
+          expandedKey={openKey}
+          onExpandedKeyChange={onOpenKeyChange}
+          empty={null}
+          renderRow={(proposal, ctx) => (
+            <ProposalCard
+              proposal={proposal}
+              liveVersion={liveVersionFor(proposal.doc_kind, proposal.doc_name)}
+              loading={loading}
+              acting={acting}
+              expanded={ctx.expanded}
+              onToggle={ctx.onToggle}
+              onDecide={onDecide}
+            />
+          )}
+        />
+      )}
+    </CollapsiblePanel>
   );
 }

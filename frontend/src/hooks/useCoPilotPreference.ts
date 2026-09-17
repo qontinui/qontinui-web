@@ -5,12 +5,14 @@
  *
  * Reads / writes ``users.preferences.ui_bridge_co_pilot_enabled`` via the
  * existing ``/api/v1/users/me/preferences`` endpoint (the same JSONB store
- * used by ``product_mode``). Default is ``false`` — the user MUST opt in
- * before the relay listener even attempts to mount.
+ * used by ``product_mode``). Default is ``false`` — off loopback dev the
+ * user MUST opt in before the relay listener even attempts to mount.
  *
- * This is the FIRST of two gates that compose into the
- * ``enableRemoteCommands`` decision in ``lib/ui-bridge/provider.tsx``. The
- * second is the per-session consent modal (see ``useCoPilotSessionConsent``).
+ * One of the inputs to the consent predicate in
+ * ``lib/ui-bridge/co-pilot-gates.ts`` that the relay listener mounts on,
+ * together with the per-session decision (see ``useCoPilotSessionConsent``).
+ * On loopback dev that predicate auto-grants without consulting this
+ * preference.
  *
  * Cross-link: plans/2026-05-28-production-safe-ui-bridge-design.md §4.5.
  */

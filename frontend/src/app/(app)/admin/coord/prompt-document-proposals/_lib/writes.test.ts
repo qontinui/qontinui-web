@@ -18,6 +18,7 @@ import {
   hasLooseningVerdict,
   looseningClassificationPresent,
   notificationHref,
+  reasoningRef,
   sortWritesForFeed,
 } from "./writes";
 
@@ -164,6 +165,32 @@ describe("notificationHref", () => {
     expect(notificationHref("a&b#c")).toBe(
       "/admin/coord/notifications?ref=a%26b%23c"
     );
+  });
+});
+
+describe("reasoningRef", () => {
+  it("is null for an absent or blank ref, whatever the version", () => {
+    expect(reasoningRef({ version_number: 1 })).toBeNull();
+    expect(reasoningRef({ version_number: 6, notification_ref: null })).toBeNull();
+    expect(reasoningRef({ version_number: 6, notification_ref: "  " })).toBeNull();
+  });
+
+  it("links an EDIT to the notice that announced it", () => {
+    expect(
+      reasoningRef({ version_number: 2, notification_ref: "abc-123" })
+    ).toEqual({
+      kind: "notice",
+      href: "/admin/coord/notifications?ref=abc-123",
+      findingId: "abc-123",
+    });
+  });
+
+  it("gives a CREATE the finding only — no notice exists to link to", () => {
+    // Creation never emits, and the reconciler excludes v1, so the deep link
+    // would land on an event that cannot exist.
+    expect(
+      reasoningRef({ version_number: 1, notification_ref: " abc-123 " })
+    ).toEqual({ kind: "finding_only", findingId: "abc-123" });
   });
 });
 

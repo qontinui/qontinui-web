@@ -122,10 +122,10 @@ export function usePlanLibrary() {
    * * `finally { setLoading(false) }` re-enables the pager while the live
    *   request is still out.
    *
-   * An `AbortController` cannot do this job here: `http-client.ts` overwrites
-   * the caller's `signal` with its own timeout controller, so the abort never
-   * reaches the request. This is the same counter pattern
-   * `ArtifactDetailDialog` uses, for the same reason.
+   * Cancelling the superseded request would not do this job: `http-client.ts`
+   * honours a caller's `signal`, but aborting stops a read from running, while
+   * these writes need to know which settled read still owns the state. This is
+   * the same counter pattern `ArtifactDetailDialog` uses.
    */
   const requestIdRef = useRef(0);
 
@@ -290,9 +290,9 @@ export function useDivergentArtifacts() {
  * Built on the console's `useRetainedValue` rather than a private newest-id
  * guard, which is what each hook carried before. Reads DO overlap, even with a
  * panel's Refresh disabled while one is out: React StrictMode runs the mount
- * effect twice in development, and nothing stops a second caller. And
- * `http-client.ts` overwrites the caller's AbortController signal, so an
- * overlapping read cannot be cancelled and BOTH will settle. A newest-id guard
+ * effect twice in development, and nothing stops a second caller. No read
+ * here passes an AbortController signal (which `http-client.ts` now honours),
+ * so overlapping reads BOTH settle. A newest-id guard
  * handles two of the three orderings and loses the third: read A is out, a
  * newer read B FAILS, then A answers with real data — and is thrown away,
  * leaving the panel saying nothing could be read although something was.
@@ -396,5 +396,59 @@ export function useScanRoots() {
   return useRetainedRead<ScanRootListResponse>(
     `${API}/scan-roots`,
     "Failed to load scan sources"
+  );
+}
+
+/**
+ * What the corpus HOLDS against what EXISTS, per scan source — the coverage
+ * set difference.
+ *
+ * Reads the same route as [`useScanRoots`] and is deliberately a separate
+ * hook rather than a second consumer of one shared read.
+ *
+ * ⚠️ **What that costs is not one extra HTTP round trip — it is the whole
+ * SERVER-SIDE coverage computation, run twice per mount of
+ * `/admin/coord/plan-library`, once for a panel that reads no coverage field
+ * at all.** `GET /scan-roots` is the one route that computes the set
+ * difference, and serving it means: the census-LOADING observation read,
+ * which UNDEFERS the two stem JSONB columns (~208 KB per device for both
+ * sides at 1837 stems, per the measurement on
+ * `crud.plan_scan_root.list_observations`, against a page read that defers
+ * them precisely because it never renders them), plus the corpus statement
+ * over every
+ * `kind = 'plan'` row in the organization. That is exactly the concentrated
+ * cost design decision D2 moved ONTO this route and off the `corpus_health`
+ * rendering that rides every list page — and mounting this page pays it
+ * twice. [`useScanRoots`] needs none of it.
+ *
+ * It is paid deliberately, for this phase only:
+ *
+ * * The two panels are siblings on one page, each with its own Refresh, and
+ *   `useRetainedRead` has no cross-hook cache to share. Lifting the read into
+ *   the page would mean `ScanSourcesPanel` taking its data as a prop —
+ *   changing a component with an open pull request against it (#1332) for a
+ *   reason that has nothing to do with either change.
+ * * Sharing one read would also share one Refresh, so re-asking "how much is
+ *   missing" would silently re-ask "how far behind is each feeder" and vice
+ *   versa. The panels state different things about different moments; one
+ *   `fetchedAt` for both would make one of the two stamps a lie.
+ *
+ * The honest fix is an HTTP-layer cache or a page-level provider, and neither
+ * is this phase's — both mean `ScanSourcesPanel` taking its data as a prop,
+ * and that component has an open pull request against it (#1332). If a third
+ * consumer of `/scan-roots` ever appears, build that instead of adding a
+ * third read; and if the doubled server cost is what bites first, the cheaper
+ * half-measure is a `coverage=false` query parameter on the route so
+ * [`useScanRoots`] can ask for the readings WITHOUT the stem load and the
+ * corpus statement.
+ *
+ * `data` carries the WHOLE response — `coverage` plus the `coverage_detail`
+ * that says why it is empty — because an empty `coverage` is not "nothing is
+ * missing" and the panel cannot tell the difference without the detail.
+ */
+export function usePlanCoverage() {
+  return useRetainedRead<ScanRootListResponse>(
+    `${API}/scan-roots`,
+    "Failed to load plan coverage"
   );
 }

@@ -2,7 +2,7 @@
   "version": "1.0",
   "id": "dashboard",
   "name": "Dashboard",
-  "description": "Visual-mode-only page. The /dashboard route is a pure client-side redirect (DashboardRedirect): in Visual product mode it resolves to /tools/visual-automation, in AI Dev mode it resolves to /build/workflows. This spec captures the Visual-mode dashboard surface (the Visual Automation projects landing): the page header, the 'Your Projects' section with its create entry point, and the populated project grid (Spec CI seeds a fixture project, so the grid shows the persistent creation cards plus the fixture card rather than the zero-projects empty state). Structure-only — never asserts specific project rows or counts. Reach this view by switching to Visual mode (toggle id 'button-visual-1') before navigating.",
+  "description": "Visual-automation page. The /dashboard route is a pure client-side redirect (DashboardRedirect) that resolved here only in Visual product mode, which the app no longer offers, so Spec CI navigates to /tools/visual-automation directly. This spec captures the Visual-mode dashboard surface (the Visual Automation projects landing): the page header, the 'Your Projects' section with its create entry point, and the populated project grid (Spec CI seeds a fixture project, so the grid shows the persistent creation cards plus the fixture card rather than the zero-projects empty state). Structure-only — never asserts specific project rows or counts. Reach this view by navigating to /tools/visual-automation.",
   "provenance": {
     "source": "ai-generated",
     "appId": "qontinui-web"

@@ -133,9 +133,40 @@ _RELAY_TIMEOUT_MS_MIN = 1000
 _RELAY_TIMEOUT_MS_MAX = 120000
 _RELAY_TIMEOUT_MS_DEFAULT = 30000
 
+# The end user's BROWSER provenance headers, dropped on BOTH runner hops below.
+#
+# The runner's loopback API classifies a caller by ``Origin`` and
+# ``Sec-Fetch-Site`` (``src-tauri/src/mcp/origin_guard.rs``, plan
+# ``2026-09-17-runner-loopback-api-accepts-any-origin``): absent both it is a
+# NON-browser caller and keeps full local trust; with a browser origin it is
+# admitted only to the routes that origin's class is allowlisted for. Every
+# request through this proxy is SERVER-mediated — this backend has already
+# authenticated the user and, on the relay arm, the runner's
+# ``relay_path_policy`` gates the path — so forwarding the page's
+# ``Origin: https://app.qontinui.io`` would make the runner refuse a proxied
+# mobile / digital-twin / co-pilot call as a Foreign browser request. The whole
+# Fetch Metadata family goes too — matched by its ``sec-fetch-`` PREFIX, so a
+# member browsers add later is stripped without an edit here: it describes the
+# browser's hop, not this one. This strip must be deployed BEFORE the runner
+# enforces its route allowlist (that plan's Phase 2 prerequisite).
+_BROWSER_PROVENANCE_REQUEST_HEADERS = frozenset({"origin"})
+_BROWSER_PROVENANCE_REQUEST_HEADER_PREFIX = "sec-fetch-"
+
+
+def _is_browser_provenance_header(name: str) -> bool:
+    """True for a request header that only a browser's own hop can carry."""
+    lowered = name.lower()
+    return lowered in _BROWSER_PROVENANCE_REQUEST_HEADERS or lowered.startswith(
+        _BROWSER_PROVENANCE_REQUEST_HEADER_PREFIX
+    )
+
+
 # Request headers never forwarded to the runner over the relay. ``authorization``
 # is excluded deliberately: the runner trusts its outbound WS connection, NOT
 # the end user's bearer token, so the token must never cross the relay.
+#
+# Browser provenance headers are dropped as well, by
+# :func:`_is_browser_provenance_header` (above) at the filter site.
 _RELAY_EXCLUDED_REQUEST_HEADERS = frozenset(
     {"host", "connection", "transfer-encoding", "content-length", "authorization"}
 )
@@ -159,6 +190,9 @@ _LOCAL_PROXY_TIMEOUT_S = 30.0
 # just hands the runner httpx's default instead of the caller's. The request
 # is sent with ``_LOCAL_PROXY_FORCED_REQUEST_HEADERS`` below to actually
 # negotiate identity; see :func:`runner_proxy`.
+#
+# Browser provenance headers (:func:`_is_browser_provenance_header`, above) are
+# dropped here too, at the filter site, for the same reason as on the relay arm.
 _LOCAL_PROXY_EXCLUDED_REQUEST_HEADERS = frozenset(
     {
         "host",
@@ -839,6 +873,7 @@ async def runner_proxy(
             (k, v)
             for k, v in request.headers.items()
             if k.lower() not in _LOCAL_PROXY_EXCLUDED_REQUEST_HEADERS
+            and not _is_browser_provenance_header(k)
         ]
         # Set, not forwarded — httpx merges its own ``accept-encoding`` default
         # into ``headers=``, so dropping the caller's key above does not by
@@ -1194,6 +1229,7 @@ async def _runner_proxy_relay(
         k.lower(): v
         for k, v in request.headers.items()
         if k.lower() not in _RELAY_EXCLUDED_REQUEST_HEADERS
+        and not _is_browser_provenance_header(k)
     }
 
     # 6. Build the http_request envelope (top-level type — see wire contract).

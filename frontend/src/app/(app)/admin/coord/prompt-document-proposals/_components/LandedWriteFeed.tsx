@@ -39,7 +39,7 @@ import {
   hasLooseningVerdict,
   isDocumentWithdrawn,
   isLoosening,
-  notificationHref,
+  reasoningRef,
   sortWritesForFeed,
   writeKey,
 } from "../_lib/writes";
@@ -64,8 +64,11 @@ import type { PromptDocumentWrite } from "../types";
  * window that has none — with two limits said on screen: nothing is sent, or
  * re-sent, while `coord.notifications` is unprovisioned (the sweep reports
  * UNKNOWN then), and creation deliberately never emits. A created document is
- * announced by the finding its author filed with the write (`notification_ref`,
- * the row's "Why" link) instead.
+ * announced by the finding its author filed with the write (`notification_ref`)
+ * instead — which is why a v1 row shows that finding as a reference and NOT as
+ * the "Why" link the edit rows carry: the link opens the notifications feed,
+ * and for a v1 there is no event there to open (`_lib/writes.ts`
+ * `reasoningRef`).
  *
  * This text used to say the list itself "can be incomplete" because of that
  * emit, which pointed the operator at the wrong surface: it told them to
@@ -542,7 +545,7 @@ export function LandedWriteFeed({
             const expanded = expandedKey === key;
             const flagged = isLoosening(write);
             const authorClass = classifyWriteAuthor(write.edited_by);
-            const href = notificationHref(write.notification_ref);
+            const reasoning = reasoningRef(write);
             const withdrawn = isDocumentWithdrawn(write);
             const withdrawable = canWithdraw(write);
             const composing = withdrawable && withdrawingKey === key;
@@ -636,7 +639,7 @@ export function LandedWriteFeed({
                   </button>
 
                   <div className="flex shrink-0 items-center gap-2">
-                    {href && (
+                    {reasoning?.kind === "notice" && (
                       // Absent ref ⇒ no link. Points into the EXISTING
                       // notifications feed; this route builds no second one.
                       <Button
@@ -646,14 +649,44 @@ export function LandedWriteFeed({
                         className="gap-1.5"
                       >
                         <Link
-                          href={href}
-                          title="Open the notification this write was announced with, and the reasoning its author recorded."
+                          href={reasoning.href}
+                          title={`Open the notification this write was announced with, and the reasoning its author recorded (coord finding ${reasoning.findingId}).`}
                           data-testid={`write-reasoning-${write.kind}-${write.name}-${write.version_number}`}
                         >
                           <MessageSquareText className="size-4" />
                           Why
                         </Link>
                       </Button>
+                    )}
+
+                    {reasoning?.kind === "finding_only" && (
+                      // A CREATED document has reasoning but no notice to
+                      // open (`reasoningRef`), so the reference is shown, not
+                      // linked. Not a <Button>: nothing here is actionable,
+                      // and a control that looks like the edit rows' "Why"
+                      // but does nothing would be the same false promise in
+                      // a different coat. The row keeps the short form — this
+                      // cluster is `shrink-0`, so prose here would crush the
+                      // label on the left — and says the rest for a screen
+                      // reader; the full, copyable id is in the expanded
+                      // detail (R8: raw ids live in the detail, not the row).
+                      // `h-8 text-sm` matches the `size="sm"` controls beside
+                      // it.
+                      <span
+                        className="inline-flex h-8 items-center gap-1.5 px-2 text-sm text-muted-foreground"
+                        data-testid={`write-reasoning-finding-${write.kind}-${write.name}-${write.version_number}`}
+                      >
+                        <MessageSquareText className="size-4 shrink-0" />
+                        <span>
+                          Why: no notice sent
+                          <span className="sr-only">
+                            {" "}
+                            — a created document is announced by its
+                            author&apos;s finding; expand this row to read its
+                            id
+                          </span>
+                        </span>
+                      </span>
                     )}
 
                     {isHead && write.version_number > 1 && (
@@ -754,6 +787,27 @@ export function LandedWriteFeed({
                       </div>
                     </div>
                   </CoordAdminOnly>
+                )}
+
+                {expanded && reasoning?.kind === "finding_only" && (
+                  // The full id, where R8 puts raw ids: in the detail, as
+                  // selectable text. It is the operator's only handle on the
+                  // reasoning — the console has no finding reader — so it is
+                  // complete and `select-all`, never truncated or hover-only.
+                  // Outside `WriteDiff` so it is present while the diff is
+                  // still loading or failed to load: the reasoning reference
+                  // does not depend on the bodies coming back.
+                  <p
+                    className="border-t border-border px-3 py-2 text-xs text-muted-foreground"
+                    data-testid={`write-reasoning-finding-id-${write.kind}-${write.name}-${write.version_number}`}
+                  >
+                    Reasoning: this write created the document, so no notice
+                    was sent. Its author filed coord finding{" "}
+                    <code className="select-all rounded bg-muted px-1 py-0.5 text-[10px]">
+                      {reasoning.findingId}
+                    </code>
+                    .
+                  </p>
                 )}
 
                 {expanded && (

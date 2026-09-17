@@ -1,5 +1,6 @@
 /**
- * usePlanLibrary / useDivergentArtifacts / useCaptureHealth / useScanRoots.
+ * usePlanLibrary / useDivergentArtifacts / useCaptureHealth / useScanRoots /
+ * usePlanCoverage.
  *
  * The list hook is mostly plumbing; what is worth pinning is the behaviour
  * that is wrong in a way nobody notices:
@@ -39,6 +40,7 @@ vi.mock("sonner", () => ({
 import {
   useCaptureHealth,
   useDivergentArtifacts,
+  usePlanCoverage,
   usePlanLibrary,
   useScanRoots,
 } from "./usePlanLibrary";
@@ -214,10 +216,9 @@ describe("usePlanLibrary — overlapping loads must not race", () => {
 
   // `load` is recreated on [applied, offset] and fired by an effect, so two
   // of it are in flight whenever the operator pages or retypes faster than
-  // the backend answers. An AbortController cannot fix this — `http-client`
-  // overwrites the caller's `signal` with its own timeout controller — so the
-  // hook carries a generation counter, and each of these tests pins one of
-  // its four writes.
+  // the backend answers. The hook passes no abort signal, so both settle and
+  // it carries a generation counter; each of these tests pins one of its four
+  // writes.
 
   it("drops a superseded page response instead of painting it", async () => {
     const first = deferred<unknown>();
@@ -760,5 +761,50 @@ describe.each([
       releaseNew(payload);
     });
     await waitFor(() => expect(result.current.loading).toBe(false));
+  });
+});
+
+/**
+ * `usePlanCoverage` reads the SAME route as `useScanRoots`, deliberately and
+ * at the cost of a second GET. These pin the two properties that make that
+ * defensible: it is really the coverage door, and it hands the panel the
+ * `coverage_detail` an empty `coverage` needs — without which an empty array
+ * is indistinguishable from "nothing is missing".
+ */
+describe("usePlanCoverage", () => {
+  it("reads the scan-roots door, where coverage is computed", async () => {
+    getMock.mockResolvedValue({
+      state: "measured",
+      detail: null,
+      fresh_within_secs: 2700,
+      count: 1,
+      fresh_count: 1,
+      rows: [],
+      by_source_repo: [],
+      coverage: [],
+      coverage_detail: "not_computed_here: …",
+    });
+
+    const { result } = renderHook(() => usePlanCoverage());
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
+    expect(getMock).toHaveBeenCalledWith("/api/v1/plan-library/scan-roots");
+    // An empty `coverage` is only readable NEXT TO its detail; a hook that
+    // handed the panel the array alone would make the panel unable to tell
+    // "not computed here" from "nothing is missing".
+    expect(result.current.data?.coverage).toEqual([]);
+    expect(result.current.data?.coverage_detail).toContain("not_computed_here");
+  });
+
+  it("a failed read is not full coverage", async () => {
+    getMock.mockRejectedValue(new Error("backend down"));
+
+    const { result } = renderHook(() => usePlanCoverage());
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
+    // Synthesising an empty coverage list here renders as "nothing is
+    // missing" on the evidence of a network failure.
+    expect(result.current.data).toBeNull();
+    expect(result.current.error).toContain("backend down");
   });
 });
