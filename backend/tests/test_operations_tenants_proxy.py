@@ -699,10 +699,16 @@ class _FakeCognito:
         groups: list[str],
         members: list[dict[str, Any]] | None = None,
         fail_on_add: bool = False,
+        add_error: Exception | None = None,
+        fail_on_list_users: bool = False,
+        create_raises_exists: bool = False,
     ) -> None:
         self.groups = list(groups)
         self.members = members or []
         self.fail_on_add = fail_on_add
+        self.add_error = add_error
+        self.fail_on_list_users = fail_on_list_users
+        self.create_raises_exists = create_raises_exists
         self.created: list[str] = []
         self.added: list[tuple[str, str]] = []
         self.deleted: list[str] = []
@@ -713,14 +719,24 @@ class _FakeCognito:
         return [{"group_name": g} for g in self.groups]
 
     def create_group(self, name: str, description: str | None = None) -> dict:
+        if self.create_raises_exists:
+            from app.services.cognito_admin import CognitoGroupExistsError
+
+            raise CognitoGroupExistsError(f"Group already exists: {name}")
         self.created.append(name)
         self.groups.append(name)
         return {"group_name": name}
 
     def list_users_in_group(self, name: str) -> list[dict[str, Any]]:
+        if self.fail_on_list_users:
+            from app.services.cognito_admin import CognitoAdminError
+
+            raise CognitoAdminError("ListUsersInGroup failed: throttled out")
         return list(self.members)
 
     def add_user_to_group(self, username: str, group: str) -> None:
+        if self.add_error is not None and self.added:
+            raise self.add_error
         if self.fail_on_add:
             from app.services.cognito_admin import CognitoAdminError
 
@@ -734,15 +750,37 @@ class _FakeCognito:
         self.deleted.append(f"{username}@{group}")
 
 
+def _blast_radius(mapped_total: int = 0) -> Any:
+    from app.api.v1.endpoints.operations import _BlastRadius
+
+    return _BlastRadius(
+        mapped_total=mapped_total,
+        mapped_own_tenant_slugs=(),
+        mapped_other_tenant_rows=mapped_total,
+        mapped_unmaterialized_rows=0,
+        strands_own_tenant=(),
+        strands_other_tenant_count=0,
+    )
+
+
 def _run_rename_with_cognito(
-    test_client: TestClient, fake: _FakeCognito
+    test_client: TestClient,
+    fake: _FakeCognito,
+    *,
+    home_group_to_migrate: str = "my-pizzeria-home",
+    blast_radius: Any = None,
 ) -> tuple[Any, MagicMock]:
     from app.services import cognito_admin
 
     mock_resp = _mock_response(
-        json_data=_rename_payload(home_group_to_migrate="my-pizzeria-home")
+        json_data=_rename_payload(home_group_to_migrate=home_group_to_migrate)
     )
     audit = AsyncMock()
+    radius = (
+        blast_radius
+        if blast_radius is not None
+        else AsyncMock(return_value=_blast_radius(0))
+    )
     with (
         _patch_httpx() as MockClient,
         patch.object(cognito_admin, "list_groups", fake.list_groups),
@@ -754,6 +792,7 @@ def _run_rename_with_cognito(
             cognito_admin, "remove_user_from_group", fake.remove_user_from_group
         ),
         patch("app.api.v1.endpoints.operations._write_cognito_group_audit", new=audit),
+        patch("app.api.v1.endpoints.operations._coord_group_blast_radius", new=radius),
     ):
         instance = MagicMock()
         instance.patch = AsyncMock(return_value=mock_resp)
@@ -830,3 +869,124 @@ class TestRenameHomeGroupMigration:
         assert outcome["status"] == "failed"
         assert "boom" in outcome["detail"]
         assert fake.deleted == []
+
+    def test_failure_after_create_says_the_new_group_exists(
+        self, admin_client: TestClient
+    ):
+        """A half-done move leaves a real group in the SHARED pool. The outcome
+        must say so, not just "failed"."""
+        fake = _FakeCognito(
+            groups=["my-pizzeria-home"],
+            members=self._MEMBERS,
+            fail_on_list_users=True,
+        )
+        resp, _audit = _run_rename_with_cognito(admin_client, fake)
+
+        assert resp.status_code == 200
+        outcome = resp.json()["home_group_migration"]
+        assert outcome["status"] == "failed"
+        assert outcome["new_group_created"] is True
+        assert (
+            "“new-name-home” WAS created and holds 0 member(s)" in (outcome["detail"])
+        )
+        assert fake.created == ["new-name-home"]
+        assert fake.deleted == []
+
+    def test_partial_copy_names_n_of_m(self, admin_client: TestClient):
+        from app.services.cognito_admin import CognitoAdminError
+
+        fake = _FakeCognito(
+            groups=["my-pizzeria-home"],
+            members=self._MEMBERS,
+            add_error=CognitoAdminError("AdminAddUserToGroup failed: second"),
+        )
+        resp, _audit = _run_rename_with_cognito(admin_client, fake)
+
+        outcome = resp.json()["home_group_migration"]
+        assert outcome["status"] == "failed"
+        assert outcome["members_copied"] == 1
+        assert "holds 1 of 2 member(s)" in outcome["detail"]
+
+    def test_an_unexpected_exception_is_failed_never_a_500(
+        self, admin_client: TestClient
+    ):
+        """Coord has already committed the rename; a 500 here would read as
+        "not renamed" and invite a retry against the NEW slug."""
+        fake = _FakeCognito(
+            groups=["my-pizzeria-home"],
+            members=self._MEMBERS,
+            add_error=RuntimeError("not a Cognito error"),
+        )
+        resp, _audit = _run_rename_with_cognito(admin_client, fake)
+
+        assert resp.status_code == 200
+        outcome = resp.json()["home_group_migration"]
+        assert outcome["status"] == "failed"
+        assert "RuntimeError" in outcome["detail"]
+        assert "The rename itself is complete" in outcome["detail"]
+        assert outcome["new_group_created"] is True
+        assert resp.json()["slug"] == "new-name"
+
+    def test_create_race_is_target_exists(self, admin_client: TestClient):
+        fake = _FakeCognito(
+            groups=["my-pizzeria-home"],
+            members=self._MEMBERS,
+            create_raises_exists=True,
+        )
+        resp, audit = _run_rename_with_cognito(admin_client, fake)
+
+        outcome = resp.json()["home_group_migration"]
+        assert outcome["status"] == "target_exists"
+        assert outcome["new_group_created"] is False
+        assert fake.added == [] and fake.deleted == []
+        audit.assert_not_awaited()
+
+    def test_home_group_not_matching_previous_slug_makes_no_aws_call(
+        self, admin_client: TestClient
+    ):
+        """`home_group_to_migrate` must be `<previous slug>-home`. Anything
+        else is a response this code does not understand, so no writes."""
+        fake = _FakeCognito(groups=["someone-elses-home"], members=self._MEMBERS)
+        resp, audit = _run_rename_with_cognito(
+            admin_client, fake, home_group_to_migrate="someone-elses-home"
+        )
+
+        assert resp.status_code == 200
+        outcome = resp.json()["home_group_migration"]
+        assert outcome["status"] == "failed"
+        assert "my-pizzeria-home" in outcome["detail"]
+        assert fake.list_calls == 0
+        assert fake.created == [] and fake.added == [] and fake.deleted == []
+        audit.assert_not_awaited()
+
+    def test_a_target_coord_already_maps_is_not_created(self, admin_client: TestClient):
+        """A mapping naming a not-yet-existing group goes live when the group
+        appears, so creating it would grant the copied members those roles."""
+        fake = _FakeCognito(groups=["my-pizzeria-home"], members=self._MEMBERS)
+        radius = AsyncMock(return_value=_blast_radius(2))
+        resp, audit = _run_rename_with_cognito(admin_client, fake, blast_radius=radius)
+
+        outcome = resp.json()["home_group_migration"]
+        assert outcome["status"] == "target_mapped"
+        radius.assert_awaited_once_with("new-name-home")
+        assert fake.created == [] and fake.added == [] and fake.deleted == []
+        audit.assert_not_awaited()
+
+    def test_an_unreadable_mapping_check_refuses_to_create(
+        self, admin_client: TestClient
+    ):
+        from fastapi import HTTPException
+
+        fake = _FakeCognito(groups=["my-pizzeria-home"], members=self._MEMBERS)
+        radius = AsyncMock(
+            side_effect=HTTPException(
+                status_code=502, detail={"error": "mapping_check_unavailable"}
+            )
+        )
+        resp, _audit = _run_rename_with_cognito(admin_client, fake, blast_radius=radius)
+
+        assert resp.status_code == 200
+        outcome = resp.json()["home_group_migration"]
+        assert outcome["status"] == "failed"
+        assert "was not created" in outcome["detail"]
+        assert fake.created == []

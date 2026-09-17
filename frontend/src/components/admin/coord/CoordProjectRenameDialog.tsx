@@ -178,13 +178,29 @@ export function renameErrorMessage(err: unknown): string {
     return "Only an administrator of this project can rename it.";
   }
   if (err.status === 404) return "This project no longer exists.";
+  // The two statuses the web proxy INVENTS, and they mean opposite things.
+  // 504 is a statement about our clock, not about coord's transaction: coord
+  // may well have committed, so claiming "not renamed" would be false — and
+  // the dialog re-reads the project list (`isRenameOutcomeUnknown`). 502 is a
+  // connect failure: the request never reached coord, so nothing changed.
+  if (isRenameOutcomeUnknown(err)) {
+    return "Coord didn't answer in time, so the rename may have been applied. The project list was reloaded to check — look for the new name before trying again.";
+  }
+  if (err.status === 502) {
+    return "Coord could not be reached, so the rename was not applied. Try again.";
+  }
   return err.detail
     ? `Could not rename the project (${err.status}): ${err.detail}`
     : `Could not rename the project (${err.status}).`;
 }
 
+/** A failure after which the rename may or may not have been applied. */
+export function isRenameOutcomeUnknown(err: unknown): boolean {
+  return err instanceof TenantRenameError && err.status === 504;
+}
+
 /** One line on what happened to the `<old-id>-home` Cognito group. */
-function homeGroupHeadline(outcome: HomeGroupMigration): string {
+export function homeGroupHeadline(outcome: HomeGroupMigration): string {
   switch (outcome.status) {
     case "migrated":
       return "Home group moved";
@@ -192,6 +208,8 @@ function homeGroupHeadline(outcome: HomeGroupMigration): string {
       return "Home group not moved";
     case "target_exists":
       return "Home group left as is";
+    case "target_mapped":
+      return "Home group not moved — its new name is already mapped";
     case "absent":
       return "No home group to move";
     case "failed":
@@ -208,6 +226,9 @@ interface CoordProjectRenameDialogProps {
   tenant: RenameTarget | null;
   /** Called after a successful rename, after the tenant list refresh. */
   onRenamed?: (result: TenantRenameResponse) => void;
+  /** Called when the rename's outcome is UNKNOWN (a 504) — the caller should
+   *  re-read anything that shows the tenant's name or short id. */
+  onOutcomeUnknown?: () => void;
 }
 
 export function CoordProjectRenameDialog({
@@ -215,8 +236,12 @@ export function CoordProjectRenameDialog({
   onOpenChange,
   tenant,
   onRenamed,
+  onOutcomeUnknown,
 }: CoordProjectRenameDialogProps) {
   const { refresh } = useTenant();
+  // False when the post-rename list refresh failed: the rename stands, but the
+  // switcher may still show the old name until a reload.
+  const [listRefreshed, setListRefreshed] = useState(true);
   const [name, setName] = useState("");
   const [slug, setSlug] = useState("");
   const [submitting, setSubmitting] = useState(false);
@@ -238,12 +263,14 @@ export function CoordProjectRenameDialog({
     setSubmitting(false);
     setError(null);
     setResult(null);
+    setListRefreshed(true);
   }, [open, tenant]);
 
   const trimmedName = name.trim();
   const trimmedSlug = slug.trim();
   const nameChanged = tenant !== null && trimmedName !== tenant.name;
   const slugChanged = tenant !== null && trimmedSlug !== tenant.slug;
+  const nameEmpty = tenant !== null && trimmedName.length === 0;
   const nameValid =
     trimmedName.length > 0 && [...trimmedName].length <= MAX_DISPLAY_NAME_CHARS;
   const slugProblem = slugChanged ? renameSlugProblem(trimmedSlug) : null;
@@ -260,8 +287,23 @@ export function CoordProjectRenameDialog({
       ? error.message
       : null;
 
-  const handleSubmit = async () => {
-    if (!canSubmit || tenant === null) return;
+  /**
+   * Submit the rename. Resolves with coord's result; REJECTS with the refusal
+   * (after rendering it) or with a plain `Error` when there is nothing
+   * submittable — so the UI Bridge action can report what actually happened
+   * rather than resolving `undefined` either way.
+   */
+  const submitRename = async (): Promise<TenantRenameResponse> => {
+    if (!canSubmit || tenant === null) {
+      throw new Error(
+        submitting
+          ? "rename-tenant: a rename is already in flight"
+          : (slugProblem ??
+              (nameChanged && !nameValid
+                ? "rename-tenant: the project name is invalid"
+                : "rename-tenant: nothing changed — edit the name or the short id first"))
+      );
+    }
     const body: TenantRenameRequest = {};
     if (nameChanged) body.display_name = trimmedName;
     if (slugChanged) body.slug = trimmedSlug;
@@ -271,15 +313,23 @@ export function CoordProjectRenameDialog({
       const renamed = await renameTenant(tenant.id, body);
       setResult(renamed);
       // The switcher and header chip read the provider's list, which is
-      // otherwise fetched once on mount.
-      await refresh();
+      // otherwise fetched once on mount. A failed refresh does not undo the
+      // rename — it only means the list is stale — so it never throws here.
+      setListRefreshed(await refresh());
       onRenamed?.(renamed);
+      return renamed;
     } catch (err) {
       setError({
         name: trimmedName,
         slug: trimmedSlug,
         message: renameErrorMessage(err),
       });
+      if (isRenameOutcomeUnknown(err)) {
+        // Coord may have committed: re-read, so the answer is visible.
+        void refresh();
+        onOutcomeUnknown?.();
+      }
+      throw err;
     } finally {
       setSubmitting(false);
     }
@@ -295,12 +345,10 @@ export function CoordProjectRenameDialog({
         id: "rename-tenant",
         label: "Rename tenant",
         description:
-          "Submit the rename with the values currently in the dialog's fields.",
+          "Submit the rename with the values currently in the dialog's fields. Resolves with coord's rename result (slug, display_name, previous, home_group_migration); rejects with the refusal, or when nothing is submittable.",
         // A rename is a reversible write — declared, not re-derived.
         effect: "write",
-        handler: async () => {
-          await handleSubmit();
-        },
+        handler: async () => submitRename(),
       },
     ],
   });
@@ -360,6 +408,15 @@ export function CoordProjectRenameDialog({
                 </p>
               </div>
             ) : null}
+            {!listRefreshed ? (
+              <p
+                className="text-xs text-muted-foreground"
+                data-testid="coord-tenant-rename-list-stale"
+              >
+                The project list could not be reloaded, so the switcher may show
+                the old name until you reload the page.
+              </p>
+            ) : null}
           </div>
         ) : (
           <div className="space-y-3 py-2">
@@ -374,7 +431,21 @@ export function CoordProjectRenameDialog({
                 maxLength={MAX_DISPLAY_NAME_CHARS}
                 autoComplete="off"
                 disabled={submitting}
+                aria-invalid={nameEmpty}
+                aria-describedby={
+                  nameEmpty ? "coord-tenant-rename-name-problem" : undefined
+                }
               />
+              {nameEmpty ? (
+                <p
+                  id="coord-tenant-rename-name-problem"
+                  className="text-xs text-destructive"
+                  data-testid="coord-tenant-rename-name-problem"
+                  aria-live="polite"
+                >
+                  The name can&apos;t be blank.
+                </p>
+              ) : null}
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="coord-tenant-rename-slug">Short id</Label>
@@ -395,12 +466,15 @@ export function CoordProjectRenameDialog({
               <p
                 id="coord-tenant-rename-slug-note"
                 className="text-xs text-muted-foreground"
-                aria-live="polite"
               >
+                {/* `aria-live` rides the PROBLEM only: the preview below changes
+                    on every keystroke, and announcing it would talk over the
+                    operator while they type. */}
                 {slugProblem !== null ? (
                   <span
                     className="text-destructive"
                     data-testid="coord-tenant-rename-slug-problem"
+                    aria-live="polite"
                   >
                     {slugProblem}
                   </span>
@@ -451,7 +525,8 @@ export function CoordProjectRenameDialog({
                 Cancel
               </Button>
               <Button
-                onClick={() => void handleSubmit()}
+                // The refusal is already rendered in the alert box.
+                onClick={() => void submitRename().catch(() => undefined)}
                 disabled={!canSubmit}
                 data-testid="coord-tenant-rename-submit"
                 data-ui-bridge-id="coord.tenant-rename.submit"

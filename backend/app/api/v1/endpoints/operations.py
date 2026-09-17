@@ -13164,7 +13164,12 @@ async def remove_cognito_group_user(
 _TENANT_RENAME_RATE_LIMIT = _CREATE_GROUP_RATE_LIMIT
 
 HomeGroupMigrationStatus = Literal[
-    "migrated", "requires_superuser", "target_exists", "absent", "failed"
+    "migrated",
+    "requires_superuser",
+    "target_exists",
+    "target_mapped",
+    "absent",
+    "failed",
 ]
 
 
@@ -13175,6 +13180,7 @@ def _home_group_outcome(
     old_group: str,
     new_group: str,
     members_copied: int = 0,
+    new_group_created: bool = False,
 ) -> dict[str, Any]:
     return {
         "status": status,
@@ -13182,6 +13188,10 @@ def _home_group_outcome(
         "old_group": old_group,
         "new_group": new_group,
         "members_copied": members_copied,
+        # True whenever THIS call created `new_group` — including on `failed`,
+        # where a half-populated group now exists in the shared pool and the
+        # operator has to know it is there.
+        "new_group_created": new_group_created,
     }
 
 
@@ -13191,16 +13201,23 @@ async def _migrate_home_group(
     current_user: UserModel,
     old_group: str,
     new_group: str,
+    expected_old_group: str | None,
 ) -> dict[str, Any]:
     """Carry ``<old>-home`` to ``<new>-home`` after a coord slug rename (D5).
 
     Never raises and never rolls the coord rename back: the rename is already
     committed coord-side, and coord's slug history makes a stale home group
     harmless (it still resolves to the renamed tenant), so this is hygiene
-    whose outcome is REPORTED rather than enforced.
+    whose outcome is REPORTED rather than enforced. Every failure — a Cognito
+    error, an unreadable mapping check, or anything unexpected — becomes
+    ``failed`` with "the rename is complete" wording, never a 500 the caller
+    would read as "the rename failed" and retry.
 
-    Four rules, each a refusal to widen what a tenant admin can do:
+    The rules, each a refusal to widen what a tenant admin can do:
 
+    * **Coord's answer must be self-consistent.** ``home_group_to_migrate``
+      must be ``<previous slug>-home``; anything else means the response is not
+      what this code understands, and no AWS write is made on its say-so.
     * **Superuser only.** Web's Cognito group routes are ``require_admin``
       (``is_superuser``); a tenant-admin rename must not side-step that gate by
       reaching the same pool through this route. A non-superuser gets
@@ -13209,11 +13226,33 @@ async def _migrate_home_group(
       act (no undelete) and has its own blast-radius guards on its own route.
     * **Never touch an existing ``<new>-home``.** The pool is SHARED; a group
       by that name may already belong to someone else — ``target_exists``.
+    * **Never create a ``<new>-home`` coord already maps.** A mapping naming a
+      group that does not exist yet is live the moment the group appears:
+      creating it and copying members in would grant them whatever roles that
+      mapping carries, in whichever tenant it points at — ``target_mapped``.
+      Checked with ``_coord_group_blast_radius``, the pool-wide read the delete
+      route's guard uses; an unreadable answer is UNKNOWN and refuses.
     * **Through the same audited helpers** the group routes use: every
       ``create_group`` / ``add_user_to_group`` that lands writes its
       ``auth.cognito_group_admin_events`` row via
       ``_write_cognito_group_audit``.
     """
+    if old_group != expected_old_group:
+        logger.warning(
+            "tenant_rename_home_group_mismatch",
+            home_group_to_migrate=old_group,
+            expected=expected_old_group,
+        )
+        return _home_group_outcome(
+            "failed",
+            f"Coord named “{old_group}” as the home group to move, but the "
+            "previous short id implies "
+            f"“{expected_old_group or 'unknown'}”. Nothing was changed in "
+            "Cognito. The rename itself is complete.",
+            old_group=old_group,
+            new_group=new_group,
+        )
+
     if not getattr(current_user, "is_superuser", False):
         return _home_group_outcome(
             "requires_superuser",
@@ -13224,7 +13263,20 @@ async def _migrate_home_group(
             new_group=new_group,
         )
 
+    created = False
     copied = 0
+    total: int | None = None
+
+    def _partial() -> str:
+        if not created:
+            return f"“{new_group}” was not created."
+        of_total = f" of {total}" if total is not None else ""
+        return (
+            f"“{new_group}” WAS created and holds {copied}{of_total} member(s) "
+            f"of “{old_group}” — finish or delete it from the Cognito groups "
+            "panel."
+        )
+
     try:
         groups = await asyncio.to_thread(cognito_admin.list_groups)
         names = {g.get("group_name") for g in groups}
@@ -13244,6 +13296,32 @@ async def _migrate_home_group(
                 new_group=new_group,
             )
         try:
+            radius = await _coord_group_blast_radius(new_group)
+        except HTTPException as exc:
+            logger.warning(
+                "tenant_rename_home_group_mapping_check_failed",
+                new_group=new_group,
+                status=exc.status_code,
+            )
+            return _home_group_outcome(
+                "failed",
+                f"Could not check whether coord already maps “{new_group}”, so "
+                "it was not created. The rename itself is complete; "
+                f"“{old_group}” was not deleted.",
+                old_group=old_group,
+                new_group=new_group,
+            )
+        if radius.mapped_total > 0:
+            return _home_group_outcome(
+                "target_mapped",
+                f"Coord already has {radius.mapped_total} SSO group mapping(s) "
+                f"naming “{new_group}”, so creating it would grant its members "
+                "those roles. It was not created and nothing was copied. The "
+                "rename itself is complete.",
+                old_group=old_group,
+                new_group=new_group,
+            )
+        try:
             await asyncio.to_thread(
                 cognito_admin.create_group,
                 new_group,
@@ -13258,6 +13336,7 @@ async def _migrate_home_group(
                 old_group=old_group,
                 new_group=new_group,
             )
+        created = True
         await _write_cognito_group_audit(
             db,
             actor_user_id=current_user.id,
@@ -13266,10 +13345,10 @@ async def _migrate_home_group(
             details={"reason": "tenant_rename_home_group", "from": old_group},
         )
         users = await asyncio.to_thread(cognito_admin.list_users_in_group, old_group)
-        for user in users:
-            username = user.get("username")
-            if not username:
-                continue
+        members = [u for u in users if u.get("username")]
+        total = len(members)
+        for user in members:
+            username = user["username"]
             await asyncio.to_thread(
                 cognito_admin.add_user_to_group, username, new_group
             )
@@ -13288,17 +13367,38 @@ async def _migrate_home_group(
             "tenant_rename_home_group_migration_failed",
             old_group=old_group,
             new_group=new_group,
+            new_group_created=created,
             members_copied=copied,
             error=str(exc),
         )
         return _home_group_outcome(
             "failed",
-            f"Moving “{old_group}” to “{new_group}” failed after {copied} "
-            f"member(s) were copied: {exc}. The rename itself is complete; "
-            f"“{old_group}” was not deleted.",
+            f"Moving “{old_group}” to “{new_group}” failed: {exc}. {_partial()} "
+            f"The rename itself is complete; “{old_group}” was not deleted.",
             old_group=old_group,
             new_group=new_group,
             members_copied=copied,
+            new_group_created=created,
+        )
+    except Exception as exc:  # noqa: BLE001 - coord already committed the rename
+        # Anything else (a non-Cognito bug, a malformed helper answer) must not
+        # become a 500: coord has committed, and a 500 reads as "not renamed".
+        logger.exception(
+            "tenant_rename_home_group_migration_crashed",
+            old_group=old_group,
+            new_group=new_group,
+            new_group_created=created,
+            members_copied=copied,
+        )
+        return _home_group_outcome(
+            "failed",
+            f"Moving “{old_group}” to “{new_group}” hit an unexpected error "
+            f"({type(exc).__name__}). {_partial()} The rename itself is "
+            f"complete; “{old_group}” was not deleted.",
+            old_group=old_group,
+            new_group=new_group,
+            members_copied=copied,
+            new_group_created=created,
         )
     return _home_group_outcome(
         "migrated",
@@ -13308,6 +13408,7 @@ async def _migrate_home_group(
         old_group=old_group,
         new_group=new_group,
         members_copied=copied,
+        new_group_created=True,
     )
 
 
@@ -13371,11 +13472,16 @@ async def rename_user_tenant(
     if isinstance(result, dict):
         old_home = result.get("home_group_to_migrate")
         new_slug = result.get("slug")
+        previous = result.get("previous")
+        prev_slug = previous.get("slug") if isinstance(previous, dict) else None
         if isinstance(old_home, str) and old_home and isinstance(new_slug, str):
             result["home_group_migration"] = await _migrate_home_group(
                 db,
                 current_user=current_user,
                 old_group=old_home,
                 new_group=f"{new_slug}-home",
+                expected_old_group=(
+                    f"{prev_slug}-home" if isinstance(prev_slug, str) else None
+                ),
             )
     return result

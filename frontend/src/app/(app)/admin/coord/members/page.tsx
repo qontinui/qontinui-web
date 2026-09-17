@@ -447,7 +447,13 @@ function GroupNameHint({
 // Section a — Your tenant + roles
 // ===========================================================================
 
-function MyTenantsCard() {
+/**
+ * @param onSlugChanged called when a tenant's SHORT ID may have changed (a
+ *   rename that moved the slug, or one whose outcome is unknown). Other panels
+ *   on this page render slugs — the group-mapping list and the Cognito groups'
+ *   mapping chips — so the page re-reads them.
+ */
+function MyTenantsCard({ onSlugChanged }: { onSlugChanged: () => void }) {
   const [data, setData] = useState<MyTenantsResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -611,7 +617,7 @@ function MyTenantsCard() {
                           className="h-7"
                           onClick={() => setRenaming(renameTarget)}
                           data-testid={`coord-tenant-rename-open-${renameTarget.id}`}
-                          data-ui-bridge-id="coord.tenant-rename.open"
+                          data-ui-bridge-id={`coord.tenant-rename.open.${renameTarget.id}`}
                         >
                           Rename
                         </Button>
@@ -644,7 +650,14 @@ function MyTenantsCard() {
           if (!open) setRenaming(null);
         }}
         // The rows above show what this section's read returned, so re-read.
-        onRenamed={() => void load()}
+        onRenamed={(result) => {
+          void load();
+          if (result.previous.slug !== result.slug) onSlugChanged();
+        }}
+        onOutcomeUnknown={() => {
+          void load();
+          onSlugChanged();
+        }}
       />
     ) : null}
     </div>
@@ -1338,7 +1351,14 @@ function AddTenantMemberForm({ onAdded }: { onAdded: () => void }) {
 // Section d — Group → tenant → role mappings
 // ===========================================================================
 
-function GroupTenantRolesSection({ isSuperuser }: { isSuperuser: boolean }) {
+function GroupTenantRolesSection({
+  isSuperuser,
+  refreshKey = 0,
+}: {
+  isSuperuser: boolean;
+  /** Bumped when a tenant slug changed elsewhere on the page. */
+  refreshKey?: number;
+}) {
   const [rows, setRows] = useState<GroupTenantRoleRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -1398,7 +1418,7 @@ function GroupTenantRolesSection({ isSuperuser }: { isSuperuser: boolean }) {
 
   useEffect(() => {
     void load();
-  }, [load]);
+  }, [load, refreshKey]);
 
   const addMapping = useCallback(async () => {
     if (!groupId.trim() || !tenantSlug.trim()) {
@@ -2735,7 +2755,15 @@ function MountedOnce({ onMount }: { onMount: () => void }) {
  * require staff/superuser access. A coord admin who is NOT a superuser sees a
  * muted note instead of the controls.
  */
-function CognitoGroupsSection({ isSuperuser }: { isSuperuser: boolean }) {
+function CognitoGroupsSection({
+  isSuperuser,
+  refreshKey = 0,
+}: {
+  isSuperuser: boolean;
+  /** Bumped when a tenant slug changed elsewhere on the page: the mapping
+   *  chips on each group name tenants by slug. */
+  refreshKey?: number;
+}) {
   const [groups, setGroups] = useState<CognitoGroupRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -2854,7 +2882,7 @@ function CognitoGroupsSection({ isSuperuser }: { isSuperuser: boolean }) {
     return () => {
       cancelled = true;
     };
-  }, [isSuperuser, panelOpened, countsToken]);
+  }, [isSuperuser, panelOpened, countsToken, refreshKey]);
 
   // Member counts, one probe per group, in parallel.
   useEffect(() => {
@@ -3111,6 +3139,10 @@ export default function MembersPage() {
   // Bumped after any membership mutation so dependent sections refetch.
   const [refreshKey, setRefreshKey] = useState(0);
   const bump = useCallback(() => setRefreshKey((k) => k + 1), []);
+  // Bumped when a tenant rename moved (or may have moved) a slug, so every
+  // panel that renders slugs re-reads.
+  const [slugKey, setSlugKey] = useState(0);
+  const bumpSlugs = useCallback(() => setSlugKey((k) => k + 1), []);
 
   if (loading) {
     return (
@@ -3166,7 +3198,7 @@ export default function MembersPage() {
           count, the group count), which is R7's actual contract — the panel
           folds, its signal does not. */}
       <MembersTable refreshKey={refreshKey} onChanged={bump} />
-      <MyTenantsCard />
+      <MyTenantsCard onSlugChanged={bumpSlugs} />
       {/* R7 + the plan's Design decision 1 — the SSO-group machinery is one
           tool for a different job (pre-authorizing an entire IdP group's
           current and future members), not a second way to do what the form at
@@ -3201,8 +3233,14 @@ export default function MembersPage() {
             To give one colleague access, use the form at the top of this page
             instead.
           </p>
-          <GroupTenantRolesSection isSuperuser={user?.is_superuser === true} />
-          <CognitoGroupsSection isSuperuser={user?.is_superuser === true} />
+          <GroupTenantRolesSection
+            isSuperuser={user?.is_superuser === true}
+            refreshKey={slugKey}
+          />
+          <CognitoGroupsSection
+            isSuperuser={user?.is_superuser === true}
+            refreshKey={slugKey}
+          />
         </>
       </CollapsiblePanel>
     </div>

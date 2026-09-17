@@ -66,10 +66,14 @@ interface TenantContextValue {
   /**
    * Re-fetch `/tenants` in place. The list is otherwise fetched once on mount,
    * so a write that changes a tenant's name or slug (the rename dialog) calls
-   * this instead of reloading the page. Resolves once the fetch settles; a
-   * failure lands in `error` exactly as the mount fetch's does.
+   * this instead of reloading the page. `loading` is true while it runs.
+   *
+   * Resolves `true` when the list was re-read and `false` when the re-read
+   * failed. A failed REFRESH never sets `error` and never clears `tenants`:
+   * the previous list is still a real answer, and a global error after a
+   * write that succeeded would tell every consumer the tenants are unknown.
    */
-  refresh: () => Promise<void>;
+  refresh: () => Promise<boolean>;
 }
 
 const TenantContext = createContext<TenantContextValue | undefined>(undefined);
@@ -87,41 +91,57 @@ export function TenantProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const load = useCallback(async (signal?: AbortSignal) => {
-    try {
-      const data: TenantListResponse = await listTenants(signal);
-      setTenants(data.tenants);
+  /**
+   * Fetch the list. `isRefresh` distinguishes a re-read of a list we already
+   * hold from the first load: only the first load's failure is a global
+   * `error` (there is no list at all); a refresh failure keeps the last good
+   * list and is reported to the caller as `false`.
+   */
+  const load = useCallback(
+    async (signal?: AbortSignal, isRefresh = false): Promise<boolean> => {
+      if (isRefresh) setLoading(true);
+      try {
+        const data: TenantListResponse = await listTenants(signal);
+        setTenants(data.tenants);
 
-      // Reconcile localStorage selection against the server's
-      // membership view. If the persisted id is not in the
-      // tenant list (e.g. operator was removed from the tenant),
-      // fall back to the server-side active_tenant_id.
-      setActiveTenantIdState((prev) => {
-        if (prev && data.tenants.some((t) => t.id === prev)) {
-          return prev;
-        }
-        // No prior selection or stale selection: use the server's
-        // hint. This is the "one-time forced selection on first
-        // multi-tenant launch" per plan §D12 — for now the
-        // server only knows one tenant per operator, so this is
-        // a no-op write.
-        if (typeof window !== "undefined") {
-          try {
-            localStorage.setItem(STORAGE_KEY, data.active_tenant_id);
-          } catch {
-            // ignore quota / private-mode errors
+        // Reconcile localStorage selection against the server's
+        // membership view. If the persisted id is not in the
+        // tenant list (e.g. operator was removed from the tenant),
+        // fall back to the server-side active_tenant_id.
+        setActiveTenantIdState((prev) => {
+          if (prev && data.tenants.some((t) => t.id === prev)) {
+            return prev;
           }
+          // No prior selection or stale selection: use the server's
+          // hint. This is the "one-time forced selection on first
+          // multi-tenant launch" per plan §D12 — for now the
+          // server only knows one tenant per operator, so this is
+          // a no-op write.
+          if (typeof window !== "undefined") {
+            try {
+              localStorage.setItem(STORAGE_KEY, data.active_tenant_id);
+            } catch {
+              // ignore quota / private-mode errors
+            }
+          }
+          return data.active_tenant_id;
+        });
+        setError(null);
+        return true;
+      } catch (err) {
+        if ((err as { name?: string })?.name === "AbortError") return false;
+        if (!isRefresh) {
+          setError(
+            err instanceof Error ? err.message : "failed to load tenants"
+          );
         }
-        return data.active_tenant_id;
-      });
-      setError(null);
-    } catch (err) {
-      if ((err as { name?: string })?.name === "AbortError") return;
-      setError(err instanceof Error ? err.message : "failed to load tenants");
-    } finally {
-      setLoading(false);
-    }
-  }, []);
+        return false;
+      } finally {
+        setLoading(false);
+      }
+    },
+    []
+  );
 
   useEffect(() => {
     const ctrl = new AbortController();
@@ -129,7 +149,7 @@ export function TenantProvider({ children }: { children: ReactNode }) {
     return () => ctrl.abort();
   }, [load]);
 
-  const refresh = useCallback(() => load(), [load]);
+  const refresh = useCallback(() => load(undefined, true), [load]);
 
   const setActiveTenantId = useCallback((id: string) => {
     setActiveTenantIdState(id);

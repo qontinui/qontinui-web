@@ -338,6 +338,8 @@ export type HomeGroupMigrationStatus =
   | "migrated"
   | "requires_superuser"
   | "target_exists"
+  /** Coord already maps `<new>-home`; creating it would grant those roles. */
+  | "target_mapped"
   | "absent"
   | "failed";
 
@@ -347,6 +349,9 @@ export interface HomeGroupMigration {
   old_group?: string;
   new_group?: string;
   members_copied?: number;
+  /** True when this rename created `new_group` — including on `failed`, where
+   *  a partially populated group now exists in the shared pool. */
+  new_group_created?: boolean;
 }
 
 /**

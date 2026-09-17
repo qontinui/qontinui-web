@@ -19,7 +19,7 @@
  */
 
 import { describe, expect, it, vi, beforeEach } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { act, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
 const renameTenantMock = vi.fn();
@@ -39,12 +39,24 @@ vi.mock("@/contexts/tenant-context", () => ({
   useTenant: () => ({ refresh: refreshMock }),
 }));
 
+/** The options of the most recent `useUIComponent` registration. */
+let lastUIComponent: {
+  actions: Array<{
+    id: string;
+    effect?: string;
+    handler: () => Promise<unknown>;
+  }>;
+} | null = null;
+
 vi.mock("@qontinui/ui-bridge", () => ({
-  useUIComponent: () => undefined,
+  useUIComponent: (options: typeof lastUIComponent) => {
+    lastUIComponent = options;
+  },
 }));
 
 import {
   CoordProjectRenameDialog,
+  homeGroupHeadline,
   renameErrorMessage,
   renameSlugProblem,
 } from "./CoordProjectRenameDialog";
@@ -59,16 +71,23 @@ const TENANT = {
   name: "My Pizzeria",
 };
 
-function renderDialog(onRenamed = vi.fn()) {
+function renderDialog(onRenamed = vi.fn(), onOutcomeUnknown = vi.fn()) {
   render(
     <CoordProjectRenameDialog
       open
       onOpenChange={() => undefined}
       tenant={TENANT}
       onRenamed={onRenamed}
+      onOutcomeUnknown={onOutcomeUnknown}
     />
   );
-  return { onRenamed };
+  return { onRenamed, onOutcomeUnknown };
+}
+
+function renameAction() {
+  const action = lastUIComponent?.actions.find((a) => a.id === "rename-tenant");
+  if (!action) throw new Error("rename-tenant action was not registered");
+  return action;
 }
 
 const nameInput = () =>
@@ -99,7 +118,8 @@ function proxiedError(status: number, coordBody: Record<string, unknown>) {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  refreshMock.mockResolvedValue(undefined);
+  refreshMock.mockResolvedValue(true);
+  lastUIComponent = null;
   renameTenantMock.mockResolvedValue(renameResult());
 });
 
@@ -306,6 +326,18 @@ describe("coord refusals — one sentence each", () => {
       "An SSO group mapping for this project changed at the same moment, so nothing was renamed. Try again.",
     ],
     [
+      "502 — the proxy never reached coord: not applied",
+      502,
+      { error: "coord_unreachable" },
+      "Coord could not be reached, so the rename was not applied. Try again.",
+    ],
+    [
+      "504 — coord did not answer in time: may have been applied",
+      504,
+      { error: "timeout" },
+      "Coord didn't answer in time, so the rename may have been applied. The project list was reloaded to check \u2014 look for the new name before trying again.",
+    ],
+    [
       "an unknown code is verbatim",
       500,
       { error: "something_new", message: "boom" },
@@ -380,5 +412,129 @@ describe("success", () => {
     const outcome = await screen.findByTestId("coord-tenant-rename-home-group");
     expect(outcome).toHaveAttribute("data-status", "migrated");
     expect(outcome.textContent).toContain("Home group moved");
+  });
+});
+
+describe("unknown outcome (504) vs not applied (502)", () => {
+  async function submitSlugChange() {
+    const user = userEvent.setup();
+    await user.clear(slugInput());
+    await user.type(slugInput(), "new-pizzeria");
+    await user.click(submitButton());
+  }
+
+  it("a 504 re-reads the tenant list and tells the caller the outcome is unknown", async () => {
+    renameTenantMock.mockRejectedValue(
+      new TenantRenameError(504, null, null, "timeout waiting for coord")
+    );
+    const { onRenamed, onOutcomeUnknown } = renderDialog();
+    await submitSlugChange();
+
+    const alert = await screen.findByTestId("coord-tenant-rename-error");
+    expect(alert.textContent).toContain("may have been applied");
+    expect(refreshMock).toHaveBeenCalledTimes(1);
+    expect(onOutcomeUnknown).toHaveBeenCalledTimes(1);
+    expect(onRenamed).not.toHaveBeenCalled();
+  });
+
+  it("a 502 says not applied and re-reads nothing", async () => {
+    renameTenantMock.mockRejectedValue(
+      new TenantRenameError(502, null, null, "coord is not reachable")
+    );
+    const { onOutcomeUnknown } = renderDialog();
+    await submitSlugChange();
+
+    const alert = await screen.findByTestId("coord-tenant-rename-error");
+    expect(alert.textContent).toBe(
+      "Coord could not be reached, so the rename was not applied. Try again."
+    );
+    expect(refreshMock).not.toHaveBeenCalled();
+    expect(onOutcomeUnknown).not.toHaveBeenCalled();
+  });
+});
+
+describe("UI Bridge rename-tenant action", () => {
+  it("is declared a write", () => {
+    renderDialog();
+    expect(renameAction().effect).toBe("write");
+  });
+
+  it("rejects when nothing is submittable, and sends nothing", async () => {
+    renderDialog();
+    await expect(renameAction().handler()).rejects.toThrow(/nothing changed/);
+    expect(renameTenantMock).not.toHaveBeenCalled();
+  });
+
+  it("resolves with coord's rename result so an agent can observe the effect", async () => {
+    const user = userEvent.setup();
+    const result = renameResult();
+    renameTenantMock.mockResolvedValue(result);
+    renderDialog();
+    await user.clear(slugInput());
+    await user.type(slugInput(), "new-pizzeria");
+
+    let resolved: unknown;
+    await act(async () => {
+      resolved = await renameAction().handler();
+    });
+    expect(resolved).toEqual(result);
+  });
+
+  it("rejects with coord's refusal", async () => {
+    const user = userEvent.setup();
+    const refusal = new TenantRenameError(
+      409,
+      "slug_taken",
+      null,
+      "slug_taken"
+    );
+    renameTenantMock.mockRejectedValue(refusal);
+    renderDialog();
+    await user.clear(slugInput());
+    await user.type(slugInput(), "new-pizzeria");
+
+    let caught: unknown;
+    await act(async () => {
+      caught = await renameAction()
+        .handler()
+        .catch((e: unknown) => e);
+    });
+    expect(caught).toBe(refusal);
+  });
+});
+
+describe("smaller contracts", () => {
+  it("a blank name says so and holds submit", async () => {
+    const user = userEvent.setup();
+    renderDialog();
+    await user.clear(nameInput());
+    expect(nameInput()).toHaveAttribute("aria-invalid", "true");
+    expect(
+      screen.getByTestId("coord-tenant-rename-name-problem").textContent
+    ).toBe("The name can't be blank.");
+    expect(submitButton()).toBeDisabled();
+  });
+
+  it("a failed list refresh after a successful rename is a note, not an error", async () => {
+    const user = userEvent.setup();
+    refreshMock.mockResolvedValue(false);
+    renderDialog();
+    await user.clear(slugInput());
+    await user.type(slugInput(), "new-pizzeria");
+    await user.click(submitButton());
+
+    expect(
+      await screen.findByTestId("coord-tenant-rename-list-stale")
+    ).toBeInTheDocument();
+    expect(
+      screen.getByTestId("coord-tenant-rename-success")
+    ).toBeInTheDocument();
+    expect(screen.queryByTestId("coord-tenant-rename-error")).toBeNull();
+  });
+
+  it("target_mapped has its own headline", () => {
+    expect(homeGroupHeadline({ status: "target_mapped", detail: "" })).toBe(
+      "Home group not moved \u2014 its new name is already mapped"
+    );
   });
 });
