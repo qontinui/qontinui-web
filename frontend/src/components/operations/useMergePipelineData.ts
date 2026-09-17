@@ -8,7 +8,8 @@
 // coord-fleet-page-redesign-2026-07-14.md): the MergePipeline hero fuses the
 // proposal queue and the PR outer state, so a single hook fetches BOTH plus
 // the two actionable side-channels (suggestions, blast-radius gate blocks).
-// Transport: WS push on `events.merge.>` with a debounced co-refetch of
+// Transport: WS push on coord's `events.merge.*` — through the web backend's
+// coord-events bridge (`subscribe=merge`) — with a debounced co-refetch of
 // every surface, plus a slow poll fallback. Having ONE owner (instead of the
 // pre-redesign MergeTrain panel polling the same four endpoints on its own)
 // keeps the dashboard at the same request budget as before the redesign.
@@ -43,7 +44,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createLogger } from "@/lib/logger";
 import { httpClient } from "@/services/service-factory";
-import { OPERATIONS_API } from "./utils";
+import { OPERATIONS_API, coordEventsWsUrl } from "./utils";
 import { isMergedPr } from "./prPipeline";
 import type {
   BlastRadiusBlock,
@@ -60,9 +61,17 @@ import type {
 
 const log = createLogger("useMergePipelineData");
 
-const COORD_WS_URL =
-  process.env.NEXT_PUBLIC_COORD_WS_URL || "ws://localhost:9870/ws";
-const WS_PATTERN = "events.merge.>";
+/**
+ * The bridge subscription this hook opens. The web backend forwards it to
+ * coord's authenticated `/ws?subscribe=merge`, which coord resolves to
+ * `events.merge.*` server-side. The hook used to dial coord directly on
+ * `NEXT_PUBLIC_COORD_WS_URL` with `?pattern=events.merge.>` — a NATS
+ * wildcard, not a Redis glob, so that subscription had never matched a
+ * frame and the "live transport" was the 15s poll all along. Plan
+ * 2026-09-13-coord-publishes-agent-jwts-on-a-redis-channel-fronted-by-an-unauthenticated-ws-firehose
+ * Phase 2 re-homed it and fixed the pattern in the same move.
+ */
+const WS_SUBSCRIPTION = "merge" as const;
 // Fallback only — the WS is the live transport, so this just bounds staleness
 // if the socket is down. 2s here meant 5 authenticated requests every 2s per
 // open tab against a 20-connection backend pool.
@@ -190,6 +199,9 @@ export function useMergePipelineData(
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const reconnectAttemptsRef = useRef(0);
+  // Every `connectWs` attempt awaits its session token; one overtaken while
+  // it waited (another connect, cleanup, tab hide) must create no socket.
+  const connectGenRef = useRef(0);
   const refetchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const cleanedUpRef = useRef(false);
@@ -483,7 +495,7 @@ export function useMergePipelineData(
     refetchTimerRef.current = setTimeout(() => {
       // Rule 3 applies to the WS path too, not just the poll: a hidden tab
       // with a live socket would otherwise keep running full batches off
-      // `events.merge.>` all night. Suppressing here rather than at schedule
+      // `events.merge.*` all night. Suppressing here rather than at schedule
       // time loses nothing — `onVisibility` re-schedules on reveal.
       if (document.hidden) return;
       void fetchAllRef.current();
@@ -531,7 +543,7 @@ export function useMergePipelineData(
     fetchAllRef.current = fetchAll;
   }, [fetchAll]);
 
-  const connectWs = useCallback(() => {
+  const connectWs = useCallback(async (): Promise<void> => {
     if (cleanedUpRef.current || document.hidden) return;
     // Detach BEFORE closing. A superseded socket's `onclose` fires
     // asynchronously and would otherwise schedule a reconnect that closes the
@@ -542,8 +554,33 @@ export function useMergePipelineData(
       prev.onopen = prev.onmessage = prev.onerror = prev.onclose = null;
       prev.close();
     }
+    wsRef.current = null;
+    const gen = ++connectGenRef.current;
 
-    const url = `${COORD_WS_URL}?pattern=${encodeURIComponent(WS_PATTERN)}`;
+    // The bridge authenticates the operator from the same session token
+    // every other operations WS uses (`useDeviceStatusStream` is the
+    // precedent) — the client-held bearer when present, else the
+    // cookie-reading /api/v1/ws-token route.
+    const token = await httpClient.getWebSocketToken();
+
+    // Overtaken while awaiting the token — by another connect, by cleanup,
+    // or by the tab hiding. Create nothing: a socket made here would be one
+    // no cleanup can reach.
+    if (
+      gen !== connectGenRef.current ||
+      cleanedUpRef.current ||
+      document.hidden
+    ) {
+      return;
+    }
+    if (!token) {
+      // No session → the bridge would refuse. The poll's `reviveWs` retries
+      // every POLL_INTERVAL_MS, which is the right cadence for "signed out".
+      log.debug("No WS token; merge pipeline stays on the poll");
+      return;
+    }
+
+    const url = coordEventsWsUrl(WS_SUBSCRIPTION, token);
     let ws: WebSocket;
     try {
       ws = new WebSocket(url);
@@ -585,7 +622,7 @@ export function useMergePipelineData(
       }
       const delay = Math.min(1_000 * 2 ** reconnectAttemptsRef.current, 30_000);
       reconnectAttemptsRef.current += 1;
-      reconnectRef.current = setTimeout(connectWs, delay);
+      reconnectRef.current = setTimeout(() => void connectWs(), delay);
     };
   }, [scheduleRefetch]);
 
@@ -604,7 +641,7 @@ export function useMergePipelineData(
       reconnectRef.current = null;
     }
     reconnectAttemptsRef.current = 0;
-    connectWs();
+    void connectWs();
   }, [connectWs]);
 
   useEffect(() => {
@@ -657,7 +694,7 @@ export function useMergePipelineData(
     // fetches on first reveal, so nothing is lost.
     if (!document.hidden) void fetchAllRef.current();
     pollTimerRef.current = setTimeout(() => void tick(), POLL_INTERVAL_MS);
-    connectWs();
+    void connectWs();
 
     // Re-reveal: resync at once, and open the socket if we never got one —
     // `connectWs` no-ops while hidden, so a tab that mounted in the

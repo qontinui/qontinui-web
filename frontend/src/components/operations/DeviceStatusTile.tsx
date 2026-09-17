@@ -149,13 +149,15 @@ function StalledBadge({
  *
  * History: this tile used to fetch coord's `GET /coord/status` directly
  * through the `/coord-api/*` Next rewrite with `credentials: "omit"`,
- * and opened its own anonymous coord WS
- * (`NEXT_PUBLIC_COORD_WS_URL`, default `ws://localhost:9870/ws`).
- * Coord's `GET /coord/status` became operator-auth fail-closed
- * (fleet-auth P4), so the direct call 403'd (`tenant_not_resolved`)
- * and the tile silently emptied. Routing through the web-backend
- * proxy forwards the operator bearer and keeps the tenant scoping
- * server-side.
+ * and opened its own anonymous coord WS on a since-deleted
+ * `NEXT_PUBLIC_COORD_WS_URL` envvar. Coord's `GET /coord/status` became
+ * operator-auth fail-closed (fleet-auth P4), so the direct call 403'd
+ * (`tenant_not_resolved`) and the tile silently emptied. Routing through
+ * the web-backend proxy forwards the operator bearer and keeps the
+ * tenant scoping server-side. No browser code dials coord's WS any more:
+ * the last two direct subscribers (strategy, merge pipeline) moved onto
+ * the backend's `coord-events/ws` bridge when coord's `/ws` went
+ * authenticated.
  */
 export function DeviceStatusTile({
   stream,

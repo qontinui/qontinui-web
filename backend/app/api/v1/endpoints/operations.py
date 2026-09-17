@@ -93,9 +93,13 @@ from app.services.cognito_admin import (
     CognitoUserNotFoundError,
 )
 from app.services.coord_device_status import (
+    COORD_EVENTS_SUBSCRIPTIONS,
     CoordDeviceStatusDisabledError,
     CoordDeviceStatusMintFailedError,
+    build_coord_events_ws_url,
     build_device_status_ws_url,
+    channel_in_family,
+    envelope_channel,
     fetch_device_status,
     mint_device_status_token,
 )
@@ -6027,6 +6031,321 @@ async def websocket_device_status(
                 await websocket.close()
             except Exception as exc:  # noqa: BLE001
                 logger.debug("device_status_ws_close_failed", error=str(exc))
+
+
+# ---- Coord events bridge (generic authenticated `/ws` fan-out) ----------
+#
+# Plan: `2026-09-13-coord-publishes-agent-jwts-on-a-redis-channel-fronted-
+# by-an-unauthenticated-ws-firehose`, Phase 2 (qontinui-web half).
+#
+#   WS /operations/coord-events/ws?subscribe=<name>
+#
+# Coord's generic `/ws` used to be anonymous and took a caller-supplied
+# Redis glob (`?pattern=`). Two browser hooks dialled it directly on
+# `NEXT_PUBLIC_COORD_WS_URL` (`useStrategyWebSocket`,
+# `useMergePipelineData`). Phase 2 makes `/ws` verify a credential at the
+# upgrade and replaces the glob with a CLOSED set of named subscriptions,
+# so a browser — which holds no coord credential — can no longer reach it.
+# This bridge is the re-homing: the backend authenticates the operator the
+# way the device-status bridge does, mints the same tenant-scoped coord
+# service token, opens `wss://<coord>/ws?token=<minted>&subscribe=<name>`,
+# and relays each `{"channel","payload"}` text frame verbatim. The
+# subscription is fixed per connection and validated against
+# `COORD_EVENTS_SUBSCRIPTIONS` BEFORE any auth, mint or connect — a name
+# outside the set (including the runner-only `device` / `device_ci`) is
+# refused at the door and never reaches coord.
+#
+# Unlike `/ws/device-status`, coord's generic `/ws` takes its subscription
+# in the query string and expects NO in-band subscribe message, so the
+# bridge sends nothing upstream; the browser→upstream pump exists only so
+# a browser close propagates.
+
+
+@router.websocket("/coord-events/ws")
+async def websocket_coord_events(
+    websocket: WebSocket,
+) -> None:
+    """Bridge browser ↔ coord's authenticated generic `/ws`.
+
+    Per-connection flow:
+
+    1. Browser opens
+       `WS /api/v1/operations/coord-events/ws?subscribe=<name>&token=<jwt>`
+       (`active_tenant` optional, as on the device-status bridge).
+    2. `subscribe` is checked against `COORD_EVENTS_SUBSCRIPTIONS`
+       (`strategy` | `merge` | `claims` | `branches`); anything else closes
+       1008 `unknown_subscription` before the token is even read.
+    3. Auth + effective-tenant resolution, exactly as
+       :func:`websocket_device_status`.
+    4. Mint the tenant-scoped coord service JWT (same mint as the
+       device-status bridge — `mint_device_status_token`).
+    5. Open `wss://<coord>/ws?token=<minted>&subscribe=<name>`; coord
+       verifies the token and resolves the name to its fixed pattern
+       server-side (`strategy` → `events.strategy.*`, `merge` →
+       `events.merge.*`, …).
+    6. Every `{"channel": "...", "payload": "<json string>"}` frame whose
+       `channel` is in the subscription's FAMILY (`channel_in_family`:
+       `strategy` → `events.strategy.*`, `merge` → `events.merge.*`,
+       `claims` → exactly `events.claims`, `branches` → exactly
+       `events.branches`) is forwarded verbatim; the browser parses it
+       (`payload` is a JSON STRING, per coord's `ws.rs`). Anything else is
+       DROPPED and counted, never relayed — the subscription is enforced
+       here as well as at coord's upgrade, because a coord that predates
+       `?subscribe=` ignores the param and PSUBSCRIBEs `events.*`, which
+       would otherwise hand every operator browser the whole bus,
+       spawn-request JWTs included.
+
+    Disconnect / failure handling matches the device-status bridge:
+    browser drop → close upstream (browser gets the normal 1000); coord
+    drop → close browser 1011 `Upstream coord WS closed` so the hook
+    reconnects with backoff; mint / connect failure → 1011 + an error
+    frame. An upstream that REFUSES the upgrade (coord answering 401/403
+    to the minted token, or 403 `unknown_subscription` for a name coord
+    does not map) is reported with its HTTP status rather than as
+    "unreachable", because those are two different remediations.
+    """
+    await websocket.accept()
+
+    # --- Subscription allowlist -------------------------------------------
+    # First, and before auth: the set is static and public, so refusing an
+    # unknown name costs nothing and leaks nothing, and it keeps a bad
+    # caller from spending a coord identity lookup + mint on a request
+    # that can only end in an upstream 403.
+    subscribe = websocket.query_params.get("subscribe") or ""
+    if subscribe not in COORD_EVENTS_SUBSCRIPTIONS:
+        logger.warning("coord_events_ws_unknown_subscription", subscribe=subscribe)
+        await safe_send_json(
+            websocket,
+            {
+                "type": "error",
+                "error": "unknown_subscription",
+                "subscribe": subscribe,
+                "allowed": sorted(COORD_EVENTS_SUBSCRIPTIONS),
+            },
+        )
+        await safe_close(websocket, 1008, reason="unknown_subscription")
+        return
+
+    # --- Browser-side auth ------------------------------------------------
+    token = websocket.query_params.get("token")
+    if not token:
+        await safe_send_json(
+            websocket, {"type": "error", "error": "Missing authentication token"}
+        )
+        await safe_close(websocket, 1008, reason="Missing authentication token")
+        return
+
+    try:
+        user = await get_current_user_from_ws(token)
+    except Exception as exc:  # noqa: BLE001 — auth diagnostics live in deps
+        logger.warning("coord_events_ws_auth_failed", error=str(exc))
+        await safe_send_json(
+            websocket, {"type": "error", "error": "Authentication failed"}
+        )
+        await safe_close(websocket, 1008, reason="Authentication failed")
+        return
+
+    # --- Tenant resolution + token mint ----------------------------------
+    # Same path as the device-status bridge: identity from coord's
+    # `/admin/coord/me` over HTTP (forwarding the WS-auth bearer), then the
+    # EFFECTIVE tenant from the membership-validated `active_tenant` query
+    # param, degrading to the home tenant and never widening.
+    try:
+        identity = await get_coord_identity_for_token(token)
+        tenant_id = _effective_tenant_id(
+            identity, websocket.query_params.get("active_tenant")
+        )
+        if tenant_id is None:
+            raise HTTPException(status_code=403, detail="tenant_not_resolved")
+    except HTTPException as http_exc:
+        await safe_send_json(websocket, {"type": "error", "error": http_exc.detail})
+        await safe_close(websocket, 1008, reason=str(http_exc.detail))
+        return
+    except Exception as exc:  # noqa: BLE001
+        logger.error("coord_events_ws_tenant_lookup_failed", error=str(exc))
+        await safe_send_json(
+            websocket, {"type": "error", "error": "Tenant lookup failed"}
+        )
+        await safe_close(websocket, 1011, reason="Tenant lookup failed")
+        return
+
+    try:
+        coord_token = await mint_device_status_token(tenant_id=tenant_id)
+    except CoordDeviceStatusDisabledError as exc:
+        logger.warning(
+            "coord_events_ws_disabled",
+            user_id=str(user.id),
+            subscribe=subscribe,
+            reason=str(exc),
+        )
+        await safe_send_json(
+            websocket,
+            {
+                "type": "error",
+                "error": "Coord integration disabled — fall back to REST polling.",
+            },
+        )
+        await safe_close(websocket, 1011, reason="Coord integration disabled")
+        return
+    except CoordDeviceStatusMintFailedError as exc:
+        logger.error(
+            "coord_events_ws_mint_failed",
+            user_id=str(user.id),
+            subscribe=subscribe,
+            error=str(exc),
+        )
+        await safe_send_json(websocket, {"type": "error", "error": "Token mint failed"})
+        await safe_close(websocket, 1011, reason="Token mint failed")
+        return
+
+    upstream_url = build_coord_events_ws_url(coord_token, subscribe)
+
+    # --- Upstream bridge --------------------------------------------------
+    upstream: Any = None
+    # What the browser is closed with when the bridge ends: a browser-
+    # initiated end is the normal 1000; an upstream-initiated one is 1011.
+    close_code, close_reason = 1000, ""
+    try:
+        try:
+            upstream = await websockets_connect(upstream_url, open_timeout=10)
+        except websockets.exceptions.InvalidStatus as exc:
+            # Coord answered the upgrade with a plain HTTP response: 401
+            # (token refused) or 403 (subscription not admitted for this
+            # principal / not in coord's map). Name the status — a
+            # rejected upgrade is not an unreachable host.
+            upstream_status = exc.response.status_code
+            logger.warning(
+                "coord_events_ws_upstream_refused",
+                user_id=str(user.id),
+                subscribe=subscribe,
+                status=upstream_status,
+            )
+            await safe_send_json(
+                websocket,
+                {
+                    "type": "error",
+                    "error": "Upstream coord WS refused the upgrade",
+                    "upstream_status": upstream_status,
+                },
+            )
+            await safe_close(websocket, 1011, reason="Upstream WS refused")
+            return
+        except Exception as exc:  # noqa: BLE001
+            # `type(exc).__name__` and the query-stripped URL only — never
+            # `str(exc)`: `websockets.exceptions.InvalidURI.__str__` embeds
+            # the full URI, `?token=<minted>` included.
+            logger.warning(
+                "coord_events_ws_upstream_connect_failed",
+                user_id=str(user.id),
+                subscribe=subscribe,
+                error_type=type(exc).__name__,
+                upstream=upstream_url.split("?", 1)[0],
+            )
+            await safe_send_json(
+                websocket, {"type": "error", "error": "Upstream coord WS unreachable"}
+            )
+            await safe_close(websocket, 1011, reason="Upstream WS unreachable")
+            return
+
+        # No in-band subscribe: coord's generic `/ws` took the subscription
+        # from the query string at the upgrade and starts relaying at once.
+
+        # Frames outside the subscription's family. Counted per connection
+        # and logged ONCE at WARN (with the channel, never the payload): a
+        # non-zero count is the signature of an upstream that ignored
+        # `?subscribe=` and is fanning out the whole bus.
+        dropped = 0
+
+        async def pump_upstream_to_browser() -> None:
+            nonlocal dropped
+            try:
+                async for message in upstream:
+                    if websocket.client_state != WebSocketState.CONNECTED:
+                        break
+                    if isinstance(message, bytes):
+                        message = message.decode("utf-8")
+                    channel = envelope_channel(message)
+                    if channel is None or not channel_in_family(subscribe, channel):
+                        dropped += 1
+                        if dropped == 1:
+                            logger.warning(
+                                "coord_events_ws_frame_outside_subscription",
+                                user_id=str(user.id),
+                                subscribe=subscribe,
+                                channel=channel,
+                            )
+                        continue
+                    # Coord sends Text frames; forward verbatim — the
+                    # browser parses the `{"channel","payload"}` envelope.
+                    await websocket.send_text(message)
+            except websockets.exceptions.ConnectionClosed:
+                pass
+            except Exception as exc:  # noqa: BLE001
+                logger.warning(
+                    "coord_events_ws_upstream_pump_error",
+                    user_id=str(user.id),
+                    subscribe=subscribe,
+                    error=str(exc),
+                )
+
+        async def pump_browser_to_upstream() -> None:
+            try:
+                while True:
+                    # Detect disconnect only; the subscription is fixed per
+                    # connection, so nothing the browser sends is forwarded.
+                    await websocket.receive_text()
+            except WebSocketDisconnect:
+                pass
+            except Exception as exc:  # noqa: BLE001
+                logger.debug(
+                    "coord_events_ws_browser_pump_exit",
+                    user_id=str(user.id),
+                    error=str(exc),
+                )
+
+        # Race the two pumps — whichever side closes first ends the
+        # bridge. asyncio.wait+FIRST_COMPLETED + cancel the rest.
+        upstream_task = asyncio.create_task(pump_upstream_to_browser())
+        browser_task = asyncio.create_task(pump_browser_to_upstream())
+        done, pending = await asyncio.wait(
+            {upstream_task, browser_task},
+            return_when=asyncio.FIRST_COMPLETED,
+        )
+        for task in pending:
+            task.cancel()
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
+            except Exception as exc:  # noqa: BLE001
+                logger.debug(
+                    "coord_events_ws_task_cancel_exception",
+                    user_id=str(user.id),
+                    error=str(exc),
+                )
+        if upstream_task in done:
+            # Coord ended the stream (or its pump died) while the browser
+            # is still here: 1011, so the hook reconnects on its backoff
+            # ladder instead of reading a clean 1000 as "done".
+            close_code, close_reason = 1011, "Upstream coord WS closed"
+        if dropped:
+            logger.warning(
+                "coord_events_ws_frames_dropped",
+                user_id=str(user.id),
+                subscribe=subscribe,
+                dropped=dropped,
+            )
+    finally:
+        if upstream is not None:
+            try:
+                await upstream.close()
+            except Exception as exc:  # noqa: BLE001
+                logger.debug("coord_events_ws_upstream_close_failed", error=str(exc))
+        if websocket.client_state == WebSocketState.CONNECTED:
+            try:
+                await websocket.close(code=close_code, reason=close_reason)
+            except Exception as exc:  # noqa: BLE001
+                logger.debug("coord_events_ws_close_failed", error=str(exc))
 
 
 # ---- CI Status Dashboard surface (Phase 3 + Phase 5) --------------------
