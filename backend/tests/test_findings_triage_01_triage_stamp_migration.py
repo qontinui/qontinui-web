@@ -29,8 +29,10 @@ What is asserted
    shipped ``recent()`` WHERE clause with the Phase 1 arm appended (quoted
    verbatim from origin/main ``c2ba3267``).
 6. **Sensitivity: the complementary read does NOT get the index.** A
-   ``triaged_at IS NOT NULL`` read must fall back to a sequential scan;
-   without this, assertion 5 would pass against a non-partial index.
+   ``triaged_at IS NOT NULL`` read must not use the partial index (on this
+   schema it falls to ``idx_findings_tenant_recent``, or a Seq Scan on one
+   without it); without this, assertion 5 would pass against a non-partial
+   index.
 7. A mark (``UPDATE ... SET triaged_at = now()``) moves a row out of the
    ``triaged=false`` population and a re-read sees it gone; un-marking brings
    it back.
@@ -83,9 +85,11 @@ _UNTRIAGED_SQL = (
 # convention: the point is that THIS statement rides the index, and a
 # paraphrase could ride it while the real one did not. Note the
 # `OR f.scope = 'fleet-infra'` disjunction defeats the leading `tenant_id`
-# key, so the real shape rides the index as a whole-partial-index bitmap scan
-# (Recheck Cond on `triaged_at IS NULL`) rather than with a tenant Index Cond —
-# the partial predicate is what earns the index, and that is what is pinned.
+# key, so the real shape rides the index as a scan over the whole partial
+# index (the tenant/scope disjunction lands in a Filter, not an Index Cond);
+# whether the planner picks a plain or a bitmap index scan varies with stats,
+# and the assertion pins only that the index is chosen — the partial
+# predicate is what earns it.
 _REAL_RECENT_SQL = f"""
     SELECT finding_id FROM coord.findings f
      WHERE (f.tenant_id = '{_TENANT}' OR f.scope = 'fleet-infra')
@@ -157,7 +161,8 @@ def _plan_for(engine: Engine, sql: str) -> str:
     quality. ``enable_seqscan = off`` removes the cost question and leaves the
     one being asked: CAN the planner use this index for this predicate? If the
     partial predicate does not cover the query, no penalty makes it usable and
-    the plan still shows a Seq Scan — which is how assertion 6 discriminates.
+    the plan falls to another index or a Seq Scan — which is how assertion 6
+    discriminates.
 
     One caveat on assertion 5: ``coord.findings`` already carries
     ``idx_findings_tenant_recent (tenant_id, expires_at)`` (revision
