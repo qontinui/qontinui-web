@@ -89,6 +89,7 @@ from app.services.cognito_admin import (
     CognitoInvalidParameterError,
     CognitoResourceNotFoundError,
     CognitoThrottledError,
+    CognitoUserExistsError,
     CognitoUserNotFoundError,
 )
 from app.services.coord_device_status import (
@@ -10360,7 +10361,7 @@ def _rate_limiting_disabled() -> bool:
 #:    tenant admin, so the caller population is every tenant's administrator
 #:    rather than fleet staff;
 #:  * its two answers differ on whether the email EXISTS in the pool
-#:    (``added`` vs ``invite_required``), so an unbounded caller can walk an
+#:    (``added`` vs ``invited``), so an unbounded caller can walk an
 #:    address list and read membership of the whole Cognito pool out of it.
 #:
 #: Its own ``scope`` for the reason the block below spells out: ``shared_limit``
@@ -10460,12 +10461,18 @@ async def post_coord_tenant_member(
 
     * ``{"status": "added", "operator_id", "role"}`` — they had a Cognito
       account and now hold ``role`` in this tenant.
-    * ``{"status": "invite_required"}`` — no Cognito account for that email.
-      NOTHING is written: no operator row, no role, no email. Real invitation
-      is a later phase, and answering "invited" here would be a lie the
-      operator only discovers when their colleague never arrives.
+    * ``{"status": "invited", "operator_id", "role"}`` — they had no account
+      (or had one from an invitation they never accepted). The account is
+      created with nothing sent, the grant is made, and only THEN does the
+      invitation email go out — see :func:`_invite_identity`. Adding the same
+      person again before they accept re-sends it with a fresh temporary
+      password, which is how an admin recovers a lost or expired invite.
     * ``409`` — the email matches more than one pool user, so picking one
       would be guessing which human gets access to the tenant.
+
+    A grant that landed without its email is a ``502`` whose ``message`` says
+    exactly that, and a retry converges: the account then resolves as a
+    pending invitation, the grant is idempotent, and the email is re-sent.
 
     Coord's own refusals pass through with their status and typed body
     intact (``structured_errors=True``) rather than collapsing into a 500 —
@@ -10498,8 +10505,12 @@ async def post_coord_tenant_member(
         ) from exc
 
     if identity is None:
-        logger.info("tenant_member_add_invite_required", tenant_id=str(tenant_id))
-        return {"status": "invite_required"}
+        identity = await _invite_identity(email)
+    # Decided by the account's STATE, not by which branch produced it: a
+    # lowercase-form or raced lookup inside `_invite_identity` can return a
+    # colleague who already accepted, and re-sending to a CONFIRMED account
+    # is refused by Cognito.
+    invited = identity.status == cognito_admin.INVITATION_PENDING_STATUS
 
     created = await _proxy_coord_post_readable(
         "/admin/coord/operators",
@@ -10523,13 +10534,88 @@ async def post_coord_tenant_member(
         {"role": body.role, "target_tenant_id": str(tenant_id)},
         tenant_id=tenant_id,
     )
+    if invited:
+        try:
+            await asyncio.to_thread(
+                cognito_admin.send_invitation, email, identity.username
+            )
+        except CognitoAdminError as exc:
+            logger.error(
+                "tenant_member_invitation_not_sent",
+                tenant_id=str(tenant_id),
+                operator_id=operator_id,
+                error=str(exc),
+            )
+            raise HTTPException(
+                status_code=502,
+                detail={
+                    "error": "invitation_not_sent",
+                    "message": (
+                        f"{email} was given access, but the invitation email "
+                        "could not be sent, so they have no way to sign in "
+                        "yet. Add them again to retry sending it."
+                    ),
+                },
+            ) from exc
+
     logger.info(
         "tenant_member_add_ok",
         tenant_id=str(tenant_id),
         operator_id=operator_id,
         role=body.role,
+        invited=invited,
     )
-    return {"status": "added", "operator_id": operator_id, "role": body.role}
+    return {
+        "status": "invited" if invited else "added",
+        "operator_id": operator_id,
+        "role": body.role,
+    }
+
+
+async def _invite_identity(email: str) -> cognito_admin.CognitoIdentity:
+    """Create the pool account for an email nobody holds — sending nothing.
+
+    The new account's email and username are LOWERCASED. This pool predates
+    Cognito's case-insensitive-username option, so ``Stefan@x.io`` and
+    ``stefan@x.io`` would be two accounts; the lowercase form is resolved
+    first so a colleague already holding it is found rather than duplicated.
+
+    A ``UsernameExistsException`` means a concurrent request created the
+    account between the lookup and the create, so the account is resolved
+    again rather than reported as a failure.
+    """
+    normalized = email.lower()
+    try:
+        if normalized != email:
+            existing = await asyncio.to_thread(
+                cognito_admin.resolve_identity_for_email, normalized
+            )
+            if existing is not None:
+                return existing
+        try:
+            return await asyncio.to_thread(
+                cognito_admin.create_invited_user, normalized
+            )
+        except CognitoUserExistsError:
+            raced = await asyncio.to_thread(
+                cognito_admin.resolve_identity_for_email, normalized
+            )
+            if raced is None:
+                raise CognitoAdminError(
+                    "Cognito reported the account exists but it could not be found"
+                ) from None
+            return raced
+    except CognitoAmbiguousEmailError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except CognitoInvalidParameterError as exc:
+        raise _invalid_parameter_http(exc) from exc
+    except CognitoAdminError as exc:
+        raise _cognito_http_error(
+            exc,
+            log_event="tenant_member_invite_create_failed",
+            fallback_detail="Could not create the invited account.",
+            email=email,
+        ) from exc
 
 
 @router.get("/coord/group-tenant-roles")
