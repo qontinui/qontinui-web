@@ -35,6 +35,17 @@ vi.mock("@/components/sessions/api", async () => {
   };
 });
 
+const warnMock = vi.fn();
+
+vi.mock("@/lib/logger", () => ({
+  createLogger: () => ({
+    warn: (...args: unknown[]) => warnMock(...args),
+    info: vi.fn(),
+    error: vi.fn(),
+    debug: vi.fn(),
+  }),
+}));
+
 vi.mock("@/contexts/tenant-context", () => ({
   useTenant: () => ({ refresh: refreshMock }),
 }));
@@ -561,6 +572,8 @@ describe("5xx outcome honesty", () => {
       UNKNOWN,
     ],
     [502, "Bad Gateway", UNKNOWN],
+    [520, "Web server returned an unknown error", UNKNOWN],
+    [524, "A timeout occurred", UNKNOWN],
     [
       502,
       "coord is not reachable",
@@ -577,9 +590,36 @@ describe("5xx outcome honesty", () => {
   });
 
   it("reads the proxy detail out of the PRODUCTION envelope too", () => {
+    const raw = JSON.stringify({
+      error: "BAD_GATEWAY",
+      message: "coord is not reachable",
+      timestamp: 1,
+      path: "http://x/api/v1/operations/tenants/t",
+    });
+    const parsed = parseTenantRenameError(raw);
+    // The envelope's status token is NOT coord's code: coord sent none. A
+    // parser that reads the envelope as coord's body reports `BAD_GATEWAY`.
+    expect(parsed.code).toBeNull();
+    expect(parsed.detail).toBe("coord is not reachable");
     const err = proxyStringError(502, "coord is not reachable", true);
-    expect(err.detail).toBe("coord is not reachable");
     expect(isRenameOutcomeUnknown(err)).toBe(false);
+  });
+
+  it("keeps the envelope's status token as a separate fallback label", () => {
+    const parsed = parseTenantRenameError(
+      JSON.stringify({
+        error: "SERVICE_UNAVAILABLE",
+        message: "upstream is down",
+        timestamp: 1,
+        path: "http://x/api/v1/operations/tenants/t",
+      })
+    );
+    expect(parsed.code).toBeNull();
+    expect(parsed.envelopeCode).toBe("SERVICE_UNAVAILABLE");
+    // And a bare FastAPI body has no envelope token at all.
+    expect(
+      parseTenantRenameError(JSON.stringify({ detail: "x" })).envelopeCode
+    ).toBeNull();
   });
 
   it("reads coord's code and reason out of the production envelope", () => {
@@ -626,6 +666,12 @@ describe("a throwing onRenamed cannot turn a rename into a failure", () => {
     ).toBeInTheDocument();
     expect(onRenamed).toHaveBeenCalledTimes(1);
     expect(screen.queryByTestId("coord-tenant-rename-error")).toBeNull();
+    // The throw was caught and logged — not swallowed silently, and not
+    // rendered as a failure.
+    expect(warnMock).toHaveBeenCalledWith(
+      "onRenamed threw after a successful rename",
+      expect.any(Error)
+    );
   });
 
   it("still resolves the bridge action with the result", async () => {
@@ -667,5 +713,49 @@ describe("live regions are mounted before their messages", () => {
     expect(slugLive).toContainElement(
       screen.getByTestId("coord-tenant-rename-slug-problem")
     );
+  });
+});
+
+describe("a non-HTTP failure after the request may have gone", () => {
+  it.each([
+    ["TypeError", new TypeError("Failed to fetch")],
+    ["AbortError", Object.assign(new Error("aborted"), { name: "AbortError" })],
+  ])(
+    "%s is outcome-unknown: re-read and the unknown message",
+    async (_l, err) => {
+      const user = userEvent.setup();
+      renameTenantMock.mockRejectedValue(err);
+      const { onOutcomeUnknown } = renderDialog();
+      await user.clear(slugInput());
+      await user.type(slugInput(), "new-pizzeria");
+      await user.click(submitButton());
+
+      const alert = await screen.findByTestId("coord-tenant-rename-error");
+      expect(alert.textContent).toContain("may have been applied");
+      expect(isRenameOutcomeUnknown(err)).toBe(true);
+      expect(refreshMock).toHaveBeenCalledTimes(1);
+      expect(onOutcomeUnknown).toHaveBeenCalledTimes(1);
+    }
+  );
+
+  it("a rejecting refresh on that path is caught, not an unhandled rejection", async () => {
+    const unhandled = vi.fn();
+    process.on("unhandledRejection", unhandled);
+    try {
+      const user = userEvent.setup();
+      renameTenantMock.mockRejectedValue(
+        new TenantRenameError(504, null, null, "timeout waiting for coord")
+      );
+      refreshMock.mockRejectedValue(new Error("list read blew up"));
+      renderDialog();
+      await user.clear(slugInput());
+      await user.type(slugInput(), "new-pizzeria");
+      await user.click(submitButton());
+      await screen.findByTestId("coord-tenant-rename-error");
+      await new Promise((r) => setTimeout(r, 0));
+      expect(unhandled).not.toHaveBeenCalled();
+    } finally {
+      process.off("unhandledRejection", unhandled);
+    }
   });
 });
