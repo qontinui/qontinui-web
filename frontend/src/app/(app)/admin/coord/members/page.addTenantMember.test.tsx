@@ -14,8 +14,9 @@
  *    of the two wanted ones — a body carrying all four would otherwise pass.
  *
  * 2. **The three response arms render distinctly.** `added` says access
- *    exists; `invited` (Phase 4) says an email with a temporary password is on
- *    its way; `409` says the email is ambiguous, in the wording the Cognito
+ *    exists; `invited` (Phase 4, superuser) says an invitation with a
+ *    temporary password was requested; `invite_required` (tenant admin) says
+ *    nothing happened and who can invite; `409` says the email is ambiguous, in the wording the Cognito
  *    group member-add already uses for the same condition.
  *
  * 3. **The `invited` arm does not overclaim.** Access starts only when the
@@ -277,9 +278,7 @@ describe("Add a member by email — the `invited` arm", () => {
     const text = outcome.textContent ?? "";
     expect(text).toMatch(/developer/i);
     expect(text).toMatch(/temporary password/i);
-    expect(toastSuccess).toHaveBeenCalledWith(
-      "Invitation sent to newbie@example.com"
-    );
+    expect(toastSuccess).toHaveBeenCalledWith("Invited newbie@example.com");
   });
 
   it("steers the first sign-in to email and password", async () => {
@@ -401,7 +400,7 @@ describe("Add a member by email — the `invitation_pending` arm", () => {
     };
   });
 
-  it("states the grant and that no new email was sent", async () => {
+  it("states the grant and does not claim an email went out", async () => {
     const user_ = userEvent.setup();
     render(<MembersPage />);
     await submitEmail(user_, "pending@example.com");
@@ -414,6 +413,10 @@ describe("Add a member by email — the `invitation_pending` arm", () => {
     expect(text).toMatch(/not accepted yet/i);
     expect(text).toMatch(/only a qontinui administrator can send a new invitation/i);
     expect(text).not.toMatch(/invitation sent/i);
+    expect(text).not.toMatch(/invited/i);
+    expect(toastSuccess).not.toHaveBeenCalledWith(
+      expect.stringMatching(/invit/i)
+    );
   });
 });
 

@@ -36,8 +36,10 @@
  * was no invitation behind it, and both fields are internal vocabulary on a
  * primary surface (**R8**). It is deleted, not deprecated: `AddTenantMemberForm`
  * takes an email and a tier, and the backend decides whether the account exists
- * (`added`) or does not (`invited` — it creates the account, grants the tier,
- * and only then emails a temporary password).
+ * (`added`) or does not. Creating an account is a platform superuser's act —
+ * Qontinui is invite-only — so a superuser gets `invited` (account created,
+ * tier granted, then a temporary password emailed) and a tenant admin gets
+ * `invite_required`, with nothing written.
  *
  * Sections d and e were the other two ways to "add somebody", each framed in
  * IdP plumbing. They now sit together under one folded **Advanced** panel that
@@ -1111,7 +1113,7 @@ function AddTenantMemberForm({ onAdded }: { onAdded: () => void }) {
       }
       if (json?.status === "invited") {
         setOutcome({ kind: "invited", email: addr, role });
-        toast.success(`Invitation sent to ${addr}`);
+        toast.success(`Invited ${addr}`);
         setEmail("");
         onAdded();
         return;
