@@ -25,7 +25,9 @@ What is asserted
 4. Its recorded predicate is ``triaged_at IS NULL`` and its key is
    ``(tenant_id, created_at)``.
 5. **The planner chooses it for the steward's read** — a per-tenant
-   ``triaged_at IS NULL`` scan ordered by ``created_at``.
+   ``triaged_at IS NULL`` scan ordered by ``created_at``, AND for coord's
+   shipped ``recent()`` WHERE clause with the Phase 1 arm appended (quoted
+   verbatim from origin/main ``c2ba3267``).
 6. **Sensitivity: the complementary read does NOT get the index.** A
    ``triaged_at IS NOT NULL`` read must fall back to a sequential scan;
    without this, assertion 5 would pass against a non-partial index.
@@ -63,13 +65,44 @@ _INDEX_NAME = "idx_findings_untriaged"
 
 _TENANT = uuid.UUID("00000000-0000-4000-8000-00000000f1d1")
 
-# The steward's read, in the shape coord's `recent()` issues it under
-# `triaged=false`: per-tenant, untriaged, newest first.
+# The steward's `triaged=false` read as the plan specifies it (Phase 1+): a
+# per-tenant untriaged scan, newest first. This is a PARAPHRASE that pins the
+# partial predicate, NOT coord's shipped SQL — see `_REAL_RECENT_SQL` below for
+# that. The tenant is a fixed test UUID interpolated once, never user input.
 _UNTRIAGED_SQL = (
     "SELECT finding_id FROM coord.findings "
     f"WHERE tenant_id = '{_TENANT}' AND triaged_at IS NULL "
     "ORDER BY created_at DESC"
 )
+
+# coord's `recent()` WHERE clause, quoted from qontinui-coord origin/main
+# c2ba3267 `crates/coord/src/findings.rs:1115-1140`, with the Phase 1 arm
+# `AND f.triaged_at IS NULL` appended and the binds fixed to the steward's
+# shape (no resource_keys, no topic, no kind). Quoted in full rather than
+# simplified, the sibling `test_coord_alerts_pagedidx_01_migration.py`
+# convention: the point is that THIS statement rides the index, and a
+# paraphrase could ride it while the real one did not. Note the
+# `OR f.scope = 'fleet-infra'` disjunction defeats the leading `tenant_id`
+# key, so the real shape rides the index as a whole-partial-index bitmap scan
+# (Recheck Cond on `triaged_at IS NULL`) rather than with a tenant Index Cond —
+# the partial predicate is what earns the index, and that is what is pinned.
+_REAL_RECENT_SQL = f"""
+    SELECT finding_id FROM coord.findings f
+     WHERE (f.tenant_id = '{_TENANT}' OR f.scope = 'fleet-infra')
+       AND f.expires_at > now()
+       AND NOT EXISTS (
+             SELECT 1 FROM coord.findings s WHERE s.supersedes = f.finding_id
+           )
+       AND (
+             f.resource_keys && '{{}}'::text[]
+          OR (NULL::text IS NOT NULL AND f.topic = NULL::text)
+          OR ('{{}}'::text[] = '{{}}'::text[] AND NULL::text IS NULL)
+           )
+       AND (NULL::text IS NULL OR f.kind = NULL::text)
+       AND f.triaged_at IS NULL
+     ORDER BY f.created_at DESC
+     LIMIT 100
+"""
 
 # The complementary predicate: the partial index cannot serve it.
 _TRIAGED_SQL = (
@@ -125,6 +158,14 @@ def _plan_for(engine: Engine, sql: str) -> str:
     one being asked: CAN the planner use this index for this predicate? If the
     partial predicate does not cover the query, no penalty makes it usable and
     the plan still shows a Seq Scan — which is how assertion 6 discriminates.
+
+    One caveat on assertion 5: ``coord.findings`` already carries
+    ``idx_findings_tenant_recent (tenant_id, expires_at)`` (revision
+    ``coord_findings``), which also satisfies ``tenant_id = X``, so with seq
+    scans penalised the planner chooses between two index paths on cost. The
+    partial index wins on row estimate and on matching ``ORDER BY created_at``;
+    if a future index on ``(tenant_id, created_at)`` is added, assertion 5
+    becomes ambiguous and should be revisited.
     """
     with engine.connect() as conn:
         conn.execute(text("SET enable_seqscan = off"))
@@ -177,7 +218,10 @@ def test_findings_triage_01_stamp_columns_and_untriaged_index() -> None:
 
         # 2. Apply — both columns, nullable, NULL by default.
         run_alembic(root, url, "upgrade", _REVISION_ID)
-        for column, kind in (("triaged_at", "timestamp"), ("triaged_by", "text")):
+        for column, kind in (
+            ("triaged_at", "timestamp with time zone"),
+            ("triaged_by", "text"),
+        ):
             info = column_info(engine, "findings", column)
             assert info is not None, f"{column} missing after upgrade"
             data_type, is_nullable, default = info
@@ -209,10 +253,16 @@ def test_findings_triage_01_stamp_columns_and_untriaged_index() -> None:
             ).scalar()
         assert stamped == 0, "a fresh row is never-consumed: both columns NULL"
 
-        # 5. The steward's read rides the index.
+        # 5. The steward's read rides the index — both the plan's paraphrase and
+        #    coord's real `recent()` shape with the Phase 1 arm appended.
         plan = _plan_for(engine, _UNTRIAGED_SQL)
         assert _INDEX_NAME in plan, (
             f"the triaged=false read must ride the new index; got:\n{plan}"
+        )
+        real_plan = _plan_for(engine, _REAL_RECENT_SQL)
+        assert _INDEX_NAME in real_plan, (
+            "coord's shipped recent() WHERE + `triaged_at IS NULL` must ride the "
+            f"new index; got:\n{real_plan}"
         )
 
         # 6. Sensitivity — the complementary read cannot use it.

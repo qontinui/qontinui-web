@@ -30,7 +30,7 @@ WHERE triaged_at IS NULL`` serves the steward's ``triaged=false`` read — the
 only consumer of that predicate. The NON-dossier population it indexes shrinks
 to roughly a day's worth of findings once the steward runs on its schedule;
 dossier rows (never stamped, and never expiring — coord gives ``kind='dossier'``
-a 100-year TTL) stay in it permanently, which is a few hundred rows and is why
+a 100-year TTL) stay in it permanently — ~100 rows (104 measured 2026-09-17) — which is why
 the predicate is deliberately NOT ``AND kind <> 'dossier'``: a partial index is
 chosen only when the query's own WHERE implies the predicate verbatim, and the
 plain ``IS NULL`` form is the one every consumer can satisfy. The predicate is
