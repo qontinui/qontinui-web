@@ -18,6 +18,11 @@ What is asserted:
    it never starts granting roles in the system tenant.
 5. **Downgrade** — restores slug, display name and mappings, deletes the
    history row, and leaves the table in place; one more step drops the table.
+   Downgrade is a no-op when the tenant was renamed away from ``qontinui``,
+   another tenant holds ``personal-jspinak``, or a mapping already names it.
+6. **Old slug already in history for another tenant** — upgrade no-op.
+7. **Customised display name** — upgrade renames the slug but keeps the name;
+   downgrade keeps a name edited after the rename.
 
 Substrate comes from ``_alembic_harness``: an ephemeral database inside the
 test Postgres, skipped when none is reachable. A skip proves nothing — point it
@@ -293,3 +298,119 @@ def test_downgrade_keeps_a_later_display_name_edit(_admin_url: str) -> None:
         assert system["slug"] == "personal-jspinak"
         assert system["display_name"] == "Operator chose"
         assert _history(engine) == []
+
+
+def _insert_other_tenant(engine: Engine, slug: str) -> str:
+    with engine.begin() as conn:
+        return str(
+            conn.execute(
+                text(
+                    "INSERT INTO coord.tenants (tenant_id, slug, display_name) "
+                    "VALUES (gen_random_uuid(), :s, 'other tenant') "
+                    "RETURNING tenant_id::text"
+                ),
+                {"s": slug},
+            ).scalar_one()
+        )
+
+
+def test_no_op_when_old_slug_is_in_history_for_another_tenant(
+    _admin_url: str,
+) -> None:
+    with ephemeral_database(_admin_url, "tenantrename_hist") as (engine, db_url):
+        _up(db_url, _HISTORY_REVISION)
+        other = _insert_other_tenant(engine, "some-other-tenant")
+        _execute(
+            engine,
+            "INSERT INTO coord.tenant_slug_history (old_slug, tenant_id, renamed_by) "
+            "VALUES ('personal-jspinak', CAST(:t AS uuid), 'operator:fixture')",
+            t=other,
+        )
+        before = _tenants(engine)
+        history = _history(engine)
+
+        _up(db_url, _RENAME_REVISION)
+
+        assert _tenants(engine) == before, "no tenant row may change"
+        assert _system(engine)["slug"] == "personal-jspinak"
+        assert _history(engine) == history
+        assert len(_history(engine)) == 1
+        assert _history(engine)[0]["renamed_by"] == "operator:fixture"
+
+
+def test_upgrade_keeps_a_customised_display_name(_admin_url: str) -> None:
+    with ephemeral_database(_admin_url, "tenantrename_custom") as (engine, db_url):
+        _up(db_url, _HISTORY_REVISION)
+        _execute(
+            engine,
+            "UPDATE coord.tenants SET display_name = 'Josh custom' WHERE is_system",
+        )
+
+        _up(db_url, _RENAME_REVISION)
+
+        system = _system(engine)
+        assert system["slug"] == "qontinui", "the slug renames regardless"
+        assert system["display_name"] == "Josh custom"
+        assert len(_history(engine)) == 1
+
+
+def test_downgrade_no_op_when_renamed_away_from_qontinui(_admin_url: str) -> None:
+    with ephemeral_database(_admin_url, "tenantrename_away") as (engine, db_url):
+        _up(db_url, _RENAME_REVISION)
+        _execute(
+            engine,
+            "UPDATE coord.tenants SET slug = 'qontinui-later' WHERE is_system",
+        )
+        before = _tenants(engine)
+        history = _history(engine)
+
+        run_alembic(backend_root(), db_url, "downgrade", "-1")
+
+        assert _tenants(engine) == before
+        assert _system(engine)["slug"] == "qontinui-later"
+        assert _history(engine) == history
+        assert len(history) == 1
+
+
+def test_downgrade_no_op_when_another_tenant_holds_the_old_slug(
+    _admin_url: str,
+) -> None:
+    with ephemeral_database(_admin_url, "tenantrename_holder") as (engine, db_url):
+        _up(db_url, _RENAME_REVISION)
+        _insert_other_tenant(engine, "personal-jspinak")
+        before = _tenants(engine)
+        history = _history(engine)
+
+        run_alembic(backend_root(), db_url, "downgrade", "-1")
+
+        assert _tenants(engine) == before
+        assert _system(engine)["slug"] == "qontinui"
+        assert _tenants(engine)["personal-jspinak"]["is_system"] is False
+        assert _history(engine) == history
+        assert len(history) == 1
+
+
+def test_downgrade_no_op_when_a_mapping_names_the_old_slug(_admin_url: str) -> None:
+    with ephemeral_database(_admin_url, "tenantrename_oldmap") as (engine, db_url):
+        _up(db_url, _RENAME_REVISION)
+        # Same (group, role) under both slugs: moving the qontinui row back
+        # would collide on group_tenant_roles_pkey without the guard.
+        _execute(
+            engine,
+            "INSERT INTO coord.group_tenant_roles (group_id, tenant_slug, role) "
+            "VALUES ('fixture-group', 'qontinui', 'admin'), "
+            "('fixture-group', 'personal-jspinak', 'admin')",
+        )
+        before = _tenants(engine)
+        history = _history(engine)
+
+        run_alembic(backend_root(), db_url, "downgrade", "-1")
+
+        assert _tenants(engine) == before
+        assert _system(engine)["slug"] == "qontinui"
+        assert _history(engine) == history
+        assert len(history) == 1
+        assert _mapping_slugs(engine, "fixture-group") == [
+            "personal-jspinak",
+            "qontinui",
+        ]

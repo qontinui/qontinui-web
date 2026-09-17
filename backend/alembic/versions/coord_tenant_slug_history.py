@@ -30,8 +30,8 @@ exactly which row moved, which is how
 SHAPE
 -----
 ``old_slug`` is the PRIMARY KEY because a slug can be remembered for at most
-one tenant — a slug in history for another tenant is refused as
-``historical_slug`` by the rename route. ``ON DELETE CASCADE`` because a
+one tenant — a slug in history for another tenant will be
+refused as ``historical_slug`` by the rename route (Phase B). ``ON DELETE CASCADE`` because a
 deleted tenant's retired names are no longer anyone's to protect. The
 ``tenant_id`` index serves "every former slug of this tenant" and the cascade.
 

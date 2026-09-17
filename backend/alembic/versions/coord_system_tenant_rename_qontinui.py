@@ -31,7 +31,9 @@ When ALL preconditions hold:
   collide on that table's primary key. Narrower than the plan text, never
   wider: prod measured 0 such rows on 2026-09-17.
 
-it sets ``slug = 'qontinui'``, ``display_name = 'Qontinui'``, records
+it sets ``slug = 'qontinui'`` — and ``display_name = 'Qontinui'`` only when the
+display name is still exactly the bootstrap ``Personal (jspinak)``, so a
+customised name is kept — records
 ``('personal-jspinak', <tenant_id>, 'alembic:coord_system_tenant_rename_qontinui')``
 in ``coord.tenant_slug_history`` (D3 — the old slug stays known so coord never
 re-mints a tenant under it) and cascades ``coord.group_tenant_roles.tenant_slug``.
@@ -43,12 +45,14 @@ DOWNGRADE
 ---------
 Reverses exactly the row this revision moved, keyed by the history row carrying
 this revision's ``renamed_by`` marker: the slug goes back to
-``personal-jspinak``, ``display_name`` goes back to ``Personal (jspinak)`` only
-if it is still ``Qontinui`` (a later display-name edit is not this revision's
-to clobber), mappings naming ``qontinui`` follow the slug back, and the history
-row is deleted. A no-op with a NOTICE when there is no marked history row, the
-tenant has since been renamed away from ``qontinui``, or another tenant now
-holds ``personal-jspinak``.
+``personal-jspinak``; ``display_name`` is set to the constant
+``Personal (jspinak)`` only when it is still ``Qontinui`` (a customised name,
+whether kept by the upgrade or edited later, is left alone); mappings naming
+``qontinui`` follow the slug back; and the history row is deleted. A no-op with
+a NOTICE when there is no marked history row, the tenant has since been renamed
+away from ``qontinui``, another tenant now holds ``personal-jspinak``, or a
+``coord.group_tenant_roles`` row already names ``personal-jspinak`` (moving the
+``qontinui`` mappings back would collide on that table's primary key).
 
 Revision ID: coord_system_tenant_rename_qontinui
 Revises: coord_tenant_slug_history
@@ -103,7 +107,9 @@ BEGIN
 
     UPDATE coord.tenants
        SET slug = 'qontinui',
-           display_name = 'Qontinui'
+           display_name = CASE WHEN display_name = 'Personal (jspinak)'
+                               THEN 'Qontinui'
+                               ELSE display_name END
      WHERE is_system
        AND slug = 'personal-jspinak'
     RETURNING tenant_id INTO v_tenant_id;
@@ -152,6 +158,15 @@ BEGIN
     ) THEN
         RAISE NOTICE 'coord_system_tenant_rename_qontinui downgrade: no-op, '
                      'personal-jspinak is held by another tenant';
+        RETURN;
+    END IF;
+
+    IF EXISTS (
+        SELECT 1 FROM coord.group_tenant_roles
+         WHERE tenant_slug = 'personal-jspinak'
+    ) THEN
+        RAISE NOTICE 'coord_system_tenant_rename_qontinui downgrade: no-op, a '
+                     'group_tenant_roles mapping already names personal-jspinak';
         RETURN;
     END IF;
 
