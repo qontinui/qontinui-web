@@ -1004,6 +1004,8 @@ interface TenantMemberAddResponse {
 type AddMemberOutcome =
   | { kind: "added"; email: string; role: CoordRole }
   | { kind: "invited"; email: string; role: CoordRole }
+  | { kind: "invitation_pending"; email: string; role: CoordRole }
+  | { kind: "invite_required"; email: string }
   | { kind: "error"; message: string };
 
 /**
@@ -1093,7 +1095,12 @@ function AddTenantMemberForm({ onAdded }: { onAdded: () => void }) {
         toast.error(message);
         return;
       }
-      if (!res.ok) throw new Error(await backendErrorMessage(res));
+      if (!res.ok) {
+        // A 502 can mean the grant landed and only its invitation email
+        // failed (`invitation_not_sent`), so the list may have changed.
+        if (res.status === 502) onAdded();
+        throw new Error(await backendErrorMessage(res));
+      }
       const json = (await res.json()) as TenantMemberAddResponse;
       if (json?.status === "added") {
         setOutcome({ kind: "added", email: addr, role });
@@ -1107,6 +1114,19 @@ function AddTenantMemberForm({ onAdded }: { onAdded: () => void }) {
         toast.success(`Invitation sent to ${addr}`);
         setEmail("");
         onAdded();
+        return;
+      }
+      if (json?.status === "invitation_pending") {
+        setOutcome({ kind: "invitation_pending", email: addr, role });
+        toast.success(`Granted ${tierLabel(role)} access to ${addr}`);
+        setEmail("");
+        onAdded();
+        return;
+      }
+      if (json?.status === "invite_required") {
+        // Deliberately NOT a success toast and NOT a cleared field: nothing
+        // was created, so the administrator's input is still the live thing.
+        setOutcome({ kind: "invite_required", email: addr });
         return;
       }
       // A 2xx with no arm this build knows. Rendering it as success would
@@ -1202,17 +1222,44 @@ function AddTenantMemberForm({ onAdded }: { onAdded: () => void }) {
               <AlertTriangle className="h-4 w-4 shrink-0" />
               {outcome.message}
             </p>
-          ) : (
+          ) : outcome.kind === "invited" ? (
             <div className="space-y-1 rounded-md border border-border bg-muted/30 p-3">
               <p className="flex items-center gap-1.5 text-sm font-medium">
                 <Mail className="h-4 w-4 shrink-0" />
                 Invited {outcome.email} as {tierLabel(outcome.role)}.
               </p>
               <p className="text-xs text-muted-foreground">
-                An email with a temporary password is on its way to them. Their
-                access starts when they sign in with it and choose their own
-                password. If the email does not arrive, or the temporary
-                password expires, add them again here to send a new one.
+                Cognito accepted an invitation email with a temporary password
+                for them. They can use their access once they sign in with it,
+                using their email and password rather than Google or Microsoft,
+                and choose their own password. If the email does not arrive, or
+                the temporary password expires, add them again here to send a
+                new one.
+              </p>
+            </div>
+          ) : outcome.kind === "invitation_pending" ? (
+            <div className="space-y-1 rounded-md border border-border bg-muted/30 p-3">
+              <p className="flex items-center gap-1.5 text-sm font-medium">
+                <ShieldCheck className="h-4 w-4 shrink-0" />
+                Granted {tierLabel(outcome.role)} access to {outcome.email}.
+              </p>
+              <p className="text-xs text-muted-foreground">
+                They have a Qontinui invitation they have not accepted yet, so
+                they can use this access once they sign in with the temporary
+                password from that email. Only a Qontinui administrator can
+                send a new invitation.
+              </p>
+            </div>
+          ) : (
+            <div className="space-y-1 rounded-md border border-border bg-muted/30 p-3">
+              <p className="text-sm font-medium">
+                No Qontinui account exists for {outcome.email} — nothing was
+                added, and no email was sent.
+              </p>
+              <p className="text-xs text-muted-foreground">
+                Qontinui is invite-only, so a Qontinui administrator has to
+                invite them first. Once their account exists, add them here
+                with this same form and the access applies immediately.
               </p>
             </div>
           )}

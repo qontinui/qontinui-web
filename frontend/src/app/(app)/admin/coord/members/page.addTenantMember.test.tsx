@@ -282,18 +282,19 @@ describe("Add a member by email — the `invited` arm", () => {
     );
   });
 
-  it("does not claim they have access before they sign in", async () => {
+  it("steers the first sign-in to email and password", async () => {
+    // A Google or Microsoft sign-in before the invitation is accepted is not
+    // linked to the invited account, so the copy has to say which door.
     const user_ = userEvent.setup();
     render(<MembersPage />);
     await submitEmail(user_, "newbie@example.com");
 
     const outcome = await screen.findByTestId("add-member-outcome");
     await waitFor(() =>
-      expect(outcome.textContent ?? "").toMatch(/access starts when they sign in/i)
+      expect(outcome.textContent ?? "").toMatch(/rather than google or microsoft/i)
     );
-    const text = outcome.textContent ?? "";
-    expect(text).not.toMatch(/granted/i);
-    expect(text).not.toMatch(/have access now/i);
+    // Cognito accepting the send is what the backend knows; delivery is not.
+    expect(outcome.textContent ?? "").not.toMatch(/on its way/i);
   });
 
   it("names the recovery for an invitation that never arrived", async () => {
@@ -318,6 +319,21 @@ describe("Add a member by email — the `invited` arm", () => {
     ).toBe("");
   });
 
+  it("refreshes the list after the unsent-invitation 502, since the grant landed", async () => {
+    addResponse = {
+      status: 502,
+      body: { error: "invitation_not_sent", message: "was given access" },
+    };
+    const user_ = userEvent.setup();
+    render(<MembersPage />);
+    await waitFor(() => expect(memberReads().length).toBeGreaterThan(0));
+    const before = memberReads().length;
+    await submitEmail(user_, "newbie@example.com");
+
+    await screen.findByTestId("add-member-outcome");
+    await waitFor(() => expect(memberReads().length).toBeGreaterThan(before));
+  });
+
   it("renders the unsent-invitation 502 as the server's sentence", async () => {
     addResponse = {
       status: 502,
@@ -336,6 +352,68 @@ describe("Add a member by email — the `invited` arm", () => {
       expect(outcome.textContent ?? "").toMatch(/was given access, but the invitation email could not be sent/i)
     );
     expect(toastSuccess).not.toHaveBeenCalled();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Tenant admins cannot create accounts: invite_required, invitation_pending
+// ---------------------------------------------------------------------------
+
+describe("Add a member by email — the `invite_required` arm", () => {
+  beforeEach(() => {
+    addResponse = { status: 200, body: { status: "invite_required" } };
+  });
+
+  it("says nothing happened, no email was sent, and who can invite", async () => {
+    const user_ = userEvent.setup();
+    render(<MembersPage />);
+    await submitEmail(user_, "newbie@example.com");
+
+    const outcome = await screen.findByTestId("add-member-outcome");
+    await waitFor(() =>
+      expect(outcome.textContent ?? "").toMatch(/no email was sent/i)
+    );
+    const text = outcome.textContent ?? "";
+    expect(text).toMatch(/newbie@example\.com/);
+    expect(text).toMatch(/nothing was added/i);
+    expect(text).toMatch(/qontinui administrator has to invite them/i);
+    expect(text).not.toMatch(/invitation sent/i);
+    expect(toastSuccess).not.toHaveBeenCalled();
+  });
+
+  it("keeps the typed address, because nothing was created", async () => {
+    const user_ = userEvent.setup();
+    render(<MembersPage />);
+    await submitEmail(user_, "newbie@example.com");
+
+    await screen.findByTestId("add-member-outcome");
+    expect(
+      (screen.getByTestId("add-member-email") as HTMLInputElement).value
+    ).toBe("newbie@example.com");
+  });
+});
+
+describe("Add a member by email — the `invitation_pending` arm", () => {
+  beforeEach(() => {
+    addResponse = {
+      status: 200,
+      body: { status: "invitation_pending", operator_id: "op-p", role: "operator" },
+    };
+  });
+
+  it("states the grant and that no new email was sent", async () => {
+    const user_ = userEvent.setup();
+    render(<MembersPage />);
+    await submitEmail(user_, "pending@example.com");
+
+    const outcome = await screen.findByTestId("add-member-outcome");
+    await waitFor(() =>
+      expect(outcome.textContent ?? "").toMatch(/granted developer access/i)
+    );
+    const text = outcome.textContent ?? "";
+    expect(text).toMatch(/not accepted yet/i);
+    expect(text).toMatch(/only a qontinui administrator can send a new invitation/i);
+    expect(text).not.toMatch(/invitation sent/i);
   });
 });
 
