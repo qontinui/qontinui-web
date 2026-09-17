@@ -13,10 +13,12 @@
  *    The assertion is on the ABSENCE of those keys, not only on the presence
  *    of the two wanted ones — a body carrying all four would otherwise pass.
  *
- * 2. **The three response arms render distinctly.** `added` says access
+ * 2. **The response arms render distinctly.** `added` says access
  *    exists; `invited` (Phase 4, superuser) says an invitation with a
  *    temporary password was requested; `invite_required` (tenant admin) says
- *    nothing happened and who can invite; `409` says the email is ambiguous, in the wording the Cognito
+ *    nothing happened and who can invite; `invitation_pending` states the
+ *    grant without claiming an email exists; `409` says the email is
+ *    ambiguous, in the wording the Cognito
  *    group member-add already uses for the same condition.
  *
  * 3. **The `invited` arm does not overclaim.** Access starts only when the
@@ -410,8 +412,11 @@ describe("Add a member by email — the `invitation_pending` arm", () => {
       expect(outcome.textContent ?? "").toMatch(/granted developer access/i)
     );
     const text = outcome.textContent ?? "";
-    expect(text).toMatch(/not accepted yet/i);
-    expect(text).toMatch(/only a qontinui administrator can send a new invitation/i);
+    expect(text).toMatch(/not been activated/i);
+    expect(text).toMatch(/ask a qontinui administrator to add them again/i);
+    // The backend cannot tell a sent invitation from one never sent, so the
+    // copy must not point at an email as if it exists.
+    expect(text).not.toMatch(/from that email/i);
     expect(text).not.toMatch(/invitation sent/i);
     expect(text).not.toMatch(/invited/i);
     expect(toastSuccess).not.toHaveBeenCalledWith(
