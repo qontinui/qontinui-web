@@ -93,6 +93,8 @@ from app.services.cognito_admin import (
     CognitoUserNotFoundError,
 )
 from app.services.coord_device_status import (
+    COORD_EVENTS_KEEPALIVE_FRAME,
+    COORD_EVENTS_KEEPALIVE_INTERVAL_S,
     COORD_EVENTS_SUBSCRIPTIONS,
     CoordDeviceStatusDisabledError,
     CoordDeviceStatusMintFailedError,
@@ -6094,6 +6096,17 @@ async def websocket_coord_events(
        `?subscribe=` ignores the param and PSUBSCRIBEs `events.*`, which
        would otherwise hand every operator browser the whole bus,
        spawn-request JWTs included.
+    7. Independently of upstream traffic, the bridge sends the browser a
+       channel-less `{"type":"keepalive"}` text frame every
+       `COORD_EVENTS_KEEPALIVE_INTERVAL_S`. Finding 67329129: the
+       backend<->coord leg already survives an idle upstream via
+       `websockets`' 20s ping, but nothing kept the browser<->backend leg
+       alive, so an idle-timing proxy on THAT leg reconnects the browser on
+       its own clock instead of disappearing. `useStrategyWebSocket` drops it
+       for free (`envelope.channel` is not a string on this frame, and the
+       handler already returns on that check); `useMergePipelineData`
+       recognizes it explicitly (`isKeepaliveFrame`) because it otherwise
+       treats every message as "something changed, refetch".
 
     Disconnect / failure handling matches the device-status bridge:
     browser drop → close upstream (browser gets the normal 1000); coord
@@ -6256,6 +6269,16 @@ async def websocket_coord_events(
         # `?subscribe=` and is fanning out the whole bus.
         dropped = 0
 
+        # `pump_upstream_to_browser` and `send_keepalive` are two independent
+        # tasks that can each call `websocket.send_text` — the keepalive
+        # ticker fires on a wall-clock timer, not gated on upstream traffic.
+        # Starlette's `WebSocket.send` has no internal mutex, and interleaved
+        # sends from two tasks on one ASGI WebSocket are only as safe as the
+        # server's own write ordering happens to be — not a documented
+        # guarantee. Serialize both send sites through this lock rather than
+        # rely on that.
+        send_lock = asyncio.Lock()
+
         async def pump_upstream_to_browser() -> None:
             nonlocal dropped
             try:
@@ -6277,7 +6300,8 @@ async def websocket_coord_events(
                         continue
                     # Coord sends Text frames; forward verbatim — the
                     # browser parses the `{"channel","payload"}` envelope.
-                    await websocket.send_text(message)
+                    async with send_lock:
+                        await websocket.send_text(message)
             except websockets.exceptions.ConnectionClosed:
                 pass
             except Exception as exc:  # noqa: BLE001
@@ -6303,12 +6327,39 @@ async def websocket_coord_events(
                     error=str(exc),
                 )
 
-        # Race the two pumps — whichever side closes first ends the
-        # bridge. asyncio.wait+FIRST_COMPLETED + cancel the rest.
+        async def send_keepalive() -> None:
+            # Runs for the life of the bridge, independent of upstream
+            # traffic — an idle `strategy`/`claims` subscription can go
+            # minutes between real frames, and that idle gap is exactly when
+            # a proxy on the browser<->backend leg times the socket out
+            # (finding 67329129). Ends only via cancellation (the other pump
+            # finished) or a send failing because the browser is already
+            # gone — never treated as the bridge's own close reason.
+            try:
+                while True:
+                    await asyncio.sleep(COORD_EVENTS_KEEPALIVE_INTERVAL_S)
+                    if websocket.client_state != WebSocketState.CONNECTED:
+                        return
+                    async with send_lock:
+                        await websocket.send_text(COORD_EVENTS_KEEPALIVE_FRAME)
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:  # noqa: BLE001
+                logger.debug(
+                    "coord_events_ws_keepalive_send_failed",
+                    user_id=str(user.id),
+                    error=str(exc),
+                )
+
+        # Race the two pumps plus the keepalive ticker — whichever finishes
+        # first ends the bridge. asyncio.wait+FIRST_COMPLETED + cancel the
+        # rest. The keepalive task loops until cancelled or the browser is
+        # already gone, so in practice it is always among `pending`.
         upstream_task = asyncio.create_task(pump_upstream_to_browser())
         browser_task = asyncio.create_task(pump_browser_to_upstream())
+        keepalive_task = asyncio.create_task(send_keepalive())
         done, pending = await asyncio.wait(
-            {upstream_task, browser_task},
+            {upstream_task, browser_task, keepalive_task},
             return_when=asyncio.FIRST_COMPLETED,
         )
         for task in pending:
