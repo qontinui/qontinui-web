@@ -709,6 +709,11 @@ class PlanDifficultyResponse(BaseModel):
     items: list[PlanDifficultyItem]
     count: int
     rerated: int
+    #: Plans in scope still unrated (or rated under an older rubric) after
+    #: this read's capped pass. Non-zero right after a deploy: they are OMITTED
+    #: from ``items`` until a later read rates them, so a consumer re-reads.
+    #: ``None`` when the pass failed (see ``rerate_failed_reason``).
+    rerate_pending: int | None = None
     #: Set when the re-rating pass FAILED. ``items`` is then what was stored
     #: before this read: a plan missing from it is UNRATED-because-the-rating-
     #: failed, and a rating may be from an older rubric (its

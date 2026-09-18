@@ -185,3 +185,24 @@ describe("describeSignals", () => {
     expect(describeSignals(undefined)).toEqual([]);
   });
 });
+
+describe("unrated says only what the answer supports", () => {
+  it("names a pending backlog rather than claiming there is no body", () => {
+    const index = indexDifficulty({ ...response([]), rerate_pending: 12 });
+    const cell = difficultyCell(index, "x");
+    expect(cell.kind).toBe("unrated");
+    const { title } = describeDifficultyCell(cell);
+    expect(title).toContain("still rating 12 plans");
+    expect(title).not.toContain("holds no body");
+  });
+
+  it("names a failed re-rating", () => {
+    const index = indexDifficulty({
+      ...response([]),
+      rerate_pending: null,
+      rerate_failed_reason: "OperationalError: boom",
+    });
+    const { title } = describeDifficultyCell(difficultyCell(index, "x"));
+    expect(title).toContain("Re-rating failed (OperationalError: boom)");
+  });
+});

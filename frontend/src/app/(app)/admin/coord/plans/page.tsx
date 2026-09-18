@@ -533,7 +533,19 @@ export default function CoordPlansListPage() {
         loaded={data !== null || error !== null}
         skeletonRows={6}
         empty={
-          plansUnknown ? (
+          sorted.length > 0 ? (
+            // Checked FIRST: coord returned rows and the DIFFICULTY filter
+            // removed them all, so neither the unknown nor the stale copy (both
+            // about the work-unit read) describes this list.
+            <p
+              className="text-sm text-muted-foreground italic"
+              data-testid="coord-plans-difficulty-empty"
+            >
+              {difficultyFilter === "unrated"
+                ? `None of the ${sorted.length} fetched plans is unrated.`
+                : `None of the ${sorted.length} fetched plans is rated ${difficultyFilter}.`}
+            </p>
+          ) : plansUnknown ? (
             <p
               className="text-sm text-muted-foreground italic"
               data-testid="coord-plans-unknown"
@@ -548,17 +560,6 @@ export default function CoordPlansListPage() {
             >
               No plans matched status={status === "any" ? "any" : status} at the
               last good read — this list has not refreshed since.
-            </p>
-          ) : sorted.length > 0 ? (
-            // Coord returned rows; the DIFFICULTY filter removed them all. Say
-            // which filter emptied the list, not the status one.
-            <p
-              className="text-sm text-muted-foreground italic"
-              data-testid="coord-plans-difficulty-empty"
-            >
-              {difficultyFilter === "unrated"
-                ? `None of the ${sorted.length} fetched plans is unrated.`
-                : `None of the ${sorted.length} fetched plans is rated ${difficultyFilter}.`}
             </p>
           ) : (
             <p
