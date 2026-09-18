@@ -58,6 +58,7 @@ surfaces the fork instead.
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import re
 from collections.abc import Iterable, Sequence
@@ -101,6 +102,10 @@ DIFFICULTY_RATED_KIND = "plan"
 #: Bodies loaded per round trip when re-rating stale rows — bounds the memory
 #: one re-rating pass holds (a plan body runs to ~100 KB at the tail).
 _DIFFICULTY_RERATE_BATCH = 100
+
+#: Plans one request re-rates at most — ~2 s of CPU in a worker thread. The
+#: backlog a deploy leaves is worked through by the reads that follow.
+_DIFFICULTY_RERATE_LIMIT = 300
 
 #: Relations traversed BACKWARDS to reconstruct the prompt chain that produced
 #: a plan: ``investigation_prompt --produced_report--> report --feeds-->
@@ -1000,57 +1005,137 @@ async def upsert_artifact(
     return existing, False, True
 
 
-async def rerate_stale_plan_difficulty(db: AsyncSession, *, org_id: UUID | None) -> int:
-    """Rate every plan in scope whose rating predates the running rubric.
+@dataclass(frozen=True)
+class RerateOutcome:
+    """What one re-rating pass did. ``pending`` is how many plans in scope are
+    STILL stale afterwards — non-zero while a capped pass works through a
+    backlog (the first reads after a deploy or a rubric bump)."""
 
-    Returns how many rows were written. Selects ids first (cheap: no bodies)
-    and loads bodies :data:`_DIFFICULTY_RERATE_BATCH` at a time, committing
-    per batch, so the first read after a deploy or a rubric bump rates the
-    whole corpus in bounded memory and every later read finds nothing to do.
+    written: int
+    pending: int
 
-    ``updated_at`` is left alone on purpose: a rating is derived from a body
-    that did not change, and bumping the stamp would make every plan read as
-    freshly touched to the consumers that sort on it.
+
+@dataclass(frozen=True)
+class RatedSnapshot:
+    """A rating computed from a body read at ``content_sha256``/``kind``.
+
+    The write is conditional on both still holding, which is what stops a
+    pass that raced a newer write from stamping the OLD body's rating onto the
+    new body at the current rubric version — a rating nothing would ever
+    re-rate again.
+    """
+
+    id: UUID
+    kind: str
+    content_sha256: str
+    values: dict[str, object]
+
+
+def _stale_rating(org_id: UUID | None) -> tuple[ColumnElement[bool], ...]:
+    return (
+        _org_scope(org_id),
+        WorkArtifact.kind == DIFFICULTY_RATED_KIND,
+        WorkArtifact.difficulty_rubric_version.is_distinct_from(RUBRIC_VERSION),
+    )
+
+
+async def apply_rated_snapshots(
+    db: AsyncSession, snapshots: Sequence[RatedSnapshot]
+) -> int:
+    """Write each snapshot's rating IF its row is unchanged; returns rows written.
+
+    Guarded on the digest and kind the rating was computed from, and on the
+    row still being stale (a concurrent pass that already rated it is not
+    re-written). ``updated_at`` is assigned to itself, which is what
+    suppresses the column's ``onupdate``: a rating derived from an unchanged
+    body is not a touch, and consumers sort on that stamp. Does not commit.
+    """
+    written = 0
+    for snap in snapshots:
+        result = await db.execute(
+            update(WorkArtifact)
+            .where(
+                WorkArtifact.id == snap.id,
+                WorkArtifact.content_sha256 == snap.content_sha256,
+                WorkArtifact.kind == snap.kind,
+                WorkArtifact.difficulty_rubric_version.is_distinct_from(RUBRIC_VERSION),
+            )
+            .values(**snap.values, updated_at=WorkArtifact.updated_at)
+            .execution_options(synchronize_session=False)
+        )
+        written += int(getattr(result, "rowcount", 0) or 0)
+    return written
+
+
+def _rate_rows(rows: Sequence[tuple[UUID, str, str, str]]) -> list[RatedSnapshot]:
+    """CPU-bound half of a batch — run off the event loop."""
+    return [
+        RatedSnapshot(
+            id=row_id,
+            kind=kind,
+            content_sha256=digest,
+            values=difficulty_values(kind, body),
+        )
+        for row_id, kind, body, digest in rows
+    ]
+
+
+async def rerate_stale_plan_difficulty(
+    db: AsyncSession,
+    *,
+    org_id: UUID | None,
+    limit: int = _DIFFICULTY_RERATE_LIMIT,
+) -> RerateOutcome:
+    """Rate up to ``limit`` plans in scope whose rating predates the rubric.
+
+    Bounded so one request never pays for the whole corpus: rating is ~7 ms
+    of CPU per plan, and a deploy leaves every plan unrated. Newest-written
+    plans go first, so the plans being worked on are rated on the first read;
+    the rest are rated by the reads that follow, and ``pending`` says how
+    many remain. Scoring runs in a worker thread (``asyncio.to_thread``) so
+    the event loop keeps serving other requests, and each write is guarded by
+    :func:`apply_rated_snapshots` — two concurrent passes waste CPU but can
+    never write a stale rating.
     """
     stale_ids = list(
         (
             await db.execute(
-                select(WorkArtifact.id).where(
-                    _org_scope(org_id),
-                    WorkArtifact.kind == DIFFICULTY_RATED_KIND,
-                    or_(
-                        WorkArtifact.difficulty_rubric_version.is_(None),
-                        WorkArtifact.difficulty_rubric_version != RUBRIC_VERSION,
-                    ),
-                )
+                select(WorkArtifact.id)
+                .where(*_stale_rating(org_id))
+                .order_by(WorkArtifact.updated_at.desc(), WorkArtifact.id)
+                .limit(limit)
             )
         ).scalars()
     )
     written = 0
     for start in range(0, len(stale_ids), _DIFFICULTY_RERATE_BATCH):
         batch = stale_ids[start : start + _DIFFICULTY_RERATE_BATCH]
-        rows = (
-            await db.execute(
-                select(WorkArtifact.id, WorkArtifact.kind, WorkArtifact.body).where(
-                    WorkArtifact.id.in_(batch)
+        rows = [
+            (row_id, kind, body, digest)
+            for row_id, kind, body, digest in (
+                await db.execute(
+                    select(
+                        WorkArtifact.id,
+                        WorkArtifact.kind,
+                        WorkArtifact.body,
+                        WorkArtifact.content_sha256,
+                    ).where(WorkArtifact.id.in_(batch))
                 )
-            )
-        ).all()
-        for row_id, kind, body in rows:
-            await db.execute(
-                update(WorkArtifact)
-                .where(WorkArtifact.id == row_id)
-                # Assigning the column to itself is what suppresses its
-                # ``onupdate``; an ORM write of an unchanged value would not.
-                .values(
-                    **difficulty_values(kind, body),
-                    updated_at=WorkArtifact.updated_at,
-                )
-                .execution_options(synchronize_session=False)
-            )
-            written += 1
+            ).all()
+        ]
+        snapshots = await asyncio.to_thread(_rate_rows, rows)
+        written += await apply_rated_snapshots(db, snapshots)
         await db.commit()
-    return written
+    pending = int(
+        (
+            await db.execute(
+                select(func.count())
+                .select_from(WorkArtifact)
+                .where(*_stale_rating(org_id))
+            )
+        ).scalar_one()
+    )
+    return RerateOutcome(written=written, pending=pending)
 
 
 async def list_plan_difficulties(

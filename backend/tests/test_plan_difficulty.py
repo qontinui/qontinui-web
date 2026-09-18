@@ -13,6 +13,8 @@ Plan ``2026-09-18-plan-library-difficulty-field``. What these pin:
 
 from __future__ import annotations
 
+import time
+
 import pytest
 
 from app.services.plan_difficulty import (
@@ -183,3 +185,69 @@ class TestRepoCount:
             "qontinui-web",
             "ui-bridge",
         ]
+
+
+class TestPathologicalBodies:
+    """Every shape that made a first-cut regex super-linear, at 200k chars.
+
+    The budget is generous (the measured worst is ~0.25 s) so a slow CI box
+    cannot flake it, and tight enough that the quadratic cases — 3,000 blank
+    lines took 18 s, one 200,000-space line 142 s — fail it by orders of
+    magnitude.
+    """
+
+    @pytest.mark.parametrize(
+        "body",
+        [
+            "\n" * 200_000,
+            "\r\n" * 200_000,
+            " " * 200_000,
+            "\t" * 200_000,
+            "* " * 200_000,
+            "> " * 200_000,
+            "> ** \n" * 50_000,
+            "Difficulty" + " " * 200_000,
+            "**Difficulty" + " *" * 200_000,
+            "Repos:" + " " * 200_000,
+            "**Repos" + " *" * 200_000,
+            "a/" * 200_000 + "b" * 200_000,
+            "```\n" * 200_000,
+        ],
+        ids=[
+            "blank-lines",
+            "crlf-lines",
+            "spaces",
+            "tabs",
+            "star-space",
+            "quote-space",
+            "quote-bold-lines",
+            "difficulty-then-spaces",
+            "bold-difficulty-then-star-space",
+            "repos-then-spaces",
+            "bold-repos-then-star-space",
+            "long-path",
+            "unclosed-fences",
+        ],
+    )
+    def test_rating_is_linear(self, body: str) -> None:
+        start = time.perf_counter()
+        compute_difficulty(body)
+        assert time.perf_counter() - start < 3.0
+
+
+class TestSecurityFamily:
+    def test_author_is_not_auth(self) -> None:
+        body = "The author authored this; authority says so. " * 5
+        assert "security" not in compute_difficulty(body).signals["concept_families"]  # type: ignore[operator]
+
+    def test_authentication_still_counts(self) -> None:
+        body = "authentication, authorization, the credential. " * 2
+        assert "security" in compute_difficulty(body).signals["concept_families"]  # type: ignore[operator]
+
+
+class TestDeclaredStampFences:
+    def test_a_fence_opening_in_the_header_and_closing_below_it_hides_its_stamp(
+        self,
+    ) -> None:
+        body = "# Plan\n\n```text\nDifficulty: high\n" + "x\n" * 80 + "```\n"
+        assert compute_difficulty(body).source == "computed"

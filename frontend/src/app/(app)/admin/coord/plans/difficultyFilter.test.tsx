@@ -81,6 +81,7 @@ function loaded(): DifficultyIndex {
     ],
     count: 2,
     rerated: 0,
+    rerate_pending: 0,
     rerate_failed_reason: null,
     rubric_version: 1,
     model_tiers: { high: "Fable 5.1", medium: "Opus 5", low: "Fast tier" },
@@ -195,5 +196,27 @@ describe("/admin/coord/plans difficulty", () => {
       screen.getByTestId("coord-plans-difficulty-empty")
     ).toHaveTextContent("None of the 3 fetched plans is rated medium.");
     expect(screen.queryByTestId("coord-plans-empty")).toBeNull();
+  });
+
+  it("names the difficulty filter over a STALE list too, not the stale copy", async () => {
+    difficultyIndex = loaded();
+    get.mockReset();
+    get.mockResolvedValueOnce(UNITS).mockRejectedValue(new Error("HTTP 502"));
+    const user = userEvent.setup();
+    render(<CoordPlansListPage />);
+    await screen.findAllByTestId("coord-plan-card");
+
+    await user.click(screen.getByTestId("coord-plans-difficulty-select"));
+    await user.click(
+      await screen.findByRole("option", { name: "Medium difficulty" })
+    );
+    // A later read fails: the page keeps its rows (stale), and the filter
+    // still hides all of them.
+    await user.click(screen.getByTestId("coord-plans-refresh"));
+    await screen.findByText(/Failed to load/);
+    expect(
+      screen.getByTestId("coord-plans-difficulty-empty")
+    ).toBeInTheDocument();
+    expect(screen.queryByTestId("coord-plans-stale")).toBeNull();
   });
 });
