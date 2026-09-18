@@ -26,8 +26,10 @@ import {
   mergeKindVocabulary,
   notificationHeadline,
   notificationSubject,
+  orderUnreadFirst,
   scrubUuids,
   selectionIds,
+  sensitiveActionFacts,
 } from "./notificationStatus";
 
 const UUID = "c79a07d5-7e40-49b4-87fa-554c749f9644";
@@ -182,18 +184,19 @@ describe("mergeKindVocabulary", () => {
   it("accumulates kinds across pages", () => {
     const a = mergeKindVocabulary([], [{ kind: "policy_change" }]);
     expect(a).toEqual(["policy_change"]);
-    expect(mergeKindVocabulary(a, [{ kind: "pr_landed" }])).toEqual([
-      "policy_change",
-      "pr_landed",
-    ]);
+    expect(
+      mergeKindVocabulary(a, [{ kind: "agent_took_sensitive_action" }])
+    ).toEqual(["agent_took_sensitive_action", "policy_change"]);
   });
 
   it("NEVER shrinks — a filtered page must not erase the vocabulary", () => {
     // The bug this prevents: select kind A, the next page contains only A, and
     // the dropdown collapses to ["A"] so you cannot get to B without detouring
     // via "All kinds".
-    const vocab = ["policy_change", "pr_landed"];
-    expect(mergeKindVocabulary(vocab, [{ kind: "pr_landed" }])).toEqual(vocab);
+    const vocab = ["agent_took_sensitive_action", "policy_change"];
+    expect(
+      mergeKindVocabulary(vocab, [{ kind: "agent_took_sensitive_action" }])
+    ).toEqual(vocab);
   });
 
   it("returns the SAME reference when nothing is new", () => {
@@ -210,10 +213,9 @@ describe("mergeKindVocabulary", () => {
 
 describe("kindOptions", () => {
   it("offers the accumulated vocabulary, alphabetised", () => {
-    expect(kindOptions(["pr_landed", "policy_change"], "any")).toEqual([
-      "policy_change",
-      "pr_landed",
-    ]);
+    expect(
+      kindOptions(["policy_change", "agent_took_sensitive_action"], "any")
+    ).toEqual(["agent_took_sensitive_action", "policy_change"]);
   });
 
   it("keeps the selected kind even when the vocabulary lacks it", () => {
@@ -560,5 +562,95 @@ describe("linkedRefNotice", () => {
     expect(
       linkedRefNotice({ found: false, loading: false, error: false })
     ).toMatch(/not on the page that is loaded/i);
+  });
+});
+
+describe("humanKind — the sensitive-action label", () => {
+  it("gives the agent-action kind a hand-written label", () => {
+    expect(humanKind("agent_took_sensitive_action")).toBe(
+      "Sensitive agent action"
+    );
+  });
+
+  it("keeps the mechanical path for every other kind", () => {
+    expect(humanKind("agent_took_sensitive_gate_action")).toBe(
+      "Agent took sensitive gate action"
+    );
+    expect(humanKind("policy_document_changed")).toBe(
+      "Policy document changed"
+    );
+  });
+});
+
+describe("orderUnreadFirst", () => {
+  const unreadA = row({ notification_id: "a", read_at: null });
+  const readB = row({ notification_id: "b", read_at: "2026-09-18T10:00:00Z" });
+  const unreadC = row({ notification_id: "c", read_at: null });
+  const readD = row({ notification_id: "d", read_at: "2026-09-18T09:00:00Z" });
+
+  it("partitions unread before read, keeping each group's order", () => {
+    expect(
+      orderUnreadFirst([readB, unreadA, readD, unreadC]).map(
+        (n) => n.notification_id
+      )
+    ).toEqual(["a", "c", "b", "d"]);
+  });
+
+  it("returns the same array when it is already ordered", () => {
+    const rows = [unreadA, unreadC, readB, readD];
+    expect(orderUnreadFirst(rows)).toBe(rows);
+    const empty: CoordNotificationRow[] = [];
+    expect(orderUnreadFirst(empty)).toBe(empty);
+  });
+});
+
+describe("sensitiveActionFacts", () => {
+  const sensitive = (detail: Record<string, unknown> | null) =>
+    row({ kind: "agent_took_sensitive_action", detail });
+
+  it("reads each reversibility value into its operator label", () => {
+    expect(sensitiveActionFacts(sensitive({ reversible: "no" }))).toEqual({
+      reversible: "no",
+      reversibleLabel: "not reversible",
+      undo: null,
+    });
+    expect(
+      sensitiveActionFacts(sensitive({ reversible: "roll-forward" }))
+        ?.reversibleLabel
+    ).toBe("roll-forward");
+    expect(
+      sensitiveActionFacts(sensitive({ reversible: "restore" }))
+        ?.reversibleLabel
+    ).toBe("restore");
+  });
+
+  it("carries the undo handle verbatim — it is a paste target", () => {
+    expect(
+      sensitiveActionFacts(
+        sensitive({ reversible: "restore", undo: `ledger:${UUID}` })
+      )?.undo
+    ).toBe(`ledger:${UUID}`);
+  });
+
+  it("states nothing when the row states nothing", () => {
+    expect(sensitiveActionFacts(sensitive({}))).toEqual({
+      reversible: null,
+      reversibleLabel: null,
+      undo: null,
+    });
+    expect(sensitiveActionFacts(sensitive(null))?.reversible).toBeNull();
+  });
+
+  it("renders a reversibility value coord adds later as itself, scrubbed", () => {
+    expect(
+      sensitiveActionFacts(sensitive({ reversible: `revert-${UUID}` }))
+        ?.reversibleLabel
+    ).toBe("revert-…");
+  });
+
+  it("is null for every other kind", () => {
+    expect(
+      sensitiveActionFacts(row({ detail: { reversible: "no", undo: "x" } }))
+    ).toBeNull();
   });
 });

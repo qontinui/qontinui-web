@@ -40,6 +40,19 @@
  * renders the whole line as one `<button>`, and a button nested in a button is
  * invalid HTML whose click would fold the row instead of marking it read.
  *
+ * ## Sensitive agent actions say how they can be undone
+ *
+ * Plan `2026-09-18-notifications-are-agent-actions-and-alerts-are-agent-work`
+ * Phase 8. An `agent_took_sensitive_action` row is the feed's whole reason to
+ * exist — an agent did something significant, permanent or sensitive — and
+ * the one question the operator has about it is "can this be undone, and
+ * how?". So coord's `detail.reversible` is lifted onto the SCAN line (as
+ * "not reversible" / "roll-forward" / "restore"), and `detail.undo`, the
+ * concrete revert handle, into the expanded panel's actions slot, where an id
+ * is a paste target rather than noise. Both only when present: a row that
+ * states no reversibility says nothing about it, rather than a default.
+ * Neither is repeated in the raw detail list below them.
+ *
  * Every authored `data-testid` is carried across unchanged (D4a):
  * `coord-notification-row`, `-unread-dot`, `-summary`, `-mark-read`,
  * `-detail`, `-link`, `-id`, `-device-id`, plus `row-time`, and the
@@ -57,7 +70,14 @@ import {
   isUnread,
   notificationHeadline,
   notificationSubject,
+  sensitiveActionFacts,
 } from "./notificationStatus";
+
+/** Detail keys a sensitive-action row renders in their own slots. */
+const SENSITIVE_DETAIL_KEYS: ReadonlySet<string> = new Set([
+  "reversible",
+  "undo",
+]);
 
 /** Absent/unparseable timestamps render as UNKNOWN, never as a blank. */
 const TIME_UNKNOWN = "time unknown";
@@ -85,9 +105,16 @@ function rowTimeLabel(iso: string | null | undefined): string {
 }
 
 /** Detail payload as label/value pairs. Objects and arrays are JSON-rendered
- *  rather than dropped — this panel is the debugging surface. */
-function DetailEntries({ detail }: { detail: Record<string, unknown> }) {
-  const entries = Object.entries(detail);
+ *  rather than dropped — this panel is the debugging surface. `omit` names
+ *  keys the row already renders in their own slot. */
+function DetailEntries({
+  detail,
+  omit,
+}: {
+  detail: Record<string, unknown>;
+  omit?: ReadonlySet<string>;
+}) {
+  const entries = Object.entries(detail).filter(([k]) => !omit?.has(k));
   if (entries.length === 0) return null;
   return (
     <dl className="grid grid-cols-[minmax(0,10rem)_1fr] gap-x-3 gap-y-1 text-xs">
@@ -121,6 +148,38 @@ export function NotificationRow({
   const unread = isUnread(notification);
   const subject = notificationSubject(notification);
   const actor = detailActor(notification);
+  const sensitive = sensitiveActionFacts(notification);
+  const omitDetail = sensitive ? SENSITIVE_DETAIL_KEYS : undefined;
+  const detailShown =
+    notification.detail &&
+    Object.keys(notification.detail).some((k) => !omitDetail?.has(k));
+  const githubLink = notification.repo ? (
+    <div className="text-xs">
+      <a
+        href={
+          notification.pr_number != null
+            ? `https://github.com/${notification.repo}/pull/${notification.pr_number}`
+            : `https://github.com/${notification.repo}`
+        }
+        target="_blank"
+        rel="noreferrer"
+        className="text-primary underline-offset-2 hover:underline"
+        data-testid="coord-notification-link"
+      >
+        {notification.pr_number != null
+          ? `${notification.repo}#${notification.pr_number} on GitHub`
+          : `${notification.repo} on GitHub`}
+      </a>
+    </div>
+  ) : null;
+  const undo = sensitive?.undo ? (
+    <div className="text-xs" data-testid="coord-notification-undo">
+      <span className="text-muted-foreground">To undo: </span>
+      <code className="break-all font-mono text-foreground/90">
+        {sensitive.undo}
+      </code>
+    </div>
+  ) : null;
 
   return (
     // The two `data-notification-*` attributes ride the wrapper rather than
@@ -154,11 +213,23 @@ export function NotificationRow({
             </span>
           }
           label={
-            <span
-              className={cn(!unread && "text-muted-foreground")}
-              data-testid="coord-notification-summary"
-            >
-              {notificationHeadline(notification)}
+            <span className="inline-flex min-w-0 items-center gap-2">
+              <span
+                className={cn("truncate", !unread && "text-muted-foreground")}
+                data-testid="coord-notification-summary"
+              >
+                {notificationHeadline(notification)}
+              </span>
+              {sensitive?.reversibleLabel && (
+                <span
+                  className="shrink-0 rounded border border-border px-1.5 text-[11px] text-muted-foreground"
+                  data-testid="coord-notification-reversible"
+                  data-reversible={sensitive.reversible ?? undefined}
+                  title="How coord says this action can be undone"
+                >
+                  {sensitive.reversibleLabel}
+                </span>
+              )}
             </span>
           }
           reason={subject ?? undefined}
@@ -185,30 +256,19 @@ export function NotificationRow({
               </div>
             }
             problems={
-              notification.detail &&
-              Object.keys(notification.detail).length > 0 ? (
-                <DetailEntries detail={notification.detail} />
+              notification.detail && detailShown ? (
+                <DetailEntries
+                  detail={notification.detail}
+                  omit={omitDetail}
+                />
               ) : undefined
             }
             actions={
-              notification.repo ? (
-                <div className="text-xs">
-                  <a
-                    href={
-                      notification.pr_number != null
-                        ? `https://github.com/${notification.repo}/pull/${notification.pr_number}`
-                        : `https://github.com/${notification.repo}`
-                    }
-                    target="_blank"
-                    rel="noreferrer"
-                    className="text-primary underline-offset-2 hover:underline"
-                    data-testid="coord-notification-link"
-                  >
-                    {notification.pr_number != null
-                      ? `${notification.repo}#${notification.pr_number} on GitHub`
-                      : `${notification.repo} on GitHub`}
-                  </a>
-                </div>
+              undo || githubLink ? (
+                <>
+                  {undo}
+                  {githubLink}
+                </>
               ) : undefined
             }
             raw={

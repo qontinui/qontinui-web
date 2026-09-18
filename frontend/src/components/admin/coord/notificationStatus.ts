@@ -152,8 +152,7 @@ export const NOTIFICATIONS_MARK_READ_OPTIONS: { noRetryStatuses: number[] } = {
  * nothing needs to ASK whether a string carries a UUID, because everything
  * bound for the default view goes through `scrubUuids` unconditionally — a
  * check is the "remember to do this" step the header says this module refuses
- * to have. `alertStatus.ts` keeps its own `containsUuid`, live and called, for
- * the surface that genuinely branches on the answer. If a caller here ever
+ * to have. If a caller here ever
  * needs the predicate back, note the trap the deleted instance existed to
  * dodge: a `/g` regex carries `lastIndex` across `.test()` calls, so
  * alternating calls on one instance return alternating answers.
@@ -179,15 +178,38 @@ export function scrubUuids(value: string): string {
 }
 
 /**
+ * The mechanical-agent-action kind (plan
+ * `2026-09-18-notifications-are-agent-actions-and-alerts-are-agent-work` D4):
+ * an agent did something significant, permanent or sensitive, and coord tells
+ * the operator after the fact. It was `agent_took_irreversible_action` until
+ * that plan widened it past irreversible actions; coord serves rows stored
+ * under the old name with this one, so the page never sees the old string.
+ */
+export const SENSITIVE_ACTION_KIND = "agent_took_sensitive_action";
+
+/**
+ * Hand-written labels, for the few kinds whose mechanical reading is worse
+ * than a phrase. An OVERRIDE, never the vocabulary: every other kind still
+ * goes through `humanKind`'s mechanical path, so a kind this build has never
+ * heard of still gets a readable label — a hardcoded kind LIST is exactly what
+ * rotted on the old Alerts page, where four hardcoded values matched almost
+ * nothing live.
+ */
+const KIND_LABELS: Readonly<Record<string, string>> = {
+  [SENSITIVE_ACTION_KIND]: "Sensitive agent action",
+};
+
+/**
  * Machine kind → scannable label: `pr_merge_landed` → "Pr merge landed".
- * Deliberately mechanical rather than a hand-maintained lookup table: a
- * hardcoded kind list is exactly what rotted on the Alerts page, where four
- * hardcoded values matched almost nothing live.
+ * Mechanical apart from the short {@link KIND_LABELS} override list.
  *
  * Default-view string ⇒ scrubbed.
  */
 export function humanKind(kind: string | null | undefined): string {
-  const raw = scrubUuids((kind ?? "").trim());
+  const trimmed = (kind ?? "").trim();
+  const override = KIND_LABELS[trimmed];
+  if (override) return override;
+  const raw = scrubUuids(trimmed);
   const spaced = raw.replace(/[_-]+/g, " ").trim();
   // Nothing left worth reading — including the case where the kind was
   // ENTIRELY a UUID and scrubbed down to the elision. A badge reading "…"
@@ -361,6 +383,82 @@ export function notificationHeadline(n: CoordNotificationRow): string {
 /** Unread ⇔ the calling principal has no `read_at` for this row. */
 export function isUnread(n: CoordNotificationRow): boolean {
   return !n.read_at;
+}
+
+/**
+ * Unread rows first, read rows after, each group in the order coord served it
+ * (newest first). A stable partition, not a re-sort: within a group nothing
+ * moves. Returns the SAME array when it is already in that order, so a caller
+ * can memoise on it without re-rendering the list on every poll.
+ *
+ * Plan `2026-09-18-notifications-are-agent-actions-and-alerts-are-agent-work`
+ * Phase 8: the feed is the operator's record of what agents did, and the rows
+ * he has not seen are the ones it exists to put in front of him.
+ */
+export function orderUnreadFirst(
+  rows: CoordNotificationRow[]
+): CoordNotificationRow[] {
+  const unread: CoordNotificationRow[] = [];
+  const read: CoordNotificationRow[] = [];
+  for (const n of rows) (isUnread(n) ? unread : read).push(n);
+  const ordered = [...unread, ...read];
+  return ordered.every((n, i) => n === rows[i]) ? rows : ordered;
+}
+
+/** How an `agent_took_sensitive_action` row can be undone, per coord. */
+export interface SensitiveActionFacts {
+  /**
+   * Coord's `detail.reversible`: `"no"`, `"roll-forward"` or `"restore"`.
+   * `null` when the row states none — never defaulted to either end, because
+   * "we were not told" is neither "it is reversible" nor "it is not".
+   */
+  reversible: string | null;
+  /** The operator-facing reading of `reversible`. */
+  reversibleLabel: string | null;
+  /**
+   * Coord's `detail.undo`: the concrete revert handle — a git-write-ledger
+   * id, a prompt-document version, a route. EXPANDED PANEL ONLY: it may carry
+   * an id, and that id is the paste target, so it is never scrubbed and never
+   * rendered on the scan line.
+   */
+  undo: string | null;
+}
+
+const REVERSIBLE_LABELS: Readonly<Record<string, string>> = {
+  no: "not reversible",
+  "roll-forward": "roll-forward",
+  restore: "restore",
+};
+
+/**
+ * The reversibility and undo handle of a sensitive-action row, or `null` for
+ * every other kind. Pure — the row decides where each half renders.
+ */
+export function sensitiveActionFacts(
+  n: Pick<CoordNotificationRow, "kind" | "detail">
+): SensitiveActionFacts | null {
+  if ((n.kind ?? "").trim() !== SENSITIVE_ACTION_KIND) return null;
+  const detail = n.detail ?? {};
+  const rawReversible = detail["reversible"];
+  const reversible =
+    typeof rawReversible === "string" && rawReversible.trim() !== ""
+      ? rawReversible.trim()
+      : null;
+  const rawUndo = detail["undo"];
+  const undo =
+    typeof rawUndo === "string" && rawUndo.trim() !== ""
+      ? rawUndo.trim()
+      : null;
+  return {
+    reversible,
+    // A value coord adds later still renders, as itself (scrubbed — this
+    // label is on the scan line), rather than being dropped.
+    reversibleLabel:
+      reversible === null
+        ? null
+        : (REVERSIBLE_LABELS[reversible] ?? scrubUuids(reversible)),
+    undo,
+  };
 }
 
 /**
