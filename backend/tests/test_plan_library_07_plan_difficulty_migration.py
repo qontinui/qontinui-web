@@ -117,6 +117,32 @@ def test_it_imports_nothing_from_the_app() -> None:
     assert "import app" not in source
 
 
+def test_the_static_upgrade_sql_spells_every_column_in_columns() -> None:
+    """``upgrade()`` spells its DDL as plain literals (coord's classifier rejects
+    f-strings); ``_COLUMNS`` is the same DDL as data. Keep them in step."""
+    import importlib.util
+
+    path = backend_root() / "alembic" / "versions" / _REVISION_FILENAME
+    spec = importlib.util.spec_from_file_location("_pl07", path)
+    assert spec and spec.loader
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    source = _revision_source()
+    upgrade_src = source[
+        source.index("def upgrade()") : source.index("def downgrade()")
+    ]
+    flat = " ".join(upgrade_src.replace('"\n', " ").split())
+    assert 'f"' not in upgrade_src, "upgrade() must use plain string literals"
+    for column, column_type, check_name, check in module._COLUMNS:
+        assert f"ADD COLUMN IF NOT EXISTS {column} {column_type}" in flat.replace(
+            '" "', ""
+        ).replace('"', ""), column
+        if check_name:
+            assert f"CONSTRAINT {check_name} CHECK ({check})" in flat.replace(
+                '" "', ""
+            ).replace('"', ""), check_name
+
+
 _PG_SKIP = pytest.mark.skipif(
     not can_connect(admin_database_url()),
     reason=(
