@@ -4,12 +4,23 @@
  * /admin/coord/notifications — the append-only `coord.notifications` feed.
  *
  * Plan `2026-08-05-coord-notifications-type-and-tab.md` Change 4. This is the
- * EVENT surface, the deliberate counterpart to `/admin/coord/alerts` (the
- * CONDITION surface):
+ * EVENT surface, the deliberate counterpart to coord's alerts (the CONDITION
+ * type):
  *
  *   Alerts        — "what is wrong right now?"   fire → persist → resolve
  *   Notifications — "what happened while I was away?"  append-only, per-actor
  *                                                       read state
+ *
+ * Since plan
+ * `2026-09-18-notifications-are-agent-actions-and-alerts-are-agent-work` the
+ * two have different AUDIENCES as well: alerts are agents' work (their
+ * operator page is gone; the Dev Ops page's Conditions panel is the rollup),
+ * and this feed is the operator's record of what agents DID — sensitive
+ * agent actions and agent-authored policy changes. Phase 8 made the page
+ * serve that job: unread rows are listed before read ones (the rows he has
+ * not seen are the ones the feed exists to show him), and an
+ * `agent_took_sensitive_action` row says whether and how it can be undone
+ * (`NotificationRow`).
  *
  * Conventions follow the sibling plan's SHARED UI CONVENTIONS section: one row
  * per event, one plain-language line (coord pre-renders `summary`), detail
@@ -170,6 +181,7 @@ import {
   linkedRefNotice,
   matchesNotificationRef,
   mergeKindVocabulary,
+  orderUnreadFirst,
   selectionIds,
 } from "@/components/admin/coord/notificationStatus";
 import { httpClient } from "@/services/service-factory";
@@ -596,6 +608,15 @@ export default function CoordNotificationsPage() {
   );
 
   /**
+   * The rows as listed: unread before read, each group in coord's order
+   * (newest first). Display order only — `rows` stays in fetch order, which
+   * is what paging and the merge in `fetchHead` are written against. Marking
+   * a row read moves it into the read group on the next render, which is the
+   * point: the top of the list is always what has not been seen.
+   */
+  const listedRows = useMemo(() => orderUnreadFirst(rows), [rows]);
+
+  /**
    * The linked row, if it is on the page that is loaded.
    *
    * `null` while a `linkedRef` is set is a real, reportable state — the event
@@ -904,7 +925,7 @@ export default function CoordNotificationsPage() {
       ) : (
         <>
           <RecordList
-            items={rows}
+            items={listedRows}
             itemKey={(n) => n.notification_id}
             // R6 applied to a list: an in-flight FIRST read renders skeletons,
             // never an empty list claiming there is nothing. A later poll that
