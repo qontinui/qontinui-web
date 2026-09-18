@@ -188,6 +188,23 @@ class TestCoordEventsServiceHelpers:
         assert envelope_channel('{"payload":"{}"}') is None
         assert envelope_channel('{"channel":7}') is None
 
+    def test_keepalive_frame_is_channel_less_and_interval_is_positive(self) -> None:
+        # Finding 67329129: the bridge sends this frame on an idle upstream
+        # so a proxy on the browser<->backend leg doesn't time the socket
+        # out. It must carry no `channel` — that absence, not a special-cased
+        # `type`, is what makes `envelope_channel` (the bridge's own frame
+        # classifier) and every subscriber's own channel check ignore it for
+        # free, with no per-consumer allowlist to keep in sync.
+        from app.services.coord_device_status import (
+            COORD_EVENTS_KEEPALIVE_FRAME,
+            COORD_EVENTS_KEEPALIVE_INTERVAL_S,
+            envelope_channel,
+        )
+
+        assert json.loads(COORD_EVENTS_KEEPALIVE_FRAME) == {"type": "keepalive"}
+        assert envelope_channel(COORD_EVENTS_KEEPALIVE_FRAME) is None
+        assert COORD_EVENTS_KEEPALIVE_INTERVAL_S > 0
+
     def test_device_status_url_is_unchanged_by_the_shared_base(self) -> None:
         # The scheme translation was lifted into a shared helper; the
         # device-status bridge's URL must be byte-identical to before.
@@ -662,3 +679,76 @@ class TestCoordEventsWsBridge:
         assert call.kwargs["upstream"] == "ws://localhost:9870/ws"
         assert "error" not in call.kwargs
         assert "fake.jwt.token" not in repr(call)
+
+    def test_keepalive_frame_reaches_the_browser_on_an_idle_upstream(self) -> None:
+        # A bare `MockUpstream()` yields nothing and blocks for an hour
+        # (its idle behaviour) — the only thing that can reach the browser
+        # on this socket is the keepalive ticker, so seeing the frame here
+        # proves the ticker runs independently of upstream traffic.
+        ws_client = TestClient(_build_test_app())
+        upstream_mock = MockUpstream()
+
+        async def fake_connect(url: str, **kwargs: Any) -> MockUpstream:
+            return upstream_mock
+
+        p1, p2, p3, p4 = self._patches(connect=fake_connect)
+        with (
+            p1,
+            p2,
+            p3,
+            p4,
+            patch("app.services.coord_device_status.settings") as mock_settings,
+            patch(
+                "app.api.v1.endpoints.operations.COORD_EVENTS_KEEPALIVE_INTERVAL_S",
+                0.01,
+            ),
+        ):
+            mock_settings.COORD_URL = "http://localhost:9870"
+            with ws_client.websocket_connect(
+                f"{API_PREFIX}/coord-events/ws?subscribe=strategy&token=session-jwt"
+            ) as ws:
+                first = ws.receive_text()
+                assert json.loads(first) == {"type": "keepalive"}
+                # Ticks, not a one-shot: a second frame follows on the same
+                # cadence.
+                second = ws.receive_text()
+                assert json.loads(second) == {"type": "keepalive"}
+
+        # A channel-less frame is never counted as dropped — it was never a
+        # subscription violation to begin with.
+        assert upstream_mock.closed is True
+
+    def test_keepalive_does_not_prevent_a_real_frame_from_being_relayed(
+        self,
+    ) -> None:
+        # The keepalive ticker and the upstream pump run concurrently; a
+        # real coord frame must still reach the browser once it arrives,
+        # keepalive ticks notwithstanding.
+        ws_client = TestClient(_build_test_app())
+        real_frame = json.dumps(
+            {"channel": "events.strategy.thread.created.t1", "payload": "{}"}
+        )
+        upstream_mock = MockUpstream([real_frame])
+
+        async def fake_connect(url: str, **kwargs: Any) -> MockUpstream:
+            return upstream_mock
+
+        p1, p2, p3, p4 = self._patches(connect=fake_connect)
+        with (
+            p1,
+            p2,
+            p3,
+            p4,
+            patch("app.services.coord_device_status.settings") as mock_settings,
+            patch(
+                "app.api.v1.endpoints.operations.COORD_EVENTS_KEEPALIVE_INTERVAL_S",
+                0.01,
+            ),
+        ):
+            mock_settings.COORD_URL = "http://localhost:9870"
+            with ws_client.websocket_connect(
+                f"{API_PREFIX}/coord-events/ws?subscribe=strategy&token=session-jwt"
+            ) as ws:
+                seen = {ws.receive_text() for _ in range(3)}
+                assert real_frame in seen
+                assert json.dumps({"type": "keepalive"}) in seen

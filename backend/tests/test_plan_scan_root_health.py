@@ -50,6 +50,8 @@ from uuid import UUID, uuid4
 from app.models.plan_scan_root import PlanScanRootObservation
 from app.schemas.plan_library_scan_roots import ScanRootSourceRollup
 from app.services.plan_scan_root_health import (
+    COVERAGE_NOT_COMPUTED_DETAIL,
+    COVERAGE_NOT_REQUESTED_DETAIL,
     FRESH_WITHIN_SECS,
     NO_OBSERVATION_DETAIL,
     render_row,
@@ -519,3 +521,46 @@ class TestGrouping:
         assert none.unmeasured_device_ids == [unnamed.device_id]
         assert health.count == 3
         assert sum(r.device_count for r in health.by_source_repo) == health.count
+
+
+class TestCoverageRequestedDetail:
+    """``coverage_requested`` picks WHY ``coverage_detail`` is empty when
+    ``captured`` is ``None`` — the ``corpus_health`` path never asks (its
+    caller passes no ``captured`` either) and the dedicated route passes
+    ``False`` only when the CALLER itself opted out with ``?coverage=false``.
+    Reusing ``corpus_health``'s string on that opt-out would tell the caller
+    to read the very route it just asked to skip.
+
+    Mutation-proved: hard-coding ``not_computed_detail`` to
+    ``COVERAGE_NOT_COMPUTED_DETAIL`` regardless of ``coverage_requested``
+    fails every case below that asserts ``COVERAGE_NOT_REQUESTED_DETAIL``.
+    """
+
+    def test_default_omits_captured_and_reads_not_computed_here(self) -> None:
+        health = scan_roots_health([_obs()], now=NOW)
+        assert health.coverage == []
+        assert health.coverage_detail == COVERAGE_NOT_COMPUTED_DETAIL
+
+    def test_explicit_true_with_no_captured_still_reads_not_computed_here(
+        self,
+    ) -> None:
+        health = scan_roots_health(
+            [_obs()], now=NOW, captured=None, coverage_requested=True
+        )
+        assert health.coverage_detail == COVERAGE_NOT_COMPUTED_DETAIL
+
+    def test_opted_out_reads_not_requested_not_not_computed_here(self) -> None:
+        health = scan_roots_health(
+            [_obs()], now=NOW, captured=None, coverage_requested=False
+        )
+        assert health.coverage == []
+        assert health.coverage_detail == COVERAGE_NOT_REQUESTED_DETAIL
+        assert health.coverage_detail != COVERAGE_NOT_COMPUTED_DETAIL
+
+    def test_opting_out_with_no_rows_still_reads_not_requested(self) -> None:
+        """The no-rows branch is a separate return in
+        :func:`scan_roots_health`, so it is pinned on its own — a fix that
+        only reaches the with-rows branch would leave this one wrong."""
+        health = scan_roots_health([], now=NOW, captured=None, coverage_requested=False)
+        assert health.coverage == []
+        assert health.coverage_detail == COVERAGE_NOT_REQUESTED_DETAIL

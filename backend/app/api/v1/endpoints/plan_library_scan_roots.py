@@ -77,7 +77,7 @@ through the real ``api_router``.
 from datetime import UTC, datetime
 
 import structlog
-from fastapi import APIRouter, Depends, Response, status
+from fastapi import APIRouter, Depends, Query, Response, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import (
@@ -176,6 +176,14 @@ async def report_scan_root(
     summary="Every device's latest plan-scan-source reading, judged for age",
 )
 async def list_scan_roots(
+    coverage: bool = Query(
+        True,
+        description=(
+            "Compute the coverage set difference (default). false skips the "
+            "stem census load and the corpus anti-join for a caller that only "
+            "needs the per-device readings and roll-up."
+        ),
+    ),
     db: AsyncSession = Depends(get_async_db),
     current_user: User = Depends(get_audit_actor_user),
 ) -> ScanRootListResponse:
@@ -227,14 +235,33 @@ async def list_scan_roots(
     101.8% in production for a real corpus; nothing served here can express
     that number. A key with no usable census reads ``unknown`` with a detail,
     never a zero and never an omitted key.
+
+    ``coverage`` (the query parameter, default ``true``) lets a caller that
+    only wants the per-device readings and roll-up — ``ScanSourcesPanel`` on
+    the console, which renders no coverage field at all — say so and skip the
+    stem census load and the corpus anti-join. Passing ``false`` reads
+    ``coverage: []`` with ``coverage_detail`` starting ``not_requested:``,
+    never an unexplained empty list. Follow-up to Phase 4 of the same plan,
+    which shipped the two panels as two separate reads of this one route
+    without a way for either to opt out of the other's cost.
     """
     org_id = await _resolve_org_id(db, current_user)
-    # The censuses are DEFERRED on ``list_observations`` — this route is the one
-    # that needs the stems, so it takes the loading read; see D2 above.
-    observations = await crud.list_observations_with_censuses(db, org_id=org_id)
-    captured = await artifact_crud.captured_plan_corpus(
-        db,
-        org_id=org_id,
-        source_repos=coverage_source_repos(observations),
+    if coverage:
+        # The censuses are DEFERRED on ``list_observations`` — this is the one
+        # branch that needs the stems, so it takes the loading read; see D2
+        # above.
+        observations = await crud.list_observations_with_censuses(db, org_id=org_id)
+        captured = await artifact_crud.captured_plan_corpus(
+            db,
+            org_id=org_id,
+            source_repos=coverage_source_repos(observations),
+        )
+    else:
+        observations = await crud.list_observations(db, org_id=org_id)
+        captured = None
+    return scan_roots_health(
+        observations,
+        now=datetime.now(UTC),
+        captured=captured,
+        coverage_requested=coverage,
     )
-    return scan_roots_health(observations, now=datetime.now(UTC), captured=captured)
