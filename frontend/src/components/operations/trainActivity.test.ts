@@ -353,6 +353,113 @@ describe("buildRepoTrainRows — why it is paused", () => {
     expect(rows[0]!.reasons[0]!.detail).toContain("slot contention");
   });
 
+  it("gives a coord-landed phantom-open its own row state, never the unknown-token alarm", () => {
+    const rows = buildRepoTrainRows(
+      [],
+      [
+        pr({ pr_number: 11, merge_status: "landed-open" }),
+        pr({ pr_number: 12, merge_status: "landed-open" }),
+        pr({
+          pr_number: 13,
+          merge_status: "ci-failed",
+          ci_conclusion: "failure",
+        }),
+      ],
+      null,
+      NOW
+    );
+    const row = rows[0]!;
+    const landed = row.reasons.find((r) => r.code === "landed-open");
+    expect(landed).toBeDefined();
+    expect(landed!.label).toBe("Landed, awaiting close");
+    expect(landed!.severity).toBe("info");
+    expect(landed!.prCount).toBe(2);
+    expect(landed!.prNumbers).toEqual([11, 12]);
+    expect(landed!.detail).toContain("pr_merge_phantom_open_stuck");
+
+    // THE POINT. Without the `STATUS_TO_REASON` row the token falls into the
+    // unknown-token catch-all, which is graded `blocking` — so a landed PR
+    // renders RED. (It does not headline HERE: `unrecognized-status` ranks
+    // below `ci-failed`, and this fixture has a red PR. The single-population
+    // case below is where it takes the headline as well.)
+    expect(row.reasons.map((r) => r.code)).not.toContain("unrecognized-status");
+
+    // …and it must not become the repo's headline either: the red CI PR is
+    // still what explains this repo.
+    expect(row.reasons[0]!.code).toBe("ci-failed");
+    expect(row.severity).toBe("blocking");
+  });
+
+  it("does not raise a repo's severity on landed-open alone", () => {
+    const rows = buildRepoTrainRows(
+      [],
+      [pr({ pr_number: 11, merge_status: "landed-open" })],
+      null,
+      NOW
+    );
+    const row = rows[0]!;
+    expect(row.reasons[0]!.code).toBe("landed-open");
+    expect(row.severity).toBe("info");
+  });
+
+  it("never calls a landed-open PR 'ready but unlanded', even when coord's health read still lists it", () => {
+    // The unclosed path. coord's `ready_unmerged` is built from `looks_ready`,
+    // which reads the FROZEN merge-state / CI signals and carries no
+    // land-stamp term — so a phantom-open whose signals froze CLEAN and green
+    // is still in that list. Left unfiltered, `orchestrator-stalled` fires at
+    // `blocking`, rank 3, "The train should have taken it" — the loudest wrong
+    // answer, outranking and out-shouting the new `info` chip at rank 17.
+    const health: TrainHealth = {
+      ready_unmerged: {
+        count: 1,
+        max_age_seconds: 7200,
+        prs: [{ repo: "qontinui/web", pr_number: 11, age_seconds: 7200 }],
+      },
+    };
+    const rows = buildRepoTrainRows(
+      [],
+      [pr({ pr_number: 11, merge_status: "landed-open" })],
+      health,
+      NOW
+    );
+    const row = rows[0]!;
+    expect(row.reasons.map((r) => r.code)).not.toContain(
+      "orchestrator-stalled"
+    );
+    expect(row.reasons[0]!.code).toBe("landed-open");
+    expect(row.severity).toBe("info");
+    expect(row.readyUnmerged).toHaveLength(0);
+  });
+
+  it("still raises the stall for a ready-unmerged PR that is NOT landed-open", () => {
+    // The other direction, so the filter above cannot be a blanket mute: the
+    // alarm must survive for every PR the land-stamp does not exonerate.
+    const health: TrainHealth = {
+      ready_unmerged: {
+        count: 2,
+        max_age_seconds: 7200,
+        prs: [
+          { repo: "qontinui/web", pr_number: 11, age_seconds: 7200 },
+          { repo: "qontinui/web", pr_number: 12, age_seconds: 3600 },
+        ],
+      },
+    };
+    const rows = buildRepoTrainRows(
+      [],
+      [
+        pr({ pr_number: 11, merge_status: "landed-open" }),
+        pr({ pr_number: 12 }),
+      ],
+      health,
+      NOW
+    );
+    const row = rows[0]!;
+    const stall = row.reasons.find((r) => r.code === "orchestrator-stalled");
+    expect(stall).toBeDefined();
+    expect(stall!.prNumbers).toEqual([12]);
+    expect(row.severity).toBe("blocking");
+  });
+
   it("promotes a day-old conflict to a strand", () => {
     const rows = buildRepoTrainRows(
       [],
