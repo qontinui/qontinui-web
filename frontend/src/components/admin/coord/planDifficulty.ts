@@ -14,9 +14,10 @@
  * ## Three states a cell can be in, and they are not interchangeable
  *
  * - **rated** — the library holds a rating for this plan.
- * - **unrated** — the difficulty read ANSWERED and this plan is not in it: the
- *   library holds no body for it (the body sync never captured it), so there
- *   is nothing to rate. A real answer, and it is never rendered as `low`.
+ * - **unrated** — the difficulty read ANSWERED and this plan is not in it.
+ *   Usually the library holds no body for it; it may also still be queued
+ *   for rating (`pending`) or its rating may have failed, and the hover text
+ *   says which of those the answer can support. Never rendered as `low`.
  * - **unknown** — the difficulty read has not answered, or FAILED. Whether
  *   the plan is rated is not known (R6: absence is not zero).
  *
@@ -50,6 +51,8 @@ export interface PlanDifficultyResponse {
   items: PlanDifficultyItem[];
   count: number;
   rerated: number;
+  /** Plans still to rate after this read's capped pass (null: pass failed). */
+  rerate_pending?: number | null;
   rerate_failed_reason?: string | null;
   rubric_version: number;
   model_tiers: Record<string, string>;
@@ -65,12 +68,15 @@ export type DifficultyIndex =
       tiers: Readonly<Record<string, string>>;
       /** Set when the backend's re-rating pass failed — ratings may lag. */
       staleReason: string | null;
+      /** Plans the backend has yet to rate (a post-deploy backlog). They are
+       *  absent from `bySlug`, so an absent slug is not yet "unrated". */
+      pending: number;
     };
 
 /** What ONE row knows. */
 export type DifficultyCell =
   | { kind: "rated"; item: PlanDifficultyItem; tier: string | null }
-  | { kind: "unrated" }
+  | { kind: "unrated"; why: string }
   | { kind: "unknown"; reason: string };
 
 export const DIFFICULTY_LEVELS: readonly DifficultyLevel[] = [
@@ -106,6 +112,7 @@ export function indexDifficulty(
     bySlug,
     tiers: response.model_tiers ?? {},
     staleReason: response.rerate_failed_reason ?? null,
+    pending: response.rerate_pending ?? 0,
   };
 }
 
@@ -127,7 +134,18 @@ export function difficultyCell(
     };
   }
   const item = index.bySlug.get(slug);
-  if (!item) return { kind: "unrated" };
+  if (!item) {
+    // A slug missing from the answer is NOT proof there is no body: the
+    // backend omits a plan whose rating is still pending or failed, and a slug
+    // that does not join is missing too. Say what is known, no more.
+    const why =
+      index.pending > 0
+        ? `The backend is still rating ${index.pending} plan${index.pending === 1 ? "" : "s"}; this one may be among them.`
+        : index.staleReason
+          ? `Re-rating failed (${index.staleReason}), so this plan may simply not have been rated.`
+          : "Usually the plan library holds no body for this plan (the body sync has not captured it), so there is nothing to rate.";
+    return { kind: "unrated", why };
+  }
   return { kind: "rated", item, tier: index.tiers[item.difficulty] ?? null };
 }
 
@@ -179,9 +197,7 @@ export function describeDifficultyCell(cell: DifficultyCell): {
   if (cell.kind === "unrated") {
     return {
       label: "unrated",
-      title:
-        "No difficulty rating: the plan library holds no body for this plan, " +
-        "so there is nothing to rate. Unrated is not low.",
+      title: `No difficulty rating found for this plan's slug. ${cell.why} Unrated is not low.`,
     };
   }
   const { item, tier } = cell;

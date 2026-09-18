@@ -3487,12 +3487,12 @@ async def list_plan_candidates(
 
 async def _rerate_best_effort(
     db: AsyncSession, *, org_id: UUID | None, route: str
-) -> tuple[int, str | None]:
+) -> tuple[crud.RerateOutcome | None, str | None]:
     """Run :func:`crud.rerate_stale_plan_difficulty`; never raise.
 
-    Returns ``(rows rated, failure reason or None)``. The rating is derived
-    data a read may fill in, not the read's subject, so a failure is logged
-    and reported beside the answer rather than failing it.
+    Returns ``(outcome, None)``, or ``(None, reason)`` when the pass failed.
+    The rating is derived data a read may fill in, not the read's subject, so
+    a failure is logged and reported beside the answer rather than failing it.
     """
     try:
         return await crud.rerate_stale_plan_difficulty(db, org_id=org_id), None
@@ -3504,7 +3504,7 @@ async def _rerate_best_effort(
             error=str(exc),
             detail="serving the ratings stored before this read",
         )
-        return 0, f"{type(exc).__name__}: {_cap_reason(str(exc))}"
+        return None, f"{type(exc).__name__}: {_cap_reason(str(exc))}"
 
 
 # NOTE: declared BEFORE ``/{artifact_id}`` so the literal path wins the match.
@@ -3525,13 +3525,15 @@ async def list_plan_difficulty(
     Fable 5.1, ``medium`` → Opus 5, ``low`` → a fast tier), with a plan's own
     ``Difficulty:`` stamp overriding the computed level.
 
-    Before answering, every plan rated under an older rubric (or none) is
-    re-rated — see :func:`crud.rerate_stale_plan_difficulty` — so this read is
-    also the corpus backfill. Unrated plans are OMITTED, never served as
-    ``low``.
+    Before answering, plans rated under an older rubric (or none) are re-rated,
+    up to a per-request cap, newest first — see
+    :func:`crud.rerate_stale_plan_difficulty` — so these reads are also the
+    corpus backfill. ``rerate_pending`` says how many plans the next reads
+    still have to rate. Unrated plans are
+    OMITTED, never served as ``low``.
     """
     org_id = await _resolve_org_id(db, current_user)
-    rerated, failed_reason = await _rerate_best_effort(
+    outcome, failed_reason = await _rerate_best_effort(
         db, org_id=org_id, route="difficulty"
     )
     rows = await crud.list_plan_difficulties(db, org_id=org_id)
@@ -3558,7 +3560,8 @@ async def list_plan_difficulty(
     return PlanDifficultyResponse(
         items=items,
         count=len(items),
-        rerated=rerated,
+        rerated=outcome.written if outcome else 0,
+        rerate_pending=outcome.pending if outcome else None,
         rerate_failed_reason=failed_reason,
         rubric_version=RUBRIC_VERSION,
         model_tiers=dict(MODEL_TIERS),

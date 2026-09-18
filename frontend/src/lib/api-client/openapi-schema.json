@@ -32982,6 +32982,17 @@
             ],
             "title": "Rerate Failed Reason"
           },
+          "rerate_pending": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rerate Pending"
+          },
           "rerated": {
             "title": "Rerated",
             "type": "integer"
@@ -95448,7 +95459,7 @@
     },
     "/api/v1/plan-library/difficulty": {
       "get": {
-        "description": "The difficulty map ``/admin/coord/plans`` joins onto coord's work units.\n\nPlan ``2026-09-18-plan-library-difficulty-field``. The rating is computed\nfrom each plan's body by ``app.services.plan_difficulty`` \u2014 two axes,\nconceptual and implementation, folded into a routing level (``high`` \u2192\nFable 5.1, ``medium`` \u2192 Opus 5, ``low`` \u2192 a fast tier), with a plan's own\n``Difficulty:`` stamp overriding the computed level.\n\nBefore answering, every plan rated under an older rubric (or none) is\nre-rated \u2014 see :func:`crud.rerate_stale_plan_difficulty` \u2014 so this read is\nalso the corpus backfill. Unrated plans are OMITTED, never served as\n``low``.",
+        "description": "The difficulty map ``/admin/coord/plans`` joins onto coord's work units.\n\nPlan ``2026-09-18-plan-library-difficulty-field``. The rating is computed\nfrom each plan's body by ``app.services.plan_difficulty`` \u2014 two axes,\nconceptual and implementation, folded into a routing level (``high`` \u2192\nFable 5.1, ``medium`` \u2192 Opus 5, ``low`` \u2192 a fast tier), with a plan's own\n``Difficulty:`` stamp overriding the computed level.\n\nBefore answering, plans rated under an older rubric (or none) are re-rated,\nup to a per-request cap, newest first \u2014 see\n:func:`crud.rerate_stale_plan_difficulty` \u2014 so these reads are also the\ncorpus backfill. ``rerate_pending`` says how many plans the next reads\nstill have to rate. Unrated plans are\nOMITTED, never served as ``low``.",
         "operationId": "api_v1_plan_library_difficulty_get",
         "responses": {
           "200": {

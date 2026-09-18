@@ -188,12 +188,11 @@ class TestStaleRowsAreRerated:
             )
         ).scalar_one()
 
-        written = await crud.rerate_stale_plan_difficulty(async_db_session, org_id=org)
-        assert written == 1
+        outcome = await crud.rerate_stale_plan_difficulty(async_db_session, org_id=org)
+        assert (outcome.written, outcome.pending) == (1, 0)
         # Idempotent: nothing is stale the second time.
-        assert (
-            await crud.rerate_stale_plan_difficulty(async_db_session, org_id=org) == 0
-        )
+        again = await crud.rerate_stale_plan_difficulty(async_db_session, org_id=org)
+        assert (again.written, again.pending) == (0, 0)
 
         async_db_session.expire_all()
         after = (
@@ -215,9 +214,8 @@ class TestStaleRowsAreRerated:
         their_id = their_row.id
         await self._make_stale(async_db_session, their_id, rubric_version=None)
 
-        assert (
-            await crud.rerate_stale_plan_difficulty(async_db_session, org_id=mine) == 0
-        )
+        outcome = await crud.rerate_stale_plan_difficulty(async_db_session, org_id=mine)
+        assert (outcome.written, outcome.pending) == (0, 0)
         async_db_session.expire_all()
         still = (
             await async_db_session.execute(
@@ -225,6 +223,100 @@ class TestStaleRowsAreRerated:
             )
         ).scalar_one()
         assert still is None
+
+    async def test_a_pass_is_capped_and_reports_what_is_left(
+        self, async_db_session: AsyncSession
+    ) -> None:
+        org = uuid4()
+        for n in range(3):
+            row = await _upsert(
+                async_db_session, org_id=org, slug=_slug(f"cap{n}"), body=_HIGH_BODY
+            )
+            await self._make_stale(async_db_session, row.id, rubric_version=None)
+
+        first = await crud.rerate_stale_plan_difficulty(
+            async_db_session, org_id=org, limit=2
+        )
+        assert (first.written, first.pending) == (2, 1)
+        second = await crud.rerate_stale_plan_difficulty(
+            async_db_session, org_id=org, limit=2
+        )
+        assert (second.written, second.pending) == (1, 0)
+
+    async def test_a_rating_computed_before_a_newer_write_is_not_applied(
+        self, async_db_session: AsyncSession
+    ) -> None:
+        """The race: a pass reads a body, a writer changes it, the pass writes.
+
+        The writer here is one that does NOT rate — a web task still on the
+        previous build during a rolling deploy — so the row is still stale when
+        the pass writes, and only the digest guard stands between the OLD
+        body's rating and the new body. Without it the stale rating is stamped
+        at the current rubric version, and nothing ever re-rates it.
+        """
+        org, slug = uuid4(), _slug("race")
+        row = await _upsert(async_db_session, org_id=org, slug=slug, body=_HIGH_BODY)
+        row_id, old_digest = row.id, row.content_sha256
+        await self._make_stale(async_db_session, row_id, rubric_version=None)
+
+        # The pass's snapshot, taken from the OLD body...
+        stale = crud.RatedSnapshot(
+            id=row_id,
+            kind="plan",
+            content_sha256=old_digest,
+            values=crud.difficulty_values("plan", _HIGH_BODY),
+        )
+        # ...then an old-build writer lands a new body and leaves it unrated...
+        await _upsert(async_db_session, org_id=org, slug=slug, body=_LOW_BODY)
+        await self._make_stale(async_db_session, row_id, rubric_version=None)
+        # ...then the pass writes.
+        assert await crud.apply_rated_snapshots(async_db_session, [stale]) == 0
+        await async_db_session.commit()
+
+        # The next pass rates what is actually there.
+        outcome = await crud.rerate_stale_plan_difficulty(async_db_session, org_id=org)
+        assert outcome.written == 1
+        async_db_session.expire_all()
+        now = (
+            await async_db_session.execute(
+                select(WorkArtifact.difficulty).where(WorkArtifact.id == row_id)
+            )
+        ).scalar_one()
+        assert now == "low", "the stale pass overwrote the newer body's rating"
+
+    async def test_a_pass_does_not_rewrite_a_row_a_concurrent_pass_rated(
+        self, async_db_session: AsyncSession
+    ) -> None:
+        org = uuid4()
+        row = await _upsert(
+            async_db_session, org_id=org, slug=_slug("twice"), body=_HIGH_BODY
+        )
+        snap = crud.RatedSnapshot(
+            id=row.id,
+            kind="plan",
+            content_sha256=row.content_sha256,
+            values=crud.difficulty_values("plan", _HIGH_BODY),
+        )
+        # The upsert already rated it at the current rubric.
+        assert await crud.apply_rated_snapshots(async_db_session, [snap]) == 0
+
+    async def test_a_rating_is_not_applied_to_a_row_whose_kind_moved(
+        self, async_db_session: AsyncSession
+    ) -> None:
+        org = uuid4()
+        row = await _upsert(
+            async_db_session, org_id=org, slug=_slug("moved"), body=_HIGH_BODY
+        )
+        row_id, digest = row.id, row.content_sha256
+        await self._make_stale(async_db_session, row_id, rubric_version=None)
+        stale = crud.RatedSnapshot(
+            id=row_id,
+            kind="plan",
+            content_sha256=digest,
+            values=crud.difficulty_values("plan", _HIGH_BODY),
+        )
+        await crud.set_artifact_kind(async_db_session, row, kind="handoff", org_id=org)
+        assert await crud.apply_rated_snapshots(async_db_session, [stale]) == 0
 
 
 class TestDifficultyRoute:
@@ -253,6 +345,7 @@ class TestDifficultyRoute:
         assert payload["count"] == len(payload["items"])
         assert payload["rubric_version"] == RUBRIC_VERSION
         assert payload["rerate_failed_reason"] is None
+        assert payload["rerate_pending"] == 0
         assert payload["model_tiers"]["high"] == "Fable 5.1"
         mine = [item for item in payload["items"] if item["slug"] == slug]
         assert len(mine) == 1
