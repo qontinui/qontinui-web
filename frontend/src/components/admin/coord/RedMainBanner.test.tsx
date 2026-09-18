@@ -1,11 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import {
-  act,
-  fireEvent,
-  render,
-  screen,
-  waitFor,
-} from "@testing-library/react";
+import { act, render, screen } from "@testing-library/react";
 
 const getMock = vi.fn();
 const fetchMock = vi.fn();
@@ -18,12 +12,14 @@ vi.mock("@/services/service-factory", () => ({
 
 import {
   RedMainBanner,
-  fixButtonState,
+  compactPrincipal,
+  parseAlertClaim,
   parseFixSession,
   parseRedMainAlerts,
   redMainHeadline,
   sinceLabel,
   truncateAgentId,
+  type AlertClaimState,
   type FixSessionState,
   type RedMainAlert,
 } from "./RedMainBanner";
@@ -31,11 +27,11 @@ import {
 /**
  * Tests for the red-main banner (plan
  * `2026-07-06-coord-red-main-auto-remediation-and-dashboard-alert.md`).
- * Phase 1 (D2) is the pure parse/headline contract; Phase 4b adds the
- * operator-driven "Spawn fix session" control whose enabled/disabled state is
- * derived SOLELY from the same alert row (`detail.fix_session` +
- * `detail.auto_fix_red_main`), and which POSTs through the web→coord
- * operations proxy.
+ * Phase 1 (D2) is the pure parse/headline contract. Plan
+ * `2026-09-18-notifications-are-agent-actions-and-alerts-are-agent-work`
+ * Phase 8 removed the "Spawn fix session" control and made the banner say
+ * whether an agent holds the alert's claim, and who — with an older coord
+ * that sends no claim fields rendered as UNKNOWN, never as unclaimed.
  */
 describe("parseRedMainAlerts", () => {
   const redRow = {
@@ -63,12 +59,13 @@ describe("parseRedMainAlerts", () => {
         blockedPrCount: 8,
         since: "2026-07-06T01:00:00Z",
         fixSession: { kind: "none" },
-        autoFixRedMain: false,
+        // No `claimed` / `claim` on the row: an older coord.
+        claim: { kind: "unknown" },
       },
     ]);
   });
 
-  it("parses an object fix_session and the auto_fix_red_main opt-in", () => {
+  it("parses an object fix_session", () => {
     const got = parseRedMainAlerts([
       {
         ...redRow,
@@ -83,7 +80,6 @@ describe("parseRedMainAlerts", () => {
         },
       },
     ]);
-    expect(got[0].autoFixRedMain).toBe(true);
     expect(got[0].fixSession).toEqual<FixSessionState>({
       kind: "running",
       agentId: "11111111-2222-3333-4444-555555555555",
@@ -110,10 +106,10 @@ describe("parseRedMainAlerts", () => {
     for (const a of got) {
       expect(a.workflows).toEqual([]);
       expect(a.blockedPrCount).toBe(0);
-      // Missing / malformed remediation state degrades to "none" (button stays
-      // available) with auto-fix treated as off.
+      // Missing / malformed remediation state degrades to "none", and a row
+      // with no claim fields has an UNKNOWN claim.
       expect(a.fixSession).toEqual({ kind: "none" });
-      expect(a.autoFixRedMain).toBe(false);
+      expect(a.claim).toEqual({ kind: "unknown" });
     }
   });
 
@@ -166,55 +162,85 @@ describe("parseFixSession", () => {
   });
 });
 
-describe("fixButtonState", () => {
-  function makeAlert(overrides: Partial<RedMainAlert> = {}): RedMainAlert {
-    return {
-      alertKey: "red_main:a/b",
-      repo: "a/b",
-      workflows: [],
-      blockedPrCount: 1,
-      since: undefined,
-      fixSession: { kind: "none" },
-      autoFixRedMain: true,
-      ...overrides,
-    };
-  }
+describe("parseAlertClaim", () => {
+  const now = Date.parse("2026-09-18T12:00:00Z");
 
-  it("is enabled whenever auto-fix is off, regardless of remediation state", () => {
-    for (const kind of ["none", "running", "self_heal", "stalled", "failed"] as const) {
-      const state = fixButtonState(
-        makeAlert({ autoFixRedMain: false, fixSession: { kind } })
-      );
-      expect(state.enabled).toBe(true);
-    }
-  });
-
-  it("is enabled (spawn) when auto-fix on but no remediation is active", () => {
-    expect(fixButtonState(makeAlert({ fixSession: { kind: "none" } }))).toEqual({
-      enabled: true,
-      label: "Spawn fix session",
+  it("reads coord's claimed verdict and names the claimant", () => {
+    expect(
+      parseAlertClaim(
+        {
+          claimed: true,
+          claim: {
+            claimed_by: "agent:11111111-2222-3333-4444-555555555555",
+            claimed_at: "2026-09-18T11:00:00Z",
+            claim_expires_at: "2026-09-18T13:00:00Z",
+          },
+        },
+        now
+      )
+    ).toEqual<AlertClaimState>({
+      kind: "claimed",
+      claimedBy: "agent:11111111-2222-3333-4444-555555555555",
+      claimedAt: "2026-09-18T11:00:00Z",
+      expiresAt: "2026-09-18T13:00:00Z",
     });
   });
 
-  it("is enabled (retry) when a prior session stalled or failed", () => {
-    for (const kind of ["stalled", "failed"] as const) {
-      expect(fixButtonState(makeAlert({ fixSession: { kind } }))).toEqual({
-        enabled: true,
-        label: "Retry fix session",
-      });
-    }
+  it("is unclaimed when coord says so", () => {
+    expect(parseAlertClaim({ claimed: false, claim: null }, now)).toEqual({
+      kind: "unclaimed",
+    });
   });
 
-  it("is disabled while a session is running", () => {
-    expect(
-      fixButtonState(makeAlert({ fixSession: { kind: "running" } }))
-    ).toEqual({ enabled: false, label: "fix session running" });
+  it("is UNKNOWN, not unclaimed, when coord sends neither field", () => {
+    // An older coord build. Absent claim fields say nothing about who is
+    // working on it.
+    expect(parseAlertClaim({}, now)).toEqual({ kind: "unknown" });
   });
 
-  it("is disabled while coord's own auto-rerun is in flight", () => {
+  it("trusts coord's verdict over a lease it did not name", () => {
+    expect(parseAlertClaim({ claimed: true }, now)).toEqual({
+      kind: "claimed",
+      claimedBy: undefined,
+      claimedAt: undefined,
+      expiresAt: undefined,
+    });
+  });
+
+  it("reads a lease directly when coord gave no verdict, honouring expiry", () => {
     expect(
-      fixButtonState(makeAlert({ fixSession: { kind: "self_heal", raw: "x" } }))
-    ).toEqual({ enabled: false, label: "auto-rerun in flight" });
+      parseAlertClaim(
+        {
+          claim: {
+            claimed_by: "session:abc",
+            claim_expires_at: "2026-09-18T11:59:00Z",
+          },
+        },
+        now
+      )
+    ).toEqual({ kind: "unclaimed" });
+    expect(
+      parseAlertClaim(
+        {
+          claim: {
+            claimed_by: "session:abc",
+            claim_expires_at: "2026-09-18T12:30:00Z",
+          },
+        },
+        now
+      ).kind
+    ).toBe("claimed");
+    expect(parseAlertClaim({ claim: null }, now)).toEqual({ kind: "unclaimed" });
+  });
+});
+
+describe("compactPrincipal", () => {
+  it("keeps the principal kind and shortens only the id", () => {
+    expect(
+      compactPrincipal("agent:11111111-2222-3333-4444-555555555555")
+    ).toBe("agent:11111111…");
+    expect(compactPrincipal("device:c79a07d5")).toBe("device:c79a07d5");
+    expect(compactPrincipal("no-prefix-but-quite-long")).toBe("no-prefi…");
   });
 });
 
@@ -253,7 +279,7 @@ describe("redMainHeadline", () => {
         blockedPrCount: 8,
         since: "2026-07-06T09:00:00Z",
         fixSession: { kind: "none" },
-        autoFixRedMain: false,
+        claim: { kind: "unknown" },
       },
       now
     );
@@ -272,7 +298,7 @@ describe("redMainHeadline", () => {
         blockedPrCount: 1,
         since: undefined,
         fixSession: { kind: "none" },
-        autoFixRedMain: false,
+        claim: { kind: "unknown" },
       },
       now
     );
@@ -284,13 +310,13 @@ describe("redMainHeadline", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Phase 4b — the "Spawn fix session" control rendered inside the banner.
+// Plan 2026-09-18 Phase 8 — the banner reports the claim, and spawns nothing.
 // ---------------------------------------------------------------------------
 
-describe("<RedMainBanner> spawn fix session", () => {
+describe("<RedMainBanner> claim and remediation", () => {
   const REPO = "jspinak/qontinui-runner";
 
-  function alertRow(fixDetail: Record<string, unknown>) {
+  function alertRow(extra: Record<string, unknown> = {}, detail = {}) {
     return {
       id: 1,
       alert_key: `red_main:${REPO}`,
@@ -302,16 +328,11 @@ describe("<RedMainBanner> spawn fix session", () => {
         repo: REPO,
         workflows: ["CI"],
         blocked_pr_count: 3,
-        ...fixDetail,
+        fix_session: "none",
+        ...detail,
       },
+      ...extra,
     };
-  }
-
-  function jsonResponse(body: unknown, status = 200): Response {
-    return new Response(JSON.stringify(body), {
-      status,
-      headers: { "Content-Type": "application/json" },
-    });
   }
 
   beforeEach(() => {
@@ -319,79 +340,74 @@ describe("<RedMainBanner> spawn fix session", () => {
     fetchMock.mockReset();
   });
 
-  it("renders an enabled spawn button and POSTs the correct path on click", async () => {
-    getMock.mockResolvedValue([alertRow({ fix_session: "none" })]);
-    fetchMock.mockResolvedValue(
-      jsonResponse({ agent_id: "11111111-2222-3333-4444-555555555555" })
-    );
+  it("renders no spawn control and never POSTs", async () => {
+    getMock.mockResolvedValue([alertRow()]);
     render(<RedMainBanner />);
 
-    const btn = (await screen.findByTestId(
-      "red-main-spawn-fix"
-    )) as HTMLButtonElement;
-    expect(btn.disabled).toBe(false);
-    expect(btn.textContent).toContain("Spawn fix session");
-
-    fireEvent.click(btn);
-
-    await waitFor(() => {
-      expect(fetchMock).toHaveBeenCalledTimes(1);
-    });
-    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
-    expect(url).toBe(
-      `/api/v1/operations/pr-merge/red-main/${REPO}/spawn-fix`
-    );
-    expect(init.method).toBe("POST");
-  });
-
-  it("renders the optimistic running state on a 200 success", async () => {
-    getMock.mockResolvedValue([alertRow({ fix_session: "none" })]);
-    fetchMock.mockResolvedValue(
-      jsonResponse({ agent_id: "11111111-2222-3333-4444-555555555555" })
-    );
-    render(<RedMainBanner />);
-
-    fireEvent.click(await screen.findByTestId("red-main-spawn-fix"));
-
-    const running = await screen.findByTestId("red-main-fix-running");
-    expect(running.textContent).toContain("fix session running");
-    // Truncated agent id is shown.
-    expect(running.textContent).toContain("11111111…");
-    // The button is replaced by the running badge.
+    await screen.findByTestId("red-main-banner");
     expect(screen.queryByTestId("red-main-spawn-fix")).toBeNull();
+    expect(screen.queryByRole("button")).toBeNull();
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 
-  it("surfaces coord's 409 message inline and keeps the button enabled", async () => {
-    getMock.mockResolvedValue([alertRow({ fix_session: "none" })]);
-    fetchMock.mockResolvedValue(
-      jsonResponse({ error: "fix session already running" }, 409)
-    );
-    render(<RedMainBanner />);
-
-    fireEvent.click(await screen.findByTestId("red-main-spawn-fix"));
-
-    const err = await screen.findByTestId("red-main-spawn-fix-error");
-    expect(err.textContent).toContain("fix session already running");
-    // No optimistic running badge, and the button re-enables for a retry.
-    expect(screen.queryByTestId("red-main-fix-running")).toBeNull();
-    const btn = screen.getByTestId("red-main-spawn-fix") as HTMLButtonElement;
-    expect(btn.disabled).toBe(false);
-  });
-
-  it("disables the button while a fix session is already running", async () => {
+  it("names the agent holding the claim", async () => {
+    const future = new Date(Date.now() + 3_600_000).toISOString();
     getMock.mockResolvedValue([
       alertRow({
-        auto_fix_red_main: true,
-        fix_session: { state: "running", agent_id: "abc" },
+        claimed: true,
+        claim: {
+          claimed_by: "agent:11111111-2222-3333-4444-555555555555",
+          claimed_at: "2026-07-06T01:05:00Z",
+          claim_expires_at: future,
+        },
       }),
     ]);
     render(<RedMainBanner />);
 
-    const btn = (await screen.findByTestId(
-      "red-main-spawn-fix"
-    )) as HTMLButtonElement;
-    expect(btn.disabled).toBe(true);
-    expect(btn.textContent).toContain("fix session running");
+    const chip = await screen.findByTestId("red-main-claim");
+    expect(chip).toHaveAttribute("data-claim-state", "claimed");
+    expect(chip.textContent).toBe("claimed by agent:11111111…");
+    expect(chip.getAttribute("title")).toContain(
+      "agent:11111111-2222-3333-4444-555555555555"
+    );
+  });
+
+  it("says plainly when no agent has claimed it", async () => {
+    getMock.mockResolvedValue([alertRow({ claimed: false, claim: null })]);
+    render(<RedMainBanner />);
+
+    const chip = await screen.findByTestId("red-main-claim");
+    expect(chip).toHaveAttribute("data-claim-state", "unclaimed");
+    expect(chip.textContent).toBe("no agent has claimed it");
+  });
+
+  it("renders an older coord's missing claim fields as unknown, not unclaimed", async () => {
+    getMock.mockResolvedValue([alertRow()]);
+    render(<RedMainBanner />);
+
+    const chip = await screen.findByTestId("red-main-claim");
+    expect(chip).toHaveAttribute("data-claim-state", "unknown");
+    expect(chip.textContent).toBe("claim unknown");
+    expect(chip.textContent).not.toContain("no agent");
+  });
+
+  it("shows coord's own active remediation, read only", async () => {
+    getMock.mockResolvedValue([
+      alertRow({}, { fix_session: { state: "running", agent_id: "abc" } }),
+    ]);
+    render(<RedMainBanner />);
+
+    const note = await screen.findByTestId("red-main-remediation");
+    expect(note.textContent).toContain("fix session running");
+    expect(note.textContent).toContain("abc");
+  });
+
+  it("shows no remediation note when none is active", async () => {
+    getMock.mockResolvedValue([alertRow()]);
+    render(<RedMainBanner />);
+
+    await screen.findByTestId("red-main-banner");
+    expect(screen.queryByTestId("red-main-remediation")).toBeNull();
   });
 });
 
