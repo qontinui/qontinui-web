@@ -54,12 +54,11 @@ about lease timing:
 * **"Oldest-expiring / lapsed leases"** — ordered by the key.
 
 Only the non-NULL-claimant open rows are indexed, so the index stays tiny as
-the table grows and costs nothing on the ~2 s alert-upsert write path for the
-overwhelming majority of rows (unclaimed alerts are not in it at all).
-
-The predicate names ``resolved_at IS NULL`` first to match the shape of the
-existing ``uq_alerts_active_key`` / open-alert partials, so coord's queue can
-state the same conjunct and the planner can prove implication.
+the table grows and adds no maintenance cost on the alert-upsert write path
+for the overwhelming majority of rows (unclaimed alerts are not in it at all).
+A read rides it only if its WHERE clause states both conjuncts of the partial
+predicate (``resolved_at IS NULL AND claimed_by IS NOT NULL``); conjunct order
+is irrelevant to the planner.
 
 Locking: ADD COLUMN in the transaction, the index outside it
 ==========================================================================
@@ -81,11 +80,12 @@ write-blocking ``SHARE`` lock for the duration of a scan over the whole table).
 precedent. The ALTER runs first so the autocommit block's implicit COMMIT
 publishes the columns before the index build needs them.
 
-Note on a killed CONCURRENTLY build: a partial build leaves an **INVALID**
-index of the same name, which ``IF NOT EXISTS`` will then skip — a migration
-that reports success while the index never serves a query. Verify with
-``pg_index.indisvalid``, not mere existence; if invalid, ``DROP INDEX`` it and
-re-run.
+A killed or failed CONCURRENTLY build leaves an **INVALID** index of the same
+name, which the planner never uses and which ``IF NOT EXISTS`` alone would keep
+— a migration reporting success while the index never serves a query. So
+before the CREATE, the upgrade looks the index up in ``pg_index`` and, if it
+exists with ``indisvalid = false``, drops it (CONCURRENTLY) so the CREATE
+rebuilds it. A re-run ends with a valid index or a loud failure.
 
 Downgrade drops the index (CONCURRENTLY) and then the three columns. Any lease
 state is lost, which is the correct reversal of an additive revision; the
@@ -100,12 +100,33 @@ Create Date: 2026-09-18
 from collections.abc import Sequence
 
 from alembic import op
+from sqlalchemy import text
 
 # revision identifiers, used by Alembic.
 revision: str = "coord_alerts_claim_01"
 down_revision: str | Sequence[str] | None = "coord_overlap_detections"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
+
+
+def _index_is_invalid(index_name: str) -> bool:
+    """True when ``coord.<index_name>`` exists and is INVALID (a failed build)."""
+    return bool(
+        op.get_bind()
+        .execute(
+            text(
+                """
+                SELECT NOT i.indisvalid
+                  FROM pg_index i
+                  JOIN pg_class c ON c.oid = i.indexrelid
+                  JOIN pg_namespace n ON n.oid = c.relnamespace
+                 WHERE n.nspname = 'coord' AND c.relname = :idx
+                """
+            ),
+            {"idx": index_name},
+        )
+        .scalar()
+    )
 
 
 def upgrade() -> None:
@@ -127,6 +148,12 @@ def upgrade() -> None:
     op.execute("RESET lock_timeout")
 
     with op.get_context().autocommit_block():
+        # A failed earlier CONCURRENTLY build leaves an INVALID index that
+        # IF NOT EXISTS would keep. Drop it so the CREATE below rebuilds it.
+        if _index_is_invalid("idx_alerts_claim_expiry"):
+            op.execute(
+                "DROP INDEX CONCURRENTLY IF EXISTS coord.idx_alerts_claim_expiry"
+            )
         # Plain literal, never an f-string: the `alembic-schema-arg-gate`
         # pre-commit hook parses the raw SQL inside `op.execute(...)` to prove
         # every CREATE/DROP names its schema, and an interpolated string is not

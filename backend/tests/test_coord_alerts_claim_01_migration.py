@@ -20,8 +20,14 @@ What is asserted
    separate live leases from lapsed ones.
 5. **Sensitivity:** an unclaimed-alert read (``claimed_by IS NULL``) cannot
    use it, so assertion 4 is measuring the partial predicate, not a full index.
-6. Downgrade removes the index and the columns; rows survive. A second
-   upgrade re-applies cleanly (the revision is idempotent on its own chain).
+6. **Idempotency:** with the schema already applied, ``alembic stamp`` back to
+   the parent and ``upgrade`` again succeeds and leaves a valid index.
+7. **A failed CONCURRENTLY build is repaired, not kept:** an INVALID index of
+   the same name (manufactured by a genuinely failing ``CREATE UNIQUE INDEX
+   CONCURRENTLY`` — no catalog poking, no superuser) is dropped and rebuilt
+   by a re-run, instead of being skipped by ``IF NOT EXISTS``.
+8. Downgrade removes the index and the columns; rows survive. A second
+   upgrade re-applies cleanly after the downgrade.
 
 Substrate comes from ``_alembic_harness``: an ephemeral database inside the
 test Postgres, skipped when none is reachable.
@@ -32,6 +38,7 @@ from __future__ import annotations
 import pytest
 from sqlalchemy import text
 from sqlalchemy.engine import Engine
+from sqlalchemy.exc import IntegrityError
 
 from tests._alembic_harness import (
     admin_database_url,
@@ -235,7 +242,46 @@ def test_coord_alerts_claim_01_adds_lease_columns_and_partial_index() -> None:
             + complement_plan
         )
 
-        # 6. Downgrade removes index + columns; rows survive. Re-upgrade works.
+        # 6. Idempotency — re-running the revision over its own schema.
+        run_alembic(root, url, "stamp", _PARENT_REVISION_ID)
+        run_alembic(root, url, "upgrade", _REVISION_ID)
+        assert _index_row(engine)[0], "a re-run must leave a VALID index"
+
+        # 7. A failed CONCURRENTLY build is repaired. Replace the index with a
+        #    same-named UNIQUE build over `kind`: the 'live' and 'lapsed' rows
+        #    are both claimed, open and share a kind, so the build fails and
+        #    leaves an INVALID index under our name.
+        with engine.connect().execution_options(isolation_level="AUTOCOMMIT") as conn:
+            conn.execute(text("DROP INDEX CONCURRENTLY coord.idx_alerts_claim_expiry"))
+            with pytest.raises(IntegrityError):
+                conn.execute(
+                    text(
+                        """
+                        CREATE UNIQUE INDEX CONCURRENTLY idx_alerts_claim_expiry
+                        ON coord.alerts (kind)
+                        WHERE resolved_at IS NULL AND claimed_by IS NOT NULL
+                        """
+                    )
+                )
+        assert index_exists(engine, _INDEX_NAME)
+        assert not _index_row(engine)[0], "fixture must leave an INVALID index"
+
+        run_alembic(root, url, "stamp", _PARENT_REVISION_ID)
+        run_alembic(root, url, "upgrade", _REVISION_ID)
+        valid, predicate = _index_row(engine)
+        assert valid, "the re-run must drop the INVALID index and rebuild it"
+        with engine.connect() as conn:
+            indexdef = str(
+                conn.execute(
+                    text("SELECT pg_get_indexdef(CAST(:i AS regclass))"),
+                    {"i": "coord." + _INDEX_NAME},
+                ).scalar_one()
+            )
+        assert "UNIQUE" not in indexdef and "(claim_expires_at)" in indexdef, (
+            f"the rebuilt index must be the revision's own, got {indexdef!r}"
+        )
+
+        # 8. Downgrade removes index + columns; rows survive. Re-upgrade works.
         rows_before = _alert_count(engine)
         run_alembic(root, url, "downgrade", _PARENT_REVISION_ID)
         assert not index_exists(engine, _INDEX_NAME)
