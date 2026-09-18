@@ -73,6 +73,7 @@ import type { PrMergeStatus } from "@/services/admin-dev-service";
  * | `ready-but-unlanded` | `author` | `conflict-stranded` (same class) | coord says ready and it has not landed — a wedge. The promise that something else would land it is demonstrably false. |
  * | `repo-unreachable` | `author` | `not-mergeable` | coord cannot clone the repo (deleted/renamed, or App access revoked). Not fixable by a rebase or a re-evaluate; a human must restore access. |
  * | `predicate-blocked` | `waiting` | (none — see why) | coord's merge predicate is holding the PR with no more specific token. A real block, so never calm. But it is a RESIDUE bucket spanning states with OPPOSITE readings: `main-red` and `has-cross-repo-dependency` clear themselves with no author action, while `has-blocking-label` needs a human and `dry-run-mode` is operator config. Red would assert "someone must act now", false for at least two members; plain `WAITING_AMBER` would promise "something else will clear this", false for at least two others. So it sits at the IGNORANCE FLOOR alongside `unknown` — we cannot say whose move it is. It differs from `unknown` in that coord DID diagnose it and names the specific code in `blocking_summary`, which `derivePrStatus` already surfaces as the badge's `reason`/`title`, so the operator can read the real cause off the row. No `prPipeline` counterpart genuinely fits: `blocked` (`waiting`) covers only the cross-repo-dependency member and carries the "lands after the other PR" promise this bucket cannot make, so naming it would be an invented alignment. |
+ * | `landed-open` | `none` | (no counterpart) | coord LANDED this PR at its CURRENT head and GitHub has not closed it yet — the phantom-open ff-land window. Nobody's move: the code is on the base branch, no author can clear it, and coord's own sweep does the close (`pr_merge_phantom_open_stuck` fires when it cannot). Its `none` siblings are `ready`/`queued`/`draft`, not `unknown` — this is the one state where we know MORE than usual, not less. |
  * | `unknown` | `waiting` | `unknown` | R3's IGNORANCE FLOOR. We cannot say whose move this is, and calm would assert nothing is wrong. |
  */
 export const PR_ATTENTION_BY_MERGE_STATUS: Record<PrMergeStatus, Attention> = {
@@ -81,6 +82,11 @@ export const PR_ATTENTION_BY_MERGE_STATUS: Record<PrMergeStatus, Attention> = {
   queued: "none",
   "ci-pending": "none",
   draft: "none",
+  // Landed at this head; GitHub has not closed it yet. Calm is RIGHT here and
+  // is not an ignorance claim — the opposite: coord corroborated a `merged`
+  // proposal at this PR's exact current head. Amber would promise a clearer
+  // that is not a person, and red would send someone to act on finished work.
+  "landed-open": "none",
   // --- waiting on something that will clear itself → amber ------------------
   "behind-base": "waiting",
   "awaiting-specialist-review": "waiting",
@@ -107,6 +113,8 @@ export const PR_MERGE_STATUS_CLASS: Record<PrMergeStatus, string> = {
   queued: INERT,
   "ci-pending": CI_YELLOW,
   draft: "bg-transparent text-muted-foreground border-border border-dashed",
+  // INERT, the same calm `queued` gets: nothing is owed on this PR.
+  "landed-open": INERT,
   "behind-base": WAITING_AMBER,
   "awaiting-specialist-review": WAITING_AMBER,
   conflicts: AUTHOR_RED,
