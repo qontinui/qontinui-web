@@ -39,12 +39,6 @@ import {
   STATUS_BADGE_CLASS,
 } from "./statusRow";
 import { ATTENTION_BY_KIND as PIPELINE_ATTENTION } from "@/components/operations/prPipeline";
-import { ATTENTION_BY_KIND as ALERT_ATTENTION } from "@/components/admin/coord/alertStatus";
-import {
-  ALERT_AUTHOR_GLYPH_KINDS,
-  ALERT_BADGE_CLASS,
-  ALERT_PER_ROW_KINDS,
-} from "@/components/admin/coord/AlertRow";
 // Wave 1 surfaces.
 import {
   PLAN_ATTENTION_BY_TONE,
@@ -222,20 +216,6 @@ export const CONSOLE_PALETTES: ReadonlyArray<ConsoleSurface> = [
       badgeClass: STATUS_BADGE_CLASS,
       authorGlyphKinds: AUTHOR_GLYPH_KINDS as ReadonlySet<string>,
     },
-  },
-  {
-    surface: "alerts (/admin/coord/alerts)",
-    module: "components/admin/coord/alertStatus.ts",
-    attentionByKind: ALERT_ATTENTION,
-    palette: {
-      badgeClass: ALERT_BADGE_CLASS,
-      authorGlyphKinds: ALERT_AUTHOR_GLYPH_KINDS as ReadonlySet<string>,
-    },
-    // `unknown` is amber-BY-FLOOR in the table but neutral in the static
-    // badge: its real attention is severity-derived per row, and
-    // `alertPaletteFor` paints the row from that. `alertStatus.test.ts`
-    // covers the per-row resolution; this audit covers the static table.
-    perRowKinds: ALERT_PER_ROW_KINDS as ReadonlySet<string>,
   },
   // --- Phase 3 Wave 1 -------------------------------------------------------
   {

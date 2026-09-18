@@ -166,7 +166,7 @@ describe("the console surface registry is self-enforcing", () => {
     // which is the failure mode of every scan-based test. Pin a floor and one
     // module we know by name.
     expect(discovered.length).toBeGreaterThanOrEqual(15);
-    expect(discovered).toContain("components/admin/coord/alertStatus.ts");
+    expect(discovered).toContain("components/admin/coord/treeStatus.ts");
   });
 
   it("registers EVERY attention table in the tree, and names no phantom", () => {
