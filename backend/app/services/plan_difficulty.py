@@ -26,9 +26,9 @@ whenever its body is written, and ``GET /plan-library/difficulty`` re-rates
 every plan row stored under an older :data:`RUBRIC_VERSION` (or none) before it
 answers — so bumping the version is the whole of a re-rating.
 
-The thresholds were calibrated on 2026-09-18 against the 1,773 plans on
-``qontinui-dev-notes`` ``origin/main``, which rate 24% high, 53% medium and 23%
-low under version 1.
+The thresholds were calibrated on 2026-09-18 against the 1,777 plans on
+``qontinui-dev-notes`` ``origin/main`` at ``34665300``, which rate 20% high,
+52% medium and 28% low under version 1.
 """
 
 from __future__ import annotations
@@ -58,9 +58,18 @@ MODEL_TIERS: dict[str, str] = {
 #: markup around the key and/or the value, and a bullet. Only the header region
 #: is searched (see :data:`_HEADER_LINES`) so a plan that merely DISCUSSES
 #: difficulty in its body does not stamp itself.
+#:
+#: ⚠️ Horizontal whitespace only — ``[ \t]``, never ``\s``. Under MULTILINE a
+#: ``\s*`` at ``^`` crosses newlines, and two adjacent ones can split one blank
+#: run in quadratically many ways at every line start: a body of 3,000 blank
+#: lines took 18 s to rate (review of the first cut, 2026-09-18). For the
+#: same reason every optional ``*`` run OWNS the whitespace after it
+#: (``(?:\*+[ \t]*)?``): a bare ``\**`` between two ``[ \t]*`` runs can be
+#: empty, which makes them adjacent again — one 200,000-space line took 142 s.
+#: ``tests/test_plan_difficulty.py`` ``TestPathologicalBodies`` pins both.
 _DECLARED_RE = re.compile(
-    r"^\s*(?:>\s*)?(?:[-*]\s+)?\**\s*difficulty\s*\**\s*:\s*\**\s*"
-    r"(high|medium|low)\b",
+    r"^[ \t]*(?:>[ \t]*)?(?:[-*][ \t]+)?(?:\*+[ \t]*)?difficulty"
+    r"[ \t]*(?:\*+[ \t]*)?:[ \t]*(?:\*+[ \t]*)?(high|medium|low)\b",
     re.IGNORECASE | re.MULTILINE,
 )
 _HEADER_LINES = 60
@@ -120,8 +129,10 @@ KNOWN_REPOS: frozenset[str] = frozenset(
     }
 )
 _REPO_TOKEN_RE = re.compile(r"(?<![\w/-])[a-z][a-z-]*[a-z](?![\w-])")
+#: Horizontal whitespace only, for the reason on :data:`_DECLARED_RE`.
 _REPOS_LINE_RE = re.compile(
-    r"^\s*(?:>\s*)?\**\s*repos?\s*\**\s*:\s*(.+)$", re.IGNORECASE | re.MULTILINE
+    r"^[ \t]*(?:>[ \t]*)?(?:\*+[ \t]*)?repos?[ \t]*(?:\*+[ \t]*)?:[ \t]*(.+)$",
+    re.IGNORECASE | re.MULTILINE,
 )
 
 #: A file path: at least one directory separator and an extension.
@@ -142,7 +153,10 @@ _FAMILIES: dict[str, re.Pattern[str]] = {
         re.IGNORECASE,
     ),
     "security": re.compile(
-        r"\b(auth\w*|credential\w*|jwt|nonce|secret\w*|permission\w*|"
+        # Not ``auth\w*``: that also matches "author", "authored" and
+        # "authority", which every plan in this corpus says.
+        r"\b(authn|authz|authenticat\w*|authoriz\w*|credential\w*|jwt|nonce|"
+        r"secret\w*|permission\w*|"
         r"tenant isolation|cross-tenant|privilege\w*|rls|encrypt\w*)\b",
         re.IGNORECASE,
     ),
@@ -181,9 +195,12 @@ def _strip_fences(body: str) -> str:
     return _FENCE_RE.sub("", body)
 
 
-def _declared(body: str) -> DifficultyLevel | None:
-    header = "\n".join(body.splitlines()[:_HEADER_LINES])
-    m = _DECLARED_RE.search(_strip_fences(header))
+def _declared(prose: str) -> DifficultyLevel | None:
+    """The header stamp, from the first :data:`_HEADER_LINES` lines of
+    ``prose`` — the body with fences ALREADY stripped, so a fence that opens
+    in the header and closes below it cannot leak a stamp."""
+    header = "\n".join(prose.splitlines()[:_HEADER_LINES])
+    m = _DECLARED_RE.search(header)
     return m.group(1).lower() if m else None  # type: ignore[return-value]
 
 
@@ -252,7 +269,7 @@ def compute_difficulty(body: str) -> PlanDifficulty:
     conceptual = _bucket(concept_score, medium_at=6, high_at=11)
     implementation = _bucket(impl_score, medium_at=6, high_at=14)
     computed = _fold(conceptual, implementation)
-    declared = _declared(body)
+    declared = _declared(prose)
 
     signals: dict[str, object] = {
         "phases": phases,
