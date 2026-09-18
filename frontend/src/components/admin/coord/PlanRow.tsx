@@ -51,6 +51,12 @@ import {
   planRowTime,
   type CoordPlanRow,
 } from "@/components/admin/coord/planStatus";
+import { PlanDifficultyBadge } from "@/components/admin/coord/PlanDifficultyBadge";
+import {
+  describeDifficultyCell,
+  describeSignals,
+  type DifficultyCell,
+} from "@/components/admin/coord/planDifficulty";
 
 export type { CoordPlanRow };
 
@@ -58,10 +64,18 @@ export function PlanRow({
   plan,
   expanded,
   onToggle,
+  difficulty,
 }: {
   plan: CoordPlanRow;
   expanded: boolean;
   onToggle: () => void;
+  /**
+   * The plan library's difficulty rating for this work unit (see
+   * `planDifficulty.ts`). Omitted by surfaces that do not read ratings —
+   * `/history`, `/spawn`, the detail route — which then render no chip at
+   * all, rather than an "unknown" one for a question they never asked.
+   */
+  difficulty?: DifficultyCell;
 }) {
   const router = useRouter();
   const status = derivePlanStatus(plan);
@@ -101,29 +115,55 @@ export function PlanRow({
         </span>
       }
       status={
-        // The badge is wrapped rather than replaced: `coord-plan-status-tag`
-        // and its `data-tone` / `data-recognised` attributes are the frozen
-        // authored contract (D4a), and `<StatusBadge>` — correctly — exposes
-        // neither. Wrapping keeps the primitive AND the contract; forking a
-        // second badge implementation to add three attributes would not.
-        <span
-          className="inline-flex shrink-0"
-          data-testid="coord-plan-status-tag"
-          data-tone={tag.tone}
-          data-recognised={tag.recognised ? "true" : "false"}
-          title={tag.title}
-        >
-          <StatusBadge status={status} palette={PLAN_STATUS_PALETTE} />
-        </span>
+        <>
+          {difficulty && <PlanDifficultyBadge cell={difficulty} />}
+          {/* The badge is wrapped rather than replaced: `coord-plan-status-tag`
+              and its `data-tone` / `data-recognised` attributes are the frozen
+              authored contract (D4a), and `<StatusBadge>` — correctly —
+              exposes neither. Wrapping keeps the primitive AND the contract;
+              forking a second badge implementation to add three attributes
+              would not. */}
+          <span
+            className="inline-flex shrink-0"
+            data-testid="coord-plan-status-tag"
+            data-tone={tag.tone}
+            data-recognised={tag.recognised ? "true" : "false"}
+            title={tag.title}
+          >
+            <StatusBadge status={status} palette={PLAN_STATUS_PALETTE} />
+          </span>
+        </>
       }
       reason={plan.current_phase ? `phase ${plan.current_phase}` : undefined}
       time={<RowTime at={at} verb={verb} absent={PLAN_TIME_ABSENT} />}
     >
       <RecordDetail
         why={
-          <div className="text-xs">
-            <span className="text-muted-foreground">Status: </span>
-            <span className="text-foreground/90">{tag.title}</span>
+          <div className="text-xs space-y-1">
+            <div>
+              <span className="text-muted-foreground">Status: </span>
+              <span className="text-foreground/90">{tag.title}</span>
+            </div>
+            {difficulty && (
+              <div data-testid="coord-plan-difficulty-detail">
+                <span className="text-muted-foreground">Difficulty: </span>
+                <span className="text-foreground/90">
+                  {describeDifficultyCell(difficulty).title}
+                </span>
+                {difficulty.kind === "rated" &&
+                  describeSignals(difficulty.item.difficulty_signals).length >
+                    0 && (
+                    <span className="text-muted-foreground">
+                      {" "}
+                      Measured:{" "}
+                      {describeSignals(difficulty.item.difficulty_signals).join(
+                        " · "
+                      )}
+                      .
+                    </span>
+                  )}
+              </div>
+            )}
           </div>
         }
         problems={
