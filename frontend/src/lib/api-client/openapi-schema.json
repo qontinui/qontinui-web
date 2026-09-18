@@ -32227,6 +32227,69 @@
             "title": "Created At",
             "type": "string"
           },
+          "difficulty": {
+            "anyOf": [
+              {
+                "enum": [
+                  "low",
+                  "medium",
+                  "high"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Difficulty"
+          },
+          "difficulty_conceptual": {
+            "anyOf": [
+              {
+                "enum": [
+                  "low",
+                  "medium",
+                  "high"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Difficulty Conceptual"
+          },
+          "difficulty_implementation": {
+            "anyOf": [
+              {
+                "enum": [
+                  "low",
+                  "medium",
+                  "high"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Difficulty Implementation"
+          },
+          "difficulty_source": {
+            "anyOf": [
+              {
+                "enum": [
+                  "declared",
+                  "computed"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Difficulty Source"
+          },
           "document_state": {
             "default": "present",
             "enum": [
@@ -32760,6 +32823,148 @@
           "ref_sha"
         ],
         "title": "PlanCoverage",
+        "type": "object"
+      },
+      "PlanDifficultyItem": {
+        "description": "One plan's rating, keyed the ways a consumer joins it.\n\n``work_unit_slug`` is the join key onto coord's work units (the\n``/admin/coord/plans`` console); ``slug`` is the artifact's own stem, which\nthe scanner writes identically for a plan. Both are served because a\nhand-POSTed row may carry no ``work_unit_slug``.",
+        "properties": {
+          "difficulty": {
+            "enum": [
+              "low",
+              "medium",
+              "high"
+            ],
+            "title": "Difficulty",
+            "type": "string"
+          },
+          "difficulty_conceptual": {
+            "enum": [
+              "low",
+              "medium",
+              "high"
+            ],
+            "title": "Difficulty Conceptual",
+            "type": "string"
+          },
+          "difficulty_implementation": {
+            "enum": [
+              "low",
+              "medium",
+              "high"
+            ],
+            "title": "Difficulty Implementation",
+            "type": "string"
+          },
+          "difficulty_rubric_version": {
+            "title": "Difficulty Rubric Version",
+            "type": "integer"
+          },
+          "difficulty_signals": {
+            "additionalProperties": true,
+            "title": "Difficulty Signals",
+            "type": "object"
+          },
+          "difficulty_source": {
+            "enum": [
+              "declared",
+              "computed"
+            ],
+            "title": "Difficulty Source",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "slug": {
+            "title": "Slug",
+            "type": "string"
+          },
+          "source_repo": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Repo"
+          },
+          "work_unit_slug": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Work Unit Slug"
+          }
+        },
+        "required": [
+          "id",
+          "slug",
+          "difficulty",
+          "difficulty_conceptual",
+          "difficulty_implementation",
+          "difficulty_source",
+          "difficulty_rubric_version"
+        ],
+        "title": "PlanDifficultyItem",
+        "type": "object"
+      },
+      "PlanDifficultyResponse": {
+        "description": "Every rated plan in the caller's scope \u2014 not paged: the console joins\nit onto a coord window of up to 500 work units, and a row is ~300 bytes.\n\n``count`` is ``len(items)``. ``rerated`` is how many rows THIS read rated\nbefore answering (non-zero once after a deploy or a rubric bump). A plan\nrow that is still unrated is left OUT of ``items`` \u2014 absent here means\n\"no rating\", which the console renders as unrated, never as \"low\".\n``model_tiers`` maps each level to the model tier it routes to, served so\nevery consumer names the same models.",
+        "properties": {
+          "count": {
+            "title": "Count",
+            "type": "integer"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/PlanDifficultyItem"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "model_tiers": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "Model Tiers",
+            "type": "object"
+          },
+          "rerate_failed_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rerate Failed Reason"
+          },
+          "rerated": {
+            "title": "Rerated",
+            "type": "integer"
+          },
+          "rubric_version": {
+            "title": "Rubric Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "count",
+          "rerated",
+          "rubric_version",
+          "model_tiers"
+        ],
+        "title": "PlanDifficultyResponse",
         "type": "object"
       },
       "PlanSlugCensus": {
@@ -54570,6 +54775,80 @@
             "title": "Current Version",
             "type": "integer"
           },
+          "difficulty": {
+            "anyOf": [
+              {
+                "enum": [
+                  "low",
+                  "medium",
+                  "high"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Difficulty"
+          },
+          "difficulty_conceptual": {
+            "anyOf": [
+              {
+                "enum": [
+                  "low",
+                  "medium",
+                  "high"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Difficulty Conceptual"
+          },
+          "difficulty_implementation": {
+            "anyOf": [
+              {
+                "enum": [
+                  "low",
+                  "medium",
+                  "high"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Difficulty Implementation"
+          },
+          "difficulty_rubric_version": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Difficulty Rubric Version"
+          },
+          "difficulty_source": {
+            "anyOf": [
+              {
+                "enum": [
+                  "declared",
+                  "computed"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Difficulty Source"
+          },
           "edges": {
             "items": {
               "$ref": "#/components/schemas/WorkArtifactEdgeRead"
@@ -54991,6 +55270,80 @@
           "current_version": {
             "title": "Current Version",
             "type": "integer"
+          },
+          "difficulty": {
+            "anyOf": [
+              {
+                "enum": [
+                  "low",
+                  "medium",
+                  "high"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Difficulty"
+          },
+          "difficulty_conceptual": {
+            "anyOf": [
+              {
+                "enum": [
+                  "low",
+                  "medium",
+                  "high"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Difficulty Conceptual"
+          },
+          "difficulty_implementation": {
+            "anyOf": [
+              {
+                "enum": [
+                  "low",
+                  "medium",
+                  "high"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Difficulty Implementation"
+          },
+          "difficulty_rubric_version": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Difficulty Rubric Version"
+          },
+          "difficulty_source": {
+            "anyOf": [
+              {
+                "enum": [
+                  "declared",
+                  "computed"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Difficulty Source"
           },
           "id": {
             "format": "uuid",
@@ -95245,6 +95598,36 @@
           }
         ],
         "summary": "Corpus census by capture door (scan / agent / operator)",
+        "tags": [
+          "plan-library"
+        ]
+      }
+    },
+    "/api/v1/plan-library/difficulty": {
+      "get": {
+        "description": "The difficulty map ``/admin/coord/plans`` joins onto coord's work units.\n\nPlan ``2026-09-18-plan-library-difficulty-field``. The rating is computed\nfrom each plan's body by ``app.services.plan_difficulty`` \u2014 two axes,\nconceptual and implementation, folded into a routing level (``high`` \u2192\nFable 5.1, ``medium`` \u2192 Opus 5, ``low`` \u2192 a fast tier), with a plan's own\n``Difficulty:`` stamp overriding the computed level.\n\nBefore answering, every plan rated under an older rubric (or none) is\nre-rated \u2014 see :func:`crud.rerate_stale_plan_difficulty` \u2014 so this read is\nalso the corpus backfill. Unrated plans are OMITTED, never served as\n``low``.",
+        "operationId": "api_v1_plan_library_difficulty_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlanDifficultyResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          },
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Every plan's difficulty rating (the model tier it routes to)",
         "tags": [
           "plan-library"
         ]

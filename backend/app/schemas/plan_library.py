@@ -53,6 +53,13 @@ WorkArtifactKind = Literal[
 
 CapturedBy = Literal["runner_scan", "agent", "operator"]
 
+#: A plan's difficulty — a MODEL-ROUTING vocabulary: ``high`` → Fable 5.1,
+#: ``medium`` → Opus 5, ``low`` → a fast tier. See
+#: ``app.services.plan_difficulty``; the CHECKs in
+#: ``plan_library_07_plan_difficulty`` back it.
+DifficultyLevel = Literal["low", "medium", "high"]
+DifficultySource = Literal["declared", "computed"]
+
 WorkArtifactRelation = Literal[
     "produced_report",
     "feeds",
@@ -316,6 +323,15 @@ class WorkArtifactSummary(BaseORMSchema):
     current_version: int
     created_at: IsoDatetime
     updated_at: IsoDatetime
+    #: The plan's routing difficulty. ``None`` on every non-plan kind, and on
+    #: a plan not yet rated — UNRATED, never "low". The two axes and
+    #: ``difficulty_source`` explain it; ``GET /plan-library/difficulty`` also
+    #: serves the measured signals.
+    difficulty: DifficultyLevel | None = None
+    difficulty_conceptual: DifficultyLevel | None = None
+    difficulty_implementation: DifficultyLevel | None = None
+    difficulty_source: DifficultySource | None = None
+    difficulty_rubric_version: int | None = None
 
 
 class WorkArtifactVersionRead(BaseORMSchema):
@@ -641,6 +657,65 @@ class PlanCandidate(BaseModel):
     #: :data:`DocumentState`. Defaults to ``present`` so an artifact-backed row
     #: (every row this route emitted before the union) is unchanged.
     document_state: DocumentState = "present"
+    #: **Additive.** The backing plan's difficulty rating — the model tier a
+    #: sweep should route this candidate to. ``None`` when there is no artifact
+    #: (``document_state`` other than ``present``: there is no body to rate),
+    #: which is UNRATED, not "low".
+    difficulty: DifficultyLevel | None = None
+    difficulty_conceptual: DifficultyLevel | None = None
+    difficulty_implementation: DifficultyLevel | None = None
+    difficulty_source: DifficultySource | None = None
+
+
+# ─────────────── difficulty map ───────────────
+
+
+class PlanDifficultyItem(BaseModel):
+    """One plan's rating, keyed the ways a consumer joins it.
+
+    ``work_unit_slug`` is the join key onto coord's work units (the
+    ``/admin/coord/plans`` console); ``slug`` is the artifact's own stem, which
+    the scanner writes identically for a plan. Both are served because a
+    hand-POSTed row may carry no ``work_unit_slug``.
+    """
+
+    id: UUID
+    slug: str
+    work_unit_slug: str | None = None
+    source_repo: str | None = None
+    difficulty: DifficultyLevel
+    difficulty_conceptual: DifficultyLevel
+    difficulty_implementation: DifficultyLevel
+    difficulty_source: DifficultySource
+    difficulty_rubric_version: int
+    #: The measured inputs (phases, repos, file_paths, lines,
+    #: concept_families, deliberation_markers, the two axis scores and the
+    #: computed level) — for an explanation, not for routing.
+    difficulty_signals: dict[str, object] = Field(default_factory=dict)
+
+
+class PlanDifficultyResponse(BaseModel):
+    """Every rated plan in the caller's scope — not paged: the console joins
+    it onto a coord window of up to 500 work units, and a row is ~300 bytes.
+
+    ``count`` is ``len(items)``. ``rerated`` is how many rows THIS read rated
+    before answering (non-zero once after a deploy or a rubric bump). A plan
+    row that is still unrated is left OUT of ``items`` — absent here means
+    "no rating", which the console renders as unrated, never as "low".
+    ``model_tiers`` maps each level to the model tier it routes to, served so
+    every consumer names the same models.
+    """
+
+    items: list[PlanDifficultyItem]
+    count: int
+    rerated: int
+    #: Set when the re-rating pass FAILED. ``items`` is then what was stored
+    #: before this read: a plan missing from it is UNRATED-because-the-rating-
+    #: failed, and a rating may be from an older rubric (its
+    #: ``difficulty_rubric_version`` says which).
+    rerate_failed_reason: str | None = None
+    rubric_version: int
+    model_tiers: dict[str, str]
 
 
 # ─────────────── open follow-ups (Phase 7) ───────────────

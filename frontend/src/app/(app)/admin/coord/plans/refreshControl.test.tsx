@@ -31,6 +31,17 @@ vi.mock("next/navigation", () => ({
   useParams: () => ({}),
 }));
 
+// The page's SECOND read — the plan library's difficulty ratings — goes
+// through its own hook and would otherwise count against the `get` spy this
+// file asserts on. What is under test here is the work-unit read, so the
+// ratings stay pending; `usePlanDifficulty` has its own coverage.
+vi.mock("./usePlanDifficulty", () => ({
+  usePlanDifficulty: () => ({
+    index: { state: "pending" },
+    refresh: () => Promise.resolve(),
+  }),
+}));
+
 vi.mock("@/services/service-factory", () => ({
   httpClient: {
     get: (...args: unknown[]) => get(...args),
@@ -89,7 +100,9 @@ describe("/admin/coord/plans refresh control", () => {
     let call = 0;
     get.mockImplementation(() => {
       call += 1;
-      return call === 1 ? Promise.resolve({ work_units: [] }) : clickRead.promise;
+      return call === 1
+        ? Promise.resolve({ work_units: [] })
+        : clickRead.promise;
     });
     const user = userEvent.setup();
     render(<CoordPlansListPage />);
@@ -121,7 +134,9 @@ describe("/admin/coord/plans refresh control", () => {
     let call = 0;
     get.mockImplementation(() => {
       call += 1;
-      return call === 1 ? Promise.resolve({ work_units: [] }) : pollRead.promise;
+      return call === 1
+        ? Promise.resolve({ work_units: [] })
+        : pollRead.promise;
     });
     render(<CoordPlansListPage />);
     await screen.findByTestId("coord-plans-empty");
@@ -147,7 +162,9 @@ describe("/admin/coord/plans refresh control", () => {
     let call = 0;
     get.mockImplementation(() => {
       call += 1;
-      return call === 1 ? Promise.resolve({ work_units: [] }) : clickRead.promise;
+      return call === 1
+        ? Promise.resolve({ work_units: [] })
+        : clickRead.promise;
     });
     const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
     render(<CoordPlansListPage />);
