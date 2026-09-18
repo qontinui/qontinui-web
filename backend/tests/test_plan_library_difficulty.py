@@ -318,6 +318,38 @@ class TestStaleRowsAreRerated:
         await crud.set_artifact_kind(async_db_session, row, kind="handoff", org_id=org)
         assert await crud.apply_rated_snapshots(async_db_session, [stale]) == 0
 
+    async def test_a_kind_correction_clears_a_rating_written_after_the_load(
+        self, async_db_session: AsyncSession
+    ) -> None:
+        """The operator's row was loaded unrated; the re-rater rated it since;
+        the correction away from ``plan`` must still clear that rating."""
+        org = uuid4()
+        row = await _upsert(
+            async_db_session, org_id=org, slug=_slug("loaded"), body=_HIGH_BODY
+        )
+        await self._make_stale(async_db_session, row.id, rubric_version=None)
+        await async_db_session.refresh(row)
+        assert row.difficulty is None  # what the correction's caller holds
+
+        # The re-rater writes behind the ORM object's back (Core UPDATE).
+        outcome = await crud.rerate_stale_plan_difficulty(async_db_session, org_id=org)
+        assert outcome.written == 1
+
+        corrected = await crud.set_artifact_kind(
+            async_db_session, row, kind="handoff", org_id=org
+        )
+        assert corrected.difficulty is None
+        corrected_id = corrected.id
+        async_db_session.expire_all()
+        stored = (
+            await async_db_session.execute(
+                select(WorkArtifact.difficulty, WorkArtifact.difficulty_signals).where(
+                    WorkArtifact.id == corrected_id
+                )
+            )
+        ).one()
+        assert tuple(stored) == (None, None)
+
 
 class TestDifficultyRoute:
     async def test_it_serves_rated_plans_with_the_model_tiers(

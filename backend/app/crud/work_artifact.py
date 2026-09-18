@@ -1185,6 +1185,12 @@ async def set_artifact_kind(
     (``uq_work_artifacts_identity`` covers ``kind``) and merging the two rows
     is an operator decision, not something this write may guess at.
     """
+    # Lock and re-read first. The caller loaded ``artifact`` earlier, and the
+    # difficulty re-rater may have written its rating since; without the
+    # re-read, ``assign_difficulty`` below compares against the stale
+    # in-memory NULLs, writes nothing, and leaves that rating on a row that
+    # is no longer a plan. The lock also serializes this against an upsert.
+    await db.refresh(artifact, with_for_update=True)
     if artifact.kind != kind:
         clash = await get_by_identity(
             db,
