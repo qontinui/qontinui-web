@@ -185,12 +185,39 @@ describe("reasoningRef", () => {
     });
   });
 
-  it("gives a CREATE the finding only — no notice exists to link to", () => {
-    // Creation never emits, and the reconciler excludes v1, so the deep link
-    // would land on an event that cannot exist.
+  it("sends a CREATE to the findings reader, not to the notifications feed", () => {
+    // Creation never emits and the reconciler excludes v1, so a notifications
+    // deep link would land on an event that cannot exist. The reasoning is
+    // still readable — it is the finding its author filed — so the arm
+    // carries a REAL href into `/admin/coord/findings`, which is the whole of
+    // plan `2026-09-15-the-console-names-a-finding-it-cannot-open`.
     expect(
       reasoningRef({ version_number: 1, notification_ref: " abc-123 " })
-    ).toEqual({ kind: "finding_only", findingId: "abc-123" });
+    ).toEqual({
+      kind: "finding_only",
+      href: "/admin/coord/findings?id=abc-123",
+      findingId: "abc-123",
+    });
+  });
+
+  it("gives BOTH arms an href, and they are different destinations", () => {
+    // The union survives the change because the destination does: a notice
+    // opens the announcement, a finding opens the reasoning itself. What is
+    // gone is the arm that had no href at all and could only print a uuid.
+    const create = reasoningRef({
+      version_number: 1,
+      notification_ref: "abc-123",
+    });
+    const edit = reasoningRef({ version_number: 2, notification_ref: "abc-123" });
+    expect(create?.href).toBeTruthy();
+    expect(edit?.href).toBeTruthy();
+    expect(create?.href).not.toEqual(edit?.href);
+  });
+
+  it("percent-encodes an id that is not uuid-shaped", () => {
+    expect(
+      reasoningRef({ version_number: 1, notification_ref: "a b/c" })?.href
+    ).toBe("/admin/coord/findings?id=a%20b%2Fc");
   });
 });
 
