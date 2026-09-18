@@ -47,6 +47,12 @@
  * to 500 ms on a successful reconnect (the `open` event). A fresh session
  * token is fetched on every (re)connect, so an expiring token never
  * strands the socket: the next flap presents a live one.
+ *
+ * The bridge also sends a channel-less `{"type":"keepalive"}` frame on an
+ * idle upstream (finding 67329129, so a proxy on this leg doesn't time the
+ * socket out). It needs no special case here: `envelope.channel` is not a
+ * string on that frame, and the handler already returns on that check before
+ * it ever reaches the pattern filter.
  */
 
 import { useEffect, useRef } from "react";

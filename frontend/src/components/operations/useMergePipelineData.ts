@@ -72,6 +72,25 @@ const log = createLogger("useMergePipelineData");
  * Phase 2 re-homed it and fixed the pattern in the same move.
  */
 const WS_SUBSCRIPTION = "merge" as const;
+
+/**
+ * True for the coord-events bridge's own `{"type":"keepalive"}` frame — the
+ * one text frame on this socket that carries no coord event (finding
+ * 67329129). Exported so the shape is pinned by a unit test independent of
+ * the WS plumbing: anything that doesn't parse as JSON, or parses but isn't
+ * this exact shape, is treated as a real coord frame and refetches, which is
+ * the safe default for an envelope this hook doesn't otherwise recognize.
+ */
+export function isKeepaliveFrame(data: unknown): boolean {
+  if (typeof data !== "string") return false;
+  try {
+    const parsed = JSON.parse(data) as { type?: unknown };
+    return parsed?.type === "keepalive";
+  } catch {
+    return false;
+  }
+}
+
 // Fallback only — the WS is the live transport, so this just bounds staleness
 // if the socket is down. 2s here meant 5 authenticated requests every 2s per
 // open tab against a 20-connection backend pool.
@@ -601,9 +620,16 @@ export function useMergePipelineData(
       scheduleRefetch();
     };
 
-    ws.onmessage = () => {
-      // Merge events only signal "something changed" — refetch for the
-      // canonical state.
+    ws.onmessage = (event) => {
+      // The bridge also sends a channel-less `{"type":"keepalive"}` frame
+      // on an idle upstream (finding 67329129) so a proxy on this leg
+      // doesn't time the socket out. It carries no merge event and must
+      // not trigger the hero's five-surface refetch — that would turn a
+      // keepalive into a periodic full reload instead of a no-op.
+      // Anything else is a real coord frame: merge events only signal
+      // "something changed", so any non-keepalive message refetches for
+      // the canonical state rather than trying to apply it incrementally.
+      if (isKeepaliveFrame(event.data)) return;
       scheduleRefetch();
     };
 

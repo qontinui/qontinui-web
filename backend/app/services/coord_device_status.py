@@ -299,3 +299,23 @@ def build_coord_events_ws_url(token: str, subscribe: str) -> str:
     if subscribe not in COORD_EVENTS_SUBSCRIPTIONS:
         raise ValueError(f"unknown coord-events subscription: {subscribe!r}")
     return f"{_coord_ws_base()}/ws?token={token}&subscribe={subscribe}"
+
+
+#: Interval, in seconds, at which the bridge sends a browser-bound keepalive
+#: frame while the upstream is idle. Coord's own JetStream ``/ws`` publisher
+#: gap on the strategy channel — the socket this plan re-homed — measured
+#: ~70s reconnect cycles in production against an ALB idle-timeout class
+#: boundary (finding 67329129); the backend<->coord leg already survives
+#: this via `websockets`' 20s ping, but nothing kept the browser<->backend
+#: leg alive. 20s mirrors that same margin on the newly-added leg.
+COORD_EVENTS_KEEPALIVE_INTERVAL_S: float = 20.0
+
+#: The frame itself. Deliberately has NO ``channel`` key: `useStrategyWebSocket`
+#: keys its per-frame handling off `channel` already, so the channel-less
+#: shape alone makes it inert there with no code change. `useMergePipelineData`
+#: treats ANY message as "something changed, refetch" — it has no channel to
+#: key off — so it checks for this exact `{"type":"keepalive"}` shape
+#: explicitly (`isKeepaliveFrame`) before that frontend change landed
+#: alongside this one. Built once; the bridge sends the same bytes every
+#: interval.
+COORD_EVENTS_KEEPALIVE_FRAME: str = json.dumps({"type": "keepalive"})
