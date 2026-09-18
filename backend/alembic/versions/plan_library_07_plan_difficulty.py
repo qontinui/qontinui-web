@@ -110,13 +110,45 @@ _COLUMNS: tuple[tuple[str, str, str | None, str | None], ...] = (
 
 
 def upgrade() -> None:
-    """Add the nullable rating columns, each with its vocabulary CHECK."""
-    # ONE string literal per call: the classifier checks each literal it
-    # extracts as a statement of its own, so a split `f"..." f"{x}"` would
-    # hand it a bare `{x}` fragment to reject.
-    for col, typ, name, check in _COLUMNS:
-        ck = f" CONSTRAINT {name} CHECK ({check})" if check else ""
-        op.execute(f"ALTER TABLE {_TABLE} ADD COLUMN IF NOT EXISTS {col} {typ}{ck}")
+    """Add the nullable rating columns, each with its vocabulary CHECK.
+
+    One PLAIN string literal per call — no f-string, no formatting — because
+    coord's migration classifier (qontinui-coord#2251) rejects dynamic SQL:
+    it cannot prove an interpolated column type or constraint is additive.
+    ``_COLUMNS`` above is the same DDL as data, and
+    ``test_plan_library_07_plan_difficulty_migration`` asserts the two agree.
+    """
+    op.execute(
+        "ALTER TABLE agent.work_artifacts ADD COLUMN IF NOT EXISTS difficulty TEXT "
+        "CONSTRAINT ck_work_artifacts_difficulty "
+        "CHECK (difficulty IN ('low', 'medium', 'high'))"
+    )
+    op.execute(
+        "ALTER TABLE agent.work_artifacts "
+        "ADD COLUMN IF NOT EXISTS difficulty_conceptual TEXT "
+        "CONSTRAINT ck_work_artifacts_difficulty_conceptual "
+        "CHECK (difficulty_conceptual IN ('low', 'medium', 'high'))"
+    )
+    op.execute(
+        "ALTER TABLE agent.work_artifacts "
+        "ADD COLUMN IF NOT EXISTS difficulty_implementation TEXT "
+        "CONSTRAINT ck_work_artifacts_difficulty_implementation "
+        "CHECK (difficulty_implementation IN ('low', 'medium', 'high'))"
+    )
+    op.execute(
+        "ALTER TABLE agent.work_artifacts "
+        "ADD COLUMN IF NOT EXISTS difficulty_source TEXT "
+        "CONSTRAINT ck_work_artifacts_difficulty_source "
+        "CHECK (difficulty_source IN ('declared', 'computed'))"
+    )
+    op.execute(
+        "ALTER TABLE agent.work_artifacts "
+        "ADD COLUMN IF NOT EXISTS difficulty_rubric_version INTEGER"
+    )
+    op.execute(
+        "ALTER TABLE agent.work_artifacts "
+        "ADD COLUMN IF NOT EXISTS difficulty_signals JSONB"
+    )
 
 
 def downgrade() -> None:
