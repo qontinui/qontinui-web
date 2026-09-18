@@ -2830,33 +2830,6 @@ async def get_pr_merge_slo(
     )
 
 
-@router.post("/pr-merge/red-main/{repo:path}/spawn-fix")
-async def post_pr_merge_red_main_spawn_fix(
-    repo: str,
-    tenant_id: UUID = Depends(require_coord_tenant_admin),
-) -> Any:
-    """Operator-driven red-main remediation (red-main auto-remediation
-    Phase 4b). Spawn a visible fix session on the operator's device for
-    ``repo``'s current red episode, proxying coord's
-    ``POST /pr-merge/red-main/:repo/spawn-fix``.
-
-    ``repo`` is ``owner/name`` and is captured inline via ``{repo:path}``
-    (the same shape as ``/pr-merge/repos/:repo/profile``). No request body
-    is required — coord resolves the live red episode + tenant from the
-    forwarded operator bearer.
-
-    Coord returns ``200 {"agent_id": "<uuid>"}`` on success, or ``409`` when
-    a fix session is already running for the current red episode or the repo
-    has no live red-main alert. ``_proxy_coord_post`` re-raises coord's
-    status + JSON body so the banner can surface the 409 message inline.
-    """
-    return await _proxy_coord_post(
-        f"/pr-merge/red-main/{repo}/spawn-fix",
-        {},
-        tenant_id=tenant_id,
-    )
-
-
 # ---- Tenant self-service merge recovery ----------------------------------
 #
 # Plan `2026-07-30-coord-tenant-self-service-merge-recovery.md` Phase 4.
@@ -3250,14 +3223,18 @@ async def post_agents_allocate(
 # ---- Coord claims-dashboard proxy ---------------------------------------
 #
 # Plan `2026-05-18-agent-spawn-coordination.md` Phase 5 — the
-# `/admin/agent-claims` dashboard backend. Five read-only proxy
+# `/admin/agent-claims` dashboard backend. Four read-only proxy
 # endpoints that forward to coord:
 #
 # - `/operations/claims/list`             → coord `/coord/claims/list`
 # - `/operations/claims/recent-conflicts` → coord `/coord/claims/recent-conflicts`
 # - `/operations/claims/recent-expirations` → coord `/coord/claims/recent-expirations`
 # - `/operations/claims/steals`           → coord `/coord/claims/steals`
-# - `/operations/claims/alerts`           → coord `/coord/alerts` (filtered)
+#
+# A fifth, `/operations/claims/alerts` (the `claim-` slice of `/coord/alerts`),
+# was deleted with the dashboard's stale-claim alerts section by plan
+# `2026-09-18-notifications-are-agent-actions-and-alerts-are-agent-work`
+# Phase 8: raw alert rows are agents' work, not an operator surface.
 #
 # Same proxy posture as the merge endpoints above — read-only, no
 # mutating coord routes exposed through this surface. Steal +
@@ -3594,63 +3571,6 @@ async def get_claims_steals(
     return await _proxy_coord_get(
         "/coord/claims/steals", params=params, tenant_id=tenant_id
     )
-
-
-#: Page size asked of coord for the claim-alert slice. Coord's documented hard
-#: maximum, and it clamps rather than erroring, so this cannot 4xx if the cap
-#: ever moves down. See the comment in :func:`get_claims_alerts` for why this
-#: is a constant and not a query parameter.
-_CLAIMS_ALERTS_LIMIT = 1000
-
-
-@router.get("/claims/alerts")
-async def get_claims_alerts(
-    tenant_id: UUID = Depends(get_tenant_id),
-) -> Any:
-    """Return active claim-related alerts from coord.
-
-    Asks coord for the ``claim-`` slice directly (``?source=claim-`` —
-    ``source`` is matched as an ``alert_key`` prefix, the convention used
-    by
-    [`claims_alert_watcher`](https://github.com/qontinui/qontinui-coord/blob/main/src/claims_alert_watcher.rs)).
-    Other alert kinds (fleet-health, alembic-status, etc.) stay scoped
-    to the Operations page's general alerts surface.
-
-    ⚠️ This used to pull the WHOLE rollup and filter ``alert_key`` in
-    Python, which measured **0 rows** on 2026-08-14: coord caps the
-    unfiltered rollup at 500 rows ordered by severity/recency, and claim
-    alerts never survived the cap, so the Python filter was always
-    filtering an already-claimless window. A targeted ``source`` query is
-    filtered in SQL and cannot be evicted by another watcher's tick.
-
-    Forwards the operator bearer (fleet-auth P2/D6).
-    """
-    # `limit` is EXPLICIT, and it is not a style choice. This endpoint sends
-    # no page size, so it inherits coord's default — and the coord half of
-    # plan `2026-08-05-coord-alerts-surface-and-fleet-style-ui` dropped that
-    # default from 500 to 100 when it added paging. Silently, from here: the
-    # narrowing lives in another repo and there is no signal on this side.
-    #
-    # The single consumer (`AgentClaimsDashboard`'s stale-claim section) does
-    # not page and does not read `total_count`, so above the ceiling it would
-    # render a truncated list as the whole truth — the exact defect that plan
-    # exists to kill, re-created one endpoint over. 1000 is coord's own hard
-    # maximum (it clamps rather than erroring), which is 2x the ceiling this
-    # endpoint had before the coord change and 10x the one it has now.
-    #
-    # Deliberately a constant in the params dict rather than a `limit` query
-    # parameter: a new FastAPI parameter changes the OpenAPI schema, and this
-    # endpoint has exactly one caller, which wants all active claim alerts.
-    # Give it a real `limit` when a second caller needs a different answer.
-    payload = await _proxy_coord_get(
-        "/coord/alerts",
-        params={"source": "claim-", "limit": _CLAIMS_ALERTS_LIMIT},
-        tenant_id=tenant_id,
-    )
-    # coord returns either a list or `{"alerts": [...]}` depending on the
-    # version; pass either through untouched. No Python-side filtering —
-    # coord's `source` prefix match is the filter now.
-    return payload
 
 
 # ---- Coord dev-action ledger proxy ----------------------------------------
@@ -4115,7 +4035,7 @@ async def get_pull_decisions(
     )
 
 
-# ---- Alerts (full rollup; sibling of /claims/alerts) ---------------------
+# ---- Alerts (full rollup; read API for agents and the red-main banner) ---
 
 
 def _nonblank(values: list[str] | None) -> list[str] | None:
@@ -4144,12 +4064,14 @@ async def get_coord_alerts(
 ) -> Any:
     """Return the full ``coord.alerts`` rollup with optional filters.
 
-    Sibling of ``/operations/claims/alerts`` (which narrows to
-    ``alert_key`` prefix ``claim-``). This endpoint exposes ALL alert
-    kinds for the dashboard's Alerts page. The kind vocabulary is
-    **served by the API** — coord returns the distinct kind list in the
-    response, so neither this proxy nor the UI hardcodes it (an
-    enumeration here went stale the moment a new watcher shipped).
+    Exposes ALL alert kinds. Its operator PAGE is gone (plan
+    ``2026-09-18-notifications-are-agent-actions-and-alerts-are-agent-work``
+    D7), but the read API stays for its consumers: the console's
+    ``RedMainBanner`` (``?kind=red_main``, reading each row's ``claimed`` /
+    ``claim`` fields) and agent tooling. The kind vocabulary is **served by
+    the API** — coord returns the distinct kind list in the response, so
+    neither this proxy nor a caller hardcodes it (an enumeration here went
+    stale the moment a new watcher shipped).
 
     ``severity`` and ``kind`` are REPEATABLE
     (``?kind=stale_wip&kind=red_main``) so the UI can multi-select; they

@@ -1,7 +1,10 @@
 """Integration tests for the coord alerts proxy (``/operations/alerts``).
 
-Backs the ``/admin/coord/alerts`` tab, the ``CoordNav`` badge and
-``RedMainBanner``. The frontend never calls coord directly — the chain is
+Backs ``RedMainBanner`` and agent tooling. (The ``/admin/coord/alerts``
+tab and the ``CoordNav`` badge it also used to back were deleted by plan
+``2026-09-18-notifications-are-agent-actions-and-alerts-are-agent-work``
+Phase 8; this read API stays, D7.) The frontend never calls coord
+directly — the chain is
 ``frontend → /api/v1/operations/alerts → coord /coord/alerts`` — so this
 proxy is what decides whether the new coord filter vocabulary
 (``limit`` / ``cursor`` / repeated ``kind`` / repeated ``severity``) and
@@ -275,3 +278,72 @@ class TestAuthGate:
         client = TestClient(_build_test_app(authenticated=False))
         resp = client.get(f"{API_PREFIX}/alerts")
         assert resp.status_code in (401, 403)
+
+
+# ---------------------------------------------------------------------------
+# Alert claims (plan 2026-09-18-notifications-are-agent-actions-and-alerts-
+# are-agent-work Phase 2) reach the banner untouched
+# ---------------------------------------------------------------------------
+
+
+class TestAlertClaimsPassThrough:
+    """``claimed`` / ``claim`` are coord fields this proxy must not drop.
+
+    ``RedMainBanner`` reads them to say whether an agent holds a red main,
+    and an ABSENT field is how it tells an older coord (claim state unknown)
+    from a row nobody has claimed. So the proxy must neither strip the
+    fields nor invent them.
+    """
+
+    def test_claim_fields_are_forwarded_verbatim(self, auth_client: TestClient):
+        coord_payload = {
+            "alerts": [
+                {
+                    "id": 7,
+                    "alert_key": "red_main:qontinui-web",
+                    "claimed": True,
+                    "claim": {
+                        "claimed_by": "agent:11111111-2222-3333-4444-555555555555",
+                        "claimed_at": "2026-09-18T11:00:00Z",
+                        "claim_expires_at": "2026-09-18T13:00:00Z",
+                    },
+                },
+                {
+                    "id": 8,
+                    "alert_key": "red_main:qontinui-coord",
+                    "claimed": False,
+                    "claim": None,
+                },
+                {"id": 9, "alert_key": "red_main:qontinui-runner"},
+            ]
+        }
+        mock_resp = _mock_response(json_data=coord_payload)
+        with _patch_httpx() as MockClient:
+            instance = AsyncMock()
+            instance.get.return_value = mock_resp
+            _configure_mock_client(MockClient, instance)
+            resp = auth_client.get(f"{API_PREFIX}/alerts?kind=red_main")
+        assert resp.status_code == 200
+        assert resp.json() == coord_payload
+        # The older-coord row stays field-less rather than gaining a default.
+        assert "claimed" not in resp.json()["alerts"][2]
+
+
+class TestRedMainSpawnFixRetired:
+    """The web proxy for coord's red-main spawn-fix route is gone.
+
+    Its only caller was ``RedMainBanner``'s "Spawn fix session" button,
+    deleted by the same Phase 8 (spawning a fix is operational work, which
+    is agents' work). The coord-side route stays: agents may use it.
+    """
+
+    def test_route_is_not_mounted(self, auth_client: TestClient):
+        with _patch_httpx() as MockClient:
+            instance = AsyncMock()
+            _configure_mock_client(MockClient, instance)
+            resp = auth_client.post(
+                f"{API_PREFIX}/pr-merge/red-main/qontinui/qontinui-web/spawn-fix",
+                json={},
+            )
+        assert resp.status_code in (404, 405)
+        instance.post.assert_not_called()

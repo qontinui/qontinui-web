@@ -24,8 +24,8 @@
  * would lose information the expanded row does not carry.
  *
  * **The two links inside the row stop propagation.** `#123` and the blocking
- * badge deep-link to GitHub / the alerts rollup; a click on either must
- * navigate, not toggle the row.
+ * badge deep-link to GitHub; a click on either must navigate, not toggle the
+ * row.
  */
 
 import { Fragment, useMemo, useState } from "react";
@@ -751,14 +751,6 @@ function PrDetail({ pr }: { pr: PrRow }) {
           >
             Open {pr.repo}#{pr.pr_number} on GitHub ↗
           </Link>
-          {pr.escalation_alert_id != null && (
-            <Link
-              href="/admin/coord/alerts"
-              className="font-medium text-primary hover:underline"
-            >
-              Open the escalation ↗
-            </Link>
-          )}
         </div>
       }
       raw={
@@ -778,26 +770,23 @@ function PrDetail({ pr }: { pr: PrRow }) {
 /**
  * The centerpiece: the colored blocking-reason badge.
  *
- * Deep-link decision: when `escalation_alert_id != null` (the PR is parked in
- * `awaiting-specialist-review` behind an escalation), link to the escalations
- * surface `/admin/coord/alerts`. There is no per-alert deep-link route in
- * CoordNav (the alerts page is a filterable rollup, not /alerts/:id), so we
- * link the rollup. Otherwise the badge deep-links to the GitHub PR so the
- * operator lands one click from the actual blocker.
+ * Deep-links to the GitHub PR so the operator lands one click from the actual
+ * blocker. An escalated PR (`escalation_alert_id != null`, parked in
+ * `awaiting-specialist-review`) used to link the `/admin/coord/alerts`
+ * rollup instead; that page is deleted (plan
+ * `2026-09-18-notifications-are-agent-actions-and-alerts-are-agent-work`
+ * Phase 8 — raw alerts are agents' work), so every badge now links GitHub.
+ * The badge TEXT still says the PR is escalated: that comes from `prStatus`,
+ * not from the link.
  */
 function BlockingBadge({ pr }: { pr: PrRow }) {
   const status = derivePrStatus(pr);
-  const href =
-    pr.escalation_alert_id != null
-      ? "/admin/coord/alerts"
-      : prGithubUrl(pr);
-  const isExternal = pr.escalation_alert_id == null;
 
   return (
     <Link
-      href={href}
-      target={isExternal ? "_blank" : undefined}
-      rel={isExternal ? "noopener noreferrer" : undefined}
+      href={prGithubUrl(pr)}
+      target="_blank"
+      rel="noopener noreferrer"
       className="inline-block"
       data-testid="blocking-badge-link"
       // The badge is a deep link inside a clickable row: it must navigate,

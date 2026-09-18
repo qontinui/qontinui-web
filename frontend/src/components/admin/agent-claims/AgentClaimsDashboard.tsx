@@ -9,7 +9,14 @@
  *  1. Active claims — filter by kind + resource_key prefix.
  *  2. Recent conflicts — in-memory ring buffer (coord-side).
  *  3. Recent steals — `event='admin_stolen'` audit rows.
- *  4. Stale-claim alerts — `coord.alerts` rows whose key starts `claim-`.
+ *  4. Gates anchored on claims.
+ *
+ * A stale-claim ALERTS section (`coord.alerts` rows whose key starts
+ * `claim-`) used to sit between steals and gates. Plan
+ * `2026-09-18-notifications-are-agent-actions-and-alerts-are-agent-work`
+ * Phase 8 deleted it with its `/operations/claims/alerts` proxy: raw alert
+ * rows are agents' work, and the operator's rollup of them is the Dev Ops
+ * page's Conditions panel.
  *
  * All sections poll every 10s through the web backend's
  * `/api/v1/operations/claims/*` proxy (the browser can't speak directly
@@ -18,7 +25,6 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
-  AlertTriangle,
   CheckCircle,
   Filter,
   Layers,
@@ -65,14 +71,6 @@ const KIND_OPTIONS = [
   { value: "worktree", label: "worktree" },
   { value: "alembic_revision", label: "alembic_revision" },
   { value: "ci_wait", label: "ci_wait" },
-];
-
-const ALERT_FILTER_OPTIONS = [
-  { value: "__all__", label: "all alerts" },
-  { value: "vercel-recovery-", label: "vercel recovery" },
-  { value: "vercel-deploy-stale", label: "vercel deploy stale" },
-  { value: "vercel-build-failed", label: "vercel build failed" },
-  { value: "ecs-image-stale", label: "ecs image stale" },
 ];
 
 // ---------------------------------------------------------------------------
@@ -141,19 +139,6 @@ interface StealRow {
   steal_reason: string | null;
 }
 
-interface AlertRow {
-  id?: number;
-  alert_key: string;
-  severity: string;
-  kind?: string;
-  machine_id?: string | null;
-  summary: string;
-  detail?: Record<string, unknown>;
-  first_seen_at?: string;
-  last_seen_at?: string;
-  occurrences?: number;
-}
-
 interface GateEntry {
   gate_id: string;
   claim_kind: string | null;
@@ -189,21 +174,6 @@ function relativeTime(iso?: string | null): string {
 function shortId(id?: string | null): string {
   if (!id) return "—";
   return id.length > 12 ? `${id.slice(0, 8)}…` : id;
-}
-
-function severityVariant(
-  sev: string
-): "default" | "destructive" | "secondary" | "outline" {
-  switch (sev.toLowerCase()) {
-    case "critical":
-      return "destructive";
-    case "warning":
-      return "default";
-    case "info":
-      return "secondary";
-    default:
-      return "outline";
-  }
 }
 
 function verdictVariant(
@@ -732,138 +702,7 @@ function RecentStealsSection() {
 }
 
 // ---------------------------------------------------------------------------
-// Section 4 — Stale-claim alerts
-// ---------------------------------------------------------------------------
-
-function StaleClaimAlertsSection() {
-  const [alerts, setAlerts] = useState<AlertRow[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [alertFilter, setAlertFilter] = useState("__all__");
-
-  const fetchData = useCallback(async () => {
-    try {
-      const res = await fetch(`${API}/alerts`);
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const body = await res.json();
-      // Tolerate both `{alerts: [...]}` and bare list shapes.
-      const list: AlertRow[] = Array.isArray(body)
-        ? body
-        : Array.isArray(body.alerts)
-        ? body.alerts
-        : [];
-      setAlerts(list);
-      setError(null);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    fetchData();
-    const interval = setInterval(fetchData, POLL_INTERVAL_MS);
-    return () => clearInterval(interval);
-  }, [fetchData]);
-
-  const sorted = useMemo(
-    () =>
-      [...alerts]
-        .filter(
-          (a) =>
-            alertFilter === "__all__" ||
-            a.alert_key.startsWith(alertFilter)
-        )
-        .sort((a, b) => {
-          const order = { critical: 0, warning: 1, info: 2 } as Record<
-            string,
-            number
-          >;
-          const ao = order[a.severity.toLowerCase()] ?? 99;
-          const bo = order[b.severity.toLowerCase()] ?? 99;
-          return ao - bo;
-        }),
-    [alerts, alertFilter]
-  );
-
-  return (
-    <Card data-testid="claims-alerts-section">
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2 text-base">
-          <AlertTriangle className="h-4 w-4 text-red-500" />
-          Stale-claim alerts
-          <Badge variant="outline" className="ml-2">
-            {sorted.length}
-          </Badge>
-        </CardTitle>
-      </CardHeader>
-      <CardContent className="space-y-3">
-        <div className="flex items-center gap-2">
-          <Filter className="h-4 w-4 text-muted-foreground" />
-          <Select value={alertFilter} onValueChange={setAlertFilter}>
-            <SelectTrigger className="w-[200px]">
-              <SelectValue placeholder="filter by alert_key" />
-            </SelectTrigger>
-            <SelectContent>
-              {ALERT_FILTER_OPTIONS.map((opt) => (
-                <SelectItem key={opt.value} value={opt.value}>
-                  {opt.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-        {error && (
-          <p className="text-sm text-destructive">Failed to load: {error}</p>
-        )}
-        {loading && sorted.length === 0 ? (
-          <Skeleton className="h-16 w-full" />
-        ) : sorted.length > 0 ? (
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead className="w-[100px]">severity</TableHead>
-                <TableHead>alert_key</TableHead>
-                <TableHead>summary</TableHead>
-                <TableHead className="w-[100px]">last_seen</TableHead>
-                <TableHead className="w-[80px] text-right">count</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {sorted.map((a) => (
-                <TableRow key={a.alert_key} data-testid="claims-alert-row">
-                  <TableCell>
-                    <Badge variant={severityVariant(a.severity)}>
-                      {a.severity}
-                    </Badge>
-                  </TableCell>
-                  <TableCell className="font-mono text-xs">
-                    {a.alert_key}
-                  </TableCell>
-                  <TableCell className="text-xs">{a.summary}</TableCell>
-                  <TableCell className="text-xs text-muted-foreground">
-                    {relativeTime(a.last_seen_at)}
-                  </TableCell>
-                  <TableCell className="text-right text-xs tabular-nums">
-                    {a.occurrences ?? "—"}
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        ) : (
-          <p className="text-sm text-muted-foreground italic">
-            No active stale-claim alerts.
-          </p>
-        )}
-      </CardContent>
-    </Card>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Section 5 — Gates
+// Section 4 — Gates
 // ---------------------------------------------------------------------------
 
 function GatesSection({
@@ -1136,7 +975,6 @@ export default function AgentClaimsDashboard() {
       <ActiveClaimsSection openGateCountsByAnchor={openGateCountsByAnchor} />
       <RecentConflictsSection />
       <RecentStealsSection />
-      <StaleClaimAlertsSection />
       <GatesSection gates={gates} onRefresh={fetchGates} />
     </div>
   );

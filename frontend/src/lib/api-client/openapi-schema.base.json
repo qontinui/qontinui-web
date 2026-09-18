@@ -81505,7 +81505,7 @@
     },
     "/api/v1/operations/alerts": {
       "get": {
-        "description": "Return the full ``coord.alerts`` rollup with optional filters.\n\nSibling of ``/operations/claims/alerts`` (which narrows to\n``alert_key`` prefix ``claim-``). This endpoint exposes ALL alert\nkinds for the dashboard's Alerts page. The kind vocabulary is\n**served by the API** \u2014 coord returns the distinct kind list in the\nresponse, so neither this proxy nor the UI hardcodes it (an\nenumeration here went stale the moment a new watcher shipped).\n\n``severity`` and ``kind`` are REPEATABLE\n(``?kind=stale_wip&kind=red_main``) so the UI can multi-select; they\nride the wire as repeated query keys, which is what coord parses.\n``limit`` / ``cursor`` page the result; the response carries\n``total_count`` (the unpaged, filter-applied count) so a caller that\nasks for ``?limit=1`` can still render an honest badge. ``limit`` is\nbounded ``1..1000`` at the edge (coord's stated hard max) so a\nnonsense value 422s here rather than relying on coord's clamp.\n\nThe coord response is passed through **untouched** \u2014 no re-wrapping,\nno re-keying \u2014 so ``total_count``, the kind list, and any field coord\nadds later reach the frontend without a change here.\n\nTenant-scoped \u2014 the underlying ``coord.alerts`` rollup is fleet-wide\ntoday but the tenant header lets coord-side enforcement filter once\nthe alert producer stamps a tenant_id per row.",
+        "description": "Return the full ``coord.alerts`` rollup with optional filters.\n\nExposes ALL alert kinds. Its operator PAGE is gone (plan\n``2026-09-18-notifications-are-agent-actions-and-alerts-are-agent-work``\nD7), but the read API stays for its consumers: the console's\n``RedMainBanner`` (``?kind=red_main``, reading each row's ``claimed`` /\n``claim`` fields) and agent tooling. The kind vocabulary is **served by\nthe API** \u2014 coord returns the distinct kind list in the response, so\nneither this proxy nor a caller hardcodes it (an enumeration here went\nstale the moment a new watcher shipped).\n\n``severity`` and ``kind`` are REPEATABLE\n(``?kind=stale_wip&kind=red_main``) so the UI can multi-select; they\nride the wire as repeated query keys, which is what coord parses.\n``limit`` / ``cursor`` page the result; the response carries\n``total_count`` (the unpaged, filter-applied count) so a caller that\nasks for ``?limit=1`` can still render an honest badge. ``limit`` is\nbounded ``1..1000`` at the edge (coord's stated hard max) so a\nnonsense value 422s here rather than relying on coord's clamp.\n\nThe coord response is passed through **untouched** \u2014 no re-wrapping,\nno re-keying \u2014 so ``total_count``, the kind list, and any field coord\nadds later reach the frontend without a change here.\n\nTenant-scoped \u2014 the underlying ``coord.alerts`` rollup is fleet-wide\ntoday but the tenant header lets coord-side enforcement filter once\nthe alert producer stamps a tenant_id per row.",
         "operationId": "api_v1_operations_alerts_get",
         "parameters": [
           {
@@ -81678,28 +81678,6 @@
           }
         },
         "summary": "Post Ci Status Notify When Green",
-        "tags": [
-          "operations"
-        ]
-      }
-    },
-    "/api/v1/operations/claims/alerts": {
-      "get": {
-        "description": "Return active claim-related alerts from coord.\n\nAsks coord for the ``claim-`` slice directly (``?source=claim-`` \u2014\n``source`` is matched as an ``alert_key`` prefix, the convention used\nby\n[`claims_alert_watcher`](https://github.com/qontinui/qontinui-coord/blob/main/src/claims_alert_watcher.rs)).\nOther alert kinds (fleet-health, alembic-status, etc.) stay scoped\nto the Operations page's general alerts surface.\n\n\u26a0\ufe0f This used to pull the WHOLE rollup and filter ``alert_key`` in\nPython, which measured **0 rows** on 2026-08-14: coord caps the\nunfiltered rollup at 500 rows ordered by severity/recency, and claim\nalerts never survived the cap, so the Python filter was always\nfiltering an already-claimless window. A targeted ``source`` query is\nfiltered in SQL and cannot be evicted by another watcher's tick.\n\nForwards the operator bearer (fleet-auth P2/D6).",
-        "operationId": "api_v1_operations_claims_alerts_get",
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "title": "Response Get Claims Alerts Api V1 Operations Claims Alerts Get"
-                }
-              }
-            },
-            "description": "Successful Response"
-          }
-        },
-        "summary": "Get Claims Alerts",
         "tags": [
           "operations"
         ]
@@ -90389,54 +90367,6 @@
           }
         },
         "summary": "Get Pr Merge Pr Checks",
-        "tags": [
-          "operations"
-        ]
-      }
-    },
-    "/api/v1/operations/pr-merge/red-main/{repo}/spawn-fix": {
-      "post": {
-        "description": "Operator-driven red-main remediation (red-main auto-remediation\nPhase 4b). Spawn a visible fix session on the operator's device for\n``repo``'s current red episode, proxying coord's\n``POST /pr-merge/red-main/:repo/spawn-fix``.\n\n``repo`` is ``owner/name`` and is captured inline via ``{repo:path}``\n(the same shape as ``/pr-merge/repos/:repo/profile``). No request body\nis required \u2014 coord resolves the live red episode + tenant from the\nforwarded operator bearer.\n\nCoord returns ``200 {\"agent_id\": \"<uuid>\"}`` on success, or ``409`` when\na fix session is already running for the current red episode or the repo\nhas no live red-main alert. ``_proxy_coord_post`` re-raises coord's\nstatus + JSON body so the banner can surface the 409 message inline.",
-        "operationId": "api_v1_operations_pr_merge_red_main_repo_spawn_fix_post",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "repo",
-            "required": true,
-            "schema": {
-              "title": "Repo",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "title": "Response Post Pr Merge Red Main Spawn Fix Api V1 Operations Pr Merge Red Main  Repo  Spawn Fix Post"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
-        "summary": "Post Pr Merge Red Main Spawn Fix",
         "tags": [
           "operations"
         ]
