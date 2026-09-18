@@ -75,10 +75,12 @@ from sqlalchemy import (
     select,
     text,
     true,
+    update,
 )
 from sqlalchemy.dialects.postgresql import ARRAY
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import load_only
 
 from app.models.work_artifact import (
     NIL_ORGANIZATION_ID,
@@ -90,6 +92,15 @@ from app.models.work_artifact import (
     WorkArtifactEdge,
     WorkArtifactVersion,
 )
+from app.services.plan_difficulty import RUBRIC_VERSION, compute_difficulty
+
+#: The only kind the difficulty rubric rates. It was calibrated on plans; a
+#: prompt or a report is not a unit of implementation work.
+DIFFICULTY_RATED_KIND = "plan"
+
+#: Bodies loaded per round trip when re-rating stale rows — bounds the memory
+#: one re-rating pass holds (a plan body runs to ~100 KB at the tail).
+_DIFFICULTY_RERATE_BATCH = 100
 
 #: Relations traversed BACKWARDS to reconstruct the prompt chain that produced
 #: a plan: ``investigation_prompt --produced_report--> report --feeds-->
@@ -647,6 +658,53 @@ async def list_edges(
     return out
 
 
+#: The six columns :func:`difficulty_values` fills.
+DIFFICULTY_COLUMNS: tuple[str, ...] = (
+    "difficulty",
+    "difficulty_conceptual",
+    "difficulty_implementation",
+    "difficulty_source",
+    "difficulty_rubric_version",
+    "difficulty_signals",
+)
+
+
+def difficulty_values(kind: str, body: str | None) -> dict[str, object]:
+    """The ``difficulty*`` column values for an artifact of ``kind``/``body``.
+
+    A ``plan`` is rated by
+    :func:`app.services.plan_difficulty.compute_difficulty`; any other kind
+    gets NULL in every column (unrated) — which is also what a plan whose kind
+    a later correction moves away from ``plan`` needs.
+    """
+    if kind != DIFFICULTY_RATED_KIND:
+        return dict.fromkeys(DIFFICULTY_COLUMNS)
+    rating = compute_difficulty(body or "")
+    return {
+        "difficulty": rating.level,
+        "difficulty_conceptual": rating.conceptual,
+        "difficulty_implementation": rating.implementation,
+        "difficulty_source": rating.source,
+        "difficulty_rubric_version": rating.rubric_version,
+        "difficulty_signals": rating.signals,
+    }
+
+
+def assign_difficulty(row: WorkArtifact) -> bool:
+    """Rate ``row`` from its current ``kind`` and ``body``; ``True`` if moved.
+
+    The ORM-side writer every upsert arm and the kind correction share; the
+    stale-row re-rating writes the same :func:`difficulty_values` through a
+    Core UPDATE instead (see :func:`rerate_stale_plan_difficulty`).
+    """
+    moved = False
+    for field, value in difficulty_values(row.kind, row.body).items():
+        if getattr(row, field) != value:
+            setattr(row, field, value)
+            moved = True
+    return moved
+
+
 @dataclass(frozen=True)
 class _HeadMetadata:
     """The head row's payload-described metadata — everything a POST says
@@ -727,6 +785,9 @@ async def _settle_unchanged_digest(
     lock_asserted = not kind_is_heuristic and not existing.kind_locked
     if lock_asserted:
         existing.kind_locked = True
+    # The rating is NOT refreshed here: an unchanged body cannot move it, and a
+    # stale one (an older rubric) is healed by ``rerate_stale_plan_difficulty``,
+    # which — unlike an ORM write here — leaves ``updated_at`` alone.
     if metadata_moved or lock_asserted:
         await db.commit()
         await db.refresh(existing)
@@ -826,6 +887,7 @@ async def upsert_artifact(
             captured_by=captured_by,
             current_version=1,
         )
+        assign_difficulty(artifact)
         db.add(artifact)
         try:
             await db.flush()
@@ -918,6 +980,8 @@ async def upsert_artifact(
     _assign_head_metadata(existing, metadata)
     existing.body = body
     existing.content_sha256 = digest
+    # After the body AND the kind are final: both are the rating's inputs.
+    assign_difficulty(existing)
     # The body moved, so the row was touched whether or not the metadata did.
     existing.updated_at = datetime.now(UTC)
 
@@ -934,6 +998,92 @@ async def upsert_artifact(
     await db.commit()
     await db.refresh(existing)
     return existing, False, True
+
+
+async def rerate_stale_plan_difficulty(db: AsyncSession, *, org_id: UUID | None) -> int:
+    """Rate every plan in scope whose rating predates the running rubric.
+
+    Returns how many rows were written. Selects ids first (cheap: no bodies)
+    and loads bodies :data:`_DIFFICULTY_RERATE_BATCH` at a time, committing
+    per batch, so the first read after a deploy or a rubric bump rates the
+    whole corpus in bounded memory and every later read finds nothing to do.
+
+    ``updated_at`` is left alone on purpose: a rating is derived from a body
+    that did not change, and bumping the stamp would make every plan read as
+    freshly touched to the consumers that sort on it.
+    """
+    stale_ids = list(
+        (
+            await db.execute(
+                select(WorkArtifact.id).where(
+                    _org_scope(org_id),
+                    WorkArtifact.kind == DIFFICULTY_RATED_KIND,
+                    or_(
+                        WorkArtifact.difficulty_rubric_version.is_(None),
+                        WorkArtifact.difficulty_rubric_version != RUBRIC_VERSION,
+                    ),
+                )
+            )
+        ).scalars()
+    )
+    written = 0
+    for start in range(0, len(stale_ids), _DIFFICULTY_RERATE_BATCH):
+        batch = stale_ids[start : start + _DIFFICULTY_RERATE_BATCH]
+        rows = (
+            await db.execute(
+                select(WorkArtifact.id, WorkArtifact.kind, WorkArtifact.body).where(
+                    WorkArtifact.id.in_(batch)
+                )
+            )
+        ).all()
+        for row_id, kind, body in rows:
+            await db.execute(
+                update(WorkArtifact)
+                .where(WorkArtifact.id == row_id)
+                # Assigning the column to itself is what suppresses its
+                # ``onupdate``; an ORM write of an unchanged value would not.
+                .values(
+                    **difficulty_values(kind, body),
+                    updated_at=WorkArtifact.updated_at,
+                )
+                .execution_options(synchronize_session=False)
+            )
+            written += 1
+        await db.commit()
+    return written
+
+
+async def list_plan_difficulties(
+    db: AsyncSession, *, org_id: UUID | None
+) -> list[WorkArtifact]:
+    """Every plan row in scope, for the difficulty map — no bodies loaded.
+
+    Ordered by ``updated_at DESC`` so that, when two artifacts carry the same
+    ``work_unit_slug`` (a fork across ``source_repo``), a consumer keeping the
+    FIRST row per slug keeps the most recently written copy.
+    """
+    stmt = (
+        select(WorkArtifact)
+        .options(
+            load_only(
+                WorkArtifact.id,
+                WorkArtifact.kind,
+                WorkArtifact.slug,
+                WorkArtifact.work_unit_slug,
+                WorkArtifact.source_repo,
+                WorkArtifact.updated_at,
+                WorkArtifact.difficulty,
+                WorkArtifact.difficulty_conceptual,
+                WorkArtifact.difficulty_implementation,
+                WorkArtifact.difficulty_source,
+                WorkArtifact.difficulty_rubric_version,
+                WorkArtifact.difficulty_signals,
+            )
+        )
+        .where(_org_scope(org_id), WorkArtifact.kind == DIFFICULTY_RATED_KIND)
+        .order_by(WorkArtifact.updated_at.desc(), WorkArtifact.id)
+    )
+    return list((await db.execute(stmt)).scalars())
 
 
 async def set_artifact_kind(
@@ -964,6 +1114,9 @@ async def set_artifact_kind(
             )
         artifact.kind = kind
 
+    # The kind is a rating input: a correction onto ``plan`` rates the row, a
+    # correction away from it clears the rating.
+    assign_difficulty(artifact)
     artifact.kind_locked = True
     artifact.updated_at = datetime.now(UTC)
     try:
