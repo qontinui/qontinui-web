@@ -464,6 +464,43 @@ describe("linkedRefNotice", () => {
     ).toMatch(/not on the page that is loaded/i);
   });
 
+  it("names the findings reader in the fallback arm, and ONLY there", () => {
+    // A ref that matches nothing has one explanation this feed can never
+    // satisfy: a CREATED document sends no notice, so its reasoning lives in
+    // a finding rather than an event. Plan
+    // `2026-09-15-the-console-names-a-finding-it-cannot-open`, Phase 3.
+    const fallback = linkedRefNotice({
+      found: false,
+      loading: false,
+      error: false,
+    });
+    expect(fallback).toMatch(/created/i);
+    expect(fallback).toMatch(/\/admin\/coord\/findings\?id=/);
+
+    // Not in the arm that FOUND the event — an edit's notice is on screen and
+    // must not be overshadowed by a sentence about creations — nor in any of
+    // the arms that rank above the fallback.
+    for (const line of [
+      linkedRefNotice({ found: true, loading: false, error: false }),
+      linkedRefNotice({ found: false, loading: true, error: false }),
+      linkedRefNotice({ found: false, loading: false, error: true }),
+      linkedRefNotice({
+        found: false,
+        loading: false,
+        error: false,
+        migrationPending: true,
+      }),
+      linkedRefNotice({
+        found: false,
+        loading: false,
+        error: false,
+        pagingFailed: true,
+      }),
+    ]) {
+      expect(line).not.toMatch(/\/admin\/coord\/findings/);
+    }
+  });
+
   it("names the BUTTON, not the feed, when only a page append failed", () => {
     // A failed "Load more" leaves the head read — and the strip — perfectly
     // healthy, so folding it into `error` told the operator "the feed above
