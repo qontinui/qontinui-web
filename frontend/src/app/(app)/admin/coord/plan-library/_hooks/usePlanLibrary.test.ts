@@ -529,7 +529,12 @@ describe("useScanRoots", () => {
     const { result } = renderHook(() => useScanRoots());
     await waitFor(() => expect(result.current.loading).toBe(false));
 
-    expect(getMock).toHaveBeenCalledWith("/api/v1/plan-library/scan-roots");
+    // `coverage=false`: this panel renders no coverage field, so it must not
+    // pay the route's census-load and corpus anti-join — see `usePlanCoverage`
+    // below, whose own read asks for coverage instead.
+    expect(getMock).toHaveBeenCalledWith(
+      "/api/v1/plan-library/scan-roots?coverage=false"
+    );
     // The whole point of the route: an empty list arrives labelled `unknown`,
     // and the hook must not flatten that into "no rows, so nothing is wrong".
     expect(result.current.data?.state).toBe("unknown");
@@ -766,10 +771,11 @@ describe.each([
 
 /**
  * `usePlanCoverage` reads the SAME route as `useScanRoots`, deliberately and
- * at the cost of a second GET. These pin the two properties that make that
- * defensible: it is really the coverage door, and it hands the panel the
- * `coverage_detail` an empty `coverage` needs — without which an empty array
- * is indistinguishable from "nothing is missing".
+ * at the cost of a second GET — but not a second full-cost one, since
+ * `useScanRoots` asks with `?coverage=false`. These pin the two properties
+ * that make the second GET defensible: it is really the coverage door, and it
+ * hands the panel the `coverage_detail` an empty `coverage` needs — without
+ * which an empty array is indistinguishable from "nothing is missing".
  */
 describe("usePlanCoverage", () => {
   it("reads the scan-roots door, where coverage is computed", async () => {
