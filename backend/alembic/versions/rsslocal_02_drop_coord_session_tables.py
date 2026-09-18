@@ -1,7 +1,7 @@
 """rsslocal 02 — drop four vestigial coord session-state tables
 
 Revision ID: rsslocal_02_drop_coord_tables
-Revises: ptbe_01_primary_tree_branch_events
+Revises: pdtier_03
 Create Date: 2026-09-08
 
 Phase 2 of plan
@@ -287,7 +287,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "rsslocal_02_drop_coord_tables"
-down_revision: str | Sequence[str] | None = "ptbe_01_primary_tree_branch_events"
+down_revision: str | Sequence[str] | None = "pdtier_03"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
