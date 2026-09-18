@@ -10,11 +10,11 @@
  * component body) — pages gate their own mutations on `isCoordAdmin`. That
  * distinction is load-bearing for the connect-flow security reasoning in
  * `onboarding-status/page.tsx`, so do not restate it as "admin-gated".
- * Five primary pages:
+ * Primary pages:
  *  - /admin/coord/pipeline
  *  - /admin/coord/trees
  *  - /admin/coord/plans (the plan CORPUS, reconciled three ways)
- *  - /admin/coord/alerts
+ *  - /admin/coord/devops (Dev Ops overview, incl. the Conditions panel)
  *  - /admin/coord/history
  *
  * The per-unit detail route is `/admin/coord/work-units/[slug]`: plan

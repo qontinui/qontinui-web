@@ -8,7 +8,11 @@
  *
  * Added by the qontinui-web#1049 follow-up, under §6.4 ("a new console page
  * adds no new visual vocabulary — it composes the primitives, or it extends
- * the guide in the same PR"). The page that needed it is `/admin/coord/alerts`.
+ * the guide in the same PR"). The page that needed it was `/admin/coord/alerts`
+ * (deleted by plan
+ * `2026-09-18-notifications-are-agent-actions-and-alerts-are-agent-work`);
+ * `/sessions` is its consumer now. The alerts examples below are kept as the
+ * derivation of the rules, not as live call sites.
  *
  * ## Why a second component instead of a prop on `FilterTabs`
  *

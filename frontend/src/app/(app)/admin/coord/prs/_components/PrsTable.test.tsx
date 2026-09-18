@@ -187,3 +187,21 @@ describe("draft-state control", () => {
     }
   });
 });
+
+describe("escalated PRs (the alerts page is gone)", () => {
+  it("links the blocking badge to GitHub, never to /admin/coord/alerts", () => {
+    const row = pr({
+      merge_status: "awaiting-specialist-review",
+      escalation_alert_id: 42,
+    });
+    const { getByTestId, container } = render(<PrsTable prs={[row]} />);
+    const tr = getByTestId(`pr-row-${row.repo}-${row.pr_number}`);
+    const link = within(tr).getByTestId("blocking-badge-link");
+    expect(link.getAttribute("href")).toContain("github.com");
+    expect(link.getAttribute("href")).toContain(String(row.pr_number));
+    expect(
+      container.querySelector('a[href="/admin/coord/alerts"]')
+    ).toBeNull();
+    expect(screen.queryByText(/Open the escalation/)).toBeNull();
+  });
+});
