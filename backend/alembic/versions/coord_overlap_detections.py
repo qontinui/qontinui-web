@@ -1,7 +1,7 @@
 """coord.overlap_detections (durable PG sink for events.coord.overlap.detected)
 
 Revision ID: coord_overlap_detections
-Revises: coord_agent_worktrees_credentialed_at_01
+Revises: pdtier_03
 Create Date: 2026-09-17
 
 Phase 1 of ``2026-09-17-coord-overlap-detections-durable-sink.md``.
@@ -99,7 +99,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "coord_overlap_detections"
-down_revision: str | Sequence[str] | None = "coord_agent_worktrees_credentialed_at_01"
+down_revision: str | Sequence[str] | None = "pdtier_03"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
