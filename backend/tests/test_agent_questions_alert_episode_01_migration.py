@@ -241,9 +241,20 @@ def test_agent_questions_alert_episode_01_one_open_question_per_episode() -> Non
         assert _ask(engine, tenant_a, None) is not None
 
         # 8. Idempotency — re-running the revision over its own schema.
+        with engine.connect() as conn:
+            oid_before = conn.execute(
+                text(f"SELECT 'coord.{_INDEX_NAME}'::regclass::oid")
+            ).scalar_one()
         run_alembic(root, url, "stamp", _PARENT_REVISION_ID)
         run_alembic(root, url, "upgrade", _REVISION_ID)
         assert _index_row(engine)[0], "a re-run must leave a VALID index"
+        with engine.connect() as conn:
+            oid_after = conn.execute(
+                text(f"SELECT 'coord.{_INDEX_NAME}'::regclass::oid")
+            ).scalar_one()
+        assert oid_after == oid_before, (
+            "a re-run must leave a VALID index untouched, not drop and rebuild it"
+        )
 
         # 9. A failed CONCURRENTLY build is repaired. Drop the index, create
         #    a duplicate open question, and let a real CONCURRENTLY build fail

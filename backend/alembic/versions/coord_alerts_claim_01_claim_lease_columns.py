@@ -56,9 +56,10 @@ about lease timing:
 Only the non-NULL-claimant open rows are indexed, so the index stays tiny as
 the table grows and adds no maintenance cost on the alert-upsert write path
 for the overwhelming majority of rows (unclaimed alerts are not in it at all).
-A read rides it only if its WHERE clause states both conjuncts of the partial
-predicate (``resolved_at IS NULL AND claimed_by IS NOT NULL``); conjunct order
-is irrelevant to the planner.
+A read rides it only if its WHERE clause implies both conjuncts of the partial
+predicate (``resolved_at IS NULL AND claimed_by IS NOT NULL``). It need not
+state them: the planner infers ``claimed_by IS NOT NULL`` from any strict
+comparison on ``claimed_by`` (e.g. ``claimed_by = $1``).
 
 Locking: ADD COLUMN in the transaction, the index outside it
 ==========================================================================
