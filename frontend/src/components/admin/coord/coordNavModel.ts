@@ -10,7 +10,7 @@
  * The groups are persona-shaped (developer / merge maintainer / fleet
  * operator), carried over unchanged from the console's own dropdown nav:
  *
- *   Pipeline · Pull Requests · Gates · Alerts · Notifications   ← direct
+ *   Pipeline · Pull Requests · Gates · Notifications   ← direct
  *   Work ▸    Plans / Work Units / Plan Library / Plan Candidates /
  *             Plan Forks / Plan Follow-ups / Questions / Agents /
  *             Agent Commands / Agent Skills / Prompt Log / History / Lands
@@ -23,13 +23,18 @@
  *             Memory° / Onboarding° / Onboarding Status°
  *   Access ▸  Members / Agent Registry                  (° = operator-only)
  *
+ * There is no Alerts tab. The raw `coord.alerts` list is agents' work (plan
+ * `2026-09-18-notifications-are-agent-actions-and-alerts-are-agent-work`
+ * Phase 8); the operator's rollup of it is the Conditions panel on
+ * `Dev Ops ▸ Overview`, and `next.config.mjs` 308s `/admin/coord/alerts`
+ * there.
+ *
  * `testId` values are load-bearing: the header crumb renders
  * `<testId>-active`, which Spec-CI "active section" assertions match.
  */
 
 import {
   Activity,
-  AlertTriangle,
   Anchor,
   Bell,
   BookOpen,
@@ -131,15 +136,8 @@ export const DIRECT_TABS: NavLeaf[] = [
     testId: "coord-nav-gates",
   },
   {
-    href: "/admin/coord/alerts",
-    label: "Alerts",
-    icon: AlertTriangle,
-    testId: "coord-nav-alerts",
-  },
-  {
-    // Fifth direct tab by argued exception — see the header block. Placed
-    // immediately after Alerts: conditions ("what is wrong now?") and
-    // events ("what happened while I was away?") read as a pair.
+    // Fourth direct tab by argued exception — see the header block: the
+    // operator's record of what agents did, read at a glance.
     href: "/admin/coord/notifications",
     label: "Notifications",
     icon: Bell,

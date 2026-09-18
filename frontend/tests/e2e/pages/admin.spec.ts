@@ -268,7 +268,7 @@ test.describe("Admin - Agent Claims", () => {
     expect(hasAgentClaimsHeading || wasRedirected).toBeTruthy();
   });
 
-  test("should render four dashboard sections for superusers", async ({
+  test("should render three dashboard sections for superusers", async ({
     page,
   }) => {
     await page.goto("/admin/agent-claims");
@@ -290,7 +290,7 @@ test.describe("Admin - Agent Claims", () => {
         page.getByTestId("agent-claims-dashboard")
       ).toBeVisible();
 
-      // All four section cards render — they don't depend on coord
+      // All three section cards render — they don't depend on coord
       // data being present (each shows an empty-state message when
       // the proxy returns no data).
       await expect(
@@ -301,9 +301,6 @@ test.describe("Admin - Agent Claims", () => {
       ).toBeVisible();
       await expect(
         page.getByTestId("claims-steals-section")
-      ).toBeVisible();
-      await expect(
-        page.getByTestId("claims-alerts-section")
       ).toBeVisible();
     }
   });
@@ -379,7 +376,11 @@ test.describe("Admin - Coord operator console", () => {
       // sections (`coordNavModel.ts`).
       await expect(page.getByTestId("coord-nav")).toBeVisible();
       await expect(page.getByTestId("coord-nav-pipeline-active")).toBeVisible();
-      await expect(page.getByTestId("coord-nav-alerts")).toBeVisible();
+      await expect(page.getByTestId("coord-nav-notifications")).toBeVisible();
+      // The raw alert list left the operator UI (plan
+      // `2026-09-18-notifications-are-agent-actions-and-alerts-are-agent-work`
+      // Phase 8): no header link to it, and no sidebar item.
+      await expect(page.getByTestId("coord-nav-alerts")).toHaveCount(0);
 
       const sidebar = page.locator('aside[data-sidebar="true"]');
       const navItem = (id: string) => sidebar.locator(`[data-nav-id="${id}"]`);
@@ -387,11 +388,11 @@ test.describe("Admin - Coord operator console", () => {
         "coord-pipeline",
         "coord-prs",
         "coord-gates",
-        "coord-alerts",
         "coord-notifications",
       ]) {
         await expect(navItem(id)).toBeVisible();
       }
+      await expect(navItem("coord-alerts")).toHaveCount(0);
 
       // Work group: Plans / Questions / Agents / History.
       await navItem("coord-group-work").click();
@@ -419,7 +420,6 @@ test.describe("Admin - Coord operator console", () => {
     { path: "/admin/coord/plans", testId: "coord-plans-page" },
     { path: "/admin/coord/questions", testId: "coord-questions-page" },
     { path: "/admin/coord/agents", testId: "coord-agents-page" },
-    { path: "/admin/coord/alerts", testId: "coord-alerts-page" },
     { path: "/admin/coord/history", testId: "coord-history-page" },
   ]) {
     test(`should load ${path} without errors`, async ({ page }) => {

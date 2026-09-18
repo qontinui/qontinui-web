@@ -266,105 +266,26 @@ class TestSteals:
 
 
 # ---------------------------------------------------------------------------
-# GET /operations/claims/alerts
+# GET /operations/claims/alerts — deleted
 # ---------------------------------------------------------------------------
 
 
-class TestClaimsAlerts:
-    """The claim slice is now selected by coord, not in Python.
+class TestClaimsAlertsRetired:
+    """The ``claim-`` alert slice proxy is gone, with its only consumer.
 
-    The endpoint used to pull the whole ``/coord/alerts`` rollup and keep
-    the ``claim-`` prefixed rows in Python. coord caps that rollup at 500
-    rows ordered by severity/recency, so claim alerts were evicted before
-    the filter ever saw them (measured 0 rows, 2026-08-14). It now asks
-    coord for ``?source=claim-`` — a prefix match done in SQL, which no
-    other watcher's tick can evict.
+    ``AgentClaimsDashboard``'s stale-claim alerts section was its single
+    caller; plan
+    ``2026-09-18-notifications-are-agent-actions-and-alerts-are-agent-work``
+    Phase 8 deleted both, because raw alert rows are agents' work rather
+    than an operator surface. The general ``/operations/alerts`` read API
+    stays.
     """
 
-    def test_requests_the_claim_prefix_from_coord(self, auth_client: TestClient):
-        coord_payload = {
-            "alerts": [
-                {"alert_key": "claim-stale-claims-m-a", "severity": "warning"},
-                {"alert_key": "claim-stale-claims-unknown", "severity": "warning"},
-            ]
-        }
-        mock_resp = _mock_response(json_data=coord_payload)
+    def test_route_is_not_mounted(self, auth_client: TestClient):
         with _patch_httpx() as MockClient:
             instance = AsyncMock()
-            instance.get.return_value = mock_resp
             _configure_mock_client(MockClient, instance)
             resp = auth_client.get(f"{API_PREFIX}/claims/alerts")
-        assert resp.status_code == 200
-        called_url = instance.get.call_args.args[0]
-        assert called_url.endswith("/coord/alerts")
-        called_params = instance.get.call_args.kwargs.get("params", {})
-        assert called_params.get("source") == "claim-"
-        # Passed through verbatim — no Python-side re-filtering.
-        assert resp.json() == coord_payload
-
-    def test_asks_for_coords_maximum_page_rather_than_its_default(
-        self, auth_client: TestClient
-    ):
-        """The page size is EXPLICIT, because coord's default moved.
-
-        This endpoint sent no ``limit``, so it inherited coord's default —
-        and the coord half of the same plan dropped that default from 500
-        to 100 when it added paging. The narrowing lives in another repo
-        and produces no signal here, so the only thing that can pin it is
-        an assertion on the outgoing request.
-
-        It matters because the single consumer (``AgentClaimsDashboard``'s
-        stale-claim section) neither pages nor reads ``total_count``: above
-        the ceiling it renders a truncated list as the whole truth, which
-        is the defect this plan exists to kill.
-        """
-        mock_resp = _mock_response(json_data={"alerts": []})
-        with _patch_httpx() as MockClient:
-            instance = AsyncMock()
-            instance.get.return_value = mock_resp
-            _configure_mock_client(MockClient, instance)
-            resp = auth_client.get(f"{API_PREFIX}/claims/alerts")
-        assert resp.status_code == 200
-        called_params = instance.get.call_args.kwargs.get("params", {})
-        # coord's documented hard maximum; it clamps rather than erroring,
-        # so this stays safe even if that ceiling is lowered later.
-        assert called_params.get("limit") == 1000
-
-    def test_no_python_side_filtering(self, auth_client: TestClient):
-        """Whatever coord returns is what the caller gets.
-
-        If a future coord widens ``source`` semantics (or the operator
-        hits the route through a proxy that rewrites it), silently
-        dropping rows here would hide the discrepancy instead of
-        surfacing it.
-        """
-        coord_payload = {
-            "alerts": [
-                {"alert_key": "claim-stale-claims-m-a", "severity": "warning"},
-                {"alert_key": "fleet-machine-partitioned-m-x", "severity": "critical"},
-            ]
-        }
-        mock_resp = _mock_response(json_data=coord_payload)
-        with _patch_httpx() as MockClient:
-            instance = AsyncMock()
-            instance.get.return_value = mock_resp
-            _configure_mock_client(MockClient, instance)
-            resp = auth_client.get(f"{API_PREFIX}/claims/alerts")
-        keys = [a["alert_key"] for a in resp.json()["alerts"]]
-        assert keys == ["claim-stale-claims-m-a", "fleet-machine-partitioned-m-x"]
-
-    def test_list_payload_shape_also_supported(self, auth_client: TestClient):
-        # coord variants may return a bare list rather than a dict.
-        coord_payload = [
-            {"alert_key": "claim-stale-claims-m-z", "severity": "warning"},
-        ]
-        mock_resp = _mock_response(json_data=coord_payload)
-        with _patch_httpx() as MockClient:
-            instance = AsyncMock()
-            instance.get.return_value = mock_resp
-            _configure_mock_client(MockClient, instance)
-            resp = auth_client.get(f"{API_PREFIX}/claims/alerts")
-        body = resp.json()
-        assert isinstance(body, list)
-        assert len(body) == 1
-        assert body[0]["alert_key"] == "claim-stale-claims-m-z"
+        assert resp.status_code == 404
+        # Nothing was forwarded to coord.
+        instance.get.assert_not_called()
