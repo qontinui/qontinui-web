@@ -33,10 +33,12 @@ the running rubric before it answers — so the first read after deploy rates
 the corpus, and every later rubric bump re-rates it the same way.
 
 The three level columns carry CHECKs, because the API and the console key
-colour and routing off the exact word; ``difficulty_source`` likewise.
+colour and routing off the exact word; ``difficulty_source`` likewise. They
+are declared inside each ``ADD COLUMN`` — see ``_COLUMNS`` for why.
 
-Downgrade drops the six columns. Every one is derived from ``body``, so
-nothing is lost that the next read would not recompute.
+Downgrade drops the six columns, and their CHECKs with them. Every one is
+derived from ``body``, so nothing is lost that the next read would not
+recompute.
 
 Idempotency: ``IF NOT EXISTS`` / ``IF EXISTS`` throughout.
 """
@@ -57,48 +59,67 @@ _TABLE = "agent.work_artifacts"
 
 _LEVELS = "('low', 'medium', 'high')"
 
-#: ``(column, type)`` in upgrade order; the downgrade drops them reversed.
-_COLUMNS: tuple[tuple[str, str], ...] = (
-    ("difficulty", "TEXT"),
-    ("difficulty_conceptual", "TEXT"),
-    ("difficulty_implementation", "TEXT"),
-    ("difficulty_source", "TEXT"),
-    ("difficulty_rubric_version", "INTEGER"),
-    ("difficulty_signals", "JSONB"),
-)
-
-#: ``(constraint name, predicate)``. NULL passes every one — unrated is legal.
-_CHECKS: tuple[tuple[str, str], ...] = (
-    ("ck_work_artifacts_difficulty", f"difficulty IN {_LEVELS}"),
+#: ``(column, type, CHECK constraint name or None, CHECK predicate or None)`` in
+#: upgrade order; the downgrade drops the columns reversed.
+#:
+#: Each CHECK is declared INSIDE its ``ADD COLUMN IF NOT EXISTS`` as a named
+#: column constraint, never as a separate ``DROP CONSTRAINT IF EXISTS`` +
+#: ``ADD CONSTRAINT`` pair. Two reasons, both load-bearing:
+#:
+#: * coord's merge-train migration classifier
+#:   (``qontinui-coord`` ``crates/coord/src/pr_merge/migration_classifier.rs``)
+#:   rejects any ``DROP`` inside ``ALTER TABLE`` and any ``ADD CONSTRAINT``
+#:   without ``NOT VALID``, and a rejection parks the PR on
+#:   ``escalate-path-matched``. The first cut of this revision was parked
+#:   exactly that way (2026-09-18).
+#: * It stays re-runnable: ``IF NOT EXISTS`` skips the column AND its
+#:   constraint together, so a partially-applied upgrade re-runs cleanly
+#:   without a drop. Validating the CHECK costs nothing — the column is new,
+#:   so every existing row holds NULL, which every CHECK here admits.
+#:
+#: Dropping a column drops its column constraints with it, which is why the
+#: downgrade names only columns.
+_COLUMNS: tuple[tuple[str, str, str | None, str | None], ...] = (
     (
+        "difficulty",
+        "TEXT",
+        "ck_work_artifacts_difficulty",
+        f"difficulty IN {_LEVELS}",
+    ),
+    (
+        "difficulty_conceptual",
+        "TEXT",
         "ck_work_artifacts_difficulty_conceptual",
         f"difficulty_conceptual IN {_LEVELS}",
     ),
     (
+        "difficulty_implementation",
+        "TEXT",
         "ck_work_artifacts_difficulty_implementation",
         f"difficulty_implementation IN {_LEVELS}",
     ),
     (
+        "difficulty_source",
+        "TEXT",
         "ck_work_artifacts_difficulty_source",
         "difficulty_source IN ('declared', 'computed')",
     ),
+    ("difficulty_rubric_version", "INTEGER", None, None),
+    ("difficulty_signals", "JSONB", None, None),
 )
 
 
 def upgrade() -> None:
-    """Add the nullable rating columns and their vocabulary CHECKs."""
-    for column, column_type in _COLUMNS:
-        op.execute(
-            f"ALTER TABLE {_TABLE} ADD COLUMN IF NOT EXISTS {column} {column_type}"
-        )
-    for name, predicate in _CHECKS:
-        op.execute(f"ALTER TABLE {_TABLE} DROP CONSTRAINT IF EXISTS {name}")
-        op.execute(f"ALTER TABLE {_TABLE} ADD CONSTRAINT {name} CHECK ({predicate})")
+    """Add the nullable rating columns, each with its vocabulary CHECK."""
+    # ONE string literal per call: the classifier checks each literal it
+    # extracts as a statement of its own, so a split `f"..." f"{x}"` would
+    # hand it a bare `{x}` fragment to reject.
+    for col, typ, name, check in _COLUMNS:
+        ck = f" CONSTRAINT {name} CHECK ({check})" if check else ""
+        op.execute(f"ALTER TABLE {_TABLE} ADD COLUMN IF NOT EXISTS {col} {typ}{ck}")
 
 
 def downgrade() -> None:
-    """Drop them. Every column is derived from ``body``."""
-    for name, _predicate in reversed(_CHECKS):
-        op.execute(f"ALTER TABLE {_TABLE} DROP CONSTRAINT IF EXISTS {name}")
-    for column, _column_type in reversed(_COLUMNS):
+    """Drop them (their CHECKs go with them). Every column derives from ``body``."""
+    for column, _column_type, _check_name, _check in reversed(_COLUMNS):
         op.execute(f"ALTER TABLE {_TABLE} DROP COLUMN IF EXISTS {column}")
