@@ -98,6 +98,16 @@ import {
   CLEARANCE_AUTHOR_GLYPH_KINDS,
   CLEARANCE_RULE_CLASS,
 } from "@/app/(app)/admin/coord/gate-clearance/clearanceRuleStatus";
+// The findings reader — plan
+// `2026-09-15-the-console-names-a-finding-it-cannot-open` Phase 2. A
+// `*Status.ts` in a `_lib/` beside its own route: `attention.test.ts`'s
+// `src/app/**` glob reaches it at any depth, so no discovery line was widened
+// for it.
+import {
+  FINDING_ATTENTION_BY_RETENTION,
+  FINDING_AUTHOR_GLYPH_RETENTIONS,
+  FINDING_RETENTION_CLASS,
+} from "@/app/(app)/admin/coord/findings/_lib/findingStatus";
 // Plan `2026-09-06-decision-policy-rows-are-operator-only-to-create` Phase 3a —
 // the v2 decision-domain editor. Same shape as gate-clearance: a `*Status.ts`
 // beside its own route.
@@ -208,6 +218,15 @@ export interface ConsoleSurface {
  * renders it. One row per surface.
  */
 export const CONSOLE_PALETTES: ReadonlyArray<ConsoleSurface> = [
+  {
+    surface: "findings (/admin/coord/findings)",
+    module: "app/(app)/admin/coord/findings/_lib/findingStatus.ts",
+    attentionByKind: FINDING_ATTENTION_BY_RETENTION,
+    palette: {
+      badgeClass: FINDING_RETENTION_CLASS,
+      authorGlyphKinds: FINDING_AUTHOR_GLYPH_RETENTIONS as ReadonlySet<string>,
+    },
+  },
   {
     surface: "merge pipeline (/admin/coord/pipeline)",
     module: "components/operations/prPipeline.ts",

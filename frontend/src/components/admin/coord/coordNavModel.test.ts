@@ -67,6 +67,7 @@ describe("coordNavModel", () => {
       "Plan Forks",
       "Plan Follow-ups",
       "Questions",
+      "Findings",
       "Agents",
       "Agent Commands",
       "Agent Skills",
