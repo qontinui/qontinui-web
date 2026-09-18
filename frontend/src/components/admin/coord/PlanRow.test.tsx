@@ -53,13 +53,13 @@ describe("PlanRow status tag", () => {
 
   it("renders in-progress visually DISTINCT from shipped", () => {
     const { unmount } = renderRow({ slug: "p-1", status: "shipped" });
-    const shippedClass =
-      screen.getByTestId("coord-plan-status-tag").firstElementChild?.className;
+    const shippedClass = screen.getByTestId("coord-plan-status-tag")
+      .firstElementChild?.className;
     unmount();
 
     renderRow({ slug: "p-2", status: "in_progress" });
-    const activeClass =
-      screen.getByTestId("coord-plan-status-tag").firstElementChild?.className;
+    const activeClass = screen.getByTestId("coord-plan-status-tag")
+      .firstElementChild?.className;
 
     expect(activeClass).not.toBe(shippedClass);
     expect(screen.getByTestId("coord-plan-status-tag")).toHaveTextContent(
@@ -323,15 +323,47 @@ describe("PlanRow detail (R5) and the frozen testids (D4a)", () => {
   it("carries the detail route as an explicit action, not a whole-row link (D1)", () => {
     renderRow(plan, true);
     const link = screen.getByTestId("coord-plan-card-link");
-    expect(link).toHaveAttribute(
-      "href",
-      "/admin/coord/plans/p-5"
-    );
+    expect(link).toHaveAttribute("href", "/admin/coord/plans/p-5");
     expect(screen.getByTestId("coord-plan-card-spawn-btn")).toBeInTheDocument();
     // The row itself must NOT be an anchor any more — that is the whole point
     // of D1, and it is the one thing a testid check cannot see.
-    expect(
-      screen.getByTestId("coord-plan-card").querySelector("a")
-    ).toBe(link);
+    expect(screen.getByTestId("coord-plan-card").querySelector("a")).toBe(link);
+  });
+});
+
+describe("PlanRow difficulty chip", () => {
+  it("renders no chip when the surface passes no rating", () => {
+    renderRow({ slug: "p-1", status: "vetted" });
+    expect(screen.queryByTestId("coord-plan-difficulty")).toBeNull();
+  });
+
+  it("renders the level beside the status, and the detail explains it", () => {
+    render(
+      <PlanRow
+        plan={{ slug: "p-1", status: "vetted" }}
+        expanded
+        onToggle={() => {}}
+        difficulty={{
+          kind: "rated",
+          tier: "Opus 5",
+          item: {
+            id: "1",
+            slug: "p-1",
+            difficulty: "medium",
+            difficulty_conceptual: "medium",
+            difficulty_implementation: "low",
+            difficulty_source: "computed",
+            difficulty_rubric_version: 1,
+            difficulty_signals: { phases: 2, repos: ["qontinui-web"] },
+          },
+        }}
+      />
+    );
+    const chip = screen.getByTestId("coord-plan-difficulty");
+    expect(chip).toHaveTextContent("medium");
+    expect(chip).toHaveAttribute("data-difficulty", "medium");
+    const detail = screen.getByTestId("coord-plan-difficulty-detail");
+    expect(detail).toHaveTextContent("route to Opus 5");
+    expect(detail).toHaveTextContent("2 phases · 1 repo (qontinui-web)");
   });
 });
