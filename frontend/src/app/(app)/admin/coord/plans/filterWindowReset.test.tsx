@@ -58,6 +58,17 @@ vi.mock("@/contexts/auth-context", () => ({
   useAuth: () => ({ isCoordAdmin: true }),
 }));
 
+// The page's SECOND read — the plan library's difficulty ratings — goes
+// through its own hook and would otherwise count against the `get` spy this
+// file asserts on. What is under test here is the work-unit read, so the
+// ratings stay pending; `usePlanDifficulty` has its own coverage.
+vi.mock("./usePlanDifficulty", () => ({
+  usePlanDifficulty: () => ({
+    index: { state: "pending" },
+    refresh: () => Promise.resolve(),
+  }),
+}));
+
 vi.mock("@/services/service-factory", () => ({
   httpClient: {
     get: (...args: unknown[]) => get(...args),

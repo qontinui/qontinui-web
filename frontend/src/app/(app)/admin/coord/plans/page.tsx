@@ -48,6 +48,16 @@
  * strictly worse control than the Select, and `coord-plans-status-select` is a
  * frozen authored testid (D4a). The counts operators actually want are in the
  * health strip, derived from the window that WAS fetched.
+ *
+ * ## Difficulty (plan `2026-09-18-plan-library-difficulty-field`)
+ *
+ * Each row carries the plan library's difficulty rating — the model tier the
+ * plan routes to — read from `/api/v1/plan-library/difficulty` by
+ * `usePlanDifficulty` and joined by slug (`planDifficulty.ts`). Unlike the
+ * status Select, the difficulty Select is a CLIENT-side filter over the
+ * fetched window, and it is disabled until the ratings have loaded: filtering
+ * on ratings the page does not have would render an empty list that reads as
+ * "no plan is that hard".
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -58,7 +68,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { ArrowDownUp, Filter, TriangleAlert } from "lucide-react";
+import { ArrowDownUp, Filter, SignalHigh, TriangleAlert } from "lucide-react";
 import {
   CollapsiblePanel,
   HealthStrip,
@@ -71,8 +81,15 @@ import {
   planAuthoredAt,
   type CoordPlanRow,
 } from "@/components/admin/coord/planStatus";
+import {
+  DIFFICULTY_FILTERS,
+  difficultyCell,
+  matchesDifficulty,
+  type DifficultyFilter,
+} from "@/components/admin/coord/planDifficulty";
 import { httpClient } from "@/services/service-factory";
 import { sortPlans, SORTS, type SortKey } from "./planSort";
+import { usePlanDifficulty } from "./usePlanDifficulty";
 import { derivePlansHealth, SHEPHERD_SLUG_PREFIX } from "./plansHealth";
 
 const API = "/api/v1/operations";
@@ -118,6 +135,11 @@ interface PlansListResponse {
 export default function CoordPlansListPage() {
   const [status, setStatus] = useState("any");
   const [sort, setSort] = useState<SortKey>("authored_desc");
+  const [difficultyFilter, setDifficultyFilter] =
+    useState<DifficultyFilter>("any");
+  const { index: difficultyIndex, refresh: refreshDifficulty } =
+    usePlanDifficulty();
+  const difficultyLoaded = difficultyIndex.state === "loaded";
   const [data, setData] = useState<PlansListResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   // There is deliberately no `loading` flag. It used to gate the list's
@@ -287,6 +309,10 @@ export default function CoordPlansListPage() {
    * one must not free.
    */
   const refresh = useCallback(() => {
+    // The ratings refresh with the operator's press too — never with the poll
+    // (see `usePlanDifficulty`). Not awaited: the button acknowledges the
+    // work-unit read, which is the one it is labelled for.
+    void refreshDifficulty();
     const tookLock = !pollInFlight.current;
     if (tookLock) pollInFlight.current = true;
     const question = questionGen.current;
@@ -295,13 +321,23 @@ export default function CoordPlansListPage() {
         pollInFlight.current = false;
       }
     });
-  }, [fetchData]);
+  }, [fetchData, refreshDifficulty]);
 
-  const plans = useMemo(
-    () => data?.work_units ?? data?.plans ?? [],
-    [data]
-  );
+  const plans = useMemo(() => data?.work_units ?? data?.plans ?? [], [data]);
   const sorted = useMemo(() => sortPlans(plans, sort), [plans, sort]);
+  // Applied only once the ratings have loaded — see the module docstring.
+  const shown = useMemo(
+    () =>
+      difficultyLoaded && difficultyFilter !== "any"
+        ? sorted.filter((p) =>
+            matchesDifficulty(
+              difficultyCell(difficultyIndex, p.slug),
+              difficultyFilter
+            )
+          )
+        : sorted,
+    [sorted, difficultyFilter, difficultyIndex, difficultyLoaded]
+  );
   // coord returned a full page, so there are almost certainly more work units
   // than we sorted. Say so: with the list capped at `updated_at DESC`, an
   // "oldest authored" answer drawn from this window can be wrong.
@@ -373,6 +409,33 @@ export default function CoordPlansListPage() {
             ))}
           </SelectContent>
         </Select>
+        <SignalHigh className="h-4 w-4 text-muted-foreground ml-1" />
+        <Select
+          value={difficultyLoaded ? difficultyFilter : "any"}
+          onValueChange={(v) => setDifficultyFilter(v as DifficultyFilter)}
+          disabled={!difficultyLoaded}
+        >
+          <SelectTrigger
+            className="w-[180px]"
+            data-testid="coord-plans-difficulty-select"
+            title={
+              difficultyIndex.state === "failed"
+                ? `Difficulty ratings could not be read: ${difficultyIndex.reason}`
+                : difficultyIndex.state === "pending"
+                  ? "Difficulty ratings are loading"
+                  : "Filter by the plan library's difficulty rating (applied to the rows fetched)"
+            }
+          >
+            <SelectValue placeholder="difficulty" />
+          </SelectTrigger>
+          <SelectContent>
+            {DIFFICULTY_FILTERS.map((opt) => (
+              <SelectItem key={opt.value} value={opt.value}>
+                {opt.label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
         {/* Keyed on the question: a press whose read was superseded by a filter
             change must not leave the NEW question's control busy for up to the
             60s request timeout, over a read whose answer will be discarded. */}
@@ -414,9 +477,9 @@ export default function CoordPlansListPage() {
               data-testid="coord-plans-truncated-notice"
             >
               Showing the {FETCH_LIMIT} most-recently-updated work units — coord
-              caps this list. Sorting applies to these only, so a
-              &ldquo;{SORTS.find((s) => s.value === sort)?.label}&rdquo; result
-              may not be the corpus-wide answer.
+              caps this list. Sorting applies to these only, so a &ldquo;
+              {SORTS.find((s) => s.value === sort)?.label}&rdquo; result may not
+              be the corpus-wide answer.
             </p>
           )}
           {missingAuthored > 0 && (
@@ -424,9 +487,9 @@ export default function CoordPlansListPage() {
               className="text-xs text-muted-foreground"
               data-testid="coord-plans-missing-authored-notice"
             >
-              {missingAuthored} of {plans.length} have no authoring date —
-              no date prefix on the slug and no authored_at in coord; they
-              sort last rather than being treated as oldest.
+              {missingAuthored} of {plans.length} have no authoring date — no
+              date prefix on the slug and no authored_at in coord; they sort
+              last rather than being treated as oldest.
             </p>
           )}
         </CollapsiblePanel>
@@ -436,8 +499,27 @@ export default function CoordPlansListPage() {
         <p className="text-sm text-destructive">Failed to load: {error}</p>
       )}
 
+      {difficultyIndex.state === "failed" && (
+        <p
+          className="text-xs text-muted-foreground"
+          data-testid="coord-plans-difficulty-unknown"
+        >
+          Difficulty ratings could not be read ({difficultyIndex.reason}) — each
+          row&apos;s difficulty is unknown, not unrated.
+        </p>
+      )}
+      {difficultyIndex.state === "loaded" && difficultyIndex.staleReason && (
+        <p
+          className="text-xs text-muted-foreground"
+          data-testid="coord-plans-difficulty-stale"
+        >
+          Some difficulty ratings may predate the current rubric — re-rating
+          failed: {difficultyIndex.staleReason}
+        </p>
+      )}
+
       <RecordList
-        items={sorted}
+        items={shown}
         itemKey={(p) => p.slug}
         // "Has this question been ANSWERED, one way or the other?" — never
         // "is a request outstanding?". The two diverge, and the gap is where a
@@ -467,6 +549,17 @@ export default function CoordPlansListPage() {
               No plans matched status={status === "any" ? "any" : status} at the
               last good read — this list has not refreshed since.
             </p>
+          ) : sorted.length > 0 ? (
+            // Coord returned rows; the DIFFICULTY filter removed them all. Say
+            // which filter emptied the list, not the status one.
+            <p
+              className="text-sm text-muted-foreground italic"
+              data-testid="coord-plans-difficulty-empty"
+            >
+              {difficultyFilter === "unrated"
+                ? `None of the ${sorted.length} fetched plans is unrated.`
+                : `None of the ${sorted.length} fetched plans is rated ${difficultyFilter}.`}
+            </p>
           ) : (
             <p
               className="text-sm text-muted-foreground italic"
@@ -481,6 +574,7 @@ export default function CoordPlansListPage() {
             plan={p}
             expanded={ctx.expanded}
             onToggle={ctx.onToggle}
+            difficulty={difficultyCell(difficultyIndex, p.slug)}
           />
         )}
       />
