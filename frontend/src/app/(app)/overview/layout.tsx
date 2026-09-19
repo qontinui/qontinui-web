@@ -39,8 +39,11 @@ export default function OverviewLayout({ children }: { children: ReactNode }) {
               <Link
                 key={href}
                 href={href}
-                className="whitespace-nowrap border-b-2 border-transparent px-3 py-3 text-sm text-muted-foreground transition-colors hover:text-foreground [&.active]:border-primary [&.active]:text-foreground"
-                data-active={isActive}
+                className={`whitespace-nowrap border-b-2 border-transparent px-3 py-3 text-sm transition-colors hover:text-foreground ${
+                  isActive ? "border-primary text-foreground" : "text-muted-foreground"
+                }`}
+                aria-current={isActive ? "page" : undefined}
+                data-ui-bridge-id={`overview.subnav.${label.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`}
               >
                 {label}
               </Link>
