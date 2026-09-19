@@ -648,6 +648,24 @@ describe("sensitiveActionFacts", () => {
     ).toBe("revert-…");
   });
 
+  it("accepts the pre-rename wire string until coord's alias retires", () => {
+    expect(
+      sensitiveActionFacts(
+        row({
+          kind: "agent_took_irreversible_action",
+          detail: { reversible: "no", undo: "ledger:1" },
+        })
+      )
+    ).toEqual({
+      reversible: "no",
+      reversibleLabel: "not reversible",
+      undo: "ledger:1",
+    });
+    expect(humanKind("agent_took_irreversible_action")).toBe(
+      "Sensitive agent action"
+    );
+  });
+
   it("is null for every other kind", () => {
     expect(
       sensitiveActionFacts(row({ detail: { reversible: "no", undo: "x" } }))
