@@ -23,20 +23,45 @@ What is asserted
 2. Neither the column nor either index exists at the parent revision.
 3. After upgrade the column is ``timestamptz``, nullable, no default, and
    carries a comment naming the derive worker.
-4. Both indexes are ``indisvalid`` (a killed ``CONCURRENTLY`` build leaves an
-   INVALID index that ``IF NOT EXISTS`` skips forever), and their definitions
+4. Both indexes are ``indisvalid`` after a clean upgrade, and their definitions
    carry the exact key directions / NULL placement.
 5. **The list page rides the authored index with no Sort node** —
    ``WHERE tenant_id = X ORDER BY authored_at DESC NULLS LAST, slug ASC LIMIT n``.
 6. **Sensitivity:** the same order with ``NULLS FIRST`` cannot be served
    without a sort — otherwise assertion 5 would pass against an index whose
    NULL placement is wrong.
-7. **The derive rotation read rides the derive index with no Sort node**, and
-   the NULLS-FIRST rows come back first.
-8. Downgrade removes all three objects and leaves ``authored_at`` and every row.
+7. **The derive rotation lane, in the statement coord actually runs** — cited
+   units only, the recency lane's ids excluded, ordered
+   ``derive_checked_at ASC NULLS FIRST, id ASC``. Asserted: the derive index is
+   the scan the planner reaches for and supplies the LEADING key
+   (``Presorted Key: w.derive_checked_at``), never-evaluated units come out
+   first, the rest ascend, no uncited unit and no excluded id appears.
+8. **The killed-``CONCURRENTLY`` hazard, exercised rather than described:** one
+   index is marked ``indisvalid = false`` in the catalog, alembic is re-stamped
+   at the parent and ``upgrade`` re-run — and the index is STILL invalid,
+   because ``CREATE INDEX ... IF NOT EXISTS`` sees the name and skips. Then the
+   operator's repair (``DROP INDEX`` + re-run) is shown to rebuild it valid.
+9. Downgrade removes all three objects and leaves ``authored_at`` and every row.
+
+What is deliberately NOT asserted
+=================================
+
+* **No "Sort-free plan" claim for the rotation lane.** Its second sort key
+  (``w.id``) is not in the single-column derive index, so no plan avoids a sort
+  entirely; on PG16 the shape is an ``Incremental Sort`` over an index scan.
+  Assertion 7 pins the presorted key, not the absence of a ``Sort`` node. An
+  earlier version of this test pinned a SYNTHETIC
+  ``ORDER BY derive_checked_at ASC NULLS FIRST LIMIT 20`` and asserted
+  "no Sort" — true of that statement, false of coord's.
+* **Nothing about production plan CHOICE.** Every plan assertion here runs with
+  ``enable_seqscan = off`` against ~120 rows: it shows an index is USABLE for an
+  order, which is the DDL property this revision owns. Cardinality-driven plan
+  selection on the real corpus is not in scope for a migration test.
 
 Substrate comes from ``_alembic_harness``: an ephemeral database inside the test
-Postgres, skipped when none is reachable.
+Postgres, skipped when none is reachable. The invalid-index step needs a
+superuser (a catalog ``UPDATE``); both CI's service container and a local
+``pgvector/pgvector:pg16`` run as one.
 """
 
 from __future__ import annotations
@@ -84,11 +109,25 @@ _LIST_WRONG_NULLS_SQL = (
     "ORDER BY authored_at DESC NULLS FIRST, slug ASC LIMIT 50"
 )
 
-# The Phase 3 rotation half: oldest-evaluated first, never-evaluated before all.
+# The Phase 3 rotation lane, in the shape coord runs it
+# (`work_unit_derive_worker::select_candidates`): CITED units only, the recency
+# lane's already-taken ids excluded, and a second sort key (`w.id`) this index
+# does not carry. Two separate statements per tick, not a UNION — the recency
+# lane is a query of its own and does not appear here.
 _ROTATION_SQL = (
-    "SELECT slug FROM coord.work_units "
-    "ORDER BY derive_checked_at ASC NULLS FIRST LIMIT 20"
+    "SELECT w.id, w.slug, w.derive_checked_at FROM coord.work_units w "
+    "WHERE w.status NOT IN ('superseded', 'obsolete') "
+    "AND NOT (w.id = ANY(:excluded ::uuid[])) "
+    "AND EXISTS (SELECT 1 FROM coord.work_unit_pr_citations c "
+    "WHERE c.work_unit_id = w.id) "
+    "ORDER BY w.derive_checked_at ASC NULLS FIRST, w.id ASC "
+    "LIMIT 100"
 )
+
+# How many ids coord's recency lane hands the rotation lane to exclude
+# (`RECENT_CANDIDATES`). The array's SIZE is part of the statement shape being
+# planned, so the fixture pads to it rather than passing the three it can check.
+_RECENT_CANDIDATES = 500
 
 
 def test_the_pinned_parent_matches_the_revisions_down_revision() -> None:
@@ -125,38 +164,69 @@ def _indexdef(engine: Engine, name: str) -> tuple[str, bool]:
     return str(row[0]), bool(row[1])
 
 
-def _plan_for(engine: Engine, sql: str) -> str:
-    """EXPLAIN with sequential scans penalised (the fixture is tiny)."""
+def _plan_for(engine: Engine, sql: str, params: dict[str, object] | None = None) -> str:
+    """EXPLAIN with sequential scans penalised (the fixture is tiny).
+
+    ``enable_seqscan = off`` makes this a test of whether an index CAN serve an
+    order, not of what the planner would pick on the real corpus — see the
+    module docstring's "deliberately NOT asserted".
+    """
     with engine.connect() as conn:
         conn.execute(text("SET enable_seqscan = off"))
-        rows = conn.execute(text(f"EXPLAIN {sql}")).all()
+        rows = conn.execute(text(f"EXPLAIN {sql}"), params or {}).all()
     return "\n".join(str(r[0]) for r in rows)
 
 
-def _seed(engine: Engine) -> None:
-    """Dated, undated and other-tenant units; half already derive-checked."""
+def _seed(engine: Engine) -> dict[str, uuid.UUID]:
+    """Dated, undated and other-tenant units; half derive-checked, 2/3 cited.
+
+    Returns ``{slug: id}``. The rotation lane admits only CITED units, so the
+    fixture has to contain uncited ones for that filter to be observable at all.
+    """
+    ids: dict[str, uuid.UUID] = {}
     with engine.begin() as conn:
         for tenant, prefix in ((_TENANT, "t"), (_OTHER_TENANT, "o")):
             for i in range(60):
                 authored = None if i % 7 == 0 else _EPOCH + timedelta(days=i % 20)
                 checked = None if i % 2 == 0 else _EPOCH + timedelta(hours=i)
-                conn.execute(
+                slug = f"{prefix}-unit-{i:03d}"
+                ids[slug] = conn.execute(
                     text(
                         """
                         INSERT INTO coord.work_units
                             (slug, tenant_id, status, title,
                              authored_at, derive_checked_at)
                         VALUES (:slug, :tenant, 'draft', :slug, :authored, :checked)
+                        RETURNING id
                         """
                     ),
                     {
-                        "slug": f"{prefix}-unit-{i:03d}",
+                        "slug": slug,
                         "tenant": str(tenant),
                         "authored": authored,
                         "checked": checked,
                     },
-                )
+                ).scalar_one()
+                if _is_cited(slug):
+                    conn.execute(
+                        text(
+                            """
+                            INSERT INTO coord.work_unit_pr_citations
+                                (tenant_id, work_unit_id, repo, pr_number, source)
+                            VALUES (:tenant, :unit, 'qontinui/qontinui-web', :pr,
+                                    'test_coord_wu_list_order_01')
+                            """
+                        ),
+                        {"tenant": str(tenant), "unit": ids[slug], "pr": 1000 + i},
+                    )
         conn.execute(text("ANALYZE coord.work_units"))
+        conn.execute(text("ANALYZE coord.work_unit_pr_citations"))
+    return ids
+
+
+def _is_cited(slug: str) -> bool:
+    """Two of every three seeded units carry a PR citation."""
+    return int(slug.rsplit("-", 1)[1]) % 3 != 0
 
 
 @pytest.mark.skipif(
@@ -212,7 +282,7 @@ def test_coord_wu_list_order_01_indexes_serve_both_orders_and_downgrade() -> Non
         assert derive_valid, "INVALID index — a killed CONCURRENTLY build"
         assert "(derive_checked_at NULLS FIRST)" in derive_def, derive_def
 
-        _seed(engine)
+        seeded = _seed(engine)
 
         # 5. The list page rides the authored index without sorting.
         plan = _plan_for(engine, _LIST_SQL)
@@ -240,22 +310,94 @@ def test_coord_wu_list_order_01_indexes_serve_both_orders_and_downgrade() -> Non
         undated = [r for r in listed if r[1] is None]
         assert undated and listed[-len(undated) :] == undated, "undated sort last"
 
-        # 7. The rotation read rides the derive index, NULLs first.
-        rotation_plan = _plan_for(engine, _ROTATION_SQL)
-        assert _IX_DERIVE in rotation_plan, rotation_plan
-        assert "Sort" not in rotation_plan, rotation_plan
-        with engine.connect() as conn:
-            first = conn.execute(
-                text(
-                    "SELECT derive_checked_at FROM coord.work_units "
-                    "ORDER BY derive_checked_at ASC NULLS FIRST LIMIT 20"
-                )
-            ).all()
-        assert all(r[0] is None for r in first), (
-            "never-evaluated units must come first in the rotation"
+        # 7. The rotation lane — coord's own statement, not a synthetic one.
+        # Excluded ids: three the fixture can check, padded to the 500 the
+        # recency lane really passes, because the array's size is part of the
+        # shape being planned.
+        excluded_slugs = ["t-unit-001", "t-unit-002", "o-unit-004"]
+        assert all(_is_cited(s) for s in excluded_slugs), (
+            "an uncited exclusion proves nothing — the EXISTS filters it anyway"
+        )
+        excluded = [str(seeded[s]) for s in excluded_slugs]
+        excluded += [
+            str(uuid.uuid4()) for _ in range(_RECENT_CANDIDATES - len(excluded))
+        ]
+        params: dict[str, object] = {"excluded": excluded}
+
+        # The DDL property this index owns: it is usable as the scan for that
+        # statement and supplies the LEADING sort key. A full Sort IS expected
+        # and correct — `w.id` is not in this index — so the presorted key is
+        # what gets pinned. See "deliberately NOT asserted" above.
+        rotation_plan = _plan_for(engine, _ROTATION_SQL, params)
+        assert _IX_DERIVE in rotation_plan, (
+            f"the rotation statement must be able to ride the index:\n{rotation_plan}"
+        )
+        assert "Presorted Key: w.derive_checked_at" in rotation_plan, (
+            "the index must supply the LEADING key so the LIMIT can stop early "
+            f"instead of ordering the whole eligible set:\n{rotation_plan}"
         )
 
-        # 8. Downgrade — exactly this revision's three objects.
+        with engine.connect() as conn:
+            rotation = conn.execute(text(_ROTATION_SQL), params).all()
+
+        returned = [r[1] for r in rotation]
+        checked_ats = [r[2] for r in rotation]
+        assert returned, "the rotation fixture must return rows to assert on"
+        assert not any(s in excluded_slugs for s in returned), (
+            "a unit the recency lane already took must not be selected twice"
+        )
+        assert all(_is_cited(s) for s in returned), (
+            "the rotation lane admits only CITED units — an uncited shipped unit "
+            "would demote under the lane's Full derive authority"
+        )
+        never = [c for c in checked_ats if c is None]
+        already = [c for c in checked_ats if c is not None]
+        assert never and already, (
+            "the fixture must contain both never-evaluated and evaluated cited "
+            "units, or the NULLS FIRST ordering below asserts nothing"
+        )
+        assert checked_ats[: len(never)] == never, (
+            f"never-evaluated units must come first in the rotation: {checked_ats}"
+        )
+        assert already == sorted(already), (
+            f"the evaluated remainder must ascend (oldest first): {already}"
+        )
+
+        # 8. The killed-CONCURRENTLY hazard, EXERCISED. An INVALID index is what
+        # a cancelled `CREATE INDEX CONCURRENTLY` leaves behind; this poke is the
+        # deterministic stand-in for that kill.
+        with engine.begin() as conn:
+            conn.execute(
+                text(
+                    "UPDATE pg_index SET indisvalid = false "
+                    f"WHERE indexrelid = 'coord.{_IX_DERIVE}'::regclass"
+                )
+            )
+        assert not _indexdef(engine, _IX_DERIVE)[1], "the poke must have landed"
+
+        run_alembic(root, url, "stamp", _PARENT_REVISION_ID)
+        run_alembic(root, url, "upgrade", _REVISION_ID)
+        assert not _indexdef(engine, _IX_DERIVE)[1], (
+            "re-running the revision must NOT be assumed to heal an INVALID "
+            "index: CREATE INDEX ... IF NOT EXISTS sees the name and skips, so "
+            "the table is left unindexed forever and no statement here notices. "
+            "If this assertion now fails the behaviour changed — rewrite the "
+            "revision's hazard note with it."
+        )
+        assert column_info(engine, "work_units", "derive_checked_at") is not None
+        assert _indexdef(engine, _IX_AUTHORED)[1], "the other index stays valid"
+
+        # The operator's recovery, also exercised: drop, then re-run.
+        with engine.begin() as conn:
+            conn.execute(text(f"DROP INDEX coord.{_IX_DERIVE}"))
+        run_alembic(root, url, "stamp", _PARENT_REVISION_ID)
+        run_alembic(root, url, "upgrade", _REVISION_ID)
+        assert _indexdef(engine, _IX_DERIVE)[1], (
+            "DROP INDEX then re-run is the documented recovery — it must rebuild "
+            "the index valid"
+        )
+
+        # 9. Downgrade — exactly this revision's three objects.
         run_alembic(root, url, "downgrade", _PARENT_REVISION_ID)
         assert not index_exists(engine, _IX_AUTHORED)
         assert not index_exists(engine, _IX_DERIVE)

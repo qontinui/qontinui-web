@@ -38,13 +38,30 @@ What this revision adds
 
    Stamped by coord's derive worker each time it evaluates a unit, so the
    derive sweep can rotate through units that nothing else touches,
-   independent of ``updated_at``. Today the worker selects its 500 candidates
-   by ``updated_at`` recency, so a unit no scanner or transition touches is
-   never re-derived — and once Phase 1 stops ordering the index by
-   ``updated_at``, nothing else would surface it either. Phase 3 selects the
-   candidates as ``updated_at`` recency **UNION** the oldest
-   ``derive_checked_at NULLS FIRST``, which bounds every non-terminal unit's
-   re-derive interval.
+   independent of ``updated_at``. Before Phase 3 the worker had ONE lane — its
+   500 candidates by ``updated_at DESC`` — so a unit no scanner or transition
+   touched was never re-derived, and once Phase 1 stops ordering the operator's
+   list by ``updated_at`` nothing else would surface it either.
+
+   Phase 3 adds a SECOND lane, and it is **not a ``UNION``**: coord issues two
+   separate statements per tick and concatenates the rows in Rust
+   (``work_unit_derive_worker::select_candidates``), because the rotation lane
+   is best-effort — a coord deployed ahead of this revision has to keep
+   deriving from the recency lane rather than ``42703``-ing the whole tick. The
+   rotation statement, in the shape coord actually runs it (qontinui-coord, as
+   of 2026-09-19)::
+
+       SELECT w.id, w.slug, w.tenant_id, w.status, w.metadata
+         FROM coord.work_units w
+        WHERE w.status NOT IN ('superseded', 'obsolete')
+          AND NOT (w.id = ANY($1::uuid[]))
+          AND EXISTS (SELECT 1 FROM coord.work_unit_pr_citations c
+                       WHERE c.work_unit_id = w.id)
+        ORDER BY w.derive_checked_at ASC NULLS FIRST, w.id ASC
+        LIMIT $2
+
+   ``$1`` is the ids the recency lane already took this tick (≤ 500) and ``$2``
+   is the rotation budget (100 per tick).
 
    **NULL means "the derive worker has never evaluated this unit"** — never
    "checked at created_at". It is exactly the population the rotation must
@@ -53,13 +70,33 @@ What this revision adds
    and push every existing unit to the BACK of the rotation.
 
 3. ``ix_coord_work_units_derive_checked_at`` ON ``coord.work_units
-   (derive_checked_at ASC NULLS FIRST)`` — serves the rotation half of that
-   UNION (``ORDER BY derive_checked_at ASC NULLS FIRST LIMIT n``). ``NULLS
-   FIRST`` is explicit because a plain ASC key is ``NULLS LAST``. Not
-   partial: the worker's own status filter is applied to the rows the scan
-   yields, and a predicate on ``status`` here would have to match coord's
+   (derive_checked_at ASC NULLS FIRST)`` — the LEADING key of that rotation
+   statement's ``ORDER BY``. ``NULLS FIRST`` is explicit because a plain ASC
+   key is ``NULLS LAST``, and the never-evaluated units are exactly the
+   population the rotation must reach first.
+
+   **What it buys — stated so nobody over-reads it.** The statement's second
+   sort key (``w.id``) is NOT in this index, so no plan answers it without a
+   sort of some kind. Measured on PG16 against the behaviour test's fixture:
+   an index scan on this index under an ``Incremental Sort`` whose
+   ``Presorted Key`` is ``derive_checked_at``, i.e. only rows sharing a
+   timestamp are sorted. What the index buys is that the ``LIMIT`` stops early
+   instead of ordering the whole eligible set; it is not a no-Sort guarantee,
+   which is why the behaviour test asserts the presorted key rather than the
+   absence of a ``Sort`` node.
+
+   **The population is the CITED non-terminal units, not the table.** The
+   ``EXISTS`` on ``coord.work_unit_pr_citations`` is a safety property of the
+   lane rather than a saving (an uncited ``shipped`` unit would demote under
+   the lane's ``Full`` derive authority), so this index is scanned as the outer
+   side of a semi-join, with the ``status`` filter and the recency-lane id
+   exclusion applied to the rows it yields. Size it against the CITED share of
+   the corpus, not against ``count(*)``.
+
+   Not partial: a predicate on ``status`` here would have to match coord's
    terminal-status list verbatim to be usable — a cross-repo coupling the
-   derive worker's list is free to change.
+   derive worker's list is free to change — and the citation ``EXISTS`` is not
+   an indexable predicate on this table at all.
 
 Lock posture (deliberate)
 =========================
@@ -79,7 +116,13 @@ convention for a nullable column + index on such a table
   EXISTS`` / ``IF EXISTS``).
 
 A killed ``CONCURRENTLY`` build leaves an INVALID index that ``IF NOT EXISTS``
-would then skip forever; the behaviour test pins ``indisvalid`` for both.
+then skips forever: re-running this migration does NOT heal it, and no
+statement here detects it. The behaviour test EXERCISES that hazard — it marks
+one of the two indexes invalid in the catalog, re-stamps alembic at the parent,
+re-runs ``upgrade`` and asserts the index is still invalid afterwards — so the
+skip is a pinned property rather than a warning. Recovery is manual: ``DROP
+INDEX`` the invalid one, then re-run. The detector after a clean upgrade is
+that same test's ``indisvalid`` assertion; nothing in production watches it.
 
 Rollout ordering
 ================
@@ -100,8 +143,9 @@ Hand-authored, never ``--autogenerate``d; raw ``op.execute`` with every
 statement schema-qualified as ``coord.`` (the ``forbid-public-schema`` check).
 The table already exists (``coord_workunits_01_work_units``); this revision
 only ALTERs it and is not added to any ``ALEMBIC_OWNED_TABLES`` list.
-``downgrade`` drops exactly the two indexes and the column this revision
-created; ``authored_at`` (``coord_wu_authored_at_01``) is untouched.
+``downgrade`` drops exactly the column and the two indexes this revision
+created (in that order — see its own docstring); ``authored_at``
+(``coord_wu_authored_at_01``) is untouched.
 
 ``down_revision`` chains off the single live head at authoring time
 (``agent_questions_alert_episode_01``, per ``scripts/ci/count_alembic_heads.py``
@@ -173,10 +217,26 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    """Reverse exactly this revision: the two indexes, then the column."""
+    """Reverse exactly this revision: the column, then the indexes.
+
+    Statement ORDER mirrors ``upgrade``, and for the same reason: the
+    lock-taking ``ALTER`` runs in the migration's own transaction, immediately
+    after the ``SET LOCAL lock_timeout`` that bounds it, and the
+    ``CONCURRENTLY`` work runs last. Putting the ``autocommit_block`` first
+    would commit that transaction and discard the ``SET LOCAL`` — and under a
+    non-transactional configuration the later ``SET LOCAL`` is a no-op warning
+    — leaving ``DROP COLUMN`` to queue an unbounded ``ACCESS EXCLUSIVE``
+    request in front of every reader of a continuously-written table.
+
+    Dropping the column takes ``ix_coord_work_units_derive_checked_at`` with it
+    (an index on a dropped column cannot survive), under the ``ACCESS
+    EXCLUSIVE`` lock the ``ALTER`` already holds, so the ``DROP INDEX
+    CONCURRENTLY IF EXISTS`` for it below is a no-op. The one drop that still
+    matters concurrently is the authored-order index.
+    """
+    op.execute("SET LOCAL lock_timeout = '3s'")
+    op.execute(_DROP_COLUMN)
+
     with op.get_context().autocommit_block():
         for statement in _DROP_INDEXES:
             op.execute(statement)
-
-    op.execute("SET LOCAL lock_timeout = '3s'")
-    op.execute(_DROP_COLUMN)
