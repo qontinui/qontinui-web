@@ -40,6 +40,7 @@ import {
   VOLUMES_NOT_YET_READ,
   type VolumesFetch,
 } from "./fleetVolumes";
+import { isCiRunnerDevice } from "./useFleetHealth";
 import type { FleetHealthDevice, UseFleetHealthResult } from "./useFleetHealth";
 import { resolveCiCapacity, type DevenvMachinesRead } from "./ciCapacity";
 import { resolveDeviceDrain, resolveDrainTarget } from "./fleetDrain";
@@ -277,6 +278,7 @@ function buildMachineGroups(
       // normalised to `{dark: false}`, which would be this join inventing a
       // measurement coord never made.
       credential_dark: device.credential_dark,
+      ciRunner: isCiRunnerDevice(device),
     };
     if (group) {
       group.coordHealth = join;
@@ -294,6 +296,12 @@ function buildMachineGroups(
       volumes: resolveVolumes(hostname, activity, device.device_id),
       coordHealth: join,
       coordHealthOnly: true,
+      // Coord's own capability read classifies a row nothing else claimed: a
+      // CI-runner registration stays CI infrastructure even when the mirror
+      // poll that usually claims it first is loading or has failed. A group
+      // some other source already built keeps its category — a workstation
+      // that also hosts a runner is still a workstation.
+      ...(join.ciRunner ? { isCiInfrastructure: true } : {}),
     });
   }
   for (const group of byHost.values()) {
@@ -810,15 +818,7 @@ export function FleetOverview({
                     // them would make "no device to drain" and "the drain read
                     // is down" render the same, and they call for different
                     // next steps.
-                    drainTarget={resolveDrainTarget(group.coordHealth, {
-                      // A row coord's CI-runner MIRROR named is a GitHub
-                      // Actions runner: its device advertises `ci_runner`, so
-                      // neither reader of the drain map selects it. Derived
-                      // from the row's own source, not `isCiInfrastructure`,
-                      // which a device-registry CI host also carries.
-                      githubActionsRunner:
-                        group.ciRunner?.source === "coord-mirror",
-                    })}
+                    drainTarget={resolveDrainTarget(group.coordHealth)}
                     drainState={resolveDeviceDrain(
                       drain.read,
                       group.coordHealth?.matched

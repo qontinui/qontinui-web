@@ -10,6 +10,12 @@ vi.mock("@/services/service-factory", () => ({
   },
 }));
 
+// The feed is admin-gated; hoisted so a test can flip it per case.
+const authState = vi.hoisted(() => ({ isCoordAdmin: true }));
+vi.mock("@/contexts/auth-context", () => ({
+  useAuth: () => ({ isCoordAdmin: authState.isCoordAdmin }),
+}));
+
 import { OperatorAuditPanel } from "./OperatorAuditPanel";
 import { NIL_OPERATOR_ID, type AuditRow } from "./operatorAudit";
 
@@ -30,7 +36,7 @@ const DRAIN_ROW: AuditRow = {
   operator_id: "11111111-1111-1111-1111-111111111111",
   action: "fleet.drain.set",
   resource_kind: "coord.fleet_runtime_policy",
-  resource_key: "drain:22222222-2222-2222-2222-222222222222",
+  resource_key: "22222222-2222-2222-2222-222222222222",
   metadata: {
     device_id: "22222222-2222-2222-2222-222222222222",
     drained: true,
@@ -44,6 +50,7 @@ const DRAIN_ROW: AuditRow = {
 beforeEach(() => {
   getMock.mockReset();
   window.localStorage.clear();
+  authState.isCoordAdmin = true;
 });
 
 async function openPanel() {
@@ -243,5 +250,36 @@ describe("the two refusals", () => {
         screen.getByText(/this is a measurement, not a failed look/i)
       ).toBeTruthy()
     );
+  });
+});
+
+describe("OperatorAuditPanel — access and ordering", () => {
+  it("issues no read for a non-admin, and says why rather than showing an error", async () => {
+    authState.isCoordAdmin = false;
+    render(<OperatorAuditPanel />);
+    fireEvent.click(screen.getByRole("button", { name: /Operator audit/i }));
+    expect(screen.getByTestId("operator-audit-admin-only")).toBeTruthy();
+    expect(screen.queryByTestId("operator-audit-error")).toBeNull();
+    // Give any stray effect a turn to fire.
+    await new Promise((r) => setTimeout(r, 0));
+    expect(getMock).not.toHaveBeenCalled();
+  });
+
+  it("never lets an older, slower response overwrite a newer one", async () => {
+    // First read hangs until released; the Refresh read answers immediately.
+    let releaseFirst: (v: unknown) => void = () => {};
+    getMock
+      .mockImplementationOnce(
+        () => new Promise((resolve) => (releaseFirst = resolve))
+      )
+      .mockResolvedValueOnce({ audit: [] });
+    await openPanel();
+    await waitFor(() => expect(getMock).toHaveBeenCalledTimes(1));
+    fireEvent.click(screen.getByTestId("operator-audit-refresh"));
+    await waitFor(() => expect(getMock).toHaveBeenCalledTimes(2));
+    // The stale first response now lands carrying a row; it must be dropped.
+    releaseFirst({ audit: [DRAIN_ROW] });
+    await new Promise((r) => setTimeout(r, 0));
+    expect(document.body.textContent).not.toContain("Drained a machine");
   });
 });

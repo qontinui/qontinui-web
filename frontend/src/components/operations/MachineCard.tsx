@@ -49,6 +49,16 @@ import type { CiCapacityJoin } from "./ciCapacity";
 import type { DeviceDrainState, DrainTarget } from "./fleetDrain";
 import type { MachineGroup, MachineVolumes, VolumeReading } from "./types";
 
+/**
+ * What draining a GitHub Actions runner registration does and does not do.
+ * Exported so the test asserts the rendered sentence rather than a copy.
+ */
+export const CI_RUNNER_DRAIN_SCOPE =
+  "GitHub Actions runner: draining it removes this runner from coord's " +
+  "merge-capacity count, but GitHub still routes jobs to it by label. " +
+  "Removing its `qontinui` label on GitHub is what stops fleet CI jobs " +
+  "arriving.";
+
 interface MachineCardProps {
   machine: MachineGroup;
   /**
@@ -885,6 +895,22 @@ export function MachineCard({
             rowHostname={hostname}
             onActed={onDrainActed}
           />
+        )}
+
+        {/* A GitHub Actions runner registration is drainable, and the drain is
+            real: coord's merge scheduler stops counting a drained `ci_runner`
+            device as merge-slot capacity. What it does NOT do is stop GitHub
+            routing jobs to the host — GitHub matches `runs-on` against the
+            runner's labels and never reads coord's drain map. Keyed off coord's
+            own capability read, not the CI-runner mirror, which can be loading
+            or down. */}
+        {machine.coordHealth?.matched && machine.coordHealth.ciRunner && (
+          <p
+            className="text-[11px] leading-snug break-words text-muted-foreground"
+            data-testid="ci-runner-drain-scope"
+          >
+            {CI_RUNNER_DRAIN_SCOPE}
+          </p>
         )}
 
         {/* CI capacity — how much CI this machine is ALLOWED to take, next to

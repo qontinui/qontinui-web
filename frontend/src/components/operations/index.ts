@@ -85,7 +85,6 @@ export type { DeviceDrainControlProps } from "./DeviceDrainControl";
 export {
   DRAIN_PRESETS,
   MAX_DRAIN_DAYS,
-  DRAIN_INERT_GITHUB_RUNNER,
   canActOnDrain,
   describeDrainError,
   formatDrainRemaining,

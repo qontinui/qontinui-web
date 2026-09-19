@@ -53,17 +53,21 @@
  * ## These rows are a SEPARATE population, not a richer view of the machines
  *
  * `ci_runner_registrar::hostname_for` mints a **synthetic** hostname —
- * `gh-runner-<runner name>` — and `device_id_for` keys on `(repo, runner name)`.
- * Two consequences the rest of this file depends on:
+ * `gh-runner-<runner name>@<owner>/<repo>` since coord d145a29bb — and
+ * `device_id_for` keys on the same `(repo, runner name)` pair. Two consequences
+ * the rest of this file depends on:
  *
  *  * A mirror row's hostname **never** equals a real machine's, so it never
  *    joins onto a workstation card. It gets its own row, for its own device.
  *    Any code here that reads as "where both sources carry a host, X wins" is
  *    describing a collision that cannot happen; say so rather than implying a
  *    merge that never runs.
- *  * One runner registered in N repos yields N devices sharing ONE synthetic
- *    hostname. That collision is real, it is the only one, and it is counted
- *    rather than resolved — see `indexCiRunners`.
+ *  * One runner registered in N repos yields N devices with N DISTINCT
+ *    hostnames, one card each. A hostname collision is therefore not expected
+ *    from a current coord; the only ways to get one are a row written by an
+ *    older registrar build (a bare `gh-runner-<name>`, not yet re-polled) or a
+ *    malformed payload. `indexCiRunners` counts such a collision as a guard
+ *    rather than resolving it.
  */
 
 import type { CiRunnersByHost, CiRunnerStatus } from "./types";
@@ -221,12 +225,12 @@ export function indexCiRunners(payload: CoordCiRunnersPayload): {
       unplaceableRows += 1;
       continue;
     }
-    // A COLLISION is a different fact and gets its own counter. `device_id_for`
-    // keys on `(repo, runner name)` while `hostname_for` keys on the name
-    // alone, so one runner registered in several repos arrives as several
-    // devices sharing one synthetic hostname. First row wins; the rest are
-    // SHADOWED — present on screen through another registration's labels, not
-    // missing from the roster.
+    // A COLLISION is a different fact and gets its own counter. Since coord
+    // d145a29bb `hostname_for` is unique per (runner, repo), so a current coord
+    // never produces one: this is a GUARD for a legacy row written before the
+    // `@<owner>/<repo>` suffix (not yet re-polled) or a malformed payload.
+    // First row wins; the rest are SHADOWED — present on screen through
+    // another registration's labels, not missing from the roster.
     if (byHostname.has(hostname)) {
       shadowedRows += 1;
       continue;
@@ -359,7 +363,7 @@ export function describeMirrorFreshness(read: CiRunnerMirrorRead): string {
  * Fold coord's mirror rows in beside the device-registry ones.
  *
  * **Not a reconciliation of two views of one population.** Mirror hostnames are
- * synthetic (`gh-runner-<name>`, see the module doc), so they cannot collide
+ * synthetic (`gh-runner-<name>@<owner>/<repo>`, see the module doc), so they cannot collide
  * with a workstation's, and the two sets are disjoint in practice. What this
  * function does is add the GitHub fleet — which `GET /operations/fleet` cannot
  * see at all, because coord's registrar writes those devices with no `user_id`

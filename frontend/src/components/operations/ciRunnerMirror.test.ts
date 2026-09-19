@@ -17,22 +17,23 @@ import type { CiRunnersByHost } from "./types";
  * Coord's CI-runner mirror — plan
  * `2026-08-20-fleet-page-runner-enable-disable-switch` Phase 2.
  *
- * The fixtures are the pool as it actually was, measured with `gh api` on
- * 2026-08-31: three hosts, `merytshost` carrying no per-machine label at all.
- * That third host is the one every written description of the pool in the tree
- * has missed, so it is in every fixture here on purpose.
+ * The fixtures are shaped as coord serves them since d145a29bb: each hostname
+ * is the synthetic `gh-runner-<runner name>@<owner>/<repo>` that
+ * `ci_runner_registrar::hostname_for` mints, never a real machine name. The
+ * label sets are the pool measured with `gh api` on 2026-08-31 — including
+ * the host carrying no per-machine label at all.
  */
 
 const MERYTSHOST = {
   device_id: "d-meryts",
-  hostname: "merytshost",
+  hostname: "gh-runner-merytshost@qontinui/qontinui-runner",
   ci_runner_status: "idle",
   ci_runner_labels: ["self-hosted", "Linux", "X64", "qontinui"],
   last_seen_at: "2026-08-31T12:00:00Z",
 };
 const MSI = {
   device_id: "d-msi",
-  hostname: "msi-wsl",
+  hostname: "gh-runner-msi-wsl@qontinui/qontinui-runner",
   ci_runner_status: "busy",
   ci_runner_labels: ["self-hosted", "Linux", "X64", "qontinui", "msi"],
   last_seen_at: "2026-08-31T12:00:00Z",
@@ -40,7 +41,7 @@ const MSI = {
 /** The delabelled shape — what `DELETE .../runners/22/labels/qontinui` leaves. */
 const SPACESHIP_DELABELLED = {
   device_id: "d-spaceship",
-  hostname: "spaceship-wsl",
+  hostname: "gh-runner-spaceship-wsl@qontinui/qontinui-runner",
   ci_runner_status: "idle",
   ci_runner_labels: ["self-hosted", "Linux", "X64", "spaceship"],
   last_seen_at: "2026-08-31T12:00:00Z",
@@ -99,9 +100,9 @@ describe("parseCiRunnersPayload", () => {
     expect(read.state).toBe("ok");
     if (read.state !== "ok") return;
     expect([...read.byHostname.keys()].sort()).toEqual([
-      "merytshost",
-      "msi-wsl",
-      "spaceship-wsl",
+      "gh-runner-merytshost@qontinui/qontinui-runner",
+      "gh-runner-msi-wsl@qontinui/qontinui-runner",
+      "gh-runner-spaceship-wsl@qontinui/qontinui-runner",
     ]);
     expect(read.windowSecs).toBe(42);
     expect(read.asOf).toBe("2026-08-31T12:00:30Z");
@@ -140,17 +141,20 @@ describe("parseCiRunnersPayload", () => {
   });
 
   it("counts a SHADOWED registration separately from an unplaceable row", () => {
-    // `device_id_for` keys on (repo, name) while `hostname_for` keys on the
-    // name alone, so one runner in several repos arrives as several devices
-    // sharing a hostname. That host is on screen showing ONE registration's
-    // labels — the opposite of missing, and a different sentence.
+    // A guard: a current coord's hostnames are unique per (runner, repo), so a
+    // collision means a legacy suffix-less row or a malformed payload. The
+    // host is on screen showing ONE registration's labels — the opposite of
+    // missing, and a different sentence.
     const { byHostname, unplaceableRows, shadowedRows } = indexCiRunners({
       runners: [MSI, { ...MSI, ci_runner_labels: ["self-hosted"] }],
     });
     expect(byHostname.size).toBe(1);
     expect(shadowedRows).toBe(1);
     expect(unplaceableRows).toBe(0);
-    expect(byHostname.get("msi-wsl")?.ci_runner_labels).toContain("qontinui");
+    expect(
+      byHostname.get("gh-runner-msi-wsl@qontinui/qontinui-runner")
+        ?.ci_runner_labels
+    ).toContain("qontinui");
   });
 
   it("drops a row with no hostname rather than guessing one", () => {
@@ -170,7 +174,7 @@ describe("mergeCiRunners", () => {
       labels: ["self-hosted"],
       lastJobAt: "2026-08-30T00:00:00Z",
     },
-    "msi-wsl": {
+    "gh-runner-msi-wsl@qontinui/qontinui-runner": {
       status: "offline",
       labels: [],
       lastJobAt: "2026-08-29T00:00:00Z",
@@ -184,39 +188,57 @@ describe("mergeCiRunners", () => {
   it("adds the GitHub fleet's hosts, which the device read cannot see at all", () => {
     const merged = mergeCiRunners(registry, mirror);
     expect(Object.keys(merged).sort()).toEqual([
-      "merytshost",
-      "msi-wsl",
+      "gh-runner-merytshost@qontinui/qontinui-runner",
+      "gh-runner-msi-wsl@qontinui/qontinui-runner",
+      "gh-runner-spaceship-wsl@qontinui/qontinui-runner",
       "my-workstation",
-      "spaceship-wsl",
     ]);
   });
 
+  // A GUARD, not the common case: mirror hostnames are synthetic
+  // (`gh-runner-<name>@<owner>/<repo>`), so a device-registry row sharing one
+  // is not expected. If one ever does, the GitHub-derived copy must win.
   it("lets the mirror win for status and labels where both carry a host", () => {
     const merged = mergeCiRunners(registry, mirror);
-    expect(merged["msi-wsl"]?.status).toBe("busy");
-    expect(merged["msi-wsl"]?.labels).toContain("qontinui");
-    expect(merged["msi-wsl"]?.source).toBe("coord-mirror");
+    expect(merged["gh-runner-msi-wsl@qontinui/qontinui-runner"]?.status).toBe(
+      "busy"
+    );
+    expect(
+      merged["gh-runner-msi-wsl@qontinui/qontinui-runner"]?.labels
+    ).toContain("qontinui");
+    expect(merged["gh-runner-msi-wsl@qontinui/qontinui-runner"]?.source).toBe(
+      "coord-mirror"
+    );
   });
 
   it("keeps lastJobAt from the device registry, which the mirror does not carry", () => {
     const merged = mergeCiRunners(registry, mirror);
-    expect(merged["msi-wsl"]?.lastJobAt).toBe("2026-08-29T00:00:00Z");
-    expect(merged["merytshost"]?.lastJobAt).toBeNull();
+    expect(
+      merged["gh-runner-msi-wsl@qontinui/qontinui-runner"]?.lastJobAt
+    ).toBe("2026-08-29T00:00:00Z");
+    expect(
+      merged["gh-runner-merytshost@qontinui/qontinui-runner"]?.lastJobAt
+    ).toBeNull();
   });
 
   it("carries last_seen_at, the only recency a mirrored row actually has", () => {
     // Dropping it made every mirrored host render "No jobs run yet" — a claim
     // about the host drawn from a field the mirror does not send at all.
     const merged = mergeCiRunners(registry, mirror);
-    expect(merged["merytshost"]?.lastSeenAt).toBe("2026-08-31T12:00:00Z");
+    expect(
+      merged["gh-runner-merytshost@qontinui/qontinui-runner"]?.lastSeenAt
+    ).toBe("2026-08-31T12:00:00Z");
   });
 
   it("carries device_id, the row's ONLY real key", () => {
-    // The hostname is synthetic (`gh-runner-<name>`), so it joins to nothing.
+    // The hostname is synthetic (`gh-runner-<name>@<owner>/<repo>`), so it
+    // joins to nothing.
     // Without the device id the card resolves no volume telemetry and names no
     // coord device.
     const merged = mergeCiRunners(registry, mirror);
-    expect(merged["merytshost"]?.deviceId).toBe("d-meryts");
+    expect(
+      merged["gh-runner-merytshost@qontinui/qontinui-runner"]?.deviceId
+    ).toBe("d-meryts");
   });
 
   it("marks device-registry rows as such, so no routing verdict is claimed", () => {
@@ -230,8 +252,13 @@ describe("mergeCiRunners", () => {
       reason: "coord is not reachable",
     };
     const merged = mergeCiRunners(registry, failed);
-    expect(Object.keys(merged).sort()).toEqual(["msi-wsl", "my-workstation"]);
-    expect(merged["msi-wsl"]?.source).toBe("device-registry");
+    expect(Object.keys(merged).sort()).toEqual([
+      "gh-runner-msi-wsl@qontinui/qontinui-runner",
+      "my-workstation",
+    ]);
+    expect(merged["gh-runner-msi-wsl@qontinui/qontinui-runner"]?.source).toBe(
+      "device-registry"
+    );
   });
 });
 

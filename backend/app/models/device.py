@@ -203,19 +203,17 @@ class Device(Base):
         comment="idle | busy | offline — NULL when the device has no CI runner.",
     )
     #
-    # ``TEXT[]``, NOT ``JSONB``. Both authorities agree and this model was the
-    # only thing that disagreed: alembic — the sole author of ``coord.*`` DDL —
-    # created the column as ``TEXT[]``
-    # (``c5d6e7f8a9b0_add_ci_runner_columns_to_devices.py``), and coord declares
-    # the same in ``device_state.rs``'s self-heal helper. A ``JSONB`` mapping
-    # over a ``TEXT[]`` column is a *silent* mismatch: nothing writes this
-    # column from the web side (coord's ``ci_runner_registrar`` is the only
-    # writer), and the rows it writes are invisible to the web read's
-    # ``capability_user_paired`` filter, so the wrong type had no live reader to
-    # fail on. It would have failed the moment one appeared. Corrected by plan
-    # ``2026-08-20-fleet-page-runner-enable-disable-switch`` Phase 2, which is
-    # that reader. **No migration** — the DDL was always ``TEXT[]``; this is the
-    # model catching up to it.
+    # ``TEXT[]``, NOT ``JSONB`` — a correctness fix to the MODEL, not a live
+    # bug. alembic, the sole author of ``coord.*`` DDL, created the column as
+    # ``TEXT[]`` (``c5d6e7f8a9b0_add_ci_runner_columns_to_devices.py``), and
+    # coord declares the same. Reads work either way today: asyncpg decodes a
+    # ``text[]`` column into a Python list whatever SQLAlchemy type is declared
+    # (``GET /operations/fleet``'s ``ci_runners`` map reads it that way). What
+    # the ``JSONB`` mapping gets wrong is everything that consults the DECLARED
+    # type — a bind parameter, a comparison or cast in a query, or DDL emitted
+    # from this metadata would be ``jsonb`` against a ``text[]`` column. **No
+    # migration** — the DDL was always ``TEXT[]``; this is the model catching
+    # up to it.
     ci_runner_labels: Mapped[list[str] | None] = mapped_column(
         ARRAY(Text),
         nullable=True,

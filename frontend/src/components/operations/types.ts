@@ -712,6 +712,11 @@ export type CoordHealthJoin =
        */
       state?: string;
       /**
+       * Whether coord says this device carries the `ci_runner` capability
+       * (a GitHub Actions runner registration). Absent => not known to be one.
+       */
+      ciRunner?: boolean;
+      /**
        * Coord's OWN hostname for this device, carried verbatim.
        *
        * Added by plan
