@@ -44,16 +44,8 @@ def _build_test_app(
         require_coord_tenant_admin_target,
     )
     from app.api.v1.endpoints.operations import router as operations_router
-    from app.db.session import get_async_db
 
     test_app = FastAPI()
-    # `POST /coord/tenant-members` reads `coord.operator_roles` /
-    # `coord.operator_audit` through this session to decide whether the grant
-    # gave the person anything new. No test here has a database, and none
-    # needs one: `member_prior_access` patches the helper that would use it,
-    # so the session is only ever a placeholder that must not be a generator
-    # FastAPI tries to close.
-    test_app.dependency_overrides[get_async_db] = lambda: MagicMock()
     if authenticated:
         mock_user = MagicMock()
         mock_user.id = uuid4()
@@ -151,12 +143,13 @@ def member_prior_access():
     """Answer "did they already have access?" without a database.
 
     The route consults ``_member_had_prior_access`` before granting, and
-    sends the notice only on a definite ``False``. The real helper reads
-    ``coord.operator_roles`` and ``coord.operator_audit``; no test in this
-    module has those tables, and an unpatched call would take the
-    except-branch and answer ``None`` — which means "could not establish", so
-    every ``added`` test would silently land on ``not_sent`` and stop
-    asserting the behaviour it was written for.
+    sends the notice only on a definite ``False``. The real helper reads the
+    tenant's members over coord's HTTP API; no test in this module stands up
+    a coord, and an unpatched call would take the except-branch and answer
+    ``None`` — which means "could not establish", so every ``added`` test
+    would silently land on ``not_sent`` and stop asserting the behaviour it
+    was written for. (``tests/test_member_prior_access.py`` is where the
+    helper itself is exercised.)
 
     Defaults to ``False`` (a genuinely new grant, notice expected). Set
     ``.return_value`` to ``True`` for a re-add, or ``None`` for an unreadable
@@ -1100,8 +1093,8 @@ class TestMemberAddedNotice:
 
     def test_prior_access_is_read_before_the_grant(self, member_prior_access):
         """Order is the whole mechanism. Coord's own write is what makes the
-        question unanswerable: after the grant, ``coord.operator_roles``
-        holds a row either way. Read after it and the check answers "they
+        question unanswerable: after the grant the operator holds a role in
+        this tenant either way. Read after it and the check answers "they
         already had access" for every caller, forever."""
         order: list[str] = []
 

@@ -11552,7 +11552,6 @@ async def post_coord_tenant_member(
     body: _TenantMemberAddBody,
     tenant_id: UUID = Depends(require_coord_tenant_admin_target),
     current_user: UserModel = Depends(get_current_active_user_async),
-    db: AsyncSession = Depends(get_async_db),
 ) -> dict[str, Any]:
     """Add a person to the caller's tenant by EMAIL — no IdP fields.
 
@@ -11647,7 +11646,7 @@ async def post_coord_tenant_member(
     # write is what makes "did they already have access?" unanswerable
     # afterwards. Read it here and carry the answer past the grant.
     had_access = await _member_had_prior_access(
-        db, tenant_id=tenant_id, operator_id=operator_id
+        tenant_id=tenant_id, sso_subject=identity.sub
     )
     await _grant_tenant_member_role(
         operator_id=operator_id, role=body.role, tenant_id=tenant_id
@@ -11817,154 +11816,102 @@ async def _grant_tenant_member_role(
     )
 
 
-#: Has this person ever had access to this tenant? Two independent EXISTS
-#: against the tables qontinui-web's own alembic authors, in the database this
-#: backend is already connected to.
-#:
-#: Every parameter is bound as TEXT and cast in SQL. ``operator_id`` and
-#: ``tenant_id`` are ``uuid`` columns while ``operator_audit.resource_key`` is
-#: ``TEXT`` holding the same value — so the one id is compared against both
-#: types in one statement, and an implicit ``uuid = text`` comparison is an
-#: error in PostgreSQL rather than a coercion. Spelling the casts keeps the
-#: statement independent of how the driver happens to adapt a ``UUID``
-#: object.
-_MEMBER_PRIOR_ACCESS_SQL = text(
-    """
-    SELECT
-      EXISTS(
-        SELECT 1 FROM coord.operator_roles
-        WHERE operator_id = CAST(:operator_id AS uuid)
-          AND tenant_id = CAST(:tenant_id AS uuid)
-      ) AS holds_role_now,
-      EXISTS(
-        SELECT 1 FROM coord.operator_audit
-        WHERE action = 'operator.grant_role'
-          AND resource_kind = 'operator'
-          AND resource_key = :operator_key
-          AND tenant_id = CAST(:tenant_id AS uuid)
-      ) AS granted_before
-    """
-)
-
-
-async def _member_had_prior_access(
-    db: AsyncSession, *, tenant_id: UUID, operator_id: str
-) -> bool | None:
-    """Did this operator already have access to this tenant BEFORE this call?
+async def _member_had_prior_access(*, tenant_id: UUID, sso_subject: str) -> bool | None:
+    """Did this person already have access to this tenant BEFORE this call?
 
     ``True`` they did, ``False`` this grant is their first, ``None`` we could
     not establish it. The caller sends the notice ONLY on ``False``.
 
-    **Why this exists — correctness first.** Coord's role grant answers a
-    bare ``{"ok": true}``: ``insert_operator_role`` upserts and
-    ``post_operator_grant_role`` reports nothing about whether a row
-    appeared, so the response cannot distinguish a grant that changed state
-    from one that was already true. Without this the notice fires on EVERY
-    submit, and tells somebody who has had access since June that they have
-    just been given it. That alone is the reason to keep the check.
+    **Why it exists.** Coord's role grant answers a bare ``{"ok": true}``:
+    ``insert_operator_role`` upserts and ``post_operator_grant_role`` reports
+    nothing about whether a row appeared, so the response cannot distinguish
+    a grant that changed state from one that was already true. Without this
+    the notice fires on EVERY submit and tells somebody who has had access
+    since June that they have just been given it.
 
-    **And who can actually reach this route, measured rather than assumed.**
-    Not superuser-gated. ``require_coord_tenant_admin`` requires ``admin`` in
-    the EFFECTIVE tenant, and ``_effective_tenant_id`` accepts a switcher
-    selection only for a tenant the caller belongs to; coord re-checks it in
-    ``post_operator_grant_role`` against ``coord.operator_roles``. So the
-    TARGET tenant is not arbitrary — but the RECIPIENT is: the email is the
-    caller's free text, resolved against the whole Cognito pool. Every
-    signed-in user administers their own personal tenant (``auth_sso``
-    grants personal-tenant owner ``admin``) and may self-create up to
-    ``COORD_SELF_SERVICE_TENANT_CAP`` more (default 5), becoming admin of
-    each. So an attacker can mail any address that holds a confirmed
-    Qontinui account, from tenants they control, at the limiter's 30/min.
+    **Why it is an HTTP read and not a SQL one.** An earlier version of this
+    helper answered the same question with two ``EXISTS`` against
+    ``coord.operator_roles`` and ``coord.operator_audit`` over this request's
+    own database session. That is a breach of an architectural invariant this
+    repo enforces in CI: web makes ZERO direct reads of coord's Postgres
+    schema, everything it reads from coord comes over coord's HTTP API, and
+    ``tests/test_coord_schema_boundary_guard.py`` keeps
+    ``READ_BOUNDARY_CLOSED`` EMPTY precisely so that emptiness is the
+    invariant. The fix is this function, not an allowlist entry — widening a
+    closed boundary to make its guard pass is the exact failure the guard is
+    built to prevent.
 
-    That is a smaller vector than "anyone can spam anyone from anywhere", and
-    it is not nothing: without this check the volume to one victim is
-    unbounded; with it, it is roughly one message per tenant the attacker
-    administers, so the tenant cap becomes the bound. The abuse reduction is
-    a real secondary benefit of a check that earns its place on correctness.
+    **The read.** ``GET /admin/coord/operators?sso_subject=…`` through the
+    same proxy helper every other coord interaction in this module uses.
+    Narrowing by the subject Cognito already resolved keeps it to one row
+    rather than the whole tenant, and the subject is the right key: it is
+    IdP-issued and unique on ``(sso_provider, sso_subject)``, whereas
+    ``coord.operators.email`` is neither unique nor immutable.
 
-    **Why two signals rather than one**, and what each is actually worth:
+    **How it degrades, and in which direction.** Coord's route is today
+    scoped ``WHERE o.tenant_id = $1`` — the operator's HOME tenant — so a
+    colleague homed in a DIFFERENT tenant is not listed even when they hold a
+    role here. coord PR 2224 widens it to everyone holding a role in the
+    tenant. Until that deploys this check UNDER-reports membership, so the
+    worst case is a duplicate notice to somebody who already had access. It
+    can never wrongly SUPPRESS one, because a listed row with a role is
+    positive evidence either way. After 2224 the check is exact, with no new
+    field and no new call shape here.
 
-    * ``holds_role_now`` is the literal state-change test, and it is the
-      DURABLE one: ``insert_operator_role`` runs synchronously inside the
-      grant, so from the moment a grant returns, every later add of that
-      person to that tenant reads ``True`` here. It also catches members
-      provisioned by SSO group mapping (``coord.group_tenant_roles``), who
-      hold a role with no admin grant anywhere in their history.
-    * ``granted_before`` is coord's append-only ``operator.grant_role``
-      audit trail. It covers the one case the state test cannot: the same
-      dashboard offers Revoke, so grant → revoke → grant would "change
-      state" every cycle, and the audit row outlives the role row.
-
-    **What this does NOT guarantee.** It is read-then-act with no
-    atomicity, so concurrent submits can all read ``False`` and all send —
-    bounded by concurrency, not eliminated. And the second signal is
-    weaker than the first: coord writes the audit row from a detached
-    ``tokio::spawn`` AFTER responding, and abandons it on a pool-acquire
-    failure, so it is not durable at the moment the grant returns and can
-    simply be missing. Treat this as "collapses the repeated-add case and
-    bounds the rest", not as an exactly-once guarantee.
-
-    **Why a direct query rather than a coord API call.** Coord exposes no
-    read that answers it. ``GET /admin/coord/operators`` is scoped
-    ``WHERE o.tenant_id = $1`` — the operator's HOME tenant — so it returns
-    nothing at all for the cross-home colleague this feature exists for, and
-    ``membership-sync`` reports SSO-group syncs, not admin grants. Both
-    tables read here are authored by THIS repo's alembic
-    (``coord_sso_rbac``, ``grantorig_01_operator_roles_grant_origin``) and
-    live in the database this request already holds a session on.
+    **What this is worth, stated honestly.** "They do not currently hold a
+    role in this tenant." That collapses the repeated-add case, which is the
+    product requirement. It does NOT survive a revoke: revoke then re-add
+    sends again, where the earlier audit-table version would have stayed
+    silent. It is also read-then-act with no atomicity, so concurrent
+    submits can all read ``False`` and all send — which the SQL version did
+    not fix either. Treat it as "collapses the repeated add", not as an
+    exactly-once guarantee.
 
     ``None`` on any failure, and the caller treats it as "do not send". That
-    is the safe direction: a missed courtesy email costs one sentence in the
-    response telling the admin to pass the news on themselves, while sending
-    on an unreadable check restores the unbounded behaviour.
+    is the safe direction: a missed courtesy email costs one sentence telling
+    the admin to pass the news on themselves, while sending on an
+    unestablished check restores the unbounded behaviour.
     """
     try:
-        # SAVEPOINT, for the reason spelled out at
-        # `_write_cognito_group_audit`: a failed STATEMENT poisons the WHOLE
-        # session, and `get_async_db` commits on teardown — so without this,
-        # a statement error here (a missing column on a database that has not
-        # taken `membernotice_01_operator_audit_grant_lookup` yet, a
-        # permissions problem) would let the grant proceed, swallow the
-        # error, and then raise `PendingRollbackError` out of teardown. The
-        # operator would read a 500 for a grant whose two coord writes had
-        # both committed, and would retry it. That is the precise failure
-        # this whole check exists to prevent, arriving by another door.
-        #
-        # ACKNOWLEDGED RESIDUAL, in the same spirit as that helper's own
-        # "what this does NOT cover": a savepoint contains a statement
-        # error, NOT a lost connection. A DBAPI disconnect invalidates the
-        # whole connection, so the implicit ROLLBACK TO SAVEPOINT fails too,
-        # the `except` below swallows that as UNKNOWN, and the teardown
-        # commit still raises. The 500-after-a-committed-grant is therefore
-        # narrowed, not eliminated. Closing it would take catching
-        # `DBAPIError.connection_invalidated` here and marking the request
-        # non-committing, which this layer has no way to express.
-        #
-        # A session-wide `rollback()` is not the alternative: `db` is the
-        # same session `get_current_active_user_async` loaded `current_user`
-        # from, so rolling it back would expire that instance and make the
-        # `current_user.is_superuser` read above re-query mid-request.
-        async with db.begin_nested():
-            row = (
-                await db.execute(
-                    _MEMBER_PRIOR_ACCESS_SQL,
-                    {
-                        "operator_id": str(operator_id),
-                        "operator_key": str(operator_id),
-                        "tenant_id": str(tenant_id),
-                    },
-                )
-            ).one()
+        payload = await _proxy_coord_get(
+            "/admin/coord/operators",
+            params={"sso_subject": sso_subject},
+            tenant_id=tenant_id,
+        )
     except Exception as exc:  # noqa: BLE001 - an unreadable check is UNKNOWN
         logger.error(
             "tenant_member_prior_access_unreadable",
             tenant_id=str(tenant_id),
-            operator_id=operator_id,
             error=str(exc),
             error_type=type(exc).__name__,
         )
         return None
-    return bool(row.holds_role_now) or bool(row.granted_before)
+
+    operators = payload.get("operators") if isinstance(payload, dict) else None
+    if not isinstance(operators, list):
+        # A 200 whose body is not the documented shape is UNKNOWN, never an
+        # empty membership: reading a missing list as "they are new here"
+        # would send on every call the moment coord's response shape drifted.
+        logger.error(
+            "tenant_member_prior_access_unreadable",
+            tenant_id=str(tenant_id),
+            error="coord returned no operators list",
+        )
+        return None
+
+    for operator in operators:
+        if not isinstance(operator, dict):
+            continue
+        if operator.get("sso_subject") != sso_subject:
+            # Coord filters server-side; this only guards against a build
+            # that ignores the parameter and answers with the whole tenant.
+            continue
+        roles = operator.get("roles")
+        # ANY role means they already had access to this team. A colleague
+        # being promoted from Developer to Administrator has already been
+        # told about it, so this must not narrow by the role being granted.
+        return bool(isinstance(roles, list) and roles)
+    return False
 
 
 async def _send_member_invitation(

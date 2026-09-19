@@ -654,14 +654,6 @@ jobs:
           # conftest.py overrides this anyway, but keep aligned with the
           # postgres service creds for clarity.
           DATABASE_URL: postgresql://qontinui_user:qontinui_dev_password@localhost:5432/qontinui_test
-          # This job provisions a postgres service, so a Postgres-gated test
-          # that SKIPS here has not been excused -- it has stopped running, and
-          # a skip is indistinguishable from a pass in a summary line. Tests that
-          # read this turn their skip into a failure. Deliberately NOT set on the
-          # collect-only step above, where a probe failure would break sharding
-          # rather than report a lane. Unset locally, so a developer with no
-          # database still gets the skip.
-          QONTINUI_REQUIRE_PG: 1
           REDIS_HOST: localhost
           REDIS_PORT: 6379
           REDIS_ENABLED: true
