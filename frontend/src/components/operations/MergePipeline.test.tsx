@@ -685,8 +685,8 @@ describe("MergePipeline", () => {
 
     render(<MergePipeline />);
 
-    // Merged rows are history — the live list does not carry them.
-    expect(screen.getAllByTestId("pipeline-row")).toHaveLength(1);
+    // All PRs carries the landed rows too (see the ordering test below).
+    expect(screen.getAllByTestId("pipeline-row")).toHaveLength(3);
 
     fireEvent.click(screen.getByTestId("pipeline-filter-merged"));
     const rows = screen.getAllByTestId("pipeline-row");
@@ -808,23 +808,68 @@ describe("MergePipeline", () => {
   // The merged read is expensive — it must stay off the 2s hot poll
   // --------------------------------------------------------------------------
 
-  it("asks for merged rows ONLY while the Merged tab is open", () => {
+  it("asks for merged rows ONLY on the tabs that list landed PRs", () => {
     hookData.current.prs = [pr()];
     hookCalls.length = 0;
 
     render(<MergePipeline />);
-    // Default tab: every render so far must have opted OUT of the expensive
-    // `?include_merged=` read.
+    // Default tab is All PRs, which lists landed rows alongside open ones.
     expect(hookCalls.length).toBeGreaterThan(0);
-    expect(hookCalls.every((c) => c.includeMerged === false)).toBe(true);
+    expect(hookCalls.every((c) => c.includeMerged === true)).toBe(true);
+
+    // A tab that shows no landed PRs must switch the costly read back off —
+    // otherwise it keeps running for the rest of the session.
+    fireEvent.click(screen.getByTestId("pipeline-filter-attention"));
+    expect(hookCalls.at(-1)?.includeMerged).toBe(false);
+    fireEvent.click(screen.getByTestId("pipeline-filter-in-flight"));
+    expect(hookCalls.at(-1)?.includeMerged).toBe(false);
 
     fireEvent.click(screen.getByTestId("pipeline-filter-merged"));
     expect(hookCalls.at(-1)?.includeMerged).toBe(true);
 
-    // Leaving the tab must switch it back off — otherwise the costly read
-    // keeps running for the rest of the session.
     fireEvent.click(screen.getByTestId("pipeline-filter-all"));
-    expect(hookCalls.at(-1)?.includeMerged).toBe(false);
+    expect(hookCalls.at(-1)?.includeMerged).toBe(true);
+  });
+
+  it("orders All PRs newest-first across status bands, merged rows included", () => {
+    const at = (minutesAgo: number) =>
+      new Date(Date.now() - minutesAgo * 60_000).toISOString();
+    hookData.current.prs = [
+      // Oldest, and the triage sort would rank it FIRST (conflict band).
+      pr({ pr_number: 1, branch: "b-conflict", last_refreshed_at: at(300) }),
+      pr({ pr_number: 2, branch: "b-ready", last_refreshed_at: at(30) }),
+      // Newest, and the triage sort would rank it LAST (merged band).
+      mergedPr(3, 1, "aaaaaaa1111"),
+    ];
+    hookData.current.proposals = [
+      proposal({
+        proposal_id: "pc",
+        status: "conflict",
+        updated_at: at(300),
+        repos: [
+          {
+            repo: "qontinui/qontinui-web",
+            branch: "b-conflict",
+            head_sha: "abc123",
+            ci_run_url: null,
+          },
+        ],
+      }),
+    ];
+
+    render(<MergePipeline />);
+
+    const rows = screen.getAllByTestId("pipeline-row");
+    expect(rows).toHaveLength(3);
+    expect(rows[0]).toHaveTextContent("qontinui-web#3");
+    expect(rows[1]).toHaveTextContent("qontinui-web#2");
+    expect(rows[2]).toHaveTextContent("qontinui-web#1");
+
+    // The working tabs keep their triage order: needs-the-author first.
+    fireEvent.click(screen.getByTestId("pipeline-filter-attention"));
+    expect(screen.getAllByTestId("pipeline-row")[0]).toHaveTextContent(
+      "qontinui-web#1"
+    );
   });
 
   it("labels the Merged tab from coord's cheap count before the tab is opened", () => {
@@ -895,8 +940,13 @@ describe("MergePipeline", () => {
 
     render(<MergePipeline />);
 
-    // Not in the live list, and counted exactly once in the merged tab.
-    expect(screen.queryAllByTestId("pipeline-row")).toHaveLength(0);
+    // Listed exactly once on All PRs — as the landed row, not also as live
+    // work — and counted exactly once in the merged tab.
+    const allRows = screen.getAllByTestId("pipeline-row");
+    expect(allRows).toHaveLength(1);
+    expect(within(allRows[0]).getByTestId("row-time")).toHaveTextContent(
+      "merged"
+    );
     expect(screen.getByTestId("pipeline-filter-merged")).toHaveTextContent(
       /Merged\s*1/
     );
