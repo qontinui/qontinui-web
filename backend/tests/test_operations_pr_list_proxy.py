@@ -126,6 +126,59 @@ class TestGetPrMergePrs:
 
         assert resp.status_code == 502
 
+    def _timeout_for(self, client: TestClient, query: str = "") -> httpx.Timeout:
+        """The ``httpx.Timeout`` the proxy built its coord client with."""
+        mock_resp = _mock_response(json_data=_COORD_PAYLOAD)
+        with patch("app.api.v1.endpoints.operations.httpx.AsyncClient") as MockClient:
+            instance = AsyncMock()
+            instance.get.return_value = mock_resp
+            instance.__aenter__ = AsyncMock(return_value=instance)
+            instance.__aexit__ = AsyncMock(return_value=False)
+            MockClient.return_value = instance
+            resp = client.get(f"{API_PREFIX}/pr-merge/prs{query}")
+        assert resp.status_code == 200
+        return MockClient.call_args.kwargs["timeout"]
+
+    def test_merged_rows_read_gets_the_long_timeout(self, client: TestClient):
+        """``include_merged`` is slow by construction and must outlive the 5s cap.
+
+        Measured against prod on 2026-09-19 with this proxy's own call shape:
+        a 24h/48h window takes 14-21s, so at the default 5s the read answered
+        504 every time and the Merged tab showed only the open list's dateless
+        landed rows. A timeout under the observed ceiling reintroduces that.
+        """
+        timeout = self._timeout_for(client, "?include_merged=48")
+
+        assert timeout.read is not None and timeout.read >= 30
+        # An unreachable coord must still fail fast: only the READ is long.
+        assert timeout.connect == 5.0
+
+    def test_every_other_call_keeps_the_fail_fast_timeout(self, client: TestClient):
+        """The long timeout is for the merged ROWS only — never the default.
+
+        ``merged_count_hours`` is one indexed count and rides the hot poll; a
+        coord that answers it slower than 5s is broken and should say so.
+        """
+        for query in ("", "?merged_count_hours=48"):
+            timeout = self._timeout_for(client, query)
+            assert timeout.read == 5.0, query
+            assert timeout.connect == 5.0, query
+
+    def test_merged_rows_read_that_still_times_out_is_a_504(self, client: TestClient):
+        """A read slower than even the long timeout is still a 504, and it was
+        asked for with the long timeout (so this cannot pass on the old 5s cap)."""
+        with patch("app.api.v1.endpoints.operations.httpx.AsyncClient") as MockClient:
+            instance = AsyncMock()
+            instance.get.side_effect = httpx.ReadTimeout("slow")
+            instance.__aenter__ = AsyncMock(return_value=instance)
+            instance.__aexit__ = AsyncMock(return_value=False)
+            MockClient.return_value = instance
+
+            resp = client.get(f"{API_PREFIX}/pr-merge/prs?include_merged=48")
+
+        assert resp.status_code == 504
+        assert MockClient.call_args.kwargs["timeout"].read >= 30
+
 
 class TestAdminDevPrsMirror:
     """``/admin-dev/prs`` proxies the same coord route and must not drift.
@@ -183,3 +236,43 @@ class TestAdminDevPrsMirror:
 
         assert resp.status_code == 200
         assert instance.get.call_args.kwargs["params"] is None
+        # No merged rows requested → the default fail-fast timeout.
+        assert MockClient.call_args.kwargs["timeout"].read == 5.0
+
+    def test_merged_count_hours_keeps_the_fail_fast_timeout(
+        self, admin_client: TestClient
+    ):
+        """The cheap count must not inherit the long timeout on the mirror either."""
+        mock_resp = _mock_response(json_data=_COORD_PAYLOAD)
+        with patch("app.api.v1.endpoints.operations.httpx.AsyncClient") as MockClient:
+            instance = AsyncMock()
+            instance.get.return_value = mock_resp
+            instance.__aenter__ = AsyncMock(return_value=instance)
+            instance.__aexit__ = AsyncMock(return_value=False)
+            MockClient.return_value = instance
+
+            resp = admin_client.get("/api/v1/admin-dev/prs?merged_count_hours=48")
+
+        assert resp.status_code == 200
+        assert MockClient.call_args.kwargs["timeout"].read == 5.0
+
+    def test_include_merged_gets_the_long_timeout(self, admin_client: TestClient):
+        """The mirror must not drift from ``/operations/pr-merge/prs``.
+
+        Worse than the primary route if it does: this one's coord-down handler
+        turns a 504 into an EMPTY envelope, so a too-short timeout is silent.
+        """
+        mock_resp = _mock_response(json_data=_COORD_PAYLOAD)
+        with patch("app.api.v1.endpoints.operations.httpx.AsyncClient") as MockClient:
+            instance = AsyncMock()
+            instance.get.return_value = mock_resp
+            instance.__aenter__ = AsyncMock(return_value=instance)
+            instance.__aexit__ = AsyncMock(return_value=False)
+            MockClient.return_value = instance
+
+            resp = admin_client.get("/api/v1/admin-dev/prs?include_merged=48")
+
+        assert resp.status_code == 200
+        timeout = MockClient.call_args.kwargs["timeout"]
+        assert timeout.read is not None and timeout.read >= 30
+        assert timeout.connect == 5.0
