@@ -11,13 +11,15 @@ All coord/JWKS/Cognito interactions are mocked — no network, no DB.
 from __future__ import annotations
 
 from unittest.mock import AsyncMock, MagicMock
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import pytest
 from fastapi import HTTPException
 from fastapi.security import HTTPAuthorizationCredentials
+from pydantic import ValidationError
 
 from app.api.v1.endpoints import memory as memory_ep
+from app.schemas.memory import MemoryQueryRequest, MemoryRecordIn
 from app.services.coord_jwks import (
     CoordJWKSUnavailableError,
     CoordTokenExpiredError,
@@ -29,6 +31,18 @@ from app.services.coord_jwks import (
 
 def _creds(token: str = "some-bearer") -> HTTPAuthorizationCredentials:
     return HTTPAuthorizationCredentials(scheme="Bearer", credentials=token)
+
+
+def _user(user_id: UUID) -> MagicMock:
+    """A stand-in for the ``auth.users`` row ``_verify_device_jwt`` resolves.
+
+    ``.id`` has to be a real UUID: the device arm now reads it onto the
+    principal, and a bare ``MagicMock()`` would let an assertion on
+    ``principal.user_id`` pass against an attribute that is itself a mock.
+    """
+    user = MagicMock()
+    user.id = user_id
+    return user
 
 
 def _mock_verify(monkeypatch: pytest.MonkeyPatch, result) -> AsyncMock:
@@ -124,7 +138,7 @@ async def test_device_token_resolves_device_tenant(
     monkeypatch.setattr(
         memory_ep,
         "_verify_device_jwt",
-        AsyncMock(return_value=(device_claims, MagicMock())),
+        AsyncMock(return_value=(device_claims, _user(UUID(device_claims["user_id"])))),
     )
     principal = await memory_ep.get_memory_tenant(
         request=MagicMock(), user=None, credentials=_creds()
@@ -143,7 +157,7 @@ async def test_device_token_without_tenant_claim_is_403(
     monkeypatch.setattr(
         memory_ep,
         "_verify_device_jwt",
-        AsyncMock(return_value=(device_claims, MagicMock())),
+        AsyncMock(return_value=(device_claims, _user(UUID(device_claims["user_id"])))),
     )
     with pytest.raises(HTTPException) as exc:
         await memory_ep.get_memory_tenant(
@@ -412,3 +426,244 @@ async def test_every_failure_class_is_classified_at_the_memory_door(
         )
         assert principal.actor == "operator"
         assert principal.tenant_id == tenant_id
+
+
+# ---------------------------------------------------------------------------
+# PROVENANCE FACETS — `MemoryPrincipal.user_id`
+#
+# Plan `2026-08-06-user-and-device-facets-on-memories-and-findings`, Phase 2
+# (web half). SECURITY SURFACE: `user_id` is the key of the one read path
+# that can return a row from a tenant other than the caller's
+# (`applies_at='user'`, §6), so where it comes from is the security-critical
+# line of the whole plan. It is resolved HERE, from a verified credential,
+# and nowhere else.
+#
+# The tests below pin three things that are easy to break and silent when
+# broken:
+#
+#   1. the device arm actually CARRIES the user it already resolves (it used
+#      to bind it to `_device_user` and throw it away);
+#   2. a coord-service token with no `user_id` claim is FAIL-SOFT — `None`,
+#      never a 401. coord does not mint that claim yet, so a strict read here
+#      would 401 every proxied memory write in the fleet. "A memory that
+#      fails to save is worse than one that is coarsely scoped" (§4.1);
+#   3. a coord-service token that DOES carry the claim yields it, which is
+#      what coord's deferred half will start sending.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_device_principal_carries_the_resolved_user(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The device arm stops discarding the user `_verify_device_jwt` resolved.
+
+    This is the one arm on which the facet resolves today, and the user is
+    free: `_verify_device_jwt` has already 401'd a token with no `user_id`
+    claim, a malformed one, an unknown user or an inactive one, so by the
+    time the principal is built the value is fully verified.
+    """
+    user_id = uuid4()
+    device_claims = {
+        "user_id": str(user_id),
+        "device_id": str(uuid4()),
+        "tenant_id": str(uuid4()),
+    }
+    _mock_verify(monkeypatch, device_claims)
+    monkeypatch.setattr(
+        memory_ep,
+        "_verify_device_jwt",
+        AsyncMock(return_value=(device_claims, _user(user_id))),
+    )
+
+    principal = await memory_ep.get_memory_tenant(
+        request=MagicMock(), user=None, credentials=_creds()
+    )
+
+    assert principal.actor == "device"
+    assert principal.user_id == user_id
+
+
+@pytest.mark.asyncio
+async def test_coord_service_token_without_user_claim_is_fail_soft(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """No `user_id` claim → `user_id is None`, and NOT a 401.
+
+    This is today's live shape: coord's `MemoryProxyClaims` carries
+    `{sub, token_kind, tenant_id, device_id, iat, exp}` and no user, so
+    every proxied write lands here. Turning the absence into a rejection
+    would take out `coord_memory_record` fleet-wide for a facet that is
+    nice to have.
+    """
+    tenant_id = uuid4()
+    _mock_verify(
+        monkeypatch,
+        {
+            "token_kind": "coord_service",
+            "sub": "coord-memory-proxy",
+            "tenant_id": str(tenant_id),
+            "device_id": str(uuid4()),
+        },
+    )
+
+    principal = await memory_ep.get_memory_tenant(
+        request=MagicMock(), user=None, credentials=_creds()
+    )
+
+    assert principal.actor == "coord_service"
+    assert principal.tenant_id == tenant_id
+    assert principal.user_id is None
+
+
+@pytest.mark.asyncio
+async def test_coord_service_token_with_user_claim_carries_it(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A `user_id` CLAIM is honoured — the deferred coord half's wire shape.
+
+    Once coord mints `user_id` into `MemoryProxyClaims`, this is the arm
+    that starts resolving. It reads the VERIFIED claim, the same way
+    `tenant_id` and `device_id` already do; nothing here reads the body.
+    """
+    user_id = uuid4()
+    _mock_verify(
+        monkeypatch,
+        {
+            "token_kind": "coord_service",
+            "sub": "coord-memory-proxy",
+            "tenant_id": str(uuid4()),
+            "device_id": str(uuid4()),
+            "user_id": str(user_id),
+        },
+    )
+
+    principal = await memory_ep.get_memory_tenant(
+        request=MagicMock(), user=None, credentials=_creds()
+    )
+
+    assert principal.user_id == user_id
+
+
+@pytest.mark.asyncio
+async def test_coord_service_token_with_malformed_user_claim_is_401(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A present-but-unparseable `user_id` is a 401, not a silent None.
+
+    Fail-SOFT is about ABSENCE. A claim that is there and malformed is a
+    broken minter, and `_claim_uuid` already treats `device_id` that way;
+    swallowing it would attribute the record to nobody while reporting
+    success.
+    """
+    _mock_verify(
+        monkeypatch,
+        {
+            "token_kind": "coord_service",
+            "sub": "coord-memory-proxy",
+            "tenant_id": str(uuid4()),
+            "user_id": "not-a-uuid",
+        },
+    )
+
+    with pytest.raises(HTTPException) as exc:
+        await memory_ep.get_memory_tenant(
+            request=MagicMock(), user=None, credentials=_creds()
+        )
+
+    assert exc.value.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_operator_principal_carries_the_authenticated_user(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The operator arm attributes to the `auth.users` row it authenticated.
+
+    Deliberately `user.id` and not `identity.operator_id`: `user_id` FKs to
+    `auth.users(id)`, and coord's operator id is a different keyspace.
+    """
+    user_id = uuid4()
+    _mock_verify(monkeypatch, CoordTokenInvalidError("not coord-signed"))
+    identity = MagicMock()
+    identity.home_tenant_id = uuid4()
+    monkeypatch.setattr(
+        memory_ep, "get_coord_identity", AsyncMock(return_value=identity)
+    )
+
+    principal = await memory_ep.get_memory_tenant(
+        request=MagicMock(), user=_user(user_id), credentials=_creds()
+    )
+
+    assert principal.actor == "operator"
+    assert principal.user_id == user_id
+
+
+# ---------------------------------------------------------------------------
+# THE PROHIBITION — provenance arrives as a verified claim or not at all.
+#
+# §6 requirement 5(b): a `user_id` accepted from a request body would let any
+# device write or read any human's cross-tenant memory corpus. Both request
+# models are `extra="forbid"`, so the refusal is STRUCTURAL — there is no
+# rejection to write, only a field not to declare.
+#
+# These two tests exist because that protection is invisible: it is the
+# ABSENCE of three field declarations, which nothing stops a future author
+# from adding for convenience. They fail the moment one is added, which is
+# the point at which someone has to argue for it.
+# ---------------------------------------------------------------------------
+
+_FORBIDDEN_PROVENANCE_KEYS = ("user_id", "device_id", "applies_at")
+
+
+@pytest.mark.parametrize("key", _FORBIDDEN_PROVENANCE_KEYS)
+def test_record_write_body_cannot_declare_provenance(key: str) -> None:
+    """`MemoryRecordIn` must 422 a provenance key, not honour it."""
+    body = {
+        "title": "t",
+        "content": "c",
+        "kind": "fact",
+        key: str(uuid4()) if key != "applies_at" else "fleet",
+    }
+    with pytest.raises(ValidationError) as exc:
+        MemoryRecordIn.model_validate(body)
+    assert key in str(exc.value)
+
+
+@pytest.mark.parametrize("key", _FORBIDDEN_PROVENANCE_KEYS)
+def test_query_body_cannot_declare_provenance(key: str) -> None:
+    """`MemoryQueryRequest` must 422 a provenance key, not filter on it.
+
+    A `user_id` honoured here is the read half of the same hole: it would
+    let any holder of a device token select another human's user-altitude
+    rows across every tenant that human belongs to.
+    """
+    body = {
+        "query_text": "q",
+        key: str(uuid4()) if key != "applies_at" else "fleet",
+    }
+    with pytest.raises(ValidationError) as exc:
+        MemoryQueryRequest.model_validate(body)
+    assert key in str(exc.value)
+
+
+def test_no_schema_on_the_memory_write_path_declares_a_provenance_field() -> None:
+    """Belt and braces: the field set itself, not just one rejected body.
+
+    A future author could re-open the hole by declaring the field with an
+    alias, or by relaxing `extra="forbid"` on one model while the other
+    keeps it. Reading the model fields directly catches both.
+    """
+    for model in (MemoryRecordIn, MemoryQueryRequest):
+        assert model.model_config.get("extra") == "forbid", model.__name__
+        declared = set(model.model_fields)
+        leaked = declared & set(_FORBIDDEN_PROVENANCE_KEYS)
+        assert not leaked, (
+            f"{model.__name__} declares {sorted(leaked)}. Provenance is "
+            f"resolved server-side from a verified credential "
+            f"(get_memory_tenant -> MemoryPrincipal) and must never be "
+            f"accepted from a request body — plan "
+            f"2026-08-06-user-and-device-facets-on-memories-and-findings "
+            f"§6 requirement 1. A body-supplied user_id lets any device "
+            f"read or write any human's cross-tenant memory corpus."
+        )

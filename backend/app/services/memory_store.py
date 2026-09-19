@@ -620,6 +620,8 @@ async def insert_record(
     source: dict[str, Any],
     consolidated_from: list[UUID] | None = None,
     anchors: list[dict[str, Any]] | None = None,
+    user_id: UUID | None = None,
+    device_id: UUID | None = None,
 ) -> tuple[UUID, bool]:
     """Insert one record, deduping on ``(tenant_id, content_hash)``
     against LIVE rows only.
@@ -649,6 +651,19 @@ async def insert_record(
     discriminates them — but "is the id the one I proposed" does,
     deterministically and without leaning on ``xmax`` implementation
     details.
+
+    ``user_id`` / ``device_id`` are the PROVENANCE facets of plan
+    ``2026-08-06-user-and-device-facets-on-memories-and-findings``. They
+    travel the same route ``tenant_id`` does — resolved from the verified
+    caller by ``get_memory_tenant`` into a ``MemoryPrincipal`` and handed
+    down — and are NEVER taken from a request body. Both default to
+    ``None`` so a caller with no principal (the ``memory_bridge`` job)
+    keeps working and simply lands NULLs; a write is never rejected for
+    missing provenance.
+
+    ``applies_at`` is deliberately NOT written here. Phase 3 of that plan
+    owns it; until then the column's ``DEFAULT 'tenant'`` supplies it,
+    which is today's semantics exactly.
     """
     proposed_id = uuid4()
     returned = (
@@ -658,14 +673,16 @@ async def insert_record(
                 INSERT INTO coord.memory_records
                     (memory_id, tenant_id, scope, scope_ref, kind, title,
                      content, content_hash, embedding, embedding_model,
-                     importance, source, consolidated_from, anchors)
+                     importance, source, consolidated_from, anchors,
+                     user_id, device_id)
                 VALUES
                     (:memory_id, :tenant_id, :scope, :scope_ref, :kind,
                      :title, :content, :content_hash,
                      CAST(:embedding AS vector),
                      :embedding_model, :importance, CAST(:source AS jsonb),
                      CAST(:consolidated_from AS uuid[]),
-                     CAST(:anchors AS jsonb))
+                     CAST(:anchors AS jsonb),
+                     :user_id, :device_id)
                 ON CONFLICT (tenant_id, content_hash)
                     WHERE {_LIVE_DEDUP_PREDICATE}
                     {_ANCHOR_MERGE_CONFLICT_ACTION}
@@ -687,6 +704,8 @@ async def insert_record(
                 "source": json.dumps(source),
                 "consolidated_from": consolidated_from,
                 "anchors": _anchors_json(anchors),
+                "user_id": user_id,
+                "device_id": device_id,
             },
         )
     ).scalar_one_or_none()
@@ -743,6 +762,8 @@ async def insert_records_batch(
     *,
     tenant_id: UUID,
     items: list[MemoryRecordInsert],
+    user_id: UUID | None = None,
+    device_id: UUID | None = None,
 ) -> list[tuple[UUID, bool]]:
     """Set-based multi-row insert with the same live-row dedup semantics
     as :func:`insert_record`, in ONE round-trip (plus one dedup lookup
@@ -775,6 +796,21 @@ async def insert_records_batch(
     would be the same silent anchor loss the ON CONFLICT merge exists to
     prevent, just moved one layer out. Every occurrence still gets its
     own result entry; the later ones report ``deduped=True``.
+
+    ``user_id`` / ``device_id`` are the PROVENANCE facets of plan
+    ``2026-08-06-user-and-device-facets-on-memories-and-findings``, and
+    they are REQUEST-level rather than per-item for the same reason
+    ``tenant_id`` is: they come from the one verified ``MemoryPrincipal``
+    that authenticated the call, so every row in a batch necessarily
+    shares them. They are never read from a request body.
+
+    **This is the path the fleet actually exercises** — coord's
+    ``coord_memory_record`` proxy posts a single-record BATCH, not a
+    single record — so a facet persisted only by :func:`insert_record`
+    would read as silently NULL in production.
+
+    ``applies_at`` is deliberately not written here; see
+    :func:`insert_record`.
     """
     if not items:
         return []
@@ -797,12 +833,13 @@ async def insert_records_batch(
         INSERT INTO coord.memory_records
             (memory_id, tenant_id, scope, scope_ref, kind, title, content,
              content_hash, embedding, embedding_model, importance, source,
-             anchors)
+             anchors, user_id, device_id)
         SELECT CAST(u.memory_id AS uuid), :tenant_id, u.scope, u.scope_ref,
                u.kind, u.title, u.content, u.content_hash,
                CAST(u.embedding AS vector),
                u.embedding_model, u.importance, CAST(u.source AS jsonb),
-               CAST(u.anchors AS jsonb)
+               CAST(u.anchors AS jsonb),
+               CAST(:user_id AS uuid), CAST(:device_id AS uuid)
         FROM unnest(
                  CAST(:memory_ids AS text[]),
                  CAST(:scopes AS text[]),
@@ -842,6 +879,12 @@ async def insert_records_batch(
         stmt,
         {
             "tenant_id": tenant_id,
+            # Request-level, like ``tenant_id``: one verified principal per
+            # call, so these are scalars broadcast over the unnest rather
+            # than arrays. ``CAST(... AS uuid)`` in the SELECT list is what
+            # types them when they are NULL.
+            "user_id": user_id,
+            "device_id": device_id,
             "memory_ids": [str(proposed[i.content_hash]) for i in unique],
             "scopes": [i.scope for i in unique],
             "scope_refs": [i.scope_ref for i in unique],
