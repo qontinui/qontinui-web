@@ -54,8 +54,8 @@ import type {
 
 /**
  * The MINIMUM a row's status must carry to render through these primitives.
- * `prPipeline`'s `UnifiedStatus` and `alertStatus`'s `AlertStatus` are both
- * structurally assignable to it.
+ * `prPipeline`'s `UnifiedStatus` is structurally assignable to it (as the
+ * retired `alertStatus`'s `AlertStatus` was).
  *
  * - `kind` — the derived status vocabulary, keys the badge palette.
  * - `label` — the user-facing plain-language status. Never a raw enum value.

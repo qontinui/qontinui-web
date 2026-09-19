@@ -4,7 +4,8 @@
  *
  * Plan `2026-08-16-coord-console-ui-unification-pipeline-style.md` Phase 3
  * Wave 4 (Family C, D2). Derivation lives in a pure, unit-tested module rather
- * than inline in JSX (R8), the shape `alertStatus.ts` established.
+ * than inline in JSX (R8), the shape `planStatus.ts` carries (first established by `alertStatus.ts`,
+ * since retired with the alerts page).
  *
  * ## What this replaces, and why it is an R3 fix rather than a repaint
  *
