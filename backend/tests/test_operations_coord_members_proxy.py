@@ -15,6 +15,7 @@ group-mapping-delete take a JSON body, and the proxy must forward it (not
 silently drop it).
 """
 
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import UUID, uuid4
 
@@ -43,8 +44,16 @@ def _build_test_app(
         require_coord_tenant_admin_target,
     )
     from app.api.v1.endpoints.operations import router as operations_router
+    from app.db.session import get_async_db
 
     test_app = FastAPI()
+    # `POST /coord/tenant-members` reads `coord.operator_roles` /
+    # `coord.operator_audit` through this session to decide whether the grant
+    # gave the person anything new. No test here has a database, and none
+    # needs one: `member_prior_access` patches the helper that would use it,
+    # so the session is only ever a placeholder that must not be a generator
+    # FastAPI tries to close.
+    test_app.dependency_overrides[get_async_db] = lambda: MagicMock()
     if authenticated:
         mock_user = MagicMock()
         mock_user.id = uuid4()
@@ -96,6 +105,66 @@ def _fresh_rate_limit_bucket():
     user_limiter.reset()
     yield
     user_limiter.reset()
+
+
+@pytest.fixture(autouse=True)
+def member_notice():
+    """Stub the member-added notice for EVERY test in this module.
+
+    Two reasons it is autouse rather than opt-in:
+
+    * **Unstubbed it reaches AWS.** The ``added`` arm sends through a real
+      ``EmailTransportService``, and ``USE_SES_API`` defaults to ``True``, so
+      an un-patched unit test would hand a message to a boto3 SES client and
+      wait on the network for it.
+    * **Every ``added`` assertion in this file now carries a ``notice``.** A
+      test that did not think about email still gets a deterministic one.
+
+    **What is patched, and why it is the factory and not the class.** An
+    earlier version of this fixture patched ``MemberAddedNoticeComposer``
+    while the call site read ``MemberAddedNoticeComposer(EmailTemplateService(),
+    EmailTransportService())``. That does NOT prevent the transport being
+    built: Python evaluates the arguments before it calls the (patched)
+    class, so every test driving the ``added`` arm still constructed a real
+    ``EmailTransportService`` and its boto3 SES client. The call site now
+    goes through ``_member_added_notice_composer()``, which owns the
+    construction, so patching that one name stops all of it.
+
+    Yields a namespace whose ``send`` is the ``AsyncMock`` behind the
+    composer's ``send`` — configure its ``return_value`` or ``side_effect``
+    to drive the failure arms — and whose ``factory`` is the patched
+    function, so a test can assert the composer was never even LOOKED UP,
+    which is the real assertion for "this arm sends nothing".
+    """
+    send = AsyncMock(return_value=True)
+    composer = MagicMock()
+    composer.send = send
+    factory = MagicMock(return_value=composer)
+    with patch(
+        "app.api.v1.endpoints.operations._member_added_notice_composer", factory
+    ):
+        yield SimpleNamespace(send=send, factory=factory)
+
+
+@pytest.fixture(autouse=True)
+def member_prior_access():
+    """Answer "did they already have access?" without a database.
+
+    The route consults ``_member_had_prior_access`` before granting, and
+    sends the notice only on a definite ``False``. The real helper reads
+    ``coord.operator_roles`` and ``coord.operator_audit``; no test in this
+    module has those tables, and an unpatched call would take the
+    except-branch and answer ``None`` — which means "could not establish", so
+    every ``added`` test would silently land on ``not_sent`` and stop
+    asserting the behaviour it was written for.
+
+    Defaults to ``False`` (a genuinely new grant, notice expected). Set
+    ``.return_value`` to ``True`` for a re-add, or ``None`` for an unreadable
+    check.
+    """
+    probe = AsyncMock(return_value=False)
+    with patch("app.api.v1.endpoints.operations._member_had_prior_access", probe):
+        yield probe
 
 
 @pytest.fixture()
@@ -344,6 +413,9 @@ class TestAddTenantMemberByEmail:
             "status": "added",
             "operator_id": "op-1",
             "role": "admin",
+            # The `added` arm now tells the colleague. `notice` reports it;
+            # `sent` here is the `member_notice` fixture's stubbed transport.
+            "notice": "sent",
         }
 
         first, second = instance.post.call_args_list
@@ -839,6 +911,331 @@ class TestAddTenantMemberByEmail:
         assert resp.status_code == 502
         # The role grant is never attempted against an id we do not have.
         assert instance.post.call_count == 1
+
+
+# ---------------------------------------------------------------------------
+# The member-added notice
+# ---------------------------------------------------------------------------
+
+
+class TestMemberAddedNotice:
+    """``added`` tells the person. Failing to tell them never undoes the grant.
+
+    The gap this closes: of the three grant arms, only ``invited`` sent
+    anything (Cognito's invitation) and only ``invitation_pending`` was
+    deliberately silent. ``added`` — the arm for somebody who ALREADY holds a
+    confirmed account — granted the role and sent nothing at all, so a
+    colleague found out by being told in person, or never.
+
+    The load-bearing property here is the FAILURE shape, not the success one.
+    Compare ``_send_member_invitation``, which answers a failed send with a
+    502: correct there, because without the invitation the person cannot sign
+    in. Here they already can, so a failed notice must leave a correct grant
+    correct — and must still be visible, because an email nobody received and
+    nobody was told about is the exact defect being fixed.
+    """
+
+    TENANT = uuid4()
+
+    def _client(self, superuser: bool = False) -> TestClient:
+        return TestClient(
+            _build_test_app(server_tenant=self.TENANT, superuser=superuser)
+        )
+
+    def _add_confirmed(self, *, role: str = "operator"):
+        """Drive the ``added`` arm: a CONFIRMED account, granted a role."""
+        from app.services.cognito_admin import CognitoIdentity
+
+        with (
+            patch(
+                "app.services.cognito_admin.resolve_identity_for_email",
+                MagicMock(
+                    return_value=CognitoIdentity(
+                        username="u1", sub="s-1", status="CONFIRMED"
+                    )
+                ),
+            ),
+            _patch_httpx() as MockClient,
+        ):
+            instance = AsyncMock()
+            instance.post.side_effect = [
+                _mock_response(json_data={"operator_id": "op-added"}),
+                _mock_response(json_data={"ok": True}),
+            ]
+            _configure_mock_client(MockClient, instance)
+            resp = self._client().post(
+                f"{API_PREFIX}/coord/tenant-members",
+                json={"email": "colleague@x.io", "role": role},
+            )
+        return resp, instance
+
+    # ---- the send is attempted, and reported ------------------------------
+
+    def test_added_attempts_the_notice_and_reports_it(self, member_notice):
+        resp, _ = self._add_confirmed()
+
+        assert resp.status_code == 200
+        assert resp.json()["status"] == "added"
+        assert resp.json()["notice"] == "sent"
+        member_notice.send.assert_awaited_once()
+        kwargs = member_notice.send.await_args.kwargs
+        # The address the administrator typed — the one the grant was made
+        # against — not a username or a Cognito sub.
+        assert kwargs["email"] == "colleague@x.io"
+        assert kwargs["role"] == "operator"
+
+    def test_the_notice_names_no_tenant_when_the_name_is_unresolvable(
+        self, member_notice
+    ):
+        """These tests present no bearer, so ``get_coord_identity`` 401s and
+        no name resolves. ``None`` is the honest value to pass on; the
+        composer turns it into "a team". A raw UUID must never reach it —
+        that is an identifier, not a name, and an email showing one reads
+        like a phishing attempt."""
+        self._add_confirmed()
+
+        name = member_notice.send.await_args.kwargs["tenant_name"]
+        assert name is None
+        assert str(self.TENANT) != name
+
+    # ---- failure does not fail the grant ----------------------------------
+
+    def test_a_false_send_is_not_sent_and_the_grant_still_stands(self, member_notice):
+        member_notice.send.return_value = False
+
+        resp, instance = self._add_confirmed()
+
+        assert resp.status_code == 200
+        body = resp.json()
+        # The grant is the thing that must survive: status unchanged, the
+        # operator id still reported, and BOTH coord writes still made.
+        assert body["status"] == "added"
+        assert body["operator_id"] == "op-added"
+        assert body["role"] == "operator"
+        assert instance.post.call_count == 2
+        # And the failure is visible rather than silent.
+        assert body["notice"] == "not_sent"
+
+    def test_a_raising_send_is_not_sent_and_the_grant_still_stands(self, member_notice):
+        """Any exception, not just a transport ``False``. A template that
+        will not load, a boto3 client that will not build, a coord blip while
+        resolving the tenant name — none of them may reach the caller as a
+        failed grant, because the grant already succeeded."""
+        member_notice.send.side_effect = RuntimeError("SMTP exploded")
+
+        resp, instance = self._add_confirmed()
+
+        assert resp.status_code == 200
+        assert resp.json() == {
+            "status": "added",
+            "operator_id": "op-added",
+            "role": "operator",
+            "notice": "not_sent",
+        }
+        assert instance.post.call_count == 2
+
+    def test_a_failed_notice_is_logged_at_error_with_tenant_and_operator(
+        self, member_notice
+    ):
+        """An administrator reading the dashboard learns it from ``notice``;
+        an operator reading the logs afterwards needs to know WHICH grant and
+        WHOSE — otherwise the record cannot be acted on."""
+        member_notice.send.return_value = False
+
+        with patch("app.api.v1.endpoints.operations.logger") as log:
+            self._add_confirmed()
+
+        errors = [c for c in log.error.call_args_list if c.args]
+        assert any(
+            c.args[0] == "tenant_member_added_notice_not_sent"
+            and c.kwargs.get("tenant_id") == str(self.TENANT)
+            and c.kwargs.get("operator_id") == "op-added"
+            for c in errors
+        ), log.error.call_args_list
+
+    # ---- the notice is not an email-sending primitive ---------------------
+
+    def test_a_re_add_of_an_existing_member_sends_nothing(
+        self, member_notice, member_prior_access
+    ):
+        """The defect this closes is BOTH a false sentence and an abuse door.
+
+        False sentence: coord's role grant answers ``{"ok": true}`` whether
+        it inserted a row or found one, so without a prior-access check the
+        notice fires on every submit and tells somebody who has had access
+        since June that they have just been given it.
+
+        Abuse door: the route is open to every tenant admin, every signed-in
+        user administers their own personal tenant, and the limiter allows 30
+        calls a minute — so "send on every submit" is 30 emails a minute from
+        the product's verified sender at any address that holds an account.
+        """
+        member_prior_access.return_value = True
+
+        resp, instance = self._add_confirmed()
+
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["status"] == "added"
+        assert body["notice"] == "not_needed"
+        # Not merely "did not send" — the composer was never even looked up.
+        member_notice.factory.assert_not_called()
+        member_notice.send.assert_not_awaited()
+        # And the grant itself still happened, idempotently.
+        assert instance.post.call_count == 2
+
+    def test_prior_access_is_read_before_the_grant(self, member_prior_access):
+        """Order is the whole mechanism. Coord's own write is what makes the
+        question unanswerable: after the grant, ``coord.operator_roles``
+        holds a row either way. Read after it and the check answers "they
+        already had access" for every caller, forever."""
+        order: list[str] = []
+
+        async def _probe(*_a, **_k):
+            order.append("prior_access")
+            return False
+
+        member_prior_access.side_effect = _probe
+
+        from app.services.cognito_admin import CognitoIdentity
+
+        with (
+            patch(
+                "app.services.cognito_admin.resolve_identity_for_email",
+                MagicMock(
+                    return_value=CognitoIdentity(
+                        username="u1", sub="s-1", status="CONFIRMED"
+                    )
+                ),
+            ),
+            _patch_httpx() as MockClient,
+        ):
+            instance = AsyncMock()
+            responses = [
+                _mock_response(json_data={"operator_id": "op-added"}),
+                _mock_response(json_data={"ok": True}),
+            ]
+
+            async def _post(url, *args, **kwargs):
+                order.append("coord:" + url.rsplit("/admin/coord", 1)[-1])
+                return responses.pop(0)
+
+            instance.post.side_effect = _post
+            _configure_mock_client(MockClient, instance)
+            resp = self._client().post(
+                f"{API_PREFIX}/coord/tenant-members",
+                json={"email": "colleague@x.io", "role": "operator"},
+            )
+
+        assert resp.status_code == 200
+        # The operator upsert mints the id the check needs, so it must come
+        # first; the ROLE grant must come after the check.
+        assert order == [
+            "coord:/operators",
+            "prior_access",
+            "coord:/operators/op-added/roles",
+        ]
+
+    def test_an_unreadable_prior_access_check_sends_nothing(
+        self, member_notice, member_prior_access
+    ):
+        """UNKNOWN is not "no". Sending on a check we could not run restores
+        the unbounded behaviour exactly, so the safe direction is silence —
+        reported as ``not_sent``, which already tells the admin to pass the
+        news on themselves."""
+        member_prior_access.return_value = None
+
+        resp, instance = self._add_confirmed()
+
+        assert resp.status_code == 200
+        assert resp.json()["status"] == "added"
+        assert resp.json()["notice"] == "not_sent"
+        member_notice.factory.assert_not_called()
+        member_notice.send.assert_not_awaited()
+        assert instance.post.call_count == 2
+
+    def test_the_grant_is_logged_before_the_notice_is_attempted(self, member_notice):
+        """``tenant_member_add_ok`` describes something already true when the
+        grant returns. Emitting it only after the email round-trip made the
+        record of a completed grant wait on a transport — and vanish if the
+        notice raised."""
+        seen: list[str] = []
+
+        async def _slow_send(*_a, **_k):
+            seen.append("send")
+            return True
+
+        member_notice.send.side_effect = _slow_send
+
+        with patch("app.api.v1.endpoints.operations.logger") as log:
+
+            def _info(event, *_a, **_k):
+                seen.append("log:" + event)
+
+            log.info.side_effect = _info
+            self._add_confirmed()
+
+        assert "log:tenant_member_add_ok" in seen
+        assert "send" in seen
+        assert seen.index("log:tenant_member_add_ok") < seen.index("send")
+
+    # ---- the other two arms send nothing ----------------------------------
+
+    def _post_pending(self, *, superuser: bool):
+        from app.services.cognito_admin import (
+            INVITATION_PENDING_STATUS,
+            CognitoIdentity,
+        )
+
+        pending = CognitoIdentity(
+            username="pending@x.io",
+            sub="s-p",
+            status=INVITATION_PENDING_STATUS,
+        )
+        with (
+            patch(
+                "app.services.cognito_admin.resolve_identity_for_email",
+                MagicMock(return_value=pending),
+            ),
+            patch(
+                "app.services.cognito_admin.send_invitation",
+                MagicMock(return_value=None),
+            ),
+            _patch_httpx() as MockClient,
+        ):
+            instance = AsyncMock()
+            instance.post.side_effect = [
+                _mock_response(json_data={"operator_id": "op-p"}),
+                _mock_response(json_data={"ok": True}),
+            ]
+            _configure_mock_client(MockClient, instance)
+            return self._client(superuser=superuser).post(
+                f"{API_PREFIX}/coord/tenant-members",
+                json={"email": "pending@x.io", "role": "operator"},
+            )
+
+    def test_invitation_pending_sends_no_notice(self, member_notice):
+        """Deliberately silent. Sending here would route around the rule that
+        contacting a not-yet-activated account is a superuser act — and a
+        person who cannot sign in yet is owed the invitation, not a note
+        about a team they cannot reach."""
+        resp = self._post_pending(superuser=False)
+
+        assert resp.json()["status"] == "invitation_pending"
+        assert "notice" not in resp.json()
+        member_notice.factory.assert_not_called()
+        member_notice.send.assert_not_awaited()
+
+    def test_invited_sends_no_notice(self, member_notice):
+        """Cognito already emails this person — with the temporary password
+        they need. A second email saying the same thing less usefully is
+        noise at best and a phishing lookalike at worst."""
+        resp = self._post_pending(superuser=True)
+
+        assert resp.json()["status"] == "invited"
+        assert "notice" not in resp.json()
+        member_notice.factory.assert_not_called()
+        member_notice.send.assert_not_awaited()
 
 
 class TestTenantMemberBodyRefusesIdpFields:

@@ -19,6 +19,7 @@ import json
 import re
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
+from functools import lru_cache
 from typing import Any, Literal, NoReturn
 from urllib.parse import quote
 from uuid import UUID
@@ -111,6 +112,11 @@ from app.services.coord_identity import (
     get_coord_identity_for_token,
 )
 from app.services.dev_dashboard_service import get_fleet_registry
+from app.services.email import (
+    EmailTemplateService,
+    EmailTransportService,
+    MemberAddedNoticeComposer,
+)
 from app.websockets.safe_send import safe_close, safe_send_json
 
 # Timeout for coord proxy reads. The merge queue is a small JSON payload
@@ -10813,6 +10819,7 @@ async def post_coord_tenant_member(
     body: _TenantMemberAddBody,
     tenant_id: UUID = Depends(require_coord_tenant_admin_target),
     current_user: UserModel = Depends(get_current_active_user_async),
+    db: AsyncSession = Depends(get_async_db),
 ) -> dict[str, Any]:
     """Add a person to the caller's tenant by EMAIL — no IdP fields.
 
@@ -10830,8 +10837,22 @@ async def post_coord_tenant_member(
 
     Answers:
 
-    * ``{"status": "added", "operator_id", "role"}`` — they had an account
-      and now hold ``role`` in this tenant.
+    * ``{"status": "added", "operator_id", "role", "notice"}`` — they had an
+      account and now hold ``role`` in this tenant. ``notice`` reports the
+      "you have been given access" email, which is attempted on THIS arm
+      only, and takes one of three values:
+
+      - ``sent`` — the email reached a transport.
+      - ``not_sent`` — nothing was sent and the admin should pass the news
+        on themselves. Covers both a failed send and an unreadable
+        prior-access check.
+      - ``not_needed`` — they ALREADY had access to this tenant, so this
+        grant told them nothing new and no email was sent.
+
+      See :func:`_member_had_prior_access` for why the third value exists
+      (it is what stops this route being an email-sending primitive) and
+      :func:`_send_member_added_notice` for why a failed send does not fail
+      the grant.
     * ``{"status": "invited", "operator_id", "role"}`` — SUPERUSER ONLY. They
       had no account (or an unaccepted invitation): the account is created
       with nothing sent, the grant is made, and only then is the invitation
@@ -10839,7 +10860,10 @@ async def post_coord_tenant_member(
       recovers a lost or expired one.
     * ``{"status": "invitation_pending", "operator_id", "role"}`` — a tenant
       admin added somebody holding an invitation they have not accepted. The
-      grant is made; nothing is sent, since sending is a superuser act.
+      grant is made; nothing is sent, since sending is a superuser act. No
+      ``notice`` either: a person who cannot sign in yet is owed the
+      invitation, not a note about a team they cannot reach, and sending one
+      would route around the superuser rule above.
     * ``{"status": "invite_required"}`` — a tenant admin named an email with
       no account. NOTHING is written or sent.
     * ``409`` — more than one account matches the email, so picking one
@@ -10883,8 +10907,17 @@ async def post_coord_tenant_member(
     # targets CONFIRMED accounts — and a retry converges on it. Deleting it
     # instead could remove an account a concurrent request had just invited,
     # or orphan a grant coord committed before its response was lost.
-    operator_id = await _grant_tenant_member(
-        email=email, sub=identity.sub, role=body.role, tenant_id=tenant_id
+    operator_id = await _upsert_tenant_operator(
+        email=email, sub=identity.sub, tenant_id=tenant_id
+    )
+    # BEFORE the grant, while the question is still answerable: coord's own
+    # write is what makes "did they already have access?" unanswerable
+    # afterwards. Read it here and carry the answer past the grant.
+    had_access = await _member_had_prior_access(
+        db, tenant_id=tenant_id, operator_id=operator_id
+    )
+    await _grant_tenant_member_role(
+        operator_id=operator_id, role=body.role, tenant_id=tenant_id
     )
 
     status = "added"
@@ -10898,6 +10931,18 @@ async def post_coord_tenant_member(
             operator_id=operator_id,
         )
 
+    result: dict[str, Any] = {
+        "status": status,
+        "operator_id": operator_id,
+        "role": body.role,
+    }
+
+    # The grant is already true here, and nothing below can change that — so
+    # this line is logged BEFORE the notice rather than after it. Putting it
+    # after made a record of a completed grant reachable only once an email
+    # round-trip had returned, so a slow or wedged transport delayed (and a
+    # crash inside the notice erased) the log line for work that had in fact
+    # succeeded.
     logger.info(
         "tenant_member_add_ok",
         tenant_id=str(tenant_id),
@@ -10905,7 +10950,42 @@ async def post_coord_tenant_member(
         role=body.role,
         outcome=status,
     )
-    return {"status": status, "operator_id": operator_id, "role": body.role}
+
+    # ONLY the `added` arm, and only when this grant actually gave them
+    # something they did not already have. `invited` already emails (Cognito
+    # sends the invitation with the temporary password); `invitation_pending`
+    # is deliberately silent; and a re-add of somebody who already had access
+    # must not claim to have given it to them again — see
+    # `_member_had_prior_access` for why that is a safety property and not
+    # only a copy one.
+    if status == "added":
+        if had_access is False:
+            result["notice"] = await _send_member_added_notice(
+                request=request,
+                email=email,
+                role=body.role,
+                tenant_id=tenant_id,
+                operator_id=operator_id,
+                actor_id=getattr(current_user, "id", None),
+            )
+        elif had_access is True:
+            result["notice"] = "not_needed"
+        else:
+            # UNKNOWN. Nothing was sent, and the honest thing to tell the
+            # admin is the same as a failed send: pass the news on yourself.
+            logger.error(
+                "tenant_member_added_notice_skipped_unknown_prior_access",
+                tenant_id=str(tenant_id),
+                operator_id=operator_id,
+            )
+            result["notice"] = "not_sent"
+        logger.info(
+            "tenant_member_add_notice",
+            tenant_id=str(tenant_id),
+            operator_id=operator_id,
+            notice=result["notice"],
+        )
+    return result
 
 
 async def _resolve_member_identity(email: str) -> cognito_admin.CognitoIdentity | None:
@@ -10970,10 +11050,14 @@ async def _create_invited_identity(email: str) -> cognito_admin.CognitoIdentity:
         ) from exc
 
 
-async def _grant_tenant_member(
-    *, email: str, sub: str, role: str, tenant_id: UUID
-) -> str:
-    """Coord's operator upsert and role grant; returns the ``operator_id``."""
+async def _upsert_tenant_operator(*, email: str, sub: str, tenant_id: UUID) -> str:
+    """Coord's operator upsert; returns the ``operator_id``. Grants nothing.
+
+    Split out of the old ``_grant_tenant_member`` so the caller has the
+    ``operator_id`` — which only this call mints — BEFORE the role grant
+    happens. :func:`_member_had_prior_access` needs both, and needs to run
+    while "did they already have access?" is still answerable.
+    """
     created = await _proxy_coord_post_readable(
         "/admin/coord/operators",
         {"email": email, "sso_subject": sub, "sso_provider": "cognito"},
@@ -10986,12 +11070,168 @@ async def _grant_tenant_member(
             status_code=502,
             detail="coord accepted the operator upsert but returned no operator_id",
         )
+    return operator_id
+
+
+async def _grant_tenant_member_role(
+    *, operator_id: str, role: str, tenant_id: UUID
+) -> None:
+    """Coord's role grant, with the explicit target tenant it re-checks."""
     await _proxy_coord_post_readable(
         f"/admin/coord/operators/{quote(operator_id, safe='')}/roles",
         {"role": role, "target_tenant_id": str(tenant_id)},
         tenant_id=tenant_id,
     )
-    return operator_id
+
+
+#: Has this person ever had access to this tenant? Two independent EXISTS
+#: against the tables qontinui-web's own alembic authors, in the database this
+#: backend is already connected to.
+#:
+#: Every parameter is bound as TEXT and cast in SQL. ``operator_id`` and
+#: ``tenant_id`` are ``uuid`` columns while ``operator_audit.resource_key`` is
+#: ``TEXT`` holding the same value — so the one id is compared against both
+#: types in one statement, and an implicit ``uuid = text`` comparison is an
+#: error in PostgreSQL rather than a coercion. Spelling the casts keeps the
+#: statement independent of how the driver happens to adapt a ``UUID``
+#: object.
+_MEMBER_PRIOR_ACCESS_SQL = text(
+    """
+    SELECT
+      EXISTS(
+        SELECT 1 FROM coord.operator_roles
+        WHERE operator_id = CAST(:operator_id AS uuid)
+          AND tenant_id = CAST(:tenant_id AS uuid)
+      ) AS holds_role_now,
+      EXISTS(
+        SELECT 1 FROM coord.operator_audit
+        WHERE action = 'operator.grant_role'
+          AND resource_kind = 'operator'
+          AND resource_key = :operator_key
+          AND tenant_id = CAST(:tenant_id AS uuid)
+      ) AS granted_before
+    """
+)
+
+
+async def _member_had_prior_access(
+    db: AsyncSession, *, tenant_id: UUID, operator_id: str
+) -> bool | None:
+    """Did this operator already have access to this tenant BEFORE this call?
+
+    ``True`` they did, ``False`` this grant is their first, ``None`` we could
+    not establish it. The caller sends the notice ONLY on ``False``.
+
+    **Why this exists — correctness first.** Coord's role grant answers a
+    bare ``{"ok": true}``: ``insert_operator_role`` upserts and
+    ``post_operator_grant_role`` reports nothing about whether a row
+    appeared, so the response cannot distinguish a grant that changed state
+    from one that was already true. Without this the notice fires on EVERY
+    submit, and tells somebody who has had access since June that they have
+    just been given it. That alone is the reason to keep the check.
+
+    **And who can actually reach this route, measured rather than assumed.**
+    Not superuser-gated. ``require_coord_tenant_admin`` requires ``admin`` in
+    the EFFECTIVE tenant, and ``_effective_tenant_id`` accepts a switcher
+    selection only for a tenant the caller belongs to; coord re-checks it in
+    ``post_operator_grant_role`` against ``coord.operator_roles``. So the
+    TARGET tenant is not arbitrary — but the RECIPIENT is: the email is the
+    caller's free text, resolved against the whole Cognito pool. Every
+    signed-in user administers their own personal tenant (``auth_sso``
+    grants personal-tenant owner ``admin``) and may self-create up to
+    ``COORD_SELF_SERVICE_TENANT_CAP`` more (default 5), becoming admin of
+    each. So an attacker can mail any address that holds a confirmed
+    Qontinui account, from tenants they control, at the limiter's 30/min.
+
+    That is a smaller vector than "anyone can spam anyone from anywhere", and
+    it is not nothing: without this check the volume to one victim is
+    unbounded; with it, it is roughly one message per tenant the attacker
+    administers, so the tenant cap becomes the bound. The abuse reduction is
+    a real secondary benefit of a check that earns its place on correctness.
+
+    **Why two signals rather than one**, and what each is actually worth:
+
+    * ``holds_role_now`` is the literal state-change test, and it is the
+      DURABLE one: ``insert_operator_role`` runs synchronously inside the
+      grant, so from the moment a grant returns, every later add of that
+      person to that tenant reads ``True`` here. It also catches members
+      provisioned by SSO group mapping (``coord.group_tenant_roles``), who
+      hold a role with no admin grant anywhere in their history.
+    * ``granted_before`` is coord's append-only ``operator.grant_role``
+      audit trail. It covers the one case the state test cannot: the same
+      dashboard offers Revoke, so grant → revoke → grant would "change
+      state" every cycle, and the audit row outlives the role row.
+
+    **What this does NOT guarantee.** It is read-then-act with no
+    atomicity, so concurrent submits can all read ``False`` and all send —
+    bounded by concurrency, not eliminated. And the second signal is
+    weaker than the first: coord writes the audit row from a detached
+    ``tokio::spawn`` AFTER responding, and abandons it on a pool-acquire
+    failure, so it is not durable at the moment the grant returns and can
+    simply be missing. Treat this as "collapses the repeated-add case and
+    bounds the rest", not as an exactly-once guarantee.
+
+    **Why a direct query rather than a coord API call.** Coord exposes no
+    read that answers it. ``GET /admin/coord/operators`` is scoped
+    ``WHERE o.tenant_id = $1`` — the operator's HOME tenant — so it returns
+    nothing at all for the cross-home colleague this feature exists for, and
+    ``membership-sync`` reports SSO-group syncs, not admin grants. Both
+    tables read here are authored by THIS repo's alembic
+    (``coord_sso_rbac``, ``grantorig_01_operator_roles_grant_origin``) and
+    live in the database this request already holds a session on.
+
+    ``None`` on any failure, and the caller treats it as "do not send". That
+    is the safe direction: a missed courtesy email costs one sentence in the
+    response telling the admin to pass the news on themselves, while sending
+    on an unreadable check restores the unbounded behaviour.
+    """
+    try:
+        # SAVEPOINT, for the reason spelled out at
+        # `_write_cognito_group_audit`: a failed STATEMENT poisons the WHOLE
+        # session, and `get_async_db` commits on teardown — so without this,
+        # a statement error here (a missing column on a database that has not
+        # taken `membernotice_01_operator_audit_grant_lookup` yet, a
+        # permissions problem) would let the grant proceed, swallow the
+        # error, and then raise `PendingRollbackError` out of teardown. The
+        # operator would read a 500 for a grant whose two coord writes had
+        # both committed, and would retry it. That is the precise failure
+        # this whole check exists to prevent, arriving by another door.
+        #
+        # ACKNOWLEDGED RESIDUAL, in the same spirit as that helper's own
+        # "what this does NOT cover": a savepoint contains a statement
+        # error, NOT a lost connection. A DBAPI disconnect invalidates the
+        # whole connection, so the implicit ROLLBACK TO SAVEPOINT fails too,
+        # the `except` below swallows that as UNKNOWN, and the teardown
+        # commit still raises. The 500-after-a-committed-grant is therefore
+        # narrowed, not eliminated. Closing it would take catching
+        # `DBAPIError.connection_invalidated` here and marking the request
+        # non-committing, which this layer has no way to express.
+        #
+        # A session-wide `rollback()` is not the alternative: `db` is the
+        # same session `get_current_active_user_async` loaded `current_user`
+        # from, so rolling it back would expire that instance and make the
+        # `current_user.is_superuser` read above re-query mid-request.
+        async with db.begin_nested():
+            row = (
+                await db.execute(
+                    _MEMBER_PRIOR_ACCESS_SQL,
+                    {
+                        "operator_id": str(operator_id),
+                        "operator_key": str(operator_id),
+                        "tenant_id": str(tenant_id),
+                    },
+                )
+            ).one()
+    except Exception as exc:  # noqa: BLE001 - an unreadable check is UNKNOWN
+        logger.error(
+            "tenant_member_prior_access_unreadable",
+            tenant_id=str(tenant_id),
+            operator_id=operator_id,
+            error=str(exc),
+            error_type=type(exc).__name__,
+        )
+        return None
+    return bool(row.holds_role_now) or bool(row.granted_before)
 
 
 async def _send_member_invitation(
@@ -11029,6 +11269,141 @@ async def _send_member_invitation(
             },
         ) from exc
     return "invited"
+
+
+async def _member_tenant_display_name(request: Request, tenant_id: UUID) -> str | None:
+    """The tenant's human-readable name, or ``None`` if there isn't one.
+
+    Cheap by construction: ``get_coord_identity`` memoizes the parsed
+    ``/admin/coord/me`` payload on ``request.state``, and
+    :func:`require_coord_tenant_admin_target` has already paid for it on this
+    request — so this adds no coord round-trip.
+
+    ``None`` on every failure, including a name that is really an identifier.
+    The composer renders that as "a team", which is the point: a UUID in front
+    of a person is not a name, and an email that shows one reads like a
+    phishing attempt rather than like a colleague adding them to a project.
+    """
+    try:
+        identity = await get_coord_identity(request)
+    except Exception as exc:  # noqa: BLE001 - a name is a nicety, never a failure
+        logger.info("tenant_member_notice_name_unresolved", error=str(exc))
+        return None
+    for tenant in identity.tenants:
+        if tenant.tenant_id != tenant_id:
+            continue
+        # `display_name` is the tenant's human-chosen name and is `None` on a
+        # coord that predates the field or a tenant that never got one, so the
+        # slug is the documented fallback (see `CoordTenant`).
+        name = (tenant.display_name or tenant.slug or "").strip()
+        if not name:
+            return None
+        try:
+            UUID(name)
+        except (ValueError, AttributeError, TypeError):
+            return name
+        return None
+    return None
+
+
+@lru_cache(maxsize=1)
+def _member_added_notice_composer() -> MemberAddedNoticeComposer:
+    """The one composer for this process — and the one seam tests patch.
+
+    Cached because ``EmailTransportService()`` builds a boto3 SES client, and
+    building one per request is both wasteful and a per-request chance to pay
+    credential-resolution latency on a path that is already waiting on a
+    network send.
+
+    It is a FACTORY rather than a construction at the call site for a reason
+    that only shows up in tests: Python evaluates arguments before it calls
+    anything, so patching ``MemberAddedNoticeComposer`` does NOT stop
+    ``MemberAddedNoticeComposer(EmailTemplateService(), EmailTransportService())``
+    from constructing a real transport — and therefore a real boto3 client —
+    on every test that drives the ``added`` arm. Patching this function stops
+    all of it, because the construction lives inside the thing being
+    replaced.
+
+    ``get_feedback_composer`` in ``app/api/v1/endpoints/feedback.py`` shares
+    the "a factory owns the construction" half and NOT the caching: it is a
+    plain FastAPI dependency and builds a fresh composer, transport and
+    boto3 client on every request.
+    """
+    return MemberAddedNoticeComposer(EmailTemplateService(), EmailTransportService())
+
+
+async def _send_member_added_notice(
+    *,
+    request: Request,
+    email: str,
+    role: str,
+    tenant_id: UUID,
+    operator_id: str,
+    actor_id: Any,
+) -> str:
+    """Tell an EXISTING account holder they were granted access. Never raises.
+
+    Returns ``"sent"`` or ``"not_sent"``, which the route puts on the response
+    as ``notice``.
+
+    **Why this cannot fail the grant, when
+    :func:`_send_member_invitation` correctly does.** There, a grant without
+    its email leaves somebody who literally cannot sign in, so the 502 is the
+    honest answer and the retry re-sends. Here the person already has a
+    working account and the grant is already true coord-side: undoing it, or
+    reporting it as a failure, would destroy a correct outcome over a courtesy
+    message. So the send is reported, not enforced.
+
+    **And it must not read as success either.** A silent failure here is
+    exactly the defect this notice exists to fix — an administrator saw
+    "added", the colleague was told nothing, and nobody knew. So a failure is
+    logged at ERROR with the tenant and the acting operator, and is reported
+    to the caller in the response so the dashboard can say "tell them
+    yourself".
+
+    ``EmailTransportService.send_email`` reports a failure by RETURNING
+    ``False``, not by raising — an unconfigured transport, a refused SES call
+    and an unverified sender identity all land there — so ``not sent`` is a
+    value to be read, never an exception to be caught. Both shapes are
+    handled here anyway: a composer that raises is the same outcome to the
+    person who was not told.
+
+    The send goes through that shared transport rather than a second boto3
+    client, and that is a constraint as well as a style: the web task role
+    holds ``ses:SendEmail`` (the API ``_send_via_ses_api`` calls) and NOT
+    ``ses:SendRawEmail``, so a hand-rolled raw-MIME path would be refused at
+    IAM.
+    """
+    try:
+        tenant_name = await _member_tenant_display_name(request, tenant_id)
+        sent = await _member_added_notice_composer().send(
+            email=email, role=role, tenant_name=tenant_name
+        )
+    except Exception as exc:  # noqa: BLE001 - a notice never fails a grant
+        logger.error(
+            "tenant_member_added_notice_failed",
+            tenant_id=str(tenant_id),
+            operator_id=operator_id,
+            actor_id=str(actor_id) if actor_id is not None else None,
+            error=str(exc),
+            error_type=type(exc).__name__,
+        )
+        return "not_sent"
+    if not sent:
+        logger.error(
+            "tenant_member_added_notice_not_sent",
+            tenant_id=str(tenant_id),
+            operator_id=operator_id,
+            actor_id=str(actor_id) if actor_id is not None else None,
+            reason="transport reported the email was not sent",
+        )
+        return "not_sent"
+    logger.info(
+        "tenant_member_added_notice_sent",
+        tenant_id=str(tenant_id),
+        operator_id=operator_id,
+    )
+    return "sent"
 
 
 @router.get("/coord/group-tenant-roles")
