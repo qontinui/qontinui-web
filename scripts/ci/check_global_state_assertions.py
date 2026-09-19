@@ -178,6 +178,24 @@ SQL_COUNT = re.compile(r"select\s+count\s*\(", re.IGNORECASE)
 SQL_TABLE_REF = re.compile(r"from\s+\w+\.", re.IGNORECASE)
 SQL_WHERE = re.compile(r"\bwhere\b", re.IGNORECASE)
 
+#: Used only by :func:`_is_sql_fragment`, to tell a SQL string from prose that
+#: happens to contain "where". A keyword ALONE is not enough — English has all
+#: of these — so a fragment must also carry a bind parameter, a
+#: schema-qualified name, a comparison, or a second distinct keyword.
+SQL_KEYWORD = re.compile(
+    r"\b(select|from|where|join|insert|update|delete|values|set|and|or|on|"
+    r"group|order|limit|offset|having|returning)\b",
+    re.IGNORECASE,
+)
+#: Builtins that return their single argument's population unchanged, so a
+#: value wrapped in one is still the value the helper produced.
+PASSTHROUGH_BUILTINS = frozenset({"list", "sorted", "set", "tuple", "reversed"})
+
+SQL_BIND = re.compile(r":\w+\b")
+SQL_COMPARISON = re.compile(
+    r"(?:=|<>|!=|<=|>=|\bis\s+(?:not\s+)?null\b)", re.IGNORECASE
+)
+
 #: Calls that run a statement. ``exec_driver_sql`` is here for the same reason
 #: ``execute`` is: it takes the SQL as an argument, so the string is in reach.
 EXECUTE_CALLS = frozenset({"execute", "exec_driver_sql", "executemany"})
@@ -434,17 +452,50 @@ def _sql_reach(
     return reach
 
 
+def _is_sql_fragment(s: str) -> bool:
+    """Does this string look like SQL, as opposed to prose that says "where"?
+
+    This exists because the WHERE test below is applied over the whole reach,
+    and that made ANY English string carrying the word a silencer for Rule A::
+
+        msg = "where the rows are"          # <- suppressed the rule entirely
+        return conn.execute(text("SELECT id FROM coord.jobs")).all()
+
+    which is the worst possible shape for this gate: the remediation it PRINTS
+    tells the author to add a WHERE, so an author who instead adds a log line
+    gets a silent green on the assertion just flagged. Docstrings were the
+    first half of this hole and are excluded separately; this is the rest.
+
+    The test is structural rather than semantic, because the reach cannot be
+    narrowed to the matching string alone. This suite builds SQL by
+    ACCUMULATION — ``sql = "SELECT ..."`` then ``sql += " AND kind = :k"``, and
+    f-string fragments — so SELECT and WHERE routinely live in different
+    constants, and scoping the WHERE test to the string that matched as a read
+    was measured at 8 false positives. So: a string is SQL when it carries a
+    SQL keyword AND at least one token prose does not have — a bind parameter
+    (``:name``), a schema-qualified name (``a.b``), a comparison, or a second
+    distinct keyword. "where the rows are" has a keyword and none of the rest.
+    """
+    if not SQL_KEYWORD.search(s):
+        return False
+    if SQL_BIND.search(s) or SQL_TABLE_REF.search(s) or SQL_COMPARISON.search(s):
+        return True
+    return len({m.group(0).lower() for m in SQL_KEYWORD.finditer(s)}) > 1
+
+
 def _unfiltered_sql(
     closure: list[ast.expr], helpers: dict[str, ast.FunctionDef | ast.AsyncFunctionDef]
 ) -> str | None:
     """The offending statement, or ``None``.
 
     A read is unfiltered when at least one string in reach READS A TABLE
-    (``select count(...)`` or ``from <schema>.<table>``) and NO string in reach
-    mentions ``where`` at all. The second half is deliberately over the whole
-    reach rather than over the matching string alone: a helper that runs one
-    scoped statement and one bare one is ambiguous, and an ambiguous read is not
-    what a ratchet should be set on.
+    (``select count(...)`` or ``from <schema>.<table>``) and no SQL-SHAPED
+    string in reach mentions ``where`` at all. The WHERE half is deliberately
+    over the whole reach rather than over the matching string alone — a helper
+    that runs one scoped statement and one bare one is ambiguous, and an
+    ambiguous read is not what a ratchet should be set on — but it is
+    restricted to strings that are actually SQL (:func:`_is_sql_fragment`),
+    because otherwise a prose string containing "where" silences the rule.
     """
     reach = _sql_reach(closure, helpers)
     if not reach:
@@ -453,7 +504,7 @@ def _unfiltered_sql(
     reads = [s for s in literals if SQL_COUNT.search(s) or SQL_TABLE_REF.search(s)]
     if not reads:
         return None
-    if any(SQL_WHERE.search(s) for s in literals):
+    if any(SQL_WHERE.search(s) for s in literals if _is_sql_fragment(s)):
         return None
     return " ".join(reads[0].split())[:120]
 
@@ -487,7 +538,28 @@ def _producing_calls(
     if isinstance(expr, ast.Await):
         return _producing_calls(expr.value, bindings)
     if isinstance(expr, ast.Call):
+        # A BUILTIN PASSTHROUGH is transparent. `list(_job_rows(db, t))`,
+        # `sorted(...)`, `set(...)`, `tuple(...)` all return the helper's rows
+        # unchanged, so the value under assertion is still the helper's. These
+        # are ordinary spellings, not adversarial ones, and leaving them opaque
+        # meant one wrapper silenced Rule B. Only the single-positional form is
+        # followed — `sorted(rows, key=...)` still is, `list(a, b)` is not a
+        # thing, and a passthrough SHADOWED by a local helper of the same name
+        # is left alone, since then it is not the builtin at all.
+        if (
+            isinstance(expr.func, ast.Name)
+            and expr.func.id in PASSTHROUGH_BUILTINS
+            and len(expr.args) == 1
+            and expr.func.id not in bindings
+        ):
+            return _producing_calls(expr.args[0], bindings)
         return [expr]
+    if isinstance(expr, (ast.ListComp, ast.SetComp, ast.GeneratorExp)):
+        # `[r for r in _job_rows(db, t)]` — the population is the iterable of
+        # the FIRST generator; the comprehension only re-shapes it.
+        if expr.generators:
+            return _producing_calls(expr.generators[0].iter, bindings)
+        return []
     if isinstance(expr, ast.Name):
         out: list[ast.Call] = []
         for assigned in bindings.get(expr.id, []):
@@ -515,6 +587,16 @@ def _unused_discriminator(
             # `f(**overrides)` — the discriminators may well be in there. An
             # unknown is not a violation.
             continue
+        # An EXPLICIT `None` is not a discriminator: `_job_rows(db, t,
+        # input_hash=None)` is byte-equivalent to the bare call, because the
+        # helper's own body is `if input_hash is not None:`. Counting it as
+        # "passed" made the cheapest possible silencer — one keystroke, one
+        # token away from the fix this rule prints — into a green.
+        passed = {
+            kw.arg
+            for kw in call.keywords
+            if not (isinstance(kw.value, ast.Constant) and kw.value.value is None)
+        }
         if passed.isdisjoint(declared):
             return f"{helper.name}(*, {', '.join(declared)})"
     return None
@@ -678,7 +760,7 @@ def load_allowlist(path: Path) -> dict[str, int] | None:
         if not line or line.startswith("#"):
             continue
         parts = line.split()
-        if len(parts) != 2 or not parts[1].isdigit():
+        if len(parts) != 2 or not re.fullmatch(r"[0-9]+", parts[1]):
             err(f"{_rel(path)}:{lineno}: expected `<path> <count>`, got: {raw!r}")
             ok = False
             continue

@@ -85,18 +85,18 @@ _DECLARED_LANES = frozenset(
 
 #: RULE A, positive — a direct `execute` whose SQL counts a whole table. The
 #: shape of `test_coord_wu_authored_at_01_migration.py:394`.
-_A_POSITIVE_DIRECT = '''
+_A_POSITIVE_DIRECT = """
 from sqlalchemy import text
 
 
 def test_the_downgrade_keeps_every_row(conn):
     total = conn.execute(text("SELECT count(*) FROM coord.work_units")).scalar()
     assert total == 6
-'''
+"""
 
 #: RULE A, positive — the read one call away, in a same-file helper. The shape
 #: of `_row_count(engine)` across the migration suites.
-_A_POSITIVE_HELPER = '''
+_A_POSITIVE_HELPER = """
 from sqlalchemy import text
 
 
@@ -110,11 +110,11 @@ def _rows(engine):
 def test_one_job_was_enqueued(engine):
     jobs = _rows(engine)
     assert len(jobs) == 1
-'''
+"""
 
 #: RULE A, near-miss NEGATIVE — byte-for-byte the same read, scoped by a WHERE
 #: on the tenant the test minted. This is what the fix looks like.
-_A_NEGATIVE_WHERE = '''
+_A_NEGATIVE_WHERE = """
 from uuid import uuid4
 
 from sqlalchemy import text
@@ -132,11 +132,11 @@ def test_one_job_was_enqueued(engine):
     tenant = uuid4()
     jobs = _rows(engine, tenant)
     assert len(jobs) == 1
-'''
+"""
 
 #: RULE B, positive — `_job_rows` declares keyword-only discriminators and this
 #: call passes neither. Verbatim the seam of commit `164e25f4a`.
-_B_POSITIVE = '''
+_B_POSITIVE = """
 from uuid import uuid4
 
 
@@ -152,11 +152,11 @@ def test_one_job_was_enqueued(db):
 def test_no_job_was_enqueued(db):
     tenant = uuid4()
     assert _job_rows(db, tenant) == []
-'''
+"""
 
 #: RULE B, near-miss NEGATIVE — the same helper, the same assertions, with the
 #: discriminator the helper declares actually passed.
-_B_NEGATIVE_PASSED = '''
+_B_NEGATIVE_PASSED = """
 from uuid import uuid4
 
 
@@ -172,23 +172,23 @@ def test_one_job_was_enqueued(db):
 def test_no_job_was_enqueued(db):
     tenant = uuid4()
     assert _job_rows(db, tenant, input_hash="abc") == []
-'''
+"""
 
 #: RULE B, negative — a helper with no keyword-only parameters declares no
 #: discriminator, so there is none to ignore. The gate is not a ban on `len`.
-_B_NEGATIVE_NO_KWONLY = '''
+_B_NEGATIVE_NO_KWONLY = """
 def _own_dispatches(dispatch, db):
     return dispatch.rows
 
 
 def test_one_dispatch(dispatch, db):
     assert len(_own_dispatches(dispatch, db)) == 1
-'''
+"""
 
 #: RULE B, negative — the keyword-only helper built an ARGUMENT, not the value.
 #: Following arguments blamed seven correct assertions in `test_scheduler_db.py`
 #: on a discriminator belonging to a different value.
-_B_NEGATIVE_ARGUMENT_PROVENANCE = '''
+_B_NEGATIVE_ARGUMENT_PROVENANCE = """
 def _patch_dispatcher(monkeypatch, *, raises=None):
     return object()
 
@@ -200,22 +200,22 @@ def _own_dispatches(dispatch, db):
 def test_one_dispatch(monkeypatch, db):
     dispatch = _patch_dispatcher(monkeypatch)
     assert len(_own_dispatches(dispatch, db)) == 1
-'''
+"""
 
 #: RULE B, negative — `**overrides` may well carry them. An unknown is not a
 #: violation.
-_B_NEGATIVE_SPLAT = '''
+_B_NEGATIVE_SPLAT = """
 def _job_rows(db, tenant, *, input_hash=None, kind=None):
     return _read(db, tenant, input_hash, kind)
 
 
 def test_one_job(db, tenant, overrides):
     assert len(_job_rows(db, tenant, **overrides)) == 1
-'''
+"""
 
 #: The measured false positives of the FIRST draft of this detector. Every one
 #: of these is a correct assertion and none may be flagged.
-_MEASURED_NON_FINDINGS = '''
+_MEASURED_NON_FINDINGS = """
 def _manager(*, target_connected=True):
     return object()
 
@@ -234,10 +234,10 @@ def test_correct_idioms(session, pubsub, frame, db):
     assert session.listeners == {}
     assert db.enabled is True
     assert len(session.rows) == len(errors)     # no fixed extent at all
-'''
+"""
 
 #: An assert both rules could claim. It is ONE finding, and Rule A wins.
-_BOTH_RULES = '''
+_BOTH_RULES = """
 from sqlalchemy import text
 
 
@@ -248,7 +248,88 @@ def _rows(engine, *, tenant=None):
 
 def test_one_gate(engine):
     assert len(_rows(engine)) == 1
+"""
+
+
+# --- Evasion fixtures. Each of these returned [] from an earlier build of the
+# --- detector, and each is a one-token, NON-adversarial edit that turned a red
+# --- into a green without scoping anything. A ratchet that is easier to
+# --- silence than to satisfy is not a ratchet, so every one of them is pinned.
+
+_A_POSITIVE_PROSE_WHERE = """
+from sqlalchemy import text
+
+
+def _rows(engine):
+    msg = "where the rows are"
+    with engine.connect() as conn:
+        return conn.execute(text("SELECT id FROM coord.jobs")).mappings().all()
+
+
+def test_one_row(engine):
+    assert len(_rows(engine)) == 1
+"""
+
+_A_POSITIVE_DOCSTRING_WHERE = '''
+from sqlalchemy import text
+
+
+def _rows(engine):
+    """Every job row. Used where a test needs the raw table."""
+    with engine.connect() as conn:
+        return conn.execute(text("SELECT id FROM coord.jobs")).mappings().all()
+
+
+def test_one_row(engine):
+    assert len(_rows(engine)) == 1
 '''
+
+_B_POSITIVE_NONE_KWARG = """
+def _job_rows(db, tenant, *, input_hash=None, kind=None):
+    return db.execute("SELECT id FROM coord.jobs WHERE t = :t", {"t": tenant}).all()
+
+
+def test_one_job(db):
+    assert len(_job_rows(db, 1, input_hash=None)) == 1
+"""
+
+_B_POSITIVE_WRAPPED = """
+def _job_rows(db, tenant, *, input_hash=None, kind=None):
+    return db.execute("SELECT id FROM coord.jobs WHERE t = :t", {"t": tenant}).all()
+
+
+def test_list(db):
+    assert len(list(_job_rows(db, 1))) == 1
+
+
+def test_sorted(db):
+    assert len(sorted(_job_rows(db, 1))) == 1
+
+
+def test_comprehension(db):
+    assert len([r for r in _job_rows(db, 1)]) == 1
+"""
+
+_NOT_POSITIVE = """
+from sqlalchemy import text
+
+
+def _rows(engine):
+    with engine.connect() as conn:
+        return conn.execute(text("SELECT id FROM coord.jobs")).mappings().all()
+
+
+def test_nothing_remains(engine):
+    assert not _rows(engine)
+"""
+
+_NOT_NEGATIVE = """
+def test_local_list_and_bare_flag(db):
+    errors = []
+    assert not errors
+    flag = db.enabled
+    assert not flag
+"""
 
 
 def _write(tmp_path: Path, name: str, source: str) -> Path:
@@ -379,9 +460,7 @@ _ROW = "backend/tests/a_direct.py"
 
 
 def _allowlist(tests: Path, body: str) -> None:
-    (tests / ALLOWLIST_NAME).write_text(
-        gate.ALLOWLIST_HEADER + body, encoding="utf-8"
-    )
+    (tests / ALLOWLIST_NAME).write_text(gate.ALLOWLIST_HEADER + body, encoding="utf-8")
 
 
 def test_a_tree_matching_its_allowlist_is_clean(
@@ -518,3 +597,57 @@ def test_the_scripts_docstring_names_every_lane() -> None:
     ``a208240e2`` left the tree in for 90 commits.
     """
     assert_docstring_names_every_lane(_gate_docstring(), _SCRIPT_REF, _DECLARED_LANES)
+
+
+# ---------------------------------------------------------------------------
+# Evasions. Every one of these was a measured false GREEN before it was pinned.
+# ---------------------------------------------------------------------------
+
+
+def test_rule_a_survives_prose_containing_the_word_where(tmp_path: Path) -> None:
+    """A log line is not a WHERE clause.
+
+    The WHERE test runs over the whole dataflow reach, so before
+    ``_is_sql_fragment`` any English string carrying the word silenced Rule A —
+    on an assertion whose printed remediation is "add a WHERE". An author who
+    followed that advice badly got a green.
+    """
+    assert _rules(tmp_path, "a_prose.py", _A_POSITIVE_PROSE_WHERE) == [gate.RULE_A]
+
+
+def test_rule_a_survives_a_docstring_containing_the_word_where(
+    tmp_path: Path,
+) -> None:
+    """Same hole, reached through a docstring rather than a statement."""
+    assert _rules(tmp_path, "a_doc.py", _A_POSITIVE_DOCSTRING_WHERE) == [gate.RULE_A]
+
+
+def test_rule_b_treats_an_explicit_none_as_not_passed(tmp_path: Path) -> None:
+    """``input_hash=None`` is byte-equivalent to the bare call.
+
+    The helper's own body is ``if input_hash is not None:``, so an explicit
+    ``None`` constrains nothing. Counting it as "passed" made the cheapest
+    possible silencer, one token from the fix the rule prints.
+    """
+    assert _rules(tmp_path, "b_none.py", _B_POSITIVE_NONE_KWARG) == [gate.RULE_B]
+
+
+def test_rule_b_sees_through_a_builtin_passthrough(tmp_path: Path) -> None:
+    """``list()``, ``sorted()`` and a comprehension re-shape, they do not scope."""
+    assert _rules(tmp_path, "b_wrapped.py", _B_POSITIVE_WRAPPED) == [
+        gate.RULE_B,
+        gate.RULE_B,
+        gate.RULE_B,
+    ]
+
+
+def test_assert_not_is_the_same_claim_as_equals_empty(tmp_path: Path) -> None:
+    """``assert not rows`` is the idiomatic spelling of ``assert rows == []``."""
+    assert _rules(tmp_path, "not_pos.py", _NOT_POSITIVE) == [gate.RULE_A]
+
+
+def test_assert_not_does_not_flag_a_local_list_or_a_bare_flag(
+    tmp_path: Path,
+) -> None:
+    """The near-miss for the arm above — neither reads shared state."""
+    assert _rules(tmp_path, "not_neg.py", _NOT_NEGATIVE) == []
