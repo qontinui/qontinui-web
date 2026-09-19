@@ -1445,6 +1445,9 @@ settings in effect) — so it adds no visual vocabulary.
 | An absent `conditions` block → "Unknown — coord does not report conditions yet"; `scrape_up: false` → "Unknown — health query failed"; a `null` count → `–` | R6 — absence is not zero, at the strip and per count |
 | Unknown states are amber; unclaimed conditions are amber; only "waiting on you N" borrows red | R3 — red means a human must act, and an operator question is the one thing on the panel only he can clear |
 | Settings in effect never move the level | R3 — a drain or a kill switch is a deliberate operator setting reflected back, not a fault |
+| More operator-responder alerts than open questions (`awaiting_operator_alerts` > `awaiting_operator`) says "N operator alerts have no question yet" and is never green | R3 — something needs the operator that the question queue does not show yet |
+| A failed LATEST read keeps the retained numbers, labelled, and forces amber | R6 — a retained verdict may not look like a re-confirmed one, in either direction |
+| `scrape_up: false` names coord's `unavailable_reason` | R8's converse — the operator gets the one fact that says where to look |
 | Domain and setting names are operator words; the wire kind is in the `title` | R8 |
 
 **The one new composition: a second health strip on one page.** R1 says a list

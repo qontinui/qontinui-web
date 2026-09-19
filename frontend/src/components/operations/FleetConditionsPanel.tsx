@@ -107,6 +107,17 @@ export function FleetConditionsPanel({
       onClick: () => onNavigate(summary.questionsHref),
       "data-testid": "coord-devops-conditions-awaiting-badge",
     });
+    const unasked = summary.unaskedOperatorAlerts;
+    if (unasked !== null && unasked > 0) {
+      out.push({
+        key: "unasked",
+        label: `no question yet ${unasked}`,
+        tone: "default",
+        title:
+          "Open conditions only you can resolve that coord has not raised a question for yet. They are not in the question queue until it does.",
+        "data-testid": "coord-devops-conditions-unasked-badge",
+      });
+    }
     out.push({
       key: "claimed",
       label: `claimed ${dash(summary.claimed)}`,
@@ -140,12 +151,21 @@ export function FleetConditionsPanel({
 
   const settingStats = useMemo<Stat[]>(
     () =>
-      (summary.settings ?? []).map((s) => ({
-        key: `${s.kind}-${s.since ?? ""}`,
+      (summary.settings ?? []).map((s, i) => ({
+        // The alert row's id is the setting's identity: two machines drained
+        // are two rows of one kind. The index fallback only serves a coord
+        // that sends no id.
+        key: s.alertId !== null ? `alert-${s.alertId}` : `${s.kind}-${i}`,
         label: `${s.label} · `,
         value: s.sinceLabel,
         tone: "muted",
-        title: `${s.kind} — a deliberate setting coord is reflecting back, not a fault.${s.since ? ` In effect since ${s.since}.` : ""}`,
+        title: [
+          s.summary,
+          `${s.kind} — a deliberate setting coord is reflecting back, not a fault.`,
+          s.since ? `In effect since ${s.since}.` : null,
+        ]
+          .filter(Boolean)
+          .join(" "),
         "data-testid": `coord-devops-conditions-setting-${s.kind}`,
       })),
     [summary.settings]
@@ -182,6 +202,16 @@ export function FleetConditionsPanel({
           >
             <span className="text-muted-foreground">Settings in effect:</span>
             <StatCluster stats={settingStats} />
+            {summary.settingsNotListed > 0 && (
+              // Coord caps the list and counts exactly; the rest is named, not
+              // silently dropped.
+              <span
+                className="text-muted-foreground"
+                data-testid="coord-devops-conditions-settings-more"
+              >
+                +{summary.settingsNotListed} more
+              </span>
+            )}
           </div>
         ) : (
           <p

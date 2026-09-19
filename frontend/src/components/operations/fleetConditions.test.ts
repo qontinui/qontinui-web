@@ -36,7 +36,9 @@ function measured(
     },
     awaiting_operator: 0,
     awaiting_operator_question_ids: [],
+    awaiting_operator_alerts: 0,
     settings_in_effect: [],
+    settings_in_effect_count: 0,
     scrape_up: true,
     ...overrides,
   };
@@ -121,6 +123,17 @@ describe("summarizeFleetConditions — the unknown states", () => {
     expect(s.settings).toBeNull();
   });
 
+  it("names the read coord says failed", () => {
+    const s = summarize({
+      conditions: {
+        scrape_up: false,
+        unavailable_reason: "schema_migration_pending",
+      },
+    });
+    expect(s.unavailableReason).toBe("schema_migration_pending");
+    expect(s.detail).toContain("schema_migration_pending");
+  });
+
   it("does not believe zeros beside scrape_up: false", () => {
     const s = summarize({
       conditions: measured({ scrape_up: false }),
@@ -149,6 +162,56 @@ describe("summarizeFleetConditions — the unknown states", () => {
     );
     expect(s.headline).toBe("Nothing unhandled");
     expect(s.detail).toContain("latest fleet-health read failed");
+    // A verdict that is not being re-confirmed may not look like one that is.
+    expect(s.level).toBe("amber");
+  });
+
+  it("forces amber on a failed latest read even over a retained red", () => {
+    const s = summarize(
+      {
+        conditions: measured({
+          awaiting_operator: 1,
+          awaiting_operator_alerts: 1,
+          awaiting_operator_question_ids: ["q"],
+        }),
+      },
+      { error: "network down" }
+    );
+    expect(s.level).toBe("amber");
+  });
+});
+
+describe("summarizeFleetConditions — operator alerts without a question", () => {
+  it("says so, and is never green, when alerts outnumber questions", () => {
+    const s = summarize({
+      conditions: measured({ awaiting_operator: 0, awaiting_operator_alerts: 3 }),
+    });
+    expect(s.headline).toBe("Nothing unhandled");
+    expect(s.unaskedOperatorAlerts).toBe(3);
+    expect(s.level).toBe("amber");
+    expect(s.detail).toContain("3 operator alerts have no question yet");
+  });
+
+  it("stays red when a question also waits", () => {
+    const s = summarize({
+      conditions: measured({
+        awaiting_operator: 1,
+        awaiting_operator_question_ids: ["q"],
+        awaiting_operator_alerts: 2,
+      }),
+    });
+    expect(s.level).toBe("red");
+    expect(s.unaskedOperatorAlerts).toBe(1);
+    expect(s.detail).toContain("1 operator alert has no question yet");
+  });
+
+  it("is not green when the operator-alert count is unmeasured", () => {
+    const s = summarize({
+      conditions: measured({ awaiting_operator_alerts: null }),
+    });
+    expect(s.unaskedOperatorAlerts).toBeNull();
+    expect(s.level).toBe("amber");
+    expect(s.detail).toContain("unknown");
   });
 });
 
@@ -211,31 +274,51 @@ describe("summarizeFleetConditions — unhandled conditions", () => {
 });
 
 describe("summarizeFleetConditions — settings in effect", () => {
-  it("names each setting and ages it", () => {
+  it("names each setting, ages it, and carries its id and summary", () => {
     const s = summarize({
       conditions: measured({
         settings_in_effect: [
-          { kind: "kill_switch_fired", since: "2026-09-18T09:00:00Z" },
+          {
+            alert_id: 41,
+            kind: "kill_switch_fired",
+            since: "2026-09-18T09:00:00Z",
+            summary: "Merge kill switch activated by operator",
+          },
           { kind: "some_new_setting", since: null },
         ],
+        settings_in_effect_count: 2,
       }),
     });
     expect(s.settings).toEqual([
       {
+        alertId: 41,
         kind: "kill_switch_fired",
+        summary: "Merge kill switch activated by operator",
         label: "merge kill switch on",
         since: "2026-09-18T09:00:00Z",
         sinceLabel: "3h ago",
       },
       {
+        alertId: null,
         kind: "some_new_setting",
         label: "some new setting",
         since: undefined,
         sinceLabel: "since an unknown time",
       },
     ]);
+    expect(s.settingsNotListed).toBe(0);
     // Settings never move the level.
     expect(s.level).toBe("green");
+  });
+
+  it("counts the settings coord's capped list left out", () => {
+    const s = summarize({
+      conditions: measured({
+        settings_in_effect: [{ alert_id: 1, kind: "fleet_device_drained" }],
+        settings_in_effect_count: 26,
+      }),
+    });
+    expect(s.settingsNotListed).toBe(25);
   });
 
   it("separates 'none in effect' from 'not reported'", () => {
