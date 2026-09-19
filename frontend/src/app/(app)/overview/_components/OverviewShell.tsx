@@ -11,6 +11,7 @@
  */
 
 import Link from "next/link";
+import { Clock3 } from "lucide-react";
 import { usePathname } from "next/navigation";
 import { useAuth } from "@/contexts/auth-context";
 import { useTenant } from "@/contexts/tenant-context";
@@ -82,18 +83,28 @@ export function OverviewShell({ children }: { children: React.ReactNode }) {
                 key={section.id}
                 href={section.route}
                 aria-current={active ? "page" : undefined}
-                title={section.description}
+                title={
+                  section.available
+                    ? section.description
+                    : `${section.description} (not available yet)`
+                }
                 data-ui-bridge-id={`overview.subnav.${section.id}`}
                 className={cn(
-                  "whitespace-nowrap border-b-2 px-3 pb-2.5 pt-1 text-sm transition-colors",
+                  "inline-flex items-center gap-1 whitespace-nowrap border-b-2 px-2.5 pb-2.5 pt-1 text-sm transition-colors",
                   "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background rounded-t-sm",
                   active
                     ? "border-primary text-foreground"
-                    : "border-transparent text-muted-foreground hover:text-foreground",
-                  !section.available && !active && "text-muted-foreground/60"
+                    : "border-transparent text-muted-foreground hover:text-foreground"
                 )}
               >
                 {section.label}
+                {!section.available && (
+                  <>
+                    {/* A shape, not only a colour, marks an unbuilt page. */}
+                    <Clock3 className="size-3 opacity-70" aria-hidden />
+                    <span className="sr-only">(not available yet)</span>
+                  </>
+                )}
               </Link>
             );
           })}

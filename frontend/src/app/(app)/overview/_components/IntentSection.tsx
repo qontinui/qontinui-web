@@ -9,7 +9,12 @@
 import { useState } from "react";
 import Link from "next/link";
 import { MarkdownView } from "@/components/overview/MarkdownView";
-import type { IntentEntry, SummaryIntentKind } from "../_lib/intent";
+import { LoadFailure } from "@/components/overview/LoadFailure";
+import {
+  hasContent,
+  type IntentEntry,
+  type SummaryIntentKind,
+} from "../_lib/intent";
 
 export const INTENT_HEADINGS: Record<
   SummaryIntentKind,
@@ -88,7 +93,7 @@ export function IntentSection({
   canEdit: boolean;
 }) {
   const { heading, missing } = INTENT_HEADINGS[kind];
-  const written = entries.filter((e) => e.state !== "skeleton");
+  const written = entries.filter(hasContent);
   const sectionId = kind.replace(/_/g, "-");
 
   return (
@@ -130,7 +135,15 @@ export function IntentSection({
                   {entry.description ?? entry.name}
                 </h3>
               )}
-              <IntentBody entry={entry} id={`${sectionId}-${entry.name}`} />
+              {entry.state === "unreadable" ? (
+                <LoadFailure
+                  what="this part of the description"
+                  message={entry.error ?? ""}
+                  uiBridgeId={`overview.summary.${sectionId}-${entry.name}.error`}
+                />
+              ) : (
+                <IntentBody entry={entry} id={`${sectionId}-${entry.name}`} />
+              )}
             </article>
           ))}
         </div>

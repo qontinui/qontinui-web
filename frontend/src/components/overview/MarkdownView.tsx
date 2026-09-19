@@ -2,14 +2,40 @@
  * Markdown as the overview renders it: GitHub-flavoured (tables matter —
  * delivery plans are mostly tables), headings in the overview's serif.
  *
- * Deliberately WITHOUT `rehype-raw`: overview content is written by any
- * project member, and raw HTML from a member is an injection vector.
- * react-markdown escapes HTML by default; keep it that way.
+ * Overview content is authored by people and agents other than the reader,
+ * so two things are deliberate:
+ * - NO `rehype-raw`: raw HTML in a document is an injection vector;
+ *   react-markdown escapes HTML by default. Keep it that way.
+ * - Images from other sites are not loaded. An embedded remote image would
+ *   tell its host who read the document and when; it is shown as a link
+ *   the reader can choose to open instead.
  */
 
-import ReactMarkdown from "react-markdown";
+import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { cn } from "@/lib/utils";
+
+/** Same-origin (relative) sources only; anything with a scheme or a
+ *  protocol-relative `//host` is remote. */
+export function isLocalImageSrc(src: string | undefined): boolean {
+  if (!src) return false;
+  return !/^[a-z][a-z0-9+.-]*:/i.test(src) && !src.startsWith("//");
+}
+
+const components: Components = {
+  img: ({ src, alt }) => {
+    const href = typeof src === "string" ? src : undefined;
+    if (isLocalImageSrc(href)) {
+      // eslint-disable-next-line @next/next/no-img-element -- markdown content, sizes unknown
+      return <img src={href} alt={alt ?? ""} />;
+    }
+    return (
+      <a href={href} target="_blank" rel="noopener noreferrer nofollow">
+        {alt ? `Image: ${alt}` : "External image"}
+      </a>
+    );
+  },
+};
 
 export function MarkdownView({
   children,
@@ -31,7 +57,9 @@ export function MarkdownView({
         className
       )}
     >
-      <ReactMarkdown remarkPlugins={[remarkGfm]}>{children}</ReactMarkdown>
+      <ReactMarkdown remarkPlugins={[remarkGfm]} components={components}>
+        {children}
+      </ReactMarkdown>
     </div>
   );
 }

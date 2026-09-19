@@ -8,38 +8,67 @@ const row = (
   extra: Partial<CoordPlanRow> = {}
 ): CoordPlanRow => ({ slug, status, ...extra });
 
+const summarize = (rows: CoordPlanRow[]) =>
+  summarizeProgress(rows, { fetchLimit: 500 });
+
 describe("summarizeProgress", () => {
-  it("buckets the closed status vocabulary and drops abandoned work", () => {
-    const p = summarizeProgress(
-      [
-        row("a", "shipped"),
-        row("b", "in_progress"),
-        row("c", "ready"),
-        row("d", "blocked"),
-        row("e", "draft"),
-        row("f", "vetted"),
-        row("g", "superseded"),
-        row("h", "obsolete"),
-      ],
-      { fetchLimit: 500 }
-    );
+  it("buckets by the console's status vocabulary", () => {
+    const p = summarize([
+      row("a", "shipped"),
+      row("b", "in_progress"),
+      row("c", "in-progress"),
+      row("d", "partial"),
+      row("e", "ready"),
+      row("f", "blocked"),
+      row("g", "draft"),
+      row("h", "vetted"),
+      row("i", "vetted_unattested"),
+    ]);
     expect(p.counts).toEqual({
       done: 1,
-      in_progress: 2,
+      in_progress: 3,
+      ready: 1,
       blocked: 1,
-      planned: 2,
+      planned: 3,
+      unknown: 0,
     });
-    expect(p.total).toBe(6);
-    expect(p.other).toBe(0);
-    expect(p.truncated).toBe(false);
+    expect(p.total).toBe(9);
   });
 
-  it("reports an unrecognised status instead of hiding it", () => {
-    const p = summarizeProgress([row("a", "archived"), row("b", "")], {
-      fetchLimit: 500,
-    });
-    expect(p.other).toBe(2);
-    expect(p.total).toBe(0);
+  it("does not count ready (dependencies met) as in progress", () => {
+    const p = summarize([row("a", "ready")]);
+    expect(p.counts.in_progress).toBe(0);
+    expect(p.counts.ready).toBe(1);
+  });
+
+  it("drops work that will not be done", () => {
+    const p = summarize([
+      row("a", "superseded"),
+      row("b", "obsolete"),
+      row("c", "archived"),
+      row("d", "shipped"),
+    ]);
+    expect(p.total).toBe(1);
+  });
+
+  it("keeps unrecognised statuses in the total, so they cannot inflate done", () => {
+    const p = summarize([
+      row("a", "shipped"),
+      row("b", "tier3_dispatched"),
+      row("c", ""),
+    ]);
+    expect(p.counts.unknown).toBe(2);
+    expect(p.total).toBe(3);
+    expect(p.counts.done / p.total).toBeCloseTo(1 / 3);
+  });
+
+  it("tolerates padded and mixed-case statuses", () => {
+    expect(summarize([row("a", "  Shipped ")]).counts.done).toBe(1);
+  });
+
+  it("drops merge-shepherd bookkeeping units even if the server kept them", () => {
+    const p = summarize([row("shepherd-pr-12", "draft"), row("x", "draft")]);
+    expect(p.total).toBe(1);
   });
 
   it("marks a full page as a lower bound", () => {

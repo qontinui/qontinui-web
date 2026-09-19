@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { classifyIntent, stripFrontmatter, toIntentEntry } from "./intent";
+import {
+  classifyIntent,
+  hasContent,
+  skeletonEntry,
+  stripFrontmatter,
+  toIntentEntry,
+  unreadableEntry,
+} from "./intent";
 import type { PromptDocument } from "@/app/(app)/admin/coord/prompt-documents/types";
 
 describe("classifyIntent", () => {
@@ -84,5 +91,37 @@ describe("toIntentEntry", () => {
     });
     expect(entry.state).toBe("authored");
     expect(entry.body).toBe("A portal for partners.");
+  });
+});
+
+describe("hasContent", () => {
+  const summary = {
+    id: "d2",
+    kind: "initiative",
+    name: "x",
+    description: null,
+    format: "markdown",
+    default_source: null,
+    current_version: 2,
+    updated_at: "2026-09-19T10:00:00Z",
+  } as unknown as PromptDocument;
+
+  it("treats an authored document with an empty body as not written", () => {
+    const entry = toIntentEntry({
+      ...summary,
+      body: "---\nowner: x\n---\n   \n",
+    });
+    expect(entry.state).toBe("authored");
+    expect(hasContent(entry)).toBe(false);
+  });
+
+  it("never lets a skeleton read as written", () => {
+    expect(hasContent(skeletonEntry(summary))).toBe(false);
+  });
+
+  it("reports an unreadable document instead of calling it unwritten", () => {
+    const entry = unreadableEntry(summary, "GET /x failed: 502 - {}");
+    expect(hasContent(entry)).toBe(true);
+    expect(entry.error).toContain("502");
   });
 });

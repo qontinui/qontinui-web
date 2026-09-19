@@ -18,9 +18,20 @@ import {
 const BUCKET_FILL: Record<ProgressBucket, string> = {
   done: "bg-[var(--chart-2)]",
   in_progress: "bg-primary",
+  ready: "bg-primary/45",
   blocked: "bg-destructive",
   planned: "bg-muted-foreground/35",
+  // Amber: the console's colour for "unknown".
+  unknown: "bg-[var(--chart-3)]",
 };
+
+/** Buckets always listed, even at zero; the rest only when they hold work. */
+const ALWAYS_LISTED: ReadonlySet<ProgressBucket> = new Set([
+  "done",
+  "in_progress",
+  "blocked",
+  "planned",
+]);
 
 function formatDate(iso: string): string {
   try {
@@ -31,7 +42,10 @@ function formatDate(iso: string): string {
 }
 
 export function ProgressPanel({ progress }: { progress: Progress }) {
-  const { counts, total, truncated, recentlyFinished, other } = progress;
+  const { counts, total, truncated, recentlyFinished } = progress;
+  const listed = PROGRESS_BUCKETS.filter(
+    (b) => ALWAYS_LISTED.has(b.key) || counts[b.key] > 0
+  );
 
   if (total === 0) {
     return (
@@ -72,9 +86,10 @@ export function ProgressPanel({ progress }: { progress: Progress }) {
         <div
           className="flex h-3 w-full overflow-hidden rounded-full bg-muted"
           role="img"
-          aria-label={PROGRESS_BUCKETS.map(
-            (b) => `${b.label}: ${counts[b.key]}`
-          ).join(", ")}
+          aria-label={
+            (truncated ? "At least: " : "") +
+            listed.map((b) => `${b.label}: ${counts[b.key]}`).join(", ")
+          }
         >
           {PROGRESS_BUCKETS.map((b) =>
             counts[b.key] > 0 ? (
@@ -89,7 +104,7 @@ export function ProgressPanel({ progress }: { progress: Progress }) {
       </div>
 
       <dl className="mt-3 max-w-56 space-y-0.5 text-sm">
-        {PROGRESS_BUCKETS.map((b) => (
+        {listed.map((b) => (
           <div
             key={b.key}
             className="flex min-h-6 items-center gap-2"
@@ -107,11 +122,11 @@ export function ProgressPanel({ progress }: { progress: Progress }) {
         ))}
       </dl>
 
-      {(truncated || other > 0) && (
+      {(truncated || counts.unknown > 0) && (
         <p className="mt-3 text-xs leading-relaxed text-muted-foreground">
           {truncated && "Each count above is a lower bound. "}
-          {other > 0 &&
-            `${other} piece${other === 1 ? "" : "s"} of work with an unrecognised status ${other === 1 ? "is" : "are"} not counted.`}
+          {counts.unknown > 0 &&
+            `${counts.unknown} piece${counts.unknown === 1 ? " of work has a status" : "s of work have a status"} this page doesn\u2019t recognise. ${counts.unknown === 1 ? "It counts" : "They count"} toward the total but not as done.`}
         </p>
       )}
 
