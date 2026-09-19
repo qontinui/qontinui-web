@@ -1619,12 +1619,19 @@ class TestReindex:
         # (app/core/scheduler.py), and conftest disables only
         # `scheduled_dispatch`, so it sweeps for the whole session and enqueues
         # `kind='embedding'` jobs of its own. A `kind=` filter would not
-        # separate this test's job from that one. `embedding_job_input` folds
-        # EMBEDDING_MODEL_TAG into the hash, so this is the exact hash the
-        # enqueue under test produces and no other.
+        # separate this test's job from that one. `job_input_hash` sorts the
+        # ids and folds in EMBEDDING_MODEL_TAG exactly as `embedding_job_input`
+        # does, so this hash names this member set and no other set.
+        #
+        # It does NOT make the row unique on its own: a sweeper picking up the
+        # same two rows produces the SAME hash. What holds the count at 1 is
+        # the `uq_memory_jobs_live_input` partial-unique dedupe. The residual
+        # race runs the other way — if the sweeper wins, `enqueued_jobs == 1`
+        # above goes red, which is a visible failure rather than a silent one.
         expected_hash = job_input_hash([stale, null_emb], model_tag=EMBEDDING_MODEL_TAG)
         jobs = _job_rows(db, tenant, input_hash=expected_hash)
         assert len(jobs) == 1
+        assert jobs[0]["kind"] == "embedding"
         assert jobs[0]["status"] == "pending"
         assert {UUID(str(t)) for t in jobs[0]["target_ids"]} == {stale, null_emb}
 
