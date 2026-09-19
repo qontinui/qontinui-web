@@ -117,6 +117,27 @@ from app.websockets.safe_send import safe_close, safe_send_json
 # served from PG; if coord takes longer than 5s something is wrong.
 _COORD_TIMEOUT = httpx.Timeout(5.0)
 
+# Timeout for the ONE coord read that is not a small JSON payload: the
+# recently-merged ROWS (``GET /pr-merge/prs?include_merged=<hours>``). coord
+# resolves a deploy surface per repo and runs a git-ancestry probe per merged
+# PR, so it is slow by construction. Measured against prod on 2026-09-19
+# straight to coord with this proxy's own call shape: a 1h window 1.7s, 12h
+# 3.0s, 18h 4.2s, and 24h/48h 14-21s (varying run to run) — so at
+# ``_COORD_TIMEOUT`` every window past roughly 18h answered 504 and the
+# dashboard's Merged tab fell back to the open-PR list's dateless landed rows.
+# 45s clears the observed ceiling (21s) with headroom. A 2026-07-21 comment in
+# the frontend's useMergePipelineData.ts reports coord answering 500 at a 30s
+# gateway under load; that is UNVERIFIED here (no such layer was found in
+# coord's source), and if it is real, a slow answer comes back through the
+# normal non-2xx path below rather than as a timeout. The connect phase stays
+# at the short default: an unreachable coord should still fail fast.
+#
+# COST: the operations proxy holds a pooled backend DB session across the coord
+# round trip (see the load-discipline note in useMergePipelineData.ts), so this
+# read pins one connection for its 14-21s instead of <5s. The frontend
+# therefore polls it single-flight, never retries it, and skips hidden tabs.
+_COORD_MERGED_READ_TIMEOUT = httpx.Timeout(45.0, connect=5.0)
+
 # Phase T2b — the legacy ``X-Qontinui-Tenant-Id`` email-bridge header is no
 # longer sent to coord. Coord resolves the operator/tenant from the
 # forwarded Cognito bearer (``resolve_operator_optional`` middleware,
@@ -807,6 +828,7 @@ async def _proxy_coord_get(
     tenant_id: UUID | None = None,
     forward_bearer: bool = False,
     headers: dict[str, str] | None = None,
+    timeout: httpx.Timeout | None = None,
 ) -> Any:
     """Proxy a GET request to coord and return the JSON body.
 
@@ -855,6 +877,12 @@ async def _proxy_coord_get(
     compute the caller's ``paired_elsewhere`` device list (plan
     2026-07-02-multi-tenant-device-pairing-reconsideration Phase 1b).
     Default ``None`` puts nothing extra on the wire.
+
+    ``timeout`` — override :data:`_COORD_TIMEOUT` for a read that is slow by
+    construction (today only the recently-merged rows,
+    :data:`_COORD_MERGED_READ_TIMEOUT`). Default ``None`` keeps the 5s
+    fail-fast for every other proxy: coord answering a small JSON read slower
+    than that means something is wrong, and that is worth surfacing.
     """
     url = f"{settings.COORD_URL}{path}"
     request_headers: dict[str, str] | None
@@ -864,7 +892,7 @@ async def _proxy_coord_get(
         request_headers = None
     if headers:
         request_headers = {**(request_headers or {}), **headers}
-    async with httpx.AsyncClient(timeout=_COORD_TIMEOUT) as client:
+    async with httpx.AsyncClient(timeout=timeout or _COORD_TIMEOUT) as client:
         try:
             resp = await client.get(url, params=params, headers=request_headers)
         except httpx.ConnectError as exc:
@@ -950,7 +978,12 @@ async def get_pr_merge_prs(
     if merged_count_hours > 0:
         params["merged_count_hours"] = merged_count_hours
     return await _proxy_coord_get(
-        "/pr-merge/prs", params=params or None, tenant_id=tenant_id
+        "/pr-merge/prs",
+        params=params or None,
+        tenant_id=tenant_id,
+        # Only the merged ROWS are slow; ``merged_count_hours`` is one indexed
+        # count and keeps the 5s fail-fast.
+        timeout=_COORD_MERGED_READ_TIMEOUT if include_merged > 0 else None,
     )
 
 
