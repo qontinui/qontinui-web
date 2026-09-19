@@ -68,6 +68,7 @@ describe("alignment with prPipeline — same condition, same reading", () => {
     ["blast-radius-block", "requirements"],
     ["repo-unreachable", "not-mergeable"],
     ["ready-but-unlanded", "conflict-stranded"],
+    ["landed-open", "merged"],
   ];
 
   for (const [mergeStatus, kind] of COUNTERPART) {
