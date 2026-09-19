@@ -215,7 +215,8 @@ function overrideFieldsFrom(raw: RawRepoOverride): RepoOverrideFields {
     confidence_threshold_override:
       raw.confidence_threshold_override === null
         ? ""
-        : String(raw.confidence_threshold_override),
+        : // Round away f64 widening of an f32 column (0.8999999761581726 → "0.9").
+          String(Number(raw.confidence_threshold_override.toPrecision(6))),
     auto_merge_label_budget:
       raw.auto_merge_label_budget === null
         ? ""
@@ -791,17 +792,48 @@ function RepoOverrideCard({
     "inherit" | "true" | "false"
   >("inherit");
   // Body keys the operator has edited this session; only these are PATCHed.
+  //
+  // Mirrored SYNCHRONOUSLY in `dirtyRef` (every write goes through
+  // `markDirty` / `clearDirty`), so the async seeding paths — the initial
+  // profile GET and the post-PATCH re-seed — always see the latest edits.
   const [dirty, setDirty] = useState<Set<string>>(new Set());
+  const dirtyRef = useRef<Set<string>>(dirty);
+  // True while a save is in flight; edits made meanwhile are recorded in
+  // `editedDuringSaveRef` so the save's re-seed neither overwrites them nor
+  // drops their dirty flags (the save's snapshot did not carry them).
+  const savingRef = useRef(false);
+  const editedDuringSaveRef = useRef<Set<string>>(new Set());
+  // Set once a save has adopted coord's post-PATCH answer. A slow initial GET
+  // resolving after that carries PRE-save values and must be ignored.
+  const adoptedSaveResponseRef = useRef(false);
   const markDirty = useCallback((field: string) => {
-    setDirty((prev) => (prev.has(field) ? prev : new Set(prev).add(field)));
+    if (savingRef.current) editedDuringSaveRef.current.add(field);
+    if (dirtyRef.current.has(field)) return;
+    const next = new Set(dirtyRef.current).add(field);
+    dirtyRef.current = next;
+    setDirty(next);
   }, []);
-
-  // Read through a ref by the seeding path, so a seed triggered by the fetch
-  // sees the operator's latest edits without re-running the fetch effect.
-  const dirtyRef = useRef(dirty);
-  useEffect(() => {
-    dirtyRef.current = dirty;
-  }, [dirty]);
+  /**
+   * The dirty flags to keep once a save has consumed `sent`: fields the save
+   * did not carry, plus any edited again while it was in flight.
+   */
+  const dirtyAfterSave = useCallback(
+    (sent: ReadonlySet<string>) =>
+      new Set(
+        [...dirtyRef.current].filter(
+          (f) => !sent.has(f) || editedDuringSaveRef.current.has(f)
+        )
+      ),
+    []
+  );
+  const clearDirty = useCallback(
+    (sent: ReadonlySet<string>) => {
+      const next = dirtyAfterSave(sent);
+      dirtyRef.current = next;
+      setDirty(next);
+    },
+    [dirtyAfterSave]
+  );
 
   /**
    * Seed the edit fields from a stored raw override. Fields named in `keep`
@@ -843,7 +875,7 @@ function RepoOverrideCard({
         return (await res.json()) as RepoProfileResponse;
       })
       .then((body) => {
-        if (cancelled) return;
+        if (cancelled || adoptedSaveResponseRef.current) return;
         setRepoProfile(body);
         if (body.raw_override) {
           seedFromRaw(body.raw_override, dirtyRef.current);
@@ -861,6 +893,11 @@ function RepoOverrideCard({
   const handleSave = useCallback(async () => {
     setError(null);
     setSaving(true);
+    // The dirty set this save sends. Edits made while it is in flight are
+    // tracked separately and survive the save.
+    const sent: ReadonlySet<string> = new Set(dirty);
+    savingRef.current = true;
+    editedDuringSaveRef.current = new Set();
     try {
       // Send ONLY fields the operator edited. coord's PatchRepoProfile treats
       // an absent field as "leave unchanged", so omitting untouched fields
@@ -932,11 +969,17 @@ function RepoOverrideCard({
           .json()
           .catch(() => null)) as RepoProfileResponse | null;
         if (saved && typeof saved === "object" && saved.profile) {
+          adoptedSaveResponseRef.current = true;
           setRepoProfile(saved);
           if (saved.raw_override) {
-            seedFromRaw(saved.raw_override, new Set());
+            // Keep only fields edited outside this save; everything it sent
+            // is replaced by what coord now stores.
+            seedFromRaw(saved.raw_override, dirtyAfterSave(sent));
           }
         }
+        // The PATCH consumed these edits; a later failure (the enablement
+        // POST below) must not leave them flagged for a re-send.
+        clearDirty(sent);
       }
       // Merge enablement is NOT a profile-PATCH field — it POSTs the audited
       // merge-enabled route with a repo scope. Unlike every other field on
@@ -963,12 +1006,14 @@ function RepoOverrideCard({
           );
         }
       }
-      setDirty(new Set());
+      clearDirty(sent);
       onSaved();
     } catch (err) {
       log.warn("save repo profile failed", err);
       setError(err instanceof Error ? err.message : String(err));
     } finally {
+      savingRef.current = false;
+      editedDuringSaveRef.current = new Set();
       setSaving(false);
     }
   }, [
@@ -983,6 +1028,8 @@ function RepoOverrideCard({
     ffLandHeadSyncOverride,
     ffLandHeadSyncWritable,
     seedFromRaw,
+    dirtyAfterSave,
+    clearDirty,
     onSaved,
   ]);
 
@@ -1051,8 +1098,9 @@ function RepoOverrideCard({
             data-testid={`repo-raw-override-unavailable-${repoRow.repo}`}
           >
             This coord build does not report the current per-repo overrides, so
-            they are not shown here — a blank field means &quot;leave
-            unchanged&quot;, not &quot;inherit&quot;.
+            they are not shown here. A field you leave untouched is left
+            unchanged; a field you type into and then clear resets that
+            override to inherit.
           </p>
         )}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
