@@ -28,13 +28,23 @@ scoped (§4.1 item 3).
 Do not "fix" this by adding one. The plan originally had the ``DROP DEFAULT``
 in this migration and the re-vet of 2026-09-19 identified that as a
 **production outage**: after the drop, a ``NOT NULL`` column with no default
-makes every INSERT that does not name ``applies_at`` fail, and **no current
-writer names it** — ``memory_store.insert_record`` lists 14 columns
-(``backend/app/services/memory_store.py:658-661``) and
-``insert_records_batch`` lists 13 (``:797-800``). This migration is advertised
-as behaviour-neutral, and the ``DROP DEFAULT`` would have taken every memory
-write in the fleet to ``null value in column "applies_at" violates not-null
-constraint``.
+makes every INSERT that does not name ``applies_at`` fail — and **no writer
+names it**. That is the whole argument, and it is a property of the code
+rather than of any line number, so confirm it the way it stays confirmable::
+
+    grep -n 'INSERT INTO coord.memory_records' app/services/memory_store.py
+
+Every hit is an explicit column list; none of them contains ``applies_at``.
+(The same check on coord's own writers is
+``grep -n 'INSERT INTO coord.memory_records' crates/coord/src/*.rs`` in
+qontinui-coord.) Do not replace that with a count or a line range: both went
+stale in the very commit that introduced this banner, and a reader who
+follows a citation onto unrelated prose has every reason to discount the
+argument it was supporting.
+
+This migration is advertised as behaviour-neutral, and the ``DROP DEFAULT``
+would have taken every memory write in the fleet to ``null value in column
+"applies_at" violates not-null constraint``.
 
 The ``DROP DEFAULT`` belongs to **Phase 3's migration 2b**, landing together
 with the API change that makes ``applies_at`` a required field on the wire.
@@ -54,7 +64,22 @@ already does (``memory_store._validity_filters``)::
 
     idx_memory_records_user      (user_id)              WHERE user_id IS NOT NULL
     idx_memory_records_device    (device_id)            WHERE device_id IS NOT NULL
-    idx_memory_records_altitude  (applies_at, tenant_id)
+    idx_memory_records_altitude  (tenant_id, applies_at)
+
+⚠ THE ALTITUDE INDEX DELIBERATELY DEVIATES FROM THE PLAN'S §5 SQL, which
+spells it ``(applies_at, tenant_id)``. Do not "correct" it back. A
+composite b-tree can only use a leading column for a lookup that names
+it, and ``applies_at`` is near-CONSTANT here: §2.1 measured 5,681 memory
+records in production, 100% at the one value this migration's DEFAULT
+backfills them to. Led by ``applies_at`` the index cannot serve a
+tenant-only lookup at all, and for ``tenant_id = X AND applies_at = Y``
+it has to scan the whole ``'tenant'`` prefix to find the tenant. Led by
+``tenant_id`` — the selective column, and the one every retrieval path
+in ``memory_store`` already filters on — it serves both shapes.
+
+The swap is free right now: Phase 3 owns the only future reader, so
+nothing queries the column yet and there is no plan behaviour to
+preserve. Getting it wrong would have cost an online rebuild later.
 
 Built NON-concurrently, inside this migration's transaction, deliberately:
 ``coord.memory_records`` is a ~5.7k-row table (§2.1, measured 2026-08-06), so
@@ -125,7 +150,7 @@ def upgrade() -> None:
     op.execute(
         """
         CREATE INDEX IF NOT EXISTS idx_memory_records_altitude
-            ON coord.memory_records (applies_at, tenant_id)
+            ON coord.memory_records (tenant_id, applies_at)
             WHERE is_tombstone = false
         """
     )

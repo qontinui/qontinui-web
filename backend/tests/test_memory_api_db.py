@@ -132,6 +132,7 @@ _SETUP_SQL = [
         user_id            UUID,
         device_id          UUID,
         applies_at         TEXT NOT NULL DEFAULT 'tenant'
+            CONSTRAINT ck_memory_records_applies_at
             CHECK (applies_at IN (
                 'fleet', 'tenant', 'user', 'device', 'session'
             ))
@@ -152,6 +153,24 @@ _SETUP_SQL = [
         ADD COLUMN IF NOT EXISTS user_id    UUID,
         ADD COLUMN IF NOT EXISTS device_id  UUID,
         ADD COLUMN IF NOT EXISTS applies_at TEXT NOT NULL DEFAULT 'tenant'
+    """,
+    # ...including the CHECK. ``ADD COLUMN IF NOT EXISTS`` above carries no
+    # constraint, so without these two statements a PERSISTENT test DB would
+    # run the whole suite against a schema that accepts altitudes the real
+    # migration rejects — a different database from CI's, silently. Written
+    # drop-then-add (the same idiom as the kind-CHECK above) because
+    # ``ADD CONSTRAINT`` has no ``IF NOT EXISTS`` and the setup is re-run
+    # every session.
+    """
+    ALTER TABLE coord.memory_records
+        DROP CONSTRAINT IF EXISTS ck_memory_records_applies_at
+    """,
+    """
+    ALTER TABLE coord.memory_records
+        ADD CONSTRAINT ck_memory_records_applies_at
+            CHECK (applies_at IN (
+                'fleet', 'tenant', 'user', 'device', 'session'
+            ))
     """,
     # Live-row dedup key — mirrors the migration's partial unique index:
     # dead rows (tombstoned / superseded / validity-ended) release their
@@ -416,12 +435,47 @@ def db(memory_engine: AsyncEngine) -> Generator[AsyncEngine, None, None]:
     yield memory_engine
 
 
+#: The provenance the endpoint fixture's principal carries.
+#:
+#: NOT ``None``. Every HTTP-level test in this module runs through
+#: ``MemoryClient``, so a principal with no provenance makes every one of
+#: them write NULLs and assert nothing about the seam this change exists to
+#: create — the three ``user_id=principal.user_id, device_id=...`` arguments
+#: in ``endpoints/memory.py`` could be deleted outright and the whole suite
+#: would stay green. A real pair here is what lets
+#: ``TestProvenanceReachesTheRowThroughTheEndpoint`` below fail when they are.
+_FIXTURE_USER_ID = UUID("11111111-1111-4111-8111-111111111111")
+_FIXTURE_DEVICE_ID = UUID("22222222-2222-4222-8222-222222222222")
+
+
+def _provenance_of(engine: AsyncEngine, memory_id: UUID | str) -> tuple[Any, Any, Any]:
+    """``(user_id, device_id, applies_at)`` as actually stored."""
+
+    async def _go() -> tuple[Any, Any, Any]:
+        async with engine.connect() as conn:
+            row = (
+                await conn.execute(
+                    text(
+                        "SELECT user_id, device_id, applies_at "
+                        "FROM coord.memory_records WHERE memory_id = :m"
+                    ),
+                    {"m": str(memory_id)},
+                )
+            ).one()
+        return (row.user_id, row.device_id, row.applies_at)
+
+    return asyncio.run(_go())
+
+
 class MemoryClient:
     """TestClient wrapper with a switchable tenant principal."""
 
     def __init__(self, engine: AsyncEngine) -> None:
         self._principal = MemoryPrincipal(
-            tenant_id=uuid4(), device_id=None, actor="device"
+            tenant_id=uuid4(),
+            device_id=_FIXTURE_DEVICE_ID,
+            actor="device",
+            user_id=_FIXTURE_USER_ID,
         )
         maker = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
@@ -442,8 +496,16 @@ class MemoryClient:
 
     def as_tenant(self, tenant_id: UUID) -> MemoryClient:
         self._principal = MemoryPrincipal(
-            tenant_id=tenant_id, device_id=None, actor="device"
+            tenant_id=tenant_id,
+            device_id=_FIXTURE_DEVICE_ID,
+            actor="device",
+            user_id=_FIXTURE_USER_ID,
         )
+        return self
+
+    def as_principal(self, principal: MemoryPrincipal) -> MemoryClient:
+        """Swap the whole principal — for provenance-shape tests."""
+        self._principal = principal
         return self
 
 
@@ -5615,22 +5677,6 @@ class TestProvenanceFacetsArePersisted:
     they are.
     """
 
-    def _row(self, db: AsyncEngine, memory_id: UUID) -> tuple[Any, Any, Any]:
-        async def _go() -> tuple[Any, Any, Any]:
-            async with db.connect() as conn:
-                row = (
-                    await conn.execute(
-                        text(
-                            "SELECT user_id, device_id, applies_at "
-                            "FROM coord.memory_records WHERE memory_id = :m"
-                        ),
-                        {"m": memory_id},
-                    )
-                ).one()
-            return (row.user_id, row.device_id, row.applies_at)
-
-        return asyncio.run(_go())
-
     def test_insert_record_persists_the_facets(self, db: AsyncEngine) -> None:
         tenant_id, user_id, device_id = uuid4(), uuid4(), uuid4()
 
@@ -5656,7 +5702,7 @@ class TestProvenanceFacetsArePersisted:
                 await session.commit()
                 return memory_id
 
-        stored_user, stored_device, applies_at = self._row(db, asyncio.run(_go()))
+        stored_user, stored_device, applies_at = _provenance_of(db, asyncio.run(_go()))
         assert stored_user == user_id
         assert stored_device == device_id
         # Phase 1's column default, untouched by this phase.
@@ -5691,7 +5737,7 @@ class TestProvenanceFacetsArePersisted:
                 await session.commit()
                 return out[0][0]
 
-        stored_user, stored_device, applies_at = self._row(db, asyncio.run(_go()))
+        stored_user, stored_device, applies_at = _provenance_of(db, asyncio.run(_go()))
         assert stored_user == user_id
         assert stored_device == device_id
         assert applies_at == "tenant"
@@ -5728,7 +5774,107 @@ class TestProvenanceFacetsArePersisted:
                 await session.commit()
                 return memory_id
 
-        stored_user, stored_device, applies_at = self._row(db, asyncio.run(_go()))
+        stored_user, stored_device, applies_at = _provenance_of(db, asyncio.run(_go()))
         assert stored_user is None
         assert stored_device is None
+        assert applies_at == "tenant"
+
+
+class TestProvenanceReachesTheRowThroughTheEndpoint:
+    """The SEAM: `MemoryPrincipal` -> handler -> store -> column.
+
+    The store-level class above proves `insert_record` /
+    `insert_records_batch` can persist the facets when handed them. That is
+    not the guarantee this change exists to make. The guarantee is that the
+    HANDLERS hand them over — three call sites in
+    `app/api/v1/endpoints/memory.py`, each one line, each deletable without
+    a single store-level test noticing. Until these tests existed the whole
+    suite stayed green with all three removed, which made the one seam that
+    can go silently NULL in production the one seam nothing covered.
+
+    Both record-CREATING doors are exercised, because they are separate
+    call sites: the batch write, and supersede (whose successor is a NEW
+    row, attributed to THIS caller rather than to the superseded row's
+    author).
+    """
+
+    def test_write_records_carries_the_principal_onto_the_row(
+        self, mc: MemoryClient, db: AsyncEngine
+    ) -> None:
+        r = mc.client.post(
+            "/api/v1/memory/records",
+            json={"records": [_record("provenance through the write door")]},
+        )
+        assert r.status_code == 200, r.text
+
+        user_id, device_id, applies_at = _provenance_of(
+            db, r.json()["records"][0]["memory_id"]
+        )
+        assert user_id == _FIXTURE_USER_ID
+        assert device_id == _FIXTURE_DEVICE_ID
+        # Phase 1's column default. Nothing on the request path writes it.
+        assert applies_at == "tenant"
+
+    def test_supersede_attributes_the_successor_to_this_caller(
+        self, mc: MemoryClient, db: AsyncEngine
+    ) -> None:
+        """The supersede provenance path had no test at all.
+
+        Its successor row is written by a THIRD call site, with its own
+        `user_id=` / `device_id=` arguments, and none of the write-door
+        coverage reaches it.
+        """
+        original = mc.client.post(
+            "/api/v1/memory/records",
+            json={"records": [_record("the claim as first written")]},
+        )
+        assert original.status_code == 200, original.text
+        memory_id = original.json()["records"][0]["memory_id"]
+
+        r = mc.client.post(
+            f"/api/v1/memory/records/{memory_id}/supersede",
+            json={"title": "note", "content": "the claim, corrected"},
+        )
+        assert r.status_code == 200, r.text
+        new_id = r.json()["memory_id"]
+        assert new_id != memory_id
+
+        user_id, device_id, applies_at = _provenance_of(db, new_id)
+        assert user_id == _FIXTURE_USER_ID
+        assert device_id == _FIXTURE_DEVICE_ID
+        assert applies_at == "tenant"
+
+    def test_a_degraded_principal_still_lands_the_row(
+        self, mc: MemoryClient, db: AsyncEngine
+    ) -> None:
+        """The other half of the FK fail-soft, at the endpoint.
+
+        `_existing_provenance` degrades a claimed id that names no
+        `auth.users` / `coord.devices` row to `None` (proven in
+        `test_memory_auth.py`); this is what the handler then does with
+        that principal. It must be an ordinary 200 with NULL provenance —
+        "a memory that fails to save is worse than one that is coarsely
+        scoped" (§4.1 item 3). The two tests together are the chain a
+        coord-service token naming a nonexistent user walks: degrade at the
+        door, land at the store, never a 500.
+        """
+        mc.as_principal(
+            MemoryPrincipal(
+                tenant_id=mc.tenant_id,
+                device_id=None,
+                actor="coord_service",
+                user_id=None,
+            )
+        )
+        r = mc.client.post(
+            "/api/v1/memory/records",
+            json={"records": [_record("written by an unattributable caller")]},
+        )
+        assert r.status_code == 200, r.text
+
+        user_id, device_id, applies_at = _provenance_of(
+            db, r.json()["records"][0]["memory_id"]
+        )
+        assert user_id is None
+        assert device_id is None
         assert applies_at == "tenant"

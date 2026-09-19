@@ -238,6 +238,12 @@ class MemoryPrincipal:
     coord carried the claim, CI — writes NULLs and the row is simply less
     filterable. Rejecting the write instead would be worse: a memory that
     fails to save is worse than one that is coarsely scoped (§4.1 item 3).
+
+    Both columns are FKs, so "optional" has to mean *resolvable or NULL*,
+    never *dangling*: an id that names no row would abort the INSERT with
+    a ``ForeignKeyViolation``, which is the same rejected write by another
+    name. The one arm whose ids are unverified assertions resolves them
+    first — see :func:`_existing_provenance`.
     """
 
     tenant_id: UUID
@@ -262,7 +268,100 @@ def _claim_uuid(claims: dict[str, Any], key: str) -> UUID | None:
         ) from exc
 
 
-def _principal_from_service_claims(claims: dict[str, Any]) -> MemoryPrincipal:
+async def _existing_provenance(
+    user_id: UUID | None, device_id: UUID | None
+) -> tuple[UUID | None, UUID | None]:
+    """Reduce claim-ASSERTED provenance ids to the ones that really exist.
+
+    Both facet columns are foreign keys —
+    ``coord.memory_records.user_id REFERENCES auth.users(id)`` and
+    ``coord.memory_records.device_id REFERENCES coord.devices(device_id)``
+    (migration ``memfacets_01``) — so an id that names no row does not
+    land a NULL, it raises ``ForeignKeyViolation`` and takes the whole
+    write to a 500. That is forbidden by the plan this facet comes from:
+    "never reject a write for missing provenance — a memory that fails to
+    save is worse than one that is coarsely scoped" (§4.1 item 3).
+
+    On the device and operator arms the ids are not assertions: the user
+    is the ``auth.users`` row the request itself just read, so it
+    necessarily exists. On the COORD-SERVICE arm both ids are bare claims
+    in a token coord minted, checked only for UUID SHAPE by
+    ``_claim_uuid``. Nothing today proves coord's ``user_id`` is even in
+    the same keyspace as ``auth.users`` — coord carries its own operator
+    ids, which is exactly the trap the operator arm below has a comment
+    about — so the first proxied write after coord starts minting the
+    claim could 500 every ``coord_memory_record`` call in the fleet.
+
+    This resolves them instead, and degrades a dangling id to ``None``.
+    It runs on its OWN session (the ``_verify_device_jwt`` pattern) so a
+    failure here can never poison the request's transaction, and ANY
+    failure — including the reference tables being unreachable — degrades
+    rather than raises, because a coarser row beats a lost one. Every
+    degradation is logged at warning level: a coord-side keyspace mistake
+    has to be visible, not silent.
+    """
+    if user_id is None and device_id is None:
+        return None, None
+
+    from sqlalchemy import text as sa_text
+
+    from app.db.session import AsyncSessionLocal
+
+    try:
+        async with AsyncSessionLocal() as session:
+            row = (
+                await session.execute(
+                    sa_text(
+                        "SELECT"
+                        "  (SELECT u.id FROM auth.users u"
+                        "    WHERE u.id = CAST(:user_id AS uuid)) AS user_id,"
+                        "  (SELECT d.device_id FROM coord.devices d"
+                        "    WHERE d.device_id = CAST(:device_id AS uuid))"
+                        "    AS device_id"
+                    ),
+                    {
+                        "user_id": str(user_id) if user_id is not None else None,
+                        "device_id": str(device_id) if device_id is not None else None,
+                    },
+                )
+            ).one()
+    except Exception as exc:
+        logger.warning(
+            "memory_provenance_unresolvable",
+            error=str(exc),
+            failure=type(exc).__name__,
+            note=(
+                "could not resolve claimed provenance against its reference "
+                "tables; writing the record unattributed rather than failing it"
+            ),
+        )
+        return None, None
+
+    resolved_user = cast("UUID | None", row.user_id)
+    resolved_device = cast("UUID | None", row.device_id)
+    if user_id is not None and resolved_user is None:
+        logger.warning(
+            "memory_provenance_user_not_found",
+            claimed_user_id=str(user_id),
+            note=(
+                "coord-service token named a user_id with no auth.users row "
+                "— degraded to NULL. If this is steady-state, coord is "
+                "minting an id from a different keyspace."
+            ),
+        )
+    if device_id is not None and resolved_device is None:
+        logger.warning(
+            "memory_provenance_device_not_found",
+            claimed_device_id=str(device_id),
+            note=(
+                "coord-service token named a device_id with no coord.devices "
+                "row — degraded to NULL."
+            ),
+        )
+    return resolved_user, resolved_device
+
+
+async def _principal_from_service_claims(claims: dict[str, Any]) -> MemoryPrincipal:
     """Validate the coord-service-token contract and extract the tenant."""
     if claims.get("sub") != COORD_SERVICE_SUBJECT:
         raise HTTPException(
@@ -275,19 +374,26 @@ def _principal_from_service_claims(claims: dict[str, Any]) -> MemoryPrincipal:
             status_code=status.HTTP_403_FORBIDDEN,
             detail="coord service token carries no tenant_id",
         )
+    # Read from the VERIFIED claims, the same way ``tenant_id`` is — never
+    # from the request. coord does not yet mint ``user_id`` into
+    # ``MemoryProxyClaims`` (the deferred coord half of plan
+    # 2026-08-06-user-and-device-facets-on-memories-and-findings Phase 2),
+    # so today the user resolves to ``None`` on every proxied write. That
+    # is the intended fail-soft: the claim's absence must never raise,
+    # because an un-updated coord deploy would otherwise 401 every memory
+    # write in the fleet rather than dropping one facet.
+    #
+    # Shape is not existence, though. This is the ONE arm whose ids are
+    # unverified assertions, so both are resolved against their FK targets
+    # and a dangling one degrades to NULL — see ``_existing_provenance``.
+    user_id, device_id = await _existing_provenance(
+        _claim_uuid(claims, "user_id"), _claim_uuid(claims, "device_id")
+    )
     return MemoryPrincipal(
         tenant_id=tenant_id,
-        device_id=_claim_uuid(claims, "device_id"),
+        device_id=device_id,
         actor="coord_service",
-        # Read from the VERIFIED claim, the same way ``device_id`` is —
-        # never from the request. coord does not yet mint ``user_id`` into
-        # ``MemoryProxyClaims`` (the deferred coord half of plan
-        # 2026-08-06-user-and-device-facets-on-memories-and-findings Phase
-        # 2), so today this resolves to ``None`` on every proxied write.
-        # That is the intended fail-soft: the claim's absence must never
-        # raise, because an un-updated coord deploy would otherwise 401
-        # every memory write in the fleet rather than dropping one facet.
-        user_id=_claim_uuid(claims, "user_id"),
+        user_id=user_id,
     )
 
 
@@ -357,7 +463,7 @@ async def get_memory_tenant(
 
         if claims is not None:
             if claims.get("token_kind") == COORD_SERVICE_TOKEN_KIND:
-                return _principal_from_service_claims(claims)
+                return await _principal_from_service_claims(claims)
 
             # Coord-signed but not a service token → device-token path.
             # Reuse the canonical device verification (user resolution +

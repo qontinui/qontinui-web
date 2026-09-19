@@ -42,9 +42,12 @@ backfill failure.
 ==========================================================================
 
 Do not "fix" this by adding one — see the same banner on ``memfacets_01`` for
-the full reasoning. In short: no current writer names ``applies_at``
-(coord's ``findings::post`` lists 13 columns,
-``crates/coord/src/findings.rs:1068-1076``), so dropping the default on a
+the full reasoning. In short: no writer names ``applies_at`` — a property
+of the code, so confirm it the way it stays confirmable, with
+``grep -n 'INSERT INTO coord.findings' crates/coord/src/*.rs`` in
+qontinui-coord (every hit is an explicit column list; none of them names
+``applies_at``) rather than with a column count or a line range, both of
+which go stale the moment that file moves. Dropping the default on a
 ``NOT NULL`` column here would take every finding write in the fleet to
 ``null value in column "applies_at" violates not-null constraint`` — on a
 phase explicitly advertised as behaviour-neutral. The ``DROP DEFAULT`` is

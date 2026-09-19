@@ -4383,6 +4383,13 @@ async def record_synthesis_result(
     )
     importance = min(max_importance + SYNTHESIS_IMPORTANCE_BONUS, 1.0)
 
+    # NO ``user_id`` / ``device_id``: deliberate, not an oversight. This row
+    # is synthesized by the backend from a cluster of other rows — no human
+    # authored it and no device sent it — so the honest provenance is NULL on
+    # both facets. Attributing it to whoever happened to run the synthesis job
+    # would make ``user_id`` mean two different things in one column. The
+    # lineage that DOES belong to it is already recorded, in
+    # ``consolidated_from`` just below.
     new_id, _deduped = await insert_record(
         session,
         tenant_id=tenant_id,
