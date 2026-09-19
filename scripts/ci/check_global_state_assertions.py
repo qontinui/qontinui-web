@@ -39,13 +39,24 @@ and nothing fails when it goes stale. Computing the membership at every CI run
 is what makes the class survive its own plan — the inventory becomes the
 allowlist, and the allowlist is checked rather than read.
 
-A CANDIDATE, on the parsed AST rather than on text, is an ``assert`` whose test
-is a single ``==`` comparison with a FIXED EXTENT on one side — an integer
-literal (``0`` included; ``True``/``False`` excluded, they are not extents) or
-an empty ``[]`` / ``{}`` display. The other side is the SUBJECT, and the subject
-is ``len(X)`` or ``X`` itself. Nothing else is a candidate: an ordering
+A CANDIDATE, on the parsed AST rather than on text, takes one of two shapes.
+Either an ``assert`` whose test is a single ``==`` comparison with a FIXED
+EXTENT on one side — an integer literal (``0`` included; ``True``/``False``
+excluded, they are not extents) or an empty ``[]`` / ``{}`` display — where the
+other side is the SUBJECT, and the subject is ``len(X)`` or ``X`` itself. Or an
+``assert not X``, which is the idiomatic pytest spelling of ``assert X == []``
+and is the same claim about the same population; ``X`` is the subject and the
+negation itself is the extent. Nothing else is a candidate: an ordering
 assertion, a membership assertion, and a count compared against a computed
 ``expected`` are all outside the class.
+
+The ``assert not`` shape is admitted deliberately rather than as a widening.
+Leaving it out did not make the rule narrower, it made it BLIND to a spelling
+of the very thing it forbids — measured on this suite, 265 ``assert not …``
+statements of which exactly one is a Rule-A member
+(``test_parkwuslug_01_park_work_unit_slug_migration.py``, an unfiltered
+``SELECT … FROM coord.session_messages``). A gate that a rename of the
+assertion can evade is an enumeration wearing a detector's clothes.
 
 Two rules then decide, in this order, and the first match wins so one
 ``assert`` is never counted twice. Both are mechanical — neither guesses at
@@ -199,11 +210,28 @@ class Finding:
         self.source = source
 
     def __repr__(self) -> str:  # pragma: no cover - diagnostics only
-        return f"Finding(line={self.lineno}, rule={self.rule!r}, detail={self.detail!r})"
+        return (
+            f"Finding(line={self.lineno}, rule={self.rule!r}, detail={self.detail!r})"
+        )
 
 
 def _rel(path: Path) -> str:
-    return path.relative_to(REPO_ROOT).as_posix()
+    """Repo-relative POSIX path.
+
+    This adopts the SEMANTICS `_gate_lib.repo_relative` exists to keep in one
+    place — resolve first, and fall back to the string instead of raising, the
+    two behaviours its docstring records two earlier copies diverging on — but
+    it cannot be a call to that function. `repo_relative` closes over
+    `_gate_lib`'s own module-level `REPO_ROOT`, while this gate's tests
+    monkeypatch `REPO_ROOT` *here* to point at a fixture tree; calling through
+    would resolve every fixture path against the real repo, fail the
+    `relative_to`, and render absolute paths into the allowlist the test then
+    compares. Both sides are resolved so a symlinked temp root still matches.
+    """
+    try:
+        return path.resolve().relative_to(Path(REPO_ROOT).resolve()).as_posix()
+    except ValueError:
+        return str(path)
 
 
 # ---------------------------------------------------------------------------
@@ -287,7 +315,9 @@ def _enclosing_scopes(tree: ast.AST) -> dict[ast.AST, ast.AST]:
     return owner
 
 
-def module_helpers(tree: ast.Module) -> dict[str, ast.FunctionDef | ast.AsyncFunctionDef]:
+def module_helpers(
+    tree: ast.Module,
+) -> dict[str, ast.FunctionDef | ast.AsyncFunctionDef]:
     """The module-level ``def``s of one file, by name.
 
     Module level only, and this file only. A helper imported from elsewhere is
@@ -322,12 +352,50 @@ def _calls_in(nodes: list[ast.AST]) -> list[ast.Call]:
     return [n for node in nodes for n in ast.walk(node) if isinstance(n, ast.Call)]
 
 
+def _docstring_nodes(nodes: list[ast.AST]) -> set[int]:
+    """The `ast.Constant` nodes that are DOCSTRINGS, by identity.
+
+    A docstring is prose, never SQL, and letting it into the literal set below
+    is a false-GREEN vector rather than a cosmetic one: :data:`SQL_WHERE` is
+    ``\\bwhere\\b`` over every string in reach, so a helper whose docstring
+    contains an ordinary English "where" ("Used where a test needs the raw
+    table") suppresses Rule A for every assertion that reads through it. The
+    read is still unfiltered; the gate just stops saying so.
+
+    Excluding them changes nothing about today's tree — measured at 60
+    findings across 286 files either way — so this closes the hole without
+    moving a single ratchet row.
+    """
+    out: set[int] = set()
+    for node in nodes:
+        for n in ast.walk(node):
+            if not isinstance(
+                n, ast.Module | ast.ClassDef | ast.FunctionDef | ast.AsyncFunctionDef
+            ):
+                continue
+            body = getattr(n, "body", None)
+            if not body:
+                continue
+            first = body[0]
+            if (
+                isinstance(first, ast.Expr)
+                and isinstance(first.value, ast.Constant)
+                and isinstance(first.value.value, str)
+            ):
+                out.add(id(first.value))
+    return out
+
+
 def _string_literals(nodes: list[ast.AST]) -> list[str]:
+    """Every string in reach EXCEPT docstrings — see :func:`_docstring_nodes`."""
+    docstrings = _docstring_nodes(nodes)
     return [
         n.value
         for node in nodes
         for n in ast.walk(node)
-        if isinstance(n, ast.Constant) and isinstance(n.value, str)
+        if isinstance(n, ast.Constant)
+        and isinstance(n.value, str)
+        and id(n) not in docstrings
     ]
 
 
@@ -513,12 +581,25 @@ def find_violations(path: Path) -> list[Finding]:
     findings: list[Finding] = []
 
     for node in ast.walk(tree):
-        if not isinstance(node, ast.Assert) or not isinstance(node.test, ast.Compare):
+        if not isinstance(node, ast.Assert):
             continue
-        candidate = _subject(node.test)
-        if candidate is None:
+        if isinstance(node.test, ast.UnaryOp) and isinstance(node.test.op, ast.Not):
+            # `assert not rows` is the idiomatic pytest spelling of
+            # `assert rows == []`, and it is the SAME class member: an
+            # emptiness assertion over a population. Admitting it is not a
+            # widening of the rule, it is the rule reaching a spelling it was
+            # blind to — this suite carries 265 `assert not ...` statements and
+            # exactly one is a Rule-A member
+            # (test_parkwuslug_01_park_work_unit_slug_migration.py, an
+            # unfiltered `SELECT ... FROM coord.session_messages`).
+            subject, extent = node.test.operand, None
+        elif isinstance(node.test, ast.Compare):
+            candidate = _subject(node.test)
+            if candidate is None:
+                continue
+            subject, extent = candidate
+        else:
             continue
-        subject, extent = candidate
 
         func = owner.get(node)
         key = id(func)
@@ -533,7 +614,13 @@ def find_violations(path: Path) -> list[Finding]:
         # to be a status code or a version. It is in the class only when the
         # SQL behind it is itself an aggregate, which Rule A establishes below
         # and Rule B cannot.
-        population = counted is not None or isinstance(extent, (ast.List, ast.Dict))
+        population = (
+            counted is not None
+            or isinstance(extent, (ast.List, ast.Dict))
+            # `assert not X` carries no extent node; the negation IS the
+            # emptiness claim, so it is a population assertion by construction.
+            or extent is None
+        )
 
         closure = _closure(value, bindings)
         rule, detail = RULE_A, _unfiltered_sql(closure, helpers)
@@ -543,9 +630,7 @@ def find_violations(path: Path) -> list[Finding]:
                 detail = None
         if detail is None and population:
             rule = RULE_B
-            detail = _unused_discriminator(
-                _producing_calls(value, bindings), helpers
-            )
+            detail = _unused_discriminator(_producing_calls(value, bindings), helpers)
         if detail is None:
             continue
 

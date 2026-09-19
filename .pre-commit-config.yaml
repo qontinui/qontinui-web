@@ -259,14 +259,21 @@ repos:
         # exists for a file this commit did not touch ("remove the row"), and
         # cannot compute the "lower the row" direction either.
         #
-        # A NARROW `files:` is correct here, unlike gitignore-tracked-files
-        # which needs `always_run`. This gate's input is exactly the backend
-        # test tree plus its own allowlist, and nothing else in the repo can
-        # change its verdict — so no commit that could break the invariant
-        # sits outside this pattern. The allowlist itself is in the pattern
-        # because lowering a row is a commit that must be re-checked.
+        # `files:` only scopes WHEN the hook runs, never what it scans — the
+        # gate always walks the whole backend test tree. This pattern is the
+        # set of paths whose edit most often changes the verdict: a test file
+        # and the allowlist itself (lowering a row is a commit that must be
+        # re-checked).
+        #
+        # It is deliberately NOT a claim that nothing else can change the
+        # verdict — two things can and match nothing here. Editing
+        # `scripts/ci/check_global_state_assertions.py` or
+        # `scripts/ci/_gate_lib.py` changes the rule; and DELETING a test file
+        # that carries a row trips the "remove the row" arm while pre-commit
+        # passes no deleted paths at all. Both are caught by the CI and
+        # ci_node lanes, which run unconditionally. This is the shift-left
+        # lane, not the authority.
         files: ^backend/tests/(.*\.py|\.global-state-assertions-allowlist)$
-
 
 ci:
   autofix_prs: true
