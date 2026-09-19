@@ -1,0 +1,2 @@
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+export default function DiagramsPage() { return <div className="p-6" data-ui-bridge-id="overview.diagrams.page"><Card><CardHeader><CardTitle>Diagrams</CardTitle></CardHeader><CardContent><p className="text-muted-foreground">Project context and request-flow diagrams will be available here.</p></CardContent></Card></div>; }

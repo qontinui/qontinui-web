@@ -1,0 +1,2 @@
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+export default function WikiPage() { return <div className="p-6" data-ui-bridge-id="overview.wiki.page"><Card><CardHeader><CardTitle>Project wiki</CardTitle></CardHeader><CardContent><p className="text-muted-foreground">A plain-language glossary and topic index will be available here.</p></CardContent></Card></div>; }

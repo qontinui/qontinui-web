@@ -1,0 +1,2 @@
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+export default function TimelinePage() { return <div className="p-6" data-ui-bridge-id="overview.timeline.page"><Card><CardHeader><CardTitle>Timeline</CardTitle></CardHeader><CardContent><p className="text-muted-foreground">Milestones and shipped work will be shown here in a month-scale view.</p></CardContent></Card></div>; }
