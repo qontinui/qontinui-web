@@ -899,6 +899,7 @@ export function MergePipeline() {
     proposals,
     prs,
     mergedPrs,
+    mergedError,
     mergedCount,
     economicsByRepo,
     suggestions,
@@ -1082,6 +1083,38 @@ export function MergePipeline() {
       />
 
       {error && <p className="text-xs text-red-300">{error}</p>}
+
+      {/* A failed merged read is an INCOMPLETE history, not an empty one, and
+          the list would otherwise pass for the whole thing: the only landed rows
+          left are the open list's `landed-open` ones (coord ff-landed, GitHub
+          still open), which carry no merge time — all N of them dateless was
+          exactly how the 5s proxy timeout presented on 2026-09-19. Say what is
+          missing on the two tabs that list landed PRs. */}
+      {/* The first merged read takes 14-21s. Until it lands the only landed rows
+          held are the same dateless `landed-open` ones, so say the rest is on
+          its way rather than let them stand in as the whole history. */}
+      {mergedPrs === null &&
+        mergedError === null &&
+        (filter === "all" || filter === "merged") && (
+          <p
+            className="text-xs text-muted-foreground"
+            role="status"
+            data-testid="merged-read-loading"
+          >
+            Loading merge history…
+          </p>
+        )}
+      {mergedError && (filter === "all" || filter === "merged") && (
+        <p
+          className="text-xs text-amber-300"
+          role="status"
+          data-testid="merged-read-failed"
+        >
+          {mergedPrs === null
+            ? `Merge history could not be loaded (${mergedError}). The landed PRs listed here are only those coord still reports as open, so their merge times are unknown and PRs that have already closed are missing.`
+            : `Merge history could not be refreshed (${mergedError}). Showing the last successful read, which may be out of date.`}
+        </p>
+      )}
 
       {/* The Train tab is a row-per-REPO view of the merge train itself, not a
           filter over the PR rows — so it replaces the list entirely. */}
