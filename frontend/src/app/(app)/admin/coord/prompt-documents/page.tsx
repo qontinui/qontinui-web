@@ -64,6 +64,7 @@
 
 import { NotebookText } from "lucide-react";
 import { KindAuthorshipTierControl } from "./_components/KindAuthorshipTierControl";
+import { PolicyAutoPublishDialControl } from "./_components/PolicyAutoPublishDialControl";
 import { PolicyUpstreamDialControl } from "./_components/PolicyUpstreamDialControl";
 import { PolicyWriteDialControl } from "./_components/PolicyWriteDialControl";
 import { PromptDocumentList } from "./_components/PromptDocumentList";
@@ -136,6 +137,18 @@ export default function PromptDocumentsPage() {
       */}
       <div className="border-t border-border pt-8">
         <PolicyUpstreamDialControl />
+      </div>
+
+      {/*
+        The automatic-publishing dial sits immediately after the upstream dial
+        because it is that dial's outbound twin — what the fleet may do to this
+        tenant's documents, then whether this tenant's documents may leave it on
+        their own (plan `2026-09-19-policy-publish-all-and-auto-publish` D5).
+        An operator deciding how much autonomy to allow needs all three answers
+        on one page, and this is the only one whose failure mode is outward.
+      */}
+      <div className="border-t border-border pt-8">
+        <PolicyAutoPublishDialControl />
       </div>
 
       {/*
