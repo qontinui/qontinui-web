@@ -555,14 +555,25 @@ export function hasPendingChecks(
  * read, and gating on the sha ALONE would miss any coord deploy that does not
  * serialize it (older deploys did not) — there the ff-landed rows would fall
  * through to the GitHub derivation and pollute the LIVE list as "Ready".
+ *
+ * coord's `landed-open` merge_status is the third signal, and the only one a
+ * phantom-open row on the OPEN listing carries: coord keeps
+ * `merge_commit_sha` null on open rows, while `classify_merge_status` emits
+ * `landed-open` when coord ff-landed the PR at its CURRENT head (`land_stamp
+ * == current_head`). Without it the row fell through to `statusFromGitHub`,
+ * whose GitHub signals froze at the moment before the land — and read as
+ * `conflict`, red, about work already on the base branch. Keyed on the
+ * current head by coord, so a PR pushed to after its land is NOT covered and
+ * falls back to its live signals, as it should.
  */
 export function isMergedPr(
-  pr: Pick<PrRow, "pr_state" | "merge_commit_sha">
+  pr: Pick<PrRow, "pr_state" | "merge_commit_sha" | "merge_status">
 ): boolean {
   return (
     pr.pr_state === "merged" ||
     pr.pr_state === "closed" ||
-    pr.merge_commit_sha != null
+    pr.merge_commit_sha != null ||
+    pr.merge_status === "landed-open"
   );
 }
 
@@ -798,7 +809,9 @@ function statusFromGitHub(
       label: "Merged",
       reason: pr.merge_commit_sha
         ? `landed on ${pr.base_branch} as ${pr.merge_commit_sha.slice(0, 7)}`
-        : `landed on ${pr.base_branch}`,
+        : pr.merge_status === "landed-open"
+          ? `landed on ${pr.base_branch} by coord — GitHub has not closed the PR yet`
+          : `landed on ${pr.base_branch}`,
       attention: "none",
     };
   }
