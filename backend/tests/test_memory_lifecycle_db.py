@@ -983,7 +983,7 @@ class TestConsolidationConsumesEpisodesOnly:
         assert stats["cluster_candidates"] == 0
         assert stats["clusters"] == 0
         assert stats["enqueued"] == 0
-        assert _job_rows(db, tenant) == []
+        assert _job_rows(db, tenant, input_hash=job_input_hash(members)) == []
         _assert_live(db, *members)
 
     def test_episode_cluster_still_enqueues(self, db: AsyncEngine) -> None:
@@ -1299,7 +1299,7 @@ class TestLifecycleHoldClustering:
         assert stats["cluster_candidates"] == 0
         assert stats["clusters"] == 0
         assert stats["enqueued"] == 0
-        assert _job_rows(db, tenant) == []
+        assert _job_rows(db, tenant, input_hash=job_input_hash(members)) == []
         _assert_live(db, *members)
 
     def test_unheld_cluster_still_enqueues(self, db: AsyncEngine) -> None:
@@ -1648,7 +1648,7 @@ class TestReindex:
         )
         stats = _run(db, lambda s: reindex_once(s, now=NOW))
         assert stats["enqueued_rows"] == 0
-        assert _job_rows(db, tenant) == []
+        assert _job_rows(db, tenant, kind="embedding") == []
         assert _row(db, dead, "embedding") is None
 
     def test_rows_are_enqueued_per_tenant(self, db: AsyncEngine) -> None:
@@ -2022,7 +2022,7 @@ class TestAnchoredRowsAreConsolidationExempt:
         assert stats["cluster_candidates"] == 0
         assert stats["clusters"] == 0
         assert stats["enqueued"] == 0
-        assert _job_rows(db, tenant) == []
+        assert _job_rows(db, tenant, input_hash=job_input_hash(members)) == []
         _assert_live(db, *members)
 
     def test_unanchored_cluster_still_enqueues(self, db: AsyncEngine) -> None:
