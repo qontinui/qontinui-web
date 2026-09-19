@@ -3288,10 +3288,11 @@ class TestCallerTokenForwarding:
         monkeypatch.setattr(
             "app.api.v1.endpoints.devenv.post_to_coord", _capturing_post(captured)
         )
+        device_id = await _mk_coord_device(async_db_session, user_id=test_user.id)
         async with _cookie_client(app) as client:
             r = await client.post(
                 f"{API_PREFIX}/machines/dispatch-enroll",
-                json={"name": "cookie-box", "target_device_id": str(uuid4())},
+                json={"name": "cookie-box", "target_device_id": device_id},
             )
         assert r.status_code == 201, r.text
         assert r.json()["dispatched"] is True
@@ -3309,10 +3310,11 @@ class TestCallerTokenForwarding:
         monkeypatch.setattr(
             "app.api.v1.endpoints.devenv.post_to_coord", _capturing_post(captured)
         )
+        device_id = await _mk_coord_device(async_db_session, user_id=test_user.id)
         async with _bearer_client(app) as client:
             r = await client.post(
                 f"{API_PREFIX}/machines/dispatch-enroll",
-                json={"name": "header-box", "target_device_id": str(uuid4())},
+                json={"name": "header-box", "target_device_id": device_id},
             )
         assert r.status_code == 201, r.text
         assert captured["/devenv/enroll-dispatch"]["headers"] == {
@@ -3329,10 +3331,11 @@ class TestCallerTokenForwarding:
         monkeypatch.setattr(
             "app.api.v1.endpoints.devenv.post_to_coord", _capturing_post(captured)
         )
+        device_id = await _mk_coord_device(async_db_session, user_id=test_user.id)
         async with _client(app) as client:
             r = await client.post(
                 f"{API_PREFIX}/machines/dispatch-enroll",
-                json={"name": "anon-box", "target_device_id": str(uuid4())},
+                json={"name": "anon-box", "target_device_id": device_id},
             )
         assert r.status_code == 201, r.text
         assert captured["/devenv/enroll-dispatch"]["headers"] == {}
@@ -3346,10 +3349,11 @@ class TestCallerTokenForwarding:
         monkeypatch.setattr(
             "app.api.v1.endpoints.devenv.post_to_coord", _capturing_post(captured)
         )
+        device_id = await _mk_coord_device(async_db_session, user_id=test_user.id)
         async with _cookie_client(app) as client:
             r = await client.post(
                 f"{API_PREFIX}/machines/dispatch-enroll",
-                json={"name": "cookie-repos-box", "target_device_id": str(uuid4())},
+                json={"name": "cookie-repos-box", "target_device_id": device_id},
             )
             machine_id = r.json()["machine"]["id"]
             r = await client.post(
@@ -3371,10 +3375,11 @@ class TestCallerTokenForwarding:
         monkeypatch.setattr(
             "app.api.v1.endpoints.devenv.post_to_coord", _capturing_post(captured)
         )
+        device_id = await _mk_coord_device(async_db_session, user_id=test_user.id)
         async with _bearer_client(app) as client:
             r = await client.post(
                 f"{API_PREFIX}/machines/dispatch-enroll",
-                json={"name": "header-repos-box", "target_device_id": str(uuid4())},
+                json={"name": "header-repos-box", "target_device_id": device_id},
             )
             machine_id = r.json()["machine"]["id"]
             r = await client.post(
@@ -3399,10 +3404,11 @@ class TestCallerTokenForwarding:
             "app.api.v1.endpoints.devenv.post_to_coord", _capturing_post(captured)
         )
         _stub_ci_node_reachability(monkeypatch)
+        device_id = await _mk_coord_device(async_db_session, user_id=test_user.id)
         async with _cookie_client(app) as client:
             r = await client.post(
                 f"{API_PREFIX}/machines/dispatch-enroll",
-                json={"name": "cookie-ci-box", "target_device_id": str(uuid4())},
+                json={"name": "cookie-ci-box", "target_device_id": device_id},
             )
             machine_id = r.json()["machine"]["id"]
             r = await client.put(
@@ -3430,10 +3436,11 @@ class TestCallerTokenForwarding:
             "app.api.v1.endpoints.devenv.post_to_coord", _capturing_post(captured)
         )
         _stub_ci_node_reachability(monkeypatch)
+        device_id = await _mk_coord_device(async_db_session, user_id=test_user.id)
         async with _bearer_client(app) as client:
             r = await client.post(
                 f"{API_PREFIX}/machines/dispatch-enroll",
-                json={"name": "header-ci-box", "target_device_id": str(uuid4())},
+                json={"name": "header-ci-box", "target_device_id": device_id},
             )
             machine_id = r.json()["machine"]["id"]
             r = await client.put(
