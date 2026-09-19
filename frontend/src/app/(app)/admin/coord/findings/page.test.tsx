@@ -14,10 +14,12 @@
  *    mutation: the same row, one boolean apart, must not produce one sentence;
  *  - the FIRST render says "looking", never "no such finding";
  *  - the six accepted query keys are the only ones sent;
- *  - `triaged=false` carries its own narrowness caveat on screen.
+ *  - `triaged=false` carries its own narrowness caveat on screen;
+ *  - a malformed `?id=` is never sent, a by-id answer is accepted only for the
+ *    id asked for, and the by-id read's own degrade never reads as "not found".
  */
 
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
@@ -59,16 +61,22 @@ function finding(over: Record<string, unknown> = {}) {
   };
 }
 
-function page(rows: Record<string, unknown>[], over: Record<string, unknown> = {}) {
+function page(
+  rows: Record<string, unknown>[],
+  over: Record<string, unknown> = {}
+) {
   return {
     available: true,
     count: rows.length,
     findings: rows,
+    // coord's shapes: a COUNT of applied resource keys, and the triage
+    // filter's wire spelling ("any" | "false" | "true").
+    finding_id_applied: null,
     kind_applied: null,
     limit: 50,
-    resource_keys_applied: null,
+    resource_keys_applied: 0,
     resource_keys_truncated: false,
-    triaged_applied: null,
+    triaged_applied: "any",
     ...over,
   };
 }
@@ -112,9 +120,7 @@ describe("CoordFindingsPage", () => {
     expect([...query.keys()]).toEqual(["limit"]);
 
     await userEvent.type(screen.getByTestId("coord-findings-topic"), "coord");
-    await waitFor(() =>
-      expect(listUrl()).toMatch(/topic=coord/)
-    );
+    await waitFor(() => expect(listUrl()).toMatch(/topic=coord/));
     const after = new URLSearchParams(listUrl().split("?")[1] ?? "");
     for (const key of after.keys()) {
       expect([
@@ -183,12 +189,14 @@ describe("CoordFindingsPage", () => {
     );
     render(<CoordFindingsPage />);
 
-    await userEvent.click(await screen.findByRole("button", { expanded: false }));
+    await userEvent.click(
+      await screen.findByRole("button", { expanded: false })
+    );
 
     const detail = await screen.findByTestId(`coord-finding-detail-${ID_A}`);
-    expect(within(detail).getByTestId(`coord-finding-id-${ID_A}`)).toHaveTextContent(
-      ID_A
-    );
+    expect(
+      within(detail).getByTestId(`coord-finding-id-${ID_A}`)
+    ).toHaveTextContent(ID_A);
     expect(
       within(detail).getByTestId(`coord-finding-dossier-${ID_A}`)
     ).toHaveTextContent(/worktree-siblings/);
@@ -202,7 +210,9 @@ describe("CoordFindingsPage", () => {
     render(<CoordFindingsPage />);
 
     const row = await screen.findByTestId("coord-finding-row");
-    expect(row.querySelector('[data-finding-kind="observation"]')).not.toBeNull();
+    expect(
+      row.querySelector('[data-finding-kind="observation"]')
+    ).not.toBeNull();
     // The collapsed row says the topic, not the kind.
     expect(row).toHaveTextContent("prompt-documents");
     expect(row).not.toHaveTextContent("observation");
@@ -213,21 +223,22 @@ describe("CoordFindingsPage", () => {
       window.history.replaceState({}, "", `/?id=${id}`);
     }
 
+    const originalScrollIntoView = Element.prototype.scrollIntoView;
+    afterEach(() => {
+      Element.prototype.scrollIntoView = originalScrollIntoView;
+    });
+
     it("reads the finding BY ID, separately from the filtered list", async () => {
       withLinkedId();
       httpGet.mockImplementation((url: string) =>
         Promise.resolve(
-          String(url).includes("finding_id=")
-            ? page([finding()])
-            : page([])
+          String(url).includes("finding_id=") ? page([finding()]) : page([])
         )
       );
       render(<CoordFindingsPage />);
 
       await waitFor(() =>
-        expect(
-          urls().some((u) => u.includes(`finding_id=${ID_A}`))
-        ).toBe(true)
+        expect(urls().some((u) => u.includes(`finding_id=${ID_A}`))).toBe(true)
       );
     });
 
@@ -246,7 +257,9 @@ describe("CoordFindingsPage", () => {
       render(<CoordFindingsPage />);
 
       await waitFor(() =>
-        expect(screen.getByRole("button", { expanded: true })).toBeInTheDocument()
+        expect(
+          screen.getByRole("button", { expanded: true })
+        ).toBeInTheDocument()
       );
       expect(
         screen.getByTestId(`coord-finding-detail-${ID_A}`)
@@ -284,9 +297,8 @@ describe("CoordFindingsPage", () => {
         )
       );
       const expiredView = render(<CoordFindingsPage />);
-      const expiredLine = (
-        await screen.findByTestId("coord-findings-linked")
-      ).textContent;
+      const expiredLine = (await screen.findByTestId("coord-findings-linked"))
+        .textContent;
       expect(expiredLine).toMatch(/expanded below/i);
       expect(expiredLine).toMatch(/past its retention window/i);
       expiredView.unmount();
@@ -299,7 +311,9 @@ describe("CoordFindingsPage", () => {
           /another tenant/i
         )
       );
-      const missingLine = screen.getByTestId("coord-findings-linked").textContent;
+      const missingLine = screen.getByTestId(
+        "coord-findings-linked"
+      ).textContent;
       expect(missingLine).not.toMatch(/expanded below/i);
       expect(missingLine).not.toEqual(expiredLine);
     });
@@ -322,6 +336,94 @@ describe("CoordFindingsPage", () => {
         /another tenant/i
       );
     });
+
+    it("never sends a malformed id, and names the LINK as the problem", async () => {
+      withLinkedId("not-a-uuid");
+      httpGet.mockResolvedValue(page([]));
+      render(<CoordFindingsPage />);
+
+      const banner = await screen.findByTestId("coord-findings-linked");
+      expect(banner).toHaveTextContent(/not a finding id/i);
+      expect(banner).not.toHaveTextContent(/read failed/i);
+      await waitFor(() => expect(httpGet).toHaveBeenCalled());
+      expect(urls().some((u) => u.includes("finding_id="))).toBe(false);
+    });
+
+    it("accepts a by-id answer only for the id it asked for", async () => {
+      // A door that IGNORED `finding_id` still answers with a well-formed page.
+      // Taking its first row on trust would expand some other finding under a
+      // banner saying it is the linked one.
+      withLinkedId();
+      httpGet.mockResolvedValue(page([finding({ finding_id: ID_B })]));
+      render(<CoordFindingsPage />);
+
+      await waitFor(() =>
+        expect(screen.getByTestId("coord-findings-linked")).toHaveTextContent(
+          /no finding with that id/i
+        )
+      );
+      expect(screen.queryByRole("button", { expanded: true })).toBeNull();
+    });
+
+    it("reports the BY-ID read's own degrade, even while the list is still out", async () => {
+      withLinkedId();
+      httpGet.mockImplementation((url: string) =>
+        String(url).includes("finding_id=")
+          ? Promise.resolve({
+              available: false,
+              count: 0,
+              findings: [],
+              unavailable:
+                "coord did not answer the findings store (HTTP 503).",
+              unavailable_kind: "unreachable",
+            })
+          : new Promise(() => {})
+      );
+      render(<CoordFindingsPage />);
+
+      await waitFor(() =>
+        expect(screen.getByTestId("coord-findings-linked")).toHaveTextContent(
+          /not answering/i
+        )
+      );
+      expect(screen.getByTestId("coord-findings-linked")).not.toHaveTextContent(
+        /another tenant/i
+      );
+    });
+
+    it("re-issues the by-id read from the refresh control", async () => {
+      withLinkedId();
+      httpGet.mockImplementation((url: string) =>
+        String(url).includes("finding_id=")
+          ? Promise.reject(new Error("GET … failed: 500 - boom"))
+          : Promise.resolve(page([]))
+      );
+      render(<CoordFindingsPage />);
+      await waitFor(() =>
+        expect(screen.getByTestId("coord-findings-linked")).toHaveTextContent(
+          /refresh to retry/i
+        )
+      );
+      const before = urls().filter((u) => u.includes("finding_id=")).length;
+
+      httpGet.mockImplementation((url: string) =>
+        Promise.resolve(
+          String(url).includes("finding_id=") ? page([finding()]) : page([])
+        )
+      );
+      await userEvent.click(
+        screen.getByRole("button", { name: /refresh findings/i })
+      );
+
+      await waitFor(() =>
+        expect(screen.getByTestId("coord-findings-linked")).toHaveTextContent(
+          /expanded below/i
+        )
+      );
+      expect(urls().filter((u) => u.includes("finding_id=")).length).toBe(
+        before + 1
+      );
+    });
   });
 
   describe("degraded reads", () => {
@@ -330,16 +432,22 @@ describe("CoordFindingsPage", () => {
         available: false,
         count: 0,
         findings: [],
-        unavailable: "coord has no findings reader yet — its route has not deployed.",
+        unavailable:
+          "coord has no findings reader yet — its route has not deployed.",
         unavailable_kind: "not_deployed",
       });
       render(<CoordFindingsPage />);
 
-      expect(await screen.findByTestId("coord-findings-unavailable")).toHaveTextContent(
-        /has not deployed/i
-      );
+      expect(
+        await screen.findByTestId("coord-findings-unavailable")
+      ).toHaveTextContent(/has not deployed/i);
       expect(screen.getByTestId("coord-findings-health")).toHaveTextContent(
         /could not be read/i
+      );
+      // The empty state must not contradict the banner above it.
+      expect(screen.queryByText(/no findings match/i)).toBeNull();
+      expect(screen.getByTestId("coord-findings-unknown")).toHaveTextContent(
+        /unknown/i
       );
     });
 
@@ -347,9 +455,9 @@ describe("CoordFindingsPage", () => {
       httpGet.mockRejectedValue(new Error("GET … failed: 500 - boom"));
       render(<CoordFindingsPage />);
 
-      expect(await screen.findByTestId("coord-findings-unknown")).toHaveTextContent(
-        /unknown, not none/i
-      );
+      expect(
+        await screen.findByTestId("coord-findings-unknown")
+      ).toHaveTextContent(/unknown, not none/i);
     });
 
     it("renders an honest empty state when coord CONFIRMS nothing matches", async () => {

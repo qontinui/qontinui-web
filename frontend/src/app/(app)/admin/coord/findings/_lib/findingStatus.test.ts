@@ -30,6 +30,8 @@ import {
   findingHref,
   findingLinkNotice,
   isExpired,
+  isFindingId,
+  linkedRowFrom,
   retentionOf,
   triageFilterCaveat,
   triageOf,
@@ -78,9 +80,9 @@ describe("retentionOf", () => {
     // durable, and a fortnight-long expiry on a row that IS one is not. A
     // `kind === "dossier"` predicate fails both halves, and it would also put
     // the enum in the derivation R8 keeps it out of.
-    expect(
-      retentionOf({ expires_at: "2126-09-15T09:00:00Z" }, NOW)
-    ).toBe("durable");
+    expect(retentionOf({ expires_at: "2126-09-15T09:00:00Z" }, NOW)).toBe(
+      "durable"
+    );
     expect(
       retentionOf(
         { expires_at: new Date(NOW + 5 * 86_400_000).toISOString() },
@@ -91,7 +93,10 @@ describe("retentionOf", () => {
 
   it("puts the boundary exactly at the durable horizon", () => {
     expect(
-      retentionOf({ expires_at: new Date(NOW + DURABLE_HORIZON_MS).toISOString() }, NOW)
+      retentionOf(
+        { expires_at: new Date(NOW + DURABLE_HORIZON_MS).toISOString() },
+        NOW
+      )
     ).toBe("durable");
     expect(
       retentionOf(
@@ -159,7 +164,10 @@ describe("deriveFindingStatus", () => {
 describe("the R3 palette", () => {
   it("agrees with the attention table", () => {
     expect(
-      paletteDisagreements(FINDING_ATTENTION_BY_RETENTION, FINDING_STATUS_PALETTE)
+      paletteDisagreements(
+        FINDING_ATTENTION_BY_RETENTION,
+        FINDING_STATUS_PALETTE
+      )
     ).toEqual([]);
   });
 
@@ -179,7 +187,9 @@ describe("dossierSlug / triageOf / triageSentence", () => {
   });
 
   it("treats a blank or non-string slug as NO route", () => {
-    expect(dossierSlug(row({ artifact_refs: { dossier_slug: "  " } }))).toBeNull();
+    expect(
+      dossierSlug(row({ artifact_refs: { dossier_slug: "  " } }))
+    ).toBeNull();
     expect(dossierSlug(row({ artifact_refs: { dossier_slug: 7 } }))).toBeNull();
     expect(dossierSlug(row({ artifact_refs: {} }))).toBeNull();
     expect(dossierSlug(row({ artifact_refs: null }))).toBeNull();
@@ -194,7 +204,9 @@ describe("dossierSlug / triageOf / triageSentence", () => {
         })
       )
     ).toBe("routed");
-    expect(triageOf(row({ triaged_at: "2026-09-16T00:00:00Z" }))).toBe("triaged");
+    expect(triageOf(row({ triaged_at: "2026-09-16T00:00:00Z" }))).toBe(
+      "triaged"
+    );
     expect(triageOf(row())).toBe("untriaged");
   });
 
@@ -272,13 +284,21 @@ describe("findingLinkNotice", () => {
   });
 
   it("does not call a live row expired", () => {
-    const live = findingLinkNotice({ found: true, expired: false, loading: false });
+    const live = findingLinkNotice({
+      found: true,
+      expired: false,
+      loading: false,
+    });
     expect(live).toMatch(/expanded below/i);
     expect(live).not.toMatch(/retention window/i);
   });
 
   it("blames the read, not the id, when the look-up failed", () => {
-    const line = findingLinkNotice({ found: false, loading: false, error: true });
+    const line = findingLinkNotice({
+      found: false,
+      loading: false,
+      error: true,
+    });
     expect(line).toMatch(/read failed/i);
     expect(line).not.toMatch(/another tenant/i);
   });
@@ -295,6 +315,78 @@ describe("findingLinkNotice", () => {
     });
     expect(line).toMatch(/availability state/i);
     expect(line).not.toMatch(/another tenant/i);
+  });
+
+  it("names a malformed link first, above every other arm", () => {
+    // A mangled id was never looked up, so found / loading / failed / absent
+    // are all claims about a read that did not happen.
+    for (const state of [
+      { found: false, loading: true },
+      { found: false, loading: false, error: true },
+      { found: false, loading: false, unavailable: true },
+      { found: false, loading: false },
+    ]) {
+      const line = findingLinkNotice({ ...state, invalid: true });
+      expect(line).toMatch(/not a finding id/i);
+      expect(line).not.toMatch(/looking for|read failed|another tenant/i);
+    }
+    expect(findingLinkNotice({ found: false, loading: false })).not.toMatch(
+      /not a finding id/i
+    );
+  });
+
+  it("says a failed read can be retried from the refresh control", () => {
+    expect(
+      findingLinkNotice({ found: false, loading: false, error: true })
+    ).toMatch(/refresh to retry/i);
+  });
+
+  it("names a superseded head among the not-found explanations", () => {
+    // The by-id read keeps hiding a head that a correction superseded; the
+    // sentence must not claim the id belongs to another tenant or to nothing.
+    expect(findingLinkNotice({ found: false, loading: false })).toMatch(
+      /superseded by a correction/i
+    );
+  });
+
+  it("explains a linked row that the filters exclude, and only then", () => {
+    const outside = findingLinkNotice({
+      found: true,
+      loading: false,
+      outsideFilters: true,
+    });
+    expect(outside).toMatch(/expanded below/i);
+    expect(outside).toMatch(/outside the current filters/i);
+    expect(
+      findingLinkNotice({ found: true, loading: false, outsideFilters: false })
+    ).not.toMatch(/outside the current filters/i);
+  });
+});
+
+describe("isFindingId", () => {
+  it("accepts a uuid in either case, trimmed, and nothing else", () => {
+    expect(isFindingId("fec41291-67ed-4cf8-b331-888ad1126b45")).toBe(true);
+    expect(isFindingId(" FEC41291-67ED-4CF8-B331-888AD1126B45 ")).toBe(true);
+    expect(isFindingId("fec41291")).toBe(false);
+    expect(isFindingId("not-a-uuid")).toBe(false);
+    expect(isFindingId("")).toBe(false);
+  });
+});
+
+describe("linkedRowFrom", () => {
+  const A = "fec41291-67ed-4cf8-b331-888ad1126b45";
+  const B = "0f4d1a2b-6c8e-4f10-9a33-2b7c5d8e1f90";
+
+  it("returns the row that IS the id, case-insensitively", () => {
+    expect(
+      linkedRowFrom([{ finding_id: B }, { finding_id: A }], A.toUpperCase())
+    ).toEqual({ finding_id: A });
+  });
+
+  it("returns null when the page carries only OTHER rows", () => {
+    // A door that ignored `finding_id` still answers with a well-formed page.
+    expect(linkedRowFrom([{ finding_id: B }], A)).toBeNull();
+    expect(linkedRowFrom([], A)).toBeNull();
   });
 });
 
@@ -340,7 +432,11 @@ describe("deriveFindingsHealth", () => {
   });
 
   it("separates 'never read' from 'stopped updating'", () => {
-    const never = deriveFindingsHealth({ ...base, loaded: false, failed: true });
+    const never = deriveFindingsHealth({
+      ...base,
+      loaded: false,
+      failed: true,
+    });
     const stale = deriveFindingsHealth({ ...base, failed: true });
     expect(never.headline).toMatch(/could not read/i);
     expect(stale.headline).toMatch(/stopped updating/i);
@@ -348,9 +444,9 @@ describe("deriveFindingsHealth", () => {
   });
 
   it("names the window the filter actually selected", () => {
-    expect(
-      deriveFindingsHealth({ ...base, triaged: false }).headline
-    ).toMatch(/untriaged findings/);
+    expect(deriveFindingsHealth({ ...base, triaged: false }).headline).toMatch(
+      /untriaged findings/
+    );
     expect(deriveFindingsHealth({ ...base, triaged: true }).headline).toMatch(
       /triaged findings/
     );

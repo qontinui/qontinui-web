@@ -11242,11 +11242,15 @@ async def list_prompt_document_writes(
 # **Verbatim forward, and the refusal is coord's.** Every one of coord's six
 # accepted keys — `finding_id`, `resource_keys`, `topic`, `kind`, `limit`,
 # `triaged` — is declared here and forwarded ONLY when the caller set it, the
-# shape `get_coord_notifications` established. The vocabulary is deliberately
-# NOT re-validated at this hop: coord answers an unknown key with a typed
+# shape `get_coord_notifications` established. The id and the string filters
+# are NOT re-validated at this hop: coord answers an unknown key with a typed
 # `400 {"error": "unknown_query_parameter", "unknown": [...], "accepted": [...]}`
 # and a malformed id with `invalid_query_parameter`, and a second validator here
-# would either shadow that message with a duller one or drift from it. FastAPI
+# would either shadow that message with a duller one or drift from it. The two
+# TYPED params are the exception, exactly as on the notifications sibling:
+# FastAPI parses `limit` as an int and `triaged` as a bool, so `limit=abc` is a
+# 422 here, and coord's third triage spelling `any` is expressed by OMITTING the
+# key (coord's own default) rather than by sending it. FastAPI
 # ignores query keys it does not declare, so an unknown key never reaches coord
 # through this route — which is why the page sends none.
 #
@@ -11295,8 +11299,10 @@ async def get_coord_findings(
     """Return ``coord.findings`` rows for the calling operator's tenant.
 
     Response envelope mirrors coord's:
-    ``{"available", "count", "findings": [...], "kind_applied", "limit",
-    "resource_keys_applied", "resource_keys_truncated", "triaged_applied"}``.
+    ``{"available", "count", "findings": [...], "finding_id_applied",
+    "kind_applied", "limit", "resource_keys_applied" (a COUNT),
+    "resource_keys_truncated", "triaged_applied" ("any" | "false" | "true")}``,
+    plus ``kind_excluded`` / ``scope_restricted`` on a ``triaged=false`` read.
     The ``*_applied`` echoes are what let the page say which filter coord
     actually honoured rather than which one it was asked for — a filter coord
     dropped is otherwise invisible.

@@ -25,6 +25,7 @@
  * severity/attention vocabulary here — the only row state is read/unread.
  */
 
+import { findingHref } from "@/app/(app)/admin/coord/findings/_lib/findingStatus";
 import { httpStatusOf } from "@/components/admin/coord/httpStatus";
 
 /** One row of coord's `GET /coord/notifications` response. */
@@ -389,9 +390,37 @@ export function linkedRefNotice(state: {
     "The linked event is not on the page that is loaded. It may be older than " +
     "these, or excluded by the filters above — clear them or load more. " +
     "It may also be a document that was CREATED rather than edited: a created " +
-    "document sends no notice, so read its reasoning at " +
-    "/admin/coord/findings?id=<the id in the link>."
+    "document sends no notice, so its reasoning is in the finding its author " +
+    "filed — open it in the findings reader."
   );
+}
+
+/**
+ * The findings-reader link the `?ref=` banner offers — in the FALLBACK arm of
+ * {@link linkedRefNotice} and in no other, or `null`.
+ *
+ * The fallback sentence says "open it in the findings reader"; this is the
+ * link that sentence refers to, built from the ref the operator arrived with so
+ * he never edits a URL by hand. Its arm test mirrors the ranking above and is
+ * pinned against it by `notificationStatus.test.ts` over every input
+ * combination, so the link and the sentence cannot drift apart.
+ */
+export function linkedRefFindingHref(
+  state: Parameters<typeof linkedRefNotice>[0],
+  ref: string
+): string | null {
+  const trimmed = ref.trim();
+  if (!trimmed) return null;
+  if (
+    state.found ||
+    state.migrationPending ||
+    state.loading ||
+    state.error ||
+    state.pagingFailed
+  ) {
+    return null;
+  }
+  return findingHref(trimmed);
 }
 
 /**
