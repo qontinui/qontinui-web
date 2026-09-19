@@ -1,6 +1,10 @@
 import { describe, it, expect } from "vitest";
 import { render } from "@testing-library/react";
-import { MachineCard, runnerHealthState } from "./MachineCard";
+import {
+  CI_RUNNER_DRAIN_SCOPE,
+  MachineCard,
+  runnerHealthState,
+} from "./MachineCard";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import type { MachineGroup, SymbolClaim } from "./types";
 import type { Runner } from "@qontinui/shared-types";
@@ -533,7 +537,10 @@ describe("MachineCard — a stale coord-credential report", () => {
       baseGroup({ currentActivity: activity(threeDaysAgo) })
     );
     const badge = credentialBadge(container);
-    expect(badge).toHaveAttribute("data-operations-coord-credential", "unknown");
+    expect(badge).toHaveAttribute(
+      "data-operations-coord-credential",
+      "unknown"
+    );
     expect(badge).toHaveAttribute(
       "data-operations-coord-credential-measured",
       "false"
@@ -562,5 +569,36 @@ describe("MachineCard — a stale coord-credential report", () => {
       "data-operations-coord-credential",
       "unknown"
     );
+  });
+});
+
+/**
+ * A GitHub Actions runner registration IS drainable — coord's merge scheduler
+ * stops counting a drained `ci_runner` device as merge-slot capacity — but
+ * GitHub keeps routing jobs to it by label. The card must say both halves, and
+ * decide from coord's own capability read rather than the CI-runner mirror.
+ */
+describe("MachineCard — CI-runner drain scope", () => {
+  it("states what a drain does and does not do on a CI-runner device", () => {
+    const { container } = renderCard(
+      baseGroup({
+        coordHealth: { matched: true, device_id: "d-1", ciRunner: true },
+      })
+    );
+    const note = container.querySelector(
+      "[data-testid='ci-runner-drain-scope']"
+    );
+    expect(note?.textContent).toBe(CI_RUNNER_DRAIN_SCOPE);
+    expect(CI_RUNNER_DRAIN_SCOPE).toMatch(/merge-capacity/);
+    expect(CI_RUNNER_DRAIN_SCOPE).toMatch(/qontinui/);
+  });
+
+  it("says nothing of the kind for a device coord does not call a CI runner", () => {
+    const { container } = renderCard(
+      baseGroup({ coordHealth: { matched: true, device_id: "d-1" } })
+    );
+    expect(
+      container.querySelector("[data-testid='ci-runner-drain-scope']")
+    ).toBeNull();
   });
 });

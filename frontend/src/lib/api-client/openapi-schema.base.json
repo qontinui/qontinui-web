@@ -81676,6 +81676,154 @@
         ]
       }
     },
+    "/api/v1/operations/coord/audit/recent": {
+      "get": {
+        "description": "Return recent ``coord.operator_audit`` rows for the caller's tenant.\n\nCoord answers ``{\"audit\": [...], \"count\": <n>}`` ordered\n``occurred_at DESC``, each row carrying ``audit_id``, ``operator_id``,\n``action``, ``resource_kind``, ``resource_key``, ``metadata`` and\n``occurred_at``.\n\n**``metadata`` is where the blast radius lives**, and it is per-action\nrather than a fixed schema \u2014 `operator_disable.rs` computes\n``affected_tenant_ids`` before stamping, the kill switch stamps\n``affected_repos``, and ``fleet.drain.set`` stamps ``device_id`` / ``until``\n/ ``drained`` / ``version``. It is forwarded UNTOUCHED: a proxy that\nnormalised it into a fixed shape would silently drop whatever the next\nwriter computes, which is the one field an operator reading this feed\nactually needs.\n\n``operator_id`` is the acting operator coord resolved from the bearer. A\nrow reading ``00000000-0000-0000-0000-000000000000`` is the nil-UUID\nsignature of a coord writer that used ``resolve_operator_id(&headers)``\ninstead of ``ctx.operator_id`` \u2014 the header it reads is one this service\nnever sends. That is a coord-side defect to report, not a real operator,\nand the console labels it as such rather than rendering a plausible id.",
+        "operationId": "api_v1_operations_coord_audit_recent_get",
+        "parameters": [
+          {
+            "description": "Filter by action. A trailing `*` is a PREFIX match (`fleet.*` catches `fleet.drain.set` and `fleet.drain.clear`); anything else is an exact match. Forwarded to coord verbatim \u2014 the prefix grammar is coord's, not this proxy's.",
+            "in": "query",
+            "name": "action",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter by action. A trailing `*` is a PREFIX match (`fleet.*` catches `fleet.drain.set` and `fleet.drain.clear`); anything else is an exact match. Forwarded to coord verbatim \u2014 the prefix grammar is coord's, not this proxy's.",
+              "title": "Action"
+            }
+          },
+          {
+            "description": "Filter by resource_kind \u2014 the table/object class a handler-stamped row names (e.g. the fleet runtime policy table). Same exact-or-trailing-`*` grammar as `action`. `require_role` stamps `http.route` on every authorized request, GETs included, so `resource_kind=http.route` selects exactly that authorization-check class rather than a real write.",
+            "in": "query",
+            "name": "resource_kind",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter by resource_kind \u2014 the table/object class a handler-stamped row names (e.g. the fleet runtime policy table). Same exact-or-trailing-`*` grammar as `action`. `require_role` stamps `http.route` on every authorized request, GETs included, so `resource_kind=http.route` selects exactly that authorization-check class rather than a real write.",
+              "title": "Resource Kind"
+            }
+          },
+          {
+            "description": "Filter by resource_key \u2014 WHICH resource of that kind (a device id, an operator id, a tenant slug). Same grammar as `action`. This is how 'who touched THIS host' is answered without pulling an action family and scanning client-side for a row that may have scrolled past `limit`.",
+            "in": "query",
+            "name": "resource_key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter by resource_key \u2014 WHICH resource of that kind (a device id, an operator id, a tenant slug). Same grammar as `action`. This is how 'who touched THIS host' is answered without pulling an action family and scanning client-side for a row that may have scrolled past `limit`.",
+              "title": "Resource Key"
+            }
+          },
+          {
+            "description": "RFC 3339. Restrict to rows where `occurred_at >= since`.",
+            "in": "query",
+            "name": "since",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "RFC 3339. Restrict to rows where `occurred_at >= since`.",
+              "title": "Since"
+            }
+          },
+          {
+            "description": "RFC 3339. Restrict to rows where `occurred_at < before`.",
+            "in": "query",
+            "name": "before",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "RFC 3339. Restrict to rows where `occurred_at < before`.",
+              "title": "Before"
+            }
+          },
+          {
+            "description": "Max rows. Coord clamps to `[1, 1000]` and defaults to 200.",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Max rows. Coord clamps to `[1, 1000]` and defaults to 200.",
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Get Coord Audit Recent Api V1 Operations Coord Audit Recent Get"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Get Coord Audit Recent",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
     "/api/v1/operations/coord/cognito/groups": {
       "get": {
         "description": "List every Cognito group in the shared pool. Superuser-gated.\n\nRead-only: no audit row and no rate limit (it changes nothing and the\ndashboard polls it), but it shares the error mapper so a throttle reads\n429 and a bad pool id reads 500 rather than both reading 502.",
@@ -85825,6 +85973,33 @@
           }
         ],
         "summary": "Put Fleet Policy",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
+    "/api/v1/operations/fleet/ci-runners": {
+      "get": {
+        "description": "Return coord's mirror of the self-hosted CI runners and their labels.\n\nCoord answers::\n\n    {\n      \"runners\": [\n        {\n          \"device_id\": \"<uuid>\",\n          \"hostname\": \"<str>\",\n          \"ci_runner_status\": \"<str|null>\",\n          \"ci_runner_labels\": [\"self-hosted\", \"qontinui\", ...],\n          \"last_seen_at\": \"<rfc3339|null>\"\n        }\n      ],\n      \"as_of\": \"<rfc3339>\",\n      \"freshness_secs\": <int>\n    }\n\n``ci_runner_labels`` is the set coord's registrar last mirrored from\nGitHub's `actions/runners` listing \u2014 the same set GitHub matches a job's\n`runs-on` against. A host missing the custom `qontinui` label draws no\n`[self-hosted, qontinui]` job, which is what makes this read worth\nsurfacing: it is the only place the console can see routing eligibility.\n\n``as_of`` / ``freshness_secs`` describe the READ, not GitHub, and\n``freshness_secs`` is coord's SELECTION WINDOW \u2014 not an age. Coord's own\nwords: \"the freshness window the query was executed under, in seconds\",\nsourced from ``merge_scheduler::ci_runner_freshness_secs()``\n(``COORD_CI_RUNNER_FRESHNESS_SECS``, a configured constant, default 180).\nThe rows are those coord saw in ``(as_of - freshness_secs, as_of]``. A\nconsumer that renders it as \"N seconds old\" prints a constant as if it were\na measurement; the real per-row age is ``as_of - last_seen_at``, which is\nwhy ``last_seen_at`` is on the wire. All three pass through untouched.\n\nForwarded verbatim \u2014 this proxy adds no shape of its own, so a coord that\ngrows a field serves it to the console without a change here.",
+        "operationId": "api_v1_operations_fleet_ci_runners_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Get Fleet Ci Runners Api V1 Operations Fleet Ci Runners Get"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Get Fleet Ci Runners",
         "tags": [
           "operations"
         ]
