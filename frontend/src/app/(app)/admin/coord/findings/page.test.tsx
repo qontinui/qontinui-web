@@ -391,6 +391,56 @@ describe("CoordFindingsPage", () => {
       );
     });
 
+    it("keeps the linked row expanded across a filter change", async () => {
+      withLinkedId();
+      httpGet.mockImplementation((url: string) =>
+        Promise.resolve(
+          String(url).includes("finding_id=") ? page([finding()]) : page([])
+        )
+      );
+      render(<CoordFindingsPage />);
+      await waitFor(() =>
+        expect(
+          screen.getByTestId(`coord-finding-detail-${ID_A}`)
+        ).toBeInTheDocument()
+      );
+
+      await userEvent.type(screen.getByTestId("coord-findings-topic"), "x");
+      await waitFor(() => expect(listUrl()).toMatch(/topic=x/));
+
+      expect(
+        screen.getByTestId(`coord-finding-detail-${ID_A}`)
+      ).toBeInTheDocument();
+      expect(screen.getByTestId("coord-findings-linked")).toHaveTextContent(
+        /expanded below/i
+      );
+    });
+
+    it("says NOT FOUND when the by-id read answered, even if the list degraded", async () => {
+      withLinkedId();
+      httpGet.mockImplementation((url: string) =>
+        Promise.resolve(
+          String(url).includes("finding_id=")
+            ? page([])
+            : {
+                available: false,
+                count: 0,
+                findings: [],
+                unavailable:
+                  "coord did not answer the findings store (HTTP 503).",
+                unavailable_kind: "unreachable",
+              }
+        )
+      );
+      render(<CoordFindingsPage />);
+
+      await waitFor(() =>
+        expect(screen.getByTestId("coord-findings-linked")).toHaveTextContent(
+          /no finding with that id/i
+        )
+      );
+    });
+
     it("re-issues the by-id read from the refresh control", async () => {
       withLinkedId();
       httpGet.mockImplementation((url: string) =>
@@ -478,6 +528,31 @@ describe("CoordFindingsPage", () => {
       expect(screen.getByTestId("coord-findings-health")).toHaveTextContent(
         /could not read the findings store/i
       );
+    });
+
+    it("does not carry an OLD query's degrade over to a new filter's failure", async () => {
+      httpGet.mockResolvedValueOnce({
+        available: false,
+        count: 0,
+        findings: [],
+        unavailable: "coord did not answer the findings store (HTTP 503).",
+        unavailable_kind: "unreachable",
+      });
+      render(<CoordFindingsPage />);
+      await screen.findByTestId("coord-findings-unavailable");
+
+      httpGet.mockRejectedValue(new Error("GET … failed: 400 - unknown kind"));
+      await userEvent.type(screen.getByTestId("coord-findings-kind"), "g");
+
+      await waitFor(() =>
+        expect(screen.getByTestId("coord-findings-health")).toHaveTextContent(
+          /could not read the findings store/i
+        )
+      );
+      expect(screen.getByTestId("coord-findings-health")).not.toHaveTextContent(
+        /HTTP 503/
+      );
+      expect(screen.queryByTestId("coord-findings-unavailable")).toBeNull();
     });
 
     it("renders an honest empty state when coord CONFIRMS nothing matches", async () => {
