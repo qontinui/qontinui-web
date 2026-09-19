@@ -911,9 +911,17 @@ export function MachineCard({
               </span>
             </>
           )}
-          {machine.ciRunner && machine.ciRunner.status !== "offline" && (
-            <span>CI runner active</span>
-          )}
+          {/* `idle`/`busy` explicitly, never `!== "offline"`. With `unknown` a
+              real status (a mirrored row whose `ci_runner_status` coord did not
+              report), the negative form calls a runner nobody has heard from
+              "active" — a wrong claim in the direction that hides a problem,
+              and the exact form `FleetOverview`'s CI stat was fixed away from.
+              A row's own badge says `status unknown`; this line must agree. */}
+          {machine.ciRunner &&
+            (machine.ciRunner.status === "idle" ||
+              machine.ciRunner.status === "busy") && (
+              <span>CI runner active</span>
+            )}
           {/* The cross-links HealthSummaryCard carried per device. They only
               resolve for a matched coord device — the trees view is keyed on
               `device_id`. */}

@@ -26,8 +26,17 @@ from datetime import datetime
 from uuid import UUID, uuid4
 
 from qontinui_schemas.common import utc_now
-from sqlalchemy import BigInteger, Boolean, DateTime, ForeignKey, Integer, String, text
-from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy import (
+    BigInteger,
+    Boolean,
+    DateTime,
+    ForeignKey,
+    Integer,
+    String,
+    Text,
+    text,
+)
+from sqlalchemy.dialects.postgresql import ARRAY, JSONB
 from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -193,8 +202,22 @@ class Device(Base):
         nullable=True,
         comment="idle | busy | offline — NULL when the device has no CI runner.",
     )
+    #
+    # ``TEXT[]``, NOT ``JSONB``. Both authorities agree and this model was the
+    # only thing that disagreed: alembic — the sole author of ``coord.*`` DDL —
+    # created the column as ``TEXT[]``
+    # (``c5d6e7f8a9b0_add_ci_runner_columns_to_devices.py``), and coord declares
+    # the same in ``device_state.rs``'s self-heal helper. A ``JSONB`` mapping
+    # over a ``TEXT[]`` column is a *silent* mismatch: nothing writes this
+    # column from the web side (coord's ``ci_runner_registrar`` is the only
+    # writer), and the rows it writes are invisible to the web read's
+    # ``capability_user_paired`` filter, so the wrong type had no live reader to
+    # fail on. It would have failed the moment one appeared. Corrected by plan
+    # ``2026-08-20-fleet-page-runner-enable-disable-switch`` Phase 2, which is
+    # that reader. **No migration** — the DDL was always ``TEXT[]``; this is the
+    # model catching up to it.
     ci_runner_labels: Mapped[list[str] | None] = mapped_column(
-        JSONB,
+        ARRAY(Text),
         nullable=True,
         comment='CI runner labels, e.g. ["self-hosted", "linux", "x64"].',
     )
