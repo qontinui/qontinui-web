@@ -178,9 +178,18 @@ export default function CoordFindingsPage() {
    * the new list, or write the old query's count into the strip.
    */
   const queryGenRef = useRef(0);
+  /**
+   * Per-REQUEST counter, beside the per-query one: a refresh re-issues the
+   * SAME query, so two reads of one generation can be in flight together, and
+   * only the newest may land (or clear `loading`).
+   */
+  const listReqRef = useRef(0);
 
   const fetchList = useCallback(async () => {
     const gen = queryGenRef.current;
+    const req = ++listReqRef.current;
+    const current = () =>
+      queryGenRef.current === gen && listReqRef.current === req;
     setLoading(true);
     try {
       const body = readBody(
@@ -193,7 +202,7 @@ export default function CoordFindingsPage() {
           })}`
         )
       );
-      if (queryGenRef.current !== gen) return;
+      if (!current()) return;
       // The proxy degrades a coord that did not answer rather than 502ing, so
       // the honest arm is a BANNER and a dashed count — not an empty list
       // asserting the store is empty.
@@ -201,6 +210,7 @@ export default function CoordFindingsPage() {
         setUnavailable(body.unavailable);
         setRows([]);
         setCount(null);
+        setTruncatedKeys(false);
         setReadFailed(false);
         setError(null);
         return;
@@ -213,22 +223,35 @@ export default function CoordFindingsPage() {
       setReadFailed(false);
       setError(null);
     } catch (e) {
-      if (queryGenRef.current !== gen) return;
+      if (!current()) return;
       setError(`Failed to load: ${e instanceof Error ? e.message : String(e)}`);
       setReadFailed(true);
     } finally {
-      if (queryGenRef.current === gen) setLoading(false);
+      if (current()) setLoading(false);
     }
   }, [topic, kind, resourceKey, triaged]);
+
+  /** The linked row's id, readable from the filter effect without a dependency. */
+  const linkedRowIdRef = useRef<string | null>(null);
 
   useEffect(() => {
     queryGenRef.current += 1;
     setRows([]);
-    // The count belongs to the query that produced it: a new filter must not
-    // show the OLD query's number under the new window's name while its own
-    // read is in flight — the strip dashes it until the new count lands.
+    // Everything the list read derives belongs to the query that produced it.
+    // A new filter must not show the OLD query's count, its "loaded" verdict
+    // or its truncation notice under the new window's name: if the new read
+    // then FAILS, the honest state is "could not read" (UNKNOWN), never "no
+    // findings match" or "stopped updating" about rows that were just cleared.
     setCount(null);
-    setExpanded(null);
+    setLoaded(false);
+    setReadFailed(false);
+    setError(null);
+    setTruncatedKeys(false);
+    // Keep the LINKED row open across a filter change — the banner still says
+    // it is expanded below, and it is still on screen (prepended).
+    setExpanded((prev) =>
+      prev !== null && prev === linkedRowIdRef.current ? prev : null
+    );
     void fetchList();
   }, [fetchList]);
 
@@ -317,6 +340,7 @@ export default function CoordFindingsPage() {
   // that did would be the odd one out. Guarded so a later read cannot re-open
   // a row the operator has since collapsed.
   useEffect(() => {
+    linkedRowIdRef.current = linkedRow?.finding_id ?? null;
     if (!linkedRow || linkedApplied.current) return;
     linkedApplied.current = true;
     setExpanded(linkedRow.finding_id);
@@ -338,6 +362,8 @@ export default function CoordFindingsPage() {
     linkedRow !== null &&
     loaded &&
     !loading &&
+    !readFailed &&
+    unavailable === null &&
     !rows.some((r) => r.finding_id === linkedRow.finding_id);
   const listUnknown = readIsUnknown(loaded, readFailed);
 
@@ -447,7 +473,11 @@ export default function CoordFindingsPage() {
             // "no such finding": nothing has been read yet.
             loading: linkedLoading || !linkedAnswered,
             error: linkedFailed,
-            unavailable: linkedUnavailable || unavailable !== null,
+            // The list's degrade only speaks for the by-id read until that
+            // read has answered for itself — an authoritative empty by-id page
+            // is "not found", whatever the list read did.
+            unavailable:
+              linkedUnavailable || (!linkedAnswered && unavailable !== null),
           })}
         </p>
       )}
