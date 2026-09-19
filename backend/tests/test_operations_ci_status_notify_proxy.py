@@ -380,7 +380,7 @@ class TestNotifyWhenGreenRejectsUnknownFields:
     def test_valid_body_still_accepted(self, auth_client: TestClient):
         """``extra="forbid"`` does not break the in-tree caller's payload.
 
-        ``CiStatusPanel.tsx`` sends exactly ``repo`` + ``head_sha``.
+        ``CiRepoStrip.tsx`` sends exactly ``repo`` + ``head_sha``.
         """
         resp, _instance = _post(
             auth_client,

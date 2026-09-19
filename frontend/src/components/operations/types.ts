@@ -156,7 +156,8 @@ export interface SymbolClaimsResponse {
  * `MainCiStatus` 3-state enum (`ci_baseline.rs` `main_ci_status`),
  * lowercased on the wire. There is intentionally **no** `amber` value
  * here — amber is a frontend-only derivation from open-PR-check counts
- * (see `CiStatusPanel`), never a backend verdict.
+ * (see `CiRepoStrip`, which was `CiStatusPanel` until 2026-09-19), never a
+ * backend verdict.
  */
 export type MainCiVerdict = "green" | "red" | "unknown";
 
