@@ -25,7 +25,13 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import {
+  act,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 
 const fetchMock = vi.fn();
 vi.mock("@/services/service-factory", () => ({
@@ -914,16 +920,17 @@ describe("<MergeOrchestrationSettings> RepoOverrideCard save", () => {
     // Save without editing anything — the old form sent every field
     // (resetting untouched overrides + wiping escalate_paths_extra to []);
     // now an untouched save skips both the PATCH and the enablement POST,
-    // including for a repo that already carries a pin.
-    fireEvent.click(screen.getByTestId(`repo-save-${REPO}`));
-
-    await waitFor(() => {
-      const writes = fetchMock.mock.calls.filter((c) => {
-        const m = (c[1] as RequestInit | undefined)?.method;
-        return m === "PATCH" || m === "POST";
-      });
-      expect(writes).toEqual([]);
+    // including for a repo that already carries a pin. Clicked inside `act`
+    // so the save has fully settled before the absence of writes is asserted.
+    await act(async () => {
+      fireEvent.click(screen.getByTestId(`repo-save-${REPO}`));
     });
+
+    const writes = fetchMock.mock.calls.filter((c) => {
+      const m = (c[1] as RequestInit | undefined)?.method;
+      return m === "PATCH" || m === "POST";
+    });
+    expect(writes).toEqual([]);
   });
 
   it("no longer renders the per-repo rollout-state control", async () => {
@@ -933,6 +940,530 @@ describe("<MergeOrchestrationSettings> RepoOverrideCard save", () => {
     render(<MergeOrchestrationSettings />);
     await screen.findByTestId(`repo-card-${REPO}`);
     expect(screen.queryByTestId(`repo-rollout-state-${REPO}`)).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Per-repo override PRELOAD (plan 2026-07-22-merge-settings-repo-override-preload,
+// Phase 2). coord serves the RAW override columns as `raw_override` beside the
+// resolved profile; the card seeds its fields from them, and an older coord
+// that omits the block leaves the card write-only and says so.
+// ---------------------------------------------------------------------------
+
+describe("<MergeOrchestrationSettings> RepoOverrideCard preload", () => {
+  const REPO = "acme/app";
+
+  type Raw = {
+    framework_signals: string[] | null;
+    confidence_threshold_override: number | null;
+    escalate_paths_extra: string[] | null;
+    auto_merge_label_budget: number | null;
+    auto_fix_red_main: boolean | null;
+    auto_fix_red_main_flaky: boolean | null;
+  };
+
+  const STORED: Raw = {
+    framework_signals: null,
+    confidence_threshold_override: 0.9,
+    escalate_paths_extra: ["app/**/page.tsx", "migrations/**"],
+    auto_merge_label_budget: 3,
+    auto_fix_red_main: false,
+    auto_fix_red_main_flaky: null,
+  };
+
+  beforeEach(() => {
+    fetchMock.mockReset();
+  });
+
+  function profileBody(raw: Raw | undefined) {
+    return {
+      tenant_id: "00000000-0000-0000-0000-000000000001",
+      repo: REPO,
+      profile: makeProfile({ repo: REPO }),
+      merge_enabled_override: null,
+      ...(raw ? { raw_override: raw } : {}),
+    };
+  }
+
+  /** `raw` is what the profile read serves; `patchRaw` what the PATCH echoes. */
+  function route(
+    url: string,
+    init: RequestInit | undefined,
+    raw: Raw | undefined,
+    patchRaw: Raw | undefined = raw
+  ) {
+    if (init?.method === "PATCH") return jsonResponse(profileBody(patchRaw));
+    if (url.includes(`/pr-merge/repos/${REPO}/profile`)) {
+      return jsonResponse(profileBody(raw));
+    }
+    if (url.includes("/pr-merge/repos")) {
+      return jsonResponse({
+        repos: [
+          {
+            repo: REPO,
+            role: "owner",
+            framework_signals: [],
+            profile_source: null,
+            profile_version: null,
+            merge_enabled: true,
+            merge_enabled_override: null,
+          },
+        ],
+        total: 1,
+      });
+    }
+    return routeGet(url, {});
+  }
+
+  function patchCalls() {
+    return fetchMock.mock.calls.filter(
+      (c) => (c[1] as RequestInit | undefined)?.method === "PATCH"
+    );
+  }
+
+  function patchBody(): Record<string, unknown> {
+    const calls = patchCalls();
+    expect(calls).toHaveLength(1);
+    return JSON.parse((calls[0][1] as RequestInit).body as string);
+  }
+
+  const input = (id: string) =>
+    screen.getByTestId(`${id}-${REPO}`) as HTMLInputElement;
+
+  /**
+   * Click save inside `act` so every microtask the save queues (the async
+   * handler, the fetch, the state updates) has run before the caller asserts.
+   * Waiting on the button text instead passes vacuously — "Save override" is
+   * already there before the click.
+   */
+  async function clickSaveAndSettle() {
+    await act(async () => {
+      fireEvent.click(screen.getByTestId(`repo-save-${REPO}`));
+    });
+    expect(screen.getByTestId(`repo-save-${REPO}`)).toHaveTextContent(
+      "Save override"
+    );
+  }
+
+  /** A promise the test resolves by hand, to order racing responses. */
+  function deferred<T>() {
+    let resolve!: (v: T) => void;
+    const promise = new Promise<T>((r) => {
+      resolve = r;
+    });
+    return { promise, resolve };
+  }
+
+  async function renderPreloaded(raw: Raw | undefined, patchRaw?: Raw) {
+    fetchMock.mockImplementation((url: string, init?: RequestInit) =>
+      Promise.resolve(route(url, init, raw, patchRaw ?? raw))
+    );
+    render(<MergeOrchestrationSettings />);
+    await screen.findByTestId(`repo-card-${REPO}`);
+  }
+
+  it("renders the STORED raw override values in the inputs", async () => {
+    await renderPreloaded(STORED);
+    await waitFor(() => expect(input("repo-confidence").value).toBe("0.9"));
+    expect(input("repo-label-budget").value).toBe("3");
+    expect(input("repo-escalate-paths").value).toBe(
+      "app/**/page.tsx\nmigrations/**"
+    );
+    expect(input("repo-auto-fix-red-main").value).toBe("false");
+    expect(
+      screen.queryByTestId(`repo-raw-override-unavailable-${REPO}`)
+    ).toBeNull();
+  });
+
+  it("renders NULL (inheriting) columns as blank / inherit", async () => {
+    await renderPreloaded({
+      ...STORED,
+      confidence_threshold_override: null,
+      escalate_paths_extra: null,
+      auto_merge_label_budget: null,
+      auto_fix_red_main: null,
+    });
+    // The profile read has landed once the "effective" line renders.
+    await screen.findByText(/Effective: dwell=/);
+    expect(input("repo-confidence").value).toBe("");
+    expect(input("repo-label-budget").value).toBe("");
+    expect(input("repo-escalate-paths").value).toBe("");
+    expect(input("repo-auto-fix-red-main").value).toBe("inherit");
+  });
+
+  it("sends no PATCH on a no-op save of a preloaded card", async () => {
+    await renderPreloaded(STORED);
+    await waitFor(() => expect(input("repo-confidence").value).toBe("0.9"));
+    await clickSaveAndSettle();
+    expect(patchCalls()).toEqual([]);
+  });
+
+  it("PATCHes only the one edited field", async () => {
+    await renderPreloaded(STORED);
+    await waitFor(() => expect(input("repo-label-budget").value).toBe("3"));
+    fireEvent.change(input("repo-label-budget"), { target: { value: "5" } });
+    fireEvent.click(screen.getByTestId(`repo-save-${REPO}`));
+    await waitFor(() => {
+      expect(patchBody()).toEqual({ auto_merge_label_budget: 5 });
+    });
+  });
+
+  it("clears a preloaded field to inherit (null; [] for escalate paths)", async () => {
+    await renderPreloaded(STORED);
+    await waitFor(() => expect(input("repo-confidence").value).toBe("0.9"));
+    fireEvent.change(input("repo-confidence"), { target: { value: "" } });
+    fireEvent.change(input("repo-escalate-paths"), {
+      target: { value: "  \n " },
+    });
+    fireEvent.change(input("repo-auto-fix-red-main"), {
+      target: { value: "inherit" },
+    });
+    fireEvent.click(screen.getByTestId(`repo-save-${REPO}`));
+    await waitFor(() => {
+      expect(patchBody()).toEqual({
+        confidence_threshold_override: null,
+        // The column is NOT NULL: `[]` is its "no extra paths" value, and a
+        // `null` 500s on a coord build that writes SET col = NULL.
+        escalate_paths_extra: [],
+        auto_fix_red_main: null,
+      });
+    });
+  });
+
+  it("re-seeds the fields from the PATCH response after a save", async () => {
+    // coord stores something different from what was typed (e.g. another
+    // operator's concurrent write); the card must show what is STORED.
+    await renderPreloaded(STORED, {
+      ...STORED,
+      confidence_threshold_override: 0.75,
+      auto_merge_label_budget: 7,
+    });
+    await waitFor(() => expect(input("repo-confidence").value).toBe("0.9"));
+    fireEvent.change(input("repo-confidence"), { target: { value: "0.8" } });
+    fireEvent.click(screen.getByTestId(`repo-save-${REPO}`));
+    await waitFor(() => expect(input("repo-confidence").value).toBe("0.75"));
+    expect(input("repo-label-budget").value).toBe("7");
+
+    // The save consumed the edit: a second save is a no-op.
+    await clickSaveAndSettle();
+    expect(patchCalls()).toHaveLength(1);
+  });
+
+  it("keeps (and still sends) a value typed before the profile read lands", async () => {
+    const get = deferred<Response>();
+    fetchMock.mockImplementation((url: string, init?: RequestInit) => {
+      if (!init?.method && url.includes(`/pr-merge/repos/${REPO}/profile`)) {
+        return get.promise;
+      }
+      return Promise.resolve(route(url, init, STORED));
+    });
+    render(<MergeOrchestrationSettings />);
+    await screen.findByTestId(`repo-card-${REPO}`);
+
+    fireEvent.change(input("repo-confidence"), { target: { value: "0.5" } });
+    await act(async () => {
+      get.resolve(jsonResponse(profileBody(STORED)));
+    });
+    // Untouched fields are seeded; the typed one is not overwritten.
+    await waitFor(() => expect(input("repo-label-budget").value).toBe("3"));
+    expect(input("repo-confidence").value).toBe("0.5");
+
+    fireEvent.click(screen.getByTestId(`repo-save-${REPO}`));
+    await waitFor(() => {
+      expect(patchBody()).toEqual({ confidence_threshold_override: 0.5 });
+    });
+  });
+
+  it("ignores an initial profile read that lands AFTER a save re-seeded", async () => {
+    const get = deferred<Response>();
+    const saved: Raw = {
+      ...STORED,
+      confidence_threshold_override: 0.6,
+      auto_merge_label_budget: 9,
+    };
+    fetchMock.mockImplementation((url: string, init?: RequestInit) => {
+      if (!init?.method && url.includes(`/pr-merge/repos/${REPO}/profile`)) {
+        return get.promise;
+      }
+      return Promise.resolve(route(url, init, STORED, saved));
+    });
+    render(<MergeOrchestrationSettings />);
+    await screen.findByTestId(`repo-card-${REPO}`);
+
+    fireEvent.change(input("repo-confidence"), { target: { value: "0.6" } });
+    await clickSaveAndSettle();
+    await waitFor(() => expect(input("repo-label-budget").value).toBe("9"));
+
+    // The stale pre-save read now lands — it must not roll the card back.
+    await act(async () => {
+      get.resolve(jsonResponse(profileBody(STORED)));
+    });
+    expect(input("repo-confidence").value).toBe("0.6");
+    expect(input("repo-label-budget").value).toBe("9");
+  });
+
+  it("keeps an edit made while a save is in flight, and keeps it dirty", async () => {
+    const patch = deferred<Response>();
+    let patches = 0;
+    fetchMock.mockImplementation((url: string, init?: RequestInit) => {
+      if (init?.method === "PATCH" && patches++ === 0) return patch.promise;
+      return Promise.resolve(route(url, init, STORED));
+    });
+    render(<MergeOrchestrationSettings />);
+    await screen.findByTestId(`repo-card-${REPO}`);
+    await waitFor(() => expect(input("repo-confidence").value).toBe("0.9"));
+
+    fireEvent.change(input("repo-confidence"), { target: { value: "0.7" } });
+    fireEvent.click(screen.getByTestId(`repo-save-${REPO}`));
+    await waitFor(() =>
+      expect(screen.getByTestId(`repo-save-${REPO}`)).toHaveTextContent(
+        "Saving..."
+      )
+    );
+    // Edit a DIFFERENT field while the PATCH is in flight.
+    fireEvent.change(input("repo-label-budget"), { target: { value: "4" } });
+    await act(async () => {
+      patch.resolve(jsonResponse(profileBody(STORED)));
+    });
+    await waitFor(() =>
+      expect(screen.getByTestId(`repo-save-${REPO}`)).toHaveTextContent(
+        "Save override"
+      )
+    );
+    // The in-flight edit survived the re-seed...
+    expect(input("repo-label-budget").value).toBe("4");
+    // ...and is still dirty: the next save sends it, and only it.
+    await clickSaveAndSettle();
+    const calls = patchCalls();
+    expect(calls).toHaveLength(2);
+    expect(JSON.parse((calls[1][1] as RequestInit).body as string)).toEqual({
+      auto_merge_label_budget: 4,
+    });
+  });
+
+  it("keeps a SAME-field re-edit made while its save is in flight", async () => {
+    const patch = deferred<Response>();
+    let patches = 0;
+    fetchMock.mockImplementation((url: string, init?: RequestInit) => {
+      if (init?.method === "PATCH" && patches++ === 0) return patch.promise;
+      return Promise.resolve(route(url, init, STORED));
+    });
+    render(<MergeOrchestrationSettings />);
+    await screen.findByTestId(`repo-card-${REPO}`);
+    await waitFor(() => expect(input("repo-confidence").value).toBe("0.9"));
+
+    fireEvent.change(input("repo-confidence"), { target: { value: "0.7" } });
+    fireEvent.click(screen.getByTestId(`repo-save-${REPO}`));
+    await waitFor(() =>
+      expect(screen.getByTestId(`repo-save-${REPO}`)).toHaveTextContent(
+        "Saving..."
+      )
+    );
+    // Re-edit the field the in-flight save is carrying.
+    fireEvent.change(input("repo-confidence"), { target: { value: "0.65" } });
+    await act(async () => {
+      patch.resolve(
+        jsonResponse(
+          profileBody({ ...STORED, confidence_threshold_override: 0.7 })
+        )
+      );
+    });
+    await waitFor(() =>
+      expect(screen.getByTestId(`repo-save-${REPO}`)).toHaveTextContent(
+        "Save override"
+      )
+    );
+    expect(input("repo-confidence").value).toBe("0.65");
+    await clickSaveAndSettle();
+    const calls = patchCalls();
+    expect(calls).toHaveLength(2);
+    expect(JSON.parse((calls[1][1] as RequestInit).body as string)).toEqual({
+      confidence_threshold_override: 0.65,
+    });
+  });
+
+  it("ignores a late initial read after a 2xx PATCH with an unusable body", async () => {
+    const get = deferred<Response>();
+    fetchMock.mockImplementation((url: string, init?: RequestInit) => {
+      if (init?.method === "PATCH") {
+        return Promise.resolve(new Response("not json", { status: 200 }));
+      }
+      if (url.includes(`/pr-merge/repos/${REPO}/profile`)) return get.promise;
+      return Promise.resolve(route(url, init, STORED));
+    });
+    render(<MergeOrchestrationSettings />);
+    await screen.findByTestId(`repo-card-${REPO}`);
+
+    fireEvent.change(input("repo-confidence"), { target: { value: "0.6" } });
+    await clickSaveAndSettle();
+    expect(patchCalls()).toHaveLength(1);
+
+    await act(async () => {
+      get.resolve(jsonResponse(profileBody(STORED)));
+    });
+    // The pre-save read must not revert the saved field, nor seed the others.
+    expect(input("repo-confidence").value).toBe("0.6");
+    expect(input("repo-label-budget").value).toBe("");
+    // ...and the card says its fields were not preloaded.
+    expect(
+      screen.getByTestId(`repo-raw-override-unavailable-${REPO}`)
+    ).toBeInTheDocument();
+  });
+
+  it("does not surface a read that FAILS after a save was adopted", async () => {
+    const get = deferred<Response>();
+    const saved: Raw = { ...STORED, confidence_threshold_override: 0.6 };
+    fetchMock.mockImplementation((url: string, init?: RequestInit) => {
+      if (!init?.method && url.includes(`/pr-merge/repos/${REPO}/profile`)) {
+        return get.promise;
+      }
+      return Promise.resolve(route(url, init, STORED, saved));
+    });
+    render(<MergeOrchestrationSettings />);
+    await screen.findByTestId(`repo-card-${REPO}`);
+
+    fireEvent.change(input("repo-confidence"), { target: { value: "0.6" } });
+    await clickSaveAndSettle();
+    expect(input("repo-label-budget").value).toBe("3");
+
+    await act(async () => {
+      get.resolve(new Response("boom", { status: 500 }));
+    });
+    expect(screen.queryByText("HTTP 500")).toBeNull();
+    expect(
+      screen.queryByTestId(`repo-raw-override-load-failed-${REPO}`)
+    ).toBeNull();
+    expect(
+      screen.queryByTestId(`repo-raw-override-unavailable-${REPO}`)
+    ).toBeNull();
+    expect(input("repo-confidence").value).toBe("0.6");
+  });
+
+  it("shows a notice when the profile read fails, and clears it once a save adopts a response", async () => {
+    fetchMock.mockImplementation((url: string, init?: RequestInit) => {
+      if (!init?.method && url.includes(`/pr-merge/repos/${REPO}/profile`)) {
+        return Promise.resolve(new Response("boom", { status: 500 }));
+      }
+      return Promise.resolve(route(url, init, STORED));
+    });
+    render(<MergeOrchestrationSettings />);
+    await screen.findByTestId(`repo-raw-override-load-failed-${REPO}`);
+    expect(input("repo-confidence").value).toBe("");
+
+    fireEvent.change(input("repo-label-budget"), { target: { value: "5" } });
+    await clickSaveAndSettle();
+    expect(patchBody()).toEqual({ auto_merge_label_budget: 5 });
+    // The PATCH echoed the stored overrides: notice gone, fields seeded.
+    expect(
+      screen.queryByTestId(`repo-raw-override-load-failed-${REPO}`)
+    ).toBeNull();
+    expect(screen.queryByText("HTTP 500")).toBeNull();
+    expect(input("repo-confidence").value).toBe("0.9");
+  });
+
+  it("keeps the edits dirty when the PATCH fails", async () => {
+    let patches = 0;
+    fetchMock.mockImplementation((url: string, init?: RequestInit) => {
+      if (init?.method === "PATCH" && patches++ === 0) {
+        return Promise.resolve(new Response("nope", { status: 500 }));
+      }
+      return Promise.resolve(route(url, init, STORED));
+    });
+    render(<MergeOrchestrationSettings />);
+    await screen.findByTestId(`repo-card-${REPO}`);
+    await waitFor(() => expect(input("repo-label-budget").value).toBe("3"));
+
+    fireEvent.change(input("repo-label-budget"), { target: { value: "6" } });
+    await clickSaveAndSettle();
+    expect(screen.getByText("HTTP 500")).toBeInTheDocument();
+    expect(input("repo-label-budget").value).toBe("6");
+
+    // Retry without touching anything: the failed edit is sent again.
+    await clickSaveAndSettle();
+    const calls = patchCalls();
+    expect(calls).toHaveLength(2);
+    expect(JSON.parse((calls[1][1] as RequestInit).body as string)).toEqual({
+      auto_merge_label_budget: 6,
+    });
+  });
+
+  it("clears only the PATCHed fields when the merge-enabled POST then fails", async () => {
+    fetchMock.mockImplementation((url: string, init?: RequestInit) => {
+      if (init?.method === "POST") {
+        return Promise.resolve(new Response("denied", { status: 503 }));
+      }
+      return Promise.resolve(route(url, init, STORED));
+    });
+    render(<MergeOrchestrationSettings />);
+    await screen.findByTestId(`repo-card-${REPO}`);
+    await waitFor(() => expect(input("repo-label-budget").value).toBe("3"));
+
+    fireEvent.change(input("repo-label-budget"), { target: { value: "8" } });
+    fireEvent.change(input("repo-merge-enabled"), {
+      target: { value: "false" },
+    });
+    await clickSaveAndSettle();
+    expect(patchBody()).toEqual({ auto_merge_label_budget: 8 });
+    expect(screen.getByText(/merge-enabled: HTTP 503/)).toBeInTheDocument();
+
+    // Retry: the PATCHed field is no longer dirty, the pin still is.
+    await clickSaveAndSettle();
+    expect(patchCalls()).toHaveLength(1);
+    const posts = fetchMock.mock.calls.filter(
+      (c) => (c[1] as RequestInit | undefined)?.method === "POST"
+    );
+    expect(posts).toHaveLength(2);
+  });
+
+  it("on an older coord, a save still leaves untouched fields out", async () => {
+    await renderPreloaded(undefined);
+    await screen.findByTestId(`repo-raw-override-unavailable-${REPO}`);
+    fireEvent.change(input("repo-label-budget"), { target: { value: "2" } });
+    fireEvent.click(screen.getByTestId(`repo-save-${REPO}`));
+    await waitFor(() => {
+      expect(patchBody()).toEqual({ auto_merge_label_budget: 2 });
+    });
+  });
+
+  it("round-trips escalate paths: seeded, edited, PATCHed as a list", async () => {
+    await renderPreloaded(STORED);
+    await waitFor(() =>
+      expect(input("repo-escalate-paths").value).toBe(
+        "app/**/page.tsx\nmigrations/**"
+      )
+    );
+    fireEvent.change(input("repo-escalate-paths"), {
+      target: { value: "app/**/page.tsx\n\n  infra/** \n" },
+    });
+    fireEvent.click(screen.getByTestId(`repo-save-${REPO}`));
+    await waitFor(() => {
+      expect(patchBody()).toEqual({
+        escalate_paths_extra: ["app/**/page.tsx", "infra/**"],
+      });
+    });
+  });
+
+  it("renders a stored [] for escalate paths as blank, like null", async () => {
+    await renderPreloaded({ ...STORED, escalate_paths_extra: [] });
+    await waitFor(() => expect(input("repo-confidence").value).toBe("0.9"));
+    expect(input("repo-escalate-paths").value).toBe("");
+  });
+
+  it("shows an f64-widened confidence as its f32 value", async () => {
+    await renderPreloaded({
+      ...STORED,
+      confidence_threshold_override: 0.8999999761581726,
+    });
+    await waitFor(() => expect(input("repo-confidence").value).toBe("0.9"));
+  });
+
+  it("shows the unavailable line and blank inputs when coord omits raw_override", async () => {
+    await renderPreloaded(undefined);
+    await screen.findByTestId(`repo-raw-override-unavailable-${REPO}`);
+    expect(input("repo-confidence").value).toBe("");
+    expect(input("repo-label-budget").value).toBe("");
+    expect(input("repo-escalate-paths").value).toBe("");
+    expect(input("repo-auto-fix-red-main").value).toBe("inherit");
   });
 });
 
