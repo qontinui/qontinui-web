@@ -29,6 +29,21 @@ interface UseCiStatusStreamResult {
   /** Last fetch / WS error message, or null. Informational only —
    *  the hook keeps trying. */
   error: string | null;
+  /**
+   * True once a REST seed has SUCCEEDED at least once.
+   *
+   * `byRepo` starts as an empty Map, so without this a consumer cannot tell
+   * "this tenant has no repos registered" from "the seed has not come back
+   * yet" — and the empty-state copy asserts the first while the second is
+   * true. That is the absence-is-not-zero rule the console applies everywhere
+   * else (the pipeline health strip omits its `gate holds N` badge entirely
+   * rather than render `0` on an unfetched count).
+   *
+   * It stays true after a later failed refetch: the rows on screen are still
+   * the last good answer, and flipping back to "seeding" would relabel real
+   * data as unknown. `error` is the channel for "the last read failed".
+   */
+  seeded: boolean;
   /** Force a REST refetch. */
   refetch: () => Promise<void>;
 }
@@ -53,6 +68,7 @@ interface UseCiStatusStreamResult {
 export function useCiStatusStream(): UseCiStatusStreamResult {
   const [byRepo, setByRepo] = useState<Map<string, RepoCiRow>>(() => new Map());
   const [connected, setConnected] = useState(false);
+  const [seeded, setSeeded] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const wsRef = useRef<WebSocket | null>(null);
@@ -82,6 +98,7 @@ export function useCiStatusStream(): UseCiStatusStreamResult {
         seeded.set(row.repo, row);
       }
       setByRepo(seeded);
+      setSeeded(true);
       setError(null);
     } catch (err) {
       if (cleanedUpRef.current) return;
@@ -251,6 +268,7 @@ export function useCiStatusStream(): UseCiStatusStreamResult {
   return {
     byRepo,
     connected,
+    seeded,
     error,
     refetch: seedFromRest,
   };
