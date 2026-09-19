@@ -1074,11 +1074,37 @@ interface TenantMemberAddResponse {
   status?: string;
   operator_id?: string;
   role?: string;
+  /**
+   * `added` only — what happened to the "you have been given access" email.
+   * `sent`, `not_sent`, or `not_needed` (they already had access to this
+   * team, so nothing was sent and nothing needed to be). Absent on a backend
+   * that predates the notice, which is a further state (UNKNOWN) rather than
+   * a failure: the copy then says nothing about email rather than claiming
+   * any outcome.
+   */
+  notice?: string;
+}
+
+/** What happened to the notice. `null` = this backend did not say. */
+type AddMemberNotice = "sent" | "not_sent" | "not_needed" | null;
+
+/**
+ * Narrow the body's `notice` to the arms this build renders.
+ *
+ * A body-controlled string, so anything else — a future arm, a truncated
+ * value, 50 KB of HTML — lands on `null` and renders as silence. Claiming
+ * "we emailed them" from a value we do not recognise is the same overclaim
+ * the whole notice exists to stop.
+ */
+function readNotice(value: unknown): AddMemberNotice {
+  return value === "sent" || value === "not_sent" || value === "not_needed"
+    ? value
+    : null;
 }
 
 /** What the last submit produced, rendered inline beneath the form. */
 type AddMemberOutcome =
-  | { kind: "added"; email: string; role: CoordRole }
+  | { kind: "added"; email: string; role: CoordRole; notice: AddMemberNotice }
   | { kind: "invited"; email: string; role: CoordRole }
   | { kind: "invitation_pending"; email: string; role: CoordRole }
   | { kind: "invite_required"; email: string }
@@ -1182,7 +1208,12 @@ function AddTenantMemberForm({ onAdded }: { onAdded: () => void }) {
       }
       const json = (await res.json()) as TenantMemberAddResponse;
       if (json?.status === "added") {
-        setOutcome({ kind: "added", email: addr, role });
+        const notice = readNotice(json?.notice);
+        setOutcome({ kind: "added", email: addr, role, notice });
+        // The toast is still a success — the grant worked, which is what the
+        // administrator came here to do. `not_sent` is an ACTION for them
+        // (tell the colleague themselves), and it is spelled out in the
+        // outcome panel below, which does not vanish after four seconds.
         toast.success(`Granted ${tierLabel(role)} access to ${addr}`);
         setEmail("");
         onAdded();
@@ -1290,6 +1321,39 @@ function AddTenantMemberForm({ onAdded }: { onAdded: () => void }) {
                 <ShieldCheck className="h-4 w-4 shrink-0" />
                 Granted {tierLabel(outcome.role)} access to {outcome.email}.
               </p>
+              {/*
+                Whether they were TOLD. The grant is already stated above and
+                is true in every branch here, so this sentence only ever adds
+                "and here is what to do next" — never a retraction. A `null`
+                notice (a backend that predates the field) renders nothing at
+                all: silence is the honest rendering of "we do not know", and
+                inventing either answer is what this whole notice exists to
+                stop.
+              */}
+              {outcome.notice === "sent" ? (
+                <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                  <Mail className="h-3.5 w-3.5 shrink-0" />
+                  We emailed them to say they now have access.
+                </p>
+              ) : outcome.notice === "not_sent" ? (
+                <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                  <Mail className="h-3.5 w-3.5 shrink-0" />
+                  We could not email them, so let them know yourself — their
+                  access is granted and works now.
+                </p>
+              ) : outcome.notice === "not_needed" ? (
+                /*
+                  They already had access to this team, so the grant changed
+                  nothing and no email went out. Saying so matters: without
+                  it an administrator re-adding a colleague would read the
+                  same "Granted …" line as a first-time add and reasonably
+                  assume the person had just been told.
+                */
+                <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                  <Mail className="h-3.5 w-3.5 shrink-0" />
+                  They already had access, so we did not email them again.
+                </p>
+              ) : null}
               <p className="text-xs text-muted-foreground">
                 The list below is by home tenant, so someone whose home tenant
                 is a different one may not appear in it. Their access is granted
