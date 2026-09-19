@@ -167,6 +167,17 @@ export interface PrRow {
    * evidence" — never as fresh, and never as stale.
    */
   last_activity_secs?: number | null;
+  /**
+   * RFC3339 time the PR was OPENED on GitHub — the "time submitted" a PR list
+   * is ordered by. GitHub's own `created_at`, not the time coord first saw the
+   * PR, and unlike `last_refreshed_at` it never moves.
+   *
+   * Optional: absent on coord deploys predating the projection, and absent on
+   * any PR with no `ingest` event carrying it (webhooks predating the payload
+   * key, or never received). Consumers MUST treat absence as "unknown" — never
+   * as "just opened", which would rank a decades-old PR first.
+   */
+  opened_at?: string | null;
   // ---- Recently-merged enrichment ------------------------------------------
   // Present only on the rows coord appends for `?include_merged=<hours>`
   // (`query_recently_merged_prs`). Every field is optional: a coord deploy

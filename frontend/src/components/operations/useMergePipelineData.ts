@@ -114,7 +114,7 @@ const MIN_BATCH_SPACING_MS = 3_000;
 export const MERGED_LOOKBACK_HOURS = 48;
 /**
  * Cadence for the recently-merged rows — deliberately ~30x slower than the hot
- * poll, and only ticking while the Merged tab is open.
+ * poll, and only ticking while the Merged or All PRs tab is open.
  *
  * `?include_merged=` makes coord run `query_recently_merged_prs`, which
  * resolves a deploy surface per repo (a git-ancestry probe per merged PR) on
@@ -126,6 +126,13 @@ export const MERGED_LOOKBACK_HOURS = 48;
  * is cold data; poll it like cold data.
  */
 const MERGED_POLL_INTERVAL_MS = 60_000;
+/**
+ * A merged read is skipped when the last one finished less than this long ago,
+ * whoever asked (the timer, a tab re-shown, `includeMerged` flipping back on).
+ * Half the poll interval: fresh enough that a re-show shows current data, long
+ * enough that a burst of events cannot start a burst of 14-21s reads.
+ */
+const MERGED_MIN_AGE_MS = MERGED_POLL_INTERVAL_MS / 2;
 const REFETCH_DEBOUNCE_MS = 250;
 const MAX_RECONNECT_ATTEMPTS = 5;
 
@@ -133,8 +140,8 @@ const MAX_RECONNECT_ATTEMPTS = 5;
 export interface MergePipelineOptions {
   /**
    * Fetch recently-merged rows. False (default) keeps the hot poll on the
-   * cheap open-PR query; the caller sets it only while the Merged tab is the
-   * visible one.
+   * cheap open-PR query; the caller sets it only while a tab that shows landed
+   * PRs (Merged, All PRs) is the visible one.
    */
   includeMerged?: boolean;
 }
@@ -146,10 +153,24 @@ export interface MergePipelineData {
   /**
    * Recently-merged rows for the Merged tab. `null` until the first merged
    * fetch resolves, and it only ever runs while the caller passes
-   * `includeMerged` — so this stays null for the whole session on the other
-   * tabs, which is exactly the point.
+   * `includeMerged` — so this stays null for the whole session on the tabs
+   * that show no landed PRs, which is exactly the point.
    */
   mergedPrs: PrRow[] | null;
+  /**
+   * Why the LAST merged-rows read failed, or null when it has not failed since
+   * it last succeeded. Non-null means the merged history is not current, and
+   * which way depends on `mergedPrs`:
+   *
+   * - `mergedPrs === null` (never loaded): the history is INCOMPLETE, not
+   *   empty. The only landed rows a consumer holds are the open list's
+   *   `landed-open` ones, which carry no merge time.
+   * - `mergedPrs` non-null: the last GOOD read is kept, so those rows have
+   *   merge times and include PRs that already closed — but they are STALE.
+   *
+   * A consumer must say which, rather than render either as current history.
+   */
+  mergedError: string | null;
   /**
    * How many PRs landed in the {@link MERGED_LOOKBACK_HOURS} window, per
    * coord's cheap count — available WITHOUT the expensive merged-rows read, so
@@ -204,6 +225,7 @@ export function useMergePipelineData(
   const [proposals, setProposals] = useState<ProposalDetail[] | null>(null);
   const [prs, setPrs] = useState<PrRow[] | null>(null);
   const [mergedPrs, setMergedPrs] = useState<PrRow[] | null>(null);
+  const [mergedError, setMergedError] = useState<string | null>(null);
   const [mergedCount, setMergedCount] = useState<number | null>(null);
   const [economicsByRepo, setEconomicsByRepo] = useState<
     Record<string, MergeEconomics>
@@ -226,6 +248,11 @@ export function useMergePipelineData(
   const cleanedUpRef = useRef(false);
   /** A batch is in flight — new triggers coalesce into `rerunRef`. */
   const inFlightRef = useRef(false);
+  // The merged read runs on its own slower chain. Separate from `inFlightRef`:
+  // sharing one flag would let a 20s merged read swallow the hot poll. Owned
+  // here rather than by an effect run — see `readMergedIfStale`.
+  const mergedReadRef = useRef<Promise<void> | null>(null);
+  const mergedDoneAtRef = useRef(0);
   /** A trigger arrived mid-batch; run exactly one more batch after it. */
   const rerunRef = useRef(false);
   /** Latest `fetchAll`, so timers/listeners need not re-bind on each change. */
@@ -311,16 +338,26 @@ export function useMergePipelineData(
   }, []);
 
   // Recently-merged rows. Fetched ONLY while the caller asks for them (the
-  // Merged tab is open) and on a slow cadence — see MERGED_POLL_INTERVAL_MS
+  // Merged or All PRs tab is open) and on a slow cadence — see
+  // MERGED_POLL_INTERVAL_MS
   // for why this must never ride the hot poll.
   const fetchMergedPrs = useCallback(async () => {
     try {
       const res = await httpClient.fetch(
-        `${OPERATIONS_API}/pr-merge/prs?include_merged=${MERGED_LOOKBACK_HOURS}`
+        `${OPERATIONS_API}/pr-merge/prs?include_merged=${MERGED_LOOKBACK_HOURS}`,
+        // No client retry. The client retries every 5xx up to 3 times, and each
+        // attempt is a full coord query that holds a backend DB connection for
+        // its whole (14-21s) life: a coord that is already struggling would be
+        // asked the same expensive question four times per poll. The next poll
+        // IS the retry, on the cold cadence this read is meant to have.
+        { maxRetries: 0 }
       );
       if (!res.ok) {
         if (res.status === 404) {
-          if (!cleanedUpRef.current) setMergedPrs([]);
+          if (!cleanedUpRef.current) {
+            setMergedPrs([]);
+            setMergedError(null);
+          }
           return;
         }
         throw new Error(`HTTP ${res.status}`);
@@ -345,10 +382,19 @@ export function useMergePipelineData(
       // MergePipeline) — dropping rows is not.
       if (!cleanedUpRef.current) {
         setMergedPrs(list.filter(isMergedPr));
+        setMergedError(null);
       }
     } catch (err) {
+      // Keep whatever is held, INCLUDING null. Coercing null to [] here made a
+      // failed first read look like "nothing landed": the Merged label fell
+      // from coord's cheap count to 0. Null keeps that label honest, and it
+      // matters more now the read also runs on the default All PRs tab.
       log.warn("fetchMergedPrs failed — keeping last known merged rows", err);
-      if (!cleanedUpRef.current) setMergedPrs((prev) => prev ?? []);
+      // Kept rows are STALE and a never-loaded set is INCOMPLETE; either way
+      // the consumer needs to be told, not left to infer it from an absence.
+      if (!cleanedUpRef.current) {
+        setMergedError(err instanceof Error ? err.message : String(err));
+      }
     }
   }, []);
 
@@ -755,19 +801,92 @@ export function useMergePipelineData(
   // Merged rows ride their OWN slow timer, and only while the caller wants
   // them. Deliberately not folded into `fetchAll`: that is the 2s loop, and
   // the merged query is the expensive one (see MERGED_POLL_INTERVAL_MS).
-  // Leaving the Merged tab clears the timer; the last rows stay in state so
-  // returning to the tab renders instantly while the refetch runs.
+  // Leaving the Merged/All PRs tabs clears the timer; the last rows stay in
+  // state so returning to the tab renders instantly while the refetch runs.
+  //
+  // The same three load rules as the main batch (see the header): single-flight,
+  // a gap measured from COMPLETION, and no polling from a hidden tab. This read
+  // holds a backend DB connection for 14-21s, so it is the one that most needs
+  // them — it used to run on a bare `setInterval`, which stacks requests when
+  // coord slows down, and polled from tabs nobody was looking at.
+  // The in-flight read and the time of the last completed one are owned by the
+  // HOOK, not by any one effect run. Owning them per effect run is what let
+  // single-flight break: the effect re-runs when `includeMerged` flips (a tab
+  // click away from All PRs and back) and under StrictMode, and each run's own
+  // "I am not in flight" state started a second 14-21s read while the first was
+  // still pinning its DB connection. A new run now ADOPTS the read that is
+  // already out.
+  //
+  // The minimum age is the rate floor. Single-flight caps concurrency, not
+  // rate: without it, re-showing the tab or flipping tabs every few seconds
+  // starts one read per event. Completion time is recorded on FAILURE too, so a
+  // struggling coord is not re-asked on every reveal.
+  //
+  // KNOWN LIMIT: this is per hook INSTANCE. Leaving the page mid-read and coming
+  // back inside the read's 14-21s mounts a new instance with fresh refs, which
+  // starts its own read while the first still holds its connection. Sharing the
+  // read across mounts needs a module-level store with subscribers (the adopted
+  // read would otherwise publish into an unmounted instance's state), which is a
+  // larger change than this one.
+  const readMergedIfStale = useCallback((): Promise<void> => {
+    if (mergedReadRef.current) return mergedReadRef.current;
+    // A NEGATIVE age (the wall clock stepped backwards: resume from sleep, NTP)
+    // is stale, not fresh — otherwise reads stay suppressed until the clock
+    // catches up to where it was.
+    const age = Date.now() - mergedDoneAtRef.current;
+    if (age >= 0 && age < MERGED_MIN_AGE_MS) return Promise.resolve();
+    // Only one read is ever out, and only this promise sets the ref, so its
+    // own completion is the only thing that clears it.
+    const read: Promise<void> = fetchMergedPrs().finally(() => {
+      mergedReadRef.current = null;
+      mergedDoneAtRef.current = Date.now();
+    });
+    mergedReadRef.current = read;
+    return read;
+  }, [fetchMergedPrs]);
+
   useEffect(() => {
     if (!includeMerged) return;
-    fetchMergedPrs();
-    const id = setInterval(fetchMergedPrs, MERGED_POLL_INTERVAL_MS);
-    return () => clearInterval(id);
-  }, [includeMerged, fetchMergedPrs]);
+    let stopped = false;
+    // This run's chain is awaiting a read. A second entrance (the reveal
+    // handler) must not start a second chain: two chains reschedule twice.
+    let running = false;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const tick = async () => {
+      running = true;
+      try {
+        if (!stopped && !document.hidden) await readMergedIfStale();
+      } finally {
+        running = false;
+        // Re-armed in the `finally`: a throw from the read must not end polling
+        // for the life of the page (the main chain's own comment says the same).
+        if (!stopped) {
+          timer = setTimeout(() => void tick(), MERGED_POLL_INTERVAL_MS);
+        }
+      }
+    };
+    void tick();
+    // A tab that was hidden skipped its ticks; refresh the moment it is seen
+    // (subject to the minimum age), rather than showing rows up to a poll old
+    // for a full extra interval.
+    const onVisibility = () => {
+      if (document.hidden || stopped || running) return;
+      if (timer) clearTimeout(timer);
+      void tick();
+    };
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => {
+      stopped = true;
+      if (timer) clearTimeout(timer);
+      document.removeEventListener("visibilitychange", onVisibility);
+    };
+  }, [includeMerged, readMergedIfStale]);
 
   return {
     proposals,
     prs,
     mergedPrs,
+    mergedError,
     mergedCount,
     economicsByRepo,
     suggestions,
