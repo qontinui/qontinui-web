@@ -33,8 +33,29 @@ function ProseSkeleton() {
 
 export default function OverviewSummaryPage() {
   const { isCoordAdmin } = useAuth();
-  const { activeTenantId, loading: tenantsLoading } = useTenant();
-  const { intent, progress } = useSummaryData(activeTenantId, tenantsLoading);
+  const {
+    activeTenantId,
+    loading: tenantsLoading,
+    error: tenantsError,
+  } = useTenant();
+  const { intent, progress } = useSummaryData(
+    activeTenantId,
+    tenantsLoading || tenantsError !== null
+  );
+
+  // Without the project list the page cannot say whose figures it would be
+  // showing, so it shows none rather than an unnamed project's.
+  if (tenantsError) {
+    return (
+      <div className="max-w-[42rem]" data-ui-bridge-id="overview.summary">
+        <LoadFailure
+          what="the list of projects"
+          message={tenantsError}
+          uiBridgeId="overview.summary.tenants.error"
+        />
+      </div>
+    );
+  }
 
   return (
     <div
@@ -76,6 +97,12 @@ export default function OverviewSummaryPage() {
                   It may well exist; the service that stores it isn&rsquo;t
                   ready yet. Try again later.
                 </p>
+                <details className="mt-2 text-xs text-muted-foreground">
+                  <summary className="inline-block cursor-pointer select-none rounded-sm py-1.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+                    Technical details
+                  </summary>
+                  <p className="mt-1 break-all font-mono">{intent.degraded}</p>
+                </details>
               </div>
             ) : (
               SUMMARY_INTENT_KINDS.map((kind) => (

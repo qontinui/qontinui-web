@@ -25,6 +25,9 @@ export function isLocalImageSrc(src: string | undefined): boolean {
 const components: Components = {
   img: ({ src, alt }) => {
     const href = typeof src === "string" ? src : undefined;
+    // react-markdown's URL filter has already emptied unsafe sources
+    // (`javascript:`, `data:`), so there may be nothing safe to link to.
+    if (!href) return <span>{alt ? `[Image: ${alt}]` : "[Image]"}</span>;
     if (isLocalImageSrc(href)) {
       // eslint-disable-next-line @next/next/no-img-element -- markdown content, sizes unknown
       return <img src={href} alt={alt ?? ""} />;

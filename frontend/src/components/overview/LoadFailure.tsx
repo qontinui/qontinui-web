@@ -22,16 +22,23 @@ export function LoadFailure({
   what,
   message,
   uiBridgeId,
+  announce = true,
 }: {
   /** What could not be loaded, e.g. "the project's description". */
   what: string;
   /** The raw error message. */
   message: string;
   uiBridgeId?: string;
+  /**
+   * Interrupt a screen reader (`role="alert"`). Page-level failures do;
+   * per-section ones pass false so several failures are not announced one
+   * after another.
+   */
+  announce?: boolean;
 }) {
   return (
     <div
-      role="alert"
+      role={announce ? "alert" : "status"}
       className="border-l-2 border-destructive pl-4"
       data-ui-bridge-id={uiBridgeId}
     >
