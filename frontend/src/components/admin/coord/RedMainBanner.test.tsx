@@ -60,7 +60,7 @@ describe("parseRedMainAlerts", () => {
         since: "2026-07-06T01:00:00Z",
         fixSession: { kind: "none" },
         // No `claimed` / `claim` on the row: an older coord.
-        claim: { kind: "unknown" },
+        claim: { kind: "unknown", cause: "not-reported" },
       },
     ]);
   });
@@ -109,7 +109,7 @@ describe("parseRedMainAlerts", () => {
       // Missing / malformed remediation state degrades to "none", and a row
       // with no claim fields has an UNKNOWN claim.
       expect(a.fixSession).toEqual({ kind: "none" });
-      expect(a.claim).toEqual({ kind: "unknown" });
+      expect(a.claim).toEqual({ kind: "unknown", cause: "not-reported" });
     }
   });
 
@@ -163,21 +163,16 @@ describe("parseFixSession", () => {
 });
 
 describe("parseAlertClaim", () => {
-  const now = Date.parse("2026-09-18T12:00:00Z");
-
   it("reads coord's claimed verdict and names the claimant", () => {
     expect(
-      parseAlertClaim(
-        {
-          claimed: true,
-          claim: {
-            claimed_by: "agent:11111111-2222-3333-4444-555555555555",
-            claimed_at: "2026-09-18T11:00:00Z",
-            claim_expires_at: "2026-09-18T13:00:00Z",
-          },
+      parseAlertClaim({
+        claimed: true,
+        claim: {
+          claimed_by: "agent:11111111-2222-3333-4444-555555555555",
+          claimed_at: "2026-09-18T11:00:00Z",
+          claim_expires_at: "2026-09-18T13:00:00Z",
         },
-        now
-      )
+      })
     ).toEqual<AlertClaimState>({
       kind: "claimed",
       claimedBy: "agent:11111111-2222-3333-4444-555555555555",
@@ -187,19 +182,38 @@ describe("parseAlertClaim", () => {
   });
 
   it("is unclaimed when coord says so", () => {
-    expect(parseAlertClaim({ claimed: false, claim: null }, now)).toEqual({
+    expect(parseAlertClaim({ claimed: false, claim: null })).toEqual({
       kind: "unclaimed",
     });
   });
 
-  it("is UNKNOWN, not unclaimed, when coord sends neither field", () => {
+  it("is UNKNOWN, not unclaimed, when coord could not read the lease", () => {
+    // `fleet_health.rs` `alert_row_claim`: lease columns unreadable, or a
+    // row's claim undecodable, renders `claimed: null, claim: null`.
+    expect(parseAlertClaim({ claimed: null, claim: null })).toEqual({
+      kind: "unknown",
+      cause: "unreadable",
+    });
+  });
+
+  it("is UNKNOWN for every row when the body says claims_scrape_up: false", () => {
+    expect(
+      parseAlertClaim({ claimed: false, claim: null }, false)
+    ).toEqual({ kind: "unknown", cause: "unreadable" });
+    expect(parseAlertClaim({ claimed: true }, false).kind).toBe("unknown");
+  });
+
+  it("is UNKNOWN, not unclaimed, when coord sends no claim fields", () => {
     // An older coord build. Absent claim fields say nothing about who is
     // working on it.
-    expect(parseAlertClaim({}, now)).toEqual({ kind: "unknown" });
+    expect(parseAlertClaim({})).toEqual({
+      kind: "unknown",
+      cause: "not-reported",
+    });
   });
 
   it("trusts coord's verdict over a lease it did not name", () => {
-    expect(parseAlertClaim({ claimed: true }, now)).toEqual({
+    expect(parseAlertClaim({ claimed: true })).toEqual({
       kind: "claimed",
       claimedBy: undefined,
       claimedAt: undefined,
@@ -207,30 +221,12 @@ describe("parseAlertClaim", () => {
     });
   });
 
-  it("reads a lease directly when coord gave no verdict, honouring expiry", () => {
+  it("never infers a verdict from a lease object alone", () => {
     expect(
-      parseAlertClaim(
-        {
-          claim: {
-            claimed_by: "session:abc",
-            claim_expires_at: "2026-09-18T11:59:00Z",
-          },
-        },
-        now
-      )
-    ).toEqual({ kind: "unclaimed" });
-    expect(
-      parseAlertClaim(
-        {
-          claim: {
-            claimed_by: "session:abc",
-            claim_expires_at: "2026-09-18T12:30:00Z",
-          },
-        },
-        now
-      ).kind
-    ).toBe("claimed");
-    expect(parseAlertClaim({ claim: null }, now)).toEqual({ kind: "unclaimed" });
+      parseAlertClaim({
+        claim: { claimed_by: "session:abc", claim_expires_at: "2099-01-01T00:00:00Z" },
+      }).kind
+    ).toBe("unknown");
   });
 });
 
@@ -279,7 +275,7 @@ describe("redMainHeadline", () => {
         blockedPrCount: 8,
         since: "2026-07-06T09:00:00Z",
         fixSession: { kind: "none" },
-        claim: { kind: "unknown" },
+        claim: { kind: "unknown", cause: "not-reported" },
       },
       now
     );
@@ -298,7 +294,7 @@ describe("redMainHeadline", () => {
         blockedPrCount: 1,
         since: undefined,
         fixSession: { kind: "none" },
-        claim: { kind: "unknown" },
+        claim: { kind: "unknown", cause: "not-reported" },
       },
       now
     );
@@ -381,14 +377,42 @@ describe("<RedMainBanner> claim and remediation", () => {
     expect(chip.textContent).toBe("no agent has claimed it");
   });
 
+  it("renders coord's unreadable claim (claimed: null) as unknown, and says why", async () => {
+    getMock.mockResolvedValue({
+      alerts: [alertRow({ claimed: null, claim: null })],
+      claims_scrape_up: true,
+    });
+    render(<RedMainBanner />);
+
+    const chip = await screen.findByTestId("red-main-claim");
+    expect(chip).toHaveAttribute("data-claim-state", "unknown");
+    expect(chip).toHaveAttribute("data-claim-unknown-cause", "unreadable");
+    expect(chip.textContent).toBe("claim unknown");
+    expect(chip.getAttribute("title")).toContain("could not read");
+  });
+
+  it("renders every claim unknown when the body says claims_scrape_up: false", async () => {
+    getMock.mockResolvedValue({
+      alerts: [alertRow({ claimed: false, claim: null })],
+      claims_scrape_up: false,
+    });
+    render(<RedMainBanner />);
+
+    const chip = await screen.findByTestId("red-main-claim");
+    expect(chip).toHaveAttribute("data-claim-state", "unknown");
+    expect(chip.textContent).not.toContain("no agent");
+  });
+
   it("renders an older coord's missing claim fields as unknown, not unclaimed", async () => {
     getMock.mockResolvedValue([alertRow()]);
     render(<RedMainBanner />);
 
     const chip = await screen.findByTestId("red-main-claim");
     expect(chip).toHaveAttribute("data-claim-state", "unknown");
+    expect(chip).toHaveAttribute("data-claim-unknown-cause", "not-reported");
     expect(chip.textContent).toBe("claim unknown");
     expect(chip.textContent).not.toContain("no agent");
+    expect(chip.getAttribute("title")).toContain("does not report alert claims");
   });
 
   it("shows coord's own active remediation, read only", async () => {
