@@ -185,10 +185,11 @@ interface RepoProfileResponse {
   /**
    * The RAW per-repo override columns, beside the resolved `profile`. Each
    * field is the stored column: a value = overridden here, `null` = column
-   * NULL = inheriting. OPTIONAL because a coord build predating plan
-   * 2026-07-22-merge-settings-repo-override-preload omits it; the card then
-   * falls back to write-only editing and says so. The admin PATCH response
-   * carries the same shape.
+   * NULL = inheriting. coord serves it starting with the paired qontinui-coord
+   * change (plan 2026-07-22-merge-settings-repo-override-preload, Phase 1);
+   * until that change is deployed the field is ABSENT, so it is OPTIONAL and
+   * the card falls back to write-only editing with a notice. Where served, the
+   * admin PATCH response carries the same shape.
    */
   raw_override?: RawRepoOverride;
 }
@@ -221,6 +222,9 @@ function overrideFieldsFrom(raw: RawRepoOverride): RepoOverrideFields {
       raw.auto_merge_label_budget === null
         ? ""
         : String(raw.auto_merge_label_budget),
+    // A stored `[]` renders blank, the same as `null`: both mean "no extra
+    // paths" (the list is UNIONed with the tenant's), so a blank save that
+    // clears `[]` to `null` does not change behaviour.
     escalate_paths_extra: (raw.escalate_paths_extra ?? []).join("\n"),
     auto_fix_red_main: pinChoice(raw.auto_fix_red_main),
   };
@@ -747,9 +751,10 @@ function RepoOverrideCard({
   const storedPin: PinChoice = pinChoice(repoRow.merge_enabled_override);
   const resolvedMergeEnabled = repoRow.merge_enabled;
 
-  // Local edit state, PRELOADED from what coord stores. coord serves the raw
-  // per-repo override columns (`raw_override`) beside the resolved profile, so
-  // each field below is seeded with the stored value — `null` (inheriting)
+  // Local edit state, PRELOADED from what coord stores — where coord serves
+  // the raw per-repo override columns (`raw_override`) beside the resolved
+  // profile, which starts with the paired qontinui-coord change (plan
+  // 2026-07-22-merge-settings-repo-override-preload, Phase 1). Each field below is seeded with the stored value — `null` (inheriting)
   // renders as blank / "inherit" — as soon as the profile read lands, and
   // re-seeded from the PATCH response after a save so the card shows what is
   // stored post-save rather than going stale (the profile GET runs once per
@@ -761,9 +766,9 @@ function RepoOverrideCard({
   // reset — there is deliberately no separate "reset" button. An omitted field
   // is left unchanged (PatchField absent).
   //
-  // An older coord build omits `raw_override`; there the card stays
-  // write-only (blank means "leave unchanged") and says so. Plan
-  // 2026-07-22-merge-settings-repo-override-preload.
+  // Until that coord change is deployed `raw_override` is absent, and so it is
+  // if the profile read fails: the card then stays write-only (an untouched
+  // field is left unchanged) and says so in a muted notice.
   //
   // Merge enablement is separate: coord serves `merge_enabled_override` (the
   // raw pin) beside `profile.merge_enabled`, and that control reads the pin
@@ -960,6 +965,10 @@ function RepoOverrideCard({
         if (!res.ok) {
           throw new Error(`HTTP ${res.status}`);
         }
+        // The write landed, so the initial profile read — if it has not
+        // arrived yet — now carries PRE-save values. Ignore it from here on,
+        // whatever this response's body turns out to be.
+        adoptedSaveResponseRef.current = true;
         // The PATCH response has the profile read's shape. Adopt it so the
         // card shows what coord now STORES, and re-seed every field (the
         // save consumed the operator's edits). A body that does not parse,
@@ -969,8 +978,8 @@ function RepoOverrideCard({
           .json()
           .catch(() => null)) as RepoProfileResponse | null;
         if (saved && typeof saved === "object" && saved.profile) {
-          adoptedSaveResponseRef.current = true;
           setRepoProfile(saved);
+          setLoadError(null);
           if (saved.raw_override) {
             // Keep only fields edited outside this save; everything it sent
             // is replaced by what coord now stores.
@@ -1082,12 +1091,24 @@ function RepoOverrideCard({
             {loadError}
           </p>
         )}
+        {loadError && !repoProfile && (
+          <p
+            className="text-xs text-muted-foreground"
+            data-testid={`repo-raw-override-load-failed-${repoRow.repo}`}
+          >
+            The current per-repo overrides could not be read, so they are not
+            shown here. A field you leave untouched is left unchanged; a field
+            you type into and then clear resets that override to inherit.
+          </p>
+        )}
         {repoProfile && (
-          // Merge posture deliberately NOT repeated here. This read is issued
-          // once per mount (dep array `[repoRow.repo]`), so a posture rendered
-          // from it would freeze at its pre-save value and then contradict the
-          // badge above — two answers on one card, which is the bug this
-          // change exists to kill. The badge is the single place it is stated.
+          // Merge posture deliberately NOT repeated here. `repoProfile` comes
+          // from a read issued once per mount and is refreshed only by a
+          // profile PATCH — never by the merge-enabled POST — so a posture
+          // rendered from it would lag a pin change and contradict the badge
+          // above, which reads the repo-list row the parent re-fetches after
+          // every save. Two answers on one card is the bug this change exists
+          // to kill; the badge is the single place it is stated.
           <p className="text-xs text-muted-foreground">
             Effective: dwell={repoProfile.profile.min_green_dwell}s
           </p>

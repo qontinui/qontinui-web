@@ -1281,6 +1281,106 @@ describe("<MergeOrchestrationSettings> RepoOverrideCard preload", () => {
     });
   });
 
+  it("ignores a late initial read after a 2xx PATCH with an unusable body", async () => {
+    const get = deferred<Response>();
+    fetchMock.mockImplementation((url: string, init?: RequestInit) => {
+      if (init?.method === "PATCH") {
+        return Promise.resolve(new Response("not json", { status: 200 }));
+      }
+      if (url.includes(`/pr-merge/repos/${REPO}/profile`)) return get.promise;
+      return Promise.resolve(route(url, init, STORED));
+    });
+    render(<MergeOrchestrationSettings />);
+    await screen.findByTestId(`repo-card-${REPO}`);
+
+    fireEvent.change(input("repo-confidence"), { target: { value: "0.6" } });
+    await clickSaveAndSettle();
+    expect(patchCalls()).toHaveLength(1);
+
+    await act(async () => {
+      get.resolve(jsonResponse(profileBody(STORED)));
+    });
+    // The pre-save read must not revert the saved field, nor seed the others.
+    expect(input("repo-confidence").value).toBe("0.6");
+    expect(input("repo-label-budget").value).toBe("");
+  });
+
+  it("shows a notice when the profile read fails, and clears it once a save adopts a response", async () => {
+    fetchMock.mockImplementation((url: string, init?: RequestInit) => {
+      if (!init?.method && url.includes(`/pr-merge/repos/${REPO}/profile`)) {
+        return Promise.resolve(new Response("boom", { status: 500 }));
+      }
+      return Promise.resolve(route(url, init, STORED));
+    });
+    render(<MergeOrchestrationSettings />);
+    await screen.findByTestId(`repo-raw-override-load-failed-${REPO}`);
+    expect(input("repo-confidence").value).toBe("");
+
+    fireEvent.change(input("repo-label-budget"), { target: { value: "5" } });
+    await clickSaveAndSettle();
+    expect(patchBody()).toEqual({ auto_merge_label_budget: 5 });
+    // The PATCH echoed the stored overrides: notice gone, fields seeded.
+    expect(
+      screen.queryByTestId(`repo-raw-override-load-failed-${REPO}`)
+    ).toBeNull();
+    expect(screen.queryByText("HTTP 500")).toBeNull();
+    expect(input("repo-confidence").value).toBe("0.9");
+  });
+
+  it("keeps the edits dirty when the PATCH fails", async () => {
+    let patches = 0;
+    fetchMock.mockImplementation((url: string, init?: RequestInit) => {
+      if (init?.method === "PATCH" && patches++ === 0) {
+        return Promise.resolve(new Response("nope", { status: 500 }));
+      }
+      return Promise.resolve(route(url, init, STORED));
+    });
+    render(<MergeOrchestrationSettings />);
+    await screen.findByTestId(`repo-card-${REPO}`);
+    await waitFor(() => expect(input("repo-label-budget").value).toBe("3"));
+
+    fireEvent.change(input("repo-label-budget"), { target: { value: "6" } });
+    await clickSaveAndSettle();
+    expect(screen.getByText("HTTP 500")).toBeInTheDocument();
+    expect(input("repo-label-budget").value).toBe("6");
+
+    // Retry without touching anything: the failed edit is sent again.
+    await clickSaveAndSettle();
+    const calls = patchCalls();
+    expect(calls).toHaveLength(2);
+    expect(JSON.parse((calls[1][1] as RequestInit).body as string)).toEqual({
+      auto_merge_label_budget: 6,
+    });
+  });
+
+  it("clears only the PATCHed fields when the merge-enabled POST then fails", async () => {
+    fetchMock.mockImplementation((url: string, init?: RequestInit) => {
+      if (init?.method === "POST") {
+        return Promise.resolve(new Response("denied", { status: 503 }));
+      }
+      return Promise.resolve(route(url, init, STORED));
+    });
+    render(<MergeOrchestrationSettings />);
+    await screen.findByTestId(`repo-card-${REPO}`);
+    await waitFor(() => expect(input("repo-label-budget").value).toBe("3"));
+
+    fireEvent.change(input("repo-label-budget"), { target: { value: "8" } });
+    fireEvent.change(input("repo-merge-enabled"), {
+      target: { value: "false" },
+    });
+    await clickSaveAndSettle();
+    expect(patchBody()).toEqual({ auto_merge_label_budget: 8 });
+    expect(screen.getByText(/merge-enabled: HTTP 503/)).toBeInTheDocument();
+
+    // Retry: the PATCHed field is no longer dirty, the pin still is.
+    await clickSaveAndSettle();
+    expect(patchCalls()).toHaveLength(1);
+    const posts = fetchMock.mock.calls.filter(
+      (c) => (c[1] as RequestInit | undefined)?.method === "POST"
+    );
+    expect(posts).toHaveLength(2);
+  });
+
   it("on an older coord, a save still leaves untouched fields out", async () => {
     await renderPreloaded(undefined);
     await screen.findByTestId(`repo-raw-override-unavailable-${REPO}`);
