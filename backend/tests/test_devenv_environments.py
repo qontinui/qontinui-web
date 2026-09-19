@@ -201,7 +201,7 @@ class TestDiffEnvelopes:
             "link_claude_md": "present",
             "link_dev_start": "present",
             "config_repo": "present",
-            "installer_guard_hooks": "present",
+            "root_settings_hooks": "present",
             "installer_agent_skills": "present",
             "installer_claude_accounts": "present",
             "installer_git_hooks": "present",
