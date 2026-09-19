@@ -124,7 +124,17 @@ _SETUP_SQL = [
         source             JSONB NOT NULL DEFAULT '{}',
         is_tombstone       BOOLEAN NOT NULL DEFAULT false,
         created_at         TIMESTAMPTZ NOT NULL DEFAULT now(),
-        updated_at         TIMESTAMPTZ NOT NULL DEFAULT now()
+        updated_at         TIMESTAMPTZ NOT NULL DEFAULT now(),
+        -- Provenance + altitude facets (migration ``memfacets_01``). The
+        -- FKs to ``auth.users`` / ``coord.devices`` are omitted here for
+        -- the same reason the ``coord.tenants`` FK above is: the isolated
+        -- test DB carries neither table.
+        user_id            UUID,
+        device_id          UUID,
+        applies_at         TEXT NOT NULL DEFAULT 'tenant'
+            CHECK (applies_at IN (
+                'fleet', 'tenant', 'user', 'device', 'session'
+            ))
     )
     """,
     # Legacy shape from an older run of this suite against a persistent
@@ -132,6 +142,16 @@ _SETUP_SQL = [
     """
     ALTER TABLE coord.memory_records
         DROP CONSTRAINT IF EXISTS memory_records_tenant_content_hash_key
+    """,
+    # Same reason, forward rather than backward: ``CREATE TABLE IF NOT
+    # EXISTS`` above is a no-op against a persistent test DB built before
+    # ``memfacets_01``, so the facet columns have to be added explicitly
+    # or every INSERT naming them fails on that database only.
+    """
+    ALTER TABLE coord.memory_records
+        ADD COLUMN IF NOT EXISTS user_id    UUID,
+        ADD COLUMN IF NOT EXISTS device_id  UUID,
+        ADD COLUMN IF NOT EXISTS applies_at TEXT NOT NULL DEFAULT 'tenant'
     """,
     # Live-row dedup key — mirrors the migration's partial unique index:
     # dead rows (tombstoned / superseded / validity-ended) release their
@@ -5572,3 +5592,143 @@ class TestSelfDescribingFieldsAreRequired:
         assert [h["memory_id"] for h in hybrid["hits"]] == [
             h["memory_id"] for h in fts_only["hits"]
         ]
+
+
+class TestProvenanceFacetsArePersisted:
+    """Both insert paths land `user_id` / `device_id` on the row.
+
+    Plan `2026-08-06-user-and-device-facets-on-memories-and-findings`,
+    Phase 2 (web half). The two paths are NOT interchangeable and both are
+    tested here on purpose:
+
+    * `insert_record` is the single-row path — the supersede door and the
+      intra-batch race fallback.
+    * `insert_records_batch` is the SET-BASED path, and it is the one the
+      fleet actually exercises: coord's `coord_memory_record` proxy posts a
+      **single-record batch**, never a single record. A facet persisted only
+      by `insert_record` would read as NULL for every agent-written memory
+      in production while every test that only exercised the scalar path
+      stayed green.
+
+    `applies_at` is asserted at its column DEFAULT, not written: Phase 3
+    owns the write, and this phase must leave today's semantics exactly as
+    they are.
+    """
+
+    def _row(self, db: AsyncEngine, memory_id: UUID) -> tuple[Any, Any, Any]:
+        async def _go() -> tuple[Any, Any, Any]:
+            async with db.connect() as conn:
+                row = (
+                    await conn.execute(
+                        text(
+                            "SELECT user_id, device_id, applies_at "
+                            "FROM coord.memory_records WHERE memory_id = :m"
+                        ),
+                        {"m": memory_id},
+                    )
+                ).one()
+            return (row.user_id, row.device_id, row.applies_at)
+
+        return asyncio.run(_go())
+
+    def test_insert_record_persists_the_facets(self, db: AsyncEngine) -> None:
+        tenant_id, user_id, device_id = uuid4(), uuid4(), uuid4()
+
+        async def _go() -> UUID:
+            maker = async_sessionmaker(db, class_=AsyncSession, expire_on_commit=False)
+            async with maker() as session:
+                memory_id, _ = await store.insert_record(
+                    session,
+                    tenant_id=tenant_id,
+                    scope="tenant",
+                    scope_ref=None,
+                    kind="fact",
+                    title="scalar provenance",
+                    content="written through the single-row path",
+                    content_hash=_content_sha256("scalar provenance body"),
+                    embedding=None,
+                    embedding_model=None,
+                    importance=0.5,
+                    source={},
+                    user_id=user_id,
+                    device_id=device_id,
+                )
+                await session.commit()
+                return memory_id
+
+        stored_user, stored_device, applies_at = self._row(db, asyncio.run(_go()))
+        assert stored_user == user_id
+        assert stored_device == device_id
+        # Phase 1's column default, untouched by this phase.
+        assert applies_at == "tenant"
+
+    def test_insert_records_batch_persists_the_facets(self, db: AsyncEngine) -> None:
+        """The path coord's proxy actually takes."""
+        tenant_id, user_id, device_id = uuid4(), uuid4(), uuid4()
+        item = store.MemoryRecordInsert(
+            scope="tenant",
+            scope_ref=None,
+            kind="fact",
+            title="batch provenance",
+            content="written through the set-based path",
+            content_hash=_content_sha256("batch provenance body"),
+            embedding=None,
+            embedding_model=None,
+            importance=0.5,
+            source={},
+        )
+
+        async def _go() -> UUID:
+            maker = async_sessionmaker(db, class_=AsyncSession, expire_on_commit=False)
+            async with maker() as session:
+                out = await store.insert_records_batch(
+                    session,
+                    tenant_id=tenant_id,
+                    items=[item],
+                    user_id=user_id,
+                    device_id=device_id,
+                )
+                await session.commit()
+                return out[0][0]
+
+        stored_user, stored_device, applies_at = self._row(db, asyncio.run(_go()))
+        assert stored_user == user_id
+        assert stored_device == device_id
+        assert applies_at == "tenant"
+
+    def test_a_caller_with_no_principal_lands_nulls_not_an_error(
+        self, db: AsyncEngine
+    ) -> None:
+        """Provenance is optional everywhere — never a rejected write.
+
+        The `memory_bridge` job writes with no principal at all, and the
+        coord-service arm resolves no user until coord's deferred half
+        ships. Both must land a row: "a memory that fails to save is worse
+        than one that is coarsely scoped".
+        """
+        tenant_id = uuid4()
+
+        async def _go() -> UUID:
+            maker = async_sessionmaker(db, class_=AsyncSession, expire_on_commit=False)
+            async with maker() as session:
+                memory_id, _ = await store.insert_record(
+                    session,
+                    tenant_id=tenant_id,
+                    scope="tenant",
+                    scope_ref=None,
+                    kind="reference",
+                    title="unattributed",
+                    content="no principal was available",
+                    content_hash=_content_sha256("unattributed body"),
+                    embedding=None,
+                    embedding_model=None,
+                    importance=0.5,
+                    source={},
+                )
+                await session.commit()
+                return memory_id
+
+        stored_user, stored_device, applies_at = self._row(db, asyncio.run(_go()))
+        assert stored_user is None
+        assert stored_device is None
+        assert applies_at == "tenant"

@@ -222,11 +222,31 @@ ARM_WEIGHTS = {"link": 0.1}
 
 @dataclass(frozen=True)
 class MemoryPrincipal:
-    """The server-side identity every memory operation is bound to."""
+    """The server-side identity every memory operation is bound to.
+
+    ``user_id`` and ``device_id`` are the orthogonal PROVENANCE facets of
+    plan ``2026-08-06-user-and-device-facets-on-memories-and-findings``
+    (§4.1). Both are derived HERE, from verified credentials, exactly as
+    ``tenant_id`` already is — and for the same reason: a self-declared
+    attribution is not an attribution. Neither is ever read from a request
+    body, and ``MemoryRecordIn`` / ``MemoryQueryRequest`` deliberately do
+    not declare them (§6 requirement 5b; both are ``extra="forbid"``, so an
+    attempt is a 422).
+
+    Both are OPTIONAL and a missing one is never an error. A caller with no
+    device identity — an operator bearer, a service token minted before
+    coord carried the claim, CI — writes NULLs and the row is simply less
+    filterable. Rejecting the write instead would be worse: a memory that
+    fails to save is worse than one that is coarsely scoped (§4.1 item 3).
+    """
 
     tenant_id: UUID
     device_id: UUID | None
     actor: str  # "device" | "coord_service" | "operator"
+    # The human this operation is attributed to (``auth.users.id``).
+    # Defaulted so no construction site is obliged to resolve a user it
+    # does not have.
+    user_id: UUID | None = None
 
 
 def _claim_uuid(claims: dict[str, Any], key: str) -> UUID | None:
@@ -259,6 +279,15 @@ def _principal_from_service_claims(claims: dict[str, Any]) -> MemoryPrincipal:
         tenant_id=tenant_id,
         device_id=_claim_uuid(claims, "device_id"),
         actor="coord_service",
+        # Read from the VERIFIED claim, the same way ``device_id`` is —
+        # never from the request. coord does not yet mint ``user_id`` into
+        # ``MemoryProxyClaims`` (the deferred coord half of plan
+        # 2026-08-06-user-and-device-facets-on-memories-and-findings Phase
+        # 2), so today this resolves to ``None`` on every proxied write.
+        # That is the intended fail-soft: the claim's absence must never
+        # raise, because an un-updated coord deploy would otherwise 401
+        # every memory write in the fleet rather than dropping one facet.
+        user_id=_claim_uuid(claims, "user_id"),
     )
 
 
@@ -333,7 +362,17 @@ async def get_memory_tenant(
             # Coord-signed but not a service token → device-token path.
             # Reuse the canonical device verification (user resolution +
             # active check) from app.api.deps.
-            device_claims, _device_user = await _verify_device_jwt(
+            # ``device_user`` is NOT a discard. ``_verify_device_jwt`` has
+            # already resolved and validated the owning human — it 401s a
+            # token with no ``user_id`` claim, a malformed one, an unknown
+            # user, or an inactive one (app/api/deps.py) — so by the time
+            # this line runs the user facet is free, fully verified, and
+            # server-side. It used to be bound to ``_device_user`` and
+            # thrown away; plan
+            # 2026-08-06-user-and-device-facets-on-memories-and-findings
+            # §4.1 stops the discard. This is the one arm on which the
+            # user facet resolves today.
+            device_claims, device_user = await _verify_device_jwt(
                 credentials.credentials
             )
             tenant_id = _claim_uuid(device_claims, "tenant_id")
@@ -346,6 +385,7 @@ async def get_memory_tenant(
                 tenant_id=tenant_id,
                 device_id=_claim_uuid(device_claims, "device_id"),
                 actor="device",
+                user_id=device_user.id,
             )
 
     if user is not None:
@@ -356,7 +396,15 @@ async def get_memory_tenant(
                 detail="tenant_not_resolved",
             )
         return MemoryPrincipal(
-            tenant_id=identity.home_tenant_id, device_id=None, actor="operator"
+            tenant_id=identity.home_tenant_id,
+            device_id=None,
+            actor="operator",
+            # ``user`` is the authenticated ``auth.users`` row this
+            # dependency was handed — the same table ``user_id`` FKs to —
+            # so this is the identity itself, not a lookup. Deliberately
+            # NOT ``identity.operator_id``: that is coord's own operator
+            # id from ``GET /admin/coord/me`` and is a different keyspace.
+            user_id=user.id,
         )
 
     raise HTTPException(
@@ -623,7 +671,14 @@ async def write_records(
         for h in write_hashes
     ]
     batch_results = await store.insert_records_batch(
-        db, tenant_id=principal.tenant_id, items=batch_items
+        db,
+        tenant_id=principal.tenant_id,
+        items=batch_items,
+        # Provenance from the VERIFIED principal, exactly like tenant_id.
+        # Never from ``payload`` — ``MemoryRecordIn`` declares no such
+        # field, and that omission is the enforcement (§6 requirement 5b).
+        user_id=principal.user_id,
+        device_id=principal.device_id,
     )
     outcome_by_hash: dict[str, tuple[UUID, bool]] = dict(
         zip(write_hashes, batch_results, strict=True)
@@ -658,6 +713,8 @@ async def write_records(
                 importance=rec.importance,
                 source=rec.source,
                 anchors=[a.model_dump(mode="json") for a in rec.anchors],
+                user_id=principal.user_id,
+                device_id=principal.device_id,
             )
             # Later intra-batch occurrences dedup onto this row.
             outcome_by_hash[h] = (memory_id, True)
@@ -1226,6 +1283,11 @@ async def supersede_record(
         ),
         source=payload.source if payload.source is not None else (old["source"] or {}),
         anchors=inherited_anchors,
+        # The successor is a NEW row authored by THIS caller, so its
+        # provenance is this caller's — not the superseded row's. Same
+        # verified-principal source as every other write.
+        user_id=principal.user_id,
+        device_id=principal.device_id,
     )
     if new_id == memory_id:
         raise HTTPException(
