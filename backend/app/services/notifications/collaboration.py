@@ -171,36 +171,3 @@ class CollaborationNotifications:
             metadata=metadata,
             send_email=True,
         )
-
-    async def send_lock_released_notification(
-        self,
-        db: AsyncSession,
-        notify_user_id: UUID,
-        project_id: UUID,
-        resource_type: str,
-        resource_id: str,
-        resource_name: str | None = None,
-    ) -> Notification | None:
-        """Send notification when a lock is released."""
-        title = f"Resource available: {resource_name or resource_id}"
-        message = f"The {resource_type} is now available for editing"
-
-        metadata = {
-            "project_id": project_id,
-            "resource_type": resource_type,
-            "resource_id": resource_id,
-            "deep_link": f"/projects/{project_id}",
-        }
-
-        return await self.create_notification(  # type: ignore[attr-defined, no-any-return]
-            db=db,
-            user_id=notify_user_id,
-            notification_type=NotificationType.LOCK_RELEASED,
-            title=title,
-            message=message,
-            project_id=project_id,
-            resource_type=resource_type,
-            resource_id=resource_id,
-            metadata=metadata,
-            send_email=False,  # Don't send email for lock releases
-        )

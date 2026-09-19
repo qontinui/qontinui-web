@@ -43,7 +43,6 @@ export interface NotificationPreferencesShape {
   email_shares: boolean;
   email_replies: boolean;
   email_team_invites: boolean;
-  email_gate_action: boolean;
 
   // In-app
   in_app_mentions: boolean;
@@ -52,7 +51,6 @@ export interface NotificationPreferencesShape {
   in_app_replies: boolean;
   in_app_team_invites: boolean;
   in_app_project_updates: boolean;
-  in_app_gate_action: boolean;
 }
 
 /**
