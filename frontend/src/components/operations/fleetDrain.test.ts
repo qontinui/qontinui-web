@@ -18,7 +18,6 @@
 import { describe, expect, it } from "vitest";
 import {
   MAX_DRAIN_DAYS,
-  DRAIN_INERT_GITHUB_RUNNER,
   canActOnDrain,
   describeDrainError,
   formatDrainRemaining,
@@ -122,10 +121,10 @@ describe("parseFleetDrain — the shapes it accepts", () => {
   });
 
   it("matches a device id case-insensitively", () => {
-    const read = parseFleetDrain({
-      drained: { [DEVICE.toUpperCase()]: wireEntry() },
-    });
-    expect(resolveDeviceDrain(read, DEVICE, NOW).state).toBe("drained");
+    const read = parseFleetDrain({ drained: { [DEVICE.toUpperCase()]: wireEntry() } });
+    expect(
+      resolveDeviceDrain(read, DEVICE, NOW).state
+    ).toBe("drained");
   });
 });
 
@@ -135,10 +134,7 @@ describe("parseFleetDrain — nothing unreadable becomes 'none drained'", () => 
     ["an undefined body", undefined],
     ["a number", 7],
     ["an unrecognised envelope", { status: "fine", machines: 3 }],
-    [
-      "an explicit state: unknown",
-      { state: "unknown", reason: "pool timeout" },
-    ],
+    ["an explicit state: unknown", { state: "unknown", reason: "pool timeout" }],
     ["coord's bare Unknown variant", "Unknown"],
     ["a serde-tagged Unknown", { Unknown: null }],
     ["known: false", { known: false, drained: { [DEVICE]: wireEntry() } }],
@@ -236,22 +232,6 @@ describe("resolveDeviceDrain", () => {
 });
 
 describe("resolveDrainTarget — the keying, which is the phase's real work", () => {
-  it("refuses a mirrored GitHub Actions runner even when coord names the device", () => {
-    // Coord would ACCEPT the drain (the device is bound) and nothing would read
-    // it: CI dispatch selects `ci_node`, build dispatch `role = 'build'`, and
-    // the registrar gives these devices neither. So the row is inert, not
-    // identified — and the reason says which lever does apply.
-    const target = resolveDrainTarget(
-      { matched: true, device_id: DEVICE, hostname: "gh-runner-x" },
-      { githubActionsRunner: true }
-    );
-    expect(target.state).toBe("drain_inert");
-    if (target.state !== "drain_inert") return;
-    expect(target.reason).toBe(DRAIN_INERT_GITHUB_RUNNER);
-    expect(target.reason).toMatch(/qontinui/);
-    expect(canActOnDrain(target, { state: "not_drained" })).toBe(false);
-  });
-
   it("identifies the coord device and carries coord's OWN hostname", () => {
     const target = resolveDrainTarget({
       matched: true,
@@ -399,9 +379,7 @@ describe("describeDrainError", () => {
   });
 
   it("falls back to the raw body when it is not JSON", () => {
-    expect(describeDrainError(502, "bad gateway")).toBe(
-      "HTTP 502 — bad gateway"
-    );
+    expect(describeDrainError(502, "bad gateway")).toBe("HTTP 502 — bad gateway");
   });
 
   it("falls back to the bare status on an empty body", () => {

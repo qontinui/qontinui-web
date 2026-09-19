@@ -273,23 +273,13 @@ export function DeviceDrainControl({
   // the drain state: with no device id there is nothing the drain map could
   // have been asked about, so reporting the read's health would be a
   // non-sequitur (the same short-circuit `resolveCiCapacity` makes).
-  const stateKey =
-    target.state === "no_device" || target.state === "drain_inert"
-      ? target.state
-      : drain.state;
+  const stateKey = target.state === "no_device" ? "no_device" : drain.state;
   const actable = target.state === "identified" && drain.state !== "unknown";
 
   const stateLine = (() => {
     if (target.state === "no_device") {
       return (
         <DrainNotice tone="muted" headline="No coord device to drain">
-          {target.reason}
-        </DrainNotice>
-      );
-    }
-    if (target.state === "drain_inert") {
-      return (
-        <DrainNotice tone="muted" headline="A drain would do nothing here">
           {target.reason}
         </DrainNotice>
       );
@@ -454,7 +444,9 @@ export function DeviceDrainControl({
           <div className="space-y-3">
             {mode === "drain" && (
               <div className="space-y-1.5">
-                <Label htmlFor="device-drain-until">Expiry (required)</Label>
+                <Label htmlFor="device-drain-until">
+                  Expiry (required)
+                </Label>
                 <div className="flex flex-wrap gap-1.5">
                   {DRAIN_PRESETS.map((preset) => (
                     <Button
@@ -566,9 +558,7 @@ export function disabledReason(
   target: DrainTarget,
   drain: DeviceDrainState
 ): string | undefined {
-  if (target.state === "no_device" || target.state === "drain_inert") {
-    return target.reason;
-  }
+  if (target.state === "no_device") return target.reason;
   if (drain.state === "unknown") {
     return (
       `${drain.reason} Draining is offered only against a state that was ` +

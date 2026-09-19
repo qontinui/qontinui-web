@@ -29,7 +29,7 @@ function row(overrides: Partial<AuditRow> = {}): AuditRow {
     operator_id: "11111111-1111-1111-1111-111111111111",
     action: "fleet.drain.set",
     resource_kind: "coord.fleet_runtime_policy",
-    resource_key: "drain:22222222-2222-2222-2222-222222222222",
+    resource_key: "22222222-2222-2222-2222-222222222222",
     metadata: {},
     occurred_at: "2026-08-31T12:00:00Z",
     ...overrides,

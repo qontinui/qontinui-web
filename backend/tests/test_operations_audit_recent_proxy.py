@@ -33,7 +33,7 @@ _DRAIN_ROW = {
     "operator_id": "11111111-1111-1111-1111-111111111111",
     "action": "fleet.drain.set",
     "resource_kind": "coord.fleet_runtime_policy",
-    "resource_key": "drain:22222222-2222-2222-2222-222222222222",
+    "resource_key": "22222222-2222-2222-2222-222222222222",
     "metadata": {
         "device_id": "22222222-2222-2222-2222-222222222222",
         "drained": True,
@@ -143,12 +143,12 @@ class TestAuditRecentProxy:
 
             client.get(
                 f"{AUDIT_PATH}?resource_kind=coord.fleet_runtime_policy"
-                f"&resource_key=drain:22222222-2222-2222-2222-222222222222"
+                f"&resource_key=22222222-2222-2222-2222-222222222222"
             )
 
         params = instance.get.call_args.kwargs["params"]
         assert params["resource_kind"] == "coord.fleet_runtime_policy"
-        assert params["resource_key"] == ("drain:22222222-2222-2222-2222-222222222222")
+        assert params["resource_key"] == ("22222222-2222-2222-2222-222222222222")
 
     def test_resource_kind_prefix_grammar_forwards_verbatim(self, client: TestClient):
         with _patch_httpx() as MockClient:

@@ -8,7 +8,7 @@ listing.
 
 Auth posture: ``require_coord_tenant_admin``, matching what coord actually
 enforces — ``fleet_ci_runners::get_fleet_ci_runners`` calls
-``rbac::deny_unless_tenant_admin`` before it queries anything, so a
+``rbac::is_tenant_admin`` before it queries anything, so a
 Developer-tier caller is refused there regardless. This route was first written
 with ``get_tenant_id`` on the reasoning that admin-gating telemetry would blank
 a read-only fact for viewers who may see the page; coord does not implement that
@@ -31,28 +31,29 @@ from fastapi.testclient import TestClient
 
 API_PREFIX = "/api/v1/operations"
 
-# The pool as measured with `gh api` on 2026-08-31 — three hosts, with
-# `merytshost` carrying no per-machine label at all. The third host is the one
-# every written description of the pool in the tree has missed.
+# Label sets as measured with `gh api` on 2026-08-31 — three hosts, one
+# carrying no per-machine label at all. Hostnames are the synthetic
+# `gh-runner-<runner>@<owner>/<repo>` coord's `ci_runner_registrar::hostname_for`
+# mints since coord d145a29bb, never a real machine name.
 _COORD_PAYLOAD = {
     "runners": [
         {
             "device_id": "aaaaaaaa-0000-0000-0000-000000000001",
-            "hostname": "merytshost",
+            "hostname": "gh-runner-merytshost@qontinui/qontinui-runner",
             "ci_runner_status": "idle",
             "ci_runner_labels": ["self-hosted", "Linux", "X64", "qontinui"],
             "last_seen_at": "2026-08-31T12:00:00Z",
         },
         {
             "device_id": "aaaaaaaa-0000-0000-0000-000000000002",
-            "hostname": "msi-wsl",
+            "hostname": "gh-runner-msi-wsl@qontinui/qontinui-runner",
             "ci_runner_status": "busy",
             "ci_runner_labels": ["self-hosted", "Linux", "X64", "qontinui", "msi"],
             "last_seen_at": "2026-08-31T12:00:00Z",
         },
         {
             "device_id": "aaaaaaaa-0000-0000-0000-000000000003",
-            "hostname": "spaceship-wsl",
+            "hostname": "gh-runner-spaceship-wsl@qontinui/qontinui-runner",
             "ci_runner_status": "idle",
             "ci_runner_labels": [
                 "self-hosted",
@@ -139,10 +140,16 @@ class TestGetFleetCiRunners:
 
         assert body == _COORD_PAYLOAD
         by_host = {r["hostname"]: r for r in body["runners"]}
-        assert set(by_host) == {"merytshost", "msi-wsl", "spaceship-wsl"}
+        assert set(by_host) == {
+            "gh-runner-merytshost@qontinui/qontinui-runner",
+            "gh-runner-msi-wsl@qontinui/qontinui-runner",
+            "gh-runner-spaceship-wsl@qontinui/qontinui-runner",
+        }
         # Capitalisation is preserved: GitHub's own listing carries `Linux` /
         # `X64`, and normalising them here would hide a real difference.
-        assert by_host["merytshost"]["ci_runner_labels"] == [
+        assert by_host["gh-runner-merytshost@qontinui/qontinui-runner"][
+            "ci_runner_labels"
+        ] == [
             "self-hosted",
             "Linux",
             "X64",
@@ -183,7 +190,11 @@ class TestGetFleetCiRunners:
         with _patch_httpx() as MockClient:
             instance = AsyncMock()
             instance.get.return_value = _mock_response(
-                json_data={"runners": [], "as_of": None, "freshness_secs": None}
+                json_data={
+                    "runners": [],
+                    "as_of": "2026-08-31T12:00:30Z",
+                    "freshness_secs": 180,
+                }
             )
             _configure_mock_client(MockClient, instance)
 
@@ -210,15 +221,17 @@ class TestCiRunnerLabelsColumnType:
 
         alembic is the sole author of ``coord.*`` DDL and created it as
         ``TEXT[]`` (``c5d6e7f8a9b0_add_ci_runner_columns_to_devices``); coord
-        declares the same. This model mapped it as ``JSONB``, which had no live
-        reader to fail on — the registrar's rows are invisible to the web
-        device read — until Phase 2 became that reader. No migration: the DDL
-        was always ``TEXT[]``.
+        declares the same. This model mapped it as ``JSONB``; reads still
+        worked because asyncpg decodes ``text[]`` regardless of the declared
+        type, but anything that consults the declared type (binds, casts,
+        metadata DDL) would have used ``jsonb``. No migration: the DDL was
+        always ``TEXT[]``.
         """
-        from sqlalchemy import ARRAY
+        from sqlalchemy import ARRAY, Text
 
         from app.models.device import Device
 
         col = Device.__table__.c.ci_runner_labels
         assert isinstance(col.type, ARRAY)
+        assert isinstance(col.type.item_type, Text)
         assert col.type.item_type.python_type is str

@@ -4686,7 +4686,7 @@ async def post_fleet_undrain(
 # Developer tier and admin-gating telemetry would blank a read-only fact for
 # those viewers. **Coord does not implement that posture**:
 # `fleet_ci_runners::get_fleet_ci_runners` calls
-# `rbac::deny_unless_tenant_admin` before it queries anything, so a
+# `rbac::is_tenant_admin` before it queries anything, so a
 # Developer-tier caller gets a 403 from coord regardless. Matching the gate here
 # keeps this door's posture equal to the route it fronts and stops the comment
 # describing a behaviour the system does not have. The console degrades
