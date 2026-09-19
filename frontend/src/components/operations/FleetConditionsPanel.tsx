@@ -107,15 +107,39 @@ export function FleetConditionsPanel({
       onClick: () => onNavigate(summary.questionsHref),
       "data-testid": "coord-devops-conditions-awaiting-badge",
     });
-    const unasked = summary.unaskedOperatorAlerts;
+    // Operator alerts with no OPEN question. Coord's exact counts name the
+    // cause; an older coord's difference does not, so its badge names none.
+    const unasked = summary.operatorAlertsUnasked;
     if (unasked !== null && unasked > 0) {
       out.push({
         key: "unasked",
-        label: `no question yet ${unasked}`,
+        label: `not yet asked ${unasked}`,
         tone: "default",
         title:
           "Open conditions only you can resolve that coord has not raised a question for yet. They are not in the question queue until it does.",
         "data-testid": "coord-devops-conditions-unasked-badge",
+      });
+    }
+    const answered = summary.operatorAlertsAnsweredUncleared;
+    if (answered !== null && answered > 0) {
+      out.push({
+        key: "answered-uncleared",
+        label: `answered, not clear ${answered}`,
+        tone: "muted",
+        title:
+          "You answered these; coord has not yet re-observed the condition clear. Nothing to do unless it stays open.",
+        "data-testid": "coord-devops-conditions-answered-uncleared-badge",
+      });
+    }
+    const beyond = summary.operatorAlertsBeyondQuestions;
+    if (beyond !== null && beyond > 0) {
+      out.push({
+        key: "beyond-questions",
+        label: `open beyond questions ${beyond}`,
+        tone: "default",
+        title:
+          "Open operator alerts beyond the questions waiting on you. This coord does not say why each has no open question (not yet asked, or answered and not yet clear).",
+        "data-testid": "coord-devops-conditions-beyond-questions-badge",
       });
     }
     out.push({
@@ -166,7 +190,11 @@ export function FleetConditionsPanel({
         ]
           .filter(Boolean)
           .join(" "),
-        "data-testid": `coord-devops-conditions-setting-${s.kind}`,
+        // Keyed on the row's identity, like `key`: two drained machines are
+        // two settings of one kind.
+        "data-testid": `coord-devops-conditions-setting-${
+          s.alertId !== null ? s.alertId : `${s.kind}-${i}`
+        }`,
       })),
     [summary.settings]
   );
@@ -210,6 +238,16 @@ export function FleetConditionsPanel({
                 data-testid="coord-devops-conditions-settings-more"
               >
                 +{summary.settingsNotListed} more
+              </span>
+            )}
+            {summary.settingsCountUnknown && (
+              // No exact total served: the list may be capped, and hiding
+              // that would state a completeness nobody measured.
+              <span
+                className="text-muted-foreground"
+                data-testid="coord-devops-conditions-settings-count-unknown"
+              >
+                (count unknown)
               </span>
             )}
           </div>

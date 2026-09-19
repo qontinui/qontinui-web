@@ -1169,6 +1169,8 @@ describe("/admin/coord/devops — the Conditions panel", () => {
       awaiting_operator: 0,
       awaiting_operator_question_ids: [],
       awaiting_operator_alerts: 0,
+      awaiting_operator_unasked: 0,
+      awaiting_operator_answered_uncleared: 0,
       settings_in_effect: [],
       settings_in_effect_count: 0,
       scrape_up: true,
@@ -1320,9 +1322,11 @@ describe("/admin/coord/devops — the Conditions panel", () => {
     healthyFleet({
       conditions: conditions({
         settings_in_effect: [
-          { kind: "kill_switch_fired", since: "2026-09-18T09:00:00Z" },
-          { kind: "fleet_device_drained", since: "2026-09-18T10:00:00Z" },
+          { alert_id: 11, kind: "kill_switch_fired", since: "2026-09-18T09:00:00Z" },
+          { alert_id: 12, kind: "fleet_device_drained", since: "2026-09-18T10:00:00Z" },
+          { alert_id: 13, kind: "fleet_device_drained", since: "2026-09-18T10:30:00Z" },
         ],
+        settings_in_effect_count: 3,
       }),
     });
     render(<CoordDevOpsPage />);
@@ -1331,14 +1335,14 @@ describe("/admin/coord/devops — the Conditions panel", () => {
       "coord-devops-conditions-settings"
     );
     expect(
-      within(settings).getByTestId(
-        "coord-devops-conditions-setting-kill_switch_fired"
-      )
+      within(settings).getByTestId("coord-devops-conditions-setting-11")
     ).toHaveTextContent("merge kill switch on");
+    // Two drains are two settings: keyed on the row id, not the kind.
     expect(
-      within(settings).getByTestId(
-        "coord-devops-conditions-setting-fleet_device_drained"
-      )
+      within(settings).getByTestId("coord-devops-conditions-setting-12")
+    ).toHaveTextContent("machine drained");
+    expect(
+      within(settings).getByTestId("coord-devops-conditions-setting-13")
     ).toHaveTextContent("machine drained");
     // A setting is context, not a fault: the verdict stays calm.
     expect(
@@ -1346,19 +1350,74 @@ describe("/admin/coord/devops — the Conditions panel", () => {
     ).toHaveAttribute("data-health-level", "green");
   });
 
-  it("counts operator alerts with no question yet, and does not go green", async () => {
+  it("reads 'not yet asked' from coord's exact count, and does not go green", async () => {
     healthyFleet({
-      conditions: conditions({ awaiting_operator: 0, awaiting_operator_alerts: 2 }),
+      conditions: conditions({
+        awaiting_operator: 0,
+        awaiting_operator_alerts: 2,
+        awaiting_operator_unasked: 2,
+        awaiting_operator_answered_uncleared: 0,
+      }),
     });
     render(<CoordDevOpsPage />);
 
     const badge = await screen.findByTestId(
       "coord-devops-conditions-unasked-badge"
     );
-    expect(badge).toHaveTextContent("no question yet 2");
+    expect(badge).toHaveTextContent("not yet asked 2");
     const strip = screen.getByTestId("coord-devops-conditions-strip");
     expect(strip).toHaveAttribute("data-health-level", "amber");
-    expect(strip).toHaveTextContent("2 operator alerts have no question yet");
+    expect(strip).toHaveTextContent("2 operator alerts not yet asked");
+    expect(strip).not.toHaveTextContent("Nothing unhandled");
+  });
+
+  it("does not call an answered, uncleared alert unasked", async () => {
+    healthyFleet({
+      conditions: conditions({
+        awaiting_operator: 0,
+        awaiting_operator_alerts: 1,
+        awaiting_operator_unasked: 0,
+        awaiting_operator_answered_uncleared: 1,
+      }),
+    });
+    render(<CoordDevOpsPage />);
+
+    const badge = await screen.findByTestId(
+      "coord-devops-conditions-answered-uncleared-badge"
+    );
+    expect(badge).toHaveTextContent("answered, not clear 1");
+    expect(
+      screen.queryByTestId("coord-devops-conditions-unasked-badge")
+    ).toBeNull();
+    const strip = screen.getByTestId("coord-devops-conditions-strip");
+    expect(strip).toHaveTextContent(
+      "1 answered, waiting for coord to see it clear"
+    );
+    expect(strip).not.toHaveTextContent("not yet asked");
+  });
+
+  it("uses neutral wording, and never green, on a coord without the exact counts", async () => {
+    healthyFleet({
+      conditions: conditions({
+        awaiting_operator: 0,
+        awaiting_operator_alerts: 2,
+        awaiting_operator_unasked: undefined,
+        awaiting_operator_answered_uncleared: undefined,
+      }),
+    });
+    render(<CoordDevOpsPage />);
+
+    const badge = await screen.findByTestId(
+      "coord-devops-conditions-beyond-questions-badge"
+    );
+    expect(badge).toHaveTextContent("open beyond questions 2");
+    const strip = screen.getByTestId("coord-devops-conditions-strip");
+    expect(strip).toHaveAttribute("data-health-level", "amber");
+    expect(strip).toHaveTextContent(
+      "2 operator alerts open beyond the questions waiting on you"
+    );
+    expect(strip).not.toHaveTextContent("not yet asked");
+    expect(strip).not.toHaveTextContent("Nothing unhandled");
   });
 
   it("says which read failed when coord reports scrape_up: false", async () => {
@@ -1392,9 +1451,28 @@ describe("/admin/coord/devops — the Conditions panel", () => {
     ).toHaveTextContent("+3 more");
     expect(
       screen
-        .getByTestId("coord-devops-conditions-setting-fleet_device_drained")
+        .getByTestId("coord-devops-conditions-setting-7")
         .getAttribute("title")
     ).toContain("Device msi drained by operator");
+  });
+
+  it("says the settings count is unknown rather than hiding a possible cap", async () => {
+    healthyFleet({
+      conditions: conditions({
+        settings_in_effect: [
+          { alert_id: 9, kind: "kill_switch_fired", since: "2026-09-18T10:00:00Z" },
+        ],
+        settings_in_effect_count: null,
+      }),
+    });
+    render(<CoordDevOpsPage />);
+
+    expect(
+      await screen.findByTestId("coord-devops-conditions-settings-count-unknown")
+    ).toHaveTextContent("(count unknown)");
+    expect(
+      screen.queryByTestId("coord-devops-conditions-settings-more")
+    ).toBeNull();
   });
 
   it("renders no severity badges, no pageout note and no alerts-page link", async () => {
