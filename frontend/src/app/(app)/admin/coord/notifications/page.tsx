@@ -136,6 +136,7 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import {
   Select,
@@ -167,6 +168,7 @@ import {
   isMigrationPending,
   isUnread,
   kindOptions,
+  linkedRefFindingHref,
   linkedRefNotice,
   matchesNotificationRef,
   mergeKindVocabulary,
@@ -785,6 +787,36 @@ export default function CoordNotificationsPage() {
    */
   const feedUnknown = readIsUnknown(queryLoaded, readFailed);
 
+  // One state object for the `?ref=` banner, read by BOTH the sentence and
+  // the findings link beside it, so they are derived from the same inputs.
+  const linkedRefState: Parameters<typeof linkedRefNotice>[0] = {
+    found: Boolean(linkedMatch),
+    // The same predicate `RecordList`'s `loaded` uses below — nothing
+    // has been read yet, so "not on this page" would be a claim
+    // rather than a fact.
+    loading: loading && rows.length === 0,
+    // Not `error`. This arm says "the feed above failed to load", and
+    // `error` is the page's ONE error line — mark-read writes to it
+    // too, so a rejected POST made the banner blame a feed that had
+    // loaded perfectly well.
+    error: readFailed,
+    // The paging arm needs this to keep the filter clause it would
+    // otherwise drop — see `linkedRefNotice`. Deliberately the SAME
+    // `filterActive` that scopes mark-all, so "a filter is on" means
+    // one thing on this page.
+    filterActive,
+    // …and NOT folded into the line above, for the same reason the
+    // strip keeps them apart. `readFailed || pagingFailed` made a
+    // failed "Load more" report "the feed above failed to load" about a
+    // feed the strip was simultaneously painting green — the two states
+    // want different sentences and different remedies.
+    pagingFailed,
+    migrationPending,
+  };
+  const linkedFindingHref = linkedRef
+    ? linkedRefFindingHref(linkedRefState, linkedRef)
+    : null;
+
   return (
     <div
       className="p-3 sm:p-6 space-y-4"
@@ -866,30 +898,19 @@ export default function CoordNotificationsPage() {
           className="text-sm text-muted-foreground"
           data-testid="coord-notifications-linked-ref"
         >
-          {linkedRefNotice({
-            found: Boolean(linkedMatch),
-            // The same predicate `RecordList`'s `loaded` uses below — nothing
-            // has been read yet, so "not on this page" would be a claim
-            // rather than a fact.
-            loading: loading && rows.length === 0,
-            // Not `error`. This arm says "the feed above failed to load", and
-            // `error` is the page's ONE error line — mark-read writes to it
-            // too, so a rejected POST made the banner blame a feed that had
-            // loaded perfectly well.
-            error: readFailed,
-            // The paging arm needs this to keep the filter clause it would
-            // otherwise drop — see `linkedRefNotice`. Deliberately the SAME
-            // `filterActive` that scopes mark-all, so "a filter is on" means
-            // one thing on this page.
-            filterActive,
-            // …and NOT folded into the line above, for the same reason the
-            // strip keeps them apart. `readFailed || pagingFailed` made a
-            // failed "Load more" report "the feed above failed to load" about a
-            // feed the strip was simultaneously painting green — the two states
-            // want different sentences and different remedies.
-            pagingFailed,
-            migrationPending,
-          })}
+          {linkedRefNotice(linkedRefState)}
+          {linkedFindingHref && (
+            <>
+              {" "}
+              <Link
+                href={linkedFindingHref}
+                className="underline underline-offset-2"
+                data-testid="coord-notifications-linked-finding"
+              >
+                Open the finding
+              </Link>
+            </>
+          )}
         </p>
       )}
 

@@ -17,6 +17,7 @@ import {
   MARK_ALL,
   detailActor,
   humanKind,
+  linkedRefFindingHref,
   linkedRefNotice,
   matchesNotificationRef,
   isContractError,
@@ -379,7 +380,9 @@ describe("isContractError", () => {
  * unrelated event and present it as the write's stated reasoning.
  */
 describe("matchesNotificationRef", () => {
-  const row = (over: Partial<CoordNotificationRow> = {}): CoordNotificationRow => ({
+  const row = (
+    over: Partial<CoordNotificationRow> = {}
+  ): CoordNotificationRow => ({
     notification_id: "11111111-1111-4111-8111-111111111111",
     kind: "policy_document_changed",
     ...over,
@@ -394,7 +397,9 @@ describe("matchesNotificationRef", () => {
   it("matches a notification_ref carried in the payload", () => {
     expect(
       matchesNotificationRef(
-        row({ detail: { notification_ref: "fec41291-67ed-4cf8-b331-888ad1126b45" } }),
+        row({
+          detail: { notification_ref: "fec41291-67ed-4cf8-b331-888ad1126b45" },
+        }),
         "fec41291-67ed-4cf8-b331-888ad1126b45"
       )
     ).toBe(true);
@@ -406,9 +411,9 @@ describe("matchesNotificationRef", () => {
     expect(matchesNotificationRef(row(), "")).toBe(false);
     expect(matchesNotificationRef(row(), "   ")).toBe(false);
     // Including against a row whose payload has an empty ref of its own.
-    expect(matchesNotificationRef(row({ detail: { notification_ref: "" } }), "")).toBe(
-      false
-    );
+    expect(
+      matchesNotificationRef(row({ detail: { notification_ref: "" } }), "")
+    ).toBe(false);
   });
 
   it("is exact — a prefix or a different id does not match", () => {
@@ -419,9 +424,9 @@ describe("matchesNotificationRef", () => {
   });
 
   it("ignores a non-string payload value rather than coercing it", () => {
-    expect(matchesNotificationRef(row({ detail: { notification_ref: 42 } }), "42")).toBe(
-      false
-    );
+    expect(
+      matchesNotificationRef(row({ detail: { notification_ref: 42 } }), "42")
+    ).toBe(false);
     expect(matchesNotificationRef(row({ detail: null }), "x")).toBe(false);
   });
 });
@@ -475,7 +480,7 @@ describe("linkedRefNotice", () => {
       error: false,
     });
     expect(fallback).toMatch(/created/i);
-    expect(fallback).toMatch(/\/admin\/coord\/findings\?id=/);
+    expect(fallback).toMatch(/findings reader/i);
 
     // Not in the arm that FOUND the event — an edit's notice is on screen and
     // must not be overshadowed by a sentence about creations — nor in any of
@@ -497,8 +502,42 @@ describe("linkedRefNotice", () => {
         pagingFailed: true,
       }),
     ]) {
-      expect(line).not.toMatch(/\/admin\/coord\/findings/);
+      expect(line).not.toMatch(/findings reader/i);
     }
+  });
+
+  it("offers the findings link exactly when the banner says to open it", () => {
+    // `linkedRefFindingHref` mirrors `linkedRefNotice`'s ranking; walk EVERY
+    // combination of its inputs so the link and the sentence cannot drift.
+    const ref = "5a2cfc8e-0000-4000-8000-000000000001";
+    const flags = [
+      "found",
+      "loading",
+      "error",
+      "pagingFailed",
+      "filterActive",
+      "migrationPending",
+    ] as const;
+    for (let mask = 0; mask < 1 << flags.length; mask++) {
+      const state = {
+        found: false,
+        loading: false,
+        error: false,
+      } as Parameters<typeof linkedRefNotice>[0];
+      flags.forEach((f, i) => {
+        (state as Record<string, boolean>)[f] = Boolean(mask & (1 << i));
+      });
+      const says = /findings reader/i.test(linkedRefNotice(state));
+      const href = linkedRefFindingHref(state, ref);
+      expect(href !== null, JSON.stringify(state)).toBe(says);
+      if (href !== null) {
+        expect(href).toBe(`/admin/coord/findings?id=${ref}`);
+      }
+    }
+    // A blank ref has nothing to link to, whatever the arm.
+    expect(
+      linkedRefFindingHref({ found: false, loading: false, error: false }, "  ")
+    ).toBeNull();
   });
 
   it("names the BUTTON, not the feed, when only a page append failed", () => {
