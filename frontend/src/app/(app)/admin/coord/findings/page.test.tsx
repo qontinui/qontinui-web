@@ -460,6 +460,26 @@ describe("CoordFindingsPage", () => {
       ).toHaveTextContent(/unknown, not none/i);
     });
 
+    it("says UNKNOWN, not 'no findings match', when a NEW filter's read fails", async () => {
+      // First read lands; the operator types a filter; that read fails. The
+      // cleared list must read as unknown for the new query — `loaded` from the
+      // previous query must not make it claim "no findings match".
+      httpGet.mockResolvedValueOnce(page([finding()]));
+      render(<CoordFindingsPage />);
+      await screen.findByTestId("coord-finding-row");
+
+      httpGet.mockRejectedValue(new Error("GET … failed: 400 - unknown kind"));
+      await userEvent.type(screen.getByTestId("coord-findings-kind"), "g");
+
+      expect(
+        await screen.findByTestId("coord-findings-unknown")
+      ).toHaveTextContent(/unknown, not none/i);
+      expect(screen.queryByText(/no findings match/i)).toBeNull();
+      expect(screen.getByTestId("coord-findings-health")).toHaveTextContent(
+        /could not read the findings store/i
+      );
+    });
+
     it("renders an honest empty state when coord CONFIRMS nothing matches", async () => {
       httpGet.mockResolvedValue(page([]));
       render(<CoordFindingsPage />);
