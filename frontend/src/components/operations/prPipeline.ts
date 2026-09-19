@@ -1356,6 +1356,41 @@ function compareRows(a: PipelineRow, b: PipelineRow): number {
   );
 }
 
+/**
+ * The timestamp a row shows in its time cell, as epoch ms: LAND time for a
+ * merged row (falling back to `updatedAt` when coord projects no `merged_at`,
+ * matching `compareRows`), otherwise `updatedAt` — the active proposal's last
+ * state change, or, for a PR with no proposal, coord's `last_refreshed_at`
+ * mirror stamp. Rows with no timestamp at all read as 0 so they sink.
+ *
+ * This is NOT the PR's submitted/opened time: coord's PR feed carries no such
+ * field (`PrRow` has none). Until it does, "newest first" means newest by the
+ * time each row displays, and a proposal-less PR's stamp moves whenever coord
+ * re-hydrates it.
+ */
+export function rowRecencyMs(row: PipelineRow): number {
+  const at =
+    row.status.kind === "merged"
+      ? (row.mergedAt ?? row.updatedAt)
+      : row.updatedAt;
+  const ms = at ? new Date(at).getTime() : 0;
+  return Number.isNaN(ms) ? 0 : ms;
+}
+
+/**
+ * Newest first across EVERY row, ignoring status. `buildPipelineRows` returns
+ * triage order (`compareRows`: status band first, time only within a band),
+ * which is right for the working tabs but wrong for the "All PRs" tab — there
+ * a merged PR must interleave with the open ones by time rather than being
+ * ranked behind them all. Ties break on `key` so equal-timestamp rows keep a
+ * stable order across polls instead of swapping under the operator's cursor.
+ */
+export function compareByRecency(a: PipelineRow, b: PipelineRow): number {
+  const byTime = rowRecencyMs(b) - rowRecencyMs(a);
+  if (byTime !== 0) return byTime;
+  return a.key < b.key ? -1 : a.key > b.key ? 1 : 0;
+}
+
 // ----------------------------------------------------------------------------
 // Filtering
 // ----------------------------------------------------------------------------
@@ -1382,10 +1417,11 @@ export type RowPipelineFilter = Exclude<PipelineFilter, "train">;
 
 export function matchesFilter(row: PipelineRow, f: PipelineFilter): boolean {
   switch (f) {
-    // "All PRs" is the live pipeline — merged rows are history and live in
-    // their own tab, so they do not pad the working list.
+    // "All PRs" is every row, landed ones included (they also stay listed on
+    // their own Merged tab). The caller orders this tab by recency, not by the
+    // triage bands — see `compareByRecency`.
     case "all":
-      return row.status.kind !== "merged";
+      return true;
     case "attention":
       return row.status.attention !== "none";
     case "in-flight": {

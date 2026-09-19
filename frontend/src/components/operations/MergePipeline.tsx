@@ -77,6 +77,7 @@ import {
   buildPipelineRows,
   candidateChurnBadgeLabel,
   candidateChurnBadgeTitle,
+  compareByRecency,
   deriveCandidateChurn,
   derivePipelineHealth,
   matchesFilter,
@@ -706,7 +707,8 @@ const FILTERS: Array<{ id: PipelineFilter; label: string }> = [
 
 export function MergePipeline() {
   // Declared before the data hook: the merged rows are an expensive read, so
-  // the hook only fetches them while this tab is the visible one.
+  // the hook only fetches them while a tab that lists landed PRs (All PRs or
+  // Merged) is the visible one.
   const [filter, setFilter] = useState<PipelineFilter>("all");
 
   const {
@@ -723,7 +725,11 @@ export function MergePipeline() {
     suggestionBusy,
     onSuggestionAction,
     refetch,
-  } = useMergePipelineData({ includeMerged: filter === "merged" });
+  } = useMergePipelineData({
+    // Merged rows feed both the Merged tab and the All PRs tab (which lists
+    // landed PRs alongside open ones), so either being open turns the read on.
+    includeMerged: filter === "merged" || filter === "all",
+  });
 
   const [query, setQuery] = useState("");
   const [expandedKey, setExpandedKey] = useState<string | null>(null);
@@ -798,11 +804,15 @@ export function MergePipeline() {
       ) as Record<PipelineFilter, number>,
     [rows, trainRows]
   );
-  const visible = useMemo(
-    () =>
-      rows.filter((r) => matchesFilter(r, filter) && matchesQuery(r, query)),
-    [rows, filter, query]
-  );
+  const visible = useMemo(() => {
+    const matched = rows.filter(
+      (r) => matchesFilter(r, filter) && matchesQuery(r, query)
+    );
+    // `rows` arrives in triage order (status band, then time within the band).
+    // That is what the working tabs want; All PRs is a chronological list, so
+    // it re-sorts across the bands, newest first.
+    return filter === "all" ? [...matched].sort(compareByRecency) : matched;
+  }, [rows, filter, query]);
 
   const showSuggestions = suggestions !== null && suggestions.length > 0;
   const showGateDecisions = gateBlocks !== null && gateBlocks.length > 0;
@@ -820,8 +830,9 @@ export function MergePipeline() {
           pass `null` for a count nobody has fetched and the primitive renders
           the dash.
 
-          The merged ROWS are only fetched while that tab is open, so until
-          then `counts.merged` would be 0 for want of looking, not because
+          The merged ROWS are only fetched while the All PRs or Merged tab is
+          open, so until then `counts.merged` would be 0 for want of looking,
+          not because
           nothing landed. coord answers the cheap half — `merged_recent_count`
           — on the hot poll, so the label is a real number from the first
           render; `null` (coord too old to answer, or its count failed) is the
