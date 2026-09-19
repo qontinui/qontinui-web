@@ -434,11 +434,16 @@ describe("CoordFindingsPage", () => {
       );
       render(<CoordFindingsPage />);
 
+      // The setup this test is about: the LIST degrade is on screen.
+      await screen.findByTestId("coord-findings-unavailable");
       await waitFor(() =>
         expect(screen.getByTestId("coord-findings-linked")).toHaveTextContent(
           /no finding with that id/i
         )
       );
+      expect(
+        screen.getByTestId("coord-findings-unavailable")
+      ).toBeInTheDocument();
     });
 
     it("re-issues the by-id read from the refresh control", async () => {
@@ -553,6 +558,31 @@ describe("CoordFindingsPage", () => {
         /HTTP 503/
       );
       expect(screen.queryByTestId("coord-findings-unavailable")).toBeNull();
+    });
+
+    it("does not keep an earlier degrade's cause when a REFRESH then throws", async () => {
+      httpGet.mockResolvedValueOnce({
+        available: false,
+        count: 0,
+        findings: [],
+        unavailable: "coord did not answer the findings store (HTTP 503).",
+        unavailable_kind: "unreachable",
+      });
+      render(<CoordFindingsPage />);
+      await screen.findByTestId("coord-findings-unavailable");
+
+      httpGet.mockRejectedValue(new Error("GET … failed: 401 - unauthorized"));
+      await userEvent.click(screen.getByTestId("coord-findings-refresh"));
+
+      await waitFor(() =>
+        expect(screen.queryByTestId("coord-findings-unavailable")).toBeNull()
+      );
+      expect(screen.getByTestId("coord-findings-health")).not.toHaveTextContent(
+        /HTTP 503/
+      );
+      expect(screen.getByTestId("coord-findings-health")).toHaveTextContent(
+        /could not read the findings store/i
+      );
     });
 
     it("renders an honest empty state when coord CONFIRMS nothing matches", async () => {
