@@ -250,11 +250,14 @@ export default function CoordDevOpsPage() {
         label: `credential dark ${credentials.needsAction}`,
         tone: "attention",
         title:
-          "Machines whose coord credential needs a person: coord's dark scan named them, or their own runner reported a dark posture (dark, expired, absent, unrefreshable). Sessions spawned on them work without coord and do not know it. Opens the question queue, where coord asks you about each machine its scan names.",
+          "Machines whose coord credential needs a person: coord's dark scan named them, or their own runner reported a dark posture (dark, expired, absent, unrefreshable). Sessions spawned on them work without coord and do not know it. Opens the question queue. Coord raises a question there for each machine its scan names once it has processed the alert — if none is there yet, the machine still needs you; the question has not been raised.",
         // A dark credential is a `Responder::Operator` condition: coord turns
         // it into a question waiting on the operator (plan
         // `2026-09-18-notifications-are-agent-actions-and-alerts-are-agent-work`
-        // Phase 5), so the badge leads to the queue that question is in.
+        // Phase 5), so the badge leads to the queue that question will be in.
+        // The title does not PROMISE the question: a runner-reported dark
+        // posture coord's scan has not named raises no alert, and the Phase 5
+        // hook may not have run (or be deployed) yet.
         onClick: () => navigate(QUESTION_QUEUE_HREF),
         "data-testid": "coord-devops-credential-dark-badge",
       });
