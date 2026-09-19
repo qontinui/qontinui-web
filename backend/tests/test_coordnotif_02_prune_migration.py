@@ -34,6 +34,13 @@ Kept:
 * A ``system:`` row naming a document that does not exist (an unknown is never
   pruned).
 * A ``system:`` row whose ``document_kind`` matches no document of that name.
+* A REINCARNATED document: an old ``system:upstream`` notification at v3,
+  written 30 days ago, whose ``to_version`` now names a seed rewrite of a
+  recreated document of the same name. The version is younger than the
+  notification, so the migration's ``occurred_at`` bound keeps the row.
+* An ``upstream_policy_update_available`` row (actor ``system:``) whose
+  ``to_version`` names a seed version. It is not a prompt-document-change
+  kind, so no class touches it.
 * The agent-action kinds the feed exists for.
 
 Then a re-run (the prod-repair scenario and the idempotency claim), a re-run
@@ -59,6 +66,7 @@ from tests._alembic_harness import (
     backend_root,
     can_connect,
     ephemeral_database,
+    load_revision_module,
     run_alembic,
 )
 
@@ -66,10 +74,10 @@ from tests._alembic_harness import (
 _REVISION_ID = "coordnotif_02_prune_non_agent_kinds"
 _PARENT_REVISION_ID = "agent_questions_alert_episode_01"
 
-# Re-stated rather than imported from the migration: the test asserts what the
-# migration DOES, and importing its constants would hide a consistent mistake.
-_BATCH_ROWS = 5_000
-_BULK_ALERT_PAGED = _BATCH_ROWS + 1_500
+# More alert_paged rows than one batch. The test asserts this against the
+# migration module's own BATCH_ROWS, so a later batch-size bump cannot quietly
+# turn the multi-batch case into a single-batch one.
+_BULK_ALERT_PAGED = 6_500
 
 _EXPECTED_DELETED = {
     "alert-paged-read",
@@ -92,7 +100,17 @@ _EXPECTED_SURVIVORS = {
     "system-kind-mismatch",
     "agent-irreversible",
     "agent-sensitive-gate",
+    "reincarnated-upstream-v3",
+    "upstream-update-available-seed-version",
 }
+
+
+def _revision_batch_rows() -> int:
+    module = load_revision_module(
+        backend_root() / "alembic" / "versions" / f"{_REVISION_ID}.py",
+        f"_test_{_REVISION_ID}",
+    )
+    return int(module.BATCH_ROWS)
 
 
 def _document(
@@ -130,13 +148,20 @@ def _notification(
     kind: str,
     actor: str | None,
     detail: dict[str, object] | None = None,
+    occurred_days_ago: int = 0,
 ) -> uuid.UUID:
-    """Insert one notification; ``summary`` carries the case label."""
+    """Insert one notification; ``summary`` carries the case label.
+
+    ``occurred_at`` is computed by the server, like the version rows'
+    ``created_at``, so the reincarnation case cannot be perturbed by clock skew.
+    """
     return conn.execute(
         text(
             """
-            INSERT INTO coord.notifications (tenant_id, kind, summary, detail, actor)
-            VALUES (:t, :kind, :label, CAST(:detail AS jsonb), :actor)
+            INSERT INTO coord.notifications
+                (tenant_id, kind, summary, detail, actor, occurred_at)
+            VALUES (:t, :kind, :label, CAST(:detail AS jsonb), :actor,
+                    now() - make_interval(days => CAST(:ago AS int)))
             RETURNING notification_id
             """
         ),
@@ -146,6 +171,7 @@ def _notification(
             "label": label,
             "detail": json.dumps(detail or {}),
             "actor": actor,
+            "ago": occurred_days_ago,
         },
     ).scalar_one()
 
@@ -194,6 +220,7 @@ def _seed(engine: Engine) -> tuple[uuid.UUID, uuid.UUID]:
             document_kind: str | None = "policy",
             kind: str = "policy_document_changed",
             on_tenant: uuid.UUID = tenant,
+            occurred_days_ago: int = 0,
         ) -> uuid.UUID:
             detail: dict[str, object] = {
                 "document": document,
@@ -203,7 +230,9 @@ def _seed(engine: Engine) -> tuple[uuid.UUID, uuid.UUID]:
             }
             if document_kind is not None:
                 detail["document_kind"] = document_kind
-            return _notification(conn, on_tenant, label, kind, actor, detail)
+            return _notification(
+                conn, on_tenant, label, kind, actor, detail, occurred_days_ago
+            )
 
         # --- deleted ---
         read_deleted = _notification(
@@ -262,6 +291,32 @@ def _seed(engine: Engine) -> tuple[uuid.UUID, uuid.UUID]:
             "agent-sensitive-gate",
             "agent_took_sensitive_gate_action",
             "agent:y",
+        )
+
+        # Reincarnation: the "handbook" document was deleted and recreated. Its
+        # current v3 is a seed rewrite written now; the notification is an
+        # upstream adoption of the OLD document's v3, from 30 days ago.
+        _document(
+            conn,
+            tenant,
+            "policy",
+            "handbook",
+            ["system:seed", "system:seed", "system:seed"],
+        )
+        doc_change(
+            "reincarnated-upstream-v3",
+            "system:",
+            "handbook",
+            3,
+            occurred_days_ago=30,
+        )
+        # Not a prompt-document-change kind, although it names a seed version.
+        doc_change(
+            "upstream-update-available-seed-version",
+            "system:",
+            "engineering-priorities",
+            2,
+            kind="upstream_policy_update_available",
         )
 
         # Bulk: more alert_paged rows than one batch.
@@ -326,6 +381,9 @@ def test_coordnotif_02_prunes_exactly_the_non_agent_classes() -> None:
         engine,
         url,
     ):
+        assert _BULK_ALERT_PAGED > _revision_batch_rows(), (
+            "the bulk case must exceed one batch to exercise the cursor loop"
+        )
         run_alembic(root, url, "upgrade", _PARENT_REVISION_ID)
         read_deleted, read_kept = _seed(engine)
 
