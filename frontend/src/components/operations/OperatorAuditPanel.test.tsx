@@ -1,5 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import {
+  act,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 
 const getMock = vi.fn();
 vi.mock("@/services/service-factory", () => ({
@@ -11,9 +17,17 @@ vi.mock("@/services/service-factory", () => ({
 }));
 
 // The feed is admin-gated; hoisted so a test can flip it per case.
-const authState = vi.hoisted(() => ({ isCoordAdmin: true }));
+const authState = vi.hoisted(() => ({
+  isCoordAdmin: true,
+  loading: false,
+  user: { id: "u-1" } as { id: string } | null,
+}));
 vi.mock("@/contexts/auth-context", () => ({
-  useAuth: () => ({ isCoordAdmin: authState.isCoordAdmin }),
+  useAuth: () => ({
+    isCoordAdmin: authState.isCoordAdmin,
+    loading: authState.loading,
+    user: authState.user,
+  }),
 }));
 
 import { OperatorAuditPanel } from "./OperatorAuditPanel";
@@ -51,6 +65,8 @@ beforeEach(() => {
   getMock.mockReset();
   window.localStorage.clear();
   authState.isCoordAdmin = true;
+  authState.loading = false;
+  authState.user = { id: "u-1" };
 });
 
 async function openPanel() {
@@ -265,21 +281,46 @@ describe("OperatorAuditPanel — access and ordering", () => {
     expect(getMock).not.toHaveBeenCalled();
   });
 
+  it("says nothing about access while the user is still loading", async () => {
+    // `isCoordAdmin` reads false until the user loads; an admin must not be
+    // told the feed is admin-only during that window, and no read is issued.
+    authState.isCoordAdmin = false;
+    authState.loading = true;
+    authState.user = null;
+    render(<OperatorAuditPanel />);
+    fireEvent.click(screen.getByRole("button", { name: /Operator audit/i }));
+    expect(screen.queryByTestId("operator-audit-admin-only")).toBeNull();
+    expect(screen.queryByTestId("operator-audit-error")).toBeNull();
+    await new Promise((r) => setTimeout(r, 0));
+    expect(getMock).not.toHaveBeenCalled();
+  });
+
   it("never lets an older, slower response overwrite a newer one", async () => {
-    // First read hangs until released; the Refresh read answers immediately.
+    // First read hangs until released; the Refresh read answers immediately
+    // with a DIFFERENT row, which must be what stays on screen.
     let releaseFirst: (v: unknown) => void = () => {};
+    const NEWER: AuditRow = {
+      ...DRAIN_ROW,
+      audit_id: "aud-newer",
+      action: "fleet.drain.clear",
+    };
     getMock
       .mockImplementationOnce(
         () => new Promise((resolve) => (releaseFirst = resolve))
       )
-      .mockResolvedValueOnce({ audit: [] });
+      .mockResolvedValueOnce({ audit: [NEWER], count: 1 });
     await openPanel();
     await waitFor(() => expect(getMock).toHaveBeenCalledTimes(1));
     fireEvent.click(screen.getByTestId("operator-audit-refresh"));
-    await waitFor(() => expect(getMock).toHaveBeenCalledTimes(2));
-    // The stale first response now lands carrying a row; it must be dropped.
-    releaseFirst({ audit: [DRAIN_ROW] });
-    await new Promise((r) => setTimeout(r, 0));
+    await waitFor(() =>
+      expect(document.body.textContent).toContain("Undrained a machine")
+    );
+    // The stale first response now lands carrying another row; it must be
+    // dropped, and the newer response's row must survive it.
+    await act(async () => {
+      releaseFirst({ audit: [DRAIN_ROW], count: 1 });
+    });
+    expect(document.body.textContent).toContain("Undrained a machine");
     expect(document.body.textContent).not.toContain("Drained a machine");
   });
 });

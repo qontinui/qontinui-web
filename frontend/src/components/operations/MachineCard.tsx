@@ -57,7 +57,9 @@ export const CI_RUNNER_DRAIN_SCOPE =
   "GitHub Actions runner: draining it removes this runner from coord's " +
   "merge-capacity count, but GitHub still routes jobs to it by label. " +
   "Removing its `qontinui` label on GitHub is what stops fleet CI jobs " +
-  "arriving.";
+  "arriving. A host registered on N repos has N such rows: draining this one " +
+  "leaves the other registrations counted as capacity, and coord's " +
+  "`POST /coord/fleet/drain-host` drains the whole host.";
 
 interface MachineCardProps {
   machine: MachineGroup;
