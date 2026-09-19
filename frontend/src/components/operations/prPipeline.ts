@@ -1009,6 +1009,13 @@ export interface PipelineRow {
    * time).
    */
   mergedAt: string | null;
+  /**
+   * When this row was SUBMITTED — the key the All PRs tab orders by. For a PR,
+   * GitHub's open time (`PrRow.opened_at`); for a proposal-only row (no PR to
+   * carry one) the earliest attempt's `created_at`, i.e. when it was submitted
+   * to the merge train. Null when coord reports none: unknown, not "just now".
+   */
+  submittedAt: string | null;
   pr: PrRow | null;
   activeProposal: ProposalDetail | null;
   /** All proposals ever seen for this key, newest first (attempt history). */
@@ -1163,6 +1170,20 @@ function escalateIfStale(
   return pr === null ? escalated : withDwellEvidence(escalated, dwellMs);
 }
 
+/** Earliest `created_at` across proposal attempts, or null when there are none. */
+function earliestCreatedAt(attempts: ProposalDetail[]): string | null {
+  let best: string | null = null;
+  let bestMs = Infinity;
+  for (const a of attempts) {
+    const ms = new Date(a.created_at).getTime();
+    if (!Number.isNaN(ms) && ms < bestMs) {
+      best = a.created_at;
+      bestMs = ms;
+    }
+  }
+  return best;
+}
+
 export function buildPipelineRows(
   prs: PrRow[],
   proposals: ProposalDetail[],
@@ -1221,6 +1242,7 @@ export function buildPipelineRows(
       status,
       updatedAt: active ? active.updated_at : pr.last_refreshed_at,
       mergedAt: pickMergedAt(status, pr, attempts),
+      submittedAt: pr.opened_at ?? null,
       pr,
       activeProposal: active,
       attempts,
@@ -1264,6 +1286,7 @@ export function buildPipelineRows(
       status,
       updatedAt: active.updated_at,
       mergedAt: pickMergedAt(status, null, attempts),
+      submittedAt: earliestCreatedAt(attempts),
       pr: null,
       activeProposal: active,
       attempts,
@@ -1357,18 +1380,14 @@ function compareRows(a: PipelineRow, b: PipelineRow): number {
 }
 
 /**
- * The timestamp a row shows in its time cell, as epoch ms: LAND time for a
- * merged row (falling back to `updatedAt` when coord projects no `merged_at`,
- * matching `compareRows`), otherwise `updatedAt` — the active proposal's last
- * state change, or, for a PR with no proposal, coord's `last_refreshed_at`
- * mirror stamp. Rows with no timestamp at all read as 0 so they sink.
- *
- * This is NOT the PR's submitted/opened time: coord's PR feed carries no such
- * field (`PrRow` has none). Until it does, "newest first" means newest by the
- * time each row displays, and a proposal-less PR's stamp moves whenever coord
- * re-hydrates it.
+ * The row's ACTIVITY clock as epoch ms: LAND time for a merged row (falling
+ * back to `updatedAt` when coord projects no `merged_at`, matching
+ * `compareRows`), otherwise `updatedAt` — the active proposal's last state
+ * change or, for a PR with no proposal, coord's `last_refreshed_at` mirror
+ * stamp, which moves whenever coord re-hydrates the row. Rows with no timestamp
+ * read as 0. This is what the working tabs show; it is NOT a submission time.
  */
-export function rowRecencyMs(row: PipelineRow): number {
+export function rowActivityMs(row: PipelineRow): number {
   const at =
     row.status.kind === "merged"
       ? (row.mergedAt ?? row.updatedAt)
@@ -1377,17 +1396,38 @@ export function rowRecencyMs(row: PipelineRow): number {
   return Number.isNaN(ms) ? 0 : ms;
 }
 
+/** The row's SUBMITTED time as epoch ms, or null when unknown/unparseable. */
+export function rowSubmittedMs(row: PipelineRow): number | null {
+  if (!row.submittedAt) return null;
+  const ms = new Date(row.submittedAt).getTime();
+  return Number.isNaN(ms) ? null : ms;
+}
+
 /**
- * Newest first across EVERY row, ignoring status. `buildPipelineRows` returns
- * triage order (`compareRows`: status band first, time only within a band),
- * which is right for the working tabs but wrong for the "All PRs" tab — there
- * a merged PR must interleave with the open ones by time rather than being
- * ranked behind them all. Ties break on `key` so equal-timestamp rows keep a
- * stable order across polls instead of swapping under the operator's cursor.
+ * Newest-SUBMITTED first across EVERY row, ignoring status. `buildPipelineRows`
+ * returns triage order (`compareRows`: status band first, time only within a
+ * band), which suits the working tabs but not "All PRs" — there a merged PR
+ * must interleave with the open ones by when it was submitted.
+ *
+ * A row with no known submitted time sorts AFTER every row that has one:
+ * absence is no evidence, and ranking it first would put a PR whose age we do
+ * not know above ones we do. Those rows order among themselves by their
+ * activity clock, then by `key`, so equal rows keep a stable order across polls
+ * instead of swapping under the operator's cursor.
  */
-export function compareByRecency(a: PipelineRow, b: PipelineRow): number {
-  const byTime = rowRecencyMs(b) - rowRecencyMs(a);
-  if (byTime !== 0) return byTime;
+export function compareBySubmitted(a: PipelineRow, b: PipelineRow): number {
+  const sa = rowSubmittedMs(a);
+  const sb = rowSubmittedMs(b);
+  if (sa !== null && sb !== null) {
+    if (sa !== sb) return sb - sa;
+  } else if (sa !== null) {
+    return -1;
+  } else if (sb !== null) {
+    return 1;
+  } else {
+    const byActivity = rowActivityMs(b) - rowActivityMs(a);
+    if (byActivity !== 0) return byActivity;
+  }
   return a.key < b.key ? -1 : a.key > b.key ? 1 : 0;
 }
 
@@ -1418,8 +1458,8 @@ export type RowPipelineFilter = Exclude<PipelineFilter, "train">;
 export function matchesFilter(row: PipelineRow, f: PipelineFilter): boolean {
   switch (f) {
     // "All PRs" is every row, landed ones included (they also stay listed on
-    // their own Merged tab). The caller orders this tab by recency, not by the
-    // triage bands — see `compareByRecency`.
+    // their own Merged tab). The caller orders this tab by submitted time, not
+    // by the triage bands — see `compareBySubmitted`.
     case "all":
       return true;
     case "attention":

@@ -819,15 +819,44 @@ describe("MergePipeline", () => {
     expect(hookCalls.at(-1)?.includeMerged).toBe(true);
   });
 
-  it("orders All PRs newest-first across status bands, merged rows included", () => {
+  it("renders an unparseable opened_at as unknown, never as 'opened never'", () => {
+    hookData.current.prs = [
+      pr({ pr_number: 5, branch: "b-bad", opened_at: "not-a-date" }),
+    ];
+
+    render(<MergePipeline />);
+
+    const time = screen.getByTestId("row-time");
+    expect(time).toHaveTextContent("opened ?");
+    expect(time).not.toHaveTextContent(/never/);
+  });
+
+  it("orders All PRs by time OPENED across status bands, merged rows included", () => {
     const at = (minutesAgo: number) =>
       new Date(Date.now() - minutesAgo * 60_000).toISOString();
     hookData.current.prs = [
-      // Oldest, and the triage sort would rank it FIRST (conflict band).
-      pr({ pr_number: 1, branch: "b-conflict", last_refreshed_at: at(300) }),
-      pr({ pr_number: 2, branch: "b-ready", last_refreshed_at: at(30) }),
-      // Newest, and the triage sort would rank it LAST (merged band).
-      mergedPr(3, 1, "aaaaaaa1111"),
+      // Opened OLDEST but re-hydrated most recently, and the triage sort would
+      // rank it FIRST (conflict band): a list ordered by refresh stamp puts
+      // it on top, one ordered by open time puts it last.
+      pr({
+        pr_number: 1,
+        branch: "b-conflict",
+        opened_at: at(5000),
+        last_refreshed_at: at(1),
+      }),
+      pr({
+        pr_number: 2,
+        branch: "b-ready",
+        opened_at: at(30),
+        last_refreshed_at: at(900),
+      }),
+      // Landed most recently but opened in the middle; triage ranks it LAST.
+      {
+        ...mergedPr(3, 1, "aaaaaaa1111"),
+        opened_at: at(300),
+      },
+      // Opened by coord's projection on no PR at all: unknown, sinks last.
+      pr({ pr_number: 4, branch: "b-unknown", last_refreshed_at: at(0) }),
     ];
     hookData.current.proposals = [
       proposal({
@@ -848,15 +877,31 @@ describe("MergePipeline", () => {
     render(<MergePipeline />);
 
     const rows = screen.getAllByTestId("pipeline-row");
-    expect(rows).toHaveLength(3);
-    expect(rows[0]).toHaveTextContent("qontinui-web#3");
-    expect(rows[1]).toHaveTextContent("qontinui-web#2");
+    expect(rows).toHaveLength(4);
+    expect(rows[0]).toHaveTextContent("qontinui-web#2");
+    expect(rows[1]).toHaveTextContent("qontinui-web#3");
     expect(rows[2]).toHaveTextContent("qontinui-web#1");
+    expect(rows[3]).toHaveTextContent("qontinui-web#4");
 
-    // The working tabs keep their triage order: needs-the-author first.
+    // The time cell reports the clock the list is ordered by, or the list
+    // would read as unsorted.
+    expect(within(rows[0]).getByTestId("row-time")).toHaveTextContent(
+      "opened 30m ago"
+    );
+    expect(within(rows[3]).getByTestId("row-time")).toHaveTextContent(
+      "opened ?"
+    );
+    expect(
+      within(rows[3]).getByTestId("row-time").getAttribute("title")
+    ).toContain("did not report when this PR was opened");
+
+    // The working tabs keep their triage order (needs-the-author first) and
+    // their activity clock.
     fireEvent.click(screen.getByTestId("pipeline-filter-attention"));
-    expect(screen.getAllByTestId("pipeline-row")[0]).toHaveTextContent(
-      "qontinui-web#1"
+    const attention = screen.getAllByTestId("pipeline-row");
+    expect(attention[0]).toHaveTextContent("qontinui-web#1");
+    expect(within(attention[0]).getByTestId("row-time")).not.toHaveTextContent(
+      /opened/
     );
   });
 
@@ -923,6 +968,7 @@ describe("MergePipeline", () => {
         pr_state: "open",
         merge_commit_sha: "ccccccc3333",
         merged_at: new Date(Date.now() - 60_000).toISOString(),
+        opened_at: new Date(Date.now() - 3 * 3_600_000).toISOString(),
       }),
     ];
 
@@ -932,9 +978,15 @@ describe("MergePipeline", () => {
     // work — and counted exactly once in the merged tab.
     const allRows = screen.getAllByTestId("pipeline-row");
     expect(allRows).toHaveLength(1);
+    expect(allRows[0]).toHaveTextContent(/merged/i);
+    // The time cell is the clock the tab is ordered by, and a landed row's is
+    // still its OPEN time, not its merge time.
     expect(within(allRows[0]).getByTestId("row-time")).toHaveTextContent(
-      "merged"
+      "opened 3h ago"
     );
+    expect(
+      within(allRows[0]).getByTestId("row-time").getAttribute("title")
+    ).toMatch(/^Opened /);
     expect(screen.getByTestId("pipeline-filter-merged")).toHaveTextContent(
       /Merged\s*1/
     );

@@ -77,11 +77,12 @@ import {
   buildPipelineRows,
   candidateChurnBadgeLabel,
   candidateChurnBadgeTitle,
-  compareByRecency,
+  compareBySubmitted,
   deriveCandidateChurn,
   derivePipelineHealth,
   matchesFilter,
   matchesQuery,
+  rowSubmittedMs,
   singleKey,
   UNKNOWN_DWELL_NOTE,
   unstableHasFailure,
@@ -121,12 +122,47 @@ const PIPELINE_PALETTE: StatusPalette<UnifiedStatusKind> = {
 };
 
 /**
- * The pipeline's timestamp: a merged row reports its LAND time (what the
- * merged tab is a record of); every other row reports its last state change.
- * A merged row from a coord deploy that does not project `merged_at` says so
- * rather than passing a refresh time off as a merge time.
+ * Which clock a row's time cell reports. The All PRs tab is ordered by time
+ * SUBMITTED, so it shows that clock — a list sorted by one time and labelled
+ * with another reads as unsorted. Every other tab is a working list and shows
+ * the activity clock.
  */
-function PipelineRowTime({ row }: { row: PipelineRow }) {
+type RowTimeBasis = "submitted" | "activity";
+
+/**
+ * The pipeline's timestamp. Submitted basis: GitHub's open time (or, for a
+ * PR-less proposal, when it was submitted to the train), with an explicit
+ * "unknown" when coord reports none. Activity basis: a merged row reports its
+ * LAND time (what the merged tab is a record of); every other row reports its
+ * last state change. A merged row from a coord deploy that does not project
+ * `merged_at` says so rather than passing a refresh time off as a merge time.
+ */
+function PipelineRowTime({
+  row,
+  basis,
+}: {
+  row: PipelineRow;
+  basis: RowTimeBasis;
+}) {
+  if (basis === "submitted") {
+    const noun = row.pr !== null ? "opened" : "submitted";
+    return (
+      <RowTime
+        // Only a parseable time counts as one: `RowTime` substitutes `absent`
+        // for an EMPTY value only, so a non-empty unparseable string would
+        // otherwise render "opened never" while the sort treats it as unknown.
+        at={rowSubmittedMs(row) === null ? null : row.submittedAt}
+        verb={noun === "opened" ? "Opened" : "Submitted"}
+        prefix={`${noun} `}
+        absent={{
+          label: `${noun} ?`,
+          title: `coord did not report when this ${
+            row.pr !== null ? "PR was opened" : "proposal was submitted"
+          }`,
+        }}
+      />
+    );
+  }
   const isMerged = row.status.kind === "merged";
   return (
     <RowTime
@@ -637,11 +673,13 @@ function PipelineRowDisplay({
   expanded,
   onToggle,
   onActed,
+  timeBasis,
 }: {
   row: PipelineRow;
   expanded: boolean;
   onToggle: () => void;
   onActed: () => void;
+  timeBasis: RowTimeBasis;
 }) {
   return (
     <RecordRow
@@ -674,7 +712,7 @@ function PipelineRowDisplay({
       }
       status={<StatusBadge status={row.status} palette={PIPELINE_PALETTE} />}
       reason={row.status.reason}
-      time={<PipelineRowTime row={row} />}
+      time={<PipelineRowTime row={row} basis={timeBasis} />}
     >
       <RowDetail row={row} onActed={onActed} />
       <GroupMembers row={row} />
@@ -810,8 +848,8 @@ export function MergePipeline() {
     );
     // `rows` arrives in triage order (status band, then time within the band).
     // That is what the working tabs want; All PRs is a chronological list, so
-    // it re-sorts across the bands, newest first.
-    return filter === "all" ? [...matched].sort(compareByRecency) : matched;
+    // it re-sorts across the bands by time submitted, newest first.
+    return filter === "all" ? [...matched].sort(compareBySubmitted) : matched;
   }, [rows, filter, query]);
 
   const showSuggestions = suggestions !== null && suggestions.length > 0;
@@ -907,6 +945,7 @@ export function MergePipeline() {
               expanded={expanded}
               onToggle={onToggle}
               onActed={refetch}
+              timeBasis={filter === "all" ? "submitted" : "activity"}
             />
           )}
         />
