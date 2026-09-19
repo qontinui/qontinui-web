@@ -10,14 +10,19 @@ All coord/JWKS/Cognito interactions are mocked — no network, no DB.
 
 from __future__ import annotations
 
+from collections.abc import Iterable
+from types import SimpleNamespace
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import pytest
 from fastapi import HTTPException
 from fastapi.security import HTTPAuthorizationCredentials
+from pydantic import AliasChoices, AliasPath, BaseModel, Field, ValidationError
 
 from app.api.v1.endpoints import memory as memory_ep
+from app.schemas.memory import MemoryQueryRequest, MemoryRecordIn, SupersedeRequest
 from app.services.coord_jwks import (
     CoordJWKSUnavailableError,
     CoordTokenExpiredError,
@@ -29,6 +34,69 @@ from app.services.coord_jwks import (
 
 def _creds(token: str = "some-bearer") -> HTTPAuthorizationCredentials:
     return HTTPAuthorizationCredentials(scheme="Bearer", credentials=token)
+
+
+def _user(user_id: UUID) -> MagicMock:
+    """A stand-in for the ``auth.users`` row ``_verify_device_jwt`` resolves.
+
+    ``.id`` has to be a real UUID: the device arm now reads it onto the
+    principal, and a bare ``MagicMock()`` would let an assertion on
+    ``principal.user_id`` pass against an attribute that is itself a mock.
+    """
+    user = MagicMock()
+    user.id = user_id
+    return user
+
+
+class _FakeReferenceTables:
+    """Stands in for ``auth.users`` / ``coord.devices`` inside a fake session.
+
+    ``_existing_provenance`` resolves the coord-service arm's two ASSERTED
+    ids against the tables their FKs point at, so this module — which is
+    deliberately DB-free — needs a substrate for them. The fake answers the
+    one query that function issues, honouring membership, so the real
+    function (its SQL parameters, its NULL handling, its degradation
+    branches and its logging) is what runs.
+    """
+
+    def __init__(self, users: set[UUID], devices: set[UUID]) -> None:
+        self._users = users
+        self._devices = devices
+
+    async def execute(self, _stmt: object, params: dict[str, Any]) -> MagicMock:
+        def _hit(raw: str | None, known: set[UUID]) -> UUID | None:
+            if raw is None:
+                return None
+            value = UUID(raw)
+            return value if value in known else None
+
+        row = SimpleNamespace(
+            user_id=_hit(params["user_id"], self._users),
+            device_id=_hit(params["device_id"], self._devices),
+        )
+        result = MagicMock()
+        result.one.return_value = row
+        return result
+
+    async def __aenter__(self) -> _FakeReferenceTables:
+        return self
+
+    async def __aexit__(self, *_exc: object) -> bool:
+        return False
+
+
+def _reference_tables(
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    users: Iterable[UUID] = (),
+    devices: Iterable[UUID] = (),
+) -> None:
+    """Make exactly ``users``/``devices`` exist for the provenance lookup."""
+    known_users, known_devices = set(users), set(devices)
+    monkeypatch.setattr(
+        "app.db.session.AsyncSessionLocal",
+        lambda: _FakeReferenceTables(known_users, known_devices),
+    )
 
 
 def _mock_verify(monkeypatch: pytest.MonkeyPatch, result) -> AsyncMock:
@@ -65,6 +133,9 @@ async def test_coord_service_token_resolves_tenant(
             "device_id": str(device_id),
         },
     )
+    # The service arm resolves its asserted ids against their FK targets;
+    # this one names a device that exists, so it survives.
+    _reference_tables(monkeypatch, devices=[device_id])
     principal = await memory_ep.get_memory_tenant(
         request=MagicMock(), user=None, credentials=_creds()
     )
@@ -124,7 +195,7 @@ async def test_device_token_resolves_device_tenant(
     monkeypatch.setattr(
         memory_ep,
         "_verify_device_jwt",
-        AsyncMock(return_value=(device_claims, MagicMock())),
+        AsyncMock(return_value=(device_claims, _user(UUID(device_claims["user_id"])))),
     )
     principal = await memory_ep.get_memory_tenant(
         request=MagicMock(), user=None, credentials=_creds()
@@ -143,7 +214,7 @@ async def test_device_token_without_tenant_claim_is_403(
     monkeypatch.setattr(
         memory_ep,
         "_verify_device_jwt",
-        AsyncMock(return_value=(device_claims, MagicMock())),
+        AsyncMock(return_value=(device_claims, _user(UUID(device_claims["user_id"])))),
     )
     with pytest.raises(HTTPException) as exc:
         await memory_ep.get_memory_tenant(
@@ -412,3 +483,576 @@ async def test_every_failure_class_is_classified_at_the_memory_door(
         )
         assert principal.actor == "operator"
         assert principal.tenant_id == tenant_id
+
+
+# ---------------------------------------------------------------------------
+# PROVENANCE FACETS — `MemoryPrincipal.user_id`
+#
+# Plan `2026-08-06-user-and-device-facets-on-memories-and-findings`, Phase 2
+# (web half). SECURITY SURFACE: `user_id` is the key of the one read path
+# that can return a row from a tenant other than the caller's
+# (`applies_at='user'`, §6), so where it comes from is the security-critical
+# line of the whole plan. It is resolved HERE, from a verified credential,
+# and nowhere else.
+#
+# The tests below pin three things that are easy to break and silent when
+# broken:
+#
+#   1. the device arm actually CARRIES the user it already resolves (it used
+#      to bind it to `_device_user` and throw it away);
+#   2. a coord-service token with no `user_id` claim is FAIL-SOFT — `None`,
+#      never a 401. coord does not mint that claim yet, so a strict read here
+#      would 401 every proxied memory write in the fleet. "A memory that
+#      fails to save is worse than one that is coarsely scoped" (§4.1);
+#   3. a coord-service token that DOES carry the claim yields it, which is
+#      what coord's deferred half will start sending.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_device_principal_carries_the_resolved_user(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The device arm stops discarding the user `_verify_device_jwt` resolved.
+
+    This is the one arm on which the facet resolves today, and the user is
+    free: `_verify_device_jwt` has already 401'd a token with no `user_id`
+    claim, a malformed one, an unknown user or an inactive one, so by the
+    time the principal is built the value is fully verified.
+    """
+    user_id = uuid4()
+    device_claims = {
+        "user_id": str(user_id),
+        "device_id": str(uuid4()),
+        "tenant_id": str(uuid4()),
+    }
+    _mock_verify(monkeypatch, device_claims)
+    monkeypatch.setattr(
+        memory_ep,
+        "_verify_device_jwt",
+        AsyncMock(return_value=(device_claims, _user(user_id))),
+    )
+
+    principal = await memory_ep.get_memory_tenant(
+        request=MagicMock(), user=None, credentials=_creds()
+    )
+
+    assert principal.actor == "device"
+    assert principal.user_id == user_id
+
+
+@pytest.mark.asyncio
+async def test_coord_service_token_without_user_claim_is_fail_soft(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """No `user_id` claim → `user_id is None`, and NOT a 401.
+
+    This is today's live shape: coord's `MemoryProxyClaims` carries
+    `{sub, token_kind, tenant_id, device_id, iat, exp}` and no user, so
+    every proxied write lands here. Turning the absence into a rejection
+    would take out `coord_memory_record` fleet-wide for a facet that is
+    nice to have.
+    """
+    tenant_id, device_id = uuid4(), uuid4()
+    _mock_verify(
+        monkeypatch,
+        {
+            "token_kind": "coord_service",
+            "sub": "coord-memory-proxy",
+            "tenant_id": str(tenant_id),
+            "device_id": str(device_id),
+        },
+    )
+    _reference_tables(monkeypatch, devices=[device_id])
+
+    principal = await memory_ep.get_memory_tenant(
+        request=MagicMock(), user=None, credentials=_creds()
+    )
+
+    assert principal.actor == "coord_service"
+    assert principal.tenant_id == tenant_id
+    assert principal.user_id is None
+
+
+@pytest.mark.asyncio
+async def test_coord_service_token_with_user_claim_carries_it(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A `user_id` CLAIM is honoured — the deferred coord half's wire shape.
+
+    Once coord mints `user_id` into `MemoryProxyClaims`, this is the arm
+    that starts resolving. It reads the VERIFIED claim, the same way
+    `tenant_id` and `device_id` already do; nothing here reads the body.
+    """
+    user_id, device_id = uuid4(), uuid4()
+    _mock_verify(
+        monkeypatch,
+        {
+            "token_kind": "coord_service",
+            "sub": "coord-memory-proxy",
+            "tenant_id": str(uuid4()),
+            "device_id": str(device_id),
+            "user_id": str(user_id),
+        },
+    )
+    _reference_tables(monkeypatch, users=[user_id], devices=[device_id])
+
+    principal = await memory_ep.get_memory_tenant(
+        request=MagicMock(), user=None, credentials=_creds()
+    )
+
+    assert principal.user_id == user_id
+
+
+@pytest.mark.asyncio
+async def test_coord_service_user_that_does_not_exist_degrades_to_none(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A claimed `user_id` with no `auth.users` row is NULL, not a 500.
+
+    `coord.memory_records.user_id REFERENCES auth.users(id)`, so a dangling
+    id does not land a NULL — it raises `ForeignKeyViolation` and takes the
+    whole write to a 500. On this arm the id is an unverified ASSERTION by
+    coord, and coord carries its own operator-id keyspace, so "coord starts
+    minting user_id and it is the wrong kind of id" would break every
+    proxied memory write in the fleet at once.
+
+    Shape is checked by `_claim_uuid`; EXISTENCE is checked here. The
+    degradation is the plan's own rule: never reject a write for missing
+    provenance (§4.1 item 3).
+    """
+    device_id = uuid4()
+    _mock_verify(
+        monkeypatch,
+        {
+            "token_kind": "coord_service",
+            "sub": "coord-memory-proxy",
+            "tenant_id": str(uuid4()),
+            "device_id": str(device_id),
+            # Well-formed, and names nobody.
+            "user_id": str(uuid4()),
+        },
+    )
+    _reference_tables(monkeypatch, users=[], devices=[device_id])
+
+    principal = await memory_ep.get_memory_tenant(
+        request=MagicMock(), user=None, credentials=_creds()
+    )
+
+    assert principal.user_id is None
+    # The facet that DID resolve is unaffected — degrade one, not both.
+    assert principal.device_id == device_id
+
+
+@pytest.mark.asyncio
+async def test_coord_service_device_that_does_not_exist_degrades_to_none(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Same for `device_id` — `coord.devices` is the FK target there.
+
+    Lower risk than the user column (device retirement is a soft
+    `reaped_at`, not a DELETE) but the same failure shape, and one lookup
+    covers both columns.
+    """
+    user_id = uuid4()
+    _mock_verify(
+        monkeypatch,
+        {
+            "token_kind": "coord_service",
+            "sub": "coord-memory-proxy",
+            "tenant_id": str(uuid4()),
+            "device_id": str(uuid4()),
+            "user_id": str(user_id),
+        },
+    )
+    _reference_tables(monkeypatch, users=[user_id], devices=[])
+
+    principal = await memory_ep.get_memory_tenant(
+        request=MagicMock(), user=None, credentials=_creds()
+    )
+
+    assert principal.device_id is None
+    assert principal.user_id == user_id
+
+
+@pytest.mark.asyncio
+async def test_unresolvable_reference_tables_degrade_rather_than_raise(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The lookup ITSELF failing must not fail the request either.
+
+    The check exists to stop a provenance facet from killing a write. A
+    version of it that raises when the reference tables are unreachable
+    would just move the outage rather than remove it, so every failure
+    degrades to unattributed.
+    """
+
+    def _explode() -> None:
+        raise RuntimeError("reference tables unreachable")
+
+    _mock_verify(
+        monkeypatch,
+        {
+            "token_kind": "coord_service",
+            "sub": "coord-memory-proxy",
+            "tenant_id": str(uuid4()),
+            "device_id": str(uuid4()),
+            "user_id": str(uuid4()),
+        },
+    )
+    monkeypatch.setattr("app.db.session.AsyncSessionLocal", _explode)
+
+    principal = await memory_ep.get_memory_tenant(
+        request=MagicMock(), user=None, credentials=_creds()
+    )
+
+    assert principal.actor == "coord_service"
+    assert principal.user_id is None
+    assert principal.device_id is None
+
+
+@pytest.mark.asyncio
+async def test_device_arm_does_not_pay_for_the_existence_lookup(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Pins a DELIBERATE ASYMMETRY, not an oversight — read why before editing.
+
+    This arm skips `_existing_provenance` entirely, and the two facets are
+    not in the same position:
+
+    * `user_id` genuinely needs no check. `_verify_device_jwt` has ALREADY
+      read and validated the `auth.users` row (it 401s a token whose user
+      claim is missing, malformed, unknown or inactive), so re-reading it
+      would buy nothing.
+    * `device_id` is **as unverified as the coord-service arm's** —
+      `_verify_device_jwt` never touches `coord.devices` — and it lands in
+      the identical FK column. Leaving it unresolved is a cost decision
+      taken with eyes open: this is the fleet's hottest write path, and a
+      lookup here would add a session and a round trip to a check that a
+      raced deletion defeats anyway.
+
+    What makes that decision safe is NOT this test: it is
+    `_write_degrading_dangling_provenance`, which wraps every insert in a
+    savepoint and retries unattributed on a provenance FK violation, so a
+    dangling `device_id` degrades the request's PROVENANCE rather than
+    500ing the request — on this arm and every other. (Degraded to the
+    whole REQUEST, not one row: provenance is request-level, so on the
+    batch path every record in the call is written unattributed.) `test_memfacets_01_provenance_facets_migration.py`
+    proves that against real Postgres, including the constraint name the
+    fallback matches on.
+
+    So this test says "the lookup is scoped, and scoping it is correct"; it
+    does not say "a dangling device_id cannot happen". "Make it uniform" is
+    a plausible-looking future edit that would quietly double the
+    per-request DB work of every runner memory call for a guarantee that is
+    already made exactly, one layer down.
+    """
+    user_id, device_id = uuid4(), uuid4()
+    device_claims = {
+        "user_id": str(user_id),
+        "device_id": str(device_id),
+        "tenant_id": str(uuid4()),
+    }
+    _mock_verify(monkeypatch, device_claims)
+    monkeypatch.setattr(
+        memory_ep,
+        "_verify_device_jwt",
+        AsyncMock(return_value=(device_claims, _user(user_id))),
+    )
+    # Nothing exists in the reference tables. If the device arm consulted
+    # them, both facets would come back None.
+    _reference_tables(monkeypatch, users=[], devices=[])
+
+    principal = await memory_ep.get_memory_tenant(
+        request=MagicMock(), user=None, credentials=_creds()
+    )
+
+    assert principal.user_id == user_id
+    assert principal.device_id == device_id
+
+
+@pytest.mark.asyncio
+async def test_coord_service_token_with_malformed_user_claim_is_401(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A present-but-unparseable `user_id` is a 401, not a silent None.
+
+    Fail-SOFT is about ABSENCE. A claim that is there and malformed is a
+    broken minter, and `_claim_uuid` already treats `device_id` that way;
+    swallowing it would attribute the record to nobody while reporting
+    success.
+    """
+    _mock_verify(
+        monkeypatch,
+        {
+            "token_kind": "coord_service",
+            "sub": "coord-memory-proxy",
+            "tenant_id": str(uuid4()),
+            "user_id": "not-a-uuid",
+        },
+    )
+
+    with pytest.raises(HTTPException) as exc:
+        await memory_ep.get_memory_tenant(
+            request=MagicMock(), user=None, credentials=_creds()
+        )
+
+    assert exc.value.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_operator_principal_carries_the_authenticated_user(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The operator arm attributes to the `auth.users` row it authenticated.
+
+    Deliberately `user.id` and not `identity.operator_id`: `user_id` FKs to
+    `auth.users(id)`, and coord's operator id is a different keyspace.
+    """
+    user_id = uuid4()
+    _mock_verify(monkeypatch, CoordTokenInvalidError("not coord-signed"))
+    identity = MagicMock()
+    identity.home_tenant_id = uuid4()
+    monkeypatch.setattr(
+        memory_ep, "get_coord_identity", AsyncMock(return_value=identity)
+    )
+
+    principal = await memory_ep.get_memory_tenant(
+        request=MagicMock(), user=_user(user_id), credentials=_creds()
+    )
+
+    assert principal.actor == "operator"
+    assert principal.user_id == user_id
+
+
+# ---------------------------------------------------------------------------
+# THE PROHIBITION — provenance arrives as a verified claim or not at all.
+#
+# §6 requirement 5(b): a `user_id` accepted from a request body would let any
+# device write or read any human's cross-tenant memory corpus. Every request
+# model on this path is `extra="forbid"`, so the refusal is STRUCTURAL —
+# there is no rejection to write, only a field not to declare.
+#
+# These tests exist because that protection is invisible: it is the ABSENCE
+# of three field declarations, which nothing stops a future author from
+# adding for convenience. They fail the moment one is added, which is the
+# point at which someone has to argue for it.
+#
+# All THREE doors are enumerated in one place, because a model left out of
+# the list is a door left open and nothing else in the suite would notice:
+#
+#   * `MemoryRecordIn`      — the write door.
+#   * `MemoryQueryRequest`  — the READ half of the same hole: a honoured
+#     `user_id` would let any holder of a device token select another
+#     human's user-altitude rows across every tenant that human belongs to.
+#   * `SupersedeRequest`    — also record-CREATING (the successor is a new
+#     row, with this caller's provenance), so it is a third write door and
+#     was missing from this list until the 2026-09-19 review.
+# ---------------------------------------------------------------------------
+
+_FORBIDDEN_PROVENANCE_KEYS = ("user_id", "device_id", "applies_at")
+
+#: Each model with a minimal body that validates without the forbidden key.
+_PROVENANCE_FORBIDDING_MODELS: tuple[tuple[type[BaseModel], dict[str, Any]], ...] = (
+    (MemoryRecordIn, {"title": "t", "content": "c", "kind": "fact"}),
+    (MemoryQueryRequest, {"query_text": "q"}),
+    (SupersedeRequest, {"title": "t", "content": "c"}),
+)
+
+_MODEL_IDS = [m.__name__ for m, _ in _PROVENANCE_FORBIDDING_MODELS]
+
+
+@pytest.mark.parametrize("key", _FORBIDDEN_PROVENANCE_KEYS)
+@pytest.mark.parametrize(
+    ("model", "minimal_body"), _PROVENANCE_FORBIDDING_MODELS, ids=_MODEL_IDS
+)
+def test_request_body_cannot_declare_provenance(
+    model: type[BaseModel], minimal_body: dict[str, Any], key: str
+) -> None:
+    """Every memory request model must 422 a provenance key, not honour it."""
+    body = {
+        **minimal_body,
+        key: str(uuid4()) if key != "applies_at" else "fleet",
+    }
+    with pytest.raises(ValidationError) as exc:
+        model.model_validate(body)
+    assert key in str(exc.value)
+
+
+def _alias_strings(alias: object) -> set[str]:
+    """Every wire key an `alias=` / `validation_alias=` value can accept.
+
+    Pydantic v2 spells an alias FOUR ways and only one of them is a bare
+    `str`. The 2026-09-19 review found this test reading
+    `isinstance(alias, str)` and therefore blind to the two shapes a real
+    author would reach for:
+
+    * `AliasChoices("provenance_user", "user_id")` — accepts EITHER key,
+      and its `.choices` may itself hold `AliasPath`s;
+    * `AliasPath("user_id", 0)` — its FIRST segment is the top-level wire
+      key, so a nested path still opens the door at the key this test
+      cares about.
+
+    The body-level test above would catch an aliased key on one of the
+    three models it enumerates. This one is the belt to that braces — it
+    reads the DECLARATION rather than a probe body, so it keeps working
+    for a model added to `_PROVENANCE_FORBIDDING_MODELS` with no minimal
+    body worth probing, and it names the offending alias in the failure
+    instead of reporting only "no ValidationError raised". Reading one
+    alias shape out of four made that second guarantee hollow.
+    """
+    if isinstance(alias, str):
+        return {alias}
+    if isinstance(alias, AliasPath):
+        # Only the first segment is a top-level request key; the rest index
+        # into it. `path` holds `str | int`.
+        head = alias.path[0] if alias.path else None
+        return {head} if isinstance(head, str) else set()
+    if isinstance(alias, AliasChoices):
+        out: set[str] = set()
+        for choice in alias.choices:
+            out |= _alias_strings(choice)
+        return out
+    return set()
+
+
+def _generated_aliases(model: type[BaseModel], field_name: str) -> set[str]:
+    """Wire keys an `alias_generator` in `model_config` would mint.
+
+    A generator is the one way a forbidden key can appear on the wire with
+    NOTHING on the field declaration to show for it — `alias_generator`
+    lives in `model_config`, so a reviewer reading the field list sees a
+    clean model. Both spellings are handled: a bare callable, and
+    `AliasGenerator(alias=..., validation_alias=...)`.
+    """
+    generator = model.model_config.get("alias_generator")
+    if generator is None:
+        return set()
+    out: set[str] = set()
+    candidates: list[object] = []
+    if callable(generator):
+        candidates.append(generator)
+    else:  # pydantic.AliasGenerator
+        candidates.extend(
+            fn
+            for fn in (
+                getattr(generator, "alias", None),
+                getattr(generator, "validation_alias", None),
+            )
+            if callable(fn)
+        )
+    for fn in candidates:
+        try:
+            out |= _alias_strings(fn(field_name))  # type: ignore[operator]
+        except Exception:  # pragma: no cover — a generator that rejects a name
+            continue
+    return out
+
+
+def _accepted_wire_keys(model: type[BaseModel]) -> set[str]:
+    """Every top-level request key ``model`` would bind to a field.
+
+    Field names, plus every alias shape, plus anything a `model_config`
+    `alias_generator` mints. Factored out of the test below so it can be
+    exercised against a deliberately leaky model — an alias check nothing
+    ever proves catching an alias is the same unfalsifiable guard it
+    exists to replace.
+    """
+    keys = set(model.model_fields)
+    for field_name, field in model.model_fields.items():
+        keys |= _alias_strings(field.alias)
+        keys |= _alias_strings(field.validation_alias)
+        keys |= _generated_aliases(model, field_name)
+    return keys
+
+
+def test_no_schema_on_the_memory_write_path_declares_a_provenance_field() -> None:
+    """Belt and braces: the field set itself, not just one rejected body.
+
+    A future author could re-open the hole by relaxing `extra="forbid"` on
+    one model while the others keep it, or by declaring the field under
+    another NAME and binding it to the wire key with an alias —
+    `provenance_user: UUID = Field(alias="user_id")` sails straight past a
+    check on `model_fields`, because those are field names. So the alias
+    set is checked too, and a leak in EITHER is the same open door.
+
+    "The alias set" means all FOUR pydantic-v2 alias shapes plus a
+    `model_config` `alias_generator`, not just the bare string this check
+    read until the 2026-09-19 review — see `_alias_strings` for why
+    `AliasChoices("provenance_user", "user_id")` is the realistic spelling
+    and was sailing straight through.
+    """
+    for model, _minimal_body in _PROVENANCE_FORBIDDING_MODELS:
+        assert model.model_config.get("extra") == "forbid", model.__name__
+        leaked = _accepted_wire_keys(model) & set(_FORBIDDEN_PROVENANCE_KEYS)
+        assert not leaked, (
+            f"{model.__name__} accepts {sorted(leaked)} (as a field name or "
+            f"an alias). Provenance is resolved server-side from a verified "
+            f"credential (get_memory_tenant -> MemoryPrincipal) and must "
+            f"never be accepted from a request body — plan "
+            f"2026-08-06-user-and-device-facets-on-memories-and-findings "
+            f"§6 requirement 1. A body-supplied user_id lets any device "
+            f"read or write any human's cross-tenant memory corpus."
+        )
+
+
+def test_the_alias_check_catches_the_shapes_an_author_would_actually_use() -> None:
+    """Mutation test for the guard above — it must FAIL on a leaky model.
+
+    Until the 2026-09-19 review the guard flattened only a bare `str`
+    alias, so `AliasChoices("provenance_user", "user_id")` — the realistic
+    spelling, and the only one that lets a model accept BOTH its own field
+    name and the forbidden wire key — sailed straight through a check whose
+    docstring claimed to cover it. A guard that has never been shown to
+    catch anything is indistinguishable from one that cannot.
+
+    Each model below leaks `user_id` through a different alias shape and
+    none of them declares a field with that NAME, so the field-name half of
+    the check cannot be what notices.
+    """
+
+    class _ViaAliasChoices(BaseModel):
+        model_config = {"extra": "forbid"}
+        provenance_user: str | None = Field(
+            default=None, validation_alias=AliasChoices("provenance_user", "user_id")
+        )
+
+    class _ViaPlainAlias(BaseModel):
+        model_config = {"extra": "forbid"}
+        provenance_user: str | None = Field(default=None, alias="user_id")
+
+    class _ViaAliasPath(BaseModel):
+        model_config = {"extra": "forbid"}
+        provenance_user: str | None = Field(
+            default=None, validation_alias=AliasPath("user_id", 0)
+        )
+
+    class _ViaAliasGenerator(BaseModel):
+        model_config = {
+            "extra": "forbid",
+            "alias_generator": lambda name: (
+                "user_id" if name == "provenance_user" else name
+            ),
+            "populate_by_name": True,
+        }
+        provenance_user: str | None = None
+
+    for leaky in (
+        _ViaAliasChoices,
+        _ViaPlainAlias,
+        _ViaAliasPath,
+        _ViaAliasGenerator,
+    ):
+        assert "user_id" not in set(leaky.model_fields), leaky.__name__
+        assert "user_id" in _accepted_wire_keys(leaky), (
+            f"{leaky.__name__} binds the wire key 'user_id' to a field and "
+            f"the guard did not see it — the guard is the shape of the "
+            f"hole it is meant to close."
+        )
+
+    # ...and it must not cry wolf on a model that genuinely declares none.
+    class _Clean(BaseModel):
+        model_config = {"extra": "forbid"}
+        title: str = ""
+
+    assert not (_accepted_wire_keys(_Clean) & set(_FORBIDDEN_PROVENANCE_KEYS))
