@@ -224,6 +224,10 @@ export default function CoordFindingsPage() {
       setError(null);
     } catch (e) {
       if (!current()) return;
+      // A throw is a DIFFERENT cause from an earlier degrade of this query;
+      // leaving that degrade's text up would put two causes on screen, the
+      // strip naming the stale one (it ranks `unavailable` above `failed`).
+      setUnavailable(null);
       setError(`Failed to load: ${e instanceof Error ? e.message : String(e)}`);
       setReadFailed(true);
     } finally {
