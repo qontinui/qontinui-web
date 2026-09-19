@@ -147,6 +147,19 @@ async def bridge_sync_once(
         for name in ordered:
             version, title, content = redacted[name]
             bridge_source = _bridge_source(name, version)
+            # NO ``user_id`` / ``device_id``: deliberate, not an oversight.
+            # This job runs on a schedule with no request, no credential
+            # and therefore no ``MemoryPrincipal`` — there is no human and
+            # no machine to attribute a bridged row to, so NULL on both
+            # facets is the honest answer rather than a gap. Attributing it
+            # to whoever last touched the bridged document would make
+            # ``user_id`` mean "authored this memory" on every other row and
+            # "wrote some prose a job later ingested" here. The provenance
+            # that DOES belong to it is already recorded, in
+            # ``source`` (``_bridge_source``: the document name + version).
+            # ``insert_record``'s defaults are what make this legal — plan
+            # 2026-08-06-user-and-device-facets-on-memories-and-findings
+            # §4.1 item 3, a write is never rejected for missing provenance.
             memory_id, deduped = await store.insert_record(
                 session,
                 tenant_id=tenant_id,

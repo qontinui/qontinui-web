@@ -19,7 +19,7 @@ from uuid import UUID, uuid4
 import pytest
 from fastapi import HTTPException
 from fastapi.security import HTTPAuthorizationCredentials
-from pydantic import BaseModel, ValidationError
+from pydantic import AliasChoices, AliasPath, BaseModel, Field, ValidationError
 
 from app.api.v1.endpoints import memory as memory_ep
 from app.schemas.memory import MemoryQueryRequest, MemoryRecordIn, SupersedeRequest
@@ -715,13 +715,37 @@ async def test_unresolvable_reference_tables_degrade_rather_than_raise(
 async def test_device_arm_does_not_pay_for_the_existence_lookup(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """The check is scoped to the one arm whose ids are assertions.
+    """Pins a DELIBERATE ASYMMETRY, not an oversight — read why before editing.
 
-    On the device arm `_verify_device_jwt` has ALREADY read the
-    `auth.users` row, so re-reading it would buy nothing and cost a round
-    trip on the fleet's hot path. Pinned as a test because "make it
-    uniform" is a plausible-looking future edit that would quietly double
-    the per-request DB work of every runner memory call.
+    This arm skips `_existing_provenance` entirely, and the two facets are
+    not in the same position:
+
+    * `user_id` genuinely needs no check. `_verify_device_jwt` has ALREADY
+      read and validated the `auth.users` row (it 401s a token whose user
+      claim is missing, malformed, unknown or inactive), so re-reading it
+      would buy nothing.
+    * `device_id` is **as unverified as the coord-service arm's** —
+      `_verify_device_jwt` never touches `coord.devices` — and it lands in
+      the identical FK column. Leaving it unresolved is a cost decision
+      taken with eyes open: this is the fleet's hottest write path, and a
+      lookup here would add a session and a round trip to a check that a
+      raced deletion defeats anyway.
+
+    What makes that decision safe is NOT this test: it is
+    `_write_degrading_dangling_provenance`, which wraps every insert in a
+    savepoint and retries unattributed on a provenance FK violation, so a
+    dangling `device_id` degrades the request's PROVENANCE rather than
+    500ing the request — on this arm and every other. (Degraded to the
+    whole REQUEST, not one row: provenance is request-level, so on the
+    batch path every record in the call is written unattributed.) `test_memfacets_01_provenance_facets_migration.py`
+    proves that against real Postgres, including the constraint name the
+    fallback matches on.
+
+    So this test says "the lookup is scoped, and scoping it is correct"; it
+    does not say "a dangling device_id cannot happen". "Make it uniform" is
+    a plausible-looking future edit that would quietly double the
+    per-request DB work of every runner memory call for a guarantee that is
+    already made exactly, one layer down.
     """
     user_id, device_id = uuid4(), uuid4()
     device_claims = {
@@ -855,6 +879,93 @@ def test_request_body_cannot_declare_provenance(
     assert key in str(exc.value)
 
 
+def _alias_strings(alias: object) -> set[str]:
+    """Every wire key an `alias=` / `validation_alias=` value can accept.
+
+    Pydantic v2 spells an alias FOUR ways and only one of them is a bare
+    `str`. The 2026-09-19 review found this test reading
+    `isinstance(alias, str)` and therefore blind to the two shapes a real
+    author would reach for:
+
+    * `AliasChoices("provenance_user", "user_id")` — accepts EITHER key,
+      and its `.choices` may itself hold `AliasPath`s;
+    * `AliasPath("user_id", 0)` — its FIRST segment is the top-level wire
+      key, so a nested path still opens the door at the key this test
+      cares about.
+
+    The body-level test above would catch an aliased key on one of the
+    three models it enumerates. This one is the belt to that braces — it
+    reads the DECLARATION rather than a probe body, so it keeps working
+    for a model added to `_PROVENANCE_FORBIDDING_MODELS` with no minimal
+    body worth probing, and it names the offending alias in the failure
+    instead of reporting only "no ValidationError raised". Reading one
+    alias shape out of four made that second guarantee hollow.
+    """
+    if isinstance(alias, str):
+        return {alias}
+    if isinstance(alias, AliasPath):
+        # Only the first segment is a top-level request key; the rest index
+        # into it. `path` holds `str | int`.
+        head = alias.path[0] if alias.path else None
+        return {head} if isinstance(head, str) else set()
+    if isinstance(alias, AliasChoices):
+        out: set[str] = set()
+        for choice in alias.choices:
+            out |= _alias_strings(choice)
+        return out
+    return set()
+
+
+def _generated_aliases(model: type[BaseModel], field_name: str) -> set[str]:
+    """Wire keys an `alias_generator` in `model_config` would mint.
+
+    A generator is the one way a forbidden key can appear on the wire with
+    NOTHING on the field declaration to show for it — `alias_generator`
+    lives in `model_config`, so a reviewer reading the field list sees a
+    clean model. Both spellings are handled: a bare callable, and
+    `AliasGenerator(alias=..., validation_alias=...)`.
+    """
+    generator = model.model_config.get("alias_generator")
+    if generator is None:
+        return set()
+    out: set[str] = set()
+    candidates: list[object] = []
+    if callable(generator):
+        candidates.append(generator)
+    else:  # pydantic.AliasGenerator
+        candidates.extend(
+            fn
+            for fn in (
+                getattr(generator, "alias", None),
+                getattr(generator, "validation_alias", None),
+            )
+            if callable(fn)
+        )
+    for fn in candidates:
+        try:
+            out |= _alias_strings(fn(field_name))  # type: ignore[operator]
+        except Exception:  # pragma: no cover — a generator that rejects a name
+            continue
+    return out
+
+
+def _accepted_wire_keys(model: type[BaseModel]) -> set[str]:
+    """Every top-level request key ``model`` would bind to a field.
+
+    Field names, plus every alias shape, plus anything a `model_config`
+    `alias_generator` mints. Factored out of the test below so it can be
+    exercised against a deliberately leaky model — an alias check nothing
+    ever proves catching an alias is the same unfalsifiable guard it
+    exists to replace.
+    """
+    keys = set(model.model_fields)
+    for field_name, field in model.model_fields.items():
+        keys |= _alias_strings(field.alias)
+        keys |= _alias_strings(field.validation_alias)
+        keys |= _generated_aliases(model, field_name)
+    return keys
+
+
 def test_no_schema_on_the_memory_write_path_declares_a_provenance_field() -> None:
     """Belt and braces: the field set itself, not just one rejected body.
 
@@ -864,16 +975,16 @@ def test_no_schema_on_the_memory_write_path_declares_a_provenance_field() -> Non
     `provenance_user: UUID = Field(alias="user_id")` sails straight past a
     check on `model_fields`, because those are field names. So the alias
     set is checked too, and a leak in EITHER is the same open door.
+
+    "The alias set" means all FOUR pydantic-v2 alias shapes plus a
+    `model_config` `alias_generator`, not just the bare string this check
+    read until the 2026-09-19 review — see `_alias_strings` for why
+    `AliasChoices("provenance_user", "user_id")` is the realistic spelling
+    and was sailing straight through.
     """
     for model, _minimal_body in _PROVENANCE_FORBIDDING_MODELS:
         assert model.model_config.get("extra") == "forbid", model.__name__
-        wire_keys = set(model.model_fields)
-        for field in model.model_fields.values():
-            if field.alias:
-                wire_keys.add(field.alias)
-            if isinstance(field.validation_alias, str):
-                wire_keys.add(field.validation_alias)
-        leaked = wire_keys & set(_FORBIDDEN_PROVENANCE_KEYS)
+        leaked = _accepted_wire_keys(model) & set(_FORBIDDEN_PROVENANCE_KEYS)
         assert not leaked, (
             f"{model.__name__} accepts {sorted(leaked)} (as a field name or "
             f"an alias). Provenance is resolved server-side from a verified "
@@ -883,3 +994,65 @@ def test_no_schema_on_the_memory_write_path_declares_a_provenance_field() -> Non
             f"§6 requirement 1. A body-supplied user_id lets any device "
             f"read or write any human's cross-tenant memory corpus."
         )
+
+
+def test_the_alias_check_catches_the_shapes_an_author_would_actually_use() -> None:
+    """Mutation test for the guard above — it must FAIL on a leaky model.
+
+    Until the 2026-09-19 review the guard flattened only a bare `str`
+    alias, so `AliasChoices("provenance_user", "user_id")` — the realistic
+    spelling, and the only one that lets a model accept BOTH its own field
+    name and the forbidden wire key — sailed straight through a check whose
+    docstring claimed to cover it. A guard that has never been shown to
+    catch anything is indistinguishable from one that cannot.
+
+    Each model below leaks `user_id` through a different alias shape and
+    none of them declares a field with that NAME, so the field-name half of
+    the check cannot be what notices.
+    """
+
+    class _ViaAliasChoices(BaseModel):
+        model_config = {"extra": "forbid"}
+        provenance_user: str | None = Field(
+            default=None, validation_alias=AliasChoices("provenance_user", "user_id")
+        )
+
+    class _ViaPlainAlias(BaseModel):
+        model_config = {"extra": "forbid"}
+        provenance_user: str | None = Field(default=None, alias="user_id")
+
+    class _ViaAliasPath(BaseModel):
+        model_config = {"extra": "forbid"}
+        provenance_user: str | None = Field(
+            default=None, validation_alias=AliasPath("user_id", 0)
+        )
+
+    class _ViaAliasGenerator(BaseModel):
+        model_config = {
+            "extra": "forbid",
+            "alias_generator": lambda name: (
+                "user_id" if name == "provenance_user" else name
+            ),
+            "populate_by_name": True,
+        }
+        provenance_user: str | None = None
+
+    for leaky in (
+        _ViaAliasChoices,
+        _ViaPlainAlias,
+        _ViaAliasPath,
+        _ViaAliasGenerator,
+    ):
+        assert "user_id" not in set(leaky.model_fields), leaky.__name__
+        assert "user_id" in _accepted_wire_keys(leaky), (
+            f"{leaky.__name__} binds the wire key 'user_id' to a field and "
+            f"the guard did not see it — the guard is the shape of the "
+            f"hole it is meant to close."
+        )
+
+    # ...and it must not cry wolf on a model that genuinely declares none.
+    class _Clean(BaseModel):
+        model_config = {"extra": "forbid"}
+        title: str = ""
+
+    assert not (_accepted_wire_keys(_Clean) & set(_FORBIDDEN_PROVENANCE_KEYS))

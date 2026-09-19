@@ -7,12 +7,13 @@ Phase 1, migration 1 of plan
 What this adds
 ==========================================================================
 
-* ``coord.memory_records.user_id UUID NULL REFERENCES auth.users(id)`` — the
-  human the record is attributed to, derived server-side from the
-  authenticated caller (the device JWT's own ``user_id`` claim), NEVER from
-  the request body. §4.1/§6 requirement 1.
-* ``coord.memory_records.device_id UUID NULL REFERENCES coord.devices(device_id)``
-  — the machine the record came from, from the verified ``device_id`` claim.
+* ``coord.memory_records.user_id UUID NULL REFERENCES auth.users(id)
+  ON DELETE SET NULL`` — the human the record is attributed to, derived
+  server-side from the authenticated caller (the device JWT's own
+  ``user_id`` claim), NEVER from the request body. §4.1/§6 requirement 1.
+* ``coord.memory_records.device_id UUID NULL
+  REFERENCES coord.devices(device_id) ON DELETE SET NULL`` — the machine the
+  record came from, from the verified ``device_id`` claim.
 * ``coord.memory_records.applies_at TEXT NOT NULL DEFAULT 'tenant'`` — the
   ALTITUDE facet, constrained to ``fleet|tenant|user|device|session``.
 
@@ -21,6 +22,84 @@ device identity (operator bearer, service token, CI) writes NULLs and the row
 is simply less filterable. **A write is never rejected for missing
 provenance** — a memory that fails to save is worse than one that is coarsely
 scoped (§4.1 item 3).
+
+🚨 ``ON DELETE SET NULL`` IS LOAD-BEARING — A BARE ``REFERENCES`` WEDGES
+   COORD'S PRODUCTION DEVICE GC
+==========================================================================
+
+Do not "tidy" the clause away, and do not swap it for ``CASCADE``. Without
+it both FKs default to ``NO ACTION``, and coord's device garbage collector
+— ``gc_hard_delete`` in
+``qontinui-coord/crates/coord/src/state_reconciler_watcher.rs`` — runs::
+
+    DELETE FROM coord.devices
+     WHERE state = 'abandoned'
+       AND last_heartbeat IS NOT NULL
+       AND last_heartbeat < now() - <DEVICE_GC_DELETE_AGE_DAYS>
+
+That statement is *one* statement for the whole sweep, so the FIRST
+abandoned device that ever wrote a memory does not merely fail to be
+collected: the DELETE aborts and the sweep returns ``Err``, collecting
+**nothing at all**, every tick, forever. Reproduced on a throwaway
+``pgvector/pgvector:pg16`` with a bare ``REFERENCES``::
+
+    ERROR: update or delete on table "devices" violates foreign key
+           constraint "memory_records_device_id_fkey" on table
+           "memory_records"
+
+The device arm writes a real ``coord.devices`` id on every runner memory
+write today, memory rows are TOMBSTONED rather than deleted (so the
+referencing row outlives the device by construction), and runner devices
+do become abandoned. That function's own docstring states the contract
+this column has to join — ``coord.build_events`` / ``coord.device_status``
+are CASCADE; claims / ``agent_worktrees`` / status are SET NULL.
+
+``SET NULL`` rather than ``CASCADE`` because a memory is not a fact ABOUT
+its device: deleting the machine must not delete what the human learned on
+it. Both columns are nullable and the whole facet design is fail-soft
+(a write is never rejected for missing provenance), so a degraded-to-NULL
+provenance row is exactly the intended coarser state. The same reasoning
+is why ``coord.findings.author_device`` was deliberately left FK-FREE as a
+"best-effort device link" (``coord_findings``): findings outlive devices,
+and so do memories. ``findfacets_02`` carries the identical clause on
+``coord.findings.author_user`` for the same reason.
+
+This is the DELETE side only. The INSERT side — a token asserting an id
+that names no row — is handled in the application, by
+``_existing_provenance`` and the savepoint fallback in
+``app/api/v1/endpoints/memory.py``.
+
+WHY THE TWO FKs ARE DROPPED AND RE-ADDED RATHER THAN LEFT TO THE INLINE
+``REFERENCES`` CLAUSE
+--------------------------------------------------------------------------
+
+The inline clause above reaches a database only when the ``ADD COLUMN``
+actually adds something. This revision was first written with a BARE
+``REFERENCES`` (``NO ACTION``) and the ``ON DELETE SET NULL`` was added
+under the SAME revision id — so on any database that had already run the
+earlier form, the ``ADD COLUMN IF NOT EXISTS`` no-ops, the inline clause
+is never parsed, and the ``NO ACTION`` constraints survive the "fix".
+Reproduced: apply the pre-fix chain, swap in this file, re-run the
+revision body, and ``pg_constraint.confdeltype`` reads ``'a'`` on all
+three constraints unless they are rebuilt explicitly. The explicit
+``DROP CONSTRAINT IF EXISTS`` / ``ADD CONSTRAINT`` pair below is what
+makes the delete rule a property of RUNNING this revision rather than a
+property of the column being new.
+
+⚠ It repairs only a database on which this revision's body RUNS — a
+downgrade→upgrade cycle (``migration-reversal.yml`` walks one on every PR
+touching ``backend/alembic/versions/**``) or a partially-applied state.
+A database already STAMPED at this revision is never re-run by
+``alembic upgrade head`` at all, and repairing that one would take a new
+revision. This branch is unmerged, so no such database is known to exist;
+the guard is here because "no such database exists" is not something a
+migration can check. ``test_a_prefix_database_is_repaired_by_rerunning_the_fixed_revision``
+pins both halves.
+
+The names are the ones Postgres derives for an inline column FK
+(``<table>_<column>_fkey``), spelled out because
+``_PROVENANCE_FK_CONSTRAINTS`` in ``app/api/v1/endpoints/memory.py``
+matches the savepoint fallback on exactly those strings.
 
 🚨 THERE IS DELIBERATELY NO ``ALTER COLUMN applies_at DROP DEFAULT`` HERE
 ==========================================================================
@@ -37,7 +116,12 @@ rather than of any line number, so confirm it the way it stays confirmable::
 Every hit is an explicit column list; none of them contains ``applies_at``.
 (The same check on coord's own writers is
 ``grep -n 'INSERT INTO coord.memory_records' crates/coord/src/*.rs`` in
-qontinui-coord.) Do not replace that with a count or a line range: both went
+qontinui-coord, and it returns **zero hits** — coord PROXIES memory writes
+to this backend rather than issuing them, so there is no coord-side INSERT
+to inspect. Zero is the expected result there, not a mistyped path; the
+equivalent recipe on the FINDINGS side, in ``findfacets_02``, does return
+hits, and they are what that banner's claim rests on.) Do not replace that
+with a count or a line range: both went
 stale in the very commit that introduced this banner, and a reader who
 follows a citation onto unrelated prose has every reason to discount the
 argument it was supporting.
@@ -118,14 +202,39 @@ def upgrade() -> None:
         """
         ALTER TABLE coord.memory_records
             ADD COLUMN IF NOT EXISTS user_id UUID
-                REFERENCES auth.users(id),
+                REFERENCES auth.users(id) ON DELETE SET NULL,
             ADD COLUMN IF NOT EXISTS device_id UUID
-                REFERENCES coord.devices(device_id),
+                REFERENCES coord.devices(device_id) ON DELETE SET NULL,
             ADD COLUMN IF NOT EXISTS applies_at TEXT NOT NULL DEFAULT 'tenant'
                 CONSTRAINT ck_memory_records_applies_at
                 CHECK (applies_at IN (
                     'fleet', 'tenant', 'user', 'device', 'session'
                 ))
+        """
+    )
+    # Idempotent by NAME, not by the column being new: see the banner above.
+    # An `ADD COLUMN IF NOT EXISTS` carries its inline `REFERENCES` only when
+    # it actually adds the column, so on a database that ran the pre-fix form
+    # of THIS revision the inline `ON DELETE SET NULL` never lands. Rebuilding
+    # the constraint makes the delete rule a property of running the revision.
+    # DROP and ADD in one statement. Postgres processes ALTER TABLE
+    # sub-commands in PASSES, with DROP CONSTRAINT before ADD CONSTRAINT
+    # regardless of the order they are written in, so the name is free when it
+    # is reused. (Do not carry "left to right" to another multi-subcommand
+    # ALTER TABLE -- it is not how Postgres works, and pass ordering does bite
+    # elsewhere. Measured: writing the ADD first also succeeds, and the ADD
+    # wins, which left-to-right could not produce.)
+    op.execute(
+        """
+        ALTER TABLE coord.memory_records
+            DROP CONSTRAINT IF EXISTS memory_records_user_id_fkey,
+            ADD  CONSTRAINT memory_records_user_id_fkey
+                 FOREIGN KEY (user_id) REFERENCES auth.users(id)
+                 ON DELETE SET NULL,
+            DROP CONSTRAINT IF EXISTS memory_records_device_id_fkey,
+            ADD  CONSTRAINT memory_records_device_id_fkey
+                 FOREIGN KEY (device_id) REFERENCES coord.devices(device_id)
+                 ON DELETE SET NULL
         """
     )
     # SET LOCAL is transaction-scoped and env.py wraps the WHOLE run in one
