@@ -1613,10 +1613,17 @@ class TestReindex:
         assert stats["enqueued_jobs"] == 1
 
         # One embedding job covering exactly the two stale/NULL rows.
-        # Scoped to kind: _job_rows has no kind filter of its own, so a
-        # concurrent memory_consolidate sweep's `synthesis` job for this
-        # same fresh tenant would otherwise break the count.
-        jobs = _job_rows(db, tenant, kind="embedding")
+        #
+        # Scoped by the job's own input_hash, NOT by kind. The interferer here
+        # is `memory_reindex` — registered `*/10 * * * *` with run_at_boot
+        # (app/core/scheduler.py), and conftest disables only
+        # `scheduled_dispatch`, so it sweeps for the whole session and enqueues
+        # `kind='embedding'` jobs of its own. A `kind=` filter would not
+        # separate this test's job from that one. `embedding_job_input` folds
+        # EMBEDDING_MODEL_TAG into the hash, so this is the exact hash the
+        # enqueue under test produces and no other.
+        expected_hash = job_input_hash([stale, null_emb], model_tag=EMBEDDING_MODEL_TAG)
+        jobs = _job_rows(db, tenant, input_hash=expected_hash)
         assert len(jobs) == 1
         assert jobs[0]["status"] == "pending"
         assert {UUID(str(t)) for t in jobs[0]["target_ids"]} == {stale, null_emb}
@@ -1634,7 +1641,7 @@ class TestReindex:
         stats = _run(db, lambda s: reindex_once(s, now=NOW))
         assert stats["enqueued_rows"] == 0
         assert stats["enqueued_jobs"] == 0
-        assert len(_job_rows(db, tenant, kind="embedding")) == 1
+        assert len(_job_rows(db, tenant, input_hash=expected_hash)) == 1
 
     def test_tombstones_never_enqueued(self, db: AsyncEngine) -> None:
         tenant = uuid4()
@@ -1648,21 +1655,57 @@ class TestReindex:
         )
         stats = _run(db, lambda s: reindex_once(s, now=NOW))
         assert stats["enqueued_rows"] == 0
-        assert _job_rows(db, tenant, kind="embedding") == []
+        # No embedding job was enqueued for the TOMBSTONED row specifically —
+        # the hash of `[dead]` is what `reindex_once` would have produced had
+        # it wrongly selected it, so this names the defect rather than asking
+        # whether the tenant has any embedding job at all (the live
+        # `memory_reindex` sweeper answers that question, not this test).
+        assert (
+            _job_rows(
+                db,
+                tenant,
+                input_hash=job_input_hash([dead], model_tag=EMBEDDING_MODEL_TAG),
+            )
+            == []
+        )
         assert _row(db, dead, "embedding") is None
 
     def test_rows_are_enqueued_per_tenant(self, db: AsyncEngine) -> None:
         # The batch sweep is tenant-agnostic but a claim is tenant-bound,
         # so a batch spanning tenants must split into one job per tenant.
         tenant_a, tenant_b = uuid4(), uuid4()
-        _seed(db, tenant_a, content="a row", embedding=None, embedding_model=None)
-        _seed(db, tenant_b, content="b row", embedding=None, embedding_model=None)
+        row_a = _seed(
+            db, tenant_a, content="a row", embedding=None, embedding_model=None
+        )
+        row_b = _seed(
+            db, tenant_b, content="b row", embedding=None, embedding_model=None
+        )
 
         stats = _run(db, lambda s: reindex_once(s, now=NOW))
         assert stats["enqueued_rows"] == 2
         assert stats["enqueued_jobs"] == 2
-        assert len(_job_rows(db, tenant_a, kind="embedding")) == 1
-        assert len(_job_rows(db, tenant_b, kind="embedding")) == 1
+        # Each tenant's own row's hash — the live `memory_reindex` sweeper
+        # enqueues embedding jobs too, so `kind=` would not separate them.
+        assert (
+            len(
+                _job_rows(
+                    db,
+                    tenant_a,
+                    input_hash=job_input_hash([row_a], model_tag=EMBEDDING_MODEL_TAG),
+                )
+            )
+            == 1
+        )
+        assert (
+            len(
+                _job_rows(
+                    db,
+                    tenant_b,
+                    input_hash=job_input_hash([row_b], model_tag=EMBEDDING_MODEL_TAG),
+                )
+            )
+            == 1
+        )
 
 
 class TestSupersedeGuard:
