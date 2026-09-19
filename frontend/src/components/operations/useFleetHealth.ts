@@ -198,12 +198,20 @@ export interface FleetHealthConditions {
   /** Their ids, oldest first, CAPPED by coord — `awaiting_operator` is exact. */
   awaiting_operator_question_ids?: string[] | null;
   /**
-   * Open `Responder::Operator` alerts in scope. More of these than
-   * `awaiting_operator` means some operator condition has no question yet
-   * (Phase 5 raises one per episode) — the operator must not be told nothing
-   * is waiting on him.
+   * Open `Responder::Operator` alerts in scope. NOT comparable with
+   * `awaiting_operator` by subtraction: an answered alert that has not yet
+   * cleared is never re-asked, so it is an open alert with no open question
+   * for an ordinary reason. Read the two exact counts below instead; this is
+   * the fallback for a coord that does not serve them.
    */
   awaiting_operator_alerts?: number | null;
+  /** Open operator alerts with NO question at all (exact). Absent on an older coord. */
+  awaiting_operator_unasked?: number | null;
+  /**
+   * Open operator alerts whose question was ANSWERED, and which coord has not
+   * yet re-observed clear (exact). Absent on an older coord.
+   */
+  awaiting_operator_answered_uncleared?: number | null;
   /** Oldest first, CAPPED by coord — see `settings_in_effect_count`. */
   settings_in_effect?: FleetHealthSettingInEffect[] | null;
   /** The exact number of settings in effect, beside the capped list. */
