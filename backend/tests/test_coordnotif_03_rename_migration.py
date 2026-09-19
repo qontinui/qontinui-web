@@ -32,6 +32,7 @@ from tests._alembic_harness import (
     backend_root,
     can_connect,
     ephemeral_database,
+    load_revision_module,
     run_alembic,
 )
 
@@ -42,9 +43,17 @@ _OLD = "agent_took_irreversible_action"
 _NEW = "agent_took_sensitive_action"
 _GATE = "agent_took_sensitive_gate_action"
 
-# Re-stated rather than imported: more old-kind rows than one batch.
-_BATCH_ROWS = 5_000
-_BULK_OLD = _BATCH_ROWS + 700
+# More old-kind rows than one batch; asserted against the migration module's
+# own BATCH_ROWS so a batch-size bump cannot quietly make this one batch.
+_BULK_OLD = 5_700
+
+
+def _revision_batch_rows() -> int:
+    module = load_revision_module(
+        backend_root() / "alembic" / "versions" / f"{_REVISION_ID}.py",
+        f"_test_{_REVISION_ID}",
+    )
+    return int(module.BATCH_ROWS)
 
 
 def _kinds(engine: Engine) -> dict[str, int]:
@@ -86,6 +95,9 @@ def test_coordnotif_03_renames_only_the_irreversible_kind() -> None:
         engine,
         url,
     ):
+        assert _BULK_OLD > _revision_batch_rows(), (
+            "the bulk case must exceed one batch to exercise the cursor loop"
+        )
         run_alembic(root, url, "upgrade", _PARENT_REVISION_ID)
 
         with engine.begin() as conn:
