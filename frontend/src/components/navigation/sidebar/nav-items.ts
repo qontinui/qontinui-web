@@ -45,6 +45,10 @@ import {
   type NavGroup,
   type NavLeaf,
 } from "@/components/admin/coord/coordNavModel";
+import {
+  OVERVIEW_ROOT,
+  OVERVIEW_SECTIONS,
+} from "@/components/overview/sections";
 
 // =============================================================================
 // Web-local navigation items.
@@ -109,7 +113,34 @@ function coordGroupItem(id: CoordGroupId, group: string): NavItem {
 
 type CoordGroupId = "work" | "merge" | "intent" | "devops" | "access";
 
+/** Sidebar group label for the Project Overview. `use-sidebar-navigation`
+ *  moves this group to the very top of the menu, whatever else is shown. */
+export const OVERVIEW_GROUP = "Overview";
+
+const OVERVIEW_COLOR = "#4A90D9";
+
 export const devNavItems: NavItem[] = [
+  // ===========================================================================
+  // Overview — the project overview for business leaders overseeing a
+  // project (plan `2026-09-19-project-overview-for-business-leaders`). The
+  // page list lives in `components/overview/sections.ts`, shared with the
+  // overview's own sub-navigation. Visible to every authenticated user.
+  // ===========================================================================
+  ...OVERVIEW_SECTIONS.map(
+    (section): NavItem => ({
+      id: section.id,
+      label: section.label,
+      description: section.description,
+      icon: React.createElement(section.icon, { className: "size-5" }),
+      route: section.route,
+      color: OVERVIEW_COLOR,
+      // Summary's route prefixes every sibling's, so only the others keep
+      // their highlight on detail routes.
+      matchPrefix: section.route !== OVERVIEW_ROOT,
+      group: OVERVIEW_GROUP,
+    })
+  ),
+
   // NOTE: there is no local "Co-Pilot" or "Home" nav item. The shared
   // `@qontinui/navigation` registry's `prompt-home` item ("Home", the co-pilot
   // command surface) is hidden on web for now — see `WEB_REMOVED_SHARED_IDS`
