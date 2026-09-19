@@ -2,7 +2,8 @@
  * `repo_pull` decision → operator-facing status.
  *
  * Created by plan `2026-08-16-coord-console-ui-unification-pipeline-style.md`
- * Phase 3 Wave 2, in the shape `alertStatus.ts` / `planStatus.ts` established:
+ * Phase 3 Wave 2, in the shape `planStatus.ts` carries (first established by the
+ * since-retired `alertStatus.ts`):
  * a pure derivation module beside the row that renders it, carrying R3's two
  * requirements — an audited kind→attention table and a palette keyed off it —
  * with `pullDecisionStatus.test.ts` asserting the agreement through the shared
@@ -111,8 +112,8 @@ export const PULL_VERDICT_CLASS: Record<PullVerdictKind, string> = {
  * - `diverged` — **`author`**, but only while NOTHING has reported back. A
  *   diverged checkout does not reconcile itself; no watcher, no retry and no
  *   timeout resolves it, and the failure mode is lost local work. Only a human
- *   decides which side wins. Same call `alertStatus.ts` and `treeStatus.ts`
- *   make for idle uncommitted work, and R3 records the tie-break: where the
+ *   decides which side wins. Same call `treeStatus.ts` makes (and the retired
+ *   `alertStatus.ts` made) for idle uncommitted work, and R3 records the tie-break: where the
  *   failure mode is lost work, it breaks toward the louder signal.
  * - `diverged_handled` — **`none`**. THIS SURFACE IS AN AUDIT FEED, not a live
  *   checkout list: rows are append-only, carry a `resolved_at`, and the fetch
