@@ -1661,8 +1661,8 @@ class TestReindex:
         stats = _run(db, lambda s: reindex_once(s, now=NOW))
         assert stats["enqueued_rows"] == 2
         assert stats["enqueued_jobs"] == 2
-        assert len(_job_rows(db, tenant_a)) == 1
-        assert len(_job_rows(db, tenant_b)) == 1
+        assert len(_job_rows(db, tenant_a, kind="embedding")) == 1
+        assert len(_job_rows(db, tenant_b, kind="embedding")) == 1
 
 
 class TestSupersedeGuard:
