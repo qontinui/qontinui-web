@@ -1168,7 +1168,9 @@ describe("/admin/coord/devops — the Conditions panel", () => {
       },
       awaiting_operator: 0,
       awaiting_operator_question_ids: [],
+      awaiting_operator_alerts: 0,
       settings_in_effect: [],
+      settings_in_effect_count: 0,
       scrape_up: true,
       ...overrides,
     };
@@ -1342,6 +1344,57 @@ describe("/admin/coord/devops — the Conditions panel", () => {
     expect(
       screen.getByTestId("coord-devops-conditions-strip")
     ).toHaveAttribute("data-health-level", "green");
+  });
+
+  it("counts operator alerts with no question yet, and does not go green", async () => {
+    healthyFleet({
+      conditions: conditions({ awaiting_operator: 0, awaiting_operator_alerts: 2 }),
+    });
+    render(<CoordDevOpsPage />);
+
+    const badge = await screen.findByTestId(
+      "coord-devops-conditions-unasked-badge"
+    );
+    expect(badge).toHaveTextContent("no question yet 2");
+    const strip = screen.getByTestId("coord-devops-conditions-strip");
+    expect(strip).toHaveAttribute("data-health-level", "amber");
+    expect(strip).toHaveTextContent("2 operator alerts have no question yet");
+  });
+
+  it("says which read failed when coord reports scrape_up: false", async () => {
+    healthyFleet({
+      conditions: { scrape_up: false, unavailable_reason: "agent_work" },
+    });
+    render(<CoordDevOpsPage />);
+
+    const strip = await screen.findByTestId("coord-devops-conditions-strip");
+    await waitFor(() => expect(strip).toHaveTextContent("agent_work"));
+  });
+
+  it("names the settings coord's capped list left out", async () => {
+    healthyFleet({
+      conditions: conditions({
+        settings_in_effect: [
+          {
+            alert_id: 7,
+            kind: "fleet_device_drained",
+            since: "2026-09-18T10:00:00Z",
+            summary: "Device msi drained by operator",
+          },
+        ],
+        settings_in_effect_count: 4,
+      }),
+    });
+    render(<CoordDevOpsPage />);
+
+    expect(
+      await screen.findByTestId("coord-devops-conditions-settings-more")
+    ).toHaveTextContent("+3 more");
+    expect(
+      screen
+        .getByTestId("coord-devops-conditions-setting-fleet_device_drained")
+        .getAttribute("title")
+    ).toContain("Device msi drained by operator");
   });
 
   it("renders no severity badges, no pageout note and no alerts-page link", async () => {

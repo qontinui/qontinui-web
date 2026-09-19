@@ -143,10 +143,14 @@ export type FleetConditionsDomain =
 
 /** One deliberate operator setting coord is reflecting back (D1 `Responder::Setting`). */
 export interface FleetHealthSettingInEffect {
+  /** The `coord.alerts.id` of the row reflecting the setting — its identity. */
+  alert_id?: number | null;
   /** Coord's alert kind, e.g. `kill_switch_fired`, `fleet_device_drained`. */
   kind: string;
   /** When the setting took effect (ISO). */
   since?: string | null;
+  /** Coord's own one-line description of the row. */
+  summary?: string | null;
 }
 
 /**
@@ -170,11 +174,24 @@ export interface FleetHealthConditions {
   unclaimed_oldest_age_secs?: number | null;
   /** Keyed by {@link FleetConditionsDomain} — typed `string` so a new domain is not dropped. */
   unclaimed_by_domain?: Record<string, number | null> | null;
-  /** Open operator questions (the `Responder::Operator` kinds, Phase 5). */
+  /** OPEN operator-audience questions in the caller's tenant (exact count). */
   awaiting_operator?: number | null;
+  /** Their ids, oldest first, CAPPED by coord — `awaiting_operator` is exact. */
   awaiting_operator_question_ids?: string[] | null;
+  /**
+   * Open `Responder::Operator` alerts in scope. More of these than
+   * `awaiting_operator` means some operator condition has no question yet
+   * (Phase 5 raises one per episode) — the operator must not be told nothing
+   * is waiting on him.
+   */
+  awaiting_operator_alerts?: number | null;
+  /** Oldest first, CAPPED by coord — see `settings_in_effect_count`. */
   settings_in_effect?: FleetHealthSettingInEffect[] | null;
+  /** The exact number of settings in effect, beside the capped list. */
+  settings_in_effect_count?: number | null;
   scrape_up?: boolean;
+  /** With `scrape_up: false`: which read failed (e.g. `agent_work`). */
+  unavailable_reason?: string | null;
 }
 
 export interface FleetHealthPayload {
