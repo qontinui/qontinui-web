@@ -1,7 +1,7 @@
 """agent.work_artifacts — a plan's difficulty rating
 
 Revision ID: plan_library_07_plan_difficulty
-Revises: agent_questions_alert_episode_01
+Revises: notif_gate_action_03_drop_enum_value
 Create Date: 2026-09-18
 
 Adds a difficulty rating to every ``kind = 'plan'`` row, so the plan library
@@ -51,7 +51,7 @@ from alembic import op
 revision: str = "plan_library_07_plan_difficulty"
 # One line, unannotated — see plan_library_06_scan_root_slug_census for why a
 # wrapped down_revision blocks coord deploys.
-down_revision = "agent_questions_alert_episode_01"
+down_revision = "notif_gate_action_03_drop_enum_value"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
