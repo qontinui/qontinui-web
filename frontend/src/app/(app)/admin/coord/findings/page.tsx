@@ -246,6 +246,7 @@ export default function CoordFindingsPage() {
     setLoaded(false);
     setReadFailed(false);
     setError(null);
+    setUnavailable(null);
     setTruncatedKeys(false);
     // Keep the LINKED row open across a filter change — the banner still says
     // it is expanded below, and it is still on screen (prepended).
