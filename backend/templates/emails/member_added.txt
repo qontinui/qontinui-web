@@ -1,0 +1,20 @@
+You have been given access
+
+Hi,
+
+You have been given access to {{ tenant_name }} on Qontinui.
+
+Team: {{ tenant_name }}
+Your role: {{ role_label }}
+
+Nothing about your own account has changed. Sign in the way you always do,
+then use the team selector at the top of the page to switch to
+{{ tenant_name }}.
+
+{{ login_url }}
+
+If you were not expecting this, you can ignore this message - nothing is
+required of you.
+
+Best regards,
+The Qontinui Team
