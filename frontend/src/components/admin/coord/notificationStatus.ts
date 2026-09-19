@@ -182,10 +182,23 @@ export function scrubUuids(value: string): string {
  * `2026-09-18-notifications-are-agent-actions-and-alerts-are-agent-work` D4):
  * an agent did something significant, permanent or sensitive, and coord tells
  * the operator after the fact. It was `agent_took_irreversible_action` until
- * that plan widened it past irreversible actions; coord serves rows stored
- * under the old name with this one, so the page never sees the old string.
+ * that plan widened it past irreversible actions.
+ *
+ * The OLD wire string can still reach this page: rows stored under it exist
+ * until the web data migration (`coordnotif_03`) rewrites them, and a coord
+ * build older than the rename still WRITES it. Coord's parser keeps the old
+ * string as an alias until that count reads 0, so this page accepts both too
+ * ({@link isSensitiveActionKind}) — the alias goes when coord's does.
  */
 export const SENSITIVE_ACTION_KIND = "agent_took_sensitive_action";
+/** The pre-rename wire string. Delete with coord's alias. */
+export const LEGACY_SENSITIVE_ACTION_KIND = "agent_took_irreversible_action";
+
+/** True for the sensitive-action kind under either wire string. */
+export function isSensitiveActionKind(kind: string | null | undefined): boolean {
+  const k = (kind ?? "").trim();
+  return k === SENSITIVE_ACTION_KIND || k === LEGACY_SENSITIVE_ACTION_KIND;
+}
 
 /**
  * Hand-written labels, for the few kinds whose mechanical reading is worse
@@ -197,6 +210,7 @@ export const SENSITIVE_ACTION_KIND = "agent_took_sensitive_action";
  */
 const KIND_LABELS: Readonly<Record<string, string>> = {
   [SENSITIVE_ACTION_KIND]: "Sensitive agent action",
+  [LEGACY_SENSITIVE_ACTION_KIND]: "Sensitive agent action",
 };
 
 /**
@@ -437,7 +451,7 @@ const REVERSIBLE_LABELS: Readonly<Record<string, string>> = {
 export function sensitiveActionFacts(
   n: Pick<CoordNotificationRow, "kind" | "detail">
 ): SensitiveActionFacts | null {
-  if ((n.kind ?? "").trim() !== SENSITIVE_ACTION_KIND) return null;
+  if (!isSensitiveActionKind(n.kind)) return null;
   const detail = n.detail ?? {};
   const rawReversible = detail["reversible"];
   const reversible =
