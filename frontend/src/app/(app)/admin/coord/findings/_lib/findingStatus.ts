@@ -81,11 +81,19 @@ export interface FindingsResponse {
   available?: boolean | null;
   count?: number | null;
   findings?: CoordFindingRow[] | null;
+  /** The id coord filtered by — `null` on a page read. */
+  finding_id_applied?: string | null;
   kind_applied?: string | null;
+  /** Kinds a `triaged=false` read leaves out by design (e.g. `["dossier"]`). */
+  kind_excluded?: string[] | null;
   limit?: number | null;
-  resource_keys_applied?: string[] | null;
+  /** How MANY resource keys coord applied — a count, not the keys. */
+  resource_keys_applied?: number | null;
   resource_keys_truncated?: boolean | null;
-  triaged_applied?: boolean | null;
+  /** The scope a `triaged=false` read is restricted to (e.g. `"tenant"`). */
+  scope_restricted?: string | null;
+  /** coord's wire spelling of the triage filter: `"any"`, `"false"` or `"true"`. */
+  triaged_applied?: string | null;
   unavailable?: string | null;
   unavailable_kind?: string | null;
 }
@@ -146,9 +154,9 @@ export const FINDING_RETENTION_CLASS: Record<FindingRetention, string> = {
 /** Red ⇔ the colourblind-safe `✕`: exactly the `author` kinds. There are none. */
 export const FINDING_AUTHOR_GLYPH_RETENTIONS: ReadonlySet<FindingRetention> =
   new Set(
-    (
-      Object.keys(FINDING_ATTENTION_BY_RETENTION) as FindingRetention[]
-    ).filter((k) => FINDING_ATTENTION_BY_RETENTION[k] === "author")
+    (Object.keys(FINDING_ATTENTION_BY_RETENTION) as FindingRetention[]).filter(
+      (k) => FINDING_ATTENTION_BY_RETENTION[k] === "author"
+    )
   );
 
 export const FINDING_STATUS_PALETTE: StatusPalette<FindingRetention> = {
@@ -194,7 +202,7 @@ const RETENTION_LABEL: Record<FindingRetention, string> = {
 
 const RETENTION_REASON: Record<FindingRetention, string> = {
   durable:
-    "A dossier head. Its retention runs a century out, so it is kept rather than expiring.",
+    "Kept indefinitely — its retention runs decades out, so it is not on a clock.",
   expiring: "Inside its retention window — coord will drop it when it lapses.",
   expired:
     "Past its retention window. It is still readable by id, which is why it is shown rather than hidden.",
@@ -265,9 +273,43 @@ export function triageSentence(
   return "Not yet read by the findings steward.";
 }
 
-/** The console deep link that opens one finding. */
+/**
+ * The console deep link that opens one finding — the ONE builder of this URL.
+ * The landed-write feed and the notifications banner import it rather than
+ * spelling the path again, because two builders of one link drift.
+ */
 export function findingHref(id: string): string {
   return `/admin/coord/findings?id=${encodeURIComponent(id)}`;
+}
+
+const UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * Is this `?id=` value something coord could possibly hold?
+ *
+ * Checked BEFORE the by-id read so a mangled link gets its own sentence
+ * ("this link's id is not a finding id") instead of coord's 400 landing in the
+ * generic read-failed arm — a malformed link is not a failed lookup, and
+ * retrying it would fail forever.
+ */
+export function isFindingId(value: string): boolean {
+  return UUID_RE.test(value.trim());
+}
+
+/**
+ * Accept a by-id answer's row only if it IS the row asked for.
+ *
+ * coord echoes `finding_id_applied` precisely because a door that ignored the
+ * id would still return a well-formed page; taking `findings[0]` on trust would
+ * expand some other finding under a banner saying it is the linked one.
+ */
+export function linkedRowFrom(
+  rows: CoordFindingRow[],
+  linkedId: string
+): CoordFindingRow | null {
+  const want = linkedId.trim().toLowerCase();
+  return rows.find((r) => r.finding_id.toLowerCase() === want) ?? null;
 }
 
 /**
@@ -316,13 +358,30 @@ export function findingLinkNotice(state: {
   error?: boolean;
   /** coord's findings surface did not answer at all (not deployed / down). */
   unavailable?: boolean;
+  /** The `?id=` value is not a finding id at all — no read was issued. */
+  invalid?: boolean;
+  /** The linked row is on screen but outside the current filters. */
+  outsideFilters?: boolean;
 }): string {
+  // First, and before `found`: a mangled id was never looked up, so no other
+  // arm's claim (found, loading, failed, absent) is about it.
+  if (state.invalid) {
+    return (
+      "This link's id is not a finding id, so there is nothing to look up. " +
+      "The link itself is malformed — it is not a missing finding."
+    );
+  }
   if (state.found) {
-    return state.expired
+    const base = state.expired
       ? "Showing the finding this write's author recorded — expanded below. " +
-          "It is past its retention window and is served by id anyway, so what " +
-          "you are reading is the whole record, not a summary of a deleted one."
+        "It is past its retention window and is served by id anyway, so what " +
+        "you are reading is the whole record, not a summary of a deleted one."
       : "Showing the finding this write's author recorded — expanded below.";
+    return state.outsideFilters
+      ? base +
+          " It is outside the current filters, so it is shown first and not " +
+          "counted in the list total."
+      : base;
   }
   // Outranks every arm below: with no findings surface there is no store for
   // the finding to be absent FROM, so "no such finding" would report a
@@ -335,12 +394,13 @@ export function findingLinkNotice(state: {
   }
   if (state.loading) return "Looking for the linked finding…";
   if (state.error) {
-    return "The linked finding could not be looked up — the read failed. Retry below.";
+    return "The linked finding could not be looked up — the read failed. Refresh to retry.";
   }
   return (
     "No finding with that id is readable here. A by-id read is served even " +
-    "past expiry, so this is coord answering: the id belongs to another " +
-    "tenant, or to no finding at all."
+    "past expiry, so this is coord answering: the finding was superseded by " +
+    "a correction, the id belongs to another tenant, or it names no finding " +
+    "at all."
   );
 }
 
@@ -380,7 +440,8 @@ export function deriveFindingsHealth(input: {
       : input.triaged === true
         ? "triaged findings"
         : "findings";
-  const readIsCurrent = input.loaded && !input.failed && input.unavailable === null;
+  const readIsCurrent =
+    input.loaded && !input.failed && input.unavailable === null;
   const countBadge: HealthBadge = {
     key: "shown",
     // R6: a count nobody managed to read is a DASH, never a zero. `0 shown`
@@ -425,7 +486,8 @@ export function deriveFindingsHealth(input: {
     return {
       level: "amber",
       headline: "Reading the findings store…",
-      detail: "Nothing has answered yet, so the count is a dash rather than a zero.",
+      detail:
+        "Nothing has answered yet, so the count is a dash rather than a zero.",
       badges: [countBadge],
       readIsCurrent: false,
     };
