@@ -17,7 +17,8 @@
  * ## The rules it encodes
  *
  * - **"Nothing unhandled" is said only when coord measured it**: `scrape_up`
- *   is `true` AND `unclaimed` is exactly `0`. It is the one sentence this
+ *   is `true`, `unclaimed` is exactly `0`, and the operator side is settled
+ *   (no question waiting, both exact operator-alert counts served and `0`). It is the one sentence this
  *   panel must never say falsely — a green report over a degraded fleet is
  *   exactly what the operator profile forbids.
  * - **An absent block is UNKNOWN, never zero.** A coord that predates Phase 7
@@ -32,11 +33,16 @@
  *   who must act. An unclaimed condition is agents' work that no agent has
  *   picked up — degraded, so amber — while an awaiting-operator question is
  *   the one thing on this panel only a human can clear.
- * - **An operator condition with no question yet is never green.** Coord
- *   counts open `Responder::Operator` alerts (`awaiting_operator_alerts`)
- *   beside the questions it has raised; more alerts than questions means
- *   something needs the operator that the question queue does not show yet,
- *   and the panel says so rather than "nothing is waiting on you".
+ * - **Operator alerts are read from coord's EXACT counts, never derived.**
+ *   `awaiting_operator_unasked` is open operator alerts with no question at
+ *   all; `awaiting_operator_answered_uncleared` is alerts whose question was
+ *   answered but which coord has not yet seen clear (an answered alert is
+ *   never re-asked, so subtracting questions from alerts miscounts exactly
+ *   these). Unasked alerts are never green; answered-uncleared ones are
+ *   amber. A coord that sends neither count gets NEUTRAL wording that names
+ *   no cause ("open beyond the questions waiting on you") and is never
+ *   green. While any such alert exists the headline is never
+ *   "Nothing unhandled".
  * - **A failed latest read is amber, whatever the retained answer said.** The
  *   numbers stay on screen, labelled as the last answer, but a verdict that
  *   is not being re-confirmed may not look like one that is — not green, and
@@ -139,19 +145,37 @@ export interface FleetConditionsSummary {
   /** Open operator-responder alerts coord counts; `null` = not measured. */
   awaitingOperatorAlerts: number | null;
   /**
-   * Operator alerts with no question yet: `awaitingOperatorAlerts` beyond
-   * `awaitingOperator`. `null` when either side is unmeasured.
+   * Whether coord served BOTH exact operator-alert counts below. When it did
+   * not (an older coord), only {@link operatorAlertsBeyondQuestions} is
+   * available, and it states no cause.
    */
-  unaskedOperatorAlerts: number | null;
+  operatorCountsExact: boolean;
+  /** Open operator alerts with no question at all (coord's exact count). */
+  operatorAlertsUnasked: number | null;
+  /** Answered, but coord has not yet seen the condition clear (exact). */
+  operatorAlertsAnsweredUncleared: number | null;
+  /**
+   * FALLBACK ONLY (an older coord): open operator alerts beyond the open
+   * questions — a difference, so it names no cause. `null` whenever the exact
+   * counts are served, or either side of the difference is unmeasured.
+   */
+  operatorAlertsBeyondQuestions: number | null;
   /** Where "waiting on you" leads: the one question, or the queue. */
   questionsHref: string;
   /** `null` = not measured (unknown), `[]` = measured and none in effect. */
   settings: ConditionsSetting[] | null;
   /**
    * Settings coord counted but did not list (its list is capped). `0` when
-   * the list is complete or the count is unknown.
+   * the list is complete or the count is unknown — see
+   * {@link settingsCountUnknown} for the latter.
    */
   settingsNotListed: number;
+  /**
+   * A listed, non-empty settings list whose exact total coord did not serve:
+   * the list may be capped, and the panel says the count is unknown rather
+   * than hiding that.
+   */
+  settingsCountUnknown: boolean;
   /** With a failed scrape: which read coord says failed. */
   unavailableReason: string | null;
 }
@@ -263,10 +287,14 @@ const EMPTY: Omit<FleetConditionsSummary, "state" | "level" | "headline" | "deta
   awaitingOperator: null,
   awaitingOperatorQuestionIds: [],
   awaitingOperatorAlerts: null,
-  unaskedOperatorAlerts: null,
+  operatorCountsExact: false,
+  operatorAlertsUnasked: null,
+  operatorAlertsAnsweredUncleared: null,
+  operatorAlertsBeyondQuestions: null,
   questionsHref: QUESTION_QUEUE_HREF,
   settings: null,
   settingsNotListed: 0,
+  settingsCountUnknown: false,
   unavailableReason: null,
 };
 
@@ -349,8 +377,18 @@ export function summarizeFleetConditions({
   const settingsTotal = count(c.settings_in_effect_count);
   const awaitingOperator = count(c.awaiting_operator);
   const awaitingOperatorAlerts = count(c.awaiting_operator_alerts);
-  const unaskedOperatorAlerts =
-    awaitingOperator === null || awaitingOperatorAlerts === null
+  const operatorAlertsUnasked = count(c.awaiting_operator_unasked);
+  const operatorAlertsAnsweredUncleared = count(
+    c.awaiting_operator_answered_uncleared
+  );
+  const operatorCountsExact =
+    operatorAlertsUnasked !== null && operatorAlertsAnsweredUncleared !== null;
+  // Fallback only. A difference cannot say WHY an alert has no open question
+  // (never asked, or answered and not yet clear), so its wording names none.
+  const operatorAlertsBeyondQuestions =
+    operatorCountsExact ||
+    awaitingOperator === null ||
+    awaitingOperatorAlerts === null
       ? null
       : Math.max(0, awaitingOperatorAlerts - awaitingOperator);
   const base = {
@@ -362,40 +400,96 @@ export function summarizeFleetConditions({
     awaitingOperator,
     awaitingOperatorQuestionIds: ids,
     awaitingOperatorAlerts,
-    unaskedOperatorAlerts,
+    operatorCountsExact,
+    operatorAlertsUnasked: operatorCountsExact ? operatorAlertsUnasked : null,
+    operatorAlertsAnsweredUncleared: operatorCountsExact
+      ? operatorAlertsAnsweredUncleared
+      : null,
+    operatorAlertsBeyondQuestions,
     questionsHref: questionsHrefFor(ids),
     settings,
     settingsNotListed:
       settings !== null && settingsTotal !== null
         ? Math.max(0, settingsTotal - settings.length)
         : 0,
+    settingsCountUnknown:
+      settings !== null && settings.length > 0 && settingsTotal === null,
     unavailableReason: null,
   };
 
   const waiting = awaitingOperator;
+  const unasked = base.operatorAlertsUnasked;
+  const answeredUncleared = base.operatorAlertsAnsweredUncleared;
+  const beyond = operatorAlertsBeyondQuestions;
+
+  const operatorSentence = operatorCountsExact
+    ? [
+        unasked !== null && unasked > 0
+          ? `${plural(unasked, "operator alert", "operator alerts")} not yet asked.`
+          : null,
+        answeredUncleared !== null && answeredUncleared > 0
+          ? `${answeredUncleared} answered, waiting for coord to see ${answeredUncleared === 1 ? "it" : "them"} clear.`
+          : null,
+      ]
+        .filter(Boolean)
+        .join(" ")
+    : beyond === null
+      ? "Whether any operator alert is open without a question is unknown."
+      : beyond > 0
+        ? `${plural(beyond, "operator alert", "operator alerts")} open beyond the questions waiting on you.`
+        : "This coord does not say whether any operator alert is still unasked.";
+
   const waitingSentence =
     (waiting === null
       ? "Whether anything is waiting on you is unknown."
       : waiting > 0
         ? `${plural(waiting, "question is", "questions are")} waiting on you.`
         : "No question is waiting on you.") +
-    (unaskedOperatorAlerts === null
-      ? " Whether any condition that needs you still has no question is unknown."
-      : unaskedOperatorAlerts > 0
-        ? ` ${plural(unaskedOperatorAlerts, "operator alert has", "operator alerts have")} no question yet.`
-        : "");
+    (operatorSentence ? ` ${operatorSentence}` : "");
+
+  /**
+   * The operator-alert side, settled: every count exact and zero. Only then
+   * may the panel go green or say "Nothing unhandled".
+   */
+  const operatorSettled =
+    waiting === 0 &&
+    operatorCountsExact &&
+    unasked === 0 &&
+    answeredUncleared === 0;
 
   /**
    * One place decides the colour, so no branch can forget a clause:
    * red iff a question waits on the operator; green only on a measured
-   * all-clear with every operator condition asked about; a failed latest
-   * read is amber whatever the retained answer says.
+   * all-clear with the operator side settled; a failed latest read is amber
+   * whatever the retained answer says.
    */
   const levelFor = (allClear: boolean): FleetConditionsLevel => {
     if (error) return "amber";
     if (waiting !== null && waiting > 0) return "red";
-    const operatorSettled = waiting === 0 && unaskedOperatorAlerts === 0;
     return allClear && operatorSettled ? "green" : "amber";
+  };
+
+  /**
+   * The agent-clear headline. "Nothing unhandled" is withheld while any open
+   * operator alert has no open question — the exact counts name why, the
+   * fallback does not.
+   */
+  const clearHeadline = (): string => {
+    if (operatorCountsExact) {
+      if (unasked !== null && unasked > 0) {
+        return `${plural(unasked, "operator alert", "operator alerts")} not yet asked`;
+      }
+      if (answeredUncleared !== null && answeredUncleared > 0) {
+        return `${plural(answeredUncleared, "answered operator alert", "answered operator alerts")} not yet clear`;
+      }
+      return "Nothing unhandled";
+    }
+    if (beyond !== null && beyond > 0) {
+      return `${plural(beyond, "operator alert", "operator alerts")} open beyond your questions`;
+    }
+    // Agent work is all claimed; whether an operator alert sits without a
+    // question is not established, so the sentence is scoped to what is.
+    return "No agent work unhandled";
   };
 
   // `scrape_up` absent on a block that is otherwise present is a coord that
@@ -432,7 +526,7 @@ export function summarizeFleetConditions({
       ...base,
       state: "clear",
       level: levelFor(true),
-      headline: "Nothing unhandled",
+      headline: clearHeadline(),
       detail: `${openClause} ${waitingSentence}${staleNote}`,
     };
   }

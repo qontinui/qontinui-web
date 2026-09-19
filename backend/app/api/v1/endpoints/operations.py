@@ -4256,14 +4256,14 @@ async def get_fleet_health(
     ``response_model``, so nothing here filters a field coord adds.
 
     Coord also serves ``alerts_scrape_up`` (beside the ``alerts``
-    severity rollup, for API consumers), ``credential_dark_scrape_up``
-    and — since plan
+    severity rollup, for API consumers), ``credential_dark_scrape_up``,
+    ``pageout`` (the page-out sink's posture) and — since plan
     ``2026-09-18-notifications-are-agent-actions-and-alerts-are-agent-work``
     Phase 7 — the ``conditions`` block. The web app reads
-    ``credential_dark_scrape_up`` and ``conditions``; nothing in it reads
-    ``alerts`` / ``alerts_scrape_up`` any more (the severity badges they fed
-    were replaced by the Dev Ops Conditions panel in Phase 8), and it has
-    never read a ``pageout`` field.
+    ``credential_dark_scrape_up`` and ``conditions``; it no longer reads
+    ``alerts`` / ``alerts_scrape_up`` or ``pageout`` (the severity badges and
+    the pageout-sink note they fed were replaced by the Dev Ops Conditions
+    panel in Phase 8).
 
     ``conditions`` answers "is anything degraded that no agent is
     handling?", computed under the same visibility predicate as
@@ -4271,7 +4271,12 @@ async def get_fleet_health(
     lease state), ``unclaimed_oldest_age_secs``, ``unclaimed_by_domain``,
     ``awaiting_operator`` + ``awaiting_operator_question_ids`` (open
     operator questions; the id list is capped, the count exact),
-    ``awaiting_operator_alerts`` (open operator-responder alerts),
+    ``awaiting_operator_alerts`` (open operator-responder alerts — NOT
+    comparable with ``awaiting_operator`` by subtraction, because an
+    answered alert that has not yet cleared is never re-asked),
+    ``awaiting_operator_unasked`` (open operator alerts with no question at
+    all) and ``awaiting_operator_answered_uncleared`` (answered, still open)
+    — the two exact counts the panel reads, absent on an older coord,
     ``settings_in_effect`` (capped list of ``{alert_id, kind, since,
     summary}``) + ``settings_in_effect_count``, and ``scrape_up``. On a
     failed read coord sends ``scrape_up: false`` with every count ``null``
