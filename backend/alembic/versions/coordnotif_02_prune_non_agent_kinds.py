@@ -1,0 +1,285 @@
+"""coord.notifications: one-shot prune of every row that is not an agent action.
+
+Phase 3 item 4 of plan
+``qontinui-dev-notes/plans/2026-09-18-notifications-are-agent-actions-and-alerts-are-agent-work.md``.
+
+The operator's notifications feed is meant to carry one class of event: an
+AGENT did something significant, permanent or sensitive. Measured when the plan
+was written, it held 2,503 rows, all unread, and 91% of them were
+``alert_paged`` — alert pages copied into the feed, burying the 125 rows of the
+intended class. The coord side of the plan stops the inflow: Phase 1 stops
+emitting operator-authored and seed prompt-document changes and deletes the
+``pr_landed`` / ``worktree_went_stale`` kinds, and Phase 3 moves pages to the
+agent queue and deletes ``alert_paged``. This revision removes what is already
+stored. It authors no schema at all — it is pure DML, same as
+``coord_alerts_retention_01``, whose batching it copies.
+
+What is deleted, by class
+==========================================================================
+
+(a) ``kind = 'alert_paged'`` — every row. Pages now go to the agent queue.
+
+(b) ``kind IN ('policy_document_changed', 'autonomy_dial_changed')`` with
+    ``actor LIKE 'operator:%'`` — the operator being told about his own edits.
+    coord stores the actor through ``prompt_documents::principal_label_only``,
+    which keeps ``operator:<uuid>`` and degrades a non-UUID second segment to
+    ``operator:``; both match the prefix.
+
+(c) The same two kinds, written by a SEED. The ``actor`` column cannot tell a
+    seed apart: ``principal_label_only("system:seed")`` and
+    ``principal_label_only("system:upstream")`` both store ``system:``
+    (pinned by coord's own test ``assert_eq!(principal_label_only(
+    UPSTREAM_ADOPT_ACTOR), "system:")``), and an upstream adoption is a change
+    the operator did NOT author and still wants to see. So a seed is identified
+    by the VERSION it announces: the notification names its document and the
+    version it moved to, and ``coord.prompt_document_versions.edited_by`` keeps
+    the UNtruncated author (``apply_document_edit_tx`` binds the raw
+    ``updated_by``, and the seed reconciler passes ``"system:seed"``). A row is
+    a seed notification iff it joins to a version row with
+    ``edited_by = 'system:seed'`` on:
+
+        n.tenant_id                                = d.tenant_id
+        n.detail->>'document'                      = d.name
+        COALESCE(n.detail->>'document_kind', 'policy') = d.kind
+        n.detail->>'to_version'                    = v.version_number::text
+        v.document_id                              = d.id
+
+    These are the payload keys ``policy_change_notification`` writes
+    (``"document"``, ``"to_version"``, ``"document_kind"``), and this is the
+    exact match coord's own reconciler uses to decide whether a version already
+    has its notification (``CANDIDATES_SQL`` in
+    ``prompt_document_notification_reconcile.rs``), including its two details:
+    ``to_version`` is compared as TEXT because ``->>`` extracts a jsonb number
+    in its textual form (and a text compare cannot raise on a malformed value
+    where an ``::int`` cast would), and a pre-widening event carried no
+    ``document_kind`` because only ``kind = 'policy'`` emitted then, hence the
+    ``COALESCE``. A ``system:`` row that matches no seed version — an upstream
+    adoption, or a row whose document has since been deleted — STAYS: an unknown
+    is never pruned.
+
+(d) ``kind IN ('pr_landed', 'worktree_went_stale')`` — kinds Phase 1 deleted
+    from ``NotificationKind``. They never had an emitter, so this is expected to
+    delete nothing; it is here so no row of a kind coord can no longer render
+    survives the migration.
+
+Everything else stays, in particular agent-authored prompt-document changes
+(``session:``, ``agent:``, ``device:``), upstream adoptions, and the
+agent-action kinds this feed exists for.
+
+``coord.notification_reads`` rows go with their parents through the
+``ON DELETE CASCADE`` foreign key ``coordnotif_01`` declared; nothing prunes
+them separately.
+
+Ordering: why this lands after coord, and after coord's Phase 1
+==========================================================================
+
+This revision is only useful once coord has stopped refilling the table, so its
+PR lands after the coord PRs are DEPLOYED (``coord:downstream-of``). There is a
+second, sharper reason for classes (b) and (c): coord's
+``prompt_document_notification_reconcile`` re-emits a notification for every
+version above v1 that has none. Until plan Phase 1 gives its candidate SELECT
+the same actor predicate as the emitter (``actor NOT LIKE 'operator:%' AND
+actor <> 'system:seed'``), deleting an operator or seed notification makes its
+version look MISSED, and the reconciler writes it straight back (within its
+lookback window). With Phase 1 deployed the delete sticks. Running this early
+is not harmful — at worst some rows reappear and a re-run removes them — but it
+is wasted.
+
+Why the delete is BATCHED, and how the cursor works
+==========================================================================
+
+Same reasoning as the ``coord_alerts_retention_01`` template: ``env.py`` wraps
+the migration run in ONE transaction, so the delete runs inside
+``autocommit_block()`` in bounded batches, each its own transaction — progress
+survives an interruption and a re-run finishes the job. The table is small
+today (thousands of rows), but the revision must be safe to run at any later
+time, against whatever has accumulated by then.
+
+Each class walks the primary key with a high-water cursor rather than a bare
+``LIMIT``, so already-deleted index entries are not re-traversed batch after
+batch. The key is ``notification_id``, a UUID. ``RETURNING`` casts it to TEXT
+and the cursor advances to the Python ``max`` of those strings: a canonical
+UUID's text form is fixed-width lowercase hex, so string order IS the uuid
+order PostgreSQL uses (a 16-byte memcmp), and the cursor never skips a row.
+Termination is structural: a batch that returns rows always advances the cursor
+past them, and a batch that returns none ends that class.
+
+Idempotency / authorship posture
+==========================================================================
+
+* alembic is the sole author of ``coord.*``; coord issues zero DDL. This
+  revision authors no schema.
+* Re-running is a no-op once the prune set is empty (every WHERE clause simply
+  matches nothing), so a partially-applied run is repaired by re-running.
+* ``downgrade()`` is a deliberate no-op: the deleted rows are unrecoverable by
+  design, as in the template.
+
+Revision ID: coordnotif_02_prune_non_agent_kinds
+Revises: agent_questions_alert_episode_01
+Create Date: 2026-09-19
+
+"""
+
+import logging
+from collections.abc import Sequence
+
+import sqlalchemy as sa
+
+from alembic import op
+
+# revision identifiers, used by Alembic.
+revision: str = "coordnotif_02_prune_non_agent_kinds"
+down_revision: str | Sequence[str] | None = "agent_questions_alert_episode_01"
+branch_labels: str | Sequence[str] | None = None
+depends_on: str | Sequence[str] | None = None
+
+logger = logging.getLogger("alembic.runtime.migration")
+
+# The two kinds `notify_document_version_change` emits.
+PROMPT_DOCUMENT_KINDS: tuple[str, ...] = (
+    "policy_document_changed",
+    "autonomy_dial_changed",
+)
+
+# Kinds deleted from `NotificationKind` by plan Phase 1 (no emitter ever).
+DELETED_KINDS: tuple[str, ...] = ("pr_landed", "worktree_went_stale")
+
+# The version-row author a seed writes. The UNtruncated form: the notification's
+# own `actor` column holds only `system:`, which an upstream adoption shares.
+SEED_EDITED_BY: str = "system:seed"
+
+# Rows per transaction.
+BATCH_ROWS: int = 5_000
+
+# Defensive ceiling per class. The cursor guarantees termination, so tripping
+# this means something is structurally wrong: fail loudly rather than spin.
+MAX_BATCHES: int = 2_000
+
+# The lowest possible uuid, as text: the cursor's starting point.
+_CURSOR_START: str = "00000000-0000-0000-0000-000000000000"
+
+# One WHERE clause per class, over `coord.notifications n`. Each is a
+# self-contained predicate, so the classes are disjoint by kind or actor and a
+# row is counted under exactly one of them.
+_CLASS_PREDICATES: tuple[tuple[str, str], ...] = (
+    ("alert_paged", "n.kind = 'alert_paged'"),
+    (
+        "operator_prompt_document_change",
+        "n.kind = ANY(:doc_kinds) AND n.actor LIKE 'operator:%'",
+    ),
+    (
+        "seed_prompt_document_change",
+        """
+        n.kind = ANY(:doc_kinds)
+        AND n.actor LIKE 'system:%'
+        AND EXISTS (
+            SELECT 1
+              FROM coord.prompt_document_versions v
+              JOIN coord.prompt_documents d ON d.id = v.document_id
+             WHERE d.tenant_id = n.tenant_id
+               AND d.name = n.detail->>'document'
+               AND d.kind = COALESCE(n.detail->>'document_kind', 'policy')
+               AND v.version_number::text = n.detail->>'to_version'
+               AND v.edited_by = :seed_edited_by
+        )
+        """,
+    ),
+    ("deleted_kind", "n.kind = ANY(:deleted_kinds)"),
+)
+
+# One batch: the next BATCH_ROWS doomed ids of one class, strictly above the
+# cursor in primary-key order; delete exactly those and report them.
+_DELETE_BATCH_SQL = """
+WITH doomed AS (
+    SELECT n.notification_id
+      FROM coord.notifications n
+     WHERE ({predicate})
+       AND n.notification_id > CAST(:after_id AS uuid)
+     ORDER BY n.notification_id
+     LIMIT :batch
+)
+DELETE FROM coord.notifications t
+      USING doomed d
+      WHERE t.notification_id = d.notification_id
+  RETURNING t.notification_id::text
+"""
+
+
+def _prune_class(bind: sa.engine.Connection, label: str, predicate: str) -> int:
+    """Delete every row matching ``predicate`` in cursor-ordered batches."""
+    sql = sa.text(_DELETE_BATCH_SQL.format(predicate=predicate))
+    total = 0
+    batches = 0
+    after_id = _CURSOR_START
+
+    while True:
+        ids = list(
+            bind.execute(
+                sql,
+                {
+                    "doc_kinds": list(PROMPT_DOCUMENT_KINDS),
+                    "deleted_kinds": list(DELETED_KINDS),
+                    "seed_edited_by": SEED_EDITED_BY,
+                    "after_id": after_id,
+                    "batch": BATCH_ROWS,
+                },
+            ).scalars()
+        )
+        if not ids:
+            break
+
+        after_id = max(ids)
+        total += len(ids)
+        batches += 1
+
+        if batches >= MAX_BATCHES:
+            raise RuntimeError(
+                f"coordnotif_02: class {label} exceeded {MAX_BATCHES} batches "
+                f"after deleting {total} row(s) (cursor at {after_id}). The "
+                "primary-key cursor should make this unreachable; refusing to spin."
+            )
+
+    logger.info(
+        "coordnotif_02: deleted %d coord.notifications row(s) of class %s "
+        "in %d batch(es).",
+        total,
+        label,
+        batches,
+    )
+    return total
+
+
+def upgrade() -> None:
+    """Prune every non-agent-action notification class, in batches.
+
+    Runs in an autocommit block so each batch commits independently: the work
+    survives an interruption and a re-run completes it.
+    """
+    with op.get_context().autocommit_block():
+        bind = op.get_bind()
+
+        counts = {
+            label: _prune_class(bind, label, predicate)
+            for label, predicate in _CLASS_PREDICATES
+        }
+        total = sum(counts.values())
+        logger.info(
+            "coordnotif_02: deleted %d coord.notifications row(s) in total: %s. "
+            "coord.notification_reads rows went with them (ON DELETE CASCADE).",
+            total,
+            counts,
+        )
+
+        if total:
+            # Refresh the planner's row estimates now rather than whenever
+            # autoanalyze fires: the prune can remove most of the table.
+            op.execute("ANALYZE coord.notifications")
+
+
+def downgrade() -> None:
+    """Deliberate no-op: the deleted rows are unrecoverable by design.
+
+    Mirrors ``coord_alerts_retention_01``. Making this raise would block
+    downgrading the chain past this revision for no gain, since the deleted
+    notifications cannot be recovered either way.
+    """
