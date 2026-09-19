@@ -10,6 +10,7 @@ interface MermaidDiagramProps {
 
 export function MermaidDiagram({ source, title }: MermaidDiagramProps) {
   const containerRef = useRef<HTMLDivElement>(null);
+  const accessibleTitle = title ?? "Project diagram";
 
   useEffect(() => {
     mermaid.initialize({ startOnLoad: true, theme: "base", securityLevel: "strict" });
@@ -17,7 +18,7 @@ export function MermaidDiagram({ source, title }: MermaidDiagramProps) {
   }, []);
 
   return (
-    <div ref={containerRef} aria-label={title ?? "Project diagram"} className="flex justify-center overflow-auto rounded-lg border bg-card p-6">
+    <div ref={containerRef} aria-label={accessibleTitle} className="flex justify-center overflow-auto rounded-lg border bg-card p-6">
       <div className="mermaid">{source}</div>
     </div>
   );

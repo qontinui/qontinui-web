@@ -9,17 +9,17 @@ import { formatDate } from "./types";
 export default function OverviewLayout({ children }: { children: ReactNode }) {
   const pathname = usePathname();
 
-  const links: readonly (readonly [string, string])[] = [
-    ["Summary", "/overview"],
-    ["Timeline", "/overview/timeline"],
-    ["Costs", "/overview/financials"],
-    ["Team", "/overview/team"],
-    ["Risks", "/overview/risks"],
-    ["Diagrams", "/overview/diagrams"],
-    ["Documents", "/overview/documents"],
-    ["Wiki", "/overview/wiki"],
-    ["Slides", "/overview/slides"],
-  ];
+  const links = [
+    { label: "Summary", href: "/overview" },
+    { label: "Timeline", href: "/overview/timeline" },
+    { label: "Costs", href: "/overview/financials" },
+    { label: "Team", href: "/overview/team" },
+    { label: "Risks", href: "/overview/risks" },
+    { label: "Diagrams", href: "/overview/diagrams" },
+    { label: "Documents", href: "/overview/documents" },
+    { label: "Wiki", href: "/overview/wiki" },
+    { label: "Slides", href: "/overview/slides" },
+  ] as const;
 
   return (
     <div className="h-[calc(100vh-44px)] flex flex-col" data-ui-bridge-id="overview.shell">
@@ -33,7 +33,7 @@ export default function OverviewLayout({ children }: { children: ReactNode }) {
           <p className="mt-2 text-xs text-muted-foreground">Last updated {formatDate("2026-09-18")}</p>
         </div>
         <nav className="flex gap-1 overflow-x-auto px-6" aria-label="Project sections" data-ui-bridge-id="overview.subnav">
-          {links.map(([label, href]) => {
+          {links.map(({ label, href }) => {
             const isActive = pathname === href;
             return (
               <Link

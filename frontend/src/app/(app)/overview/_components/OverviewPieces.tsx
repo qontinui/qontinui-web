@@ -2,8 +2,6 @@
 
 import type { ReactNode } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { scenarioA } from "../mock-data";
-
 export function OverviewHeader() {
   return null;
 }
@@ -11,7 +9,7 @@ export function OverviewHeader() {
 export function SummaryPage({ canEdit: _canEdit = false }: { canEdit?: boolean }) {
   return (
     <Card>
-      <CardHeader><CardTitle>{scenarioA.settings.projectName}</CardTitle></CardHeader>
+      <CardHeader><CardTitle>Project overview</CardTitle></CardHeader>
       <CardContent className="text-sm text-muted-foreground">Use the project overview navigation to explore the latest status.</CardContent>
     </Card>
   );
