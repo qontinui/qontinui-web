@@ -141,11 +141,14 @@ export default function CoordFindingsPage() {
   const [truncatedKeys, setTruncatedKeys] = useState(false);
   const [loading, setLoading] = useState(true);
   /**
-   * True once a read has SUCCEEDED — never merely "a read finished".
+   * True when the rows and count on screen came from a SUCCESSFUL read of the
+   * current query — never merely "a read finished".
    *
    * `loading` settles in a `finally`, so it settles on failure too: right for
    * the skeleton, wrong for a count. Two flags, two questions — the split the
    * notifications page documents and every Wave-2 console surface carries.
+   * Anything that discards those rows (a filter change, a degraded read) must
+   * reset it too, or a later failure reads as "no findings match".
    */
   const [loaded, setLoaded] = useState(false);
   const [readFailed, setReadFailed] = useState(false);
@@ -210,6 +213,9 @@ export default function CoordFindingsPage() {
         setUnavailable(body.unavailable);
         setRows([]);
         setCount(null);
+        // The rows an earlier success produced are gone, so nothing on screen
+        // is a successful read any more — see `loaded`.
+        setLoaded(false);
         setTruncatedKeys(false);
         setReadFailed(false);
         setError(null);
@@ -227,6 +233,8 @@ export default function CoordFindingsPage() {
       // A throw is a DIFFERENT cause from an earlier degrade of this query;
       // leaving that degrade's text up would put two causes on screen, the
       // strip naming the stale one (it ranks `unavailable` above `failed`).
+      // Safe only because a degrade also resets `loaded`: without that, this
+      // clear would turn "unknown" into "no findings match".
       setUnavailable(null);
       setError(`Failed to load: ${e instanceof Error ? e.message : String(e)}`);
       setReadFailed(true);
