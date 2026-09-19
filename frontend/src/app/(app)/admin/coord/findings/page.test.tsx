@@ -585,6 +585,33 @@ describe("CoordFindingsPage", () => {
       );
     });
 
+    it("reads UNKNOWN after success, then degrade, then a throw on the same query", async () => {
+      httpGet.mockResolvedValueOnce(page([finding()]));
+      render(<CoordFindingsPage />);
+      await screen.findByTestId("coord-finding-row");
+
+      httpGet.mockResolvedValueOnce({
+        available: false,
+        count: 0,
+        findings: [],
+        unavailable: "coord did not answer the findings store (HTTP 503).",
+        unavailable_kind: "unreachable",
+      });
+      await userEvent.click(screen.getByTestId("coord-findings-refresh"));
+      await screen.findByTestId("coord-findings-unavailable");
+
+      httpGet.mockRejectedValue(new Error("GET … failed: 401 - unauthorized"));
+      await userEvent.click(screen.getByTestId("coord-findings-refresh"));
+
+      expect(
+        await screen.findByTestId("coord-findings-unknown")
+      ).toHaveTextContent(/unknown, not none/i);
+      expect(screen.queryByText(/no findings match these filters/i)).toBeNull();
+      expect(screen.getByTestId("coord-findings-health")).toHaveTextContent(
+        /could not read the findings store/i
+      );
+    });
+
     it("renders an honest empty state when coord CONFIRMS nothing matches", async () => {
       httpGet.mockResolvedValue(page([]));
       render(<CoordFindingsPage />);
