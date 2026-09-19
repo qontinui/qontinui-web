@@ -332,6 +332,28 @@ def test_local_list_and_bare_flag(db):
 """
 
 
+_A_NEGATIVE_WHERE_EXPRESSION = """
+from sqlalchemy import text
+
+
+def _rows(engine):
+    with engine.connect() as conn:
+        return conn.execute(
+            text(
+                "SELECT id FROM coord.policy_rules "
+                "WHERE COALESCE(decision_domain, kind) = 'pr_fix' "
+                "ORDER BY created_at"
+            )
+        ).mappings().all()
+
+
+def test_one_row(engine):
+    rows = _rows(engine)
+    assert len(rows) == 1
+    assert rows[0]["condition"] == {}
+"""
+
+
 def _write(tmp_path: Path, name: str, source: str) -> Path:
     path = tmp_path / name
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -651,3 +673,16 @@ def test_assert_not_does_not_flag_a_local_list_or_a_bare_flag(
 ) -> None:
     """The near-miss for the arm above — neither reads shared state."""
     assert _rules(tmp_path, "not_neg.py", _NOT_NEGATIVE) == []
+
+
+def test_a_where_clause_over_an_expression_still_scopes(tmp_path: Path) -> None:
+    """``WHERE COALESCE(a, b) = 'x'`` is a real clause, not a bare column.
+
+    The WHERE-clause predicate replaced a bare ``\\bwhere\\b`` to stop prose
+    silencing Rule A, and the first version of it only allowed a single
+    identifier after WHERE. That turned every function-call, parenthesised or
+    NOT predicate into "no WHERE at all" and flagged 8 correct assertions in
+    `test_pr_fix_default_on_01_migration.py` — a false RED introduced by a
+    false-green fix, which is exactly the trade this gate must not make.
+    """
+    assert _rules(tmp_path, "a_expr.py", _A_NEGATIVE_WHERE_EXPRESSION) == []

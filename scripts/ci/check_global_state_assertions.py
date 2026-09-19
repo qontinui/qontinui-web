@@ -176,25 +176,40 @@ SCAN_SUFFIX = ".py"
 #: WHERE-less count of it.
 SQL_COUNT = re.compile(r"select\s+count\s*\(", re.IGNORECASE)
 SQL_TABLE_REF = re.compile(r"from\s+\w+\.", re.IGNORECASE)
-SQL_WHERE = re.compile(r"\bwhere\b", re.IGNORECASE)
 
-#: Used only by :func:`_is_sql_fragment`, to tell a SQL string from prose that
-#: happens to contain "where". A keyword ALONE is not enough — English has all
-#: of these — so a fragment must also carry a bind parameter, a
-#: schema-qualified name, a comparison, or a second distinct keyword.
-SQL_KEYWORD = re.compile(
-    r"\b(select|from|where|join|insert|update|delete|values|set|and|or|on|"
-    r"group|order|limit|offset|having|returning)\b",
+#: A WHERE **clause**, as opposed to the English word. This is deliberately not
+#: a "does this look like SQL" test: that framing needs a keyword list, and
+#: every candidate keyword (``set``, ``and``, ``or``, ``on``, ``order``,
+#: ``values``) is an ordinary English word, so prose kept scoring as SQL — "the
+#: row set where nothing matched" carries two of them. It also got terse real
+#: fragments wrong in the other direction, because ``" WHERE is_active"`` has
+#: exactly one keyword and no punctuation.
+#:
+#: A clause is ``where`` followed by a column and then either a predicate
+#: operator (``=``, ``<>``, ``IN``, ``LIKE``, ``BETWEEN``, or ``IS [NOT]
+#: NULL/TRUE/FALSE/DISTINCT``) or the end of
+#: the fragment — the accumulate/f-string spellings this suite uses cut the
+#: string anywhere, so a fragment ending right after ``WHERE`` or after the
+#: column is normal. Prose fails on both arms: the word after "where" is a
+#: noun, and more prose follows it.
+#:
+#: ``IS`` is spelled out to its SQL forms rather than left bare, because a bare
+#: ``\bis\b`` is the one arm English reaches easily: "returns rows where
+#: matching is done later" matched it, and a prose string that scores as a
+#: clause hands the false green straight back.
+SQL_WHERE_CLAUSE = re.compile(
+    r"\bwhere\b(?:"
+    r"\s*$"  # the fragment ends at WHERE
+    r"|\s+[\w\".]+\s*$"  # WHERE <col> — bare boolean, then end
+    r"|[^']{0,80}?(?:=|<>|!=|<=|>=|<|>"  # an expression, then a predicate operator
+    r"|\bin\s*\(|\blike\b|\bbetween\b"
+    r"|\bis\s+(?:not\s+)?(?:null|true|false|distinct)\b)"
+    r")",
     re.IGNORECASE,
 )
 #: Builtins that return their single argument's population unchanged, so a
 #: value wrapped in one is still the value the helper produced.
 PASSTHROUGH_BUILTINS = frozenset({"list", "sorted", "set", "tuple", "reversed"})
-
-SQL_BIND = re.compile(r":\w+\b")
-SQL_COMPARISON = re.compile(
-    r"(?:=|<>|!=|<=|>=|\bis\s+(?:not\s+)?null\b)", re.IGNORECASE
-)
 
 #: Calls that run a statement. ``exec_driver_sql`` is here for the same reason
 #: ``execute`` is: it takes the SQL as an argument, so the string is in reach.
@@ -374,7 +389,7 @@ def _docstring_nodes(nodes: list[ast.AST]) -> set[int]:
     """The `ast.Constant` nodes that are DOCSTRINGS, by identity.
 
     A docstring is prose, never SQL, and letting it into the literal set below
-    is a false-GREEN vector rather than a cosmetic one: :data:`SQL_WHERE` is
+    is a false-GREEN vector rather than a cosmetic one: the WHERE test is
     ``\\bwhere\\b`` over every string in reach, so a helper whose docstring
     contains an ordinary English "where" ("Used where a test needs the raw
     table") suppresses Rule A for every assertion that reads through it. The
@@ -452,11 +467,11 @@ def _sql_reach(
     return reach
 
 
-def _is_sql_fragment(s: str) -> bool:
-    """Does this string look like SQL, as opposed to prose that says "where"?
+def _is_where_clause(s: str) -> bool:
+    """Does this string carry a WHERE CLAUSE, rather than the English word?
 
-    This exists because the WHERE test below is applied over the whole reach,
-    and that made ANY English string carrying the word a silencer for Rule A::
+    This exists because the WHERE test below is applied over the whole dataflow
+    reach, and that made ANY string carrying the word a silencer for Rule A::
 
         msg = "where the rows are"          # <- suppressed the rule entirely
         return conn.execute(text("SELECT id FROM coord.jobs")).all()
@@ -466,21 +481,20 @@ def _is_sql_fragment(s: str) -> bool:
     gets a silent green on the assertion just flagged. Docstrings were the
     first half of this hole and are excluded separately; this is the rest.
 
-    The test is structural rather than semantic, because the reach cannot be
-    narrowed to the matching string alone. This suite builds SQL by
-    ACCUMULATION — ``sql = "SELECT ..."`` then ``sql += " AND kind = :k"``, and
-    f-string fragments — so SELECT and WHERE routinely live in different
-    constants, and scoping the WHERE test to the string that matched as a read
-    was measured at 8 false positives. So: a string is SQL when it carries a
-    SQL keyword AND at least one token prose does not have — a bind parameter
-    (``:name``), a schema-qualified name (``a.b``), a comparison, or a second
-    distinct keyword. "where the rows are" has a keyword and none of the rest.
+    The reach cannot simply be narrowed to the string that matched as a read.
+    This suite builds SQL by ACCUMULATION — ``sql = "SELECT ..."`` then
+    ``sql += " AND kind = :k"``, and f-string fragments — so SELECT and WHERE
+    routinely live in different constants, and scoping the WHERE test to the
+    matching string was measured at 8 false positives.
+
+    So the test is for the CLAUSE, delegated to :data:`SQL_WHERE_CLAUSE`. An
+    earlier attempt asked "is this string SQL?" instead and was wrong in both
+    directions, which is why the question is framed this way: every plausible
+    keyword is also an English word (``set``, ``and``, ``on``, ``order``), so
+    "the row set where nothing matched" scored as SQL, while the perfectly real
+    ``" WHERE is_active"`` did not.
     """
-    if not SQL_KEYWORD.search(s):
-        return False
-    if SQL_BIND.search(s) or SQL_TABLE_REF.search(s) or SQL_COMPARISON.search(s):
-        return True
-    return len({m.group(0).lower() for m in SQL_KEYWORD.finditer(s)}) > 1
+    return bool(SQL_WHERE_CLAUSE.search(s))
 
 
 def _unfiltered_sql(
@@ -494,7 +508,8 @@ def _unfiltered_sql(
     over the whole reach rather than over the matching string alone — a helper
     that runs one scoped statement and one bare one is ambiguous, and an
     ambiguous read is not what a ratchet should be set on — but it is
-    restricted to strings that are actually SQL (:func:`_is_sql_fragment`),
+    restricted to strings carrying an actual WHERE CLAUSE
+    (:func:`_is_where_clause`),
     because otherwise a prose string containing "where" silences the rule.
     """
     reach = _sql_reach(closure, helpers)
@@ -504,7 +519,7 @@ def _unfiltered_sql(
     reads = [s for s in literals if SQL_COUNT.search(s) or SQL_TABLE_REF.search(s)]
     if not reads:
         return None
-    if any(SQL_WHERE.search(s) for s in literals if _is_sql_fragment(s)):
+    if any(_is_where_clause(s) for s in literals):
         return None
     return " ".join(reads[0].split())[:120]
 
