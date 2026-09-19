@@ -1303,6 +1303,39 @@ describe("<MergeOrchestrationSettings> RepoOverrideCard preload", () => {
     // The pre-save read must not revert the saved field, nor seed the others.
     expect(input("repo-confidence").value).toBe("0.6");
     expect(input("repo-label-budget").value).toBe("");
+    // ...and the card says its fields were not preloaded.
+    expect(
+      screen.getByTestId(`repo-raw-override-unavailable-${REPO}`)
+    ).toBeInTheDocument();
+  });
+
+  it("does not surface a read that FAILS after a save was adopted", async () => {
+    const get = deferred<Response>();
+    const saved: Raw = { ...STORED, confidence_threshold_override: 0.6 };
+    fetchMock.mockImplementation((url: string, init?: RequestInit) => {
+      if (!init?.method && url.includes(`/pr-merge/repos/${REPO}/profile`)) {
+        return get.promise;
+      }
+      return Promise.resolve(route(url, init, STORED, saved));
+    });
+    render(<MergeOrchestrationSettings />);
+    await screen.findByTestId(`repo-card-${REPO}`);
+
+    fireEvent.change(input("repo-confidence"), { target: { value: "0.6" } });
+    await clickSaveAndSettle();
+    expect(input("repo-label-budget").value).toBe("3");
+
+    await act(async () => {
+      get.resolve(new Response("boom", { status: 500 }));
+    });
+    expect(screen.queryByText("HTTP 500")).toBeNull();
+    expect(
+      screen.queryByTestId(`repo-raw-override-load-failed-${REPO}`)
+    ).toBeNull();
+    expect(
+      screen.queryByTestId(`repo-raw-override-unavailable-${REPO}`)
+    ).toBeNull();
+    expect(input("repo-confidence").value).toBe("0.6");
   });
 
   it("shows a notice when the profile read fails, and clears it once a save adopts a response", async () => {

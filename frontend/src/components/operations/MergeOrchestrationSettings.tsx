@@ -185,11 +185,15 @@ interface RepoProfileResponse {
   /**
    * The RAW per-repo override columns, beside the resolved `profile`. Each
    * field is the stored column: a value = overridden here, `null` = column
-   * NULL = inheriting. coord serves it starting with the paired qontinui-coord
-   * change (plan 2026-07-22-merge-settings-repo-override-preload, Phase 1);
-   * until that change is deployed the field is ABSENT, so it is OPTIONAL and
-   * the card falls back to write-only editing with a notice. Where served, the
-   * admin PATCH response carries the same shape.
+   * NULL = inheriting.
+   *
+   * REQUIREMENT on the paired qontinui-coord change (plan
+   * 2026-07-22-merge-settings-repo-override-preload, Phase 1): serve this
+   * field on the profile GET AND on the admin PATCH response. coord's
+   * `patch_repo_profile` already returns the same `RepoProfileResponse`
+   * struct as the GET, so adding the field to that struct covers both. Until
+   * that change is deployed the field is ABSENT — hence OPTIONAL — and the
+   * card falls back to write-only editing with a notice.
    */
   raw_override?: RawRepoOverride;
 }
@@ -738,6 +742,11 @@ function RepoOverrideCard({
     null
   );
   const [loadError, setLoadError] = useState<string | null>(null);
+  // Whether the edit fields currently hold coord's stored overrides (seeded
+  // from a `raw_override`), and whether enough is known to say they do not.
+  // Together they drive the "not preloaded" notice.
+  const [preloaded, setPreloaded] = useState(false);
+  const [readSettled, setReadSettled] = useState(false);
 
   // What coord currently STORES for this repo's merge-enablement pin, and what
   // it currently RESOLVES to — both straight off the repo-list row.
@@ -859,6 +868,7 @@ function RepoOverrideCard({
       if (!keep.has("auto_fix_red_main")) {
         setAutoFixRedMainOverride(f.auto_fix_red_main);
       }
+      setPreloaded(true);
     },
     []
   );
@@ -880,7 +890,16 @@ function RepoOverrideCard({
         return (await res.json()) as RepoProfileResponse;
       })
       .then((body) => {
-        if (cancelled || adoptedSaveResponseRef.current) return;
+        if (cancelled) return;
+        setReadSettled(true);
+        if (adoptedSaveResponseRef.current) {
+          // A save landed first, so this read carries PRE-save values: never
+          // seed from it. It may still fill an empty `repoProfile` (a save
+          // whose response body was unusable), which is what lets the card
+          // state that its fields were not preloaded.
+          setRepoProfile((prev) => prev ?? body);
+          return;
+        }
         setRepoProfile(body);
         if (body.raw_override) {
           seedFromRaw(body.raw_override, dirtyRef.current);
@@ -888,6 +907,11 @@ function RepoOverrideCard({
       })
       .catch((err) => {
         if (cancelled) return;
+        setReadSettled(true);
+        // After a save has landed, a failed read is moot — the card already
+        // shows (or knowingly lacks) what the save returned; an error line
+        // here would sit beside correct fields.
+        if (adoptedSaveResponseRef.current) return;
         setLoadError(err instanceof Error ? err.message : String(err));
       });
     return () => {
@@ -969,6 +993,7 @@ function RepoOverrideCard({
         // arrived yet — now carries PRE-save values. Ignore it from here on,
         // whatever this response's body turns out to be.
         adoptedSaveResponseRef.current = true;
+        setReadSettled(true);
         // The PATCH response has the profile read's shape. Adopt it so the
         // card shows what coord now STORES, and re-seed every field (the
         // save consumed the operator's edits). A body that does not parse,
@@ -1091,14 +1116,24 @@ function RepoOverrideCard({
             {loadError}
           </p>
         )}
-        {loadError && !repoProfile && (
+        {readSettled && !preloaded && (
+          // One notice for every way the fields end up NOT holding coord's
+          // stored overrides; only the stated reason differs.
           <p
             className="text-xs text-muted-foreground"
-            data-testid={`repo-raw-override-load-failed-${repoRow.repo}`}
+            data-testid={
+              loadError
+                ? `repo-raw-override-load-failed-${repoRow.repo}`
+                : `repo-raw-override-unavailable-${repoRow.repo}`
+            }
           >
-            The current per-repo overrides could not be read, so they are not
-            shown here. A field you leave untouched is left unchanged; a field
-            you type into and then clear resets that override to inherit.
+            {loadError
+              ? "The current per-repo overrides could not be read, so they are not shown here."
+              : repoProfile && !repoProfile.raw_override
+                ? "This coord build does not report the current per-repo overrides, so they are not shown here."
+                : "The current per-repo overrides were not loaded into these fields."}{" "}
+            A field you leave untouched is left unchanged; a field you type into
+            and then clear resets that override to inherit.
           </p>
         )}
         {repoProfile && (
@@ -1111,17 +1146,6 @@ function RepoOverrideCard({
           // to kill; the badge is the single place it is stated.
           <p className="text-xs text-muted-foreground">
             Effective: dwell={repoProfile.profile.min_green_dwell}s
-          </p>
-        )}
-        {repoProfile && !repoProfile.raw_override && (
-          <p
-            className="text-xs text-muted-foreground"
-            data-testid={`repo-raw-override-unavailable-${repoRow.repo}`}
-          >
-            This coord build does not report the current per-repo overrides, so
-            they are not shown here. A field you leave untouched is left
-            unchanged; a field you type into and then clear resets that
-            override to inherit.
           </p>
         )}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
