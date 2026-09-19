@@ -1444,6 +1444,54 @@ describe("CoordNotificationsPage — agent actions", () => {
     ).toEqual(["middle, unread", "oldest, unread", "newest, already read"]);
   });
 
+  it("keeps unread before read across a Load more, walking page 1's cursor", async () => {
+    httpGet
+      .mockResolvedValueOnce({
+        notifications: [
+          notification({
+            notification_id: UUID_A,
+            summary: "A — page 1, read",
+            read_at: "2026-09-18T11:00:00Z",
+          }),
+          notification({ notification_id: UUID_B, summary: "B — page 1, unread" }),
+        ],
+        next_cursor: "page-1-cursor",
+        total: 3,
+        unread_count: 2,
+      })
+      .mockResolvedValueOnce({
+        notifications: [
+          notification({ notification_id: UUID_C, summary: "C — page 2, unread" }),
+        ],
+        next_cursor: null,
+        total: 3,
+        unread_count: 2,
+      });
+    const user = userEvent.setup();
+    render(<CoordNotificationsPage />);
+
+    await user.click(
+      await screen.findByTestId("coord-notifications-load-more")
+    );
+
+    await waitFor(() =>
+      expect(screen.getAllByTestId("coord-notification-summary")).toHaveLength(
+        3
+      )
+    );
+    expect(
+      screen
+        .getAllByTestId("coord-notification-summary")
+        .map((el) => el.textContent)
+    ).toEqual([
+      "B — page 1, unread",
+      "C — page 2, unread",
+      "A — page 1, read",
+    ]);
+    expect(httpGet).toHaveBeenCalledTimes(2);
+    expect(String(httpGet.mock.calls[1][0])).toContain("cursor=page-1-cursor");
+  });
+
   it("says how a sensitive agent action can be undone", async () => {
     httpGet.mockResolvedValue({
       notifications: [
