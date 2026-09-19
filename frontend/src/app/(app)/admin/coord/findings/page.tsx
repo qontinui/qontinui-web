@@ -52,7 +52,6 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
   Select,
@@ -61,12 +60,13 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Filter, RefreshCw } from "lucide-react";
+import { Filter } from "lucide-react";
 import {
   HealthStrip,
   RecordDetail,
   RecordList,
   RecordRow,
+  RefreshButton,
   RowTime,
   StatusBadge,
   readIsUnknown,
@@ -81,6 +81,8 @@ import {
   dossierSlug,
   findingLinkNotice,
   isExpired,
+  isFindingId,
+  linkedRowFrom,
   triageFilterCaveat,
   triageOf,
   triageSentence,
@@ -159,6 +161,8 @@ export default function CoordFindingsPage() {
   const [linkedRow, setLinkedRow] = useState<CoordFindingRow | null>(null);
   const [linkedLoading, setLinkedLoading] = useState(false);
   const [linkedFailed, setLinkedFailed] = useState(false);
+  /** The BY-ID read itself degraded — separate from the list read's degrade. */
+  const [linkedUnavailable, setLinkedUnavailable] = useState(false);
   const [linkedAnswered, setLinkedAnswered] = useState(false);
   const linkedApplied = useRef(false);
 
@@ -220,53 +224,77 @@ export default function CoordFindingsPage() {
   useEffect(() => {
     queryGenRef.current += 1;
     setRows([]);
+    // The count belongs to the query that produced it: a new filter must not
+    // show the OLD query's number under the new window's name while its own
+    // read is in flight — the strip dashes it until the new count lands.
+    setCount(null);
     setExpanded(null);
     void fetchList();
   }, [fetchList]);
 
+  const linkedInvalid = linkedId !== null && !isFindingId(linkedId);
+  /** Generation counter for the by-id read, so a stale answer never lands. */
+  const linkedGenRef = useRef(0);
+
   /**
-   * The BY-ID read, run once and separately from the list.
+   * The BY-ID read, run separately from the list.
    *
    * It has to be separate: coord serves a by-id row past `expires_at` and
    * outside whatever filter the page happens to carry, so folding this into
    * the list query would make the link work only when the filters already
    * happened to match — which is the same broken promise the inert uuid was.
    */
-  useEffect(() => {
-    if (!linkedId) return;
-    let cancelled = false;
+  const fetchLinked = useCallback(async () => {
+    // A mangled id is never sent: coord would 400 it, and that refusal would
+    // land in the read-FAILED arm, telling the operator to retry a link that
+    // will fail forever. The banner has its own arm for it.
+    if (!linkedId || !isFindingId(linkedId)) return;
+    const gen = ++linkedGenRef.current;
     setLinkedLoading(true);
     setLinkedFailed(false);
-    setLinkedAnswered(false);
-    void (async () => {
-      try {
-        const body = readBody(
-          await httpClient.get<unknown>(
-            `${API}/coord/findings?finding_id=${encodeURIComponent(linkedId)}`
-          )
-        );
-        if (cancelled) return;
-        if (body.unavailable) {
-          setLinkedFailed(false);
-          setLinkedRow(null);
-        } else {
-          // An empty page is coord ANSWERING — another tenant's id, or no such
-          // finding. It is never a 404, so it must never read as a failure.
-          setLinkedRow(rowsOf(body)[0] ?? null);
-        }
-        setLinkedAnswered(true);
-      } catch {
-        if (cancelled) return;
-        setLinkedFailed(true);
-        setLinkedAnswered(true);
-      } finally {
-        if (!cancelled) setLinkedLoading(false);
+    try {
+      const body = readBody(
+        await httpClient.get<unknown>(
+          `${API}/coord/findings?finding_id=${encodeURIComponent(linkedId.trim())}`
+        )
+      );
+      if (linkedGenRef.current !== gen) return;
+      if (body.unavailable) {
+        // The BY-ID read's own degrade, kept apart from the list read's, which
+        // may not have settled yet — without it the banner would fall through
+        // to "no such finding" about a store that did not answer.
+        setLinkedUnavailable(true);
+        setLinkedRow(null);
+      } else {
+        setLinkedUnavailable(false);
+        // An empty page is coord ANSWERING — another tenant's id, a superseded
+        // head, or no such finding. It is never a 404, so it must never read
+        // as a failure. And only the row that IS the id counts: a door that
+        // ignored `finding_id` would still answer with a well-formed page.
+        setLinkedRow(linkedRowFrom(rowsOf(body), linkedId));
       }
-    })();
-    return () => {
-      cancelled = true;
-    };
+      setLinkedAnswered(true);
+    } catch {
+      if (linkedGenRef.current !== gen) return;
+      setLinkedFailed(true);
+      setLinkedAnswered(true);
+    } finally {
+      if (linkedGenRef.current === gen) setLinkedLoading(false);
+    }
   }, [linkedId]);
+
+  useEffect(() => {
+    void fetchLinked();
+  }, [fetchLinked]);
+
+  /**
+   * The refresh control re-issues BOTH reads — the banner's "Refresh to
+   * retry" is about the by-id one.
+   */
+  const refreshAll = useCallback(
+    () => Promise.all([fetchList(), fetchLinked()]),
+    [fetchList, fetchLinked]
+  );
 
   /**
    * The linked row FIRST, then the query's rows with it de-duplicated out.
@@ -278,7 +306,10 @@ export default function CoordFindingsPage() {
    */
   const displayRows = useMemo(() => {
     if (!linkedRow) return rows;
-    return [linkedRow, ...rows.filter((r) => r.finding_id !== linkedRow.finding_id)];
+    return [
+      linkedRow,
+      ...rows.filter((r) => r.finding_id !== linkedRow.finding_id),
+    ];
   }, [rows, linkedRow]);
 
   // One-shot: expand the linked row when it first arrives. EXPAND, never
@@ -300,6 +331,14 @@ export default function CoordFindingsPage() {
   });
 
   const caveat = triageFilterCaveat(triaged);
+  // The linked row is prepended even when the filters exclude it, so the
+  // banner owes a sentence for why it is on screen but not in the count. Only
+  // claimed once the list has actually been read for the current query.
+  const linkedOutsideFilters =
+    linkedRow !== null &&
+    loaded &&
+    !loading &&
+    !rows.some((r) => r.finding_id === linkedRow.finding_id);
   const listUnknown = readIsUnknown(loaded, readFailed);
 
   return (
@@ -354,14 +393,12 @@ export default function CoordFindingsPage() {
             <SelectItem value="untriaged">Not yet read</SelectItem>
           </SelectContent>
         </Select>
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => void fetchList()}
+        <RefreshButton
+          onRefresh={refreshAll}
+          label="Refresh findings"
+          title="Re-read the findings list and the linked finding"
           data-testid="coord-findings-refresh"
-        >
-          <RefreshCw className="h-3 w-3" />
-        </Button>
+        />
       </div>
 
       {/* Two numbers must never disagree in silence — see `triageFilterCaveat`. */}
@@ -401,14 +438,16 @@ export default function CoordFindingsPage() {
           data-testid="coord-findings-linked"
         >
           {findingLinkNotice({
+            invalid: linkedInvalid,
             found: linkedRow !== null,
             expired: linkedRow ? isExpired(linkedRow) : false,
+            outsideFilters: linkedOutsideFilters,
             // `loading` sits above `error` and above the fallback and
             // short-circuits, which is exactly why the FIRST render cannot say
             // "no such finding": nothing has been read yet.
             loading: linkedLoading || !linkedAnswered,
             error: linkedFailed,
-            unavailable: unavailable !== null,
+            unavailable: linkedUnavailable || unavailable !== null,
           })}
         </p>
       )}
@@ -421,7 +460,17 @@ export default function CoordFindingsPage() {
         expandedKey={expanded}
         onExpandedKeyChange={setExpanded}
         empty={
-          listUnknown ? (
+          unavailable !== null ? (
+            // The banner above already says coord's reader is not answering;
+            // "no findings match" under it would contradict it.
+            <p
+              className="text-sm italic text-muted-foreground"
+              data-testid="coord-findings-unknown"
+            >
+              The findings store could not be read, so whether anything matches
+              is unknown — not none.
+            </p>
+          ) : listUnknown ? (
             <p
               className="text-sm italic text-muted-foreground"
               data-testid="coord-findings-unknown"
@@ -519,10 +568,7 @@ function FindingRow({
           >
             {slug !== null ? null : triageSentence(finding)}
             {finding.author_session ? (
-              <>
-                {" "}
-                Recorded by {finding.author_session}.
-              </>
+              <> Recorded by {finding.author_session}.</>
             ) : null}
           </p>
         }
@@ -540,8 +586,12 @@ function FindingRow({
             </span>
             {finding.kind ? <> · kind {finding.kind}</> : null}
             {finding.scope ? <> · scope {finding.scope}</> : null}
-            {finding.expires_at ? <> · expires_at {finding.expires_at}</> : null}
-            {finding.supersedes ? <> · supersedes {finding.supersedes}</> : null}
+            {finding.expires_at ? (
+              <> · expires_at {finding.expires_at}</>
+            ) : null}
+            {finding.supersedes ? (
+              <> · supersedes {finding.supersedes}</>
+            ) : null}
             {keys.length > 0 ? <> · {keys.join(" ")}</> : null}
           </p>
         }

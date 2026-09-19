@@ -97,11 +97,14 @@ FINDINGS_PAGE = {
     "available": True,
     "count": 1,
     "findings": [FINDING_ROW],
+    "finding_id_applied": None,
     "kind_applied": None,
     "limit": 50,
-    "resource_keys_applied": None,
+    # coord's shapes: a COUNT of applied resource keys, and the triage filter's
+    # wire spelling ("any" | "false" | "true").
+    "resource_keys_applied": 0,
     "resource_keys_truncated": False,
-    "triaged_applied": None,
+    "triaged_applied": "any",
 }
 
 
