@@ -9594,6 +9594,121 @@ async def list_prompt_documents(
     )
 
 
+# ---------------------------------------------------------------------------
+# Publish-all and the auto-publish status read
+# ---------------------------------------------------------------------------
+#
+# Plan ``2026-09-19-policy-publish-all-and-auto-publish`` D1/D4.
+#
+# **These two are registered HERE, ahead of the ``{kind}/{name}`` routes, and
+# that placement is load-bearing.** FastAPI matches in registration order, and
+# both of these are literal paths that the parameterised siblings below would
+# otherwise swallow whole:
+#
+# * ``POST /coord/prompt-documents/publish-all`` is one segment, so
+#   :func:`create_prompt_document` (``POST /coord/prompt-documents/{kind}``)
+#   would match it first with ``kind="publish-all"`` and try to create a
+#   document;
+# * ``GET /coord/prompt-documents/auto-publish/status`` is two segments, so
+#   :func:`get_prompt_document` (``GET /coord/prompt-documents/{kind}/{name}``)
+#   would match it first with ``kind="auto-publish"``, ``name="status"``.
+#
+# Either shadowing fails as a coord 400/404 rather than as a routing error, so
+# it would read as "coord does not carry the route yet" — the one refusal this
+# console's publish surface latches and hides the controls for. Registering
+# them first is the only thing that prevents it.
+#
+# Neither route carries a dynamic path segment, so there is nothing to
+# re-encode with ``quote(x, safe='')``: the ``(kind, name)`` pairs publish-all
+# addresses travel in the JSON body, where escaping is the encoder's job.
+
+
+@router.post("/coord/prompt-documents/publish-all")
+async def publish_all_prompt_documents(
+    body: dict[str, Any] | None = None,
+    tenant_id: UUID = Depends(require_coord_tenant_admin),
+) -> Any:
+    """Publish every changed document into the fleet channel in one call.
+    Tenant-admin only.
+
+    Plan ``2026-09-19-policy-publish-all-and-auto-publish`` D1. Only the SYSTEM
+    tenant may publish; coord is the authority on that and answers
+    ``not_system_tenant`` otherwise, which passes through — exactly as the
+    single-document :func:`publish_prompt_document` proxy does, and for the same
+    reason: nothing on the prompt-documents wire tells a browser whether the
+    tenant it is looking at carries the system marker.
+
+    Body: ``{release_note?, items?, dry_run?}``.
+
+    * ``dry_run`` defaults to ``true`` SERVER-SIDE (coord's default, matching
+      ``/publish`` and ``/reconcile``). It is forwarded only when the caller
+      names it, so the safe default is coord's one rather than a second copy of
+      it here that could drift the other way.
+    * ``items`` is the armed run's list, ``[{kind, name, expected_version}]``.
+      Each ``expected_version`` is the optimistic-lock guard, and it must be the
+      version the DRY RUN returned: a document edited between the preview and
+      the click then fails ``version_conflict`` instead of publishing a body
+      nobody has seen. That is the same guarantee single-document publishing
+      gives, applied per item.
+
+    The allowlist is deliberate, and it is two levels deep — the same posture
+    the ``/publish`` proxy takes with ``release_note``/``expected_version``.
+    ``published_by`` is NOT forwarded and is never taken from the browser: coord
+    stamps the publisher from its own authenticated ``OperatorContext``. A
+    per-item allowlist is what stops a browser smuggling one in under an item,
+    where a wholesale ``{**body}`` forward would carry it through unseen.
+    """
+    payload: dict[str, Any] = {}
+    for field in ("release_note", "dry_run"):
+        value = (body or {}).get(field)
+        if value is not None:
+            payload[field] = value
+
+    raw_items = (body or {}).get("items")
+    if isinstance(raw_items, list):
+        items: list[dict[str, Any]] = []
+        for raw in raw_items:
+            if not isinstance(raw, dict):
+                continue
+            item = {
+                key: raw[key]
+                for key in ("kind", "name", "expected_version")
+                if raw.get(key) is not None
+            }
+            if item:
+                items.append(item)
+        payload["items"] = items
+
+    return await _proxy_coord_post(
+        "/coord/prompt-documents/publish-all",
+        payload,
+        tenant_id=tenant_id,
+    )
+
+
+@router.get("/coord/prompt-documents/auto-publish/status")
+async def get_prompt_document_auto_publish_status(
+    tenant_id: UUID = Depends(get_tenant_id),
+) -> Any:
+    """What the auto-publisher would do next, per candidate document.
+
+    Plan ``2026-09-19-policy-publish-all-and-auto-publish`` D4. A READ, so it
+    gates on tenant MEMBERSHIP like every sibling document read — the point of
+    the route is that a pending publication is *visible before it happens*
+    (``decision_record/notification-not-permission``), and a view only an admin
+    can open is a view most of the fleet never sees.
+
+    Each candidate reports ``publish_mode``, ``direction`` (``loosening`` or
+    ``other``), ``settles_at``, ``held`` plus the held lint tokens, and the
+    document versions the pending publication would include. Coord computes all
+    of it — including what it WOULD do while the D5 kill switch is off — so
+    nothing here re-derives a settle time or a hold from the document list.
+    """
+    return await _proxy_coord_get(
+        "/coord/prompt-documents/auto-publish/status", tenant_id=tenant_id
+    )
+
+
 @router.get("/coord/prompt-documents/{kind}/{name}")
 async def get_prompt_document(
     kind: str,
@@ -9615,11 +9730,12 @@ async def update_prompt_document(
     tenant_id: UUID = Depends(require_coord_tenant_admin),
     current_user: UserModel = Depends(get_current_active_user_async),
 ) -> Any:
-    """Edit a prompt document's description/body/attrs/authorship tier.
-    Tenant-admin only.
+    """Edit a prompt document's description/body/attrs/authorship tier/publish
+    mode. Tenant-admin only.
 
     The body is forwarded as ``{description?, body?, attrs?, agent_write_tier?,
-    agent_writable?, change_description?}`` with ``updated_by`` stamped from the authenticated
+    agent_writable?, publish_mode?,
+    change_description?}`` with ``updated_by`` stamped from the authenticated
     session (see :func:`_editor_identity`) — a body-supplied ``updated_by`` is
     ignored, so the version snapshot coord writes carries the real editor. Coord
     creates a new immutable version on every successful description/body edit;
@@ -9648,6 +9764,23 @@ async def update_prompt_document(
     Omitting them leaves the current setting alone. There is no wire
     representation for clearing it back to "no operator opinion" — coord has
     none either.
+
+    ``publish_mode`` is the per-document distribution judgement (plan
+    ``2026-09-19-policy-publish-all-and-auto-publish`` D2) — one of ``auto``
+    (the auto-publisher publishes a settled version on its own), ``manual``
+    (only a click publishes it; it still appears in publish-all) or ``never``
+    (publish-all leaves it out). Absent/``null`` is UNDECIDED, which coord's
+    first worker pass rules on rather than a state this console can write.
+    Meaningful only on system-tenant rows, and refused by coord on a
+    non-publishable kind.
+
+    It takes the **versioning** path for the same reason ``agent_write_tier``
+    does, stated the same way: whether a document distributes itself to every
+    tenant with no human in the loop is authority, not configuration, and an
+    authority flip with no immutable record is what the version table exists to
+    prevent. This proxy needs no code for it — the forward below is wholesale —
+    but the field list above is the only place a reader of this module learns
+    the key exists, so it is named here rather than left to coord's schema.
     """
     return await _proxy_coord_patch(
         f"/coord/prompt-documents/{kind}/{name}",
