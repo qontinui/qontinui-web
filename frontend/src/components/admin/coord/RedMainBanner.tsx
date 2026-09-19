@@ -29,11 +29,17 @@
  * row shows the alert's claim — coord's `claimed` / `claim` fields — as one
  * of three states:
  *
- *   - **claimed** — an agent holds the lease, and the row names which one;
- *   - **unclaimed** — coord reports no live lease: nobody has picked it up;
- *   - **unknown** — the coord build serving this row predates alert claims
- *     and sends neither field. That is NOT "unclaimed": an absent field says
- *     nothing about who is working on it
+ *   - **claimed** — `claimed: true`: an agent holds a LIVE lease, and the row
+ *     names which one;
+ *   - **unclaimed** — `claimed: false`: coord read the lease columns and found
+ *     no live lease (an expired lease reads as unclaimed, coord's own rule);
+ *   - **unknown** — anything else, for two different reasons the chip's
+ *     tooltip names: coord sent `claimed: null` (or `claims_scrape_up: false`
+ *     on the body) because it could not READ the lease columns or decode a
+ *     row's claim (`fleet_health.rs` `alert_row_claim`), or the coord build
+ *     predates alert claims and sends no `claimed` at all. Neither is
+ *     "unclaimed": a claim nobody could read says nothing about who is
+ *     working on it
  *     (`verification-and-evidence` `unknown-must-not-render-as-a-default`).
  *
  * Coord's own remediation state (`detail.fix_session`) is still shown, read
@@ -65,9 +71,10 @@ export interface CoordAlertClaim {
  * `alert_key` is present because it is the row's DEDUP IDENTITY (the React key,
  * the thing coord upserts on) — it is deliberately NOT a display string.
  *
- * `claimed` and `claim` are OPTIONAL on purpose: a coord build that predates
- * alert claims sends neither, and that absence must read as "claim state
- * unknown", never as "unclaimed".
+ * `claimed` and `claim` are OPTIONAL and NULLABLE on purpose: a coord build
+ * that predates alert claims sends neither, and a current one sends
+ * `claimed: null, claim: null` when it could not read the lease. Both must
+ * read as "claim state unknown", never as "unclaimed".
  */
 export interface CoordAlertRow {
   id?: number | string;
@@ -82,9 +89,12 @@ export interface CoordAlertRow {
   occurrences?: number;
   resolved_at?: string | null;
   detail?: Record<string, unknown>;
-  /** Whether a live (unexpired) lease is held. Absent on an older coord. */
-  claimed?: boolean;
-  /** The live lease, or `null` when there is none. Absent on an older coord. */
+  /**
+   * Whether a live (unexpired) lease is held. `null` = coord could not read or
+   * decode the lease (UNKNOWN); absent = an older coord (UNKNOWN too).
+   */
+  claimed?: boolean | null;
+  /** The live lease while `claimed` is `true`; `null` otherwise. */
   claim?: CoordAlertClaim | null;
 }
 
@@ -147,7 +157,15 @@ export interface FixSessionState {
  * why `unknown` is its own state.
  */
 export type AlertClaimState =
-  | { kind: "unknown" }
+  | {
+      kind: "unknown";
+      /**
+       * `unreadable` — coord answered but could not read the lease
+       * (`claimed: null`, or `claims_scrape_up: false` on the body);
+       * `not-reported` — the coord build sends no claim fields at all.
+       */
+      cause: "unreadable" | "not-reported";
+    }
   | { kind: "unclaimed" }
   | {
       kind: "claimed";
@@ -203,34 +221,35 @@ function nonEmptyString(v: unknown): string | undefined {
 /**
  * Read an alert row's claim. Pure — exported for the vitest suite.
  *
- * `claimed` is coord's own verdict (it compares `claim_expires_at` with its
- * clock), so it wins. Without it, a `claim` object is read directly: a lease
- * whose expiry is in the past is unclaimed — coord's own rule — and a lease
- * with no parseable expiry is believed. Neither field → `unknown`.
+ * `claimed` is coord's own verdict — it compares `claim_expires_at` with its
+ * clock — so it is the ONLY thing that decides claimed vs unclaimed:
+ * `true` → claimed, `false` → unclaimed. `null` is coord saying it could not
+ * read the lease, and `claimsScrapeUp === false` (the response body's flag)
+ * is the same statement for every row at once; both are UNKNOWN. A row with
+ * no `claimed` at all comes from a coord that predates claims: UNKNOWN too.
+ * Nothing here infers a verdict from `claim` alone — no coord build produces
+ * a lease without a verdict, and guessing at one would be the default this
+ * banner is not allowed to render.
  */
 export function parseAlertClaim(
   row: Pick<CoordAlertRow, "claimed" | "claim">,
-  nowMs: number = Date.now()
+  claimsScrapeUp?: boolean | null
 ): AlertClaimState {
-  const claim =
-    row.claim && typeof row.claim === "object" ? row.claim : undefined;
-  const held = (): AlertClaimState => ({
-    kind: "claimed",
-    claimedBy: nonEmptyString(claim?.claimed_by),
-    claimedAt: nonEmptyString(claim?.claimed_at),
-    expiresAt: nonEmptyString(claim?.claim_expires_at),
-  });
-  if (row.claimed === true) return held();
-  if (row.claimed === false) return { kind: "unclaimed" };
-  // No verdict from coord (an older build, or a partial answer): read the
-  // lease itself, if there is one.
-  if (row.claim === null) return { kind: "unclaimed" };
-  if (claim && nonEmptyString(claim.claimed_by)) {
-    const expires = Date.parse(claim.claim_expires_at ?? "");
-    if (!Number.isNaN(expires) && expires <= nowMs) return { kind: "unclaimed" };
-    return held();
+  if (claimsScrapeUp === false || row.claimed === null) {
+    return { kind: "unknown", cause: "unreadable" };
   }
-  return { kind: "unknown" };
+  if (row.claimed === true) {
+    const claim =
+      row.claim && typeof row.claim === "object" ? row.claim : undefined;
+    return {
+      kind: "claimed",
+      claimedBy: nonEmptyString(claim?.claimed_by),
+      claimedAt: nonEmptyString(claim?.claimed_at),
+      expiresAt: nonEmptyString(claim?.claim_expires_at),
+    };
+  }
+  if (row.claimed === false) return { kind: "unclaimed" };
+  return { kind: "unknown", cause: "not-reported" };
 }
 
 /** Compact display form of a fix-session agent id. */
@@ -258,7 +277,8 @@ export function compactPrincipal(label: string): string {
  */
 export function parseRedMainAlerts(
   alerts: unknown,
-  nowMs: number = Date.now()
+  /** The response body's `claims_scrape_up`; `false` makes every claim UNKNOWN. */
+  claimsScrapeUp?: boolean | null
 ): RedMainAlert[] {
   if (!Array.isArray(alerts)) return [];
   const out: RedMainAlert[] = [];
@@ -286,7 +306,7 @@ export function parseRedMainAlerts(
       blockedPrCount,
       since: a.first_seen_at,
       fixSession: parseFixSession(detail.fix_session),
-      claim: parseAlertClaim(a, nowMs),
+      claim: parseAlertClaim(a, claimsScrapeUp),
     });
   }
   // Stable per-repo order so the banner stack never reshuffles between polls.
@@ -368,7 +388,12 @@ function ClaimBadge({ claim }: { claim: AlertClaimState }) {
       className="badge badge-secondary"
       data-testid="red-main-claim"
       data-claim-state="unknown"
-      title="This coord build does not report alert claims, so whether an agent is working on it is unknown — not that nobody is."
+      data-claim-unknown-cause={claim.cause}
+      title={
+        claim.cause === "unreadable"
+          ? "Coord could not read this alert's claim state (the lease could not be read or decoded), so whether an agent is working on it is unknown — not that nobody is."
+          : "This coord build does not report alert claims, so whether an agent is working on it is unknown — not that nobody is."
+      }
     >
       claim unknown
     </span>
@@ -451,13 +476,14 @@ export function RedMainBanner() {
       );
       // Tolerate both `{alerts: [...]}` and bare-list shapes (two coord
       // vintages).
-      const alerts = Array.isArray(body)
-        ? body
-        : ((body as { alerts?: CoordAlertRow[] })?.alerts ?? []);
+      const envelope = Array.isArray(body)
+        ? undefined
+        : (body as { alerts?: CoordAlertRow[]; claims_scrape_up?: boolean | null });
+      const alerts = Array.isArray(body) ? body : (envelope?.alerts ?? []);
       // The answer arrived, so what the banner shows is confirmed as of NOW —
       // whether it confirmed a red main or an empty result.
       const at = Date.now();
-      const parsed = parseRedMainAlerts(alerts, at);
+      const parsed = parseRedMainAlerts(alerts, envelope?.claims_scrape_up);
       setLastSuccessAt(at);
       setNowMs(at);
       if (parsed.length > 0) {
