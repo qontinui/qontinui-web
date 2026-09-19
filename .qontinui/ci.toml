@@ -594,3 +594,18 @@ command = [
   "frontend/src/lib/api-client/openapi-schema.json",
   "frontend/src/lib/api-client/openapi-schema.base.json",
 ]
+
+[[steps]]
+name = "global-state-assertions"
+# global-state-assertions.yml, step "Count global-state assertions in
+# backend/tests against the allowlist". Per-file ratchet on exact-count and
+# global-emptiness assertions over SHARED state under backend/tests, matched
+# EXACTLY against backend/tests/.global-state-assertions-allowlist — a row may
+# go down or away, never up. Two rules: a value read from SQL with no WHERE
+# clause (Rule A), or a value from a same-file helper that declares keyword-only
+# discriminators the call site does not pass (Rule B). Such an assertion is a
+# statement about everything else sharing the store, not about the code under
+# test — qontinui-web#1103 was an alembic-only diff reddened with `assert 2 == 1`
+# by the still-live memory_consolidate sweeper. Plain AST scan, stdlib only, no
+# git needed.
+command = ["python", "scripts/ci/check_global_state_assertions.py"]
