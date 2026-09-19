@@ -1786,6 +1786,34 @@ describe("merged rows", () => {
     expect(buildPipelineRows([phantom], [])[0].status.kind).toBe("merged");
   });
 
+  it("isMergedPr: coord's landed-open token IS merged, with no sha", () => {
+    // The open listing never projects `merge_commit_sha`, so a phantom-open
+    // row there carries only coord's `landed-open` merge_status. Its GitHub
+    // signals froze the moment before the land — DIRTY here — and without the
+    // token /fleet read finished work as a red conflict.
+    const phantom = pr({
+      pr_state: "open",
+      merge_commit_sha: null,
+      merge_state_status: "DIRTY",
+      mergeable: false,
+      merge_status: "landed-open",
+    });
+    expect(isMergedPr(phantom)).toBe(true);
+    const status = buildPipelineRows([phantom], [])[0].status;
+    expect(status.kind).toBe("merged");
+    expect(status.attention).toBe("none");
+    expect(status.reason).toContain("GitHub has not closed the PR yet");
+  });
+
+  it("isMergedPr: any other merge_status on an open row is NOT merged", () => {
+    expect(
+      isMergedPr(pr({ pr_state: "open", merge_status: "ready-but-unlanded" }))
+    ).toBe(false);
+    expect(
+      isMergedPr(pr({ pr_state: "open", merge_status: "conflicts" }))
+    ).toBe(false);
+  });
+
   it("isMergedPr: both terminal pr_states still count with no sha", () => {
     expect(isMergedPr(pr({ pr_state: "merged" }))).toBe(true);
     expect(isMergedPr(pr({ pr_state: "closed" }))).toBe(true);

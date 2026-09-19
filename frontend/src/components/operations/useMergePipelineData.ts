@@ -330,7 +330,9 @@ export function useMergePipelineData(
       // Every row this endpoint adds beyond the open list has LANDED —
       // coord's merged query requires `merge_commit_sha IS NOT NULL`, and the
       // open query never projects that column. So the merged set is exactly
-      // the rows carrying a merge sha, whatever `pr_state` says.
+      // the rows carrying a merge sha, whatever `pr_state` says — plus any
+      // open row coord classifies `landed-open` (landed at its current head,
+      // sha not projected on open rows); see `isMergedPr`.
       //
       // Filtering on `pr_state IN (merged, closed)` instead — what this did —
       // silently dropped coord's ff-lands during their phantom-open window: an
