@@ -4,7 +4,8 @@
  *
  * Plan `2026-08-16-coord-console-ui-unification-pipeline-style.md` Phase 3
  * Wave 5. Status derivation lives in a pure, unit-tested module rather than
- * inline in JSX (R8), the shape `alertStatus.ts` established.
+ * inline in JSX (R8), the shape `planStatus.ts` carries (first established by `alertStatus.ts`,
+ * since retired with the alerts page).
  *
  * ## A census correction, recorded because it changes what the plan asked for
  *

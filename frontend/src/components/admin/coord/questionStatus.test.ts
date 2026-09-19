@@ -4,7 +4,7 @@
  *
  * Added by plan `2026-08-16-coord-console-ui-unification-pipeline-style.md`
  * Phase 3 Wave 1, alongside the migration of the route onto
- * `components/console`. Modelled on `alertStatus.test.ts`: no DOM, and the R3
+ * `components/console`. Modelled on `alertStatus.test.ts` (since retired with the alerts page): no DOM, and the R3
  * palette invariant is asserted with the SHARED audit rather than eyeballed.
  */
 

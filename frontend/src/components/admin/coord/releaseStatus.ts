@@ -3,7 +3,8 @@
  *
  * Extracted from `ReleaseCard.tsx` by plan
  * `2026-08-16-coord-console-ui-unification-pipeline-style.md` Phase 3 Wave 2,
- * into the shape `alertStatus.ts` / `planStatus.ts` established: a pure
+ * into the shape `planStatus.ts` carries (first established by the
+ * since-retired `alertStatus.ts`): a pure
  * derivation module beside the row that renders it, carrying R3's two
  * requirements — an audited state→attention table and a palette keyed off it —
  * with `releaseStatus.test.ts` asserting the agreement through the shared
@@ -20,7 +21,7 @@
  * asserts *nothing is waiting on you*, which on a release descriptor we could
  * not read is exactly what we do not know. It is now amber: R3's stated
  * ignorance exception, the same floor `attention.ts` (`attentionOf`),
- * `planStatus.ts` and `alertStatus.ts` all carry. A dark observation (GitHub
+ * and `planStatus.ts` carry (as the retired `alertStatus.ts` did). A dark observation (GitHub
  * unreachable, token unset) is the common source of these, and painting it
  * grey read as "nothing to see here" on a row that means "we could not look".
  *
