@@ -125,10 +125,30 @@ _SETUP_SQL = [
         is_tombstone       BOOLEAN NOT NULL DEFAULT false,
         created_at         TIMESTAMPTZ NOT NULL DEFAULT now(),
         updated_at         TIMESTAMPTZ NOT NULL DEFAULT now(),
-        -- Provenance + altitude facets (migration ``memfacets_01``). The
-        -- FKs to ``auth.users`` / ``coord.devices`` are omitted here for
-        -- the same reason the ``coord.tenants`` FK above is: the isolated
-        -- test DB carries neither table.
+        -- Provenance + altitude facets (migration ``memfacets_01``).
+        --
+        -- The real columns carry ``REFERENCES auth.users(id)`` /
+        -- ``REFERENCES coord.devices(device_id) ON DELETE SET NULL``. Those
+        -- FKs are deliberately NOT mirrored here, and the reason is not the
+        -- one the ``coord.tenants`` FK above has:
+        --
+        --   * ``coord.devices`` really is absent from this database, as
+        --     ``coord.tenants`` is.
+        --   * ``auth.users`` is NOT absent — ``conftest.py``'s ``test_engine``
+        --     builds it from ``Base.metadata``. That is exactly why nothing
+        --     here may create a stub of it: ``create_all`` is
+        --     ``checkfirst=True``, so a one-column stub written by THIS
+        --     module would be silently adopted by every other module that
+        --     needs the real table. And an FK from this table into it would
+        --     make ``test_engine``'s session-teardown ``drop_all`` fail.
+        --
+        -- The FK behaviour those columns actually have — ``ON DELETE SET
+        -- NULL`` letting coord's device GC delete a referenced device, and
+        -- the ``ForeignKeyViolation`` a dangling id raises on INSERT — is
+        -- proved against the REAL migration chain on an ephemeral database
+        -- in ``tests/test_memfacets_01_provenance_facets_migration.py``,
+        -- which is better evidence than a hand-written mirror of it could
+        -- ever be.
         user_id            UUID,
         device_id          UUID,
         applies_at         TEXT NOT NULL DEFAULT 'tenant'
@@ -5787,15 +5807,31 @@ class TestProvenanceReachesTheRowThroughTheEndpoint:
     `insert_records_batch` can persist the facets when handed them. That is
     not the guarantee this change exists to make. The guarantee is that the
     HANDLERS hand them over — three call sites in
-    `app/api/v1/endpoints/memory.py`, each one line, each deletable without
-    a single store-level test noticing. Until these tests existed the whole
-    suite stayed green with all three removed, which made the one seam that
-    can go silently NULL in production the one seam nothing covered.
+    `app/api/v1/endpoints/memory.py`, each deletable without a single
+    store-level test noticing. Until these tests existed the whole suite
+    stayed green with all three removed, which made the one seam that can
+    go silently NULL in production the one seam nothing covered.
 
-    Both record-CREATING doors are exercised, because they are separate
-    call sites: the batch write, and supersede (whose successor is a NEW
-    row, attributed to THIS caller rather than to the superseded row's
-    author).
+    TWO of the three are exercised here, and the third is named rather than
+    quietly counted in:
+
+    * the batch write (`POST /records`) — the path coord's proxy takes;
+    * supersede — whose successor is a NEW row, attributed to THIS caller
+      rather than to the superseded row's author;
+    * **NOT covered: the intra-batch race fallback** — the single-record
+      `insert_record` the write handler falls back to when a content hash
+      passes the pre-check and is then invalidated before the batch lands.
+      It is unreachable over HTTP without inducing that race (the window is
+      between one SELECT and one INSERT inside a single request), and there
+      is no seam to fake it at: the fallback is chosen by a local `if`
+      inside the handler, not by anything injectable. Its provenance
+      arguments are the same two expressions as the batch call beside it,
+      read from the same `principal` — so the risk it carries is a
+      copy-paste omission, not a distinct behaviour, and the deleted-
+      arguments mutation that proves the other two does not reach it.
+      Recorded here rather than left as an unexplained gap; closing it
+      wants a store-level seam (a fault-injecting `find_by_hash`), which is
+      a bigger change than this phase.
     """
 
     def test_write_records_carries_the_principal_onto_the_row(

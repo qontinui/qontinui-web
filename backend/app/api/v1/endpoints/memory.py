@@ -84,6 +84,7 @@ import base64
 import binascii
 import hashlib
 import re
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any, Literal, cast, get_args
@@ -94,7 +95,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from fastapi.responses import JSONResponse, Response
 from fastapi.security import HTTPAuthorizationCredentials
 from pydantic import ValidationError
-from sqlalchemy.exc import OperationalError, SQLAlchemyError
+from sqlalchemy.exc import IntegrityError, OperationalError, SQLAlchemyError
 from sqlalchemy.exc import TimeoutError as SATimeoutError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -132,6 +133,7 @@ from app.schemas.memory import (
     MemoryQueryHit,
     MemoryQueryRequest,
     MemoryQueryResponse,
+    MemoryRecordIn,
     MemoryRecordOut,
     MemoryStatsResponse,
     SupersedeRequest,
@@ -242,8 +244,18 @@ class MemoryPrincipal:
     Both columns are FKs, so "optional" has to mean *resolvable or NULL*,
     never *dangling*: an id that names no row would abort the INSERT with
     a ``ForeignKeyViolation``, which is the same rejected write by another
-    name. The one arm whose ids are unverified assertions resolves them
-    first — see :func:`_existing_provenance`.
+    name. Two mechanisms keep that from happening, and they are not
+    redundant. :func:`_existing_provenance` resolves the COORD-SERVICE
+    arm's ids up front — a diagnostic, because that arm is the one whose
+    ids could be systematically from the wrong keyspace, and a per-request
+    warning is how that stays visible.
+    :func:`_write_degrading_dangling_provenance` then wraps every insert
+    in a savepoint and retries unattributed on a provenance FK violation —
+    the guarantee itself, covering every arm (including the device arm's
+    unresolved ``device_id``) and the raced deletion no pre-check can see.
+    The DELETE side is the FKs' own ``ON DELETE SET NULL``
+    (migration ``memfacets_01``), which also keeps a referenced row's
+    removal from wedging coord's device GC.
     """
 
     tenant_id: UUID
@@ -282,11 +294,27 @@ async def _existing_provenance(
     "never reject a write for missing provenance — a memory that fails to
     save is worse than one that is coarsely scoped" (§4.1 item 3).
 
-    On the device and operator arms the ids are not assertions: the user
-    is the ``auth.users`` row the request itself just read, so it
-    necessarily exists. On the COORD-SERVICE arm both ids are bare claims
-    in a token coord minted, checked only for UUID SHAPE by
-    ``_claim_uuid``. Nothing today proves coord's ``user_id`` is even in
+    Which arms this runs on, stated precisely, because the asymmetry is
+    deliberate and the obvious summary of it is wrong. On the device and
+    operator arms the USER is not an assertion: it is the ``auth.users``
+    row the request itself just read (``_verify_device_jwt`` resolves and
+    validates it, and 401s a token whose user is missing or inactive), so
+    it necessarily exists and re-reading it would buy nothing. The device
+    arm's ``device_id``, by contrast, is **exactly as unverified as the
+    coord-service arm's** — ``_verify_device_jwt`` never touches
+    ``coord.devices`` — and it lands in the identical FK column. It is
+    knowingly left unresolved here: closing it by lookup would add a
+    session and a round trip to the fleet's hottest write path and STILL
+    be a prediction (the row can go between the check and the INSERT), so
+    the insert-side guarantee is made exactly instead, by
+    :func:`_write_degrading_dangling_provenance`, which covers every arm.
+    What this function adds over that fallback is DIAGNOSIS: the
+    coord-service arm is the one whose ids could be systematically wrong
+    (a different keyspace, not a raced deletion), and a warning per
+    request is how that becomes visible instead of silent.
+
+    On the COORD-SERVICE arm both ids are bare claims in a token coord
+    minted, checked only for UUID SHAPE by ``_claim_uuid``. Nothing today proves coord's ``user_id`` is even in
     the same keyspace as ``auth.users`` — coord carries its own operator
     ids, which is exactly the trap the operator arm below has a comment
     about — so the first proxied write after coord starts minting the
@@ -359,6 +387,112 @@ async def _existing_provenance(
             ),
         )
     return resolved_user, resolved_device
+
+
+#: The two FK constraints ``memfacets_01`` creates on
+#: ``coord.memory_records``. Postgres derives these names from
+#: ``<table>_<column>_fkey``, so they are stable for as long as that
+#: migration spells the columns ``user_id`` / ``device_id``. Matched by
+#: NAME rather than by SQLSTATE alone because a 23503 from some OTHER
+#: foreign key on this table (``superseded_by``, say) is a real bug and
+#: must keep surfacing as a 500 — degrading it to "write it unattributed"
+#: would silently swallow it.
+_PROVENANCE_FK_CONSTRAINTS = (
+    "memory_records_user_id_fkey",
+    "memory_records_device_id_fkey",
+)
+
+
+def _is_provenance_fk_violation(exc: IntegrityError) -> bool:
+    """Is this the FK on one of the two provenance columns, and only that?
+
+    Matched against the rendered driver error rather than a driver
+    attribute: SQLAlchemy's asyncpg dialect re-wraps asyncpg's
+    ``ForeignKeyViolationError`` in its own DBAPI shim, so
+    ``exc.orig.constraint_name`` is not reliably present across drivers,
+    whereas the constraint NAME is in the message text on every one of
+    them. The names are checked explicitly, so any other integrity error
+    — including a foreign-key violation on a different column — falls
+    through and still raises.
+    """
+    rendered = str(exc.orig) if exc.orig is not None else str(exc)
+    return any(name in rendered for name in _PROVENANCE_FK_CONSTRAINTS)
+
+
+async def _write_degrading_dangling_provenance[T](
+    db: AsyncSession,
+    principal: MemoryPrincipal,
+    write: Callable[[UUID | None, UUID | None], Awaitable[T]],
+) -> T:
+    """Run ``write(user_id, device_id)``; on a dangling FK, retry unattributed.
+
+    This is the INSERT-side half of the same guarantee ``memfacets_01``'s
+    ``ON DELETE SET NULL`` gives on the DELETE side: **a write is never
+    rejected for its provenance** — "a memory that fails to save is worse
+    than one that is coarsely scoped" (plan
+    ``2026-08-06-user-and-device-facets-on-memories-and-findings`` §4.1
+    item 3). ``SET NULL`` governs what happens to rows that are ALREADY
+    stored when a parent disappears; it does nothing for a write arriving
+    with an id whose parent has already gone.
+
+    Why a fallback rather than one more existence lookup. Every
+    provenance id on every arm is ultimately a claim about a row some
+    other service owns, so no pre-check can be more than a prediction:
+    :func:`_existing_provenance` resolves the coord-service arm's ids and
+    is still a TOCTOU window, and extending it to the DEVICE arm would add
+    a session + round trip to the fleet's hottest write path to close the
+    same window it cannot actually close. This closes it exactly, for
+    **every** arm at once, and costs nothing when the ids resolve — which
+    is the steady state.
+
+    The cost when they do resolve is one ``SAVEPOINT`` / ``RELEASE`` pair
+    on the connection the request already holds. That is deliberate and
+    it is the whole price: without the savepoint the first failed
+    statement poisons the request's transaction and there is nothing left
+    to retry into.
+
+    What is degraded is the REQUEST's provenance, not one row's. Provenance
+    is request-level — one verified principal per call — so the retry
+    re-runs the whole ``write`` unattributed: on the batch path that is
+    every record in the request, not only the record whose id dangled (the
+    savepoint rolled the statement back, and the handler cannot tell WHICH
+    of the two ids was dangling without another round trip it declined to
+    take). Coarser attribution for the whole call is the intended
+    fail-soft state; a rejected write is not.
+
+    Anything that is not a provenance FK violation is re-raised untouched,
+    so this narrows the blast radius of exactly one failure mode and hides
+    no other.
+    """
+    if principal.user_id is None and principal.device_id is None:
+        # Nothing to dangle — skip the savepoint entirely so the
+        # unattributed callers (the bridge job, a coord-service token
+        # before coord mints the claim) pay nothing at all.
+        return await write(None, None)
+
+    try:
+        async with db.begin_nested():
+            return await write(principal.user_id, principal.device_id)
+    except IntegrityError as exc:
+        if not _is_provenance_fk_violation(exc):
+            raise
+        logger.warning(
+            "memory_provenance_fk_violation_degraded",
+            error=str(exc.orig) if exc.orig is not None else str(exc),
+            claimed_user_id=str(principal.user_id) if principal.user_id else None,
+            claimed_device_id=(
+                str(principal.device_id) if principal.device_id else None
+            ),
+            actor=principal.actor,
+            note=(
+                "a provenance id named no auth.users / coord.devices row at "
+                "INSERT time (the row was removed between resolution and the "
+                "write, or this arm asserts ids it does not resolve); "
+                "re-writing the record unattributed rather than failing it"
+            ),
+        )
+
+    return await write(None, None)
 
 
 async def _principal_from_service_claims(claims: dict[str, Any]) -> MemoryPrincipal:
@@ -489,6 +623,15 @@ async def get_memory_tenant(
                 )
             return MemoryPrincipal(
                 tenant_id=tenant_id,
+                # SHAPE-checked only, and deliberately not resolved against
+                # ``coord.devices``: ``_verify_device_jwt`` never reads that
+                # table, so this id is as unverified as the coord-service
+                # arm's and lands in the same FK column. The asymmetry is a
+                # cost decision, not an oversight — this is the fleet's
+                # hottest write path and a lookup here would be one more
+                # round trip for a check that a raced deletion defeats
+                # anyway. The insert-side guarantee is made exactly, at the
+                # write, by ``_write_degrading_dangling_provenance``.
                 device_id=_claim_uuid(device_claims, "device_id"),
                 actor="device",
                 user_id=device_user.id,
@@ -776,15 +919,24 @@ async def write_records(
         )
         for h in write_hashes
     ]
-    batch_results = await store.insert_records_batch(
+    # Provenance from the VERIFIED principal, exactly like tenant_id. Never
+    # from ``payload`` — ``MemoryRecordIn`` declares no such field, and that
+    # omission is the enforcement (§6 requirement 5b). Wrapped so a
+    # provenance id whose row has gone degrades the request's PROVENANCE
+    # rather than failing the request. Provenance is request-level — one
+    # principal per call — so on this path a single dangling id writes
+    # EVERY record in the batch unattributed, not just the one that
+    # dangled. See ``_write_degrading_dangling_provenance``.
+    batch_results = await _write_degrading_dangling_provenance(
         db,
-        tenant_id=principal.tenant_id,
-        items=batch_items,
-        # Provenance from the VERIFIED principal, exactly like tenant_id.
-        # Never from ``payload`` — ``MemoryRecordIn`` declares no such
-        # field, and that omission is the enforcement (§6 requirement 5b).
-        user_id=principal.user_id,
-        device_id=principal.device_id,
+        principal,
+        lambda user_id, device_id: store.insert_records_batch(
+            db,
+            tenant_id=principal.tenant_id,
+            items=batch_items,
+            user_id=user_id,
+            device_id=device_id,
+        ),
     )
     outcome_by_hash: dict[str, tuple[UUID, bool]] = dict(
         zip(write_hashes, batch_results, strict=True)
@@ -801,26 +953,43 @@ async def write_records(
             if existing_id is not None:
                 results.append(WriteRecordResult(memory_id=existing_id, deduped=True))
                 continue
+
             # Vanishingly rare race (row invalidated between the hash
             # pre-check and now): insert this one record on its own,
             # reusing ITS OWN caller-supplied vector (or none) — the race
             # path must never grow a server-side embed back.
-            memory_id, deduped = await store.insert_record(
-                db,
-                tenant_id=principal.tenant_id,
-                scope=rec.scope,
-                scope_ref=rec.scope_ref,
-                kind=rec.kind,
-                title=titles[i],
-                content=contents[i],
-                content_hash=h,
-                embedding=rec.embedding,
-                embedding_model=rec.embedding_model,
-                importance=rec.importance,
-                source=rec.source,
-                anchors=[a.model_dump(mode="json") for a in rec.anchors],
-                user_id=principal.user_id,
-                device_id=principal.device_id,
+            # A nested ``def`` rather than a lambda, and the loop variables
+            # bound as defaults rather than closed over: the defaults are
+            # what stop the late-binding bug ruff's B023 exists for, and the
+            # ``def`` is what lets mypy infer the callable's type at all
+            # (it cannot infer a lambda that carries defaults).
+            def _insert_the_raced_row(
+                user_id: UUID | None,
+                device_id: UUID | None,
+                i: int = i,
+                rec: MemoryRecordIn = rec,
+                h: str = h,
+            ) -> Awaitable[tuple[UUID, bool]]:
+                return store.insert_record(
+                    db,
+                    tenant_id=principal.tenant_id,
+                    scope=rec.scope,
+                    scope_ref=rec.scope_ref,
+                    kind=rec.kind,
+                    title=titles[i],
+                    content=contents[i],
+                    content_hash=h,
+                    embedding=rec.embedding,
+                    embedding_model=rec.embedding_model,
+                    importance=rec.importance,
+                    source=rec.source,
+                    anchors=[a.model_dump(mode="json") for a in rec.anchors],
+                    user_id=user_id,
+                    device_id=device_id,
+                )
+
+            memory_id, deduped = await _write_degrading_dangling_provenance(
+                db, principal, _insert_the_raced_row
             )
             # Later intra-batch occurrences dedup onto this row.
             outcome_by_hash[h] = (memory_id, True)
@@ -1369,31 +1538,38 @@ async def supersede_record(
         else list(old["anchors"] or [])
     )
 
-    new_id, deduped = await store.insert_record(
+    # The successor is a NEW row authored by THIS caller, so its provenance
+    # is this caller's — not the superseded row's. Same verified-principal
+    # source as every other write, and the same insert-side fail-soft: a
+    # dangling id degrades the row, never the supersede.
+    new_id, deduped = await _write_degrading_dangling_provenance(
         db,
-        tenant_id=principal.tenant_id,
-        scope=payload.scope if payload.scope is not None else old["scope"],
-        scope_ref=(
-            payload.scope_ref if payload.scope_ref is not None else old["scope_ref"]
+        principal,
+        lambda user_id, device_id: store.insert_record(
+            db,
+            tenant_id=principal.tenant_id,
+            scope=payload.scope if payload.scope is not None else old["scope"],
+            scope_ref=(
+                payload.scope_ref if payload.scope_ref is not None else old["scope_ref"]
+            ),
+            kind=payload.kind if payload.kind is not None else old["kind"],
+            title=rt.text,
+            content=rc.text,
+            content_hash=content_hash,
+            embedding=payload.embedding,
+            embedding_model=payload.embedding_model,
+            importance=(
+                payload.importance
+                if payload.importance is not None
+                else float(old["importance"])
+            ),
+            source=(
+                payload.source if payload.source is not None else (old["source"] or {})
+            ),
+            anchors=inherited_anchors,
+            user_id=user_id,
+            device_id=device_id,
         ),
-        kind=payload.kind if payload.kind is not None else old["kind"],
-        title=rt.text,
-        content=rc.text,
-        content_hash=content_hash,
-        embedding=payload.embedding,
-        embedding_model=payload.embedding_model,
-        importance=(
-            payload.importance
-            if payload.importance is not None
-            else float(old["importance"])
-        ),
-        source=payload.source if payload.source is not None else (old["source"] or {}),
-        anchors=inherited_anchors,
-        # The successor is a NEW row authored by THIS caller, so its
-        # provenance is this caller's — not the superseded row's. Same
-        # verified-principal source as every other write.
-        user_id=principal.user_id,
-        device_id=principal.device_id,
     )
     if new_id == memory_id:
         raise HTTPException(
