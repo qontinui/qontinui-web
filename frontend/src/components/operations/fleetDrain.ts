@@ -145,7 +145,35 @@ export type DrainTarget =
        */
       coordHostname: string | null;
     }
-  | { state: "no_device"; reason: string };
+  | { state: "no_device"; reason: string }
+  /**
+   * Coord names a device, and would ACCEPT a drain on it — but nothing reads
+   * the drain for this kind of device, so the write would change nothing.
+   * The one population today is a GitHub Actions runner mirrored by coord's
+   * `ci_runner_registrar` (see {@link DRAIN_INERT_GITHUB_RUNNER}). Rendered as a
+   * disabled control with the reason, never as an enabled one: a lever that
+   * answers 200, raises an alert and reports "Drained" while the host keeps
+   * taking work is worse than no lever.
+   */
+  | { state: "drain_inert"; reason: string };
+
+/**
+ * Why a drain is inert on a mirrored GitHub Actions runner (plan
+ * `2026-08-20-fleet-page-runner-enable-disable-switch`, carried from
+ * qontinui-web#1182's review rounds). Coord's drain map has exactly two
+ * readers: CI dispatch, which selects devices advertising the `ci_node`
+ * capability, and build dispatch, which selects `role = 'build'`. The
+ * registrar gives these devices `capabilities = ["ci_runner"]` and no role, so
+ * neither reader ever selects them — and GitHub, which does route jobs to them,
+ * never reads coord's drain map at all. The lever that DOES apply is the
+ * runner's `qontinui` label, shown on the CI-runner badge above.
+ */
+export const DRAIN_INERT_GITHUB_RUNNER =
+  "This row is a GitHub Actions runner mirrored by coord. Coord would accept " +
+  "a drain here and it would change nothing: coord's CI and build dispatch " +
+  "never select this kind of device, and GitHub routes jobs to it by label, " +
+  "not by coord's drain map. To stop fleet CI landing here, remove its " +
+  "`qontinui` label on GitHub.";
 
 /**
  * The coord-health join this module reads, structurally.
@@ -318,7 +346,10 @@ export function parseFleetDrain(payload: unknown): FleetDrainRead {
 
   // 1. An explicit unknown, in any of the spellings the contract admits.
   const declaredState = optionalString(payload.state ?? payload.drain_state);
-  if (declaredState !== null && declaredState.trim().toLowerCase() === "unknown") {
+  if (
+    declaredState !== null &&
+    declaredState.trim().toLowerCase() === "unknown"
+  ) {
     return {
       state: "unknown",
       reason:
@@ -473,8 +504,14 @@ export function resolveDeviceDrain(
  * that reaches it renders a disabled control and the reason it is disabled.
  */
 export function resolveDrainTarget(
-  coordHealth: DrainTargetSource | undefined
+  coordHealth: DrainTargetSource | undefined,
+  opts: { githubActionsRunner?: boolean } = {}
 ): DrainTarget {
+  // Checked FIRST: whether the join resolved is beside the point for a device
+  // no reader of the drain map will ever select.
+  if (opts.githubActionsRunner) {
+    return { state: "drain_inert", reason: DRAIN_INERT_GITHUB_RUNNER };
+  }
   if (!coordHealth) {
     return {
       state: "no_device",
@@ -619,7 +656,10 @@ export function validateDrainForm(
   }
   const untilMs = Date.parse(untilLocal);
   if (!Number.isFinite(untilMs)) {
-    return { ok: false, message: "That expiry is not a time this build can read." };
+    return {
+      ok: false,
+      message: "That expiry is not a time this build can read.",
+    };
   }
   if (untilMs <= now) {
     return {
