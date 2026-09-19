@@ -937,6 +937,208 @@ describe("<MergeOrchestrationSettings> RepoOverrideCard save", () => {
 });
 
 // ---------------------------------------------------------------------------
+// Per-repo override PRELOAD (plan 2026-07-22-merge-settings-repo-override-preload,
+// Phase 2). coord serves the RAW override columns as `raw_override` beside the
+// resolved profile; the card seeds its fields from them, and an older coord
+// that omits the block leaves the card write-only and says so.
+// ---------------------------------------------------------------------------
+
+describe("<MergeOrchestrationSettings> RepoOverrideCard preload", () => {
+  const REPO = "acme/app";
+
+  type Raw = {
+    framework_signals: string[] | null;
+    confidence_threshold_override: number | null;
+    escalate_paths_extra: string[] | null;
+    auto_merge_label_budget: number | null;
+    auto_fix_red_main: boolean | null;
+    auto_fix_red_main_flaky: boolean | null;
+  };
+
+  const STORED: Raw = {
+    framework_signals: null,
+    confidence_threshold_override: 0.9,
+    escalate_paths_extra: ["app/**/page.tsx", "migrations/**"],
+    auto_merge_label_budget: 3,
+    auto_fix_red_main: false,
+    auto_fix_red_main_flaky: null,
+  };
+
+  beforeEach(() => {
+    fetchMock.mockReset();
+  });
+
+  function profileBody(raw: Raw | undefined) {
+    return {
+      tenant_id: "00000000-0000-0000-0000-000000000001",
+      repo: REPO,
+      profile: makeProfile({ repo: REPO }),
+      merge_enabled_override: null,
+      ...(raw ? { raw_override: raw } : {}),
+    };
+  }
+
+  /** `raw` is what the profile read serves; `patchRaw` what the PATCH echoes. */
+  function route(
+    url: string,
+    init: RequestInit | undefined,
+    raw: Raw | undefined,
+    patchRaw: Raw | undefined = raw
+  ) {
+    if (init?.method === "PATCH") return jsonResponse(profileBody(patchRaw));
+    if (url.includes(`/pr-merge/repos/${REPO}/profile`)) {
+      return jsonResponse(profileBody(raw));
+    }
+    if (url.includes("/pr-merge/repos")) {
+      return jsonResponse({
+        repos: [
+          {
+            repo: REPO,
+            role: "owner",
+            framework_signals: [],
+            profile_source: null,
+            profile_version: null,
+            merge_enabled: true,
+            merge_enabled_override: null,
+          },
+        ],
+        total: 1,
+      });
+    }
+    return routeGet(url, {});
+  }
+
+  function patchCalls() {
+    return fetchMock.mock.calls.filter(
+      (c) => (c[1] as RequestInit | undefined)?.method === "PATCH"
+    );
+  }
+
+  function patchBody(): Record<string, unknown> {
+    const calls = patchCalls();
+    expect(calls).toHaveLength(1);
+    return JSON.parse((calls[0][1] as RequestInit).body as string);
+  }
+
+  const input = (id: string) =>
+    screen.getByTestId(`${id}-${REPO}`) as HTMLInputElement;
+
+  async function renderPreloaded(raw: Raw | undefined, patchRaw?: Raw) {
+    fetchMock.mockImplementation((url: string, init?: RequestInit) =>
+      Promise.resolve(route(url, init, raw, patchRaw ?? raw))
+    );
+    render(<MergeOrchestrationSettings />);
+    await screen.findByTestId(`repo-card-${REPO}`);
+  }
+
+  it("renders the STORED raw override values in the inputs", async () => {
+    await renderPreloaded(STORED);
+    await waitFor(() => expect(input("repo-confidence").value).toBe("0.9"));
+    expect(input("repo-label-budget").value).toBe("3");
+    expect(input("repo-escalate-paths").value).toBe(
+      "app/**/page.tsx\nmigrations/**"
+    );
+    expect(input("repo-auto-fix-red-main").value).toBe("false");
+    expect(
+      screen.queryByTestId(`repo-raw-override-unavailable-${REPO}`)
+    ).toBeNull();
+  });
+
+  it("renders NULL (inheriting) columns as blank / inherit", async () => {
+    await renderPreloaded({
+      ...STORED,
+      confidence_threshold_override: null,
+      escalate_paths_extra: null,
+      auto_merge_label_budget: null,
+      auto_fix_red_main: null,
+    });
+    // The profile read has landed once the "effective" line renders.
+    await screen.findByText(/Effective: dwell=/);
+    expect(input("repo-confidence").value).toBe("");
+    expect(input("repo-label-budget").value).toBe("");
+    expect(input("repo-escalate-paths").value).toBe("");
+    expect(input("repo-auto-fix-red-main").value).toBe("inherit");
+  });
+
+  it("sends no PATCH on a no-op save of a preloaded card", async () => {
+    await renderPreloaded(STORED);
+    await waitFor(() => expect(input("repo-confidence").value).toBe("0.9"));
+    fireEvent.click(screen.getByTestId(`repo-save-${REPO}`));
+    // Let the save settle before asserting the absence of a write.
+    await waitFor(() =>
+      expect(screen.getByTestId(`repo-save-${REPO}`)).toHaveTextContent(
+        "Save override"
+      )
+    );
+    expect(patchCalls()).toEqual([]);
+  });
+
+  it("PATCHes only the one edited field", async () => {
+    await renderPreloaded(STORED);
+    await waitFor(() => expect(input("repo-label-budget").value).toBe("3"));
+    fireEvent.change(input("repo-label-budget"), { target: { value: "5" } });
+    fireEvent.click(screen.getByTestId(`repo-save-${REPO}`));
+    await waitFor(() => {
+      expect(patchBody()).toEqual({ auto_merge_label_budget: 5 });
+    });
+  });
+
+  it("sends null when a preloaded field is cleared (clear to inherit)", async () => {
+    await renderPreloaded(STORED);
+    await waitFor(() => expect(input("repo-confidence").value).toBe("0.9"));
+    fireEvent.change(input("repo-confidence"), { target: { value: "" } });
+    fireEvent.change(input("repo-escalate-paths"), {
+      target: { value: "  \n " },
+    });
+    fireEvent.change(input("repo-auto-fix-red-main"), {
+      target: { value: "inherit" },
+    });
+    fireEvent.click(screen.getByTestId(`repo-save-${REPO}`));
+    await waitFor(() => {
+      expect(patchBody()).toEqual({
+        confidence_threshold_override: null,
+        // Blank is clear-to-inherit, not an empty override list.
+        escalate_paths_extra: null,
+        auto_fix_red_main: null,
+      });
+    });
+  });
+
+  it("re-seeds the fields from the PATCH response after a save", async () => {
+    // coord stores something different from what was typed (e.g. another
+    // operator's concurrent write); the card must show what is STORED.
+    await renderPreloaded(STORED, {
+      ...STORED,
+      confidence_threshold_override: 0.75,
+      auto_merge_label_budget: 7,
+    });
+    await waitFor(() => expect(input("repo-confidence").value).toBe("0.9"));
+    fireEvent.change(input("repo-confidence"), { target: { value: "0.8" } });
+    fireEvent.click(screen.getByTestId(`repo-save-${REPO}`));
+    await waitFor(() => expect(input("repo-confidence").value).toBe("0.75"));
+    expect(input("repo-label-budget").value).toBe("7");
+
+    // The save consumed the edit: a second save is a no-op.
+    fireEvent.click(screen.getByTestId(`repo-save-${REPO}`));
+    await waitFor(() =>
+      expect(screen.getByTestId(`repo-save-${REPO}`)).toHaveTextContent(
+        "Save override"
+      )
+    );
+    expect(patchCalls()).toHaveLength(1);
+  });
+
+  it("shows the unavailable line and blank inputs when coord omits raw_override", async () => {
+    await renderPreloaded(undefined);
+    await screen.findByTestId(`repo-raw-override-unavailable-${REPO}`);
+    expect(input("repo-confidence").value).toBe("");
+    expect(input("repo-label-budget").value).toBe("");
+    expect(input("repo-escalate-paths").value).toBe("");
+    expect(input("repo-auto-fix-red-main").value).toBe("inherit");
+  });
+});
+
+// ---------------------------------------------------------------------------
 // SLO dashboard — per-repo merge-enabled switch
 // ---------------------------------------------------------------------------
 //
