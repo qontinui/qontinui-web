@@ -42,7 +42,8 @@
  *    this is where it becomes visible.
  */
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useAuth } from "@/contexts/auth-context";
 import { AlertTriangle, ScrollText } from "lucide-react";
 import {
   CollapsiblePanel,
@@ -235,8 +236,8 @@ export function OperatorAuditPanel() {
   const filter = useMemo(() => resolveAuditFilter(filterId), [filterId]);
 
   // `require_role` stamps a `resource_kind=http.route` row on EVERY
-  // authorized request through its layer, GETs included — so this panel's
-  // own polling writes into the feed it renders. Hidden by default so the
+  // authorized request through its layer, GETs included — so each read or
+  // refresh of this panel writes into the feed it renders. Hidden by default so the
   // feed opens on the rows that answer "who did this", not the noise
   // reading it generates; the count stays visible so the toggle is never a
   // silent narrowing.
@@ -247,7 +248,27 @@ export function OperatorAuditPanel() {
   const [resourceKeyInput, setResourceKeyInput] = useState("");
   const [resourceKeyFilter, setResourceKeyFilter] = useState("");
 
+  // Both the proxy and coord gate this feed on coord-tenant admin, so a
+  // non-admin read is a certain 403. It is not issued: the panel says who can
+  // read it instead. `isCoordAdmin` is false until the user loads, and the
+  // effect below re-runs when it turns true.
+  const { isCoordAdmin } = useAuth();
+
+  // Stale-response guard. A filter change or Refresh issues a new read while
+  // an older one may still be in flight; only the NEWEST request may write
+  // `read`, or a slow earlier response would overwrite the current filter's
+  // rows with another filter's. Unmount bumps it too, so nothing writes after.
+  const requestSeq = useRef(0);
+  useEffect(
+    () => () => {
+      requestSeq.current += 1;
+    },
+    []
+  );
+
   const load = useCallback(async () => {
+    if (!isCoordAdmin) return;
+    const seq = ++requestSeq.current;
     setRead({ state: "loading" });
     const params = new URLSearchParams({ limit: String(AUDIT_LIMIT) });
     if (filter.action) params.set("action", filter.action);
@@ -256,8 +277,10 @@ export function OperatorAuditPanel() {
       const body = await httpClient.get<unknown>(
         `${OPERATOR_AUDIT_API}?${params.toString()}`
       );
+      if (seq !== requestSeq.current) return;
       setRead(parseAuditPayload(body));
     } catch (err) {
+      if (seq !== requestSeq.current) return;
       setRead({
         state: "unavailable",
         reason:
@@ -266,7 +289,7 @@ export function OperatorAuditPanel() {
             : "the audit feed could not be read.",
       });
     }
-  }, [filter.action, resourceKeyFilter]);
+  }, [filter.action, resourceKeyFilter, isCoordAdmin]);
 
   // Read on mount and on a filter change; NOT polled. An audit trail is
   // append-only history, not liveness — the reason to re-read it is that you
@@ -402,7 +425,17 @@ export function OperatorAuditPanel() {
           ) : null}
         </form>
 
-        {read.state === "unavailable" ? (
+        {!isCoordAdmin ? (
+          <p
+            className="text-xs text-muted-foreground"
+            role="status"
+            data-testid="operator-audit-admin-only"
+          >
+            The operator audit feed is readable by coord admins only, so it was
+            not requested for this account. That is a statement about access,
+            not about whether anyone changed anything.
+          </p>
+        ) : read.state === "unavailable" ? (
           <div
             className="flex items-start gap-2 rounded-md border border-amber-500/50 bg-amber-500/5 px-3 py-2"
             role="status"

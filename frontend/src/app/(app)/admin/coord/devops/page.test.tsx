@@ -2118,3 +2118,37 @@ describe("/admin/coord/devops — the coord-credential axis", () => {
     ).toHaveTextContent("credential unknown 1");
   });
 });
+
+describe("/admin/coord/devops — a CI-runner registration with the mirror down", () => {
+  it("still names the drain's real scope, from coord's own capability read", async () => {
+    // The CI-runner mirror GET is not mocked here, so it fails: the card must
+    // not depend on it. Coord serves `ci_runner_status` as a string only for
+    // a device carrying the `ci_runner` capability.
+    const host = "gh-runner-msi-wsl@qontinui/qontinui-runner";
+    mockRoutes({
+      devices: [
+        coordDevice("d-gh", host, "healthy", { ci_runner_status: "idle" }),
+        coordDevice("d-ws", "msi", "healthy", { ci_runner_status: null }),
+      ],
+      runners: [runner("msi")],
+      samples: [],
+      drain: { drained: {} },
+    });
+
+    render(<CoordDevOpsPage />);
+
+    await waitFor(() =>
+      expect(document.querySelector(`[data-hostname="${host}"]`)).not.toBeNull()
+    );
+    const gh = document.querySelector(
+      `[data-hostname="${host}"]`
+    ) as HTMLElement;
+    expect(
+      gh.querySelector('[data-testid="ci-runner-drain-scope"]')
+    ).not.toBeNull();
+    const ws = document.querySelector('[data-hostname="msi"]') as HTMLElement;
+    expect(
+      ws.querySelector('[data-testid="ci-runner-drain-scope"]')
+    ).toBeNull();
+  });
+});

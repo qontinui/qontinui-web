@@ -23,13 +23,7 @@
  */
 
 import { describe, expect, it, vi, beforeEach } from "vitest";
-import {
-  fireEvent,
-  render,
-  screen,
-  waitFor,
-  within,
-} from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 
 const fetchMock = vi.fn();
 vi.mock("@/services/service-factory", () => ({
@@ -52,7 +46,6 @@ vi.mock("@/contexts/auth-context", () => ({
 
 import { DeviceDrainControl, disabledReason } from "./DeviceDrainControl";
 import {
-  DRAIN_INERT_GITHUB_RUNNER,
   parseFleetDrain,
   resolveDeviceDrain,
   resolveDrainTarget,
@@ -205,39 +198,6 @@ describe("DeviceDrainControl — a row with no drainable identity", () => {
   });
 });
 
-describe("DeviceDrainControl — a mirrored GitHub Actions runner (drain_inert)", () => {
-  const INERT: DrainTarget = {
-    state: "drain_inert",
-    reason: DRAIN_INERT_GITHUB_RUNNER,
-  };
-
-  it("offers no working lever and says which lever does apply", () => {
-    // Coord would accept this write and nothing would read it — so the one
-    // wrong outcome is an enabled button that reports "Drained".
-    renderControl({ target: INERT, drain: { state: "not_drained" } });
-    expect(screen.getByTestId("device-drain-open")).toBeDisabled();
-    expect(screen.getByTestId("device-drain")).toHaveAttribute(
-      "data-device-drain",
-      "drain_inert"
-    );
-    const state = screen.getByTestId("device-drain-state");
-    expect(state.textContent).toContain("A drain would do nothing here");
-    expect(state.textContent).not.toContain("Not drained — coord may send");
-    expect(
-      screen.getByTestId("device-drain-disabled-reason").textContent
-    ).toContain("qontinui");
-    fireEvent.click(screen.getByTestId("device-drain-open"));
-    expect(screen.queryByTestId("device-drain-dialog")).not.toBeInTheDocument();
-    expect(fetchMock).not.toHaveBeenCalled();
-  });
-
-  it("disabledReason names the inert reason", () => {
-    expect(disabledReason(INERT, { state: "not_drained" })).toBe(
-      DRAIN_INERT_GITHUB_RUNNER
-    );
-  });
-});
-
 describe("DeviceDrainControl — a drained row", () => {
   it("renders until, by and reason", () => {
     renderControl({ drain: drainedState(), now: NOW });
@@ -299,9 +259,7 @@ describe("DeviceDrainControl — a drained row", () => {
     fireEvent.click(screen.getByTestId("device-drain-submit"));
 
     await waitFor(() => expect(onActed).toHaveBeenCalled());
-    expect(String(toastSuccess.mock.calls[0]?.[0])).toContain(
-      "was not drained"
-    );
+    expect(String(toastSuccess.mock.calls[0]?.[0])).toContain("was not drained");
   });
 });
 
@@ -515,9 +473,7 @@ describe("DeviceDrainControl — who may act", () => {
   it("hides the lever from a non-admin and says why", () => {
     authState.isCoordAdmin = false;
     renderControl({ drain: drainedState(), now: NOW });
-    expect(
-      screen.queryByTestId("device-drain-undrain")
-    ).not.toBeInTheDocument();
+    expect(screen.queryByTestId("device-drain-undrain")).not.toBeInTheDocument();
     expect(screen.getByTestId("coord-admin-only-notice")).toBeInTheDocument();
     // The STATE is still readable — hiding a mutation control must not hide
     // the fact that a machine is out of the fleet.
@@ -529,9 +485,7 @@ describe("DeviceDrainControl — who may act", () => {
 
 describe("disabledReason", () => {
   it("returns undefined when the control is genuinely actionable", () => {
-    expect(
-      disabledReason(IDENTIFIED, { state: "not_drained" })
-    ).toBeUndefined();
+    expect(disabledReason(IDENTIFIED, { state: "not_drained" })).toBeUndefined();
   });
 
   it("words the two blocked cases differently", () => {
