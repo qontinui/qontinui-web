@@ -72,7 +72,12 @@ export type {
   BlastRadius,
   BlastRadiusItem,
 } from "./operatorAudit";
-export { CiStatusPanel } from "./CiStatusPanel";
+// Was `CiStatusPanel`, mounted directly on /admin/coord/pipeline. The
+// 2026-09-19 redesign moved it onto the Train tab's repo axis and made it own
+// its own transport — see `CiRepoStrip`'s module header. It is exported for
+// tests and for a future repo-axis surface; the only render site today is
+// `MergeTrainActivity`.
+export { CiRepoStrip } from "./CiRepoStrip";
 export {
   DevicePicker,
   deviceStateLabel,

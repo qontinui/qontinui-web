@@ -6872,7 +6872,7 @@ class NotifyWhenGreenRequest(BaseModel):
     no 400, no log line, and a gate registered under the wrong clearance
     rules. Rejecting unknown keys makes the NEXT such drift a typed 422
     instead of another silent swallow. The only in-tree caller
-    (``CiStatusPanel.tsx``) sends exactly ``repo`` + ``head_sha``.
+    (``CiRepoStrip.tsx``) sends exactly ``repo`` + ``head_sha``.
 
     A BLANK ``gate_class`` is rejected rather than forwarded. Coord's
     ``normalize_gate_class`` trims and empty-filters it back to ``None``,
