@@ -90440,7 +90440,7 @@
     },
     "/api/v1/operations/plans": {
       "get": {
-        "description": "List work-units from coord (tenant-scoped).\n\nProxies coord ``GET /coord/work-units``; the response envelope is\n``{\"work_units\": [...], \"limit\": N, \"offset\": N}``.\n\ncoord's ``ListQuery`` has always accepted ``slug_prefix`` and ``offset``;\nthis proxy simply never forwarded them, so the console could neither page\npast the first window nor ask for a slug subset. Forwarding them needs no\ncoord change.\n\n``exclude_slug_prefix`` is the one genuinely new parameter, and it ships\nahead of its coord half deliberately. ``ListQuery`` is\n``#[derive(Debug, Deserialize, Default)]`` with ``#[serde(default)]`` on\nevery field and no ``deny_unknown_fields``, so a coord that does not know\nthe parameter **ignores** it and returns the unfiltered page rather than\nerroring. Callers must therefore treat the exclusion as best-effort until\ncoord's half deploys \u2014 a page that renders shepherd rows is a coord that\nhas not caught up, not a bug here. (coord's side now documents that\npermissiveness as a contract rather than leaving it an accident; drop this\nparagraph once that build is deployed everywhere.)\n\nBoth prefix filters take ``min_length=1``. An empty ``exclude_slug_prefix``\nwould reach coord as ``slug NOT LIKE '' || '%'`` \u2014 i.e. ``NOT LIKE '%'``,\nwhich excludes EVERY row. A console that forwarded an empty input box would\nthen render a blank list, and the paragraph above tells the operator to\nread an unexpected page as \"coord has not caught up\". Rejecting the empty\nstring here is the honest failure; coord normalizes it as well, so neither\nside depends on the other for this.",
+        "description": "List work-units from coord (tenant-scoped).\n\nProxies coord ``GET /coord/work-units``; the response envelope is\n``{\"work_units\": [...], \"limit\": N, \"offset\": N}``.\n\ncoord's ``ListQuery`` has always accepted ``slug_prefix`` and ``offset``;\nthis proxy simply never forwarded them, so the console could neither page\npast the first window nor ask for a slug subset. Forwarding them needs no\ncoord change.\n\n``exclude_slug_prefix`` is the one genuinely new parameter, and it ships\nahead of its coord half deliberately. ``ListQuery`` is\n``#[derive(Debug, Deserialize, Default)]`` with ``#[serde(default)]`` on\nevery field and no ``deny_unknown_fields``, so a coord that does not know\nthe parameter **ignores** it and returns the unfiltered page rather than\nerroring. Callers must therefore treat the exclusion as best-effort until\ncoord's half deploys \u2014 a page that renders shepherd rows is a coord that\nhas not caught up, not a bug here. (coord's side now documents that\npermissiveness as a contract rather than leaving it an accident; drop this\nparagraph once that build is deployed everywhere.)\n\nBoth prefix filters take ``min_length=1``. An empty ``exclude_slug_prefix``\nwould reach coord as ``slug NOT LIKE '' || '%'`` \u2014 i.e. ``NOT LIKE '%'``,\nwhich excludes EVERY row. A console that forwarded an empty input box would\nthen render a blank list, and the paragraph above tells the operator to\nread an unexpected page as \"coord has not caught up\". Rejecting the empty\nstring here is the honest failure; coord normalizes it as well, so neither\nside depends on the other for this.\n\n``order`` / ``after_authored_at`` / ``after_slug`` are the corpus walk\n(plan ``2026-09-12-admin-coord-plans-shows-a-rotating-3-minute-slice-so-plans-get-lost``\nPhase 1). ``order=authored_desc`` makes coord answer in\n``authored_at DESC NULLS LAST, slug`` order with a ``next_cursor`` the\nconsole follows until it is null, so no work unit can fall past a 500-row\ncap. Like ``exclude_slug_prefix`` they ship ahead of coord safely: an older\ncoord ignores all three and returns its ``updated_at``-ordered page with no\n``order`` echo and no ``next_cursor``, which is how the console tells the\ntwo apart. ``order`` is a ``Literal`` so a junk value is a 422 here rather\nthan a silently-ignored parameter upstream; the cursor halves take\n``min_length=1`` so an empty box never reaches coord as a cursor.",
         "operationId": "api_v1_operations_plans_get",
         "parameters": [
           {
@@ -90533,6 +90533,66 @@
               ],
               "title": "Offset"
             }
+          },
+          {
+            "description": "Server-side order. ``authored_desc`` walks the corpus by authoring date (keyset cursor below); ``updated_desc`` (coord's default when absent) is the mutation-time order. Ignored by a coord that predates it.",
+            "in": "query",
+            "name": "order",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "authored_desc",
+                    "updated_desc"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Server-side order. ``authored_desc`` walks the corpus by authoring date (keyset cursor below); ``updated_desc`` (coord's default when absent) is the mutation-time order. Ignored by a coord that predates it.",
+              "title": "Order"
+            }
+          },
+          {
+            "description": "Keyset cursor half: the ``after_authored_at`` of the previous page's ``next_cursor``. Omitted while walking the NULL-authored tail (the cursor's value is null there).",
+            "in": "query",
+            "name": "after_authored_at",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Keyset cursor half: the ``after_authored_at`` of the previous page's ``next_cursor``. Omitted while walking the NULL-authored tail (the cursor's value is null there).",
+              "title": "After Authored At"
+            }
+          },
+          {
+            "description": "Keyset cursor half: the previous page's ``next_cursor.after_slug``.",
+            "in": "query",
+            "name": "after_slug",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Keyset cursor half: the previous page's ``next_cursor.after_slug``.",
+              "title": "After Slug"
+            }
           }
         ],
         "responses": {
@@ -90558,6 +90618,28 @@
           }
         },
         "summary": "List Coord Plans",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
+    "/api/v1/operations/plans/overview": {
+      "get": {
+        "description": "Return coord's CORPUS-wide work-unit status tally (tenant-scoped).\n\nProxies coord ``GET /coord/work-units/overview``: ``{\"row_count\": N,\n\"distinct_status_count\": N, \"facets\": {\"by_status_class\": {...},\n\"by_status\": {...}, \"by_status_truncated\": bool, \"by_status_omitted\": N},\n\"corpus_complete\": bool}``. It takes no filters by coord's design (a\nfiltered overview would move its denominator), so ``row_count`` counts\nEVERY unit \u2014 including the ``shepherd-*`` rows the Plans list excludes.\nThe console states that difference rather than comparing unlike totals.",
+        "operationId": "api_v1_operations_plans_overview_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Get Coord Plans Overview Api V1 Operations Plans Overview Get"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Coord Plans Overview",
         "tags": [
           "operations"
         ]

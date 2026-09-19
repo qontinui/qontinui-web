@@ -139,6 +139,18 @@ class TestListCoordPlans:
             # would drop it silently and every OTHER case here stays green, so
             # this row is what pins the idiom.
             ("?offset=0", "offset", 0),
+            # The corpus walk (plan 2026-09-12-admin-coord-plans-shows-a-
+            # rotating-3-minute-slice-so-plans-get-lost). A dropped cursor
+            # half would make the console re-read page one forever — bounded
+            # only by its page cap — so each is pinned on its own.
+            ("?order=authored_desc", "order", "authored_desc"),
+            ("?order=updated_desc", "order", "updated_desc"),
+            (
+                "?after_authored_at=2026-09-10T00:00:00Z",
+                "after_authored_at",
+                "2026-09-10T00:00:00Z",
+            ),
+            ("?after_slug=2026-09-10-a-plan", "after_slug", "2026-09-10-a-plan"),
         ],
     )
     def test_each_filter_is_forwarded(
@@ -172,7 +184,46 @@ class TestListCoordPlans:
             "offset": 1000,
         }
 
-    @pytest.mark.parametrize("param", ["slug_prefix", "exclude_slug_prefix"])
+    def test_cursor_rides_with_the_order(self, auth_client: TestClient):
+        """A full next-page request, asserted as an EXACT dict — and no offset.
+
+        The walk is keyset, not offset: the proxy must not invent an
+        ``offset`` alongside the cursor.
+        """
+        _, _, params = _call(
+            auth_client,
+            "?limit=500&exclude_slug_prefix=shepherd-&order=authored_desc"
+            "&after_authored_at=2026-09-10T00:00:00Z&after_slug=2026-09-10-x",
+        )
+        assert params == {
+            "limit": 500,
+            "exclude_slug_prefix": "shepherd-",
+            "order": "authored_desc",
+            "after_authored_at": "2026-09-10T00:00:00Z",
+            "after_slug": "2026-09-10-x",
+        }
+
+    def test_null_tail_cursor_sends_slug_alone(self, auth_client: TestClient):
+        """Inside the NULL-authored tail the cursor is ``after_slug`` alone."""
+        _, _, params = _call(
+            auth_client, "?order=authored_desc&after_slug=undated-plan"
+        )
+        assert params == {"order": "authored_desc", "after_slug": "undated-plan"}
+
+    def test_junk_order_is_rejected_not_forwarded(self, auth_client: TestClient):
+        """An unknown ``order`` is a 422 here, never an ignored param upstream."""
+        with _patch_httpx() as MockClient:
+            instance = AsyncMock()
+            instance.get.return_value = _mock_response(json_data=_EMPTY)
+            _configure_mock_client(MockClient, instance)
+            resp = auth_client.get(f"{API_PREFIX}/plans?order=created_desc")
+        assert resp.status_code == 422
+        instance.get.assert_not_called()
+
+    @pytest.mark.parametrize(
+        "param",
+        ["slug_prefix", "exclude_slug_prefix", "after_slug", "after_authored_at"],
+    )
     def test_empty_prefix_is_rejected_not_forwarded(
         self, auth_client: TestClient, param: str
     ):
@@ -214,3 +265,41 @@ class TestListCoordPlans:
             _configure_mock_client(MockClient, instance)
             resp = auth_client.get(f"{API_PREFIX}/plans?limit=501")
         assert resp.status_code == 422
+
+
+class TestCoordPlansOverview:
+    def test_proxies_to_the_overview_route(self, auth_client: TestClient):
+        payload = {
+            "row_count": 1800,
+            "distinct_status_count": 2,
+            "facets": {
+                "by_status_class": {},
+                "by_status": {"shipped": 1700, "draft": 100},
+                "by_status_truncated": False,
+                "by_status_omitted": 0,
+            },
+            "corpus_complete": True,
+        }
+        with _patch_httpx() as MockClient:
+            instance = AsyncMock()
+            instance.get.return_value = _mock_response(json_data=payload)
+            _configure_mock_client(MockClient, instance)
+            resp = auth_client.get(f"{API_PREFIX}/plans/overview")
+        assert resp.status_code == 200
+        assert resp.json() == payload
+        assert instance.get.call_args.args[0].endswith("/coord/work-units/overview")
+        assert not instance.get.call_args.kwargs.get("params")
+
+    def test_overview_is_declared_before_the_slug_route(self):
+        """``/plans/overview`` must win over ``/plans/{slug}``.
+
+        FastAPI matches in declaration order. Reversed, the single-unit
+        handler would capture ``slug="overview"`` — and because it proxies to
+        ``/coord/work-units/{slug}`` the request would still reach the same
+        coord path by accident, so the URL assertion above cannot catch it.
+        The order of the router's routes can.
+        """
+        from app.api.v1.endpoints.operations import router
+
+        paths = [getattr(r, "path", "") for r in router.routes]
+        assert paths.index("/plans/overview") < paths.index("/plans/{slug}")

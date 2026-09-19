@@ -26,9 +26,19 @@
  *   page. No second request: the counts come from the same list the rows do.
  * - **R2/R5** — one work unit is one `<PlanRow>` line; detail expands in place
  *   (`<RecordList>` keeps one open at a time).
- * - **R7** — the fetch-window caveats (truncation, missing authoring dates)
- *   collapse into a `<CollapsiblePanel>` whose summary badge stays visible, so
- *   the warning cannot hide behind the click.
+ * - **R7** — the fetch-window statement (complete / INCOMPLETE / truncated,
+ *   missing authoring dates) collapses into a `<CollapsiblePanel>` whose
+ *   summary badge stays visible, so the warning cannot hide behind the click.
+ *
+ * ## The whole corpus, not a window (plan `2026-09-12-admin-coord-plans-shows-a-rotating-3-minute-slice-so-plans-get-lost`)
+ *
+ * Every sort but "Recently updated" / "Least recently updated" WALKS coord's
+ * list in `order=authored_desc` along its keyset cursor (`planWalk.ts`), so a
+ * plan cannot fall past a 500-row cap chosen by mutation time. A coord that
+ * predates the walk answers with one `updated_at`-ordered page and no `order`
+ * echo; the page then shows that page and names the `updated_at` span it
+ * covers. The two `updated_*` sorts stay a single `order=updated_desc` page —
+ * the explicit "recently touched" view.
  *
  * ## Which date (plan `2026-09-02-coord-work-units-carry-no-authoring-date`)
  *
@@ -58,7 +68,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { ArrowDownUp, Filter, TriangleAlert } from "lucide-react";
+import { ArrowDownUp, Filter, ListChecks, TriangleAlert } from "lucide-react";
 import {
   CollapsiblePanel,
   HealthStrip,
@@ -67,28 +77,24 @@ import {
   readIsUnknown,
 } from "@/components/console";
 import { PlanRow } from "@/components/admin/coord/PlanRow";
-import {
-  planAuthoredAt,
-  type CoordPlanRow,
-} from "@/components/admin/coord/planStatus";
+import { planAuthoredAt } from "@/components/admin/coord/planStatus";
 import { httpClient } from "@/services/service-factory";
 import { sortPlans, SORTS, type SortKey } from "./planSort";
+import {
+  WALK_MAX_PAGES,
+  WALK_PAGE_LIMIT,
+  formatInstant,
+  overviewTotalFor,
+  serverOrderFor,
+  timeSpan,
+  walkWorkUnits,
+  type WalkOutcome,
+  type WorkUnitOverview,
+} from "./planWalk";
 import { derivePlansHealth, SHEPHERD_SLUG_PREFIX } from "./plansHealth";
 
 const API = "/api/v1/operations";
 const POLL_INTERVAL_MS = 10_000;
-
-/**
- * Ask for coord's maximum page.
- *
- * Sorting happens client-side, so the window we sort over is the window we
- * fetched. coord's list is `ORDER BY updated_at DESC LIMIT $3` with a default
- * of 100 and a hard clamp of 500 (`work_unit_registry.rs` `list_work_units`),
- * and the proxy forwards no sort parameter — so requesting the clamp is the
- * widest honest window available. When the result fills it, the corpus is
- * larger than what is sorted and the page says so; see `truncated` below.
- */
-const FETCH_LIMIT = 500;
 
 // Work-unit lifecycle statuses (coord stores status as an opaque string;
 // these are the canonical lifecycle words the filter offers as a convenience
@@ -105,20 +111,32 @@ const STATUS_FILTERS = [
   { value: "obsolete", label: "Obsolete" },
 ];
 
-interface PlansListResponse {
-  // coord `/coord/work-units` returns rows under `work_units`. `plans` is
-  // kept for backwards-tolerance during the cutover (harmless if absent).
-  work_units?: CoordPlanRow[];
-  plans?: CoordPlanRow[];
-  limit?: number;
-  offset?: number;
-  count?: number;
+/** One answered question: the walk's outcome, plus coord's corpus tally. */
+interface PlansWindow {
+  outcome: WalkOutcome;
+  /**
+   * coord's `/overview` tally, read only when the walk ran (a coord new enough
+   * to walk is new enough to serve it). `null` = unread or failed — UNKNOWN,
+   * so the page says the count is not cross-checked rather than comparing
+   * against nothing.
+   */
+  overview: WorkUnitOverview | null;
 }
+
+const PARTIAL_REASON_COPY = {
+  error: "a page read failed",
+  page_cap: `it reached its ${WALK_MAX_PAGES}-page safety cap`,
+  stalled: "coord returned a cursor that did not advance",
+} as const;
 
 export default function CoordPlansListPage() {
   const [status, setStatus] = useState("any");
   const [sort, setSort] = useState<SortKey>("authored_desc");
-  const [data, setData] = useState<PlansListResponse | null>(null);
+  const [data, setData] = useState<PlansWindow | null>(null);
+  // The server order is part of the QUESTION (it decides what is fetched);
+  // the client sort within an order is not, so switching between two walked
+  // sorts re-sorts the rows already on the page instead of re-reading.
+  const order = serverOrderFor(sort);
   const [error, setError] = useState<string | null>(null);
   // There is deliberately no `loading` flag. It used to gate the list's
   // `loaded` prop, and the two questions it conflated are what let a
@@ -191,27 +209,40 @@ export default function CoordPlansListPage() {
   const fetchData = useCallback(async () => {
     const question = questionGen.current;
     const req = ++reqGen.current;
+    // One guard for every read of the walk: a walk overtaken mid-way stops
+    // issuing pages and lands nothing, exactly as a single read used to.
+    const current = () =>
+      question === questionGen.current && req === reqGen.current;
     try {
       const qs = new URLSearchParams();
       if (status && status !== "any") qs.set("status", status);
-      qs.set("limit", String(FETCH_LIMIT));
       qs.set("exclude_slug_prefix", SHEPHERD_SLUG_PREFIX);
-      const suffix = qs.toString() ? `?${qs.toString()}` : "";
-      const body = await httpClient.get<PlansListResponse>(
-        `${API}/plans${suffix}`
+      const outcome = await walkWorkUnits(
+        (url) => httpClient.get(url),
+        `${API}/plans`,
+        qs,
+        order,
+        current
       );
-      if (question !== questionGen.current || req !== reqGen.current) return;
-      setData(body);
+      if (outcome === null || !current()) return;
+      let overview: WorkUnitOverview | null = null;
+      if (outcome.kind !== "single_page") {
+        overview = await httpClient
+          .get<WorkUnitOverview>(`${API}/plans/overview`)
+          .catch(() => null);
+        if (!current()) return;
+      }
+      setData({ outcome, overview });
       setError(null);
     } catch (e) {
       if (question !== questionGen.current) return;
       setError(e instanceof Error ? e.message : String(e));
     }
-  }, [status]);
+  }, [status, order]);
 
   useEffect(() => {
-    // `status` is `fetchData`'s only dependency, so this effect re-runs
-    // exactly when the QUESTION changes — and the rows still in `data` answer
+    // `status` and the server `order` are `fetchData`'s only dependencies, so
+    // this effect re-runs exactly when the QUESTION changes — and the rows still in `data` answer
     // the previous one. Dropping them is not cosmetic: `loaded` is `data !==
     // null`, so keeping them leaves every read-state derivation on this page
     // reporting the OLD query while the new one is in flight — the list shows
@@ -297,15 +328,24 @@ export default function CoordPlansListPage() {
     });
   }, [fetchData]);
 
-  const plans = useMemo(
-    () => data?.work_units ?? data?.plans ?? [],
-    [data]
-  );
+  const outcome = data?.outcome ?? null;
+  const plans = useMemo(() => outcome?.rows ?? [], [outcome]);
   const sorted = useMemo(() => sortPlans(plans, sort), [plans, sort]);
-  // coord returned a full page, so there are almost certainly more work units
-  // than we sorted. Say so: with the list capped at `updated_at DESC`, an
-  // "oldest authored" answer drawn from this window can be wrong.
-  const truncated = plans.length >= FETCH_LIMIT;
+  // A single page came back full (the "Recently updated" view, or a coord
+  // that predates the walk), so there are almost certainly more work units
+  // than are shown. Say so, and say which `updated_at` span they are.
+  const truncated = outcome?.kind === "single_page" && outcome.truncated;
+  const walkComplete = outcome?.kind === "complete";
+  const walkPartial = outcome?.kind === "partial";
+  const updatedSpan = truncated ? timeSpan(plans, (p) => p.updated_at) : null;
+  // The walk runs on coord's `authored_at` COLUMN, so that is the range a
+  // partial walk covered — not the slug-derived date the chips show.
+  const authoredSpan = walkPartial
+    ? timeSpan(plans, (p) => p.authored_at)
+    : null;
+  const reachedUndatedTail = walkPartial && plans.some((p) => !p.authored_at);
+  const coordTotal = overviewTotalFor(data?.overview ?? null, status);
+  const statusLabel = status === "any" ? "any" : status;
   // No authoring date from EITHER source — the slug carries no date prefix
   // AND coord holds no `authored_at` (`planAuthoredAt`, the deriver the chip,
   // the row time and the sort all read). Counting the bare column here would
@@ -377,7 +417,7 @@ export default function CoordPlansListPage() {
             change must not leave the NEW question's control busy for up to the
             60s request timeout, over a read whose answer will be discarded. */}
         <RefreshButton
-          key={status}
+          key={`${status}:${order}`}
           onRefresh={refresh}
           label="Refresh plans"
           title={`Re-reads the work-unit list now; it also refreshes itself every ${POLL_INTERVAL_MS / 1000} s`}
@@ -387,18 +427,32 @@ export default function CoordPlansListPage() {
 
       {/* R7 — the window caveats are infrastructural, so they collapse; the
           summary badge keeps the signal visible while they are closed. */}
-      {(truncated || missingAuthored > 0) && (
+      {(truncated || walkComplete || walkPartial || missingAuthored > 0) && (
         <CollapsiblePanel
           titleAs="h2"
           className="p-2.5"
           defaultOpen={false}
           storageKey="coord-plans-window-caveats"
-          icon={<TriangleAlert className="h-3.5 w-3.5 text-amber-400" />}
-          title="Fetch-window caveats"
+          icon={
+            truncated || walkPartial || missingAuthored > 0 ? (
+              <TriangleAlert className="h-3.5 w-3.5 text-amber-400" />
+            ) : (
+              <ListChecks className="h-3.5 w-3.5 text-muted-foreground" />
+            )
+          }
+          title="Fetch window"
           summary={
-            <span className="text-xs text-amber-300/90 normal-case tracking-normal">
+            <span
+              className={
+                truncated || walkPartial || missingAuthored > 0
+                  ? "text-xs text-amber-300/90 normal-case tracking-normal"
+                  : "text-xs text-muted-foreground normal-case tracking-normal"
+              }
+            >
               {[
-                truncated ? `capped at ${FETCH_LIMIT}` : null,
+                walkComplete ? `all ${plans.length} shown` : null,
+                walkPartial ? `INCOMPLETE — ${plans.length} shown` : null,
+                truncated ? `capped at ${WALK_PAGE_LIMIT}` : null,
                 missingAuthored > 0 ? `${missingAuthored} undated` : null,
               ]
                 .filter(Boolean)
@@ -408,15 +462,65 @@ export default function CoordPlansListPage() {
           contentClassName="space-y-1"
           data-testid="coord-plans-window-caveats"
         >
-          {truncated && (
+          {outcome?.kind === "complete" && (
+            <p
+              className="text-xs text-muted-foreground"
+              data-testid="coord-plans-walk-complete"
+            >
+              All {plans.length} work units matching status={statusLabel}{" "}
+              (excluding coord&rsquo;s {SHEPHERD_SLUG_PREFIX}* merge records)
+              are shown — the whole list was read in authoring order (
+              {outcome.pages} page{outcome.pages === 1 ? "" : "s"}).{" "}
+              {coordTotal
+                ? `coord's overview counts ${coordTotal.total} work units ${
+                    status === "any" ? "in total" : `with status=${status}`
+                  }, INCLUDING its ${SHEPHERD_SLUG_PREFIX}* records, which this page excludes — so the two totals are measured over different sets, and the difference (${
+                    coordTotal.total - plans.length
+                  }) is not by itself a count of missing plans.`
+                : "coord's corpus total could not be read, so this count is not cross-checked."}
+            </p>
+          )}
+          {outcome?.kind === "partial" && (
+            <p
+              className="text-xs text-amber-300/90"
+              data-testid="coord-plans-walk-partial"
+            >
+              INCOMPLETE — this list is NOT the whole corpus. {plans.length}{" "}
+              work units are shown
+              {authoredSpan
+                ? `, authored ${formatInstant(authoredSpan.newest)} back to ${formatInstant(authoredSpan.oldest)}`
+                : ""}
+              {reachedUndatedTail ? ", plus some with no authoring date" : ""};
+              the walk stopped after {outcome.pages} page
+              {outcome.pages === 1 ? "" : "s"} because{" "}
+              {PARTIAL_REASON_COPY[outcome.reason]}
+              {outcome.error ? ` (${outcome.error})` : ""}.{" "}
+              {reachedUndatedTail
+                ? "Every dated work unit was reached; undated ones further along the list are missing from this page."
+                : "Work units authored before that range, and every undated one, are missing from this page."}
+              {coordTotal
+                ? ` coord's overview counts ${coordTotal.total} work units ${
+                    status === "any" ? "in total" : `with status=${status}`
+                  } (including its ${SHEPHERD_SLUG_PREFIX}* records, which this page excludes).`
+                : " coord's corpus total could not be read either."}
+            </p>
+          )}
+          {outcome?.kind === "single_page" && truncated && (
             <p
               className="text-xs text-amber-300/90"
               data-testid="coord-plans-truncated-notice"
             >
-              Showing the {FETCH_LIMIT} most-recently-updated work units — coord
-              caps this list. Sorting applies to these only, so a
-              &ldquo;{SORTS.find((s) => s.value === sort)?.label}&rdquo; result
-              may not be the corpus-wide answer.
+              Showing the {WALK_PAGE_LIMIT} most-recently-updated work units
+              {updatedSpan
+                ? ` — updated ${formatInstant(updatedSpan.oldest)} to ${formatInstant(updatedSpan.newest)}`
+                : ""}
+              . Any work unit not updated in that span is NOT on this page.{" "}
+              {outcome.legacyCoord
+                ? "This coord predates the authored-order walk, so it caps the list at one page by update time."
+                : "“Recently updated” is a single page by design; choose an authored sort to read the whole list."}{" "}
+              Sorting applies to these only, so a &ldquo;
+              {SORTS.find((s) => s.value === sort)?.label}&rdquo; result may not
+              be the corpus-wide answer.
             </p>
           )}
           {missingAuthored > 0 && (
@@ -424,9 +528,9 @@ export default function CoordPlansListPage() {
               className="text-xs text-muted-foreground"
               data-testid="coord-plans-missing-authored-notice"
             >
-              {missingAuthored} of {plans.length} have no authoring date —
-              no date prefix on the slug and no authored_at in coord; they
-              sort last rather than being treated as oldest.
+              {missingAuthored} of {plans.length} have no authoring date — no
+              date prefix on the slug and no authored_at in coord; they sort
+              last rather than being treated as oldest.
             </p>
           )}
         </CollapsiblePanel>
@@ -477,11 +581,7 @@ export default function CoordPlansListPage() {
           )
         }
         renderRow={(p, ctx) => (
-          <PlanRow
-            plan={p}
-            expanded={ctx.expanded}
-            onToggle={ctx.onToggle}
-          />
+          <PlanRow plan={p} expanded={ctx.expanded} onToggle={ctx.onToggle} />
         )}
       />
     </div>
