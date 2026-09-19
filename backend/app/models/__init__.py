@@ -171,7 +171,6 @@ from app.models.test_deficiency import (
     DeficiencyType,
     TestDeficiency,
 )
-from app.models.test_notification_preferences import TestNotificationPreferences
 from app.models.test_result import TestResult, TestResultStatus
 from app.models.test_screenshot import TestScreenshot, TestScreenshotType
 from app.models.test_target import TestTarget
@@ -381,7 +380,6 @@ __all__ = [
     "DeficiencyStatus",
     "TestScreenshot",
     "TestScreenshotType",
-    "TestNotificationPreferences",
     "CoverageSnapshot",
     "PathDiscovery",
     "TransitionReliability",

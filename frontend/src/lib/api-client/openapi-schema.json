@@ -29605,12 +29605,6 @@
             "title": "Email Comments",
             "type": "boolean"
           },
-          "email_gate_action": {
-            "default": true,
-            "description": "Email for merge-gate actions on your PRs",
-            "title": "Email Gate Action",
-            "type": "boolean"
-          },
           "email_mentions": {
             "default": true,
             "description": "Email for mentions",
@@ -29644,12 +29638,6 @@
             "default": true,
             "description": "In-app for comments",
             "title": "In App Comments",
-            "type": "boolean"
-          },
-          "in_app_gate_action": {
-            "default": true,
-            "description": "In-app for merge-gate actions on your PRs",
-            "title": "In App Gate Action",
             "type": "boolean"
           },
           "in_app_mentions": {
@@ -29715,17 +29703,6 @@
             ],
             "title": "Email Comments"
           },
-          "email_gate_action": {
-            "anyOf": [
-              {
-                "type": "boolean"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Email Gate Action"
-          },
           "email_mentions": {
             "anyOf": [
               {
@@ -29780,17 +29757,6 @@
               }
             ],
             "title": "In App Comments"
-          },
-          "in_app_gate_action": {
-            "anyOf": [
-              {
-                "type": "boolean"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "In App Gate Action"
           },
           "in_app_mentions": {
             "anyOf": [

@@ -83,12 +83,6 @@ class Project(Base):
     images = relationship(
         "ProjectImage", back_populates="project", cascade="all, delete-orphan"
     )
-    test_notification_preferences = relationship(
-        "TestNotificationPreferences",
-        back_populates="project",
-        uselist=False,
-        cascade="all, delete-orphan",
-    )
     visual_baselines = relationship(
         "VisualBaseline",
         back_populates="project",
