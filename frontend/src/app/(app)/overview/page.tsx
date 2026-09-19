@@ -14,6 +14,7 @@
 import { Skeleton } from "@/components/ui/skeleton";
 import { LoadFailure } from "@/components/overview/LoadFailure";
 import { useAuth } from "@/contexts/auth-context";
+import { useTenant } from "@/contexts/tenant-context";
 import { IntentSection } from "./_components/IntentSection";
 import { ProgressPanel } from "./_components/ProgressPanel";
 import { useSummaryData } from "./_hooks/useSummaryData";
@@ -32,7 +33,8 @@ function ProseSkeleton() {
 
 export default function OverviewSummaryPage() {
   const { isCoordAdmin } = useAuth();
-  const { intent, progress } = useSummaryData();
+  const { activeTenantId, loading: tenantsLoading } = useTenant();
+  const { intent, progress } = useSummaryData(activeTenantId, tenantsLoading);
 
   return (
     <div
@@ -58,23 +60,33 @@ export default function OverviewSummaryPage() {
         )}
         {intent.state === "ready" && (
           <>
-            {intent.degraded && (
-              <p
-                className="border-l-2 border-border pl-4 text-sm text-muted-foreground"
+            {intent.degraded ? (
+              // Coord answered but cannot see its document store: an empty
+              // list here means "cannot see", so no section may claim that
+              // nothing has been written.
+              <div
+                role="status"
+                className="border-l-2 border-border pl-4"
                 data-ui-bridge-id="overview.summary.degraded"
               >
-                The project&rsquo;s description can&rsquo;t be read right now,
-                so the sections below may be incomplete. ({intent.degraded})
-              </p>
+                <p className="text-[15px] leading-relaxed text-foreground">
+                  The project&rsquo;s description can&rsquo;t be read right now.
+                </p>
+                <p className="mt-1 text-sm leading-relaxed text-muted-foreground">
+                  It may well exist; the service that stores it isn&rsquo;t
+                  ready yet. Try again later.
+                </p>
+              </div>
+            ) : (
+              SUMMARY_INTENT_KINDS.map((kind) => (
+                <IntentSection
+                  key={kind}
+                  kind={kind}
+                  entries={intent.entries.filter((e) => e.kind === kind)}
+                  canEdit={isCoordAdmin}
+                />
+              ))
             )}
-            {SUMMARY_INTENT_KINDS.map((kind) => (
-              <IntentSection
-                key={kind}
-                kind={kind}
-                entries={intent.entries.filter((e) => e.kind === kind)}
-                canEdit={isCoordAdmin}
-              />
-            ))}
           </>
         )}
       </div>

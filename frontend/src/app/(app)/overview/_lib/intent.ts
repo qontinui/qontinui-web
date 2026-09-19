@@ -12,7 +12,11 @@
 import type {
   PromptDocument,
   PromptDocumentKind,
+  PromptDocumentSummary,
 } from "@/app/(app)/admin/coord/prompt-documents/types";
+
+/** A list or get row, with coord's served skeleton verdict where it has one. */
+export type WithSeedVerdict<T> = T & { unedited_seed?: boolean | null };
 
 /** The intent kinds the Summary shows, in page order. */
 export const SUMMARY_INTENT_KINDS = [
@@ -69,22 +73,58 @@ export interface IntentEntry {
   name: string;
   /** Coord's one-line description of the document, if it has one. */
   description: string | null;
-  state: IntentState;
-  /** Readable markdown, frontmatter removed. Empty for a skeleton. */
+  /** `unreadable`: the list named this document but its body failed to load. */
+  state: IntentState | "unreadable";
+  /** Readable markdown, frontmatter removed. Empty unless authored/unknown. */
   body: string;
   updatedAt: string | null;
+  /** The load error, for `unreadable` only. */
+  error?: string;
 }
 
-export function toIntentEntry(
-  doc: PromptDocument & { unedited_seed?: boolean | null }
-): IntentEntry {
-  const state = classifyIntent(doc);
+function base(
+  doc: WithSeedVerdict<PromptDocumentSummary>
+): Omit<IntentEntry, "state" | "body"> {
   return {
     kind: doc.kind as SummaryIntentKind,
     name: doc.name,
     description: doc.description,
-    state,
-    body: state === "skeleton" ? "" : stripFrontmatter(doc.body ?? ""),
     updatedAt: doc.updated_at ?? null,
   };
+}
+
+/** A document whose body was fetched. */
+export function toIntentEntry(
+  doc: WithSeedVerdict<PromptDocument>
+): IntentEntry {
+  const state = classifyIntent(doc);
+  return {
+    ...base(doc),
+    state,
+    body: state === "skeleton" ? "" : stripFrontmatter(doc.body ?? ""),
+  };
+}
+
+/** A document the list row already shows is an unedited skeleton, so its
+ *  template body is never fetched. */
+export function skeletonEntry(
+  doc: WithSeedVerdict<PromptDocumentSummary>
+): IntentEntry {
+  return { ...base(doc), state: "skeleton", body: "" };
+}
+
+/** A document the list named but whose body could not be read. */
+export function unreadableEntry(
+  doc: WithSeedVerdict<PromptDocumentSummary>,
+  error: string
+): IntentEntry {
+  return { ...base(doc), state: "unreadable", body: "", error };
+}
+
+/** True when an entry has something to show a reader: real text, or a load
+ *  failure that must be reported rather than read as "not written". */
+export function hasContent(entry: IntentEntry): boolean {
+  if (entry.state === "unreadable") return true;
+  if (entry.state === "skeleton") return false;
+  return entry.body.trim().length > 0;
 }

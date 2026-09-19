@@ -16,14 +16,19 @@ import { httpClient } from "@/services/service-factory";
 import type {
   ListPromptDocumentsResponse,
   PromptDocument,
+  PromptDocumentSummary,
 } from "@/app/(app)/admin/coord/prompt-documents/types";
 import type { CoordPlanRow } from "@/components/admin/coord/planStatus";
 import { SHEPHERD_SLUG_PREFIX } from "@/app/(app)/admin/coord/plans/plansHealth";
 import {
   SUMMARY_INTENT_KINDS,
+  classifyIntent,
+  skeletonEntry,
   toIntentEntry,
+  unreadableEntry,
   type IntentEntry,
   type SummaryIntentKind,
+  type WithSeedVerdict,
 } from "../_lib/intent";
 import { summarizeProgress, type Progress } from "../_lib/progress";
 
@@ -51,27 +56,37 @@ function errorMessage(err: unknown): string {
 }
 
 async function loadIntent(): Promise<IntentData> {
-  const list = await httpClient.get<ListPromptDocumentsResponse>(
-    `${API}/coord/prompt-documents`
-  );
+  const list = await httpClient.get<
+    Omit<ListPromptDocumentsResponse, "documents"> & {
+      documents: WithSeedVerdict<PromptDocumentSummary>[];
+    }
+  >(`${API}/coord/prompt-documents`);
   const wanted = (list.documents ?? []).filter((d) =>
     (SUMMARY_INTENT_KINDS as readonly string[]).includes(d.kind)
   );
-  const docs = await Promise.all(
-    wanted.map((d) =>
-      httpClient.get<PromptDocument & { unedited_seed?: boolean | null }>(
-        `${API}/coord/prompt-documents/${encodeURIComponent(
-          d.kind
-        )}/${encodeURIComponent(d.name)}`
-      )
-    )
+  // A document the list already shows is an untouched skeleton is never
+  // fetched: its body is template text the page would not show anyway. Each
+  // remaining body is fetched independently, so one failure marks only its
+  // own section as unreadable.
+  const entries = await Promise.all(
+    wanted.map(async (d): Promise<IntentEntry> => {
+      if (classifyIntent(d) === "skeleton") return skeletonEntry(d);
+      try {
+        const doc = await httpClient.get<WithSeedVerdict<PromptDocument>>(
+          `${API}/coord/prompt-documents/${encodeURIComponent(
+            d.kind
+          )}/${encodeURIComponent(d.name)}`
+        );
+        return toIntentEntry(doc);
+      } catch (err) {
+        return unreadableEntry(d, errorMessage(err));
+      }
+    })
   );
   const order = (k: string) =>
     SUMMARY_INTENT_KINDS.indexOf(k as SummaryIntentKind);
   return {
-    entries: docs
-      .map(toIntentEntry)
-      .sort((a, b) => order(a.kind) - order(b.kind)),
+    entries: entries.sort((a, b) => order(a.kind) - order(b.kind)),
     degraded: list.degraded ?? null,
   };
 }
@@ -89,7 +104,15 @@ async function loadProgress(): Promise<Progress> {
   return summarizeProgress(rows, { fetchLimit: PLAN_FETCH_LIMIT });
 }
 
-export function useSummaryData() {
+/**
+ * `tenantId` is the active project. Reads wait until it has resolved (the
+ * `X-Qontinui-Active-Tenant` header is taken from the same selection, so an
+ * earlier read could name a stale project), and re-run when it changes.
+ */
+export function useSummaryData(
+  tenantId: string | null,
+  tenantsLoading: boolean
+) {
   const [intent, setIntent] = useState<Loadable<IntentData>>({
     state: "loading",
   });
@@ -98,7 +121,10 @@ export function useSummaryData() {
   });
 
   useEffect(() => {
+    if (tenantsLoading) return;
     let live = true;
+    setIntent({ state: "loading" });
+    setProgress({ state: "loading" });
     loadIntent().then(
       (data) => live && setIntent({ state: "ready", ...data }),
       (err) => live && setIntent({ state: "error", message: errorMessage(err) })
@@ -111,7 +137,7 @@ export function useSummaryData() {
     return () => {
       live = false;
     };
-  }, []);
+  }, [tenantId, tenantsLoading]);
 
   return { intent, progress };
 }

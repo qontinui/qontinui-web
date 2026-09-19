@@ -2,16 +2,31 @@
  * How the project's work is progressing, from coord's work units (the plans
  * behind `/api/v1/operations/plans`), in words a business reader uses.
  *
- * Work-unit status is a closed vocabulary (served policy `plan-discipline`):
- * `draft`, `vetted`, `ready`, `in_progress`, `blocked`, `shipped`,
- * `superseded`, `obsolete`. Superseded and obsolete units are work that will
- * not be done, so they count toward nothing. Anything else is reported as
- * "other" rather than silently dropped.
+ * Work-unit status is opaque text in coord, so this does NOT keep its own
+ * vocabulary: it buckets by the tone the Coord Console already assigns
+ * (`describePlanStatus` in `components/admin/coord/planStatus.ts`), so a new
+ * status spelling is taught in one place and both surfaces agree.
+ *
+ * Closed work (superseded, obsolete, archived) will not be done and counts
+ * toward nothing. A status nobody recognises is NOT dropped: it is counted as
+ * "Status unknown" and stays in the total, so it can only ever pull the done
+ * share down, never inflate it.
  */
 
-import type { CoordPlanRow } from "@/components/admin/coord/planStatus";
+import {
+  describePlanStatus,
+  type CoordPlanRow,
+  type PlanStatusTone,
+} from "@/components/admin/coord/planStatus";
+import { SHEPHERD_SLUG_PREFIX } from "@/app/(app)/admin/coord/plans/plansHealth";
 
-export type ProgressBucket = "done" | "in_progress" | "blocked" | "planned";
+export type ProgressBucket =
+  | "done"
+  | "in_progress"
+  | "ready"
+  | "blocked"
+  | "planned"
+  | "unknown";
 
 export const PROGRESS_BUCKETS: readonly {
   key: ProgressBucket;
@@ -19,19 +34,21 @@ export const PROGRESS_BUCKETS: readonly {
 }[] = [
   { key: "done", label: "Done" },
   { key: "in_progress", label: "In progress" },
+  { key: "ready", label: "Ready to start" },
   { key: "blocked", label: "Blocked" },
   { key: "planned", label: "Planned" },
+  { key: "unknown", label: "Status unknown" },
 ];
 
-const STATUS_BUCKET: Record<string, ProgressBucket | "dropped"> = {
+const TONE_BUCKET: Record<PlanStatusTone, ProgressBucket | null> = {
   shipped: "done",
-  in_progress: "in_progress",
-  ready: "in_progress",
+  active: "in_progress",
+  // `ready` is derived by coord: dependencies met, work NOT yet started.
+  ready: "ready",
   blocked: "blocked",
-  draft: "planned",
-  vetted: "planned",
-  superseded: "dropped",
-  obsolete: "dropped",
+  pending: "planned",
+  closed: null,
+  unknown: "unknown",
 };
 
 export interface FinishedItem {
@@ -41,10 +58,8 @@ export interface FinishedItem {
 
 export interface Progress {
   counts: Record<ProgressBucket, number>;
-  /** Units counted in a bucket (dropped and unrecognised units excluded). */
+  /** Every counted unit, including those with an unknown status. */
   total: number;
-  /** Units whose status this page does not recognise. */
-  other: number;
   /**
    * True when the read may not include every unit (the server returned a
    * full page). Counts are then lower bounds and must be shown as such.
@@ -63,36 +78,41 @@ export function titleOf(row: Pick<CoordPlanRow, "slug" | "title">): string {
 }
 
 export function summarizeProgress(
-  rows: CoordPlanRow[],
+  allRows: CoordPlanRow[],
   { fetchLimit, recent = 5 }: { fetchLimit: number; recent?: number }
 ): Progress {
+  // The proxy's server-side exclusion of merge-shepherd bookkeeping units is
+  // best-effort, so it is applied again here. Truncation is judged on the
+  // rows the server actually returned, before this filter.
+  const rows = allRows.filter((r) => !r.slug.startsWith(SHEPHERD_SLUG_PREFIX));
+
   const counts: Record<ProgressBucket, number> = {
     done: 0,
     in_progress: 0,
+    ready: 0,
     blocked: 0,
     planned: 0,
+    unknown: 0,
   };
-  let other = 0;
+  const finished: (CoordPlanRow & { first_shipped_at: string })[] = [];
   for (const row of rows) {
-    const bucket = STATUS_BUCKET[(row.status ?? "").toLowerCase()];
-    if (bucket === undefined) other += 1;
-    else if (bucket !== "dropped") counts[bucket] += 1;
+    const bucket = TONE_BUCKET[describePlanStatus(row.status).tone];
+    if (bucket === null) continue;
+    counts[bucket] += 1;
+    if (bucket === "done" && row.first_shipped_at) {
+      finished.push(row as CoordPlanRow & { first_shipped_at: string });
+    }
   }
 
-  const recentlyFinished = rows
-    .filter(
-      (r): r is CoordPlanRow & { first_shipped_at: string } =>
-        (r.status ?? "").toLowerCase() === "shipped" && !!r.first_shipped_at
-    )
+  const recentlyFinished = finished
     .sort((a, b) => b.first_shipped_at.localeCompare(a.first_shipped_at))
     .slice(0, recent)
     .map((r) => ({ title: titleOf(r), finishedAt: r.first_shipped_at }));
 
   return {
     counts,
-    total: counts.done + counts.in_progress + counts.blocked + counts.planned,
-    other,
-    truncated: rows.length >= fetchLimit,
+    total: Object.values(counts).reduce((a, b) => a + b, 0),
+    truncated: allRows.length >= fetchLimit,
     recentlyFinished,
   };
 }

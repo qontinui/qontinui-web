@@ -32,7 +32,8 @@ export interface OverviewSection {
   description: string;
   /**
    * False while the page is still a placeholder. The sub-navigation marks
-   * such pages so a reader is not surprised by an empty screen.
+   * such pages with an icon (a shape, not colour alone) so a reader is not
+   * surprised by an empty screen.
    */
   available: boolean;
 }
