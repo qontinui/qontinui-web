@@ -308,7 +308,49 @@ def test_sorted(db):
 
 def test_comprehension(db):
     assert len([r for r in _job_rows(db, 1)]) == 1
+
+
+def test_bound_list(db):
+    rows = list(_job_rows(db, 1))
+    assert len(rows) == 1
+
+
+def test_bound_sorted(db):
+    rows = sorted(_job_rows(db, 1))
+    assert len(rows) == 1
+
+
+def test_bound_comprehension(db):
+    rows = [r for r in _job_rows(db, 1)]
+    assert len(rows) == 1
+
+
+def test_bound_not(db):
+    rows = list(_job_rows(db, 1))
+    assert not rows
 """
+
+#: RULE B, near-miss NEGATIVE — a comprehension that FILTERS by a value the
+#: test controls is the correct spelling, inline or bound.
+_B_NEGATIVE_FILTERED_COMPREHENSION = """
+def _job_rows(db, tenant, *, input_hash=None, kind=None):
+    return db.execute("SELECT id FROM coord.jobs WHERE t = :t", {"t": tenant}).all()
+
+
+def test_inline(db):
+    assert len([r for r in _job_rows(db, 1) if r["kind"] == "embedding"]) == 1
+
+
+def test_bound(db):
+    rows = [r for r in _job_rows(db, 1) if r["input_hash"] == "h"]
+    assert len(rows) == 1
+
+
+def test_wrapper_with_the_kwarg_passed(db):
+    rows = list(_job_rows(db, 1, kind="embedding"))
+    assert len(rows) == 1
+"""
+
 
 _NOT_POSITIVE = """
 from sqlalchemy import text
@@ -655,12 +697,21 @@ def test_rule_b_treats_an_explicit_none_as_not_passed(tmp_path: Path) -> None:
 
 
 def test_rule_b_sees_through_a_builtin_passthrough(tmp_path: Path) -> None:
-    """``list()``, ``sorted()`` and a comprehension re-shape, they do not scope."""
-    assert _rules(tmp_path, "b_wrapped.py", _B_POSITIVE_WRAPPED) == [
-        gate.RULE_B,
-        gate.RULE_B,
-        gate.RULE_B,
-    ]
+    """``list()``, ``sorted()`` and a comprehension re-shape, they do not scope.
+
+    BOTH spellings, and the second is the one that matters: the first version
+    of this fixture tested only the inline form, so it passed while
+    ``rows = list(_job_rows(db, t))`` followed by ``assert len(rows) == 1``
+    went unflagged — and bind-then-assert is what every real call site in this
+    suite writes. A green test named for a property the gate does not have is
+    worse than no test, because the next author believes the hole is shut.
+    """
+    assert _rules(tmp_path, "b_wrapped.py", _B_POSITIVE_WRAPPED) == [gate.RULE_B] * 7
+
+
+def test_rule_b_does_not_flag_a_comprehension_that_filters(tmp_path: Path) -> None:
+    """The near-miss for the arm above — an ``if`` IS a discriminator."""
+    assert _rules(tmp_path, "b_filtered.py", _B_NEGATIVE_FILTERED_COMPREHENSION) == []
 
 
 def test_assert_not_is_the_same_claim_as_equals_empty(tmp_path: Path) -> None:

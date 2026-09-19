@@ -530,7 +530,10 @@ def _unfiltered_sql(
 
 
 def _producing_calls(
-    expr: ast.expr, bindings: dict[str, list[ast.expr]]
+    expr: ast.expr,
+    bindings: dict[str, list[ast.expr]],
+    helpers: dict[str, ast.FunctionDef | ast.AsyncFunctionDef] | None = None,
+    seen: frozenset[str] = frozenset(),
 ) -> list[ast.Call]:
     """The calls whose RETURN VALUE is ``expr`` — not the calls that fed them.
 
@@ -550,8 +553,9 @@ def _producing_calls(
     What is left is exactly: the call itself, a call awaited, or a name bound
     directly to either.
     """
+    helpers = helpers if helpers is not None else {}
     if isinstance(expr, ast.Await):
-        return _producing_calls(expr.value, bindings)
+        return _producing_calls(expr.value, bindings, helpers, seen)
     if isinstance(expr, ast.Call):
         # A BUILTIN PASSTHROUGH is transparent. `list(_job_rows(db, t))`,
         # `sorted(...)`, `set(...)`, `tuple(...)` all return the helper's rows
@@ -566,21 +570,38 @@ def _producing_calls(
             and expr.func.id in PASSTHROUGH_BUILTINS
             and len(expr.args) == 1
             and expr.func.id not in bindings
+            and expr.func.id not in helpers
         ):
-            return _producing_calls(expr.args[0], bindings)
+            return _producing_calls(expr.args[0], bindings, helpers, seen)
         return [expr]
     if isinstance(expr, (ast.ListComp, ast.SetComp, ast.GeneratorExp)):
         # `[r for r in _job_rows(db, t)]` — the population is the iterable of
         # the FIRST generator; the comprehension only re-shapes it.
-        if expr.generators:
-            return _producing_calls(expr.generators[0].iter, bindings)
+        #
+        # UNLESS it filters. `[r for r in _job_rows(db, t) if r["input_hash"]
+        # == h]` IS scoped by a discriminator the test controls — it is the
+        # correct spelling — and flagging it would print "scope the read by a
+        # discriminator the test controls" at an author who just did. This
+        # module's own standard is that a gate which forbids the correct
+        # spelling alongside the broken one gets argued with rather than
+        # obeyed, so a comprehension carrying any `if` is treated as scoped.
+        if expr.generators and not any(g.ifs for g in expr.generators):
+            return _producing_calls(expr.generators[0].iter, bindings, helpers, seen)
         return []
     if isinstance(expr, ast.Name):
+        # RECURSE, rather than testing the bound expression for `ast.Call`
+        # inline. `rows = list(_job_rows(db, t))` then `assert len(rows) == 1`
+        # is the BIND-THEN-ASSERT spelling, which is what every real call site
+        # in this suite uses — and a flat isinstance test here saw the
+        # `list(...)` call, failed to resolve `list` as a helper, and lost
+        # Rule B. Closing the wrapper evasion only for the inline spelling
+        # closed it where nobody writes it.
+        if expr.id in seen:
+            return []
+        seen = seen | {expr.id}
         out: list[ast.Call] = []
         for assigned in bindings.get(expr.id, []):
-            target = assigned.value if isinstance(assigned, ast.Await) else assigned
-            if isinstance(target, ast.Call):
-                out.append(target)
+            out.extend(_producing_calls(assigned, bindings, helpers, seen))
         return out
     return []
 
@@ -727,7 +748,9 @@ def find_violations(path: Path) -> list[Finding]:
                 detail = None
         if detail is None and population:
             rule = RULE_B
-            detail = _unused_discriminator(_producing_calls(value, bindings), helpers)
+            detail = _unused_discriminator(
+                _producing_calls(value, bindings, helpers), helpers
+            )
         if detail is None:
             continue
 
