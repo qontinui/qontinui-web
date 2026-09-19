@@ -31,19 +31,31 @@ test.describe("Admin - Coord retired routes", () => {
     expect(new URL(location, "http://placeholder").pathname).toBe(DESTINATION);
   });
 
-  test("navigating to the retired alerts page lands on Dev Ops", async ({
+  test("an authenticated member lands on the Dev Ops page", async ({
     page,
   }) => {
     await page.goto(RETIRED);
-    // Auto-waiting: the retired path never renders.
-    await expect(page).not.toHaveURL(new RegExp(`${RETIRED}(\\?|#|/|$)`));
-    const landed = new URL(page.url()).pathname;
-    // A user the console sends elsewhere (the tolerated non-admin branch the
-    // other admin specs share) is not this spec's subject; one it keeps must
-    // be on the Dev Ops overview, rendering it.
-    if (landed.startsWith("/admin/coord")) {
-      expect(landed).toBe(DESTINATION);
-      await expect(page.getByTestId("coord-devops-page")).toBeVisible();
-    }
+    // `/admin/coord/*` does not admin-gate VIEWING (coord/layout.tsx): any
+    // authenticated member renders the page, so the redirect's destination is
+    // exactly where this storageState user must end up.
+    await expect(page).toHaveURL(new RegExp(`${DESTINATION}(\\?|#|$)`));
+    await expect(page.getByTestId("coord-devops-page")).toBeVisible();
+  });
+
+  test.describe("signed out", () => {
+    test.use({ storageState: { cookies: [], origins: [] } });
+
+    test("is sent to sign in with the DESTINATION as `next`, never the retired path", async ({
+      page,
+    }) => {
+      await page.goto(RETIRED);
+      // The 308 runs before the auth gate, so `AppAuthGate` builds `next`
+      // from the pathname it sees — Dev Ops. A `next` naming the retired path
+      // would mean the redirect did not run first, and signing in would land
+      // on a route that no longer exists.
+      await expect(page).toHaveURL(/\/login\?/);
+      const next = new URL(page.url()).searchParams.get("next");
+      expect(next).toBe(DESTINATION);
+    });
   });
 });
