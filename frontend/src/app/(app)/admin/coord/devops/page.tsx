@@ -24,19 +24,28 @@
  *     collapsed, rather than as a fourth section: the knob and the telemetry
  *     that says what to set it to belong in one viewport.
  *
- * ## The health strip answers THREE questions, not one
+ * ## The page answers THREE questions, not one
  *
- * The badge cluster carries machine liveness, coord's unresolved-alert
- * severity rollup, AND whether the machines can still reach coord, because
- * those are different claims and the page used to make only the first.
- * `by_state: {healthy: 8}` is liveness; it says nothing about alerts, and a
- * steward read it as an all-clear while thousands of unresolved criticals
- * stood (plan `2026-08-31-devops-surface-renders-no-alert-signal`). Coord had
- * been publishing the rollup on this page's own poll the whole time — it was
- * discarded by a hook type that declared only `devices`.
+ * The health strip carries machine liveness AND whether the machines can
+ * still reach coord; the Conditions panel under it carries whether anything is
+ * degraded that no agent is handling. Those are different claims and the page
+ * used to make only the first. `by_state: {healthy: 8}` is liveness; it says
+ * nothing about faults, and a steward read it as an all-clear while thousands
+ * of unresolved criticals stood (plan
+ * `2026-08-31-devops-surface-renders-no-alert-signal`).
  *
- * The third question is the same shape one field over, and was found the same
- * way (plan
+ * That plan answered with critical/warning/info alert-severity badges linking
+ * to the raw alerts page. Plan
+ * `2026-09-18-notifications-are-agent-actions-and-alerts-are-agent-work`
+ * Phase 8 replaced both: the raw alert list is agents' work, and 27,604 open
+ * rows sorted by severity told the operator nothing about whether anyone was
+ * on them. The Conditions panel (`FleetConditionsPanel`, derived by
+ * `fleetConditions.ts`) reads coord's `conditions` block instead — unclaimed
+ * conditions, the oldest one's age, the per-owner breakdown, the questions
+ * waiting on the operator, and the deliberate settings in effect.
+ *
+ * The credential question is the same shape as the fault question, and was
+ * found the same way (plan
  * `2026-09-12-runner-loads-with-an-expired-coord-credential-and-tells-nobody`
  * Phase 5). Liveness is coord reaching the machine; a runner that boots with
  * an expired coord device JWT answers every probe and reads `healthy` here
@@ -45,7 +54,7 @@
  * per dark device — and this page discarded the field and rendered the alert
  * only as a count with no machine attached.
  *
- * This costs NO new read: `alerts` and `credential_dark` both ride the
+ * This costs NO new read: `conditions` and `credential_dark` both ride the
  * `/fleet/health` body the page already polls, which is R1's "derived from
  * data already on the page".
  *
@@ -82,13 +91,18 @@
  * points one implementation instead of a fork.
  */
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ExternalLink } from "lucide-react";
 import { HealthStrip } from "@/components/console";
 import type { HealthBadge } from "@/components/console";
-import { FleetOverview, FleetResourcesSection } from "@/components/operations";
+import {
+  FleetConditionsPanel,
+  FleetOverview,
+  FleetResourcesSection,
+} from "@/components/operations";
+import { QUESTION_QUEUE_HREF } from "@/components/operations/fleetConditions";
 import { summarizeCoordCredentials } from "@/components/operations/coordCredentialStatus";
 import { summarizeFleetLiveness } from "@/components/operations/fleetLiveness";
 import { useDeviceStatusStream } from "@/components/operations/useDeviceStatusStream";
@@ -101,20 +115,10 @@ import type { FleetHealthDevice } from "@/components/operations/useFleetHealth";
 // defeats every downstream useMemo keyed on it.
 const EMPTY_DEVICES: FleetHealthDevice[] = [];
 
-/**
- * Where a severity badge goes — and deliberately with **no query string**.
- *
- * `/admin/coord/alerts` owns severity as local chip state and reads no
- * `useSearchParams`, so `?severity=critical` would land on an UNFILTERED page
- * showing every severity under a control that claimed to filter. Plain link
- * until that page hydrates its filters from the URL, which is a separate,
- * recorded follow-up — not something to smuggle in behind a badge.
- */
-const ALERTS_HREF = "/admin/coord/alerts";
-
 export default function CoordDevOpsPage() {
   const fleet = useFleetHealth();
   const router = useRouter();
+  const navigate = useCallback((href: string) => router.push(href), [router]);
   // The CI-capacity join (Phase 2). One read, owned here, passed down —
   // never a fetch per machine row. It carries no CI-node configuration of its
   // own: that is `CiNodeConfigPanel`'s, inside the disclosure.
@@ -156,91 +160,13 @@ export default function CoordDevOpsPage() {
     [devices, fleet.loading, fleet.error]
   );
 
-  // Coord's alert rollup, from the SAME poll — never a second fetch (R1).
-  const alertCounts = fleet.data?.alerts;
-  const alertsScrapeUp = fleet.data?.alerts_scrape_up;
-
   /**
-   * The severity cluster, and the three-way distinction it exists to make.
-   * `by_state` above is device liveness; these are alerts, and until this
-   * change the page rendered `machines 8` beside nothing at all while
-   * thousands of unresolved criticals stood.
-   *
-   * 1. `alerts` present, `alerts_scrape_up` anything but `false` → the numbers.
-   *    `undefined` is the PRE-DEPLOY coord that serves the rollup and not yet
-   *    the flag; that rollup was measured, and dashing it would blank a real
-   *    count on every day this page is ahead of coord — which the plan's
-   *    deploy order requires it to be.
-   * 2. `alerts_scrape_up === false` → coord told us its rollup query did not
-   *    run. Its `{0,0,0}` is not a count.
-   * 3. `alerts` absent → coord did not serve it, or the read failed here.
-   *
-   * Cases 2 and 3 render UNKNOWN. **Never `?? 0`** — a zero here is the one
-   * sentence this page must not say falsely, and it is the same reasoning as
-   * the `unknown` liveness badge below: a signal that has gone dark and a
-   * genuine all-clear must not look alike (`[policy: silent-empty-is-unknown]`).
-   *
-   * One badge for the unknown case, not three dashed ones: the rollup is a
-   * single measurement, so all three severities fail together and saying it
-   * three times is clutter, not honesty.
-   */
-  const alertBadges = useMemo<HealthBadge[]>(() => {
-    const openAlerts = () => router.push(ALERTS_HREF);
-    if (!alertCounts || alertsScrapeUp === false) {
-      return [
-        {
-          key: "alerts-unknown",
-          label: "alerts unknown",
-          tone: "muted",
-          title:
-            alertsScrapeUp === false
-              ? "Coord could not read the alert rollup on this poll. This is not zero alerts — it is no measurement."
-              : "This coord served no alert rollup. This is not zero alerts — it is no measurement.",
-          onClick: openAlerts,
-          "data-testid": "coord-devops-alerts-unknown-badge",
-        },
-      ];
-    }
-    // Tone is R3: colour says who must act. `attention` is the only tone that
-    // borrows red, and a count of zero needs nobody — so a measured `critical
-    // 0` stays muted rather than painting an all-clear red.
-    const toneFor = (count: number, tone: HealthBadge["tone"]) =>
-      count > 0 ? tone : ("muted" as const);
-    return [
-      {
-        key: "alerts-critical",
-        label: `critical ${alertCounts.critical}`,
-        tone: toneFor(alertCounts.critical, "attention"),
-        title: "Unresolved critical alerts. Opens the alerts list.",
-        onClick: openAlerts,
-        "data-testid": "coord-devops-critical-badge",
-      },
-      {
-        key: "alerts-warning",
-        label: `warning ${alertCounts.warning}`,
-        tone: toneFor(alertCounts.warning, "default"),
-        title: "Unresolved warning alerts. Opens the alerts list.",
-        onClick: openAlerts,
-        "data-testid": "coord-devops-warning-badge",
-      },
-      {
-        key: "alerts-info",
-        label: `info ${alertCounts.info}`,
-        tone: "muted",
-        title: "Unresolved info alerts. Opens the alerts list.",
-        onClick: openAlerts,
-        "data-testid": "coord-devops-info-badge",
-      },
-    ];
-  }, [alertCounts, alertsScrapeUp, router]);
-
-  /**
-   * **The third question the strip answers: can the machines still reach
+   * **The second question the strip answers: can the machines still reach
    * COORD?** Plan
    * `2026-09-12-runner-loads-with-an-expired-coord-credential-and-tells-nobody`
    * Phase 5.
    *
-   * `by_state` is coord reaching the machine, `alerts` is anything wrong
+   * `by_state` is coord reaching the machine, `conditions` is anything wrong
    * anywhere; neither can see a runner that booted with an expired device JWT
    * and kept working. That machine answers every probe, so it reads `healthy`
    * here while every session it spawns has no coord access and does not know
@@ -255,7 +181,7 @@ export default function CoordDevOpsPage() {
    *   machines. The only badge here that borrows red besides `unreachable`.
    * * `credential unknown N` — nothing measured them. **Never folded into the
    *   healthy side and never rendered as `0`**, which is the same rule the
-   *   `alerts unknown` badge above follows and the rule this whole plan is
+   *   Conditions panel's unknown states follow and the rule this whole plan is
    *   about (`[policy: silent-empty-is-unknown]`).
    *
    * **The strip and the machine rows resolve each device from the same two
@@ -301,8 +227,15 @@ export default function CoordDevOpsPage() {
         label: `credential dark ${credentials.needsAction}`,
         tone: "attention",
         title:
-          "Machines whose coord credential needs a person: coord's dark scan named them, or their own runner reported a dark posture (dark, expired, absent, unrefreshable). Sessions spawned on them work without coord and do not know it. Opens the alerts list, where coord raises a critical runner_coord_credentials_missing alert for each machine its scan names.",
-        onClick: () => router.push(ALERTS_HREF),
+          "Machines whose coord credential needs a person: coord's dark scan named them, or their own runner reported a dark posture (dark, expired, absent, unrefreshable). Sessions spawned on them work without coord and do not know it. Opens the question queue. Coord raises a question there for each machine its scan names once it has processed the alert — if none is there yet, the machine still needs you; the question has not been raised.",
+        // A dark credential is a `Responder::Operator` condition: coord turns
+        // it into a question waiting on the operator (plan
+        // `2026-09-18-notifications-are-agent-actions-and-alerts-are-agent-work`
+        // Phase 5), so the badge leads to the queue that question will be in.
+        // The title does not PROMISE the question: a runner-reported dark
+        // posture coord's scan has not named raises no alert, and the Phase 5
+        // hook may not have run (or be deployed) yet.
+        onClick: () => navigate(QUESTION_QUEUE_HREF),
         "data-testid": "coord-devops-credential-dark-badge",
       });
     }
@@ -345,7 +278,7 @@ export default function CoordDevOpsPage() {
       });
     }
     return badges;
-  }, [credentials, deviceStatus.error, deviceStatus.everSeeded, router]);
+  }, [credentials, deviceStatus.error, deviceStatus.everSeeded, navigate]);
 
   return (
     // `overflow-x-auto`: the resource strip is wide, and it must scroll rather
@@ -418,43 +351,25 @@ export default function CoordDevOpsPage() {
                 },
               ]
             : []),
-          // Credentials next: "are the machines there?" is answered above,
+          // Credentials last: "are the machines there?" is answered above,
           // and this answers "can the ones that ARE there still reach coord?"
           // — an independent axis, because the incident it exists for is a
           // machine that answered every probe with a dead coord credential.
           ...credentialBadges,
-          // Alerts last, after the liveness cluster: the four above answer
-          // "are the machines there?", these answer "is anything wrong?", and
-          // the second question is the one this page could not previously ask.
-          ...alertBadges,
         ]}
       />
 
-      {/* The pageout sink, when coord says it is not configured. ONE muted
-          line, deliberately: this is a recorded operator decision (confirmed
-          2026-08-05 — in-app is the delivery surface, no Slack/email sink is
-          wanted), not an incident. A warning banner on an intended state is
-          how a strip earns the operator's habit of not reading it. It exists
-          only so the next steward does not re-file "alerts reach nobody" as a
-          defect, which is exactly what happened. Absent field renders
-          nothing — we do not know the posture, so we claim nothing. */}
-      {fleet.data?.pageout?.sink_configured === false && (
-        <p
-          className="text-xs text-muted-foreground"
-          data-testid="coord-devops-pageout-note"
-        >
-          Alert pages are in-app only — no external sink is configured (by
-          decision). Everything above is delivered under{" "}
-          <Link
-            href={ALERTS_HREF}
-            className="font-medium text-foreground underline underline-offset-2 hover:no-underline"
-            data-testid="coord-devops-pageout-alerts-link"
-          >
-            Alerts
-          </Link>
-          .
-        </p>
-      )}
+      {/* "Is anything wrong that no agent is handling, and is anything
+          waiting on me?" — the operator's rollup of the conditions agents
+          own. It replaced the alert-severity badges, both links into the
+          deleted alerts page, and the pageout-sink note (plan
+          `2026-09-18-notifications-are-agent-actions-and-alerts-are-agent-work`
+          Phase 8). Fed by the same fleet-health read as the strip above. */}
+      <FleetConditionsPanel
+        health={fleet}
+        nowMs={nowMs}
+        onNavigate={navigate}
+      />
 
       {/* The join this page is keyed on, stated once, before the list it
           shapes. Rows here come from coord's device registry, and the bridge

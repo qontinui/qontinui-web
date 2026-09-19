@@ -21,12 +21,10 @@
  * third one ship ungated, so it lives here now: a nav poller that cannot import
  * the gate is a nav poller that will not use it.
  *
- * Related surfaces that gate their own polling and deliberately do NOT import
- * this: `/admin/coord/alerts` (`page.tsx` `usePoll`, which additionally
- * suspends while the operator has paged past screen one) and `RedMainBanner`
- * (whose gate is entangled with its empty-poll streak counter). Both have
- * behaviour this hook does not model; unifying them would mean pushing their
- * specifics in here, which is the wrong direction.
+ * A related surface that gates its own polling and deliberately does NOT
+ * import this: `RedMainBanner`, whose gate is entangled with its empty-poll
+ * streak counter. It has behaviour this hook does not model; unifying it would
+ * mean pushing its specifics in here, which is the wrong direction.
  */
 
 import { useEffect } from "react";

@@ -1400,3 +1400,187 @@ describe("CoordNotificationsPage", () => {
     });
   });
 });
+
+// ---------------------------------------------------------------------------
+// Plan `2026-09-18-notifications-are-agent-actions-and-alerts-are-agent-work`
+// Phase 8 — the feed is the operator's record of what agents did.
+// ---------------------------------------------------------------------------
+
+describe("CoordNotificationsPage — agent actions", () => {
+  const UUID_C = "5a6b7c8d-9e0f-4a1b-8c2d-3e4f5a6b7c8d";
+
+  beforeEach(() => {
+    httpGet.mockReset();
+    httpPost.mockReset();
+    window.history.replaceState({}, "", "/");
+  });
+
+  it("lists unread rows before read ones, each group in coord's order", async () => {
+    httpGet.mockResolvedValue({
+      notifications: [
+        notification({
+          notification_id: UUID_A,
+          summary: "newest, already read",
+          read_at: "2026-09-18T11:00:00Z",
+        }),
+        notification({ notification_id: UUID_B, summary: "middle, unread" }),
+        notification({ notification_id: UUID_C, summary: "oldest, unread" }),
+      ],
+      next_cursor: null,
+      total: 3,
+      unread_count: 2,
+    });
+    render(<CoordNotificationsPage />);
+
+    await waitFor(() =>
+      expect(screen.getAllByTestId("coord-notification-summary")).toHaveLength(
+        3
+      )
+    );
+    expect(
+      screen
+        .getAllByTestId("coord-notification-summary")
+        .map((el) => el.textContent)
+    ).toEqual(["middle, unread", "oldest, unread", "newest, already read"]);
+  });
+
+  it("keeps unread before read across a Load more, walking page 1's cursor", async () => {
+    httpGet
+      .mockResolvedValueOnce({
+        notifications: [
+          notification({
+            notification_id: UUID_A,
+            summary: "A — page 1, read",
+            read_at: "2026-09-18T11:00:00Z",
+          }),
+          notification({ notification_id: UUID_B, summary: "B — page 1, unread" }),
+        ],
+        next_cursor: "page-1-cursor",
+        total: 3,
+        unread_count: 2,
+      })
+      .mockResolvedValueOnce({
+        notifications: [
+          notification({ notification_id: UUID_C, summary: "C — page 2, unread" }),
+        ],
+        next_cursor: null,
+        total: 3,
+        unread_count: 2,
+      });
+    const user = userEvent.setup();
+    render(<CoordNotificationsPage />);
+
+    await user.click(
+      await screen.findByTestId("coord-notifications-load-more")
+    );
+
+    await waitFor(() =>
+      expect(screen.getAllByTestId("coord-notification-summary")).toHaveLength(
+        3
+      )
+    );
+    expect(
+      screen
+        .getAllByTestId("coord-notification-summary")
+        .map((el) => el.textContent)
+    ).toEqual([
+      "B — page 1, unread",
+      "C — page 2, unread",
+      "A — page 1, read",
+    ]);
+    expect(httpGet).toHaveBeenCalledTimes(2);
+    expect(String(httpGet.mock.calls[1][0])).toContain("cursor=page-1-cursor");
+  });
+
+  it("says how a sensitive agent action can be undone", async () => {
+    httpGet.mockResolvedValue({
+      notifications: [
+        notification({
+          kind: "agent_took_sensitive_action",
+          summary: "An agent force-pushed main on qontinui-web",
+          detail: {
+            action: "force_push",
+            reversible: "restore",
+            undo: "git_write_ledger:4821",
+          },
+        }),
+      ],
+      next_cursor: null,
+      total: 1,
+      unread_count: 1,
+    });
+    const user = userEvent.setup();
+    render(<CoordNotificationsPage />);
+
+    // Reversibility is on the scan line; the kind has a hand-written label.
+    const reversible = await screen.findByTestId(
+      "coord-notification-reversible"
+    );
+    expect(reversible).toHaveTextContent("restore");
+    expect(screen.getByText("Sensitive agent action")).toBeInTheDocument();
+    // The undo handle is expanded-only.
+    expect(screen.queryByTestId("coord-notification-undo")).toBeNull();
+
+    await user.click(screen.getByTestId("coord-notification-summary"));
+    const undo = await screen.findByTestId("coord-notification-undo");
+    expect(undo).toHaveTextContent("git_write_ledger:4821");
+    // Not repeated in the raw detail list beside it.
+    const detail = screen.getByTestId("coord-notification-detail");
+    expect(detail.textContent?.match(/git_write_ledger:4821/g)).toHaveLength(1);
+    expect(detail).toHaveTextContent("force_push");
+  });
+
+  it("renders 'not reversible' for reversible: no", async () => {
+    httpGet.mockResolvedValue({
+      notifications: [
+        notification({
+          kind: "agent_took_sensitive_action",
+          summary: "An agent published qontinui-schemas 0.9.0",
+          detail: { action: "publish", reversible: "no" },
+        }),
+      ],
+      next_cursor: null,
+      total: 1,
+      unread_count: 1,
+    });
+    render(<CoordNotificationsPage />);
+
+    expect(
+      await screen.findByTestId("coord-notification-reversible")
+    ).toHaveTextContent("not reversible");
+  });
+
+  it("claims nothing about reversibility when the row states none", async () => {
+    httpGet.mockResolvedValue({
+      notifications: [
+        notification({
+          kind: "agent_took_sensitive_action",
+          summary: "An agent enrolled a repository",
+          detail: { action: "repo_enrolled" },
+        }),
+      ],
+      next_cursor: null,
+      total: 1,
+      unread_count: 1,
+    });
+    render(<CoordNotificationsPage />);
+
+    await screen.findByTestId("coord-notification-row");
+    expect(screen.queryByTestId("coord-notification-reversible")).toBeNull();
+  });
+
+  it("does not render reversibility on other kinds, even if detail carries it", async () => {
+    httpGet.mockResolvedValue({
+      notifications: [
+        notification({ detail: { reversible: "no", undo: "x" } }),
+      ],
+      next_cursor: null,
+      total: 1,
+      unread_count: 1,
+    });
+    render(<CoordNotificationsPage />);
+
+    await screen.findByTestId("coord-notification-row");
+    expect(screen.queryByTestId("coord-notification-reversible")).toBeNull();
+  });
+});

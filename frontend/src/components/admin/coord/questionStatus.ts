@@ -3,7 +3,8 @@
  *
  * Extracted from `QuestionCard.tsx` by plan
  * `2026-08-16-coord-console-ui-unification-pipeline-style.md` Phase 3 Wave 1,
- * following the shape `alertStatus.ts` established: **status derivation lives
+ * following the shape `planStatus.ts` carries (first established by the
+ * since-retired `alertStatus.ts`): **status derivation lives
  * in a pure, unit-tested module** (R8), never inline in JSX.
  *
  * One kind union covers BOTH lists on `/admin/coord/questions` — the inbox and

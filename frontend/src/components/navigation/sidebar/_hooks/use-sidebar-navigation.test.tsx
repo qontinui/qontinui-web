@@ -92,7 +92,6 @@ describe("useSidebarNavigation — AI Dev menu", () => {
       "Pipeline",
       "Pull Requests",
       "Gates",
-      "Alerts",
       "Notifications",
       "Work",
       "Merge",

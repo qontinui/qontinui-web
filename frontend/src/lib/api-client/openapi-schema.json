@@ -83306,7 +83306,7 @@
     },
     "/api/v1/operations/alerts": {
       "get": {
-        "description": "Return the full ``coord.alerts`` rollup with optional filters.\n\nSibling of ``/operations/claims/alerts`` (which narrows to\n``alert_key`` prefix ``claim-``). This endpoint exposes ALL alert\nkinds for the dashboard's Alerts page. The kind vocabulary is\n**served by the API** \u2014 coord returns the distinct kind list in the\nresponse, so neither this proxy nor the UI hardcodes it (an\nenumeration here went stale the moment a new watcher shipped).\n\n``severity`` and ``kind`` are REPEATABLE\n(``?kind=stale_wip&kind=red_main``) so the UI can multi-select; they\nride the wire as repeated query keys, which is what coord parses.\n``limit`` / ``cursor`` page the result; the response carries\n``total_count`` (the unpaged, filter-applied count) so a caller that\nasks for ``?limit=1`` can still render an honest badge. ``limit`` is\nbounded ``1..1000`` at the edge (coord's stated hard max) so a\nnonsense value 422s here rather than relying on coord's clamp.\n\nThe coord response is passed through **untouched** \u2014 no re-wrapping,\nno re-keying \u2014 so ``total_count``, the kind list, and any field coord\nadds later reach the frontend without a change here.\n\nTenant-scoped \u2014 the underlying ``coord.alerts`` rollup is fleet-wide\ntoday but the tenant header lets coord-side enforcement filter once\nthe alert producer stamps a tenant_id per row.",
+        "description": "Return the full ``coord.alerts`` rollup with optional filters.\n\nExposes ALL alert kinds. Its operator PAGE is gone (plan\n``2026-09-18-notifications-are-agent-actions-and-alerts-are-agent-work``\nD7), but the read API stays for its consumers: the console's\n``RedMainBanner`` (``?kind=red_main``, reading each row's ``claimed`` /\n``claim`` fields) and agent tooling. The kind vocabulary is **served by\nthe API** \u2014 coord returns the distinct kind list in the response, so\nneither this proxy nor a caller hardcodes it (an enumeration here went\nstale the moment a new watcher shipped).\n\n``severity`` and ``kind`` are REPEATABLE\n(``?kind=stale_wip&kind=red_main``) so the UI can multi-select; they\nride the wire as repeated query keys, which is what coord parses.\n``limit`` / ``cursor`` page the result; the response carries\n``total_count`` (the unpaged, filter-applied count) so a caller that\nasks for ``?limit=1`` can still render an honest badge. ``limit`` is\nbounded ``1..1000`` at the edge (coord's stated hard max) so a\nnonsense value 422s here rather than relying on coord's clamp.\n\nThe coord response is passed through **untouched** \u2014 no re-wrapping,\nno re-keying \u2014 so ``total_count``, the kind list, and any field coord\nadds later reach the frontend without a change here.\n\nTenant-scoped \u2014 the underlying ``coord.alerts`` rollup is fleet-wide\ntoday but the tenant header lets coord-side enforcement filter once\nthe alert producer stamps a tenant_id per row.",
         "operationId": "api_v1_operations_alerts_get",
         "parameters": [
           {
@@ -83479,28 +83479,6 @@
           }
         },
         "summary": "Post Ci Status Notify When Green",
-        "tags": [
-          "operations"
-        ]
-      }
-    },
-    "/api/v1/operations/claims/alerts": {
-      "get": {
-        "description": "Return active claim-related alerts from coord.\n\nAsks coord for the ``claim-`` slice directly (``?source=claim-`` \u2014\n``source`` is matched as an ``alert_key`` prefix, the convention used\nby\n[`claims_alert_watcher`](https://github.com/qontinui/qontinui-coord/blob/main/src/claims_alert_watcher.rs)).\nOther alert kinds (fleet-health, alembic-status, etc.) stay scoped\nto the Operations page's general alerts surface.\n\n\u26a0\ufe0f This used to pull the WHOLE rollup and filter ``alert_key`` in\nPython, which measured **0 rows** on 2026-08-14: coord caps the\nunfiltered rollup at 500 rows ordered by severity/recency, and claim\nalerts never survived the cap, so the Python filter was always\nfiltering an already-claimless window. A targeted ``source`` query is\nfiltered in SQL and cannot be evicted by another watcher's tick.\n\nForwards the operator bearer (fleet-auth P2/D6).",
-        "operationId": "api_v1_operations_claims_alerts_get",
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "title": "Response Get Claims Alerts Api V1 Operations Claims Alerts Get"
-                }
-              }
-            },
-            "description": "Successful Response"
-          }
-        },
-        "summary": "Get Claims Alerts",
         "tags": [
           "operations"
         ]
@@ -88063,7 +88041,7 @@
     },
     "/api/v1/operations/fleet/health": {
       "get": {
-        "description": "Return the fleet-health rollup from coord (tenant-scoped).\n\nThe body is coord's ``get_fleet_health`` envelope, passed through\nuntouched: ``devices`` (the per-machine\n``DeviceHealthSnapshot`` roster), ``count``, ``by_state``,\n``liveness``, ``excluded`` / ``excluded_error``, ``alerts``,\n``kv_bucket`` and ``as_of``. This route declares no\n``response_model``, so nothing here filters a field coord adds.\n\nThose nine are what coord emits **today**. Two more are read by this\nrepo's client and appear nowhere in coord's source: ``FleetHealthPayload``\ndeclares ``alerts_scrape_up`` and ``pageout``, and the Dev Ops page\nbranches on ``alerts_scrape_up === false``. They are FORWARD\ndeclarations \u2014 deliberately absence-tolerant, since the client must\ntreat an absent flag as *measured* \u2014 so they are not part of this\ncontract and this route synthesises neither. The branch reading them\nis unreachable until coord grows them.\n\nThe contract is written down because the sibling resource-samples\nroute learned the lesson first: this\ndocstring is what FastAPI renders into ``openapi-schema.json`` /\n``openapi-schema.base.json``, which are committed and drift-gated by\n``backend-ci.yml``, so it is this repo's contract of record for the\nroute. Until now it described none of a wire its own browser reads\non a 10s poll (``useFleetHealth.ts``, ``useFleetAlarmBadge.ts``,\n``SpawnModal.tsx``).\n\nThe fields that make the surface honest rather than merely working:\n\n* ``devices[].state`` is coord's ``DeviceState``, serde-lowercase:\n  ``healthy | degraded | stale | partitioned | abandoned``, plus\n  ``unknown`` when the stored string did not parse. It is\n  non-optional in coord's snapshot, so today's coord always sends\n  it; callers still treat an absent one as *unknown* rather than\n  healthy, which is the rule the whole surface rests on. Read the\n  vocabulary as OPEN: a state a newer coord adds must render\n  *unknown*, not fail to parse, so nothing on this path may narrow\n  it to a closed union.\n* ``stale`` is the newest value and the only DERIVED one \u2014 computed\n  at read time and never persisted (coord's ``devices_state_chk``\n  admits only the other four). It means **the heartbeat is fine and\n  the resource SAMPLER has gone quiet**, which is deliberately not\n  ``partitioned``: on 2026-08-27 this read said ``{healthy: 4}``\n  beside a WSL-lane sample 22 minutes old, and calling that a\n  network partition would have sent an operator to debug the wrong\n  layer.\n* ``devices[].heartbeat_state`` is the machine's PERSISTED ladder\n  state, before the freshness overlay \u2014 carried so that the overlay\n  **loses nothing**. It is the difference between \"this box is\n  unreachable\" and \"this box is fine and its publisher is quiet\",\n  and a caller that renders ``state`` alone cannot tell an operator\n  which. A spawn picker is the case that bites: ``stale`` is a\n  perfectly spawnable machine and ``partitioned`` is not.\n* ``devices[].state_raw`` is present **only** when the stored state\n  failed to parse (``state`` is then ``\"unknown\"``); it carries what\n  the row actually said. Omitted entirely in the common case, so its\n  presence is the anomaly marker \u2014 do not default it in.\n* ``devices[].newest_sample_age_secs`` is seconds since that\n  device's newest resource sample, and\n  ``devices[].sample_stale_after_secs`` is the threshold it was\n  graded against. **It is NOT the configured cadence**: coord\n  computes ``sample_interval_secs \u00d7 SAMPLE_STALE_INTERVALS`` with\n  that multiplier pinned at 4, falling back to a 30s interval where\n  the tenant set none \u2014 so the default threshold is 120s, not 30s.\n  **The threshold rides the wire for the same reason the resource\n  strip's floors do** \u2014 so the client keeps no constant of its own\n  and cannot disagree with coord about where stale begins, which is\n  exactly the disagreement a client re-deriving \"4 \u00d7 the interval\"\n  would eventually ship. ``null`` on either is UNKNOWN: not zero,\n  and not \"fresh\". They are also independently nullable: a device\n  with no sample in the lookback arrives with a null age and a\n  POPULATED threshold.\n* ``devices[].within_dispatch_window`` says whether coord would\n  actually expect this machine to answer. The roster stopped\n  dropping out-of-window devices and ships the answer instead, so\n  *listed* no longer implies *reachable*; the ``liveness`` block\n  (``within_dispatch_window`` / ``outside_dispatch_window`` /\n  ``heartbeat_ttl_secs``) is the same split rolled up.\n* ``excluded`` is ``null`` when coord did not MEASURE the exclusion\n  set \u2014 see ``excluded_error`` \u2014 and never means \"none excluded\".\n\n**The one caveat a caller must not read as an all-clear**, stated\nprecisely because the imprecise version is worse than none. A\nPostgres outage is NOT this case: the roster query acquires the pool\nfirst and its failure returns 500, which this proxy raises rather\nthan passing off as an empty fleet. The caveat is the narrower\n**mid-request** one \u2014 the roster succeeded and a LATER acquire did\nnot (pool exhaustion, an acquire timeout). coord then logs *\"no\nfreshness overlay, no alert rollup this tick\"* and still answers\n200, serving ``alerts`` as ``{critical: 0, warning: 0, info: 0}``,\nindistinguishable from a genuinely quiet fleet, with every device's\n``newest_sample_age_secs`` left ``null`` and **no device OVERLAID to\n``stale``** (a persisted ``'stale'`` string would still decode \u2014\ncoord parses the value so such a row is not silently dropped \u2014 but\nthe CHECK is what makes that improbable, not this path).\n\ncoord ships no flag distinguishing that tick from a healthy one, so\nzeros here are not evidence of quiet and an absent ``stale`` is not\nevidence of a live publisher\n(``[policy: silent-empty-is-unknown]``).",
+        "description": "Return the fleet-health rollup from coord (tenant-scoped).\n\nThe body is coord's ``get_fleet_health`` envelope, passed through\nuntouched: ``devices`` (the per-machine\n``DeviceHealthSnapshot`` roster), ``count``, ``by_state``,\n``liveness``, ``excluded`` / ``excluded_error``, ``alerts``,\n``kv_bucket`` and ``as_of``. This route declares no\n``response_model``, so nothing here filters a field coord adds.\n\nCoord also serves ``alerts_scrape_up`` (beside the ``alerts``\nseverity rollup, for API consumers), ``credential_dark_scrape_up``,\n``pageout`` (the page-out sink's posture) and \u2014 since plan\n``2026-09-18-notifications-are-agent-actions-and-alerts-are-agent-work``\nPhase 7 \u2014 the ``conditions`` block. The web app reads\n``credential_dark_scrape_up`` and ``conditions``; it no longer reads\n``alerts`` / ``alerts_scrape_up`` or ``pageout`` (the severity badges and\nthe pageout-sink note they fed were replaced by the Dev Ops Conditions\npanel in Phase 8).\n\n``conditions`` answers \"is anything degraded that no agent is\nhandling?\", computed under the same visibility predicate as\n``/coord/alerts``: ``open`` / ``claimed`` / ``unclaimed`` (agent work by\nlease state), ``unclaimed_oldest_age_secs``, ``unclaimed_by_domain``,\n``awaiting_operator`` + ``awaiting_operator_question_ids`` (open\noperator questions; the id list is capped, the count exact),\n``awaiting_operator_alerts`` (open operator-responder alerts \u2014 NOT\ncomparable with ``awaiting_operator`` by subtraction, because an\nanswered alert that has not yet cleared is never re-asked),\n``awaiting_operator_unasked`` (open operator alerts with no question at\nall) and ``awaiting_operator_answered_uncleared`` (answered, still open)\n\u2014 the two exact counts the panel reads, absent on an older coord,\n``settings_in_effect`` (capped list of ``{alert_id, kind, since,\nsummary}``) + ``settings_in_effect_count``, and ``scrape_up``. On a\nfailed read coord sends ``scrape_up: false`` with every count ``null``\nand an ``unavailable_reason`` \u2014 never zeros. The block is ABSENT on a\ncoord predating Phase 7, which callers render as UNKNOWN, not as\n\"nothing unhandled\". This route synthesises none of it.\n\nThe contract is written down because the sibling resource-samples\nroute learned the lesson first: this\ndocstring is what FastAPI renders into ``openapi-schema.json`` /\n``openapi-schema.base.json``, which are committed and drift-gated by\n``backend-ci.yml``, so it is this repo's contract of record for the\nroute. Until now it described none of a wire its own browser reads\non a 10s poll (``useFleetHealth.ts``, ``useFleetAlarmBadge.ts``,\n``SpawnModal.tsx``).\n\nThe fields that make the surface honest rather than merely working:\n\n* ``devices[].state`` is coord's ``DeviceState``, serde-lowercase:\n  ``healthy | degraded | stale | partitioned | abandoned``, plus\n  ``unknown`` when the stored string did not parse. It is\n  non-optional in coord's snapshot, so today's coord always sends\n  it; callers still treat an absent one as *unknown* rather than\n  healthy, which is the rule the whole surface rests on. Read the\n  vocabulary as OPEN: a state a newer coord adds must render\n  *unknown*, not fail to parse, so nothing on this path may narrow\n  it to a closed union.\n* ``stale`` is the newest value and the only DERIVED one \u2014 computed\n  at read time and never persisted (coord's ``devices_state_chk``\n  admits only the other four). It means **the heartbeat is fine and\n  the resource SAMPLER has gone quiet**, which is deliberately not\n  ``partitioned``: on 2026-08-27 this read said ``{healthy: 4}``\n  beside a WSL-lane sample 22 minutes old, and calling that a\n  network partition would have sent an operator to debug the wrong\n  layer.\n* ``devices[].heartbeat_state`` is the machine's PERSISTED ladder\n  state, before the freshness overlay \u2014 carried so that the overlay\n  **loses nothing**. It is the difference between \"this box is\n  unreachable\" and \"this box is fine and its publisher is quiet\",\n  and a caller that renders ``state`` alone cannot tell an operator\n  which. A spawn picker is the case that bites: ``stale`` is a\n  perfectly spawnable machine and ``partitioned`` is not.\n* ``devices[].state_raw`` is present **only** when the stored state\n  failed to parse (``state`` is then ``\"unknown\"``); it carries what\n  the row actually said. Omitted entirely in the common case, so its\n  presence is the anomaly marker \u2014 do not default it in.\n* ``devices[].newest_sample_age_secs`` is seconds since that\n  device's newest resource sample, and\n  ``devices[].sample_stale_after_secs`` is the threshold it was\n  graded against. **It is NOT the configured cadence**: coord\n  computes ``sample_interval_secs \u00d7 SAMPLE_STALE_INTERVALS`` with\n  that multiplier pinned at 4, falling back to a 30s interval where\n  the tenant set none \u2014 so the default threshold is 120s, not 30s.\n  **The threshold rides the wire for the same reason the resource\n  strip's floors do** \u2014 so the client keeps no constant of its own\n  and cannot disagree with coord about where stale begins, which is\n  exactly the disagreement a client re-deriving \"4 \u00d7 the interval\"\n  would eventually ship. ``null`` on either is UNKNOWN: not zero,\n  and not \"fresh\". They are also independently nullable: a device\n  with no sample in the lookback arrives with a null age and a\n  POPULATED threshold.\n* ``devices[].within_dispatch_window`` says whether coord would\n  actually expect this machine to answer. The roster stopped\n  dropping out-of-window devices and ships the answer instead, so\n  *listed* no longer implies *reachable*; the ``liveness`` block\n  (``within_dispatch_window`` / ``outside_dispatch_window`` /\n  ``heartbeat_ttl_secs``) is the same split rolled up.\n* ``excluded`` is ``null`` when coord did not MEASURE the exclusion\n  set \u2014 see ``excluded_error`` \u2014 and never means \"none excluded\".\n\n**The one caveat a caller must not read as an all-clear**, stated\nprecisely because the imprecise version is worse than none. A\nPostgres outage is NOT this case: the roster query acquires the pool\nfirst and its failure returns 500, which this proxy raises rather\nthan passing off as an empty fleet. The caveat is the narrower\n**mid-request** one \u2014 the roster succeeded and a LATER acquire did\nnot (pool exhaustion, an acquire timeout). coord then logs *\"no\nfreshness overlay, no alert rollup this tick\"* and still answers\n200, serving ``alerts`` as ``{critical: 0, warning: 0, info: 0}``,\nindistinguishable from a genuinely quiet fleet, with every device's\n``newest_sample_age_secs`` left ``null`` and **no device OVERLAID to\n``stale``** (a persisted ``'stale'`` string would still decode \u2014\ncoord parses the value so such a row is not silently dropped \u2014 but\nthe CHECK is what makes that improbable, not this path).\n\ncoord ships no flag distinguishing that tick from a healthy one, so\nzeros here are not evidence of quiet and an absent ``stale`` is not\nevidence of a live publisher\n(``[policy: silent-empty-is-unknown]``).",
         "operationId": "api_v1_operations_fleet_health_get",
         "responses": {
           "200": {
@@ -91726,54 +91704,6 @@
           }
         },
         "summary": "Get Pr Merge Pr Checks",
-        "tags": [
-          "operations"
-        ]
-      }
-    },
-    "/api/v1/operations/pr-merge/red-main/{repo}/spawn-fix": {
-      "post": {
-        "description": "Operator-driven red-main remediation (red-main auto-remediation\nPhase 4b). Spawn a visible fix session on the operator's device for\n``repo``'s current red episode, proxying coord's\n``POST /pr-merge/red-main/:repo/spawn-fix``.\n\n``repo`` is ``owner/name`` and is captured inline via ``{repo:path}``\n(the same shape as ``/pr-merge/repos/:repo/profile``). No request body\nis required \u2014 coord resolves the live red episode + tenant from the\nforwarded operator bearer.\n\nCoord returns ``200 {\"agent_id\": \"<uuid>\"}`` on success, or ``409`` when\na fix session is already running for the current red episode or the repo\nhas no live red-main alert. ``_proxy_coord_post`` re-raises coord's\nstatus + JSON body so the banner can surface the 409 message inline.",
-        "operationId": "api_v1_operations_pr_merge_red_main_repo_spawn_fix_post",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "repo",
-            "required": true,
-            "schema": {
-              "title": "Repo",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "title": "Response Post Pr Merge Red Main Spawn Fix Api V1 Operations Pr Merge Red Main  Repo  Spawn Fix Post"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
-        "summary": "Post Pr Merge Red Main Spawn Fix",
         "tags": [
           "operations"
         ]

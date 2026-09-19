@@ -19,11 +19,18 @@
  * that appears in no runner inventory, must both still render — as `unknown`,
  * never as absent and never as healthy (`[policy: silent-empty-is-unknown]`).
  *
- * The same body also carries coord's ALERT severity rollup (`alerts`,
- * `alerts_scrape_up`) and the pageout sink's deliverability — see
- * `FleetHealthPayload`. They are declared here because every field this type
- * omits is silently discarded, which is how the rollup stayed invisible on
- * `/admin/coord/devops` while coord published it on every poll.
+ * The same body also carries coord's `conditions` rollup — which open
+ * conditions no agent is handling, what is waiting on the operator, and which
+ * deliberate settings are in effect — see `FleetHealthConditions`. It is
+ * declared here because every field this type omits is silently discarded,
+ * which is how an earlier rollup on this same body (the alert severity counts)
+ * stayed invisible on `/admin/coord/devops` while coord published it on every
+ * poll. Coord still serves those severity counts (`alerts`,
+ * `alerts_scrape_up`) for API consumers; this type no longer declares them
+ * because nothing in the web app reads them since the Conditions panel
+ * replaced the severity badges (plan
+ * `2026-09-18-notifications-are-agent-actions-and-alerts-are-agent-work`
+ * Phase 8).
  */
 
 import { useCallback, useEffect, useState } from "react";
@@ -35,7 +42,7 @@ import type { DeviceCredentialDark } from "./coordCredentialStatus";
  * `./utils` (which prefixes `ApiConfig.API_BASE_URL`). This is the exact
  * string the pipeline page used to poll; the lift was a move, not a
  * behaviour change, and the console has both conventions in it today
- * (`CoordNav`'s alerts and notifications badges are literals too). Reconcile
+ * (`CoordNav`'s notifications badge is a literal too). Reconcile
  * them deliberately, in a change that is about that — not as a side effect of
  * moving a hook between files.
  */
@@ -118,70 +125,101 @@ export interface FleetHealthDevice {
 }
 
 /**
- * Coord's unresolved-alert severity rollup, served on the SAME poll as the
- * device list (`fleet_health.rs` `get_fleet_health`).
- *
- * These are ALERT counts. `by_state` — the other rollup on this body — is
- * DEVICE LIVENESS and says nothing about alerts, which is exactly how a
- * steward came to read `{healthy: 8}` as an all-clear while 170+ criticals
- * stood (plan
- * `2026-08-31-devops-surface-renders-no-alert-signal`).
+ * The agent domain that owns an unclaimed condition — coord's closed
+ * `AgentDomain` enum (plan
+ * `2026-09-18-notifications-are-agent-actions-and-alerts-are-agent-work` D1).
+ * Listed for readers; the map below is keyed by `string` deliberately, so a
+ * domain newer than this build still renders instead of being dropped.
  */
-export interface FleetHealthAlertCounts {
-  critical: number;
-  warning: number;
-  info: number;
+export type FleetConditionsDomain =
+  | "merge_train"
+  | "dev_ops"
+  | "cleanup"
+  | "return_to_main"
+  | "pr_fix"
+  | "red_main_fix"
+  | "gate_owner"
+  | "plan_owner";
+
+/** One deliberate operator setting coord is reflecting back (D1 `Responder::Setting`). */
+export interface FleetHealthSettingInEffect {
+  /** The `coord.alerts.id` of the row reflecting the setting — its identity. */
+  alert_id?: number | null;
+  /** Coord's alert kind, e.g. `kill_switch_fired`, `fleet_device_drained`. */
+  kind: string;
+  /** When the setting took effect (ISO). */
+  since?: string | null;
+  /** Coord's own one-line description of the row. */
+  summary?: string | null;
 }
 
 /**
- * Whether the alert PAGEOUT sink is deliverable, from coord's zero-DB,
- * env-derived `alert_pageout_worker::sink_is_deliverable()`.
+ * **Is anything degraded that no agent is handling?** — coord's `conditions`
+ * block on `/coord/fleet/health` (plan
+ * `2026-09-18-notifications-are-agent-actions-and-alerts-are-agent-work`
+ * Phase 7), computed in the same visibility scope as `/coord/alerts`.
  *
- * `false` is the fleet's RECORDED CONFIGURATION, not an incident: the operator
- * confirmed 2026-08-05, across three shipped plans, that in-app is the
- * delivery surface and no Slack/email sink is wanted. Any surface rendering
- * this must say so calmly — an alarm on an intended state teaches the operator
- * to ignore the surface.
+ * Every count is `number | null`: `null` is coord saying it could not measure
+ * that number, and **renders UNKNOWN, never `0`**. `scrape_up: false` means
+ * the whole query failed and every count is `null`.
+ *
+ * The block itself is OPTIONAL: a coord predating Phase 7 serves none, and
+ * that is "coord does not report conditions yet", never "nothing unhandled".
+ * `fleetConditions.ts` is the one place this turns into operator-facing words.
  */
-export interface FleetHealthPageout {
-  sink_configured: boolean;
+export interface FleetHealthConditions {
+  open?: number | null;
+  claimed?: number | null;
+  unclaimed?: number | null;
+  unclaimed_oldest_age_secs?: number | null;
+  /** Keyed by {@link FleetConditionsDomain} — typed `string` so a new domain is not dropped. */
+  unclaimed_by_domain?: Record<string, number | null> | null;
+  /** OPEN operator-audience questions in the caller's tenant (exact count). */
+  awaiting_operator?: number | null;
+  /** Their ids, oldest first, CAPPED by coord — `awaiting_operator` is exact. */
+  awaiting_operator_question_ids?: string[] | null;
+  /**
+   * Open `Responder::Operator` alerts in scope. NOT comparable with
+   * `awaiting_operator` by subtraction: an answered alert that has not yet
+   * cleared is never re-asked, so it is an open alert with no open question
+   * for an ordinary reason. Read the two exact counts below instead; this is
+   * the fallback for a coord that does not serve them.
+   */
+  awaiting_operator_alerts?: number | null;
+  /** Open operator alerts with NO question at all (exact). Absent on an older coord. */
+  awaiting_operator_unasked?: number | null;
+  /**
+   * Open operator alerts whose question was ANSWERED, and which coord has not
+   * yet re-observed clear (exact). Absent on an older coord.
+   */
+  awaiting_operator_answered_uncleared?: number | null;
+  /** Oldest first, CAPPED by coord — see `settings_in_effect_count`. */
+  settings_in_effect?: FleetHealthSettingInEffect[] | null;
+  /** The exact number of settings in effect, beside the capped list. */
+  settings_in_effect_count?: number | null;
+  scrape_up?: boolean;
+  /** With `scrape_up: false`: which read failed (e.g. `agent_work`). */
+  unavailable_reason?: string | null;
 }
 
 export interface FleetHealthPayload {
   devices?: FleetHealthDevice[];
   /**
-   * Present on every coord that ships the rollup — which today's coord already
-   * does. It crossed the wire on every poll for months and was dropped HERE,
-   * by a type that declared only `devices`; that omission is the whole defect
-   * the plan above names.
+   * The Conditions rollup. Absent on a coord predating it — see
+   * {@link FleetHealthConditions}.
    */
-  alerts?: FleetHealthAlertCounts;
-  /**
-   * Coord's own verdict on whether the rollup query actually RAN
-   * (`alerts_scrape_up`, named for the house `coord_alert_pageout_scrape_up`
-   * convention). `false` means coord served `alerts` it could not measure, so
-   * its zeros are not a count — render UNKNOWN, never `0`
-   * (`[policy: silent-empty-is-unknown]`).
-   *
-   * **`undefined` is NOT `false`.** A coord predating the plan's Phase 2
-   * serves `alerts` and no flag at all, and that rollup is measured — reading
-   * absence as failure would dash a real number on every deploy of this page
-   * that lands ahead of coord's half (which is the deploy order this plan
-   * requires).
-   */
-  alerts_scrape_up?: boolean;
+  conditions?: FleetHealthConditions;
   /**
    * Coord's verdict on whether the per-device `credential_dark` join actually
    * RAN this tick (`fleet_health.rs`: `credential_dark_scrape_up`).
    *
-   * Exactly the `alerts_scrape_up` contract, one field over. `false` means
-   * every `credential_dark: null` beside it is coord's read failing, not a
-   * property of any machine. `undefined` is a coord that serves no such flag
-   * and is **not** `false` — a surface that read it as failure would report an
-   * outage nobody claimed.
+   * `false` means every `credential_dark: null` beside it is coord's read
+   * failing, not a property of any machine — render UNKNOWN, never healthy
+   * (`[policy: silent-empty-is-unknown]`). `undefined` is a coord that serves
+   * no such flag and is **not** `false` — a surface that read it as failure
+   * would report an outage nobody claimed.
    */
   credential_dark_scrape_up?: boolean;
-  pageout?: FleetHealthPageout;
 }
 
 export interface UseFleetHealthResult {

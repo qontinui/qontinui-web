@@ -8,7 +8,11 @@
  *
  * Added by the qontinui-web#1049 follow-up, under §6.4 ("a new console page
  * adds no new visual vocabulary — it composes the primitives, or it extends
- * the guide in the same PR"). The page that needed it is `/admin/coord/alerts`.
+ * the guide in the same PR"). The page that needed it was `/admin/coord/alerts`
+ * (deleted by plan
+ * `2026-09-18-notifications-are-agent-actions-and-alerts-are-agent-work`);
+ * `/sessions` is its consumer now. The alerts examples below are kept as the
+ * derivation of the rules, not as live call sites.
  *
  * ## Why a second component instead of a prop on `FilterTabs`
  *
@@ -37,7 +41,7 @@
  * ## Counts are a GROUP decision, and `–`-not-`0` still holds inside one
  *
  * A multi-select filter often cannot know its per-option counts without one
- * request per option — `/admin/coord/alerts` would pay a `limit=1` read per
+ * request per option — the (retired) alerts page would have paid a `limit=1` read per
  * kind, every poll — so unlike `FilterTabs` this strip may carry no counts at
  * all. That is a property of the STRIP, not of each chip: if **any** option
  * supplies a `count`, every chip renders the count slot, and R6 applies inside
@@ -101,7 +105,7 @@ export interface FilterChipsProps<V extends string> {
   onClear: () => void;
   /**
    * The `all` chip's label. Override to say something the plain word cannot —
-   * `/admin/coord/alerts` renders "all (list partial)" when coord served no
+   * the (retired) alerts page rendered "all (list partial)" when coord served no
    * kind vocabulary and the options are only the kinds already loaded.
    */
   allLabel?: ReactNode;

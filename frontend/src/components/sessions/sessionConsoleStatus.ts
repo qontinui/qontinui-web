@@ -3,7 +3,8 @@
  * console.
  *
  * Plan `2026-08-26-sessions-console-consolidation.md` Phase 1. Follows the
- * shape `alertStatus.ts` / `treeStatus.ts` established: **status derivation
+ * shape `planStatus.ts` / `treeStatus.ts` carry (first established by the
+ * since-retired `alertStatus.ts`): **status derivation
  * lives in a pure, unit-tested module** (R8), so the words an operator reads
  * are testable without a DOM and no page derives a status inline in JSX.
  *
