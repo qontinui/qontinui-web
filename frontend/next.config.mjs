@@ -150,10 +150,12 @@ const nextConfig = {
       ...(config.resolve.modules || ['node_modules']),
     ];
 
-    // Prevent duplicate library instances from symlinked packages
-    // Note: React/react-dom aliases removed — they conflict with Next.js SSR runtime
-    // which uses its own bundled React. Instead, delete react from symlinked packages'
-    // node_modules so they resolve to the host app's copy naturally.
+    // Prevent duplicate library instances from symlinked packages.
+    // UI Bridge is precompiled as ESM and imports React by package name. Pinning
+    // that package lookup to the app copy prevents Next's RSC condition from
+    // selecting react.react-server.js for the client bridge bundle, where hooks
+    // such as useSyncExternalStore are intentionally unavailable.
+    config.resolve.alias['react$'] = path.resolve(__dirname, 'node_modules/react/index.js');
     config.resolve.alias['@xyflow/react'] = path.resolve(__dirname, 'node_modules/@xyflow/react');
     config.resolve.alias['@xyflow/system'] = path.resolve(__dirname, 'node_modules/@xyflow/system');
 
