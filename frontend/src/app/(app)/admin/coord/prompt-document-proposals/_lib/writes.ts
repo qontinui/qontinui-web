@@ -25,6 +25,11 @@
  * "nothing on this page is flagged" only when the field was actually served.
  */
 
+// The `?id=` deep link into the findings reader has ONE builder, owned by the
+// reader itself (plan `2026-09-15-the-console-names-a-finding-it-cannot-open`).
+// Coord serves a by-id read even past the finding's `expires_at`, so the link
+// keeps working after the row has aged out of every list.
+import { findingHref } from "../../findings/_lib/findingStatus";
 import type { PromptDocumentWrite } from "../types";
 
 /** An explicit classification arrived and said this write widened authority. */
@@ -110,9 +115,9 @@ export function looseningClassificationPresent(
  * source, so that agreement is a convention each side documents, not something
  * either can enforce on the other.
  */
-export function sortWritesForFeed<T extends Pick<PromptDocumentWrite, "loosening">>(
-  writes: ReadonlyArray<T>
-): T[] {
+export function sortWritesForFeed<
+  T extends Pick<PromptDocumentWrite, "loosening">,
+>(writes: ReadonlyArray<T>): T[] {
   const flagged: T[] = [];
   const rest: T[] = [];
   for (const write of writes) (isLoosening(write) ? flagged : rest).push(write);
@@ -143,24 +148,6 @@ export function notificationHref(
 /** The `?ref=` deep link for a ref already known to be non-blank. */
 function notificationsFeedHref(ref: string): string {
   return `/admin/coord/notifications?ref=${encodeURIComponent(ref)}`;
-}
-
-/**
- * The `?id=` deep link into the findings reader, for an id known non-blank.
- *
- * Beside {@link notificationsFeedHref} rather than in the component, for the
- * same reason that one is here: R8 keeps a derivation out of JSX, and the two
- * arms of {@link ReasoningRef} are ONE decision — a component that built half
- * the hrefs itself could ship a row whose arm and whose link disagreed.
- *
- * `/admin/coord/findings` is the console's findings reader (plan
- * `2026-09-15-the-console-names-a-finding-it-cannot-open`, Phase 2). Coord
- * serves a by-id read even past the finding's `expires_at`, so this link keeps
- * working after the row has aged out of every list — which is exactly what an
- * old write's reasoning needs.
- */
-function findingsReaderHref(id: string): string {
-  return `/admin/coord/findings?id=${encodeURIComponent(id)}`;
 }
 
 /**
@@ -209,7 +196,7 @@ export function reasoningRef(
   if (write.version_number <= 1) {
     return {
       kind: "finding_only",
-      href: findingsReaderHref(findingId),
+      href: findingHref(findingId),
       findingId,
     };
   }
