@@ -226,9 +226,10 @@ function overrideFieldsFrom(raw: RawRepoOverride): RepoOverrideFields {
       raw.auto_merge_label_budget === null
         ? ""
         : String(raw.auto_merge_label_budget),
-    // A stored `[]` renders blank, the same as `null`: both mean "no extra
-    // paths" (the list is UNIONed with the tenant's), so a blank save that
-    // clears `[]` to `null` does not change behaviour.
+    // `null` and `[]` both render blank: both mean "no extra paths" (the list
+    // is UNIONed with the tenant's). The column is NOT NULL, so the paired
+    // coord change reports its stored `'{}'` as `null`; an older shape may
+    // send `[]`. A blank save writes `[]` back — see handleSave.
     escalate_paths_extra: (raw.escalate_paths_extra ?? []).join("\n"),
     auto_fix_red_main: pinChoice(raw.auto_fix_red_main),
   };
@@ -771,9 +772,10 @@ function RepoOverrideCard({
   //
   // Saves stay dirty-tracked: only edited fields are PATCHed, and an edited
   // field left blank / "inherit" sends `null`, which coord's PatchField treats
-  // as clear-to-inherit (SET col = NULL). So emptying a preloaded field IS the
-  // reset — there is deliberately no separate "reset" button. An omitted field
-  // is left unchanged (PatchField absent).
+  // as clear-to-inherit (SET col = NULL) — except escalate paths, whose column
+  // is NOT NULL, so blank sends `[]` (its inherit value). Emptying a preloaded
+  // field IS the reset — there is deliberately no separate "reset" button. An
+  // omitted field is left unchanged (PatchField absent).
   //
   // Until that coord change is deployed `raw_override` is absent, and so it is
   // if the profile read fails: the card then stays write-only (an untouched
@@ -947,13 +949,15 @@ function RepoOverrideCard({
               );
       }
       if (dirty.has("escalate_paths_extra")) {
-        // No non-empty lines = clear to inherit (`null`), not an empty
-        // override list.
+        // No non-empty lines sends `[]`, NOT `null`. The column is
+        // `TEXT[] NOT NULL DEFAULT '{}'`, so `'{}'` IS its "no extra paths"
+        // (inherit) value, and a coord build that maps `null` to
+        // `SET col = NULL` 500s the whole PATCH. `[]` works on every build.
         const paths = escalatePathsExtraText
           .split("\n")
           .map((s) => s.trim())
           .filter((s) => s.length > 0);
-        body.escalate_paths_extra = paths.length > 0 ? paths : null;
+        body.escalate_paths_extra = paths;
       }
       if (dirty.has("auto_merge_label_budget")) {
         body.auto_merge_label_budget =

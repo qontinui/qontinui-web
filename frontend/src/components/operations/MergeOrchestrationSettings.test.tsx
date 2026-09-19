@@ -1108,7 +1108,7 @@ describe("<MergeOrchestrationSettings> RepoOverrideCard preload", () => {
     });
   });
 
-  it("sends null when a preloaded field is cleared (clear to inherit)", async () => {
+  it("clears a preloaded field to inherit (null; [] for escalate paths)", async () => {
     await renderPreloaded(STORED);
     await waitFor(() => expect(input("repo-confidence").value).toBe("0.9"));
     fireEvent.change(input("repo-confidence"), { target: { value: "" } });
@@ -1122,8 +1122,9 @@ describe("<MergeOrchestrationSettings> RepoOverrideCard preload", () => {
     await waitFor(() => {
       expect(patchBody()).toEqual({
         confidence_threshold_override: null,
-        // Blank is clear-to-inherit, not an empty override list.
-        escalate_paths_extra: null,
+        // The column is NOT NULL: `[]` is its "no extra paths" value, and a
+        // `null` 500s on a coord build that writes SET col = NULL.
+        escalate_paths_extra: [],
         auto_fix_red_main: null,
       });
     });
@@ -1440,6 +1441,12 @@ describe("<MergeOrchestrationSettings> RepoOverrideCard preload", () => {
         escalate_paths_extra: ["app/**/page.tsx", "infra/**"],
       });
     });
+  });
+
+  it("renders a stored [] for escalate paths as blank, like null", async () => {
+    await renderPreloaded({ ...STORED, escalate_paths_extra: [] });
+    await waitFor(() => expect(input("repo-confidence").value).toBe("0.9"));
+    expect(input("repo-escalate-paths").value).toBe("");
   });
 
   it("shows an f64-widened confidence as its f32 value", async () => {
