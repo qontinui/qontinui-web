@@ -60,14 +60,12 @@ const DEFAULT_PREFS: NotificationPreferencesShape = {
   email_shares: true,
   email_replies: true,
   email_team_invites: true,
-  email_gate_action: true,
   in_app_mentions: true,
   in_app_comments: true,
   in_app_shares: true,
   in_app_replies: true,
   in_app_team_invites: true,
   in_app_project_updates: true,
-  in_app_gate_action: true,
 };
 
 // ---------------------------------------------------------------------------
@@ -96,10 +94,7 @@ describe("useNotificationPreferences", () => {
     });
 
     await waitFor(() => expect(result.current.isLoading).toBe(false));
-    expect(result.current.preferences).toMatchObject({
-      email_gate_action: true,
-      in_app_gate_action: true,
-    });
+    expect(result.current.preferences).toEqual(DEFAULT_PREFS);
     expect(result.current.error).toBeNull();
   });
 
@@ -120,7 +115,7 @@ describe("useNotificationPreferences", () => {
   it("save() PUTs only the changed field", async () => {
     fetchMock.mockResolvedValueOnce(jsonResponse(DEFAULT_PREFS));
     fetchMock.mockResolvedValueOnce(
-      jsonResponse({ ...DEFAULT_PREFS, email_gate_action: false })
+      jsonResponse({ ...DEFAULT_PREFS, email_mentions: false })
     );
 
     const { result } = renderHook(() => useNotificationPreferences(), {
@@ -129,7 +124,7 @@ describe("useNotificationPreferences", () => {
     await waitFor(() => expect(result.current.isLoading).toBe(false));
 
     await act(async () => {
-      await result.current.save({ email_gate_action: false });
+      await result.current.save({ email_mentions: false });
     });
 
     const putCalls = fetchMock.mock.calls.filter(
@@ -137,9 +132,9 @@ describe("useNotificationPreferences", () => {
     );
     expect(putCalls).toHaveLength(1);
     const [, opts] = putCalls[0] as [string, RequestInit];
-    expect(JSON.parse(opts.body as string)).toEqual({ email_gate_action: false });
+    expect(JSON.parse(opts.body as string)).toEqual({ email_mentions: false });
     await waitFor(() =>
-      expect(result.current.preferences?.email_gate_action).toBe(false)
+      expect(result.current.preferences?.email_mentions).toBe(false)
     );
   });
 
@@ -162,24 +157,24 @@ describe("useNotificationPreferences", () => {
     // optimistic-before-settle window); wrap in act so state updates flush.
     let savePromise!: Promise<void>;
     await act(async () => {
-      savePromise = result.current.save({ in_app_gate_action: false });
+      savePromise = result.current.save({ in_app_comments: false });
     });
 
     // Optimistic update should be visible before the PUT settles
     await waitFor(() =>
-      expect(result.current.preferences?.in_app_gate_action).toBe(false)
+      expect(result.current.preferences?.in_app_comments).toBe(false)
     );
 
     // Now settle the PUT and await the save
     resolvePut(
-      jsonResponse({ ...DEFAULT_PREFS, in_app_gate_action: false })
+      jsonResponse({ ...DEFAULT_PREFS, in_app_comments: false })
     );
     await act(async () => {
       await savePromise;
     });
 
     await waitFor(() => expect(result.current.isMutating).toBe(false));
-    expect(result.current.preferences?.in_app_gate_action).toBe(false);
+    expect(result.current.preferences?.in_app_comments).toBe(false);
   });
 
   it("rolls back the optimistic update on PUT failure", async () => {
