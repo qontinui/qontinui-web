@@ -77,10 +77,29 @@ describe("nothing still points at the retired route or its page testid", () => {
    * that would go red against the running app, which is what this sweep is
    * for.
    */
+  /**
+   * The one Playwright spec allowed to name the retired route: it asserts the
+   * redirect against the running app, and a redirect test has to name its
+   * source. Exempted by exact path, so a SECOND spec naming it still fails.
+   */
+  const REDIRECT_SPEC = join(
+    FRONTEND,
+    "tests",
+    "e2e",
+    "pages",
+    "admin-coord-retired-routes.spec.ts"
+  );
+
   const files = ROOTS.flatMap((r) => walk(r)).filter(
     (f) =>
-      !/\.test\.(ts|tsx)$/.test(f) && !/openapi-schema[^/\\]*\.json$/.test(f)
+      !/\.test\.(ts|tsx)$/.test(f) &&
+      !/openapi-schema[^/\\]*\.json$/.test(f) &&
+      f !== REDIRECT_SPEC
   );
+
+  it("still sees the redirect spec it exempts (the exemption is not stale)", () => {
+    expect(existsSync(REDIRECT_SPEC)).toBe(true);
+  });
 
   it("finds the trees it is asserting over", () => {
     // Without this the sweeps below would pass vacuously on an empty list.
