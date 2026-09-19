@@ -64,6 +64,7 @@ describe("coordNavModel", () => {
       "Plans",
       "Plan Library",
       "Questions",
+      "Findings",
       "Agents",
       "Agent Commands",
       "Agent Skills",

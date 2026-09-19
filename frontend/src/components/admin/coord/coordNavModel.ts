@@ -11,8 +11,8 @@
  * operator), carried over unchanged from the console's own dropdown nav:
  *
  *   Pipeline · Pull Requests · Gates · Alerts · Notifications   ← direct
- *   Work ▸    Plans / Plan Library / Questions / Agents / Agent Commands /
- *             Agent Skills / Prompt Log / History / Lands
+ *   Work ▸    Plans / Plan Library / Questions / Findings / Agents /
+ *             Agent Commands / Agent Skills / Prompt Log / History / Lands
  *   Merge ▸   Pull Decisions / Automation Rules / Gate Clearance /
  *             Merge Settings°
  *   Intent ▸  Prompt Documents / Policies / Decision Policies /
@@ -48,6 +48,7 @@ import {
   KeyRound,
   Layers,
   Library,
+  Lightbulb,
   MessageSquare,
   NotebookText,
   Package,
@@ -169,6 +170,19 @@ export const GROUPS: NavGroup[] = [
         label: "Questions",
         icon: Inbox,
         testId: "coord-nav-questions",
+      },
+      {
+        // Sits beside Questions deliberately: both are what an agent WROTE
+        // DOWN rather than what it did. Findings is coord's findings store —
+        // the reasoning an agent recorded with a write, and the only place a
+        // CREATED prompt document's reasoning exists, since coord emits no
+        // notice for a v1. `/admin/coord/prompt-document-proposals` deep-links
+        // into it at `?id=<finding_id>`. Plan
+        // `2026-09-15-the-console-names-a-finding-it-cannot-open`, Phase 2.
+        href: "/admin/coord/findings",
+        label: "Findings",
+        icon: Lightbulb,
+        testId: "coord-nav-findings",
       },
       {
         href: "/admin/coord/agents",

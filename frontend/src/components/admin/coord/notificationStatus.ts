@@ -25,6 +25,7 @@
  * severity/attention vocabulary here — the only row state is read/unread.
  */
 
+import { findingHref } from "@/app/(app)/admin/coord/findings/_lib/findingStatus";
 import { httpStatusOf } from "@/components/admin/coord/httpStatus";
 
 /** One row of coord's `GET /coord/notifications` response. */
@@ -336,10 +337,54 @@ export function linkedRefNotice(state: {
       ? `${base} It may also be excluded by the filters above — clear them.`
       : base;
   }
+  // The LAST arm, and the only one that gains the creation sentence.
+  //
+  // A `notification_ref` that reaches this page and matches nothing has one
+  // more explanation than "older" or "filtered", and it is the one this feed
+  // can never satisfy: the write may have CREATED its document, and coord
+  // emits no notice for a v1 (`notify_document_version_change`). The reasoning
+  // exists — as the finding its author filed — and since plan
+  // `2026-09-15-the-console-names-a-finding-it-cannot-open` there is a console
+  // reader for it, so the remedy is a route rather than an apology.
+  //
+  // It is said HERE and nowhere above on purpose. An EDIT's notice is a real
+  // event that is merely off the page, and telling that operator about
+  // creations would overshadow the one arm that is actually about his row.
   return (
     "The linked event is not on the page that is loaded. It may be older than " +
-    "these, or excluded by the filters above — clear them or load more."
+    "these, or excluded by the filters above — clear them or load more. " +
+    "It may also be a document that was CREATED rather than edited: a created " +
+    "document sends no notice, so its reasoning is in the finding its author " +
+    "filed — open it in the findings reader."
   );
+}
+
+/**
+ * The findings-reader link the `?ref=` banner offers — in the FALLBACK arm of
+ * {@link linkedRefNotice} and in no other, or `null`.
+ *
+ * The fallback sentence says "open it in the findings reader"; this is the
+ * link that sentence refers to, built from the ref the operator arrived with so
+ * he never edits a URL by hand. Its arm test mirrors the ranking above and is
+ * pinned against it by `notificationStatus.test.ts` over every input
+ * combination, so the link and the sentence cannot drift apart.
+ */
+export function linkedRefFindingHref(
+  state: Parameters<typeof linkedRefNotice>[0],
+  ref: string
+): string | null {
+  const trimmed = ref.trim();
+  if (!trimmed) return null;
+  if (
+    state.found ||
+    state.migrationPending ||
+    state.loading ||
+    state.error ||
+    state.pagingFailed
+  ) {
+    return null;
+  }
+  return findingHref(trimmed);
 }
 
 /**

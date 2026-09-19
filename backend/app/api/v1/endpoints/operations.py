@@ -10490,6 +10490,135 @@ async def list_prompt_document_writes(
     return response
 
 
+# ---------------------------------------------------------------------------
+# Findings — `GET /operations/coord/findings` → coord `GET /coord/findings`
+#
+# Backs `/admin/coord/findings`, the reader the landed-write feed's
+# `finding_only` reasoning reference links into. A document CREATE (v1) never
+# emits a notification — coord's `notify_document_version_change` says why — so
+# its `notification_ref` is a coord finding id with no notice to open, and
+# before this route the console could only print the uuid.
+#
+# Plan `2026-09-15-the-console-names-a-finding-it-cannot-open`, Phase 2.
+#
+# **Verbatim forward, and the refusal is coord's.** Every one of coord's six
+# accepted keys — `finding_id`, `resource_keys`, `topic`, `kind`, `limit`,
+# `triaged` — is declared here and forwarded ONLY when the caller set it, the
+# shape `get_coord_notifications` established. The id and the string filters
+# are NOT re-validated at this hop: coord answers an unknown key with a typed
+# `400 {"error": "unknown_query_parameter", "unknown": [...], "accepted": [...]}`
+# and a malformed id with `invalid_query_parameter`, and a second validator here
+# would either shadow that message with a duller one or drift from it. The two
+# TYPED params are the exception, exactly as on the notifications sibling:
+# FastAPI parses `limit` as an int and `triaged` as a bool, so `limit=abc` is a
+# 422 here, and coord's third triage spelling `any` is expressed by OMITTING the
+# key (coord's own default) rather than by sending it. FastAPI
+# ignores query keys it does not declare, so an unknown key never reaches coord
+# through this route — which is why the page sends none.
+#
+# `resource_keys` is a LIST so a repeated key stays repeated on the wire
+# (`httpx.QueryParams` encodes a sequence as `?resource_keys=a&resource_keys=b`,
+# the same property the alerts proxy relies on). A single comma-joined value
+# arrives as one element and is forwarded byte-identically, so both spellings
+# reach coord exactly as the caller sent them.
+# ---------------------------------------------------------------------------
+
+
+@router.get("/coord/findings")
+async def get_coord_findings(
+    finding_id: str | None = Query(
+        default=None,
+        description=(
+            "Read ONE finding by id. Coord serves the row even when it is past "
+            "``expires_at`` — expiry is a fact about the row, not a reason to "
+            "hide it — and answers another tenant's id, or no such id, with an "
+            "EMPTY PAGE rather than a 404."
+        ),
+    ),
+    resource_keys: list[str] | None = Query(
+        default=None,
+        description="Repeatable. Restrict to findings tagged with these resource keys.",
+    ),
+    topic: str | None = Query(default=None, description="Filter by finding topic."),
+    kind: str | None = Query(default=None, description="Filter by finding kind."),
+    limit: int | None = Query(
+        default=None,
+        description=(
+            "Page size. Forwarded verbatim — coord owns the default and the clamp."
+        ),
+    ),
+    triaged: bool | None = Query(
+        default=None,
+        description=(
+            "Restrict to findings that have (``true``) or have not (``false``) "
+            "been triaged. ``false`` deliberately excludes durable dossier heads "
+            "and fleet-infrastructure rows, so a count under it is NARROWER than "
+            "the unfiltered total by design."
+        ),
+    ),
+    tenant_id: UUID = Depends(get_tenant_id),
+) -> Any:
+    """Return ``coord.findings`` rows for the calling operator's tenant.
+
+    Response envelope mirrors coord's:
+    ``{"available", "count", "findings": [...], "finding_id_applied",
+    "kind_applied", "limit", "resource_keys_applied" (a COUNT),
+    "resource_keys_truncated", "triaged_applied" ("any" | "false" | "true")}``,
+    plus ``kind_excluded`` / ``scope_restricted`` on a ``triaged=false`` read.
+    The ``*_applied`` echoes are what let the page say which filter coord
+    actually honoured rather than which one it was asked for — a filter coord
+    dropped is otherwise invisible.
+
+    **There is no ``expired`` boolean.** Expiry is derived client-side from
+    ``expires_at``, and it has to be: a ``kind=dossier`` row is a durable
+    dossier head carrying a 100-year TTL, so a server-side "expiring" flag
+    would be true of every row that never expires in practice.
+
+    Degrade rather than 502: coord's ``/coord/findings`` twin lands in a
+    separate PR, so a 404 here is the ordinary pre-deploy window and must read
+    as "not deployed yet", never as an empty findings store. Same
+    ``unavailable`` / ``unavailable_kind`` pair the landed-write feed uses.
+    """
+    params: dict[str, Any] = {}
+    if finding_id is not None:
+        params["finding_id"] = finding_id
+    if resource_keys:
+        params["resource_keys"] = resource_keys
+    if topic is not None:
+        params["topic"] = topic
+    if kind is not None:
+        params["kind"] = kind
+    if limit is not None:
+        params["limit"] = limit
+    if triaged is not None:
+        params["triaged"] = triaged
+    try:
+        return await _proxy_coord_get(
+            "/coord/findings", params=params or None, tenant_id=tenant_id
+        )
+    except HTTPException as exc:
+        if exc.status_code in _COORD_ABSENT_STATUSES:
+            return {
+                "available": False,
+                "count": 0,
+                "findings": [],
+                "unavailable": (
+                    "coord has no findings reader yet — its `/coord/findings` "
+                    "route has not deployed. Findings cannot be listed, which "
+                    "is not the same as there being none."
+                    if exc.status_code == 404
+                    else (
+                        "coord did not answer the findings store "
+                        f"(HTTP {exc.status_code})."
+                    )
+                ),
+                "unavailable_kind": (
+                    "not_deployed" if exc.status_code == 404 else "unreachable"
+                ),
+            }
+        raise
+
+
 @router.put("/coord/policies/system/{system_rule_id}/override")
 async def put_coord_policy_override(
     system_rule_id: str,
