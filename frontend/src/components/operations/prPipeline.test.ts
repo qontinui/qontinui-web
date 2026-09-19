@@ -16,6 +16,7 @@ import {
   buildPipelineRows,
   candidateChurnBadgeLabel,
   candidateChurnBadgeTitle,
+  compareByRecency,
   deriveCandidateChurn,
   derivePipelineHealth,
   economicsFor,
@@ -26,6 +27,7 @@ import {
   matchesFilter,
   matchesQuery,
   pickActiveProposal,
+  rowRecencyMs,
   type PipelineRow,
   type UnifiedStatus,
   type UnifiedStatusKind,
@@ -1731,16 +1733,19 @@ describe("merged rows", () => {
       []
     )[0];
     expect(row.status.kind).toBe("merged");
-    expect(matchesFilter(row, "all")).toBe(false);
+    expect(matchesFilter(row, "all")).toBe(true);
     // No sha to cite, so the reason names the branch only — never a fake sha.
     expect(row.status.reason).toBe("landed on main");
   });
 
-  it("keeps merged rows out of the live list and in their own tab", () => {
+  it("lists merged rows on All PRs as well as on their own tab", () => {
     const rows = buildPipelineRows([MERGED_A, pr({ pr_number: 12 })], []);
     expect(
-      rows.filter((r) => matchesFilter(r, "all")).map((r) => r.prNumber)
-    ).toEqual([12]);
+      rows
+        .filter((r) => matchesFilter(r, "all"))
+        .map((r) => r.prNumber)
+        .sort()
+    ).toEqual([10, 12]);
     expect(
       rows.filter((r) => matchesFilter(r, "merged")).map((r) => r.prNumber)
     ).toEqual([10]);
@@ -1843,7 +1848,7 @@ describe("merged rows", () => {
     expect(rows).toHaveLength(1);
     expect(rows[0].status.kind).toBe("merged");
     expect(matchesFilter(rows[0], "merged")).toBe(true);
-    expect(matchesFilter(rows[0], "all")).toBe(false);
+    expect(matchesFilter(rows[0], "all")).toBe(true);
     // ...and NOT still in flight. The proposal lags the land, so keying the
     // in-flight arm on the proposal alone would file one row under two tabs.
     expect(matchesFilter(rows[0], "in-flight")).toBe(false);
@@ -2269,5 +2274,105 @@ describe("economicsFor — coord keys by owner/name, rows may use the short name
   it("is undefined, not a zeroed row, for a repo coord did not report", () => {
     expect(economicsFor("qontinui/qontinui-runner", econ)).toBeUndefined();
     expect(economicsFor("qontinui/qontinui-runner", undefined)).toBeUndefined();
+  });
+});
+
+describe("compareByRecency (All PRs ordering)", () => {
+  // One row per status band, deliberately in an order that disagrees with the
+  // triage sort: the conflict (rank 0) is the OLDEST, the merged row (rank 10)
+  // is the NEWEST.
+  const rows = () =>
+    buildPipelineRows(
+      [
+        pr({ pr_number: 1, branch: "b-conflict" }),
+        pr({ pr_number: 2, branch: "b-queued" }),
+        pr({ pr_number: 3, branch: "b-ready", last_refreshed_at: ago(30) }),
+        pr({
+          pr_number: 4,
+          branch: "b-merged",
+          pr_state: "merged",
+          merged_at: ago(1),
+          merge_commit_sha: "eeeeeee5555",
+        }),
+      ],
+      [
+        proposal({
+          proposal_id: "pc",
+          status: "conflict",
+          updated_at: ago(300),
+          repos: [repoDetail({ branch: "b-conflict" })],
+        }),
+        proposal({
+          proposal_id: "pq",
+          status: "queued",
+          updated_at: ago(60),
+          repos: [repoDetail({ branch: "b-queued" })],
+        }),
+      ]
+    );
+
+  it("orders across status bands, newest first, merged rows included", () => {
+    // Precondition: the triage sort really does band these — otherwise the
+    // assertion below would pass without proving the re-sort did anything.
+    expect(rows().map((r) => r.prNumber)).not.toEqual([4, 3, 2, 1]);
+
+    const sorted = rows()
+      .filter((r) => matchesFilter(r, "all"))
+      .sort(compareByRecency);
+    // Merged row by its LAND time (1m), then the ready PR by its refresh
+    // stamp (30m), the queued proposal (60m) and the conflict (300m).
+    expect(sorted.map((r) => r.prNumber)).toEqual([4, 3, 2, 1]);
+  });
+
+  it("orders a merged row by land time, not its refresh stamp", () => {
+    const [merged] = buildPipelineRows(
+      [
+        pr({
+          pr_state: "merged",
+          merged_at: ago(500),
+          last_refreshed_at: ago(1),
+          merge_commit_sha: "fffffff6666",
+        }),
+      ],
+      []
+    );
+    expect(rowRecencyMs(merged)).toBe(new Date(ago(500)).getTime());
+  });
+
+  it("falls back to updatedAt for a merged row coord gave no merged_at", () => {
+    const [merged] = buildPipelineRows(
+      [pr({ pr_state: "merged", last_refreshed_at: ago(3) })],
+      []
+    );
+    expect(merged.mergedAt).toBeNull();
+    expect(rowRecencyMs(merged)).toBe(new Date(ago(3)).getTime());
+  });
+
+  it("treats an unparseable timestamp as no timestamp, not NaN", () => {
+    const [row] = buildPipelineRows([pr()], []);
+    const bad = { ...row, updatedAt: "not-a-date", mergedAt: null };
+    expect(rowRecencyMs(bad)).toBe(0);
+    // A NaN would make the comparator return NaN and corrupt the whole sort.
+    expect([bad, row].sort(compareByRecency)[0]).toBe(row);
+  });
+
+  it("sinks rows with no timestamp and breaks ties on key", () => {
+    const [a, b] = buildPipelineRows(
+      [
+        pr({ pr_number: 1, branch: "b-a", last_refreshed_at: ago(5) }),
+        pr({ pr_number: 2, branch: "b-b", last_refreshed_at: ago(5) }),
+      ],
+      []
+    );
+    const undated = {
+      ...a,
+      key: "z::undated",
+      updatedAt: null,
+      mergedAt: null,
+    };
+    expect(rowRecencyMs(undated)).toBe(0);
+    const sorted = [undated, b, a].sort(compareByRecency);
+    expect(sorted[2]).toBe(undated);
+    expect(sorted.slice(0, 2).map((r) => r.key)).toEqual([a.key, b.key].sort());
   });
 });

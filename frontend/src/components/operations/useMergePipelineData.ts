@@ -114,7 +114,7 @@ const MIN_BATCH_SPACING_MS = 3_000;
 export const MERGED_LOOKBACK_HOURS = 48;
 /**
  * Cadence for the recently-merged rows — deliberately ~30x slower than the hot
- * poll, and only ticking while the Merged tab is open.
+ * poll, and only ticking while the Merged or All PRs tab is open.
  *
  * `?include_merged=` makes coord run `query_recently_merged_prs`, which
  * resolves a deploy surface per repo (a git-ancestry probe per merged PR) on
@@ -133,8 +133,8 @@ const MAX_RECONNECT_ATTEMPTS = 5;
 export interface MergePipelineOptions {
   /**
    * Fetch recently-merged rows. False (default) keeps the hot poll on the
-   * cheap open-PR query; the caller sets it only while the Merged tab is the
-   * visible one.
+   * cheap open-PR query; the caller sets it only while a tab that shows landed
+   * PRs (Merged, All PRs) is the visible one.
    */
   includeMerged?: boolean;
 }
@@ -146,8 +146,8 @@ export interface MergePipelineData {
   /**
    * Recently-merged rows for the Merged tab. `null` until the first merged
    * fetch resolves, and it only ever runs while the caller passes
-   * `includeMerged` — so this stays null for the whole session on the other
-   * tabs, which is exactly the point.
+   * `includeMerged` — so this stays null for the whole session on the tabs
+   * that show no landed PRs, which is exactly the point.
    */
   mergedPrs: PrRow[] | null;
   /**
@@ -311,7 +311,8 @@ export function useMergePipelineData(
   }, []);
 
   // Recently-merged rows. Fetched ONLY while the caller asks for them (the
-  // Merged tab is open) and on a slow cadence — see MERGED_POLL_INTERVAL_MS
+  // Merged or All PRs tab is open) and on a slow cadence — see
+  // MERGED_POLL_INTERVAL_MS
   // for why this must never ride the hot poll.
   const fetchMergedPrs = useCallback(async () => {
     try {
@@ -347,8 +348,11 @@ export function useMergePipelineData(
         setMergedPrs(list.filter(isMergedPr));
       }
     } catch (err) {
+      // Keep whatever is held, INCLUDING null. Coercing null to [] here made a
+      // failed first read look like "nothing landed": the Merged label fell
+      // from coord's cheap count to 0. Null keeps that label honest, and it
+      // matters more now the read also runs on the default All PRs tab.
       log.warn("fetchMergedPrs failed — keeping last known merged rows", err);
-      if (!cleanedUpRef.current) setMergedPrs((prev) => prev ?? []);
     }
   }, []);
 
@@ -755,8 +759,8 @@ export function useMergePipelineData(
   // Merged rows ride their OWN slow timer, and only while the caller wants
   // them. Deliberately not folded into `fetchAll`: that is the 2s loop, and
   // the merged query is the expensive one (see MERGED_POLL_INTERVAL_MS).
-  // Leaving the Merged tab clears the timer; the last rows stay in state so
-  // returning to the tab renders instantly while the refetch runs.
+  // Leaving the Merged/All PRs tabs clears the timer; the last rows stay in
+  // state so returning to the tab renders instantly while the refetch runs.
   useEffect(() => {
     if (!includeMerged) return;
     fetchMergedPrs();
