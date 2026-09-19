@@ -37,6 +37,8 @@ function measured(
     awaiting_operator: 0,
     awaiting_operator_question_ids: [],
     awaiting_operator_alerts: 0,
+    awaiting_operator_unasked: 0,
+    awaiting_operator_answered_uncleared: 0,
     settings_in_effect: [],
     settings_in_effect_count: 0,
     scrape_up: true,
@@ -181,15 +183,48 @@ describe("summarizeFleetConditions — the unknown states", () => {
   });
 });
 
-describe("summarizeFleetConditions — operator alerts without a question", () => {
-  it("says so, and is never green, when alerts outnumber questions", () => {
+describe("summarizeFleetConditions — operator alerts with no open question", () => {
+  it("reads 'not yet asked' from coord's exact count, never green, never 'Nothing unhandled'", () => {
     const s = summarize({
-      conditions: measured({ awaiting_operator: 0, awaiting_operator_alerts: 3 }),
+      conditions: measured({
+        awaiting_operator: 0,
+        awaiting_operator_alerts: 3,
+        awaiting_operator_unasked: 3,
+        awaiting_operator_answered_uncleared: 0,
+      }),
     });
-    expect(s.headline).toBe("Nothing unhandled");
-    expect(s.unaskedOperatorAlerts).toBe(3);
+    expect(s.operatorCountsExact).toBe(true);
+    expect(s.operatorAlertsUnasked).toBe(3);
+    expect(s.headline).toBe("3 operator alerts not yet asked");
+    expect(s.headline).not.toBe("Nothing unhandled");
     expect(s.level).toBe("amber");
-    expect(s.detail).toContain("3 operator alerts have no question yet");
+    expect(s.detail).toContain("3 operator alerts not yet asked");
+  });
+
+  it("does NOT call an answered, uncleared alert unasked — the ordinary case", () => {
+    // One question answered; coord has not yet seen the condition clear. An
+    // answered alert is never re-asked, so alerts - questions = 1 here, and
+    // the old subtraction called it "no question yet".
+    const s = summarize({
+      conditions: measured({
+        awaiting_operator: 0,
+        awaiting_operator_alerts: 1,
+        awaiting_operator_unasked: 0,
+        awaiting_operator_answered_uncleared: 1,
+      }),
+    });
+    expect(s.operatorAlertsUnasked).toBe(0);
+    expect(s.operatorAlertsAnsweredUncleared).toBe(1);
+    expect(s.detail).not.toContain("not yet asked");
+    expect(s.detail).toContain("1 answered, waiting for coord to see it clear");
+    expect(s.headline).toBe("1 answered operator alert not yet clear");
+    expect(s.level).toBe("amber");
+  });
+
+  it("is green only with every operator count exact and zero", () => {
+    const s = summarize({ conditions: measured() });
+    expect(s.headline).toBe("Nothing unhandled");
+    expect(s.level).toBe("green");
   });
 
   it("stays red when a question also waits", () => {
@@ -198,18 +233,57 @@ describe("summarizeFleetConditions — operator alerts without a question", () =
         awaiting_operator: 1,
         awaiting_operator_question_ids: ["q"],
         awaiting_operator_alerts: 2,
+        awaiting_operator_unasked: 1,
+        awaiting_operator_answered_uncleared: 0,
       }),
     });
     expect(s.level).toBe("red");
-    expect(s.unaskedOperatorAlerts).toBe(1);
-    expect(s.detail).toContain("1 operator alert has no question yet");
+    expect(s.detail).toContain("1 operator alert not yet asked");
   });
 
-  it("is not green when the operator-alert count is unmeasured", () => {
+  it("falls back to neutral wording, naming no cause, on a coord without the exact counts", () => {
     const s = summarize({
-      conditions: measured({ awaiting_operator_alerts: null }),
+      conditions: measured({
+        awaiting_operator: 0,
+        awaiting_operator_alerts: 2,
+        awaiting_operator_unasked: undefined,
+        awaiting_operator_answered_uncleared: undefined,
+      }),
     });
-    expect(s.unaskedOperatorAlerts).toBeNull();
+    expect(s.operatorCountsExact).toBe(false);
+    expect(s.operatorAlertsUnasked).toBeNull();
+    expect(s.operatorAlertsBeyondQuestions).toBe(2);
+    expect(s.detail).toContain(
+      "2 operator alerts open beyond the questions waiting on you"
+    );
+    expect(s.detail).not.toContain("not yet asked");
+    expect(s.detail).not.toContain("answered");
+    expect(s.headline).toBe("2 operator alerts open beyond your questions");
+    expect(s.level).toBe("amber");
+  });
+
+  it("never goes green on the fallback, even with nothing beyond the questions", () => {
+    const s = summarize({
+      conditions: measured({
+        awaiting_operator_unasked: null,
+        awaiting_operator_answered_uncleared: 0,
+      }),
+    });
+    expect(s.operatorCountsExact).toBe(false);
+    expect(s.operatorAlertsBeyondQuestions).toBe(0);
+    expect(s.level).toBe("amber");
+    expect(s.headline).toBe("No agent work unhandled");
+  });
+
+  it("is not green when the operator-alert counts are unmeasured", () => {
+    const s = summarize({
+      conditions: measured({
+        awaiting_operator_alerts: null,
+        awaiting_operator_unasked: null,
+        awaiting_operator_answered_uncleared: null,
+      }),
+    });
+    expect(s.operatorAlertsBeyondQuestions).toBeNull();
     expect(s.level).toBe("amber");
     expect(s.detail).toContain("unknown");
   });
@@ -319,6 +393,17 @@ describe("summarizeFleetConditions — settings in effect", () => {
       }),
     });
     expect(s.settingsNotListed).toBe(25);
+  });
+
+  it("says the count is unknown when coord lists settings but serves no total", () => {
+    const s = summarize({
+      conditions: measured({
+        settings_in_effect: [{ alert_id: 1, kind: "kill_switch_fired" }],
+        settings_in_effect_count: null,
+      }),
+    });
+    expect(s.settingsNotListed).toBe(0);
+    expect(s.settingsCountUnknown).toBe(true);
   });
 
   it("separates 'none in effect' from 'not reported'", () => {
