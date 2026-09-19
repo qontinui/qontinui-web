@@ -32,6 +32,15 @@
  *   who must act. An unclaimed condition is agents' work that no agent has
  *   picked up — degraded, so amber — while an awaiting-operator question is
  *   the one thing on this panel only a human can clear.
+ * - **An operator condition with no question yet is never green.** Coord
+ *   counts open `Responder::Operator` alerts (`awaiting_operator_alerts`)
+ *   beside the questions it has raised; more alerts than questions means
+ *   something needs the operator that the question queue does not show yet,
+ *   and the panel says so rather than "nothing is waiting on you".
+ * - **A failed latest read is amber, whatever the retained answer said.** The
+ *   numbers stay on screen, labelled as the last answer, but a verdict that
+ *   is not being re-confirmed may not look like one that is — not green, and
+ *   not red either.
  * - **Settings in effect are context, never a fault.** A drain, a kill switch
  *   or a removed runner is a deliberate operator setting coord is reflecting
  *   back (D2); it is listed so the operator sees what he turned on, and it
@@ -99,8 +108,12 @@ export interface ConditionsDomainCount {
 }
 
 export interface ConditionsSetting {
+  /** The alert row's id — the setting's identity (two drains are two rows). */
+  alertId: number | null;
   /** Coord's raw kind — for a `title`, never for the label. */
   kind: string;
+  /** Coord's own one-line description of the row, for the `title`. */
+  summary?: string;
   label: string;
   /** Raw ISO stamp, when coord served one. */
   since?: string;
@@ -123,10 +136,24 @@ export interface FleetConditionsSummary {
   byDomain: ConditionsDomainCount[];
   awaitingOperator: number | null;
   awaitingOperatorQuestionIds: string[];
+  /** Open operator-responder alerts coord counts; `null` = not measured. */
+  awaitingOperatorAlerts: number | null;
+  /**
+   * Operator alerts with no question yet: `awaitingOperatorAlerts` beyond
+   * `awaitingOperator`. `null` when either side is unmeasured.
+   */
+  unaskedOperatorAlerts: number | null;
   /** Where "waiting on you" leads: the one question, or the queue. */
   questionsHref: string;
   /** `null` = not measured (unknown), `[]` = measured and none in effect. */
   settings: ConditionsSetting[] | null;
+  /**
+   * Settings coord counted but did not list (its list is capped). `0` when
+   * the list is complete or the count is unknown.
+   */
+  settingsNotListed: number;
+  /** With a failed scrape: which read coord says failed. */
+  unavailableReason: string | null;
 }
 
 function count(v: unknown): number | null {
@@ -188,8 +215,17 @@ function settingsList(
       typeof entry.since === "string" && entry.since.length > 0
         ? entry.since
         : undefined;
+    const summary =
+      typeof entry.summary === "string" && entry.summary.trim() !== ""
+        ? entry.summary.trim()
+        : undefined;
     out.push({
+      alertId:
+        typeof entry.alert_id === "number" && Number.isFinite(entry.alert_id)
+          ? entry.alert_id
+          : null,
       kind: entry.kind,
+      ...(summary ? { summary } : {}),
       label: SETTING_LABELS[entry.kind] ?? humanise(entry.kind),
       since,
       sinceLabel: relativeTime(since, {
@@ -226,8 +262,12 @@ const EMPTY: Omit<FleetConditionsSummary, "state" | "level" | "headline" | "deta
   byDomain: [],
   awaitingOperator: null,
   awaitingOperatorQuestionIds: [],
+  awaitingOperatorAlerts: null,
+  unaskedOperatorAlerts: null,
   questionsHref: QUESTION_QUEUE_HREF,
   settings: null,
+  settingsNotListed: 0,
+  unavailableReason: null,
 };
 
 export interface SummarizeFleetConditionsInput {
@@ -286,37 +326,77 @@ export function summarizeFleetConditions({
   }
 
   if (c.scrape_up === false) {
+    const reason =
+      typeof c.unavailable_reason === "string" && c.unavailable_reason !== ""
+        ? c.unavailable_reason
+        : null;
     return {
       ...EMPTY,
       state: "unknown-scrape-failed",
       level: "amber",
       headline: "Unknown — health query failed",
+      unavailableReason: reason,
       detail:
-        "Coord could not run its conditions query on this poll. Every count is unknown — this is not zero conditions." +
+        "Coord could not run its conditions query on this poll" +
+        (reason ? ` (coord says: ${reason})` : "") +
+        ". Every count is unknown — this is not zero conditions." +
         staleNote,
     };
   }
 
   const ids = questionIds(c.awaiting_operator_question_ids);
+  const settings = settingsList(c.settings_in_effect, nowMs);
+  const settingsTotal = count(c.settings_in_effect_count);
+  const awaitingOperator = count(c.awaiting_operator);
+  const awaitingOperatorAlerts = count(c.awaiting_operator_alerts);
+  const unaskedOperatorAlerts =
+    awaitingOperator === null || awaitingOperatorAlerts === null
+      ? null
+      : Math.max(0, awaitingOperatorAlerts - awaitingOperator);
   const base = {
     open: count(c.open),
     claimed: count(c.claimed),
     unclaimed: count(c.unclaimed),
     unclaimedOldestAgeSecs: count(c.unclaimed_oldest_age_secs),
     byDomain: domainBreakdown(c.unclaimed_by_domain),
-    awaitingOperator: count(c.awaiting_operator),
+    awaitingOperator,
     awaitingOperatorQuestionIds: ids,
+    awaitingOperatorAlerts,
+    unaskedOperatorAlerts,
     questionsHref: questionsHrefFor(ids),
-    settings: settingsList(c.settings_in_effect, nowMs),
+    settings,
+    settingsNotListed:
+      settings !== null && settingsTotal !== null
+        ? Math.max(0, settingsTotal - settings.length)
+        : 0,
+    unavailableReason: null,
   };
 
-  const waiting = base.awaitingOperator;
+  const waiting = awaitingOperator;
   const waitingSentence =
-    waiting === null
+    (waiting === null
       ? "Whether anything is waiting on you is unknown."
       : waiting > 0
         ? `${plural(waiting, "question is", "questions are")} waiting on you.`
-        : "Nothing is waiting on you.";
+        : "No question is waiting on you.") +
+    (unaskedOperatorAlerts === null
+      ? " Whether any condition that needs you still has no question is unknown."
+      : unaskedOperatorAlerts > 0
+        ? ` ${plural(unaskedOperatorAlerts, "operator alert has", "operator alerts have")} no question yet.`
+        : "");
+
+  /**
+   * One place decides the colour, so no branch can forget a clause:
+   * red iff a question waits on the operator; green only on a measured
+   * all-clear with every operator condition asked about; a failed latest
+   * read is amber whatever the retained answer says.
+   */
+  const levelFor = (allClear: boolean): FleetConditionsLevel => {
+    if (error) return "amber";
+    if (waiting !== null && waiting > 0) return "red";
+    const operatorSettled = waiting === 0 && unaskedOperatorAlerts === 0;
+    return allClear && operatorSettled ? "green" : "amber";
+  };
 
   // `scrape_up` absent on a block that is otherwise present is a coord that
   // did not say whether its query ran. The counts may be real, but the one
@@ -327,7 +407,7 @@ export function summarizeFleetConditions({
     return {
       ...base,
       state: "unknown-count-missing",
-      level: waiting !== null && waiting > 0 ? "red" : "amber",
+      level: levelFor(false),
       headline:
         base.unclaimed === null
           ? "Unknown — coord served no unclaimed count"
@@ -351,7 +431,7 @@ export function summarizeFleetConditions({
     return {
       ...base,
       state: "clear",
-      level: waiting === null ? "amber" : waiting > 0 ? "red" : "green",
+      level: levelFor(true),
       headline: "Nothing unhandled",
       detail: `${openClause} ${waitingSentence}${staleNote}`,
     };
@@ -364,7 +444,7 @@ export function summarizeFleetConditions({
   return {
     ...base,
     state: "unhandled",
-    level: waiting !== null && waiting > 0 ? "red" : "amber",
+    level: levelFor(false),
     headline: `${plural(base.unclaimed, "condition", "conditions")} no agent is handling`,
     detail: `No agent has claimed ${base.unclaimed === 1 ? "it" : "them"} yet; ${age}. ${waitingSentence}${staleNote}`,
   };

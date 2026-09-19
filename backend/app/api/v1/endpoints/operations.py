@@ -4255,14 +4255,29 @@ async def get_fleet_health(
     ``kv_bucket`` and ``as_of``. This route declares no
     ``response_model``, so nothing here filters a field coord adds.
 
-    Those nine are what coord emits **today**. Two more are read by this
-    repo's client and appear nowhere in coord's source: ``FleetHealthPayload``
-    declares ``alerts_scrape_up`` and ``pageout``, and the Dev Ops page
-    branches on ``alerts_scrape_up === false``. They are FORWARD
-    declarations — deliberately absence-tolerant, since the client must
-    treat an absent flag as *measured* — so they are not part of this
-    contract and this route synthesises neither. The branch reading them
-    is unreachable until coord grows them.
+    Coord also serves ``alerts_scrape_up`` (beside the ``alerts``
+    severity rollup, for API consumers), ``credential_dark_scrape_up``
+    and — since plan
+    ``2026-09-18-notifications-are-agent-actions-and-alerts-are-agent-work``
+    Phase 7 — the ``conditions`` block. The web app reads
+    ``credential_dark_scrape_up`` and ``conditions``; nothing in it reads
+    ``alerts`` / ``alerts_scrape_up`` any more (the severity badges they fed
+    were replaced by the Dev Ops Conditions panel in Phase 8), and it has
+    never read a ``pageout`` field.
+
+    ``conditions`` answers "is anything degraded that no agent is
+    handling?", computed under the same visibility predicate as
+    ``/coord/alerts``: ``open`` / ``claimed`` / ``unclaimed`` (agent work by
+    lease state), ``unclaimed_oldest_age_secs``, ``unclaimed_by_domain``,
+    ``awaiting_operator`` + ``awaiting_operator_question_ids`` (open
+    operator questions; the id list is capped, the count exact),
+    ``awaiting_operator_alerts`` (open operator-responder alerts),
+    ``settings_in_effect`` (capped list of ``{alert_id, kind, since,
+    summary}``) + ``settings_in_effect_count``, and ``scrape_up``. On a
+    failed read coord sends ``scrape_up: false`` with every count ``null``
+    and an ``unavailable_reason`` — never zeros. The block is ABSENT on a
+    coord predating Phase 7, which callers render as UNKNOWN, not as
+    "nothing unhandled". This route synthesises none of it.
 
     The contract is written down because the sibling resource-samples
     route learned the lesson first: this
