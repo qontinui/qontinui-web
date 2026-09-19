@@ -140,6 +140,7 @@ export function IntentSection({
                   what="this part of the description"
                   message={entry.error ?? ""}
                   uiBridgeId={`overview.summary.${sectionId}-${entry.name}.error`}
+                  announce={false}
                 />
               ) : (
                 <IntentBody entry={entry} id={`${sectionId}-${entry.name}`} />

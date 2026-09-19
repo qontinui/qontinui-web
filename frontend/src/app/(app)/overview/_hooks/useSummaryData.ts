@@ -105,14 +105,14 @@ async function loadProgress(): Promise<Progress> {
 }
 
 /**
- * `tenantId` is the active project. Reads wait until it has resolved (the
- * `X-Qontinui-Active-Tenant` header is taken from the same selection, so an
- * earlier read could name a stale project), and re-run when it changes.
+ * `tenantId` is the active project. Nothing is read while `hold` is true:
+ * the caller holds until the project list has resolved (the
+ * `X-Qontinui-Active-Tenant` header comes from the same selection, so an
+ * earlier read could name a stale project) and while it has failed (the
+ * server would answer for a project the page cannot name). Reads re-run when
+ * the project changes.
  */
-export function useSummaryData(
-  tenantId: string | null,
-  tenantsLoading: boolean
-) {
+export function useSummaryData(tenantId: string | null, hold: boolean) {
   const [intent, setIntent] = useState<Loadable<IntentData>>({
     state: "loading",
   });
@@ -121,7 +121,7 @@ export function useSummaryData(
   });
 
   useEffect(() => {
-    if (tenantsLoading) return;
+    if (hold) return;
     let live = true;
     setIntent({ state: "loading" });
     setProgress({ state: "loading" });
@@ -137,7 +137,7 @@ export function useSummaryData(
     return () => {
       live = false;
     };
-  }, [tenantId, tenantsLoading]);
+  }, [tenantId, hold]);
 
   return { intent, progress };
 }

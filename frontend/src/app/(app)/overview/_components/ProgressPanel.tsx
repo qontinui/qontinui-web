@@ -47,6 +47,19 @@ export function ProgressPanel({ progress }: { progress: Progress }) {
     (b) => ALWAYS_LISTED.has(b.key) || counts[b.key] > 0
   );
 
+  if (total === 0 && truncated) {
+    // A full page with nothing countable in it says nothing about the rest.
+    return (
+      <p
+        className="text-[15px] leading-relaxed text-muted-foreground"
+        data-ui-bridge-id="overview.summary.progress.uncountable"
+      >
+        This project&rsquo;s work couldn&rsquo;t be counted from what was
+        returned. Try again later.
+      </p>
+    );
+  }
+
   if (total === 0) {
     return (
       <div data-ui-bridge-id="overview.summary.progress.empty">
