@@ -252,7 +252,12 @@ export function OperatorAuditPanel() {
   // non-admin read is a certain 403. It is not issued: the panel says who can
   // read it instead. `isCoordAdmin` is false until the user loads, and the
   // effect below re-runs when it turns true.
-  const { isCoordAdmin } = useAuth();
+  const { isCoordAdmin, loading: authLoading, user } = useAuth();
+  // `isCoordAdmin` is false while the user is still loading, which is NOT the
+  // same fact as "this user is not an admin". Only a loaded user who is not an
+  // admin gets the admin-only notice; until then the panel reads as loading.
+  const authResolved = !authLoading && user != null;
+  const confirmedNonAdmin = authResolved && !isCoordAdmin;
 
   // Stale-response guard. A filter change or Refresh issues a new read while
   // an older one may still be in flight; only the NEWEST request may write
@@ -425,7 +430,7 @@ export function OperatorAuditPanel() {
           ) : null}
         </form>
 
-        {!isCoordAdmin ? (
+        {confirmedNonAdmin ? (
           <p
             className="text-xs text-muted-foreground"
             role="status"
