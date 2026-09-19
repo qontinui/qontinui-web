@@ -29,7 +29,8 @@
  * `/plans` renders through the console primitives
  * (`frontend/docs/console-ui-style-guide.md`), so this module now also carries
  * the two things R3 requires of a console surface, in the shape
- * `alertStatus.ts` established:
+ * `alertStatus.ts` established (that module is retired with the alerts page;
+ * this one is now the reference shape):
  *
  *   - {@link PLAN_ATTENTION_BY_TONE} — the audited tone → attention table,
  *     TOTAL over {@link PlanStatusTone}: red iff a human must act on the plan
