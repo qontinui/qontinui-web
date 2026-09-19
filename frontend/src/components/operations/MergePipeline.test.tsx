@@ -29,6 +29,7 @@ const hookData: { current: MergePipelineData } = {
     proposals: [],
     prs: [],
     mergedPrs: null,
+    mergedError: null,
     mergedCount: null,
     economicsByRepo: {},
     suggestions: [],
@@ -144,6 +145,7 @@ describe("MergePipeline", () => {
       proposals: [],
       prs: [],
       mergedPrs: null,
+      mergedError: null,
       mergedCount: null,
       economicsByRepo: {},
       gateBlocks: [],
@@ -817,6 +819,98 @@ describe("MergePipeline", () => {
 
     fireEvent.click(screen.getByTestId("pipeline-filter-all"));
     expect(hookCalls.at(-1)?.includeMerged).toBe(true);
+  });
+
+  it("says the merge history is incomplete when the merged read failed", () => {
+    // The 2026-09-19 shape: the merged read timed out at the proxy, so the only
+    // landed rows held are the open list's `landed-open` ones — no merged_at.
+    hookData.current.prs = [
+      pr({
+        pr_number: 55,
+        branch: "b-phantom",
+        merge_status: "landed-open",
+      }),
+    ];
+    hookData.current.mergedPrs = null;
+    hookData.current.mergedError = "HTTP 504";
+
+    render(<MergePipeline />);
+
+    // All PRs and Merged both list landed rows, so both must say so.
+    const allNotice = screen.getByTestId("merged-read-failed");
+    expect(allNotice).toHaveTextContent("could not be loaded (HTTP 504)");
+    expect(allNotice).toHaveTextContent(/merge times are unknown/);
+
+    fireEvent.click(screen.getByTestId("pipeline-filter-merged"));
+    expect(screen.getByTestId("merged-read-failed")).toBeInTheDocument();
+    // The dateless row is still shown — it IS landed — just not as the whole.
+    expect(screen.getAllByTestId("pipeline-row")).toHaveLength(1);
+
+    // Tabs that list no landed PRs are not the place to say it.
+    fireEvent.click(screen.getByTestId("pipeline-filter-attention"));
+    expect(screen.queryByTestId("merged-read-failed")).toBeNull();
+    fireEvent.click(screen.getByTestId("pipeline-filter-in-flight"));
+    expect(screen.queryByTestId("merged-read-failed")).toBeNull();
+  });
+
+  it("says the history is stale, not incomplete, when last-good rows are kept", () => {
+    // A later read failed but the last good one is held: those rows HAVE merge
+    // times and include PRs that already closed, so the notice must not claim
+    // the times are unknown. It is stale, and that is all it can truthfully say.
+    hookData.current.prs = [pr()];
+    hookData.current.mergedPrs = [
+      pr({
+        pr_number: 9,
+        branch: "b-9",
+        pr_state: "closed",
+        merge_commit_sha: "abc1234",
+        merged_at: new Date(Date.now() - 600_000).toISOString(),
+      }),
+    ];
+    hookData.current.mergedError = "HTTP 504";
+
+    render(<MergePipeline />);
+
+    const notice = screen.getByTestId("merged-read-failed");
+    expect(notice).toHaveTextContent("could not be refreshed (HTTP 504)");
+    expect(notice).toHaveTextContent(/may be out of date/);
+    expect(notice).not.toHaveTextContent(/unknown/);
+    expect(notice).not.toHaveTextContent(/missing/);
+  });
+
+  it("says the merge history is loading until the first merged read lands", () => {
+    // Until then the only landed rows held are the dateless `landed-open` ones.
+    hookData.current.prs = [pr()];
+    hookData.current.mergedPrs = null;
+    hookData.current.mergedError = null;
+
+    render(<MergePipeline />);
+
+    expect(screen.getByTestId("merged-read-loading")).toHaveTextContent(
+      "Loading merge history"
+    );
+    fireEvent.click(screen.getByTestId("pipeline-filter-merged"));
+    expect(screen.getByTestId("merged-read-loading")).toBeInTheDocument();
+    fireEvent.click(screen.getByTestId("pipeline-filter-attention"));
+    expect(screen.queryByTestId("merged-read-loading")).toBeNull();
+  });
+
+  it("drops the loading line once merged rows exist, or the read failed", () => {
+    hookData.current.prs = [pr()];
+    hookData.current.mergedPrs = [];
+    render(<MergePipeline />);
+    expect(screen.queryByTestId("merged-read-loading")).toBeNull();
+  });
+
+  it("shows no incompleteness notice when the merged read is healthy", () => {
+    hookData.current.prs = [pr()];
+    hookData.current.mergedError = null;
+
+    render(<MergePipeline />);
+
+    expect(screen.queryByTestId("merged-read-failed")).toBeNull();
+    fireEvent.click(screen.getByTestId("pipeline-filter-merged"));
+    expect(screen.queryByTestId("merged-read-failed")).toBeNull();
   });
 
   it("renders an unparseable opened_at as unknown, never as 'opened never'", () => {
