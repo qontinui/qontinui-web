@@ -7,7 +7,7 @@
  * Replaces `MemoryCard` on `/admin/coord/memory`. Plan
  * `2026-08-16-coord-console-ui-unification-pipeline-style.md` Phase 3 Wave 2;
  * conventions from `frontend/docs/console-ui-style-guide.md` and from
- * `PlanRow.tsx` / `AlertRow.tsx`.
+ * `PlanRow.tsx` (and `AlertRow.tsx`, since retired with the alerts page).
  *
  * Two things changed and both are the point:
  *
