@@ -55,6 +55,18 @@ interface SidebarContextType {
   /** Whether the overlay drawer holding the full menu is open. */
   drawerOpen: boolean;
   setDrawerOpen: (open: boolean) => void;
+  /**
+   * The phone top bar's menu button, so the drawer can put focus back on it
+   * when it closes.
+   *
+   * It lives here because the button and the drawer are rendered by different
+   * components — the shell layout and `UnifiedSidebar` — and a ref through the
+   * context is the only channel they share. Radix's own focus restore is not
+   * enough: it returns focus to whatever was focused when the dialog opened,
+   * and iOS Safari does not focus a `<button>` on tap, so on the very device
+   * this drawer exists for that is the document body.
+   */
+  menuButtonRef: React.RefObject<HTMLButtonElement | null>;
 }
 
 const SidebarContext = createContext<SidebarContextType | undefined>(undefined);
@@ -62,6 +74,7 @@ const SidebarContext = createContext<SidebarContextType | undefined>(undefined);
 export function SidebarProvider({ children }: { children: React.ReactNode }) {
   const [preferredCollapsed, setPreferredCollapsed] = useState(false);
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const menuButtonRef = useRef<HTMLButtonElement | null>(null);
 
   const isDesktop = useMediaQuery(LG);
   const isTabletUp = useMediaQuery(MD);
@@ -118,6 +131,7 @@ export function SidebarProvider({ children }: { children: React.ReactNode }) {
       layout,
       drawerOpen,
       setDrawerOpen,
+      menuButtonRef,
     }),
     [isDesktop, preferredCollapsed, setIsCollapsed, layout, drawerOpen]
   );
