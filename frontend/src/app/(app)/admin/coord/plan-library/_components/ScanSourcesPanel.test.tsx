@@ -25,7 +25,7 @@
  * property of `useScanRoots`, covered in `../_hooks/usePlanLibrary.test.ts`.
  */
 
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen } from "@testing-library/react";
 
 const useScanRootsMock = vi.fn();
@@ -1412,6 +1412,58 @@ describe("exactDuration — a window is known precisely and carries no hedge", (
 });
 
 describe("ReadAt — the overnight case it exists for", () => {
+  /**
+   * The clock is PINNED for this block, and that is a correctness fix rather
+   * than tidiness.
+   *
+   * These two tests derive their fixtures from `Date.now()` and then assert on
+   * a format the component chooses by comparing that fixture's calendar day to
+   * today's. "Five minutes ago" is only the same calendar day for all but five
+   * minutes of it: run the suite between 00:00 and 00:05 local and
+   * `Date.now() - 5 * 60 * 1000` lands on YESTERDAY, the component correctly
+   * renders the long form, and the short-form test fails on a defect it does
+   * not have. Observed at 00:03 LOCAL on 2026-09-20 (this box is UTC+2, so
+   * 2026-09-19T22:03Z), on a suite that had been green minutes earlier — the
+   * wall clock crossed midnight between the two runs.
+   *
+   * LOCAL, not UTC, and the distinction is the whole mechanism: the component
+   * compares `new Date().toDateString() === at.toDateString()`
+   * (`ScanSourcesPanel.tsx`), and `toDateString` is local. Written as `00:03Z`
+   * this anecdote would be impossible — that is 02:03 local here, where
+   * `now - 5 min` is 01:58 the same day and the test passes.
+   *
+   * The sibling test is safe today only by luck of arithmetic: 26 > 24, so
+   * "26 hours ago" cannot land on today whatever the hour. Pinning covers both
+   * rather than leaving one correct by coincidence, and it says out loud what
+   * these tests are actually about — the FORMATTING rule, not the clock.
+   *
+   * Midday is chosen so any offset UNDER 12 HOURS stays inside the same day in
+   * both directions — not "any offset": the sibling test below deliberately
+   * steps 26 hours out of the day, which is the case it exists for. Real
+   * timers are restored afterwards so no other block inherits a frozen clock.
+   *
+   * No `Z` on the literal, deliberately: an offsetless date-time parses as
+   * LOCAL, so the pin means noon in whatever zone the suite runs in and the
+   * fixtures' distance from the day boundary is the same everywhere. A
+   * `Z`-suffixed pin would be 02:00 the NEXT day in UTC+14.
+   */
+  const PINNED_NOW = new Date("2026-09-20T12:00:00");
+
+  beforeEach(() => {
+    // `Date` ONLY. `devops/page.test.tsx:1740` is the convention this follows,
+    // and narrowing is the part of it that matters: a bare `useFakeTimers()`
+    // also fakes `setTimeout`/`setInterval`/`setImmediate`, which is inert for
+    // today's fully synchronous panel but would silently hang the first
+    // `userEvent` or debounce anyone adds to this block. These tests pin a
+    // clock; they have no reason to own the event loop.
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(PINNED_NOW);
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   it("shows the DATE when the read was not today", () => {
     // The stamp's motivating case is a console left open overnight, which is
     // exactly the case a bare time cannot express: "Read at 22:14:03" is
@@ -1431,7 +1483,18 @@ describe("ReadAt — the overnight case it exists for", () => {
   });
 
   it("keeps the short form for a read made today", () => {
-    const earlier = new Date(Date.now() - 5 * 60 * 1000);
+    // "Earlier TODAY", stated as that rather than as an offset.
+    //
+    // This fixture was `Date.now() - 5 * 60 * 1000`, which is a proxy for
+    // "today" that is false for five minutes out of every day — and pinning
+    // the clock alone does not repair it, it only makes the failure
+    // deterministic. Verified while writing this: with the pin moved to
+    // 00:03, `now - 5 min` still lands on yesterday and this test still
+    // fails. So the offset is replaced by the property the test is actually
+    // about — a timestamp on the SAME CALENDAR DAY as now, earlier in it —
+    // which holds at any pinned hour.
+    const earlier = new Date(PINNED_NOW);
+    earlier.setHours(0, 1, 0, 0);
     useScanRootsMock.mockReturnValue(
       hookState(listed([row()]), { fetchedAt: earlier })
     );
