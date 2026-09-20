@@ -154,9 +154,16 @@ authored against ``agent_questions_alert_episode_01`` (the single head per
 ``scripts/ci/count_alembic_heads.py`` on ``7a5a6f07f``) and RE-POINTED onto
 ``notif_gate_action_03_drop_enum_value`` once that landed while this PR was
 open — a re-point, not an ``alembic merge``, because the forked revision here
-had not landed and so leaves nothing behind. The re-point had to happen on the
-branch rather than at coord's land-time re-point, because the blocking
-``alembic-heads-pr`` gate fails the PR before it can reach the merge train.
+had not landed and so leaves nothing behind. The fork became visible in this
+PR's own tree once the branch was rebased onto the landed head, and was
+re-pointed here on the branch. Do NOT read that as "a required check always
+catches a fork pre-merge": a land moves ``main``, not the PR head, so
+``alembic-heads-pr`` can hold a STALE GREEN until the branch is updated
+against main — which is exactly what the rebase did here. coord also carries an
+open-PR fork re-point trigger of its own
+(``qontinui-coord`` ``pr_merge/alembic_fork_repoint_watcher.rs``), shadow-gated
+by ``COORD_AUTO_REWRITE_ARMED``; whether the deployed service has it armed is
+not readable from this repo, so this revision does not depend on it either way.
 Three sites move together: this line, the ``Revises:`` header above, and
 ``_PARENT_REVISION_ID`` in ``backend/tests/test_coord_wu_list_order_01_migration.py``.
 """
