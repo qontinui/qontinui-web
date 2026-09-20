@@ -425,6 +425,212 @@ class TestFilters:
         rows, total = await crud.list_artifacts(async_db_session, org_id=org, q="wedge")
         assert total == 1
 
+    async def test_q_finds_a_hyphenated_phrase_whose_words_are_in_prose(
+        self, async_db_session: AsyncSession
+    ) -> None:
+        """The regression fixture: ``q="devops-unfiltered-push-trigger"``.
+
+        ``plainto_tsquery`` reads a hyphenated token as one compound and ANDs
+        the whole-compound lexeme with its parts, so before the fix this query
+        returned nothing for a plan whose prose says "unfiltered push trigger"
+        — and whose slug, which carries the exact string, was never searched.
+        """
+        org = uuid4()
+        hit, _, _ = await _upsert(
+            async_db_session,
+            org_id=org,
+            slug="2026-08-31-devops-unfiltered-push-trigger-duplicates-every-pr-ci-run",
+            title="DevOps: an unfiltered push trigger duplicates every PR CI run",
+            body="The workflow's unfiltered push trigger fires beside pull_request.",
+        )
+        await _upsert(
+            async_db_session,
+            org_id=org,
+            slug=_slug("fts-miss"),
+            title="Unrelated",
+            body="nothing about that subject at all",
+        )
+
+        for q in ("devops-unfiltered-push-trigger", "unfiltered push"):
+            rows, total = await crud.list_artifacts(async_db_session, org_id=org, q=q)
+            assert total == 1, q
+            assert rows[0].id == hit.id, q
+
+    async def test_q_full_text_arm_alone_matches_a_hyphenated_phrase(
+        self, async_db_session: AsyncSession
+    ) -> None:
+        """The normalization is pinned WITHOUT the slug arm's help.
+
+        The slug shares no word with the query, so only the full-text arm can
+        answer — and it does only if the hyphens were folded to spaces.
+        """
+        org = uuid4()
+        hit, _, _ = await _upsert(
+            async_db_session,
+            org_id=org,
+            slug=_slug("opaque"),
+            title="CI duplication",
+            body="an unfiltered push trigger runs the suite twice",
+        )
+
+        for q in ("unfiltered-push-trigger", "unfiltered_push/trigger"):
+            rows, total = await crud.list_artifacts(async_db_session, org_id=org, q=q)
+            assert total == 1, q
+            assert rows[0].id == hit.id, q
+
+    async def test_q_finds_a_pasted_slug_absent_from_title_and_body(
+        self, async_db_session: AsyncSession
+    ) -> None:
+        """The slug arm: an identifier lookup the vector cannot answer."""
+        org = uuid4()
+        slug = f"2026-09-19-zymurgy-quokka-{uuid4().hex[:10]}"
+        hit, _, _ = await _upsert(
+            async_db_session,
+            org_id=org,
+            slug=slug,
+            title="A plan",
+            body="prose that repeats none of its own filename",
+        )
+        await _upsert(
+            async_db_session,
+            org_id=org,
+            slug=_slug("other"),
+            title="Another plan",
+            body="prose about something else",
+        )
+
+        for q in (
+            slug,
+            f"{slug}.md",
+            f"plans/{slug}.md",
+            slug.upper(),
+            f"  {slug.upper()}.MD ",
+            "zymurgy-quokka",
+        ):
+            rows, total = await crud.list_artifacts(async_db_session, org_id=org, q=q)
+            assert total == 1, q
+            assert rows[0].id == hit.id, q
+
+    async def test_q_like_metacharacters_match_literally(
+        self, async_db_session: AsyncSession
+    ) -> None:
+        org = uuid4()
+        await _upsert(async_db_session, org_id=org, slug="plainslug", body="first body")
+        await _upsert(
+            async_db_session, org_id=org, slug="plainXslug", body="second body"
+        )
+        underscored, _, _ = await _upsert(
+            async_db_session, org_id=org, slug="plain_slug", body="third body"
+        )
+        percent, _, _ = await _upsert(
+            async_db_session, org_id=org, slug="fifty%off", body="fourth body"
+        )
+        await _upsert(
+            async_db_session, org_id=org, slug="fiftyXXoff", body="fifth body"
+        )
+
+        # An unescaped ``%`` would be ``ILIKE '%fifty%off%'``, matching any
+        # slug with `fifty` before `off` — so `fiftyXXoff` too.
+        #
+        # The needle carries the metacharacter rather than BEING it: a bare
+        # `q="%"` is one punctuation character, which `_slug_needle` refuses
+        # outright (see `test_a_short_or_punctuation_q_never_sweeps_the_corpus`).
+        # That refusal is a stronger guarantee than escaping, and it is a
+        # different one — this case pins the escaping, which is what protects
+        # every needle long enough to reach the arm at all.
+        rows, total = await crud.list_artifacts(
+            async_db_session, org_id=org, q="fifty%off"
+        )
+        assert total == 1
+        assert rows[0].id == percent.id
+
+        # An unescaped ``_`` would match any one character, so ``plain_slug``
+        # would also return ``plainXslug``.
+        rows, total = await crud.list_artifacts(
+            async_db_session, org_id=org, q="plain_slug"
+        )
+        assert total == 1
+        assert rows[0].id == underscored.id
+
+    async def test_q_that_matches_nothing_returns_nothing(
+        self, async_db_session: AsyncSession
+    ) -> None:
+        org = uuid4()
+        await _upsert(
+            async_db_session,
+            org_id=org,
+            slug=_slug("present"),
+            title="Merge train wedge",
+            body="the orchestrator stalled on a candidate ref",
+        )
+
+        # A plain miss, then the inputs that leave NEITHER arm anything to ask
+        # for — which must read as "nothing", never as "no filter".
+        #
+        # `-` and `--` are the load-bearing cases and they are NOT the same
+        # test as `---`: the fixture slug (`present-<hex>`) contains a single
+        # hyphen, and every real plan slug is date-prefixed, so an ungated
+        # slug arm turns `q="-"` into `ILIKE '%-%'` over the whole corpus.
+        # A single letter and a stopword are the same defect in prose
+        # clothing: `plainto_tsquery` drops them, so before the gate they
+        # reached the slug arm alone and swept the corpus.
+        for q in (
+            "no-such-subject-anywhere",
+            "-",
+            "--",
+            "---",
+            "_",
+            "%",
+            " / ",
+            "   ",
+            ".md",
+            "a",
+            "the",
+            "20",
+        ):
+            rows, total = await crud.list_artifacts(async_db_session, org_id=org, q=q)
+            assert total == 0, repr(q)
+            assert rows == [], repr(q)
+
+    async def test_a_short_or_punctuation_q_never_sweeps_the_corpus(
+        self, async_db_session: AsyncSession
+    ) -> None:
+        """The regression pin for the ungated slug arm, stated as a count.
+
+        The test above asserts a miss against fixtures chosen to miss. This
+        one asserts the property that actually matters — that such a `q`
+        cannot return rows it was never meant to reach — against a corpus of
+        date-prefixed slugs, every one of which contains `-`, `2` and `0`.
+        Remove the `_slug_needle` gate and each `q` below returns all four.
+        """
+        org = uuid4()
+        for n in range(4):
+            await _upsert(
+                async_db_session,
+                org_id=org,
+                slug=f"2026-09-1{n}-corpus-sweep-probe-{uuid4().hex[:8]}",
+                title="Probe",
+                body="prose that shares no word with the queries below",
+            )
+
+        for q in ("-", "2", "0", "-2", "20", "a", "the", "_", "%", "2026"[:2]):
+            rows, total = await crud.list_artifacts(async_db_session, org_id=org, q=q)
+            assert total == 0, f"{q!r} swept {total} rows"
+            assert rows == []
+
+        # ...and the gate must not have disabled the arm itself: a needle of
+        # exactly the minimum length still resolves.
+        hit, _, _ = await _upsert(
+            async_db_session,
+            org_id=org,
+            slug=f"2026-09-19-zzq-{uuid4().hex[:8]}",
+            title="Probe",
+            body="prose that shares no word with the query below",
+        )
+        rows, total = await crud.list_artifacts(async_db_session, org_id=org, q="zzq")
+        assert total == 1
+        assert rows[0].id == hit.id
+
     async def test_repo_filter_matches_array_or_source_repo(
         self, async_db_session: AsyncSession
     ) -> None:
@@ -1154,6 +1360,25 @@ class TestHttpSurface:
 
         by_q = await client.get(API_PREFIX, params={"q": "transfer"})
         assert by_q.json()["total"] >= 1
+
+        # A hyphenated phrase whose words are prose in the body, and a pasted
+        # filename whose text is in neither title nor body — both through the
+        # route. The token keeps the match to this test's own row.
+        token = f"zq{uuid4().hex[:10]}"
+        slug = f"2026-08-31-devops-{token}"
+        created = await client.post(
+            API_PREFIX,
+            json=_payload(
+                slug=slug,
+                title="CI duplication",
+                body=f"an unfiltered push trigger {token} runs the suite twice",
+            ),
+        )
+        artifact_id = created.json()["artifact"]["id"]
+        for q in (f"unfiltered-push-trigger-{token}", f"plans/{slug.upper()}.md"):
+            found = await client.get(API_PREFIX, params={"q": q})
+            assert found.status_code == 200, found.text
+            assert [i["id"] for i in found.json()["items"]] == [artifact_id], q
 
 
 class TestWorkUnitSlugIsExact:
