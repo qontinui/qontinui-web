@@ -48,6 +48,7 @@ import {
   KeyRound,
   Layers,
   Library,
+  ListTodo,
   MessageSquare,
   NotebookText,
   Package,
@@ -153,6 +154,26 @@ export const GROUPS: NavGroup[] = [
         label: "Plans",
         icon: FileText,
         testId: "coord-nav-plans",
+      },
+      {
+        // Sits beside Plans deliberately, and the two are NOT two views of one
+        // thing. Plans is the plan CORPUS reconciled three ways
+        // (`/plan-library/reconciliation`, slug-ordered, paged, with a stated
+        // total); this is coord's OPERATIONAL work-unit store — a recency
+        // window over `coord.work_units`, including the `shepherd-*` merge
+        // escalations no other surface shows. It was `/admin/coord/plans`
+        // until Phase 3 of plan
+        // `2026-09-20-the-operator-plans-page-reads-the-wrong-store`, which
+        // moved it here rather than deleting it: it answers a real question
+        // for a real population, just not the one its old name promised.
+        //
+        // Distinct path (not `/plans/work-units`) so the Plans item's
+        // startsWith active-match doesn't double-highlight — same reasoning as
+        // the Plan Library and Onboarding pairs.
+        href: "/admin/coord/work-units",
+        label: "Work Units",
+        icon: ListTodo,
+        testId: "coord-nav-work-units",
       },
       {
         // Sits beside Plans deliberately: Plans is coord's work units, this is
