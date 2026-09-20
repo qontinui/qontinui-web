@@ -85,6 +85,9 @@ async function loadIntent(): Promise<IntentData> {
     })
   );
   // Kind order is the page's section order; within a kind, reading order.
+  // Two passes, and the second must not disturb the first: Array#sort has
+  // been stable since ES2019, which is what keeps the reading order intact
+  // while the kinds are grouped.
   const order = (k: string) =>
     SUMMARY_INTENT_KINDS.indexOf(k as SummaryIntentKind);
   return {
