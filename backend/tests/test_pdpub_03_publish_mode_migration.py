@@ -119,7 +119,7 @@ import check_coord_column_drops as guard  # noqa: E402
 # the revision's own `down_revision`, because a stale pin rewinds too far and
 # replays unrelated non-idempotent revisions as someone else's `DuplicateTable`.
 _REVISION_ID = "pdpub_03"
-_PARENT_REVISION_ID = "notif_gate_action_03_drop_enum_value"
+_PARENT_REVISION_ID = "plan_library_07_plan_difficulty"
 _REVISION_FILENAME = "pdpub_03_prompt_document_publish_mode.py"
 
 _PARENT_TABLE = "prompt_documents"

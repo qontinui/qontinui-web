@@ -1,7 +1,7 @@
 """coord prompt documents — publish_mode, the one judgement kept for a person
 
 Revision ID: pdpub_03
-Revises: notif_gate_action_03_drop_enum_value
+Revises: plan_library_07_plan_difficulty
 Create Date: 2026-09-20
 
 Phase 1 (the only qontinui-web migration) of plan
@@ -192,7 +192,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "pdpub_03"
-down_revision: str | Sequence[str] | None = "notif_gate_action_03_drop_enum_value"
+down_revision: str | Sequence[str] | None = "plan_library_07_plan_difficulty"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
