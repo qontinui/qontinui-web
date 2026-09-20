@@ -254,6 +254,59 @@ describe("sumPersonDays", () => {
     expect(parseEffortsCsv("A0,1.1,DL,4.3300").issues).toEqual([]);
   });
 
+  it("rounds an exact tie the way NUMERIC(10, 2) does", () => {
+    // `Math.round(Number("0." + f) * 100)` rounds the binary DOUBLE, which
+    // falls below the decimal on a tie — so these four were stored by
+    // Postgres as .15/.29/.57/.58 and reported by the editor as
+    // .14/.28/.56/.57. Measured against a live server.
+    expect(sumPersonDays(["0.145"])).toBe("0.15");
+    expect(sumPersonDays(["0.285"])).toBe("0.29");
+    expect(sumPersonDays(["0.565"])).toBe("0.57");
+    expect(sumPersonDays(["0.575"])).toBe("0.58");
+    // And the warning names the same figure the column will hold.
+    expect(parseEffortsCsv("A0,1.1,DL,0.145").issues[0]?.message).toContain(
+      "0.15"
+    );
+  });
+
+  it("names the stored figure with both decimal places", () => {
+    // Routed through the total's trailing-zero strip, `0.999` read "will be
+    // stored as 1" — the one thing the sentence exists to show.
+    expect(parseEffortsCsv("A0,1.1,DL,0.999").issues[0]?.message).toContain(
+      "1.00"
+    );
+    expect(parseEffortsCsv("A0,1.1,DL,0.001").issues[0]?.message).toContain(
+      "0.00"
+    );
+  });
+
+  it("refuses more days than the column can hold, rather than 500 on save", () => {
+    // NUMERIC(10, 2) tops out at 99999999.99; beyond that Postgres raises
+    // numeric_field_overflow, which reaches the reader as a 500 naming no
+    // row. It is also what keeps this parser's accept-set and
+    // `sumPersonDays`'s identical at the TOP of the range, not just the
+    // bottom.
+    const { rows, issues } = parseEffortsCsv("A0,1.1,DL,9999999999999999");
+    expect(rows).toEqual([]);
+    expect(issues[0]?.severity).toBe("error");
+    expect(issues[0]?.message).toContain("more days than can be recorded");
+    expect(sumPersonDays(["9999999999999999"])).toBeNull();
+    // The largest storable value still works.
+    expect(parseEffortsCsv("A0,1.1,DL,99999999.99").issues).toEqual([]);
+  });
+
+  it("refuses a large value rather than inventing a fraction for it", () => {
+    // Past 2^53 hundredths the old code came back SILENTLY WRONG:
+    // `9007199254740991` grew a fraction out of nothing.
+    for (const value of [
+      "90071992547409.99",
+      "9007199254740991",
+      "123456789012345.67",
+    ]) {
+      expect(sumPersonDays([value]), value).toBeNull();
+    }
+  });
+
   it("does not let one wide value refuse the whole column", () => {
     // A scale shared across the column meant a single spreadsheet-exported
     // 1/3 overflowed the safe-integer range and made the TOTAL unreadable.

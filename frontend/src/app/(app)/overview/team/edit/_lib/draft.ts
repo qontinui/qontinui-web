@@ -302,6 +302,55 @@ export function draftToContent(draft: Draft): EstimateContentWrite {
 }
 
 /**
+ * For each imported task, which saved task it continues — or `undefined` for
+ * one the chart has just introduced.
+ *
+ * Neither key alone works. A NUMBER encodes position (`ganttToPhases` builds
+ * it as `<phase index>.<task index>`), so inserting one task or one section
+ * renumbers everything below and hands each saved row to the task that took
+ * its place — a wrong requirement reference reads as an authored one. A
+ * TITLE is stable across insertion but not unique: two tasks called "Review"
+ * both matched the first, so one lost its refs and the other gained refs it
+ * never had. And a title is not stable across a rename, where position is.
+ *
+ * So it is TWO passes, and the order is the whole point. Every exact title
+ * is paired first, in order, each saved task claimed at most once; only then
+ * do the leftovers fall back to their own position, and only onto a saved
+ * task nothing has claimed. A single pass — title, else position, per task —
+ * looks equivalent and is not: the inserted task reaches position 0 before
+ * the real owner of that title has had its turn, and walks off with its
+ * refs.
+ */
+function matchTasks(
+  saved: DraftTask[],
+  imported: { number: string; title: string }[]
+): (DraftTask | undefined)[] {
+  const matched: (DraftTask | undefined)[] = imported.map(() => undefined);
+  const claimed = new Set<string>();
+
+  imported.forEach((task, index) => {
+    const byTitle = saved.find(
+      (old) => old.title === task.title && !claimed.has(old.number)
+    );
+    if (byTitle) {
+      matched[index] = byTitle;
+      claimed.add(byTitle.number);
+    }
+  });
+
+  imported.forEach((_task, index) => {
+    if (matched[index] !== undefined) return;
+    const atSamePlace = saved[index];
+    if (atSamePlace && !claimed.has(atSamePlace.number)) {
+      matched[index] = atSamePlace;
+      claimed.add(atSamePlace.number);
+    }
+  });
+
+  return matched;
+}
+
+/**
  * Apply an imported schedule to the working copy.
  *
  * Pure, and out of the component on purpose: this is the one place a
@@ -334,10 +383,41 @@ export function applyGanttImport(
     }[];
   }[]
 ): Draft {
+  // Old task number -> new task number, per phase, built from the same
+  // matcher the refs use. Effort rows are keyed `phase_code` + `task_number`
+  // (`parseEffortsCsv`), and that number moves on every insertion just as
+  // the refs' did — so without this remap the days authored against
+  // "Kick-off" silently became the days of whatever task took its place.
+  // `draftProblems` could not see it either: the key still existed, so there
+  // was no error, no warning and no visible change. Requirement refs were
+  // the smaller half of that defect; this is the money.
+  const renumbered = new Map<string, string>();
+  for (const phase of imported) {
+    const existing = draft.phases.find((old) => old.code === phase.code);
+    matchTasks(existing?.tasks ?? [], phase.tasks).forEach((old, index) => {
+      const to = phase.tasks[index];
+      if (old && to && old.number !== to.number) {
+        renumbered.set(`${phase.code}:${old.number}`, to.number);
+      }
+    });
+  }
+  // Rows whose phase the chart dropped are NOT deleted here. Deleting them
+  // would be the same silent loss this function exists to stop, one table
+  // over — and unlike a renumber, it is not something the import can know
+  // the reader wants. They are left dangling for `draftProblems` to name,
+  // exactly as the allocation rows are, and the save is blocked until the
+  // tables agree again.
   return {
     ...draft,
+    efforts: draft.efforts.map((effort) => {
+      const to = renumbered.get(`${effort.phase_code}:${effort.task_number}`);
+      return to === undefined ? effort : { ...effort, task_number: to };
+    }),
     phases: imported.map((phase) => {
       const existing = draft.phases.find((old) => old.code === phase.code);
+      // Each saved task is claimed at most once, so two tasks sharing a
+      // title cannot both take the first one's refs.
+      const continues = matchTasks(existing?.tasks ?? [], phase.tasks);
       return {
         code: phase.code,
         name: phase.name,
@@ -350,20 +430,10 @@ export function applyGanttImport(
         gate_status: existing?.gate_status ?? "pending",
         gate_decided_at: existing?.gate_decided_at ?? null,
         gate_notes: existing?.gate_notes ?? "",
-        tasks: phase.tasks.map((task) => ({
+        tasks: phase.tasks.map((task, index) => ({
           number: task.number,
           title: task.title,
-          // Matched on TITLE, not on number. `ganttToPhases` builds a number
-          // from positions in the parsed chart (`<phase index>.<task
-          // index>`), so inserting one section or one task renumbers
-          // everything below it: matching by number then either nulls every
-          // ref below the insertion point, or — worse — hands each ref to
-          // the task that took its place, where a wrong requirement
-          // reference reads as an authored one. The title is the only thing
-          // in a chart that identifies a task.
-          requirement_refs:
-            existing?.tasks.find((old) => old.title === task.title)
-              ?.requirement_refs ?? null,
+          requirement_refs: continues[index]?.requirement_refs ?? null,
           planned_start: task.planned_start,
           planned_end: task.planned_end,
           is_critical: task.is_critical,

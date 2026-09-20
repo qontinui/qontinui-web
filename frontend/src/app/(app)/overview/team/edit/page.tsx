@@ -50,6 +50,7 @@ import {
   draftToContent,
   type Draft,
 } from "./_lib/draft";
+import { statusAfterEdit, type Status } from "./_lib/status";
 
 const TEAM_ROUTE = "/overview/team";
 
@@ -74,14 +75,6 @@ const PURPOSES: {
     help: "A projection of the likely cost, with no commitment.",
   },
 ];
-
-type Status =
-  | { kind: "idle" }
-  | { kind: "saving" }
-  /** Carries the version that landed, so the message can name it. */
-  | { kind: "saved"; version: number }
-  | { kind: "conflict"; currentVersion: number | null }
-  | { kind: "failed"; message: string };
 
 function Heading({ children }: { children: React.ReactNode }) {
   return (
@@ -363,17 +356,7 @@ function EstimateEditor({
    */
   const editDraft = (update: (current: Draft) => Draft) => {
     setDraft(update);
-    setStatus((current) =>
-      // `saving` is an attempt still IN FLIGHT, not a finished one. Clearing
-      // it here put "Save the estimate" back on an enabled button while a
-      // request was open — a second submit one click away, and, when the
-      // first resolved, a "Saved as version N" banner over a table that
-      // version does not contain, which the reload then discarded. The apply
-      // buttons are disabled for the same reason (`busy` below).
-      current.kind === "saving" || current.kind === "idle"
-        ? current
-        : { kind: "idle" }
-    );
+    setStatus(statusAfterEdit);
   };
 
   const problems = draftProblems(draft);

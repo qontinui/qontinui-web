@@ -339,6 +339,19 @@ export function parseEffortsCsv(text: string): CsvResult<ParsedEffortRow> {
       });
       continue;
     }
+    if (personDayHundredths(days) === null) {
+      // More than the column can hold. Saving it would be a Postgres
+      // `numeric_field_overflow` — a 500 naming no row — so it is refused
+      // where it was pasted. This is also what keeps this parser's
+      // accept-set and `sumPersonDays`'s identical at BOTH ends.
+      issues.push({
+        line: entry.line,
+        text: entry.text,
+        message: `"${days}" is more days than can be recorded (the most is ${PERSON_DAY_MAX_DAYS})`,
+        severity: "error",
+      });
+      continue;
+    }
     const key = `${phase}:${task}:${role}`;
     if (seen.has(key)) {
       issues.push({
@@ -383,6 +396,20 @@ export function parseEffortsCsv(text: string): CsvResult<ParsedEffortRow> {
 const PERSON_DAY_DECIMALS = 2;
 
 /**
+ * The largest value that column holds: `NUMERIC(10, 2)` is ten significant
+ * digits with two after the point, so 99 999 999.99 days — a quarter of a
+ * million working years, and nothing a delivery plan can mean.
+ *
+ * Anything larger is not "finer than the store keeps", it is unstorable:
+ * Postgres raises `numeric_field_overflow` and the save 500s. Refusing it
+ * where it is pasted is what turns that into a named row.
+ */
+const PERSON_DAY_MAX_HUNDREDTHS = 10 ** (10 - PERSON_DAY_DECIMALS) * 100 - 1;
+
+/** The same ceiling as a figure, for the message that refuses a row. */
+const PERSON_DAY_MAX_DAYS = "99999999.99";
+
+/**
  * Total a column of person-day strings exactly.
  *
  * Days are exact decimal strings everywhere else in this feature precisely
@@ -410,6 +437,7 @@ export function sumPersonDays(values: string[]): string | null {
     const parsed = personDayHundredths(value);
     if (parsed === null) return null;
     hundredths += parsed;
+    if (!Number.isSafeInteger(hundredths)) return null;
   }
   const whole = Math.trunc(hundredths / 100);
   const rest = String(hundredths % 100)
@@ -428,18 +456,38 @@ function personDayHundredths(value: string): number | null {
   const match = /^(\d*)(?:\.(\d+))?$/.exec(value.trim());
   if (!match || (match[1] === "" && match[2] === undefined)) return null;
   const whole = Number(match[1] || "0");
-  const fraction = match[2] ?? "";
-  if (!Number.isSafeInteger(whole)) return null;
-  const rounded = Math.round(
-    Number(`0.${fraction || "0"}`) * 10 ** PERSON_DAY_DECIMALS
-  );
-  return whole * 100 + rounded;
+  const fraction = (match[2] ?? "").padEnd(PERSON_DAY_DECIMALS + 1, "0");
+
+  // Rounded on the DECIMAL DIGITS, never through `Number("0." + f) * 100`.
+  // That expression rounds the binary double, which falls below the decimal
+  // on an exact tie, so it disagreed with the column for exactly the inputs
+  // the warning beside it names: 0.145, 0.285, 0.565 and 0.575 stored as
+  // .15/.29/.57/.58 in `NUMERIC(10, 2)` and were reported as .14/.28/.56/.57.
+  // Postgres rounds half away from zero; these values are non-negative, so
+  // that is half-up on the third digit.
+  const kept = Number(fraction.slice(0, PERSON_DAY_DECIMALS));
+  const roundUp = Number(fraction[PERSON_DAY_DECIMALS]) >= 5;
+  const hundredths = whole * 100 + kept + (roundUp ? 1 : 0);
+
+  // The magnitude check the first rewrite dropped. Without it a value past
+  // 2^53 hundredths came back SILENTLY WRONG rather than refused —
+  // `9007199254740991` grew a fraction out of nothing — which is the one
+  // failure mode worse than the refusal it was trying to avoid.
+  if (!Number.isSafeInteger(hundredths)) return null;
+  return hundredths > PERSON_DAY_MAX_HUNDREDTHS ? null : hundredths;
 }
 
 /** `value` as the store will hold it, for a message that names the figure. */
 function roundToStoredGrain(value: string): string {
   const hundredths = personDayHundredths(value);
-  return hundredths === null ? value : (sumPersonDays([value]) ?? value);
+  // Unreachable from `parseEffortsCsv`, which refuses an unstorable value
+  // before it gets here — but a caller that did not would otherwise be told
+  // an unstorable figure "will be stored as" itself.
+  if (hundredths === null) return value;
+  return `${Math.trunc(hundredths / 100)}.${String(hundredths % 100).padStart(
+    PERSON_DAY_DECIMALS,
+    "0"
+  )}`;
 }
 
 /** True when `value` carries more precision than the store keeps. */

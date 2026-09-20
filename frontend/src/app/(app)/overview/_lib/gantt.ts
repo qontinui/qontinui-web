@@ -131,20 +131,57 @@ const DAY_MS = 86_400_000;
 function looksLikeTaskMeta(value: string): boolean {
   const colon = value.indexOf(":");
   if (colon < 0) return false;
-  const tokens = value
+  const tokens = metaTokens(value);
+  // A directive whose value merely NAMES dates is not a task: `title
+  // Delivery plan: 2026-01-05` and `section Sprint 1: 2026-01-05,
+  // 2026-03-31` are a title and a section, and warning on them told the
+  // reader to break a chart that was right. What a task carries that a
+  // date-naming directive does not is a DURATION, or a third field.
+  return (
+    tokens.length >= 3 || (tokens.length >= 2 && tokens.some(isDurationToken))
+  );
+}
+
+/** The comma-separated fields after a value's first colon. */
+function metaTokens(value: string): string[] {
+  const colon = value.indexOf(":");
+  if (colon < 0) return [];
+  return value
     .slice(colon + 1)
     .split(",")
     .map((token) => token.trim())
     .filter((token) => token !== "");
-  // A task's meta is a LIST — at minimum a start and an end. A directive
-  // value that merely ends in a date is not one: `title Delivery plan:
-  // 2026-01-05` and `section A0: 2026-01-05` have a single token after the
-  // colon, while `Excludes review :e1, 2026-01-05, 5d` has three. Testing
-  // only "contains a date" warned on both of the first two, telling the
-  // reader to rename a title that was perfectly good.
+}
+
+function isDurationToken(token: string): boolean {
+  return DURATION.test(token);
+}
+
+/**
+ * The looser test, for the five directives this import DISCARDS.
+ *
+ * Their value is never used, so a spurious warning costs nothing and a
+ * missed one costs a task — the opposite balance from the directives above,
+ * where the value is kept and the warning is advice. `Weekday catch-up :5d`
+ * and `Tickinterval review :t1, after a1` are both real task shapes this
+ * parser reads elsewhere, and under the strict rule both vanished in
+ * silence.
+ *
+ * Still no warning for the genuine values that carry a colon —
+ * `axisFormat %H:%M`, `todayMarker stroke-width:5px` — because a single
+ * field that is neither a date, a duration nor an `after` is not task meta.
+ */
+function couldBeADiscardedTask(value: string): boolean {
+  const tokens = metaTokens(value);
+  if (tokens.length === 0) return false;
   return (
-    tokens.length >= 2 &&
-    tokens.some((token) => ISO_DATE.test(token) || DURATION.test(token))
+    tokens.length >= 2 ||
+    tokens.some(
+      (token) =>
+        ISO_DATE.test(token) ||
+        isDurationToken(token) ||
+        /^after\s+/i.test(token)
+    )
   );
 }
 
@@ -390,15 +427,14 @@ export function parseMermaidGantt(source: string): GanttParseResult {
     // `Todaymarker review :x1, …` disappeared with no issue of any kind —
     // the same silent loss the word boundary was added to stop, narrowed to
     // the five directives this import has no use for.
-    const ignored = IGNORED_DIRECTIVES.find(
-      (keyword) => directiveValue(line, keyword) !== null
-    );
+    const ignored = IGNORED_DIRECTIVES.map(
+      (keyword) => [keyword, directiveValue(line, keyword)] as const
+    ).find(([, value]) => value !== null);
     if (ignored !== undefined) {
-      ambiguous = looksLikeTaskMeta(directiveValue(line, ignored) ?? "");
-      warnIfAmbiguous(ignored);
+      ambiguous = couldBeADiscardedTask(ignored[1] ?? "");
+      warnIfAmbiguous(ignored[0]);
       continue;
     }
-    if (lower.startsWith("%%")) continue;
 
     const sectionText = directiveValue(line, "section");
     if (sectionText !== null) {

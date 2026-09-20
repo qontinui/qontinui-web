@@ -331,11 +331,16 @@ gantt
 
   it("warns rather than silently swallowing a task on an IGNORED directive", () => {
     // These five directives are discarded outright, which made this the one
-    // branch where a swallowed task left no trace at all.
+    // branch where a swallowed task left no trace at all. All five, and a
+    // one-field task shape (`:5d`) as well as a three-field one, because
+    // the single-field shape is one this parser reads elsewhere.
     for (const [line, keyword] of [
       ["Weekday cover :w1, 2026-01-05, 5d", "weekday"],
+      ["Weekday catch-up :5d", "weekday"],
       ["Todaymarker review :x1, 2026-01-05, 5d", "todaymarker"],
       ["Axisformat rules :a1, 2026-01-05, 5d", "axisformat"],
+      ["Tickinterval review :t1, after a1", "tickinterval"],
+      ["Inclusiveenddates sign-off :i1, 2026-01-05, 2d", "inclusiveenddates"],
     ] as const) {
       const result = parseMermaidGantt(`
 gantt
@@ -350,13 +355,16 @@ gantt
     }
   });
 
-  it("does not warn about a directive whose value merely ends in a date", () => {
+  it("does not warn about a KEPT directive whose value merely names dates", () => {
     // The warning is for a task that vanished, so firing it on a perfectly
     // good title told the reader to rename something that was already right.
+    // These four keep their value, so a false positive is pure noise on the
+    // screen whose job is to show what went wrong.
     for (const line of [
       "title Delivery plan: 2026-01-05",
+      "title Delivery plan: 2026-01-05, 2026-03-31",
       "section A0: 2026-01-05",
-      "weekday monday: 2w",
+      "section Sprint 1: 2026-01-05, 2026-03-31",
     ]) {
       const result = parseMermaidGantt(`
 gantt
@@ -383,6 +391,38 @@ gantt
     expect(
       result.issues.every((i) => !i.message.includes("YYYY-MM-DD can be read"))
     ).toBe(true);
+  });
+
+  it("accepts a warning on a discarded directive to avoid losing a task", () => {
+    // `weekday monday: 2w` and the swallowed task `Weekday catch-up :5d`
+    // are structurally identical — one keyword, one field, a duration — so
+    // no rule separates them. The trade is made deliberately and in this
+    // direction: these five directives are DISCARDED, so a spurious warning
+    // costs a line of noise, while a missed one costs a task in silence.
+    const result = parseMermaidGantt(`
+gantt
+    dateFormat YYYY-MM-DD
+    weekday monday: 2w
+    section P One
+    Work :t1, 2026-01-05, 3d
+`);
+    expect(result.issues.map((i) => i.severity)).toEqual(["warning"]);
+    expect(result.taskCount).toBe(1);
+  });
+
+  it("still ignores a discarded directive whose value is not task meta", () => {
+    const result = parseMermaidGantt(`
+gantt
+    dateFormat YYYY-MM-DD
+    axisFormat %H:%M
+    todayMarker stroke-width:5px
+    weekday monday
+    inclusiveEndDates
+    section P One
+    Work :t1, 2026-01-05, 3d
+`);
+    expect(result.issues).toEqual([]);
+    expect(result.taskCount).toBe(1);
   });
 
   it("keeps a chart title that contains a date", () => {

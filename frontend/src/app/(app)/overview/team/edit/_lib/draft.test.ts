@@ -338,6 +338,124 @@ describe("applyGanttImport", () => {
     expect(after.phases[0]?.tasks[0]?.requirement_refs).toBe("R1, R2");
   });
 
+  it("moves the EFFORT rows with the task, not with the number", () => {
+    // The bigger half of the same defect: effort rows are keyed by the task
+    // number, which moves on every insertion, so the days authored against
+    // "Kick-off" silently became the inserted task's days. No error, no
+    // warning, no visible change — the key still existed.
+    const withInsertion = [
+      {
+        ...IMPORTED[0]!,
+        tasks: [
+          {
+            number: "1.1",
+            title: "Discovery",
+            planned_start: "2026-01-05",
+            planned_end: "2026-01-09",
+            is_critical: false,
+            status: "planned" as const,
+          },
+          { ...IMPORTED[0]!.tasks[0]!, number: "1.2" },
+        ],
+      },
+    ];
+    const after = applyGanttImport(draftFromEstimate(LOADED), withInsertion);
+    // The 4 days belonged to Kick-off, which is now task 1.2.
+    expect(after.efforts).toEqual([
+      {
+        phase_code: "A0",
+        task_number: "1.2",
+        role_code: "BE",
+        planned_person_days: "4.00",
+      },
+    ]);
+    // And the whole graph still validates, which is what makes the remap
+    // load-bearing rather than cosmetic.
+    expect(draftProblems(after).filter((p) => p.severity === "error")).toEqual(
+      []
+    );
+  });
+
+  it("leaves a dropped phase's rows to be REPORTED, not silently deleted", () => {
+    // Deleting them would be the same silent loss one table over, and the
+    // import cannot know the reader meant it. They dangle, and the pre-save
+    // check names both tables so the save is blocked until they agree.
+    const after = applyGanttImport(draftFromEstimate(LOADED), []);
+    expect(after.efforts).toHaveLength(1);
+    const errors = draftProblems(after).filter((p) => p.severity === "error");
+    expect(errors.some((p) => p.message.includes("allocation table"))).toBe(
+      true
+    );
+    expect(errors.some((p) => p.message.includes("days table"))).toBe(true);
+  });
+
+  it("pairs duplicate titles in order instead of all onto the first", () => {
+    const twoReviews = {
+      ...LOADED,
+      phases: [
+        {
+          ...LOADED.phases[0]!,
+          tasks: [
+            {
+              ...LOADED.phases[0]!.tasks[0]!,
+              number: "1.1",
+              title: "Review",
+              requirement_refs: "R1",
+            },
+            {
+              ...LOADED.phases[0]!.tasks[0]!,
+              number: "1.2",
+              title: "Review",
+              requirement_refs: "R2",
+              efforts: [],
+            },
+            {
+              ...LOADED.phases[0]!.tasks[0]!,
+              number: "1.3",
+              title: "Build",
+              requirement_refs: "R3",
+              efforts: [],
+            },
+          ],
+        },
+      ],
+    };
+    const reimported = [
+      {
+        ...IMPORTED[0]!,
+        tasks: ["Review", "Review", "Build"].map((title, i) => ({
+          number: `1.${i + 1}`,
+          title,
+          planned_start: "2026-01-05",
+          planned_end: "2026-01-09",
+          is_critical: false,
+          status: "planned" as const,
+        })),
+      },
+    ];
+    const after = applyGanttImport(draftFromEstimate(twoReviews), reimported);
+    expect(after.phases[0]?.tasks.map((t) => t.requirement_refs)).toEqual([
+      "R1",
+      "R2",
+      "R3",
+    ]);
+  });
+
+  it("keeps a renamed task's refs, which a title-only match would drop", () => {
+    const renamed = [
+      {
+        ...IMPORTED[0]!,
+        tasks: [
+          { ...IMPORTED[0]!.tasks[0]!, title: "Kick-off and access" },
+          IMPORTED[0]!.tasks[1]!,
+        ],
+      },
+    ];
+    const after = applyGanttImport(draftFromEstimate(LOADED), renamed);
+    expect(after.phases[0]?.tasks[0]?.title).toBe("Kick-off and access");
+    expect(after.phases[0]?.tasks[0]?.requirement_refs).toBe("R1, R2");
+  });
+
   it("gives a phase the chart introduces an empty gate, not a borrowed one", () => {
     const after = applyGanttImport(draftFromEstimate(LOADED), [
       { ...IMPORTED[0]!, code: "B9", name: "New phase" },
