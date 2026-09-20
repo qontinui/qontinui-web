@@ -10,6 +10,8 @@ interface SidebarFooterProps extends Omit<UserMenuProps, "isCollapsed"> {
   onToggleCollapse: () => void;
   /** Overrides the collapse control's wording — see `CollapseToggle`. */
   toggleLabel?: string;
+  /** Set when the collapse control is the drawer's disclosure button. */
+  toggleControlsDrawer?: { open: boolean; id: string };
 }
 
 export function SidebarFooter({
@@ -19,6 +21,7 @@ export function SidebarFooter({
   onDocs,
   onToggleCollapse,
   toggleLabel,
+  toggleControlsDrawer,
 }: SidebarFooterProps) {
   return (
     <div
@@ -45,6 +48,7 @@ export function SidebarFooter({
         isCollapsed={isCollapsed}
         onToggle={onToggleCollapse}
         label={toggleLabel}
+        controlsDrawer={toggleControlsDrawer}
       />
     </div>
   );

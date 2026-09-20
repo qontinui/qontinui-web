@@ -38,15 +38,12 @@ export interface SidebarDrawerProps {
   /**
    * Resolves where focus goes when the drawer closes. Called at close time —
    * a ref would not do, because on the tablet layout the control that opened
-   * the drawer is the rail's own collapse toggle, which is unmounted while
-   * the drawer holds the menu and re-created when it closes.
+   * the drawer is the rail's own collapse toggle, and which element that is
+   * depends on the width at the moment it closes.
    *
-   * Radix's own restore is not enough either way: it returns focus to
-   * whatever was focused at OPEN time, which is a detached node in that
-   * tablet case, and on a phone is the document body, because iOS Safari
-   * does not focus a `<button>` on tap. Both land a keyboard or
-   * screen-reader user at the top of the page instead of back on the control
-   * they used.
+   * Returning `null` is allowed and falls back to whatever had focus when the
+   * drawer opened; what this must never do is leave the decision to Radix.
+   * See `handleCloseAutoFocus`.
    */
   getRestoreFocusTarget?: () => HTMLElement | null;
 }
@@ -58,12 +55,36 @@ export function SidebarDrawer({
   className,
   getRestoreFocusTarget,
 }: SidebarDrawerProps) {
+  // What had focus when the drawer opened, as the last resort. Captured on
+  // mount because the drawer is mounted BY the open transition — this
+  // component does not exist while it is closed.
+  const openerRef = React.useRef<HTMLElement | null>(null);
+  React.useEffect(() => {
+    const active = document.activeElement;
+    openerRef.current = active instanceof HTMLElement ? active : null;
+  }, []);
+
+  /**
+   * `preventDefault()` is UNCONDITIONAL, and that is the whole point.
+   *
+   * Radix composes this handler with its own through `composeEventHandlers`,
+   * whose default `checkForDefaultPrevented` runs Radix's half only when this
+   * one did NOT prevent the default. Radix's half is
+   * `event.preventDefault(); context.triggerRef.current?.focus()` — and this
+   * drawer has no `Dialog.Trigger` (it is opened by the shell's own button),
+   * so that ref is permanently null. Ceding to it therefore suppresses
+   * `FocusScope`'s restore AND focuses nothing: focus lands on `<body>`,
+   * which is exactly the outcome this handler exists to prevent.
+   */
   const handleCloseAutoFocus = React.useCallback(
     (event: Event) => {
-      const target = getRestoreFocusTarget?.();
-      if (!target) return;
       event.preventDefault();
-      target.focus();
+      const target = getRestoreFocusTarget?.() ?? openerRef.current;
+      // `getClientRects()` rather than `offsetParent`, which is null for a
+      // fixed-position element even when it is on screen.
+      if (target && target.isConnected && target.getClientRects().length > 0) {
+        target.focus();
+      }
     },
     [getRestoreFocusTarget]
   );
