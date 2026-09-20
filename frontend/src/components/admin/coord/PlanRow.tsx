@@ -88,6 +88,12 @@ import {
   showsBodySignal,
   type BodyMarker,
 } from "@/components/admin/coord/planBodySignal";
+import { PlanDifficultyBadge } from "@/components/admin/coord/PlanDifficultyBadge";
+import {
+  describeDifficultyCell,
+  describeSignals,
+  type DifficultyCell,
+} from "@/components/admin/coord/planDifficulty";
 
 export type { CoordPlanRow };
 
@@ -124,10 +130,18 @@ export function PlanRow({
   plan,
   expanded,
   onToggle,
+  difficulty,
 }: {
   plan: CoordPlanRow;
   expanded: boolean;
   onToggle: () => void;
+  /**
+   * The plan library's difficulty rating for this work unit (see
+   * `planDifficulty.ts`). Omitted by surfaces that do not read ratings —
+   * `/history`, `/spawn`, the detail route — which then render no chip at
+   * all, rather than an "unknown" one for a question they never asked.
+   */
+  difficulty?: DifficultyCell;
 }) {
   const router = useRouter();
   const status = derivePlanStatus(plan);
@@ -183,6 +197,7 @@ export function PlanRow({
       }
       status={
         <>
+          {difficulty && <PlanDifficultyBadge cell={difficulty} />}
           {/* The badge is wrapped rather than replaced: `coord-plan-status-tag`
               and its `data-tone` / `data-recognised` attributes are the frozen
               authored contract (D4a), and `<StatusBadge>` — correctly —
@@ -235,6 +250,26 @@ export function PlanRow({
                 <span className="text-muted-foreground"> — {m.title}</span>
               </div>
             ))}
+            {difficulty && (
+              <div data-testid="coord-plan-difficulty-detail">
+                <span className="text-muted-foreground">Difficulty: </span>
+                <span className="text-foreground/90">
+                  {describeDifficultyCell(difficulty).title}
+                </span>
+                {difficulty.kind === "rated" &&
+                  describeSignals(difficulty.item.difficulty_signals).length >
+                    0 && (
+                    <span className="text-muted-foreground">
+                      {" "}
+                      Measured:{" "}
+                      {describeSignals(difficulty.item.difficulty_signals).join(
+                        " · "
+                      )}
+                      .
+                    </span>
+                  )}
+              </div>
+            )}
           </div>
         }
         problems={
