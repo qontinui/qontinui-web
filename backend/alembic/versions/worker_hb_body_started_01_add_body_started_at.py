@@ -9,7 +9,11 @@ in ``coord_agent_debug_01_outbound_worker_scheduler_webhook`` and, until this
 revision, never altered since):
 
 * ``body_started_at`` — when the replica that owns this row last ENTERED its
-  loop body, or NULL when no body is in flight.
+  loop body, cleared to NULL by the write that records the finished tick. Both
+  sides carry an UNKNOWN and neither collapses: NULL is "no body in flight OR
+  this row predates the column", and non-NULL is "a body started and no
+  completion has been recorded since", which is a LIVE body only if the replica
+  is still live. See "The rule for a reader" below — it is the normative form.
 
 This is Phase 1 of plan
 ``qontinui-dev-notes/plans/2026-09-19-leader-gated-worker-liveness-reads-a-follower-skip-as-the-work-running.md``,
@@ -20,9 +24,11 @@ Why this column exists
 ======================
 ``coord.worker_heartbeats`` is coord's worker-loop liveness ledger: one row per
 ``(name, replica_id)``, upserted by ``worker_ledger``'s tick wrapper. Every
-column it carries today describes a tick that **finished** — ``last_tick_at``,
-``last_outcome``, ``last_decision_code``, ``consecutive_errors``. The ledger
-writes when a loop body RETURNS, and only then.
+column that reports an OUTCOME reports a tick that **finished** —
+``last_tick_at``, ``last_outcome``, ``last_decision_code``, ``last_detail_code``,
+``consecutive_errors``. (The other four — ``name``, ``replica_id``,
+``leader_gated``, ``interval_secs`` — are identity and configuration and describe
+no tick at all.) The ledger writes when a loop body RETURNS, and only then.
 
 That makes two opposite states byte-identical in the ledger:
 
@@ -49,10 +55,14 @@ fresh follower row, called the alert a false alarm, and posted that; it was not
 a false alarm. Neither the ledger nor ``/health`` could say "a body has been
 running since T", so "in flight" and "dead" were unaskable.
 
-``body_started_at`` makes that question answerable directly off the row: a
-non-NULL value older than 2x the worker's ``interval_secs`` is a positive
-observation — *"in flight for N s"* — which is a third state, distinct from both
-"dead" and "not leader here".
+``body_started_at`` makes that question answerable: a non-NULL value older than
+2x the worker's ``interval_secs`` is a positive observation — *"a body started at
+T and no completion has been recorded since"* — distinct from both "dead" and
+"not leader here". Read beside ``coord.replica_presence`` it separates further,
+into a live body still in flight and an ORPHANED start left by a replica that
+died mid-body; the four-way reader rule below is the normative form, and this
+sentence is only its motivation. The row alone does not settle which, because
+the clearing write never runs for a replica that was killed.
 
 Write protocol — set before the body, cleared when the tick is written
 =====================================================================
@@ -65,7 +75,24 @@ protocol, and the protocol lives in the other repo:
   ``now()`` immediately **before** the body is awaited.
 * When that body returns and the completed tick is upserted, the same write
   **clears the column to NULL**. A settled row therefore carries NULL, which is
-  what makes "non-NULL" mean "in flight" with no further arithmetic.
+  what makes non-NULL the positive half of the reading.
+
+  Read that half precisely, because it has an UNKNOWN of its own and the
+  symmetry matters: non-NULL says a body **STARTED at T and no completion has
+  been recorded since**. That is "in flight" only while the replica is still
+  alive. A replica killed mid-body — a deploy roll, an OOM, the wedge this
+  column exists to observe — never runs the clearing write, and **nothing prunes
+  this table**, so its row carries a non-NULL ``body_started_at`` permanently.
+  With ~1000 departed replicas fleet-wide that is not an edge case; it is the
+  expected residue of every deploy that kills a leader mid-body. Replica
+  liveness is a SEPARATE fact, already carried by ``coord.replica_presence``
+  (``replpres_01``, joined on the shared ``replica_id`` — which is ``uuid``
+  there and ``text`` here, so the join needs an explicit
+  ``h.replica_id::uuid`` and a bare ``ON p.replica_id = h.replica_id`` fails
+  with ``operator does not exist: uuid = text``). This column does not
+  supply it and must not be read as if it did — rendering a four-day-old orphan
+  as "in flight for 4 days" is the same collapse this docstring forbids on the
+  NULL side.
 * The start write bypasses the ledger's ``THROTTLE_FLOOR`` (it is a transition,
   not steady state) but happens only on the leader arm, so the added volume is
   one extra write per leader body — not per iteration, and nothing at all on a
@@ -84,7 +111,8 @@ decided state here re-creates, inside the very column added to remove it, the
 2026-09-19 ambiguity: a stale row with NULL would read as "the loop is gone"
 when the honest answer is "this build does not report body starts".
 
-The rule for a reader is therefore three-way, not two:
+The rule for a reader is therefore FOUR-way, not two — and the non-NULL side
+carries an UNKNOWN of its own, exactly as the NULL side does:
 
 ``NULL`` + fresh ``last_tick_at``
     Nothing to say; the worker is ticking and the column adds no information.
@@ -92,11 +120,19 @@ The rule for a reader is therefore three-way, not two:
     UNKNOWN on the new axis. It is either the pre-existing ``dead`` reading or a
     replica whose build does not write the column. Report the age, and say which
     of the two the evidence supports rather than picking one silently.
-non-NULL, older than 2x ``interval_secs``
+non-NULL, older than 2x ``interval_secs``, replica LIVE in ``coord.replica_presence``
     In flight for N s. Status stays ``stale``/``dead`` by age — a bounded long
     body is still a long body, and past a per-worker ceiling it is still a fault
     — but the *reason* is now ``body_in_flight`` rather than an unexplained
     silence.
+non-NULL, replica ABSENT or stale in ``coord.replica_presence``
+    An **orphaned start**, not a long body: the replica died mid-body and never
+    ran the clearing write. Report it as a departed replica, never as "in flight
+    for N". Nothing prunes this table, so these rows persist indefinitely and are
+    the expected residue of every deploy that kills a leader mid-body — they are
+    the common case, not a corner. Reading one as a live long body would
+    manufacture a wedge that ended days ago, which is the same collapse the NULL
+    arms above refuse.
 
 Why nullable, with no default
 =============================
@@ -119,8 +155,15 @@ is precisely NULL.
 
 No ``CHECK`` constraint is declared. There is no closed vocabulary to constrain —
 the value is a timestamp — and the one invariant worth stating ("not in the
-future") is neither enforceable cheaply nor true under clock skew across
-replicas. The protocol, not the catalog, is what keeps the column honest.
+future") cannot be expressed as a ``CHECK`` **at all**: PostgreSQL refuses a
+non-``IMMUTABLE`` function there, so ``CHECK (body_started_at <= now())`` is
+rejected outright rather than being a cost trade-off. The protocol, not the
+catalog, is what keeps the column honest — and the protocol writes the SERVER's
+``now()``, exactly as ``last_tick_at`` already does (``worker_ledger.rs:469``
+passes ``now()`` in the SQL, never as a bound parameter), so **no replica's clock
+enters this column**. That is deliberate: the sibling table states the rule
+outright — ``replpres_01`` documents ``heartbeat_at`` as *"Written with the
+SERVER's now() so a replica with a skewed clock cannot forge freshness."*
 
 Deploy ordering — the coord side lands SEPARATELY, and AFTER this
 =================================================================
@@ -208,8 +251,6 @@ departed rows, not indexing this column. Revisit on measured evidence, not now.
 
 from collections.abc import Sequence
 
-import sqlalchemy as sa
-
 from alembic import op
 
 # revision identifiers, used by Alembic.
@@ -232,16 +273,27 @@ def upgrade() -> None:
     # Nullable with no server_default -> metadata-only; never rewritten.
     # When the replica owning this row entered its loop body. Set on the leader
     # arm before the body is awaited, cleared to NULL when the finished tick is
-    # written, so non-NULL means "in flight". NULL means "no body in flight OR
-    # this row predates the column" and must never be rendered as "not in
-    # flight" — see the module docstring.
-    op.add_column(
-        "worker_heartbeats",
-        sa.Column("body_started_at", sa.DateTime(timezone=True), nullable=True),
-        schema="coord",
+    # written. NEITHER side may be collapsed, and the module docstring's
+    # four-way reader rule is the normative form: non-NULL means "a body started
+    # and no completion has been recorded since" — "in flight" only while the
+    # replica is live in coord.replica_presence, otherwise an orphaned start
+    # from a replica killed mid-body — and NULL means "no body in flight OR this
+    # row predates the column", never "not in flight".
+    # ``IF NOT EXISTS`` rather than ``op.add_column``: 16 of the last 40
+    # revisions here use the raw idempotent form and 4 use the ORM helper, and
+    # four of those sixteen pair it with this same lock guard, so the two
+    # properties do not trade off. What it buys is recovery — a partially
+    # applied pipeline (``alembic stamp`` back, re-upgrade) re-runs cleanly
+    # instead of failing on an already-present column. Schema-qualified, so
+    # ``check_alembic_schema_args.py`` is satisfied by the SQL itself.
+    op.execute(
+        "ALTER TABLE coord.worker_heartbeats "
+        "ADD COLUMN IF NOT EXISTS body_started_at TIMESTAMPTZ NULL"
     )
 
 
 def downgrade() -> None:
     op.execute("SET LOCAL lock_timeout = '3s'")
-    op.drop_column("worker_heartbeats", "body_started_at", schema="coord")
+    op.execute(
+        "ALTER TABLE coord.worker_heartbeats DROP COLUMN IF EXISTS body_started_at"
+    )
