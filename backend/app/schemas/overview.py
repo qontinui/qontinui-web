@@ -149,6 +149,26 @@ class EstimateUpdate(BaseModel):
     notes: str | None = None
     expected_version: int | None = None
 
+    #: Fields whose column is NOT NULL. Every field here is typed `X | None`
+    #: so that ABSENT can be told from null, which means an explicit null
+    #: reaches the handler looking exactly like a value — and would land as an
+    #: IntegrityError 500 rather than a 422. These four are rejected as the
+    #: 422 they are.
+    _NOT_NULLABLE = ("name", "purpose", "status", "is_baseline", "notes")
+
+    @model_validator(mode="after")
+    def _no_explicit_nulls_on_required_fields(self) -> EstimateUpdate:
+        nulled = [
+            field
+            for field in self._NOT_NULLABLE
+            if field in self.model_fields_set and getattr(self, field) is None
+        ]
+        if nulled:
+            raise ValueError(
+                "these cannot be cleared, only changed: " + ", ".join(nulled)
+            )
+        return self
+
 
 class EstimateSummary(BaseModel):
     model_config = ConfigDict(from_attributes=True)

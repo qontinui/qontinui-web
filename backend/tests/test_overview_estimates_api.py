@@ -847,6 +847,27 @@ class TestEstimateCrud:
         )
         assert remaining.scalar_one() == 0
 
+    async def test_clearing_a_required_field_is_a_422_not_a_500(
+        self, admin_a: httpx.AsyncClient
+    ) -> None:
+        """Every field on the PATCH body is typed `X | None` so ABSENT can be
+        told from null — which means an explicit null looks exactly like a
+        value on the way in. For a NOT NULL column that would reach Postgres
+        and come back as a 500."""
+        created = await _create_estimate(admin_a)
+        for field in ("name", "purpose", "status", "is_baseline", "notes"):
+            response = await admin_a.patch(
+                f"{API}/estimates/{created['id']}", json={field: None}
+            )
+            assert response.status_code == 422, f"{field}: {response.text}"
+        # The nullable ones still clear.
+        cleared = await admin_a.patch(
+            f"{API}/estimates/{created['id']}",
+            json={"accuracy_note": None, "contingency_pct": None},
+        )
+        assert cleared.status_code == 200, cleared.text
+        assert cleared.json()["accuracy_note"] is None
+
     async def test_an_unknown_purpose_is_a_422_not_a_500(
         self, admin_a: httpx.AsyncClient
     ) -> None:
