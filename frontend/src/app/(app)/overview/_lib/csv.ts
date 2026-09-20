@@ -1,0 +1,277 @@
+/**
+ * Reading the two tables a delivery plan is actually written in — the role
+ * list and the phase × role FTE matrix — pasted as CSV.
+ *
+ * Pure functions with no clock, no network and no React: the editor holds the
+ * result, shows it for confirmation and only then saves. Kept separate from
+ * the components on purpose, so the shared overview authoring layer (plan
+ * `2026-09-20-overview-authoring-layer`) can reuse the parsing without the UI.
+ *
+ * A row that cannot be read becomes an `issue` naming its line and what was
+ * expected. Nothing is guessed and nothing is dropped silently.
+ */
+
+import { parseAmountToMicros } from "@/components/overview/money";
+
+export interface CsvIssue {
+  /** 1-based line number in the pasted text. */
+  line: number;
+  text: string;
+  message: string;
+  severity: "error" | "warning";
+}
+
+export interface ParsedRoleRow {
+  code: string;
+  name: string;
+  responsibility: string;
+  day_rate_micros: number | null;
+  currency: string | null;
+  client_side: boolean;
+}
+
+export interface ParsedAllocationRow {
+  phase_code: string;
+  role_code: string;
+  fte: string;
+}
+
+export interface CsvResult<T> {
+  rows: T[];
+  issues: CsvIssue[];
+}
+
+/**
+ * One CSV line into fields, honouring double quotes and `""` escapes. Written
+ * out rather than pulled from a library because the whole input is one pasted
+ * table and a dependency for 30 lines is not worth the supply chain.
+ */
+export function splitCsvLine(line: string): string[] {
+  const fields: string[] = [];
+  let field = "";
+  let quoted = false;
+  for (let i = 0; i < line.length; i += 1) {
+    const ch = line[i];
+    if (quoted) {
+      if (ch === '"') {
+        if (line[i + 1] === '"') {
+          field += '"';
+          i += 1;
+        } else {
+          quoted = false;
+        }
+      } else {
+        field += ch;
+      }
+    } else if (ch === '"') {
+      quoted = true;
+    } else if (ch === "," || ch === "\t") {
+      fields.push(field.trim());
+      field = "";
+    } else {
+      field += ch;
+    }
+  }
+  fields.push(field.trim());
+  return fields;
+}
+
+function nonEmptyLines(text: string): { line: number; text: string }[] {
+  return text
+    .replace(/\r\n?/g, "\n")
+    .split("\n")
+    .map((text, index) => ({ line: index + 1, text }))
+    .filter((row) => row.text.trim() !== "");
+}
+
+const TRUE_WORDS = new Set(["true", "yes", "y", "1", "client", "client-side"]);
+const FALSE_WORDS = new Set(["false", "no", "n", "0", "", "delivery"]);
+
+/** `true` when the first row names columns rather than holding data. */
+function looksLikeHeader(fields: string[]): boolean {
+  const first = (fields[0] ?? "").toLowerCase();
+  return first === "code" || first === "role" || first === "role code";
+}
+
+/**
+ * Roles: `code, name, responsibility, day rate, currency, client side`.
+ *
+ * Only `code` and `name` are required. A rate without a currency is an error
+ * rather than a guess — the backend refuses it too, and an amount whose unit
+ * nobody recorded is exactly the figure that later gets added to a different
+ * currency.
+ */
+export function parseRolesCsv(text: string): CsvResult<ParsedRoleRow> {
+  const issues: CsvIssue[] = [];
+  const rows: ParsedRoleRow[] = [];
+  const lines = nonEmptyLines(text);
+  if (lines.length === 0) return { rows, issues };
+
+  const start = looksLikeHeader(splitCsvLine(lines[0].text)) ? 1 : 0;
+  const seen = new Set<string>();
+
+  for (const entry of lines.slice(start)) {
+    const fields = splitCsvLine(entry.text);
+    const [code, name, responsibility, rate, currency, clientSide] = [
+      fields[0] ?? "",
+      fields[1] ?? "",
+      fields[2] ?? "",
+      fields[3] ?? "",
+      fields[4] ?? "",
+      fields[5] ?? "",
+    ];
+    if (code === "") {
+      issues.push({
+        line: entry.line,
+        text: entry.text,
+        message: "this row has no role code in its first column",
+        severity: "error",
+      });
+      continue;
+    }
+    if (seen.has(code)) {
+      issues.push({
+        line: entry.line,
+        text: entry.text,
+        message: `the role code "${code}" appears more than once`,
+        severity: "error",
+      });
+      continue;
+    }
+
+    const clientSideWord = clientSide.toLowerCase();
+    let isClientSide = false;
+    if (TRUE_WORDS.has(clientSideWord)) isClientSide = true;
+    else if (!FALSE_WORDS.has(clientSideWord)) {
+      issues.push({
+        line: entry.line,
+        text: entry.text,
+        message: `"${clientSide}" was not read as yes or no, so this role was treated as ours rather than the client's`,
+        severity: "warning",
+      });
+    }
+
+    let micros: number | null = null;
+    let iso: string | null = null;
+    if (rate !== "") {
+      micros = parseAmountToMicros(rate);
+      if (micros === null || micros < 0) {
+        issues.push({
+          line: entry.line,
+          text: entry.text,
+          message: `"${rate}" was not read as a day rate`,
+          severity: "error",
+        });
+        continue;
+      }
+      const code3 = currency.trim().toUpperCase();
+      if (!/^[A-Z]{3}$/.test(code3)) {
+        issues.push({
+          line: entry.line,
+          text: entry.text,
+          message:
+            "a day rate has to name its currency as a three-letter code, e.g. EUR",
+          severity: "error",
+        });
+        continue;
+      }
+      iso = code3;
+    }
+
+    seen.add(code);
+    rows.push({
+      code,
+      name: name || code,
+      responsibility,
+      day_rate_micros: micros,
+      currency: iso,
+      client_side: isClientSide,
+    });
+  }
+
+  return { rows, issues };
+}
+
+/**
+ * The FTE matrix: a header row of phase codes, then one row per role.
+ *
+ *     role,A0,A1,A2
+ *     DL,0.5,0.5,1
+ *     BE,,2,2
+ *
+ * An empty cell means "this role is not on that phase" and produces no row —
+ * which is not the same as an allocation of 0, and is why blanks are skipped
+ * rather than zero-filled.
+ */
+export function parseAllocationsCsv(text: string): CsvResult<ParsedAllocationRow> {
+  const issues: CsvIssue[] = [];
+  const rows: ParsedAllocationRow[] = [];
+  const lines = nonEmptyLines(text);
+  if (lines.length === 0) return { rows, issues };
+
+  const header = splitCsvLine(lines[0].text);
+  const phaseCodes = header.slice(1).map((c) => c.trim());
+  if (phaseCodes.length === 0 || phaseCodes.every((c) => c === "")) {
+    issues.push({
+      line: lines[0].line,
+      text: lines[0].text,
+      message:
+        "the first row has to name the phases, e.g. `role,A0,A1,A2` — nothing after the first column was found",
+      severity: "error",
+    });
+    return { rows, issues };
+  }
+
+  const seen = new Set<string>();
+  for (const entry of lines.slice(1)) {
+    const fields = splitCsvLine(entry.text);
+    const roleCode = (fields[0] ?? "").trim();
+    if (roleCode === "") {
+      issues.push({
+        line: entry.line,
+        text: entry.text,
+        message: "this row has no role code in its first column",
+        severity: "error",
+      });
+      continue;
+    }
+    if (seen.has(roleCode)) {
+      issues.push({
+        line: entry.line,
+        text: entry.text,
+        message: `the role "${roleCode}" appears more than once`,
+        severity: "error",
+      });
+      continue;
+    }
+    seen.add(roleCode);
+
+    if (fields.length - 1 > phaseCodes.length) {
+      issues.push({
+        line: entry.line,
+        text: entry.text,
+        message: `this row has more values than the ${phaseCodes.length} phases named in the first row; the extra ones were ignored`,
+        severity: "warning",
+      });
+    }
+
+    phaseCodes.forEach((phaseCode, index) => {
+      if (phaseCode === "") return;
+      const cell = (fields[index + 1] ?? "").trim();
+      if (cell === "" || cell === "-") return;
+      if (!/^\d*(\.\d+)?$/.test(cell) || cell === ".") {
+        issues.push({
+          line: entry.line,
+          text: entry.text,
+          message: `"${cell}" under ${phaseCode} was not read as a number of people`,
+          severity: "error",
+        });
+        return;
+      }
+      if (Number(cell) === 0) return;
+      rows.push({ phase_code: phaseCode, role_code: roleCode, fte: cell });
+    });
+  }
+
+  return { rows, issues };
+}

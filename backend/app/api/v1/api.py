@@ -82,6 +82,7 @@ from app.api.v1.endpoints import (
     notifications,
     operations,
     organizations,
+    overview,
     pair_codes,
     phase_results,
     plan_library,
@@ -265,6 +266,12 @@ api_router.include_router(conditions.router, prefix="/conditions", tags=["condit
 api_router.include_router(
     digital_twin.router, prefix="/digital-twin", tags=["digital-twin"]
 )
+# Project Overview — the business-leader surface (overview.*). Phase 2 of
+# ``2026-09-19-project-overview-for-business-leaders``: the estimate baseline.
+# Tenant-scoped on the active coord tenant, so the frontend attaches
+# ``X-Qontinui-Active-Tenant`` to this prefix (``ACTIVE_TENANT_URL_PREFIXES``
+# in ``frontend/src/services/http-client.ts``).
+api_router.include_router(overview.router, prefix="/overview", tags=["overview"])
 # Environments digital-twin — user-scoped management API + machine-key agent API.
 api_router.include_router(devenv.router, prefix="/devenv", tags=["environments"])
 api_router.include_router(
