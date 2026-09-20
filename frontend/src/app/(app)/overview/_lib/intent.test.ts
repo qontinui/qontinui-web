@@ -148,10 +148,12 @@ describe("titleOfDocument", () => {
     );
   });
 
-  it("accepts a heading that follows opening prose", () => {
+  it("ignores a heading that is not the document's first line", () => {
+    // Taking a later heading would disagree with the body strip, and the
+    // title would then render twice.
     expect(
       titleOfDocument("x", "Opening prose.\n\n## A section\n\nMore.")
-    ).toBe("A section");
+    ).toBe("X");
   });
 });
 
@@ -169,11 +171,18 @@ describe("bodyWithoutLeadHeading", () => {
 });
 
 describe("sortIntentEntries", () => {
-  const entry = (kind: string, name: string, title: string) =>
+  const entry = (
+    kind: string,
+    name: string,
+    title: string,
+    order: number | null = null
+  ) =>
     ({
       kind,
       name,
       title,
+      order,
+      hasBody: true,
       description: null,
       state: "authored",
       body: "x",
@@ -194,6 +203,16 @@ describe("sortIntentEntries", () => {
     ]);
   });
 
+  it("lets an operator-set order outrank the seeded names", () => {
+    // `vision` leads by default; an explicit order on another document wins,
+    // which is what survives a rename of the seeded rows.
+    const sorted = sortIntentEntries([
+      entry("product_intent", "vision", "Vision"),
+      entry("product_intent", "charter", "Charter", 1),
+    ]);
+    expect(sorted.map((e) => e.name)).toEqual(["charter", "vision"]);
+  });
+
   it("sorts unlisted documents after listed ones, by title", () => {
     const sorted = sortIntentEntries([
       entry("audience_profile", "z-team", "The operating team"),
@@ -203,5 +222,76 @@ describe("sortIntentEntries", () => {
       "The AI development agent",
       "The operating team",
     ]);
+  });
+});
+
+describe("the title and the body agree on one heading", () => {
+  const doc = (body: string) =>
+    ({
+      id: "d",
+      kind: "product_intent",
+      name: "vision",
+      description: null,
+      format: "markdown",
+      default_source: null,
+      current_version: 2,
+      updated_at: "2026-09-20T10:00:00Z",
+      body,
+    }) as unknown as PromptDocument;
+
+  it("ignores a # comment inside a fenced code block", () => {
+    const body =
+      "We ship weekly.\n\n```bash\n# Rebuild the index\nnpm run x\n```\n";
+    const entry = toIntentEntry(doc(body));
+    expect(entry.title).toBe("Vision");
+    expect(entry.body).toContain("# Rebuild the index");
+  });
+
+  it("never renders the title twice", () => {
+    const body = "Opening prose.\n\n## A section\n\nMore.";
+    const entry = toIntentEntry(doc(body));
+    // The document does not OPEN with a heading, so the slug titles it and
+    // the body keeps every heading it had.
+    expect(entry.title).toBe("Vision");
+    expect(entry.body).toBe(body);
+  });
+
+  it("handles a setext heading", () => {
+    const entry = toIntentEntry(
+      doc("Vision — the ratchet\n====\n\nBody text.")
+    );
+    expect(entry.title).toBe("Vision — the ratchet");
+    expect(entry.body).toBe("Body text.");
+  });
+
+  it("keeps a hash that is part of a word", () => {
+    expect(titleOfDocument("x", "# Why C# beats F#\n\nBody.")).toBe(
+      "Why C# beats F#"
+    );
+  });
+
+  it("reads a title written with inline markdown as words", () => {
+    expect(titleOfDocument("x", "# *[Vision](/v)* of the fleet\n")).toBe(
+      "Vision of the fleet"
+    );
+  });
+
+  it("reads a slug's hyphens as word breaks in the fallback", () => {
+    expect(titleOfDocument("current-initiative", "Prose, no heading.")).toBe(
+      "Current initiative"
+    );
+  });
+
+  it("a document that is only a title still has content", () => {
+    const entry = toIntentEntry(doc("---\na: b\n---\n\n# Q4 — onboarding\n"));
+    expect(entry.title).toBe("Q4 — onboarding");
+    expect(entry.body).toBe("");
+    expect(hasContent(entry)).toBe(true);
+  });
+
+  it("an authored document with no prose at all is still unwritten", () => {
+    expect(hasContent(toIntentEntry(doc("---\na: b\n---\n\n   \n")))).toBe(
+      false
+    );
   });
 });

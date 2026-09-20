@@ -29,14 +29,19 @@ export const SUMMARY_INTENT_KINDS = [
 export type SummaryIntentKind = (typeof SUMMARY_INTENT_KINDS)[number];
 
 /**
- * Document order within a kind, most important first.
+ * Reading order within a kind, for coord's SEEDED document names only.
  *
- * A kind holds several documents and coord lists them alphabetically by name,
- * which put "non-goals" above "vision" on the Summary — the first thing a
- * reader met was what the project will never be (operator, 2026-09-21).
- * Reading order is editorial, so it is stated here: what the project IS, then
- * what bounds it, then what is unsettled. A name not listed sorts after the
- * listed ones, by title.
+ * Coord lists documents alphabetically by name (`ORDER BY kind, name`), which
+ * put "non-goals" above "vision" on the Summary — the first thing a reader met
+ * was what the project will never be (operator, 2026-09-21). Reading order is
+ * editorial, so the page states one.
+ *
+ * **This list is a fallback, not the authority.** Coord documents these names
+ * as the addresses of example rows an operator is expected to rename or
+ * replace, so an order keyed on them silently stops applying after a rename.
+ * The authority is the document's own `attrs.overview_order`, set through the
+ * existing prompt-document write door; this list only keeps the seeded corpus
+ * sensible until one is set.
  */
 export const INTENT_DOC_ORDER: Record<SummaryIntentKind, readonly string[]> = {
   product_intent: ["vision", "non-goals", "open-questions"],
@@ -88,10 +93,21 @@ export function stripFrontmatter(body: string): string {
 export interface IntentEntry {
   kind: SummaryIntentKind;
   name: string;
-  /** Coord's one-line description of the document, if it has one. */
+  /**
+   * Coord's description: an editorial note for whoever maintains the document,
+   * often several lines. Never used as a heading — see `titleOfDocument`.
+   */
   description: string | null;
   /** What to call this document on the page: its own opening heading. */
   title: string;
+  /** `attrs.overview_order` when the operator has set one. */
+  order: number | null;
+  /**
+   * Whether the document had prose BEFORE its opening heading was stripped.
+   * A document that is only a title still says something — its title — and
+   * must not be reported as unwritten.
+   */
+  hasBody: boolean;
   /** `unreadable`: the list named this document but its body failed to load. */
   state: IntentState | "unreadable";
   /** Readable markdown, frontmatter removed. Empty unless authored/unknown. */
@@ -110,12 +126,47 @@ export interface IntentEntry {
  * lines long, and using one as a heading put a paragraph where a title
  * belongs and buried the document's real title beneath it.
  */
+/**
+ * The heading a document OPENS with — ATX (`# Title`) or setext (`Title` over
+ * `====`) — or null when it opens with anything else.
+ *
+ * Anchored at the first non-blank line on purpose. A scan would find a `#`
+ * comment inside a fenced code block, and would disagree with
+ * `bodyWithoutLeadHeading`, which strips only from the start; the two must
+ * name the same heading or the title renders twice.
+ */
+function leadHeading(body: string): { text: string; raw: string } | null {
+  const stripped = stripFrontmatter(body);
+  const atx =
+    /^([ \t]{0,3}#{1,6}[ \t]+(.+?)(?:[ \t]+#+)?[ \t]*)(?:\r?\n|$)/.exec(
+      stripped
+    );
+  if (atx?.[2]) return { text: atx[2].trim(), raw: atx[0] };
+  const setext =
+    /^([ \t]{0,3}(\S.*?)[ \t]*\r?\n[ \t]{0,3}[=-]{2,}[ \t]*)(?:\r?\n|$)/.exec(
+      stripped
+    );
+  if (setext?.[2]) return { text: setext[2].trim(), raw: setext[0] };
+  return null;
+}
+
+/** Inline markdown a title should read as words: `*Vision*`, `[Vision](/v)`. */
+function plainText(text: string): string {
+  return text
+    .replace(/\[([^\]]+)\]\([^)]*\)/g, "$1")
+    .replace(/[*_`]/g, "")
+    .trim();
+}
+
 export function titleOfDocument(name: string, body: string): string {
-  const heading = /^[ \t]{0,3}#{1,3}[ \t]+(.+?)[ \t]*#*[ \t]*$/m.exec(
-    stripFrontmatter(body)
-  );
-  const fromBody = heading?.[1]?.trim();
+  const heading = leadHeading(body);
+  const fromBody = heading ? plainText(heading.text) : "";
   if (fromBody) return fromBody;
+  // Fallback, for a document that opens with prose or could not be read. A
+  // slug's hyphen is usually a word separator ("current-initiative"), so it
+  // becomes a space; that spells a genuinely hyphenated name slightly wrong
+  // ("non-goals" → "Non goals"), which is the lesser of the two errors and
+  // only shows when the document carries no heading of its own.
   const words = name.replace(/[-_]+/g, " ").trim();
   return words.charAt(0).toUpperCase() + words.slice(1);
 }
@@ -124,19 +175,26 @@ export function titleOfDocument(name: string, body: string): string {
  *  heading itself as the document's title. */
 export function bodyWithoutLeadHeading(body: string): string {
   const stripped = stripFrontmatter(body);
-  return stripped
-    .replace(/^[ \t]{0,3}#{1,3}[ \t]+.+?[ \t]*#*[ \t]*(\r?\n|$)/, "")
-    .trimStart();
+  const heading = leadHeading(body);
+  return heading ? stripped.slice(heading.raw.length).trimStart() : stripped;
+}
+
+function readOrder(doc: { attrs?: unknown }): number | null {
+  const attrs = doc.attrs;
+  if (!attrs || typeof attrs !== "object") return null;
+  const value = (attrs as Record<string, unknown>).overview_order;
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
 }
 
 function base(
-  doc: WithSeedVerdict<PromptDocumentSummary>
-): Omit<IntentEntry, "state" | "body" | "title"> {
+  doc: WithSeedVerdict<PromptDocumentSummary> & { attrs?: unknown }
+): Omit<IntentEntry, "state" | "body" | "title" | "hasBody"> {
   return {
     kind: doc.kind as SummaryIntentKind,
     name: doc.name,
     description: doc.description,
     updatedAt: doc.updated_at ?? null,
+    order: readOrder(doc),
   };
 }
 
@@ -147,11 +205,13 @@ function base(
  */
 export function sortIntentEntries(entries: IntentEntry[]): IntentEntry[] {
   const rank = (e: IntentEntry) => {
-    const i = INTENT_DOC_ORDER[e.kind].indexOf(e.name);
-    return i === -1 ? Number.MAX_SAFE_INTEGER : i;
+    // An operator-set order outranks anything this file knows.
+    if (typeof e.order === "number" && Number.isFinite(e.order)) return e.order;
+    const i = (INTENT_DOC_ORDER[e.kind] ?? []).indexOf(e.name);
+    return i === -1 ? Number.MAX_SAFE_INTEGER : 1000 + i;
   };
   return [...entries].sort(
-    (a, b) => rank(a) - rank(b) || a.title.localeCompare(b.title)
+    (a, b) => rank(a) - rank(b) || a.title.localeCompare(b.title, "en")
   );
 }
 
@@ -165,6 +225,7 @@ export function toIntentEntry(
     ...base(doc),
     state,
     title: titleOfDocument(doc.name, body),
+    hasBody: stripFrontmatter(body).trim().length > 0,
     body: state === "skeleton" ? "" : bodyWithoutLeadHeading(body),
   };
 }
@@ -178,6 +239,7 @@ export function skeletonEntry(
     ...base(doc),
     state: "skeleton",
     body: "",
+    hasBody: false,
     title: titleOfDocument(doc.name, ""),
   };
 }
@@ -191,6 +253,7 @@ export function unreadableEntry(
     ...base(doc),
     state: "unreadable",
     body: "",
+    hasBody: false,
     error,
     title: titleOfDocument(doc.name, ""),
   };
@@ -201,5 +264,7 @@ export function unreadableEntry(
 export function hasContent(entry: IntentEntry): boolean {
   if (entry.state === "unreadable") return true;
   if (entry.state === "skeleton") return false;
-  return entry.body.trim().length > 0;
+  // Measured BEFORE the opening heading was stripped: a document that is only
+  // a title still says something, and is not "not written yet".
+  return entry.hasBody;
 }
