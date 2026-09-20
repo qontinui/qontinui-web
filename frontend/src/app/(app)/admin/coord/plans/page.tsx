@@ -86,8 +86,14 @@ import {
 import { Button } from "@/components/ui/button";
 import { ChevronLeft, ChevronRight, Filter, Rows3 } from "lucide-react";
 import { HealthStrip, RecordList, RefreshButton } from "@/components/console";
+import { CaptureHealthPanel } from "@/components/admin/coord/CaptureHealthPanel";
 import { ReconciliationDisclosure } from "@/components/admin/coord/ReconciliationDisclosure";
 import { ReconciliationRow } from "@/components/admin/coord/ReconciliationRow";
+import {
+  deriveCaptureCensus,
+  describeCorpusFreshness,
+  type CaptureHealthResponse,
+} from "@/components/admin/coord/captureHealthStatus";
 import {
   DEFAULT_PAGE_SIZE,
   PAGE_SIZES,
@@ -104,6 +110,15 @@ import {
 import { httpClient } from "@/services/service-factory";
 
 const ENDPOINT = "/api/v1/plan-library/reconciliation";
+/**
+ * Phase 4a — the capture census, read SEPARATELY and deliberately so.
+ *
+ * It is a different question about a different store (the artifact store, axis
+ * B's source), and it answers on the degraded population arm where the
+ * reconciliation's own document flags do not. Folding it into the
+ * reconciliation read would tie the two together and lose exactly that.
+ */
+const CAPTURE_ENDPOINT = "/api/v1/plan-library/capture-health";
 const POLL_INTERVAL_MS = 30_000;
 
 export default function CoordPlansListPage() {
@@ -120,6 +135,20 @@ export default function CoordPlansListPage() {
    * itself as an anonymous one.
    */
   const [violations, setViolations] = useState<string[] | null>(null);
+
+  /**
+   * Phase 4a — the capture census, on its own read state.
+   *
+   * It is NOT re-read when the window changes: offset and limit are questions
+   * about the reconciliation page, and this census is about the whole artifact
+   * store. `captureFailed` is kept beside the body rather than replacing it,
+   * so a failed refresh leaves the previous census on screen and labelled,
+   * never an empty one [policy: `verification-and-evidence`
+   * `silent-empty-is-unknown`].
+   */
+  const [capture, setCapture] = useState<CaptureHealthResponse | null>(null);
+  const [captureLoaded, setCaptureLoaded] = useState(false);
+  const [captureFailed, setCaptureFailed] = useState(false);
 
   /**
    * The two generation counters, for the same reasons the work-unit page
@@ -189,16 +218,38 @@ export default function CoordPlansListPage() {
     };
   }, [fetchData]);
 
+  const fetchCapture = useCallback(async () => {
+    try {
+      const body =
+        await httpClient.get<CaptureHealthResponse>(CAPTURE_ENDPOINT);
+      setCapture(body);
+      setCaptureFailed(false);
+    } catch {
+      // The census could not be read. Which door feeds this corpus is
+      // UNKNOWN — it is never "no door does".
+      setCaptureFailed(true);
+    } finally {
+      setCaptureLoaded(true);
+    }
+  }, []);
+
+  useEffect(() => {
+    void fetchCapture();
+  }, [fetchCapture]);
+
   const refresh = useCallback(() => {
     const tookLock = !pollInFlight.current;
     if (tookLock) pollInFlight.current = true;
     const question = questionGen.current;
-    return fetchData().finally(() => {
+    // Both reads, because the control says "refresh" and a stale census
+    // beside a fresh reconciliation is the misreading this page exists to
+    // stop.
+    return Promise.all([fetchData(), fetchCapture()]).finally(() => {
       if (tookLock && question === questionGen.current) {
         pollInFlight.current = false;
       }
     });
-  }, [fetchData]);
+  }, [fetchData, fetchCapture]);
 
   const rows = useMemo(() => data?.items ?? [], [data]);
   const shown = useMemo(
@@ -220,6 +271,21 @@ export default function CoordPlansListPage() {
     () => deriveReconciliationHealth(data, loaded, readFailed, violations),
     [data, loaded, readFailed, violations]
   );
+  const census = useMemo(
+    () => (capture === null ? null : deriveCaptureCensus(capture)),
+    [capture]
+  );
+  const freshness = useMemo(() => describeCorpusFreshness(capture), [capture]);
+  /**
+   * Did the reconciliation read suppress its document-layer completeness
+   * claim? The census is allowed to render either way — it read a store that
+   * answered — but on `true` it must say, in words, that it does not restore
+   * that claim. `false` while the reconciliation is unread is not a
+   * contradiction: the panel's unsuppressed note claims no restoration
+   * either.
+   */
+  const documentAxisSuppressed =
+    disclosure !== null && !disclosure.documentAxisAdmissible;
 
   const canPageBack = offset > 0;
   const canPageForward = window?.hasMore ?? false;
@@ -328,6 +394,17 @@ export default function CoordPlansListPage() {
       {/* The population state, and every flag derived from it — in that order,
           and never collapsed behind a click. */}
       {disclosure && <ReconciliationDisclosure lines={disclosure.lines} />}
+
+      {/* Phase 4a — the companion to the document-axis line above: the
+          document layer is N% complete BY WHICH DOOR, and is that door still
+          alive? A separate read, and it never repairs a suppressed claim. */}
+      <CaptureHealthPanel
+        census={census}
+        freshness={freshness}
+        documentAxisSuppressed={documentAxisSuppressed}
+        readFailed={captureFailed}
+        loaded={captureLoaded}
+      />
 
       {statusFiltered && (
         <p

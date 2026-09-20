@@ -22,6 +22,7 @@ import type {
   ReconciliationResponse,
   ReconciliationRowData,
 } from "@/components/admin/coord/planReconciliationStatus";
+import type { CaptureHealthResponse } from "@/components/admin/coord/captureHealthStatus";
 
 const get = vi.fn();
 
@@ -496,5 +497,169 @@ describe("the five read states", () => {
     expect(await screen.findByTestId("coord-plans-empty")).toHaveTextContent(
       "No plan stems in this window"
     );
+  });
+});
+
+/**
+ * Phase 4a — the capture census, beside the document-axis line.
+ *
+ * `/plan-library/capture-health` had zero frontend consumers on `origin/main`
+ * [policy: `capability-ships-enabled`], and it is the companion to Phase 0's
+ * reading: that reading established the document layer is 94.8% complete and
+ * left standing *by which door, and is that door still alive?*
+ *
+ * These tests pin the two honesty properties the route's own schema spells
+ * out, and the one this plan adds on top of them.
+ */
+
+const CAPTURE: CaptureHealthResponse = {
+  total: 1887,
+  doors: [
+    {
+      captured_by: "runner_scan",
+      count: 1880,
+      known: true,
+      first_at: "2026-06-01T00:00:00Z",
+      last_touched_at: "2026-09-20T09:00:00Z",
+    },
+    // The finding. Zero, and it must reach the screen.
+    { captured_by: "agent", count: 0, known: true },
+    {
+      captured_by: "operator",
+      count: 7,
+      known: true,
+      first_at: "2026-08-01T00:00:00Z",
+      last_touched_at: "2026-09-01T00:00:00Z",
+    },
+  ],
+  newest_updated_at: "2026-09-20T09:00:00Z",
+};
+
+/** Route by URL — the page makes two reads against two different stores. */
+function routed(
+  reconciliation: ReconciliationResponse | Error,
+  capture: CaptureHealthResponse | Error
+) {
+  get.mockImplementation((url: unknown) => {
+    const answer = String(url).includes("capture-health")
+      ? capture
+      : reconciliation;
+    return answer instanceof Error
+      ? Promise.reject(answer)
+      : Promise.resolve(answer);
+  });
+}
+
+describe("the capture census beside the document-axis line", () => {
+  it("reads /plan-library/capture-health at all", async () => {
+    routed(healthy(), CAPTURE);
+    render(<CoordPlansListPage />);
+
+    await waitFor(() =>
+      expect(
+        get.mock.calls.some((c) =>
+          String(c[0]).includes("/api/v1/plan-library/capture-health")
+        )
+      ).toBe(true)
+    );
+  });
+
+  it("RENDERS a door with zero artifacts — a zero is the finding", async () => {
+    routed(healthy(), CAPTURE);
+    render(<CoordPlansListPage />);
+
+    const doors = await screen.findAllByTestId("coord-capture-door");
+    // Three rows, not two: a door missing from the list would read as an
+    // absent feature rather than an unused one.
+    expect(doors).toHaveLength(3);
+    const agent = doors.find((d) => d.getAttribute("data-door") === "agent");
+    expect(agent).toBeDefined();
+    expect(agent).toHaveAttribute("data-silent", "true");
+    expect(
+      within(agent as HTMLElement).getByTestId("coord-capture-door-silent")
+    ).toHaveTextContent("written nothing");
+  });
+
+  it("says in words which door has written nothing", async () => {
+    routed(healthy(), CAPTURE);
+    render(<CoordPlansListPage />);
+
+    expect(
+      await screen.findByTestId("coord-capture-health-silent-finding")
+    ).toHaveTextContent("agent write door");
+  });
+
+  it("labels the timestamp last TOUCHED, never last captured", async () => {
+    routed(healthy(), CAPTURE);
+    render(<CoordPlansListPage />);
+
+    await screen.findAllByTestId("coord-capture-door");
+    expect(screen.getByTestId("coord-capture-health")).toHaveTextContent(
+      "last touched"
+    );
+    expect(screen.getByTestId("coord-capture-health")).not.toHaveTextContent(
+      "last captured,"
+    );
+  });
+
+  it("renders a null newest_updated_at as UNKNOWN, not as fresh", async () => {
+    routed(healthy(), { ...CAPTURE, newest_updated_at: null });
+    render(<CoordPlansListPage />);
+
+    const newest = await screen.findByTestId("coord-capture-health-newest");
+    expect(newest).toHaveAttribute("data-unknown", "true");
+    expect(newest).toHaveTextContent("unknown");
+    expect(newest).not.toHaveTextContent("just now");
+  });
+
+  it("does NOT present itself as restoring a suppressed completeness claim", async () => {
+    // The degraded population arm — 5 of 8 probes on 2026-09-20 — is the one
+    // where `document_axis_complete` is vacuously true and the page suppresses
+    // it. The census still renders (the artifact store answered) and must say
+    // it repairs nothing.
+    routed(degraded(), CAPTURE);
+    render(<CoordPlansListPage />);
+
+    expect(
+      await screen.findByTestId(
+        "coord-plans-disclosure-document-axis-suppressed"
+      )
+    ).toBeInTheDocument();
+    const secondRead = screen.getByTestId("coord-capture-health-second-read");
+    expect(secondRead).toHaveTextContent("does NOT restore");
+    expect(secondRead).toHaveTextContent("different moments");
+    // And the census is still there — suppression is about the verdict, not
+    // about refusing to show a store that answered.
+    expect(await screen.findAllByTestId("coord-capture-door")).toHaveLength(3);
+  });
+
+  it("says only the timing caveat when nothing was suppressed", async () => {
+    routed(healthy(), CAPTURE);
+    render(<CoordPlansListPage />);
+
+    const secondRead = await screen.findByTestId(
+      "coord-capture-health-second-read"
+    );
+    expect(secondRead).toHaveTextContent("own timing");
+    expect(secondRead).not.toHaveTextContent("does NOT restore");
+  });
+
+  it("renders a failed census read as UNKNOWN, never as no doors", async () => {
+    routed(healthy(), new Error("GET /x failed: 503 - upstream"));
+    render(<CoordPlansListPage />);
+
+    expect(
+      await screen.findByTestId("coord-capture-health-unknown")
+    ).toHaveTextContent("UNKNOWN");
+    expect(screen.queryAllByTestId("coord-capture-door")).toHaveLength(0);
+  });
+
+  it("calls a response with no door list a shape it does not understand", async () => {
+    routed(healthy(), { total: 0 });
+    render(<CoordPlansListPage />);
+
+    expect(
+      await screen.findByTestId("coord-capture-health-doors-unstated")
+    ).toHaveTextContent("not a corpus with no doors");
   });
 });
