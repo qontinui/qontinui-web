@@ -20,7 +20,7 @@ import { SidebarHeader } from "./_components/SidebarHeader";
 import { SidebarNav } from "./_components/SidebarNav";
 import { SidebarFooter } from "./_components/SidebarFooter";
 import { ProjectSwitcher } from "./ProjectSwitcher";
-import { SidebarDrawer } from "./SidebarDrawer";
+import { SidebarDrawer, SIDEBAR_DRAWER_ID } from "./SidebarDrawer";
 
 interface UnifiedSidebarProps {
   className?: string;
@@ -208,14 +208,52 @@ const UnifiedSidebarContent: React.FC<UnifiedSidebarProps> = ({
         onLogout={handleLogout}
         onDocs={handleDocs}
         onToggleCollapse={toggleCollapse}
-        toggleLabel={inDrawer ? "Close menu" : undefined}
+        // Below `lg` this control opens and closes the drawer, so it is a
+        // disclosure button and has to say so — and say what it does. Left as
+        // "Expand sidebar", the one control that opens a tablet's menu named
+        // an action that width has no equivalent of.
+        toggleLabel={
+          isDesktop ? undefined : inDrawer ? "Close menu" : "Open menu"
+        }
+        toggleControlsDrawer={
+          isDesktop ? undefined : { open: drawerOpen, id: SIDEBAR_DRAWER_ID }
+        }
       />
     </>
   );
 
   return (
     <TooltipProvider delayDuration={0}>
-      {inDrawer ? (
+      {/* The inline sidebar is ALWAYS rendered from `md` up, empty while the
+          drawer holds the menu. It is what the content column's `md:ml-16` /
+          `lg:ml-*` offset reserves space for, so unmounting it would leave the
+          page indented for an element that is not there. `hidden md:flex`
+          rather than a layout-band check: a pure CSS switch cannot disagree
+          with the top bar's own `md:hidden` about where the breakpoint is. */}
+      <aside
+        ref={inlineRef}
+        // Both identities travel WITH the menu, never duplicated: while the
+        // drawer holds the body, this element is an empty spacer and the
+        // drawer is the sidebar. The body itself is moved, not copied, so
+        // nothing beneath it is ever mounted twice either.
+        data-sidebar={inDrawer ? undefined : "true"}
+        data-tutorial-id={inDrawer ? undefined : "sidebar-main"}
+        className={cn(
+          "fixed inset-y-0 left-0 z-50 hidden flex-col border-r border-border-subtle bg-surface-canvas transition-all duration-200 ease-linear motion-reduce:transition-none md:flex",
+          // `isCollapsed`, NOT `bodyCollapsed`: this element's width is the
+          // space the content column's offset reserves, and that does not
+          // change because the menu is temporarily somewhere else. Keyed to
+          // the body's state instead, the empty spacer took the drawer's full
+          // width and visibly snapped back from 256px to the rail's 64px when
+          // the drawer closed.
+          isCollapsed ? "w-16" : "w-64",
+          className
+        )}
+      >
+        {inDrawer ? null : body}
+      </aside>
+
+      {inDrawer && (
         <SidebarDrawer
           open
           onOpenChange={setDrawerOpen}
@@ -224,26 +262,6 @@ const UnifiedSidebarContent: React.FC<UnifiedSidebarProps> = ({
         >
           {body}
         </SidebarDrawer>
-      ) : (
-        <aside
-          ref={inlineRef}
-          data-sidebar="true"
-          data-tutorial-id="sidebar-main"
-          className={cn(
-            // `hidden md:flex` rather than a layout-band check: the phone
-            // shell has no inline sidebar, and a pure CSS switch cannot
-            // disagree with the top bar's own `md:hidden` about where the
-            // breakpoint is. The element stays in the DOM at phone width so
-            // the tutorial anchors below it resolve at every width — and,
-            // because the body is MOVED into the drawer rather than copied,
-            // never twice.
-            "fixed inset-y-0 left-0 z-50 hidden flex-col border-r border-border-subtle bg-surface-canvas transition-all duration-200 ease-linear motion-reduce:transition-none md:flex",
-            bodyCollapsed ? "w-16" : "w-64",
-            className
-          )}
-        >
-          {body}
-        </aside>
       )}
 
       <CreateOrganizationDialogSlot

@@ -38,7 +38,10 @@ export function MobileTopBar() {
         onClick={() => setDrawerOpen(true)}
         aria-label="Open menu"
         aria-expanded={drawerOpen}
-        aria-controls={SIDEBAR_DRAWER_ID}
+        // Only while the panel exists. The drawer is unmounted when closed,
+        // and `aria-controls` naming an id that is not in the document is an
+        // invalid relationship, not a helpful one.
+        aria-controls={drawerOpen ? SIDEBAR_DRAWER_ID : undefined}
         data-ui-bridge-id="shell.menu-button"
         // 44x44: the whole bar height, so the tap target is the full corner.
         className="flex size-11 shrink-0 items-center justify-center text-text-muted transition-colors hover:bg-surface-hover hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring motion-reduce:transition-none"

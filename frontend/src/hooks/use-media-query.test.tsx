@@ -52,14 +52,15 @@ describe("useMediaQuery", () => {
 
   it("stops listening once unmounted", () => {
     media = installMatchMedia(390);
-    const { result, unmount } = renderHook(() =>
-      useMediaQuery("(min-width: 768px)")
-    );
+    const { unmount } = renderHook(() => useMediaQuery("(min-width: 768px)"));
+    expect(media.listenerCount("(min-width: 768px)")).toBe(1);
+
     unmount();
 
-    // No act() warning and no state update on an unmounted component.
-    act(() => media!.setWidth(1440));
-    expect(result.current).toBe(false);
+    // Asserted on the stub, not on `result.current`: `renderHook` freezes
+    // that at the last rendered value once unmounted, so it reads the same
+    // whether or not the listener was ever detached.
+    expect(media.listenerCount("(min-width: 768px)")).toBe(0);
   });
 
   it("falls back to the declared snapshot when matchMedia is missing", () => {

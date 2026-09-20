@@ -16,13 +16,30 @@ export interface CollapseToggleProps {
    * "Collapse" would describe an action that width has no equivalent of.
    */
   label?: string;
+  /**
+   * Set when this control is acting as the drawer's disclosure button rather
+   * than a collapse toggle: it then owns an expanded/collapsed relationship a
+   * screen reader has to be told about.
+   */
+  controlsDrawer?: { open: boolean; id: string };
 }
 
 export function CollapseToggle({
   isCollapsed,
   onToggle,
   label,
+  controlsDrawer,
 }: CollapseToggleProps) {
+  const disclosureProps = controlsDrawer
+    ? {
+        "aria-expanded": controlsDrawer.open,
+        // Only while the panel exists: the drawer is unmounted when closed,
+        // and `aria-controls` pointing at a missing id is an invalid
+        // relationship rather than a helpful one.
+        "aria-controls": controlsDrawer.open ? controlsDrawer.id : undefined,
+      }
+    : {};
+
   if (isCollapsed) {
     const collapsedLabel = label ?? "Expand sidebar";
     return (
@@ -33,6 +50,7 @@ export function CollapseToggle({
             onClick={onToggle}
             aria-label={collapsedLabel}
             data-sidebar-collapse-toggle=""
+            {...disclosureProps}
             className="flex size-10 items-center justify-center rounded-md text-text-muted transition-colors hover:bg-surface-hover hover:text-text-primary motion-reduce:transition-none"
           >
             <PanelLeftOpen className="size-4" aria-hidden />
@@ -48,6 +66,7 @@ export function CollapseToggle({
       type="button"
       onClick={onToggle}
       data-sidebar-collapse-toggle=""
+      {...disclosureProps}
       className="flex h-8 w-full items-center justify-center gap-2 rounded-md text-text-muted transition-colors hover:bg-surface-hover hover:text-text-primary motion-reduce:transition-none"
     >
       <PanelLeftClose className="size-3.5" aria-hidden />

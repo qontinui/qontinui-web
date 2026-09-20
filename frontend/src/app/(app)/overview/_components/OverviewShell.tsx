@@ -11,7 +11,7 @@
  */
 
 import Link from "next/link";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { Clock3 } from "lucide-react";
 import { usePathname } from "next/navigation";
 import { useAuth } from "@/contexts/auth-context";
@@ -37,11 +37,15 @@ export function OverviewShell({ children }: { children: React.ReactNode }) {
   // phone leaves sections off the right edge with nothing saying so. A fade
   // there is that signal — shown only while something IS cut off, so it never
   // dims the last tab on a screen wide enough to hold them all.
-  const subnavRef = useRef<HTMLElement | null>(null);
+  // A callback ref, not `useRef` + a mount-only effect: the `<nav>` is below
+  // the `if (!user) return null` guard, so on any first render without a user
+  // a mount-only effect would read `null`, return, and never run again —
+  // leaving the fade dead for the component's whole life.
+  const [subnav, setSubnav] = useState<HTMLElement | null>(null);
   const [subnavHasMore, setSubnavHasMore] = useState(false);
 
   useEffect(() => {
-    const nav = subnavRef.current;
+    const nav = subnav;
     if (!nav) return;
     const update = () => {
       // 1px of slack: a fractional layout width otherwise leaves the fade on
@@ -56,7 +60,7 @@ export function OverviewShell({ children }: { children: React.ReactNode }) {
       nav.removeEventListener("scroll", update);
       observer.disconnect();
     };
-  }, []);
+  }, [subnav]);
 
   if (!user) return null;
 
@@ -101,7 +105,7 @@ export function OverviewShell({ children }: { children: React.ReactNode }) {
 
         <div className="relative -mb-px mt-5">
           <nav
-            ref={subnavRef}
+            ref={setSubnav}
             aria-label="Overview pages"
             className="flex gap-1 overflow-x-auto"
             data-ui-bridge-id="overview.subnav"
