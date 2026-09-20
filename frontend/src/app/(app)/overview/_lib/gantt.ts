@@ -109,13 +109,17 @@ const IGNORED_DIRECTIVES = [
 const DAY_MS = 86_400_000;
 
 /**
- * True when the line could also be read as a task: something after its first
- * colon parses as a date or a duration.
+ * True when a directive's VALUE is itself shaped like task metadata: it
+ * contains a colon, and what follows that colon is a LIST of at least two
+ * comma-separated fields one of which parses as a date or a duration.
  *
  * This does NOT decide the line — the keyword does, exactly as mermaid's own
  * lexer decides it, so `title Delivery plan: 2026-01-05` stays a title and
- * `section A0: 2026-01-05` stays a section. Letting this win instead turned
- * both of those into a phantom "Unnamed section" and an error.
+ * `section A0: 2026-01-05` stays a section. Letting a date anywhere after
+ * the FIRST colon win instead turned both of those into a phantom "Unnamed
+ * section" and an error; testing the VALUE rather than the whole line is
+ * what tells those two apart from `Excludes review :e1, 2026-01-05, 5d`,
+ * whose value (`review :e1, 2026-01-05, 5d`) carries a colon of its own.
  *
  * What it is for is the other half of the same problem: when a line matches
  * a directive keyword AND looks like this, the reader is told, so a task the
@@ -124,14 +128,24 @@ const DAY_MS = 86_400_000;
  * off :s1, …` — is settled by the word boundary in `directiveValue` and
  * never reaches here.
  */
-function looksLikeTaskLine(line: string): boolean {
-  const colon = line.indexOf(":");
+function looksLikeTaskMeta(value: string): boolean {
+  const colon = value.indexOf(":");
   if (colon < 0) return false;
-  return line
+  const tokens = value
     .slice(colon + 1)
     .split(",")
     .map((token) => token.trim())
-    .some((token) => ISO_DATE.test(token) || DURATION.test(token));
+    .filter((token) => token !== "");
+  // A task's meta is a LIST — at minimum a start and an end. A directive
+  // value that merely ends in a date is not one: `title Delivery plan:
+  // 2026-01-05` and `section A0: 2026-01-05` have a single token after the
+  // colon, while `Excludes review :e1, 2026-01-05, 5d` has three. Testing
+  // only "contains a date" warned on both of the first two, telling the
+  // reader to rename a title that was perfectly good.
+  return (
+    tokens.length >= 2 &&
+    tokens.some((token) => ISO_DATE.test(token) || DURATION.test(token))
+  );
 }
 
 /**
@@ -306,10 +320,15 @@ export function parseMermaidGantt(source: string): GanttParseResult {
     const lower = line.toLowerCase();
     if (lower === "gantt") continue;
 
-    // A directive line that could also be read as a task. The keyword still
-    // wins — that is what mermaid does — but the reader is told, because a
-    // task read as a directive is a task that vanished.
-    const ambiguous = looksLikeTaskLine(line);
+    // A directive line whose VALUE is shaped like task metadata. The keyword
+    // still wins — that is what mermaid does — but the reader is told,
+    // because a task read as a directive is a task that vanished.
+    //
+    // `ambiguous` is computed per directive, from that directive's own
+    // value: keyed on the whole line instead, it fired on `title Delivery
+    // plan: 2026-01-05` and told the reader to rename a perfectly good
+    // title, on the screen whose job is to show what went wrong.
+    let ambiguous = false;
     const warnIfAmbiguous = (what: string) => {
       if (!ambiguous) return;
       pushIssue(
@@ -323,7 +342,15 @@ export function parseMermaidGantt(source: string): GanttParseResult {
     const dateFormat = directiveValue(line, "dateformat");
     if (dateFormat !== null) {
       const value = dateFormat;
+      ambiguous = looksLikeTaskMeta(value);
       warnIfAmbiguous("dateFormat");
+      if (ambiguous) {
+        // The line was almost certainly a task. Taking its meta for a
+        // declared date format would suppress the "no dateFormat declared"
+        // warning the chart actually deserves, and raise an error quoting
+        // task meta as if it were a format string.
+        continue;
+      }
       dateFormatSeen = true;
       if (value.toUpperCase() !== "YYYY-MM-DD") {
         pushIssue(
@@ -336,12 +363,14 @@ export function parseMermaidGantt(source: string): GanttParseResult {
     }
     const titleValue = directiveValue(line, "title");
     if (titleValue !== null) {
+      ambiguous = looksLikeTaskMeta(titleValue);
       warnIfAmbiguous("title");
       title = titleValue || null;
       continue;
     }
     const excludesValue = directiveValue(line, "excludes");
     if (excludesValue !== null) {
+      ambiguous = looksLikeTaskMeta(excludesValue);
       warnIfAmbiguous("excludes");
       const value = excludesValue.toLowerCase();
       if (value === "weekends") {
@@ -356,17 +385,24 @@ export function parseMermaidGantt(source: string): GanttParseResult {
       }
       continue;
     }
-    if (
-      IGNORED_DIRECTIVES.some(
-        (keyword) => directiveValue(line, keyword) !== null
-      ) ||
-      lower.startsWith("%%")
-    ) {
+    // The one branch that DISCARDS a line outright, so the one that most
+    // needs the warning. Without it, `Weekday cover :w1, 2026-01-05, 5d` and
+    // `Todaymarker review :x1, …` disappeared with no issue of any kind —
+    // the same silent loss the word boundary was added to stop, narrowed to
+    // the five directives this import has no use for.
+    const ignored = IGNORED_DIRECTIVES.find(
+      (keyword) => directiveValue(line, keyword) !== null
+    );
+    if (ignored !== undefined) {
+      ambiguous = looksLikeTaskMeta(directiveValue(line, ignored) ?? "");
+      warnIfAmbiguous(ignored);
       continue;
     }
+    if (lower.startsWith("%%")) continue;
 
     const sectionText = directiveValue(line, "section");
     if (sectionText !== null) {
+      ambiguous = looksLikeTaskMeta(sectionText);
       warnIfAmbiguous("section");
       const text = sectionText;
       const parts = text.split(/\s+/);

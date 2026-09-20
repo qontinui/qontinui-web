@@ -228,20 +228,42 @@ describe("sumPersonDays", () => {
     expect(sumPersonDays([])).toBe("0");
   });
 
-  it("accepts everything the effort paste box accepts", () => {
-    // These two are the ones a narrower accept-set rejected, which made the
-    // WHOLE total read "unreadable" over data the page had just saved.
-    const accepted = [".5", "4.333", "04", "0", "12", "1.5"];
-    for (const value of accepted) {
-      expect(parseEffortsCsv(`A0,1.1,DL,${value}`).issues, value).toEqual([]);
+  it("accepts every value the effort paste box accepts", () => {
+    // `.5` is the one a narrower accept-set rejected, which made the WHOLE
+    // total read "unreadable" over data the page had just saved.
+    for (const value of [".5", "04", "0", "12", "1.5", "4.333", "0.005"]) {
       expect(sumPersonDays([value]), value).not.toBeNull();
     }
     expect(sumPersonDays([".5", "0.25"])).toBe("0.75");
-    expect(sumPersonDays(["4.333", "1"])).toBe("5.333");
   });
 
-  it("mixes precisions without losing any of them", () => {
-    expect(sumPersonDays(["1", "0.5", "0.125"])).toBe("1.625");
+  it("totals at the grain the column stores, and says so on the way in", () => {
+    // NUMERIC(10, 2): Postgres rounds silently, so the paste box, the
+    // running total and the store all have to speak hundredths or the
+    // editor's own figure changes the moment it is saved.
+    expect(sumPersonDays(["4.333", "1"])).toBe("5.33");
+    expect(sumPersonDays(["0.005"])).toBe("0.01");
+    const { rows, issues } = parseEffortsCsv("A0,1.1,DL,4.333");
+    expect(rows).toHaveLength(1);
+    expect(issues).toHaveLength(1);
+    expect(issues[0]?.severity).toBe("warning");
+    expect(issues[0]?.message).toContain("4.33");
+    // Two places or fewer passes without comment.
+    expect(parseEffortsCsv("A0,1.1,DL,4.33").issues).toEqual([]);
+    expect(parseEffortsCsv("A0,1.1,DL,.5").issues).toEqual([]);
+    expect(parseEffortsCsv("A0,1.1,DL,4.3300").issues).toEqual([]);
+  });
+
+  it("does not let one wide value refuse the whole column", () => {
+    // A scale shared across the column meant a single spreadsheet-exported
+    // 1/3 overflowed the safe-integer range and made the TOTAL unreadable.
+    expect(sumPersonDays(["10", "0.333333333333333"])).toBe("10.33");
+    expect(sumPersonDays(["100000", "0.3333333333333333"])).toBe("100000.33");
+  });
+
+  it("stays exact over a long column", () => {
+    expect(sumPersonDays(Array(100000).fill("0.5"))).toBe("50000");
+    expect(sumPersonDays(["0.1", "0.2"])).toBe("0.3");
   });
 
   it("is null only when a value really cannot be read", () => {

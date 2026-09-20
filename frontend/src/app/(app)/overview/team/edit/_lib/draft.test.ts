@@ -294,6 +294,50 @@ describe("applyGanttImport", () => {
     expect(after.phases[0]?.tasks[1]?.requirement_refs).toBeNull();
   });
 
+  it("keeps refs on the right task when a task is inserted above it", () => {
+    // Task numbers encode POSITION in the chart, so inserting one renumbers
+    // everything below. Matching on number handed `Kick-off`'s refs to the
+    // new task and left `Kick-off` with none — a wrong requirement
+    // reference, which reads as an authored one.
+    const withInsertion = [
+      {
+        ...IMPORTED[0]!,
+        tasks: [
+          {
+            number: "1.1",
+            title: "Discovery",
+            planned_start: "2026-01-05",
+            planned_end: "2026-01-09",
+            is_critical: false,
+            status: "planned" as const,
+          },
+          { ...IMPORTED[0]!.tasks[0]!, number: "1.2" },
+        ],
+      },
+    ];
+    const after = applyGanttImport(draftFromEstimate(LOADED), withInsertion);
+    const tasks = after.phases[0]!.tasks;
+    expect(tasks.map((t) => t.title)).toEqual(["Discovery", "Kick-off"]);
+    expect(tasks[0]?.requirement_refs).toBeNull();
+    expect(tasks[1]?.requirement_refs).toBe("R1, R2");
+  });
+
+  it("keeps refs when a section is inserted above the phase", () => {
+    // The phase is still found by code, but every task number below the
+    // insertion point has shifted by a whole phase.
+    const renumbered = [
+      {
+        ...IMPORTED[0]!,
+        tasks: IMPORTED[0]!.tasks.map((t, i) => ({
+          ...t,
+          number: `2.${i + 1}`,
+        })),
+      },
+    ];
+    const after = applyGanttImport(draftFromEstimate(LOADED), renumbered);
+    expect(after.phases[0]?.tasks[0]?.requirement_refs).toBe("R1, R2");
+  });
+
   it("gives a phase the chart introduces an empty gate, not a borrowed one", () => {
     const after = applyGanttImport(draftFromEstimate(LOADED), [
       { ...IMPORTED[0]!, code: "B9", name: "New phase" },

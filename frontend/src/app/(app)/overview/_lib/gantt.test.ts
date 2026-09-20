@@ -329,6 +329,62 @@ gantt
     ).toBe(true);
   });
 
+  it("warns rather than silently swallowing a task on an IGNORED directive", () => {
+    // These five directives are discarded outright, which made this the one
+    // branch where a swallowed task left no trace at all.
+    for (const [line, keyword] of [
+      ["Weekday cover :w1, 2026-01-05, 5d", "weekday"],
+      ["Todaymarker review :x1, 2026-01-05, 5d", "todaymarker"],
+      ["Axisformat rules :a1, 2026-01-05, 5d", "axisformat"],
+    ] as const) {
+      const result = parseMermaidGantt(`
+gantt
+    dateFormat YYYY-MM-DD
+    section A0 One
+    ${line}
+`);
+      expect(result.taskCount, line).toBe(0);
+      expect(result.issues, line).toHaveLength(1);
+      expect(result.issues[0]?.severity, line).toBe("warning");
+      expect(result.issues[0]?.message, line).toContain(keyword);
+    }
+  });
+
+  it("does not warn about a directive whose value merely ends in a date", () => {
+    // The warning is for a task that vanished, so firing it on a perfectly
+    // good title told the reader to rename something that was already right.
+    for (const line of [
+      "title Delivery plan: 2026-01-05",
+      "section A0: 2026-01-05",
+      "weekday monday: 2w",
+    ]) {
+      const result = parseMermaidGantt(`
+gantt
+    dateFormat YYYY-MM-DD
+    ${line}
+    section P One
+    Work :t1, 2026-01-05, 3d
+`);
+      expect(result.issues, line).toEqual([]);
+      expect(result.taskCount, line).toBe(1);
+    }
+  });
+
+  it("does not let a swallowed task pose as a declared date format", () => {
+    // `dateFormatSeen` set from task meta suppressed the "no dateFormat
+    // declared" warning the chart deserved, and raised an error quoting the
+    // meta as if it were a format string.
+    const result = parseMermaidGantt(`
+gantt
+    section A0 One
+    Dateformat migration :d1, 2026-01-05, 5d
+`);
+    expect(result.issues.filter((i) => i.severity === "error")).toEqual([]);
+    expect(
+      result.issues.every((i) => !i.message.includes("YYYY-MM-DD can be read"))
+    ).toBe(true);
+  });
+
   it("keeps a chart title that contains a date", () => {
     // Deciding the line by "something after a colon looks like a date"
     // instead of by the keyword dropped the title and invented a phase.

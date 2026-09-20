@@ -350,6 +350,18 @@ export function parseEffortsCsv(text: string): CsvResult<ParsedEffortRow> {
       continue;
     }
     if (Number(days) === 0) continue;
+    if (isFinerThanStored(days)) {
+      // Said rather than discovered: the column keeps two decimal places and
+      // Postgres rounds silently, so without this the editor's own total
+      // changes the moment it is saved and the Team page disagrees with the
+      // number the editor showed a second earlier.
+      issues.push({
+        line: entry.line,
+        text: entry.text,
+        message: `days are kept to two decimal places, so "${days}" will be stored as ${roundToStoredGrain(days)}`,
+        severity: "warning",
+      });
+    }
     seen.add(key);
     rows.push({
       phase_code: phase,
@@ -363,46 +375,75 @@ export function parseEffortsCsv(text: string): CsvResult<ParsedEffortRow> {
 }
 
 /**
+ * The grain `overview.task_efforts.planned_person_days` actually stores:
+ * `NUMERIC(10, 2)`. Postgres rounds silently at this precision, so it is
+ * also the grain the paste box and the running total have to speak, or the
+ * three disagree the moment anything is saved.
+ */
+const PERSON_DAY_DECIMALS = 2;
+
+/**
  * Total a column of person-day strings exactly.
  *
  * Days are exact decimal strings everywhere else in this feature precisely
  * so no float ever touches them, and `reduce((a, b) => a + Number(b), 0)`
- * threw that away for a label. Summed as scaled integers instead.
+ * threw that away for a label. Summed in hundredths as integers instead —
+ * the grain the column stores.
  *
- * The accept-set is deliberately the SAME as `parseEffortsCsv`'s
- * (`/^\d*(\.\d+)?$/`), not a narrower one. A first cut took two decimal
- * places and a leading digit, so `.5` and `4.333` — both of which the paste
- * box accepts and saves — made the whole line read "An unreadable number
- * of", reporting a defect in the summing as a defect in the data.
+ * Two earlier cuts were wrong in opposite directions, and both are worth
+ * naming because the next edit will be tempted by one of them. The first
+ * required a leading digit and at most two decimals, so `.5` — which the
+ * paste box beside it accepts — made the whole line read "An unreadable
+ * number of", reporting a defect in the summing as a defect in the data.
+ * The second scaled to the widest fraction in the column, which made the
+ * precision budget SHARED: one spreadsheet-exported `0.333333333333333`
+ * anywhere in the column overflowed the safe-integer range and refused the
+ * whole total. The grain is fixed, so the budget is per-value and the
+ * column's length cannot exhaust it.
  *
  * `null` only when a value really is unreadable, so one bad row shows as
  * unreadable rather than as a silently smaller total.
  */
 export function sumPersonDays(values: string[]): string | null {
-  const parsed: { digits: string; scale: number }[] = [];
-  let scale = 0;
+  let hundredths = 0;
   for (const value of values) {
-    const match = /^(\d*)(?:\.(\d+))?$/.exec(value.trim());
-    if (!match || (match[1] === "" && match[2] === undefined)) return null;
-    const fraction = match[2] ?? "";
-    scale = Math.max(scale, fraction.length);
-    parsed.push({
-      digits: (match[1] || "0") + fraction,
-      scale: fraction.length,
-    });
+    const parsed = personDayHundredths(value);
+    if (parsed === null) return null;
+    hundredths += parsed;
   }
-  // Scale every value to the widest fraction seen, so the sum is exact
-  // whatever mix of precisions was pasted.
-  let total = 0;
-  for (const { digits, scale: own } of parsed) {
-    total += Number(digits) * 10 ** (scale - own);
-  }
-  if (!Number.isSafeInteger(total)) return null;
-  if (scale === 0) return String(total);
-  const divisor = 10 ** scale;
-  const whole = Math.trunc(total / divisor);
-  const rest = String(total % divisor)
-    .padStart(scale, "0")
+  const whole = Math.trunc(hundredths / 100);
+  const rest = String(hundredths % 100)
+    .padStart(PERSON_DAY_DECIMALS, "0")
     .replace(/0+$/, "");
   return rest === "" ? String(whole) : `${whole}.${rest}`;
+}
+
+/**
+ * One person-day value as a whole number of hundredths, or `null` when it
+ * cannot be read. Accepts exactly what `parseEffortsCsv` accepts, including
+ * a bare `.5`; anything finer than the stored grain is ROUNDED here, the
+ * same way the database rounds it, and `parseEffortsCsv` says so.
+ */
+function personDayHundredths(value: string): number | null {
+  const match = /^(\d*)(?:\.(\d+))?$/.exec(value.trim());
+  if (!match || (match[1] === "" && match[2] === undefined)) return null;
+  const whole = Number(match[1] || "0");
+  const fraction = match[2] ?? "";
+  if (!Number.isSafeInteger(whole)) return null;
+  const rounded = Math.round(
+    Number(`0.${fraction || "0"}`) * 10 ** PERSON_DAY_DECIMALS
+  );
+  return whole * 100 + rounded;
+}
+
+/** `value` as the store will hold it, for a message that names the figure. */
+function roundToStoredGrain(value: string): string {
+  const hundredths = personDayHundredths(value);
+  return hundredths === null ? value : (sumPersonDays([value]) ?? value);
+}
+
+/** True when `value` carries more precision than the store keeps. */
+function isFinerThanStored(value: string): boolean {
+  const fraction = /^\d*(?:\.(\d+))?$/.exec(value.trim())?.[1] ?? "";
+  return fraction.replace(/0+$/, "").length > PERSON_DAY_DECIMALS;
 }

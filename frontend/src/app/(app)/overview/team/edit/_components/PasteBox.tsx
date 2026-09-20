@@ -57,6 +57,7 @@ export function PasteBox<T>({
   parse,
   describe,
   onApply,
+  busy = false,
 }: {
   id: string;
   label: string;
@@ -66,6 +67,12 @@ export function PasteBox<T>({
   /** One line saying what was read, e.g. "12 roles". */
   describe: (rows: T[]) => string;
   onApply: (rows: T[]) => void;
+  /**
+   * A save is in flight. Applying during one changes the working copy the
+   * open request is NOT carrying, and the reload that follows it discards
+   * the change with no trace.
+   */
+  busy?: boolean;
 }) {
   const [text, setText] = useState("");
   const [outcome, setOutcome] = useState<PasteOutcome<T> | null>(null);
@@ -114,7 +121,7 @@ export function PasteBox<T>({
               setText("");
               setOutcome(null);
             }}
-            disabled={outcome.rows.length === 0}
+            disabled={outcome.rows.length === 0 || busy}
             className="inline-flex min-h-9 items-center rounded-md bg-primary px-3 text-sm text-primary-foreground hover:bg-primary/90 disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             data-ui-bridge-id={`${id}.apply`}
           >

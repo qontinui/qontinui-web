@@ -214,7 +214,14 @@ function CreateEstimate({ onCreated }: { onCreated: () => void }) {
   );
 }
 
-function GanttImport({ onImport }: { onImport: (text: string) => void }) {
+function GanttImport({
+  onImport,
+  busy = false,
+}: {
+  onImport: (text: string) => void;
+  /** A save is in flight — see `PasteBox`'s `busy`. */
+  busy?: boolean;
+}) {
   const [text, setText] = useState("");
   const [preview, setPreview] = useState<ReturnType<
     typeof parseMermaidGantt
@@ -266,12 +273,13 @@ function GanttImport({ onImport }: { onImport: (text: string) => void }) {
         {preview && preview.taskCount > 0 && (
           <button
             type="button"
+            disabled={busy}
             onClick={() => {
               onImport(text);
               setText("");
               setPreview(null);
             }}
-            className="inline-flex min-h-9 items-center rounded-md bg-primary px-3 text-sm text-primary-foreground hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            className="inline-flex min-h-9 items-center rounded-md bg-primary px-3 text-sm text-primary-foreground hover:bg-primary/90 disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             data-ui-bridge-id="overview.estimate-editor.gantt.apply"
           >
             Use this schedule
@@ -356,7 +364,15 @@ function EstimateEditor({
   const editDraft = (update: (current: Draft) => Draft) => {
     setDraft(update);
     setStatus((current) =>
-      current.kind === "idle" ? current : { kind: "idle" }
+      // `saving` is an attempt still IN FLIGHT, not a finished one. Clearing
+      // it here put "Save the estimate" back on an enabled button while a
+      // request was open — a second submit one click away, and, when the
+      // first resolved, a "Saved as version N" banner over a table that
+      // version does not contain, which the reload then discarded. The apply
+      // buttons are disabled for the same reason (`busy` below).
+      current.kind === "saving" || current.kind === "idle"
+        ? current
+        : { kind: "idle" }
     );
   };
 
@@ -400,6 +416,7 @@ function EstimateEditor({
       <section className="space-y-4">
         <Heading>Phases and tasks</Heading>
         <GanttImport
+          busy={status.kind === "saving"}
           onImport={(text) => {
             const parsed = ganttToPhases(parseMermaidGantt(text));
             editDraft((d) => applyGanttImport(d, parsed));
@@ -452,6 +469,7 @@ function EstimateEditor({
             `${rows.length} role${rows.length === 1 ? "" : "s"}`
           }
           onApply={(rows) => editDraft((d) => ({ ...d, roles: rows }))}
+          busy={status.kind === "saving"}
         />
         <div
           className="overflow-x-auto rounded-md border border-border p-4"
@@ -515,6 +533,7 @@ function EstimateEditor({
             `${rows.length} allocation${rows.length === 1 ? "" : "s"}`
           }
           onApply={(rows) => editDraft((d) => ({ ...d, allocations: rows }))}
+          busy={status.kind === "saving"}
         />
         <p
           className="text-sm text-muted-foreground"
@@ -537,6 +556,7 @@ function EstimateEditor({
             `${rows.length} line${rows.length === 1 ? "" : "s"}`
           }
           onApply={(rows) => editDraft((d) => ({ ...d, efforts: rows }))}
+          busy={status.kind === "saving"}
         />
         <p
           className="text-sm text-muted-foreground"

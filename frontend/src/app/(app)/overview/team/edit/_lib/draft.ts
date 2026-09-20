@@ -309,11 +309,13 @@ export function draftToContent(draft: Draft): EstimateContentWrite {
  * place no test could reach.
  *
  * A chart states the SCHEDULE and nothing else. Everything it cannot express
- * is carried across from the row of the same code — a phase's gate, its
- * actual dates and the working weeks the source plan stated, and a task's
- * requirement refs, which are one level down and were being nulled on every
- * re-import. A phase the chart does not mention is dropped, which is what
- * importing a corrected schedule means.
+ * is carried across from the row that matches — a phase by its CODE, and a
+ * task by its TITLE (its number encodes position in the chart, so it moves
+ * whenever anything is inserted above it). A phase's gate, its actual dates
+ * and the working weeks the source plan stated come across, and so do a
+ * task's requirement refs, which are one level down and were being nulled on
+ * every re-import. A phase the chart does not mention is dropped, which is
+ * what importing a corrected schedule means.
  */
 export function applyGanttImport(
   draft: Draft,
@@ -351,8 +353,16 @@ export function applyGanttImport(
         tasks: phase.tasks.map((task) => ({
           number: task.number,
           title: task.title,
+          // Matched on TITLE, not on number. `ganttToPhases` builds a number
+          // from positions in the parsed chart (`<phase index>.<task
+          // index>`), so inserting one section or one task renumbers
+          // everything below it: matching by number then either nulls every
+          // ref below the insertion point, or — worse — hands each ref to
+          // the task that took its place, where a wrong requirement
+          // reference reads as an authored one. The title is the only thing
+          // in a chart that identifies a task.
           requirement_refs:
-            existing?.tasks.find((old) => old.number === task.number)
+            existing?.tasks.find((old) => old.title === task.title)
               ?.requirement_refs ?? null,
           planned_start: task.planned_start,
           planned_end: task.planned_end,

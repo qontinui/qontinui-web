@@ -495,13 +495,25 @@ class TestWorkingDays:
             date(2026, 1, 5), date(2026, 1, 30), [a, b], Decimal("1.0")
         ) == Decimal("16.00")
 
-    async def test_a_century_long_phase_is_counted_not_walked(self) -> None:
+    async def test_a_millennium_long_phase_is_counted_not_walked(self) -> None:
         """A DATE column accepts year 1 to year 9999, so a mistyped year must
         not put a multi-million-iteration loop inside a read any tenant member
-        can issue. 1000 years is ~365243 days; the count is arithmetic, so
-        this returns immediately."""
-        days = working_days(date(1000, 1, 1), date(1999, 12, 31), [], Decimal("1.0"))
-        assert days > Decimal("200000")
+        can issue.
+
+        Two things make this discriminating rather than decorative. The span
+        ENDS at ``date.max``, which the walking implementation cannot reach at
+        all — it raises ``OverflowError`` incrementing past it. And the
+        expected count is EXACT, so an implementation that is merely fast and
+        wrong fails too: 1000-01-01 to 9999-12-31 is 3 287 182 days, of which
+        2 347 988 are weekdays.
+
+        The first version of this test asserted ``> 200000`` over a span the
+        old loop handles in about a third of a second — it passed against the
+        code it claimed to have replaced, and would have passed against an
+        implementation off by fifty thousand days.
+        """
+        days = working_days(date(1000, 1, 1), date.max, [], Decimal("1.0"))
+        assert days == Decimal("2347988.00")
 
     async def test_the_working_day_factor_applies_last(self) -> None:
         assert working_days(
