@@ -29,6 +29,23 @@ export const SUMMARY_INTENT_KINDS = [
 export type SummaryIntentKind = (typeof SUMMARY_INTENT_KINDS)[number];
 
 /**
+ * Document order within a kind, most important first.
+ *
+ * A kind holds several documents and coord lists them alphabetically by name,
+ * which put "non-goals" above "vision" on the Summary — the first thing a
+ * reader met was what the project will never be (operator, 2026-09-21).
+ * Reading order is editorial, so it is stated here: what the project IS, then
+ * what bounds it, then what is unsettled. A name not listed sorts after the
+ * listed ones, by title.
+ */
+export const INTENT_DOC_ORDER: Record<SummaryIntentKind, readonly string[]> = {
+  product_intent: ["vision", "non-goals", "open-questions"],
+  initiative: ["current-initiative"],
+  success_metric: [],
+  audience_profile: [],
+};
+
+/**
  * - `authored`: someone wrote or edited this document; show it.
  * - `skeleton`: the unedited template coord ships; show "not written yet".
  * - `unknown`: edited at least once but still carries a template origin, and
@@ -73,6 +90,8 @@ export interface IntentEntry {
   name: string;
   /** Coord's one-line description of the document, if it has one. */
   description: string | null;
+  /** What to call this document on the page: its own opening heading. */
+  title: string;
   /** `unreadable`: the list named this document but its body failed to load. */
   state: IntentState | "unreadable";
   /** Readable markdown, frontmatter removed. Empty unless authored/unknown. */
@@ -82,9 +101,37 @@ export interface IntentEntry {
   error?: string;
 }
 
+/**
+ * A document's own name for itself, taken from the heading it opens with
+ * ("# Vision — the autonomy ratchet"), falling back to its slug read as words.
+ *
+ * NOT `description`: coord's descriptions are editorial notes for whoever
+ * maintains the document ("Read to RULE A CANDIDATE OUT…"), often several
+ * lines long, and using one as a heading put a paragraph where a title
+ * belongs and buried the document's real title beneath it.
+ */
+export function titleOfDocument(name: string, body: string): string {
+  const heading = /^[ \t]{0,3}#{1,3}[ \t]+(.+?)[ \t]*#*[ \t]*$/m.exec(
+    stripFrontmatter(body)
+  );
+  const fromBody = heading?.[1]?.trim();
+  if (fromBody) return fromBody;
+  const words = name.replace(/[-_]+/g, " ").trim();
+  return words.charAt(0).toUpperCase() + words.slice(1);
+}
+
+/** The body with its opening heading removed, since the page renders that
+ *  heading itself as the document's title. */
+export function bodyWithoutLeadHeading(body: string): string {
+  const stripped = stripFrontmatter(body);
+  return stripped
+    .replace(/^[ \t]{0,3}#{1,3}[ \t]+.+?[ \t]*#*[ \t]*(\r?\n|$)/, "")
+    .trimStart();
+}
+
 function base(
   doc: WithSeedVerdict<PromptDocumentSummary>
-): Omit<IntentEntry, "state" | "body"> {
+): Omit<IntentEntry, "state" | "body" | "title"> {
   return {
     kind: doc.kind as SummaryIntentKind,
     name: doc.name,
@@ -93,15 +140,32 @@ function base(
   };
 }
 
+/**
+ * Sort one kind's documents into reading order: the kind's stated order
+ * first, then anything else by title. Deterministic either way — coord's own
+ * ordering is alphabetical by slug, which is not an editorial judgement.
+ */
+export function sortIntentEntries(entries: IntentEntry[]): IntentEntry[] {
+  const rank = (e: IntentEntry) => {
+    const i = INTENT_DOC_ORDER[e.kind].indexOf(e.name);
+    return i === -1 ? Number.MAX_SAFE_INTEGER : i;
+  };
+  return [...entries].sort(
+    (a, b) => rank(a) - rank(b) || a.title.localeCompare(b.title)
+  );
+}
+
 /** A document whose body was fetched. */
 export function toIntentEntry(
   doc: WithSeedVerdict<PromptDocument>
 ): IntentEntry {
   const state = classifyIntent(doc);
+  const body = doc.body ?? "";
   return {
     ...base(doc),
     state,
-    body: state === "skeleton" ? "" : stripFrontmatter(doc.body ?? ""),
+    title: titleOfDocument(doc.name, body),
+    body: state === "skeleton" ? "" : bodyWithoutLeadHeading(body),
   };
 }
 
@@ -110,7 +174,12 @@ export function toIntentEntry(
 export function skeletonEntry(
   doc: WithSeedVerdict<PromptDocumentSummary>
 ): IntentEntry {
-  return { ...base(doc), state: "skeleton", body: "" };
+  return {
+    ...base(doc),
+    state: "skeleton",
+    body: "",
+    title: titleOfDocument(doc.name, ""),
+  };
 }
 
 /** A document the list named but whose body could not be read. */
@@ -118,7 +187,13 @@ export function unreadableEntry(
   doc: WithSeedVerdict<PromptDocumentSummary>,
   error: string
 ): IntentEntry {
-  return { ...base(doc), state: "unreadable", body: "", error };
+  return {
+    ...base(doc),
+    state: "unreadable",
+    body: "",
+    error,
+    title: titleOfDocument(doc.name, ""),
+  };
 }
 
 /** True when an entry has something to show a reader: real text, or a load

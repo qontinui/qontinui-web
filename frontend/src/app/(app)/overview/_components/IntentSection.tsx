@@ -53,7 +53,7 @@ function IntentBody({ entry, id }: { entry: IntentEntry; id: string }) {
         id={id}
         className={open ? undefined : "relative max-h-72 overflow-hidden"}
       >
-        <MarkdownView>{entry.body}</MarkdownView>
+        <MarkdownView headingOffset={2}>{entry.body}</MarkdownView>
         {!open && (
           <div
             className="pointer-events-none absolute inset-x-0 bottom-0 h-20 bg-gradient-to-t from-background to-transparent"
@@ -131,8 +131,11 @@ export function IntentSection({
           {written.map((entry) => (
             <article key={entry.name}>
               {written.length > 1 && (
-                <h3 className="mb-2 text-base font-medium text-foreground">
-                  {entry.description ?? entry.name}
+                <h3
+                  className="mb-2 font-[family-name:var(--font-overview-serif)] text-xl leading-snug text-foreground"
+                  data-ui-bridge-id={`overview.summary.${sectionId}-${entry.name}.title`}
+                >
+                  {entry.title}
                 </h3>
               )}
               {entry.state === "unreadable" ? (

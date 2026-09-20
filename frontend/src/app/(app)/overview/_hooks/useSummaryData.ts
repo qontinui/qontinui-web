@@ -23,6 +23,7 @@ import { SHEPHERD_SLUG_PREFIX } from "@/app/(app)/admin/coord/work-units/plansHe
 import {
   SUMMARY_INTENT_KINDS,
   classifyIntent,
+  sortIntentEntries,
   skeletonEntry,
   toIntentEntry,
   unreadableEntry,
@@ -83,10 +84,13 @@ async function loadIntent(): Promise<IntentData> {
       }
     })
   );
+  // Kind order is the page's section order; within a kind, reading order.
   const order = (k: string) =>
     SUMMARY_INTENT_KINDS.indexOf(k as SummaryIntentKind);
   return {
-    entries: entries.sort((a, b) => order(a.kind) - order(b.kind)),
+    entries: sortIntentEntries(entries).sort(
+      (a, b) => order(a.kind) - order(b.kind)
+    ),
     degraded: list.degraded ?? null,
   };
 }
