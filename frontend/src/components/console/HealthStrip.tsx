@@ -115,7 +115,11 @@ export function HealthStrip({
         <span className="text-xs text-muted-foreground">{detail}</span>
       )}
       {badges && badges.length > 0 && (
-        <span className="ml-auto flex items-center gap-2">
+        // `flex-wrap`: the cluster is ONE flex item of the strip above, so
+        // without it the badges are a single unbreakable line that runs off a
+        // phone-width screen — measured clipped at 390px on
+        // /admin/coord/pipeline. Wrapping changes nothing where they fit.
+        <span className="ml-auto flex flex-wrap items-center gap-2">
           {badges.map((b) => {
             const badge = (
               <Badge
