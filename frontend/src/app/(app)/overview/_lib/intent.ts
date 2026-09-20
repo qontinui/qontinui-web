@@ -93,11 +93,6 @@ export function stripFrontmatter(body: string): string {
 export interface IntentEntry {
   kind: SummaryIntentKind;
   name: string;
-  /**
-   * Coord's description: an editorial note for whoever maintains the document,
-   * often several lines. Never used as a heading — see `titleOfDocument`.
-   */
-  description: string | null;
   /** What to call this document on the page: its own opening heading. */
   title: string;
   /** `attrs.overview_order` when the operator has set one. */
@@ -118,15 +113,6 @@ export interface IntentEntry {
 }
 
 /**
- * A document's own name for itself, taken from the heading it opens with
- * ("# Vision — the autonomy ratchet"), falling back to its slug read as words.
- *
- * NOT `description`: coord's descriptions are editorial notes for whoever
- * maintains the document ("Read to RULE A CANDIDATE OUT…"), often several
- * lines long, and using one as a heading put a paragraph where a title
- * belongs and buried the document's real title beneath it.
- */
-/**
  * The heading a document OPENS with — ATX (`# Title`) or setext (`Title` over
  * `====`) — or null when it opens with anything else.
  *
@@ -135,29 +121,55 @@ export interface IntentEntry {
  * `bodyWithoutLeadHeading`, which strips only from the start; the two must
  * name the same heading or the title renders twice.
  */
-function leadHeading(body: string): { text: string; raw: string } | null {
+function leadHeading(
+  body: string
+): { text: string; raw: string; stripped: string } | null {
   const stripped = stripFrontmatter(body);
   const atx =
     /^([ \t]{0,3}#{1,6}[ \t]+(.+?)(?:[ \t]+#+)?[ \t]*)(?:\r?\n|$)/.exec(
       stripped
     );
-  if (atx?.[2]) return { text: atx[2].trim(), raw: atx[0] };
+  if (atx?.[2]) return { text: atx[2].trim(), raw: atx[0], stripped };
+  // `=` only. A `-` underline is indistinguishable from a thematic break
+  // after a block quote, a list item or an HTML block, and treating one as a
+  // heading would DELETE that first line from the body.
   const setext =
-    /^([ \t]{0,3}(\S.*?)[ \t]*\r?\n[ \t]{0,3}[=-]{2,}[ \t]*)(?:\r?\n|$)/.exec(
+    /^([ \t]{0,3}(\S.*?)[ \t]*\r?\n[ \t]{0,3}={2,}[ \t]*)(?:\r?\n|$)/.exec(
       stripped
     );
-  if (setext?.[2]) return { text: setext[2].trim(), raw: setext[0] };
+  if (setext?.[2]) return { text: setext[2].trim(), raw: setext[0], stripped };
   return null;
 }
 
-/** Inline markdown a title should read as words: `*Vision*`, `[Vision](/v)`. */
+/**
+ * A heading read as words: `*Vision*`, `[Vision](/v)`, `` `vision` ``.
+ *
+ * Only DELIMITING markers are removed. `_` is left alone entirely: these
+ * documents are largely about snake_case coord fields (`new_work_bar`,
+ * `in_scope`, `source_query`), and stripping it turned a title like
+ * "new_work_bar adherence" into "newworkbar adherence".
+ */
 function plainText(text: string): string {
-  return text
+  const words = text
     .replace(/\[([^\]]+)\]\([^)]*\)/g, "$1")
-    .replace(/[*_`]/g, "")
+    .replace(/(^|[\s(])([*`]+)(?=\S)/g, "$1")
+    .replace(/(\S)([*`]+)(?=[\s).,;:!?]|$)/g, "$1")
     .trim();
+  // A "title" of pure punctuation ("# ***") is not a title. Returning ""
+  // keeps `titleOfDocument` and `bodyWithoutLeadHeading` agreeing: the slug
+  // names the document and the line stays in the body.
+  return /[\p{L}\p{N}]/u.test(words) ? words : "";
 }
 
+/**
+ * A document's own name for itself, taken from the heading it opens with
+ * ("# Vision — the autonomy ratchet"), falling back to its slug read as words.
+ *
+ * NOT `description`: coord's descriptions are editorial notes for whoever
+ * maintains the document ("Read to RULE A CANDIDATE OUT…"), often several
+ * lines long, and using one as a heading put a paragraph where a title
+ * belongs and buried the document's real title beneath it.
+ */
 export function titleOfDocument(name: string, body: string): string {
   const heading = leadHeading(body);
   const fromBody = heading ? plainText(heading.text) : "";
@@ -174,12 +186,23 @@ export function titleOfDocument(name: string, body: string): string {
 /** The body with its opening heading removed, since the page renders that
  *  heading itself as the document's title. */
 export function bodyWithoutLeadHeading(body: string): string {
-  const stripped = stripFrontmatter(body);
   const heading = leadHeading(body);
-  return heading ? stripped.slice(heading.raw.length).trimStart() : stripped;
+  if (!heading) return stripFrontmatter(body);
+  // A heading made only of markers ("# ***") yields no title, so the page
+  // never renders it — leave it in the body rather than delete it.
+  if (!plainText(heading.text)) return heading.stripped;
+  return heading.stripped.slice(heading.raw.length).trimStart();
 }
 
-function readOrder(doc: { attrs?: unknown }): number | null {
+/**
+ * `attrs.overview_order`, when the operator has set one.
+ *
+ * Only the GET-one shape carries `attrs` — coord's list rows never do — so a
+ * skeleton or unreadable entry, built from a list row, always reads `null`.
+ * Coord replaces `attrs` wholesale on write, so anything setting this key
+ * must merge the stored object first.
+ */
+function readOrder(doc: Partial<Pick<PromptDocument, "attrs">>): number | null {
   const attrs = doc.attrs;
   if (!attrs || typeof attrs !== "object") return null;
   const value = (attrs as Record<string, unknown>).overview_order;
@@ -187,12 +210,12 @@ function readOrder(doc: { attrs?: unknown }): number | null {
 }
 
 function base(
-  doc: WithSeedVerdict<PromptDocumentSummary> & { attrs?: unknown }
+  doc: WithSeedVerdict<PromptDocumentSummary> &
+    Partial<Pick<PromptDocument, "attrs">>
 ): Omit<IntentEntry, "state" | "body" | "title" | "hasBody"> {
   return {
     kind: doc.kind as SummaryIntentKind,
     name: doc.name,
-    description: doc.description,
     updatedAt: doc.updated_at ?? null,
     order: readOrder(doc),
   };
@@ -204,11 +227,19 @@ function base(
  * ordering is alphabetical by slug, which is not an editorial judgement.
  */
 export function sortIntentEntries(entries: IntentEntry[]): IntentEntry[] {
+  // Per KIND, one authority decides: if any of its documents carries an
+  // operator-set order, that is the order for that kind and its unordered
+  // documents follow. Mixing the two would let an order set on one document
+  // ("2", meaning second) outrank the whole fallback list and put it first.
+  const operatorOrdered = new Set(
+    entries.filter((e) => e.order !== null).map((e) => e.kind)
+  );
   const rank = (e: IntentEntry) => {
-    // An operator-set order outranks anything this file knows.
-    if (typeof e.order === "number" && Number.isFinite(e.order)) return e.order;
+    if (operatorOrdered.has(e.kind)) {
+      return e.order ?? Number.MAX_SAFE_INTEGER;
+    }
     const i = (INTENT_DOC_ORDER[e.kind] ?? []).indexOf(e.name);
-    return i === -1 ? Number.MAX_SAFE_INTEGER : 1000 + i;
+    return i === -1 ? Number.MAX_SAFE_INTEGER : i;
   };
   return [...entries].sort(
     (a, b) => rank(a) - rank(b) || a.title.localeCompare(b.title, "en")
@@ -225,7 +256,8 @@ export function toIntentEntry(
     ...base(doc),
     state,
     title: titleOfDocument(doc.name, body),
-    hasBody: stripFrontmatter(body).trim().length > 0,
+    hasBody:
+      state === "skeleton" ? false : stripFrontmatter(body).trim().length > 0,
     body: state === "skeleton" ? "" : bodyWithoutLeadHeading(body),
   };
 }

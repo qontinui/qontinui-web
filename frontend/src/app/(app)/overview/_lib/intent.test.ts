@@ -183,7 +183,6 @@ describe("sortIntentEntries", () => {
       title,
       order,
       hasBody: true,
-      description: null,
       state: "authored",
       body: "x",
       updatedAt: null,
@@ -293,5 +292,114 @@ describe("the title and the body agree on one heading", () => {
     expect(hasContent(toIntentEntry(doc("---\na: b\n---\n\n   \n")))).toBe(
       false
     );
+  });
+});
+
+describe("a document that does not open with a heading keeps its first line", () => {
+  const doc = (body: string) =>
+    ({
+      id: "d",
+      kind: "product_intent",
+      name: "vision",
+      format: "markdown",
+      default_source: null,
+      current_version: 2,
+      updated_at: "2026-09-20T10:00:00Z",
+      body,
+    }) as unknown as PromptDocument;
+
+  // A `---` under a quote, a list item or an HTML block is a thematic break,
+  // not a heading underline. Reading one as a heading DELETED that line.
+  it.each([
+    ["> Draft note, reviewed 2026-09-01\n---\n\n## Vision\n\nBody.", "> Draft"],
+    ["1. First\n---\n\nBody.", "1. First"],
+    ["<!-- internal -->\n---\n\n# Vision\n", "<!-- internal -->"],
+  ])("leaves %j alone", (body, opener) => {
+    const entry = toIntentEntry(doc(body));
+    expect(entry.title).toBe("Vision");
+    expect(entry.body.startsWith(opener)).toBe(true);
+  });
+
+  it("still reads a setext heading underlined with =", () => {
+    const entry = toIntentEntry(doc("Vision — the ratchet\n====\n\nBody."));
+    expect(entry.title).toBe("Vision — the ratchet");
+    expect(entry.body).toBe("Body.");
+  });
+
+  it("keeps a heading made only of markers in the body", () => {
+    const entry = toIntentEntry(doc("# ***\n\nBody."));
+    expect(entry.title).toBe("Vision");
+    expect(entry.body).toBe("# ***\n\nBody.");
+  });
+});
+
+describe("titles that name coord fields", () => {
+  it("keeps snake_case identifiers intact", () => {
+    expect(titleOfDocument("m", "# new_work_bar adherence\n")).toBe(
+      "new_work_bar adherence"
+    );
+    expect(titleOfDocument("m", "# The in_scope / out_of_scope split\n")).toBe(
+      "The in_scope / out_of_scope split"
+    );
+  });
+
+  it("still unwraps emphasis and code markers around words", () => {
+    expect(titleOfDocument("m", "# *Vision* of the `fleet`\n")).toBe(
+      "Vision of the fleet"
+    );
+  });
+});
+
+describe("one ordering authority per kind", () => {
+  const entry = (
+    kind: string,
+    name: string,
+    title: string,
+    order: number | null = null
+  ) =>
+    ({
+      kind,
+      name,
+      title,
+      order,
+      hasBody: true,
+      state: "authored",
+      body: "x",
+      updatedAt: null,
+    }) as never;
+
+  it("does not let one ordered document outrank the whole fallback list", () => {
+    // The operator means "non-goals second" and sets only that one. Mixing
+    // the two authorities put it FIRST — the original complaint, returning
+    // through the control added to fix it.
+    const sorted = sortIntentEntries([
+      entry("product_intent", "non-goals", "Non-goals", 2),
+      entry("product_intent", "vision", "Vision"),
+    ]);
+    expect(sorted.map((e) => e.name)).toEqual(["non-goals", "vision"]);
+  });
+
+  it("puts a kind's unordered documents after its ordered ones", () => {
+    const sorted = sortIntentEntries([
+      entry("product_intent", "charter", "Charter"),
+      entry("product_intent", "vision", "Vision", 1),
+      entry("product_intent", "non-goals", "Non-goals", 2),
+    ]);
+    expect(sorted.map((e) => e.name)).toEqual([
+      "vision",
+      "non-goals",
+      "charter",
+    ]);
+  });
+
+  it("leaves a kind with no operator order on the seeded reading order", () => {
+    const sorted = sortIntentEntries([
+      entry("product_intent", "non-goals", "Non-goals"),
+      entry("product_intent", "vision", "Vision"),
+      entry("success_metric", "b-metric", "B", 1),
+    ]);
+    expect(
+      sorted.filter((e) => e.kind === "product_intent").map((e) => e.name)
+    ).toEqual(["vision", "non-goals"]);
   });
 });
