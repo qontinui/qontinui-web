@@ -161,10 +161,12 @@ widening a web migration ordered ahead of the coord deploy that uses it.
 decision rather than an oversight. The real invariant is not a bound — it is
 *"this index is a member of the unit's DECLARED phase set"*, which lives on
 ``coord.work_units.metadata.phases`` and which no column constraint can
-express. Phase 3 must therefore intersect against the declared set anyway
-(``citation_scope_backfill``'s guard 2 is the in-repo precedent), and that
-check strictly subsumes ``>= 0``: index ``99`` on a seven-phase unit is exactly
-as wrong as ``-1``, and only the Rust side can see it. Putting the weaker half
+express. Phase 3 must therefore intersect against the declared set anyway —
+guard 2 of qontinui-coord
+``crates/coord/src/citation_scope_backfill.rs:500`` is the precedent, read
+against coord ``origin/main`` ``54b6249a6`` — and that check strictly subsumes
+``>= 0``: index ``99`` on a seven-phase unit is exactly as wrong as ``-1``, and
+only the Rust side can see it. Putting the weaker half
 in the database would duplicate a validation that has to exist in full
 elsewhere, and would answer a caller error with a ``23514`` instead of the
 typed refusal the coord door owes it. Keep the refusal in one place, where it
