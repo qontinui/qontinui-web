@@ -35,6 +35,16 @@ import {
   PLAN_CENSUS_SOURCES,
   PLAN_COVERAGE_NULLABLE,
   PLAN_COVERAGE_STATES,
+  DOCUMENT_STATES,
+  RECONCILIATION_AXIS_A_NULLABLE,
+  RECONCILIATION_AXIS_B_NULLABLE,
+  RECONCILIATION_AXIS_C_NULLABLE,
+  RECONCILIATION_CLASS_ORDER,
+  RECONCILIATION_FACETS_NULLABLE,
+  RECONCILIATION_RESPONSE_NULLABLE,
+  RECONCILIATION_ROW_NULLABLE,
+  RECONCILIATION_VERDICTS,
+  WORK_UNIT_POPULATION_STATES,
   SCAN_ROOT_LIST_NULLABLE,
   SCAN_ROOT_LIST_STATES,
   SCAN_ROOT_ROLLUP_NULLABLE,
@@ -56,6 +66,9 @@ interface SchemaProperty {
   enum?: string[];
   anyOf?: { type?: string }[];
   items?: { $ref?: string };
+  /** A `$ref` straight on the property — how Pydantic renders a nested model
+   *  that is not in a list (`ReconciliationResponse.facets`). */
+  $ref?: string;
 }
 
 interface ObjectSchema {
@@ -108,6 +121,13 @@ function enumOf(schema: ObjectSchema, field: string): string[] {
 }
 
 const sorted = (values: Iterable<string>) => [...values].sort();
+
+/** One property, or a thrown error naming it — never a silent `undefined`. */
+function field(schema: ObjectSchema, name: string): SchemaProperty {
+  const prop = schema.properties[name];
+  if (!prop) throw new Error(`${name} is not on the schema — renamed?`);
+  return prop;
+}
 
 describe.each(SNAPSHOTS)("the scan-root wire contract, against %s", (file) => {
   const row = component(file, "ScanRootRow");
@@ -213,3 +233,108 @@ describe.each(SNAPSHOTS)("the scan-root wire contract, against %s", (file) => {
     });
   });
 });
+
+/**
+ * The reconciliation wire contract.
+ *
+ * A separate block from the scan-root one above because the two differ on
+ * `required`: every scan-root field is required, while Pydantic leaves a
+ * DEFAULTED field out of `required` even though FastAPI serializes it on every
+ * response. So the "requires every field" assertion above would fail here for
+ * a reason that is not a defect — `variant_count: int = 1` is always on the
+ * wire, it is simply optional to CONSTRUCT. What matters for rendering is
+ * pinned instead: the field set, and nullability field by field.
+ */
+describe.each(SNAPSHOTS)(
+  "the reconciliation wire contract, against %s",
+  (file) => {
+    const axisA = component(file, "ReconciliationAxisA");
+    const axisB = component(file, "ReconciliationAxisB");
+    const axisC = component(file, "ReconciliationAxisC");
+    const row = component(file, "ReconciliationRow");
+    const facets = component(file, "ReconciliationFacets");
+    const response = component(file, "ReconciliationResponse");
+
+    it("a row's verdict admits exactly RECONCILIATION_VERDICTS", () => {
+      expect(enumOf(row, "verdict")).toEqual(sorted(RECONCILIATION_VERDICTS));
+    });
+
+    it("both document-state fields admit exactly DOCUMENT_STATES", () => {
+      expect(enumOf(row, "document_state")).toEqual(sorted(DOCUMENT_STATES));
+      expect(enumOf(axisB, "document_state")).toEqual(sorted(DOCUMENT_STATES));
+    });
+
+    it("the work-unit population state admits exactly its two values", () => {
+      expect(enumOf(response, "work_unit_population_state")).toEqual(
+        sorted(WORK_UNIT_POPULATION_STATES)
+      );
+    });
+
+    it("the response's rows are the row schema pinned here", () => {
+      expect(response.properties.items?.items?.$ref).toBe(
+        "#/components/schemas/ReconciliationRow"
+      );
+    });
+
+    it("the response's facets are the facet schema pinned here", () => {
+      expect(response.properties.facets?.$ref).toBe(
+        "#/components/schemas/ReconciliationFacets"
+      );
+    });
+
+    it("`shipped` and `evidence_complete` are BOTH nullable on the wire", () => {
+      // The one that matters most on this surface. `shipped: false` under an
+      // incomplete evidence set means "coord could not establish delivery",
+      // which is UNKNOWN — a non-nullable `shipped` is how that becomes "did
+      // not ship", and the two demand opposite responses.
+      expect(admitsNull(field(axisC, "shipped"))).toBe(true);
+      expect(admitsNull(field(axisC, "evidence_complete"))).toBe(true);
+    });
+
+    it("the twelve classes we render are the twelve the backend classifies", () => {
+      // The panel renders `by_class` from RECONCILIATION_CLASS_ORDER so the
+      // ZEROS survive; a member the backend dropped would render a permanent
+      // phantom zero, and one it added would be invisible. `by_class` is a
+      // free-form object on the wire, so the vendored classifier's own test
+      // vectors are where the order is pinned — what is pinned here is that
+      // our copy still has twelve distinct members in cascade order, with the
+      // two AGREE members last.
+      expect(new Set(RECONCILIATION_CLASS_ORDER).size).toBe(12);
+      expect(RECONCILIATION_CLASS_ORDER.slice(-2)).toEqual([
+        "AGREE_TERMINAL",
+        "AGREE_OPEN",
+      ]);
+      const evidence = RECONCILIATION_CLASS_ORDER.indexOf(
+        "EVIDENCE_INCOMPLETE"
+      );
+      const agree = RECONCILIATION_CLASS_ORDER.indexOf("AGREE_TERMINAL");
+      expect(evidence).toBeGreaterThanOrEqual(0);
+      expect(evidence).toBeLessThan(agree);
+    });
+
+    describe.each([
+      ["ReconciliationAxisA", axisA, RECONCILIATION_AXIS_A_NULLABLE],
+      ["ReconciliationAxisB", axisB, RECONCILIATION_AXIS_B_NULLABLE],
+      ["ReconciliationAxisC", axisC, RECONCILIATION_AXIS_C_NULLABLE],
+      ["ReconciliationRow", row, RECONCILIATION_ROW_NULLABLE],
+      ["ReconciliationFacets", facets, RECONCILIATION_FACETS_NULLABLE],
+      ["ReconciliationResponse", response, RECONCILIATION_RESPONSE_NULLABLE],
+    ] as const)("%s", (_name, schema, witness) => {
+      it("names exactly the fields the backend serves", () => {
+        expect(sorted(Object.keys(witness))).toEqual(
+          sorted(Object.keys(schema.properties))
+        );
+      });
+
+      it("is nullable exactly where the wire is", () => {
+        const served = Object.fromEntries(
+          Object.entries(schema.properties).map(([field, prop]) => [
+            field,
+            admitsNull(prop),
+          ])
+        );
+        expect(witness).toEqual(served);
+      });
+    });
+  }
+);

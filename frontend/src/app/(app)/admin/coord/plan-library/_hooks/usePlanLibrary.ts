@@ -7,6 +7,7 @@ import { useRetainedValue } from "@/components/console";
 import type {
   CaptureHealthResponse,
   DivergentResponse,
+  ReconciliationResponse,
   ScanRootListResponse,
   WorkArtifactDetail,
   WorkArtifactKind,
@@ -452,4 +453,80 @@ export function usePlanCoverage() {
     `${API}/scan-roots`,
     "Failed to load plan coverage"
   );
+}
+
+/**
+ * How many reconciliation rows one page asks for.
+ *
+ * The route caps `limit` at 100 and axis C is computed PER PAGE — coord has no
+ * bulk delivery door and the per-unit read measured ~0.145 s median, so a page
+ * of 100 is ~15 s of coord reads before the response leaves. 25 is the route's
+ * own default and keeps a page interactive; the facets do not depend on it,
+ * because their denominator is the whole population rather than the page.
+ */
+export const RECONCILIATION_PAGE_SIZE = 25;
+
+/**
+ * Does each plan's record agree with reality? — the three-way reconciliation.
+ *
+ * Three writers share one fact ("is this plan done?") and none reads the
+ * others, so this route reads all three and classifies the disagreement. It
+ * had NO frontend consumer at all from the day it shipped until this hook:
+ * `2026-09-15-captured-vs-authored-coverage-is-a-set-difference` recorded that
+ * as its own dossier's failure class — *"a shipped surface with zero readers
+ * is indistinguishable from an unshipped one"* — and handed it on rather than
+ * absorbing it.
+ *
+ * ## Why this is paged, unlike its sibling hooks
+ *
+ * [`useScanRoots`] and [`usePlanCoverage`] read a whole small answer once.
+ * This route's population is the corpus (~1500 stems) and **axis C is
+ * per-page by construction**: coord has no bulk delivery door, so every row
+ * outside the returned page is classified `UNKNOWN_AXIS_UNREADABLE` and stays
+ * in the denominator. Paging is therefore not pagination-for-scrolling — it
+ * is how axis C gets computed at all, one page at a time. `axis_c_computed_
+ * count` on each response says how many rows this page actually established.
+ *
+ * `offset` is state here rather than a URL parameter because the whole panel
+ * is one console section; `useRetainedRead` re-fires on a URL change, so
+ * moving the page is a `setOffset` and nothing else.
+ *
+ * ## `includeCoord`
+ *
+ * `include_coord=false` is a document-layer-only read in which BOTH coord
+ * axes report UNKNOWN — never agreement. It is offered because the coord
+ * round trips are the slow half and an operator reading the document layer
+ * should not have to pay for them, but it is **off by default**: a read that
+ * silently skipped two of three axes would make this surface answer a
+ * narrower question than its title.
+ */
+export function useReconciliation() {
+  const [offset, setOffset] = useState(0);
+  const [includeCoord, setIncludeCoord] = useState(true);
+
+  const url = useMemo(() => {
+    const qs = new URLSearchParams();
+    qs.set("offset", String(offset));
+    qs.set("limit", String(RECONCILIATION_PAGE_SIZE));
+    // Sent explicitly in both directions. The route defaults it to `true`, but
+    // an omitted parameter and a `true` one are the same request only for as
+    // long as that default holds — and this hook's whole claim is which axes
+    // were read.
+    qs.set("include_coord", String(includeCoord));
+    return `${API}/reconciliation?${qs.toString()}`;
+  }, [offset, includeCoord]);
+
+  const read = useRetainedRead<ReconciliationResponse>(
+    url,
+    "Failed to load plan reconciliation"
+  );
+
+  return {
+    ...read,
+    offset,
+    setOffset,
+    includeCoord,
+    setIncludeCoord,
+    pageSize: RECONCILIATION_PAGE_SIZE,
+  };
 }

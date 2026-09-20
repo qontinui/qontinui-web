@@ -260,7 +260,9 @@ export type CoordPrState = "available" | "unavailable" | "unlinked";
  * FILE coord recorded a `source_path` for whose body was never synced;
  * `absent` is a work unit with no document anywhere.
  */
-export type DocumentState = "present" | "unsynced" | "absent";
+export const DOCUMENT_STATES = ["present", "unsynced", "absent"] as const;
+
+export type DocumentState = (typeof DOCUMENT_STATES)[number];
 
 /**
  * Whether the union's work-unit arm was read at all.
@@ -270,7 +272,10 @@ export type DocumentState = "present" | "unsynced" | "absent";
  * reports the page-wide circuit: a 4xx on the population door is coord
  * ANSWERING and leaves that flag true.
  */
-export type WorkUnitPopulationState = "included" | "unavailable";
+export const WORK_UNIT_POPULATION_STATES = ["included", "unavailable"] as const;
+
+export type WorkUnitPopulationState =
+  (typeof WORK_UNIT_POPULATION_STATES)[number];
 
 export interface CandidateLinkedPr {
   repo: string | null;
@@ -825,4 +830,283 @@ export type ScanRootVocabulariesPinned = [
   Expect<Equal<ScanRootSourceRollup["state"], ScanRootRollupState>>,
   Expect<Equal<PlanCoverage["state"], PlanCoverageState>>,
   Expect<Equal<PlanCensusSide["source"], PlanCensusSource>>,
+];
+
+// ---------------------------------------------------------------------------
+// Three-way plan-status reconciliation — `GET /plan-library/reconciliation`
+//
+// Three writers share one fact ("is this plan done?") and none reads the
+// others: coord's STORED `work_units.status` (axis A), the plan document's
+// status stamp (axis B, here the artifact store), and coord's DERIVED
+// delivery verdict (axis C).
+//
+// The shape below is deliberately faithful to a route built around one rule:
+// an unread axis is UNKNOWN and must never fall through into agreement. Every
+// nullable field here is a place the backend refuses to invent a value, so
+// the TS type refuses to hide it — `shipped: boolean | null` is the load
+// bearing one, and `PLAN_RECONCILIATION_*_NULLABLE` pins each against the
+// served OpenAPI in `types.wire.test.ts`.
+// ---------------------------------------------------------------------------
+
+/** A stem's agreement verdict. `unknown` is a statement, never a soft `agree`. */
+export const RECONCILIATION_VERDICTS = [
+  "agree",
+  "disagree",
+  "unknown",
+] as const;
+
+export type ReconciliationVerdict = (typeof RECONCILIATION_VERDICTS)[number];
+
+/**
+ * The twelve members of the classification cascade, in the backend's ORDER.
+ *
+ * The order is part of the spec, not a presentation choice: it is a
+ * first-match-wins cascade in which `EVIDENCE_INCOMPLETE` precedes every arm
+ * that reads `shipped`, and the two AGREE members are LAST so no unreadable
+ * axis can fall through into agreement. This copy exists so the panel can
+ * render `by_class` in cascade order INCLUDING the zeros — a class with no
+ * rows is a stated fact here, and iterating the served object's keys would
+ * silently drop it.
+ */
+export const RECONCILIATION_CLASS_ORDER = [
+  "UNKNOWN_AXIS_UNREADABLE",
+  "UNKNOWN_NO_BODY_ON_MAIN",
+  "UNKNOWN_NO_UNIT",
+  "UNKNOWN_UNIT_STATUS_EMPTY",
+  "EVIDENCE_INCOMPLETE",
+  "NO_CITATIONS_CAPTURED",
+  "UNIT_STATUS_CONTRADICTS_DELIVERY",
+  "DOC_STAMP_UNREADABLE_BY_ADAPTER",
+  "DOC_OVERSTATES",
+  "DOC_UNDERSTATES",
+  "AGREE_TERMINAL",
+  "AGREE_OPEN",
+] as const;
+
+export type ReconciliationClass = (typeof RECONCILIATION_CLASS_ORDER)[number];
+
+/** Axis A — coord's STORED `work_units.status`. */
+export interface ReconciliationAxisA {
+  readable: boolean;
+  present: boolean;
+  /** OPAQUE: coord accepts an off-vocabulary status, so an unknown word is
+   *  OPEN rather than an error. */
+  status: string | null;
+  unreadable_reason: string | null;
+}
+
+/** Axis B — the plan document's status stamp, from the artifact store. */
+export interface ReconciliationAxisB {
+  /** Stated on the axis as well as the response: here it is NOT a git ref. */
+  source: string;
+  readable: boolean;
+  present: boolean;
+  status: string | null;
+  /** `ok` | `off_vocabulary` | `no_status_block`. */
+  classification: string | null;
+  /**
+   * Does any line satisfy the runner adapter's byte-exact `> **Status:` test?
+   * `null` is UNKNOWN and neutral — only an explicit `false` is a finding,
+   * because that is the case where the adapter substitutes `draft` and pushes
+   * it over coord's row.
+   */
+  adapter_readable: boolean | null;
+  document_state: DocumentState;
+  /** `document_state === "present"` and nothing else. */
+  complete: boolean;
+  unreadable_reason: string | null;
+  /** `>1` is a divergent copy; the newest was compared. */
+  variant_count: number;
+}
+
+/**
+ * Axis C — coord's DERIVED delivery verdict, forwarded verbatim.
+ *
+ * **Read `evidence_complete` before `shipped`.** When it is `false`,
+ * `shipped: false` means coord COULD NOT ESTABLISH delivery — UNKNOWN, not
+ * "undelivered". The two demand opposite responses, which is why `shipped` is
+ * `boolean | null` here and why the panel never renders it alone.
+ */
+export interface ReconciliationAxisC {
+  readable: boolean;
+  present: boolean;
+  shipped: boolean | null;
+  evidence_complete: boolean | null;
+  /** Carried VERBATIM, never collapsed to a count. */
+  evidence_gaps: string[];
+  citation_count: number | null;
+  unreadable_reason: string | null;
+  /** `false` on every off-page row — axis C is per-page. */
+  computed: boolean;
+}
+
+/** One plan stem, its three axis readings, and the resulting class. */
+export interface ReconciliationRow {
+  /** The identifier every other surface joins on. */
+  slug: string;
+  title: string | null;
+  artifact_id: string | null;
+  source_repo: string | null;
+  source_path: string | null;
+  document_state: DocumentState;
+  /** Read this before trusting any comparison on the row. */
+  document_axis_complete: boolean;
+  axis_a: ReconciliationAxisA;
+  axis_b: ReconciliationAxisB;
+  axis_c: ReconciliationAxisC;
+  classification: string;
+  verdict: ReconciliationVerdict;
+  /** A plain sentence naming the values that decided the class. */
+  reason: string;
+}
+
+/**
+ * The honesty block — and the actual answer this surface gives.
+ *
+ * `by_class` and `by_verdict` carry EVERY member including the zeros, so "no
+ * rows of class X" is a stated fact rather than an absence, and
+ * `sum(by_class) === sum(by_verdict) === denominator`. The denominator is the
+ * WHOLE population, not the page.
+ */
+export interface ReconciliationFacets {
+  denominator: number;
+  by_class: Record<string, number>;
+  by_verdict: Record<string, number>;
+  corpus_complete: boolean;
+  /** Empty iff `corpus_complete`; each entry names one blind spot. */
+  corpus_incomplete_reasons: string[];
+}
+
+/** A page of reconciled plan stems plus the honesty flags for the read. */
+export interface ReconciliationResponse {
+  items: ReconciliationRow[];
+  /** The whole population — the facets' denominator, NOT `items.length`. */
+  total: number;
+  offset: number;
+  limit: number;
+  ordering: string;
+  /** Axis B is the artifact store here, not a git ref. Stated every time. */
+  document_axis_source: string;
+  /** `true` only when EVERY row in the denominator has an artifact behind it. */
+  document_axis_complete: boolean;
+  document_present_count: number;
+  document_missing_count: number;
+  /** `false` when ANY coord read degraded on this page. */
+  coord_available: boolean;
+  work_unit_population_state: WorkUnitPopulationState;
+  work_unit_population_reason: string | null;
+  axis_c_scope: string;
+  axis_c_computed_count: number;
+  facets: ReconciliationFacets;
+}
+
+/** `ReconciliationAxisA`'s nullability, as a value. See [`WireNullability`]. */
+export const RECONCILIATION_AXIS_A_NULLABLE: WireNullability<ReconciliationAxisA> =
+  {
+    readable: false,
+    present: false,
+    status: true,
+    unreadable_reason: true,
+  };
+
+/** `ReconciliationAxisB`'s nullability, as a value. See [`WireNullability`]. */
+export const RECONCILIATION_AXIS_B_NULLABLE: WireNullability<ReconciliationAxisB> =
+  {
+    source: false,
+    readable: false,
+    present: false,
+    status: true,
+    classification: true,
+    adapter_readable: true,
+    document_state: false,
+    complete: false,
+    unreadable_reason: true,
+    variant_count: false,
+  };
+
+/**
+ * `ReconciliationAxisC`'s nullability, as a value. See [`WireNullability`].
+ *
+ * `shipped` and `evidence_complete` are BOTH nullable and that is the
+ * contract: a non-nullable `shipped` is how "coord could not establish
+ * delivery" becomes "this did not ship".
+ */
+export const RECONCILIATION_AXIS_C_NULLABLE: WireNullability<ReconciliationAxisC> =
+  {
+    readable: false,
+    present: false,
+    shipped: true,
+    evidence_complete: true,
+    evidence_gaps: false,
+    citation_count: true,
+    unreadable_reason: true,
+    computed: false,
+  };
+
+/** `ReconciliationRow`'s nullability, as a value. See [`WireNullability`]. */
+export const RECONCILIATION_ROW_NULLABLE: WireNullability<ReconciliationRow> = {
+  slug: false,
+  title: true,
+  artifact_id: true,
+  source_repo: true,
+  source_path: true,
+  document_state: false,
+  document_axis_complete: false,
+  axis_a: false,
+  axis_b: false,
+  axis_c: false,
+  classification: false,
+  verdict: false,
+  reason: false,
+};
+
+/** `ReconciliationFacets`'s nullability, as a value. See [`WireNullability`]. */
+export const RECONCILIATION_FACETS_NULLABLE: WireNullability<ReconciliationFacets> =
+  {
+    denominator: false,
+    by_class: false,
+    by_verdict: false,
+    corpus_complete: false,
+    corpus_incomplete_reasons: false,
+  };
+
+/** `ReconciliationResponse`'s nullability, as a value. See [`WireNullability`]. */
+export const RECONCILIATION_RESPONSE_NULLABLE: WireNullability<ReconciliationResponse> =
+  {
+    items: false,
+    total: false,
+    offset: false,
+    limit: false,
+    ordering: false,
+    document_axis_source: false,
+    document_axis_complete: false,
+    document_present_count: false,
+    document_missing_count: false,
+    coord_available: false,
+    work_unit_population_state: false,
+    work_unit_population_reason: true,
+    axis_c_scope: false,
+    axis_c_computed_count: false,
+    facets: false,
+  };
+
+/**
+ * The reconciliation vocabularies are the pinned consts, not a wider `string`.
+ *
+ * Same reason as [`ScanRootVocabulariesPinned`]: widening one passes every
+ * other check here, while the panel loses exhaustiveness on the field it keys
+ * its claims on. `classification` is deliberately NOT in this list — the
+ * backend types it as a plain `str`, and pinning it to the twelve would make
+ * a thirteenth member a type error in the console instead of a new row.
+ */
+export type ReconciliationVocabulariesPinned = [
+  Expect<Equal<ReconciliationRow["verdict"], ReconciliationVerdict>>,
+  Expect<Equal<ReconciliationRow["document_state"], DocumentState>>,
+  Expect<Equal<ReconciliationAxisB["document_state"], DocumentState>>,
+  Expect<
+    Equal<
+      ReconciliationResponse["work_unit_population_state"],
+      WorkUnitPopulationState
+    >
+  >,
 ];

@@ -74,6 +74,7 @@ import { CapturePolicyPanel } from "./_components/CapturePolicyPanel";
 import { CaptureHealthPanel } from "./_components/CaptureHealthPanel";
 import { ScanSourcesPanel } from "./_components/ScanSourcesPanel";
 import { PlanCoveragePanel } from "./_components/PlanCoveragePanel";
+import { ReconciliationPanel } from "./_components/ReconciliationPanel";
 import { DivergencePanel } from "./_components/DivergencePanel";
 import {
   PlanLibraryList,
@@ -116,6 +117,7 @@ export default function PlanLibraryPage() {
       <CaptureHealthPanel />
       <ScanSourcesPanel />
       <PlanCoveragePanel />
+      <ReconciliationPanel />
       <PlanLibraryList openRequest={openRequest} />
       <DivergencePanel
         onOpenArtifact={(id) =>
