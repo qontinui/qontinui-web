@@ -1451,6 +1451,30 @@ export const PUBLISH_MODE_HELP: Record<PublishMode, string> = {
 export const PUBLISH_MODE_CONFIRMED: readonly PublishMode[] = ["auto"];
 
 /**
+ * One document version between the last publication and now.
+ *
+ * **Objects, not strings.** The plan called this "the change notes of every
+ * version since the last publication", which reads as a `string[]`; coord
+ * serves the whole version row. The note is `change_note`, and it is NULLABLE —
+ * a version saved without one is normal, and rendering `null` as the string
+ * "null" beside a real note is how a version with no note comes to look like a
+ * version whose note says "null".
+ *
+ * `edited_by` per version is what makes "an agent wrote this one" visible in a
+ * batch the operator is about to send to every tenant. `loosening` is coord's
+ * per-version direction flag — `Option<bool>`, where **`null` means UNKNOWN,
+ * never `false`** — so a `null` must not render as "not a loosening".
+ */
+export interface VersionSincePublication {
+  version_number: number;
+  change_note?: string | null;
+  edited_by?: string | null;
+  created_at?: string | null;
+  /** `true`/`false`/`null`. `null` is UNKNOWN — the classifier did not rule. */
+  loosening?: boolean | null;
+}
+
+/**
  * One candidate from the publish-all DRY RUN (D1).
  *
  * A candidate is a system-tenant document whose kind is publishable, whose
@@ -1474,17 +1498,36 @@ export interface PublishAllCandidate {
   lint: PublicationLintHit[];
   /** `"loosening"` or `"other"` (D3), as coord classified the total change. */
   direction: string;
+  /** The publication this document currently tracks; `null` if never published. */
+  latest_publication_version?: number | null;
   /** The document's stored mode; `null`/absent is UNDECIDED. */
   publish_mode?: string | null;
+  /**
+   * What the auto-publisher WILL set on its first pass over this document —
+   * served only while `publish_mode` is null.
+   *
+   * Coord's answer, never derived here. Deriving it would mean shipping a
+   * second copy of coord's carve-out list and its five lint patterns into the
+   * browser, and the day either changes this console would name the wrong
+   * default with total confidence.
+   */
+  undecided_default?: string | null;
   edited_by?: string | null;
-  /** Change notes of every version since the last publication, oldest first. */
-  change_notes?: string[];
+  /** Every version since the last publication, oldest first. Objects, not notes. */
+  versions_since_publication?: VersionSincePublication[];
 }
 
 /** `POST .../publish-all` with `dry_run: true` — the preview. */
 export interface PublishAllDryRunResponse {
   dry_run: true;
+  /** Always `false` on a preview — coord says so rather than leaving it implied. */
+  published?: false;
+  /** `candidates.length`, from coord. Preferred over counting the array here. */
+  count?: number;
   candidates: PublishAllCandidate[];
+  lint_is_advisory?: boolean;
+  /** Coord's own sentence about immutability, carried verbatim. */
+  immutable?: string;
 }
 
 /**
@@ -1532,7 +1575,22 @@ export interface PublishAllResult {
 /** `POST .../publish-all` with `dry_run: false` — what actually shipped. */
 export interface PublishAllArmedResponse {
   dry_run: false;
+  /** How many items actually published — a COUNT here, not the boolean the preview carries. */
+  published?: number;
+  /** How many items were sent. `published < requested` is the designed partial success. */
+  requested?: number;
   results: PublishAllResult[];
+  /**
+   * Whether the fleet fan-out was started.
+   *
+   * `"spawned"` — a detached task is distributing the publications now.
+   * `"skipped_nothing_published"` — every item failed, so there was nothing to
+   * distribute. Worth showing: a batch that published nothing and a batch whose
+   * fan-out was lost look identical from the outside, and only one of them is
+   * a reason to worry.
+   */
+  fan_out?: "spawned" | "skipped_nothing_published" | string;
+  immutable?: string;
 }
 
 /** How long a settled change waits before the auto-publisher takes it (D3). */
@@ -1546,12 +1604,29 @@ export type AutoPublishDirection = "loosening" | "other";
  * before it happens. Coord computes all of it — including what the worker WOULD
  * do while the `policy_auto_publish` kill switch is off — so nothing in this
  * console re-derives a settle time or a hold.
+ *
+ * **This is the SAME wire shape as `PublishAllCandidate`** — coord builds both
+ * from one `publication_candidates` helper, so the status route covers the full
+ * candidate set rather than only the `auto` ones. It is declared separately
+ * because the two are read for different purposes and one field's optionality
+ * differs where it matters: `current_version` is REQUIRED on the candidate,
+ * because it is the `expected_version` the armed run is locked to and an
+ * `undefined` there would arm a publication with no concurrency guard at all.
+ * Here it is only ever displayed.
  */
 export interface AutoPublishStatusEntry {
   kind: PromptDocumentKind;
   name: string;
+  current_version?: number;
+  next_publication_version?: number;
+  latest_publication_version?: number | null;
   /** The stored mode; `null`/absent is UNDECIDED. */
   publish_mode?: string | null;
+  /**
+   * What the worker WILL set on its first pass — served only while
+   * `publish_mode` is null. Coord's answer; see `PublishAllCandidate`.
+   */
+  undecided_default?: string | null;
   /** `"loosening"` (24 h) or `"other"` (6 h). A value this build predates renders as itself. */
   direction?: string | null;
   /** ISO timestamp at which the wait expires, or `null` when nothing is pending. */
@@ -1562,11 +1637,33 @@ export interface AutoPublishStatusEntry {
   held_tokens?: PublicationLintHit[];
   /** The document versions the pending publication would carry. */
   versions?: number[];
+  /** Every version since the last publication, oldest first. Objects, not notes. */
+  versions_since_publication?: VersionSincePublication[];
 }
 
 /** `GET /coord/prompt-documents/auto-publish/status` response. */
 export interface AutoPublishStatusResponse {
   candidates: AutoPublishStatusEntry[];
+  /**
+   * `candidates.length`, from coord — **the "Publish all changed (N)" count**.
+   *
+   * Preferred over counting the array here: it is coord's own number for the
+   * same set, and if the two ever disagree the array is the thing that got
+   * truncated in transit.
+   */
+  count?: number;
+  /**
+   * The subset that is `auto`, settled and not held — what the NEXT worker pass
+   * would actually publish, as opposed to what is merely changed.
+   */
+  would_publish_now?: number;
+  /** The resolved `policy_auto_publish` level for this tenant. */
+  policy_auto_publish?: string;
+  /** Whether the worker will publish at all — the D5 switch, resolved. */
+  publishing_enabled?: boolean;
+  /** The two waits, in seconds, as coord has them compiled. */
+  quiet_period_loosening_seconds?: number;
+  quiet_period_other_seconds?: number;
 }
 
 // ------------------- the kill switch (`policy_auto_publish`) -------------------

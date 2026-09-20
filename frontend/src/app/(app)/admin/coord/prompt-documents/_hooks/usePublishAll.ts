@@ -10,10 +10,12 @@ import {
 import type {
   AutoPublishStatusEntry,
   AutoPublishStatusResponse,
+  PromptDocumentKind,
   PublishAllArmedResponse,
   PublishAllCandidate,
   PublishAllDryRunResponse,
   PublishAllItem,
+  PublishMode,
 } from "../types";
 
 const API = "/api/v1/operations";
@@ -22,6 +24,38 @@ const AUTO_PUBLISH_STATUS = `${API}/coord/prompt-documents/auto-publish/status`;
 
 function message(err: unknown, fallback: string): string {
   return err instanceof Error ? err.message : fallback;
+}
+
+/**
+ * Why a `publish_mode` PATCH failed, recovered from the thrown `Error`'s
+ * message — `"<VERB> <url> failed: <status> - <body text>"`.
+ *
+ * A string sniff, and named as one, exactly like `classifyPublishError`. It
+ * chooses an EXPLANATION and never decides whether something is allowed.
+ *
+ * | Answer | When | Why it is worth separating |
+ * |---|---|---|
+ * | `schema_missing` | the body names `42703`, or names the column and says it does not exist | Certain: coord is deployed ahead of the `pdpub_03` migration. |
+ * | `server_error` | any other 5xx | Probably the same cause — coord's write path does not degrade on a missing column, so the deploy window is the likeliest 500 on THIS field — but not certain, so the copy says "most likely" rather than asserting it. |
+ * | `other` | anything else (4xx, transport) | Not this problem. Falls through to the ordinary refusal handling. |
+ *
+ * Erring toward `server_error` is the right direction: naming a real coord
+ * fault as a pending migration costs one misleading sentence beside coord's own
+ * verbatim message, while reporting the deploy window as an unexplained 500
+ * sends an operator to debug a system behaving exactly as designed.
+ */
+export function classifyPublishModeError(
+  text: string
+): "schema_missing" | "server_error" | "other" {
+  if (text.includes("42703")) return "schema_missing";
+  if (
+    text.includes("publish_mode") &&
+    (text.includes("does not exist") || text.includes("column"))
+  ) {
+    return "schema_missing";
+  }
+  if (/failed: 5\d\d\b/.test(text)) return "server_error";
+  return "other";
 }
 
 /**
@@ -43,9 +77,8 @@ function message(err: unknown, fallback: string): string {
  * the moment the dialog opens. Two reasons, in order:
  *
  * 1. **A page load must not issue a write-shaped request.** The dry run is a
- *    POST — coord serves the preview and the armed run through one door with
- *    `dry_run` defaulting to `true`, the same shape `/publish` and `/reconcile`
- *    have — and it is gated on `require_coord_tenant_admin`. Firing it on
+ *    POST — coord serves the preview and the armed run through one door — and
+ *    it is gated on `require_coord_tenant_admin`. Firing it on
  *    mount would POST to an admin write door on every visit to this page in
  *    every tenant, and would couple every test of this list to the publish-all
  *    door. The status read is a GET on tenant membership and is needed on mount
@@ -101,9 +134,14 @@ export function usePublishAll() {
     null
   );
   const [status, setStatus] = useState<AutoPublishStatusEntry[]>([]);
+  const [servedCount, setServedCount] = useState(0);
   const [loading, setLoading] = useState(true);
   const [previewing, setPreviewing] = useState(false);
   const [publishing, setPublishing] = useState(false);
+  const [savingMode, setSavingMode] = useState(false);
+  const [modeSchemaPending, setModeSchemaPending] = useState<string | null>(
+    null
+  );
   const [unavailable, setUnavailable] = useState<{
     refusal: PublishRefusal;
     detail: string;
@@ -155,6 +193,13 @@ export function usePublishAll() {
       const data =
         await httpClient.get<AutoPublishStatusResponse>(AUTO_PUBLISH_STATUS);
       setStatus(data.candidates ?? []);
+      // Coord's own count for the same set. Preferred over the array's length:
+      // if the two disagree, the array is the thing that got truncated.
+      setServedCount(
+        typeof data.count === "number"
+          ? data.count
+          : (data.candidates ?? []).length
+      );
     } catch (err) {
       // Silent by the same rule as the latch above, and one step further: a
       // failed status read costs an ADVISORY badge. Every non-system tenant
@@ -201,6 +246,12 @@ export function usePublishAll() {
         const result = await httpClient.post<PublishAllArmedResponse>(
           PUBLISH_ALL,
           {
+            // **Explicit, and never omitted.** On publish-all `dry_run`
+            // defaults to TRUE — the opposite of `/publish`, whose default is
+            // false. Leaving it out here would take another preview and report
+            // it as a publication: a silent no-op that looks exactly like
+            // success, on the one button whose whole job is to ship 26
+            // documents at once.
             dry_run: false,
             release_note: releaseNote.trim() ? releaseNote.trim() : null,
             items,
@@ -236,6 +287,69 @@ export function usePublishAll() {
     [latch]
   );
 
+  /**
+   * Set one document's publish mode.
+   *
+   * **Why this does not go through `usePromptDocuments.updateDocument`**, which
+   * is the shared PATCH every other field uses: this field has a failure mode
+   * none of the others has, and that hook's `toast.error(… "Failed to save
+   * document")` would report it as an ordinary save failure.
+   *
+   * Coord's READS of `publish_mode` degrade on Postgres `42703` and answer
+   * UNDECIDED, so a console can run against a coord deployed ahead of the
+   * `pdpub_03` migration. **The WRITE deliberately does not degrade** — you
+   * cannot record an authority decision the schema cannot hold, and a write
+   * that silently succeeded against a missing column would tell an operator
+   * they had set `never` on a document that kept publishing itself. So during
+   * the deploy window this PATCH 500s, by design.
+   *
+   * That 500 is classified rather than swallowed. It is latched into
+   * {@link modeSchemaPending} so the list can carry a standing explanation —
+   * "the column is not migrated yet", not "coord is broken" — and the control
+   * stays on screen, because hiding it would leave no route to the setting once
+   * the migration lands. The latch clears on the first write that succeeds.
+   */
+  const setPublishMode = useCallback(
+    async (
+      kind: PromptDocumentKind,
+      name: string,
+      mode: PublishMode
+    ): Promise<boolean> => {
+      try {
+        setSavingMode(true);
+        await httpClient.patch(
+          `${API}/coord/prompt-documents/${encodeURIComponent(
+            kind
+          )}/${encodeURIComponent(name)}`,
+          {
+            publish_mode: mode,
+            change_description: `Publish mode set to \`${mode}\` by an operator`,
+          }
+        );
+        setModeSchemaPending(null);
+        toast.success(`${kind}/${name} now publishes: ${mode}.`);
+        return true;
+      } catch (err) {
+        const detail = message(err, "Failed to set the publish mode");
+        if (classifyPublishModeError(detail) !== "other") {
+          setModeSchemaPending(detail);
+          toast.error(
+            "Coord could not record the publish mode. Its `publish_mode` " +
+              "column is most likely not migrated yet — the write refuses " +
+              "rather than degrading, because a decision the schema cannot " +
+              "hold must not look like it was saved."
+          );
+        } else if (!latch(detail)) {
+          toast.error(detail);
+        }
+        return false;
+      } finally {
+        setSavingMode(false);
+      }
+    },
+    [latch]
+  );
+
   return {
     /**
      * Every changed, publishable, not-`never` document — the dry run's answer,
@@ -255,9 +369,18 @@ export function usePublishAll() {
      * the dry run uses. See the module docs for the assumption and its failure
      * mode.
      */
-    changedCount: status.length,
+    changedCount: servedCount,
     loading,
     publishing,
+    /** True while a publish-mode PATCH is in flight. */
+    savingMode,
+    setPublishMode,
+    /**
+     * Set when a publish-mode write failed in a way that points at the
+     * `pdpub_03` migration not being applied yet. Carries coord's verbatim
+     * message. Cleared by the next write that succeeds.
+     */
+    modeSchemaPending,
     /**
      * Set once coord (or this deployment's proxy) has answered that this
      * surface does not apply here at all. `null` means "no answer yet", which
