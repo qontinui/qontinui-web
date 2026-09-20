@@ -28,7 +28,7 @@ const LINE_CLASS: Record<DisclosureLevel, string> = {
   note: "border-border bg-card text-muted-foreground",
 };
 
-export function DisclosureLines({
+export function DisclosureLinesPanel({
   lines,
   testIdPrefix,
 }: {
