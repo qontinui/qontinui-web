@@ -275,15 +275,34 @@ async def _attach(
         )
 
 
-def _forwarded_attach(manager: Any) -> dict[str, Any]:
-    """The last ``terminal_attach`` frame the relay forwarded to the target."""
-    frames = [
+def _forwarded_attaches(manager: Any) -> list[dict[str, Any]]:
+    """Every ``terminal_attach`` frame the relay forwarded, in order.
+
+    A list rather than a count, because the bounded re-present is pinned by
+    comparing frame N+1 to frame N — same grant, same geometry, new wire id.
+    """
+    return [
         c.args[1]
         for c in manager.send_terminal.await_args_list
         if c.args[1].get("type") == "terminal_attach"
     ]
+
+
+def _forwarded_attach(manager: Any) -> dict[str, Any]:
+    """The last ``terminal_attach`` frame the relay forwarded to the target."""
+    frames = _forwarded_attaches(manager)
     assert frames, manager.send_terminal.await_args_list
     return frames[-1]
+
+
+async def _drain_background(relay: RemoteTerminalRelay) -> None:
+    """Run every task the relay spawned to completion (the re-present timer)."""
+    for _ in range(10):
+        tasks = [t for t in list(relay._background) if not t.done()]
+        if not tasks:
+            break
+        await asyncio.gather(*tasks, return_exceptions=True)
+    await asyncio.sleep(0)
 
 
 async def _attached(
@@ -1117,6 +1136,14 @@ async def test_terminal_exit_routes_then_drops_the_attachment(
 async def test_target_error_for_pending_attach_reaches_source_and_drops_grant(
     relay: RemoteTerminalRelay, redis: _FakeRedis
 ) -> None:
+    """A SETTLED refusal of a pending attach is forwarded and tears down at once.
+
+    Spelled with ``attach_terminal_mismatch`` rather than
+    ``attach_grant_unknown``: the latter is the one code that now takes the
+    bounded re-present first (see the re-present block below), and the property
+    pinned here — forwarded verbatim, grant dropped, registry emptied — is the
+    one every OTHER target refusal still has.
+    """
     ws = _FakeWS()
     manager = _manager()
     claims = _claims()
@@ -1130,10 +1157,96 @@ async def test_target_error_for_pending_attach_reaches_source_and_drops_grant(
         {
             "type": "error",
             "request_id": minted,
+            "code": "attach_terminal_mismatch",
+            "message": "no such grant",
+        },
+    )
+
+    assert routed is True
+    assert ws.of_type("remote_terminal_error") == [
+        {
+            "type": "remote_terminal_error",
+            "grant_jti": claims["jti"],
+            "code": "attach_terminal_mismatch",
+            "message": "no such grant",
+            "request_id": "req-attach-1",
+        }
+    ]
+    assert session.grants == {}
+    assert redis.empty()
+
+
+# ---------------------------------------------------------------------------
+# ``attach_grant_unknown`` — ONE bounded re-present of the SAME grant
+# ---------------------------------------------------------------------------
+# The target learns of a grant by a push and by a 60 s catch-up poll. Lose the
+# push and it answers ``attach_grant_unknown`` about a grant coord has already
+# written and that lives 15 minutes — a RACE, not a verdict. The source treats
+# the code as fatal and every retry mints a FRESH jti, so the poll tick that
+# finally lands records a jti no later frame presents. What these pin is the
+# remedy and its bounds: the SAME jti, re-presented ONCE, only while the relay
+# still holds the grant live, and never for a code that is a settled no.
+
+
+async def test_attach_grant_unknown_is_represented_once_with_the_same_jti(
+    relay: RemoteTerminalRelay, redis: _FakeRedis, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The delay is bounded from above by the SOURCE's 20 s ATTACH_TIMEOUT: a
+    # re-present that outruns it buys nothing, so pin that it is well under.
+    assert 0 < rtr.ATTACH_REPRESENT_DELAY_SECONDS <= 5.0
+    monkeypatch.setattr(rtr, "ATTACH_REPRESENT_DELAY_SECONDS", 0)
+
+    ws = _FakeWS()
+    manager = _manager()
+    claims = _claims()
+    await _attach(relay, ws, manager, claims)
+    first = _forwarded_attach(manager)
+    session = relay._sessions[id(ws)]
+
+    routed = await relay.route_target_frame(
+        session,
+        TARGET_DEVICE,
+        {
+            "type": "error",
+            "request_id": first["request_id"],
             "code": "attach_grant_unknown",
             "message": "no such grant",
         },
     )
+
+    # Nothing reaches the source: the pane stays open, and the grant, its
+    # Redis claim and the listener stay exactly as the first forward left them.
+    assert routed is True
+    assert ws.of_type("remote_terminal_error") == []
+    assert list(session.grants) == [claims["jti"]]
+    assert not redis.empty()
+
+    await _drain_background(relay)
+
+    frames = _forwarded_attaches(manager)
+    assert len(frames) == 2, frames
+    second = frames[1]
+    # The SAME grant — minting a fresh one is the defect, not the remedy.
+    assert second["remote"]["grant_jti"] == claims["jti"]
+    assert second["remote"] == first["remote"]
+    # A fresh WIRE id, so a duplicate answer to the first frame cannot be
+    # credited to this one.
+    assert second["request_id"] != first["request_id"]
+    assert second["request_id"] in session.pending_attach
+
+    # ONE shot. The second ``attach_grant_unknown`` is the answer, on the
+    # unchanged fatal path: forwarded to the source and torn down.
+    routed = await relay.route_target_frame(
+        session,
+        TARGET_DEVICE,
+        {
+            "type": "error",
+            "request_id": second["request_id"],
+            "code": "attach_grant_unknown",
+            "message": "no such grant",
+        },
+    )
+    await _drain_background(relay)
 
     assert routed is True
     assert ws.of_type("remote_terminal_error") == [
@@ -1145,8 +1258,195 @@ async def test_target_error_for_pending_attach_reaches_source_and_drops_grant(
             "request_id": "req-attach-1",
         }
     ]
+    # Never a third attempt — bounded, not a retry loop.
+    assert len(_forwarded_attaches(manager)) == 2
     assert session.grants == {}
     assert redis.empty()
+
+
+@pytest.mark.parametrize(
+    "code",
+    [
+        # The relay and the target agree the capability is spent.
+        "attach_grant_expired",
+        # Settled noes: re-offering the same grant cannot change any of them.
+        "attach_terminal_mismatch",
+        "remote_attach_disabled",
+        "session_not_local",
+        # A target spelling the relay's own wrong-source verdict is namespaced
+        # by ``namespace_target_code`` and is not the race either.
+        "attach_grant_wrong_source",
+    ],
+)
+async def test_settled_attach_refusal_is_never_represented(
+    relay: RemoteTerminalRelay,
+    redis: _FakeRedis,
+    monkeypatch: pytest.MonkeyPatch,
+    code: str,
+) -> None:
+    monkeypatch.setattr(rtr, "ATTACH_REPRESENT_DELAY_SECONDS", 0)
+    ws = _FakeWS()
+    manager = _manager()
+    claims = _claims()
+    await _attach(relay, ws, manager, claims)
+    minted = _forwarded_attach(manager)["request_id"]
+    session = relay._sessions[id(ws)]
+
+    routed = await relay.route_target_frame(
+        session,
+        TARGET_DEVICE,
+        {
+            "type": "error",
+            "request_id": minted,
+            "code": code,
+            "message": "settled",
+        },
+    )
+    await _drain_background(relay)
+
+    assert routed is True
+    errors = ws.of_type("remote_terminal_error")
+    assert len(errors) == 1, ws.sent
+    assert errors[0]["code"] == rtr.namespace_target_code(code)
+    assert errors[0]["request_id"] == "req-attach-1"
+    # The grant was NOT re-offered, and the attachment is gone.
+    assert len(_forwarded_attaches(manager)) == 1
+    assert session.grants == {}
+    assert redis.empty()
+
+
+async def test_represent_preserves_cols_rows_and_have_offset(
+    relay: RemoteTerminalRelay, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Geometry and the replay cursor survive the re-present.
+
+    Rebuilding the frame instead of re-sending the cached one would drop all
+    three: ``cols``/``rows`` would resize the pane, and a missing
+    ``have_offset`` makes the target ship the whole ring tail, which the source
+    renders as a DATA-LOSS marker in a pane that lost nothing.
+    """
+    monkeypatch.setattr(rtr, "ATTACH_REPRESENT_DELAY_SECONDS", 0)
+    ws = _FakeWS()
+    manager = _manager()
+    claims = _claims()
+    with _verify(claims):
+        await relay.handle_source_frame(
+            {
+                "type": "remote_terminal_attach",
+                "request_id": "req-reattach-1",
+                "grant": "opaque.jwt.here",
+                "cols": 203,
+                "rows": 61,
+                "have_offset": 4096,
+            },
+            SOURCE_DEVICE,
+            manager,
+            ws,
+        )
+    first = _forwarded_attach(manager)
+    assert (first["cols"], first["rows"], first["have_offset"]) == (203, 61, 4096)
+    session = relay._sessions[id(ws)]
+
+    await relay.route_target_frame(
+        session,
+        TARGET_DEVICE,
+        {
+            "type": "error",
+            "request_id": first["request_id"],
+            "code": "attach_grant_unknown",
+            "message": "no such grant",
+        },
+    )
+    await _drain_background(relay)
+
+    second = _forwarded_attaches(manager)[1]
+    assert second["cols"] == 203
+    assert second["rows"] == 61
+    assert second["have_offset"] == 4096
+    # Everything but the wire id and the stamp is byte-identical to what the
+    # source asked for.
+    assert {
+        k: v for k, v in second.items() if k not in ("request_id", "timestamp")
+    } == {k: v for k, v in first.items() if k not in ("request_id", "timestamp")}
+    await relay.release_source(ws)
+
+
+async def test_first_attach_without_have_offset_does_not_gain_one_on_represent(
+    relay: RemoteTerminalRelay, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A FIRST attach takes the tail arm deliberately, on the re-present too."""
+    monkeypatch.setattr(rtr, "ATTACH_REPRESENT_DELAY_SECONDS", 0)
+    ws = _FakeWS()
+    manager = _manager()
+    claims = _claims()
+    await _attach(relay, ws, manager, claims)
+    first = _forwarded_attach(manager)
+    assert "have_offset" not in first
+    session = relay._sessions[id(ws)]
+
+    await relay.route_target_frame(
+        session,
+        TARGET_DEVICE,
+        {
+            "type": "error",
+            "request_id": first["request_id"],
+            "code": "attach_grant_unknown",
+            "message": "no such grant",
+        },
+    )
+    await _drain_background(relay)
+
+    assert "have_offset" not in _forwarded_attaches(manager)[1]
+    await relay.release_source(ws)
+
+
+async def test_represented_attach_can_still_be_answered_and_binds(
+    relay: RemoteTerminalRelay, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The whole point: the second presentation lands and the pane attaches."""
+    monkeypatch.setattr(rtr, "ATTACH_REPRESENT_DELAY_SECONDS", 0)
+    ws = _FakeWS()
+    manager = _manager()
+    claims = _claims()
+    await _attach(relay, ws, manager, claims)
+    first = _forwarded_attach(manager)
+    session = relay._sessions[id(ws)]
+
+    await relay.route_target_frame(
+        session,
+        TARGET_DEVICE,
+        {
+            "type": "error",
+            "request_id": first["request_id"],
+            "code": "attach_grant_unknown",
+            "message": "no such grant",
+        },
+    )
+    await _drain_background(relay)
+    second = _forwarded_attaches(manager)[1]
+
+    routed = await relay.route_target_frame(
+        session,
+        TARGET_DEVICE,
+        {
+            "type": "terminal_attached",
+            "request_id": second["request_id"],
+            "terminal_id": "t1",
+            "data": "cmluZw==",
+            "start_offset": 0,
+            "total_bytes_produced": 4,
+        },
+    )
+
+    assert routed is True
+    assert ws.of_type("remote_terminal_error") == []
+    att = session.grants[claims["jti"]]
+    assert att.attached is True
+    assert att.terminal_id == "t1"
+    # The source's own attach request id is echoed, so its waiter settles.
+    attached = ws.of_type("remote_terminal_attached")
+    assert attached and attached[0]["request_id"] == "req-attach-1"
+    await relay.release_source(ws)
 
 
 async def test_unrelated_target_frames_are_ignored(relay: RemoteTerminalRelay) -> None:
