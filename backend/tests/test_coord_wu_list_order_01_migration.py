@@ -457,11 +457,20 @@ def test_coord_wu_list_order_01_indexes_serve_both_orders_and_downgrade() -> Non
         assert column_info(engine, "work_units", "authored_at") is not None, (
             "downgrade must NOT touch authored_at"
         )
+        # Scoped to THIS fixture's two tenants, not `count(*)` over the table:
+        # an unscoped exact count asserts over global state, so a peer test
+        # inserting one row fails this one for a reason that has nothing to do
+        # with the downgrade. The ratchet in `global-state-assertions.yml`
+        # forbids it, and is right to.
         with engine.connect() as conn:
             count = conn.execute(
-                text("SELECT count(*) FROM coord.work_units")
+                text(
+                    "SELECT count(*) FROM coord.work_units "
+                    "WHERE tenant_id IN (:tenant, :other)"
+                ),
+                {"tenant": str(_TENANT), "other": str(_OTHER_TENANT)},
             ).scalar_one()
-        assert count == 120, "downgrade must not delete rows"
+        assert count == 120, "downgrade must not delete this fixture's rows"
 
         # Re-upgrade is clean (idempotent DDL, no leftovers).
         run_alembic(root, url, "upgrade", _REVISION_ID)
