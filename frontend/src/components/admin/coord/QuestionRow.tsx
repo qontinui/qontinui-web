@@ -19,6 +19,16 @@
  * the card gave, at a third of the collapsed height.
  *
  * `coord-question-card` is carried across onto the row (D4a).
+ *
+ * **Three terminal shapes, not two.** Plan
+ * `2026-09-20-a-pending-operator-question-outlives-the-condition-that-motivated-it`
+ * Phase 4 adds `withdrawn`: a question retired because its premise died rather
+ * than because anyone decided anything. It dims like an answered row and shows
+ * its `withdrawal_reason` in the same detail slot an answered row shows its
+ * response (`coord-question-withdrawal`, beside `coord-question-response`), so
+ * a retirement is legible instead of a silent disappearance. That block is
+ * `QuestionWithdrawalRecord`, shared with the detail route — the two surfaces
+ * must not drift about what a withdrawal looks like.
  */
 
 import Link from "next/link";
@@ -33,12 +43,14 @@ import {
 } from "@/components/console";
 import {
   QUESTION_STATUS_PALETTE,
+  QUESTION_TERMINAL_KINDS,
   deriveQuestionStatus,
   optionLabels,
   questionIdentity,
   truncate,
   type AgentQuestionRow,
 } from "@/components/admin/coord/questionStatus";
+import { QuestionWithdrawalRecord } from "@/components/admin/coord/QuestionWithdrawalRecord";
 
 export type { AgentQuestionRow };
 
@@ -52,7 +64,20 @@ export function QuestionRow({
   onToggle: () => void;
 }) {
   const status = deriveQuestionStatus(question);
-  const answered = Boolean(question.responded_at);
+  // Read the classification off the derivation, never off the raw columns.
+  // `status.kind` already IS the answer — a withdrawn row keeps `responded_at`
+  // NULL, and `deriveQuestionStatus` tests `withdrawn_at` first, so a row that
+  // somehow carried both stamps is withdrawn to every consumer at once. Two
+  // booleans over `question.*` would re-derive the same thing beside it, which
+  // is exactly how this file and the detail route came apart in review: the
+  // derivation went three-valued while a sibling predicate stayed two-valued.
+  const withdrawn = status.kind === "withdrawn";
+  const answered = status.kind === "answered";
+  // Both terminal states dim the row: nobody is waiting on either. Membership
+  // in the audited table rather than `withdrawn || answered`, so a sixth kind's
+  // terminality is decided once, at `QUESTION_TERMINAL_KINDS`, instead of
+  // re-inferred here and in the detail route.
+  const terminal = QUESTION_TERMINAL_KINDS.has(status.kind);
   const options = optionLabels(question);
 
   return (
@@ -62,7 +87,7 @@ export function QuestionRow({
       expanded={expanded}
       onToggle={onToggle}
       attention={status.attention}
-      className={answered ? "opacity-70 hover:opacity-100" : undefined}
+      className={terminal ? "opacity-70 hover:opacity-100" : undefined}
       identity={questionIdentity(question)}
       label={<span title={question.question}>{truncate(question.question, 160)}</span>}
       status={
@@ -130,7 +155,7 @@ export function QuestionRow({
                 <ExternalLink className="h-3 w-3 ml-1" />
               </Button>
             </Link>
-            {!answered && (
+            {!terminal && (
               <span className="text-xs text-muted-foreground">
                 the response composer lives on the detail page
               </span>
@@ -138,7 +163,17 @@ export function QuestionRow({
           </div>
         }
         history={
-          answered ? (
+          withdrawn ? (
+            // The retirement record, in the slot the answered row uses for its
+            // response — because it answers the same operator question ("what
+            // happened to this?"), just with a reason instead of a decision.
+            // Shared with the detail route rather than copied: see
+            // `QuestionWithdrawalRecord`.
+            <QuestionWithdrawalRecord
+              question={question}
+              testId="coord-question-withdrawal"
+            />
+          ) : answered ? (
             <div className="text-xs" data-testid="coord-question-response">
               <span className="text-muted-foreground">Answered </span>
               <RowTime at={question.responded_at ?? null} verb="Answered" />
