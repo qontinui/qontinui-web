@@ -404,10 +404,28 @@ const PERSON_DAY_DECIMALS = 2;
  * Postgres raises `numeric_field_overflow` and the save 500s. Refusing it
  * where it is pasted is what turns that into a named row.
  */
-const PERSON_DAY_MAX_HUNDREDTHS = 10 ** (10 - PERSON_DAY_DECIMALS) * 100 - 1;
+const PERSON_DAY_PRECISION = 10;
 
-/** The same ceiling as a figure, for the message that refuses a row. */
-const PERSON_DAY_MAX_DAYS = "99999999.99";
+/**
+ * `NUMERIC(p, s)` holds `p` significant digits with `s` after the point, so
+ * the largest value is `10^p - 1` at the scale's grain — 9 999 999 999
+ * hundredths, i.e. 99 999 999.99 days.
+ */
+const PERSON_DAY_MAX_HUNDREDTHS = 10 ** PERSON_DAY_PRECISION - 1;
+
+/**
+ * The same ceiling as a figure, for the message that refuses a row.
+ *
+ * Derived, not hand-kept: this file makes a point of taking the grain from
+ * one constant, and a literal here is the one place a change to
+ * `PERSON_DAY_DECIMALS` would leave a right refusal beside a wrong message.
+ */
+const PERSON_DAY_MAX_DAYS = `${Math.trunc(
+  PERSON_DAY_MAX_HUNDREDTHS / 10 ** PERSON_DAY_DECIMALS
+)}.${String(PERSON_DAY_MAX_HUNDREDTHS % 10 ** PERSON_DAY_DECIMALS).padStart(
+  PERSON_DAY_DECIMALS,
+  "0"
+)}`;
 
 /**
  * Total a column of person-day strings exactly.

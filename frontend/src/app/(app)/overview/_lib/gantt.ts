@@ -135,10 +135,23 @@ function looksLikeTaskMeta(value: string): boolean {
   // A directive whose value merely NAMES dates is not a task: `title
   // Delivery plan: 2026-01-05` and `section Sprint 1: 2026-01-05,
   // 2026-03-31` are a title and a section, and warning on them told the
-  // reader to break a chart that was right. What a task carries that a
-  // date-naming directive does not is a DURATION, or a third field.
+  // reader to break a chart that was right.
+  //
+  // Three fields is a task whatever else is true. Two is the hard case,
+  // because `Section review :2026-01-05, 2026-01-20` (a task with a start
+  // and an end and no id) and `title Delivery plan: 2026-01-05,
+  // 2026-03-31` (a delivery window) have the same shape — and requiring a
+  // DURATION as well lost the first in silence, which is the one thing this
+  // module promises never to do.
+  //
+  // What separates them is the SPACE: mermaid's task separator is written
+  // ` :`, while a colon inside prose attaches to the word before it. A
+  // heuristic rather than a law — `Task:2026-01-05, 5d` is still missed —
+  // but it recovers the common form without warning on either false
+  // positive.
   return (
-    tokens.length >= 3 || (tokens.length >= 2 && tokens.some(isDurationToken))
+    tokens.length >= 3 ||
+    (tokens.length >= 2 && (tokens.some(isDurationToken) || /\s:/.test(value)))
   );
 }
 
@@ -167,9 +180,13 @@ function isDurationToken(token: string): boolean {
  * parser reads elsewhere, and under the strict rule both vanished in
  * silence.
  *
- * Still no warning for the genuine values that carry a colon —
- * `axisFormat %H:%M`, `todayMarker stroke-width:5px` — because a single
- * field that is neither a date, a duration nor an `after` is not task meta.
+ * Still no warning for a genuine single-field value that carries a colon —
+ * `axisFormat %H:%M`, `todayMarker stroke-width:5px` — because one field
+ * that is neither a date, a duration nor an `after` is not task meta. A
+ * MULTI-property `todayMarker stroke-width:5px,stroke:#0f0` does warn: it
+ * is three fields and indistinguishable from task meta by any rule here.
+ * That is the trade this function is named for — these five directives are
+ * discarded, so noise costs a line and silence costs a task.
  */
 function couldBeADiscardedTask(value: string): boolean {
   const tokens = metaTokens(value);

@@ -425,6 +425,31 @@ gantt
     expect(result.taskCount).toBe(1);
   });
 
+  it("warns on a two-date task whose title starts with a kept keyword", () => {
+    // A task with a start and an end and no id has two fields and no
+    // duration — the same shape as a delivery window in a title. Requiring
+    // a duration as well lost it in SILENCE, on the two branches that keep
+    // their value. The space before the colon is what tells them apart.
+    for (const [line, keyword] of [
+      ["Section review :2026-01-05, 2026-01-20", "section"],
+      ["Title sign-off :2026-01-05, 2026-01-20", "title"],
+    ] as const) {
+      const result = parseMermaidGantt(`
+gantt
+    dateFormat YYYY-MM-DD
+    ${line}
+    section P One
+    Work :t1, 2026-01-05, 3d
+`);
+      expect(
+        result.issues.some(
+          (i) => i.severity === "warning" && i.message.includes(keyword)
+        ),
+        line
+      ).toBe(true);
+    }
+  });
+
   it("keeps a chart title that contains a date", () => {
     // Deciding the line by "something after a colon looks like a date"
     // instead of by the keyword dropped the title and invented a phase.

@@ -210,6 +210,28 @@ export function draftProblems(draft: Draft): DraftProblem[] {
     }
   }
 
+  // Two effort rows on the same task and role. Reachable when a re-import
+  // removes a task: its rows keep a number that now belongs to a DIFFERENT
+  // task, so they land on top of that task's own.
+  //
+  // This check is deliberately independent of the matcher. Same role, the
+  // backend refuses the save with a 422 naming a task the editor never
+  // pointed at; different roles, the removed task's days are silently added
+  // to whatever took its number — and `draftProblems` could not see either,
+  // because it only ever asked whether the key EXISTS. However good the
+  // matcher gets, this is what makes the collision visible.
+  const effortSeen = new Set<string>();
+  for (const effort of draft.efforts) {
+    const key = `${effort.phase_code}:${effort.task_number}:${effort.role_code}`;
+    if (effortSeen.has(key)) {
+      problems.push({
+        severity: "error",
+        message: `Task ${effort.task_number} of phase ${effort.phase_code} has two entries for ${effort.role_code}. A re-import usually causes this when a task was removed: check the days table against the phases above.`,
+      });
+    }
+    effortSeen.add(key);
+  }
+
   for (const line of draft.costLines) {
     if (line.phase_code && !phaseCodes.has(line.phase_code)) {
       problems.push({
@@ -313,13 +335,30 @@ export function draftToContent(draft: Draft): EstimateContentWrite {
  * both matched the first, so one lost its refs and the other gained refs it
  * never had. And a title is not stable across a rename, where position is.
  *
- * So it is TWO passes, and the order is the whole point. Every exact title
- * is paired first, in order, each saved task claimed at most once; only then
- * do the leftovers fall back to their own position, and only onto a saved
- * task nothing has claimed. A single pass — title, else position, per task —
- * looks equivalent and is not: the inserted task reaches position 0 before
- * the real owner of that title has had its turn, and walks off with its
- * refs.
+ * So it is TWO passes. Every exact title is paired first, in order, each
+ * saved task claimed at most once. A single pass — title, else position,
+ * per task — looks equivalent and is not: the inserted task reaches
+ * position 0 before the real owner of that title has had its turn, and
+ * walks off with its refs.
+ *
+ * The positional second pass then runs ONLY when the two lists are the same
+ * length, i.e. when nothing was inserted or removed and position still means
+ * something. That is deliberately conservative, and it is the third attempt
+ * at this rule:
+ *
+ * - Position first lost every ref below an insertion, or handed each one to
+ *   the task that took its place.
+ * - Title only, with an unconstrained positional fallback, was worse: with
+ *   an insertion AND a rename in one import, a brand-new task took the
+ *   renamed one's refs and its person-days. `index` is the IMPORTED index
+ *   compared against the RAW saved index, so it is wrong by exactly the
+ *   shift the pass-1 anchors prove happened.
+ *
+ * A gap-constrained pairing would recover some of those cases. It is not
+ * worth it: the failure it would avoid is a LOST ref, which is visible and
+ * re-enterable, while the failure it risks is a MIS-ATTRIBUTED one, which
+ * reads as authored data and is not. When the lists differ in length, this
+ * carries what the titles prove and nothing else.
  */
 function matchTasks(
   saved: DraftTask[],
@@ -338,14 +377,17 @@ function matchTasks(
     }
   });
 
-  imported.forEach((_task, index) => {
-    if (matched[index] !== undefined) return;
-    const atSamePlace = saved[index];
-    if (atSamePlace && !claimed.has(atSamePlace.number)) {
-      matched[index] = atSamePlace;
-      claimed.add(atSamePlace.number);
-    }
-  });
+  // Position only means something when nothing was inserted or removed.
+  if (saved.length === imported.length) {
+    imported.forEach((_task, index) => {
+      if (matched[index] !== undefined) return;
+      const atSamePlace = saved[index];
+      if (atSamePlace && !claimed.has(atSamePlace.number)) {
+        matched[index] = atSamePlace;
+        claimed.add(atSamePlace.number);
+      }
+    });
+  }
 
   return matched;
 }

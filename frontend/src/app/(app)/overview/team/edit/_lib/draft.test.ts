@@ -218,6 +218,55 @@ describe("draftProblems", () => {
     ).toHaveLength(1);
   });
 
+  it("reports two effort rows landing on one task and role", () => {
+    // Reachable when a re-import removes a task: its rows keep a number
+    // that now belongs to a different task. Same role, the backend 422s on
+    // a task the editor never named; different roles, the days are silently
+    // added to whatever took the number. The key still EXISTS either way,
+    // which is why the dangling-key check could not see it.
+    const draft = draftFromEstimate(LOADED);
+    draft.efforts = [
+      {
+        phase_code: "A0",
+        task_number: "1.1",
+        role_code: "BE",
+        planned_person_days: "2",
+      },
+      {
+        phase_code: "A0",
+        task_number: "1.1",
+        role_code: "BE",
+        planned_person_days: "5",
+      },
+    ];
+    const errors = draftProblems(draft).filter((p) => p.severity === "error");
+    expect(errors).toHaveLength(1);
+    expect(errors[0]?.message).toContain("two entries for BE");
+  });
+
+  it("does not report two roles on the same task", () => {
+    const draft = draftFromEstimate(LOADED);
+    draft.efforts = [
+      {
+        phase_code: "A0",
+        task_number: "1.1",
+        role_code: "BE",
+        planned_person_days: "2",
+      },
+      {
+        phase_code: "A0",
+        task_number: "1.1",
+        role_code: "DL",
+        planned_person_days: "5",
+      },
+    ];
+    // DL is not a role of this estimate, so that error is expected; the
+    // duplicate one is not.
+    expect(
+      draftProblems(draft).some((p) => p.message.includes("two entries"))
+    ).toBe(false);
+  });
+
   it("requires exactly one primary price when tiers are given", () => {
     const draft = draftFromEstimate(LOADED);
     draft.priceTiers = [
@@ -441,19 +490,65 @@ describe("applyGanttImport", () => {
     ]);
   });
 
-  it("keeps a renamed task's refs, which a title-only match would drop", () => {
+  it("keeps a renamed task's refs when nothing else moved", () => {
+    // A pure rename: same task count, so position still means something and
+    // the second pass carries the refs a title match cannot.
     const renamed = [
       {
         ...IMPORTED[0]!,
-        tasks: [
-          { ...IMPORTED[0]!.tasks[0]!, title: "Kick-off and access" },
-          IMPORTED[0]!.tasks[1]!,
-        ],
+        tasks: [{ ...IMPORTED[0]!.tasks[0]!, title: "Kick-off and access" }],
       },
     ];
     const after = applyGanttImport(draftFromEstimate(LOADED), renamed);
     expect(after.phases[0]?.tasks[0]?.title).toBe("Kick-off and access");
     expect(after.phases[0]?.tasks[0]?.requirement_refs).toBe("R1, R2");
+  });
+
+  it("would rather LOSE a ref than attribute it to the wrong task", () => {
+    // An insertion and a rename in one import. `index` is the imported
+    // index against the raw saved index, so an unconstrained positional
+    // fallback is wrong by exactly the shift the title anchors prove
+    // happened — and it handed the brand-new task the renamed one's refs
+    // AND its person-days, which reads as authored data.
+    //
+    // With the lists at different lengths the fallback declines: the
+    // renamed task loses its ref, which is visible and re-enterable, and
+    // NOTHING wears a ref that was never its own.
+    const savedThree = {
+      ...LOADED,
+      phases: [
+        {
+          ...LOADED.phases[0]!,
+          tasks: ["A", "B", "C"].map((title, i) => ({
+            ...LOADED.phases[0]!.tasks[0]!,
+            number: `1.${i + 1}`,
+            title,
+            requirement_refs: `R${title}`,
+            efforts: [],
+          })),
+        },
+      ],
+    };
+    const reimported = [
+      {
+        ...IMPORTED[0]!,
+        tasks: ["A", "X", "B2", "C"].map((title, i) => ({
+          number: `1.${i + 1}`,
+          title,
+          planned_start: "2026-01-05",
+          planned_end: "2026-01-09",
+          is_critical: false,
+          status: "planned" as const,
+        })),
+      },
+    ];
+    const after = applyGanttImport(draftFromEstimate(savedThree), reimported);
+    expect(after.phases[0]?.tasks.map((t) => t.requirement_refs)).toEqual([
+      "RA", // matched by title
+      null, // brand new — and NOT wearing B's ref
+      null, // renamed — lost, not stolen from
+      "RC", // matched by title
+    ]);
   });
 
   it("gives a phase the chart introduces an empty gate, not a borrowed one", () => {
