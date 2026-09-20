@@ -51,8 +51,12 @@ remote-only ``runner:remote_terminal_response:{target_device_id}`` channel
 grant, such as the unsolicited ring it sends when a flow RESUME had withheld
 output — by that ``grant_jti``. The source's own ``request_id`` is never put
 on the wire to the target, because every watcher of the target shares that
-channel and two sources choosing equal ids would otherwise cross-bind.
-Anything else on the channel is ignored. The Redis registry —
+channel and two sources choosing equal ids would otherwise cross-bind. One
+frame on that channel is matched by NEITHER: ``runner_disconnected``, which
+``RunnerWebSocketManager.unregister`` publishes device-wide when the target's
+own socket goes — it settles every attachment this socket holds on that
+target, because an attach the target can no longer answer has nothing else
+left to settle it. Anything else on the channel is ignored. The Redis registry —
 ``remote_attach:claim:{grant_jti}`` → ``source_device_id`` (the atomic
 single-use claim), ``remote_attach:grant:{grant_jti}`` → the full attachment
 record, and ``remote_attach:{target_device_id}:{terminal_id}`` →
@@ -371,6 +375,14 @@ TARGET_MESSAGE_MAX = 512
 # What an unusable ``code`` becomes. Namespaced like everything else, so the
 # fallback cannot collide either.
 TARGET_CODE_FALLBACK = f"{TARGET_CODE_PREFIX}unknown"
+
+# Target frame types whose ROUTED receipt is logged at debug rather than info.
+# ``route_target_frame`` logs every frame it is handed (see its docstring);
+# ``terminal_output`` is the firehose — one frame per PTY write across every
+# terminal the target has — so it is the one type that must not be an info
+# line. Everything else on these channels is a lifecycle or RPC frame, rare
+# enough that an info line per frame is what makes the route auditable.
+_HIGH_VOLUME_TARGET_FRAMES = frozenset({"terminal_output"})
 
 
 def _prefix_is_disjoint_from_relay_codes() -> bool:
@@ -1949,7 +1961,41 @@ class RemoteTerminalRelay:
     async def route_target_frame(
         self, session: _SourceSession, target_device_id: str, frame: dict[str, Any]
     ) -> bool:
-        """Translate one TARGET frame for this source; False when it is not ours."""
+        """Translate one TARGET frame for this source; False when it is not ours.
+
+        The SUCCESS path had no log line of its own. Every other stage of a
+        remote attach announces itself, so the only way to tell a routed reply
+        from one that never arrived was to look for the ABSENCE of a downstream
+        effect — ``remote_terminal_listener_cancelled`` was the receipt that a
+        refusal had been routed, and reading an absence as a verdict is exactly
+        how the 20s-silent attach stayed invisible in the logs for its whole
+        life. This wrapper emits the positive receipt: the frame ARRIVED on
+        this session's channel, and whether it was CLAIMED (``routed``) or
+        belonged to another watcher.
+
+        ``frame_type`` is target-supplied, so it is truncated and admitted only
+        as a string — a log field is not a transfer channel (the same rule
+        ``namespace_target_code`` applies to ``code``).
+        """
+        raw_type = frame.get("type")
+        safe_type = raw_type[:TARGET_CODE_MAX] if isinstance(raw_type, str) else None
+        routed = await self._dispatch_target_frame(session, target_device_id, frame)
+        fields: dict[str, Any] = {
+            "source_device_id": session.device_id,
+            "target_device_id": target_device_id,
+            "frame_type": safe_type,
+            "routed": routed,
+        }
+        if safe_type in _HIGH_VOLUME_TARGET_FRAMES:
+            logger.debug("remote_terminal_target_frame_routed", **fields)
+        else:
+            logger.info("remote_terminal_target_frame_routed", **fields)
+        return routed
+
+    async def _dispatch_target_frame(
+        self, session: _SourceSession, target_device_id: str, frame: dict[str, Any]
+    ) -> bool:
+        """The type dispatch behind :meth:`route_target_frame`."""
         await self._reap_expired(session)
         frame_type = frame.get("type")
         # Declared once for the whole dispatch. The correlated arms below narrow
@@ -2163,6 +2209,16 @@ class RemoteTerminalRelay:
         if frame_type == "terminal_buffer_response":
             return await self._route_buffer_response(session, target_device_id, frame)
 
+        if frame_type == "runner_disconnected":
+            # A RELAY-authored notice, not a target refusal, which is why it
+            # sits OUTSIDE ``TARGET_REFUSAL_FRAME_TYPES`` and above it:
+            # ``RunnerWebSocketManager.unregister`` publishes it device-wide,
+            # so its payload is never target-supplied and there is nothing to
+            # namespace. It settles attachments rather than translating a
+            # frame. Order is documentation here, not behaviour — the two
+            # conditions are disjoint by construction.
+            return await self._route_runner_disconnected(session, target_device_id)
+
         if frame_type in TARGET_REFUSAL_FRAME_TYPES:
             # Membership, not equality: a target refusal typed
             # ``remote_terminal_error`` takes the SAME path as one typed
@@ -2174,6 +2230,62 @@ class RemoteTerminalRelay:
             return await self._route_target_error(session, target_device_id, frame)
 
         return False
+
+    async def _route_runner_disconnected(
+        self, session: _SourceSession, target_device_id: str
+    ) -> bool:
+        """Settle every attachment on a target whose relay socket just died.
+
+        ``RunnerWebSocketManager.unregister`` publishes ``runner_disconnected``
+        on the target's response channel — the channel this session's listener
+        is already subscribed to — and until this arm existed the frame fell
+        off the end of the dispatch unlogged. That silence is the whole defect:
+        an attach the target can no longer answer had NOTHING left to settle
+        it. ``_evict``'s ``att.request_id`` fallback (used only while
+        ``attached`` is False, i.e. while the attach was never answered) is the
+        piece that turns this into a correlated reply, so the source learns its
+        counterparty is gone instead of waiting out its own timeout.
+
+        The code is ``target_not_connected`` rather than a new spelling: it is
+        the same verdict the forward path answers for the same condition (a
+        dead device socket), and one condition reported under two codes is a
+        vocabulary the source cannot act on. ``listener_lost`` would be wrong
+        — the relay's return route is healthy; it is precisely how we learned
+        this.
+
+        Evicting the last attachment on the target makes ``_drop_attachment``
+        call ``_stop_listener``, which sends the ``terminal_unsubscribe``
+        matching ``_ensure_listener``'s ``terminal_subscribe``. That matters
+        beyond tidiness: an unsettled attach left the target's device-wide
+        output firehose switched ON for every terminal it owns, so each failed
+        attach permanently ratcheted the load that kills the next socket.
+
+        Returns False when this socket holds nothing on that target — the
+        frame is a device-wide notice every watcher sees, and one that settles
+        none of our attachments is not ours.
+        """
+        doomed = [
+            att
+            for att in session.grants.values()
+            if att.target_device_id == target_device_id
+        ]
+        if not doomed:
+            return False
+        logger.info(
+            "remote_terminal_target_disconnected",
+            source_device_id=session.device_id,
+            target_device_id=target_device_id,
+            attachments=len(doomed),
+            unanswered_attaches=sum(1 for att in doomed if not att.attached),
+        )
+        for att in doomed:
+            await self._evict(
+                session,
+                att,
+                code=CODE_TARGET_NOT_CONNECTED,
+                message="target device's relay socket disconnected",
+            )
+        return True
 
     async def _attachment_by_remote_mark(
         self, session: _SourceSession, target_device_id: str, frame: dict[str, Any]

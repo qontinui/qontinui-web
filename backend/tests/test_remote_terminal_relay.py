@@ -27,6 +27,13 @@ Plan ``2026-08-31-remote-session-tabs-in-runner-terminal``. What is pinned:
   either way, releasing the listener and the runner-side subscription;
 * the listener task closes its own pubsub, unregisters itself AND evicts the
   attachments it routed for (``listener_lost``) when it dies;
+* a forward to a target whose REGISTRATION outlived its socket is refused
+  ``target_not_connected`` at once rather than reported as forwarded, and a
+  ``runner_disconnected`` on the target's channel settles the pending attach
+  instead of leaving the source to time out — with the runner-side
+  ``terminal_subscribe`` matched on the way out;
+* every target frame leaves a positive routing receipt, so a reply that never
+  arrived is readable as such without inferring it from a missing side effect;
 * a target error naming a grant this socket does not hold is ignored — never
   re-keyed onto our grant through the terminal route;
 * ``devices_ws`` routes the new family through the relay while the existing
@@ -46,15 +53,18 @@ import time
 from collections.abc import AsyncIterator, Callable
 from types import SimpleNamespace
 from typing import Any
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
 
 import pytest
+from starlette.websockets import WebSocketState
 
 from app.api.v1.endpoints import devices_ws
 from app.services.coord_jwks import CoordTokenExpiredError, CoordTokenInvalidError
 from app.services.runner import remote_terminal_relay as rtr
+from app.services.runner.connection_registry import WebSocketConnectionRegistry
 from app.services.runner.remote_terminal_relay import RemoteTerminalRelay
+from app.services.runner.terminal_relay import TerminalRelayService
 
 pytestmark = pytest.mark.asyncio
 
@@ -1703,6 +1713,252 @@ async def test_listener_stopped_from_inside_itself_closes_once(
     manager.relay.send_command_to_runner.assert_awaited_with(
         TARGET_DEVICE, {"type": "terminal_unsubscribe", "runner_id": TARGET_DEVICE}
     )
+    await relay.release_source(ws)
+
+
+# ---------------------------------------------------------------------------
+# A registration that outlived its socket — the forward must not claim success
+# ---------------------------------------------------------------------------
+#
+# The device-WS teardown SKIPS ``manager.unregister`` whenever a newer
+# connection already claimed the key (``devices_ws_skip_unregister_superseded``,
+# which exists so an old handler cannot cancel the live connection's listener).
+# Under reconnect churn that leaves a registered socket whose ASGI handler has
+# exited, and ``is_runner_connected`` — registration, not liveness — kept
+# answering True for it. ``send_terminal`` then returned True, the attach was
+# LOGGED as forwarded, and ``target_not_connected`` (the refusal that exists
+# for exactly this case) could never fire, so the source sat through its own
+# 20s timeout in silence.
+
+
+class _DeadWS(_FakeWS):
+    """A registered socket whose handler has exited.
+
+    ``client_state`` is DISCONNECTED while ``application_state`` is still
+    CONNECTED, which is the shape Starlette actually leaves behind: its
+    ``send`` never reads ``client_state``, so the send reaches the server and
+    raises there (uvicorn's ``Unexpected ASGI message 'websocket.send', after
+    sending 'websocket.close'`` — the line the incident logged seven of at the
+    millisecond of the forward). A guard on ``application_state`` alone would
+    read this socket as live, which is why the check is on ``client_state``.
+    """
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.client_state = WebSocketState.DISCONNECTED
+        self.application_state = WebSocketState.CONNECTED
+
+
+class _LiveWS(_FakeWS):
+    """The same socket before its handler exited — the positive control."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.client_state = WebSocketState.CONNECTED
+        self.application_state = WebSocketState.CONNECTED
+
+
+def _manager_over(registry: Any, redis: _FakeRedis) -> Any:
+    """``_manager()`` with the REAL forward path behind ``send_terminal``.
+
+    ``_manager()`` stubs that bool to a fixed value, which is precisely the
+    assumption under test: the bool is produced by
+    ``TerminalRelayService.send_terminal_to_runner`` off the connection
+    registry, and the defect was that it said True for a socket that was gone.
+    """
+    manager = _manager()
+    terminal = TerminalRelayService(redis, registry)
+    manager.send_terminal = AsyncMock(side_effect=terminal.send_terminal_to_runner)
+    return manager
+
+
+def _runner_direction(redis: _FakeRedis) -> list[dict[str, Any]]:
+    """Everything published onto the target's mobile→runner terminal channel."""
+    channel = f"runner:terminal:{TARGET_DEVICE}"
+    return [msg for ch, msg in redis.published if ch == channel]
+
+
+async def test_attach_to_a_registration_that_outlived_its_socket_is_refused(
+    relay: RemoteTerminalRelay, redis: _FakeRedis
+) -> None:
+    registry = WebSocketConnectionRegistry()
+    registry.register_runner(TARGET_DEVICE, _DeadWS())
+    manager = _manager_over(registry, redis)
+    ws = _FakeWS()
+
+    # The stale entry is still there — this test is not about removing it.
+    assert registry.is_runner_connected(TARGET_DEVICE) is True
+    assert registry.is_runner_socket_live(TARGET_DEVICE) is False
+
+    await _attach(relay, ws, manager, _claims())
+
+    # Refused, correlated to the source's own request id, and nothing reached
+    # the target's runner-direction channel.
+    assert [e["code"] for e in ws.of_type("error")] == ["target_not_connected"]
+    assert ws.of_type("error")[0]["request_id"] == "req-attach-1"
+    assert manager.send_terminal.await_args.args[1]["type"] == "terminal_attach"
+    assert _runner_direction(redis) == []
+    # Said plainly: the forward does not report success into a dead socket.
+    assert await manager.send_terminal(TARGET_DEVICE, {"type": "probe"}) is False
+    # Nothing is left registered: no grant, no listener, no Redis rows.
+    assert relay._sessions[id(ws)].grants == {}
+    assert relay._sessions[id(ws)].listeners == {}
+    assert redis.empty()
+    # And the ratchet does not tighten: reaching the refusal reaches
+    # ``_drop_attachment``, so the ``terminal_subscribe`` ``_ensure_listener``
+    # sent is matched on the way out. While the forward reported success this
+    # never ran, and every failed attach left the target's device-wide output
+    # firehose switched on for good.
+    assert [
+        c.args[1]["type"] for c in manager.relay.send_command_to_runner.await_args_list
+    ] == ["terminal_subscribe", "terminal_unsubscribe"]
+
+
+async def test_attach_over_a_live_socket_still_forwards(
+    relay: RemoteTerminalRelay, redis: _FakeRedis
+) -> None:
+    """The positive control for the check above — it must not refuse everything."""
+    registry = WebSocketConnectionRegistry()
+    registry.register_runner(TARGET_DEVICE, _LiveWS())
+    manager = _manager_over(registry, redis)
+    ws = _FakeWS()
+
+    assert registry.is_runner_socket_live(TARGET_DEVICE) is True
+
+    await _attach(relay, ws, manager, _claims())
+
+    assert ws.of_type("error") == [], ws.sent
+    assert [f["type"] for f in _runner_direction(redis)] == ["terminal_attach"]
+    assert relay._sessions[id(ws)].grants != {}
+    await relay.release_source(ws)
+
+
+async def test_runner_disconnected_settles_the_pending_attach_and_unsubscribes(
+    relay: RemoteTerminalRelay, redis: _FakeRedis
+) -> None:
+    """The target's socket dies with the attach unanswered.
+
+    ``RunnerWebSocketManager.unregister`` publishes ``runner_disconnected`` on
+    the target's response channel; before the arm that consumes it, the frame
+    fell off the end of the dispatch and the source waited out its own
+    timeout. Two things are pinned here: the pending attach is SETTLED (the
+    reply carries the source's own ``request_id``, via ``_evict``'s
+    unanswered-attach fallback), and the runner-side ``terminal_subscribe``
+    ``_ensure_listener`` sent is MATCHED by an unsubscribe — which is what
+    stops each failed attach ratcheting the target's device-wide output
+    firehose permanently on.
+    """
+    ws = _FakeWS()
+    manager = _manager()
+    claims = _claims()
+    await _attach(relay, ws, manager, claims)
+    session = relay._sessions[id(ws)]
+    pubsub = redis.pubsubs[0]
+    (_, task) = session.listeners[TARGET_DEVICE]
+    # Forwarded and unanswered: exactly the state the incident left behind.
+    assert session.grants[claims["jti"]].attached is False
+    assert session.pending_attach != {}
+    manager.relay.send_command_to_runner.assert_awaited_once_with(
+        TARGET_DEVICE, {"type": "terminal_subscribe", "runner_id": TARGET_DEVICE}
+    )
+    manager.relay.send_command_to_runner.reset_mock()
+    manager.send_terminal.reset_mock()
+
+    pubsub.push(
+        {
+            "type": "runner_disconnected",
+            "runner_id": TARGET_DEVICE,
+            "timestamp": "2026-09-20T00:00:00+00:00",
+        }
+    )
+    await _settle(lambda: pubsub.close_count > 0 and not relay._background)
+
+    assert ws.of_type("remote_terminal_error") == [
+        {
+            "type": "remote_terminal_error",
+            "grant_jti": claims["jti"],
+            "code": "target_not_connected",
+            "message": "target device's relay socket disconnected",
+            "request_id": "req-attach-1",
+        }
+    ]
+    assert task.done() and task.cancelled()
+    assert session.grants == {}
+    assert session.pending_attach == {}
+    assert session.listeners == {}
+    assert redis.empty()
+    # The ratchet: one subscribe in, one unsubscribe out.
+    manager.relay.send_command_to_runner.assert_awaited_once_with(
+        TARGET_DEVICE, {"type": "terminal_unsubscribe", "runner_id": TARGET_DEVICE}
+    )
+    await relay.release_source(ws)
+
+
+async def test_runner_disconnected_for_a_target_we_hold_nothing_on_is_not_ours(
+    relay: RemoteTerminalRelay, redis: _FakeRedis
+) -> None:
+    """It is a device-wide notice every watcher of the channel sees."""
+    ws = _FakeWS()
+    manager = _manager()
+    session = relay._session_for(ws, SOURCE_DEVICE, manager)
+
+    routed = await relay.route_target_frame(
+        session, TARGET_DEVICE, {"type": "runner_disconnected"}
+    )
+
+    assert routed is False
+    assert ws.sent == []
+
+
+async def test_every_target_frame_leaves_a_positive_routing_receipt(
+    relay: RemoteTerminalRelay, redis: _FakeRedis
+) -> None:
+    """The success path logs, so a reply that never came is readable as such.
+
+    Nothing logged a target frame arriving or being routed, so the only
+    evidence a refusal had been delivered was a DOWNSTREAM side effect
+    (``remote_terminal_listener_cancelled``) — and reading an absence as a
+    verdict is how the silent attach stayed invisible. ``terminal_output`` is
+    the firehose and stays at debug; everything else is an info line.
+    """
+    ws = _FakeWS()
+    manager = _manager()
+    await _attached(relay, ws, manager, terminal_id="t1")
+    session = relay._sessions[id(ws)]
+
+    def receipts(method: Any) -> list[tuple[Any, Any]]:
+        return [
+            (c.kwargs["frame_type"], c.kwargs["routed"])
+            for c in method.call_args_list
+            if c.args and c.args[0] == "remote_terminal_target_frame_routed"
+        ]
+
+    with patch.object(rtr, "logger", MagicMock()) as log:
+        ours = await relay.route_target_frame(
+            session,
+            TARGET_DEVICE,
+            {"type": "terminal_output", "terminal_id": "t1", "data": "x"},
+        )
+        stranger = await relay.route_target_frame(
+            session,
+            TARGET_DEVICE,
+            {"type": "terminal_output", "terminal_id": "someone-elses", "data": "x"},
+        )
+        uncorrelated = await relay.route_target_frame(
+            session,
+            TARGET_DEVICE,
+            {"type": "terminal_attached", "request_id": "never-minted"},
+        )
+        # A target-supplied type is admitted only as a string: a log field is
+        # not a transfer channel.
+        nonsense = await relay.route_target_frame(session, TARGET_DEVICE, {"type": 42})
+
+    assert (ours, stranger, uncorrelated, nonsense) == (True, False, False, False)
+    assert receipts(log.debug) == [
+        ("terminal_output", True),
+        ("terminal_output", False),
+    ]
+    assert receipts(log.info) == [("terminal_attached", False), (None, False)]
     await relay.release_source(ws)
 
 
