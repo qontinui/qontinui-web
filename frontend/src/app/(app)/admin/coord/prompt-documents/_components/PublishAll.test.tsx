@@ -96,11 +96,12 @@ function candidate(
     name,
     current_version: 7,
     next_publication_version: 1,
+    latest_publication_version: null,
     lint: [],
     direction: "other",
     publish_mode: "manual",
     edited_by: "agent:runner",
-    change_notes: [],
+    versions_since_publication: [],
     ...over,
   };
 }
@@ -122,12 +123,17 @@ function statusEntry(
 function renderList(opts: {
   documents: PromptDocumentSummary[];
   status?: AutoPublishStatusEntry[];
+  /** Coord's own `count`. Omitted ⇒ the candidate array's length. */
+  statusCount?: number;
   statusError?: Error;
 }) {
   getMock.mockImplementation(async (url: string) => {
     if (typeof url === "string" && url.includes("/auto-publish/status")) {
       if (opts.statusError) throw opts.statusError;
-      return { candidates: opts.status ?? [] };
+      const candidates = opts.status ?? [];
+      return opts.statusCount === undefined
+        ? { candidates, count: candidates.length }
+        : { candidates, count: opts.statusCount };
     }
     return { documents: opts.documents, degraded: null };
   });
@@ -170,6 +176,20 @@ describe("the Publish all changed button", () => {
 
     expect(await screen.findByTestId("publish-all")).toHaveTextContent(
       "Publish all changed (2)"
+    );
+  });
+
+  it("counts with coord's own `count`, not with the array it happened to send", async () => {
+    // If the two disagree, the array is the thing that got truncated — and a
+    // button that under-reports the batch is one an operator stops trusting.
+    renderList({
+      documents: [summary("policy", "testing")],
+      status: [statusEntry("policy", "testing")],
+      statusCount: 26,
+    });
+
+    expect(await screen.findByTestId("publish-all")).toHaveTextContent(
+      "Publish all changed (26)"
     );
   });
 
@@ -232,6 +252,76 @@ describe("the Publish all changed dialog", () => {
     expect(armed.items).toEqual([
       { kind: "policy", name: "testing", expected_version: 9 },
     ]);
+  });
+
+  it("renders the change notes out of coord's version ROWS, not as raw objects", async () => {
+    // `versions_since_publication` is `[{version_number, change_note,
+    // edited_by, created_at, loosening?}]`, not a string array — the plan's
+    // prose ("the change notes of every version") reads like the latter. A
+    // `join` over the rows prints "[object Object]"; a `join` over the notes
+    // without filtering prints the word "null" for a version saved without
+    // one. Both land in the one line an operator reads before sending a body
+    // to every tenant.
+    renderList({
+      documents: [summary("policy", "testing")],
+      status: [statusEntry("policy", "testing")],
+    });
+    await openDialog([
+      candidate("policy", "testing", {
+        versions_since_publication: [
+          {
+            version_number: 6,
+            change_note: "retired the same-actor rule",
+            edited_by: "agent:runner",
+            created_at: "2026-09-19T08:00:00Z",
+            loosening: true,
+          },
+          // No note at all. Ordinary, and must not print as "null".
+          {
+            version_number: 7,
+            change_note: null,
+            edited_by: "operator@example.com",
+            created_at: "2026-09-19T09:00:00Z",
+            loosening: null,
+          },
+        ],
+      }),
+    ]);
+
+    const row = screen.getByTestId("publish-all-row-policy-testing");
+    expect(row).toHaveTextContent("retired the same-actor rule");
+    expect(row).not.toHaveTextContent("[object Object]");
+    expect(row).not.toHaveTextContent("null");
+  });
+
+  it("says whether the fleet fan-out actually started", async () => {
+    // A batch that published nothing and a batch whose fan-out was lost look
+    // identical from outside, and the lost one logs nothing at all.
+    renderList({
+      documents: [summary("policy", "testing")],
+      status: [statusEntry("policy", "testing")],
+    });
+    await openDialog([candidate("policy", "testing")]);
+
+    postMock.mockResolvedValueOnce({
+      dry_run: false,
+      published: 1,
+      requested: 1,
+      results: [
+        {
+          kind: "policy",
+          name: "testing",
+          outcome: "published",
+          publication_version: 1,
+        },
+      ],
+      fan_out: "spawned",
+    });
+    await user().click(screen.getByTestId("publish-all-confirm"));
+
+    expect(await screen.findByTestId("publish-all-fan-out")).toHaveTextContent(
+      /Distribution to the fleet has started/i
+    );
   });
 
   it("states the immutability of a publication before the operator commits", async () => {
@@ -523,6 +613,68 @@ describe("the per-document publish mode", () => {
       { publish_mode: string },
     ];
     expect(body.publish_mode).toBe("auto");
+  });
+
+  it("names what coord will decide for an undecided document", async () => {
+    // "Something will be decided" and "`manual` will be set" are different
+    // facts, and only the second says whether the operator needs to act before
+    // the next worker pass — the only moment acting is cheap. Coord serves the
+    // answer; deriving it here would need a browser copy of its carve-out list
+    // and its five lint patterns.
+    renderList({
+      documents: [summary("policy", "security-and-autonomy")],
+      status: [
+        statusEntry("policy", "security-and-autonomy", {
+          publish_mode: null,
+          undecided_default: "manual",
+        }),
+      ],
+    });
+
+    const trigger = await screen.findByTestId(
+      "doc-publish-mode-policy-security-and-autonomy"
+    );
+    expect(trigger).toHaveTextContent("Publish: undecided");
+    expect(trigger.getAttribute("title") ?? "").toContain(
+      'will set it to "manual"'
+    );
+  });
+
+  it("reads a refused write as a pending migration, not as a coord fault", async () => {
+    // Coord's READS of `publish_mode` degrade on a missing column and answer
+    // UNDECIDED; the WRITE deliberately does not, because an authority
+    // decision the schema cannot hold must not look like it was saved. So this
+    // 500 is expected during the `pdpub_03` deploy window, and it has to read
+    // that way — a bare "failed to save" toast sends an operator to debug a
+    // system behaving exactly as designed, and vanishes before they can act.
+    patchMock.mockRejectedValue(
+      new Error(
+        "PATCH /api/v1/operations/coord/prompt-documents/policy/testing failed: 500 - " +
+          'db error: ERROR: column "publish_mode" of relation "prompt_documents" does not exist'
+      )
+    );
+    renderList({
+      documents: [summary("policy", "testing", { publish_mode: "manual" })],
+      status: [statusEntry("policy", "testing")],
+    });
+
+    await user().click(
+      await screen.findByTestId("doc-publish-mode-policy-testing")
+    );
+    await user().click(
+      await screen.findByTestId("doc-publish-mode-never-policy-testing")
+    );
+
+    const banner = await screen.findByTestId("publish-mode-schema-pending");
+    expect(banner).toHaveTextContent(/cannot record a publish mode yet/i);
+    expect(banner).toHaveTextContent("pdpub_03");
+    // Coord's own words are carried, not swallowed.
+    expect(banner).toHaveTextContent(/does not exist/);
+    // And the control STAYS: the migration lands during this page's life, and
+    // retiring it would leave no route to the setting when it does.
+    expect(
+      screen.getByTestId("doc-publish-mode-policy-testing")
+    ).toBeInTheDocument();
   });
 
   it("shows a mode this build does not know as itself, and closes the picker", async () => {

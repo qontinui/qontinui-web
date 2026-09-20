@@ -132,6 +132,9 @@ export function PromptDocumentList() {
     status: autoPublishStatus,
     changedCount,
     publishing: publishingAll,
+    savingMode,
+    setPublishMode,
+    modeSchemaPending,
     unavailable: publishAllUnavailable,
     reload: reloadPublishAll,
     publishAll,
@@ -449,6 +452,46 @@ export function PromptDocumentList() {
         </div>
       )}
 
+      {/*
+        A publish-mode write was refused in a way that points at the `pdpub_03`
+        migration not being applied yet.
+
+        Coord's READS of `publish_mode` degrade on a missing column and answer
+        UNDECIDED, so this page works fine against a coord deployed ahead of the
+        migration — right up until someone tries to SET a mode. That write
+        deliberately does not degrade: an authority decision the schema cannot
+        hold must not look like it was saved. So the failure is real, expected,
+        and temporary, and it needs to read that way. A bare "failed to save"
+        toast sends an operator to debug a system behaving exactly as designed,
+        and it vanishes before they can act on it.
+
+        The control is NOT retired, unlike the not-system-tenant case: the
+        migration lands during this page's lifetime and the operator needs the
+        setting to still be there when it does.
+      */}
+      {modeSchemaPending && (
+        <div
+          className="flex items-start gap-2 rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2.5"
+          data-testid="publish-mode-schema-pending"
+        >
+          <AlertTriangle className="mt-0.5 size-4 shrink-0 text-amber-600 dark:text-amber-400" />
+          <div className="text-sm text-amber-800 dark:text-amber-200">
+            <p className="font-medium">
+              Coord cannot record a publish mode yet.
+            </p>
+            <p className="mt-1">
+              Its <code className="font-mono">publish_mode</code> column is most
+              likely not migrated ({" "}
+              <code className="font-mono">pdpub_03</code> ). Reading a mode
+              degrades to &quot;undecided&quot; so this page still works, but
+              the write refuses rather than degrading — a decision the schema
+              cannot hold must not look like it was saved. Nothing was changed.
+              Coord said: {modeSchemaPending}
+            </p>
+          </div>
+        </div>
+      )}
+
       {(documents.length > 0 || canAssertEmpty) &&
         PROMPT_DOCUMENT_BANDS.map((band) => {
           // Authority order is `PROMPT_DOCUMENT_KINDS`', preserved within the
@@ -549,13 +592,23 @@ export function PromptDocumentList() {
                             onSetPublishMode={
                               isPublishableKind(doc.kind) &&
                               publishAllUnavailable === null
-                                ? (mode) =>
-                                    updateDocument(doc.kind, doc.name, {
-                                      publish_mode: mode,
-                                      change_description: `Publish mode set to \`${mode}\` by an operator`,
-                                    })
+                                ? async (mode) => {
+                                    const ok = await setPublishMode(
+                                      doc.kind,
+                                      doc.name,
+                                      mode
+                                    );
+                                    // The mode takes coord's VERSIONING path,
+                                    // so a successful write bumps
+                                    // `current_version` and the row must be
+                                    // re-read or it shows a stale one beside
+                                    // its new mode.
+                                    if (ok) await reload();
+                                    return ok;
+                                  }
                                 : undefined
                             }
+                            savingPublishMode={savingMode}
                             // Absent ⇒ no badge. Coord did not name this
                             // document as a candidate, which is UNKNOWN rather
                             // than "nothing is scheduled".
@@ -710,6 +763,8 @@ interface DocumentRowProps {
    * a state the control itself renders.
    */
   onSetPublishMode?: (mode: PublishMode) => Promise<boolean>;
+  /** True while a publish-mode PATCH is in flight — disables that picker only. */
+  savingPublishMode?: boolean;
   /**
    * This document's entry in the auto-publish status read, when coord named it
    * as a candidate. `undefined` is UNKNOWN and renders no badge.
@@ -727,6 +782,7 @@ function DocumentRow({
   onUpstream,
   onPublish,
   onSetPublishMode,
+  savingPublishMode,
   autoPublish,
 }: DocumentRowProps) {
   // A document with a `default_source` has a shipped default the editor can
@@ -867,7 +923,13 @@ function DocumentRow({
       {onSetPublishMode && (
         <PublishModeControl
           doc={doc}
-          saving={saving}
+          saving={saving || savingPublishMode === true}
+          // Coord's answer for what the worker WILL set on an undecided
+          // document, served only while the mode is null. Passed down rather
+          // than derived: deriving it needs coord's carve-out list and its five
+          // lint patterns, and the day either changes this console would name
+          // the wrong default with total confidence.
+          undecidedDefault={autoPublish?.undecided_default}
           onSet={onSetPublishMode}
         />
       )}
