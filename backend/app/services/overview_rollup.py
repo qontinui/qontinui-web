@@ -242,6 +242,10 @@ def compute_rollup(
     role_totals: dict[UUID, _RoleTotals] = {r.id: _RoleTotals() for r in roles}
     phase_rows: list[dict] = []
     estimate_fees: dict[UUID | None, int] = dict.fromkeys(tier_keys, 0)
+    # The FTE matrix, flattened for the Team page's heat table. It is a READ
+    # of `phase_allocations` and nothing else: no figure here is derived from
+    # person-days, which is the separation the module docstring's rule 1 names.
+    allocation_rows: list[dict] = []
     total_person_days = Decimal("0")
     orphan_effort_role_ids: set[UUID] = set()
 
@@ -282,6 +286,19 @@ def compute_rollup(
             estimate_fees[key] += phase_fees[key]
 
         allocated_fte = sum((Decimal(a.fte) for a in phase.allocations), Decimal("0"))
+        for allocation in phase.allocations:
+            allocation_role = roles_by_id.get(allocation.role_id)
+            if allocation_role is None:
+                continue
+            allocation_rows.append(
+                {
+                    "phase_id": phase.id,
+                    "phase_code": phase.code,
+                    "role_id": allocation_role.id,
+                    "role_code": allocation_role.code,
+                    "fte": _q3(Decimal(allocation.fte)),
+                }
+            )
 
         derived_days: Decimal | None = None
         derived_weeks: Decimal | None = None
@@ -603,6 +620,7 @@ def compute_rollup(
         },
         "phases": phase_rows,
         "roles": role_rows,
+        "allocations": allocation_rows,
         "calendar_breaks": [
             {
                 "id": b.id,

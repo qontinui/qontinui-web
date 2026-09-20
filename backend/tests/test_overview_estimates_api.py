@@ -522,6 +522,26 @@ class TestRollupArithmetic:
             assert tier["total_low_micros"] == base + build["low_micros"]
             assert tier["total_high_micros"] == base + build["high_micros"]
 
+    async def test_the_fte_matrix_is_served_flat_for_the_team_page(
+        self, rollup: dict
+    ) -> None:
+        """The heat table needs the cells, not just the column totals — and
+        every cell comes from `phase_allocations`, never from person-days."""
+        cells = {
+            (a["phase_code"], a["role_code"]): a["fte"] for a in rollup["allocations"]
+        }
+        assert len(cells) == 14
+        assert Decimal(cells[("A2", "BE")]) == Decimal("2.000")
+        # A role with task effort but no allocation has no cell at all.
+        assert ("A0", "QA") not in cells
+        for phase in rollup["phases"]:
+            column = sum(
+                Decimal(a["fte"])
+                for a in rollup["allocations"]
+                if a["phase_code"] == phase["code"]
+            )
+            assert column == Decimal(phase["allocated_fte"])
+
     async def test_team_size_comes_from_the_allocation_matrix_alone(
         self, rollup: dict
     ) -> None:

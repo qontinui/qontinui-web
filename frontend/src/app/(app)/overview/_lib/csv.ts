@@ -107,7 +107,7 @@ export function parseRolesCsv(text: string): CsvResult<ParsedRoleRow> {
   const lines = nonEmptyLines(text);
   if (lines.length === 0) return { rows, issues };
 
-  const start = looksLikeHeader(splitCsvLine(lines[0].text)) ? 1 : 0;
+  const start = looksLikeHeader(splitCsvLine(lines[0]?.text ?? "")) ? 1 : 0;
   const seen = new Set<string>();
 
   for (const entry of lines.slice(start)) {
@@ -209,12 +209,13 @@ export function parseAllocationsCsv(text: string): CsvResult<ParsedAllocationRow
   const lines = nonEmptyLines(text);
   if (lines.length === 0) return { rows, issues };
 
-  const header = splitCsvLine(lines[0].text);
+  const first = lines[0];
+  const header = splitCsvLine(first?.text ?? "");
   const phaseCodes = header.slice(1).map((c) => c.trim());
   if (phaseCodes.length === 0 || phaseCodes.every((c) => c === "")) {
     issues.push({
-      line: lines[0].line,
-      text: lines[0].text,
+      line: first?.line ?? 1,
+      text: first?.text ?? "",
       message:
         "the first row has to name the phases, e.g. `role,A0,A1,A2` — nothing after the first column was found",
       severity: "error",
@@ -270,6 +271,89 @@ export function parseAllocationsCsv(text: string): CsvResult<ParsedAllocationRow
       }
       if (Number(cell) === 0) return;
       rows.push({ phase_code: phaseCode, role_code: roleCode, fte: cell });
+    });
+  }
+
+  return { rows, issues };
+}
+
+export interface ParsedEffortRow {
+  phase_code: string;
+  task_number: string;
+  role_code: string;
+  planned_person_days: string;
+}
+
+/**
+ * The task × role person-day split, in long form:
+ *
+ *     phase,task,role,days
+ *     A0,1.1,DL,4
+ *     A0,1.1,BE,6
+ *
+ * Long form rather than a matrix because tasks belong to phases and a single
+ * wide table cannot address them without repeating the phase in the header
+ * anyway. It is also what a spreadsheet exports when the split is sparse,
+ * which it usually is.
+ *
+ * This is the ONLY source of person-days (the FTE matrix is a separate,
+ * independent table), so a row this cannot read is an error rather than a
+ * silently missing day.
+ */
+export function parseEffortsCsv(text: string): CsvResult<ParsedEffortRow> {
+  const issues: CsvIssue[] = [];
+  const rows: ParsedEffortRow[] = [];
+  const lines = nonEmptyLines(text);
+  if (lines.length === 0) return { rows, issues };
+
+  const firstCell = (splitCsvLine(lines[0]?.text ?? "")[0] ?? "").toLowerCase();
+  const start = firstCell === "phase" ? 1 : 0;
+  const seen = new Set<string>();
+
+  for (const entry of lines.slice(start)) {
+    const fields = splitCsvLine(entry.text);
+    const [phase, task, role, days] = [
+      (fields[0] ?? "").trim(),
+      (fields[1] ?? "").trim(),
+      (fields[2] ?? "").trim(),
+      (fields[3] ?? "").trim(),
+    ];
+    if (phase === "" || task === "" || role === "") {
+      issues.push({
+        line: entry.line,
+        text: entry.text,
+        message:
+          "each row needs a phase, a task number and a role before its number of days",
+        severity: "error",
+      });
+      continue;
+    }
+    if (!/^\d*(\.\d+)?$/.test(days) || days === "" || days === ".") {
+      issues.push({
+        line: entry.line,
+        text: entry.text,
+        message: `"${days}" was not read as a number of days`,
+        severity: "error",
+      });
+      continue;
+    }
+    const key = `${phase}:${task}:${role}`;
+    if (seen.has(key)) {
+      issues.push({
+        line: entry.line,
+        text: entry.text,
+        message: `${role} is already given days on task ${task} of ${phase}`,
+        severity: "error",
+      });
+      continue;
+    }
+    if (Number(days) === 0) continue;
+    seen.add(key);
+    rows.push({
+      phase_code: phase,
+      task_number: task,
+      role_code: role,
+      planned_person_days: days,
     });
   }
 

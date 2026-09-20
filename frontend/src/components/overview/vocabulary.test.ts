@@ -16,7 +16,8 @@ describe("estimateVocabulary", () => {
   it("gives a comparison saving words, and never budget ones", () => {
     const v = estimateVocabulary("comparison");
     expect(v.differenceLabel).toBe("Saving");
-    const words = `${v.noun} ${v.feeLabel} ${v.totalLabel} ${v.meaning}`.toLowerCase();
+    const words =
+      `${v.noun} ${v.feeLabel} ${v.totalLabel} ${v.meaning}`.toLowerCase();
     expect(words).not.toContain("budget");
   });
 

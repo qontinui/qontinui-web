@@ -102,8 +102,8 @@ const DAY_MS = 86_400_000;
 function toDate(iso: string): Date {
   // UTC throughout: a gantt chart's dates are calendar dates, and a local
   // midnight would shift them by a day either side of a DST boundary.
-  const [y, m, d] = iso.split("-").map(Number);
-  return new Date(Date.UTC(y, m - 1, d));
+  const parts = iso.split("-").map(Number);
+  return new Date(Date.UTC(parts[0] ?? 0, (parts[1] ?? 1) - 1, parts[2] ?? 1));
 }
 
 function toIso(date: Date): string {
@@ -146,8 +146,8 @@ interface DurationResult {
 function durationInDays(token: string, excludesWeekends: boolean): DurationResult {
   const match = DURATION.exec(token);
   if (!match) return { days: null };
-  const amount = Number(match[1]);
-  const unit = match[2].toLowerCase();
+  const amount = Number(match[1] ?? "0");
+  const unit = (match[2] ?? "").toLowerCase();
   if (unit === "d") return { days: amount };
   if (unit === "w") return { days: amount * (excludesWeekends ? 5 : 7) };
   if (unit === "h" || unit === "m" || unit === "s" || unit === "ms") {
@@ -194,7 +194,7 @@ export function parseMermaidGantt(source: string): GanttParseResult {
   ) => issues.push({ line, text: text.trim(), message, severity });
 
   for (let index = 0; index < lines.length; index += 1) {
-    const raw = lines[index];
+    const raw = lines[index] ?? "";
     const lineNumber = index + 1;
     const line = raw.trim();
     if (line === "") continue;
@@ -246,10 +246,11 @@ export function parseMermaidGantt(source: string): GanttParseResult {
     if (lower.startsWith("section")) {
       const text = line.slice("section".length).trim();
       const parts = text.split(/\s+/);
+      const head = parts[0] ?? "";
       let code: string;
       let name: string;
-      if (parts.length > 1 && PHASE_CODE.test(parts[0])) {
-        code = parts[0];
+      if (parts.length > 1 && PHASE_CODE.test(head)) {
+        code = head;
         name = parts.slice(1).join(" ");
       } else {
         code = `P${phases.length + 1}`;
@@ -310,8 +311,11 @@ export function parseMermaidGantt(source: string): GanttParseResult {
     let isMilestone = false;
     let status: ParsedTask["status"] = "planned";
     let cursor = 0;
-    while (cursor < meta.length && STATUS_TAGS.has(meta[cursor].toLowerCase())) {
-      const tag = meta[cursor].toLowerCase();
+    while (
+      cursor < meta.length &&
+      STATUS_TAGS.has((meta[cursor] ?? "").toLowerCase())
+    ) {
+      const tag = (meta[cursor] ?? "").toLowerCase();
       if (tag === "crit") isCritical = true;
       if (tag === "milestone") isMilestone = true;
       if (tag === "done") status = "done";
@@ -330,7 +334,9 @@ export function parseMermaidGantt(source: string): GanttParseResult {
       ISO_DATE.test(token) || DURATION.test(token);
 
     if (rest.length >= 3) {
-      [taskId, startToken, endToken] = [rest[0], rest[1], rest[2]];
+      taskId = rest[0] ?? "";
+      startToken = rest[1] ?? null;
+      endToken = rest[2] ?? null;
       if (rest.length > 3) {
         pushIssue(
           lineNumber,
@@ -342,19 +348,24 @@ export function parseMermaidGantt(source: string): GanttParseResult {
     } else if (rest.length === 2) {
       // Either `id, end` or `start, end`. A token that can start a task is
       // read as a start; anything else is an id.
-      if (isStart(rest[0])) {
-        [startToken, endToken] = rest;
+      const first = rest[0] ?? "";
+      const second = rest[1] ?? "";
+      if (isStart(first)) {
+        startToken = first;
+        endToken = second;
       } else {
-        [taskId, endToken] = rest;
+        taskId = first;
+        endToken = second;
       }
     } else if (rest.length === 1) {
-      if (isEnd(rest[0])) {
-        endToken = rest[0];
+      const only = rest[0] ?? "";
+      if (isEnd(only)) {
+        endToken = only;
       } else {
         pushIssue(
           lineNumber,
           raw,
-          `"${rest[0]}" is neither a date nor a duration, so this task has no dates`
+          `"${only}" is neither a date nor a duration, so this task has no dates`
         );
         continue;
       }
@@ -382,7 +393,7 @@ export function parseMermaidGantt(source: string): GanttParseResult {
       const ends = refs
         .map((ref) => endById.get(ref))
         .filter((value): value is Date => value !== undefined);
-      if (ends.length !== refs.length) {
+      if (ends.length !== refs.length || ends.length === 0) {
         const missing = refs.filter((ref) => !endById.has(ref));
         pushIssue(
           lineNumber,
@@ -391,7 +402,7 @@ export function parseMermaidGantt(source: string): GanttParseResult {
         );
         continue;
       }
-      const latest = ends.reduce((a, b) => (a > b ? a : b));
+      const latest = ends.reduce((a, b) => (a > b ? a : b), ends[0] as Date);
       start = nextDay(latest, excludesWeekends);
     } else {
       pushIssue(
@@ -462,8 +473,8 @@ export function parseMermaidGantt(source: string): GanttParseResult {
   for (const phase of phases) {
     const starts = phase.tasks.map((t) => t.plannedStart).sort();
     const ends = phase.tasks.map((t) => t.plannedEnd).sort();
-    phase.plannedStart = starts.length ? starts[0] : null;
-    phase.plannedEnd = ends.length ? ends[ends.length - 1] : null;
+    phase.plannedStart = starts[0] ?? null;
+    phase.plannedEnd = ends[ends.length - 1] ?? null;
   }
 
   // A phase code has to be unique — the estimate's own constraint. Two

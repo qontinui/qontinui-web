@@ -62,7 +62,9 @@ export function formatMicrosRange(
  * (widths, shares). Returns `null` for null/undefined/unparseable, so an
  * absent figure never becomes 0.
  */
-export function toNumber(value: string | number | null | undefined): number | null {
+export function toNumber(
+  value: string | number | null | undefined
+): number | null {
   if (value === null || value === undefined) return null;
   const parsed = typeof value === "number" ? value : Number(value);
   return Number.isFinite(parsed) ? parsed : null;
@@ -93,9 +95,7 @@ export function parseAmountToMicros(input: string): number | null {
 }
 
 /** Integer micros back to a plain editable number, e.g. `900` or `1200.5`. */
-export function microsToAmountInput(
-  micros: number | null | undefined
-): string {
+export function microsToAmountInput(micros: number | null | undefined): string {
   if (micros === null || micros === undefined) return "";
   return String(micros / MICROS_PER_UNIT);
 }

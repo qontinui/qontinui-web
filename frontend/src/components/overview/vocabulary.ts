@@ -78,7 +78,11 @@ export function estimateVocabulary(
   // An unrecognised purpose is read as `forecast`: of the three it promises
   // the least, so a mislabelled estimate understates rather than overstates
   // what the project has committed to.
-  if (purpose === "budget" || purpose === "comparison" || purpose === "forecast") {
+  if (
+    purpose === "budget" ||
+    purpose === "comparison" ||
+    purpose === "forecast"
+  ) {
     return VOCABULARIES[purpose];
   }
   return VOCABULARIES.forecast;

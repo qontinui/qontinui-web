@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { parseAllocationsCsv, parseRolesCsv, splitCsvLine } from "./csv";
+import {
+  parseAllocationsCsv,
+  parseEffortsCsv,
+  parseRolesCsv,
+  splitCsvLine,
+} from "./csv";
 
 describe("splitCsvLine", () => {
   it("honours quotes, embedded commas and doubled quotes", () => {
@@ -154,5 +159,45 @@ BE,,2,2
 
   it("returns nothing for empty input, with nothing to report", () => {
     expect(parseAllocationsCsv("   \n\n")).toEqual({ rows: [], issues: [] });
+  });
+});
+
+describe("parseEffortsCsv", () => {
+  it("reads the task x role split in long form", () => {
+    const { rows, issues } = parseEffortsCsv(`
+phase,task,role,days
+A0,1.1,DL,4
+A0,1.1,BE,6.5
+A1,2.1,BE,10
+`);
+    expect(issues).toEqual([]);
+    expect(rows).toEqual([
+      { phase_code: "A0", task_number: "1.1", role_code: "DL", planned_person_days: "4" },
+      { phase_code: "A0", task_number: "1.1", role_code: "BE", planned_person_days: "6.5" },
+      { phase_code: "A1", task_number: "2.1", role_code: "BE", planned_person_days: "10" },
+    ]);
+  });
+
+  it("needs all three keys before a number", () => {
+    const { rows, issues } = parseEffortsCsv("A0,,DL,4");
+    expect(rows).toEqual([]);
+    expect(issues[0].message).toContain("phase, a task number and a role");
+  });
+
+  it("refuses days it cannot read rather than counting them as none", () => {
+    const { rows, issues } = parseEffortsCsv("A0,1.1,DL,a few");
+    expect(rows).toEqual([]);
+    expect(issues[0].message).toContain("not read as a number of days");
+  });
+
+  it("rejects the same role twice on one task", () => {
+    const { rows, issues } = parseEffortsCsv("A0,1.1,DL,4\nA0,1.1,DL,5");
+    expect(rows).toHaveLength(1);
+    expect(issues[0].message).toContain("already given days");
+  });
+
+  it("drops a zero, which is not an allocation of time", () => {
+    const { rows } = parseEffortsCsv("A0,1.1,DL,0\nA0,1.1,BE,3");
+    expect(rows.map((r) => r.role_code)).toEqual(["BE"]);
   });
 });
