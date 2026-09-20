@@ -103,6 +103,10 @@ export function HealthStrip({
         .join(" ")}
       data-testid={testId}
       data-health-level={level}
+      // Every surface that mounts a strip polls behind it, so the headline
+      // and the counts change with no other announcement. `role="status"`
+      // (polite + atomic) is what makes that audible; it never interrupts.
+      role="status"
     >
       <span
         className={`inline-block h-2.5 w-2.5 rounded-full shrink-0 ${LIGHT_CLASS[level]}`}

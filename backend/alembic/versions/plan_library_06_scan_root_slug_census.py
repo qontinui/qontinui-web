@@ -112,9 +112,20 @@ revision: str = "plan_library_06_scan_root_slug_census"
 # ("DB already at head — no-op").
 #
 # The durable fix is in coord's parser (qontinui-coord crates/coord/src/
-# enrichment.rs). Until a coord build carrying it is SERVING, this line is what
-# keeps the deployed parser right; re-wrapping it before then re-blocks every
-# coord deploy.
+# enrichment.rs `8e167261e`, "read a down_revision that spans lines"). That fix
+# is now SERVING -- measured 2026-09-20: `coord_query_release_state` gives ecs
+# `qontinui-staging/coord` at `6f2c7c44ed1d`, and
+# `git -C qontinui-coord merge-base --is-ancestor 8e167261e 6f2c7c44ed1d`
+# exits 0 -- so the condition this comment was waiting on is MET and a re-wrap
+# no longer blocks a deploy.
+#
+# The line stays on one line anyway: re-wrapping an applied revision buys
+# nothing, and a deploy that rolls coord back behind that fix would re-arm the
+# hazard. What is NOT still true is the prohibition -- a future author is bound
+# by the 88-column arithmetic, not by an expired release condition. The parent
+# revision `coord_repo_branches_touched_files_authoritative_01` carries the
+# same measurement beside its own `revision:` id, which is where an author
+# chaining off it will actually look.
 down_revision = "coord_repo_branches_touched_files_authoritative_01"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None

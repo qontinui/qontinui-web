@@ -19,7 +19,7 @@ import type {
   PromptDocumentSummary,
 } from "@/app/(app)/admin/coord/prompt-documents/types";
 import type { CoordPlanRow } from "@/components/admin/coord/planStatus";
-import { SHEPHERD_SLUG_PREFIX } from "@/app/(app)/admin/coord/plans/plansHealth";
+import { SHEPHERD_SLUG_PREFIX } from "@/app/(app)/admin/coord/work-units/plansHealth";
 import {
   SUMMARY_INTENT_KINDS,
   classifyIntent,

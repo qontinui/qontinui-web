@@ -14,6 +14,7 @@ import type {
 import {
   ATTENTION_BY_KIND,
   buildPipelineRows,
+  fusePipelinePrs,
   candidateChurnBadgeLabel,
   candidateChurnBadgeTitle,
   deriveCandidateChurn,
@@ -2269,5 +2270,101 @@ describe("economicsFor — coord keys by owner/name, rows may use the short name
   it("is undefined, not a zeroed row, for a repo coord did not report", () => {
     expect(economicsFor("qontinui/qontinui-runner", econ)).toBeUndefined();
     expect(economicsFor("qontinui/qontinui-runner", undefined)).toBeUndefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// fusePipelinePrs — ONE row per PR, across AND within the two reads.
+//
+// The duplicate it exists for is operator-reported (2026-09-20): a coord
+// ff-landed PR rendered TWICE in the Merged tab, once as "landed on main by
+// coord — GitHub has not closed the PR yet" and once as "landed on main as
+// <sha>". The previous collapse compared the open ARRAY against the merged
+// ARRAY, and coord serves both copies inside the merged one.
+// ---------------------------------------------------------------------------
+
+describe("fusePipelinePrs", () => {
+  const BRANCH = "agent/eb2155ed4152-01a0a0a33785/stale-mirror-sha";
+  const REPO = "qontinui/qontinui-runner";
+
+  /** The phantom-open half: coord knows it landed, GitHub has not closed it. */
+  const phantomOpen = () =>
+    pr({
+      repo: REPO,
+      branch: BRANCH,
+      pr_number: 1538,
+      pr_state: "open",
+      merge_status: "landed-open",
+    });
+
+  /** The landed half of the SAME response: carries the sha and the time. */
+  const landedTwin = () =>
+    pr({
+      repo: REPO,
+      branch: BRANCH,
+      pr_number: 1538,
+      pr_state: "open",
+      merge_commit_sha: "d73f3c4aaaa",
+      merged_at: "2026-09-20T08:00:00Z",
+    });
+
+  it("collapses both copies coord served in ONE merged response", () => {
+    const fused = fusePipelinePrs([], [phantomOpen(), landedTwin()]);
+    expect(fused).toHaveLength(1);
+    expect(fused[0].merge_commit_sha).toBe("d73f3c4aaaa");
+  });
+
+  it("prefers the sha-bearing row WHICHEVER order coord listed them", () => {
+    // Order-independence is the property that makes this safe: both rows come
+    // from one response, so there is no ordering between them to appeal to.
+    for (const merged of [
+      [phantomOpen(), landedTwin()],
+      [landedTwin(), phantomOpen()],
+    ]) {
+      const fused = fusePipelinePrs([], merged);
+      expect(fused).toHaveLength(1);
+      expect(fused[0].merge_commit_sha).toBe("d73f3c4aaaa");
+      expect(fused[0].merged_at).toBe("2026-09-20T08:00:00Z");
+    }
+  });
+
+  it("keeps a landed-open row when it is the ONLY copy", () => {
+    // Before coord's straggler sweep catches up, this may be all there is.
+    // Preferring the sha must not become REQUIRING one, or a real landing
+    // vanishes from the tab that records landings.
+    const fused = fusePipelinePrs([], [phantomOpen()]);
+    expect(fused).toHaveLength(1);
+    expect(fused[0].merge_status).toBe("landed-open");
+  });
+
+  it("still drops the open-poll copy of a landed PR (the original case)", () => {
+    const fused = fusePipelinePrs(
+      [pr({ repo: REPO, branch: BRANCH, pr_number: 1538, pr_state: "open" })],
+      [landedTwin()]
+    );
+    expect(fused).toHaveLength(1);
+    expect(fused[0].merge_commit_sha).toBe("d73f3c4aaaa");
+  });
+
+  it("keys on repo AND branch, so two repos' same-named branches both survive", () => {
+    const fused = fusePipelinePrs(
+      [],
+      [
+        pr({ repo: "qontinui/qontinui-web", branch: "feat/x", pr_number: 1 }),
+        pr({ repo: "qontinui/qontinui-coord", branch: "feat/x", pr_number: 2 }),
+      ]
+    );
+    expect(fused).toHaveLength(2);
+  });
+
+  it("leaves live work alone and preserves order: open first, then landed", () => {
+    const openA = pr({ branch: "feat/a", pr_number: 10 });
+    const openB = pr({ branch: "feat/b", pr_number: 11 });
+    const fused = fusePipelinePrs([openA, openB], [landedTwin()]);
+    expect(fused.map((p) => p.pr_number)).toEqual([10, 11, 1538]);
+  });
+
+  it("is a no-op on two empty reads", () => {
+    expect(fusePipelinePrs([], [])).toEqual([]);
   });
 });

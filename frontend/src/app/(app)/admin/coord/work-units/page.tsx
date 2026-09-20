@@ -1,0 +1,866 @@
+"use client";
+
+/**
+ * /admin/coord/work-units — list coord WORK UNITS, filter by status.
+ *
+ * Plan `2026-05-19-coordinator-production-readiness.md` Phase 2 (Wave 2);
+ * repointed onto the generic work-unit primitive
+ * (`2026-06-18-coord-generic-work-unit-primitive`).
+ *
+ * ## Why this page is no longer called "Plans" (Phase 3 of plan
+ * `2026-09-20-the-operator-plans-page-reads-the-wrong-store`)
+ *
+ * This page reads `coord.work_units` — the OPERATIONAL store — through
+ * `/api/v1/operations/plans*`, ordered `updated_at DESC` and clamped at
+ * {@link FETCH_LIMIT}. That is a **recency window over coord's work units**,
+ * not the plan corpus: a unit's position depends on when it was last touched,
+ * so work that has stalled is exactly what falls out of view. Calling it
+ * "Plans" told an operator it was a corpus they could search, and one who
+ * could not find a three-week-old plan on it read "not here" as "absent".
+ *
+ * The plan CORPUS now lives at `/admin/coord/plans`, which reads
+ * `GET /api/v1/plan-library/reconciliation` (slug-ordered, paged, with a
+ * stated total). This page keeps the question it always actually answered —
+ * *what has coord touched lately, and what is blocked?* — under the name of
+ * the store it reads. `updated_at DESC` stays, deliberately: for the merge
+ * escalation triage this page is FOR, recency is the right axis.
+ *
+ * **The `shepherd-*` exclusion is a control here, not a constant, and it
+ * DEFAULTS TO INCLUDED.** `shepherd-*` units are coord's own unlandable-PR
+ * merge escalations (`SHEPHERD_SLUG_PREFIX`, `plansHealth.tsx`). They were
+ * hard-excluded while this route was called "Plans", which was right — they
+ * are not plans. On a work-unit page they are the subject, and hard-excluding
+ * them would leave ~1,264 rows with no consumer on either page. So the
+ * exclusion is a Select, defaulting to including them, and the operator can
+ * narrow to authored work when that is the question.
+ *
+ * ## Console style (Phase 3 Wave 1)
+ *
+ * Migrated onto `components/console` by plan
+ * `2026-08-16-coord-console-ui-unification-pipeline-style.md`, against
+ * `frontend/docs/console-ui-style-guide.md`:
+ *
+ * - **R9** — the page-level `<Card><CardHeader><CardTitle>Plans` wrapper is
+ *   gone. `coord/layout.tsx` already renders the console `<h1>` and the nav
+ *   crumb, so that header was a second title costing ~72px above the fold.
+ * - **R1** — a `<HealthStrip>` derived from the rows ALREADY FETCHED opens the
+ *   page. No second request: the counts come from the same list the rows do.
+ * - **R2/R5** — one work unit is one `<PlanRow>` line; detail expands in place
+ *   (`<RecordList>` keeps one open at a time).
+ * - **R7** — the fetch-window caveats (truncation, missing authoring dates)
+ *   collapse into a `<CollapsiblePanel>` whose summary badge stays visible, so
+ *   the warning cannot hide behind the click.
+ *
+ * ## Which date (plan `2026-09-02-coord-work-units-carry-no-authoring-date`)
+ *
+ * The default sort is `authored_desc` on the plan's EFFECTIVE authoring date
+ * (`planAuthoredAt`: the slug's date prefix, else coord's `authored_at`), and
+ * the "undated" caveat counts rows with NEITHER. It used to be
+ * `created_desc` on `created_at` — the INGEST time, a bulk-backfill date for
+ * most of the corpus — under the label "Newest created", so a plan written in
+ * May sorted as a June plan. With a coord that predates the column every row
+ * is undated: they all sink, the caveat says "N of N", and the row falls back
+ * to "Ingested <created_at>" — true, and labelled as what it is.
+ *
+ * **The status `<Select>` deliberately stays a Select, not `<FilterTabs>`.**
+ * It is a SERVER-side filter — the value goes to coord as `?status=` and
+ * changes what is fetched — so tab counts would be `–` for all nine options on
+ * every render but one. R6's dash rule permits that; it would still be a
+ * strictly worse control than the Select, and `coord-work-units-status-select` is a
+ * frozen authored testid (D4a). The counts operators actually want are in the
+ * health strip, derived from the window that WAS fetched.
+ *
+ * The shepherd Select follows that precedent for the same reason: it is also a
+ * SERVER-side filter (`?exclude_slug_prefix=`), so a chip strip would carry
+ * dashes rather than counts.
+ *
+ * ## Difficulty (plan `2026-09-18-plan-library-difficulty-field`)
+ *
+ * Each row carries the plan library's difficulty rating — the model tier the
+ * plan routes to — read from `/api/v1/plan-library/difficulty` by
+ * `usePlanDifficulty` and joined by slug (`planDifficulty.ts`). Unlike the
+ * status Select, the difficulty Select is a CLIENT-side filter over the
+ * fetched window, and it is disabled until the ratings have loaded: filtering
+ * on ratings the page does not have would render an empty list that reads as
+ * "no plan is that hard".
+ */
+
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  ArrowDownUp,
+  FileQuestion,
+  Filter,
+  ShieldAlert,
+  SignalHigh,
+  TriangleAlert,
+} from "lucide-react";
+import {
+  CollapsiblePanel,
+  FilterChips,
+  HealthStrip,
+  RecordList,
+  RefreshButton,
+  absoluteTime,
+  readIsUnknown,
+} from "@/components/console";
+import { PlanRow } from "@/components/admin/coord/PlanRow";
+import {
+  planAuthoredAt,
+  type CoordPlanRow,
+} from "@/components/admin/coord/planStatus";
+import {
+  HAS_BODY_FILTERS,
+  PROVENANCE_FILTERS,
+  filterPlansByBodySignal,
+  hasBodyFilterValue,
+  type BodyProvenance,
+  type HasBodyFilter,
+  type PlanBodySignalBlock,
+} from "@/components/admin/coord/planBodySignal";
+import {
+  DIFFICULTY_FILTERS,
+  difficultyCell,
+  matchesDifficulty,
+  type DifficultyFilter,
+} from "@/components/admin/coord/planDifficulty";
+import { httpClient } from "@/services/service-factory";
+import { sortPlans, SORTS, type SortKey } from "./planSort";
+import { usePlanDifficulty } from "./usePlanDifficulty";
+import {
+  derivePlansHealth,
+  SHEPHERD_FILTERS,
+  SHEPHERD_SLUG_PREFIX,
+  type ShepherdFilter,
+} from "./plansHealth";
+
+const API = "/api/v1/operations";
+const POLL_INTERVAL_MS = 10_000;
+
+/**
+ * Ask for coord's maximum page.
+ *
+ * Sorting happens client-side, so the window we sort over is the window we
+ * fetched. coord's list is `ORDER BY updated_at DESC LIMIT $3` with a default
+ * of 100 and a hard clamp of 500 (`work_unit_registry.rs` `list_work_units`),
+ * and the proxy forwards no sort parameter — so requesting the clamp is the
+ * widest honest window available. When the result fills it, the corpus is
+ * larger than what is sorted and the page says so; see `truncated` below.
+ */
+const FETCH_LIMIT = 500;
+
+/** What one row IS here — see `PlansHealthNoun` in `plansHealth.tsx`. */
+const WORK_UNIT_NOUN = { one: "work unit", many: "work units" };
+
+// Work-unit lifecycle statuses (coord stores status as an opaque string;
+// these are the canonical lifecycle words the filter offers as a convenience
+// — an exact-match `status=` filter on the coord list).
+const STATUS_FILTERS = [
+  { value: "any", label: "All statuses" },
+  { value: "draft", label: "Draft" },
+  { value: "vetted", label: "Vetted" },
+  { value: "in_progress", label: "In progress" },
+  { value: "blocked", label: "Blocked" },
+  { value: "ready", label: "Ready" },
+  { value: "shipped", label: "Shipped" },
+  { value: "superseded", label: "Superseded" },
+  { value: "obsolete", label: "Obsolete" },
+];
+
+interface PlansListResponse {
+  // coord `/coord/work-units` returns rows under `work_units`. `plans` is
+  // kept for backwards-tolerance during the cutover (harmless if absent).
+  work_units?: CoordPlanRow[];
+  plans?: CoordPlanRow[];
+  limit?: number;
+  offset?: number;
+  count?: number;
+  /**
+   * The size of the WHOLE population, when coord serves one.
+   *
+   * It is optional because nothing between this page and coord's
+   * `list_work_units` promises it: the web proxy forwards coord's envelope
+   * verbatim (`operations.py` `list_coord_plans`), and that envelope is
+   * `{work_units, limit, offset}`. So an absent `total` is UNKNOWN and the
+   * truncation notice says so — it never substitutes `count`, which is the
+   * size of the PAGE and would turn "500 of ?" into the false "500 of 500".
+   */
+  total?: number;
+  /**
+   * Why a `has_body: false` on this page is (or is not) evidence — computed
+   * once per request by the proxy. Absent when the page had no rows to
+   * annotate, and on a backend that predates the signals.
+   */
+  body_signal?: PlanBodySignalBlock;
+}
+
+/** Add or remove one value — the `FilterChips` caller owns the set. */
+function toggle<V extends string>(prev: V[], value: V): V[] {
+  return prev.includes(value)
+    ? prev.filter((v) => v !== value)
+    : [...prev, value];
+}
+
+export default function CoordWorkUnitsListPage() {
+  const [status, setStatus] = useState("any");
+  // Server-side, like `status` — see `SHEPHERD_FILTERS` in `plansHealth.tsx`
+  // for why the default includes coord's own merge escalations.
+  const [shepherd, setShepherd] = useState<ShepherdFilter>("include");
+  const [sort, setSort] = useState<SortKey>("authored_desc");
+  // Both body filters are CLIENT-side, unlike `status`: the proxy derives
+  // these fields, it does not take them as query parameters, so they filter
+  // the window that was fetched. That also means their counts are real —
+  // computed from the same rows the list renders — rather than R6's `–`.
+  const [provenance, setProvenance] = useState<BodyProvenance[]>([]);
+  const [hasBody, setHasBody] = useState<HasBodyFilter[]>([]);
+  // The difficulty filter is client-side for the same reason, but its ratings
+  // come from a SECOND read (the plan library, not coord) — so unlike the body
+  // signals it can be pending or failed, and the Select stays disabled until
+  // it has loaded.
+  const [difficultyFilter, setDifficultyFilter] =
+    useState<DifficultyFilter>("any");
+  const { index: difficultyIndex, refresh: refreshDifficulty } =
+    usePlanDifficulty();
+  const difficultyLoaded = difficultyIndex.state === "loaded";
+  const [data, setData] = useState<PlansListResponse | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  // There is deliberately no `loading` flag. It used to gate the list's
+  // `loaded` prop, and the two questions it conflated are what let a
+  // fabricated absence through: "is a request outstanding?" is not "has this
+  // question been answered?", and only the second one may decide whether the
+  // page is allowed to say "no plans match". `data !== null || error !== null`
+  // answers the second directly, so the flag had no reader left.
+
+  /**
+   * Generation guard — a read may only speak while it is still the newest one.
+   *
+   * Without it the reset below narrows the bug instead of closing it: the read
+   * issued under the PREVIOUS `status` is still live, still holds its own
+   * closure, and lands on `setData`/`setError` unconditionally. Both arms are
+   * reachable by changing the filter while the first load is in flight, which
+   * is the ordinary case, not a corner:
+   *
+   *   - the superseded SUCCESS repaints the discarded window under the new
+   *     filter, for a whole poll interval;
+   *   - worse, it lands on top of a new read that FAILED — `setError(null)`
+   *     clears the banner, `loaded` flips true, and the old window is stated
+   *     as a confident answer to a question that errored. That is the
+   *     fabricated-answer class this change exists to close, re-created in a
+   *     race window.
+   *
+   * Same shape as `/notifications`' `queryGen`, `/questions`' three `*Seq`
+   * refs and `usePlanLibrary`'s counter. `http-client.ts` now honours a
+   * caller's `signal`, but cancelling a superseded read would not replace
+   * these counters: they decide which settled read may land, not which reads
+   * run.
+   *
+   * **TWO counters, because the two things being gated are not one question.**
+   * A single per-request counter silences a read in every arm at once, and
+   * that is how a page ends up stuck: `httpClient`'s request timeout is 60s
+   * and its 5xx retry spends ~7s in backoff over four round trips, both far
+   * longer than this page's 10s tick, so under a slow or retrying backend
+   * every read is superseded before it settles and the failure is never
+   * surfaced at all — the page waits on coord forever with nothing to show for
+   * it. That is exactly the defect `readFailed` exists to prevent —
+   * `plansHealth.tsx`: *"a first load that errors leaves `loaded` false and
+   * renders 'Waiting for coord…' over a request that is never arriving"* —
+   * re-created by the fix for a different one.
+   *
+   * So:
+   *
+   *   - `questionGen` (bumped in the effect, once per FILTER change) gates the
+   *     ERROR. "This read failed" is true of the filter currently on screen
+   *     whether or not a newer request has overtaken it, so an overtaken
+   *     failure still gets to speak; a failure belonging to a filter the
+   *     operator has left does not.
+   *   - `reqGen` (bumped per call) additionally gates `setData`, so the newest
+   *     response is the one rendered and two overlapping reads cannot land out
+   *     of order.
+   *
+   * The residue is the asymmetry `/questions` states and accepts: a stale
+   * FAILURE landing after a fresh success shows a banner the newest read
+   * disagrees with. That fails safe — it over-reports trouble — where the
+   * opposite silences it. `pollInFlight` keeps same-question ticks from
+   * overlapping in the first place, and a refresh CLICK takes the same lock
+   * when it is free (`refresh` below), so no tick can stack on a manual read
+   * either. What remains is one narrower window: a click made while a poll
+   * or the first read is already out still issues its own read, which is the
+   * overlap `filterWindowReset.test.tsx` pins as guarded by the two counters.
+   */
+  const questionGen = useRef(0);
+  const reqGen = useRef(0);
+  /** One poll at a time — see the retry arithmetic above. */
+  const pollInFlight = useRef(false);
+
+  const fetchData = useCallback(async () => {
+    const question = questionGen.current;
+    const req = ++reqGen.current;
+    try {
+      const qs = new URLSearchParams();
+      if (status && status !== "any") qs.set("status", status);
+      qs.set("limit", String(FETCH_LIMIT));
+      if (shepherd === "exclude") {
+        qs.set("exclude_slug_prefix", SHEPHERD_SLUG_PREFIX);
+      }
+      const suffix = qs.toString() ? `?${qs.toString()}` : "";
+      const body = await httpClient.get<PlansListResponse>(
+        `${API}/plans${suffix}`
+      );
+      if (question !== questionGen.current || req !== reqGen.current) return;
+      setData(body);
+      setError(null);
+    } catch (e) {
+      if (question !== questionGen.current) return;
+      setError(e instanceof Error ? e.message : String(e));
+    }
+  }, [status, shepherd]);
+
+  useEffect(() => {
+    // `status` is `fetchData`'s only dependency, so this effect re-runs
+    // exactly when the QUESTION changes — and the rows still in `data` answer
+    // the previous one. Dropping them is not cosmetic: `loaded` is `data !==
+    // null`, so keeping them leaves every read-state derivation on this page
+    // reporting the OLD query while the new one is in flight — the list shows
+    // the previous filter's records instead of skeletons, the strip describes
+    // the previous window, and a new fetch that FAILS lands on the STALE arm
+    // ("the last counts that landed") when nothing has ever landed for this
+    // query. That is R6's own `loaded`-means-"answered-THIS-question" clause,
+    // one level up from a count.
+    //
+    // It is cleared HERE and not in `fetchData`, which the poll also calls: a
+    // poll must never blank a loaded page.
+    //
+    // The question generation is bumped here for the same reason — this is the
+    // one place the QUESTION changes.
+    questionGen.current += 1;
+    const question = questionGen.current;
+    /**
+     * Release the poll lock only if it is still the one this read took.
+     *
+     * A read superseded by a filter change settles LATE — after the cleanup
+     * has released the lock and the new question has taken it — so an
+     * unconditional release would free a lock the NEW question's read is still
+     * holding, and the next tick would issue a second concurrent read. Not
+     * harmful (`reqGen` still picks the winner), but it would quietly falsify
+     * the "one poll at a time" claim after every filter change, and a guard is
+     * only worth having while its comment is true.
+     */
+    const releaseLock = () => {
+      if (question === questionGen.current) pollInFlight.current = false;
+    };
+    setData(null);
+    setError(null);
+    // The FIRST read holds the lock too. Without that a tick 10s in issues a
+    // second read of the same question while the first is still out, and the
+    // first is then dropped for being superseded — which is only ever safe
+    // when nothing downstream mistakes "no answer yet" for "no answer".
+    pollInFlight.current = true;
+    void fetchData().finally(releaseLock);
+    const id = setInterval(() => {
+      // A tick that outruns the previous read would otherwise stack: the
+      // request timeout is 60s against a 10s interval, so a hung backend
+      // accumulates six concurrent reads a minute for nothing.
+      if (pollInFlight.current) return;
+      pollInFlight.current = true;
+      void fetchData().finally(releaseLock);
+    }, POLL_INTERVAL_MS);
+    return () => {
+      clearInterval(id);
+      // The lock was taken for a question that is over. Leaving it set would
+      // have the new question's first few ticks skip while a read nobody is
+      // waiting for finishes — bounded by the 60s timeout, but pointless.
+      pollInFlight.current = false;
+    };
+  }, [fetchData]);
+
+  /**
+   * The refresh button's read — the operator's, never the poll's.
+   *
+   * It returns the read's promise so `<RefreshButton>` acknowledges the press
+   * for exactly as long as that read is out; the poll calls `fetchData`
+   * directly and has no path to that state, so the control never pulses on a
+   * tick (plan `2026-09-09-coord-plans-page-controls-do-not-acknowledge-or-name-themselves`
+   * F1).
+   *
+   * It TAKES `pollInFlight` when the lock is free, so the ticks that come due
+   * while a manual read is out skip instead of stacking a second read of the
+   * same question on top of it. When a poll already holds the lock the click
+   * still issues its own read rather than waiting for or joining that one:
+   * the operator asked for a read now, and the resulting overlap is exactly
+   * what `questionGen`/`reqGen` above are for. The release is question-scoped
+   * for the same reason as the effect's `releaseLock`: a filter change while
+   * this read is out hands the lock to the new question's read, which this
+   * one must not free.
+   */
+  const refresh = useCallback(() => {
+    // The ratings refresh with the operator's press too — never with the poll
+    // (see `usePlanDifficulty`). Not awaited: the button acknowledges the
+    // work-unit read, which is the one it is labelled for.
+    void refreshDifficulty();
+    const tookLock = !pollInFlight.current;
+    if (tookLock) pollInFlight.current = true;
+    const question = questionGen.current;
+    return fetchData().finally(() => {
+      if (tookLock && question === questionGen.current) {
+        pollInFlight.current = false;
+      }
+    });
+  }, [fetchData, refreshDifficulty]);
+
+  const plans = useMemo(() => data?.work_units ?? data?.plans ?? [], [data]);
+  // The chip counts describe the WINDOW, so they are derived from `plans` —
+  // before the body filters are applied, or every count but the selected one
+  // would collapse to 0 the moment a chip was clicked.
+  const provenanceCounts = useMemo(() => {
+    const counts = new Map<BodyProvenance, number>();
+    for (const p of plans) {
+      if (p.body_provenance) {
+        counts.set(p.body_provenance, (counts.get(p.body_provenance) ?? 0) + 1);
+      }
+    }
+    return counts;
+  }, [plans]);
+  const hasBodyCounts = useMemo(() => {
+    const counts = new Map<HasBodyFilter, number>();
+    for (const p of plans) {
+      const v = hasBodyFilterValue(p.has_body);
+      if (v) counts.set(v, (counts.get(v) ?? 0) + 1);
+    }
+    return counts;
+  }, [plans]);
+  // A backend that predates the signals serves neither field. Offering a
+  // filter over a vocabulary no row carries would let an operator select a
+  // chip and empty the list — a control that can only ever answer "none" to a
+  // question nobody was told the answer to.
+  const bodySignalsServed = plans.some(
+    (p) => p.body_provenance !== undefined || p.has_body !== undefined
+  );
+  const filtered = useMemo(
+    () => filterPlansByBodySignal(plans, { provenance, hasBody }),
+    [plans, provenance, hasBody]
+  );
+  const sorted = useMemo(() => sortPlans(filtered, sort), [filtered, sort]);
+  const bodyFiltered = provenance.length > 0 || hasBody.length > 0;
+  // The difficulty filter runs LAST, over the body-filtered window, and only
+  // once the ratings have loaded — see the module docstring.
+  const shown = useMemo(
+    () =>
+      difficultyLoaded && difficultyFilter !== "any"
+        ? sorted.filter((p) =>
+            matchesDifficulty(
+              difficultyCell(difficultyIndex, p.slug),
+              difficultyFilter
+            )
+          )
+        : sorted,
+    [sorted, difficultyFilter, difficultyIndex, difficultyLoaded]
+  );
+  const difficultyFiltered = difficultyLoaded && difficultyFilter !== "any";
+  // coord returned a full page, so there are almost certainly more work units
+  // than we sorted. Say so: with the list capped at `updated_at DESC`, an
+  // "oldest authored" answer drawn from this window can be wrong.
+  const truncated = plans.length >= FETCH_LIMIT;
+  /**
+   * The DENOMINATOR, or UNKNOWN — never a substitute.
+   *
+   * Phase 3 of plan `2026-09-20-the-operator-plans-page-reads-the-wrong-store`:
+   * *"a disclosure without a denominator is a disclaimer, not a measurement"*.
+   * "The 500 most-recently-updated" is true and still does not tell a reader
+   * they are looking at 43 hours of a 3,268-row store.
+   *
+   * `count` is deliberately NOT consulted as a fallback: it is the size of the
+   * page, so reading it here would render "500 of 500" — a complete corpus —
+   * over a window that is nothing of the sort. Absent is UNKNOWN.
+   */
+  const windowTotal = typeof data?.total === "number" ? data.total : null;
+  /**
+   * The BOUNDARY value — how old the oldest row in this window is.
+   *
+   * coord orders `updated_at DESC`, so the window's edge is the minimum
+   * `updated_at` across the rows FETCHED. It is computed off `plans` rather
+   * than off the rendered order on purpose: the display sort is client-side
+   * and re-orders the same window, so reading the last rendered row would make
+   * the stated boundary move with a control that cannot move it.
+   *
+   * `null` when no row carries a parseable timestamp — UNKNOWN, not "now".
+   */
+  const oldestUpdatedAt = useMemo(() => {
+    let oldest: { iso: string; ms: number } | null = null;
+    for (const p of plans) {
+      const iso = p.updated_at;
+      if (!iso) continue;
+      const ms = Date.parse(iso);
+      if (Number.isNaN(ms)) continue;
+      if (!oldest || ms < oldest.ms) oldest = { iso, ms };
+    }
+    return oldest?.iso ?? null;
+  }, [plans]);
+  // No authoring date from EITHER source — the slug carries no date prefix
+  // AND coord holds no `authored_at` (`planAuthoredAt`, the deriver the chip,
+  // the row time and the sort all read). Counting the bare column here would
+  // call a dated slug with a NULL column "undated" while its own chip shows
+  // the date. UNKNOWN either way: these rows sink in the sort and the caveat
+  // says so.
+  const missingAuthored = plans.filter((p) => !planAuthoredAt(p)).length;
+  const loaded = data !== null;
+  // R6 — "not fetched" includes "fetched and FAILED". The shared deriver grew
+  // this arm for `/spawn`; this route reads the same list from the same
+  // endpoint and had the same hole, so it consults it too.
+  const readFailed = error !== null;
+  const plansUnknown = readIsUnknown(loaded, readFailed);
+  // ...and the third state, for the `empty=` slot. A poll that fails over a
+  // window coord confirmed EMPTY leaves `data` non-null (the poll does not
+  // blank a loaded page, deliberately), so the plain copy would otherwise
+  // claim "No plans matching status=X" in the present tense while the read is
+  // currently failing.
+  const plansStale = readFailed && loaded;
+  const health = useMemo(
+    // The noun is "work units", not "plans": with the shepherd filter
+    // defaulting to INCLUDED this window is coord's work units, and a badge
+    // reading `plans 500` over it would be the mislabel this route was moved
+    // to fix, restated in a badge.
+    () => derivePlansHealth(plans, loaded, readFailed, WORK_UNIT_NOUN),
+    [plans, loaded, readFailed]
+  );
+
+  return (
+    <div className="p-3 sm:p-6 space-y-4" data-testid="coord-work-units-page">
+      <HealthStrip
+        level={health.level}
+        headline={health.headline}
+        detail={health.detail}
+        badges={health.badges}
+        data-testid="coord-work-units-health"
+      />
+
+      <div className="flex flex-wrap items-center gap-2">
+        <Filter className="h-4 w-4 text-muted-foreground" />
+        <Select value={status} onValueChange={setStatus}>
+          <SelectTrigger
+            className="w-[180px]"
+            data-testid="coord-work-units-status-select"
+          >
+            <SelectValue placeholder="status" />
+          </SelectTrigger>
+          <SelectContent>
+            {STATUS_FILTERS.map((opt) => (
+              <SelectItem key={opt.value} value={opt.value}>
+                {opt.label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <ShieldAlert className="h-4 w-4 text-muted-foreground ml-1" />
+        <Select
+          value={shepherd}
+          onValueChange={(v) => setShepherd(v as ShepherdFilter)}
+        >
+          <SelectTrigger
+            className="w-[220px]"
+            data-testid="coord-work-units-shepherd-select"
+            title={
+              "coord's own `shepherd-*` merge-escalation work units. They are " +
+              "INCLUDED by default here — this page is the surface that " +
+              "triages them, and no other page shows them at all. Excluding " +
+              "them re-asks coord (`exclude_slug_prefix`); it does not filter " +
+              "the fetched window."
+            }
+          >
+            <SelectValue placeholder="escalations" />
+          </SelectTrigger>
+          <SelectContent>
+            {SHEPHERD_FILTERS.map((opt) => (
+              <SelectItem key={opt.value} value={opt.value}>
+                {opt.label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <ArrowDownUp className="h-4 w-4 text-muted-foreground ml-1" />
+        <Select value={sort} onValueChange={(v) => setSort(v as SortKey)}>
+          <SelectTrigger
+            className="w-[200px]"
+            data-testid="coord-work-units-sort-select"
+          >
+            <SelectValue placeholder="sort" />
+          </SelectTrigger>
+          <SelectContent>
+            {SORTS.map((opt) => (
+              <SelectItem key={opt.value} value={opt.value}>
+                {opt.label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <SignalHigh className="h-4 w-4 text-muted-foreground ml-1" />
+        <Select
+          value={difficultyLoaded ? difficultyFilter : "any"}
+          onValueChange={(v) => setDifficultyFilter(v as DifficultyFilter)}
+          disabled={!difficultyLoaded}
+        >
+          <SelectTrigger
+            className="w-[180px]"
+            data-testid="coord-work-units-difficulty-select"
+            title={
+              difficultyIndex.state === "failed"
+                ? `Difficulty ratings could not be read: ${difficultyIndex.reason}`
+                : difficultyIndex.state === "pending"
+                  ? "Difficulty ratings are loading"
+                  : "Filter by the plan library's difficulty rating (applied to the rows fetched)"
+            }
+          >
+            <SelectValue placeholder="difficulty" />
+          </SelectTrigger>
+          <SelectContent>
+            {DIFFICULTY_FILTERS.map((opt) => (
+              <SelectItem key={opt.value} value={opt.value}>
+                {opt.label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        {/* Keyed on the question: a press whose read was superseded by a filter
+            change must not leave the NEW question's control busy for up to the
+            60s request timeout, over a read whose answer will be discarded. */}
+        <RefreshButton
+          key={`${status}:${shepherd}`}
+          onRefresh={refresh}
+          label="Refresh work units"
+          title={`Re-reads the work-unit list now; it also refreshes itself every ${POLL_INTERVAL_MS / 1000} s`}
+          data-testid="coord-work-units-refresh"
+        />
+      </div>
+
+      {/* Does this "Plan" have a plan? Plan `2026-09-02-bodyless-work-units-…`.
+          A second row rather than more controls on the first: these two answer
+          a different question from status/sort, and the strips are only
+          rendered at all once a backend has actually told us the answer. */}
+      {bodySignalsServed && (
+        <div
+          className="flex flex-wrap items-center gap-2"
+          data-testid="coord-work-units-body-filters"
+        >
+          <FileQuestion className="h-4 w-4 text-muted-foreground" />
+          <FilterChips
+            label="document"
+            testIdPrefix="coord-work-units-has-body-filter"
+            options={HAS_BODY_FILTERS.map((o) => ({
+              ...o,
+              count: hasBodyCounts.get(o.value) ?? 0,
+            }))}
+            selected={hasBody}
+            onToggle={(v) => setHasBody((prev) => toggle(prev, v))}
+            onClear={() => setHasBody([])}
+            title={
+              data?.body_signal?.miss_reason
+                ? "This page could not establish whether a document exists — " +
+                  `${data.body_signal.miss_reason}. Every miss is reported ` +
+                  "unknown rather than as a missing document."
+                : "Whether a plan artifact exists for this work unit."
+            }
+          />
+          <FilterChips
+            label="scanner"
+            testIdPrefix="coord-work-units-provenance-filter"
+            options={PROVENANCE_FILTERS.map((o) => ({
+              ...o,
+              count: provenanceCounts.get(o.value) ?? 0,
+            }))}
+            selected={provenance}
+            onToggle={(v) => setProvenance((prev) => toggle(prev, v))}
+            onClear={() => setProvenance([])}
+            title={
+              "Whether a plan scanner has ever seen a file for this work " +
+              "unit. A SCREEN, not a verdict — measured 2026-09-02 on one " +
+              "device it has 27.6% precision and 90.4% recall."
+            }
+          />
+        </div>
+      )}
+
+      {/* R7 — the window caveats are infrastructural, so they collapse; the
+          summary badge keeps the signal visible while they are closed. */}
+      {(truncated || missingAuthored > 0) && (
+        <CollapsiblePanel
+          titleAs="h2"
+          className="p-2.5"
+          defaultOpen={false}
+          storageKey="coord-work-units-window-caveats"
+          icon={<TriangleAlert className="h-3.5 w-3.5 text-amber-400" />}
+          title="Fetch-window caveats"
+          summary={
+            <span className="text-xs text-amber-300/90 normal-case tracking-normal">
+              {[
+                truncated
+                  ? `showing ${plans.length} of ${windowTotal ?? "?"}`
+                  : null,
+                missingAuthored > 0 ? `${missingAuthored} undated` : null,
+              ]
+                .filter(Boolean)
+                .join(" · ")}
+            </span>
+          }
+          contentClassName="space-y-1"
+          data-testid="coord-work-units-window-caveats"
+        >
+          {truncated && (
+            <p
+              className="text-xs text-amber-300/90"
+              data-testid="coord-work-units-truncated-notice"
+            >
+              Showing {plans.length} of{" "}
+              {windowTotal !== null ? (
+                windowTotal
+              ) : (
+                <>
+                  an <strong>unknown</strong> total — coord&apos;s work-unit
+                  list envelope carries no count, so how much of the store this
+                  is cannot be stated
+                </>
+              )}{" "}
+              work units, ordered most-recently-updated first and capped at{" "}
+              {FETCH_LIMIT} by coord.{" "}
+              {oldestUpdatedAt !== null ? (
+                <>
+                  The oldest row in this window was updated{" "}
+                  <span data-testid="coord-work-units-window-boundary">
+                    {absoluteTime(oldestUpdatedAt)}
+                  </span>
+                  ; anything untouched since then is out of the window, not
+                  absent.
+                </>
+              ) : (
+                <span data-testid="coord-work-units-window-boundary">
+                  No row in this window carries a readable updated_at, so how
+                  far back it reaches is unknown.
+                </span>
+              )}{" "}
+              Sorting applies to these rows only, so a &ldquo;
+              {SORTS.find((s) => s.value === sort)?.label}&rdquo; result may not
+              be the corpus-wide answer. The plan corpus, slug-ordered with a
+              stated total, is at /admin/coord/plans.
+            </p>
+          )}
+          {missingAuthored > 0 && (
+            <p
+              className="text-xs text-muted-foreground"
+              data-testid="coord-work-units-missing-authored-notice"
+            >
+              {missingAuthored} of {plans.length} have no authoring date — no
+              date prefix on the slug and no authored_at in coord; they sort
+              last rather than being treated as oldest.
+            </p>
+          )}
+        </CollapsiblePanel>
+      )}
+
+      {error && (
+        <p className="text-sm text-destructive">Failed to load: {error}</p>
+      )}
+
+      {difficultyIndex.state === "failed" && (
+        <p
+          className="text-xs text-muted-foreground"
+          data-testid="coord-work-units-difficulty-unknown"
+        >
+          Difficulty ratings could not be read ({difficultyIndex.reason}) — each
+          row&apos;s difficulty is unknown, not unrated.
+        </p>
+      )}
+      {difficultyIndex.state === "loaded" && difficultyIndex.staleReason && (
+        <p
+          className="text-xs text-muted-foreground"
+          data-testid="coord-work-units-difficulty-stale"
+        >
+          Some difficulty ratings may predate the current rubric — re-rating
+          failed: {difficultyIndex.staleReason}
+        </p>
+      )}
+
+      <RecordList
+        items={shown}
+        itemKey={(p) => p.slug}
+        // "Has this question been ANSWERED, one way or the other?" — never
+        // "is a request outstanding?". The two diverge, and the gap is where a
+        // fabricated absence gets in: a read overtaken by a newer request of
+        // the SAME question is dropped without setting `data` or `error`, so a
+        // flag tracking requests would report "not loading" over a question
+        // coord has never answered, and this slot would render the plain "No
+        // plans matching status=X." underneath a strip still reading "Waiting
+        // for coord…". Derived from the answer instead, that state is what it
+        // is — still waiting, so still skeletons.
+        loaded={data !== null || error !== null}
+        skeletonRows={6}
+        empty={
+          // ORDER MATTERS. A client-side filter that emptied the list is a
+          // statement about the WINDOW — rows were fetched — so it is checked
+          // BEFORE the unknown/stale copy, which is about the work-unit read
+          // and would blame the wrong control. Difficulty first, then the
+          // document filters, because difficulty runs over their output.
+          difficultyFiltered && sorted.length > 0 ? (
+            <p
+              className="text-sm text-muted-foreground italic"
+              data-testid="coord-work-units-difficulty-empty"
+            >
+              {difficultyFilter === "unrated"
+                ? `None of the ${sorted.length} fetched work units is unrated.`
+                : `None of the ${sorted.length} fetched work units is rated ${difficultyFilter}.`}
+            </p>
+          ) : bodyFiltered && plans.length > 0 ? (
+            // The body filters are client-side, so "nothing matched" here is a
+            // statement about the WINDOW, not about coord. Saying
+            // "No plans matching status=any" over a window that holds
+            // {plans.length} rows would blame the wrong control.
+            <p
+              className="text-sm text-muted-foreground italic"
+              data-testid="coord-work-units-body-filtered-empty"
+            >
+              None of the {plans.length} work units in this window match the
+              document filter.
+            </p>
+          ) : plansUnknown ? (
+            <p
+              className="text-sm text-muted-foreground italic"
+              data-testid="coord-work-units-unknown"
+            >
+              Could not read the work-unit list — whether any work unit matches
+              status={status === "any" ? "any" : status} is unknown, not none.
+            </p>
+          ) : plansStale ? (
+            <p
+              className="text-sm text-muted-foreground italic"
+              data-testid="coord-work-units-stale"
+            >
+              No work units matched status={status === "any" ? "any" : status}{" "}
+              at the last good read — this list has not refreshed since.
+            </p>
+          ) : (
+            <p
+              className="text-sm text-muted-foreground italic"
+              data-testid="coord-work-units-empty"
+            >
+              No work units matching status={status === "any" ? "any" : status}
+              {shepherd === "exclude"
+                ? ", excluding coord's merge escalations."
+                : "."}
+            </p>
+          )
+        }
+        renderRow={(p, ctx) => (
+          <PlanRow
+            plan={p}
+            expanded={ctx.expanded}
+            onToggle={ctx.onToggle}
+            difficulty={difficultyCell(difficultyIndex, p.slug)}
+          />
+        )}
+      />
+    </div>
+  );
+}

@@ -10,50 +10,66 @@
  * meanings for one word in one console is exactly the predictability cost
  * `docs/console-ui-style-guide.md` exists to prevent.
  *
- * ## What this page is, after the drawer
+ * ## What this page is
  *
  * Everything here answers ONE question: *where is my PR and is it stuck?*
  *
  *  - `StuckPrRecoveryPanel` — the tenant's own door out of a wedged train.
  *    Renders `null` when nothing is stuck.
- *  - `MergePipeline` — the hero: health strip, filter tabs, one row per PR,
- *    with the cross-repo dependency DAG inside a row's own expansion (it
- *    already knows the repo and the PR number, so nothing is re-typed).
- *  - `CiStatusPanel` — promoted out of the deleted drawer to sit directly
- *    under the hero, because CI results are *why* PRs are stuck.
+ *  - `MergePipeline` — the hero, and now the whole page: health strip, filter
+ *    tabs, one row per PR, with everything that is ABOUT a PR inside that
+ *    PR's own expansion (failing checks, the blast-radius gate's decision,
+ *    every merge attempt, the cross-repo dependency DAG).
  *
- * ## What left, and where it went
+ * ## Two panels, one axis (2026-09-19)
  *
- * The single collapsed `System details` `CollapsiblePanel` is **deleted**.
+ * The page used to be three components deep and the hero five sections tall,
+ * because every new fact about the merge system arrived as a new section. The
+ * redesign applies one rule — *a fact about a PR belongs in that PR's row; a
+ * fact about all of them belongs in the health strip; a fact on another axis
+ * belongs on the view that owns that axis* — and the page falls out of it.
+ * `MergePipeline`'s own header records what moved where and why.
+ *
+ * **`CiStatusPanel` is gone from this page, and that reverses Phase 4's
+ * decision deliberately.** Phase 4 promoted it out of the deleted `System
+ * details` drawer to sit directly under the hero, on the reasoning that "CI
+ * results are why PRs are stuck". The reasoning was right and the placement
+ * was not, for three reasons that are in `CiRepoStrip`'s module header: it is
+ * a row-per-REPO list in a stack of row-per-PR lists; its headline claim (main
+ * is red) is already made louder by `RedMainBanner`, which the coord LAYOUT
+ * mounts on every route; and it polled for every visitor to this page whether
+ * or not they opened it, because its stream was owned above its own
+ * `<CollapsiblePanel>`. It now lives on the Train tab — this page's existing
+ * repo-axis view — and owns its transport, so it is mounted only while
+ * someone is reading it.
+ *
+ * ## The two polls this page has never run since Phase 4
+ *
+ * `/operations/fleet/health` (10 s) and `/operations/fleet/resource-samples`
+ * (30 s) ran on the old `/admin/coord/fleet` unconditionally — including while
+ * the drawer was collapsed — purely so the `N unhealthy` / `N refusing work` /
+ * `N delaying work` / `N stale` / `N unknown` alarm could stay visible on the
+ * collapsed header. With Dev Ops as a real nav destination that alarm belongs
+ * on the `Dev Ops ▾` group trigger (`CoordNav`'s `useFleetAlarmBadge`, 60 s),
+ * where it is visible from EVERY console page rather than from this one. Both
+ * polls are therefore gone from here, not moved: this page makes zero requests
+ * to either route, and `page.test.tsx` is what keeps that true.
+ *
+ * The `unknown` badge moved with the rest and must never be dropped — see
+ * `useFleetAlarmBadge`'s docblock for why a breach-only badge would be a
+ * false-safe.
+ *
+ * ## Where the other panels went
+ *
  * `HealthSummaryCard`, `FleetOverview` and `FleetResourcesSection` are on
  * `/admin/coord/devops`; `FleetTestTargetsPanel` and `MigrationQueueTile` are
  * their own Dev Ops routes; `DevActionsTile` joined the agent-activity ledger
  * at `/admin/coord/agents`; `GatesPanel` is gone in favour of
  * `/admin/coord/gates`, which already held a strict superset of its actions;
  * `LandedFeaturesPanel` is deleted outright.
- *
- * ## The two polls this page no longer runs
- *
- * `/operations/fleet/health` (10 s) and `/operations/fleet/resource-samples`
- * (30 s) ran here unconditionally — including while the drawer was collapsed —
- * purely so the `N unhealthy` / `N refusing work` / `N delaying work` /
- * `N stale` / `N unknown` alarm could stay visible on the collapsed header.
- * With Dev Ops as a real nav destination that alarm belongs on the
- * `Dev Ops ▾` group trigger (`CoordNav`'s `useFleetAlarmBadge`, 60 s), where
- * it is visible from EVERY console page rather than from this one. Both polls
- * are therefore gone from here, not moved: this page makes zero requests to
- * either route.
- *
- * The `unknown` badge moved with the rest and must never be dropped — see
- * `useFleetAlarmBadge`'s docblock for why a breach-only badge would be a
- * false-safe.
  */
 
-import {
-  CiStatusPanel,
-  MergePipeline,
-  StuckPrRecoveryPanel,
-} from "@/components/operations";
+import { MergePipeline, StuckPrRecoveryPanel } from "@/components/operations";
 
 export default function CoordPipelinePage() {
   return (
@@ -72,13 +88,9 @@ export default function CoordPipelinePage() {
           exactly as it did before. */}
       <StuckPrRecoveryPanel />
 
-      {/* The hero: unified PR pipeline (health strip + one row per PR). */}
+      {/* The hero, and the page: unified PR pipeline (health strip + one row
+          per PR + one collapsed residue panel). */}
       <MergePipeline />
-
-      {/* Directly under the hero rather than one disclosure away: "main is red"
-          and "this PR's checks are failing" are the two most common answers to
-          the question the hero asks, so the evidence sits with the symptom. */}
-      <CiStatusPanel />
     </div>
   );
 }

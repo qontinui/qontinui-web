@@ -1,7 +1,8 @@
 "use client";
 
 /**
- * The `/admin/coord/plans` health strip, derived.
+ * The `/admin/coord/work-units` (and `/admin/coord/spawn`) health strip,
+ * derived.
  *
  * Split out of `page.tsx` because a Next.js App Router page module may export
  * NOTHING but its default and the framework's own reserved names — an extra
@@ -23,6 +24,29 @@ import {
 import { describePlanStatus } from "@/components/admin/coord/planStatus";
 import type { CoordPlanRow } from "@/components/admin/coord/planStatus";
 
+/**
+ * What ONE row is, on the surface calling this deriver.
+ *
+ * Two routes share this strip and they are no longer two views of one
+ * population: `/admin/coord/spawn` lists authored plans (it still excludes
+ * `shepherd-*` at the wire), while `/admin/coord/work-units` lists coord's
+ * work units INCLUDING the merge escalations. A badge reading `plans 500` over
+ * a window that is 39% coord's own escalation units is the same class of
+ * mislabel Phase 3 moved the route to fix, one level down — so the noun is the
+ * caller's to state. The default keeps `/spawn`'s wording byte-identical.
+ */
+export interface PlansHealthNoun {
+  one: string;
+  many: string;
+}
+
+const DEFAULT_NOUN: PlansHealthNoun = { one: "plan", many: "plans" };
+
+/** Sentence-cased for a headline. Both nouns here are ASCII lower-case. */
+function capitalize(word: string): string {
+  return word.charAt(0).toUpperCase() + word.slice(1);
+}
+
 export interface PlansHealth {
   level: HealthStripLevel;
   headline: string;
@@ -42,10 +66,40 @@ export interface PlansHealth {
  * than "give it a label". `coord_work_unit_list`'s own `exclude_slug_prefix`
  * doc names shepherd rows for exactly this reason, and the web proxy already
  * forwards the parameter end-to-end (`operations.py` `list_coord_plans`).
- * Shared here because `/plans` and `/spawn` both fetch this list and both
- * read `derivePlansHealth` off it.
+ * Shared here because `/admin/coord/work-units` and `/admin/coord/spawn`
+ * both fetch this list and both read `derivePlansHealth` off it. On
+ * `/work-units` the exclusion is a CONTROL rather than a constant — see
+ * {@link SHEPHERD_FILTERS} — and `/spawn` still applies it unconditionally.
  */
 export const SHEPHERD_SLUG_PREFIX = "shepherd-";
+
+/**
+ * The `shepherd-*` control on `/admin/coord/work-units`, and why its default
+ * is **include**.
+ *
+ * While this route was called `/admin/coord/plans` the exclusion above was a
+ * hard-coded query parameter, which was right: a shepherd unit is not a plan.
+ * Phase 3 of plan `2026-09-20-the-operator-plans-page-reads-the-wrong-store`
+ * moved the route to `/admin/coord/work-units`, and on a page whose subject IS
+ * coord's work units — merge-escalation triage above all — carrying the
+ * exclusion along would have left that population (measured 1,264 rows on
+ * 2026-09-20, 39% of `coord.work_units`) with **no consumer on either page**:
+ * the new `/admin/coord/plans` reads the plan-library corpus and never sees
+ * them at all. That is the `capability-ships-enabled` failure the plan opens by
+ * naming, and a triage page that cannot see the escalations it exists to triage
+ * is a thin shim.
+ *
+ * So the exclusion became a control that defaults to INCLUDED. It stays
+ * SERVER-side (`?exclude_slug_prefix=`) — `include` sends the parameter not at
+ * all, `exclude` sends {@link SHEPHERD_SLUG_PREFIX} — so switching re-asks
+ * coord rather than filtering the fetched window.
+ */
+export type ShepherdFilter = "include" | "exclude";
+
+export const SHEPHERD_FILTERS: { value: ShepherdFilter; label: string }[] = [
+  { value: "include", label: "Incl. merge escalations" },
+  { value: "exclude", label: "Excl. merge escalations" },
+];
 
 /**
  * The page's health, derived from the rows already on it (R1) — never a second
@@ -84,11 +138,14 @@ export const SHEPHERD_SLUG_PREFIX = "shepherd-";
  * or not the window refreshed.
  *
  * @param readFailed the page's last fetch threw.
+ * @param noun what one row IS on the calling surface — see
+ *   {@link PlansHealthNoun}. Defaults to plan/plans.
  */
 export function derivePlansHealth(
   plans: CoordPlanRow[],
   loaded: boolean,
-  readFailed = false
+  readFailed = false,
+  noun: PlansHealthNoun = DEFAULT_NOUN
 ): PlansHealth {
   if (readIsUnknown(loaded, readFailed)) {
     return {
@@ -96,7 +153,7 @@ export function derivePlansHealth(
       headline: "Could not read the work-unit list — unknown, not empty",
       detail: UNKNOWN_COUNTS_DETAIL,
       badges: [
-        { key: "total", label: <>plans –</>, tone: "muted" },
+        { key: "total", label: <>{noun.many} –</>, tone: "muted" },
         { key: "blocked", label: <>blocked –</>, tone: "muted" },
       ],
     };
@@ -108,7 +165,7 @@ export function derivePlansHealth(
       headline: "Waiting for coord…",
       detail: "counts appear once the work-unit list arrives",
       badges: [
-        { key: "total", label: <>plans –</>, tone: "muted" },
+        { key: "total", label: <>{noun.many} –</>, tone: "muted" },
         { key: "blocked", label: <>blocked –</>, tone: "muted" },
       ],
     };
@@ -152,8 +209,8 @@ export function derivePlansHealth(
   const headline =
     blocked > 0
       ? blocked === 1
-        ? "A plan is blocked on a human"
-        : "Plans are blocked on a human"
+        ? `A ${noun.one} is blocked on a human`
+        : `${capitalize(noun.many)} are blocked on a human`
       : readFailed
         ? // Names the read that has not come back, and stops there. "No plan
           // was blocked at the last good read" would be the tempting phrasing
@@ -163,7 +220,7 @@ export function derivePlansHealth(
           "Last refresh failed — these counts are not current"
         : plans.length === 0
           ? "No work units in this window"
-          : "No plan is blocked";
+          : `No ${noun.one} is blocked`;
   const window =
     unrecognised > 0
       ? "A status this build has no label for is shown verbatim."
@@ -183,7 +240,15 @@ export function derivePlansHealth(
     headline,
     detail,
     badges: [
-      { key: "total", label: <>plans {plans.length}</>, tone: "muted" },
+      {
+        key: "total",
+        label: (
+          <>
+            {noun.many} {plans.length}
+          </>
+        ),
+        tone: "muted",
+      },
       {
         key: "blocked",
         label: <>blocked {blocked}</>,

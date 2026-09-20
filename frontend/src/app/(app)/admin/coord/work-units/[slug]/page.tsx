@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * /admin/coord/plans/[slug] — single work-unit view.
+ * /admin/coord/work-units/[slug] — single work-unit view.
  *
  * Plan `2026-05-19-coordinator-production-readiness.md` Phase 2 (Wave 2);
  * repointed onto the generic work-unit primitive
@@ -38,7 +38,7 @@
  * - **R9** — three `<Card><CardHeader><CardTitle>` section wrappers are gone;
  *   each cost ~72px of header to label a section a heading labels as well.
  * - **R3/R4/R8** — the work-unit's status is now the SAME `<StatusBadge>`
- *   `/plans` renders (`derivePlanStatus`), with the matching left-edge accent.
+ *   `/work-units` renders (`derivePlanStatus`), with the matching left-edge accent.
  *   It was a bare `<Badge variant="outline">{plan.status}</Badge>` printing the
  *   raw coord enum — R8's "no internal vocabulary on a primary surface", and
  *   it also meant a `blocked` work unit read exactly like a `draft` one here
@@ -124,7 +124,7 @@ interface CoordWorkUnit {
    * coord `work_units.current_phase`. Omitted from this interface until
    * 2026-08-29, which silently disarmed `derivePlanStatus`'s `reason` — it
    * reads exactly this field, so the badge could never produce its "phase N"
-   * subtitle here even though `/plans` and `/spawn` show it for the same work
+   * subtitle here even though `/work-units` and `/spawn` show it for the same work
    * unit. The deriver was doing its job; it was being handed a type that had
    * thrown the input away.
    */
@@ -328,7 +328,7 @@ export default function CoordPlanDetailPage() {
         <Button
           variant="ghost"
           size="sm"
-          onClick={() => router.push("/admin/coord/plans")}
+          onClick={() => router.push("/admin/coord/work-units")}
           data-testid="coord-plan-back-btn"
         >
           <ArrowLeft className="h-3.5 w-3.5 mr-1" />
@@ -347,7 +347,7 @@ export default function CoordPlanDetailPage() {
       ) : plan ? (
         <>
           {/* R9/R3/R4 — one bordered strip carrying the same status badge and
-              left-edge accent `/plans` renders, not a Card with a header. */}
+              left-edge accent `/work-units` renders, not a Card with a header. */}
           <div
             data-testid="coord-plan-meta"
             {...rowAccentProps(
@@ -369,7 +369,7 @@ export default function CoordPlanDetailPage() {
               {/* Each time is prefixed with its own word because three sit on
                   one line and a bare "3d ago" would not say which. An absent
                   authoring date is stated, not filled from `created_at`.
-                  The date is the same EFFECTIVE one `/plans` shows — slug
+                  The date is the same EFFECTIVE one `/work-units` shows — slug
                   prefix first, coord's column second (`planAuthoredAt`) — so
                   a dated slug whose column is NULL does not read "authored
                   not recorded" here under a list row that shows its date. */}
