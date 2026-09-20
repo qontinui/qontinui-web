@@ -82,8 +82,10 @@ What this revision adds
    ``Presorted Key`` is ``derive_checked_at``, i.e. only rows sharing a
    timestamp are sorted. What the index buys is that the ``LIMIT`` stops early
    instead of ordering the whole eligible set; it is not a no-Sort guarantee,
-   which is why the behaviour test asserts the presorted key rather than the
-   absence of a ``Sort`` node.
+   and Incremental-Sort-versus-Sort over the same scan is a cost decision
+   rather than a property of this DDL — which is why the behaviour test
+   requires only that the statement ride this index, and checks the presorted
+   key only on the arm where the planner did choose ``Incremental Sort``.
 
    **The population is the CITED non-terminal units, not the table.** The
    ``EXISTS`` on ``coord.work_unit_pr_citations`` is a safety property of the
@@ -223,10 +225,12 @@ def downgrade() -> None:
     lock-taking ``ALTER`` runs in the migration's own transaction, immediately
     after the ``SET LOCAL lock_timeout`` that bounds it, and the
     ``CONCURRENTLY`` work runs last. Putting the ``autocommit_block`` first
-    would commit that transaction and discard the ``SET LOCAL`` — and under a
-    non-transactional configuration the later ``SET LOCAL`` is a no-op warning
-    — leaving ``DROP COLUMN`` to queue an unbounded ``ACCESS EXCLUSIVE``
-    request in front of every reader of a continuously-written table.
+    would commit that transaction and discard the ``SET LOCAL``, leaving
+    ``DROP COLUMN`` to queue an unbounded ``ACCESS EXCLUSIVE`` request in front
+    of every reader of a continuously-written table. What the ordering buys is
+    therefore the lock bound in the TRANSACTIONAL (default) case only: run
+    non-transactionally, ``SET LOCAL`` is a no-op in either order and the bound
+    has to come from the server's own ``lock_timeout``.
 
     Dropping the column takes ``ix_coord_work_units_derive_checked_at`` with it
     (an index on a dropped column cannot survive), under the ``ACCESS
