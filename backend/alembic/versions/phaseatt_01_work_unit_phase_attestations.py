@@ -1,7 +1,7 @@
 """coord.work_unit_phase_attestations — evidence for a phase that ships no PR
 
 Revision ID: phaseatt_01
-Revises: contspawn_01_gates_continuation_spawn_attempts
+Revises: merge_20260920_ci_contspawn_pdpub_rsslocal
 Create Date: 2026-09-20
 
 Phase 2 of plan
@@ -180,28 +180,27 @@ by a ``coord_query_schema_object`` read of the table, not by the merge."*
 ``down_revision``
 =================
 
-Pointed at a live head as of authoring. Measured against qontinui-web
-``origin/main`` ``c514c36b2`` on 2026-09-20: **581 revisions and FOUR live
-heads** — ``ci_job_mem_01``, ``contspawn_01_gates_continuation_spawn_attempts``,
-``pdpub_03`` and ``rsslocal_02_drop_coord_tables``. A head is therefore a
-CHOICE here rather than a lookup, and ``contspawn_01_gates_continuation_spawn_attempts``
-is the one taken: it is the newest of the four (2026-09-20) and the only one in
-the same ``coord.*``-schema lineage as this revision, so the chain reads in the
-order the work happened.
+**Re-pointed at the merged head at land time**, which is this directory's
+convention rather than an afterthought. It was authored against qontinui-web
+``origin/main`` ``c514c36b2``, where the chain carried **581 revisions and FOUR
+live heads** — ``ci_job_mem_01``,
+``contspawn_01_gates_continuation_spawn_attempts``, ``pdpub_03`` and
+``rsslocal_02_drop_coord_tables`` — so a head was a CHOICE there rather than a
+lookup, and ``contspawn_01_gates_continuation_spawn_attempts`` was the one
+taken (newest, and the only one in this revision's own ``coord.*`` lineage).
+Resolving that fork was never this revision's job: qontinui-web #1430 owned it
+and landed the merge revision ``merge_20260920_ci_contspawn_pdpub_rsslocal``.
 
-Chaining off one existing head keeps the head COUNT at four; it does not add a
-fifth. Resolving the existing fork is **not this revision's job** — qontinui-web
-#1430 (``merge_20260920_ci_contspawn_pdpub_rsslocal``) owns it, and a second
-merge revision authored here would be permanent bookkeeping added for nothing.
+Re-measured after #1430 landed, at ``origin/main`` ``ce5fe2356``: **582
+revisions, exactly ONE head**, that merge revision — which is now this
+revision's parent. Chaining off it keeps the count at one.
 
-Per this directory's convention the ``down_revision`` above is **RE-POINTED at
-the merged head at land time** rather than hand-ordered now; once #1430 lands,
-the correct parent is its merge revision. The re-point edits two places — the
-token below and the ``Revises:`` line in this docstring — and deliberately NOT
-a third: this revision's test asserts the chain is WELL-FORMED (one parent, and
-that parent is a real sibling) without pinning WHICH revision it is, so a
-re-point never touches the test. A test that pinned the parent would fail on
-every land-time re-point and wedge coord's rebase.
+The re-point edited two places and deliberately NOT a third: the token below
+and the ``Revises:`` line in this docstring. This revision's test asserts the
+chain is WELL-FORMED (exactly one parent, and that parent is a real sibling)
+without pinning WHICH revision it is, so a re-point never touches the test. A
+test that pinned the parent would fail on every land-time re-point and wedge
+coord's rebase.
 """
 
 from collections.abc import Sequence
@@ -210,9 +209,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "phaseatt_01"
-down_revision: str | Sequence[str] | None = (
-    "contspawn_01_gates_continuation_spawn_attempts"
-)
+down_revision: str | Sequence[str] | None = "merge_20260920_ci_contspawn_pdpub_rsslocal"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
