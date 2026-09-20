@@ -105,7 +105,7 @@ from tests._alembic_harness import (
 # prefix says nothing about the chain edge, and on a busy repo that head moves:
 # read `down_revision` rather than inferring it, and re-point both together.
 _REVISION_ID = "ci_job_mem_01"
-_PARENT_REVISION_ID = "notif_gate_action_03_drop_enum_value"
+_PARENT_REVISION_ID = "plan_library_07_plan_difficulty"
 _REVISION_FILENAME = "ci_job_mem_01_memory_headroom_columns.py"
 
 _TABLE = "ci_job_observations"

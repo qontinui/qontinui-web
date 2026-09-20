@@ -1,7 +1,7 @@
 """coord.ci_job_observations — the memory-headroom columns for a CI job
 
 Revision ID: ci_job_mem_01
-Revises: notif_gate_action_03_drop_enum_value
+Revises: plan_library_07_plan_difficulty
 Create Date: 2026-09-20
 
 Phase 1 of plan
@@ -146,10 +146,17 @@ Head choice
 ===========
 
 ``down_revision`` is the repo's **LOCAL single alembic head at authoring
-time** — ``notif_gate_action_03_drop_enum_value``, derived on ``origin/main``
-at ``83c9ea5f7`` by parsing every file under ``backend/alembic/versions/`` for
-its ``revision`` and every ``down_revision`` edge and taking the revision no
-file names as a parent (576 revisions, exactly 1 head). The family name carries
+time** — ``plan_library_07_plan_difficulty``, derived on ``origin/main`` at
+``84c3b9dcb`` by parsing every file under ``backend/alembic/versions/`` for its
+``revision`` and every ``down_revision`` edge and taking the revision no file
+names as a parent (577 revisions, exactly 1 head).
+
+That head ALREADY MOVED ONCE during this change, which is the rule below
+working rather than an anomaly: it was authored against
+``notif_gate_action_03_drop_enum_value`` at ``83c9ea5f7``, and
+``plan_library_07_plan_difficulty`` landed while the work was in review. The
+fork was caught here — by re-deriving the head before pushing — rather than by
+CI, which is the cheaper of the two places to catch it. The family name carries
 no lineage; the edge does. On a busy repo that head MOVES, so if another
 alembic PR lands first this is re-pointed at the new head — and
 ``alembic-heads-pr`` (a required check) is what catches the fork rather than a
@@ -206,7 +213,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "ci_job_mem_01"
-down_revision: str | Sequence[str] | None = "notif_gate_action_03_drop_enum_value"
+down_revision: str | Sequence[str] | None = "plan_library_07_plan_difficulty"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
