@@ -11,6 +11,7 @@
  */
 
 import Link from "next/link";
+import { useEffect, useRef, useState } from "react";
 import { Clock3 } from "lucide-react";
 import { usePathname } from "next/navigation";
 import { useAuth } from "@/contexts/auth-context";
@@ -32,6 +33,31 @@ export function OverviewShell({ children }: { children: React.ReactNode }) {
     error: tenantsError,
   } = useTenant();
 
+  // The sub-navigation scrolls sideways rather than wrapping, which on a
+  // phone leaves sections off the right edge with nothing saying so. A fade
+  // there is that signal — shown only while something IS cut off, so it never
+  // dims the last tab on a screen wide enough to hold them all.
+  const subnavRef = useRef<HTMLElement | null>(null);
+  const [subnavHasMore, setSubnavHasMore] = useState(false);
+
+  useEffect(() => {
+    const nav = subnavRef.current;
+    if (!nav) return;
+    const update = () => {
+      // 1px of slack: a fractional layout width otherwise leaves the fade on
+      // permanently at the scroll end.
+      setSubnavHasMore(nav.scrollLeft + nav.clientWidth < nav.scrollWidth - 1);
+    };
+    update();
+    nav.addEventListener("scroll", update, { passive: true });
+    const observer = new ResizeObserver(update);
+    observer.observe(nav);
+    return () => {
+      nav.removeEventListener("scroll", update);
+      observer.disconnect();
+    };
+  }, []);
+
   if (!user) return null;
 
   const current = findOverviewSection(pathname);
@@ -50,7 +76,9 @@ export function OverviewShell({ children }: { children: React.ReactNode }) {
           {current?.label ?? "Overview"}
         </p>
         <h1
-          className="mt-1 font-[family-name:var(--font-overview-serif)] text-3xl leading-tight tracking-[-0.01em] text-foreground sm:text-4xl"
+          // Steps down below `sm`: at 390px a long project name in `text-3xl`
+          // wrapped to three lines and pushed the sub-navigation off screen.
+          className="mt-1 font-[family-name:var(--font-overview-serif)] text-2xl leading-tight tracking-[-0.01em] text-foreground sm:text-4xl"
           data-ui-bridge-id="overview.header.project-name"
         >
           {project?.name ??
@@ -71,44 +99,54 @@ export function OverviewShell({ children }: { children: React.ReactNode }) {
           </p>
         )}
 
-        <nav
-          aria-label="Overview pages"
-          className="-mb-px mt-5 flex gap-1 overflow-x-auto"
-          data-ui-bridge-id="overview.subnav"
-        >
-          {OVERVIEW_SECTIONS.map((section) => {
-            const active = current?.id === section.id;
-            return (
-              <Link
-                key={section.id}
-                href={section.route}
-                aria-current={active ? "page" : undefined}
-                title={
-                  section.available
-                    ? section.description
-                    : `${section.description} (not available yet)`
-                }
-                data-ui-bridge-id={`overview.subnav.${section.id}`}
-                className={cn(
-                  "inline-flex items-center gap-1 whitespace-nowrap border-b-2 px-2.5 pb-2.5 pt-1 text-sm transition-colors",
-                  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background rounded-t-sm",
-                  active
-                    ? "border-primary text-foreground"
-                    : "border-transparent text-muted-foreground hover:text-foreground"
-                )}
-              >
-                {section.label}
-                {!section.available && (
-                  <>
-                    {/* A shape, not only a colour, marks an unbuilt page. */}
-                    <Clock3 className="size-3 opacity-70" aria-hidden />
-                    <span className="sr-only">(not available yet)</span>
-                  </>
-                )}
-              </Link>
-            );
-          })}
-        </nav>
+        <div className="relative -mb-px mt-5">
+          <nav
+            ref={subnavRef}
+            aria-label="Overview pages"
+            className="flex gap-1 overflow-x-auto"
+            data-ui-bridge-id="overview.subnav"
+          >
+            {OVERVIEW_SECTIONS.map((section) => {
+              const active = current?.id === section.id;
+              return (
+                <Link
+                  key={section.id}
+                  href={section.route}
+                  aria-current={active ? "page" : undefined}
+                  title={
+                    section.available
+                      ? section.description
+                      : `${section.description} (not available yet)`
+                  }
+                  data-ui-bridge-id={`overview.subnav.${section.id}`}
+                  className={cn(
+                    "inline-flex items-center gap-1 whitespace-nowrap border-b-2 px-2.5 pb-2.5 pt-1 text-sm transition-colors",
+                    "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background rounded-t-sm",
+                    active
+                      ? "border-primary text-foreground"
+                      : "border-transparent text-muted-foreground hover:text-foreground"
+                  )}
+                >
+                  {section.label}
+                  {!section.available && (
+                    <>
+                      {/* A shape, not only a colour, marks an unbuilt page. */}
+                      <Clock3 className="size-3 opacity-70" aria-hidden />
+                      <span className="sr-only">(not available yet)</span>
+                    </>
+                  )}
+                </Link>
+              );
+            })}
+          </nav>
+          <div
+            aria-hidden
+            className={cn(
+              "pointer-events-none absolute inset-y-0 right-0 w-10 bg-gradient-to-l from-background to-transparent transition-opacity motion-reduce:transition-none",
+              subnavHasMore ? "opacity-100" : "opacity-0"
+            )}
+          />
+        </div>
       </header>
 
       <ScrollArea className="flex-1 min-h-0">
