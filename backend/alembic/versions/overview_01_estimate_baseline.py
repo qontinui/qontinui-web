@@ -1,7 +1,7 @@
 """overview.* — the project estimate (the baseline): phases, tasks, roles, tiers
 
 Revision ID: overview_01_estimate_baseline
-Revises: notif_gate_action_03_drop_enum_value
+Revises: phaseatt_01
 Create Date: 2026-09-20
 
 Phase 2 of ``2026-09-19-project-overview-for-business-leaders``. Ten tables in
@@ -105,7 +105,11 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "overview_01_estimate_baseline"
-down_revision: str = "notif_gate_action_03_drop_enum_value"
+# Re-pointed at the tip as `main` moved: this revision creates a schema of
+# its own and reads nothing from the chain, so ordering is all that changes,
+# and chaining off the single existing head is what keeps the count at one
+# without a merge revision.
+down_revision: str = "phaseatt_01"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
