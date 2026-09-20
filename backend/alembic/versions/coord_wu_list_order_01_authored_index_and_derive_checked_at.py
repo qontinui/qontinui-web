@@ -1,7 +1,7 @@
 """coord.work_units — authored-order list index, plus derive_checked_at for the derive rotation
 
 Revision ID: coord_wu_list_order_01
-Revises: agent_questions_alert_episode_01
+Revises: notif_gate_action_03_drop_enum_value
 Create Date: 2026-09-19
 
 Phases 1 and 3 (their alembic halves only) of plan
@@ -149,9 +149,16 @@ only ALTERs it and is not added to any ``ALEMBIC_OWNED_TABLES`` list.
 created (in that order — see its own docstring); ``authored_at``
 (``coord_wu_authored_at_01``) is untouched.
 
-``down_revision`` chains off the single live head at authoring time
-(``agent_questions_alert_episode_01``, per ``scripts/ci/count_alembic_heads.py``
-on ``7a5a6f07f``); coord re-points it at land time if the head has moved.
+``down_revision`` chains off the single live head on ``origin/main``. It was
+authored against ``agent_questions_alert_episode_01`` (the single head per
+``scripts/ci/count_alembic_heads.py`` on ``7a5a6f07f``) and RE-POINTED onto
+``notif_gate_action_03_drop_enum_value`` once that landed while this PR was
+open — a re-point, not an ``alembic merge``, because the forked revision here
+had not landed and so leaves nothing behind. The re-point had to happen on the
+branch rather than at coord's land-time re-point, because the blocking
+``alembic-heads-pr`` gate fails the PR before it can reach the merge train.
+Three sites move together: this line, the ``Revises:`` header above, and
+``_PARENT_REVISION_ID`` in ``backend/tests/test_coord_wu_list_order_01_migration.py``.
 """
 
 from collections.abc import Sequence
@@ -160,7 +167,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "coord_wu_list_order_01"
-down_revision: str | Sequence[str] | None = "agent_questions_alert_episode_01"
+down_revision: str | Sequence[str] | None = "notif_gate_action_03_drop_enum_value"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

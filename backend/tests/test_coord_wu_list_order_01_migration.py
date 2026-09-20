@@ -113,7 +113,7 @@ from tests._alembic_harness import (
 )
 
 _REVISION_ID = "coord_wu_list_order_01"
-_PARENT_REVISION_ID = "agent_questions_alert_episode_01"
+_PARENT_REVISION_ID = "notif_gate_action_03_drop_enum_value"
 _REVISION_FILENAME = "coord_wu_list_order_01_authored_index_and_derive_checked_at.py"
 
 _IX_AUTHORED = "ix_coord_work_units_tenant_authored_slug"
