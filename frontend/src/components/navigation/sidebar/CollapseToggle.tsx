@@ -32,6 +32,7 @@ export function CollapseToggle({
             type="button"
             onClick={onToggle}
             aria-label={collapsedLabel}
+            data-sidebar-collapse-toggle=""
             className="flex size-10 items-center justify-center rounded-md text-text-muted transition-colors hover:bg-surface-hover hover:text-text-primary motion-reduce:transition-none"
           >
             <PanelLeftOpen className="size-4" aria-hidden />
@@ -46,6 +47,7 @@ export function CollapseToggle({
     <button
       type="button"
       onClick={onToggle}
+      data-sidebar-collapse-toggle=""
       className="flex h-8 w-full items-center justify-center gap-2 rounded-md text-text-muted transition-colors hover:bg-surface-hover hover:text-text-primary motion-reduce:transition-none"
     >
       <PanelLeftClose className="size-3.5" aria-hidden />

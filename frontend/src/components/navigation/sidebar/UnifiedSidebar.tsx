@@ -53,8 +53,14 @@ const UnifiedSidebarContent: React.FC<UnifiedSidebarProps> = ({
   projectId: propProjectId,
 }) => {
   const { user, logout } = useAuth();
-  const { isCollapsed, setIsCollapsed, layout, drawerOpen, setDrawerOpen } =
-    useSidebar();
+  const {
+    isCollapsed,
+    setIsCollapsed,
+    layout,
+    drawerOpen,
+    setDrawerOpen,
+    menuButtonRef,
+  } = useSidebar();
   const { mode } = useProductMode();
   const router = useRouter();
 
@@ -124,6 +130,26 @@ const UnifiedSidebarContent: React.FC<UnifiedSidebarProps> = ({
   // one of these two containers — see `SidebarDrawer`'s doc block for why it
   // is moved rather than duplicated.
   const inDrawer = drawerOpen && !isDesktop;
+
+  const inlineRef = React.useRef<HTMLElement | null>(null);
+  /**
+   * Resolved when the drawer closes, not before — the tablet target does not
+   * exist while the drawer is open. Phone: the top bar's menu button, which
+   * stays mounted throughout. Tablet: the rail's collapse toggle, which is
+   * the control that opened the drawer and which React has already re-created
+   * by the time Radix asks.
+   */
+  const getRestoreFocusTarget = useCallback(() => {
+    const menu = menuButtonRef.current;
+    // `getClientRects()` rather than `offsetParent`, which is null for a
+    // fixed-position element even when it is on screen.
+    if (menu && menu.getClientRects().length > 0) return menu;
+    return (
+      inlineRef.current?.querySelector<HTMLElement>(
+        "[data-sidebar-collapse-toggle]"
+      ) ?? null
+    );
+  }, [menuButtonRef]);
   // The drawer always shows the full menu, whatever the inline sidebar is.
   const bodyCollapsed = inDrawer ? false : isCollapsed;
 
@@ -190,11 +216,17 @@ const UnifiedSidebarContent: React.FC<UnifiedSidebarProps> = ({
   return (
     <TooltipProvider delayDuration={0}>
       {inDrawer ? (
-        <SidebarDrawer open onOpenChange={setDrawerOpen} className={className}>
+        <SidebarDrawer
+          open
+          onOpenChange={setDrawerOpen}
+          className={className}
+          getRestoreFocusTarget={getRestoreFocusTarget}
+        >
           {body}
         </SidebarDrawer>
       ) : (
         <aside
+          ref={inlineRef}
           data-sidebar="true"
           data-tutorial-id="sidebar-main"
           className={cn(

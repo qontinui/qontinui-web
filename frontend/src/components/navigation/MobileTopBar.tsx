@@ -22,7 +22,7 @@ import { useTenant } from "@/contexts/tenant-context";
 import { SIDEBAR_DRAWER_ID } from "./sidebar/SidebarDrawer";
 
 export function MobileTopBar() {
-  const { drawerOpen, setDrawerOpen } = useSidebar();
+  const { drawerOpen, setDrawerOpen, menuButtonRef } = useSidebar();
   const { tenants, activeTenantId } = useTenant();
 
   const project = tenants.find((t) => t.id === activeTenantId);
@@ -33,6 +33,7 @@ export function MobileTopBar() {
       className="flex h-11 shrink-0 items-center gap-2 border-b border-border-subtle bg-surface-canvas pr-3 md:hidden"
     >
       <button
+        ref={menuButtonRef}
         type="button"
         onClick={() => setDrawerOpen(true)}
         aria-label="Open menu"
