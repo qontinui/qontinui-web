@@ -124,13 +124,23 @@ function nextDay(date: Date, skipWeekends: boolean): Date {
   return next;
 }
 
+/**
+ * The longest duration this will lay out — about twenty years of working
+ * days. This runs in the reader's browser on whatever they paste, and the
+ * layout below walks a day at a time (it has to: weekends are skipped), so an
+ * unbounded `999999999d` would freeze the tab rather than produce a wrong
+ * date. A task longer than this is a typo, and is reported as one.
+ */
+const MAX_DURATION_DAYS = 7500;
+
 /** `start` advanced by `days` INCLUSIVE days: 1 day ends where it starts. */
 function addDays(start: Date, days: number, skipWeekends: boolean): Date {
   let cursor = new Date(start.getTime());
   if (skipWeekends) {
     while (isWeekend(cursor)) cursor = new Date(cursor.getTime() + DAY_MS);
   }
-  let remaining = Math.max(1, Math.round(days)) - 1;
+  let remaining =
+    Math.min(Math.max(1, Math.round(days)), MAX_DURATION_DAYS) - 1;
   while (remaining > 0) {
     cursor = nextDay(cursor, skipWeekends);
     remaining -= 1;
@@ -143,13 +153,26 @@ interface DurationResult {
   message?: string;
 }
 
-function durationInDays(token: string, excludesWeekends: boolean): DurationResult {
+function durationInDays(
+  token: string,
+  excludesWeekends: boolean
+): DurationResult {
   const match = DURATION.exec(token);
   if (!match) return { days: null };
   const amount = Number(match[1] ?? "0");
   const unit = (match[2] ?? "").toLowerCase();
-  if (unit === "d") return { days: amount };
-  if (unit === "w") return { days: amount * (excludesWeekends ? 5 : 7) };
+  const tooLong = (days: number): DurationResult | null =>
+    days > MAX_DURATION_DAYS
+      ? {
+          days: null,
+          message: `a duration of "${token}" is longer than this import will lay out, so the task was left out`,
+        }
+      : null;
+  if (unit === "d") return tooLong(amount) ?? { days: amount };
+  if (unit === "w") {
+    const days = amount * (excludesWeekends ? 5 : 7);
+    return tooLong(days) ?? { days };
+  }
   if (unit === "h" || unit === "m" || unit === "s" || unit === "ms") {
     // Shorter than a day: the estimate's grain is a day, so it becomes one.
     return {

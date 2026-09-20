@@ -198,6 +198,36 @@ gantt
     expect(result.issues[0].message).toContain("days or weeks");
   });
 
+  it("refuses an absurd duration rather than freezing the tab laying it out", () => {
+    // The layout walks a day at a time, because weekends are skipped. This
+    // runs in the reader's browser on whatever they paste, so the bound is
+    // what stops a typo from hanging the page.
+    const started = Date.now();
+    const result = parseMermaidGantt(`
+gantt
+    dateFormat YYYY-MM-DD
+    excludes weekends
+    section P One
+    Work :t1, 2026-01-05, 999999999d
+`);
+    expect(Date.now() - started).toBeLessThan(2000);
+    expect(result.taskCount).toBe(0);
+    expect(result.issues[0]?.message).toContain("longer than this import");
+  });
+
+  it("still lays out a long but plausible duration", () => {
+    // 200w with weekends counted is 1400 calendar days, inclusive of the
+    // start: 2026-01-05 + 1399 days.
+    const result = parseMermaidGantt(`
+gantt
+    dateFormat YYYY-MM-DD
+    section P One
+    Work :t1, 2026-01-05, 200w
+`);
+    expect(result.taskCount).toBe(1);
+    expect(result.phases[0]?.tasks[0]?.plannedEnd).toBe("2029-11-04");
+  });
+
   it("keeps a task written before any section, and says where it put it", () => {
     const result = parseMermaidGantt(`
 gantt
@@ -219,9 +249,7 @@ gantt
     More :t2, 2026-01-12, 3d
 `);
     expect(result.phases.map((p) => p.code)).toEqual(["A1", "A1-2"]);
-    expect(
-      result.issues.some((i) => i.message.includes("renamed"))
-    ).toBe(true);
+    expect(result.issues.some((i) => i.message.includes("renamed"))).toBe(true);
   });
 
   it("reports a line that is neither a directive, a section nor a task", () => {
@@ -239,9 +267,14 @@ gantt
 describe("parseMermaidGantt — shapes a real chart uses", () => {
   it("reads a markdown fence around the chart", () => {
     const result = parseMermaidGantt(
-      ["```mermaid", "gantt", "  dateFormat YYYY-MM-DD", "  section P One", "  Work :t1, 2026-01-05, 3d", "```"].join(
-        "\n"
-      )
+      [
+        "```mermaid",
+        "gantt",
+        "  dateFormat YYYY-MM-DD",
+        "  section P One",
+        "  Work :t1, 2026-01-05, 3d",
+        "```",
+      ].join("\n")
     );
     expect(result.taskCount).toBe(1);
   });
