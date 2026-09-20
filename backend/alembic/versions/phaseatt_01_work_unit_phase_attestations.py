@@ -91,7 +91,10 @@ Column by column, and why each is shaped the way it is:
   verb. ``retracted_at IS NULL`` means live; a set value means retracted.
   **A retraction is a column UPDATE on the attestation row, never a DELETE and
   never a second row** — so the history survives, and the correction cannot be
-  defeated by re-inserting the same evidence (see the dedupe index below).
+  defeated by re-inserting the same evidence, which the dedupe index below
+  refuses. ``DELETE`` is not a supported verb and coord issues none; the index
+  guarantees nothing about a row that has been removed, and the dedupe note
+  below says so.
   Shipping the correction verb in the same revision as the store is a hard
   constraint inherited from
   ``2026-09-20-a-recorded-delivery-scope-is-permanent-so-a-mis-declared-phase-is-uncorrectable``
@@ -112,6 +115,15 @@ Indexes
   clears ``retracted_at``, decided by coord, rather than a fresh INSERT that
   quietly routes around the correction.
 
+  Stated precisely, because the weaker claim is the true one: the index blocks
+  a second INSERT only for as long as the retracted row is THERE. A ``DELETE``
+  followed by an ``INSERT`` yields a fresh live attestation with no trace of
+  the retraction, and nothing in this schema forbids a ``DELETE``. What makes
+  that acceptable is the direction rather than the constraint — deleting an
+  attestation REMOVES coverage, so it can never forge ``shipped`` — plus the
+  fact that ``DELETE`` is not a supported verb: the correction verb is the
+  retraction column set, and coord issues no delete against this table.
+
   Honest note on ``NULLS NOT DISTINCT``: all four key columns are ``NOT NULL``
   today, so the clause changes nothing at this moment. It is written anyway
   because it states the intended identity semantics at the one place the
@@ -124,15 +136,39 @@ Indexes
   is.
 
 * ``idx_work_unit_phase_attestations_work_unit`` — plain index on
-  ``(work_unit_id)`` for the per-unit read. That read is the hot path: coord
-  resolves every attestation for a unit on each delivery derivation, and the
-  unique index above cannot serve it as cheaply for the ``retracted_at IS
-  NULL`` scan that follows.
+  ``(work_unit_id)`` for the per-unit read, which coord performs on every
+  delivery derivation. It mirrors ``idx_work_unit_pr_citations_work_unit`` on
+  the sibling table (``coord_workunits_04:105-108``), and being one narrow
+  column it is marginally cheaper to scan and to maintain than the four-column
+  unique index.
 
-No CHECK, no trigger, no partial predicate. ``evidence_kind`` is a vocabulary
-column and the house posture for those in ``coord.*`` is Rust-side enforcement;
-a ``CHECK`` here would make a vocabulary widening a migration ordered ahead of
-the coord deploy that uses it.
+  That is the whole justification, and it is deliberately not a performance
+  claim. The dedupe index LEADS on ``work_unit_id``, so it can serve this
+  lookup on its own; and neither index carries ``retracted_at``, so the
+  ``retracted_at IS NULL`` filter that follows costs the same heap fetch either
+  way. An earlier draft of this paragraph asserted the opposite and was wrong.
+  A partial ``WHERE retracted_at IS NULL`` index would make that filter free,
+  and is deliberately NOT taken: it would contradict the no-partial-predicate
+  posture below for a saving nobody has measured on a table with no rows in it.
+
+No CHECK, no trigger, no partial predicate.
+
+``evidence_kind`` is a vocabulary column, and the house posture for those in
+``coord.*`` is Rust-side enforcement: a ``CHECK`` here would make a vocabulary
+widening a web migration ordered ahead of the coord deploy that uses it.
+
+``phase_index`` carries no ``CHECK (phase_index >= 0)`` either, and that is a
+decision rather than an oversight. The real invariant is not a bound — it is
+*"this index is a member of the unit's DECLARED phase set"*, which lives on
+``coord.work_units.metadata.phases`` and which no column constraint can
+express. Phase 3 must therefore intersect against the declared set anyway
+(``citation_scope_backfill``'s guard 2 is the in-repo precedent), and that
+check strictly subsumes ``>= 0``: index ``99`` on a seven-phase unit is exactly
+as wrong as ``-1``, and only the Rust side can see it. Putting the weaker half
+in the database would duplicate a validation that has to exist in full
+elsewhere, and would answer a caller error with a ``23514`` instead of the
+typed refusal the coord door owes it. Keep the refusal in one place, where it
+can be complete.
 
 Idempotency / authorship posture
 ================================
@@ -240,7 +276,10 @@ def upgrade() -> None:
     # Identity key. Re-attesting the same evidence for the same phase collides
     # with the existing row instead of accumulating a second one, so a
     # retraction (a column UPDATE on this row) cannot be defeated by
-    # re-inserting. NULLS NOT DISTINCT states the intended semantics at the one
+    # re-inserting — for as long as the row is there. DELETE is not a supported
+    # verb and coord issues none; a deleted row is outside this index's reach,
+    # and that direction is safe because deleting coverage cannot forge
+    # shipped. NULLS NOT DISTINCT states the intended semantics at the one
     # place identity is defined and mirrors uq_work_unit_pr_citations_dedupe;
     # every key column is NOT NULL today, so it changes nothing yet. A unique
     # INDEX rather than a constraint so ON CONFLICT can bind to it by name.
@@ -315,7 +354,10 @@ def upgrade() -> None:
         COMMENT ON COLUMN coord.work_unit_phase_attestations.retracted_at IS
         'NULL = live. A retraction sets this column on the existing row — never a '
         'DELETE, never a second row — so the history survives and a re-attest of '
-        'the same evidence cannot route around the correction.'
+        'the same evidence cannot be defeated by re-inserting. DELETE is not a '
+        'supported verb and coord issues none: the dedupe index refuses a second '
+        'INSERT only while the retracted row is there, and a deleted attestation '
+        'simply removes coverage, which cannot forge shipped.'
         """
     )
 

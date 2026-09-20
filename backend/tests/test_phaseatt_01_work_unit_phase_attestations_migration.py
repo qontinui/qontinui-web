@@ -333,8 +333,18 @@ def test_upgrade_ddl_is_idempotent_and_the_dedupe_key_is_the_identity() -> None:
     assert not re.search(r"CREATE\s+TRIGGER", up, re.I), "house convention: no triggers"
     # evidence_kind is a closed vocabulary enforced in Rust, deliberately not by
     # a CHECK — widening it must be a coord deploy, not a web migration ordered
-    # ahead of one.
-    assert not re.search(r"\bCHECK\s*\(", up, re.I), "vocabulary columns carry no CHECK"
+    # ahead of one. That reason is specific to the VOCABULARY column, so this
+    # asserts only what the reason covers: no CHECK mentioning evidence_kind.
+    # It deliberately does not ban every CHECK. A bound that can never widen
+    # (`phase_index >= 0`, say) is a different question with a different answer
+    # — argued in the revision's own docstring, and left to the Rust side
+    # because the real invariant is membership of the declared phase set, which
+    # no column constraint can express — and a later author who changes that
+    # answer should not have to fight this test to do it.
+    for check in re.findall(r"\bCHECK\s*\(([^)]*)\)", up, re.I):
+        assert "evidence_kind" not in check.lower(), (
+            f"evidence_kind carries no CHECK; found CHECK ({check})"
+        )
 
 
 # ---------------------------------------------------------------------------
