@@ -43,8 +43,8 @@ export function EffortByRole({
         className="text-[15px] leading-relaxed text-muted-foreground"
         data-ui-bridge-id="overview.team.effort.empty"
       >
-        No effort has been split across roles yet, so there is nothing to
-        divide up here.
+        No effort has been split across roles yet, so there is nothing to divide
+        up here.
       </p>
     );
   }
@@ -59,7 +59,10 @@ export function EffortByRole({
         <table className="w-full min-w-[32rem] border-collapse text-sm">
           <thead>
             <tr className="border-b border-border text-left">
-              <th scope="col" className="py-2 pr-4 font-medium text-muted-foreground">
+              <th
+                scope="col"
+                className="py-2 pr-4 font-medium text-muted-foreground"
+              >
                 Role
               </th>
               <th
@@ -110,7 +113,10 @@ export function EffortByRole({
           </tbody>
           <tfoot>
             <tr className="border-t border-border">
-              <th scope="row" className="py-2 pr-4 text-left font-medium text-foreground">
+              <th
+                scope="row"
+                className="py-2 pr-4 text-left font-medium text-foreground"
+              >
                 All of our roles
               </th>
               <td

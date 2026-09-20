@@ -34,7 +34,9 @@ export function IssueList({
         <li
           key={`${issue.line}-${index}`}
           className={`text-sm leading-relaxed ${
-            issue.severity === "error" ? "text-destructive" : "text-muted-foreground"
+            issue.severity === "error"
+              ? "text-destructive"
+              : "text-muted-foreground"
           }`}
         >
           {issue.line > 0 && (
@@ -78,7 +80,9 @@ export function PasteBox<T>({
       >
         {label}
       </label>
-      <p className="mt-1 text-sm leading-relaxed text-muted-foreground">{help}</p>
+      <p className="mt-1 text-sm leading-relaxed text-muted-foreground">
+        {help}
+      </p>
       <textarea
         id={`${id}-input`}
         value={text}
@@ -131,7 +135,9 @@ export function PasteBox<T>({
           </p>
         )}
       </div>
-      {outcome && <IssueList issues={outcome.issues} uiBridgeId={`${id}.issues`} />}
+      {outcome && (
+        <IssueList issues={outcome.issues} uiBridgeId={`${id}.issues`} />
+      )}
     </div>
   );
 }

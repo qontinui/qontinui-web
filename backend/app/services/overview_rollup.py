@@ -35,7 +35,7 @@ Three rules it exists to enforce
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import date, datetime, timedelta
+from datetime import date, datetime
 from decimal import ROUND_HALF_UP, Decimal
 from typing import Any
 from uuid import UUID
@@ -126,7 +126,12 @@ def _merged_break_spans(
     )
     merged: list[tuple[date, date]] = []
     for lo, hi in clipped:
-        if merged and lo <= merged[-1][1] + timedelta(days=1):
+        # `<= previous_hi + 1 day` is the adjacency test, spelled as a
+        # subtraction because `date.max + timedelta(days=1)` raises
+        # OverflowError — and `DATE` really does accept 9999-12-31, so two
+        # breaks clipped to the last representable day would turn a read any
+        # tenant member can issue into a 500.
+        if merged and (lo - merged[-1][1]).days <= 1:
             previous_lo, previous_hi = merged[-1]
             merged[-1] = (previous_lo, max(previous_hi, hi))
         else:
@@ -477,7 +482,10 @@ def compute_rollup(
     )
     build_lines = [c for c in cost_lines if c.kind == "build_non_labour"]
     run_lines = [c for c in cost_lines if c.kind == "run_annual"]
-    build_low, build_high, build_currency, build_mixed = _sum_band(build_lines)
+    build = _sum_band(build_lines)
+    build_low, build_high = build.low, build.high
+    build_currency, build_mixed = build.currency, build.mixed
+    build_unpriced = build.unpriced_lines
     if build_mixed:
         unavailable.append(
             Unavailable(
@@ -486,6 +494,17 @@ def compute_rollup(
                 detail=(
                     "Non-labour build items are priced in more than one "
                     "currency, so they have no single total here."
+                ),
+            )
+        )
+    elif build_unpriced:
+        unavailable.append(
+            Unavailable(
+                figure="build_non_labour",
+                reason="cost_line_without_a_low_amount",
+                detail=(
+                    "A non-labour build item carries only an upper figure, so "
+                    "these items have no total. Each one is listed on its own."
                 ),
             )
         )
@@ -499,7 +518,39 @@ def compute_rollup(
     totals_currency: str | None = None
     if can_price:
         totals_currency = labour_currency
-        if build_low is not None and build_currency != labour_currency:
+        # A grand total is only honest when every part of it is IN it. Three
+        # ways that fails, and all three withdraw the total rather than
+        # quietly leaving a part out of it — the defect this guard exists for
+        # was `build_low is not None and …`, which skipped the check exactly
+        # when `_sum_band` had refused to produce a figure, so the mixed
+        # non-labour items were added in as zero.
+        if build_mixed:
+            totals_currency = None
+            unavailable.append(
+                Unavailable(
+                    figure="grand_total",
+                    reason="mixed_currencies",
+                    detail=(
+                        "The non-labour build items are priced in more than "
+                        "one currency, so there is no total to add them to "
+                        "the labour fees in."
+                    ),
+                )
+            )
+        elif build_unpriced:
+            totals_currency = None
+            unavailable.append(
+                Unavailable(
+                    figure="grand_total",
+                    reason="cost_line_without_a_low_amount",
+                    detail=(
+                        "Some non-labour build items carry only an upper "
+                        "figure, so they have no lower bound to add into a "
+                        "total. They are listed on their own instead."
+                    ),
+                )
+            )
+        elif build_low is not None and build_currency != labour_currency:
             totals_currency = None
             unavailable.append(
                 Unavailable(
@@ -513,6 +564,32 @@ def compute_rollup(
                     ),
                 )
             )
+    elif not priced_roles and roles:
+        # Every role is unpriced (typically an estimate that is all
+        # client-side effort). There is no fee — which is not a fee of zero,
+        # and without this the tier rows come back null with nothing anywhere
+        # saying why.
+        unavailable.append(
+            Unavailable(
+                figure="labour_fees",
+                reason="estimate_has_no_priced_role",
+                detail=(
+                    "No role in this estimate has a day rate, so the work has "
+                    "not been priced."
+                ),
+            )
+        )
+    elif not roles:
+        unavailable.append(
+            Unavailable(
+                figure="labour_fees",
+                reason="estimate_has_no_roles",
+                detail=(
+                    "This estimate names no roles yet, so there is nothing to "
+                    "price the work with."
+                ),
+            )
+        )
 
     tier_rows: list[dict] = []
     for key, name, multiplier, is_primary in tiers:
@@ -676,31 +753,53 @@ def _cost_line_row(line: CostLine) -> dict:
     }
 
 
-def _sum_band(
-    lines: list[CostLine],
-) -> tuple[int | None, int | None, str | None, bool]:
-    """Total a set of cost lines. Returns ``(low, high, currency, mixed)``.
+@dataclass(frozen=True)
+class _Band:
+    """A set of cost lines totalled — or the reason they could not be."""
 
-    ``mixed`` is True when the lines name more than one currency, in which
-    case the totals are ``None`` — adding two currencies is not a sum. A line
-    whose ``high`` is absent contributes its ``low`` to both ends, which is
-    what a single-point estimate means.
+    low: int | None
+    high: int | None
+    currency: str | None
+    #: The lines name more than one currency. Adding two currencies is not a
+    #: sum, so both ends are ``None``.
+    mixed: bool
+    #: At least one line carries an amount but no LOW end, so it has no lower
+    #: bound to contribute. Both ends are ``None`` rather than a total that
+    #: quietly excludes it.
+    unpriced_lines: bool
+
+
+def _sum_band(lines: list[CostLine]) -> _Band:
+    """Total a set of cost lines.
+
+    A line whose ``high`` is absent contributes its ``low`` to both ends —
+    that is what a single-point estimate means. A line whose ``LOW`` is
+    absent is the opposite case and is NOT symmetric: it has no lower bound,
+    so it cannot join a low total, and dropping it silently would put a line
+    on the page underneath a total that does not contain it. The whole band
+    is withdrawn instead, and the caller says so.
     """
-    priced = [line for line in lines if line.low_micros is not None]
-    if not priced:
-        return None, None, None, False
-    currencies = {line.currency for line in priced if line.currency}
+    amounts = [
+        line
+        for line in lines
+        if line.low_micros is not None or line.high_micros is not None
+    ]
+    if not amounts:
+        return _Band(None, None, None, False, False)
+    currencies = {line.currency for line in amounts if line.currency}
     if len(currencies) > 1:
-        return None, None, None, True
+        return _Band(None, None, None, True, False)
     currency = next(iter(currencies)) if currencies else None
-    low = sum(int(line.low_micros or 0) for line in priced)
+    if any(line.low_micros is None for line in amounts):
+        return _Band(None, None, currency, False, True)
+    low = sum(int(line.low_micros or 0) for line in amounts)
     high = sum(
         int(
             line.high_micros if line.high_micros is not None else (line.low_micros or 0)
         )
-        for line in priced
+        for line in amounts
     )
-    return low, high, currency, False
+    return _Band(low, high, currency, False, False)
 
 
 def stringify_decimals(value: Any) -> Any:

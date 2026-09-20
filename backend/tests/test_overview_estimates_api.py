@@ -377,6 +377,73 @@ class TestOverviewSchemaBinding:
             "task_efforts",
         }
 
+    async def test_the_models_carry_every_check_the_migration_does(self) -> None:
+        """The test database is built by ``Base.metadata.create_all``, not by
+        alembic (``conftest.py``'s ``test_engine``). So a CHECK that lives
+        only in the migration is enforced in production and enforced NOWHERE
+        in the suite — every test here would pass against a database that
+        cannot reject what production rejects, and the drift would be
+        invisible until deploy.
+
+        This compares the two sets by NAME, which is what makes the model
+        docstrings' repeated "Enforced by ``ck_overview_…``" claims true of
+        the database these tests actually run against.
+        """
+        import re
+        from pathlib import Path
+
+        from sqlalchemy import CheckConstraint
+
+        from app.db.base import Base
+
+        in_models = {
+            constraint.name
+            for name, table in Base.metadata.tables.items()
+            if name.startswith("overview.")
+            for constraint in table.constraints
+            if isinstance(constraint, CheckConstraint) and constraint.name
+        }
+        migration = Path(
+            "alembic/versions/overview_01_estimate_baseline.py"
+        ).read_text()
+        in_migration = set(re.findall(r"CONSTRAINT (ck_overview_\w+)", migration))
+
+        assert in_migration, "the migration's CHECK names could not be read"
+        assert in_models == in_migration, (
+            "model and migration CHECK constraints have drifted — "
+            f"model only: {sorted(in_models - in_migration)}; "
+            f"migration only: {sorted(in_migration - in_models)}"
+        )
+
+    async def test_a_check_constraint_really_bites_in_the_test_database(
+        self, async_db_session: AsyncSession
+    ) -> None:
+        """Names agreeing is necessary, not sufficient — this proves one of
+        them is actually live in the schema the suite runs against."""
+        from sqlalchemy.exc import IntegrityError
+
+        from app.models.overview import Estimate, EstimateRole
+
+        estimate = Estimate(
+            tenant_id=TENANT_A, name="Check bites", purpose="budget", version=1
+        )
+        async_db_session.add(estimate)
+        await async_db_session.flush()
+        # A rate with no currency: an amount whose unit nobody recorded.
+        async_db_session.add(
+            EstimateRole(
+                tenant_id=TENANT_A,
+                estimate_id=estimate.id,
+                code="BE",
+                name="Backend",
+                day_rate_micros=750_000_000,
+                currency=None,
+            )
+        )
+        with pytest.raises(IntegrityError):
+            await async_db_session.flush()
+        await async_db_session.rollback()
+
 
 # ===========================================================================
 # Layer 1 — derived values
@@ -701,6 +768,196 @@ class TestRollupHonesty:
         assert body["money"]["currency"] is None
         assert body["money"]["tiers"][0]["labour_micros"] is None
         assert "mixed_currencies" in {u["reason"] for u in body["unavailable"]}
+
+    async def test_mixed_currency_build_items_withdraw_the_grand_total(
+        self, admin_a: httpx.AsyncClient
+    ) -> None:
+        """A total that silently leaves a known cost out is worse than no
+        total. Both the non-labour band AND the grand total go, and both say
+        why."""
+        estimate = await _create_estimate(admin_a, name="Mixed build")
+        content = {
+            "roles": [
+                {
+                    "code": "BE",
+                    "name": "Backend",
+                    "day_rate_micros": 1_000_000_000,
+                    "currency": "EUR",
+                }
+            ],
+            "phases": [
+                {
+                    "code": "P1",
+                    "name": "One",
+                    "tasks": [
+                        {
+                            "number": "1",
+                            "title": "Work",
+                            "efforts": [
+                                {"role_code": "BE", "planned_person_days": "10"}
+                            ],
+                        }
+                    ],
+                }
+            ],
+            "cost_lines": [
+                {
+                    "kind": "build_non_labour",
+                    "label": "Licences",
+                    "low_micros": 5_000_000_000,
+                    "high_micros": 5_000_000_000,
+                    "currency": "EUR",
+                },
+                {
+                    "kind": "build_non_labour",
+                    "label": "Hardware",
+                    "low_micros": 3_000_000_000,
+                    "high_micros": 3_000_000_000,
+                    "currency": "USD",
+                },
+            ],
+        }
+        assert (
+            await admin_a.put(f"{API}/estimates/{estimate['id']}/content", json=content)
+        ).status_code == 200
+        body = (await admin_a.get(f"{API}/estimates/{estimate['id']}/rollup")).json()
+
+        # The labour fee is still known and still correct.
+        tier = body["money"]["tiers"][0]
+        assert tier["labour_micros"] == 10_000_000_000
+        # The total is WITHDRAWN, not quietly served without the 8,000.
+        assert tier["total_low_micros"] is None
+        assert tier["total_high_micros"] is None
+        assert body["money"]["totals_currency"] is None
+        reasons = {(u["figure"], u["reason"]) for u in body["unavailable"]}
+        assert ("build_non_labour", "mixed_currencies") in reasons
+        assert ("grand_total", "mixed_currencies") in reasons
+
+    async def test_a_cost_line_with_only_an_upper_figure_is_not_dropped(
+        self, admin_a: httpx.AsyncClient
+    ) -> None:
+        """`low=None, high=4000, EUR` is a legal row — the CHECK only ties
+        amounts to a currency. It has no lower bound, so it cannot join a low
+        total; it must not be silently excluded from one either."""
+        estimate = await _create_estimate(admin_a, name="Upper only")
+        content = {
+            "roles": [
+                {
+                    "code": "BE",
+                    "name": "Backend",
+                    "day_rate_micros": 1_000_000_000,
+                    "currency": "EUR",
+                }
+            ],
+            "phases": [
+                {
+                    "code": "P1",
+                    "name": "One",
+                    "tasks": [
+                        {
+                            "number": "1",
+                            "title": "Work",
+                            "efforts": [
+                                {"role_code": "BE", "planned_person_days": "10"}
+                            ],
+                        }
+                    ],
+                }
+            ],
+            "cost_lines": [
+                {
+                    "kind": "build_non_labour",
+                    "label": "Licences",
+                    "high_micros": 4_000_000_000,
+                    "currency": "EUR",
+                }
+            ],
+        }
+        assert (
+            await admin_a.put(f"{API}/estimates/{estimate['id']}/content", json=content)
+        ).status_code == 200
+        body = (await admin_a.get(f"{API}/estimates/{estimate['id']}/rollup")).json()
+
+        assert body["money"]["build_non_labour"]["low_micros"] is None
+        # The line is still SERVED, so the page can list it...
+        assert [
+            line["label"] for line in body["money"]["build_non_labour"]["lines"]
+        ] == ["Licences"]
+        # ...and there is no total for it to sit under unexplained.
+        assert body["money"]["tiers"][0]["total_low_micros"] is None
+        reasons = {u["reason"] for u in body["unavailable"]}
+        assert "cost_line_without_a_low_amount" in reasons
+
+    async def test_an_estimate_with_no_priced_role_says_so(
+        self, admin_a: httpx.AsyncClient
+    ) -> None:
+        """No fee is not a fee of zero, and it is not an unexplained blank
+        either."""
+        estimate = await _create_estimate(admin_a, name="All client side")
+        content = {
+            "roles": [{"code": "CS", "name": "Client sponsor", "client_side": True}],
+            "phases": [
+                {
+                    "code": "P1",
+                    "name": "One",
+                    "tasks": [
+                        {
+                            "number": "1",
+                            "title": "Work",
+                            "efforts": [
+                                {"role_code": "CS", "planned_person_days": "5"}
+                            ],
+                        }
+                    ],
+                }
+            ],
+        }
+        assert (
+            await admin_a.put(f"{API}/estimates/{estimate['id']}/content", json=content)
+        ).status_code == 200
+        body = (await admin_a.get(f"{API}/estimates/{estimate['id']}/rollup")).json()
+        assert body["money"]["tiers"][0]["labour_micros"] is None
+        assert Decimal(body["effort"]["client_side_person_days"]) == Decimal("5.00")
+        reasons = {u["reason"] for u in body["unavailable"]}
+        assert "estimate_has_no_priced_role" in reasons
+
+    async def test_a_break_at_the_end_of_time_does_not_500(
+        self, admin_a: httpx.AsyncClient
+    ) -> None:
+        """`DATE` accepts 9999-12-31, and merging two breaks that both clip to
+        it used to compute `date.max + 1 day` — an OverflowError, which
+        reaches the client as a 500 on a route every tenant member can read."""
+        estimate = await _create_estimate(admin_a, name="End of time")
+        content = {
+            "phases": [
+                {
+                    "code": "P1",
+                    "name": "One",
+                    "planned_start": "9999-01-01",
+                    "planned_end": "9999-12-31",
+                }
+            ],
+            "calendar_breaks": [
+                {
+                    "label": "A",
+                    "start_date": "9999-01-01",
+                    "end_date": "9999-12-31",
+                },
+                {
+                    "label": "B",
+                    "start_date": "9999-06-01",
+                    "end_date": "9999-12-31",
+                },
+            ],
+        }
+        assert (
+            await admin_a.put(f"{API}/estimates/{estimate['id']}/content", json=content)
+        ).status_code == 200
+        response = await admin_a.get(f"{API}/estimates/{estimate['id']}/rollup")
+        assert response.status_code == 200, response.text
+        phase = response.json()["phases"][0]
+        # Every working day of the phase is inside a break.
+        assert Decimal(phase["working_days"]) == Decimal("0.00")
 
     async def test_a_stated_working_week_count_is_reported_beside_the_derived_one(
         self, admin_a: httpx.AsyncClient

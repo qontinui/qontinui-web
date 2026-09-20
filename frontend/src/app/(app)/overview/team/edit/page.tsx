@@ -20,7 +20,7 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { LoadFailure } from "@/components/overview/LoadFailure";
-import { formatDecimal, formatMicros } from "@/components/overview/money";
+import { formatMicros } from "@/components/overview/money";
 import { NotAvailable } from "@/components/overview/UnavailableNotes";
 import { estimateVocabulary } from "@/components/overview/vocabulary";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -51,29 +51,33 @@ import {
 
 const TEAM_ROUTE = "/overview/team";
 
-const PURPOSES: { value: EstimatePurposeOption; label: string; help: string }[] =
-  [
-    {
-      value: "budget",
-      label: "A budget",
-      help: "Money this project is expected to spend. What it actually spends will be tracked against it.",
-    },
-    {
-      value: "comparison",
-      label: "A comparison",
-      help: "What the work would cost delivered conventionally. A baseline to compare against, not money this project will spend.",
-    },
-    {
-      value: "forecast",
-      label: "A forecast",
-      help: "A projection of the likely cost, with no commitment.",
-    },
-  ];
+const PURPOSES: {
+  value: EstimatePurposeOption;
+  label: string;
+  help: string;
+}[] = [
+  {
+    value: "budget",
+    label: "A budget",
+    help: "Money this project is expected to spend. What it actually spends will be tracked against it.",
+  },
+  {
+    value: "comparison",
+    label: "A comparison",
+    help: "What the work would cost delivered conventionally. A baseline to compare against, not money this project will spend.",
+  },
+  {
+    value: "forecast",
+    label: "A forecast",
+    help: "A projection of the likely cost, with no commitment.",
+  },
+];
 
 type Status =
   | { kind: "idle" }
   | { kind: "saving" }
-  | { kind: "saved" }
+  /** Carries the version that landed, so the message can name it. */
+  | { kind: "saved"; version: number }
   | { kind: "conflict"; currentVersion: number | null }
   | { kind: "failed"; message: string };
 
@@ -89,10 +93,58 @@ function errorText(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
 }
 
+/**
+ * Total a column of person-day strings exactly.
+ *
+ * Days are exact decimal strings everywhere else in this feature precisely
+ * so no float ever touches them, and `reduce((a, b) => a + Number(b), 0)`
+ * threw that away for a label. Summed in hundredths as integers instead —
+ * the grain `planned_person_days NUMERIC(10, 2)` stores. `null` when any
+ * value is unreadable, so a bad row shows as unreadable rather than as a
+ * silently smaller total.
+ */
+function sumPersonDays(values: string[]): string | null {
+  let hundredths = 0;
+  for (const value of values) {
+    const match = /^(\d+)(?:\.(\d{1,2}))?$/.exec(value.trim());
+    if (!match) return null;
+    hundredths +=
+      Number(match[1]) * 100 + Number((match[2] ?? "").padEnd(2, "0"));
+  }
+  const whole = Math.trunc(hundredths / 100);
+  const rest = hundredths % 100;
+  return rest === 0
+    ? String(whole)
+    : `${whole}.${String(rest).padStart(2, "0").replace(/0$/, "")}`;
+}
+
+/**
+ * `httpClient` throws `Error("PUT <url> failed: <status> - <body>")`, so the
+ * status and the body have to come back out of the message. Anchoring on
+ * `failed: <status>` is what makes that exact rather than a substring hunt:
+ * `message.includes("409")` also matched a 500 whose body happened to
+ * mention 409, and missed a real one whose wording changed.
+ *
+ * The same convention `describeFailure` in `components/overview/LoadFailure`
+ * already reads.
+ */
+function failureStatus(message: string): number | null {
+  const match = /failed:\s*(\d{3})\b/.exec(message);
+  return match ? Number(match[1]) : null;
+}
+
 /** The version the server reports in a 409 body, when it says one. */
 function conflictVersion(message: string): number | null {
-  const match = /"current_version":\s*(\d+)/.exec(message);
-  return match ? Number(match[1]) : null;
+  const body = message.slice(message.indexOf(" - ") + 3);
+  try {
+    const parsed = JSON.parse(body) as {
+      detail?: { current_version?: unknown };
+    };
+    const version = parsed.detail?.current_version;
+    return typeof version === "number" ? version : null;
+  } catch {
+    return null;
+  }
 }
 
 function CreateEstimate({ onCreated }: { onCreated: () => void }) {
@@ -102,12 +154,15 @@ function CreateEstimate({ onCreated }: { onCreated: () => void }) {
   const [error, setError] = useState<string | null>(null);
 
   return (
-    <section className="max-w-[38rem]" data-ui-bridge-id="overview.estimate-editor.create">
+    <section
+      className="max-w-[38rem]"
+      data-ui-bridge-id="overview.estimate-editor.create"
+    >
       <Heading>Set up this project&rsquo;s estimate</Heading>
       <p className="mt-2 text-[15px] leading-relaxed text-muted-foreground">
-        An estimate is the plan the project is measured against: its phases,
-        the roles it needs and what they come to. What it MEANS is the first
-        choice, because every figure is described in those terms afterwards.
+        An estimate is the plan the project is measured against: its phases, the
+        roles it needs and what they come to. What it MEANS is the first choice,
+        because every figure is described in those terms afterwards.
       </p>
 
       <label
@@ -215,7 +270,9 @@ function GanttImport({ onImport }: { onImport: (text: string) => void }) {
         }}
         rows={10}
         spellCheck={false}
-        placeholder={"gantt\n    dateFormat YYYY-MM-DD\n    excludes weekends\n    section A0 Mobilisation\n    Kick-off :a0t1, 2026-01-05, 5d"}
+        placeholder={
+          "gantt\n    dateFormat YYYY-MM-DD\n    excludes weekends\n    section A0 Mobilisation\n    Kick-off :a0t1, 2026-01-05, 5d"
+        }
         className="mt-3 w-full rounded-md border border-border bg-background p-2 font-mono text-xs text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
         data-ui-bridge-id="overview.estimate-editor.gantt.input"
       />
@@ -301,9 +358,14 @@ function EstimateEditor({
 
   // A fresh load (after a save, or after a reload following a conflict)
   // replaces the working copy wholesale — there is no merge here on purpose.
+  //
+  // It must NOT clear the status: saving sets "saved" and then hands back the
+  // fresh estimate, which lands here and used to wipe the confirmation in the
+  // same tick, so a successful save looked exactly like one that never
+  // happened. `savedVersion` is what the message is keyed on instead, so the
+  // acknowledgement survives its own reload and disappears on the next edit.
   useEffect(() => {
     setDraft(draftFromEstimate(detail));
-    setStatus({ kind: "idle" });
   }, [detail]);
 
   const problems = draftProblems(draft);
@@ -313,13 +375,16 @@ function EstimateEditor({
     setStatus({ kind: "saving" });
     saveEstimateContent(detail.estimate.id, draftToContent(draft)).then(
       (fresh) => {
-        setStatus({ kind: "saved" });
+        setStatus({ kind: "saved", version: fresh.estimate.version });
         onSaved(fresh);
       },
       (err) => {
         const message = errorText(err);
-        if (message.includes("409")) {
-          setStatus({ kind: "conflict", currentVersion: conflictVersion(message) });
+        if (failureStatus(message) === 409) {
+          setStatus({
+            kind: "conflict",
+            currentVersion: conflictVersion(message),
+          });
         } else {
           setStatus({ kind: "failed", message });
         }
@@ -347,16 +412,32 @@ function EstimateEditor({
             const parsed = ganttToPhases(parseMermaidGantt(text));
             setDraft((d) => ({
               ...d,
-              phases: parsed.map((p) => ({
-                code: p.code,
-                name: p.name,
-                planned_start: p.planned_start,
-                planned_end: p.planned_end,
-                gate_criteria:
-                  d.phases.find((old) => old.code === p.code)?.gate_criteria ??
-                  "",
-                tasks: p.tasks,
-              })),
+              // The chart states the SCHEDULE and nothing else. Everything a
+              // phase carries that the chart cannot express — its gate, its
+              // actual dates, the stated working weeks — is kept from the
+              // phase of the same code, so re-importing a corrected chart
+              // does not silently reset a gate somebody already recorded on
+              // the Timeline page.
+              phases: parsed.map((p) => {
+                const existing = d.phases.find((old) => old.code === p.code);
+                return {
+                  code: p.code,
+                  name: p.name,
+                  planned_start: p.planned_start,
+                  planned_end: p.planned_end,
+                  stated_working_weeks: existing?.stated_working_weeks ?? null,
+                  gate_criteria: existing?.gate_criteria ?? "",
+                  actual_start: existing?.actual_start ?? null,
+                  actual_end: existing?.actual_end ?? null,
+                  gate_status: existing?.gate_status ?? "pending",
+                  gate_decided_at: existing?.gate_decided_at ?? null,
+                  gate_notes: existing?.gate_notes ?? "",
+                  tasks: p.tasks.map((task) => ({
+                    ...task,
+                    requirement_refs: null,
+                  })),
+                };
+              }),
             }));
           }}
         />
@@ -368,9 +449,7 @@ function EstimateEditor({
             In the working copy now
           </h3>
           {draft.phases.length === 0 ? (
-            <p className="mt-2 text-sm text-muted-foreground">
-              No phases yet.
-            </p>
+            <p className="mt-2 text-sm text-muted-foreground">No phases yet.</p>
           ) : (
             <ul className="mt-2 space-y-1.5 text-sm">
               {draft.phases.map((phase) => (
@@ -401,9 +480,13 @@ function EstimateEditor({
           id="overview.estimate-editor.roles-paste"
           label="Paste the role table"
           help="One role per line: code, name, what they do, day rate, currency, and whether they are the client's own person. Only the code is required."
-          placeholder={"code,name,responsibility,day_rate,currency,client_side\nDL,Delivery lead,Runs the delivery,900,EUR,no"}
+          placeholder={
+            "code,name,responsibility,day_rate,currency,client_side\nDL,Delivery lead,Runs the delivery,900,EUR,no"
+          }
           parse={parseRolesCsv}
-          describe={(rows) => `${rows.length} role${rows.length === 1 ? "" : "s"}`}
+          describe={(rows) =>
+            `${rows.length} role${rows.length === 1 ? "" : "s"}`
+          }
           onApply={(rows) => setDraft((d) => ({ ...d, roles: rows }))}
         />
         <div
@@ -486,21 +569,17 @@ function EstimateEditor({
           help="One line per role on a task: phase, task number, role, days. This is the only place days of work come from — the allocation matrix above is a separate statement of team size and is never used to derive them."
           placeholder={"phase,task,role,days\nA0,1.1,DL,4\nA0,1.1,BE,6.5"}
           parse={parseEffortsCsv}
-          describe={(rows) => `${rows.length} line${rows.length === 1 ? "" : "s"}`}
+          describe={(rows) =>
+            `${rows.length} line${rows.length === 1 ? "" : "s"}`
+          }
           onApply={(rows) => setDraft((d) => ({ ...d, efforts: rows }))}
         />
         <p
           className="text-sm text-muted-foreground"
           data-ui-bridge-id="overview.estimate-editor.efforts.count"
         >
-          {formatDecimal(
-            String(
-              draft.efforts.reduce(
-                (sum, e) => sum + (Number(e.planned_person_days) || 0),
-                0
-              )
-            )
-          )}{" "}
+          {sumPersonDays(draft.efforts.map((e) => e.planned_person_days)) ??
+            "An unreadable number of"}{" "}
           days across {draft.efforts.length} line
           {draft.efforts.length === 1 ? "" : "s"} in the working copy.
         </p>
@@ -556,7 +635,7 @@ function EstimateEditor({
         >
           {status.kind === "saved" && (
             <span className="text-muted-foreground">
-              Saved. The Team page now shows this.
+              Saved as version {status.version}. The Team page now shows this.
             </span>
           )}
           {status.kind === "conflict" && (
@@ -604,7 +683,10 @@ export default function EstimateEditorPage() {
       .then(async (listed) => {
         const chosen = pickBaseline(listed.estimates);
         if (!chosen) return { kind: "none" as const };
-        return { kind: "ready" as const, detail: await fetchEstimate(chosen.id) };
+        return {
+          kind: "ready" as const,
+          detail: await fetchEstimate(chosen.id),
+        };
       })
       .then(
         (loaded) => live && setState(loaded),
@@ -617,7 +699,10 @@ export default function EstimateEditorPage() {
 
   if (tenantsError) {
     return (
-      <div className="max-w-[42rem]" data-ui-bridge-id="overview.estimate-editor.page">
+      <div
+        className="max-w-[42rem]"
+        data-ui-bridge-id="overview.estimate-editor.page"
+      >
         <LoadFailure
           what="the list of projects"
           message={tenantsError}

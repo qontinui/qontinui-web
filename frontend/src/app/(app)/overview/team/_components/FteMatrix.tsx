@@ -14,7 +14,11 @@
  */
 
 import { formatDecimal, toNumber } from "@/components/overview/money";
-import type { AllocationRead, RollupPhase, RollupRole } from "../../_lib/estimate-api";
+import type {
+  AllocationRead,
+  RollupPhase,
+  RollupRole,
+} from "../../_lib/estimate-api";
 
 export function FteMatrix({
   phases,
@@ -109,8 +113,9 @@ export function FteMatrix({
                   <td
                     key={phase.id}
                     className="px-3 py-2 text-right tabular-nums text-foreground"
-                    // Shade by share of the busiest single allocation, never
-                    // instead of the number itself.
+                    // Shade by share of the busiest PHASE's total, never
+                    // instead of the number itself — so the tint reads as
+                    // "how much of the project's peak is this cell".
                     style={
                       value
                         ? {

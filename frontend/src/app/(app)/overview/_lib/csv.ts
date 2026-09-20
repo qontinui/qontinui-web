@@ -203,7 +203,9 @@ export function parseRolesCsv(text: string): CsvResult<ParsedRoleRow> {
  * which is not the same as an allocation of 0, and is why blanks are skipped
  * rather than zero-filled.
  */
-export function parseAllocationsCsv(text: string): CsvResult<ParsedAllocationRow> {
+export function parseAllocationsCsv(
+  text: string
+): CsvResult<ParsedAllocationRow> {
   const issues: CsvIssue[] = [];
   const rows: ParsedAllocationRow[] = [];
   const lines = nonEmptyLines(text);

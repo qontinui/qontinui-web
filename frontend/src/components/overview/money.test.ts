@@ -67,6 +67,15 @@ describe("toNumber / formatDecimal", () => {
     expect(formatDecimal(null)).toBeNull();
   });
 
+  it("keeps significant zeros when asked for no decimal places", () => {
+    // An unanchored trailing-zero trim ate these: `formatDecimal(100, 0)`
+    // returned "1".
+    expect(formatDecimal(100, 0)).toBe("100");
+    expect(formatDecimal(20, 0)).toBe("20");
+    expect(formatDecimal("240.00", 0)).toBe("240");
+    expect(formatDecimal(0, 0)).toBe("0");
+  });
+
   it("keeps a genuine zero", () => {
     expect(toNumber("0")).toBe(0);
     expect(formatDecimal("0.00")).toBe("0");

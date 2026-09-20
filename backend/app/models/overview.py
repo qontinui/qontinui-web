@@ -25,6 +25,7 @@ from sqlalchemy import (
     CHAR,
     BigInteger,
     Boolean,
+    CheckConstraint,
     Date,
     DateTime,
     ForeignKey,
@@ -113,7 +114,21 @@ class OverviewSettings(_AuditMixin, Base):
     """
 
     __tablename__ = "settings"
-    __table_args__ = ({"schema": _SCHEMA},)
+    __table_args__ = (
+        CheckConstraint(
+            "labour_billing IN ('unbilled', 'day_rates', 'fixed_fee')",
+            name="ck_overview_settings_labour_billing",
+        ),
+        CheckConstraint(
+            "hours_per_day > 0 AND hours_per_day <= 24",
+            name="ck_overview_settings_hours_per_day",
+        ),
+        CheckConstraint(
+            "working_day_factor > 0 AND working_day_factor <= 1",
+            name="ck_overview_settings_working_day_factor",
+        ),
+        {"schema": _SCHEMA},
+    )
 
     tenant_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True)
 
@@ -153,6 +168,18 @@ class Estimate(_AuditMixin, Base):
 
     __tablename__ = "estimates"
     __table_args__ = (
+        CheckConstraint(
+            "purpose IN ('budget', 'comparison', 'forecast')",
+            name="ck_overview_estimates_purpose",
+        ),
+        CheckConstraint(
+            "status IN ('draft', 'for_decision', 'approved', 'superseded')",
+            name="ck_overview_estimates_status",
+        ),
+        CheckConstraint(
+            "contingency_pct IS NULL OR contingency_pct >= 0",
+            name="ck_overview_estimates_contingency_pct",
+        ),
         Index("ix_overview_estimates_tenant", "tenant_id"),
         Index(
             "uq_overview_estimates_baseline",
@@ -230,6 +257,23 @@ class Phase(_AuditMixin, Base):
 
     __tablename__ = "phases"
     __table_args__ = (
+        CheckConstraint(
+            "stated_working_weeks IS NULL OR stated_working_weeks >= 0",
+            name="ck_overview_phases_stated_working_weeks",
+        ),
+        CheckConstraint(
+            "gate_status IN ('pending', 'passed', 'failed', 'waived')",
+            name="ck_overview_phases_gate_status",
+        ),
+        CheckConstraint(
+            "planned_start IS NULL OR planned_end IS NULL "
+            "OR planned_end >= planned_start",
+            name="ck_overview_phases_planned_order",
+        ),
+        CheckConstraint(
+            "actual_start IS NULL OR actual_end IS NULL OR actual_end >= actual_start",
+            name="ck_overview_phases_actual_order",
+        ),
         UniqueConstraint("estimate_id", "code", name="uq_overview_phases_code"),
         Index("ix_overview_phases_tenant", "tenant_id"),
         Index("ix_overview_phases_estimate", "estimate_id", "sort_order"),
@@ -291,6 +335,15 @@ class PhaseTask(_AuditMixin, Base):
 
     __tablename__ = "phase_tasks"
     __table_args__ = (
+        CheckConstraint(
+            "status IN ('planned', 'in_progress', 'done')",
+            name="ck_overview_phase_tasks_status",
+        ),
+        CheckConstraint(
+            "planned_start IS NULL OR planned_end IS NULL "
+            "OR planned_end >= planned_start",
+            name="ck_overview_phase_tasks_planned_order",
+        ),
         UniqueConstraint("phase_id", "number", name="uq_overview_phase_tasks_number"),
         Index("ix_overview_phase_tasks_tenant", "tenant_id"),
         Index("ix_overview_phase_tasks_phase", "phase_id", "sort_order"),
@@ -344,6 +397,14 @@ class EstimateRole(_AuditMixin, Base):
 
     __tablename__ = "roles"
     __table_args__ = (
+        CheckConstraint(
+            "day_rate_micros IS NULL OR day_rate_micros >= 0",
+            name="ck_overview_roles_day_rate_non_negative",
+        ),
+        CheckConstraint(
+            "(day_rate_micros IS NULL) = (currency IS NULL)",
+            name="ck_overview_roles_rate_has_currency",
+        ),
         UniqueConstraint("estimate_id", "code", name="uq_overview_roles_code"),
         Index("ix_overview_roles_tenant", "tenant_id"),
         Index("ix_overview_roles_estimate", "estimate_id", "sort_order"),
@@ -393,6 +454,10 @@ class TaskEffort(_AuditMixin, Base):
 
     __tablename__ = "task_efforts"
     __table_args__ = (
+        CheckConstraint(
+            "planned_person_days >= 0",
+            name="ck_overview_task_efforts_non_negative",
+        ),
         UniqueConstraint("task_id", "role_id", name="uq_overview_task_efforts"),
         Index("ix_overview_task_efforts_tenant", "tenant_id"),
         Index("ix_overview_task_efforts_role", "role_id"),
@@ -432,6 +497,7 @@ class PhaseAllocation(_AuditMixin, Base):
 
     __tablename__ = "phase_allocations"
     __table_args__ = (
+        CheckConstraint("fte >= 0", name="ck_overview_phase_allocations_non_negative"),
         UniqueConstraint("phase_id", "role_id", name="uq_overview_phase_allocations"),
         Index("ix_overview_phase_allocations_tenant", "tenant_id"),
         Index("ix_overview_phase_allocations_role", "role_id"),
@@ -470,6 +536,7 @@ class PriceTier(_AuditMixin, Base):
 
     __tablename__ = "price_tiers"
     __table_args__ = (
+        CheckConstraint("multiplier > 0", name="ck_overview_price_tiers_multiplier"),
         UniqueConstraint("estimate_id", "name", name="uq_overview_price_tiers_name"),
         Index("ix_overview_price_tiers_tenant", "tenant_id"),
         Index(
@@ -511,6 +578,26 @@ class CostLine(_AuditMixin, Base):
 
     __tablename__ = "cost_lines"
     __table_args__ = (
+        CheckConstraint(
+            "kind IN ('build_non_labour', 'run_annual')",
+            name="ck_overview_cost_lines_kind",
+        ),
+        CheckConstraint(
+            "low_micros IS NULL OR low_micros >= 0",
+            name="ck_overview_cost_lines_low_non_negative",
+        ),
+        CheckConstraint(
+            "high_micros IS NULL OR high_micros >= 0",
+            name="ck_overview_cost_lines_high_non_negative",
+        ),
+        CheckConstraint(
+            "low_micros IS NULL OR high_micros IS NULL OR high_micros >= low_micros",
+            name="ck_overview_cost_lines_band",
+        ),
+        CheckConstraint(
+            "(low_micros IS NULL AND high_micros IS NULL) = (currency IS NULL)",
+            name="ck_overview_cost_lines_amount_has_currency",
+        ),
         Index("ix_overview_cost_lines_tenant", "tenant_id"),
         Index("ix_overview_cost_lines_estimate", "estimate_id", "kind", "sort_order"),
         {"schema": _SCHEMA},
@@ -557,6 +644,9 @@ class CalendarBreak(_AuditMixin, Base):
 
     __tablename__ = "calendar_breaks"
     __table_args__ = (
+        CheckConstraint(
+            "end_date >= start_date", name="ck_overview_calendar_breaks_order"
+        ),
         Index("ix_overview_calendar_breaks_tenant", "tenant_id"),
         Index("ix_overview_calendar_breaks_estimate", "estimate_id", "start_date"),
         {"schema": _SCHEMA},

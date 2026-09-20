@@ -302,6 +302,12 @@ export interface TaskWrite {
   efforts?: { role_code: string; planned_person_days: string }[];
 }
 
+/**
+ * Every field the content endpoint owns for a phase. The endpoint replaces
+ * the WHOLE graph, so an omitted field is not "leave it alone" — it is
+ * "reset it to its default". Anything added here must also be round-tripped
+ * by the editor's draft (`team/edit/_lib/draft.ts`).
+ */
 export interface PhaseWrite {
   code: string;
   name: string;
@@ -309,7 +315,11 @@ export interface PhaseWrite {
   planned_end?: string | null;
   stated_working_weeks?: string | null;
   gate_criteria?: string;
+  actual_start?: string | null;
+  actual_end?: string | null;
   gate_status?: GateStatus;
+  gate_decided_at?: string | null;
+  gate_notes?: string;
   tasks?: TaskWrite[];
 }
 

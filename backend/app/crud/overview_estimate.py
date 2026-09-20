@@ -2,11 +2,21 @@
 
 Phase 2 of ``2026-09-19-project-overview-for-business-leaders``.
 
-Every function here takes ``tenant_id`` and filters on it. That is the whole
-isolation story for these tables: there is no row-level security, no
-tenant-scoped session, and no FK to lean on, so a query that forgets the
-predicate is a cross-tenant read. ``tests/test_overview_estimates_api.py``
-pins each route against a second tenant's data for exactly that reason.
+**Every function that RESOLVES a row takes ``tenant_id`` and filters on it**
+— ``get_settings``, ``list_estimates``, ``get_estimate``,
+``load_estimate_graph``, ``upsert_settings``, ``create_estimate``,
+``_clear_other_baselines``. That is the whole isolation story for these
+tables: there is no row-level security, no tenant-scoped session and no FK to
+lean on, so a lookup that forgets the predicate is a cross-tenant read.
+``tests/test_overview_estimates_api.py`` pins each route against a second
+tenant's data for exactly that reason.
+
+The three that take an ``Estimate`` instead — ``update_estimate``,
+``delete_estimate``, ``replace_content`` — inherit the scope from a row the
+endpoint has already resolved through ``get_estimate``, and derive
+``tenant_id`` from it rather than from the request. A new function here
+belongs in the first group unless it takes an already-scoped row; taking
+neither is the bug this paragraph exists to prevent.
 
 Nothing in this module touches a ``coord.*`` table. The tenant is resolved
 over coord's HTTP API by the endpoint layer and arrives here as a plain UUID.

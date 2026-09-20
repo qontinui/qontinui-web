@@ -97,13 +97,85 @@ const STATUS_TAGS = new Set(["done", "active", "crit", "milestone", "vert"]);
 /** A leading `A0` / `P1` / `PH2` style token is a phase code. */
 const PHASE_CODE = /^[A-Z][A-Z0-9]{0,4}$/;
 
+/** Directives this import has no use for, skipped rather than reported. */
+const IGNORED_DIRECTIVES = [
+  "axisformat",
+  "todaymarker",
+  "tickinterval",
+  "weekday",
+  "inclusiveenddates",
+] as const;
+
 const DAY_MS = 86_400_000;
 
-function toDate(iso: string): Date {
-  // UTC throughout: a gantt chart's dates are calendar dates, and a local
-  // midnight would shift them by a day either side of a DST boundary.
+/**
+ * True when the line is a TASK rather than a directive.
+ *
+ * Checked BEFORE any keyword, because a task title may legitimately begin
+ * with one: `Excludes review :e1, 2026-01-05, 5d` matched the `excludes`
+ * directive on its keyword alone, and `Titles and rates : …` silently
+ * overwrote the chart title. Matching on the keyword and then excluding a
+ * colon is not enough either — it would break `section A0: Mobilisation`.
+ *
+ * What separates the two is what follows the colon: a task always names a
+ * date or a duration there, and a directive value never does
+ * (`axisFormat %H:%M`, `todayMarker stroke-width:5px`).
+ */
+function looksLikeTaskLine(line: string): boolean {
+  const colon = line.indexOf(":");
+  if (colon < 0) return false;
+  return line
+    .slice(colon + 1)
+    .split(",")
+    .map((token) => token.trim())
+    .some((token) => ISO_DATE.test(token) || DURATION.test(token));
+}
+
+/**
+ * A directive is its keyword followed by WHITESPACE — never a bare prefix.
+ *
+ * `lower.startsWith("section")` also matches the task line
+ * `Sections signed off : s1, 2026-01-05, 5d`, which then becomes a phase
+ * named "s signed off :s1, …" and no issue at all. The same trap eats a task
+ * titled "Titles and rates" (it silently overwrites the chart title) and one
+ * titled "Excludes review". Requiring the boundary is what keeps this
+ * module's promise that every unreadable line becomes an issue.
+ */
+function directiveValue(line: string, keyword: string): string | null {
+  const match = new RegExp(`^${keyword}[ \\t]+(.*)$`, "i").exec(line);
+  if (match) return (match[1] ?? "").trim();
+  // The keyword alone on its line is still the directive, with no value.
+  return line.toLowerCase() === keyword ? "" : null;
+}
+
+/**
+ * A calendar date, or `null` when the text is shaped like one but is not a
+ * real day.
+ *
+ * `ISO_DATE` checks the SHAPE only, and `Date.UTC` silently rolls over
+ * (`2026-13-45` becomes 2027-02-14, `2026-02-30` becomes 2026-03-02) and
+ * remaps years 0-99 into 1900+ (`0099-01-01` becomes 1999-01-01). This
+ * module promises an issue rather than a silently misread date, so the
+ * result is compared back against the input and a disagreement is a refusal.
+ *
+ * UTC throughout: a gantt chart's dates are calendar dates, and a local
+ * midnight would shift them by a day either side of a DST boundary.
+ */
+function toDate(iso: string): Date | null {
   const parts = iso.split("-").map(Number);
-  return new Date(Date.UTC(parts[0] ?? 0, (parts[1] ?? 1) - 1, parts[2] ?? 1));
+  const [year, month, day] = [parts[0] ?? 0, parts[1] ?? 0, parts[2] ?? 0];
+  const date = new Date(Date.UTC(year, month - 1, day));
+  // `setUTCFullYear` is what undoes the 0-99 remap; without it a two-digit
+  // year would fail this comparison for the wrong reason.
+  date.setUTCFullYear(year);
+  if (
+    date.getUTCFullYear() !== year ||
+    date.getUTCMonth() !== month - 1 ||
+    date.getUTCDate() !== day
+  ) {
+    return null;
+  }
+  return date;
 }
 
 function toIso(date: Date): string {
@@ -133,12 +205,18 @@ function nextDay(date: Date, skipWeekends: boolean): Date {
  */
 const MAX_DURATION_DAYS = 7500;
 
+/** The first working day on or after `date`, when weekends are excluded. */
+function firstWorkingDay(date: Date, skipWeekends: boolean): Date {
+  let cursor = new Date(date.getTime());
+  while (skipWeekends && isWeekend(cursor)) {
+    cursor = new Date(cursor.getTime() + DAY_MS);
+  }
+  return cursor;
+}
+
 /** `start` advanced by `days` INCLUSIVE days: 1 day ends where it starts. */
 function addDays(start: Date, days: number, skipWeekends: boolean): Date {
-  let cursor = new Date(start.getTime());
-  if (skipWeekends) {
-    while (isWeekend(cursor)) cursor = new Date(cursor.getTime() + DAY_MS);
-  }
+  let cursor = firstWorkingDay(start, skipWeekends);
   let remaining =
     Math.min(Math.max(1, Math.round(days)), MAX_DURATION_DAYS) - 1;
   while (remaining > 0) {
@@ -225,8 +303,12 @@ export function parseMermaidGantt(source: string): GanttParseResult {
     const lower = line.toLowerCase();
     if (lower === "gantt") continue;
 
-    if (lower.startsWith("dateformat")) {
-      const value = line.slice("dateFormat".length).trim();
+    // A task whose TITLE opens with a directive keyword is still a task.
+    const isTask = looksLikeTaskLine(line);
+
+    const dateFormat = isTask ? null : directiveValue(line, "dateformat");
+    if (dateFormat !== null) {
+      const value = dateFormat;
       dateFormatSeen = true;
       if (value.toUpperCase() !== "YYYY-MM-DD") {
         pushIssue(
@@ -237,12 +319,14 @@ export function parseMermaidGantt(source: string): GanttParseResult {
       }
       continue;
     }
-    if (lower.startsWith("title")) {
-      title = line.slice("title".length).trim() || null;
+    const titleValue = isTask ? null : directiveValue(line, "title");
+    if (titleValue !== null) {
+      title = titleValue || null;
       continue;
     }
-    if (lower.startsWith("excludes")) {
-      const value = line.slice("excludes".length).trim().toLowerCase();
+    const excludesValue = isTask ? null : directiveValue(line, "excludes");
+    if (excludesValue !== null) {
+      const value = excludesValue.toLowerCase();
       if (value === "weekends") {
         excludesWeekends = true;
       } else {
@@ -256,18 +340,18 @@ export function parseMermaidGantt(source: string): GanttParseResult {
       continue;
     }
     if (
-      lower.startsWith("axisformat") ||
-      lower.startsWith("todaymarker") ||
-      lower.startsWith("tickinterval") ||
-      lower.startsWith("weekday") ||
-      lower.startsWith("inclusiveenddates") ||
+      (!isTask &&
+        IGNORED_DIRECTIVES.some(
+          (keyword) => directiveValue(line, keyword) !== null
+        )) ||
       lower.startsWith("%%")
     ) {
       continue;
     }
 
-    if (lower.startsWith("section")) {
-      const text = line.slice("section".length).trim();
+    const sectionText = isTask ? null : directiveValue(line, "section");
+    if (sectionText !== null) {
+      const text = sectionText;
       const parts = text.split(/\s+/);
       const head = parts[0] ?? "";
       let code: string;
@@ -411,6 +495,10 @@ export function parseMermaidGantt(source: string): GanttParseResult {
       start = nextDay(previousEnd, excludesWeekends);
     } else if (ISO_DATE.test(startToken)) {
       start = toDate(startToken);
+      if (start === null) {
+        pushIssue(lineNumber, raw, `"${startToken}" is not a real date`);
+        continue;
+      }
     } else if (/^after\s+/i.test(startToken)) {
       const refs = startToken.slice(5).trim().split(/\s+/);
       const ends = refs
@@ -443,7 +531,12 @@ export function parseMermaidGantt(source: string): GanttParseResult {
       continue;
     }
     if (ISO_DATE.test(endToken)) {
-      end = toDate(endToken);
+      const parsedEnd = toDate(endToken);
+      if (parsedEnd === null) {
+        pushIssue(lineNumber, raw, `"${endToken}" is not a real date`);
+        continue;
+      }
+      end = parsedEnd;
       if (end < start) {
         pushIssue(
           lineNumber,
@@ -464,6 +557,21 @@ export function parseMermaidGantt(source: string): GanttParseResult {
         continue;
       }
       if (message) pushIssue(lineNumber, raw, message, "warning");
+      if (excludesWeekends && isWeekend(start)) {
+        // The duration is laid out over working days, so a bar that started
+        // on a weekend would end a working day later than mermaid draws it
+        // while still claiming the weekend start. Move the start to the
+        // first working day — and say so, because it is a date the chart
+        // did not write.
+        const moved = firstWorkingDay(start, true);
+        pushIssue(
+          lineNumber,
+          raw,
+          `it starts on a weekend, which this chart excludes, so it was moved to ${toIso(moved)}`,
+          "warning"
+        );
+        start = moved;
+      }
       end = isMilestone ? start : addDays(start, days, excludesWeekends);
     }
     if (isMilestone) end = start;

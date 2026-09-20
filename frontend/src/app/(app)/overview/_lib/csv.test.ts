@@ -8,9 +8,9 @@ import {
 
 describe("splitCsvLine", () => {
   it("honours quotes, embedded commas and doubled quotes", () => {
-    expect(splitCsvLine('BE,"Engineer, backend","Says ""no"" a lot",750')).toEqual(
-      ["BE", "Engineer, backend", 'Says "no" a lot', "750"]
-    );
+    expect(
+      splitCsvLine('BE,"Engineer, backend","Says ""no"" a lot",750')
+    ).toEqual(["BE", "Engineer, backend", 'Says "no" a lot', "750"]);
   });
 
   it("accepts tabs, so a spreadsheet paste works", () => {
@@ -74,7 +74,9 @@ CS,Client sponsor,Approves each gate,,,yes
   });
 
   it("refuses a rate it cannot read", () => {
-    const { rows, issues } = parseRolesCsv("DL,Delivery lead,,about nine hundred,EUR");
+    const { rows, issues } = parseRolesCsv(
+      "DL,Delivery lead,,about nine hundred,EUR"
+    );
     expect(rows).toEqual([]);
     expect(issues[0].message).toContain("not read as a day rate");
   });
@@ -172,9 +174,24 @@ A1,2.1,BE,10
 `);
     expect(issues).toEqual([]);
     expect(rows).toEqual([
-      { phase_code: "A0", task_number: "1.1", role_code: "DL", planned_person_days: "4" },
-      { phase_code: "A0", task_number: "1.1", role_code: "BE", planned_person_days: "6.5" },
-      { phase_code: "A1", task_number: "2.1", role_code: "BE", planned_person_days: "10" },
+      {
+        phase_code: "A0",
+        task_number: "1.1",
+        role_code: "DL",
+        planned_person_days: "4",
+      },
+      {
+        phase_code: "A0",
+        task_number: "1.1",
+        role_code: "BE",
+        planned_person_days: "6.5",
+      },
+      {
+        phase_code: "A1",
+        task_number: "2.1",
+        role_code: "BE",
+        planned_person_days: "10",
+      },
     ]);
   });
 

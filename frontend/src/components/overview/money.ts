@@ -73,6 +73,10 @@ export function toNumber(
 /**
  * Render a wire decimal with a fixed number of places, trimming a trailing
  * `.00`. `null` in, `null` out.
+ *
+ * The trim is anchored on the decimal point. Unanchored, it eats SIGNIFICANT
+ * zeros the moment `places` is 0 — `formatDecimal(100, 0)` returned `"1"` —
+ * and there is nothing in the call to warn the next caller.
  */
 export function formatDecimal(
   value: string | number | null | undefined,
@@ -81,7 +85,8 @@ export function formatDecimal(
   const parsed = toNumber(value);
   if (parsed === null) return null;
   const fixed = parsed.toFixed(places);
-  return fixed.replace(/\.?0+$/, "") || "0";
+  if (!fixed.includes(".")) return fixed;
+  return fixed.replace(/0+$/, "").replace(/\.$/, "");
 }
 
 /** Whole-currency-unit input (e.g. `900` or `1,200.50`) to integer micros. */

@@ -264,6 +264,164 @@ gantt
   });
 });
 
+describe("parseMermaidGantt — a keyword is a directive only with a boundary", () => {
+  // A bare `startsWith` ate any task whose TITLE began with a keyword, and
+  // produced no issue — the one outcome this module promises never to have.
+  it("does not read a task titled 'Sections…' as a section", () => {
+    const result = parseMermaidGantt(`
+gantt
+    dateFormat YYYY-MM-DD
+    section A0 Mobilisation
+    Sections signed off :s1, 2026-01-05, 5d
+`);
+    expect(result.phases.map((p) => p.code)).toEqual(["A0"]);
+    expect(result.phases[0]?.tasks[0]?.title).toBe("Sections signed off");
+    expect(result.issues.filter((i) => i.severity === "error")).toEqual([]);
+  });
+
+  it("does not let a task titled 'Titles…' overwrite the chart title", () => {
+    const result = parseMermaidGantt(`
+gantt
+    dateFormat YYYY-MM-DD
+    title Delivery plan
+    section A0 Mobilisation
+    Titles and rates :t1, 2026-01-05, 5d
+`);
+    expect(result.title).toBe("Delivery plan");
+    expect(result.taskCount).toBe(1);
+  });
+
+  it("does not read a task titled 'Excludes…' as an excludes directive", () => {
+    const result = parseMermaidGantt(`
+gantt
+    dateFormat YYYY-MM-DD
+    section A0 Mobilisation
+    Excludes review :e1, 2026-01-05, 5d
+`);
+    expect(result.excludesWeekends).toBe(false);
+    expect(result.taskCount).toBe(1);
+    expect(result.issues).toEqual([]);
+  });
+
+  it("still reads a section whose NAME contains a colon", () => {
+    // The colon alone does not make a line a task — what follows it does.
+    const result = parseMermaidGantt(`
+gantt
+    dateFormat YYYY-MM-DD
+    section A0: Mobilisation
+    Work :t1, 2026-01-05, 3d
+`);
+    expect(result.phases).toHaveLength(1);
+    expect(result.phases[0]?.name).toContain("Mobilisation");
+    expect(result.taskCount).toBe(1);
+  });
+
+  it("still ignores an axisFormat whose value contains a colon", () => {
+    const result = parseMermaidGantt(`
+gantt
+    dateFormat YYYY-MM-DD
+    axisFormat %H:%M
+    todayMarker stroke-width:5px
+    section P One
+    Work :t1, 2026-01-05, 3d
+`);
+    expect(result.issues).toEqual([]);
+    expect(result.taskCount).toBe(1);
+  });
+
+  it("still reads a directive followed by a tab", () => {
+    const result = parseMermaidGantt(
+      [
+        "gantt",
+        "\tdateFormat\tYYYY-MM-DD",
+        "\tsection A0 One",
+        "\tWork :t1, 2026-01-05, 3d",
+      ].join("\n")
+    );
+    expect(result.issues).toEqual([]);
+    expect(result.taskCount).toBe(1);
+  });
+});
+
+describe("parseMermaidGantt — a date has to be a real day", () => {
+  it("refuses an impossible month or day rather than rolling it over", () => {
+    for (const bad of ["2026-13-45", "2026-02-30", "2026-00-10"]) {
+      const result = parseMermaidGantt(`
+gantt
+    dateFormat YYYY-MM-DD
+    section P One
+    Work :t1, ${bad}, 3d
+`);
+      expect(result.taskCount, bad).toBe(0);
+      expect(result.issues[0]?.message, bad).toContain("not a real date");
+    }
+  });
+
+  it("reads a two-digit year as that year, not as 19xx", () => {
+    const result = parseMermaidGantt(`
+gantt
+    dateFormat YYYY-MM-DD
+    section P One
+    Work :t1, 0099-01-01, 1d
+`);
+    expect(result.taskCount).toBe(1);
+    expect(result.phases[0]?.tasks[0]?.plannedStart).toBe("0099-01-01");
+  });
+
+  it("refuses an impossible END date too", () => {
+    const result = parseMermaidGantt(`
+gantt
+    dateFormat YYYY-MM-DD
+    section P One
+    Work :t1, 2026-01-05, 2026-02-31
+`);
+    expect(result.taskCount).toBe(0);
+    expect(result.issues[0]?.message).toContain("not a real date");
+  });
+});
+
+describe("parseMermaidGantt — a weekend start under `excludes weekends`", () => {
+  it("moves the start to the first working day and says so", () => {
+    // Sat 2026-01-03 + 5 working days is Mon 05 to Fri 09 — the bar mermaid
+    // draws. Keeping the Saturday start would claim a 7-day bar.
+    const result = parseMermaidGantt(`
+gantt
+    dateFormat YYYY-MM-DD
+    excludes weekends
+    section P One
+    Kick-off :t1, 2026-01-03, 5d
+`);
+    expect(result.phases[0]?.tasks[0]?.plannedStart).toBe("2026-01-05");
+    expect(result.phases[0]?.tasks[0]?.plannedEnd).toBe("2026-01-09");
+    expect(result.issues[0]?.severity).toBe("warning");
+    expect(result.issues[0]?.message).toContain("2026-01-05");
+  });
+
+  it("leaves a weekend start alone when the chart does not exclude weekends", () => {
+    const result = parseMermaidGantt(`
+gantt
+    dateFormat YYYY-MM-DD
+    section P One
+    Kick-off :t1, 2026-01-03, 5d
+`);
+    expect(result.phases[0]?.tasks[0]?.plannedStart).toBe("2026-01-03");
+    expect(result.issues).toEqual([]);
+  });
+
+  it("leaves an explicit end date on a weekend start alone", () => {
+    // Only the DURATION path lays days out; an explicit end is what it says.
+    const result = parseMermaidGantt(`
+gantt
+    dateFormat YYYY-MM-DD
+    excludes weekends
+    section P One
+    Kick-off :t1, 2026-01-03, 2026-01-09
+`);
+    expect(result.phases[0]?.tasks[0]?.plannedStart).toBe("2026-01-03");
+    expect(result.phases[0]?.tasks[0]?.plannedEnd).toBe("2026-01-09");
+  });
+});
+
 describe("parseMermaidGantt — shapes a real chart uses", () => {
   it("reads a markdown fence around the chart", () => {
     const result = parseMermaidGantt(

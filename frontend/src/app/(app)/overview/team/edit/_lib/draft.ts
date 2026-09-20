@@ -9,10 +9,20 @@
  * `2026-09-20-overview-authoring-layer`) owns all of that, and duplicating it
  * now would mean deleting it later.
  *
- * One thing the draft carries without editing: the estimate's cost lines and
- * calendar breaks. The content endpoint replaces an estimate's WHOLE graph,
- * so a payload that omitted them would delete them — and they belong to the
- * Costs and Timeline pages, not this one. They round-trip untouched.
+ * **Everything this page does not edit still has to travel.** The content
+ * endpoint replaces an estimate's WHOLE graph, so any field absent from the
+ * payload reverts to its default — which for a phase means every gate reset
+ * to `pending`, gate notes and decision dates blanked, actual dates cleared
+ * and the source plan's stated working weeks dropped, all from one Save on a
+ * page that shows none of them. The Timeline page (Phase 3) writes exactly
+ * those fields, so this is a live cross-page data-loss path rather than a
+ * hypothetical one.
+ *
+ * The rule, therefore: the draft round-trips every field of every table the
+ * content endpoint owns. `DraftPhase` and `DraftTask` below mirror
+ * `PhaseWrite` and `TaskWrite` field for field, and the cost lines and
+ * calendar breaks are carried verbatim. Adding a field to the wire shape
+ * means adding it here too.
  */
 
 import type {
@@ -23,24 +33,36 @@ import type {
 import type {
   EstimateContentWrite,
   EstimateDetail,
+  GateStatus,
   PhaseWrite,
   RoleWrite,
 } from "../../../_lib/estimate-api";
 
+/** Mirrors `TaskWrite` field for field — see the module docstring. */
+export interface DraftTask {
+  number: string;
+  title: string;
+  requirement_refs: string | null;
+  planned_start: string | null;
+  planned_end: string | null;
+  is_critical: boolean;
+  status: "planned" | "in_progress" | "done";
+}
+
+/** Mirrors `PhaseWrite` field for field — see the module docstring. */
 export interface DraftPhase {
   code: string;
   name: string;
   planned_start: string | null;
   planned_end: string | null;
+  stated_working_weeks: string | null;
   gate_criteria: string;
-  tasks: {
-    number: string;
-    title: string;
-    planned_start: string | null;
-    planned_end: string | null;
-    is_critical: boolean;
-    status: "planned" | "in_progress" | "done";
-  }[];
+  actual_start: string | null;
+  actual_end: string | null;
+  gate_status: GateStatus;
+  gate_decided_at: string | null;
+  gate_notes: string;
+  tasks: DraftTask[];
 }
 
 export interface Draft {
@@ -72,10 +94,17 @@ export function draftFromEstimate(detail: EstimateDetail): Draft {
       name: p.name,
       planned_start: p.planned_start,
       planned_end: p.planned_end,
+      stated_working_weeks: p.stated_working_weeks,
       gate_criteria: p.gate_criteria,
+      actual_start: p.actual_start,
+      actual_end: p.actual_end,
+      gate_status: p.gate_status,
+      gate_decided_at: p.gate_decided_at,
+      gate_notes: p.gate_notes,
       tasks: p.tasks.map((t) => ({
         number: t.number,
         title: t.title,
+        requirement_refs: t.requirement_refs,
         planned_start: t.planned_start,
         planned_end: t.planned_end,
         is_critical: t.is_critical,
@@ -229,10 +258,17 @@ export function draftToContent(draft: Draft): EstimateContentWrite {
     name: phase.name,
     planned_start: phase.planned_start,
     planned_end: phase.planned_end,
+    stated_working_weeks: phase.stated_working_weeks,
     gate_criteria: phase.gate_criteria,
+    actual_start: phase.actual_start,
+    actual_end: phase.actual_end,
+    gate_status: phase.gate_status,
+    gate_decided_at: phase.gate_decided_at,
+    gate_notes: phase.gate_notes,
     tasks: phase.tasks.map((task) => ({
       number: task.number,
       title: task.title,
+      requirement_refs: task.requirement_refs,
       planned_start: task.planned_start,
       planned_end: task.planned_end,
       is_critical: task.is_critical,

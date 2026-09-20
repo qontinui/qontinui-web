@@ -29,13 +29,22 @@ function RoleRows({
       >
         <thead>
           <tr className="border-b border-border text-left">
-            <th scope="col" className="py-2 pr-4 font-medium text-muted-foreground">
+            <th
+              scope="col"
+              className="py-2 pr-4 font-medium text-muted-foreground"
+            >
               Code
             </th>
-            <th scope="col" className="py-2 pr-4 font-medium text-muted-foreground">
+            <th
+              scope="col"
+              className="py-2 pr-4 font-medium text-muted-foreground"
+            >
               Role
             </th>
-            <th scope="col" className="py-2 pr-4 font-medium text-muted-foreground">
+            <th
+              scope="col"
+              className="py-2 pr-4 font-medium text-muted-foreground"
+            >
               What they do
             </th>
             {showRate && (
@@ -87,15 +96,21 @@ export function RolesTable({ roles }: { roles: RollupRole[] }) {
         className="text-[15px] leading-relaxed text-muted-foreground"
         data-ui-bridge-id="overview.team.roles.empty"
       >
-        No roles have been entered for this estimate yet, so there is nothing
-        to price the work with.
+        No roles have been entered for this estimate yet, so there is nothing to
+        price the work with.
       </p>
     );
   }
 
   return (
     <div className="space-y-8" data-ui-bridge-id="overview.team.roles">
-      {ours.length > 0 && <RoleRows roles={ours} showRate uiBridgeId="overview.team.roles.delivery" />}
+      {ours.length > 0 && (
+        <RoleRows
+          roles={ours}
+          showRate
+          uiBridgeId="overview.team.roles.delivery"
+        />
+      )}
       {theirs.length > 0 && (
         <div data-ui-bridge-id="overview.team.roles.client-side-section">
           <h3 className="font-[family-name:var(--font-overview-serif)] text-lg text-foreground">
