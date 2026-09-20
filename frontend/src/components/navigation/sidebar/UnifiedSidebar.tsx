@@ -247,7 +247,10 @@ const UnifiedSidebarContent: React.FC<UnifiedSidebarProps> = ({
           // width and visibly snapped back from 256px to the rail's 64px when
           // the drawer closed.
           isCollapsed ? "w-16" : "w-64",
-          className
+          // Follows whichever element is currently BEING the sidebar, the same
+          // rule `data-sidebar` and `data-tutorial-id` follow above — the
+          // drawer takes it while it holds the menu.
+          inDrawer ? undefined : className
         )}
       >
         {inDrawer ? null : body}

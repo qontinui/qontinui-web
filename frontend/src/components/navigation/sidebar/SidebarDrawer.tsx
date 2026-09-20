@@ -58,10 +58,20 @@ export function SidebarDrawer({
   // What had focus when the drawer opened, as the last resort. Captured on
   // mount because the drawer is mounted BY the open transition — this
   // component does not exist while it is closed.
+  //
+  // `<body>` is explicitly NOT a target: it is what `document.activeElement`
+  // reads as when nothing is focused (the iOS-tap case), and focusing it is a
+  // no-op that would leave a keyboard user where this handler is trying not to
+  // leave them. In practice `getRestoreFocusTarget` answers in every band —
+  // Radix dispatches this from a `setTimeout`, so React has re-committed and
+  // both the phone button and the tablet rail are mounted by then — which
+  // makes this a guard against a caller that supplies no resolver, not the
+  // path the two real layouts take.
   const openerRef = React.useRef<HTMLElement | null>(null);
   React.useEffect(() => {
     const active = document.activeElement;
-    openerRef.current = active instanceof HTMLElement ? active : null;
+    openerRef.current =
+      active instanceof HTMLElement && active !== document.body ? active : null;
   }, []);
 
   /**
