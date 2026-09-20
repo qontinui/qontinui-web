@@ -138,6 +138,33 @@ _DERIVED_KEYS: dict[str, frozenset[str]] = {
             "repos_scope_kind",
         }
     ),
+    "harness": frozenset(
+        {
+            # The harness section's provenance key, and registered here for
+            # exactly the reason the ``repos`` entry above spells out:
+            # ``_DERIVED_KEYS`` is keyed by SECTION and ``is_derived_key``
+            # answers False for a key it does not recognise, so neither entry
+            # above covers a same-named key here.
+            #
+            # Every other ``harness`` key is a probe under the workspace root
+            # or a rendering relative to it, which is why the runner publishes
+            # WHICH rung resolved that root (``declared`` / ``default`` /
+            # ``inherited``): two boxes that resolved it differently did not
+            # measure the same concept, and a reader has to be able to tell
+            # that before acting on a difference.
+            #
+            # Derived for the same operational reason ``repos_scope_kind`` is:
+            # it is REPORTED but can never be an apply action — no remediation
+            # installs a scope — and ``harness`` is report-only by design in
+            # any case (plan ``2026-09-13-a-new-machine-cannot-discover-apply-
+            # or-verify-the-fleet-harness-config`` D3). Leaving it underived
+            # would count a pure provenance difference as drift and put two
+            # otherwise compliant boxes permanently out of sync on this
+            # section — the reading that plan's Phase 3 gate forbids, since
+            # derived keys are excluded from ``in_sync``.
+            "harness_scope_kind",
+        }
+    ),
 }
 
 # Per-dependency keys are built as ``format!("node_dep_{dep}")`` by the
