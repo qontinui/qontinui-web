@@ -1,7 +1,7 @@
 """coord.agent_questions — withdrawal record + the ask-time reference
 
 Revision ID: coord_agent_questions_withdrawn
-Revises: plan_library_07_plan_difficulty
+Revises: mrg_aqw_01
 Create Date: 2026-09-20
 
 Phase 0 of plan
@@ -205,14 +205,19 @@ a no-op. Raw ``op.execute`` rather than ``op.add_column`` for exactly that
 reason — the convention of the ``coord_substrate_*`` revisions and of the
 sibling above.
 
-``down_revision`` chains off the single current head
-``plan_library_07_plan_difficulty``, computed from the chain rather than taken
-from a coord migration reservation: coord's ``HEAD_KEYED_ALEMBIC_REDIRECT``
-(``semantic_reserve.rs``:192-199) says reserving is optional and advisory for
-alembic, the semantic ``reserve()`` door refuses the head outright, and the
-``alembic_revision`` claim kind answers 410 Gone. Land-time re-pointing plus the
-required ``alembic-graph-pr.yml`` check is the backstop, so no
-``coord:stacked-on`` / ``coord:upstream-of`` label belongs on this PR.
+``down_revision`` chains off ``mrg_aqw_01``, the no-op merge revision added
+beside this one. It did NOT originally: this revision was authored against the
+single head ``plan_library_07_plan_difficulty``, and while it sat open, two
+migrations that had been authored off that same head both landed on main
+(``ci_job_mem_01`` and ``rsslocal_02_drop_coord_tables``), leaving main itself
+forked at two heads and this branch a third. `alembic-graph-pr.yml` fails a PR
+iff the resulting chain exceeds one head, so its own stated remedy applies --
+"the author either rebases or adds an `alembic merge` revision" -- and rebasing
+cannot resolve a fork between two revisions already on main. See
+``mrg_aqw_01_merge_cijobmem_rsslocal_heads.py`` for the reasoning; that merge
+imposes no ordering between its parents.
+
+The head was computed from the chain rather than taken
 
 Downgrade drops both indices and all five columns. Nothing is lost that was not
 introduced here: every withdrawal record and every ``asked_about`` reference is
@@ -225,7 +230,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "coord_agent_questions_withdrawn"
-down_revision: str | Sequence[str] | None = "plan_library_07_plan_difficulty"
+down_revision: str | Sequence[str] | None = "mrg_aqw_01"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
