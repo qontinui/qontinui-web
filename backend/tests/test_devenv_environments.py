@@ -341,7 +341,7 @@ class TestDiffEnvelopes:
             "invariant_class": "(a)",
         }
         canonical = _envelope({"harness": {**compliant, "harness_scope_kind": "declared"}})
-        actual = _envelope({"harness": {**compliant, "harness_scope_kind": "default"}})
+        actual = _envelope({"harness": {**compliant, "harness_scope_kind": "home_default"}})
         report = devenv_drift.diff_envelopes(canonical, actual)
 
         delta = _delta(_section(report, "harness"), "harness_scope_kind")
@@ -356,7 +356,7 @@ class TestDiffEnvelopes:
                 "harness": {
                     **compliant,
                     "invariant_class": "(c)",
-                    "harness_scope_kind": "default",
+                    "harness_scope_kind": "home_default",
                 }
             }
         )
