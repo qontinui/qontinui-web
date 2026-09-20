@@ -11,8 +11,9 @@
  * operator), carried over unchanged from the console's own dropdown nav:
  *
  *   Pipeline · Pull Requests · Gates · Alerts · Notifications   ← direct
- *   Work ▸    Plans / Plan Library / Questions / Agents / Agent Commands /
- *             Agent Skills / Prompt Log / History / Lands
+ *   Work ▸    Plans / Work Units / Plan Library / Plan Candidates /
+ *             Plan Forks / Plan Follow-ups / Questions / Agents /
+ *             Agent Commands / Agent Skills / Prompt Log / History / Lands
  *   Merge ▸   Pull Decisions / Automation Rules / Gate Clearance /
  *             Merge Settings°
  *   Intent ▸  Prompt Documents / Policies / Decision Policies /
@@ -35,11 +36,13 @@ import {
   Bot,
   Boxes,
   Compass,
+  CornerDownRight,
   Cpu,
   FileText,
   Gauge,
   Gavel,
   GitBranch,
+  GitFork,
   GitMerge,
   GitPullRequest,
   Hammer,
@@ -48,6 +51,7 @@ import {
   KeyRound,
   Layers,
   Library,
+  ListChecks,
   ListTodo,
   MessageSquare,
   NotebookText,
@@ -184,6 +188,35 @@ export const GROUPS: NavGroup[] = [
         label: "Plan Library",
         icon: Library,
         testId: "coord-nav-plan-library",
+      },
+      // Phase 4 of `2026-09-20-the-operator-plans-page-reads-the-wrong-store`.
+      // Three purpose-built plan-library joins had shipped with tests, an
+      // OpenAPI entry and a contract — and ZERO consumers; a `git grep` for
+      // each route name across `frontend/**` matched only the two generated
+      // snapshots. An unconsumed route is not neutral [policy:
+      // `capability-ships-enabled`], so each gets a leaf here as well as its
+      // in-page entry point. No href prefixes another (`/plans` does not
+      // prefix `/plan-candidates`), which is what keeps the sidebar's
+      // startsWith active-match from double-highlighting.
+      {
+        href: "/admin/coord/plan-candidates",
+        label: "Plan Candidates",
+        icon: ListChecks,
+        testId: "coord-nav-plan-candidates",
+      },
+      {
+        // Reached from the `coord-plan-divergent` marker on Plans as well —
+        // that marker had nowhere to go until this page existed.
+        href: "/admin/coord/plan-forks",
+        label: "Plan Forks",
+        icon: GitFork,
+        testId: "coord-nav-plan-forks",
+      },
+      {
+        href: "/admin/coord/plan-followups",
+        label: "Plan Follow-ups",
+        icon: CornerDownRight,
+        testId: "coord-nav-plan-followups",
       },
       {
         href: "/admin/coord/questions",

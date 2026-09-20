@@ -72,6 +72,7 @@ import {
   type RowStatus,
   type StatusPalette,
 } from "@/components/console";
+import type { DisclosureLevel, DisclosureLine } from "./disclosureLines";
 
 // ---------------------------------------------------------------------------
 // The wire shape. Mirrors `backend/app/schemas/plan_library.py`
@@ -493,19 +494,13 @@ export function describeWindow(res: ReconciliationResponse): WindowReading {
 // derived from the population.
 // ---------------------------------------------------------------------------
 
-export type DisclosureLevel = "critical" | "caveat" | "note";
-
-export interface DisclosureLine {
-  key: string;
-  level: DisclosureLevel;
-  text: string;
-  /**
-   * Values carried VERBATIM from the route — reasons, gaps. Rendered as a list
-   * rather than folded into `text`, because these are the fields that still say
-   * something true when the flags do not.
-   */
-  items?: string[];
-}
+/**
+ * The line shape now lives in `disclosureLines.ts`, shared with
+ * `/admin/coord/plan-candidates` — which owes the operator the same three
+ * disclosures over a different route (Phase 4c). Re-exported here so every
+ * existing importer keeps its spelling.
+ */
+export type { DisclosureLevel, DisclosureLine };
 
 export interface ReconciliationDisclosure {
   /**

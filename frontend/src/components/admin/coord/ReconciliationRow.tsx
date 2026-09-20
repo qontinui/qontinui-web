@@ -20,10 +20,13 @@
  *     rides the detail panel verbatim as a list.
  *
  * `variant_count > 1` — a divergent document copy the route collapsed to the
- * newest — is surfaced as a marker rather than left silent. Phase 4 links it
- * to `/plan-library/divergent`; until then it is visible, which is the point.
+ * newest — is surfaced as a marker rather than left silent, and since Phase 4b
+ * the marker is a LINK to `/admin/coord/plan-forks`, the consumer for
+ * `GET /plan-library/divergent`. It had nowhere to go before that page
+ * existed, which made it a notice rather than a route to the answer.
  */
 
+import Link from "next/link";
 import { GitFork } from "lucide-react";
 import {
   RecordDetail,
@@ -133,23 +136,28 @@ export function ReconciliationRow({
             <AxisCell axis="C" reading={c} testId="coord-plan-axis-c" />
           </span>
           {divergent && (
-            <span
+            <Link
               // R3/§4.1 — `statusRow.tsx` is the only module allowed to spell
               // an attention colour. This marker is the "we do not know which
               // copy is the plan" amber, so it interpolates UNKNOWN_AMBER
               // rather than re-typing a tint next to it.
               className={`inline-flex items-center gap-1 rounded border px-1.5 py-0.5 text-[11px] whitespace-nowrap ${UNKNOWN_AMBER}`}
+              href="/admin/coord/plan-forks"
+              // The row itself is a toggle button, so a click on the marker
+              // must not also open the detail panel underneath it.
+              onClick={(e) => e.stopPropagation()}
               data-testid="coord-plan-divergent"
               data-variant-count={variantCount(row.axis_b)}
               title={
                 `${variantCount(row.axis_b)} artifact rows share this stem — a divergent ` +
                 "document copy. The newest is the one compared here; the " +
-                "others are not shown, which is why this marker exists."
+                "others are not shown, which is why this marker exists. " +
+                "Opens the fork list, which shows every copy."
               }
             >
               <GitFork className="h-3 w-3" aria-hidden="true" />
               {variantCount(row.axis_b)} copies
-            </span>
+            </Link>
           )}
         </>
       }
@@ -221,7 +229,15 @@ export function ReconciliationRow({
                 </span>{" "}
                 <span className="text-muted-foreground">
                   The newest is the one compared above; the others were
-                  collapsed, not reconciled.
+                  collapsed, not reconciled.{" "}
+                  <Link
+                    href="/admin/coord/plan-forks"
+                    className="underline"
+                    data-testid="coord-plan-divergent-link"
+                  >
+                    See every copy, with its source and digest
+                  </Link>
+                  .
                 </span>
               </div>
             )}
