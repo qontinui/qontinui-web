@@ -89,34 +89,59 @@ class Unavailable:
 
 
 def _business_days(start: date, end: date) -> int:
-    """Monday–Friday days in the inclusive range ``[start, end]``."""
+    """Monday–Friday days in the inclusive range ``[start, end]``.
+
+    Counted arithmetically rather than by walking the range. A ``DATE`` column
+    accepts ``0001-01-01`` to ``9999-12-31``, so a phase with a mistyped year
+    would otherwise put a multi-million-iteration loop inside a request that
+    any tenant member can issue. The remainder loop below runs at most six
+    times whatever the span.
+    """
     if end < start:
         return 0
-    total = 0
-    cursor = start
-    while cursor <= end:
-        if cursor.weekday() < 5:
+    days = (end - start).days + 1
+    weeks, remainder = divmod(days, 7)
+    total = weeks * 5
+    weekday = start.weekday()
+    for offset in range(remainder):
+        if (weekday + offset) % 7 < 5:
             total += 1
-        cursor += timedelta(days=1)
     return total
+
+
+def _merged_break_spans(
+    start: date, end: date, breaks: list[CalendarBreak]
+) -> list[tuple[date, date]]:
+    """The breaks clipped to ``[start, end]``, overlaps merged.
+
+    Merging is what makes a day count once: a day is either worked or it is
+    not, and two holidays falling on the same day do not remove two days.
+    """
+    clipped = sorted(
+        (
+            (max(start, brk.start_date), min(end, brk.end_date))
+            for brk in breaks
+            if max(start, brk.start_date) <= min(end, brk.end_date)
+        ),
+    )
+    merged: list[tuple[date, date]] = []
+    for lo, hi in clipped:
+        if merged and lo <= merged[-1][1] + timedelta(days=1):
+            previous_lo, previous_hi = merged[-1]
+            merged[-1] = (previous_lo, max(previous_hi, hi))
+        else:
+            merged.append((lo, hi))
+    return merged
 
 
 def _break_business_days(start: date, end: date, breaks: list[CalendarBreak]) -> int:
     """Monday–Friday days inside ``[start, end]`` that a calendar break
-    removes. Overlapping breaks are counted once — a day is either worked or
-    it is not, and two holidays on the same day do not remove two days."""
+    removes, each such day counted once."""
     if end < start:
         return 0
-    removed: set[date] = set()
-    for brk in breaks:
-        lo = max(start, brk.start_date)
-        hi = min(end, brk.end_date)
-        cursor = lo
-        while cursor <= hi:
-            if cursor.weekday() < 5:
-                removed.add(cursor)
-            cursor += timedelta(days=1)
-    return len(removed)
+    return sum(
+        _business_days(lo, hi) for lo, hi in _merged_break_spans(start, end, breaks)
+    )
 
 
 def calendar_weeks(start: date, end: date) -> Decimal:

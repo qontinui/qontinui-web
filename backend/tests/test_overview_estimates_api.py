@@ -417,6 +417,14 @@ class TestWorkingDays:
             date(2026, 1, 5), date(2026, 1, 30), [a, b], Decimal("1.0")
         ) == Decimal("16.00")
 
+    async def test_a_century_long_phase_is_counted_not_walked(self) -> None:
+        """A DATE column accepts year 1 to year 9999, so a mistyped year must
+        not put a multi-million-iteration loop inside a read any tenant member
+        can issue. 1000 years is ~365243 days; the count is arithmetic, so
+        this returns immediately."""
+        days = working_days(date(1000, 1, 1), date(1999, 12, 31), [], Decimal("1.0"))
+        assert days > Decimal("200000")
+
     async def test_the_working_day_factor_applies_last(self) -> None:
         assert working_days(
             date(2026, 1, 5), date(2026, 1, 30), [], Decimal("0.9")
