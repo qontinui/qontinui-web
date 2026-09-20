@@ -350,7 +350,7 @@ describe("titles that name coord fields", () => {
   });
 });
 
-describe("one ordering authority per kind", () => {
+describe("operator-set positions", () => {
   const entry = (
     kind: string,
     name: string,
@@ -368,20 +368,24 @@ describe("one ordering authority per kind", () => {
       updatedAt: null,
     }) as never;
 
-  it("does not let one ordered document outrank the whole fallback list", () => {
-    // The operator means "non-goals second" and sets only that one. Mixing
-    // the two authorities put it FIRST — the original complaint, returning
-    // through the control added to fix it.
+  it("reads an order as the POSITION the operator meant", () => {
+    // "non-goals second", set on that document alone. Everything else keeps
+    // the default reading order around it — so the vision still leads.
     const sorted = sortIntentEntries([
       entry("product_intent", "non-goals", "Non-goals", 2),
+      entry("product_intent", "open-questions", "Open questions"),
       entry("product_intent", "vision", "Vision"),
     ]);
-    expect(sorted.map((e) => e.name)).toEqual(["non-goals", "vision"]);
+    expect(sorted.map((e) => e.name)).toEqual([
+      "vision",
+      "non-goals",
+      "open-questions",
+    ]);
   });
 
-  it("puts a kind's unordered documents after its ordered ones", () => {
+  it("honours a fully ordered kind", () => {
     const sorted = sortIntentEntries([
-      entry("product_intent", "charter", "Charter"),
+      entry("product_intent", "charter", "Charter", 3),
       entry("product_intent", "vision", "Vision", 1),
       entry("product_intent", "non-goals", "Non-goals", 2),
     ]);
@@ -390,6 +394,35 @@ describe("one ordering authority per kind", () => {
       "non-goals",
       "charter",
     ]);
+  });
+
+  it("clamps a position outside the section", () => {
+    const first = sortIntentEntries([
+      entry("product_intent", "charter", "Charter", 0),
+      entry("product_intent", "vision", "Vision"),
+    ]);
+    expect(first.map((e) => e.name)).toEqual(["charter", "vision"]);
+    const last = sortIntentEntries([
+      entry("product_intent", "charter", "Charter", 99),
+      entry("product_intent", "vision", "Vision"),
+    ]);
+    expect(last.map((e) => e.name)).toEqual(["vision", "charter"]);
+  });
+
+  it("keeps an unreadable document in its default place", () => {
+    // It can never carry an order (list rows carry no attrs), so it must not
+    // be exiled to the end of a section where a sibling has one.
+    const unreadable = {
+      ...(entry("product_intent", "vision", "Vision") as object),
+      state: "unreadable",
+      hasBody: false,
+      body: "",
+    } as never;
+    const sorted = sortIntentEntries([
+      entry("product_intent", "non-goals", "Non-goals", 2),
+      unreadable,
+    ]);
+    expect(sorted.map((e) => e.name)).toEqual(["vision", "non-goals"]);
   });
 
   it("leaves a kind with no operator order on the seeded reading order", () => {
@@ -401,5 +434,28 @@ describe("one ordering authority per kind", () => {
     expect(
       sorted.filter((e) => e.kind === "product_intent").map((e) => e.name)
     ).toEqual(["vision", "non-goals"]);
+  });
+
+  it("sorts unlisted documents after listed ones, by title", () => {
+    const sorted = sortIntentEntries([
+      entry("audience_profile", "z-team", "The operating team"),
+      entry("audience_profile", "a-agent", "The AI development agent"),
+    ]);
+    expect(sorted.map((e) => e.title)).toEqual([
+      "The AI development agent",
+      "The operating team",
+    ]);
+  });
+});
+
+describe("a setext underline cannot rescue a non-heading opener", () => {
+  it.each([
+    "> Draft note\n===\n\nBody.",
+    "- First item\n===\n\nBody.",
+    "1. First\n===\n\nBody.",
+    "<!-- internal -->\n===\n\nBody.",
+  ])("leaves %j in the body", (body) => {
+    expect(bodyWithoutLeadHeading(body)).toBe(body);
+    expect(titleOfDocument("vision", body)).toBe("Vision");
   });
 });

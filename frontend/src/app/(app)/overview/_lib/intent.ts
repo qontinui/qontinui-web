@@ -132,7 +132,11 @@ function leadHeading(
   if (atx?.[2]) return { text: atx[2].trim(), raw: atx[0], stripped };
   // `=` only. A `-` underline is indistinguishable from a thematic break
   // after a block quote, a list item or an HTML block, and treating one as a
-  // heading would DELETE that first line from the body.
+  // heading would DELETE that first line from the body. The guard below
+  // rejects those openers outright, since none of them can carry a setext
+  // underline in CommonMark.
+  if (/^[ \t]{0,3}(?:[>|<#]|[-*+][ \t]|\d+[.)][ \t])/.test(stripped))
+    return null;
   const setext =
     /^([ \t]{0,3}(\S.*?)[ \t]*\r?\n[ \t]{0,3}={2,}[ \t]*)(?:\r?\n|$)/.exec(
       stripped
@@ -226,24 +230,49 @@ function base(
  * first, then anything else by title. Deterministic either way — coord's own
  * ordering is alphabetical by slug, which is not an editorial judgement.
  */
-export function sortIntentEntries(entries: IntentEntry[]): IntentEntry[] {
-  // Per KIND, one authority decides: if any of its documents carries an
-  // operator-set order, that is the order for that kind and its unordered
-  // documents follow. Mixing the two would let an order set on one document
-  // ("2", meaning second) outrank the whole fallback list and put it first.
-  const operatorOrdered = new Set(
-    entries.filter((e) => e.order !== null).map((e) => e.kind)
-  );
-  const rank = (e: IntentEntry) => {
-    if (operatorOrdered.has(e.kind)) {
-      return e.order ?? Number.MAX_SAFE_INTEGER;
-    }
+/**
+ * Reading order for one kind's documents.
+ *
+ * `attrs.overview_order` is a POSITION, 1-based: "2" means second in the
+ * section, which is what an operator reading the page means by it. So the
+ * documents nobody has ruled on keep their default order among themselves,
+ * and each ordered document is inserted at the position it names.
+ *
+ * Ranking the two against each other on one numeric axis cannot express
+ * that — whichever band wins, setting "2" on a single document moves it to
+ * the top, which is the complaint this file exists to fix, arriving through
+ * the control added to fix it.
+ */
+function sortOneKind(entries: IntentEntry[]): IntentEntry[] {
+  const seeded = (e: IntentEntry) => {
     const i = (INTENT_DOC_ORDER[e.kind] ?? []).indexOf(e.name);
     return i === -1 ? Number.MAX_SAFE_INTEGER : i;
   };
-  return [...entries].sort(
-    (a, b) => rank(a) - rank(b) || a.title.localeCompare(b.title, "en")
-  );
+  const byDefault = (a: IntentEntry, b: IntentEntry) =>
+    seeded(a) - seeded(b) || a.title.localeCompare(b.title, "en");
+
+  const placed = entries
+    .filter((e) => e.order !== null)
+    .sort((a, b) => a.order! - b.order! || byDefault(a, b));
+  const rest = entries.filter((e) => e.order === null).sort(byDefault);
+
+  for (const entry of placed) {
+    // 1-based, clamped: position 0 or a negative reads as "first", and a
+    // position past the end reads as "last".
+    const at = Math.min(Math.max((entry.order ?? 1) - 1, 0), rest.length);
+    rest.splice(at, 0, entry);
+  }
+  return rest;
+}
+
+export function sortIntentEntries(entries: IntentEntry[]): IntentEntry[] {
+  const byKind = new Map<SummaryIntentKind, IntentEntry[]>();
+  for (const entry of entries) {
+    const bucket = byKind.get(entry.kind);
+    if (bucket) bucket.push(entry);
+    else byKind.set(entry.kind, [entry]);
+  }
+  return [...byKind.values()].flatMap(sortOneKind);
 }
 
 /** A document whose body was fetched. */
