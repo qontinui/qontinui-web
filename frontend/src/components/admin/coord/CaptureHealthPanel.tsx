@@ -19,6 +19,14 @@
  *   - **`last_touched_at` is last TOUCHED.** A kind correction bumps it with
  *     no capture, so the caveat rides the value rather than the footnotes.
  *   - **`newest_updated_at: null` is UNKNOWN**, not "fresh" and not an epoch.
+ *   - **A door with no `count` at all is UNKNOWN**, and gets a dash and its
+ *     own cell — never the "this door has written nothing" accusation, which
+ *     belongs to a served `0` alone.
+ *   - **A census kept on screen after a FAILED refresh is LABELLED.** The
+ *     page that owns this read states the intent — the previous census stays
+ *     "and labelled" — and without the label the summary goes on reading "3
+ *     doors, all of them writing" about a read that just failed, while every
+ *     relative time keeps drifting as though it were current.
  *
  * And the one it must not overreach on: this is a SECOND read, of the artifact
  * store alone. On a reconciliation read whose population arm failed it still
@@ -41,6 +49,7 @@ import {
 import {
   SECOND_READ_CAVEAT,
   SECOND_READ_NOTE,
+  STALE_CENSUS_NOTE,
   type CaptureCensus,
   type CorpusFreshness,
 } from "./captureHealthStatus";
@@ -74,8 +83,11 @@ function DoorRow({ door }: { door: CaptureCensus["doors"][number] }) {
       <td
         className="py-1.5 pr-3 tabular-nums"
         data-testid="coord-capture-door-count"
+        data-count-unstated={door.countUnstated ? "true" : "false"}
       >
-        {door.count}
+        {/* R6 — an unserved count is a dash. Printing `0` here would turn a
+            field the response did not carry into this panel's loudest claim. */}
+        {door.countUnstated ? DASH : door.count}
         {/* The zero is the finding, so it is SAID, not merely printed. */}
         {door.silent && (
           <div
@@ -83,6 +95,14 @@ function DoorRow({ door }: { door: CaptureCensus["doors"][number] }) {
             data-testid="coord-capture-door-silent"
           >
             this door has written nothing
+          </div>
+        )}
+        {door.countUnstated && (
+          <div
+            className="text-[11px] text-muted-foreground italic mt-0.5"
+            data-testid="coord-capture-door-count-unstated"
+          >
+            this response carried no count for this door — unknown, not zero
           </div>
         )}
       </td>
@@ -138,7 +158,17 @@ export function CaptureHealthPanel({
   loaded: boolean;
 }) {
   const silent = census?.silentDoors ?? [];
-  const summary = !loaded
+  const unstated = census?.countUnstatedDoors ?? [];
+  /**
+   * The census on screen is the LAST GOOD one and has not refreshed.
+   *
+   * `plans/page.tsx` states the intent — the previous census stays "and
+   * labelled" — and this is the second half of it. Unlabelled, a summary
+   * reading "3 doors, all of them writing" is a present-tense claim about a
+   * read that just failed.
+   */
+  const stale = readFailed && census !== null;
+  const measured = !loaded
     ? readFailed
       ? "unread — unknown, not empty"
       : "reading…"
@@ -148,7 +178,12 @@ export function CaptureHealthPanel({
         ? "this backend served no door list"
         : silent.length > 0
           ? `${silent.length} of ${census.doors.length} doors have written nothing`
-          : `${census.doors.length} doors, all of them writing`;
+          : unstated.length === census.doors.length && census.doors.length > 0
+            ? `${census.doors.length} doors, none of them counted on this read`
+            : `${census.doors.length} doors, all of them writing`;
+  const summary = stale
+    ? `${measured} — last good read, not refreshed`
+    : measured;
 
   return (
     <CollapsiblePanel
@@ -176,6 +211,15 @@ export function CaptureHealthPanel({
         {!loaded && !readFailed && (
           <p className="text-muted-foreground italic">
             Reading the capture census…
+          </p>
+        )}
+
+        {stale && (
+          <p
+            className="text-muted-foreground italic"
+            data-testid="coord-capture-health-stale"
+          >
+            {STALE_CENSUS_NOTE}
           </p>
         )}
 
@@ -255,8 +299,14 @@ export function CaptureHealthPanel({
                 className={freshness.unknown ? "italic" : undefined}
                 title={freshness.text}
               >
+                {/* The unknown arm's own text already opens with what is
+                    unknown and why, so prefixing "unknown — " reads as
+                    "unknown — the capture census has not been read, so the
+                    corpus's freshness is unknown". The reading is carried by
+                    the sentence and by `data-unknown`, not by a label
+                    stacked on top of it. */}
                 {freshness.unknown
-                  ? `unknown — ${freshness.text}`
+                  ? freshness.text
                   : relativeTime(freshness.at)}
               </span>
               {!freshness.unknown && (

@@ -102,6 +102,26 @@ describe("an empty unmet_depends_on is UNKNOWN on a row with no artifact", () =>
     expect(status.reason).toMatch(/walked/);
   });
 
+  it("reads an UNSTATED document_state as UNKNOWN, never as 'present'", () => {
+    // The field is optional on the wire. A `?? "present"` default walked the
+    // confident arm on the strength of a field nobody served — the cascade's
+    // first question answered by the renderer instead of by the route.
+    const status = describeReadiness(
+      candidate({ document_state: undefined, unmet_depends_on: [] })
+    );
+    expect(status.kind).toBe("unknown");
+    expect(status.label).not.toBe("no unmet dependency");
+    expect(status.reason).toMatch(/UNKNOWN/);
+  });
+
+  it("reads an ABSENT dependency list as UNKNOWN, never as an empty one", () => {
+    const status = describeReadiness(
+      candidate({ unmet_depends_on: undefined })
+    );
+    expect(status.kind).toBe("unknown");
+    expect(status.label).not.toBe("no unmet dependency");
+  });
+
   it("counts real blockers, and waits rather than escalating", () => {
     const status = describeReadiness(
       candidate({
@@ -150,10 +170,39 @@ describe("coord unavailable is UNKNOWN; unlinked PRs is a real zero", () => {
     expect(available.prLabel).toBe("no PR cited");
   });
 
-  it("reads an absent coord block as unlinked, not as unreadable", () => {
+  it("reads an ABSENT coord block as UNKNOWN — neither 'no unit link' nor 'no PR cited'", () => {
+    // `coord` is optional on the wire type. A backend that omits it has said
+    // nothing; defaulting either half to `unlinked` publishes this function's
+    // own named failure — "coord is down" rendered as "this plan has no PRs".
     const reading = describeCoordLink(undefined);
-    expect(reading.label).toBe("no unit link");
+    expect(reading.unknown).toBe(true);
+    expect(reading.label).not.toBe("no unit link");
+    expect(reading.prUnknown).toBe(true);
+    expect(reading.prLabel).not.toBe("no PR cited");
+    expect(reading.prs).toEqual([]);
+  });
+
+  it("reads a coord block with NO linked_prs_state as UNKNOWN on the PR half", () => {
+    // The block came; this half did not. Only an explicit `unlinked` is the
+    // real zero the citations' hard FK guarantees.
+    const reading = describeCoordLink({ work_unit_state: "linked" });
     expect(reading.unknown).toBe(false);
+    expect(reading.prUnknown).toBe(true);
+    expect(reading.prLabel).not.toBe("no PR cited");
+  });
+
+  it("reads an ABSENT work_unit_state as UNKNOWN — only an explicit 'unlinked' is zero", () => {
+    const reading = describeCoordLink({ linked_prs_state: "unlinked" });
+    expect(reading.unknown).toBe(true);
+    expect(reading.label).not.toBe("no unit link");
+    // The PR half is independent and was explicitly served: a real zero.
+    expect(reading.prUnknown).toBe(false);
+  });
+
+  it("still reads an EXPLICIT unlinked work unit as a real zero", () => {
+    const reading = describeCoordLink({ work_unit_state: "unlinked" });
+    expect(reading.unknown).toBe(false);
+    expect(reading.label).toBe("no unit link");
   });
 
   it("carries a citation's unknown merge state rather than flattening it", () => {

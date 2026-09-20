@@ -49,7 +49,7 @@
  * unserved count), R8 (every reading is derived in `forkStatus.ts`).
  */
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { GitFork, Tags } from "lucide-react";
 import {
   HealthStrip,
@@ -61,6 +61,10 @@ import {
   absoluteTime,
   relativeTime,
 } from "@/components/console";
+import {
+  useGuardedPoll,
+  type ReadGuard,
+} from "@/components/admin/coord/useGuardedPoll";
 import { httpClient } from "@/services/service-factory";
 import {
   FORK_PALETTE,
@@ -291,21 +295,30 @@ export default function CoordPlanForksPage() {
   const [data, setData] = useState<DivergentResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const fetchData = useCallback(async () => {
+  /**
+   * Guarded by `useGuardedPoll` — the same two counters and in-flight lock
+   * every coord console list uses. This page has no window control, so it
+   * asks one question for its whole life and only the second race is live
+   * here: without the lock a refresh CLICK stacks on an in-flight poll, and
+   * two overlapping reads of a LIVE-computed fork list can land out of order,
+   * leaving the older census on screen.
+   */
+  const fetchData = useCallback(async (guard: ReadGuard) => {
     try {
       const body = await httpClient.get<DivergentResponse>(ENDPOINT);
+      if (!guard.isNewest()) return;
       setData(body);
       setError(null);
     } catch (e) {
+      if (!guard.isCurrentQuestion()) return;
       setError(e instanceof Error ? e.message : String(e));
     }
   }, []);
 
-  useEffect(() => {
-    void fetchData();
-    const id = setInterval(() => void fetchData(), POLL_INTERVAL_MS);
-    return () => clearInterval(id);
-  }, [fetchData]);
+  const { refresh } = useGuardedPoll({
+    read: fetchData,
+    intervalMs: POLL_INTERVAL_MS,
+  });
 
   const census = useMemo(
     () => (data === null ? null : deriveForkCensus(data)),
@@ -330,7 +343,7 @@ export default function CoordPlanForksPage() {
 
       <div className="flex flex-wrap items-center gap-2">
         <RefreshButton
-          onRefresh={fetchData}
+          onRefresh={refresh}
           label="Refresh fork list"
           title={`Re-computes the fork list now; it also refreshes itself every ${POLL_INTERVAL_MS / 1000} s`}
           data-testid="coord-plan-forks-refresh"
@@ -378,6 +391,17 @@ export default function CoordPlanForksPage() {
               >
                 Could not read the fork list — whether any copy disagrees is
                 unknown, not none.
+              </p>
+            ) : readFailed ? (
+              // A failed refresh over a loaded window is STALE — and "as
+              // measured by this read" is a claim about a measurement that
+              // just failed.
+              <p
+                className="text-sm text-muted-foreground italic"
+                data-testid="coord-fork-content-stale"
+              >
+                No content fork at the last good read — it has not refreshed
+                since, so whether any copy disagrees NOW is unknown.
               </p>
             ) : (
               <p
@@ -428,6 +452,14 @@ export default function CoordPlanForksPage() {
               >
                 Could not read the fork list — whether any slug is forked across
                 kinds is unknown, not none.
+              </p>
+            ) : readFailed ? (
+              <p
+                className="text-sm text-muted-foreground italic"
+                data-testid="coord-fork-kind-stale"
+              >
+                No kind fork at the last good read — it has not refreshed since,
+                so whether any slug is forked NOW is unknown.
               </p>
             ) : (
               <p

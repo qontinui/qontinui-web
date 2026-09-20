@@ -47,7 +47,7 @@
  * derives in `candidateStatus.ts`).
  */
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import Link from "next/link";
 import { ChevronLeft, ChevronRight, FileText, Rows3 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -74,6 +74,10 @@ import {
   deriveCaptureCensus,
   describeCorpusFreshness,
 } from "@/components/admin/coord/captureHealthStatus";
+import {
+  useGuardedPoll,
+  type ReadGuard,
+} from "@/components/admin/coord/useGuardedPoll";
 import { httpClient } from "@/services/service-factory";
 import {
   CANDIDATE_PALETTE,
@@ -106,7 +110,10 @@ function CandidateRow({
   const coord = describeCoordLink(candidate.coord);
   const unmet = candidate.unmet_depends_on ?? [];
   const chain = candidate.prompt_chain ?? [];
-  const documentState = candidate.document_state ?? "present";
+  // NOT `?? "present"` — the same reading `describeReadiness` takes. A
+  // response that did not carry `document_state` has not said which corpus
+  // layer this row came from, and rendering `doc: present` would state it.
+  const documentState = candidate.document_state ?? null;
 
   return (
     <RecordRow
@@ -144,16 +151,18 @@ function CandidateRow({
           <span
             className="hidden sm:inline text-[11px] text-muted-foreground whitespace-nowrap"
             data-testid="coord-candidate-document-state"
-            data-document-state={documentState}
+            data-document-state={documentState ?? "unstated"}
             title={
               documentState === "present"
                 ? "An artifact row backs this candidate, so its body and edges are readable."
                 : documentState === "unsynced"
                   ? "No artifact row — coord's work unit records a source_path, so a plan file exists and only the body sync is missing."
-                  : "No artifact row and no source_path: coord knows of the work and no document for it has been seen anywhere."
+                  : documentState === "absent"
+                    ? "No artifact row and no source_path: coord knows of the work and no document for it has been seen anywhere."
+                    : "This response carried no document_state for this row, so which corpus layer it came from is UNKNOWN — it is not 'present'."
             }
           >
-            doc: {documentState}
+            doc: {documentState ?? "unstated"}
           </span>
           <span
             className={`hidden md:inline text-[11px] whitespace-nowrap ${coord.unknown ? "text-muted-foreground italic" : "text-muted-foreground"}`}
@@ -224,7 +233,9 @@ function CandidateRow({
               >
                 {documentState === "present"
                   ? "No unmet dependency — its depends_on edges were walked and every target is terminal."
-                  : "No dependency list: this row has no artifact, so there were no edges to walk. Empty here is UNKNOWN, not unblocked."}
+                  : documentState === null
+                    ? "No dependency list, and no document_state to say whether there were edges to walk. Empty here is UNKNOWN, not unblocked."
+                    : "No dependency list: this row has no artifact, so there were no edges to walk. Empty here is UNKNOWN, not unblocked."}
               </div>
             )}
             <div data-testid="coord-candidate-prs">
@@ -302,30 +313,46 @@ export default function CoordPlanCandidatesPage() {
   const [data, setData] = useState<PlanCandidateResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const fetchData = useCallback(async () => {
-    try {
-      const qs = new URLSearchParams();
-      qs.set("offset", String(offset));
-      qs.set("limit", String(limit));
-      const body = await httpClient.get<PlanCandidateResponse>(
-        `${ENDPOINT}?${qs.toString()}`
-      );
-      setData(body);
-      setError(null);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
-    }
-  }, [offset, limit]);
+  /**
+   * Guarded by `useGuardedPoll` — the two generation counters and the
+   * in-flight lock, one spelling shared with `/admin/coord/plans`. This page
+   * has a window control, so both races the hook documents are reachable
+   * here: change the page size while a read is out and the superseded
+   * response repaints the discarded window, or lands on top of a newer
+   * failure and states a stale window as a confident answer.
+   */
+  const fetchData = useCallback(
+    async (guard: ReadGuard) => {
+      try {
+        const qs = new URLSearchParams();
+        qs.set("offset", String(offset));
+        qs.set("limit", String(limit));
+        const body = await httpClient.get<PlanCandidateResponse>(
+          `${ENDPOINT}?${qs.toString()}`
+        );
+        if (!guard.isNewest()) return;
+        setData(body);
+        setError(null);
+      } catch (e) {
+        if (!guard.isCurrentQuestion()) return;
+        setError(e instanceof Error ? e.message : String(e));
+      }
+    },
+    [offset, limit]
+  );
 
-  useEffect(() => {
-    // The window is the question: changing it makes the rows already held
-    // answers to a question nobody asked.
+  // The window is the question: changing it makes the rows already held
+  // answers to a question nobody asked.
+  const resetWindow = useCallback(() => {
     setData(null);
     setError(null);
-    void fetchData();
-    const id = setInterval(() => void fetchData(), POLL_INTERVAL_MS);
-    return () => clearInterval(id);
-  }, [fetchData]);
+  }, []);
+
+  const { refresh } = useGuardedPoll({
+    read: fetchData,
+    intervalMs: POLL_INTERVAL_MS,
+    onQuestionChange: resetWindow,
+  });
 
   const loaded = data !== null;
   const readFailed = error !== null;
@@ -349,7 +376,12 @@ export default function CoordPlanCandidatesPage() {
   );
   const freshness = useMemo(() => describeCorpusFreshness(capture), [capture]);
 
-  const followups = data?.open_followups ?? [];
+  // NOT collapsed to `[]`. A backend that did not carry `open_followups` has
+  // said nothing about the queue; `[]` would render as "No open follow-up in
+  // this read" — a measured zero beside a total that correctly shows `–`, so
+  // the two halves of one paragraph would disagree.
+  const followups = data?.open_followups;
+  const followupsUnstated = loaded && followups === undefined;
   const followupTotal = data?.open_followup_total;
 
   return (
@@ -391,7 +423,7 @@ export default function CoordPlanCandidatesPage() {
         </Select>
         <RefreshButton
           key={`${offset}:${limit}`}
-          onRefresh={fetchData}
+          onRefresh={refresh}
           label="Refresh candidates"
           title={`Re-reads the candidates now; it also refreshes itself every ${POLL_INTERVAL_MS / 1000} s`}
           data-testid="coord-candidates-refresh"
@@ -469,6 +501,17 @@ export default function CoordPlanCandidatesPage() {
               Could not read the candidates — whether anything is unshipped is
               unknown, not none.
             </p>
+          ) : readFailed ? (
+            // The third arm the two older pages carry: a failed refresh over
+            // a loaded window is STALE, and present-tense measured copy over
+            // it states a measurement that just failed.
+            <p
+              className="text-sm text-muted-foreground italic"
+              data-testid="coord-candidates-stale"
+            >
+              This window held no unshipped plan at the last good read — it has
+              not refreshed since.
+            </p>
           ) : (
             <p
               className="text-sm text-muted-foreground italic"
@@ -541,7 +584,16 @@ export default function CoordPlanCandidatesPage() {
           </Link>
           .
         </p>
-        {followups.length === 0 ? (
+        {followupsUnstated ? (
+          <p
+            className="text-sm text-muted-foreground italic"
+            data-testid="coord-candidates-followups-unstated"
+          >
+            This backend served no follow-up list with the candidates, so
+            whether anything is waiting for an owner is UNKNOWN — not none. The
+            queue has its own page.
+          </p>
+        ) : (followups?.length ?? 0) === 0 ? (
           <p
             className="text-sm text-muted-foreground italic"
             data-testid="coord-candidates-followups-empty"
@@ -554,7 +606,7 @@ export default function CoordPlanCandidatesPage() {
           </p>
         ) : (
           <ul className="space-y-1.5">
-            {followups.map((f) => (
+            {(followups ?? []).map((f) => (
               <li
                 key={f.edge_id}
                 className="rounded border border-border bg-card px-2.5 py-1.5 text-xs"

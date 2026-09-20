@@ -231,6 +231,28 @@ describe("the window is a measurement", () => {
     });
   });
 
+  it("marks the total INADMISSIBLE on the degraded population arm", () => {
+    // The same `1887` the health strip dashes. It is a real number over a
+    // denominator that silently moved — the artifact store rather than the
+    // corpus — and it is the MORE optimistic of the two arms.
+    const w = describeWindow({
+      items: [],
+      total: 1887,
+      work_unit_population_state: "unavailable",
+    });
+    expect(w.total).toBe(1887);
+    expect(w.totalAdmissible).toBe(false);
+  });
+
+  it("marks it admissible only when the population arm actually ran", () => {
+    expect(
+      describeWindow({ total: 1991, work_unit_population_state: "included" })
+        .totalAdmissible
+    ).toBe(true);
+    // ABSENT reads the same way as `unavailable` — absence is UNKNOWN.
+    expect(describeWindow({ total: 1991 }).totalAdmissible).toBe(false);
+  });
+
   it("reports an absent total as UNKNOWN rather than as items.length", () => {
     const w = describeWindow({ ...res, total: undefined });
     expect(w.total).toBeNull();
@@ -471,6 +493,45 @@ describe("the health strip never publishes an inadmissible histogram", () => {
     expect(h.level).toBe("red");
     expect(h.headline).toMatch(/refused/);
     expect(h.badges.map((b) => b.label).join(" ")).toContain("plans –");
+  });
+
+  it("does NOT claim 'no plan record disagrees' when no histogram was served", () => {
+    // The badge was already honest (`disagree –`); the HEADLINE is the
+    // largest text on the page, and it asserted a negative this read never
+    // measured. An absent `by_verdict` is UNKNOWN, not zero.
+    const h = deriveReconciliationHealth(
+      { total: 1991, work_unit_population_state: "included" },
+      true,
+      false
+    );
+    expect(h.headline).not.toMatch(/No plan record disagrees/i);
+    expect(h.headline).toMatch(/unknown/i);
+    expect(h.level).not.toBe("green");
+    expect(h.badges.map((b) => b.label).join(" ")).toContain("disagree –");
+  });
+
+  it("reads an EMPTY by_verdict the same way — the key is absent, not zero", () => {
+    const h = deriveReconciliationHealth(
+      { total: 1991, work_unit_population_state: "included", facets: {} },
+      true,
+      false
+    );
+    expect(h.headline).not.toMatch(/No plan record disagrees/i);
+    expect(h.level).toBe("amber");
+  });
+
+  it("still says the negative when the route MEASURED zero disagreements", () => {
+    const h = deriveReconciliationHealth(
+      {
+        total: 1991,
+        work_unit_population_state: "included",
+        facets: { by_verdict: { agree: 1991, disagree: 0, unknown: 0 } },
+      },
+      true,
+      false
+    );
+    expect(h.headline).toBe("No plan record disagrees with reality");
+    expect(h.level).toBe("green");
   });
 
   it("publishes the counts on the good arm", () => {

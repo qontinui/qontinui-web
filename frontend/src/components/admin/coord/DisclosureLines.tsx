@@ -38,7 +38,15 @@ export function DisclosureLines({
 }) {
   if (lines.length === 0) return null;
   return (
-    <div className="space-y-1.5" data-testid={testIdPrefix}>
+    <div
+      className="space-y-1.5"
+      data-testid={testIdPrefix}
+      // The block is the page's PRIMARY reading and it mutates on every poll
+      // tick with no other announcement. `role="status"` (polite + atomic) is
+      // the least intrusive way a screen reader hears "axis A is UNKNOWN for
+      // every row" arrive, rather than only finding it on a re-read.
+      role="status"
+    >
       {lines.map((line) => (
         <div
           key={line.key}
@@ -70,8 +78,11 @@ export function DisclosureLines({
               className="list-disc pl-7 mt-1 space-y-0.5 font-mono text-[11px]"
               data-testid={`${testIdPrefix}-${line.key}-items`}
             >
-              {line.items.map((item) => (
-                <li key={item}>{item}</li>
+              {/* Keyed by INDEX: route-supplied strings, no uniqueness
+                  guarantee. The list is static per render and never
+                  reordered. */}
+              {line.items.map((item, i) => (
+                <li key={i}>{item}</li>
               ))}
             </ul>
           )}

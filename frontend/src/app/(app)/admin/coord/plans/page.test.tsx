@@ -250,9 +250,15 @@ describe("/admin/coord/plans reads the reconciliation route", () => {
     expect(marker).toHaveTextContent("3 copies");
   });
 
-  it("gives that marker somewhere to go (Phase 4b)", async () => {
+  it("gives that marker somewhere to go (Phase 4b) — from the DETAIL panel", async () => {
     // Until `/admin/coord/plan-forks` existed the marker was a notice, not a
     // route to the answer: `/plan-library/divergent` had zero consumers.
+    //
+    // The row's own marker is deliberately NOT a link: `RecordRow` renders
+    // the whole line as one `<button>`, and interactive content inside a
+    // `<button>` is invalid HTML — the anchor's accessible name is absorbed
+    // and a keyboard user gets two ambiguous focus stops on one row. The
+    // route to the fork list lives one click away, in the detail panel.
     const user = userEvent.setup();
     get.mockResolvedValue(
       healthy({
@@ -272,10 +278,13 @@ describe("/admin/coord/plans reads the reconciliation route", () => {
     );
     render(<CoordPlansListPage />);
 
-    expect(await screen.findByTestId("coord-plan-divergent")).toHaveAttribute(
-      "href",
-      "/admin/coord/plan-forks"
-    );
+    const marker = await screen.findByTestId("coord-plan-divergent");
+    expect(marker).not.toHaveAttribute("href");
+    expect(marker.tagName).toBe("SPAN");
+    // Nothing interactive inside the row's button — one focus stop, not two.
+    expect(within(marker).queryByRole("link")).toBeNull();
+    expect(marker).toHaveAccessibleDescription(/fork list/i);
+
     await user.click(
       within(
         await screen.findByTestId("coord-plan-reconciliation-row")
@@ -407,6 +416,50 @@ describe("the degraded population arm — the plan's exit criterion", () => {
     expect(strip).toHaveTextContent("plans –");
     expect(strip).toHaveTextContent("unknown –");
     expect(strip).not.toHaveTextContent("1887");
+  });
+
+  it("does NOT print the collapsed total as a confident count of plan stems", async () => {
+    // The strip dashes `plans`; the window line used to print that same
+    // 1887 as a bare count of "plan stems", one widget up. The good arm says
+    // 1991 — so the degraded number is smaller AND more optimistic.
+    get.mockResolvedValue(degraded());
+    render(<CoordPlansListPage />);
+
+    const window = await screen.findByTestId("coord-plans-window");
+    expect(window).not.toHaveTextContent("Showing 1 of 1887 plan stems");
+    const caveat = within(window).getByTestId(
+      "coord-plans-window-total-unknown"
+    );
+    expect(caveat).toHaveTextContent("not a corpus count on this read");
+    // The number itself may still be shown — labelled for what it is.
+    expect(caveat).toHaveTextContent("1887");
+  });
+
+  it("renders the population disclosure ABOVE the window line", async () => {
+    // Structural, not a convention to be careful about: the window's
+    // denominator is one of the figures derived from the population, so a
+    // reader who has not yet met "coord's work-unit list could not be read"
+    // cannot read it correctly.
+    get.mockResolvedValue(degraded());
+    render(<CoordPlansListPage />);
+
+    const disclosure = await screen.findByTestId("coord-plans-disclosure");
+    const window = screen.getByTestId("coord-plans-window");
+    expect(
+      disclosure.compareDocumentPosition(window) &
+        Node.DOCUMENT_POSITION_FOLLOWING
+    ).toBeTruthy();
+  });
+
+  it("still prints the total as a count on the good arm", async () => {
+    get.mockResolvedValue(healthy());
+    render(<CoordPlansListPage />);
+
+    const window = await screen.findByTestId("coord-plans-window");
+    expect(window).toHaveTextContent("Showing 1 of 1991 plan stems");
+    expect(
+      within(window).queryByTestId("coord-plans-window-total-unknown")
+    ).toBeNull();
   });
 
   it("states coord_available: false", async () => {
@@ -688,6 +741,54 @@ describe("the capture census beside the document-axis line", () => {
       await screen.findByTestId("coord-capture-health-unknown")
     ).toHaveTextContent("UNKNOWN");
     expect(screen.queryAllByTestId("coord-capture-door")).toHaveLength(0);
+  });
+
+  it("LABELS a census left on screen by a failed refresh", async () => {
+    // `plans/page.tsx` states the intent: the previous census stays "and
+    // labelled". Unlabelled, the summary goes on reading "3 doors, all of
+    // them writing" and every relative time keeps drifting, as though the
+    // read that just failed had succeeded.
+    const user = userEvent.setup();
+    routed(healthy(), CAPTURE);
+    render(<CoordPlansListPage />);
+
+    await screen.findAllByTestId("coord-capture-door");
+    expect(screen.queryByTestId("coord-capture-health-stale")).toBeNull();
+
+    routed(healthy(), new Error("GET /x failed: 503 - upstream"));
+    await user.click(screen.getByTestId("coord-plans-refresh"));
+
+    expect(
+      await screen.findByTestId("coord-capture-health-stale")
+    ).toHaveTextContent("has not been re-measured");
+    // The census itself is STILL there — an empty panel would be a
+    // fabricated absence.
+    expect(screen.getAllByTestId("coord-capture-door")).toHaveLength(3);
+    expect(
+      screen.getByTestId("coord-capture-health-summary")
+    ).toHaveTextContent("last good read, not refreshed");
+  });
+
+  it("dashes a door the response carried no count for", async () => {
+    routed(healthy(), {
+      total: 7,
+      doors: [
+        { captured_by: "runner_scan", count: 7 },
+        // No `count` at all: UNKNOWN, and never the silence accusation.
+        { captured_by: "agent" },
+      ],
+    });
+    render(<CoordPlansListPage />);
+
+    const doors = await screen.findAllByTestId("coord-capture-door");
+    const agent = doors.find(
+      (d) => d.getAttribute("data-door") === "agent"
+    ) as HTMLElement;
+    expect(agent).toHaveAttribute("data-silent", "false");
+    expect(within(agent).queryByTestId("coord-capture-door-silent")).toBeNull();
+    expect(
+      within(agent).getByTestId("coord-capture-door-count-unstated")
+    ).toHaveTextContent("unknown, not zero");
   });
 
   it("calls a response with no door list a shape it does not understand", async () => {

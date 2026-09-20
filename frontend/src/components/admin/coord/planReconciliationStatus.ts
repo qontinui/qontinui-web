@@ -467,6 +467,19 @@ export interface WindowReading {
   lastStem: string | null;
   /** Can the operator page further forward? UNKNOWN total ⇒ page-full test. */
   hasMore: boolean;
+  /**
+   * Is `total` a count of PLAN STEMS, or of whatever population this read
+   * happened to reach?
+   *
+   * The same predicate, and the same trap, as
+   * {@link documentAxisAdmissible} — which is why it is that function and not
+   * a second spelling of it. On the degraded arm the population collapses to
+   * the artifact store, so `total` is `1887` where the good arm says `1991`:
+   * a smaller, MORE OPTIMISTIC number that still looks like a corpus size.
+   * The health strip already dashes it; a window line that prints it anyway
+   * republishes exactly what the strip refused.
+   */
+  totalAdmissible: boolean;
 }
 
 export function describeWindow(res: ReconciliationResponse): WindowReading {
@@ -486,6 +499,7 @@ export function describeWindow(res: ReconciliationResponse): WindowReading {
       total !== null
         ? offset + items.length < total
         : limit !== null && items.length >= limit,
+    totalAdmissible: documentAxisAdmissible(res),
   };
 }
 
@@ -729,6 +743,12 @@ const DASH = "–";
  * looks measured, over a denominator that silently moved. R6's rule applies
  * unchanged: an unfetched count renders `–`, never a number that means
  * something else.
+ *
+ * The same rule governs the HEADLINE, which is the larger claim and was the
+ * easier one to get wrong: an ABSENT `by_verdict` is UNKNOWN, so the strip
+ * takes its own amber arm rather than "No plan record disagrees with reality"
+ * — a negative nothing on this read measured. The badge was already honest
+ * (`disagree –`); the headline is the text an operator actually reads.
  */
 export function deriveReconciliationHealth(
   res: ReconciliationResponse | null,
@@ -777,9 +797,12 @@ export function deriveReconciliationHealth(
   }
 
   const admissible = documentAxisAdmissible(res);
-  const byVerdict = res.facets?.by_verdict ?? {};
-  const disagree = byVerdict.disagree;
-  const unknown = byVerdict.unknown;
+  // NOT `?? {}`. A response with no facet block has not said "zero
+  // disagreements" — it has said nothing, and the collapse is what let the
+  // headline below assert a negative nobody measured.
+  const byVerdict = res.facets?.by_verdict;
+  const disagree = byVerdict?.disagree;
+  const unknown = byVerdict?.unknown;
   const total = res.total;
 
   if (!admissible) {
@@ -806,26 +829,39 @@ export function deriveReconciliationHealth(
     };
   }
 
+  // ORDERED, and the middle arm is the one a `?? {}` used to swallow. An
+  // absent `by_verdict` is not a measured zero, so the green headline — the
+  // largest text on the page — may not assert the negative it could not
+  // measure [policy: `verification-and-evidence` `silent-empty-is-unknown`].
+  const disagreeMeasured = typeof disagree === "number";
   const level: ReconciliationHealth["level"] =
-    typeof disagree === "number" && disagree > 0
+    disagreeMeasured && disagree > 0
       ? "red"
-      : readFailed
+      : !disagreeMeasured
         ? "amber"
-        : "green";
+        : readFailed
+          ? "amber"
+          : "green";
   const headline =
-    typeof disagree === "number" && disagree > 0
+    disagreeMeasured && disagree > 0
       ? disagree === 1
         ? "One plan's record disagrees with reality"
         : `${disagree} plans' records disagree with reality`
-      : readFailed
-        ? "Last refresh failed — these counts are not current"
-        : "No plan record disagrees with reality";
+      : !disagreeMeasured
+        ? "The route served no verdict histogram — whether any record disagrees is unknown"
+        : readFailed
+          ? "Last refresh failed — these counts are not current"
+          : "No plan record disagrees with reality";
   return {
     level,
     headline,
-    detail: readFailed
-      ? "Last refresh failed — these counts are stale."
-      : undefined,
+    detail: !disagreeMeasured
+      ? "The rows below are real; the disagreement count behind this headline " +
+        "was never served, so nothing here is a measured zero." +
+        (readFailed ? " The last refresh also failed." : "")
+      : readFailed
+        ? "Last refresh failed — these counts are stale."
+        : undefined,
     badges: [
       {
         key: "plans",

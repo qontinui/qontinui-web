@@ -9,7 +9,7 @@
  */
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { render, screen, within } from "@testing-library/react";
+import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { PlanCandidate, PlanCandidateResponse } from "./candidateStatus";
 
@@ -297,5 +297,168 @@ describe("/admin/coord/plan-candidates consumes /plan-library/candidates", () =>
       await screen.findByTestId("coord-candidates-unknown")
     ).toHaveTextContent("unknown, not none");
     expect(screen.queryByTestId("coord-candidates-empty")).toBeNull();
+  });
+
+  it("dates the empty copy once a later read over the same window fails", async () => {
+    // The third arm the two older coord lists carry. A poll deliberately does
+    // not blank a loaded page, so `data` stays non-null — which left the
+    // present-tense "No unshipped plan in this window." on screen while the
+    // read was currently failing.
+    const user = userEvent.setup();
+    let call = 0;
+    get.mockImplementation(async () => {
+      call += 1;
+      if (call === 1) return response({ items: [] });
+      throw new Error("coord unreachable");
+    });
+    render(<CoordPlanCandidatesPage />);
+
+    await screen.findByTestId("coord-candidates-empty");
+    await user.click(screen.getByTestId("coord-candidates-refresh"));
+
+    const stale = await screen.findByTestId("coord-candidates-stale");
+    expect(stale).toHaveTextContent(/at the last good read/i);
+    expect(screen.queryByTestId("coord-candidates-empty")).toBeNull();
+  });
+
+  it("renders a row with no document_state as UNKNOWN, never as ready", async () => {
+    // The field is optional on the wire. Defaulting it to `present` walked
+    // the confident arm on the strength of a field nobody served.
+    get.mockResolvedValue(
+      response({
+        items: [candidate({ document_state: undefined, unmet_depends_on: [] })],
+      })
+    );
+    render(<CoordPlanCandidatesPage />);
+
+    const readiness = await screen.findByTestId("coord-candidate-readiness");
+    expect(readiness).toHaveAttribute("data-readiness", "unknown");
+    expect(
+      screen.getByTestId("coord-candidate-document-state")
+    ).toHaveAttribute("data-document-state", "unstated");
+    expect(screen.getByTestId("coord-candidate-reason")).toHaveTextContent(
+      /UNKNOWN/
+    );
+  });
+
+  it("renders a row with no coord block as UNKNOWN on both halves", async () => {
+    get.mockResolvedValue(
+      response({ items: [candidate({ coord: undefined })] })
+    );
+    render(<CoordPlanCandidatesPage />);
+
+    const cell = await screen.findByTestId("coord-candidate-coord");
+    expect(cell).toHaveAttribute("data-unknown", "true");
+    expect(cell).not.toHaveTextContent("no unit link");
+  });
+
+  it("does not call an ABSENT open_followups list 'no open follow-up'", async () => {
+    // A backend not carrying the field has said nothing. The total beside it
+    // already renders `–`, so a measured-zero sentence next to it would make
+    // one paragraph disagree with itself.
+    get.mockResolvedValue(
+      response({ open_followups: undefined, open_followup_total: undefined })
+    );
+    render(<CoordPlanCandidatesPage />);
+
+    const unstated = await screen.findByTestId(
+      "coord-candidates-followups-unstated"
+    );
+    expect(unstated).toHaveTextContent("UNKNOWN — not none");
+    expect(screen.queryByTestId("coord-candidates-followups-empty")).toBeNull();
+    expect(
+      screen.getByTestId("coord-candidates-followup-total")
+    ).toHaveTextContent("–");
+  });
+});
+
+/**
+ * The request-generation guard, lifted into `useGuardedPoll`.
+ *
+ * This page has a window control, so both races that hook documents are
+ * reachable here — and neither was guarded before the review. The subtler one
+ * is pinned first: a superseded SUCCESS landing on top of a newer FAILURE
+ * clears the banner, flips `loaded` true, and states a discarded window as a
+ * confident answer to a question that errored.
+ */
+describe("a superseded read may not speak", () => {
+  /** Route by the `limit` on the wire — never by call order. */
+  function routeByLimit(handlers: {
+    first: () => unknown;
+    switched: () => unknown;
+  }) {
+    get.mockImplementation(async (url: string) =>
+      url.includes("limit=100") ? handlers.switched() : handlers.first()
+    );
+  }
+
+  async function switchPageSize(user: ReturnType<typeof userEvent.setup>) {
+    await user.click(screen.getByTestId("coord-candidates-page-size-select"));
+    await user.click(
+      await screen.findByRole("option", { name: "100 per page" })
+    );
+  }
+
+  /**
+   * `waitFor` invokes its callback synchronously on entry, so a negative
+   * assertion straight after a `resolve()` would pass before the
+   * continuation had a chance to run — green whether or not the guard exists.
+   */
+  async function flushMicrotasks() {
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+  }
+
+  it("does not let a late success clear the banner of a newer failure", async () => {
+    let releaseFirstRead: ((body: unknown) => void) | undefined;
+    routeByLimit({
+      first: () =>
+        new Promise((resolve) => {
+          releaseFirstRead = resolve;
+        }),
+      switched: () => {
+        throw new Error("coord unreachable");
+      },
+    });
+    const user = userEvent.setup();
+    render(<CoordPlanCandidatesPage />);
+
+    await switchPageSize(user);
+    await screen.findByTestId("coord-candidates-unknown");
+
+    releaseFirstRead?.(response());
+    await flushMicrotasks();
+
+    // The failure still speaks, and the discarded window did not repaint.
+    expect(screen.getByTestId("coord-candidates-error")).toBeInTheDocument();
+    expect(screen.getByTestId("coord-candidates-unknown")).toBeInTheDocument();
+    expect(screen.queryByTestId("coord-candidate-row")).toBeNull();
+  });
+
+  it("does not repaint the discarded window when the old read lands late", async () => {
+    let releaseFirstRead: ((body: unknown) => void) | undefined;
+    routeByLimit({
+      first: () =>
+        new Promise((resolve) => {
+          releaseFirstRead = resolve;
+        }),
+      switched: () => response({ items: [] }),
+    });
+    const user = userEvent.setup();
+    render(<CoordPlanCandidatesPage />);
+
+    await switchPageSize(user);
+    await waitFor(() =>
+      expect(get).toHaveBeenLastCalledWith(expect.stringContaining("limit=100"))
+    );
+    await screen.findByTestId("coord-candidates-empty");
+
+    releaseFirstRead?.(response());
+    await flushMicrotasks();
+
+    expect(screen.queryByTestId("coord-candidate-row")).toBeNull();
+    expect(screen.getByTestId("coord-candidates-empty")).toBeInTheDocument();
   });
 });

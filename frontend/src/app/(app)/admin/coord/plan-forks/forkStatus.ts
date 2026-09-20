@@ -294,6 +294,13 @@ const DASH = "–";
  * The strip. R6 throughout: an unfetched or unserved count is `–`, never `0`,
  * because "no fork" and "we did not look" are the two readings this whole
  * plan exists to keep apart.
+ *
+ * **A missing total does not make the forks go away.** The verdict is taken
+ * from the ROWS when the route served no count — a strip reading "No fork in
+ * what this read returned" above a list rendering that fork contradicts its
+ * own page, and it is the same `?? 0` collapse this module's `measuredClean`
+ * already refuses. The count stays a dash; only the presence claim is
+ * answered from the list.
  */
 export function deriveForkHealth(
   census: ForkCensus | null,
@@ -325,31 +332,61 @@ export function deriveForkHealth(
   const content = census.contentTotal;
   const kind = census.kindForkTotal;
   const operatorForks = census.kindForks.filter((f) => !f.resolvable).length;
-  const needsPerson = (content ?? 0) > 0 || operatorForks > 0;
+  // NOT `(content ?? 0) > 0`. An unserved `total` is UNKNOWN, and collapsing
+  // it to a measured zero made the strip say "No fork in what this read
+  // returned" while the list underneath rendered the forks the same response
+  // carried. The ROWS are the fact that survives a missing total, so the
+  // presence question is answered from them; `measuredClean` at the top of
+  // this module is the counterpart and was already right.
+  const contentForksPresent =
+    content !== null ? content > 0 : census.groups.length > 0;
+  const kindForksPresent =
+    kind !== null ? kind > 0 : census.kindForks.length > 0;
+  const needsPerson = contentForksPresent || operatorForks > 0;
+  // A count the route did not serve stays a dash on the badge either way —
+  // the strip may say a fork is THERE without inventing how many.
+  const totalsUnserved =
+    (content === null && census.groups.length > 0) ||
+    (kind === null && census.kindForks.length > 0);
 
   return {
-    level: needsPerson ? "red" : (kind ?? 0) > 0 ? "amber" : "green",
+    // GREEN is reserved for a measured clean read that also refreshed. A
+    // failed refresh, or a read whose totals the route never served, is a
+    // statement about our knowledge — the same reading `deriveCandidateHealth`
+    // and `deriveFollowupHealth` now take.
+    level: needsPerson
+      ? "red"
+      : kindForksPresent || readFailed || !census.measuredClean
+        ? "amber"
+        : "green",
     headline: needsPerson
       ? "Copies of a plan disagree, and only a person can settle it"
-      : (kind ?? 0) > 0
+      : kindForksPresent
         ? "Kind forks only — the scanner can heal every one of them"
         : census.measuredClean
           ? "No copy of any plan disagrees with another"
           : "No fork in what this read returned",
     detail: readFailed
       ? "Last refresh failed — these counts are stale."
-      : census.measuredClean
-        ? "Measured now: the route recomputes on every read, so this is a " +
-          "fresh zero rather than a cached one."
-        : undefined,
+      : totalsUnserved
+        ? "The route served no total for a list it did return, so the forks " +
+          "below are real and their count is UNKNOWN — the badge is a dash, " +
+          "not a zero."
+        : census.measuredClean
+          ? "Measured now: the route recomputes on every read, so this is a " +
+            "fresh zero rather than a cached one."
+          : undefined,
     badges: [
       {
         key: "content",
         label: `content forks ${content ?? DASH}`,
-        tone: (content ?? 0) > 0 ? "attention" : "muted",
+        tone: contentForksPresent ? "attention" : "muted",
         title:
           "Same kind and slug, different content digests. Nothing but a " +
-          "person reconciles these.",
+          "person reconciles these." +
+          (content === null
+            ? " The route served no total for this read, so the count is unknown."
+            : ""),
       },
       {
         key: "kind",
@@ -357,7 +394,10 @@ export function deriveForkHealth(
         tone: operatorForks > 0 ? "attention" : "muted",
         title:
           `${operatorForks} of them need an operator to pick; the rest have ` +
-          "exactly one locked kind and heal on the scanner's next pass.",
+          "exactly one locked kind and heal on the scanner's next pass." +
+          (kind === null
+            ? " The route served no total for this read, so the count is unknown."
+            : ""),
       },
     ],
   };

@@ -10,7 +10,6 @@ import {
   type OpenFollowupResponse,
   deriveFollowupHealth,
   describeFollowupWindow,
-  noteIsTruncatable,
 } from "./followupStatus";
 
 function response(
@@ -37,12 +36,6 @@ function response(
     ...over,
   };
 }
-
-describe("the note is the whole payload", () => {
-  it("is never truncatable, and that is written down", () => {
-    expect(noteIsTruncatable()).toBe(false);
-  });
-});
 
 describe("the window reports the declared ordering", () => {
   it("carries it, and does not flag the expected value", () => {
@@ -94,6 +87,37 @@ describe("the strip", () => {
     );
     expect(health.detail).toMatch(/not deleted/);
     expect(health.detail).toMatch(/nothing is UNOWNED/);
+  });
+
+  it("withdraws the oldest reading when the route declares another ordering", () => {
+    // The page already renders "nothing here warrants reading the first row
+    // as the oldest" for this response. The strip used to print `oldest 31d`
+    // beside it — one half of the page retracting the claim the other makes.
+    const health = deriveFollowupHealth(
+      response({ ordering: "newest_first" }),
+      true,
+      false
+    );
+    const oldest = health.badges.find((b) => b.key === "oldest");
+    expect(oldest?.label).toBe("oldest –");
+    expect(oldest?.title).toMatch(/newest_first/);
+  });
+
+  it("keeps the reading when the ordering is ABSENT — absence is not a change", () => {
+    const health = deriveFollowupHealth(
+      response({ ordering: undefined }),
+      true,
+      false
+    );
+    expect(health.badges.find((b) => b.key === "oldest")?.label).toBe(
+      "oldest 31d"
+    );
+  });
+
+  it("is not green on a failed refresh, whatever the detail says", () => {
+    const health = deriveFollowupHealth(response(), true, true);
+    expect(health.level).toBe("amber");
+    expect(health.detail).toMatch(/stale/i);
   });
 
   it("measures the oldest row only on the first page", () => {

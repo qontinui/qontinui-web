@@ -75,7 +75,7 @@
  * reading is derived in `planReconciliationStatus.ts`, nothing inline here).
  */
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Select,
   SelectContent,
@@ -107,6 +107,10 @@ import {
   parseContractViolation,
   type ReconciliationResponse,
 } from "@/components/admin/coord/planReconciliationStatus";
+import {
+  useGuardedPoll,
+  type ReadGuard,
+} from "@/components/admin/coord/useGuardedPoll";
 import { httpClient } from "@/services/service-factory";
 
 const ENDPOINT = "/api/v1/plan-library/reconciliation";
@@ -120,6 +124,24 @@ const ENDPOINT = "/api/v1/plan-library/reconciliation";
  */
 const CAPTURE_ENDPOINT = "/api/v1/plan-library/capture-health";
 const POLL_INTERVAL_MS = 30_000;
+
+/**
+ * The contract refusal is a 500 — and it is DETERMINISTIC.
+ *
+ * `httpClient` retries every 5xx on a GET, so without this the route's own
+ * "I checked my facet block and it no longer means what it says" costs five
+ * requests and ~7 s of backoff per poll tick, against a route computing a
+ * three-way join over ~1,991 stems, every 30 s. The route will refuse
+ * identically on each one: nothing about it is transient.
+ *
+ * `http-client.ts` documents `noRetryStatuses` for exactly this shape. The
+ * generic-500 path loses nothing — `parseContractViolation` returns `null`
+ * and the page degrades to the ordinary error state either way, one request
+ * sooner.
+ */
+const RECONCILIATION_REQUEST_OPTIONS: { noRetryStatuses: number[] } = {
+  noRetryStatuses: [500],
+};
 
 export default function CoordPlansListPage() {
   const [status, setStatus] = useState("any");
@@ -151,72 +173,60 @@ export default function CoordPlansListPage() {
   const [captureFailed, setCaptureFailed] = useState(false);
 
   /**
-   * The two generation counters, for the same reasons the work-unit page
-   * documents at length: `questionGen` (bumped once per QUESTION — here,
-   * per window) gates the error so an overtaken failure still speaks, and
-   * `reqGen` (bumped per call) gates the data so two overlapping reads cannot
-   * land out of order. `pollInFlight` keeps same-question ticks from stacking.
+   * The two generation counters and the in-flight lock now live in
+   * `useGuardedPoll` — one spelling for every coord console list, after a
+   * review found the guard implemented twice in this change and then dropped
+   * on the three surfaces added beside it. The reasoning is in that hook's
+   * docstring; what stays here is which state each arm may set, which is this
+   * page's own business (the contract refusal is a third read state).
    */
-  const questionGen = useRef(0);
-  const reqGen = useRef(0);
-  const pollInFlight = useRef(false);
-
-  const fetchData = useCallback(async () => {
-    const question = questionGen.current;
-    const req = ++reqGen.current;
-    try {
-      const qs = new URLSearchParams();
-      qs.set("offset", String(offset));
-      qs.set("limit", String(limit));
-      const body = await httpClient.get<ReconciliationResponse>(
-        `${ENDPOINT}?${qs.toString()}`
-      );
-      if (question !== questionGen.current || req !== reqGen.current) return;
-      setData(body);
-      setError(null);
-      setViolations(null);
-    } catch (e) {
-      if (question !== questionGen.current) return;
-      const contract = parseContractViolation(e);
-      if (contract !== null) {
-        // A named refusal replaces whatever was on screen: the route is
-        // telling us the last body's facets stopped meaning what they say,
-        // and continuing to render rows under them would be the defect.
-        setViolations(contract);
-        setData(null);
+  const fetchData = useCallback(
+    async (guard: ReadGuard) => {
+      try {
+        const qs = new URLSearchParams();
+        qs.set("offset", String(offset));
+        qs.set("limit", String(limit));
+        const body = await httpClient.get<ReconciliationResponse>(
+          `${ENDPOINT}?${qs.toString()}`,
+          RECONCILIATION_REQUEST_OPTIONS
+        );
+        if (!guard.isNewest()) return;
+        setData(body);
         setError(null);
-        return;
+        setViolations(null);
+      } catch (e) {
+        if (!guard.isCurrentQuestion()) return;
+        const contract = parseContractViolation(e);
+        if (contract !== null) {
+          // A named refusal replaces whatever was on screen: the route is
+          // telling us the last body's facets stopped meaning what they say,
+          // and continuing to render rows under them would be the defect.
+          setViolations(contract);
+          setData(null);
+          setError(null);
+          return;
+        }
+        setViolations(null);
+        setError(e instanceof Error ? e.message : String(e));
       }
-      setViolations(null);
-      setError(e instanceof Error ? e.message : String(e));
-    }
-  }, [offset, limit]);
+    },
+    [offset, limit]
+  );
 
-  useEffect(() => {
-    // The WINDOW is the question. Changing it makes the rows in `data`
-    // answers to a question nobody asked, and keeping them would leave every
-    // read-state derivation reporting the old window while the new one is in
-    // flight.
-    questionGen.current += 1;
-    const question = questionGen.current;
-    const releaseLock = () => {
-      if (question === questionGen.current) pollInFlight.current = false;
-    };
+  // The WINDOW is the question. Changing it makes the rows in `data` answers
+  // to a question nobody asked, and keeping them would leave every read-state
+  // derivation reporting the old window while the new one is in flight.
+  const resetWindow = useCallback(() => {
     setData(null);
     setError(null);
     setViolations(null);
-    pollInFlight.current = true;
-    void fetchData().finally(releaseLock);
-    const id = setInterval(() => {
-      if (pollInFlight.current) return;
-      pollInFlight.current = true;
-      void fetchData().finally(releaseLock);
-    }, POLL_INTERVAL_MS);
-    return () => {
-      clearInterval(id);
-      pollInFlight.current = false;
-    };
-  }, [fetchData]);
+  }, []);
+
+  const { refresh: refreshReconciliation } = useGuardedPoll({
+    read: fetchData,
+    intervalMs: POLL_INTERVAL_MS,
+    onQuestionChange: resetWindow,
+  });
 
   const fetchCapture = useCallback(async () => {
     try {
@@ -237,19 +247,12 @@ export default function CoordPlansListPage() {
     void fetchCapture();
   }, [fetchCapture]);
 
-  const refresh = useCallback(() => {
-    const tookLock = !pollInFlight.current;
-    if (tookLock) pollInFlight.current = true;
-    const question = questionGen.current;
-    // Both reads, because the control says "refresh" and a stale census
-    // beside a fresh reconciliation is the misreading this page exists to
-    // stop.
-    return Promise.all([fetchData(), fetchCapture()]).finally(() => {
-      if (tookLock && question === questionGen.current) {
-        pollInFlight.current = false;
-      }
-    });
-  }, [fetchData, fetchCapture]);
+  // Both reads, because the control says "refresh" and a stale census beside
+  // a fresh reconciliation is the misreading this page exists to stop.
+  const refresh = useCallback(
+    () => refreshReconciliation(fetchCapture),
+    [refreshReconciliation, fetchCapture]
+  );
 
   const rows = useMemo(() => data?.items ?? [], [data]);
   const shown = useMemo(
@@ -355,6 +358,19 @@ export default function CoordPlansListPage() {
         />
       </div>
 
+      {/* The population state, and every flag derived from it — in that order,
+          and never collapsed behind a click.
+
+          It renders ABOVE the window line, and the order is STRUCTURAL rather
+          than a convention to be careful about: the window's denominator is
+          one of the figures derived from the population, so a reader who has
+          not yet met "coord's work-unit list could not be read" has no way to
+          read `1887 plan stems` correctly. The general rule this page states
+          in its docstring — render the population state before any flag
+          derived from the population — is now enforced by the JSX order and
+          not only by `deriveDisclosure`'s internal ordering. */}
+      {disclosure && <ReconciliationDisclosure lines={disclosure.lines} />}
+
       {/* Phase 2 — the window as a MEASUREMENT: what was asked for, what came
           back, on which declared axis, and the boundary stems. A disclosure
           without a denominator is a disclaimer. */}
@@ -364,11 +380,17 @@ export default function CoordPlansListPage() {
           data-testid="coord-plans-window"
         >
           Showing {window.shown} of{" "}
-          {window.total !== null ? (
+          {window.totalAdmissible && window.total !== null ? (
             window.total
           ) : (
+            /* R6, one widget up. `total` on the degraded arm is 1887 against
+               a real corpus of 1991 — the health strip dashes it, and
+               reprinting it here as a bare count of "plan stems" republishes
+               exactly what the strip refused. */
             <span data-testid="coord-plans-window-total-unknown">
-              an unknown total — the route served no count
+              {window.total === null
+                ? "an unknown total — the route served no count"
+                : `a total (${window.total}) that is not a corpus count on this read — coord's work-unit population was not read`}
             </span>
           )}{" "}
           plan stems
@@ -390,10 +412,6 @@ export default function CoordPlansListPage() {
           .
         </p>
       )}
-
-      {/* The population state, and every flag derived from it — in that order,
-          and never collapsed behind a click. */}
-      {disclosure && <ReconciliationDisclosure lines={disclosure.lines} />}
 
       {/* Phase 4a — the companion to the document-axis line above: the
           document layer is N% complete BY WHICH DOOR, and is that door still
@@ -436,8 +454,12 @@ export default function CoordPlansListPage() {
               className="list-disc pl-5 mt-1.5 space-y-0.5 font-mono text-[11px]"
               data-testid="coord-plans-contract-violation-list"
             >
-              {violations.map((v) => (
-                <li key={v}>{v}</li>
+              {/* Keyed by INDEX: these are route-supplied strings with no
+                  uniqueness guarantee, and two identical violations would
+                  collide on a value key. The list is static per render and
+                  never reordered, so the index is the stable identity. */}
+              {violations.map((v, i) => (
+                <li key={i}>{v}</li>
               ))}
             </ul>
           ) : (
