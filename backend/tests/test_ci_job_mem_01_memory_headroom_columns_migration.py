@@ -189,9 +189,21 @@ _NEVER_ZERO_COLUMNS: tuple[str, ...] = (
 # `mem_total=` key in the wire format and memory headroom is not computable.
 # NULL is how the schema says that, on a row where every other reading arrived.
 #
-# `min_disk_avail_mb` is None for a duller reason worth stating: the reduction
-# above did not carry a disk floor, so the honest value is UNKNOWN. A plausible
-# number copied from the documentation's example line would have been fiction.
+# `min_disk_avail_mb` is 27705 — the floor of the `disk_avail=` key, which all
+# 77 sample lines carry (range 27705..29552 M, declining monotonically as the
+# build fills the disk).
+#
+# Two earlier drafts of this one constant were both wrong, and the second is
+# worth recording because it was wrong in the direction this file is about.
+# Draft one copied 31204 from the sampler's DOCUMENTATION example — a fabricated
+# measurement. Draft two replaced it with None on the stated ground that "the
+# reduction did not carry a disk floor", which was FALSE: the reduction was
+# never re-read for that key, so an absence was asserted rather than observed.
+# Substituting an unverified UNKNOWN for an unverified number is not a fix; it
+# is the same defect wearing the opposite costume, and it happened inside the
+# comment block whose entire subject is values whose provenance cannot carry
+# them. The log settled it in one API call, which is what should have happened
+# both times.
 #
 # The arithmetic is the point of the rest, and the ceiling is where it bites:
 # 7981/12287 = 64.95%. NOT /12288 — `fallocate -l 12G` yields 12,288 MiB and
@@ -204,9 +216,21 @@ _GREEN_RUN_PEAK_SWAP_MB = 7_981
 _GREEN_RUN_SWAP_TOTAL_MB = 12_287
 _GREEN_RUN_MIN_MEM_AVAIL_MB = 194
 _GREEN_RUN_PEAK_MEM_USED_MB = 7_743
-_GREEN_RUN_MIN_DISK_AVAIL_MB = None
+_GREEN_RUN_MIN_DISK_AVAIL_MB = 27_705
 _GREEN_RUN_SAMPLE_COUNT = 77
-_GREEN_RUN_SPAN_SECS = 1_520
+# First-to-last parsed `[sample]` line: 19:36:39 -> 20:02:01 = 1522 s. That is
+# the definition `resource_span_secs`'s own COMMENT gives, so it is the one
+# fixtured here. Note it is NOT the sampler summary table's `(n-1) * INTERVAL`
+# arithmetic, which gives 76 x 20 = 1520 on this run — loop jitter puts the two
+# 2 s apart, and coord Phase 2 writes the first-to-last form the column
+# describes.
+_GREEN_RUN_SPAN_SECS = 1_522
+# The job itself: 2026-09-12T19:35:04Z -> 20:02:14Z. The span MUST be shorter —
+# sampling starts inside the step and ends before the job does — and the gap is
+# the evidence `resource_span_secs`'s COMMENT describes. An earlier draft left
+# this at 1450 against a 1520 span, i.e. a sample window longer than the job it
+# was taken inside, which is impossible and which no assertion here catches.
+_GREEN_RUN_DURATION_SECS = 1_630
 
 
 # ---------------------------------------------------------------------------
@@ -321,6 +345,44 @@ def test_the_two_column_tables_describe_the_same_nine() -> None:
         "Only the live-schema walk would otherwise catch that, and it skips "
         "without a Postgres — so the drift ships green from a database-less CI "
         "run"
+    )
+
+
+def test_the_fixture_run_is_physically_possible() -> None:
+    """The sampled span must fit inside the job, and the peaks inside the ceiling.
+
+    No other assertion in this file looks at the fixture's internal coherence,
+    and that gap is measured rather than hypothetical: round 2 of review moved
+    `_GREEN_RUN_SPAN_SECS` from 1400 to 1522 and left `duration_secs` at 1450,
+    producing a sample window LONGER than the job it was taken inside. Nothing
+    failed. A fixture that cannot physically exist is a worse witness than no
+    fixture, because every round-trip below then demonstrates the impossible.
+
+    These are properties of the RUN, not of the schema, so they need no
+    database and never skip.
+    """
+    assert _GREEN_RUN_SPAN_SECS < _GREEN_RUN_DURATION_SECS, (
+        f"the sampled span ({_GREEN_RUN_SPAN_SECS}s) is not shorter than the "
+        f"job it was sampled inside ({_GREEN_RUN_DURATION_SECS}s). Sampling "
+        "starts inside the step and stops before the job ends, so the gap is "
+        "the evidence resource_span_secs' COMMENT describes — inverted here, "
+        "it asserts something that cannot have happened"
+    )
+    assert _GREEN_RUN_PEAK_SWAP_MB < _GREEN_RUN_SWAP_TOTAL_MB, (
+        f"peak swap ({_GREEN_RUN_PEAK_SWAP_MB}M) is not below the ceiling it "
+        f"was measured against ({_GREEN_RUN_SWAP_TOTAL_MB}M); a ratio consumer "
+        "would render over 100% headroom used"
+    )
+    assert _GREEN_RUN_SAMPLE_COUNT > 1, (
+        "a span between the first and last sample needs at least two samples"
+    )
+    # Every peak this fixture claims came off the same reduction, so a None
+    # here is a key the log genuinely did not carry -- today only mem_total,
+    # and that absence is the whole point of the mem_total_mb column.
+    assert _GREEN_RUN_MIN_DISK_AVAIL_MB is not None, (
+        "min_disk_avail_mb is None, but all 77 sample lines of the fixtured "
+        "run carry a disk_avail= key. An absence asserted without re-reading "
+        "the reduction is the defect this block exists to document"
     )
 
 
@@ -604,10 +666,10 @@ def _seed_job_row(engine: Engine, job_id: int) -> None:
                     (repo, job_id, run_id, run_attempt, workflow_name,
                      job_name, self_hosted, outcome, duration_secs)
                 VALUES ('qontinui/qontinui-coord', :j, 34714587244, 1, 'CI',
-                        'coord-db-tests', false, 'pass', 1450)
+                        'coord-db-tests', false, 'pass', :dur)
                 """
             ),
-            {"j": job_id},
+            {"j": job_id, "dur": _GREEN_RUN_DURATION_SECS},
         )
 
 
@@ -705,12 +767,13 @@ def test_an_unsampled_job_and_a_sampled_one_round_trip(_admin_url: str) -> None:
                          resource_source)
                     VALUES ('qontinui/qontinui-coord', 2, 34714587244, 1, 'CI',
                             'coord-db-tests', ARRAY['ubuntu-latest'], false,
-                            'success', 'pass', 1450,
+                            'success', 'pass', :dur,
                             :swap, :swap_total, :mem_avail, :mem_used, NULL,
                             :disk, :count, :span, 'job_log')
                     """
                 ),
                 {
+                    "dur": _GREEN_RUN_DURATION_SECS,
                     "swap": _GREEN_RUN_PEAK_SWAP_MB,
                     "swap_total": _GREEN_RUN_SWAP_TOTAL_MB,
                     "mem_avail": _GREEN_RUN_MIN_MEM_AVAIL_MB,
