@@ -13,9 +13,14 @@
  * Five primary pages:
  *  - /admin/coord/pipeline
  *  - /admin/coord/trees
- *  - /admin/coord/plans (+ /admin/coord/plans/[slug])
+ *  - /admin/coord/plans (the plan CORPUS, reconciled three ways)
  *  - /admin/coord/alerts
  *  - /admin/coord/history
+ *
+ * The per-unit detail route is `/admin/coord/work-units/[slug]`: plan
+ * `2026-09-20-the-operator-plans-page-reads-the-wrong-store` Phase 3 moved
+ * coord's work-unit list — and its detail page with it — off `/plans`, which
+ * now reads the plan library.
  *
  * Navigation between console pages is the app sidebar's Coord, Sessions and
  * Fleet sections (built from `components/admin/coord/coordNavModel.ts`).

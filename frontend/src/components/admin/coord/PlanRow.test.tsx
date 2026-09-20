@@ -334,7 +334,7 @@ describe("PlanRow detail (R5) and the frozen testids (D4a)", () => {
   it("carries the detail route as an explicit action, not a whole-row link (D1)", () => {
     renderRow(plan, true);
     const link = screen.getByTestId("coord-plan-card-link");
-    expect(link).toHaveAttribute("href", "/admin/coord/plans/p-5");
+    expect(link).toHaveAttribute("href", "/admin/coord/work-units/p-5");
     expect(screen.getByTestId("coord-plan-card-spawn-btn")).toBeInTheDocument();
     // The row itself must NOT be an anchor any more — that is the whole point
     // of D1, and it is the one thing a testid check cannot see.

@@ -1,5 +1,5 @@
 /**
- * `/admin/coord/plans/[slug]` — a failed read is not a verdict about the
+ * `/admin/coord/work-units/[slug]` — a failed read is not a verdict about the
  * corpus, and the phase the deriver was already asking for reaches it.
  *
  * Post-merge follow-up to Phase 3 Wave 3 (qontinui-web#1035). Wave 3 gave this

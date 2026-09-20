@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * The plan-difficulty chip on a `/admin/coord/plans` row.
+ * The plan-difficulty chip on a `/admin/coord/work-units` row.
  *
  * Neutral by design — see `planDifficulty.ts` ("No hue"): the level is the
  * word plus a signal-bars glyph whose shape differs per level. `data-difficulty`

@@ -80,7 +80,10 @@ import { SpawnModal } from "@/components/admin/coord/SpawnModal";
 import { SpawnPlanRow } from "@/components/admin/coord/SpawnPlanRow";
 import type { CoordPlanRow } from "@/components/admin/coord/planStatus";
 import { httpClient } from "@/services/service-factory";
-import { derivePlansHealth, SHEPHERD_SLUG_PREFIX } from "../plans/plansHealth";
+import {
+  derivePlansHealth,
+  SHEPHERD_SLUG_PREFIX,
+} from "../work-units/plansHealth";
 
 const API = "/api/v1/operations";
 const POLL_INTERVAL_MS = 15_000;

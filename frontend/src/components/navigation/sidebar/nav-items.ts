@@ -77,9 +77,9 @@ function coordLeafItem(leaf: NavLeaf, group?: string): NavItem {
     }),
     route: leaf.href,
     color: COORD_COLOR,
-    // Console pages have detail routes (`/admin/coord/plans/<slug>`) that
-    // should keep their section highlighted. No two console hrefs prefix one
-    // another, so this cannot double-highlight.
+    // Console pages have detail routes (`/admin/coord/work-units/<slug>`)
+    // that should keep their section highlighted. No two console hrefs prefix
+    // one another, so this cannot double-highlight.
     matchPrefix: true,
     adminOnly: leaf.operatorOnly,
     group,
