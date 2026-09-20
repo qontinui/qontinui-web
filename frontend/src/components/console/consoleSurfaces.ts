@@ -219,7 +219,7 @@ export const CONSOLE_PALETTES: ReadonlyArray<ConsoleSurface> = [
   },
   // --- Phase 3 Wave 1 -------------------------------------------------------
   {
-    surface: "plans (/admin/coord/plans, /history)",
+    surface: "work units (/admin/coord/work-units, /admin/coord/spawn, /history)",
     module: "components/admin/coord/planStatus.ts",
     attentionByKind: PLAN_ATTENTION_BY_TONE,
     palette: {

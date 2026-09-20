@@ -26,7 +26,7 @@ const get = vi.fn();
 
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ push: vi.fn(), replace: vi.fn(), prefetch: vi.fn() }),
-  usePathname: () => "/admin/coord/plans",
+  usePathname: () => "/admin/coord/work-units",
   useSearchParams: () => new URLSearchParams(),
   useParams: () => ({}),
 }));
@@ -49,7 +49,7 @@ vi.mock("@/services/service-factory", () => ({
   },
 }));
 
-import CoordPlansListPage from "./page";
+import CoordWorkUnitsListPage from "./page";
 
 const POLL_INTERVAL_MS = 10_000;
 
@@ -63,7 +63,7 @@ function deferred() {
 }
 
 function refreshButton() {
-  return screen.getByTestId("coord-plans-refresh");
+  return screen.getByTestId("coord-work-units-refresh");
 }
 
 beforeEach(() => {
@@ -74,12 +74,14 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
-describe("/admin/coord/plans refresh control", () => {
+describe("/admin/coord/work-units refresh control", () => {
   it("has an accessible name, and a title that names its effect", async () => {
     get.mockResolvedValue({ work_units: [] });
-    render(<CoordPlansListPage />);
+    render(<CoordWorkUnitsListPage />);
 
-    const button = await screen.findByRole("button", { name: "Refresh plans" });
+    const button = await screen.findByRole("button", {
+      name: "Refresh work units",
+    });
     expect(button).toBe(refreshButton());
     expect(button).toHaveAttribute(
       "title",
@@ -105,8 +107,8 @@ describe("/admin/coord/plans refresh control", () => {
         : clickRead.promise;
     });
     const user = userEvent.setup();
-    render(<CoordPlansListPage />);
-    await screen.findByTestId("coord-plans-empty");
+    render(<CoordWorkUnitsListPage />);
+    await screen.findByTestId("coord-work-units-empty");
 
     expect(refreshButton()).not.toHaveAttribute("aria-busy", "true");
     await user.click(refreshButton());
@@ -138,8 +140,8 @@ describe("/admin/coord/plans refresh control", () => {
         ? Promise.resolve({ work_units: [] })
         : pollRead.promise;
     });
-    render(<CoordPlansListPage />);
-    await screen.findByTestId("coord-plans-empty");
+    render(<CoordWorkUnitsListPage />);
+    await screen.findByTestId("coord-work-units-empty");
 
     // One tick: the poll issues a read through the same `fetchData`.
     await act(async () => {
@@ -167,8 +169,8 @@ describe("/admin/coord/plans refresh control", () => {
         : clickRead.promise;
     });
     const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
-    render(<CoordPlansListPage />);
-    await screen.findByTestId("coord-plans-empty");
+    render(<CoordWorkUnitsListPage />);
+    await screen.findByTestId("coord-work-units-empty");
 
     await user.click(refreshButton());
     await waitFor(() => expect(get).toHaveBeenCalledTimes(2));
@@ -207,7 +209,7 @@ describe("/admin/coord/plans refresh control", () => {
       return Promise.resolve({ work_units: [] });
     });
     const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
-    render(<CoordPlansListPage />);
+    render(<CoordWorkUnitsListPage />);
     await waitFor(() => expect(get).toHaveBeenCalledTimes(1));
 
     await user.click(refreshButton());
@@ -239,8 +241,8 @@ describe("/admin/coord/plans refresh control", () => {
       return clickRead.promise;
     });
     const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
-    render(<CoordPlansListPage />);
-    await screen.findByTestId("coord-plans-empty");
+    render(<CoordWorkUnitsListPage />);
+    await screen.findByTestId("coord-work-units-empty");
 
     // The click takes the free lock; its read stays out.
     await user.click(refreshButton());
@@ -248,7 +250,7 @@ describe("/admin/coord/plans refresh control", () => {
 
     // The operator changes the filter: the new question's first read takes
     // the lock and stays out too.
-    await user.click(screen.getByTestId("coord-plans-status-select"));
+    await user.click(screen.getByTestId("coord-work-units-status-select"));
     await user.click(await screen.findByRole("option", { name: "Blocked" }));
     await waitFor(() => expect(get).toHaveBeenCalledTimes(3));
 
@@ -278,8 +280,8 @@ describe("/admin/coord/plans refresh control", () => {
       return clickRead.promise;
     });
     const user = userEvent.setup();
-    render(<CoordPlansListPage />);
-    await screen.findByTestId("coord-plans-empty");
+    render(<CoordWorkUnitsListPage />);
+    await screen.findByTestId("coord-work-units-empty");
 
     await user.click(refreshButton());
     await waitFor(() =>
@@ -288,7 +290,7 @@ describe("/admin/coord/plans refresh control", () => {
 
     // The question changes while that press's read is still out. Its answer
     // will be discarded, so the control must not keep acknowledging it.
-    await user.click(screen.getByTestId("coord-plans-status-select"));
+    await user.click(screen.getByTestId("coord-work-units-status-select"));
     await user.click(await screen.findByRole("option", { name: "Blocked" }));
     await waitFor(() => expect(get).toHaveBeenCalledTimes(3));
 

@@ -1,17 +1,38 @@
 "use client";
 
 /**
- * /admin/coord/plans — list coord work-units, filter by status.
+ * /admin/coord/work-units — list coord WORK UNITS, filter by status.
  *
  * Plan `2026-05-19-coordinator-production-readiness.md` Phase 2 (Wave 2);
  * repointed onto the generic work-unit primitive
  * (`2026-06-18-coord-generic-work-unit-primitive`).
  *
- * Operators still author markdown plans; coord now stores them as generic
- * slug-keyed work-units (`coord.work_units`). The operator UX stays "Plans"
- * — this is a data-source repoint, not a rename. The web proxy still serves
- * `/api/v1/operations/plans*`; only the coord upstream moved to
- * `/coord/work-units*`, whose list envelope is `{work_units: [...]}`.
+ * ## Why this page is no longer called "Plans" (Phase 3 of plan
+ * `2026-09-20-the-operator-plans-page-reads-the-wrong-store`)
+ *
+ * This page reads `coord.work_units` — the OPERATIONAL store — through
+ * `/api/v1/operations/plans*`, ordered `updated_at DESC` and clamped at
+ * {@link FETCH_LIMIT}. That is a **recency window over coord's work units**,
+ * not the plan corpus: a unit's position depends on when it was last touched,
+ * so work that has stalled is exactly what falls out of view. Calling it
+ * "Plans" told an operator it was a corpus they could search, and one who
+ * could not find a three-week-old plan on it read "not here" as "absent".
+ *
+ * The plan CORPUS now lives at `/admin/coord/plans`, which reads
+ * `GET /api/v1/plan-library/reconciliation` (slug-ordered, paged, with a
+ * stated total). This page keeps the question it always actually answered —
+ * *what has coord touched lately, and what is blocked?* — under the name of
+ * the store it reads. `updated_at DESC` stays, deliberately: for the merge
+ * escalation triage this page is FOR, recency is the right axis.
+ *
+ * **The `shepherd-*` exclusion is a control here, not a constant, and it
+ * DEFAULTS TO INCLUDED.** `shepherd-*` units are coord's own unlandable-PR
+ * merge escalations (`SHEPHERD_SLUG_PREFIX`, `plansHealth.tsx`). They were
+ * hard-excluded while this route was called "Plans", which was right — they
+ * are not plans. On a work-unit page they are the subject, and hard-excluding
+ * them would leave ~1,264 rows with no consumer on either page. So the
+ * exclusion is a Select, defaulting to including them, and the operator can
+ * narrow to authored work when that is the question.
  *
  * ## Console style (Phase 3 Wave 1)
  *
@@ -45,9 +66,13 @@
  * It is a SERVER-side filter — the value goes to coord as `?status=` and
  * changes what is fetched — so tab counts would be `–` for all nine options on
  * every render but one. R6's dash rule permits that; it would still be a
- * strictly worse control than the Select, and `coord-plans-status-select` is a
+ * strictly worse control than the Select, and `coord-work-units-status-select` is a
  * frozen authored testid (D4a). The counts operators actually want are in the
  * health strip, derived from the window that WAS fetched.
+ *
+ * The shepherd Select follows that precedent for the same reason: it is also a
+ * SERVER-side filter (`?exclude_slug_prefix=`), so a chip strip would carry
+ * dashes rather than counts.
  *
  * ## Difficulty (plan `2026-09-18-plan-library-difficulty-field`)
  *
@@ -72,6 +97,7 @@ import {
   ArrowDownUp,
   FileQuestion,
   Filter,
+  ShieldAlert,
   SignalHigh,
   TriangleAlert,
 } from "lucide-react";
@@ -81,6 +107,7 @@ import {
   HealthStrip,
   RecordList,
   RefreshButton,
+  absoluteTime,
   readIsUnknown,
 } from "@/components/console";
 import { PlanRow } from "@/components/admin/coord/PlanRow";
@@ -106,7 +133,12 @@ import {
 import { httpClient } from "@/services/service-factory";
 import { sortPlans, SORTS, type SortKey } from "./planSort";
 import { usePlanDifficulty } from "./usePlanDifficulty";
-import { derivePlansHealth, SHEPHERD_SLUG_PREFIX } from "./plansHealth";
+import {
+  derivePlansHealth,
+  SHEPHERD_FILTERS,
+  SHEPHERD_SLUG_PREFIX,
+  type ShepherdFilter,
+} from "./plansHealth";
 
 const API = "/api/v1/operations";
 const POLL_INTERVAL_MS = 10_000;
@@ -122,6 +154,9 @@ const POLL_INTERVAL_MS = 10_000;
  * larger than what is sorted and the page says so; see `truncated` below.
  */
 const FETCH_LIMIT = 500;
+
+/** What one row IS here — see `PlansHealthNoun` in `plansHealth.tsx`. */
+const WORK_UNIT_NOUN = { one: "work unit", many: "work units" };
 
 // Work-unit lifecycle statuses (coord stores status as an opaque string;
 // these are the canonical lifecycle words the filter offers as a convenience
@@ -147,6 +182,17 @@ interface PlansListResponse {
   offset?: number;
   count?: number;
   /**
+   * The size of the WHOLE population, when coord serves one.
+   *
+   * It is optional because nothing between this page and coord's
+   * `list_work_units` promises it: the web proxy forwards coord's envelope
+   * verbatim (`operations.py` `list_coord_plans`), and that envelope is
+   * `{work_units, limit, offset}`. So an absent `total` is UNKNOWN and the
+   * truncation notice says so — it never substitutes `count`, which is the
+   * size of the PAGE and would turn "500 of ?" into the false "500 of 500".
+   */
+  total?: number;
+  /**
    * Why a `has_body: false` on this page is (or is not) evidence — computed
    * once per request by the proxy. Absent when the page had no rows to
    * annotate, and on a backend that predates the signals.
@@ -161,8 +207,11 @@ function toggle<V extends string>(prev: V[], value: V): V[] {
     : [...prev, value];
 }
 
-export default function CoordPlansListPage() {
+export default function CoordWorkUnitsListPage() {
   const [status, setStatus] = useState("any");
+  // Server-side, like `status` — see `SHEPHERD_FILTERS` in `plansHealth.tsx`
+  // for why the default includes coord's own merge escalations.
+  const [shepherd, setShepherd] = useState<ShepherdFilter>("include");
   const [sort, setSort] = useState<SortKey>("authored_desc");
   // Both body filters are CLIENT-side, unlike `status`: the proxy derives
   // these fields, it does not take them as query parameters, so they filter
@@ -256,7 +305,9 @@ export default function CoordPlansListPage() {
       const qs = new URLSearchParams();
       if (status && status !== "any") qs.set("status", status);
       qs.set("limit", String(FETCH_LIMIT));
-      qs.set("exclude_slug_prefix", SHEPHERD_SLUG_PREFIX);
+      if (shepherd === "exclude") {
+        qs.set("exclude_slug_prefix", SHEPHERD_SLUG_PREFIX);
+      }
       const suffix = qs.toString() ? `?${qs.toString()}` : "";
       const body = await httpClient.get<PlansListResponse>(
         `${API}/plans${suffix}`
@@ -268,7 +319,7 @@ export default function CoordPlansListPage() {
       if (question !== questionGen.current) return;
       setError(e instanceof Error ? e.message : String(e));
     }
-  }, [status]);
+  }, [status, shepherd]);
 
   useEffect(() => {
     // `status` is `fetchData`'s only dependency, so this effect re-runs
@@ -415,6 +466,41 @@ export default function CoordPlansListPage() {
   // than we sorted. Say so: with the list capped at `updated_at DESC`, an
   // "oldest authored" answer drawn from this window can be wrong.
   const truncated = plans.length >= FETCH_LIMIT;
+  /**
+   * The DENOMINATOR, or UNKNOWN — never a substitute.
+   *
+   * Phase 3 of plan `2026-09-20-the-operator-plans-page-reads-the-wrong-store`:
+   * *"a disclosure without a denominator is a disclaimer, not a measurement"*.
+   * "The 500 most-recently-updated" is true and still does not tell a reader
+   * they are looking at 43 hours of a 3,268-row store.
+   *
+   * `count` is deliberately NOT consulted as a fallback: it is the size of the
+   * page, so reading it here would render "500 of 500" — a complete corpus —
+   * over a window that is nothing of the sort. Absent is UNKNOWN.
+   */
+  const windowTotal = typeof data?.total === "number" ? data.total : null;
+  /**
+   * The BOUNDARY value — how old the oldest row in this window is.
+   *
+   * coord orders `updated_at DESC`, so the window's edge is the minimum
+   * `updated_at` across the rows FETCHED. It is computed off `plans` rather
+   * than off the rendered order on purpose: the display sort is client-side
+   * and re-orders the same window, so reading the last rendered row would make
+   * the stated boundary move with a control that cannot move it.
+   *
+   * `null` when no row carries a parseable timestamp — UNKNOWN, not "now".
+   */
+  const oldestUpdatedAt = useMemo(() => {
+    let oldest: { iso: string; ms: number } | null = null;
+    for (const p of plans) {
+      const iso = p.updated_at;
+      if (!iso) continue;
+      const ms = Date.parse(iso);
+      if (Number.isNaN(ms)) continue;
+      if (!oldest || ms < oldest.ms) oldest = { iso, ms };
+    }
+    return oldest?.iso ?? null;
+  }, [plans]);
   // No authoring date from EITHER source — the slug carries no date prefix
   // AND coord holds no `authored_at` (`planAuthoredAt`, the deriver the chip,
   // the row time and the sort all read). Counting the bare column here would
@@ -435,18 +521,22 @@ export default function CoordPlansListPage() {
   // currently failing.
   const plansStale = readFailed && loaded;
   const health = useMemo(
-    () => derivePlansHealth(plans, loaded, readFailed),
+    // The noun is "work units", not "plans": with the shepherd filter
+    // defaulting to INCLUDED this window is coord's work units, and a badge
+    // reading `plans 500` over it would be the mislabel this route was moved
+    // to fix, restated in a badge.
+    () => derivePlansHealth(plans, loaded, readFailed, WORK_UNIT_NOUN),
     [plans, loaded, readFailed]
   );
 
   return (
-    <div className="p-3 sm:p-6 space-y-4" data-testid="coord-plans-page">
+    <div className="p-3 sm:p-6 space-y-4" data-testid="coord-work-units-page">
       <HealthStrip
         level={health.level}
         headline={health.headline}
         detail={health.detail}
         badges={health.badges}
-        data-testid="coord-plans-health"
+        data-testid="coord-work-units-health"
       />
 
       <div className="flex flex-wrap items-center gap-2">
@@ -454,7 +544,7 @@ export default function CoordPlansListPage() {
         <Select value={status} onValueChange={setStatus}>
           <SelectTrigger
             className="w-[180px]"
-            data-testid="coord-plans-status-select"
+            data-testid="coord-work-units-status-select"
           >
             <SelectValue placeholder="status" />
           </SelectTrigger>
@@ -466,11 +556,37 @@ export default function CoordPlansListPage() {
             ))}
           </SelectContent>
         </Select>
+        <ShieldAlert className="h-4 w-4 text-muted-foreground ml-1" />
+        <Select
+          value={shepherd}
+          onValueChange={(v) => setShepherd(v as ShepherdFilter)}
+        >
+          <SelectTrigger
+            className="w-[220px]"
+            data-testid="coord-work-units-shepherd-select"
+            title={
+              "coord's own `shepherd-*` merge-escalation work units. They are " +
+              "INCLUDED by default here — this page is the surface that " +
+              "triages them, and no other page shows them at all. Excluding " +
+              "them re-asks coord (`exclude_slug_prefix`); it does not filter " +
+              "the fetched window."
+            }
+          >
+            <SelectValue placeholder="escalations" />
+          </SelectTrigger>
+          <SelectContent>
+            {SHEPHERD_FILTERS.map((opt) => (
+              <SelectItem key={opt.value} value={opt.value}>
+                {opt.label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
         <ArrowDownUp className="h-4 w-4 text-muted-foreground ml-1" />
         <Select value={sort} onValueChange={(v) => setSort(v as SortKey)}>
           <SelectTrigger
             className="w-[200px]"
-            data-testid="coord-plans-sort-select"
+            data-testid="coord-work-units-sort-select"
           >
             <SelectValue placeholder="sort" />
           </SelectTrigger>
@@ -490,7 +606,7 @@ export default function CoordPlansListPage() {
         >
           <SelectTrigger
             className="w-[180px]"
-            data-testid="coord-plans-difficulty-select"
+            data-testid="coord-work-units-difficulty-select"
             title={
               difficultyIndex.state === "failed"
                 ? `Difficulty ratings could not be read: ${difficultyIndex.reason}`
@@ -513,11 +629,11 @@ export default function CoordPlansListPage() {
             change must not leave the NEW question's control busy for up to the
             60s request timeout, over a read whose answer will be discarded. */}
         <RefreshButton
-          key={status}
+          key={`${status}:${shepherd}`}
           onRefresh={refresh}
-          label="Refresh plans"
+          label="Refresh work units"
           title={`Re-reads the work-unit list now; it also refreshes itself every ${POLL_INTERVAL_MS / 1000} s`}
-          data-testid="coord-plans-refresh"
+          data-testid="coord-work-units-refresh"
         />
       </div>
 
@@ -528,12 +644,12 @@ export default function CoordPlansListPage() {
       {bodySignalsServed && (
         <div
           className="flex flex-wrap items-center gap-2"
-          data-testid="coord-plans-body-filters"
+          data-testid="coord-work-units-body-filters"
         >
           <FileQuestion className="h-4 w-4 text-muted-foreground" />
           <FilterChips
             label="document"
-            testIdPrefix="coord-plans-has-body-filter"
+            testIdPrefix="coord-work-units-has-body-filter"
             options={HAS_BODY_FILTERS.map((o) => ({
               ...o,
               count: hasBodyCounts.get(o.value) ?? 0,
@@ -551,7 +667,7 @@ export default function CoordPlansListPage() {
           />
           <FilterChips
             label="scanner"
-            testIdPrefix="coord-plans-provenance-filter"
+            testIdPrefix="coord-work-units-provenance-filter"
             options={PROVENANCE_FILTERS.map((o) => ({
               ...o,
               count: provenanceCounts.get(o.value) ?? 0,
@@ -575,13 +691,15 @@ export default function CoordPlansListPage() {
           titleAs="h2"
           className="p-2.5"
           defaultOpen={false}
-          storageKey="coord-plans-window-caveats"
+          storageKey="coord-work-units-window-caveats"
           icon={<TriangleAlert className="h-3.5 w-3.5 text-amber-400" />}
           title="Fetch-window caveats"
           summary={
             <span className="text-xs text-amber-300/90 normal-case tracking-normal">
               {[
-                truncated ? `capped at ${FETCH_LIMIT}` : null,
+                truncated
+                  ? `showing ${plans.length} of ${windowTotal ?? "?"}`
+                  : null,
                 missingAuthored > 0 ? `${missingAuthored} undated` : null,
               ]
                 .filter(Boolean)
@@ -589,23 +707,50 @@ export default function CoordPlansListPage() {
             </span>
           }
           contentClassName="space-y-1"
-          data-testid="coord-plans-window-caveats"
+          data-testid="coord-work-units-window-caveats"
         >
           {truncated && (
             <p
               className="text-xs text-amber-300/90"
-              data-testid="coord-plans-truncated-notice"
+              data-testid="coord-work-units-truncated-notice"
             >
-              Showing the {FETCH_LIMIT} most-recently-updated work units — coord
-              caps this list. Sorting applies to these only, so a &ldquo;
+              Showing {plans.length} of{" "}
+              {windowTotal !== null ? (
+                windowTotal
+              ) : (
+                <>
+                  an <strong>unknown</strong> total — coord&apos;s work-unit
+                  list envelope carries no count, so how much of the store this
+                  is cannot be stated
+                </>
+              )}{" "}
+              work units, ordered most-recently-updated first and capped at{" "}
+              {FETCH_LIMIT} by coord.{" "}
+              {oldestUpdatedAt !== null ? (
+                <>
+                  The oldest row in this window was updated{" "}
+                  <span data-testid="coord-work-units-window-boundary">
+                    {absoluteTime(oldestUpdatedAt)}
+                  </span>
+                  ; anything untouched since then is out of the window, not
+                  absent.
+                </>
+              ) : (
+                <span data-testid="coord-work-units-window-boundary">
+                  No row in this window carries a readable updated_at, so how
+                  far back it reaches is unknown.
+                </span>
+              )}{" "}
+              Sorting applies to these rows only, so a &ldquo;
               {SORTS.find((s) => s.value === sort)?.label}&rdquo; result may not
-              be the corpus-wide answer.
+              be the corpus-wide answer. The plan corpus, slug-ordered with a
+              stated total, is at /admin/coord/plans.
             </p>
           )}
           {missingAuthored > 0 && (
             <p
               className="text-xs text-muted-foreground"
-              data-testid="coord-plans-missing-authored-notice"
+              data-testid="coord-work-units-missing-authored-notice"
             >
               {missingAuthored} of {plans.length} have no authoring date — no
               date prefix on the slug and no authored_at in coord; they sort
@@ -622,7 +767,7 @@ export default function CoordPlansListPage() {
       {difficultyIndex.state === "failed" && (
         <p
           className="text-xs text-muted-foreground"
-          data-testid="coord-plans-difficulty-unknown"
+          data-testid="coord-work-units-difficulty-unknown"
         >
           Difficulty ratings could not be read ({difficultyIndex.reason}) — each
           row&apos;s difficulty is unknown, not unrated.
@@ -631,7 +776,7 @@ export default function CoordPlansListPage() {
       {difficultyIndex.state === "loaded" && difficultyIndex.staleReason && (
         <p
           className="text-xs text-muted-foreground"
-          data-testid="coord-plans-difficulty-stale"
+          data-testid="coord-work-units-difficulty-stale"
         >
           Some difficulty ratings may predate the current rubric — re-rating
           failed: {difficultyIndex.staleReason}
@@ -661,11 +806,11 @@ export default function CoordPlansListPage() {
           difficultyFiltered && sorted.length > 0 ? (
             <p
               className="text-sm text-muted-foreground italic"
-              data-testid="coord-plans-difficulty-empty"
+              data-testid="coord-work-units-difficulty-empty"
             >
               {difficultyFilter === "unrated"
-                ? `None of the ${sorted.length} fetched plans is unrated.`
-                : `None of the ${sorted.length} fetched plans is rated ${difficultyFilter}.`}
+                ? `None of the ${sorted.length} fetched work units is unrated.`
+                : `None of the ${sorted.length} fetched work units is rated ${difficultyFilter}.`}
             </p>
           ) : bodyFiltered && plans.length > 0 ? (
             // The body filters are client-side, so "nothing matched" here is a
@@ -674,7 +819,7 @@ export default function CoordPlansListPage() {
             // {plans.length} rows would blame the wrong control.
             <p
               className="text-sm text-muted-foreground italic"
-              data-testid="coord-plans-body-filtered-empty"
+              data-testid="coord-work-units-body-filtered-empty"
             >
               None of the {plans.length} work units in this window match the
               document filter.
@@ -682,25 +827,28 @@ export default function CoordPlansListPage() {
           ) : plansUnknown ? (
             <p
               className="text-sm text-muted-foreground italic"
-              data-testid="coord-plans-unknown"
+              data-testid="coord-work-units-unknown"
             >
-              Could not read the work-unit list — whether any plan matches
+              Could not read the work-unit list — whether any work unit matches
               status={status === "any" ? "any" : status} is unknown, not none.
             </p>
           ) : plansStale ? (
             <p
               className="text-sm text-muted-foreground italic"
-              data-testid="coord-plans-stale"
+              data-testid="coord-work-units-stale"
             >
-              No plans matched status={status === "any" ? "any" : status} at the
-              last good read — this list has not refreshed since.
+              No work units matched status={status === "any" ? "any" : status}{" "}
+              at the last good read — this list has not refreshed since.
             </p>
           ) : (
             <p
               className="text-sm text-muted-foreground italic"
-              data-testid="coord-plans-empty"
+              data-testid="coord-work-units-empty"
             >
-              No plans matching status={status === "any" ? "any" : status}.
+              No work units matching status={status === "any" ? "any" : status}
+              {shepherd === "exclude"
+                ? ", excluding coord's merge escalations."
+                : "."}
             </p>
           )
         }

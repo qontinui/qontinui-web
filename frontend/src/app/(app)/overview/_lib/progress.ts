@@ -18,7 +18,7 @@ import {
   type CoordPlanRow,
   type PlanStatusTone,
 } from "@/components/admin/coord/planStatus";
-import { SHEPHERD_SLUG_PREFIX } from "@/app/(app)/admin/coord/plans/plansHealth";
+import { SHEPHERD_SLUG_PREFIX } from "@/app/(app)/admin/coord/work-units/plansHealth";
 
 export type ProgressBucket =
   | "done"

@@ -1,5 +1,5 @@
 /**
- * `/admin/coord/plans` — the difficulty chip and filter, end to end on the page.
+ * `/admin/coord/work-units` — the difficulty chip and filter, end to end on the page.
  *
  * Plan `2026-09-18-plan-library-difficulty-field`. Pinned:
  *   - each row carries the plan library's rating, joined by slug, and a plan
@@ -23,7 +23,7 @@ let difficultyIndex: DifficultyIndex = { state: "pending" };
 
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ push: vi.fn(), replace: vi.fn(), prefetch: vi.fn() }),
-  usePathname: () => "/admin/coord/plans",
+  usePathname: () => "/admin/coord/work-units",
   useSearchParams: () => new URLSearchParams(),
   useParams: () => ({}),
 }));
@@ -42,7 +42,7 @@ vi.mock("@/services/service-factory", () => ({
   },
 }));
 
-import CoordPlansListPage from "./page";
+import CoordWorkUnitsListPage from "./page";
 
 const UNITS = {
   work_units: [
@@ -102,10 +102,10 @@ beforeEach(() => {
   difficultyIndex = { state: "pending" };
 });
 
-describe("/admin/coord/plans difficulty", () => {
+describe("/admin/coord/work-units difficulty", () => {
   it("chips every row by slug, and an uncaptured plan reads unrated", async () => {
     difficultyIndex = loaded();
-    render(<CoordPlansListPage />);
+    render(<CoordWorkUnitsListPage />);
     await screen.findAllByTestId("coord-plan-card");
 
     expect(chipFor("2026-09-10-hard-one")).toHaveAttribute(
@@ -128,9 +128,11 @@ describe("/admin/coord/plans difficulty", () => {
   });
 
   it("disables the filter while the ratings are pending", async () => {
-    render(<CoordPlansListPage />);
+    render(<CoordWorkUnitsListPage />);
     await screen.findAllByTestId("coord-plan-card");
-    expect(screen.getByTestId("coord-plans-difficulty-select")).toBeDisabled();
+    expect(
+      screen.getByTestId("coord-work-units-difficulty-select")
+    ).toBeDisabled();
     expect(chipFor("2026-09-10-hard-one")).toHaveAttribute(
       "data-difficulty",
       "unknown"
@@ -139,12 +141,14 @@ describe("/admin/coord/plans difficulty", () => {
 
   it("says a failed ratings read, and reads every chip unknown, not unrated", async () => {
     difficultyIndex = { state: "failed", reason: "HTTP 503" };
-    render(<CoordPlansListPage />);
+    render(<CoordWorkUnitsListPage />);
     await screen.findAllByTestId("coord-plan-card");
     expect(
-      screen.getByTestId("coord-plans-difficulty-unknown")
+      screen.getByTestId("coord-work-units-difficulty-unknown")
     ).toHaveTextContent("HTTP 503");
-    expect(screen.getByTestId("coord-plans-difficulty-select")).toBeDisabled();
+    expect(
+      screen.getByTestId("coord-work-units-difficulty-select")
+    ).toBeDisabled();
     for (const chip of screen.getAllByTestId("coord-plan-difficulty")) {
       expect(chip).toHaveAttribute("data-difficulty", "unknown");
       expect(chip).toHaveTextContent("?");
@@ -153,17 +157,17 @@ describe("/admin/coord/plans difficulty", () => {
 
   it("enables the filter once the ratings load", async () => {
     difficultyIndex = loaded();
-    render(<CoordPlansListPage />);
+    render(<CoordWorkUnitsListPage />);
     await screen.findAllByTestId("coord-plan-card");
     expect(
-      screen.getByTestId("coord-plans-difficulty-select")
+      screen.getByTestId("coord-work-units-difficulty-select")
     ).not.toBeDisabled();
   });
 
   it("filters the fetched rows by level, and unrated is its own bucket", async () => {
     difficultyIndex = loaded();
     const user = userEvent.setup();
-    render(<CoordPlansListPage />);
+    render(<CoordWorkUnitsListPage />);
     await screen.findAllByTestId("coord-plan-card");
 
     const keys = () =>
@@ -171,13 +175,13 @@ describe("/admin/coord/plans difficulty", () => {
         .getAllByTestId("coord-plan-card")
         .map((el) => el.getAttribute("data-row-key"));
 
-    await user.click(screen.getByTestId("coord-plans-difficulty-select"));
+    await user.click(screen.getByTestId("coord-work-units-difficulty-select"));
     await user.click(
       await screen.findByRole("option", { name: "High difficulty" })
     );
     expect(keys()).toEqual(["2026-09-10-hard-one"]);
 
-    await user.click(screen.getByTestId("coord-plans-difficulty-select"));
+    await user.click(screen.getByTestId("coord-work-units-difficulty-select"));
     await user.click(await screen.findByRole("option", { name: "Unrated" }));
     expect(keys()).toEqual(["2026-09-12-no-body"]);
   });
@@ -185,17 +189,17 @@ describe("/admin/coord/plans difficulty", () => {
   it("names the difficulty filter when it empties the list", async () => {
     difficultyIndex = loaded();
     const user = userEvent.setup();
-    render(<CoordPlansListPage />);
+    render(<CoordWorkUnitsListPage />);
     await screen.findAllByTestId("coord-plan-card");
 
-    await user.click(screen.getByTestId("coord-plans-difficulty-select"));
+    await user.click(screen.getByTestId("coord-work-units-difficulty-select"));
     await user.click(
       await screen.findByRole("option", { name: "Medium difficulty" })
     );
     expect(
-      screen.getByTestId("coord-plans-difficulty-empty")
-    ).toHaveTextContent("None of the 3 fetched plans is rated medium.");
-    expect(screen.queryByTestId("coord-plans-empty")).toBeNull();
+      screen.getByTestId("coord-work-units-difficulty-empty")
+    ).toHaveTextContent("None of the 3 fetched work units is rated medium.");
+    expect(screen.queryByTestId("coord-work-units-empty")).toBeNull();
   });
 
   it("names the difficulty filter over a STALE list too, not the stale copy", async () => {
@@ -203,20 +207,20 @@ describe("/admin/coord/plans difficulty", () => {
     get.mockReset();
     get.mockResolvedValueOnce(UNITS).mockRejectedValue(new Error("HTTP 502"));
     const user = userEvent.setup();
-    render(<CoordPlansListPage />);
+    render(<CoordWorkUnitsListPage />);
     await screen.findAllByTestId("coord-plan-card");
 
-    await user.click(screen.getByTestId("coord-plans-difficulty-select"));
+    await user.click(screen.getByTestId("coord-work-units-difficulty-select"));
     await user.click(
       await screen.findByRole("option", { name: "Medium difficulty" })
     );
     // A later read fails: the page keeps its rows (stale), and the filter
     // still hides all of them.
-    await user.click(screen.getByTestId("coord-plans-refresh"));
+    await user.click(screen.getByTestId("coord-work-units-refresh"));
     await screen.findByText(/Failed to load/);
     expect(
-      screen.getByTestId("coord-plans-difficulty-empty")
+      screen.getByTestId("coord-work-units-difficulty-empty")
     ).toBeInTheDocument();
-    expect(screen.queryByTestId("coord-plans-stale")).toBeNull();
+    expect(screen.queryByTestId("coord-work-units-stale")).toBeNull();
   });
 });
