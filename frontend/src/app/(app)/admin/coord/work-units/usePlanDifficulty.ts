@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * The plan library's difficulty ratings, for `/admin/coord/plans`.
+ * The plan library's difficulty ratings, for `/admin/coord/work-units`.
  *
  * A SECOND read beside the page's coord work-unit list, because the rating
  * lives on the plan-library artifact, not on the work unit (see

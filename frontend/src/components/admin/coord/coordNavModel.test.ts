@@ -62,7 +62,11 @@ describe("coordNavModel", () => {
   it("keeps agent tooling in Work beside Agents", () => {
     expect(labels("work")).toEqual([
       "Plans",
+      "Work Units",
       "Plan Library",
+      "Plan Candidates",
+      "Plan Forks",
+      "Plan Follow-ups",
       "Questions",
       "Agents",
       "Agent Commands",

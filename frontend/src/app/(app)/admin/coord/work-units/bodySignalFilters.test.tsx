@@ -1,5 +1,5 @@
 /**
- * `/admin/coord/plans` — the two body-signal filter strips.
+ * `/admin/coord/work-units` — the two body-signal filter strips.
  *
  * Plan `2026-09-02-bodyless-work-units-are-listed-and-spawnable-as-plans`.
  * The predicates are unit-tested in
@@ -27,7 +27,7 @@ const get = vi.fn();
 // router mounted under `render()`. The navigation is not what is under test.
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ push: vi.fn(), replace: vi.fn(), prefetch: vi.fn() }),
-  usePathname: () => "/admin/coord/plans",
+  usePathname: () => "/admin/coord/work-units",
   useSearchParams: () => new URLSearchParams(),
   useParams: () => ({}),
 }));
@@ -39,7 +39,7 @@ vi.mock("@/services/service-factory", () => ({
   },
 }));
 
-import CoordPlansListPage from "./page";
+import CoordWorkUnitsListPage from "./page";
 
 const ANNOTATED = {
   work_units: [
@@ -96,7 +96,7 @@ const UNANNOTATED = {
 
 async function renderPage(payload: unknown) {
   get.mockResolvedValue(payload);
-  render(<CoordPlansListPage />);
+  render(<CoordWorkUnitsListPage />);
   await waitFor(() =>
     expect(screen.queryAllByTestId("coord-plan-card").length).toBeGreaterThan(0)
   );
@@ -115,18 +115,18 @@ describe("/plans body-signal filters", () => {
 
   it("renders both strips once the backend serves the fields", async () => {
     await renderPage(ANNOTATED);
-    expect(screen.getByTestId("coord-plans-body-filters")).toBeInTheDocument();
+    expect(screen.getByTestId("coord-work-units-body-filters")).toBeInTheDocument();
     expect(
-      screen.getByTestId("coord-plans-has-body-filter")
+      screen.getByTestId("coord-work-units-has-body-filter")
     ).toBeInTheDocument();
     expect(
-      screen.getByTestId("coord-plans-provenance-filter")
+      screen.getByTestId("coord-work-units-provenance-filter")
     ).toBeInTheDocument();
   });
 
   it("renders NEITHER strip when no row carries a signal", async () => {
     await renderPage(UNANNOTATED);
-    expect(screen.queryByTestId("coord-plans-body-filters")).toBeNull();
+    expect(screen.queryByTestId("coord-work-units-body-filters")).toBeNull();
     // ...and the rows themselves still render, unfiltered.
     expect(visibleSlugs()).toHaveLength(3);
   });
@@ -136,7 +136,7 @@ describe("/plans body-signal filters", () => {
     await renderPage(ANNOTATED);
 
     const unknownChip = screen.getByTestId(
-      "coord-plans-has-body-filter-unknown"
+      "coord-work-units-has-body-filter-unknown"
     );
     expect(unknownChip).toHaveTextContent("1");
     await user.click(unknownChip);
@@ -144,10 +144,10 @@ describe("/plans body-signal filters", () => {
     // The other chips must still report the window's counts — a strip whose
     // unselected counts collapse to 0 on click cannot be used to navigate.
     await waitFor(() => expect(visibleSlugs()).toEqual(["2026-09-02-one-machine-only"]));
-    expect(screen.getByTestId("coord-plans-has-body-filter-yes")).toHaveTextContent(
+    expect(screen.getByTestId("coord-work-units-has-body-filter-yes")).toHaveTextContent(
       "1"
     );
-    expect(screen.getByTestId("coord-plans-has-body-filter-no")).toHaveTextContent(
+    expect(screen.getByTestId("coord-work-units-has-body-filter-no")).toHaveTextContent(
       "1"
     );
   });
@@ -157,15 +157,15 @@ describe("/plans body-signal filters", () => {
     await renderPage(ANNOTATED);
 
     await user.click(
-      screen.getByTestId("coord-plans-provenance-filter-never_scanned")
+      screen.getByTestId("coord-work-units-provenance-filter-never_scanned")
     );
     await waitFor(() =>
       expect(visibleSlugs()).toEqual(["2026-09-01-bodyless-and-unscanned"])
     );
 
     await user.click(
-      within(screen.getByTestId("coord-plans-provenance-filter")).getByTestId(
-        "coord-plans-provenance-filter-all"
+      within(screen.getByTestId("coord-work-units-provenance-filter")).getByTestId(
+        "coord-work-units-provenance-filter-all"
       )
     );
     await waitFor(() => expect(visibleSlugs()).toHaveLength(3));
@@ -176,9 +176,9 @@ describe("/plans body-signal filters", () => {
     await renderPage(ANNOTATED);
 
     await user.click(
-      screen.getByTestId("coord-plans-provenance-filter-never_scanned")
+      screen.getByTestId("coord-work-units-provenance-filter-never_scanned")
     );
-    await user.click(screen.getByTestId("coord-plans-has-body-filter-yes"));
+    await user.click(screen.getByTestId("coord-work-units-has-body-filter-yes"));
     await waitFor(() => expect(visibleSlugs()).toHaveLength(0));
   });
 
@@ -187,13 +187,13 @@ describe("/plans body-signal filters", () => {
     await renderPage(ANNOTATED);
 
     await user.click(
-      screen.getByTestId("coord-plans-provenance-filter-never_scanned")
+      screen.getByTestId("coord-work-units-provenance-filter-never_scanned")
     );
-    await user.click(screen.getByTestId("coord-plans-has-body-filter-yes"));
+    await user.click(screen.getByTestId("coord-work-units-has-body-filter-yes"));
 
-    const empty = await screen.findByTestId("coord-plans-body-filtered-empty");
+    const empty = await screen.findByTestId("coord-work-units-body-filtered-empty");
     expect(empty).toHaveTextContent(/3 work units in this window/);
     // The status-filter copy would name the wrong control entirely.
-    expect(screen.queryByTestId("coord-plans-empty")).toBeNull();
+    expect(screen.queryByTestId("coord-work-units-empty")).toBeNull();
   });
 });

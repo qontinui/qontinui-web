@@ -52,6 +52,11 @@ import {
   PLAN_TONE_CLASS,
 } from "@/components/admin/coord/planStatus";
 import {
+  RECONCILIATION_ATTENTION_BY_VERDICT,
+  RECONCILIATION_AUTHOR_GLYPH_VERDICTS,
+  RECONCILIATION_BADGE_CLASS,
+} from "@/components/admin/coord/planReconciliationStatus";
+import {
   TREE_ATTENTION_BY_KIND,
   TREE_AUTHOR_GLYPH_KINDS,
   TREE_BADGE_CLASS,
@@ -143,6 +148,21 @@ import {
   MEMBER_AUTHOR_GLYPH_KINDS,
   MEMBER_KIND_CLASS,
 } from "@/app/(app)/admin/coord/members/memberStatus";
+// Phase 4 of `2026-09-20-the-operator-plans-page-reads-the-wrong-store` — the
+// three plan-library join routes that had shipped with zero consumers. Two of
+// them paint a status; the follow-up queue deliberately paints none (an
+// unowned follow-up is a backlog item, not an incident), so it has no row here
+// and nothing to audit.
+import {
+  FORK_ATTENTION_BY_KIND,
+  FORK_AUTHOR_GLYPH_KINDS,
+  FORK_KIND_CLASS,
+} from "@/app/(app)/admin/coord/plan-forks/forkStatus";
+import {
+  CANDIDATE_ATTENTION_BY_KIND,
+  CANDIDATE_AUTHOR_GLYPH_KINDS,
+  CANDIDATE_KIND_CLASS,
+} from "@/app/(app)/admin/coord/plan-candidates/candidateStatus";
 // The consolidated sessions console — plan
 // `2026-08-26-sessions-console-consolidation` Phase 1. Not under
 // `admin/coord/`, and the guide's §1 scope clause is explicit that it covers
@@ -219,12 +239,27 @@ export const CONSOLE_PALETTES: ReadonlyArray<ConsoleSurface> = [
   },
   // --- Phase 3 Wave 1 -------------------------------------------------------
   {
-    surface: "plans (/admin/coord/plans, /history)",
+    surface: "work units (/admin/coord/work-units, /admin/coord/spawn, /history)",
     module: "components/admin/coord/planStatus.ts",
     attentionByKind: PLAN_ATTENTION_BY_TONE,
     palette: {
       badgeClass: PLAN_TONE_CLASS,
       authorGlyphKinds: PLAN_AUTHOR_GLYPH_TONES as ReadonlySet<string>,
+    },
+  },
+  {
+    // The plan CORPUS, reconciled three ways — a different surface from the
+    // work-unit list above and a different vocabulary: its kinds are the
+    // route's three VERDICTS, not a status tone. `unknown` is amber by the
+    // guide's stated exception (an amber painted on ignorance), and it is the
+    // largest bucket here because axis C is page-scoped.
+    surface: "plan reconciliation (/admin/coord/plans)",
+    module: "components/admin/coord/planReconciliationStatus.ts",
+    attentionByKind: RECONCILIATION_ATTENTION_BY_VERDICT,
+    palette: {
+      badgeClass: RECONCILIATION_BADGE_CLASS,
+      authorGlyphKinds:
+        RECONCILIATION_AUTHOR_GLYPH_VERDICTS as ReadonlySet<string>,
     },
   },
   {
@@ -387,6 +422,34 @@ export const CONSOLE_PALETTES: ReadonlyArray<ConsoleSurface> = [
     palette: {
       badgeClass: MEMBER_KIND_CLASS,
       authorGlyphKinds: MEMBER_AUTHOR_GLYPH_KINDS as ReadonlySet<string>,
+    },
+  },
+  {
+    // Copies of one plan that do not agree. Both `author` kinds are red for
+    // the same reason the reconciliation page's `disagree` is: two writers of
+    // one fact hold different values and nothing but a person reconciles them
+    // — the scan-safe upsert 409s rather than pick a winner. The third kind is
+    // genuinely waiting: one locked kind means the scanner heals it unaided.
+    surface: "plan forks (/admin/coord/plan-forks)",
+    module: "app/(app)/admin/coord/plan-forks/forkStatus.ts",
+    attentionByKind: FORK_ATTENTION_BY_KIND,
+    palette: {
+      badgeClass: FORK_KIND_CLASS,
+      authorGlyphKinds: FORK_AUTHOR_GLYPH_KINDS as ReadonlySet<string>,
+    },
+  },
+  {
+    // Unshipped plans with their ranking inputs. NO kind here is `author`, and
+    // that is a claim rather than an omission: an unpicked candidate is the
+    // normal state of a backlog, and the route emits no score for this page to
+    // escalate on (its design decision D6). The empty glyph set is audited
+    // against that by `paletteDisagreements`'s size clause.
+    surface: "plan candidates (/admin/coord/plan-candidates)",
+    module: "app/(app)/admin/coord/plan-candidates/candidateStatus.ts",
+    attentionByKind: CANDIDATE_ATTENTION_BY_KIND,
+    palette: {
+      badgeClass: CANDIDATE_KIND_CLASS,
+      authorGlyphKinds: CANDIDATE_AUTHOR_GLYPH_KINDS as ReadonlySet<string>,
     },
   },
   {

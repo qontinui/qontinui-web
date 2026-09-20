@@ -218,7 +218,7 @@ export default function AppLayout({
                           single app-shell-level provider so every authenticated
                           page's tooltips work — without it, any page that
                           renders a Tooltip without its own local provider (e.g.
-                          /operations via CiStatusPanel/FleetOverview) crashes
+                          /operations via CiRepoStrip/FleetOverview) crashes
                           into the ErrorBoundary and shows no content. */}
                             <TooltipProvider>
                               <AppLayoutContent>{children}</AppLayoutContent>

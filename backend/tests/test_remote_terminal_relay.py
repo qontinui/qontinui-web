@@ -1827,6 +1827,18 @@ async def test_remote_only_target_frame_predicate() -> None:
     # A generic error stays dropped, exactly as before.
     assert rtr.is_remote_only_target_frame({"type": "error", "message": "x"}) is False
     assert rtr.is_remote_only_target_frame({"type": "terminal_output"}) is False
+    # A refusal the target typed `remote_terminal_error` is admitted on every
+    # shape, correlated or not, marked or not — nothing else consumes that
+    # type, and the shape the runner's `AttachRefusal::SessionNotLocal`
+    # actually sends (a MINTED request_id, no `remote` block) is precisely the
+    # one the two `error` conditions would have gone on discarding.
+    assert rtr.is_remote_only_target_frame({"type": "remote_terminal_error"}) is True
+    assert (
+        rtr.is_remote_only_target_frame(
+            {"type": "remote_terminal_error", "request_id": "r", "code": "x"}
+        )
+        is True
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -3140,6 +3152,144 @@ async def test_a_target_error_is_namespaced_and_its_message_capped(
     err = ws.of_type("remote_terminal_error")[0]
     assert err["code"] == f"{rtr.TARGET_CODE_PREFIX}{rtr.CODE_LISTENER_LOST}"
     assert len(err["message"]) == rtr.TARGET_MESSAGE_MAX
+
+
+# ---------------------------------------------------------------------------
+# Every refusal a target can emit must REACH the source.
+# ---------------------------------------------------------------------------
+
+
+async def test_every_target_refusal_type_and_code_reaches_the_source(
+    relay: RemoteTerminalRelay,
+) -> None:
+    """The invariant a whole refusal SPELLING slipped through unnoticed.
+
+    qontinui-runner's ``AttachRefusal::SessionNotLocal`` types its refusal
+    ``remote_terminal_error`` while every other target refusal goes through
+    ``refusal_frame`` and types it ``error``. One frame type, on one arm, was
+    unroutable end to end — ``devices_ws`` discarded it as
+    ``devices_ws_unhandled_message`` and ``route_target_frame`` would have
+    answered ``False`` even if it had not. A refusal class the source could
+    not be told about under any conditions.
+
+    It is LATENT and this test claims nothing more: no observed attach failure
+    is attributed to the gap. What makes it worth a sweep is how it was found
+    — by reading the emitter, after hours of log work on an unrelated failure
+    — and how cheaply it would have been found by a test that simply asked
+    whether every refusal a target can emit arrives.
+
+    Nothing caught it because every existing test names a type and a code by
+    hand, so a spelling nobody thought to name is a spelling nobody covers.
+    This test names none of them: it SWEEPS the product of
+    ``TARGET_REFUSAL_FRAME_TYPES`` and ``TARGET_ERROR_CODES``, so a refusal
+    spelling added to either set is covered the moment it is declared, and a
+    spelling that exists on the wire without being declared here is the real
+    defect this pins the shape of.
+
+    Two independent halves per case, because the bug needed both:
+
+    * the ``devices_ws`` seam hands the frame to one of the two channels the
+      relay's listener subscribes to, rather than dropping it;
+    * ``route_target_frame`` routes it and the SOURCE is actually told.
+    """
+    # A refusal type that is also a SOURCE type would be swallowed by the
+    # source arm in `devices_ws`, which runs first — the target's refusal
+    # would be handled as if the target had originated an attach.
+    assert not (rtr.TARGET_REFUSAL_FRAME_TYPES & rtr.SOURCE_FRAME_TYPES)
+
+    for frame_type in sorted(rtr.TARGET_REFUSAL_FRAME_TYPES):
+        for code in sorted(rtr.TARGET_ERROR_CODES):
+            ws = _FakeWS()
+            manager = _manager()
+            claims = _claims()
+            await _attach(relay, ws, manager, claims)
+            assert ws.of_type("error") == [], ws.sent
+            minted = _forwarded_attach(manager)["request_id"]
+            session = relay._sessions[id(ws)]
+            frame: dict[str, Any] = {
+                "type": frame_type,
+                "request_id": minted,
+                "code": code,
+                "message": "target refused the remote frame",
+            }
+
+            # Half 1 — the seam. `publish_target_frame` is the remote-only
+            # channel; `send_terminal_response_to_mobiles` publishes on the
+            # target's ordinary response channel, which `_ensure_listener`
+            # subscribes to as well. Either is a route; neither is the
+            # discard.
+            router_manager = _manager()
+            with patch.object(
+                devices_ws.remote_terminal_relay, "publish_target_frame", AsyncMock()
+            ) as published:
+                await devices_ws._route_device_message(
+                    frame, "dev-1", "user-1", router_manager
+                )
+            to_mobiles = router_manager.send_terminal_response_to_mobiles
+            assert published.await_count + to_mobiles.await_count == 1, (
+                f"{frame_type}/{code} reached no channel the relay listens on — "
+                "devices_ws discarded it"
+            )
+
+            # Half 2 — the route, and the delivery it exists for.
+            routed = await relay.route_target_frame(session, TARGET_DEVICE, frame)
+            assert routed is True, (frame_type, code)
+            errors = ws.of_type("remote_terminal_error")
+            assert len(errors) == 1, (frame_type, code, ws.sent)
+            # Every member of `TARGET_ERROR_CODES` is the target's own
+            # vocabulary and passes through un-namespaced, which is what lets
+            # the source recognise `session_not_local` at all.
+            assert errors[0]["code"] == code, (frame_type, code)
+            assert errors[0]["grant_jti"] == claims["jti"]
+            assert errors[0]["request_id"] == "req-attach-1"
+            await relay.release_source(ws)
+
+
+async def test_a_refusal_typed_remote_terminal_error_is_namespaced_like_any_other(
+    relay: RemoteTerminalRelay,
+) -> None:
+    """The synonym buys no authority.
+
+    A frame arriving typed ``remote_terminal_error`` wears the relay's own
+    OUTBOUND type, so the tempting shortcut is to forward it as already
+    translated. That would hand the target the relay's voice —
+    ``listener_lost`` says the RELAY lost its route to the device, a claim
+    only the relay is in a position to make. The inbound type decides routing
+    and is then discarded; ``code`` goes through ``namespace_target_code``
+    exactly as it does for an ``error``, and the outbound type is the relay's
+    literal.
+    """
+    ws = _FakeWS()
+    manager = _manager()
+    claims = _claims()
+    await _attach(relay, ws, manager, claims)
+    minted = _forwarded_attach(manager)["request_id"]
+    session = relay._sessions[id(ws)]
+
+    assert (
+        await relay.route_target_frame(
+            session,
+            TARGET_DEVICE,
+            {
+                "type": "remote_terminal_error",
+                "request_id": minted,
+                "code": rtr.CODE_LISTENER_LOST,
+                "message": "A" * 10_000,
+                # Forwarding wholesale would let the target set these too.
+                "grant_jti": "not-ours",
+                "type_confusion": {"nested": "structure"},
+            },
+        )
+        is True
+    )
+    err = ws.of_type("remote_terminal_error")[0]
+    assert err["type"] == "remote_terminal_error"
+    assert err["code"] == f"{rtr.TARGET_CODE_PREFIX}{rtr.CODE_LISTENER_LOST}"
+    assert err["code"] not in rtr.RELAY_ERROR_CODES
+    assert err["grant_jti"] == claims["jti"]
+    assert len(err["message"]) == rtr.TARGET_MESSAGE_MAX
+    assert "type_confusion" not in err
+    await relay.release_source(ws)
 
 
 async def test_a_refused_create_reaches_the_source_and_drops_the_grant(

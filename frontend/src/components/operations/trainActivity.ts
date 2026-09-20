@@ -51,7 +51,7 @@ import {
   economicsFor,
   type CandidateChurn,
 } from "./prPipeline";
-import { formatStallAge } from "./utils";
+import { formatStallAge, isAfter } from "./utils";
 
 // ----------------------------------------------------------------------------
 // Proposal status classification
@@ -601,20 +601,11 @@ function secsSince(iso: string | null | undefined, now: number): number | null {
   return Math.max(0, Math.floor((now - t) / 1000));
 }
 
-/**
- * Chronological comparison of two RFC3339 stamps.
- *
- * NOT a string compare: coord serialises `DateTime<Utc>` with chrono's default,
- * whose fractional-second width varies (0/3/6/9 digits), so lexicographic order
- * is not chronological — `…59.999500Z` sorts BEFORE `…59.999Z`. That is enough
- * to pick the wrong driver proposal in a tie-break.
- */
-function isAfter(a: string, b: string): boolean {
-  const ta = Date.parse(a);
-  const tb = Date.parse(b);
-  if (Number.isNaN(ta) || Number.isNaN(tb)) return a > b;
-  return ta > tb;
-}
+// `isAfter` moved to `./utils` on 2026-09-19, unchanged. It was private here
+// and `gateDecision.ts` promptly reintroduced the exact string comparison this
+// function's docblock forbids — in the same directory, for the same reason
+// (picking the newest of two coord rows). A helper that is the right answer
+// twice belongs where the second caller can find it.
 
 /**
  * Compact duration: "45s", "12m", "3h", "2d"; "—" when unknown.

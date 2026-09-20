@@ -1,6 +1,7 @@
 /**
- * The `/plans` health strip's derivation — R1 (derived from the rows already
- * on the page) and the absence-is-not-zero rule that goes with it.
+ * The `/admin/coord/work-units` + `/admin/coord/spawn` health strip's
+ * derivation — R1 (derived from the rows already on the page) and the
+ * absence-is-not-zero rule that goes with it.
  *
  * Added by plan `2026-08-16-coord-console-ui-unification-pipeline-style.md`
  * Phase 3 Wave 1.
@@ -282,5 +283,75 @@ describe("derivePlansHealth", () => {
         expect(occurrences(text, digit(4))).toBe(1);
       }
     });
+  });
+});
+
+/**
+ * The caller states what one row IS. Phase 3 of plan
+ * `2026-09-20-the-operator-plans-page-reads-the-wrong-store`: the two callers
+ * no longer share a population, so a badge reading `plans N` over coord's
+ * work units — 39% of which are its own merge escalations — is the mislabel
+ * the move exists to fix, restated one level down.
+ */
+describe("derivePlansHealth noun", () => {
+  const noun = { one: "work unit", many: "work units" };
+
+  it("defaults to plan/plans, so /spawn's wording is unchanged", () => {
+    const h = derivePlansHealth([{ slug: "c", status: "blocked" }], true);
+    expect(h.headline).toBe("A plan is blocked on a human");
+  });
+
+  it("labels the badge with the caller's plural", () => {
+    const h = derivePlansHealth(rows, true, false, noun);
+    render(
+      <HealthStrip
+        level={h.level}
+        headline={h.headline}
+        detail={h.detail}
+        badges={h.badges}
+        data-testid="noun-strip"
+      />
+    );
+    const strip = screen.getByTestId("noun-strip");
+    expect(strip).toHaveTextContent("work units 4");
+    expect(strip).not.toHaveTextContent("plans 4");
+  });
+
+  it("dashes the caller's plural before coord has answered", () => {
+    const h = derivePlansHealth([], false, false, noun);
+    render(
+      <HealthStrip
+        level={h.level}
+        headline={h.headline}
+        detail={h.detail}
+        badges={h.badges}
+        data-testid="noun-unfetched"
+      />
+    );
+    const strip = screen.getByTestId("noun-unfetched");
+    expect(strip).toHaveTextContent("work units –");
+    expect(strip).not.toHaveTextContent("work units 0");
+  });
+
+  it("uses the caller's noun in both blocked headlines and the all-clear", () => {
+    expect(
+      derivePlansHealth([{ slug: "c", status: "blocked" }], true, false, noun)
+        .headline
+    ).toBe("A work unit is blocked on a human");
+    expect(
+      derivePlansHealth(
+        [
+          { slug: "c", status: "blocked" },
+          { slug: "d", status: "blocked" },
+        ],
+        true,
+        false,
+        noun
+      ).headline
+    ).toBe("Work units are blocked on a human");
+    expect(
+      derivePlansHealth([{ slug: "a", status: "shipped" }], true, false, noun)
+        .headline
+    ).toBe("No work unit is blocked");
   });
 });
