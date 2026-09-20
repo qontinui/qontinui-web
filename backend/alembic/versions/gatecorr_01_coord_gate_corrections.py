@@ -61,11 +61,18 @@ here; a correction annotates, it never gates.
 Postgres cannot express "append-only" in this DDL. There is no ``REVOKE`` to
 issue (coord connects as the owning role, which GRANTs cannot constrain), and a
 rule/trigger that raised on UPDATE/DELETE would block the very migrations that
-may one day have to reshape this table. **So the property is enforced on
+may one day have to reshape this table. **So the property WILL BE enforced on
 coord's side**, by a source-scanning test in the coord phase that adds the
 ``coord_correct_gate`` verb: it asserts coord's SQL contains no ``UPDATE`` and
 no ``DELETE`` against ``coord.gate_corrections``. The same idiom coord already
 uses to pin ``register_gate_core``'s guard placement.
+
+Note the tense, because it matters: between this migration landing and that
+phase landing, enforcement is **zero**. That is harmless only because there are
+no writers yet — this table has no producer until ``coord_correct_gate``
+exists. The phase that adds the verb MUST add the test in the same change;
+a verb shipped without it leaves an append-only store that is append-only by
+convention alone.
 
 **Do not read this schema as guaranteeing immutability.** A direct
 ``UPDATE coord.gate_corrections`` from psql will succeed. If you are reviewing a
@@ -113,9 +120,27 @@ must fail — and if it does not, that is the bug.
 
 ## Why ``gate_id`` carries no foreign key
 
-coord's gate rows are **never deleted** — no code path anywhere issues a DELETE
-against ``coord.gates``, and the doctor's 21,896-row population on this tenant
-is the whole history, not a live set. An FK would therefore buy nothing at
+coord's gate rows are **never deleted in production** — the only ``DELETE``
+statements against ``coord.gates`` anywhere in the coord tree are
+``#[cfg(test)]`` fixture cleanup (10 sites, in ``orphan_reconciler.rs``,
+``branch_reap_worker.rs`` and ``gate_class_backfill.rs``, all inside test
+modules), so there is no production deletion path. The doctor's 21,896-row
+population on this tenant is the whole history, not a live set.
+
+An earlier draft of this paragraph said "no code path anywhere", which is
+refutable with one grep and would have undermined the decision it supports.
+The decision stands on the narrower, true claim.
+
+**One integrity contract the schema cannot express, recorded here because the
+verb that will write these rows has to honour it.** ``tenant_id`` is
+denormalized onto this table and is constrained against nothing — not against
+``coord.gates.tenant_id``, and (being FK-free) not against the gate row at all.
+So a correction written with the wrong ``tenant_id`` is invisible to the
+tenant-scoped read, or visible to the wrong tenant, and nothing here catches
+it. The whole burden therefore falls on ``coord_correct_gate``: it MUST derive
+``tenant_id`` (and the tenant check on ``gate_id``) **from the gate row it is
+correcting, never from caller arguments**. Written down now so it is a contract
+for that phase rather than a discovery after rows exist. An FK would therefore buy nothing at
 runtime while coupling this annotation's lifetime to a table this plan must not
 constrain: an ``ON DELETE CASCADE`` would make a hypothetical future gate
 cleanup silently erase corrections (the exact class of loss the table exists to
