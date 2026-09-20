@@ -260,6 +260,48 @@ TARGET_ERROR_CODES = frozenset(
 )
 
 # ---------------------------------------------------------------------------
+# The frame TYPES a target may spell a refusal with.
+# ---------------------------------------------------------------------------
+# ``error`` is the contract. ``remote_terminal_error`` is a SYNONYM for it and
+# nothing more — never a pre-approved result.
+#
+# The second spelling is not hypothetical: qontinui-runner's
+# ``AttachRefusal::SessionNotLocal`` builds its refusal as
+# ``{"type": "remote_terminal_error", ...}`` while every other target refusal
+# goes through ``refusal_frame`` and emits ``{"type": "error", ...}``. A frame
+# already wearing the relay's OWN outbound type matched nothing on this side —
+# not ``is_source_frame``, not ``is_remote_only_target_frame``, not any
+# ``devices_ws`` arm — so it was discarded as ``devices_ws_unhandled_message``
+# and the source was told nothing.
+#
+# The scope of that, stated exactly, because it is easy to overstate in both
+# directions. It is LATENT: one refusal class, unreachable by the source under
+# any conditions, from the day the spelling diverged. No observed incident is
+# attributed to it here — the attach failure that led to the discovery was
+# traced to something else entirely — and nothing in this module should be
+# read as fixing a timeout. What makes it worth fixing anyway is that the
+# class is dead on arrival rather than merely rare, and that fixing the
+# EMITTER only fixes devices that are rebuilt; admitting the synonym here is
+# what reaches a device already running the old binary.
+#
+# The danger the synonym introduces, and the one thing that must never be
+# conceded: a frame arriving typed ``remote_terminal_error`` LOOKS
+# relay-authored, and forwarding it verbatim would hand the target the relay's
+# own voice — ``listener_lost`` above all, a claim only the relay is in a
+# position to make. So every member of this set is dispatched to
+# ``_route_target_error``, which REBUILDS the payload and puts ``code``
+# through ``namespace_target_code``. The inbound type is read to decide
+# routing and is then thrown away; the outbound type is the relay's literal.
+# There is deliberately no branch anywhere that treats a member of this set as
+# already-translated.
+TARGET_REFUSAL_FRAME_TYPES: frozenset[str] = frozenset(
+    {
+        "error",
+        "remote_terminal_error",
+    }
+)
+
+# ---------------------------------------------------------------------------
 # The RELAY's own closed set of refusal codes.
 # ---------------------------------------------------------------------------
 # DERIVED, not transcribed. It used to be a hand-written literal list, and a
@@ -509,13 +551,35 @@ def is_remote_only_target_frame(msg: dict[str, Any]) -> bool:
     generic error must not surface as a spurious mobile toast); when it
     carries a ``remote`` block or a ``grant_jti`` it is a target refusal of a
     remote keystroke and belongs to the source that sent it.
+
+    A refusal type is admitted by DEFAULT — membership in
+    ``TARGET_REFUSAL_FRAME_TYPES`` is the gate, so a spelling added there is
+    admitted here without a second edit, and ``devices_ws`` never grows a
+    drifting copy of the list. ``error`` is the one carve-out, and only
+    because the mobile watcher path shares that exact type.
+
+    Which makes ``remote_terminal_error`` admitted UNCONDITIONALLY, and the
+    asymmetry is the point rather than an oversight. Neither ``error``
+    condition has a reason to apply to it: no mobile arm in ``devices_ws``
+    matches that type and no mobile client consumes it, so there is no
+    spurious toast to prevent and no already-routed correlated twin. Carrying
+    either condition over would leave a live shape still discarded — a refusal
+    correlated by the MINTED ``request_id`` and carrying no ``remote`` block
+    satisfies neither — for no benefit either condition was bought for.
+    Admitting it costs nothing: a frame that belongs to no attachment on a
+    socket is answered ``False`` by ``route_target_frame`` and goes nowhere,
+    the same fate ``terminal_attached`` already has.
     """
     msg_type = msg.get("type")
+    if not isinstance(msg_type, str):
+        return False
     if msg_type == "terminal_attached":
         return True
-    if msg_type == "error" and msg.get("request_id") is None:
-        return _is_remote_marked(msg)
-    return False
+    if msg_type not in TARGET_REFUSAL_FRAME_TYPES:
+        return False
+    if msg_type == "error":
+        return msg.get("request_id") is None and _is_remote_marked(msg)
+    return True
 
 
 @dataclass
@@ -2099,7 +2163,14 @@ class RemoteTerminalRelay:
         if frame_type == "terminal_buffer_response":
             return await self._route_buffer_response(session, target_device_id, frame)
 
-        if frame_type == "error":
+        if frame_type in TARGET_REFUSAL_FRAME_TYPES:
+            # Membership, not equality: a target refusal typed
+            # ``remote_terminal_error`` takes the SAME path as one typed
+            # ``error`` and gets no shortcut for wearing the relay's outbound
+            # type. ``_route_target_error`` rebuilds the payload and puts
+            # ``code`` through ``namespace_target_code``, so the namespacing a
+            # target must not escape is applied identically either way. See
+            # ``TARGET_REFUSAL_FRAME_TYPES``.
             return await self._route_target_error(session, target_device_id, frame)
 
         return False
