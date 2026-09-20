@@ -249,6 +249,42 @@ describe("/admin/coord/plans reads the reconciliation route", () => {
     expect(marker).toHaveAttribute("data-variant-count", "3");
     expect(marker).toHaveTextContent("3 copies");
   });
+
+  it("gives that marker somewhere to go (Phase 4b)", async () => {
+    // Until `/admin/coord/plan-forks` existed the marker was a notice, not a
+    // route to the answer: `/plan-library/divergent` had zero consumers.
+    const user = userEvent.setup();
+    get.mockResolvedValue(
+      healthy({
+        items: [
+          row({
+            axis_b: {
+              readable: true,
+              present: true,
+              status: "vetted",
+              document_state: "present",
+              complete: true,
+              variant_count: 3,
+            },
+          }),
+        ],
+      })
+    );
+    render(<CoordPlansListPage />);
+
+    expect(await screen.findByTestId("coord-plan-divergent")).toHaveAttribute(
+      "href",
+      "/admin/coord/plan-forks"
+    );
+    await user.click(
+      within(
+        await screen.findByTestId("coord-plan-reconciliation-row")
+      ).getByRole("button")
+    );
+    expect(
+      await screen.findByTestId("coord-plan-divergent-link")
+    ).toHaveAttribute("href", "/admin/coord/plan-forks");
+  });
 });
 
 describe("/admin/coord/plans says what the window is", () => {

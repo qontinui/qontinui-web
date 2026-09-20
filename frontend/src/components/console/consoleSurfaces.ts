@@ -148,6 +148,21 @@ import {
   MEMBER_AUTHOR_GLYPH_KINDS,
   MEMBER_KIND_CLASS,
 } from "@/app/(app)/admin/coord/members/memberStatus";
+// Phase 4 of `2026-09-20-the-operator-plans-page-reads-the-wrong-store` — the
+// three plan-library join routes that had shipped with zero consumers. Two of
+// them paint a status; the follow-up queue deliberately paints none (an
+// unowned follow-up is a backlog item, not an incident), so it has no row here
+// and nothing to audit.
+import {
+  FORK_ATTENTION_BY_KIND,
+  FORK_AUTHOR_GLYPH_KINDS,
+  FORK_KIND_CLASS,
+} from "@/app/(app)/admin/coord/plan-forks/forkStatus";
+import {
+  CANDIDATE_ATTENTION_BY_KIND,
+  CANDIDATE_AUTHOR_GLYPH_KINDS,
+  CANDIDATE_KIND_CLASS,
+} from "@/app/(app)/admin/coord/plan-candidates/candidateStatus";
 // The consolidated sessions console — plan
 // `2026-08-26-sessions-console-consolidation` Phase 1. Not under
 // `admin/coord/`, and the guide's §1 scope clause is explicit that it covers
@@ -407,6 +422,34 @@ export const CONSOLE_PALETTES: ReadonlyArray<ConsoleSurface> = [
     palette: {
       badgeClass: MEMBER_KIND_CLASS,
       authorGlyphKinds: MEMBER_AUTHOR_GLYPH_KINDS as ReadonlySet<string>,
+    },
+  },
+  {
+    // Copies of one plan that do not agree. Both `author` kinds are red for
+    // the same reason the reconciliation page's `disagree` is: two writers of
+    // one fact hold different values and nothing but a person reconciles them
+    // — the scan-safe upsert 409s rather than pick a winner. The third kind is
+    // genuinely waiting: one locked kind means the scanner heals it unaided.
+    surface: "plan forks (/admin/coord/plan-forks)",
+    module: "app/(app)/admin/coord/plan-forks/forkStatus.ts",
+    attentionByKind: FORK_ATTENTION_BY_KIND,
+    palette: {
+      badgeClass: FORK_KIND_CLASS,
+      authorGlyphKinds: FORK_AUTHOR_GLYPH_KINDS as ReadonlySet<string>,
+    },
+  },
+  {
+    // Unshipped plans with their ranking inputs. NO kind here is `author`, and
+    // that is a claim rather than an omission: an unpicked candidate is the
+    // normal state of a backlog, and the route emits no score for this page to
+    // escalate on (its design decision D6). The empty glyph set is audited
+    // against that by `paletteDisagreements`'s size clause.
+    surface: "plan candidates (/admin/coord/plan-candidates)",
+    module: "app/(app)/admin/coord/plan-candidates/candidateStatus.ts",
+    attentionByKind: CANDIDATE_ATTENTION_BY_KIND,
+    palette: {
+      badgeClass: CANDIDATE_KIND_CLASS,
+      authorGlyphKinds: CANDIDATE_AUTHOR_GLYPH_KINDS as ReadonlySet<string>,
     },
   },
   {
