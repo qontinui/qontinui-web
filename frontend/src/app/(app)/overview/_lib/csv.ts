@@ -361,3 +361,48 @@ export function parseEffortsCsv(text: string): CsvResult<ParsedEffortRow> {
 
   return { rows, issues };
 }
+
+/**
+ * Total a column of person-day strings exactly.
+ *
+ * Days are exact decimal strings everywhere else in this feature precisely
+ * so no float ever touches them, and `reduce((a, b) => a + Number(b), 0)`
+ * threw that away for a label. Summed as scaled integers instead.
+ *
+ * The accept-set is deliberately the SAME as `parseEffortsCsv`'s
+ * (`/^\d*(\.\d+)?$/`), not a narrower one. A first cut took two decimal
+ * places and a leading digit, so `.5` and `4.333` — both of which the paste
+ * box accepts and saves — made the whole line read "An unreadable number
+ * of", reporting a defect in the summing as a defect in the data.
+ *
+ * `null` only when a value really is unreadable, so one bad row shows as
+ * unreadable rather than as a silently smaller total.
+ */
+export function sumPersonDays(values: string[]): string | null {
+  const parsed: { digits: string; scale: number }[] = [];
+  let scale = 0;
+  for (const value of values) {
+    const match = /^(\d*)(?:\.(\d+))?$/.exec(value.trim());
+    if (!match || (match[1] === "" && match[2] === undefined)) return null;
+    const fraction = match[2] ?? "";
+    scale = Math.max(scale, fraction.length);
+    parsed.push({
+      digits: (match[1] || "0") + fraction,
+      scale: fraction.length,
+    });
+  }
+  // Scale every value to the widest fraction seen, so the sum is exact
+  // whatever mix of precisions was pasted.
+  let total = 0;
+  for (const { digits, scale: own } of parsed) {
+    total += Number(digits) * 10 ** (scale - own);
+  }
+  if (!Number.isSafeInteger(total)) return null;
+  if (scale === 0) return String(total);
+  const divisor = 10 ** scale;
+  const whole = Math.trunc(total / divisor);
+  const rest = String(total % divisor)
+    .padStart(scale, "0")
+    .replace(/0+$/, "");
+  return rest === "" ? String(whole) : `${whole}.${rest}`;
+}

@@ -39,7 +39,11 @@ export function UnavailableNotes({
           <li
             key={`${item.figure}:${item.reason}`}
             className="text-sm leading-relaxed text-muted-foreground"
-            data-ui-bridge-id={`${uiBridgeId}.${item.reason}`}
+            // Keyed on figure AND reason: one reason can legitimately
+            // describe two figures (`mixed_currencies` applies to the
+            // non-labour items and to the grand total), and two elements
+            // sharing a UI-Bridge id make both unaddressable.
+            data-ui-bridge-id={`${uiBridgeId}.${item.figure}.${item.reason}`}
           >
             {item.detail}
           </li>

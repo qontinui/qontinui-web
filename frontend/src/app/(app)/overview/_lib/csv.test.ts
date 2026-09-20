@@ -4,6 +4,7 @@ import {
   parseEffortsCsv,
   parseRolesCsv,
   splitCsvLine,
+  sumPersonDays,
 } from "./csv";
 
 describe("splitCsvLine", () => {
@@ -216,5 +217,37 @@ A1,2.1,BE,10
   it("drops a zero, which is not an allocation of time", () => {
     const { rows } = parseEffortsCsv("A0,1.1,DL,0\nA0,1.1,BE,3");
     expect(rows.map((r) => r.role_code)).toEqual(["BE"]);
+  });
+});
+
+describe("sumPersonDays", () => {
+  it("totals exactly, with no float in the path", () => {
+    // 0.1 + 0.2 is the reason this is not a `reduce` over `Number`.
+    expect(sumPersonDays(["0.1", "0.2"])).toBe("0.3");
+    expect(sumPersonDays(["10.00", "6.50", "3.50"])).toBe("20");
+    expect(sumPersonDays([])).toBe("0");
+  });
+
+  it("accepts everything the effort paste box accepts", () => {
+    // These two are the ones a narrower accept-set rejected, which made the
+    // WHOLE total read "unreadable" over data the page had just saved.
+    const accepted = [".5", "4.333", "04", "0", "12", "1.5"];
+    for (const value of accepted) {
+      expect(parseEffortsCsv(`A0,1.1,DL,${value}`).issues, value).toEqual([]);
+      expect(sumPersonDays([value]), value).not.toBeNull();
+    }
+    expect(sumPersonDays([".5", "0.25"])).toBe("0.75");
+    expect(sumPersonDays(["4.333", "1"])).toBe("5.333");
+  });
+
+  it("mixes precisions without losing any of them", () => {
+    expect(sumPersonDays(["1", "0.5", "0.125"])).toBe("1.625");
+  });
+
+  it("is null only when a value really cannot be read", () => {
+    expect(sumPersonDays(["1", "a few"])).toBeNull();
+    expect(sumPersonDays(["1", ""])).toBeNull();
+    expect(sumPersonDays(["1", "."])).toBeNull();
+    expect(sumPersonDays(["1", "-2"])).toBeNull();
   });
 });

@@ -403,8 +403,14 @@ class TestOverviewSchemaBinding:
             for constraint in table.constraints
             if isinstance(constraint, CheckConstraint) and constraint.name
         }
-        migration = Path(
-            "alembic/versions/overview_01_estimate_baseline.py"
+        # Relative to THIS file, not to the pytest working directory: a
+        # cwd-relative path makes the test a statement about where it was
+        # run from.
+        migration = (
+            Path(__file__).resolve().parent.parent
+            / "alembic"
+            / "versions"
+            / "overview_01_estimate_baseline.py"
         ).read_text()
         in_migration = set(re.findall(r"CONSTRAINT (ck_overview_\w+)", migration))
 
@@ -440,8 +446,13 @@ class TestOverviewSchemaBinding:
                 currency=None,
             )
         )
-        with pytest.raises(IntegrityError):
+        with pytest.raises(IntegrityError) as excinfo:
             await async_db_session.flush()
+        # Naming it matters: every other column on this model has a
+        # Python-side default, so today nothing else COULD fail — but a
+        # future NOT NULL column without one would make this pass for a
+        # reason that has nothing to do with the CHECK.
+        assert "ck_overview_roles_rate_has_currency" in str(excinfo.value)
         await async_db_session.rollback()
 
 

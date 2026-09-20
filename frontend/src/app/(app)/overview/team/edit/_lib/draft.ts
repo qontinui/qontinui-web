@@ -300,3 +300,66 @@ export function draftToContent(draft: Draft): EstimateContentWrite {
     expected_version: draft.version,
   };
 }
+
+/**
+ * Apply an imported schedule to the working copy.
+ *
+ * Pure, and out of the component on purpose: this is the one place a
+ * re-import can lose something, and inline in a JSX callback it was the one
+ * place no test could reach.
+ *
+ * A chart states the SCHEDULE and nothing else. Everything it cannot express
+ * is carried across from the row of the same code — a phase's gate, its
+ * actual dates and the working weeks the source plan stated, and a task's
+ * requirement refs, which are one level down and were being nulled on every
+ * re-import. A phase the chart does not mention is dropped, which is what
+ * importing a corrected schedule means.
+ */
+export function applyGanttImport(
+  draft: Draft,
+  imported: {
+    code: string;
+    name: string;
+    planned_start: string | null;
+    planned_end: string | null;
+    tasks: {
+      number: string;
+      title: string;
+      planned_start: string;
+      planned_end: string;
+      is_critical: boolean;
+      status: DraftTask["status"];
+    }[];
+  }[]
+): Draft {
+  return {
+    ...draft,
+    phases: imported.map((phase) => {
+      const existing = draft.phases.find((old) => old.code === phase.code);
+      return {
+        code: phase.code,
+        name: phase.name,
+        planned_start: phase.planned_start,
+        planned_end: phase.planned_end,
+        stated_working_weeks: existing?.stated_working_weeks ?? null,
+        gate_criteria: existing?.gate_criteria ?? "",
+        actual_start: existing?.actual_start ?? null,
+        actual_end: existing?.actual_end ?? null,
+        gate_status: existing?.gate_status ?? "pending",
+        gate_decided_at: existing?.gate_decided_at ?? null,
+        gate_notes: existing?.gate_notes ?? "",
+        tasks: phase.tasks.map((task) => ({
+          number: task.number,
+          title: task.title,
+          requirement_refs:
+            existing?.tasks.find((old) => old.number === task.number)
+              ?.requirement_refs ?? null,
+          planned_start: task.planned_start,
+          planned_end: task.planned_end,
+          is_critical: task.is_critical,
+          status: task.status,
+        })),
+      };
+    }),
+  };
+}

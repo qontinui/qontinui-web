@@ -109,17 +109,20 @@ const IGNORED_DIRECTIVES = [
 const DAY_MS = 86_400_000;
 
 /**
- * True when the line is a TASK rather than a directive.
+ * True when the line could also be read as a task: something after its first
+ * colon parses as a date or a duration.
  *
- * Checked BEFORE any keyword, because a task title may legitimately begin
- * with one: `Excludes review :e1, 2026-01-05, 5d` matched the `excludes`
- * directive on its keyword alone, and `Titles and rates : …` silently
- * overwrote the chart title. Matching on the keyword and then excluding a
- * colon is not enough either — it would break `section A0: Mobilisation`.
+ * This does NOT decide the line — the keyword does, exactly as mermaid's own
+ * lexer decides it, so `title Delivery plan: 2026-01-05` stays a title and
+ * `section A0: 2026-01-05` stays a section. Letting this win instead turned
+ * both of those into a phantom "Unnamed section" and an error.
  *
- * What separates the two is what follows the colon: a task always names a
- * date or a duration there, and a directive value never does
- * (`axisFormat %H:%M`, `todayMarker stroke-width:5px`).
+ * What it is for is the other half of the same problem: when a line matches
+ * a directive keyword AND looks like this, the reader is told, so a task the
+ * parser swallowed is never swallowed in silence. The far more common
+ * collision — a title merely STARTING with a keyword, `Sections signed
+ * off :s1, …` — is settled by the word boundary in `directiveValue` and
+ * never reaches here.
  */
 function looksLikeTaskLine(line: string): boolean {
   const colon = line.indexOf(":");
@@ -303,12 +306,24 @@ export function parseMermaidGantt(source: string): GanttParseResult {
     const lower = line.toLowerCase();
     if (lower === "gantt") continue;
 
-    // A task whose TITLE opens with a directive keyword is still a task.
-    const isTask = looksLikeTaskLine(line);
+    // A directive line that could also be read as a task. The keyword still
+    // wins — that is what mermaid does — but the reader is told, because a
+    // task read as a directive is a task that vanished.
+    const ambiguous = looksLikeTaskLine(line);
+    const warnIfAmbiguous = (what: string) => {
+      if (!ambiguous) return;
+      pushIssue(
+        lineNumber,
+        raw,
+        `this was read as the "${what}" setting because it starts with that word. If it was meant to be a task, give it a different title.`,
+        "warning"
+      );
+    };
 
-    const dateFormat = isTask ? null : directiveValue(line, "dateformat");
+    const dateFormat = directiveValue(line, "dateformat");
     if (dateFormat !== null) {
       const value = dateFormat;
+      warnIfAmbiguous("dateFormat");
       dateFormatSeen = true;
       if (value.toUpperCase() !== "YYYY-MM-DD") {
         pushIssue(
@@ -319,13 +334,15 @@ export function parseMermaidGantt(source: string): GanttParseResult {
       }
       continue;
     }
-    const titleValue = isTask ? null : directiveValue(line, "title");
+    const titleValue = directiveValue(line, "title");
     if (titleValue !== null) {
+      warnIfAmbiguous("title");
       title = titleValue || null;
       continue;
     }
-    const excludesValue = isTask ? null : directiveValue(line, "excludes");
+    const excludesValue = directiveValue(line, "excludes");
     if (excludesValue !== null) {
+      warnIfAmbiguous("excludes");
       const value = excludesValue.toLowerCase();
       if (value === "weekends") {
         excludesWeekends = true;
@@ -340,17 +357,17 @@ export function parseMermaidGantt(source: string): GanttParseResult {
       continue;
     }
     if (
-      (!isTask &&
-        IGNORED_DIRECTIVES.some(
-          (keyword) => directiveValue(line, keyword) !== null
-        )) ||
+      IGNORED_DIRECTIVES.some(
+        (keyword) => directiveValue(line, keyword) !== null
+      ) ||
       lower.startsWith("%%")
     ) {
       continue;
     }
 
-    const sectionText = isTask ? null : directiveValue(line, "section");
+    const sectionText = directiveValue(line, "section");
     if (sectionText !== null) {
+      warnIfAmbiguous("section");
       const text = sectionText;
       const parts = text.split(/\s+/);
       const head = parts[0] ?? "";
@@ -557,12 +574,17 @@ export function parseMermaidGantt(source: string): GanttParseResult {
         continue;
       }
       if (message) pushIssue(lineNumber, raw, message, "warning");
-      if (excludesWeekends && isWeekend(start)) {
+      if (excludesWeekends && isWeekend(start) && !isMilestone) {
         // The duration is laid out over working days, so a bar that started
         // on a weekend would end a working day later than mermaid draws it
         // while still claiming the weekend start. Move the start to the
         // first working day — and say so, because it is a date the chart
         // did not write.
+        //
+        // NOT a milestone: that is a point, not a bar (and it reaches this
+        // branch because mermaid spells it `:milestone, m1, <date>, 0d`).
+        // It has no duration to lay out, and mermaid draws it on the day it
+        // was given, weekend or not.
         const moved = firstWorkingDay(start, true);
         pushIssue(
           lineNumber,

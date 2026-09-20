@@ -30,6 +30,7 @@ import {
   parseAllocationsCsv,
   parseEffortsCsv,
   parseRolesCsv,
+  sumPersonDays,
 } from "../../_lib/csv";
 import {
   createEstimate,
@@ -43,6 +44,7 @@ import {
 import { ganttToPhases, parseMermaidGantt } from "../../_lib/gantt";
 import { IssueList, PasteBox } from "./_components/PasteBox";
 import {
+  applyGanttImport,
   draftFromEstimate,
   draftProblems,
   draftToContent,
@@ -91,31 +93,6 @@ function Heading({ children }: { children: React.ReactNode }) {
 
 function errorText(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
-}
-
-/**
- * Total a column of person-day strings exactly.
- *
- * Days are exact decimal strings everywhere else in this feature precisely
- * so no float ever touches them, and `reduce((a, b) => a + Number(b), 0)`
- * threw that away for a label. Summed in hundredths as integers instead —
- * the grain `planned_person_days NUMERIC(10, 2)` stores. `null` when any
- * value is unreadable, so a bad row shows as unreadable rather than as a
- * silently smaller total.
- */
-function sumPersonDays(values: string[]): string | null {
-  let hundredths = 0;
-  for (const value of values) {
-    const match = /^(\d+)(?:\.(\d{1,2}))?$/.exec(value.trim());
-    if (!match) return null;
-    hundredths +=
-      Number(match[1]) * 100 + Number((match[2] ?? "").padEnd(2, "0"));
-  }
-  const whole = Math.trunc(hundredths / 100);
-  const rest = hundredths % 100;
-  return rest === 0
-    ? String(whole)
-    : `${whole}.${String(rest).padStart(2, "0").replace(/0$/, "")}`;
 }
 
 /**
@@ -359,14 +336,29 @@ function EstimateEditor({
   // A fresh load (after a save, or after a reload following a conflict)
   // replaces the working copy wholesale — there is no merge here on purpose.
   //
-  // It must NOT clear the status: saving sets "saved" and then hands back the
-  // fresh estimate, which lands here and used to wipe the confirmation in the
-  // same tick, so a successful save looked exactly like one that never
-  // happened. `savedVersion` is what the message is keyed on instead, so the
-  // acknowledgement survives its own reload and disappears on the next edit.
+  // It must NOT clear the status: saving sets "saved" and then hands back
+  // the fresh estimate, which lands here and used to wipe the confirmation
+  // in the same tick, so a successful save looked exactly like one that
+  // never happened.
   useEffect(() => {
     setDraft(draftFromEstimate(detail));
   }, [detail]);
+
+  /**
+   * Every change to the working copy goes through here, so that "Saved as
+   * version N" cannot outlive the thing it describes.
+   *
+   * Leaving the banner up until the next save is the opposite error to
+   * wiping it instantly, and the worse one: a reader who has just pasted
+   * three new tables would be looking at a sentence claiming the Team page
+   * shows them. It does not — they are unsaved.
+   */
+  const editDraft = (update: (current: Draft) => Draft) => {
+    setDraft(update);
+    setStatus((current) =>
+      current.kind === "idle" ? current : { kind: "idle" }
+    );
+  };
 
   const problems = draftProblems(draft);
   const blocking = problems.filter((p) => p.severity === "error");
@@ -410,35 +402,7 @@ function EstimateEditor({
         <GanttImport
           onImport={(text) => {
             const parsed = ganttToPhases(parseMermaidGantt(text));
-            setDraft((d) => ({
-              ...d,
-              // The chart states the SCHEDULE and nothing else. Everything a
-              // phase carries that the chart cannot express — its gate, its
-              // actual dates, the stated working weeks — is kept from the
-              // phase of the same code, so re-importing a corrected chart
-              // does not silently reset a gate somebody already recorded on
-              // the Timeline page.
-              phases: parsed.map((p) => {
-                const existing = d.phases.find((old) => old.code === p.code);
-                return {
-                  code: p.code,
-                  name: p.name,
-                  planned_start: p.planned_start,
-                  planned_end: p.planned_end,
-                  stated_working_weeks: existing?.stated_working_weeks ?? null,
-                  gate_criteria: existing?.gate_criteria ?? "",
-                  actual_start: existing?.actual_start ?? null,
-                  actual_end: existing?.actual_end ?? null,
-                  gate_status: existing?.gate_status ?? "pending",
-                  gate_decided_at: existing?.gate_decided_at ?? null,
-                  gate_notes: existing?.gate_notes ?? "",
-                  tasks: p.tasks.map((task) => ({
-                    ...task,
-                    requirement_refs: null,
-                  })),
-                };
-              }),
-            }));
+            editDraft((d) => applyGanttImport(d, parsed));
           }}
         />
         <div
@@ -487,7 +451,7 @@ function EstimateEditor({
           describe={(rows) =>
             `${rows.length} role${rows.length === 1 ? "" : "s"}`
           }
-          onApply={(rows) => setDraft((d) => ({ ...d, roles: rows }))}
+          onApply={(rows) => editDraft((d) => ({ ...d, roles: rows }))}
         />
         <div
           className="overflow-x-auto rounded-md border border-border p-4"
@@ -550,7 +514,7 @@ function EstimateEditor({
           describe={(rows) =>
             `${rows.length} allocation${rows.length === 1 ? "" : "s"}`
           }
-          onApply={(rows) => setDraft((d) => ({ ...d, allocations: rows }))}
+          onApply={(rows) => editDraft((d) => ({ ...d, allocations: rows }))}
         />
         <p
           className="text-sm text-muted-foreground"
@@ -572,7 +536,7 @@ function EstimateEditor({
           describe={(rows) =>
             `${rows.length} line${rows.length === 1 ? "" : "s"}`
           }
-          onApply={(rows) => setDraft((d) => ({ ...d, efforts: rows }))}
+          onApply={(rows) => editDraft((d) => ({ ...d, efforts: rows }))}
         />
         <p
           className="text-sm text-muted-foreground"

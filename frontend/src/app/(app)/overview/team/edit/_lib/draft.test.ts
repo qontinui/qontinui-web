@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { draftFromEstimate, draftProblems, draftToContent } from "./draft";
+import {
+  applyGanttImport,
+  draftFromEstimate,
+  draftProblems,
+  draftToContent,
+} from "./draft";
 import type { EstimateDetail } from "../../../_lib/estimate-api";
 
 /**
@@ -226,5 +231,93 @@ describe("draftProblems", () => {
 
   it("finds nothing wrong with the estimate as loaded", () => {
     expect(draftProblems(draftFromEstimate(LOADED))).toEqual([]);
+  });
+});
+
+describe("applyGanttImport", () => {
+  /** What `ganttToPhases` hands over: the schedule and nothing else. */
+  const IMPORTED = [
+    {
+      code: "A0",
+      name: "Mobilisation (revised)",
+      planned_start: "2026-01-12",
+      planned_end: "2026-02-06",
+      tasks: [
+        {
+          number: "1.1",
+          title: "Kick-off",
+          planned_start: "2026-01-12",
+          planned_end: "2026-01-16",
+          is_critical: false,
+          status: "planned" as const,
+        },
+        {
+          number: "1.2",
+          title: "Environments",
+          planned_start: "2026-01-19",
+          planned_end: "2026-02-06",
+          is_critical: true,
+          status: "planned" as const,
+        },
+      ],
+    },
+  ];
+
+  it("takes the schedule from the chart", () => {
+    const after = applyGanttImport(draftFromEstimate(LOADED), IMPORTED);
+    const phase = after.phases[0]!;
+    expect(phase.name).toBe("Mobilisation (revised)");
+    expect(phase.planned_start).toBe("2026-01-12");
+    expect(phase.planned_end).toBe("2026-02-06");
+    expect(phase.tasks).toHaveLength(2);
+    expect(phase.tasks[1]?.is_critical).toBe(true);
+  });
+
+  it("keeps everything a chart cannot express, matched by code", () => {
+    const after = applyGanttImport(draftFromEstimate(LOADED), IMPORTED);
+    const phase = after.phases[0]!;
+    expect(phase.gate_status).toBe("passed");
+    expect(phase.gate_criteria).toBe("Environments reachable");
+    expect(phase.gate_decided_at).toBe("2026-02-03");
+    expect(phase.gate_notes).toBe("Demonstrated to the sponsor");
+    expect(phase.actual_start).toBe("2026-01-06");
+    expect(phase.actual_end).toBe("2026-02-02");
+    expect(phase.stated_working_weeks).toBe("3.60");
+  });
+
+  it("keeps a task's requirement refs, matched by task number", () => {
+    // One level down from the phase, and the only loss path left after the
+    // draft round-trip was fixed.
+    const after = applyGanttImport(draftFromEstimate(LOADED), IMPORTED);
+    expect(after.phases[0]?.tasks[0]?.requirement_refs).toBe("R1, R2");
+    // A task the chart adds has none, rather than inheriting a neighbour's.
+    expect(after.phases[0]?.tasks[1]?.requirement_refs).toBeNull();
+  });
+
+  it("gives a phase the chart introduces an empty gate, not a borrowed one", () => {
+    const after = applyGanttImport(draftFromEstimate(LOADED), [
+      { ...IMPORTED[0]!, code: "B9", name: "New phase" },
+    ]);
+    expect(after.phases[0]?.gate_status).toBe("pending");
+    expect(after.phases[0]?.gate_notes).toBe("");
+    expect(after.phases[0]?.tasks[0]?.requirement_refs).toBeNull();
+  });
+
+  it("drops a phase the chart does not mention", () => {
+    const after = applyGanttImport(draftFromEstimate(LOADED), []);
+    expect(after.phases).toEqual([]);
+    // And leaves everything that is not the schedule alone.
+    expect(after.roles).toHaveLength(1);
+    expect(after.costLines).toHaveLength(1);
+    expect(after.version).toBe(7);
+  });
+
+  it("survives the round trip to the wire shape", () => {
+    const content = draftToContent(
+      applyGanttImport(draftFromEstimate(LOADED), IMPORTED)
+    );
+    const phase = content.phases[0]!;
+    expect(phase.gate_status).toBe("passed");
+    expect(phase.tasks?.[0]?.requirement_refs).toBe("R1, R2");
   });
 });

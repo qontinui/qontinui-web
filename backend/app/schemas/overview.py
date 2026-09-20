@@ -152,8 +152,8 @@ class EstimateUpdate(BaseModel):
     #: Fields whose column is NOT NULL. Every field here is typed `X | None`
     #: so that ABSENT can be told from null, which means an explicit null
     #: reaches the handler looking exactly like a value — and would land as an
-    #: IntegrityError 500 rather than a 422. These four are rejected as the
-    #: 422 they are.
+    #: IntegrityError 500 rather than a 422. Each one is rejected as the 422
+    #: it is.
     _NOT_NULLABLE = ("name", "purpose", "status", "is_baseline", "notes")
 
     @model_validator(mode="after")

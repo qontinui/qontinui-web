@@ -253,7 +253,10 @@ def compute_rollup(
     unpriced_delivery = [
         r for r in roles if r.day_rate_micros is None and not r.client_side
     ]
-    if unpriced_delivery:
+    # Only when SOME role is priced. When none is, "no role has a rate" is
+    # the whole story and `estimate_has_no_priced_role` below tells it once,
+    # rather than this naming every role and that naming the same fact again.
+    if unpriced_delivery and priced_roles:
         unavailable.append(
             Unavailable(
                 figure="labour_fees",

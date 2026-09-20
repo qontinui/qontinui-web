@@ -95,6 +95,23 @@ describe("parseMermaidGantt — the reference example's shape", () => {
     expect(result.phases[0].tasks[1].plannedStart).toBe("2026-01-12");
   });
 
+  it("does not move a weekend milestone", () => {
+    // A milestone is a point, not a bar, so there is no duration to lay out
+    // and mermaid draws it on the day it was given. It reaches the duration
+    // branch only because it is spelled `:milestone, m1, <date>, 0d`.
+    const result = parseMermaidGantt(`
+gantt
+    dateFormat YYYY-MM-DD
+    excludes weekends
+    section P One
+    Go live :milestone, m1, 2026-01-03, 0d
+`);
+    const milestone = result.phases[0]?.tasks[0];
+    expect(milestone?.plannedStart).toBe("2026-01-03");
+    expect(milestone?.plannedEnd).toBe("2026-01-03");
+    expect(result.issues).toEqual([]);
+  });
+
   it("gives a milestone a single day", () => {
     const milestone = result.phases[4].tasks[1];
     expect(milestone.isMilestone).toBe(true);
@@ -291,16 +308,67 @@ gantt
     expect(result.taskCount).toBe(1);
   });
 
-  it("does not read a task titled 'Excludes…' as an excludes directive", () => {
+  it("reads a line that IS the keyword as the directive, and says so", () => {
+    // "Excludes" is the keyword exactly, so mermaid's own lexer reads this
+    // as the directive too. Following it is right; doing it in silence is
+    // not, because a task has just vanished.
     const result = parseMermaidGantt(`
 gantt
     dateFormat YYYY-MM-DD
     section A0 Mobilisation
     Excludes review :e1, 2026-01-05, 5d
 `);
-    expect(result.excludesWeekends).toBe(false);
+    expect(result.taskCount).toBe(0);
+    // Two warnings, no error: the line was ambiguous, AND its value was not
+    // a set of days this import understands. Nothing is silent.
+    expect(result.issues.every((i) => i.severity === "warning")).toBe(true);
+    expect(
+      result.issues.some(
+        (i) => i.line === 5 && i.message.includes("was meant to be a task")
+      )
+    ).toBe(true);
+  });
+
+  it("keeps a chart title that contains a date", () => {
+    // Deciding the line by "something after a colon looks like a date"
+    // instead of by the keyword dropped the title and invented a phase.
+    const result = parseMermaidGantt(`
+gantt
+    dateFormat YYYY-MM-DD
+    title Delivery plan: 2026-01-05
+    section A0 Mobilisation
+    Work :t1, 2026-01-05, 5d
+`);
+    expect(result.title).toBe("Delivery plan: 2026-01-05");
+    expect(result.phases.map((p) => p.code)).toEqual(["A0"]);
     expect(result.taskCount).toBe(1);
-    expect(result.issues).toEqual([]);
+  });
+
+  it("keeps a section whose name contains a date", () => {
+    const result = parseMermaidGantt(`
+gantt
+    dateFormat YYYY-MM-DD
+    section A0: 2026-01-05
+    Work :t1, 2026-01-05, 5d
+`);
+    expect(result.phases).toHaveLength(1);
+    expect(result.phases[0]?.tasks).toHaveLength(1);
+    // The task belongs to the real section, not to an invented one.
+    expect(result.phases[0]?.name).not.toBe("Unnamed section");
+  });
+
+  it("keeps an `excludes` and a `weekday` whose value contains a duration", () => {
+    const result = parseMermaidGantt(`
+gantt
+    dateFormat YYYY-MM-DD
+    excludes weekends
+    weekday monday: 2w
+    section P One
+    Work :t1, 2026-01-05, 5d
+`);
+    expect(result.excludesWeekends).toBe(true);
+    expect(result.phases.map((p) => p.code)).toEqual(["P"]);
+    expect(result.taskCount).toBe(1);
   });
 
   it("still reads a section whose NAME contains a colon", () => {
