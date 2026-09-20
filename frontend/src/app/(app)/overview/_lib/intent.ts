@@ -135,8 +135,11 @@ function leadHeading(
   // heading would DELETE that first line from the body. The guard below
   // rejects those openers outright, since none of them can carry a setext
   // underline in CommonMark.
-  if (/^[ \t]{0,3}(?:[>|<#]|[-*+][ \t]|\d+[.)][ \t])/.test(stripped))
+  // Also `\``/`~` (a code fence) and `[` (a footnote or link definition):
+  // none can carry a setext underline, and eating one deletes a line.
+  if (/^[ \t]{0,3}(?:[>|<#`~[]|[-*+][ \t]|\d+[.)][ \t])/.test(stripped)) {
     return null;
+  }
   const setext =
     /^([ \t]{0,3}(\S.*?)[ \t]*\r?\n[ \t]{0,3}={2,}[ \t]*)(?:\r?\n|$)/.exec(
       stripped
@@ -256,11 +259,22 @@ function sortOneKind(entries: IntentEntry[]): IntentEntry[] {
     .sort((a, b) => a.order! - b.order! || byDefault(a, b));
   const rest = entries.filter((e) => e.order === null).sort(byDefault);
 
+  // Front to back: a position is relative to the FINAL list, so earlier
+  // positions must be in place before later ones are measured. Documents
+  // SHARING a position go in one after another, keeping the order
+  // `byDefault` computed, rather than each landing on the same index and
+  // reversing the group.
+  let lastOrder: number | null = null;
+  let lastAt = -1;
   for (const entry of placed) {
-    // 1-based, clamped: position 0 or a negative reads as "first", and a
-    // position past the end reads as "last".
-    const at = Math.min(Math.max((entry.order ?? 1) - 1, 0), rest.length);
+    const wanted = Math.min(Math.max((entry.order ?? 1) - 1, 0), rest.length);
+    // 1-based and clamped: position 0 or negative reads as "first", a
+    // position past the end as "last".
+    const at =
+      entry.order === lastOrder ? Math.min(lastAt + 1, rest.length) : wanted;
     rest.splice(at, 0, entry);
+    lastOrder = entry.order;
+    lastAt = at;
   }
   return rest;
 }

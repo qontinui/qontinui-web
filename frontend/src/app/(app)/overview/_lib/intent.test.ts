@@ -459,3 +459,32 @@ describe("a setext underline cannot rescue a non-heading opener", () => {
     expect(titleOfDocument("vision", body)).toBe("Vision");
   });
 });
+
+describe("deep tail", () => {
+  const entry = (name: string, title: string, order: number | null = null) =>
+    ({
+      kind: "product_intent",
+      name,
+      title,
+      order,
+      hasBody: true,
+      state: "authored",
+      body: "x",
+      updatedAt: null,
+    }) as never;
+
+  it("keeps documents sharing a position in title order", () => {
+    const sorted = sortIntentEntries([
+      entry("c", "Ccc", 1),
+      entry("a", "Aaa", 1),
+      entry("b", "Bbb", 1),
+    ]);
+    expect(sorted.map((e) => e.title)).toEqual(["Aaa", "Bbb", "Ccc"]);
+  });
+
+  it("does not read a code fence as a setext heading", () => {
+    const body = "```bash\n===\necho hi\n```\n";
+    expect(bodyWithoutLeadHeading(body)).toBe(body);
+    expect(titleOfDocument("vision", body)).toBe("Vision");
+  });
+});
