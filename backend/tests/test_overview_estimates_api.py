@@ -1210,6 +1210,107 @@ class TestContentReplace:
         first_task = body["phases"][0]["tasks"][0]
         assert all(e["role_code"] for e in first_task["efforts"])
 
+    async def test_every_field_the_endpoint_owns_survives_a_round_trip(
+        self, admin_a: httpx.AsyncClient
+    ) -> None:
+        """The editor reads an estimate, edits part of it, and PUTs the whole
+        graph back. Any field the server accepts on the way in but the
+        payload omits reverts to its default — so the fields no page shows
+        are exactly the ones that go missing silently.
+
+        This pins the contract at the boundary the editor crosses: send
+        everything, get everything back. `draft.test.ts` pins the other half,
+        that the editor's draft actually carries them.
+        """
+        estimate = await _create_estimate(admin_a, name="Full fidelity")
+        content = {
+            "roles": [
+                {
+                    "code": "BE",
+                    "name": "Backend",
+                    "responsibility": "Builds it",
+                    "day_rate_micros": 750_000_000,
+                    "currency": "EUR",
+                    "client_side": False,
+                }
+            ],
+            "phases": [
+                {
+                    "code": "A0",
+                    "name": "Mobilisation",
+                    "planned_start": "2026-01-05",
+                    "planned_end": "2026-01-30",
+                    "stated_working_weeks": "3.6",
+                    "gate_criteria": "Environments reachable",
+                    "actual_start": "2026-01-06",
+                    "actual_end": "2026-02-02",
+                    "gate_status": "passed",
+                    "gate_decided_at": "2026-02-03",
+                    "gate_notes": "Demonstrated to the sponsor",
+                    "tasks": [
+                        {
+                            "number": "1.1",
+                            "title": "Kick-off",
+                            "requirement_refs": "R1, R2",
+                            "planned_start": "2026-01-05",
+                            "planned_end": "2026-01-09",
+                            "is_critical": True,
+                            "status": "done",
+                            "efforts": [
+                                {"role_code": "BE", "planned_person_days": "4"}
+                            ],
+                        }
+                    ],
+                }
+            ],
+            "allocations": [{"phase_code": "A0", "role_code": "BE", "fte": "0.5"}],
+            "price_tiers": [
+                {"name": "Midpoint", "multiplier": "1.0", "is_primary": True}
+            ],
+            "cost_lines": [
+                {
+                    "kind": "build_non_labour",
+                    "label": "Licences",
+                    "basis": "12 seats",
+                    "low_micros": 1_000_000_000,
+                    "high_micros": 2_000_000_000,
+                    "currency": "EUR",
+                    "phase_code": "A0",
+                }
+            ],
+            "calendar_breaks": [
+                {
+                    "label": "Easter",
+                    "start_date": "2026-04-03",
+                    "end_date": "2026-04-06",
+                }
+            ],
+        }
+        saved = await admin_a.put(
+            f"{API}/estimates/{estimate['id']}/content", json=content
+        )
+        assert saved.status_code == 200, saved.text
+
+        phase = saved.json()["phases"][0]
+        assert phase["gate_status"] == "passed"
+        assert phase["gate_decided_at"] == "2026-02-03"
+        assert phase["gate_notes"] == "Demonstrated to the sponsor"
+        assert phase["actual_start"] == "2026-01-06"
+        assert phase["actual_end"] == "2026-02-02"
+        assert Decimal(phase["stated_working_weeks"]) == Decimal("3.60")
+        task = phase["tasks"][0]
+        assert task["requirement_refs"] == "R1, R2"
+        assert task["is_critical"] is True
+        assert task["status"] == "done"
+        line = saved.json()["cost_lines"][0]
+        assert line["phase_code"] == "A0"
+        assert line["basis"] == "12 seats"
+
+        # And a second read agrees with the write's own response.
+        fetched = await admin_a.get(f"{API}/estimates/{estimate['id']}")
+        assert fetched.status_code == 200
+        assert fetched.json()["phases"] == saved.json()["phases"]
+
     async def test_replacing_twice_does_not_accumulate(
         self, admin_a: httpx.AsyncClient
     ) -> None:
