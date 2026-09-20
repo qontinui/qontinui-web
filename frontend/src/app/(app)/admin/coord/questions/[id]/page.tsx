@@ -59,11 +59,24 @@
  * question under the new id; and the empty-`id` bail clears `loading` instead
  * of leaving the skeleton up forever.
  *
+ * ## Three terminal shapes, not two
+ *
+ * Plan
+ * `2026-09-20-a-pending-operator-question-outlives-the-condition-that-motivated-it`
+ * Phase 4 adds `withdrawn` — a question retired because its premise died
+ * rather than because anyone decided anything. It leaves `responded_at` NULL,
+ * so the page's old `answered` predicate read it as PENDING and put a live
+ * composer under a "withdrawn" badge. The predicate is now three-valued and
+ * matches `deriveQuestionStatus` kind for kind; see `terminal` below.
+ *
  * Every authored `data-testid` is carried across unchanged (D4a):
  * `coord-question-detail-page`, `coord-question-back-btn`,
  * `coord-question-meta`, `coord-question-context`, `coord-question-options`,
  * `coord-question-option-card`, `coord-question-respond`,
- * `coord-question-response-textarea`, `coord-question-submit`.
+ * `coord-question-response-textarea`, `coord-question-submit`. Phase 4 adds
+ * one: `coord-question-withdrawal-detail`, this page's withdrawal block —
+ * named apart from the inbox row's `coord-question-withdrawal` so a test can
+ * say which surface it is asserting on.
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -88,11 +101,13 @@ import { httpClient } from "@/services/service-factory";
 import { httpStatusOf } from "@/components/admin/coord/httpStatus";
 import {
   QUESTION_STATUS_PALETTE,
+  QUESTION_TERMINAL_KINDS,
   deriveQuestionStatus,
   formatRelative,
   type AgentQuestionOption,
   type AgentQuestionRow,
 } from "@/components/admin/coord/questionStatus";
+import { QuestionWithdrawalRecord } from "@/components/admin/coord/QuestionWithdrawalRecord";
 
 const API = "/api/v1/operations";
 
@@ -209,19 +224,27 @@ export default function CoordQuestionDetailPage() {
     // question under the new id — and both arms below sit behind
     // `question === null`, so neither could be reached. `fetchOne` keys on
     // `id`, and this route does not poll.
+    //
+    // #1110's rule is that a retained list is STALE-but-real and worth
+    // keeping; that rule turns on the retained rows still being about the same
+    // thing. Here they are not — a different `[id]` is a different question,
+    // and holding A's text under B's id beside a live composer that posts to B
+    // is the wrong-question hazard the generation guard exists to close,
+    // arriving by the other door.
     setQuestion(null);
     setError(null);
     setNotFound(false);
     setLoading(true);
-    // Drop the previous question when the id changes. #1110's rule is that a
-    // retained list is STALE-but-real and worth keeping; that rule turns on the
-    // retained rows still being about the same thing. Here they are not — a
-    // different `[id]` is a different question, and holding A's text under B's
-    // id beside a live composer that posts to B is the wrong-question hazard
-    // the generation guard exists to close, arriving by the other door.
-    setQuestion(null);
-    setError(null);
-    setNotFound(false);
+    // The DRAFT is the third door onto that same hazard, and it stayed open
+    // until now. `response` and `selectedOption` are composer state, not read
+    // state, so nothing above touched them: a sentence typed for question A —
+    // or an option card clicked on A — survived the route change and pre-filled
+    // B's composer, which `onSubmit` then POSTs to B. The operator sends an
+    // answer they wrote about a different question, and neither the generation
+    // guard nor the identity check can see it, because both are about which
+    // ROW is displayed. A draft belongs to the question it was written for.
+    setResponse("");
+    setSelectedOption(null);
     fetchOne();
   }, [fetchOne]);
 
@@ -265,12 +288,55 @@ export default function CoordQuestionDetailPage() {
   const pending = loading || identityMismatch;
 
   const options = normalizeOptions(shown?.options ?? null);
-  const answered = Boolean(shown?.responded_at);
   // R3 — the SAME derivation the inbox renders, so the two surfaces cannot
   // disagree about whether an agent is stopped on this question. `question`
   // may be null while the first read is in flight; the block that consumes
   // this only renders once it is not.
   const status = deriveQuestionStatus(shown ?? {});
+  /**
+   * The page's terminal predicate must MATCH the derivation above, kind for
+   * kind — three-valued, not two.
+   *
+   * `deriveQuestionStatus` became three-valued when plan
+   * `2026-09-20-a-pending-operator-question-outlives-the-condition-that-motivated-it`
+   * added `withdrawn`, and this page is its second caller. A bare
+   * `Boolean(shown?.responded_at)` is false for a withdrawn row — whose
+   * `responded_at` stays NULL — so the badge read "withdrawn" while the page
+   * below it rendered the "Respond" heading, a live `<Textarea>`, an enabled
+   * "Send response" button and enabled option cards. The operator was invited
+   * to answer a question nobody is waiting on, and the POST to
+   * `/agent-questions/{id}/respond` is one coord's answer door will refuse
+   * once the sibling PR ships it.
+   *
+   * That is the hazard class this module's docstring already names for the
+   * unreadable-200 case: never a live composer over a row we cannot, or must
+   * not, answer. `QuestionRow` computes exactly these three, and suppresses
+   * its "the response composer lives on the detail page" hint for a terminal
+   * row — so the inbox was already treating a withdrawn question as
+   * composer-less and then linking here.
+   *
+   * So they are read OFF `status.kind`, which already holds the classification
+   * by construction, rather than re-derived from `shown?.withdrawn_at` /
+   * `shown?.responded_at`. Re-deriving is what produced the defect above: a
+   * boolean over a raw column is a second, unaudited copy of a decision the
+   * derivation has already made, and `tsc` cannot see the two disagree.
+   * Terminality in particular is membership in `QUESTION_TERMINAL_KINDS`, the
+   * audited table beside the attention and badge tables — a sixth kind is then
+   * a recorded decision there, not an inference re-made in both surfaces.
+   *
+   * Behaviour is unchanged for `shown === null`: `deriveQuestionStatus({})`
+   * yields `pending`, which is in neither branch and not terminal, exactly as
+   * the three booleans did.
+   */
+  const withdrawn = status.kind === "withdrawn";
+  // Withdrawn wins, for the same reason `deriveQuestionStatus` tests it first:
+  // the two stamps should never coexist, and if they do, the console can
+  // explain the withdrawal record and cannot reconcile the response. That
+  // precedence now lives in ONE place — the derivation — instead of being
+  // re-stated as `!withdrawn && …` here.
+  const answered = status.kind === "answered";
+  /** Either terminal state: nobody is waiting, and nothing may be composed. */
+  const terminal = QUESTION_TERMINAL_KINDS.has(status.kind);
 
   return (
     <div
@@ -373,7 +439,10 @@ export default function CoordQuestionDetailPage() {
                         type="button"
                         key={`${value}-${i}`}
                         data-testid="coord-question-option-card"
-                        disabled={answered}
+                        // `terminal`, not `answered`: a withdrawn row is not
+                        // answerable either, and seeding a composer that must
+                        // not submit is the same invitation by another route.
+                        disabled={terminal}
                         onClick={() => {
                           setSelectedOption(value);
                           setResponse(value);
@@ -384,7 +453,7 @@ export default function CoordQuestionDetailPage() {
                           isSelected
                             ? "border-primary bg-primary/5"
                             : "border-border",
-                          answered && "opacity-60 cursor-not-allowed"
+                          terminal && "opacity-60 cursor-not-allowed"
                         )}
                       >
                         <div className="text-sm font-medium">
@@ -408,9 +477,23 @@ export default function CoordQuestionDetailPage() {
           >
             <h2 className="flex items-center gap-2 text-sm font-semibold text-muted-foreground uppercase tracking-wider">
               <Inbox className="h-4 w-4" />
-              {answered ? "Recorded response" : "Respond"}
+              {withdrawn
+                ? "Withdrawal record"
+                : answered
+                  ? "Recorded response"
+                  : "Respond"}
             </h2>
-              {answered ? (
+              {withdrawn ? (
+                /* The retirement record, in the slot an answered row uses for
+                   its response — the SAME component the inbox row renders, so
+                   the two surfaces cannot drift about what a withdrawal looks
+                   like or about what an absent reason means. */
+                <QuestionWithdrawalRecord
+                  question={shown}
+                  testId="coord-question-withdrawal-detail"
+                  className="text-sm"
+                />
+              ) : answered ? (
                 <>
                   <p className="text-sm whitespace-pre-wrap">
                     {shown.response}
