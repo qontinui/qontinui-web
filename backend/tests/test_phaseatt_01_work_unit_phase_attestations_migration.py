@@ -171,6 +171,30 @@ def _function(tree: ast.Module, name: str) -> ast.FunctionDef:
     raise AssertionError(f"{_REVISION_FILENAME} has no top-level {name}()")
 
 
+def _check_bodies(sql: str) -> list[str]:
+    """Every ``CHECK (...)`` body in ``sql``, scanned to its BALANCED close.
+
+    Not ``re.findall(r"CHECK\\s*\\(([^)]*)\\)")``: that stops at the first ``)``,
+    so a body that opens a nested call before naming the column escapes the
+    match entirely — ``CHECK (length(other) > 0 AND evidence_kind <> '')``
+    yields only ``length(other``. A test built on it under-constrains exactly
+    the thing it was narrowed to catch, which is why the depth counter below
+    exists and why [`test_the_check_scanner_reaches_past_a_nested_call`] pins
+    it against forms the naive pattern misses.
+    """
+    bodies: list[str] = []
+    for match in re.finditer(r"\bCHECK\s*\(", sql, re.I):
+        depth, i = 1, match.end()
+        while depth and i < len(sql):
+            depth += (sql[i] == "(") - (sql[i] == ")")
+            i += 1
+        # `i` is one past the balanced close (or the end, on unbalanced SQL —
+        # which Postgres would reject anyway, and which must not silently
+        # truncate the body a caller is about to search).
+        bodies.append(sql[match.end() : i - 1 if depth == 0 else i])
+    return bodies
+
+
 def _sql_literals(fn: ast.FunctionDef) -> list[str]:
     """Every string constant inside ``fn`` except its own docstring."""
     doc = ast.get_docstring(fn, clean=False)
@@ -341,10 +365,71 @@ def test_upgrade_ddl_is_idempotent_and_the_dedupe_key_is_the_identity() -> None:
     # because the real invariant is membership of the declared phase set, which
     # no column constraint can express — and a later author who changes that
     # answer should not have to fight this test to do it.
-    for check in re.findall(r"\bCHECK\s*\(([^)]*)\)", up, re.I):
+    for check in _check_bodies(up):
         assert "evidence_kind" not in check.lower(), (
             f"evidence_kind carries no CHECK; found CHECK ({check})"
         )
+
+
+def test_the_check_scanner_reaches_past_a_nested_call() -> None:
+    """The assertion above is only as good as the body it is handed.
+
+    The failing shape is precise, and worth naming rather than gesturing at:
+    a ``[^)]*`` capture loses the column whenever the body's FIRST ``)``
+    closes a nested call that sits BEFORE the column name. ``coalesce(nullif(
+    evidence_kind, ''), ...)`` survives the naive pattern by accident — the
+    column happens to fall inside the truncated prefix — so it is kept below as
+    a body the scanner must return WHOLE, not as one the naive pattern misses.
+    The two genuinely-missed forms are listed separately, and both are ordinary
+    SQL. If this test fails, the guard above has stopped guarding.
+    """
+    naive = r"\bCHECK\s*\(([^)]*)\)"
+
+    # Bodies that DO name the column. Each must be found whole.
+    for sql, body in (
+        ("CHECK (evidence_kind <> '')", "evidence_kind <> ''"),
+        (
+            "CHECK (length(other_col) > 0 AND evidence_kind <> '')",
+            "length(other_col) > 0 AND evidence_kind <> ''",
+        ),
+        (
+            "CHECK (evidence_kind IN ('finding', 'prompt_document'))",
+            "evidence_kind IN ('finding', 'prompt_document')",
+        ),
+        (
+            "CHECK (coalesce(nullif(evidence_kind, ''), 'x') = evidence_kind)",
+            "coalesce(nullif(evidence_kind, ''), 'x') = evidence_kind",
+        ),
+        (
+            "CHECK (char_length(evidence_ref) > 0 AND evidence_kind IN ('finding'))",
+            "char_length(evidence_ref) > 0 AND evidence_kind IN ('finding')",
+        ),
+        (
+            "phase_index INTEGER NOT NULL CHECK (phase_index >= (0)),\n"
+            "evidence_kind TEXT NOT NULL CHECK (btrim(evidence_kind) <> '')",
+            "btrim(evidence_kind) <> ''",
+        ),
+    ):
+        bodies = _check_bodies(sql)
+        assert body in bodies, f"scanner missed {body!r} in {sql!r} (got {bodies})"
+        assert any("evidence_kind" in b for b in bodies), sql
+
+    # The forms the naive pattern gets WRONG — its first `)` closes a nested
+    # call that precedes the column, so the column never reaches the capture.
+    # Stated so the regression is named rather than merely prevented.
+    for sql in (
+        "CHECK (length(other_col) > 0 AND evidence_kind <> '')",
+        "CHECK (char_length(evidence_ref) > 0 AND evidence_kind IN ('finding'))",
+    ):
+        assert not any("evidence_kind" in c for c in re.findall(naive, sql, re.I)), (
+            f"the naive pattern unexpectedly caught {sql!r}"
+        )
+
+    # A bound that never widens is NOT flagged — that is the narrowing B3 made.
+    assert not any(
+        "evidence_kind" in b for b in _check_bodies("CHECK (phase_index >= 0)")
+    )
+    assert _check_bodies("CREATE TABLE t (a INTEGER)") == []
 
 
 # ---------------------------------------------------------------------------
