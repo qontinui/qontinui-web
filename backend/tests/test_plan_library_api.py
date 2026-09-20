@@ -1790,6 +1790,7 @@ class TestStrictQueryKeepsEveryDeclaredKey:
                 "include_coord": "false",
             },
             f"{API_PREFIX}/followups": {"offset": "0", "limit": "5"},
+            f"{API_PREFIX}/difficulty": {},
             f"{API_PREFIX}/{{artifact_id}}": {"include_coord": "false"},
             f"{API_PREFIX}/{{artifact_id}}/export": {"version_number": "1"},
         }

@@ -48,6 +48,16 @@
  * strictly worse control than the Select, and `coord-plans-status-select` is a
  * frozen authored testid (D4a). The counts operators actually want are in the
  * health strip, derived from the window that WAS fetched.
+ *
+ * ## Difficulty (plan `2026-09-18-plan-library-difficulty-field`)
+ *
+ * Each row carries the plan library's difficulty rating — the model tier the
+ * plan routes to — read from `/api/v1/plan-library/difficulty` by
+ * `usePlanDifficulty` and joined by slug (`planDifficulty.ts`). Unlike the
+ * status Select, the difficulty Select is a CLIENT-side filter over the
+ * fetched window, and it is disabled until the ratings have loaded: filtering
+ * on ratings the page does not have would render an empty list that reads as
+ * "no plan is that hard".
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -62,6 +72,7 @@ import {
   ArrowDownUp,
   FileQuestion,
   Filter,
+  SignalHigh,
   TriangleAlert,
 } from "lucide-react";
 import {
@@ -86,8 +97,15 @@ import {
   type HasBodyFilter,
   type PlanBodySignalBlock,
 } from "@/components/admin/coord/planBodySignal";
+import {
+  DIFFICULTY_FILTERS,
+  difficultyCell,
+  matchesDifficulty,
+  type DifficultyFilter,
+} from "@/components/admin/coord/planDifficulty";
 import { httpClient } from "@/services/service-factory";
 import { sortPlans, SORTS, type SortKey } from "./planSort";
+import { usePlanDifficulty } from "./usePlanDifficulty";
 import { derivePlansHealth, SHEPHERD_SLUG_PREFIX } from "./plansHealth";
 
 const API = "/api/v1/operations";
@@ -138,7 +156,9 @@ interface PlansListResponse {
 
 /** Add or remove one value — the `FilterChips` caller owns the set. */
 function toggle<V extends string>(prev: V[], value: V): V[] {
-  return prev.includes(value) ? prev.filter((v) => v !== value) : [...prev, value];
+  return prev.includes(value)
+    ? prev.filter((v) => v !== value)
+    : [...prev, value];
 }
 
 export default function CoordPlansListPage() {
@@ -150,6 +170,15 @@ export default function CoordPlansListPage() {
   // computed from the same rows the list renders — rather than R6's `–`.
   const [provenance, setProvenance] = useState<BodyProvenance[]>([]);
   const [hasBody, setHasBody] = useState<HasBodyFilter[]>([]);
+  // The difficulty filter is client-side for the same reason, but its ratings
+  // come from a SECOND read (the plan library, not coord) — so unlike the body
+  // signals it can be pending or failed, and the Select stays disabled until
+  // it has loaded.
+  const [difficultyFilter, setDifficultyFilter] =
+    useState<DifficultyFilter>("any");
+  const { index: difficultyIndex, refresh: refreshDifficulty } =
+    usePlanDifficulty();
+  const difficultyLoaded = difficultyIndex.state === "loaded";
   const [data, setData] = useState<PlansListResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   // There is deliberately no `loading` flag. It used to gate the list's
@@ -319,6 +348,10 @@ export default function CoordPlansListPage() {
    * one must not free.
    */
   const refresh = useCallback(() => {
+    // The ratings refresh with the operator's press too — never with the poll
+    // (see `usePlanDifficulty`). Not awaited: the button acknowledges the
+    // work-unit read, which is the one it is labelled for.
+    void refreshDifficulty();
     const tookLock = !pollInFlight.current;
     if (tookLock) pollInFlight.current = true;
     const question = questionGen.current;
@@ -327,12 +360,9 @@ export default function CoordPlansListPage() {
         pollInFlight.current = false;
       }
     });
-  }, [fetchData]);
+  }, [fetchData, refreshDifficulty]);
 
-  const plans = useMemo(
-    () => data?.work_units ?? data?.plans ?? [],
-    [data]
-  );
+  const plans = useMemo(() => data?.work_units ?? data?.plans ?? [], [data]);
   // The chip counts describe the WINDOW, so they are derived from `plans` —
   // before the body filters are applied, or every count but the selected one
   // would collapse to 0 the moment a chip was clicked.
@@ -366,6 +396,21 @@ export default function CoordPlansListPage() {
   );
   const sorted = useMemo(() => sortPlans(filtered, sort), [filtered, sort]);
   const bodyFiltered = provenance.length > 0 || hasBody.length > 0;
+  // The difficulty filter runs LAST, over the body-filtered window, and only
+  // once the ratings have loaded — see the module docstring.
+  const shown = useMemo(
+    () =>
+      difficultyLoaded && difficultyFilter !== "any"
+        ? sorted.filter((p) =>
+            matchesDifficulty(
+              difficultyCell(difficultyIndex, p.slug),
+              difficultyFilter
+            )
+          )
+        : sorted,
+    [sorted, difficultyFilter, difficultyIndex, difficultyLoaded]
+  );
+  const difficultyFiltered = difficultyLoaded && difficultyFilter !== "any";
   // coord returned a full page, so there are almost certainly more work units
   // than we sorted. Say so: with the list capped at `updated_at DESC`, an
   // "oldest authored" answer drawn from this window can be wrong.
@@ -431,6 +476,33 @@ export default function CoordPlansListPage() {
           </SelectTrigger>
           <SelectContent>
             {SORTS.map((opt) => (
+              <SelectItem key={opt.value} value={opt.value}>
+                {opt.label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <SignalHigh className="h-4 w-4 text-muted-foreground ml-1" />
+        <Select
+          value={difficultyLoaded ? difficultyFilter : "any"}
+          onValueChange={(v) => setDifficultyFilter(v as DifficultyFilter)}
+          disabled={!difficultyLoaded}
+        >
+          <SelectTrigger
+            className="w-[180px]"
+            data-testid="coord-plans-difficulty-select"
+            title={
+              difficultyIndex.state === "failed"
+                ? `Difficulty ratings could not be read: ${difficultyIndex.reason}`
+                : difficultyIndex.state === "pending"
+                  ? "Difficulty ratings are loading"
+                  : "Filter by the plan library's difficulty rating (applied to the rows fetched)"
+            }
+          >
+            <SelectValue placeholder="difficulty" />
+          </SelectTrigger>
+          <SelectContent>
+            {DIFFICULTY_FILTERS.map((opt) => (
               <SelectItem key={opt.value} value={opt.value}>
                 {opt.label}
               </SelectItem>
@@ -525,9 +597,9 @@ export default function CoordPlansListPage() {
               data-testid="coord-plans-truncated-notice"
             >
               Showing the {FETCH_LIMIT} most-recently-updated work units — coord
-              caps this list. Sorting applies to these only, so a
-              &ldquo;{SORTS.find((s) => s.value === sort)?.label}&rdquo; result
-              may not be the corpus-wide answer.
+              caps this list. Sorting applies to these only, so a &ldquo;
+              {SORTS.find((s) => s.value === sort)?.label}&rdquo; result may not
+              be the corpus-wide answer.
             </p>
           )}
           {missingAuthored > 0 && (
@@ -535,9 +607,9 @@ export default function CoordPlansListPage() {
               className="text-xs text-muted-foreground"
               data-testid="coord-plans-missing-authored-notice"
             >
-              {missingAuthored} of {plans.length} have no authoring date —
-              no date prefix on the slug and no authored_at in coord; they
-              sort last rather than being treated as oldest.
+              {missingAuthored} of {plans.length} have no authoring date — no
+              date prefix on the slug and no authored_at in coord; they sort
+              last rather than being treated as oldest.
             </p>
           )}
         </CollapsiblePanel>
@@ -547,8 +619,27 @@ export default function CoordPlansListPage() {
         <p className="text-sm text-destructive">Failed to load: {error}</p>
       )}
 
+      {difficultyIndex.state === "failed" && (
+        <p
+          className="text-xs text-muted-foreground"
+          data-testid="coord-plans-difficulty-unknown"
+        >
+          Difficulty ratings could not be read ({difficultyIndex.reason}) — each
+          row&apos;s difficulty is unknown, not unrated.
+        </p>
+      )}
+      {difficultyIndex.state === "loaded" && difficultyIndex.staleReason && (
+        <p
+          className="text-xs text-muted-foreground"
+          data-testid="coord-plans-difficulty-stale"
+        >
+          Some difficulty ratings may predate the current rubric — re-rating
+          failed: {difficultyIndex.staleReason}
+        </p>
+      )}
+
       <RecordList
-        items={sorted}
+        items={shown}
         itemKey={(p) => p.slug}
         // "Has this question been ANSWERED, one way or the other?" — never
         // "is a request outstanding?". The two diverge, and the gap is where a
@@ -562,7 +653,33 @@ export default function CoordPlansListPage() {
         loaded={data !== null || error !== null}
         skeletonRows={6}
         empty={
-          plansUnknown ? (
+          // ORDER MATTERS. A client-side filter that emptied the list is a
+          // statement about the WINDOW — rows were fetched — so it is checked
+          // BEFORE the unknown/stale copy, which is about the work-unit read
+          // and would blame the wrong control. Difficulty first, then the
+          // document filters, because difficulty runs over their output.
+          difficultyFiltered && sorted.length > 0 ? (
+            <p
+              className="text-sm text-muted-foreground italic"
+              data-testid="coord-plans-difficulty-empty"
+            >
+              {difficultyFilter === "unrated"
+                ? `None of the ${sorted.length} fetched plans is unrated.`
+                : `None of the ${sorted.length} fetched plans is rated ${difficultyFilter}.`}
+            </p>
+          ) : bodyFiltered && plans.length > 0 ? (
+            // The body filters are client-side, so "nothing matched" here is a
+            // statement about the WINDOW, not about coord. Saying
+            // "No plans matching status=any" over a window that holds
+            // {plans.length} rows would blame the wrong control.
+            <p
+              className="text-sm text-muted-foreground italic"
+              data-testid="coord-plans-body-filtered-empty"
+            >
+              None of the {plans.length} work units in this window match the
+              document filter.
+            </p>
+          ) : plansUnknown ? (
             <p
               className="text-sm text-muted-foreground italic"
               data-testid="coord-plans-unknown"
@@ -578,18 +695,6 @@ export default function CoordPlansListPage() {
               No plans matched status={status === "any" ? "any" : status} at the
               last good read — this list has not refreshed since.
             </p>
-          ) : bodyFiltered ? (
-            // The body filters are client-side, so "nothing matched" here is a
-            // statement about the WINDOW, not about coord. Saying
-            // "No plans matching status=any" over a window that holds
-            // {plans.length} rows would blame the wrong control.
-            <p
-              className="text-sm text-muted-foreground italic"
-              data-testid="coord-plans-body-filtered-empty"
-            >
-              None of the {plans.length} work units in this window match the
-              document filter.
-            </p>
           ) : (
             <p
               className="text-sm text-muted-foreground italic"
@@ -604,6 +709,7 @@ export default function CoordPlansListPage() {
             plan={p}
             expanded={ctx.expanded}
             onToggle={ctx.onToggle}
+            difficulty={difficultyCell(difficultyIndex, p.slug)}
           />
         )}
       />
