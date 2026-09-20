@@ -895,6 +895,79 @@ describe("MergePipeline", () => {
     expect(rows[0]).toHaveTextContent("qontinui-web#55");
   });
 
+  it("REGRESSION: renders it once when the MERGED read itself carries both copies", () => {
+    // Operator-reported 2026-09-20: `qontinui-runner#1538` and
+    // `qontinui-coord#2258` each rendered TWICE in the Merged tab — once as
+    // "landed on main by coord — GitHub has not closed the PR yet" and once as
+    // "landed on main as <sha>".
+    //
+    // The test above models the duplicate as one row in `prs` and one in
+    // `mergedPrs`, which the open-vs-merged filter catches. That is NOT the
+    // shape coord actually serves. `?include_merged=` returns the open/draft
+    // list WITH the recently-landed rows appended, and `useMergePipelineData`
+    // keeps everything `isMergedPr` accepts from that ONE response — which is
+    // both copies of an ff-landed PR: the phantom-open row (merge_status
+    // `landed-open`, no sha) and its landed twin (sha + merged_at).
+    //
+    // So both duplicates arrive inside `mergedPrs`, where the filter never
+    // looked: it only ever subtracts `merged` from `open`. Two PrRows sharing
+    // one `singleKey` then become two rows sharing one React key.
+    const phantom = {
+      pr_number: 1538,
+      branch: "agent/eb2155ed4152-01a0a0a33785/stale-mirror-sha",
+      repo: "qontinui/qontinui-runner",
+    };
+    hookData.current.prs = [pr({ ...phantom, pr_state: "open" })];
+    hookData.current.mergedPrs = [
+      // The phantom-open half of coord's response.
+      pr({ ...phantom, pr_state: "open", merge_status: "landed-open" }),
+      // The landed half of the SAME response, for the SAME PR.
+      pr({
+        ...phantom,
+        pr_state: "open",
+        merge_commit_sha: "d73f3c4aaaa",
+        merged_at: new Date(Date.now() - 3_600_000).toISOString(),
+      }),
+    ];
+
+    render(<MergePipeline />);
+    fireEvent.click(screen.getByTestId("pipeline-filter-merged"));
+
+    const rows = screen.getAllByTestId("pipeline-row");
+    expect(rows).toHaveLength(1);
+
+    // And the SURVIVOR must be the truthful one. Keeping the phantom-open copy
+    // would render a row that knows neither the land sha nor the land time —
+    // strictly less than coord reported, on a tab whose whole purpose is the
+    // landing record.
+    expect(rows[0]).toHaveTextContent("d73f3c4");
+    expect(rows[0]).not.toHaveTextContent(/GitHub has not closed/);
+  });
+
+  it("keeps the landed-open row when that is the ONLY copy coord served", () => {
+    // The dedup must PREFER the sha-bearing row, not REQUIRE one. Before
+    // coord's straggler sweep catches up, `landed-open` may be all there is,
+    // and dropping it would hide a real landing from the tab that records
+    // landings.
+    hookData.current.prs = [];
+    hookData.current.mergedPrs = [
+      pr({
+        pr_number: 77,
+        branch: "feat/only-phantom",
+        repo: "qontinui/qontinui-web",
+        pr_state: "open",
+        merge_status: "landed-open",
+      }),
+    ];
+
+    render(<MergePipeline />);
+    fireEvent.click(screen.getByTestId("pipeline-filter-merged"));
+
+    const rows = screen.getAllByTestId("pipeline-row");
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toHaveTextContent(/GitHub has not closed/);
+  });
+
   // --------------------------------------------------------------------------
   // The Train tab. Unlike every other tab it is NOT a filter over the PR rows
   // — it swaps in a row-per-REPO view of the merge train itself. These cover
