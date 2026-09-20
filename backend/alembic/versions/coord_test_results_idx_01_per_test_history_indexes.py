@@ -87,6 +87,40 @@ rather than that the planner picks it. Re-read ``pg_stat_user_indexes.idx_scan``
 for BOTH indexes on production AFTER this lands and the coord read is
 deployed, then retire whichever is idle in its own follow-up.
 
+AMENDED 2026-09-20 — idx_scan no longer decides this index's retirement
+------------------------------------------------------------------------------
+The paragraph above was written while ``coord.test_results`` had no sweeper.
+qontinui-coord#2278 (merge ``6ffb11a3c1bce38e3c2dc5035cf04caf0379fd85``) gave it
+one: a 14-day table-retention sweep whose batch statement is
+
+    DELETE FROM coord.test_results WHERE id IN (
+      SELECT id FROM coord.test_results
+      WHERE observed_at < now() - make_interval(days => $1::int)
+      ORDER BY observed_at LIMIT $2)
+
+It binds NO ``repo``, so index #2 ``(repo, observed_at DESC)`` cannot serve it —
+its leading column is unbound. Only the bare ``(observed_at)`` index can, and
+without it each batch seq-scans and sorts a multi-GB table, 200 batches per
+sweep, which is coord's 60 s ``statement_timeout`` — the same wall the dark read
+this revision exists to fix had already hit.
+
+So ``idx_test_results_observed_at`` is now LOAD-BEARING, and a low ``idx_scan``
+on it is no longer evidence of idleness: the sweep is leader-only on a six-hour
+cadence, so it contributes about four scans a day against a table taking
+~1.7-2M ingest rows a day. Four is a small number and a live consumer. Read the
+CONSUMER, not the counter.
+
+Retiring it is still allowed — but only by REPLACING it with an index that
+leads on ``observed_at`` AND is btree AND is full, never by dropping it
+outright. All three matter: a partial index cannot serve the sweep's
+unqualified ``WHERE observed_at < cutoff``, and BRIN — the obvious reach when
+shrinking a 428 MB index on an append-only timestamp — cannot serve
+``ORDER BY ... LIMIT`` as an ordered scan at all. Coord asserts those three
+properties (not the index name) in
+``table_retention::db_tests::test_results_age_index_is_present``; that lane
+provisions from a pinned migrator digest, so it reds on the pin bump rather than
+the same day. Coord finding ``50ca1e91-4454-492c-b4a5-2f5002e0ac5f``.
+
 Ordering / safety
 ------------------------------------------------------------------------------
 ``CREATE INDEX CONCURRENTLY`` / ``DROP INDEX CONCURRENTLY`` (not the plain
