@@ -15,14 +15,14 @@
  * (Phase 0, Finding 2: the degraded read is the MORE optimistic one) and the
  * deriver suppresses it.
  *
- * Phase 4c moved the rendering itself into `<DisclosureLines>`, shared with
+ * Phase 4c moved the rendering itself into `<DisclosureLinesPanel>`, shared with
  * `/admin/coord/plan-candidates`, which owes the operator the same three
  * disclosures over a different route. This file is now the reconciliation
  * page's testid prefix and nothing else — `coord-plans-disclosure-*`, which
  * the Phase 2 tests address by name.
  */
 
-import { DisclosureLines } from "./DisclosureLines";
+import { DisclosureLinesPanel } from "./DisclosureLinesPanel";
 import type { DisclosureLine } from "./disclosureLines";
 
 export function ReconciliationDisclosure({
@@ -31,6 +31,6 @@ export function ReconciliationDisclosure({
   lines: readonly DisclosureLine[];
 }) {
   return (
-    <DisclosureLines lines={lines} testIdPrefix="coord-plans-disclosure" />
+    <DisclosureLinesPanel lines={lines} testIdPrefix="coord-plans-disclosure" />
   );
 }

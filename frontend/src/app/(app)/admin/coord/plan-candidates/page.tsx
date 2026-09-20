@@ -69,7 +69,7 @@ import {
   relativeTime,
 } from "@/components/console";
 import { CaptureHealthPanel } from "@/components/admin/coord/CaptureHealthPanel";
-import { DisclosureLines } from "@/components/admin/coord/DisclosureLines";
+import { DisclosureLinesPanel } from "@/components/admin/coord/DisclosureLinesPanel";
 import {
   deriveCaptureCensus,
   describeCorpusFreshness,
@@ -469,7 +469,7 @@ export default function CoordPlanCandidatesPage() {
       )}
 
       {disclosure && (
-        <DisclosureLines
+        <DisclosureLinesPanel
           lines={disclosure}
           testIdPrefix="coord-candidates-disclosure"
         />
