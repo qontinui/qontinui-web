@@ -148,8 +148,12 @@ _DERIVED_KEYS: dict[str, frozenset[str]] = {
             #
             # Every other ``harness`` key is a probe under the workspace root
             # or a rendering relative to it, which is why the runner publishes
-            # WHICH rung resolved that root (``declared`` / ``default`` /
-            # ``inherited``): two boxes that resolved it differently did not
+            # WHICH rung resolved that root. The values are
+            # ``WorkspaceRootKind``'s wire strings -- ``declared`` /
+            # ``discovered`` / ``home_default`` / ``unresolved`` -- and NOT
+            # ``ProbeScopeKind``'s, which is a different enum with a different
+            # value set and is what ``versions.probe_scope_kind`` carries.
+            # Two boxes that resolved the root by different rungs did not
             # measure the same concept, and a reader has to be able to tell
             # that before acting on a difference.
             #
