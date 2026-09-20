@@ -22,7 +22,11 @@ import {
   estimateVocabulary,
   labourBillingDescription,
 } from "@/components/overview/vocabulary";
-import { formatDecimal, formatMicros } from "@/components/overview/money";
+import {
+  formatDecimal,
+  formatMicros,
+  toNumber,
+} from "@/components/overview/money";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useAuth } from "@/contexts/auth-context";
 import { useTenant } from "@/contexts/tenant-context";
@@ -114,7 +118,10 @@ function TeamBody({
   const billing = labourBillingDescription(labourBilling);
   const currency = rollup.money.currency;
   const primaryTier =
-    rollup.money.tiers.find((t) => t.is_primary) ?? rollup.money.tiers[0] ?? null;
+    rollup.money.tiers.find((t) => t.is_primary) ??
+    rollup.money.tiers[0] ??
+    null;
+  const clientDays = toNumber(rollup.effort.client_side_person_days) ?? 0;
 
   return (
     <div className="space-y-14">
@@ -172,8 +179,20 @@ function TeamBody({
             />
             <Figure
               label="Days the client has to give"
-              value={formatDecimal(rollup.effort.client_side_person_days)}
-              detail="Their own people's time, which this estimate does not price."
+              // A 0 here would read as "we have measured this and it is
+              // none", which is not what an estimate that simply never split
+              // days to the client's roles is saying. `null` renders as "Not
+              // known" instead, and the detail says which it is.
+              value={
+                clientDays > 0
+                  ? formatDecimal(rollup.effort.client_side_person_days)
+                  : null
+              }
+              detail={
+                clientDays > 0
+                  ? "Their own people's time, which this estimate does not price."
+                  : "No days have been split to the client's own roles, so how much of their time this needs has not been estimated."
+              }
               uiBridgeId="overview.team.figure.client-days"
             />
           </dl>
@@ -224,13 +243,16 @@ function TeamBody({
 
 function NoEstimate({ canEdit }: { canEdit: boolean }) {
   return (
-    <section className="max-w-[38rem]" data-ui-bridge-id="overview.team.no-estimate">
+    <section
+      className="max-w-[38rem]"
+      data-ui-bridge-id="overview.team.no-estimate"
+    >
       <h2 className="font-[family-name:var(--font-overview-serif)] text-2xl text-foreground">
         This project has no estimate yet
       </h2>
       <p className="mt-2 text-[15px] leading-relaxed text-muted-foreground">
-        The Team page shows the roles a project needs, how much of each it
-        needs per phase, and what that comes to. All of it is read from the
+        The Team page shows the roles a project needs, how much of each it needs
+        per phase, and what that comes to. All of it is read from the
         project&rsquo;s estimate, and none has been entered.
       </p>
       {canEdit ? (
