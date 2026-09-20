@@ -264,6 +264,30 @@ function badgeText(el: HTMLElement): string {
   return (el.textContent ?? "").replace(/ /g, " ").trim();
 }
 
+/**
+ * Open the "Advanced: auto-provision by SSO group" panel that now hosts BOTH
+ * SSO-group sections (plan `2026-09-15-simplify-tenant-member-add-by-email`
+ * Phase 2).
+ *
+ * It is `defaultOpen={false}` and Radix UNMOUNTS a closed panel's content, so
+ * neither inner panel — nor its collapsed-header summary badge, which is what
+ * half the assertions in this file read — exists in the DOM until the outer
+ * one is open. The inner panels keep their own fold and their own badges; this
+ * only reaches the wrapper.
+ *
+ * Idempotent: `data-state` on the Radix trigger says whether a click is owed,
+ * so calling it twice cannot fold the panel back up.
+ */
+async function openAdvanced(
+  user_?: ReturnType<typeof userEvent.setup>
+): Promise<void> {
+  const u = user_ ?? userEvent.setup();
+  const outer = await screen.findByRole("button", {
+    name: /advanced: auto-provision by sso group/i,
+  });
+  if (outer.getAttribute("data-state") !== "open") await u.click(outer);
+}
+
 describe("/admin/coord/members — an unreadable section is unknown, not empty", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -292,6 +316,7 @@ describe("/admin/coord/members — an unreadable section is unknown, not empty",
   it("does not print a mapping count on the collapsed header when the read failed", async () => {
     state.mappingsMode = "error";
     render(<MembersPage />);
+    await openAdvanced();
 
     const badge = await screen.findByTestId("coord-group-roles-summary");
     await waitFor(() => expect(badgeText(badge)).toMatch(/unknown/i));
@@ -303,6 +328,7 @@ describe("/admin/coord/members — an unreadable section is unknown, not empty",
     state.mappingsMode = "malformed";
     const user_ = userEvent.setup();
     render(<MembersPage />);
+    await openAdvanced();
 
     const badge = await screen.findByTestId("coord-group-roles-summary");
     await waitFor(() => expect(badgeText(badge)).toMatch(/unknown/i));
@@ -325,6 +351,7 @@ describe("/admin/coord/members — an unreadable section is unknown, not empty",
     // panel down; the read must be refused before the render sees it.
     state.mappingsMode = "notArray";
     render(<MembersPage />);
+    await openAdvanced();
 
     const badge = await screen.findByTestId("coord-group-roles-summary");
     await waitFor(() => expect(badgeText(badge)).toMatch(/unknown/i));
@@ -335,6 +362,7 @@ describe("/admin/coord/members — an unreadable section is unknown, not empty",
     state.mappings = [];
     const user_ = userEvent.setup();
     render(<MembersPage />);
+    await openAdvanced();
 
     const badge = await screen.findByTestId("coord-group-roles-summary");
     await waitFor(() => expect(badgeText(badge)).toMatch(/mappings 0$/));
@@ -355,6 +383,7 @@ describe("/admin/coord/members — an unreadable section is unknown, not empty",
   it("does not print a group count on the collapsed header when the read failed", async () => {
     state.groupsMode = "error";
     render(<MembersPage />);
+    await openAdvanced();
 
     const badge = await screen.findByTestId("coord-cognito-groups-summary");
     await waitFor(() => expect(badgeText(badge)).toMatch(/unknown/i));
@@ -365,6 +394,7 @@ describe("/admin/coord/members — an unreadable section is unknown, not empty",
     state.groupsMode = "malformed";
     const user_ = userEvent.setup();
     render(<MembersPage />);
+    await openAdvanced();
 
     const badge = await screen.findByTestId("coord-cognito-groups-summary");
     await waitFor(() => expect(badgeText(badge)).toMatch(/unknown/i));
@@ -383,6 +413,7 @@ describe("/admin/coord/members — an unreadable section is unknown, not empty",
   it("survives a 200 whose group list is not a list", async () => {
     state.groupsMode = "notArray";
     render(<MembersPage />);
+    await openAdvanced();
 
     const badge = await screen.findByTestId("coord-cognito-groups-summary");
     await waitFor(() => expect(badgeText(badge)).toMatch(/unknown/i));
@@ -393,6 +424,7 @@ describe("/admin/coord/members — an unreadable section is unknown, not empty",
     state.groups = [];
     const user_ = userEvent.setup();
     render(<MembersPage />);
+    await openAdvanced();
 
     const badge = await screen.findByTestId("coord-cognito-groups-summary");
     await waitFor(() => expect(badgeText(badge)).toMatch(/groups 0$/));
@@ -636,6 +668,7 @@ describe("/admin/coord/members — an unreadable section is unknown, not empty",
     state.usersMode = "malformed";
     const user_ = userEvent.setup();
     render(<MembersPage />);
+    await openAdvanced();
 
     await user_.click(
       await screen.findByRole("button", { name: /cognito groups/i })
@@ -654,6 +687,7 @@ describe("/admin/coord/members — an unreadable section is unknown, not empty",
     state.usersMode = "notArray";
     const user_ = userEvent.setup();
     render(<MembersPage />);
+    await openAdvanced();
 
     await user_.click(
       await screen.findByRole("button", { name: /cognito groups/i })
@@ -669,6 +703,7 @@ describe("/admin/coord/members — an unreadable section is unknown, not empty",
     state.users = [cognitoUser("ada"), cognitoUser("grace")];
     const user_ = userEvent.setup();
     render(<MembersPage />);
+    await openAdvanced();
 
     await user_.click(
       await screen.findByRole("button", { name: /cognito groups/i })
@@ -698,6 +733,7 @@ describe("/admin/coord/members — an unreadable section is unknown, not empty",
     state.usersMode = "malformed";
     const user_ = userEvent.setup();
     render(<MembersPage />);
+    await openAdvanced();
 
     await user_.click(
       await screen.findByRole("button", { name: /cognito groups/i })
@@ -718,6 +754,7 @@ describe("/admin/coord/members — an unreadable section is unknown, not empty",
     state.usersMode = "notArray";
     const user_ = userEvent.setup();
     render(<MembersPage />);
+    await openAdvanced();
 
     await user_.click(
       await screen.findByRole("button", { name: /cognito groups/i })
@@ -739,6 +776,7 @@ describe("/admin/coord/members — an unreadable section is unknown, not empty",
     state.usersMode = "ok";
     const user_ = userEvent.setup();
     render(<MembersPage />);
+    await openAdvanced();
 
     await user_.click(
       await screen.findByRole("button", { name: /cognito groups/i })
@@ -798,6 +836,7 @@ describe("/admin/coord/members — an unreadable section is unknown, not empty",
     state.mappingsMode = "error";
     const user_ = userEvent.setup();
     render(<MembersPage />);
+    await openAdvanced();
 
     await user_.click(
       await screen.findByRole("button", { name: /cognito groups/i })

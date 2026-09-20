@@ -27,17 +27,27 @@
  *    serve that row an explicit `false` — what a deployed classifier does — and
  *    the page printed the reassurance over a hidden loosening. Both arms are
  *    pinned separately now, which is why there are two cases that look alike.
- * 4. **The completeness caveat is always on screen.** Coord's announce path is
- *    post-commit and best-effort, so a quiet feed is not evidence of a quiet
- *    fleet, and no per-response caveat would ever say so.
+ * 4. **The completeness caveat is always on screen, and names the right
+ *    surface.** The list is built from version history, so it is the complete
+ *    view as of the read; the best-effort channel is the push notice, which
+ *    coord reconciles within limits the caveat also states. A caveat that
+ *    blamed the list sent the operator to distrust the one surface that cannot
+ *    silently miss a write.
  */
 
-import { describe, it, expect, vi } from "vitest";
-import { render, screen, within, fireEvent } from "@testing-library/react";
+import { beforeEach, describe, it, expect, vi } from "vitest";
+import { act, render, screen, within, fireEvent } from "@testing-library/react";
 
+const authState = vi.hoisted(() => ({ isCoordAdmin: true }));
 vi.mock("@/contexts/auth-context", () => ({
-  useAuth: () => ({ isCoordAdmin: true }),
+  useAuth: () => authState,
 }));
+
+// Reset rather than left to declaration order: the non-admin case below sets it
+// `false`, and every later test must not pass only by reassigning it first.
+beforeEach(() => {
+  authState.isCoordAdmin = true;
+});
 
 import { LandedWriteFeed } from "./LandedWriteFeed";
 import type { PromptDocumentWrite } from "../types";
@@ -66,6 +76,7 @@ function renderFeed(props: Partial<Parameters<typeof LandedWriteFeed>[0]> = {}) 
       loading={false}
       acting={false}
       onRevert={vi.fn().mockResolvedValue(true)}
+      onWithdraw={vi.fn().mockResolvedValue(true)}
       onLoadDiff={vi.fn().mockResolvedValue(undefined)}
       diffFor={() => null}
       {...props}
@@ -255,11 +266,26 @@ describe("LandedWriteFeed — the agent-authored filter", () => {
 });
 
 describe("LandedWriteFeed — honesty about completeness", () => {
-  it("states the best-effort caveat even when nothing went wrong", () => {
+  it("states the standing caveat even when nothing went wrong", () => {
     renderFeed({ writes: [write()] });
-    expect(
-      screen.getByTestId("landed-writes-completeness")
-    ).toHaveTextContent(/best-effort/i);
+    const caveat = screen.getByTestId("landed-writes-completeness");
+    // The list is built from version history — say so, not the opposite.
+    expect(caveat).toHaveTextContent(/version history/i);
+    expect(caveat).toHaveTextContent(/cannot be missing/i);
+    // The best-effort channel is the NOTICE, and coord re-sends a missed one…
+    expect(caveat).toHaveTextContent(/sends it again|re-?sen/i);
+    // …but only for RECENT edits, and not at all while the store is not set up.
+    expect(caveat).toHaveTextContent(/recent/i);
+    expect(caveat).toHaveTextContent(/not set up/i);
+    // A created document is announced by its author's reasoning instead.
+    expect(caveat).toHaveTextContent(/newly created/i);
+  });
+
+  it("no longer tells the operator the LIST can be incomplete", () => {
+    renderFeed({ writes: [write()] });
+    const caveat = screen.getByTestId("landed-writes-completeness");
+    expect(caveat).not.toHaveTextContent(/list can be incomplete/i);
+    expect(caveat).not.toHaveTextContent(/absent write as unknown/i);
   });
 
   it("keeps every per-response caveat alongside it", () => {
@@ -270,7 +296,7 @@ describe("LandedWriteFeed — honesty about completeness", () => {
     const box = screen.getByTestId("landed-writes-notice");
     expect(box).toHaveTextContent("did not return their history");
     expect(box).toHaveTextContent("40 most recent");
-    expect(box).toHaveTextContent(/best-effort/i);
+    expect(box).toHaveTextContent(/version history/i);
   });
 });
 
@@ -290,6 +316,99 @@ describe("LandedWriteFeed — the linked reasoning", () => {
     renderFeed({ writes: [write()] });
     expect(
       screen.queryByTestId("write-reasoning-policy-operating-rules-6")
+    ).toBeNull();
+    expect(
+      screen.queryByTestId("write-reasoning-finding-policy-operating-rules-6")
+    ).toBeNull();
+  });
+
+  it("shows a CREATED document's reasoning as a finding reference, never as a link into the notifications feed", () => {
+    // Creation never emits a notice and the reconciler skips v1 — the caveat
+    // on this very page says so. A link would send the operator to an event
+    // that cannot exist, where the `?ref=` banner reports it as one that "may
+    // be older than these".
+    renderFeed({
+      writes: [
+        write({
+          kind: "decision_record",
+          name: "escalate-path-clearance-is-agent-work",
+          version_number: 1,
+          current_version: 1,
+          notification_ref: "fec41291-67ed-4cf8-b331-888ad1126b45",
+        }),
+      ],
+    });
+    expect(
+      screen.queryByTestId(
+        "write-reasoning-decision_record-escalate-path-clearance-is-agent-work-1"
+      )
+    ).toBeNull();
+    const ref = screen.getByTestId(
+      "write-reasoning-finding-decision_record-escalate-path-clearance-is-agent-work-1"
+    );
+    expect(ref.tagName).not.toBe("A");
+    expect(ref.querySelector("a")).toBeNull();
+    // Accessible TEXT, not a `title`: the explanation is what a keyboard or
+    // screen-reader operator gets. The row stays short (the cluster it sits
+    // in never shrinks), and says where the id is.
+    expect(ref).toHaveTextContent(/no notice sent/i);
+    expect(ref).toHaveTextContent(/expand this row/i);
+    // The FULL id lives in the expanded detail (R8), as selectable text: it
+    // is the only handle on the reasoning the console offers, so it must be
+    // complete and copyable, never truncated or hover-only — and present
+    // whether or not the diff bodies came back.
+    const idTestId =
+      "write-reasoning-finding-id-decision_record-escalate-path-clearance-is-agent-work-1";
+    expect(screen.queryByTestId(idTestId)).toBeNull();
+    fireEvent.click(
+      screen.getByTestId(
+        "write-toggle-decision_record-escalate-path-clearance-is-agent-work-1"
+      )
+    );
+    expect(screen.getByTestId(idTestId)).toHaveTextContent(
+      "fec41291-67ed-4cf8-b331-888ad1126b45"
+    );
+  });
+
+  it("still links a v2 edit of that same document into the notifications feed", () => {
+    renderFeed({
+      writes: [
+        write({
+          kind: "decision_record",
+          name: "escalate-path-clearance-is-agent-work",
+          version_number: 2,
+          current_version: 2,
+          notification_ref: "ref-2",
+        }),
+      ],
+    });
+    expect(
+      screen.getByTestId(
+        "write-reasoning-decision_record-escalate-path-clearance-is-agent-work-2"
+      )
+    ).toHaveAttribute("href", "/admin/coord/notifications?ref=ref-2");
+    // The tooltip names the finding the notice carries.
+    expect(
+      screen.getByTestId(
+        "write-reasoning-decision_record-escalate-path-clearance-is-agent-work-2"
+      )
+    ).toHaveAttribute("title", expect.stringContaining("ref-2"));
+    // And NOT the finding-only reference as well — the two arms are exclusive,
+    // in the row and in the expanded detail.
+    expect(
+      screen.queryByTestId(
+        "write-reasoning-finding-decision_record-escalate-path-clearance-is-agent-work-2"
+      )
+    ).toBeNull();
+    fireEvent.click(
+      screen.getByTestId(
+        "write-toggle-decision_record-escalate-path-clearance-is-agent-work-2"
+      )
+    );
+    expect(
+      screen.queryByTestId(
+        "write-reasoning-finding-id-decision_record-escalate-path-clearance-is-agent-work-2"
+      )
     ).toBeNull();
   });
 });
@@ -662,5 +781,179 @@ describe("LandedWriteFeed — the filter and the flagged claim describe ONE set"
     expect(
       screen.getByTestId("write-loosening-policy-engineering-priorities-4")
     ).toBeInTheDocument();
+  });
+});
+
+describe("LandedWriteFeed — Withdraw for a created decision record", () => {
+  const created = () =>
+    write({
+      kind: "decision_record",
+      name: "no-cross-tenant-reads",
+      label: "No cross-tenant reads",
+      version_number: 1,
+      current_version: 1,
+    });
+
+  it("offers Withdraw, not Undo, on a head v1 decision record", () => {
+    renderFeed({ writes: [created()] });
+    expect(
+      screen.getByTestId("withdraw-decision_record-no-cross-tenant-reads")
+    ).toHaveTextContent("Withdraw");
+    expect(
+      screen.queryByTestId("revert-decision_record-no-cross-tenant-reads")
+    ).toBeNull();
+  });
+
+  it("does not offer Withdraw on a head v1 of any other kind", () => {
+    renderFeed({
+      writes: [
+        write({ kind: "initiative", name: "ship-it", version_number: 1, current_version: 1 }),
+        write({ kind: "policy", name: "operating-rules", version_number: 1, current_version: 1 }),
+      ],
+    });
+    expect(screen.queryByTestId("withdraw-initiative-ship-it")).toBeNull();
+    expect(screen.queryByTestId("withdraw-policy-operating-rules")).toBeNull();
+  });
+
+  it("keeps Undo, and offers no Withdraw, on a later decision-record version", () => {
+    renderFeed({
+      writes: [
+        write({
+          kind: "decision_record",
+          name: "no-cross-tenant-reads",
+          version_number: 2,
+          current_version: 2,
+        }),
+        write({
+          kind: "decision_record",
+          name: "no-cross-tenant-reads",
+          version_number: 1,
+          current_version: 2,
+          created_at: "2026-08-26T11:51:41Z",
+        }),
+      ],
+    });
+    expect(
+      screen.getByTestId("revert-decision_record-no-cross-tenant-reads")
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByTestId("withdraw-decision_record-no-cross-tenant-reads")
+    ).toBeNull();
+  });
+
+  it("opens an in-place reason composer and will not submit a blank reason", () => {
+    const onWithdraw = vi.fn().mockResolvedValue(true);
+    renderFeed({ writes: [created()], onWithdraw });
+
+    expect(
+      screen.queryByTestId("withdraw-composer-decision_record-no-cross-tenant-reads")
+    ).toBeNull();
+    fireEvent.click(
+      screen.getByTestId("withdraw-decision_record-no-cross-tenant-reads")
+    );
+    const confirm = screen.getByTestId(
+      "withdraw-confirm-decision_record-no-cross-tenant-reads"
+    );
+    expect(confirm).toBeDisabled();
+
+    // Whitespace is not a reason.
+    fireEvent.change(
+      screen.getByTestId("withdraw-reason-decision_record-no-cross-tenant-reads"),
+      { target: { value: "   " } }
+    );
+    expect(confirm).toBeDisabled();
+    fireEvent.click(confirm);
+    expect(onWithdraw).not.toHaveBeenCalled();
+  });
+
+  it("submits the trimmed reason and closes the composer once it lands", async () => {
+    const record = created();
+    const onWithdraw = vi.fn().mockResolvedValue(true);
+    renderFeed({ writes: [record], onWithdraw });
+
+    fireEvent.click(
+      screen.getByTestId("withdraw-decision_record-no-cross-tenant-reads")
+    );
+    fireEvent.change(
+      screen.getByTestId("withdraw-reason-decision_record-no-cross-tenant-reads"),
+      { target: { value: "  never decided  " } }
+    );
+    fireEvent.click(
+      screen.getByTestId("withdraw-confirm-decision_record-no-cross-tenant-reads")
+    );
+
+    expect(onWithdraw).toHaveBeenCalledWith(record, "never decided");
+    expect(
+      await screen.findByTestId("withdraw-decision_record-no-cross-tenant-reads")
+    ).toHaveAttribute("aria-expanded", "false");
+    expect(
+      screen.queryByTestId("withdraw-composer-decision_record-no-cross-tenant-reads")
+    ).toBeNull();
+  });
+
+  it("keeps the composer and its text when the withdrawal fails", async () => {
+    const onWithdraw = vi.fn().mockResolvedValue(false);
+    renderFeed({ writes: [created()], onWithdraw });
+
+    fireEvent.click(
+      screen.getByTestId("withdraw-decision_record-no-cross-tenant-reads")
+    );
+    const reason = screen.getByTestId(
+      "withdraw-reason-decision_record-no-cross-tenant-reads"
+    );
+    fireEvent.change(reason, { target: { value: "never decided" } });
+    // Inside `act` so the rejected-withdrawal promise SETTLES before asserting —
+    // a bare waitFor on the call would pass before the composer could close.
+    await act(async () => {
+      fireEvent.click(
+        screen.getByTestId("withdraw-confirm-decision_record-no-cross-tenant-reads")
+      );
+    });
+
+    expect(onWithdraw).toHaveBeenCalled();
+    expect(
+      screen.getByTestId("withdraw-reason-decision_record-no-cross-tenant-reads")
+    ).toHaveValue("never decided");
+  });
+
+  it("gates Withdraw from a non-admin, and says why", () => {
+    authState.isCoordAdmin = false;
+    renderFeed({ writes: [created()] });
+    expect(
+      screen.queryByTestId("withdraw-decision_record-no-cross-tenant-reads")
+    ).toBeNull();
+    expect(
+      within(rowFor(created())).getByTestId("coord-admin-only-notice")
+    ).toHaveTextContent("Admin only");
+  });
+
+  it("marks rows of a withdrawn record, and only on an explicit true", () => {
+    renderFeed({
+      writes: [
+        write({
+          kind: "decision_record",
+          name: "voided",
+          version_number: 2,
+          current_version: 2,
+          document_withdrawn: true,
+          document_withdrawn_reason: "never decided",
+        }),
+        write({
+          kind: "decision_record",
+          name: "older-coord",
+          version_number: 3,
+          current_version: 3,
+        }),
+      ],
+    });
+    const badge = screen.getByTestId("write-withdrawn-decision_record-voided-2");
+    expect(badge).toHaveTextContent("Withdrawn");
+    expect(badge).toHaveAttribute(
+      "title",
+      expect.stringContaining("never decided")
+    );
+    expect(
+      screen.queryByTestId("write-withdrawn-decision_record-older-coord-3")
+    ).toBeNull();
   });
 });

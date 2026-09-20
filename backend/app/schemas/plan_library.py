@@ -36,6 +36,7 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.schemas.base import BaseORMSchema, IsoDatetime
+from app.schemas.plan_library_scan_roots import ScanRootListResponse
 
 WorkArtifactKind = Literal[
     "investigation_prompt",
@@ -51,6 +52,13 @@ WorkArtifactKind = Literal[
 ]
 
 CapturedBy = Literal["runner_scan", "agent", "operator"]
+
+#: A plan's difficulty — a MODEL-ROUTING vocabulary: ``high`` → Fable 5.1,
+#: ``medium`` → Opus 5, ``low`` → a fast tier. See
+#: ``app.services.plan_difficulty``; the CHECKs in
+#: ``plan_library_07_plan_difficulty`` back it.
+DifficultyLevel = Literal["low", "medium", "high"]
+DifficultySource = Literal["declared", "computed"]
 
 WorkArtifactRelation = Literal[
     "produced_report",
@@ -315,6 +323,15 @@ class WorkArtifactSummary(BaseORMSchema):
     current_version: int
     created_at: IsoDatetime
     updated_at: IsoDatetime
+    #: The plan's routing difficulty. ``None`` on every non-plan kind, and on
+    #: a plan not yet rated — UNRATED, never "low". The two axes and
+    #: ``difficulty_source`` explain it; ``GET /plan-library/difficulty`` also
+    #: serves the measured signals.
+    difficulty: DifficultyLevel | None = None
+    difficulty_conceptual: DifficultyLevel | None = None
+    difficulty_implementation: DifficultyLevel | None = None
+    difficulty_source: DifficultySource | None = None
+    difficulty_rubric_version: int | None = None
 
 
 class WorkArtifactVersionRead(BaseORMSchema):
@@ -370,17 +387,6 @@ class WorkArtifactDetail(WorkArtifactSummary):
     versions: list[WorkArtifactVersionRead]
     edges: list[WorkArtifactEdgeRead]
     coord: CandidateCoordLink = Field(default_factory=CandidateCoordLink)
-
-
-class WorkArtifactListResponse(BaseModel):
-    """A page of list rows. ``count`` is this page's length; ``total`` is the
-    unpaged total."""
-
-    items: list[WorkArtifactSummary]
-    count: int
-    total: int
-    offset: int
-    limit: int
 
 
 class WorkArtifactUpsertResponse(BaseModel):
@@ -497,6 +503,66 @@ class CaptureHealthResponse(BaseModel):
 
     total: int
     doors: list[CaptureDoorHealth]
+    #: ``max(updated_at)`` across every door — the corpus's freshness in one
+    #: figure, beside the census. ``null`` on an empty corpus.
+    newest_updated_at: IsoDatetime | None = None
+
+
+# ───────────────────── list page + corpus health ─────────────────────
+
+
+class CorpusHealth(BaseModel):
+    """What the corpus this page was drawn from actually holds.
+
+    ``2026-08-27-plan-corpus-read-path-is-dark`` design decision D1: a read
+    path that cannot report its own health is not a read path. Without this
+    block a ``200`` with ``items: []`` was two indistinguishable sentences —
+    "no such plan" and "the corpus holds no plans at all" (the body sync
+    is opt-in and its off-state is unlogged, so the second was the live
+    state on the operator box for weeks). With it, ``plan_count: 0`` beside
+    an empty page says which, and ``newest_updated_at`` says how long ago the
+    corpus last moved.
+
+    Every figure is org-scoped like the page, and UNFILTERED by the page's
+    own query: the caller's filter is what they asked about, this is what
+    they asked it of. ``capture`` is the ``/capture-health`` census from the
+    SAME query and the same builder, so the two apply one rule to one census
+    (two reads can still differ by when they happen).
+    """
+
+    #: Every artifact in scope, all kinds.
+    artifact_count: int
+    #: ``kind == "plan"`` only — the number the by-stem probes care about.
+    plan_count: int
+    #: ``max(updated_at)`` in scope; ``null`` on an EMPTY corpus, never an
+    #: epoch. Last TOUCHED, not last captured (see ``CaptureDoorHealth``).
+    newest_updated_at: IsoDatetime | None = None
+    capture: CaptureHealthResponse
+    #: How far the directories FEEDING this corpus are from their default
+    #: branch, one judged reading per reporting device plus a per-source
+    #: roll-up — ``GET /plan-library/scan-roots``, from the same builder
+    #: (plan ``2026-09-11-the-plan-corpus-scan-root-does-not-report-its-own-drift``).
+    #: ``plan_count`` says what the corpus holds; this says whether its feeders
+    #: are current. ``state: "unknown"`` with no rows means no device has
+    #: reported — never "every feeder is current".
+    scan_roots: ScanRootListResponse
+
+
+class WorkArtifactListResponse(BaseModel):
+    """A page of list rows, plus the health of the corpus it was drawn from.
+
+    ``corpus_health`` is reported on EVERY page, filtered or not, so an
+    empty ``items`` can always be read against ``plan_count`` — a zero on a
+    frozen corpus and a zero on a real absence are different findings.
+    """
+
+    items: list[WorkArtifactSummary]
+    #: This page's length; ``total`` is the unpaged total.
+    count: int
+    total: int
+    offset: int
+    limit: int
+    corpus_health: CorpusHealth
 
 
 # ─────────────────── candidate selection (Phase 6) ───────────────────
@@ -591,6 +657,70 @@ class PlanCandidate(BaseModel):
     #: :data:`DocumentState`. Defaults to ``present`` so an artifact-backed row
     #: (every row this route emitted before the union) is unchanged.
     document_state: DocumentState = "present"
+    #: **Additive.** The backing plan's difficulty rating — the model tier a
+    #: sweep should route this candidate to. ``None`` when there is no artifact
+    #: (``document_state`` other than ``present``: there is no body to rate),
+    #: which is UNRATED, not "low".
+    difficulty: DifficultyLevel | None = None
+    difficulty_conceptual: DifficultyLevel | None = None
+    difficulty_implementation: DifficultyLevel | None = None
+    difficulty_source: DifficultySource | None = None
+
+
+# ─────────────── difficulty map ───────────────
+
+
+class PlanDifficultyItem(BaseModel):
+    """One plan's rating, keyed the ways a consumer joins it.
+
+    ``work_unit_slug`` is the join key onto coord's work units (the
+    ``/admin/coord/plans`` console); ``slug`` is the artifact's own stem, which
+    the scanner writes identically for a plan. Both are served because a
+    hand-POSTed row may carry no ``work_unit_slug``.
+    """
+
+    id: UUID
+    slug: str
+    work_unit_slug: str | None = None
+    source_repo: str | None = None
+    difficulty: DifficultyLevel
+    difficulty_conceptual: DifficultyLevel
+    difficulty_implementation: DifficultyLevel
+    difficulty_source: DifficultySource
+    difficulty_rubric_version: int
+    #: The measured inputs (phases, repos, file_paths, lines,
+    #: concept_families, deliberation_markers, the two axis scores and the
+    #: computed level) — for an explanation, not for routing.
+    difficulty_signals: dict[str, object] = Field(default_factory=dict)
+
+
+class PlanDifficultyResponse(BaseModel):
+    """Every rated plan in the caller's scope — not paged: the console joins
+    it onto a coord window of up to 500 work units, and a row is ~300 bytes.
+
+    ``count`` is ``len(items)``. ``rerated`` is how many rows THIS read rated
+    before answering (non-zero once after a deploy or a rubric bump). A plan
+    row that is still unrated is left OUT of ``items`` — absent here means
+    "no rating", which the console renders as unrated, never as "low".
+    ``model_tiers`` maps each level to the model tier it routes to, served so
+    every consumer names the same models.
+    """
+
+    items: list[PlanDifficultyItem]
+    count: int
+    rerated: int
+    #: Plans in scope still unrated (or rated under an older rubric) after
+    #: this read's capped pass. Non-zero right after a deploy: they are OMITTED
+    #: from ``items`` until a later read rates them, so a consumer re-reads.
+    #: ``None`` when the pass failed (see ``rerate_failed_reason``).
+    rerate_pending: int | None = None
+    #: Set when the re-rating pass FAILED. ``items`` is then what was stored
+    #: before this read: a plan missing from it is UNRATED-because-the-rating-
+    #: failed, and a rating may be from an older rubric (its
+    #: ``difficulty_rubric_version`` says which).
+    rerate_failed_reason: str | None = None
+    rubric_version: int
+    model_tiers: dict[str, str]
 
 
 # ─────────────── open follow-ups (Phase 7) ───────────────
@@ -675,6 +805,16 @@ class PlanCandidateResponse(BaseModel):
     #: Unpaged count of open follow-ups, so a truncated ``open_followups``
     #: never reads as the whole queue.
     open_followup_total: int = 0
+    #: The same block every ``GET /plan-library`` page carries, so a consumer
+    #: ranking these candidates learns in the same read whether the corpus
+    #: they came from is complete and whether its feeders are current. Covers
+    #: the WHOLE corpus, not this page. ``null`` — with the reason beside it —
+    #: when the block could not be read: it is report-only on this route, so a
+    #: failed read never fails the candidates, and null is UNKNOWN, not healthy.
+    corpus_health: CorpusHealth | None
+    #: Why ``corpus_health`` is null (a ``read_failed:`` line naming only the
+    #: error class); null whenever the block was read.
+    corpus_health_unavailable_reason: str | None
 
 
 # ───────── three-way status reconciliation (Phase 4) ─────────

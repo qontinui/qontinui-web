@@ -41,10 +41,13 @@ export class ExtractionClient {
       clearTimeout(timeoutId);
 
       if (!response.ok) {
-        const errorText = await response.text();
+        const message = await this.base.failureMessage(
+          response,
+          "Failed to start extraction"
+        );
         return {
           success: false,
-          error: `Failed to start extraction: ${response.status} - ${errorText}`,
+          error: message,
         };
       }
 
@@ -72,10 +75,13 @@ export class ExtractionClient {
       });
 
       if (!response.ok) {
-        const errorText = await response.text();
+        const message = await this.base.failureMessage(
+          response,
+          "Failed to stop extraction"
+        );
         return {
           success: false,
-          error: `Failed to stop extraction: ${response.status} - ${errorText}`,
+          error: message,
         };
       }
 
@@ -103,10 +109,13 @@ export class ExtractionClient {
       });
 
       if (!response.ok) {
-        const errorText = await response.text();
+        const message = await this.base.failureMessage(
+          response,
+          "Failed to get extraction status"
+        );
         return {
           success: false,
-          error: `Failed to get extraction status: ${response.status} - ${errorText}`,
+          error: message,
         };
       }
 
@@ -153,9 +162,16 @@ export class ExtractionClient {
         if (response.status === 404) {
           return { success: false, error: "Screenshot not found" };
         }
+        const message = await this.base.failureMessage(
+          response,
+          "Failed to fetch screenshot",
+          {
+            includeBody: false,
+          }
+        );
         return {
           success: false,
-          error: `Failed to fetch screenshot: ${response.status}`,
+          error: message,
         };
       }
 

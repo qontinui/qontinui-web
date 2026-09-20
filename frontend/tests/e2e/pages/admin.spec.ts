@@ -374,40 +374,48 @@ test.describe("Admin - Coord operator console", () => {
     expect(hasCoordHeading || wasRedirected).toBeTruthy();
 
     if (hasCoordHeading) {
+      // The header row keeps the crumb and the live badges; the console's
+      // page links are the app sidebar's Coord / Sessions / Fleet / Access
+      // sections (`coordNavModel.ts`).
       await expect(page.getByTestId("coord-nav")).toBeVisible();
-      // Nav redesign: four direct tabs + persona dropdown groups. Direct
-      // tabs render always; grouped pages surface once their menu opens.
-      await expect(page.getByTestId("coord-nav-pipeline")).toBeVisible();
-      await expect(page.getByTestId("coord-nav-prs")).toBeVisible();
-      await expect(page.getByTestId("coord-nav-gates")).toBeVisible();
+      await expect(page.getByTestId("coord-nav-pipeline-active")).toBeVisible();
       await expect(page.getByTestId("coord-nav-alerts")).toBeVisible();
 
-      // Work group: Plans / Questions / Agents / History / Lands.
-      await page.getByTestId("coord-nav-group-work").click();
-      await expect(page.getByTestId("coord-nav-plans")).toBeVisible();
-      await expect(page.getByTestId("coord-nav-questions")).toBeVisible();
-      await expect(page.getByTestId("coord-nav-agents")).toBeVisible();
-      await expect(page.getByTestId("coord-nav-history")).toBeVisible();
-      await page.keyboard.press("Escape");
+      const sidebar = page.locator('aside[data-sidebar="true"]');
+      const navItem = (id: string) => sidebar.locator(`[data-nav-id="${id}"]`);
+      for (const id of [
+        "coord-pipeline",
+        "coord-prs",
+        "coord-gates",
+        "coord-alerts",
+        "coord-notifications",
+      ]) {
+        await expect(navItem(id)).toBeVisible();
+      }
+
+      // Work group: Plans / Questions / Agents / History.
+      await navItem("coord-group-work").click();
+      await expect(navItem("coord-plans")).toBeVisible();
+      await expect(navItem("coord-questions")).toBeVisible();
+      await expect(navItem("coord-agents")).toBeVisible();
+      await expect(navItem("coord-history")).toBeVisible();
 
       // The Dev Ops group's members are operator-only (this test path runs
-      // as superuser when the heading rendered); the group trigger itself is
+      // as superuser when the heading rendered); the group itself is
       // member-visible and carries `Overview`.
-      await page.getByTestId("coord-nav-group-devops").click();
-      await expect(page.getByTestId("coord-nav-trees")).toBeVisible();
-      await page.keyboard.press("Escape");
+      await navItem("coord-group-devops").click();
+      await expect(navItem("coord-trees")).toBeVisible();
 
-      // Cross-links to existing surfaces live in the Access group.
-      await page.getByTestId("coord-nav-group-access").click();
-      await expect(page.getByTestId("coord-nav-claims")).toBeVisible();
-      await expect(page.getByTestId("coord-nav-sessions")).toBeVisible();
-      await page.keyboard.press("Escape");
+      // Claims and Sessions live in the Sessions section.
+      await expect(navItem("agent-claims")).toBeVisible();
+      await expect(navItem("sessions")).toBeVisible();
     }
   });
 
   for (const { path, testId } of [
     { path: "/admin/coord/pipeline", testId: "coord-pipeline-page" },
     { path: "/admin/coord/trees", testId: "coord-trees-page" },
+    { path: "/admin/coord/runners", testId: "coord-runners-page" },
     { path: "/admin/coord/plans", testId: "coord-plans-page" },
     { path: "/admin/coord/questions", testId: "coord-questions-page" },
     { path: "/admin/coord/agents", testId: "coord-agents-page" },
@@ -463,8 +471,9 @@ test.describe("Admin - Coord operator console", () => {
     }
 
     // Plans lives in the Work group — open the menu, then navigate.
-    await page.getByTestId("coord-nav-group-work").click();
-    await page.getByTestId("coord-nav-plans").click();
+    const sidebar = page.locator('aside[data-sidebar="true"]');
+    await sidebar.locator('[data-nav-id="coord-group-work"]').click();
+    await sidebar.locator('[data-nav-id="coord-plans"]').click();
     await page.waitForURL(/\/admin\/coord\/plans/);
     await expect(page.getByTestId("coord-plans-page")).toBeVisible();
   });

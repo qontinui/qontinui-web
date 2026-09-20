@@ -10,15 +10,42 @@
  * the page body. The backend ALSO enforces admin on every mutating endpoint
  * (403), so this gate is the UX layer keeping the surface honest.
  *
- * Four sections:
- *  a. Your tenant + roles      — GET  /coord/my-tenants
+ * Sections, in render order:
+ *  c. Add a member by email    — POST /coord/tenant-members
+ *     (the PRIMARY write, unfolded and first)
  *  b. Members table            — GET  /coord/members
  *                                POST /coord/members/{operator_id}/roles
  *                                DELETE /coord/members/{operator_id}/roles
- *  c. Invite / pre-provision   — POST /coord/members
- *  d. Group → tenant → role    — GET  /coord/group-tenant-roles
+ *  a. Your tenant + roles      — GET  /coord/my-tenants   (folded)
+ *  "Advanced: auto-provision by SSO group" (folded) holding two panels:
+ *   d. Group → tenant → role   — GET  /coord/group-tenant-roles
  *                                POST /coord/group-tenant-roles
  *                                DELETE /coord/group-tenant-roles
+ *   e. Cognito groups          — GET/POST/DELETE /coord/cognito/groups*
+ *                                (superuser-only, gated inside the section)
+ *
+ * The letters are the sections' historical names, kept so the banner comments
+ * further down this file still resolve; they are no longer the order.
+ *
+ * ## One task, one form (plan `2026-09-15-simplify-tenant-member-add-by-email`)
+ *
+ * Section c used to be `InviteForm`, a "invite / pre-provision" panel asking
+ * the administrator to hand-type a Cognito **subject (`sub`)** and an **SSO
+ * provider**. Its own on-page copy conceded it only worked for somebody who
+ * had already signed up and whose `sub` you already knew out-of-band — there
+ * was no invitation behind it, and both fields are internal vocabulary on a
+ * primary surface (**R8**). It is deleted, not deprecated: `AddTenantMemberForm`
+ * takes an email and a tier, and the backend decides whether the account exists
+ * (`added`) or does not. Creating an account is a platform superuser's act —
+ * Qontinui is invite-only — so a superuser gets `invited` (account created,
+ * tier granted, then a temporary password emailed) and a tenant admin gets
+ * `invite_required`, with nothing written.
+ *
+ * Sections d and e were the other two ways to "add somebody", each framed in
+ * IdP plumbing. They now sit together under one folded **Advanced** panel that
+ * says what they are actually for — pre-authorizing an entire IdP group's
+ * current *and future* members — so they read as a rarer, different tool
+ * rather than as two more routes to the thing the top form does.
  *
  * PRODUCT TIER ↔ coord role mapping (tier labels shown in UI, coord roles sent
  * to the API): Administrator ↔ `admin`, Developer ↔ `operator`. (A future
@@ -88,6 +115,7 @@ import {
   ChevronRight,
   KeyRound,
   Lock,
+  Mail,
   Plus,
   ShieldCheck,
   Trash2,
@@ -109,6 +137,13 @@ import {
   type Stat,
 } from "@/components/console";
 import { deriveMemberStatus, MEMBER_STATUS_PALETTE } from "./memberStatus";
+import {
+  backendErrorMessage,
+  bounded,
+  MAX_CAUSE_LENGTH,
+  messageFromErrorBody,
+  plainSentence,
+} from "@/lib/errors/backend-error-message";
 
 const log = createLogger("CoordMembersPage");
 
@@ -399,7 +434,7 @@ function MyTenantsCard() {
     setError(null);
     try {
       const res = await httpClient.fetch(`${OPERATIONS_API}/coord/my-tenants`);
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      if (!res.ok) throw new Error(await backendErrorMessage(res));
       const json = (await res.json()) as MyTenantsResponse | null;
       // This read is cast straight into state with no check at all. A `null`
       // body — legal JSON, and what a proxy returns when it has nothing —
@@ -589,7 +624,7 @@ function MembersTable({
     setError(null);
     try {
       const res = await httpClient.fetch(`${OPERATIONS_API}/coord/members`);
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      if (!res.ok) throw new Error(await backendErrorMessage(res));
       const json = (await res.json()) as MembersResponse;
       // The third sibling. A malformed 200 here fabricates "No members yet." —
       // and, through `stats` below, the four-count headline `members 0 ·
@@ -635,10 +670,7 @@ function MembersTable({
           )}/roles`,
           { method: "POST", body: JSON.stringify({ role }) }
         );
-        if (!res.ok) {
-          const text = await res.text();
-          throw new Error(`HTTP ${res.status} ${text}`.trim());
-        }
+        if (!res.ok) throw new Error(await backendErrorMessage(res));
         toast.success(`Granted ${tierLabel(role)}`);
         await load();
         onChanged();
@@ -664,10 +696,7 @@ function MembersTable({
           )}/roles`,
           { method: "DELETE", body: JSON.stringify({ role }) }
         );
-        if (!res.ok) {
-          const text = await res.text();
-          throw new Error(`HTTP ${res.status} ${text}`.trim());
-        }
+        if (!res.ok) throw new Error(await backendErrorMessage(res));
         toast.success(`Revoked ${tierLabel(role)}`);
         await load();
         onChanged();
@@ -963,155 +992,291 @@ function MemberDetail({
 }
 
 // ===========================================================================
-// Section c — Invite / pre-provision
+// Section c — Add a member by email (the page's PRIMARY write)
 // ===========================================================================
 
-function InviteForm({ onInvited }: { onInvited: () => void }) {
+/**
+ * The success body of `POST /coord/tenant-members`.
+ *
+ * `status` is declared optional against the wire even though the backend
+ * always sends it: a 2xx that carries no arm is a body this component cannot
+ * describe, and the only honest rendering of it is the error arm (see
+ * `submit`), not a silent success.
+ */
+interface TenantMemberAddResponse {
+  status?: string;
+  operator_id?: string;
+  role?: string;
+}
+
+/** What the last submit produced, rendered inline beneath the form. */
+type AddMemberOutcome =
+  | { kind: "added"; email: string; role: CoordRole }
+  | { kind: "invited"; email: string; role: CoordRole }
+  | { kind: "invitation_pending"; email: string; role: CoordRole }
+  | { kind: "invite_required"; email: string }
+  | { kind: "error"; message: string };
+
+/**
+ * ONE form for the one thing an administrator comes to this page to do: give a
+ * colleague access. Two inputs — an email and a tier — and the backend decides
+ * whether that email already has an account (add them now) or does not. For
+ * one that does not, a superuser gets `invited` (the account is created, the
+ * tier granted, then the email sent) and a tenant admin gets `invite_required`.
+ *
+ * ## Why there is no "group" field (plan Design decision 1)
+ *
+ * The form it replaces (`InviteForm`) asked for a raw Cognito **subject** and
+ * **SSO provider**, and its own copy admitted it only worked for someone who
+ * had already signed up and whose `sub` the administrator knew out-of-band —
+ * i.e. it was never an invitation. Both fields are internal vocabulary on a
+ * primary surface, which is exactly what console style guide **R8** forbids
+ * (`docs/console-ui-style-guide.md:1060`); internal ids belong in `MemberDetail`'s
+ * `raw` slot, and nowhere else on this page.
+ *
+ * The tier selector reuses {@link TIER_OPTIONS} rather than offering a Cognito
+ * group, because a **role** is a first-class product concept this console
+ * already renders (`tierLabel`, `MemberDetail`) while a **group** is plumbing
+ * for a different feature — pre-authorizing an entire IdP group's current *and
+ * future* members. That feature is not removed; it is one panel down, under
+ * "Advanced: auto-provision by SSO group".
+ *
+ * Skipping groups costs nothing durability-wise: coord's login-time
+ * `reconcile_group_memberships` scopes its `DELETE FROM coord.operator_roles`
+ * to its own sentinel `granted_by` (`auth_sso.rs:1328`), so a role granted
+ * directly is never revoked by the group sync.
+ *
+ * ## Why the `added` arm does not promise a row in the table
+ *
+ * The grant and the table answer two different questions. `GET /coord/members`
+ * proxies coord's `GET /admin/coord/operators`, which lists operators by their
+ * HOME tenant (`WHERE o.tenant_id = $1`) — not by role membership — and the
+ * upsert behind this form deliberately never moves `tenant_id` on conflict, so
+ * a colleague who already has an operator row homed elsewhere is granted the
+ * role and still does not appear below. That is a real gap in the listing, not
+ * in the grant, and closing it is coord's to do.
+ *
+ * Until it is closed the copy has to be true: the notice states the grant, and
+ * says a member homed in another tenant may not show up in the list. It does
+ * not say "they are in the table now", which the refetch below cannot
+ * guarantee. The refetch stays — for the common case (a colleague homed here,
+ * or already listed and being re-tiered) the row genuinely does appear, and a
+ * table that needed a manual reload would be its own defect.
+ *
+ * ## Why the outcome is inline and not only a toast
+ *
+ * Three of the outcomes are not one-liners. `invited` has to say what the
+ * invitee will receive and how to recover an invitation that never arrived;
+ * `invitation_pending` has to say the account is not activated without
+ * claiming an email exists (the backend cannot tell sent from never-sent);
+ * `invite_required` has to say nothing happened and who can invite. A toast
+ * that disappears in four seconds is the wrong host for that, so each renders
+ * into a notice that stays until the next submit. Toasts still fire for every
+ * success arm, matching the rest of this page.
+ */
+function AddTenantMemberForm({ onAdded }: { onAdded: () => void }) {
   const [email, setEmail] = useState("");
-  const [displayName, setDisplayName] = useState("");
-  const [ssoSubject, setSsoSubject] = useState("");
-  const [ssoProvider, setSsoProvider] = useState("cognito");
-  const [role, setRole] = useState<CoordRole>("admin");
+  // Developer, not Administrator: the old form defaulted to `admin`, which
+  // makes the most privileged grant the one a distracted click produces. A
+  // tier is one click to change and a mis-grant is a revoke plus an apology.
+  const [role, setRole] = useState<CoordRole>("operator");
   const [submitting, setSubmitting] = useState(false);
+  const [outcome, setOutcome] = useState<AddMemberOutcome | null>(null);
 
   const submit = useCallback(async () => {
-    if (!email.trim() || !ssoSubject.trim()) {
-      toast.error("Email and Cognito subject are required.");
+    const addr = email.trim();
+    if (!addr) {
+      toast.error("Enter an email address.");
       return;
     }
     setSubmitting(true);
+    setOutcome(null);
     try {
-      const body: Record<string, unknown> = {
-        email: email.trim(),
-        sso_subject: ssoSubject.trim(),
-        sso_provider: ssoProvider.trim() || "cognito",
-        roles: [role],
-      };
-      if (displayName.trim()) body.display_name = displayName.trim();
-      const res = await httpClient.fetch(`${OPERATIONS_API}/coord/members`, {
-        method: "POST",
-        body: JSON.stringify(body),
-      });
-      if (!res.ok) {
-        const text = await res.text();
-        throw new Error(`HTTP ${res.status} ${text}`.trim());
-      }
-      toast.success(`Invited ${email.trim()}`);
-      setEmail("");
-      setDisplayName("");
-      setSsoSubject("");
-      setSsoProvider("cognito");
-      setRole("admin");
-      onInvited();
-    } catch (err) {
-      log.warn("invite failed", err);
-      toast.error(
-        `Invite failed: ${err instanceof Error ? err.message : String(err)}`
+      const res = await httpClient.fetch(
+        `${OPERATIONS_API}/coord/tenant-members`,
+        { method: "POST", body: JSON.stringify({ email: addr, role }) }
       );
+      // 409 is the resolver's ambiguity verdict (more than one Cognito user
+      // carries this email), NOT a generic conflict — same wording the Cognito
+      // group member add already uses, because it is the same condition and an
+      // operator who has read one should recognise the other.
+      if (res.status === 409) {
+        const message =
+          "Ambiguous email — more than one Cognito user matches. Resolve in Cognito first.";
+        setOutcome({ kind: "error", message });
+        toast.error(message);
+        return;
+      }
+      if (!res.ok) {
+        // A 502 can mean the grant landed and only its invitation email
+        // failed (`invitation_not_sent`), so the list may have changed.
+        if (res.status === 502) onAdded();
+        throw new Error(await backendErrorMessage(res));
+      }
+      const json = (await res.json()) as TenantMemberAddResponse;
+      if (json?.status === "added") {
+        setOutcome({ kind: "added", email: addr, role });
+        toast.success(`Granted ${tierLabel(role)} access to ${addr}`);
+        setEmail("");
+        onAdded();
+        return;
+      }
+      if (json?.status === "invited") {
+        setOutcome({ kind: "invited", email: addr, role });
+        toast.success(`Invited ${addr}`);
+        setEmail("");
+        onAdded();
+        return;
+      }
+      if (json?.status === "invitation_pending") {
+        setOutcome({ kind: "invitation_pending", email: addr, role });
+        toast.success(`Granted ${tierLabel(role)} access to ${addr}`);
+        setEmail("");
+        onAdded();
+        return;
+      }
+      if (json?.status === "invite_required") {
+        // Deliberately NOT a success toast and NOT a cleared field: nothing
+        // was created, so the administrator's input is still the live thing.
+        setOutcome({ kind: "invite_required", email: addr });
+        return;
+      }
+      // A 2xx with no arm this build knows. Rendering it as success would
+      // claim access that may not exist; the status is at least true.
+      //
+      // `status` is coord's, proxied through `post_coord_tenant_member`, so it
+      // is body-controlled and faces the same guard as every other value this
+      // page shows — a 200 carrying `{"status": "<html>…</html>"}` or 50 KB
+      // of it would otherwise render whole into a paragraph AND a toast. A
+      // A refused one reads as `unreadable` rather than `missing`: the two are
+      // different facts about the body, and an operator grepping coord's logs
+      // for a dropped `status` would otherwise be sent after a field that was
+      // sent.
+      const raw = typeof json?.status === "string" ? json.status : "";
+      const reported = raw ? plainSentence(raw) : null;
+      throw new Error(
+        `Unexpected response from the server (status: ${
+          reported ?? (raw ? "unreadable" : "missing")
+        }).`
+      );
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      log.warn("add tenant member failed", err);
+      setOutcome({ kind: "error", message });
+      toast.error(`Add failed: ${message}`);
     } finally {
       setSubmitting(false);
     }
-  }, [email, displayName, ssoSubject, ssoProvider, role, onInvited]);
+  }, [email, role, onAdded]);
 
   return (
-    // R7 — a WRITE form is the clearest case of secondary material: it
-    // is never what an administrator is reading, only what they came to
-    // do occasionally, and it cost ~330px above the group/Cognito
-    // sections on every visit. Testid on the wrapper — see MyTenantsCard.
-    <div data-testid="coord-members-invite">
-    <CollapsiblePanel
-      title="Invite / pre-provision a member"
-      icon={<UserPlus className="h-4 w-4" />}
-      titleAs="h2"
-      defaultOpen={false}
-      storageKey="coord-members-invite"
-      contentClassName="space-y-4"
-    >
-      <>
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          <div className="space-y-1">
-            <Label htmlFor="invite-email">Email</Label>
-            <Input
-              id="invite-email"
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              placeholder="person@example.com"
-              data-testid="invite-email"
-            />
-          </div>
-          <div className="space-y-1">
-            <Label htmlFor="invite-display-name">Display name (optional)</Label>
-            <Input
-              id="invite-display-name"
-              value={displayName}
-              onChange={(e) => setDisplayName(e.target.value)}
-              placeholder="Jane Doe"
-              data-testid="invite-display-name"
-            />
-          </div>
-          <div className="space-y-1">
-            <Label htmlFor="invite-sso-subject">Cognito subject (sub)</Label>
-            <Input
-              id="invite-sso-subject"
-              value={ssoSubject}
-              onChange={(e) => setSsoSubject(e.target.value)}
-              placeholder="e.g. 9f2c…-uuid"
-              data-testid="invite-sso-subject"
-            />
-          </div>
-          <div className="space-y-1">
-            <Label htmlFor="invite-sso-provider">SSO provider</Label>
-            <Input
-              id="invite-sso-provider"
-              value={ssoProvider}
-              onChange={(e) => setSsoProvider(e.target.value)}
-              placeholder="cognito"
-              data-testid="invite-sso-provider"
-            />
-          </div>
-          <div className="space-y-1">
-            <Label htmlFor="invite-tier">Initial tier</Label>
-            <Select
-              value={role}
-              onValueChange={(v) => setRole(v as CoordRole)}
+    <div className="space-y-2" data-testid="coord-members-add">
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
+        <div className="flex-1 space-y-1">
+          <Label htmlFor="add-member-email">Add a member by email</Label>
+          <Input
+            id="add-member-email"
+            type="email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && !submitting) void submit();
+            }}
+            placeholder="colleague@example.com"
+            data-testid="add-member-email"
+          />
+        </div>
+        <div className="space-y-1 sm:w-52">
+          <Label htmlFor="add-member-role">Role</Label>
+          <Select value={role} onValueChange={(v) => setRole(v as CoordRole)}>
+            <SelectTrigger
+              id="add-member-role"
+              className="w-full"
+              data-testid="add-member-role"
             >
-              <SelectTrigger
-                id="invite-tier"
-                className="w-full"
-                data-testid="invite-tier"
-              >
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {TIER_OPTIONS.map((t) => (
-                  <SelectItem key={t.role} value={t.role}>
-                    {t.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {TIER_OPTIONS.map((t) => (
+                <SelectItem key={t.role} value={t.role}>
+                  {t.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
-        <p className="text-xs text-muted-foreground">
-          The user must sign up in Cognito first — the{" "}
-          <span className="font-medium">Cognito subject</span> is their Cognito{" "}
-          <code className="text-[0.7rem]">sub</code> claim. Pre-provisioning here
-          binds that subject to a tenant member + initial role so they have
-          access the moment they sign in.
-        </p>
-        <div className="flex justify-end">
-          <Button
-            onClick={submit}
-            disabled={submitting}
-            data-testid="invite-submit"
-          >
-            <UserPlus className="h-4 w-4" />
-            Invite
-          </Button>
+        <Button
+          onClick={submit}
+          disabled={submitting}
+          data-testid="add-member-submit"
+        >
+          <UserPlus className="h-4 w-4" />
+          {submitting ? "Adding…" : "Add"}
+        </Button>
+      </div>
+
+      {outcome !== null && (
+        <div data-testid="add-member-outcome">
+          {outcome.kind === "added" ? (
+            <div className="space-y-1">
+              <p className="flex items-center gap-1.5 text-sm text-muted-foreground">
+                <ShieldCheck className="h-4 w-4 shrink-0" />
+                Granted {tierLabel(outcome.role)} access to {outcome.email}.
+              </p>
+              <p className="text-xs text-muted-foreground">
+                The list below is by home tenant, so someone whose home tenant
+                is a different one may not appear in it. Their access is granted
+                either way.
+              </p>
+            </div>
+          ) : outcome.kind === "error" ? (
+            <p className="flex items-center gap-1.5 text-sm text-destructive">
+              <AlertTriangle className="h-4 w-4 shrink-0" />
+              {outcome.message}
+            </p>
+          ) : outcome.kind === "invited" ? (
+            <div className="space-y-1 rounded-md border border-border bg-muted/30 p-3">
+              <p className="flex items-center gap-1.5 text-sm font-medium">
+                <Mail className="h-4 w-4 shrink-0" />
+                Invited {outcome.email} as {tierLabel(outcome.role)}.
+              </p>
+              <p className="text-xs text-muted-foreground">
+                Cognito accepted an invitation email with a temporary password
+                for them. They can use their access once they sign in with it,
+                using their email and password rather than Google or Microsoft,
+                and choose their own password. If the email does not arrive, or
+                the temporary password expires, add them again here to send a
+                new one.
+              </p>
+            </div>
+          ) : outcome.kind === "invitation_pending" ? (
+            <div className="space-y-1 rounded-md border border-border bg-muted/30 p-3">
+              <p className="flex items-center gap-1.5 text-sm font-medium">
+                <ShieldCheck className="h-4 w-4 shrink-0" />
+                Granted {tierLabel(outcome.role)} access to {outcome.email}.
+              </p>
+              <p className="text-xs text-muted-foreground">
+                Their Qontinui account has not been activated yet, so they can
+                use this access once they sign in for the first time. If they
+                have no invitation email, or it has expired, ask a Qontinui
+                administrator to add them again, which sends a new one.
+              </p>
+            </div>
+          ) : (
+            <div className="space-y-1 rounded-md border border-border bg-muted/30 p-3">
+              <p className="text-sm font-medium">
+                No Qontinui account exists for {outcome.email} — nothing was
+                added, and no email was sent.
+              </p>
+              <p className="text-xs text-muted-foreground">
+                Qontinui is invite-only, so a Qontinui administrator has to
+                invite them first. Once their account exists, add them here
+                with this same form and the access applies immediately.
+              </p>
+            </div>
+          )}
         </div>
-      </>
-    </CollapsiblePanel>
+      )}
     </div>
   );
 }
@@ -1155,7 +1320,7 @@ function GroupTenantRolesSection({ isSuperuser }: { isSuperuser: boolean }) {
       const res = await httpClient.fetch(
         `${OPERATIONS_API}/coord/group-tenant-roles`
       );
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      if (!res.ok) throw new Error(await backendErrorMessage(res));
       const json = (await res.json()) as GroupTenantRolesResponse;
       // A successful STATUS is not a successful READ — the same rule the
       // blast-radius read of this SAME endpoint applies below. `?? []` is dead
@@ -1253,9 +1418,15 @@ function GroupTenantRolesSection({ isSuperuser }: { isSuperuser: boolean }) {
         // A partial failure LEAVES A POOL-WIDE GROUP BEHIND. Reporting only
         // the mapping failure hides an orphan that a non-superuser cannot even
         // see, let alone clean up — so the message has to name it.
+        //
+        // The orphan comes FIRST. It used to trail the backend's reason, which
+        // was harmless while an over-long reason collapsed to `HTTP 500`, and
+        // is not now that a long one is truncated rather than refused: the
+        // clean-up instruction would sit behind up to 2000 characters in a
+        // toast. The consequence the operator has to act on outranks the cause.
         throw new Error(
           groupCreated
-            ? `${reason} — the Cognito group "${gid}" WAS created and is now unmapped. Delete it in the Cognito Groups section below if you are not about to retry.`
+            ? `The Cognito group "${gid}" WAS created and is now unmapped — delete it in the Cognito Groups section below if you are not about to retry. The mapping failed because: ${reason}`
             : reason
         );
       }
@@ -1306,10 +1477,7 @@ function GroupTenantRolesSection({ isSuperuser }: { isSuperuser: boolean }) {
             }),
           }
         );
-        if (!res.ok) {
-          const text = await res.text();
-          throw new Error(`HTTP ${res.status} ${text}`.trim());
-        }
+        if (!res.ok) throw new Error(await backendErrorMessage(res));
         toast.success("Mapping deleted");
         await load();
       } catch (err) {
@@ -1689,41 +1857,254 @@ function CognitoGroupMembers({
 const HOME_GROUP_SUFFIX = "-home";
 
 /**
- * The human sentence out of a backend error response.
+ * What deleting one Cognito group would take down, POOL-WIDE — the delete's
+ * own verdict, read ahead of the click from
+ * `GET /coord/cognito/groups/{name}/blast-radius`.
  *
- * The group-delete guards answer 409 with a STRUCTURED detail
- * (`{error, tenants, message}`) so the caller can branch on `error`, while
- * every other route on this page answers with a plain-string detail. Rendering
- * `[object Object]` at the one place an operator most needs to read the reason
- * is exactly the failure this helper exists to prevent.
- *
- * Three sources, in order: a string `detail`, a structured `detail.message`,
- * then the status. A JSON body carrying neither falls back to the STATUS, not
- * to its own source text — `{}` printed as `{}` is the same non-message as
- * `[object Object]`. A body that is not JSON at all is different: a plain-text
- * gateway or proxy error IS the sentence, so that one is returned as-is.
+ * Partial by design: slugs are named for the caller's OWN tenant only and
+ * every other tenant is an integer, so the two `*_total` fields are the honest
+ * sizes and the lists never are. A reader that renders a list as "everything
+ * affected" is reading it wrong.
  */
-async function backendErrorMessage(res: Response): Promise<string> {
+interface BlastRadiusVerdict {
+  group_name: string;
+  /** ROW count, pool-wide. */
+  mapped_total: number;
+  /** Own-tenant slugs, sorted + deduplicated by the backend. */
+  mapped_own_tenant: string[];
+  /** ROWS in tenants the caller does not administer. */
+  mapped_other_tenant_rows: number;
+  /** ROWS whose tenant is not materialised yet. */
+  mapped_unmaterialized_rows: number;
+  /** Distinct TENANTS the delete would leave with no admin at all. */
+  strands_total: number;
+  strands_own_tenant: string[];
+  strands_other_tenant_count: number;
+}
+
+/** The two codes `_coord_group_blast_radius` raises when the PREVIEW read
+ * fails. Named rather than inferred, because at the level this now reads them
+ * every error body has an `error` key — see {@link blastRadiusReadCause}. */
+const BLAST_RADIUS_CAUSE_CODES = [
+  "mapping_check_unavailable",
+  "mapping_check_unreadable",
+] as const;
+
+/** Whether `value` is one of the two codes {@link blastRadiusReadCause} speaks
+ * for. A type guard rather than a bare `includes`, so both arms narrow. */
+function isBlastRadiusCauseCode(
+  value: unknown
+): value is (typeof BLAST_RADIUS_CAUSE_CODES)[number] {
+  return (
+    typeof value === "string" &&
+    (BLAST_RADIUS_CAUSE_CODES as readonly string[]).includes(value)
+  );
+}
+
+/**
+ * A short cause for a failed blast-radius PREVIEW read.
+ *
+ * The backend's 502 detail is structured (`{error, coord_status, message}`)
+ * and its `message` is the delete's own refusal sentence. For a preview the
+ * useful part is the code and coord's status — "mapping_check_unavailable,
+ * coord answered 404" tells an operator the route is not deployed yet; the
+ * message's "Nothing was deleted" tells them about a click they never made.
+ * Anything not in that shape falls back to `backendErrorMessage`.
+ *
+ * ## It has to read the ENVELOPE too, not only `detail`
+ *
+ * This read `detail` alone, which is FastAPI's own shape and what a test app
+ * produces. In PRODUCTION `http_exception_handler` splices a dict detail to
+ * the TOP LEVEL and emits no `detail` key at all (`error_handler.py`), so on a
+ * deployed backend the branch never matched and the whole thing fell through
+ * to `messageFromErrorBody` — which returns the refusal sentence. The 300
+ * ceiling hid that by refusing the sentence for its length; raising the
+ * ceiling to fit the backend's real copy exposed it, and the dialog would have
+ * told an operator "Nothing was deleted." about a delete they never clicked.
+ *
+ * Recognition is by CODE rather than by "an `error` key is present", because
+ * at the top level every error body has one and matching on presence would
+ * capture bodies this helper has nothing to say about. The SAME test applies
+ * to the `detail` arm, which used to match on presence alone: without it, a
+ * backend running no middleware (a test app, a local dev server — the exact
+ * configuration the rest of this file goes out of its way to serve) had any
+ * `{"detail": {"error": …}}` refusal on this route reduced to its bare code
+ * with its sentence discarded, while production rendered the sentence. One
+ * rule, both arms.
+ */
+async function blastRadiusReadCause(res: Response): Promise<string> {
   const text = await res.text();
   try {
     const parsed = JSON.parse(text) as { detail?: unknown };
-    const detail = parsed?.detail;
-    if (typeof detail === "string" && detail) return detail;
+    // `detail` when the middleware did not run, the body ITSELF when it did.
+    // No second code test guards this choice: the one below decides, and it
+    // reaches the same verdict on either shape, so a test here would read like
+    // a guard while being a no-op.
+    const detail = parsed?.detail ?? parsed;
     if (detail && typeof detail === "object") {
-      const message = (detail as { message?: unknown }).message;
-      if (typeof message === "string" && message) return message;
+      const { error, coord_status, reason } = detail as {
+        error?: unknown;
+        coord_status?: unknown;
+        reason?: unknown;
+      };
+      if (isBlastRadiusCauseCode(error)) {
+        // Three shapes, and ABSENT is not `null`. `mapping_check_unavailable`
+        // always carries `coord_status` — a number for coord's own answer,
+        // `null` when coord never completed one. `mapping_check_unreadable`
+        // carries no `coord_status` at all, deliberately: coord DID answer,
+        // with a body that is not the verdict, and it carries a `reason`
+        // instead. Reading absent as `null` would tell the operator coord
+        // never answered in exactly the case where it did.
+        if (typeof coord_status === "number") {
+          return `${error}, coord answered ${coord_status}`;
+        }
+        if (coord_status === null) {
+          return `${error}, coord never completed an answer`;
+        }
+        // GUARDED, and bounded to THIS SURFACE rather than to the toast's
+        // ceiling. `reason` is `_raise_mapping_check_unreadable`'s argument,
+        // and one of its thirteen call sites is `_verdict_is_about`, which
+        // interpolates coord's ECHOED `group_id` — a value
+        // `_is_attributable` checks for printability and non-emptiness but NOT
+        // for length. So this is a body-controlled string.
+        //
+        // It lands in `ConfirmDestructiveDialog`, which renders into an
+        // `AlertDialogContent` that is `fixed`, vertically centred, and
+        // carries no `max-h` and no `overflow-y-auto`. A value at the toast's
+        // 2000-character ceiling is ~33 lines at `max-w-lg`, which pushes the
+        // type-to-confirm input and BOTH BUTTONS out of the viewport with no
+        // way to scroll to them — on an irreversible pool-wide delete.
+        // Bounding to the toast's ceiling is not enough here; the surface
+        // decides the bound, and this one is a diagnostic code plus a short
+        // clause, never prose.
+        const safeReason =
+          typeof reason === "string" && reason
+            ? plainSentence(reason, MAX_CAUSE_LENGTH)
+            : null;
+        // The COMPOSITION is what the dialog receives, so that is what the
+        // surface cap applies to — bounding only the half leaves the code and
+        // its separator on top of it, which is the composed-return mistake
+        // this file already made once at the rung level.
+        return safeReason
+          ? bounded(`${error}: ${safeReason}`, MAX_CAUSE_LENGTH)
+          : error;
+      }
     }
-    // Parsed as JSON and carries no sentence — `{}`, or a `detail` in a shape
-    // this does not know. The raw JSON is NOT a message: printing it puts `{}`
-    // or a brace-blob where the operator expects a reason, which is the same
-    // defect as `[object Object]` one shape along. The status is at least true,
-    // and it is what these call sites showed before they were routed here.
-    return `HTTP ${res.status}`;
   } catch {
-    // Not JSON — a plain-text gateway or proxy body IS the message, so fall
-    // through to the raw body rather than discarding it for the status.
+    // Not JSON — fall through to the generic reader, which returns the raw
+    // body when it is a plain-text gateway sentence.
   }
-  return text.trim() || `HTTP ${res.status}`;
+  // The SURFACE bound, on this return too. Both of this function's
+  // operator-facing returns land in the same dialog `<li>`, so an argument
+  // about that `<li>` covers both; bounding one of them was the same
+  // half-a-fix as bounding one half of a composition.
+  //
+  // No production body reaches here long today — every refusal this route
+  // raises is a cause code or a short sentence. A DEV backend does:
+  // `general_exception_handler` returns `str(exc)` unbounded under
+  // `ENVIRONMENT == "development"`. Passing the limit costs one argument and
+  // removes the need to re-derive that reachability argument every time a
+  // refusal is added to the route.
+  return messageFromErrorBody(text, res.status, MAX_CAUSE_LENGTH);
+}
+
+/**
+ * The dialog's read of the verdict. `idle` while the dialog is closed;
+ * `error` is UNKNOWN — a failed, refused or unreadable read — and is never
+ * rendered as "breaks nothing".
+ */
+type BlastRadiusRead =
+  | { state: "idle" }
+  | { state: "loading" }
+  | { state: "error"; message: string }
+  | { state: "ok"; verdict: BlastRadiusVerdict };
+
+function isCount(v: unknown): v is number {
+  // `typeof true === "boolean"`, so a boolean never passes — but say it
+  // anyway: the backend refuses a boolean count for the same reason
+  // (`isinstance(True, int)` in Python), and the two sides should read alike.
+  return typeof v === "number" && Number.isInteger(v) && v >= 0;
+}
+
+function isSlugList(v: unknown): v is string[] {
+  return Array.isArray(v) && v.every((s) => typeof s === "string" && s !== "");
+}
+
+/**
+ * The verdict out of a 200 body — or `null` when the body is not one.
+ *
+ * A successful STATUS is not a successful READ. The backend has already
+ * validated coord's answer field by field and would have answered 502 rather
+ * than pass a malformed one through, so this is a shape check on OUR proxy's
+ * body, not a re-run of coord's contract. It matters for the same reason the
+ * section's `requireRows` does: `?? 0` on a missing count would fabricate
+ * exactly the all-clear the dialog exists to stop fabricating.
+ */
+function parseBlastRadiusVerdict(body: unknown): BlastRadiusVerdict | null {
+  if (!body || typeof body !== "object") return null;
+  const b = body as Record<string, unknown>;
+  if (
+    typeof b.group_name !== "string" ||
+    !isCount(b.mapped_total) ||
+    !isSlugList(b.mapped_own_tenant) ||
+    !isCount(b.mapped_other_tenant_rows) ||
+    !isCount(b.mapped_unmaterialized_rows) ||
+    !isCount(b.strands_total) ||
+    !isSlugList(b.strands_own_tenant) ||
+    !isCount(b.strands_other_tenant_count)
+  ) {
+    return null;
+  }
+  return {
+    group_name: b.group_name,
+    mapped_total: b.mapped_total,
+    mapped_own_tenant: b.mapped_own_tenant,
+    mapped_other_tenant_rows: b.mapped_other_tenant_rows,
+    mapped_unmaterialized_rows: b.mapped_unmaterialized_rows,
+    strands_total: b.strands_total,
+    strands_own_tenant: b.strands_own_tenant,
+    strands_other_tenant_count: b.strands_other_tenant_count,
+  };
+}
+
+function pluralNoun(n: number, noun: string): string {
+  return `${noun}${n === 1 ? "" : "s"}`;
+}
+
+function plural(n: number, noun: string): string {
+  return `${n} ${pluralNoun(n, noun)}`;
+}
+
+/**
+ * Name what may be named and COUNT the rest — the same discipline as the
+ * backend's `_render_affected`, so the preview and the 409 it previews say
+ * the same thing about the same verdict. `unit` is explicit because guard 1
+ * counts ROWS (one group holds several rows in one tenant) and guard 3 counts
+ * TENANTS; "3 other tenants" over a row count would be false in the one
+ * sentence the operator acts on.
+ */
+function renderAffected(
+  named: string[],
+  other: number,
+  unit: "mapping" | "tenant",
+  unmaterialized = 0
+): string {
+  const parts: string[] = [];
+  if (named.length) parts.push(named.join(", "));
+  if (other) {
+    const more = named.length ? "further " : "";
+    parts.push(
+      unit === "mapping"
+        ? `${other} ${more}${pluralNoun(other, "mapping")} in tenants you do not administer`
+        : `${other} ${more}${pluralNoun(other, "tenant")} you do not administer`
+    );
+  }
+  if (unmaterialized) {
+    parts.push(
+      `${plural(unmaterialized, "mapping")} into tenants that do not exist yet`
+    );
+  }
+  return parts.length ? parts.join(" and ") : "a tenant";
 }
 
 /**
@@ -1744,6 +2125,18 @@ async function backendErrorMessage(res: Response): Promise<string> {
  *  - **Delete goes through {@link ConfirmDestructiveDialog}** and requires
  *    typing the group name. `DestructiveButton` alone only blocks synthetic
  *    clicks; it never asked a human anything.
+ *  - **The confirmation shows the delete's OWN verdict.** Opening the dialog
+ *    reads `GET /coord/cognito/groups/{name}/blast-radius` — the pool-wide
+ *    verdict the backend's guards are derived from — rather than the section's
+ *    `group-tenant-roles` read, which is TENANT-SCOPED and so can say "no
+ *    mappings" about a group mapped into another tenant. Until this the
+ *    dialog under-reported exactly as the guards once did (plan
+ *    `2026-08-28-pool-wide-blast-radius-read-for-group-delete`, open question
+ *    2): it said nothing referenced the group and the delete then 409'd.
+ *    The row badges still come from the section's read — it is one call for
+ *    every group and correct for what it names, the caller's own tenant —
+ *    which is why their copy says "in your tenant" rather than claiming the
+ *    pool.
  */
 function CognitoGroupItem({
   group,
@@ -1781,6 +2174,9 @@ function CognitoGroupItem({
   const [deleting, setDeleting] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [allowHomeGroup, setAllowHomeGroup] = useState(false);
+  const [blastRadius, setBlastRadius] = useState<BlastRadiusRead>({
+    state: "idle",
+  });
   // Bump to force the members sub-list to refetch after an add.
   const [membersKey, setMembersKey] = useState(0);
 
@@ -1788,6 +2184,67 @@ function CognitoGroupItem({
   const homeTenantSlug = isHomeGroup
     ? group.group_name.slice(0, -HOME_GROUP_SUFFIX.length)
     : null;
+
+  // ONE read, at the moment of decision. Opening the dialog is what asks; the
+  // blast-radius route is per-group, so reading it for every row on the
+  // section's behalf would be N calls for a preview nobody has opened. A
+  // close resets to `idle` so a re-open reads again — the operator's usual
+  // path past a mapped refusal is "remove the mapping, re-open", and a cached
+  // verdict would show them the refusal they just cleared.
+  useEffect(() => {
+    if (!confirmOpen) {
+      // Functional so a row that is already idle (every row, at mount) does
+      // not re-render over a fresh-but-equal object.
+      setBlastRadius((prev) => (prev.state === "idle" ? prev : { state: "idle" }));
+      return;
+    }
+    let cancelled = false;
+    setBlastRadius({ state: "loading" });
+    void (async () => {
+      try {
+        const res = await httpClient.fetch(
+          `${OPERATIONS_API}/coord/cognito/groups/${encodeURIComponent(
+            group.group_name
+          )}/blast-radius`
+        );
+        // A 502 here is the backend's own `mapping_check_unavailable` /
+        // `mapping_check_unreadable` — coord could not say, so neither can
+        // we. Render the CAUSE (`error` + coord's status), not the detail's
+        // `message`: that prose is the DELETE's refusal ("Refused … Nothing
+        // was deleted …"), written for the moment after a click, and in a
+        // preview nothing was attempted.
+        if (!res.ok) throw new Error(await blastRadiusReadCause(res));
+        const verdict = parseBlastRadiusVerdict(await res.json());
+        if (verdict === null) {
+          throw new Error("the blast-radius body is not a verdict");
+        }
+        if (!cancelled) setBlastRadius({ state: "ok", verdict });
+      } catch (err) {
+        log.warn("read cognito group blast radius failed", err);
+        if (!cancelled) {
+          setBlastRadius({
+            state: "error",
+            message: err instanceof Error ? err.message : String(err),
+          });
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [confirmOpen, group.group_name]);
+
+  // A verdict the backend is CERTAIN to refuse: guard 1 (mapped; the
+  // dashboard sends no `allow_mapped`) or guard 3 (stranded; no override
+  // exists). Same reasoning as the `-home` gate below — a confirm that is
+  // guaranteed to 409 teaches operators to click through and read the toast.
+  // Unknown (`error`) deliberately does NOT disable: the backend re-runs the
+  // check and refuses on its own if coord still cannot answer, so blocking
+  // here would only turn a recoverable delete into a dead end.
+  const verdictRefuses =
+    blastRadius.state === "ok" &&
+    (blastRadius.verdict.mapped_total > 0 ||
+      blastRadius.verdict.strands_total > 0);
 
   const addUser = useCallback(async () => {
     const email = addEmail.trim();
@@ -1930,12 +2387,16 @@ function CognitoGroupItem({
                 reading tenant mappings…
               </Badge>
             ) : mappings.length === 0 ? (
+              // "in your tenant", not "no tenant mappings": the section's read
+              // is coord's TENANT-SCOPED list, so this badge cannot speak for
+              // the pool. The confirmation dialog reads the pool-wide verdict
+              // and is where the un-scoped sentence lives.
               <Badge
                 variant="outline"
                 className="text-[0.7rem] font-normal text-muted-foreground"
                 data-testid={`cognito-group-unmapped-${group.group_name}`}
               >
-                no tenant mappings
+                no mappings in your tenant
               </Badge>
             ) : (
               mappings.map((m) => (
@@ -2008,8 +2469,9 @@ function CognitoGroupItem({
         // The `-home` acknowledgement is a HARD gate in the UI, not a hint:
         // the backend refuses without `allow_home_group`, and shipping a
         // confirm that is guaranteed to 409 would teach operators to click
-        // through the dialog and read the toast instead.
-        confirmDisabled={isHomeGroup && !allowHomeGroup}
+        // through the dialog and read the toast instead. `verdictRefuses` is
+        // the same rule applied to the two guards the dialog can now SEE.
+        confirmDisabled={(isHomeGroup && !allowHomeGroup) || verdictRefuses}
         onConfirm={() => void deleteGroup()}
         extra={
           isHomeGroup ? (
@@ -2043,60 +2505,94 @@ function CognitoGroupItem({
                     memberCount === 1 ? "" : "s"
                   } lose this group at their next login.`}
           </li>
-          {mappingsError ? (
+          {blastRadius.state === "error" ? (
             // The bullet that would otherwise say "nothing references this
             // group" is the one an operator reads as permission to proceed.
             // When the read failed we do not know that, so we say so — and we
             // name the guard that DOES know, so "unknown" does not read as
             // "unguarded". The confirm stays enabled deliberately: the backend
-            // re-runs this check server-side and answers 502
-            // `mapping_check_unavailable` if IT cannot read the table either,
-            // so blocking here would only convert a recoverable delete into a
+            // re-runs this same check and answers 502
+            // `mapping_check_unavailable` if IT cannot read coord either, so
+            // blocking here would only convert a recoverable delete into a
             // dead end while implying the dashboard is the guard.
             <li
               className="text-amber-700 dark:text-amber-400"
               data-testid={`cognito-delete-confirm-mappings-${group.group_name}`}
             >
-              coord&apos;s tenant mappings could not be read — treat this as
+              {/* The INSTRUCTION first, the cause last. The same ordering
+                  the create-then-map orphan warning uses, and for the same
+                  reason: what the operator must do outranks why, and only the
+                  cause can be long. */}
+              coord&apos;s blast radius could not be read — treat it as
               unknown, not as &ldquo;none&rdquo;. The delete is still checked
-              server-side and will be refused if any mapping exists.
+              server-side and will be refused if coord cannot answer there
+              either. ({blastRadius.message})
             </li>
-          ) : mappings === null ? (
+          ) : blastRadius.state !== "ok" ? (
             <li
               data-testid={`cognito-delete-confirm-mappings-${group.group_name}`}
             >
-              Reading coord&apos;s tenant mappings…
+              Reading coord&apos;s pool-wide blast radius…
             </li>
-          ) : mappings.length === 0 ? (
+          ) : blastRadius.verdict.mapped_total === 0 ? (
+            // Now a TRUE sentence: this is coord's pool-wide answer, not the
+            // caller's own tenant's slice of it.
             <li
               data-testid={`cognito-delete-confirm-mappings-${group.group_name}`}
             >
-              No coord tenant mappings reference this group.
+              No coord tenant mappings reference this group — pool-wide, not
+              only in your tenant.
             </li>
           ) : (
-            // The SAME testid rides every arm, this one included, so a query
-            // for it is total over the state space. Leaving it off here would
-            // make `queryByTestId(...) === null` mean "there ARE mappings" —
-            // the opposite of what a reader assumes, and a way for a future
-            // `toBeNull()` assertion to pass vacuously on the mapped path.
-            //
-            // NOTE for tests: this arm is the ONLY one that can render the id
-            // more than once (one `<li>` per mapping), and `getByTestId`
-            // THROWS on multiple matches. A test that reaches the mapped path
-            // with more than one mapping must use `getAllByTestId`. The other
-            // three arms are always single, which is why the singular query is
-            // safe there.
-            mappings.map((m) => (
-              <li
-                key={`${m.tenant_slug}:${m.role}`}
-                data-testid={`cognito-delete-confirm-mappings-${group.group_name}`}
-              >
-                Grants <strong>{tierLabel(m.role)}</strong> in{" "}
-                <span className="font-mono">{m.tenant_slug}</span> — the backend
-                will refuse this delete until that mapping is removed above.
-              </li>
-            ))
+            // The SAME testid rides every arm, so a query for it is total over
+            // the state space; `queryByTestId(...) === null` never means
+            // "there ARE mappings".
+            <li
+              data-testid={`cognito-delete-confirm-mappings-${group.group_name}`}
+            >
+              Mapped to{" "}
+              <strong>
+                {renderAffected(
+                  blastRadius.verdict.mapped_own_tenant,
+                  blastRadius.verdict.mapped_other_tenant_rows,
+                  "mapping",
+                  blastRadius.verdict.mapped_unmaterialized_rows
+                )}
+              </strong>{" "}
+              in coord&apos;s group → tenant → role table (
+              {plural(blastRadius.verdict.mapped_total, "mapping")} in all).
+              The backend will refuse this delete until those mappings are
+              removed
+              {blastRadius.verdict.mapped_own_tenant.length
+                ? " — the ones in your tenant, above"
+                : " — by an administrator of the tenants they are in"}
+              .
+            </li>
           )}
+          {blastRadius.state === "ok" &&
+          blastRadius.verdict.strands_total > 0 ? (
+            // Guard 3 has NO override, so this is the one bullet that is not
+            // "remove something first, then come back": the fix is to grant
+            // another group admin on the tenant. Named separately from the
+            // mapping bullet because it counts TENANTS, not rows.
+            <li
+              className="text-amber-700 dark:text-amber-400"
+              data-testid={`cognito-delete-confirm-strands-${group.group_name}`}
+            >
+              The only thing conferring admin on{" "}
+              <strong>
+                {renderAffected(
+                  blastRadius.verdict.strands_own_tenant,
+                  blastRadius.verdict.strands_other_tenant_count,
+                  "tenant"
+                )}
+              </strong>{" "}
+              ({plural(blastRadius.verdict.strands_total, "tenant")} in all).
+              Deleting it would leave nobody able to repair the mapping; the
+              backend refuses this with no override. Grant another group admin
+              on them first.
+            </li>
+          ) : null}
           {isHomeGroup ? (
             <li>
               Pins its members&apos; home tenant to{" "}
@@ -2235,7 +2731,7 @@ function CognitoGroupsSection({ isSuperuser }: { isSuperuser: boolean }) {
       const res = await httpClient.fetch(
         `${OPERATIONS_API}/coord/cognito/groups`
       );
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      if (!res.ok) throw new Error(await backendErrorMessage(res));
       const json = (await res.json()) as CognitoGroupsResponse;
       // Same rule as the two `group-tenant-roles` reads: a 200 whose body is
       // not the list is UNKNOWN, not "no groups". `?? []` would render "No
@@ -2265,7 +2761,7 @@ function CognitoGroupsSection({ isSuperuser }: { isSuperuser: boolean }) {
         const res = await httpClient.fetch(
           `${OPERATIONS_API}/coord/group-tenant-roles`
         );
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        if (!res.ok) throw new Error(await backendErrorMessage(res));
         const json = (await res.json()) as GroupTenantRolesResponse;
         // A successful STATUS is not a successful READ. `group_tenant_roles`
         // is declared non-optional, so a `?? []` here is dead per the types
@@ -2322,7 +2818,7 @@ function CognitoGroupsSection({ isSuperuser }: { isSuperuser: boolean }) {
                 g.group_name
               )}/users`
             );
-            if (!res.ok) throw new Error(`HTTP ${res.status}`);
+            if (!res.ok) throw new Error(await backendErrorMessage(res));
             const json = (await res.json()) as CognitoGroupUsersResponse;
             // `memberErrors` is the mechanism #1111 held up as the model — a
             // failed probe becomes "members unknown" rather than a count. But
@@ -2599,18 +3095,63 @@ export default function MembersPage() {
       className="p-3 sm:p-6 space-y-4 max-w-5xl"
       data-testid="coord-members-page"
     >
-      {/* R7 — the members table FIRST and unconditional; the four secondary
-          sections below it and folded. Ordering matters as much as folding:
-          "Your tenant & roles" used to sit ABOVE the table, so an
-          administrator arriving to change somebody's access read their own
-          roles first. Each panel keeps its signal on the header while closed
-          (the home tenant's name, the mapping count, the group count), which
-          is R7's actual contract — the panel folds, its signal does not. */}
+      {/* The add form FIRST, then the members table, then everything else
+          folded below. R7's ordering argument ("the read an administrator came
+          for goes first, write forms fold away") held while the write form was
+          a five-field pre-provisioning panel costing ~330px. It is now two
+          inputs and one button — and it is the task this page exists for, so
+          burying it under a members list that grows without bound would cost
+          the primary action a scroll on exactly the tenants that have the most
+          people in them. Everything R7 was actually protecting against is
+          unchanged: nothing secondary sits above the table. */}
+      <AddTenantMemberForm onAdded={bump} />
+      {/* R7 — the members table unconditional; the secondary sections below it
+          and folded. Ordering matters as much as folding: "Your tenant & roles"
+          used to sit ABOVE the table, so an administrator arriving to change
+          somebody's access read their own roles first. Each panel keeps its
+          signal on the header while closed (the home tenant's name, the mapping
+          count, the group count), which is R7's actual contract — the panel
+          folds, its signal does not. */}
       <MembersTable refreshKey={refreshKey} onChanged={bump} />
       <MyTenantsCard />
-      <InviteForm onInvited={bump} />
-      <GroupTenantRolesSection isSuperuser={user?.is_superuser === true} />
-      <CognitoGroupsSection isSuperuser={user?.is_superuser === true} />
+      {/* R7 + the plan's Design decision 1 — the SSO-group machinery is one
+          tool for a different job (pre-authorizing an entire IdP group's
+          current and future members), not a second way to do what the form at
+          the top does. Two sibling panels read as two more options; ONE
+          labelled "Advanced" panel with a sentence of its own reads as the
+          rarer tool it is.
+
+          The cost, named rather than glossed: R7's "the panel folds, its
+          signal does not" now holds one level down. The mapping count and the
+          group count still sit on their own collapsed headers, but those
+          headers are themselves unmounted until this wrapper is opened, so
+          neither number is visible on arrival. That is acceptable HERE and
+          only here — both are inventory counts of a bulk-provisioning tool,
+          not a health signal: nothing about them is ever the thing an
+          administrator must act on now. The one signal that IS (a member
+          holding no access at all) lives in the members table's own
+          StatCluster, which is unconditional and above this. */}
+      <CollapsiblePanel
+        title="Advanced: auto-provision by SSO group"
+        icon={<Users className="h-4 w-4" />}
+        titleAs="h2"
+        defaultOpen={false}
+        storageKey="coord-members-advanced-sso"
+        contentClassName="space-y-4"
+        data-testid="coord-members-advanced"
+      >
+        <>
+          <p className="text-xs text-muted-foreground">
+            Bulk provisioning. Map an identity-provider group to a tenant role
+            and every member of that group — the ones in it today and the ones
+            added to it later — gets that role automatically when they sign in.
+            To give one colleague access, use the form at the top of this page
+            instead.
+          </p>
+          <GroupTenantRolesSection isSuperuser={user?.is_superuser === true} />
+          <CognitoGroupsSection isSuperuser={user?.is_superuser === true} />
+        </>
+      </CollapsiblePanel>
     </div>
   );
 }

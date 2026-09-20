@@ -28,6 +28,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { httpClient } from "@/services/service-factory";
+import type { DeviceCredentialDark } from "./coordCredentialStatus";
 
 /**
  * A SAME-ORIGIN literal, deliberately, and not `OPERATIONS_API` from
@@ -87,6 +88,52 @@ export interface FleetHealthDevice {
    * `state`, which would manufacture agreement the wire never claimed.
    */
   heartbeat_state?: string;
+  /**
+   * **Can this machine still reach coord?** — coord's join of the runner's own
+   * `coord.device_status.details.coord_credential` onto the device row
+   * (`fleet_health.rs`, `DeviceCredentialDark`).
+   *
+   * Declared here by plan
+   * `2026-09-12-runner-loads-with-an-expired-coord-credential-and-tells-nobody`
+   * Phase 5, and the declaration IS the fix on this side: coord has been
+   * serving this field, and raising a **critical**
+   * `runner_coord_credentials_missing:{device_id}` alert from the same scan,
+   * while every byte of it was discarded here by a type that did not mention
+   * it — the identical omission that kept the alert rollup invisible one field
+   * up.
+   *
+   * Three distinct states, and the middle one is the point:
+   *
+   * * `{dark: true, reason?}` — this runner reported that it holds no usable
+   *   coord device JWT. Every session it spawns works without coord.
+   * * `{dark: false}` — the scan RAN and this device was not in its result
+   *   set. A measurement.
+   * * `null` / absent — coord's join did not run (body-level
+   *   `credential_dark_scrape_up: false`), the snapshot came from the watcher
+   *   path that does no such join, or this coord predates the field.
+   *   **UNKNOWN, never healthy** — see `coordCredentialStatus.ts`, which is the one
+   *   place that turns this into something an operator reads.
+   */
+  credential_dark?: DeviceCredentialDark | null;
+  /**
+   * Coord's raw CI-runner measurement (`idle` | `busy` | `offline`).
+   *
+   * Coord serves it as a STRING only for a device carrying the `ci_runner`
+   * capability and as `null` for every other device (`fleet_health.rs`
+   * `DeviceHealthSnapshot::ci_runner_status`), so `typeof === "string"` is the
+   * capability test — see {@link isCiRunnerDevice}. Absent means this coord
+   * predates the field: UNKNOWN, and treated as "not known to be a CI runner".
+   */
+  ci_runner_status?: string | null;
+}
+
+/**
+ * Whether coord says this device carries the `ci_runner` capability. Read off
+ * coord's own device read rather than the CI-runner mirror, so a mirror poll
+ * that is loading or has failed cannot reclassify the machine.
+ */
+export function isCiRunnerDevice(device: FleetHealthDevice): boolean {
+  return typeof device.ci_runner_status === "string";
 }
 
 /**
@@ -142,6 +189,17 @@ export interface FleetHealthPayload {
    * requires).
    */
   alerts_scrape_up?: boolean;
+  /**
+   * Coord's verdict on whether the per-device `credential_dark` join actually
+   * RAN this tick (`fleet_health.rs`: `credential_dark_scrape_up`).
+   *
+   * Exactly the `alerts_scrape_up` contract, one field over. `false` means
+   * every `credential_dark: null` beside it is coord's read failing, not a
+   * property of any machine. `undefined` is a coord that serves no such flag
+   * and is **not** `false` — a surface that read it as failure would report an
+   * outage nobody claimed.
+   */
+  credential_dark_scrape_up?: boolean;
   pageout?: FleetHealthPageout;
 }
 

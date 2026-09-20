@@ -316,3 +316,241 @@ describe("ProposalCard — a typed note is not lost on collapse", () => {
     );
   });
 });
+
+/**
+ * Plan `2026-09-13-policy-proposals-agent-decidable-dial-driven-self-retiring`,
+ * Phase 4 — the two things that changed under this card.
+ *
+ * Both are the same class of failure if they regress: the row keeps rendering,
+ * and says something untrue quietly. A retired proposal that still shows an
+ * "approve before it moves" warning invites an action that cannot happen; an
+ * author-decided row painted as a caution re-asserts an ownership rule the
+ * fleet deliberately removed.
+ */
+describe("ProposalCard — coord's terminal `stale`", () => {
+  it("badges a retired proposal calm, and drops the pre-approval warning", () => {
+    renderCard(proposal({ status: "stale", base_version: 4 }), {
+      liveVersion: 9,
+    });
+    const badge = screen.getByTestId("proposal-direction");
+    expect(badge.textContent ?? "").toMatch(/retired/i);
+    expect(badge.innerHTML).not.toMatch(/\bbg-(red|amber)-/);
+
+    toggleRow();
+    // The panel's text is "read the current wording BEFORE approving". Nobody
+    // can approve this one — coord closed it — so repeating the instruction
+    // would be noise attached to an action that no longer exists.
+    expect(screen.queryByTestId("proposal-stale")).toBeNull();
+    // The raw comparator verdict stays machine-readable either way.
+    expect(badge.getAttribute("data-direction")).toBe("loosening");
+  });
+
+  it("still warns on a PENDING row the document has moved past", () => {
+    // The race window the derived kind exists for — the same fixture minus
+    // coord's verdict. Without this, "retired drops the warning" could be
+    // satisfied by dropping the warning entirely.
+    renderCard(proposal({ status: "pending", base_version: 4 }), {
+      liveVersion: 9,
+    });
+    toggleRow();
+    expect(screen.getByTestId("proposal-stale")).toBeTruthy();
+  });
+});
+
+/**
+ * coord's OTHER two terminal statuses — `approved` and `rejected` — and the
+ * regression that reached production because no fixture in this file combined
+ * one of them with a readable live version.
+ */
+describe("ProposalCard — a row coord already decided", () => {
+  it("badges an APPROVED row calm too, with the live version actually supplied", () => {
+    /*
+     * The fixture that was missing, and the reason every "Recently proposed &
+     * approved" row rendered a red act-now alarm while this file stayed green.
+     *
+     * Approving a proposal APPLIES the edit as a new document version, so
+     * `liveVersion > base_version` is true of an approved row BY CONSTRUCTION —
+     * it is the receipt for the approval, not a decayed premise. Every
+     * `status: "approved"` fixture in this file took `renderCard`'s
+     * `liveVersion` default of `null`, which short-circuits the comparison, so
+     * no test in the suite combined the two. This one does: v4 authored, v9
+     * live.
+     */
+    renderCard(proposal({ status: "approved", base_version: 4 }), {
+      liveVersion: 9,
+    });
+    const badge = screen.getByTestId("proposal-direction");
+    expect(badge.textContent ?? "").toMatch(/approved/i);
+    expect(badge.innerHTML).not.toMatch(/\bbg-red-/);
+    // Red ⇔ the `✕` glyph, so its absence is the second half of "not an alarm".
+    expect(badge.textContent ?? "").not.toContain("✕");
+
+    toggleRow();
+    // "Read the current wording before approving" — addressed to a reader who
+    // already approved it.
+    expect(screen.queryByTestId("proposal-stale")).toBeNull();
+    // The row IS reached and expanded, so the null above is a real absence.
+    expect(screen.getByTestId("proposal-content")).toBeTruthy();
+  });
+
+  it("badges a REJECTED row calm on the same evidence", () => {
+    // Same closed-status arm, the other outcome. Without it, "approved is calm"
+    // could be satisfied by special-casing one word.
+    renderCard(proposal({ status: "rejected", base_version: 4 }), {
+      liveVersion: 9,
+    });
+    const badge = screen.getByTestId("proposal-direction");
+    expect(badge.textContent ?? "").toMatch(/rejected/i);
+    expect(badge.innerHTML).not.toMatch(/\bbg-red-/);
+    toggleRow();
+    expect(screen.queryByTestId("proposal-stale")).toBeNull();
+  });
+});
+
+describe("ProposalCard — a proposal decided by its own author", () => {
+  it("says so plainly, as information rather than a caution", () => {
+    renderCard(
+      proposal({
+        status: "approved",
+        decided_by: "merge-train-steward",
+        decided_at: "2026-09-14T09:00:00Z",
+        decision_note: "second opinion from a fresh-context subagent",
+      })
+    );
+    toggleRow();
+    const line = screen.getByTestId("proposal-decided-by");
+    expect(line.textContent ?? "").toMatch(/decided by its author/i);
+    expect(line.getAttribute("data-self-decided")).toBe("true");
+    // Ownership is no longer a criterion for deciding a proposal, so this is a
+    // permitted outcome stated in the provenance line — no alarm chrome, no
+    // icon, no colour.
+    expect(line.className).not.toMatch(/\b(text|bg|border)-(red|amber)-/);
+    expect(line.innerHTML).not.toMatch(/\b(bg|text)-(red|amber)-/);
+    expect(line.querySelector("svg")).toBeNull();
+    // coord's note travels with the decision rather than being dropped.
+    expect(line.textContent ?? "").toMatch(/fresh-context subagent/);
+  });
+
+  it("does not claim self-decision when a DIFFERENT actor decided", () => {
+    renderCard(
+      proposal({
+        status: "approved",
+        decided_by: "operator:josh@qontinui.io",
+        decided_at: "2026-09-14T09:00:00Z",
+      })
+    );
+    toggleRow();
+    const line = screen.getByTestId("proposal-decided-by");
+    expect(line.getAttribute("data-self-decided")).toBe("false");
+    expect(line.textContent ?? "").not.toMatch(/its author/i);
+  });
+
+  it("prefers coord's `self_decided` over comparing the two strings", () => {
+    // The fixture is DELIBERATELY SYNTHETIC — coord cannot emit it. It derives
+    // `self_decided` as exactly `decided_by == proposed_by` with no
+    // normalization (`with_derived_self_decided()`), so against today's coord
+    // the flag and the comparison can never disagree, and this row's
+    // `session:aaaa` / `agent:aaaa` pair carrying `self_decided: true` is a
+    // shape no server produces. It is constructed that way on purpose: it is
+    // the only way to make the precedence OBSERVABLE, and precedence is what
+    // matters — coord's answer is the SERVER's, so a coord that later starts
+    // normalizing changes what this page says with no web deploy, while a
+    // client-side comparison quietly overruling the flag would not.
+    // See `../_lib/authorship.ts` on `selfDecidedOrUnknown`.
+    renderCard(
+      proposal({
+        status: "approved",
+        proposed_by: "session:aaaa",
+        decided_by: "agent:aaaa",
+        self_decided: true,
+      })
+    );
+    toggleRow();
+    expect(
+      screen.getByTestId("proposal-decided-by").getAttribute("data-self-decided")
+    ).toBe("true");
+  });
+
+  it("shows no decided line at all while the proposal is pending", () => {
+    renderCard(proposal({ status: "pending" }));
+    toggleRow();
+    expect(screen.queryByTestId("proposal-decided-by")).toBeNull();
+  });
+});
+
+/**
+ * The machine-readable half of the provenance line, and the affordance that
+ * must not outlive the decision.
+ *
+ * Both are the same class of defect as the four above: the page keeps rendering
+ * and quietly says something it does not know, or offers something that cannot
+ * happen.
+ */
+describe("ProposalCard — `data-self-decided` keeps UNKNOWN out of `false`", () => {
+  it("reports `unknown` when the question is unanswerable", () => {
+    // No `self_decided` from coord, and one of the two identities blank — so
+    // there is no answer to give. `"false"` here would be an assertion ("coord
+    // answered, and somebody else decided it"), which is precisely the
+    // absence-is-not-zero conflation the rest of this page works to avoid, left
+    // open in the one channel a UI-Bridge or spec-CI check actually reads.
+    renderCard(
+      proposal({
+        status: "approved",
+        proposed_by: "   ",
+        decided_by: "operator:josh@qontinui.io",
+        decided_at: "2026-09-14T09:00:00Z",
+      })
+    );
+    toggleRow();
+    const line = screen.getByTestId("proposal-decided-by");
+    expect(line.getAttribute("data-self-decided")).toBe("unknown");
+    // The rendered TEXT is unchanged by this: it only ever spoke for `true`.
+    expect(line.textContent ?? "").not.toMatch(/its author/i);
+    expect(screen.queryByTestId("proposal-self-decided")).toBeNull();
+  });
+
+  it("still reports a plain `false` when coord answered no", () => {
+    // The other side of the distinction — without this, "unknown" could be
+    // satisfied by never emitting `false` at all.
+    renderCard(
+      proposal({
+        status: "approved",
+        proposed_by: "session:aaaa",
+        decided_by: "operator:josh@qontinui.io",
+        decided_at: "2026-09-14T09:00:00Z",
+      })
+    );
+    toggleRow();
+    expect(
+      screen.getByTestId("proposal-decided-by").getAttribute("data-self-decided")
+    ).toBe("false");
+  });
+});
+
+describe("ProposalCard — the decision composer is offered only where a decision is possible", () => {
+  it("replaces it with a one-line explanation on a closed row", () => {
+    // Defence in depth — coord refuses a decision on a closed proposal
+    // server-side and is the authority. But this card already drops the
+    // pre-approval staleness warning on a retired row because the action no
+    // longer exists; leaving two enabled buttons under that same argument
+    // offers the action while the text says it is impossible.
+    renderCard(proposal({ status: "stale" }));
+    toggleRow();
+    // Asserted with the row OPEN — a null means gated, never merely collapsed.
+    expect(screen.getByTestId("proposal-closed").textContent ?? "").toMatch(
+      /no decision is possible/i
+    );
+    expect(screen.queryByTestId("proposal-approve")).toBeNull();
+    expect(screen.queryByTestId("proposal-reject")).toBeNull();
+    expect(screen.queryByTestId("proposal-decision-note")).toBeNull();
+  });
+
+  it("still offers it on a pending row", () => {
+    // Without this, "gated on closed" could be satisfied by gating everything.
+    renderCard(proposal({ status: "pending" }));
+    toggleRow();
+    expect(screen.getByTestId("proposal-approve")).toBeTruthy();
+    expect(screen.getByTestId("proposal-reject")).toBeTruthy();
+    expect(screen.queryByTestId("proposal-closed")).toBeNull();
+  });
+});

@@ -97,6 +97,7 @@ from app.models.organization import (
 from app.models.pair_code import PairCode
 from app.models.path_discovery import PathDiscovery
 from app.models.phase_result import PhaseResult
+from app.models.plan_scan_root import PlanScanRootObservation
 from app.models.project import Project
 from app.models.project_annotation_state import ProjectAnnotationState
 from app.models.project_assets import ProjectImage, ProjectScreenshot
@@ -170,7 +171,6 @@ from app.models.test_deficiency import (
     DeficiencyType,
     TestDeficiency,
 )
-from app.models.test_notification_preferences import TestNotificationPreferences
 from app.models.test_result import TestResult, TestResultStatus
 from app.models.test_screenshot import TestScreenshot, TestScreenshotType
 from app.models.test_target import TestTarget
@@ -380,7 +380,6 @@ __all__ = [
     "DeficiencyStatus",
     "TestScreenshot",
     "TestScreenshotType",
-    "TestNotificationPreferences",
     "CoverageSnapshot",
     "PathDiscovery",
     "TransitionReliability",
@@ -522,6 +521,8 @@ __all__ = [
     "WorkArtifact",
     "WorkArtifactVersion",
     "WorkArtifactEdge",
+    # Per-device plan-scan-source readings (agent.plan_scan_root_observations)
+    "PlanScanRootObservation",
     # Claude Code Session Repository (agent.session_artifacts — archived
     # sessions; bodies live in the object store, not in a column)
     "SessionArtifact",

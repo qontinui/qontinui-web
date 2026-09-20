@@ -106,6 +106,7 @@ const UnifiedSidebarContent: React.FC<UnifiedSidebarProps> = ({
           switcherCurrentOrg={switcherCurrentOrg}
           onOrganizationChange={handleOrganizationChange}
           onCreateOrganization={handleCreateOrganization}
+          showOrganizationSwitcher={mode === "visual"}
         />
 
         <div

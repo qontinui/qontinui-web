@@ -1,0 +1,426 @@
+{
+  "version": "1.0",
+  "id": "coord-runners",
+  "name": "Coord runners (admin)",
+  "description": "Per-runner drain, restart readiness and session wind-down (/admin/coord/runners), plan 2026-09-13-drained-runner-never-reaches-idle Phase 8. ci-bot is a superuser so the page renders its real content. The page reads its device from `?device=` (run-spec-ci.ts seeds the sentinel below) and makes four reads: GET /api/v1/operations/fleet/health (the DevicePicker roster), GET /fleet/drain (the drain badge + DeviceDrainControl), GET /fleet/resource-samples?device_id=&history=false (the readiness verdict riding the device's newest resource sample) and GET /sessions/fleet?device_id= (the session census). metadata.routeStubs fulfills all four so the populated states render deterministically: one fresh, unsafe readiness sample whose wind_down_sessions name two sessions (an idle operator-terminal session and a busy steward), matched by claude_code_session_id to two census rows. The stubs are load-bearing: without them the sentinel device has no sample and no sessions, and the populated state goes red. AUTHORED FROM SOURCE, NOT DERIVED: no dev stack or authed UI Bridge snapshot was available in the authoring session, so every criterion below is an authored data-testid read off page.tsx and verified by page.specSelectors.test.tsx against a jsdom render, not against a live capture. Re-derive from a live authed snapshot when one is available (console style guide §6.3). Read-only; structural only.",
+  "provenance": {
+    "source": "ai-generated",
+    "appId": "qontinui-web"
+  },
+  "metadata": {
+    "tags": [
+      "admin",
+      "coord",
+      "runners",
+      "drain",
+      "readiness",
+      "wind-down",
+      "route-stub"
+    ],
+    "extraSettleMs": 3500,
+    "routeStubs": [
+      {
+        "urlPattern": "**/api/v1/operations/fleet/health",
+        "status": 200,
+        "contentType": "application/json",
+        "body": {
+          "devices": [
+            {
+              "device_id": "c1c1c1c1-0000-4000-8000-000000000001",
+              "hostname": "spec-ci-host",
+              "state": "healthy",
+              "heartbeat_state": "healthy"
+            }
+          ]
+        }
+      },
+      {
+        "urlPattern": "**/api/v1/operations/fleet/drain",
+        "status": 200,
+        "contentType": "application/json",
+        "body": {
+          "drained": {}
+        }
+      },
+      {
+        "urlPattern": "**/api/v1/operations/fleet/resource-samples**",
+        "status": 200,
+        "contentType": "application/json",
+        "body": {
+          "latest": [
+            {
+              "device_id": "c1c1c1c1-0000-4000-8000-000000000001",
+              "lane": "host",
+              "sampled_at": "2026-09-13T10:00:00Z",
+              "age_secs": 20,
+              "readiness_safe": false,
+              "readiness_reason": "2 sessions block a restart",
+              "readiness_blocking": 2,
+              "readiness_finished": 0,
+              "wind_down_candidates": 0,
+              "wind_down_exit_stuck": 0,
+              "wind_down_sessions": [
+                {
+                  "claude_code_session_id": "c1a0de00-0000-4000-8000-000000000001",
+                  "blocks_restart": true,
+                  "idle_state": "idle",
+                  "eligibility": "ineligible",
+                  "close_eligible_at": null,
+                  "exit_stuck": false,
+                  "spawn_origin": "operator_terminal"
+                },
+                {
+                  "claude_code_session_id": "5e5e5e5e-0000-4000-8000-000000000002",
+                  "blocks_restart": true,
+                  "idle_state": "busy",
+                  "eligibility": "ineligible",
+                  "close_eligible_at": null,
+                  "exit_stuck": false,
+                  "spawn_origin": "steward"
+                }
+              ],
+              "readiness_age_secs": 20,
+              "readiness_state": "fresh"
+            }
+          ],
+          "count": 1,
+          "history": [],
+          "schema_pending": false
+        }
+      },
+      {
+        "urlPattern": "**/api/v1/operations/sessions/fleet**",
+        "status": 200,
+        "contentType": "application/json",
+        "body": {
+          "tenantId": "c1c1c1c1-0000-4000-8000-0000000000aa",
+          "callerDeviceId": null,
+          "sessions": [
+            {
+              "sessionId": "aaaaaaaa-1111-4111-8111-111111111111",
+              "deviceId": "c1c1c1c1-0000-4000-8000-000000000001",
+              "isCallerDevice": false,
+              "claudeCodeSessionId": "c1a0de00-0000-4000-8000-000000000001",
+              "sessionStatus": "working",
+              "state": "active",
+              "repo": "qontinui/spec-ci-alpha",
+              "startedAt": "2026-09-13T09:00:00Z",
+              "spawnOrigin": "operator_terminal",
+              "continuationGateId": null,
+              "dispatchSource": null
+            },
+            {
+              "sessionId": "bbbbbbbb-2222-4222-8222-222222222222",
+              "deviceId": "c1c1c1c1-0000-4000-8000-000000000001",
+              "isCallerDevice": false,
+              "claudeCodeSessionId": "5e5e5e5e-0000-4000-8000-000000000002",
+              "sessionStatus": "working",
+              "state": "active",
+              "repo": "qontinui/spec-ci-beta",
+              "startedAt": "2026-09-13T08:00:00Z",
+              "spawnOrigin": "steward",
+              "continuationGateId": null,
+              "dispatchSource": "coord_dispatch"
+            }
+          ],
+          "count": 2,
+          "limit": 500,
+          "nextCursor": null,
+          "sessionBridgeColumnPresent": true,
+          "workAxisColumnsPresent": true,
+          "deviceIdentityColumnsPresent": true
+        }
+      }
+    ]
+  },
+  "states": [
+    {
+      "id": "coord-runners-shell",
+      "name": "Coord console shell",
+      "description": "The persistent coord operator-console chrome on every /admin/coord/* route once the superuser gate passes: the h1 title, the coord-nav status row, and the Runner Drain wayfinding crumb in the console header.",
+      "isInitial": true,
+      "assertions": [
+        {
+          "id": "coord-runners-shell-elem-0",
+          "description": "h1 'Coord operator console' — the coord layout mounted (superuser gate passed, not redirected).",
+          "category": "element-presence",
+          "severity": "critical",
+          "assertionType": "exists",
+          "target": {
+            "type": "search",
+            "criteria": {
+              "role": "heading",
+              "text": "Coord operator console"
+            },
+            "label": "Coord console title"
+          },
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        },
+        {
+          "id": "coord-runners-shell-elem-1",
+          "description": "Coord navigation container (data-testid coord-nav).",
+          "category": "navigation",
+          "severity": "critical",
+          "assertionType": "exists",
+          "target": {
+            "type": "search",
+            "criteria": {
+              "id": "coord-nav"
+            },
+            "label": "Coord nav"
+          },
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        },
+        {
+          "id": "coord-runners-shell-elem-2",
+          "description": "'Runner Drain' wayfinding crumb (data-testid coord-nav-runners-active) in the console header.",
+          "category": "navigation",
+          "severity": "warning",
+          "assertionType": "exists",
+          "target": {
+            "type": "search",
+            "criteria": {
+              "id": "coord-nav-runners-active"
+            },
+            "label": "Runner Drain wayfinding crumb"
+          },
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        },
+        {
+          "id": "coord-runners-shell-elem-3",
+          "description": "The console header's wayfinding crumb (data-testid coord-nav-crumb) — 'Dev Ops · Runner Drain'.",
+          "category": "navigation",
+          "severity": "warning",
+          "assertionType": "exists",
+          "target": {
+            "type": "search",
+            "criteria": {
+              "id": "coord-nav-crumb"
+            },
+            "label": "Wayfinding crumb"
+          },
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        }
+      ],
+      "provenance": {
+        "source": "ai-generated"
+      }
+    },
+    {
+      "id": "coord-runners-controls",
+      "name": "Runner selection controls",
+      "description": "The page container, the device picker and the refresh control. These render whether or not a device is selected and whatever the reads return, so they are the stable signal that the page mounted.",
+      "assertions": [
+        {
+          "id": "coord-runners-controls-elem-0",
+          "description": "Page container (data-testid coord-runners-page).",
+          "category": "element-presence",
+          "severity": "critical",
+          "assertionType": "exists",
+          "target": {
+            "type": "search",
+            "criteria": {
+              "id": "coord-runners-page"
+            },
+            "label": "Runners page"
+          },
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        },
+        {
+          "id": "coord-runners-controls-elem-1",
+          "description": "Device picker trigger (data-testid coord-runners-device-picker), the shared DevicePicker over the fleet-health roster.",
+          "category": "interaction",
+          "severity": "critical",
+          "assertionType": "exists",
+          "target": {
+            "type": "search",
+            "criteria": {
+              "id": "coord-runners-device-picker"
+            },
+            "label": "Device picker"
+          },
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        },
+        {
+          "id": "coord-runners-controls-elem-2",
+          "description": "Refresh control (data-testid coord-runners-refresh).",
+          "category": "interaction",
+          "severity": "warning",
+          "assertionType": "exists",
+          "target": {
+            "type": "search",
+            "criteria": {
+              "id": "coord-runners-refresh"
+            },
+            "label": "Refresh"
+          },
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        }
+      ],
+      "provenance": {
+        "source": "ai-generated"
+      }
+    },
+    {
+      "id": "coord-runners-populated",
+      "name": "Readiness and sessions for the seeded device",
+      "description": "With ?device= set and the four reads stubbed: the health strip carrying the drain badge and the four readiness counts (blocking / finished / close-eligible / exit-stuck), and the live-session list with one row per stubbed census session.",
+      "assertions": [
+        {
+          "id": "coord-runners-populated-elem-0",
+          "description": "Readiness health strip (data-testid coord-runners-health).",
+          "category": "data-display",
+          "severity": "critical",
+          "assertionType": "exists",
+          "target": {
+            "type": "search",
+            "criteria": {
+              "id": "coord-runners-health"
+            },
+            "label": "Readiness strip"
+          },
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        },
+        {
+          "id": "coord-runners-populated-elem-1",
+          "description": "Drain state badge (data-testid coord-runners-drain-badge).",
+          "category": "data-display",
+          "severity": "warning",
+          "assertionType": "exists",
+          "target": {
+            "type": "search",
+            "criteria": {
+              "id": "coord-runners-drain-badge"
+            },
+            "label": "Drain badge"
+          },
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        },
+        {
+          "id": "coord-runners-populated-elem-2",
+          "description": "Blocking count (data-testid coord-runners-count-blocking).",
+          "category": "data-display",
+          "severity": "warning",
+          "assertionType": "exists",
+          "target": {
+            "type": "search",
+            "criteria": {
+              "id": "coord-runners-count-blocking"
+            },
+            "label": "Blocking count"
+          },
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        },
+        {
+          "id": "coord-runners-populated-elem-3",
+          "description": "Finished count (data-testid coord-runners-count-finished).",
+          "category": "data-display",
+          "severity": "warning",
+          "assertionType": "exists",
+          "target": {
+            "type": "search",
+            "criteria": {
+              "id": "coord-runners-count-finished"
+            },
+            "label": "Finished count"
+          },
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        },
+        {
+          "id": "coord-runners-populated-elem-4",
+          "description": "Close-eligible count (data-testid coord-runners-count-close-eligible).",
+          "category": "data-display",
+          "severity": "warning",
+          "assertionType": "exists",
+          "target": {
+            "type": "search",
+            "criteria": {
+              "id": "coord-runners-count-close-eligible"
+            },
+            "label": "Close-eligible count"
+          },
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        },
+        {
+          "id": "coord-runners-populated-elem-5",
+          "description": "Exit-stuck count (data-testid coord-runners-count-exit-stuck).",
+          "category": "data-display",
+          "severity": "warning",
+          "assertionType": "exists",
+          "target": {
+            "type": "search",
+            "criteria": {
+              "id": "coord-runners-count-exit-stuck"
+            },
+            "label": "Exit-stuck count"
+          },
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        },
+        {
+          "id": "coord-runners-populated-elem-6",
+          "description": "Live sessions section (data-testid coord-runners-sessions).",
+          "category": "data-display",
+          "severity": "critical",
+          "assertionType": "exists",
+          "target": {
+            "type": "search",
+            "criteria": {
+              "id": "coord-runners-sessions"
+            },
+            "label": "Sessions section"
+          },
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        },
+        {
+          "id": "coord-runners-populated-elem-7",
+          "description": "At least one session row (data-testid coord-runners-session-row) rendered from the stubbed census joined to the sample's wind_down_sessions.",
+          "category": "data-display",
+          "severity": "critical",
+          "assertionType": "exists",
+          "target": {
+            "type": "search",
+            "criteria": {
+              "id": "coord-runners-session-row"
+            },
+            "label": "Session row"
+          },
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
+        }
+      ],
+      "provenance": {
+        "source": "ai-generated"
+      }
+    }
+  ],
+  "transitions": []
+}

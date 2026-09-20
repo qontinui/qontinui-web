@@ -16,6 +16,8 @@ import { ModelClient } from "./model-client";
 import { WorkflowClient } from "./workflow-client";
 import { ClickCaptureClient } from "./click-capture-client";
 
+export type { RunnerAvailability } from "./config-client";
+
 // Re-export all types from the centralized types module
 export type {
   RunnerMonitor,
@@ -131,6 +133,9 @@ class RunnerClient {
 
   isAvailable = (...args: Parameters<ConfigClient["isAvailable"]>) =>
     this.config.isAvailable(...args);
+
+  getAvailability = (...args: Parameters<ConfigClient["getAvailability"]>) =>
+    this.config.getAvailability(...args);
 
   getStatus = (...args: Parameters<ConfigClient["getStatus"]>) =>
     this.config.getStatus(...args);

@@ -2,8 +2,9 @@
  * Tests for ``<CoPilotActiveBanner>``.
  *
  * §4.5 contract under test:
- *   - banner renders ONLY when preference=true AND consent=granted AND
- *     activity says isActive
+ *   - banner renders ONLY when the relay consent predicate holds
+ *     (preference=true AND consent=granted, or loopback dev not revoked)
+ *     AND activity says isActive
  *   - the rendered banner subtree is wrapped in
  *     ``data-bridge-invisible="true"`` (SDK auto-register skip — Stop
  *     button MUST be inside that subtree so the bridge can't click it)
@@ -16,6 +17,7 @@
 import React from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  act,
   fireEvent,
   render,
   screen,
@@ -24,6 +26,7 @@ import {
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
 import { CoPilotActiveBanner } from "./CoPilotActiveBanner";
+import { CO_PILOT_PREFERENCE_QUERY_KEY } from "@/hooks/useCoPilotPreference";
 import {
   __CO_PILOT_SESSION_CONSENT_KEY__,
 } from "@/hooks/useCoPilotSessionConsent";
@@ -34,6 +37,13 @@ vi.mock("@/services/service-factory", () => ({
 }));
 vi.mock("@/services/api-config", () => ({
   ApiConfig: { API_BASE_URL: "" },
+}));
+// Loopback detection is dev-only and `isDev` is fixed at import time
+// (NODE_ENV is "test" here), so stub it; the consent predicate stays real.
+const gates = vi.hoisted(() => ({ loopbackDev: false }));
+vi.mock("@/lib/ui-bridge/co-pilot-gates", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/ui-bridge/co-pilot-gates")>()),
+  useIsLoopbackDev: () => gates.loopbackDev,
 }));
 
 function jsonResponse(body: unknown): Response {
@@ -51,10 +61,9 @@ function activityResponse(items: Array<{ occurred_at: string }>): Response {
   return jsonResponse({ items });
 }
 
-function renderBanner() {
-  const qc = new QueryClient({
-    defaultOptions: { queries: { retry: false } },
-  });
+function renderBanner(
+  qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+) {
   return render(
     <QueryClientProvider client={qc}>
       <CoPilotActiveBanner />
@@ -66,6 +75,7 @@ describe("<CoPilotActiveBanner>", () => {
   beforeEach(() => {
     fetchMock.mockReset();
     window.sessionStorage.clear();
+    gates.loopbackDev = false;
   });
   afterEach(() => {
     window.sessionStorage.clear();
@@ -118,6 +128,90 @@ describe("<CoPilotActiveBanner>", () => {
     await waitFor(() => {
       expect(screen.queryByTestId("co-pilot-active-banner")).not.toBeNull();
     });
+  });
+
+  it("lights on loopback dev with preference off and no session decision (auto-grant)", async () => {
+    // The relay listener is live under the loopback auto-grant, so the
+    // "AI in control" banner — and its Stop button — must be too. The
+    // account opt-out is hidden: the auto-grant never reads the preference,
+    // so flipping it could not keep a new tab from going live.
+    gates.loopbackDev = true;
+    const recent = new Date(Date.now() - 2_000).toISOString();
+    fetchMock.mockImplementation((url: string) => {
+      if (typeof url === "string" && url.includes("/preferences")) {
+        return Promise.resolve(preferenceResponse(false));
+      }
+      return Promise.resolve(activityResponse([{ occurred_at: recent }]));
+    });
+    renderBanner();
+    await waitFor(() => {
+      expect(screen.queryByTestId("co-pilot-active-banner")).not.toBeNull();
+      expect(screen.queryByTestId("co-pilot-active-banner-stop")).not.toBeNull();
+    });
+    expect(
+      screen.queryByTestId("co-pilot-active-banner-disable-account")
+    ).toBeNull();
+  });
+
+  it("hides the account opt-out on loopback dev even when preference + grant hold the gate", async () => {
+    // A new tab on loopback is auto-granted regardless of the preference, so
+    // "Disable for this account" could never keep it off — hide it for every
+    // loopback state, not only the auto-grant-only one.
+    gates.loopbackDev = true;
+    window.sessionStorage.setItem(__CO_PILOT_SESSION_CONSENT_KEY__, "granted");
+    const recent = new Date(Date.now() - 2_000).toISOString();
+    fetchMock.mockImplementation((url: string) => {
+      if (typeof url === "string" && url.includes("/preferences")) {
+        return Promise.resolve(preferenceResponse(true));
+      }
+      return Promise.resolve(activityResponse([{ occurred_at: recent }]));
+    });
+    const qc = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    renderBanner(qc);
+    await waitFor(() => {
+      expect(qc.getQueryData(CO_PILOT_PREFERENCE_QUERY_KEY)).toBeDefined();
+      expect(screen.queryByTestId("co-pilot-active-banner-stop")).not.toBeNull();
+    });
+    await act(async () => {});
+    expect(
+      screen.queryByTestId("co-pilot-active-banner-disable-account")
+    ).toBeNull();
+  });
+
+  it("stays dark on loopback dev after an explicit revoke", async () => {
+    gates.loopbackDev = true;
+    window.sessionStorage.setItem(__CO_PILOT_SESSION_CONSENT_KEY__, "revoked");
+    const recent = new Date(Date.now() - 2_000).toISOString();
+    fetchMock.mockImplementation((url: string) => {
+      if (typeof url === "string" && url.includes("/preferences")) {
+        return Promise.resolve(preferenceResponse(true));
+      }
+      return Promise.resolve(activityResponse([{ occurred_at: recent }]));
+    });
+    const qc = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    renderBanner(qc);
+    // Wait for preference=true to actually LAND before asserting: the hidden
+    // placeholder is already there on the first render, while
+    // preference.enabled is still false, which would let a preference-path
+    // bug that ignores the revoke slip through.
+    await waitFor(() => {
+      expect(qc.getQueryData(CO_PILOT_PREFERENCE_QUERY_KEY)).toBeDefined();
+    });
+    await act(async () => {});
+    expect(
+      screen.queryByTestId("co-pilot-active-banner-hidden")
+    ).not.toBeNull();
+    // Revoked means no polling at all, not just a hidden banner.
+    expect(
+      fetchMock.mock.calls.some(
+        ([url]: [string]) =>
+          typeof url === "string" && url.includes("/co-pilot/activity")
+      )
+    ).toBe(false);
   });
 
   it("banner root is wrapped in data-bridge-invisible='true' (auto-register skip)", async () => {

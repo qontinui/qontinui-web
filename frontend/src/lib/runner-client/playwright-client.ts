@@ -45,10 +45,13 @@ export class PlaywrightClient {
       clearTimeout(timeoutId);
 
       if (!response.ok) {
-        const errorText = await response.text();
+        const message = await this.base.failureMessage(
+          response,
+          "Failed to start Playwright collection"
+        );
         return {
           success: false,
-          error: `Failed to start Playwright collection: ${response.status} - ${errorText}`,
+          error: message,
         };
       }
 
@@ -88,10 +91,13 @@ export class PlaywrightClient {
       });
 
       if (!response.ok) {
-        const errorText = await response.text();
+        const message = await this.base.failureMessage(
+          response,
+          "Failed to get Playwright collection status"
+        );
         return {
           success: false,
-          error: `Failed to get Playwright collection status: ${response.status} - ${errorText}`,
+          error: message,
         };
       }
 
@@ -135,10 +141,13 @@ export class PlaywrightClient {
       clearTimeout(timeoutId);
 
       if (!response.ok) {
-        const errorText = await response.text();
+        const message = await this.base.failureMessage(
+          response,
+          "Failed to get Playwright collection results"
+        );
         return {
           success: false,
-          error: `Failed to get Playwright collection results: ${response.status} - ${errorText}`,
+          error: message,
         };
       }
 
@@ -174,10 +183,13 @@ export class PlaywrightClient {
       );
 
       if (!response.ok) {
-        const errorText = await response.text();
+        const message = await this.base.failureMessage(
+          response,
+          "Failed to stop Playwright collection"
+        );
         return {
           success: false,
-          error: `Failed to stop Playwright collection: ${response.status} - ${errorText}`,
+          error: message,
         };
       }
 

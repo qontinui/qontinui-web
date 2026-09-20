@@ -22,19 +22,54 @@ export const DEVICE_STATUS_API = `${OPERATIONS_API}/device-status`;
  * can't set custom headers on the upgrade).
  */
 export function deviceStatusWsUrl(token: string): string {
-  // OPERATIONS_API begins with `http://` or `https://`; translate to
-  // `ws://`/`wss://` for the WS upgrade. The browser's URL constructor
-  // can't help here because we're inserting the WS scheme on top of
-  // an HTTP-shaped base URL.
-  let wsBase: string;
+  return `${operationsWsBase()}/device-status/ws?token=${encodeURIComponent(token)}${activeTenantWsParam()}`;
+}
+
+/**
+ * `OPERATIONS_API` with its scheme translated for a WS upgrade. The base
+ * begins with `http://` or `https://`; the browser's URL constructor can't
+ * help because we're inserting the WS scheme on top of an HTTP-shaped URL.
+ */
+function operationsWsBase(): string {
   if (OPERATIONS_API.startsWith("https://")) {
-    wsBase = "wss://" + OPERATIONS_API.slice("https://".length);
-  } else if (OPERATIONS_API.startsWith("http://")) {
-    wsBase = "ws://" + OPERATIONS_API.slice("http://".length);
-  } else {
-    wsBase = "ws://" + OPERATIONS_API;
+    return "wss://" + OPERATIONS_API.slice("https://".length);
   }
-  return `${wsBase}/device-status/ws?token=${encodeURIComponent(token)}${activeTenantWsParam()}`;
+  if (OPERATIONS_API.startsWith("http://")) {
+    return "ws://" + OPERATIONS_API.slice("http://".length);
+  }
+  return "ws://" + OPERATIONS_API;
+}
+
+/**
+ * The named subscriptions the web backend's coord-events bridge forwards
+ * to coord's generic `/ws`. Coord takes a CLOSED set (`?subscribe=<name>`,
+ * each mapped server-side to a fixed pattern — `strategy` →
+ * `events.strategy.*`, `merge` → `events.merge.*`, `claims` →
+ * `events.claims`, `branches` → `events.branches`); a caller-supplied glob
+ * is refused. Mirrors `COORD_EVENTS_SUBSCRIPTIONS` in
+ * `backend/app/services/coord_device_status.py`, which is the gate: a name
+ * absent there closes 1008 `unknown_subscription` before any auth. The
+ * runner-only `device` / `device_ci` names are deliberately not here.
+ */
+export type CoordEventSubscription = "strategy" | "merge" | "claims" | "branches";
+
+/**
+ * WebSocket URL for the coord-events bridge,
+ * `WS /api/v1/operations/coord-events/ws?subscribe=<name>&token=<jwt>`.
+ * Same shape as `deviceStatusWsUrl`: the backend authenticates the
+ * operator from `token`, mints a tenant-scoped coord service JWT, opens
+ * `wss://<coord>/ws?token=<minted>&subscribe=<name>` and relays every
+ * `{channel, payload}` frame verbatim. Replaces the direct browser→coord
+ * sockets the strategy and merge-pipeline hooks used to open on
+ * `NEXT_PUBLIC_COORD_WS_URL`, which coord's authenticated `/ws` refuses
+ * (plan
+ * 2026-09-13-coord-publishes-agent-jwts-on-a-redis-channel-fronted-by-an-unauthenticated-ws-firehose).
+ */
+export function coordEventsWsUrl(
+  subscribe: CoordEventSubscription,
+  token: string
+): string {
+  return `${operationsWsBase()}/coord-events/ws?subscribe=${subscribe}&token=${encodeURIComponent(token)}${activeTenantWsParam()}`;
 }
 
 /**
@@ -77,15 +112,7 @@ export const CI_STATUS_NOTIFY_API = `${OPERATIONS_API}/ci-status/notify-when-gre
  * `token` query-param (the JS WS API can't set headers on upgrade).
  */
 export function ciStatusWsUrl(token: string): string {
-  let wsBase: string;
-  if (OPERATIONS_API.startsWith("https://")) {
-    wsBase = "wss://" + OPERATIONS_API.slice("https://".length);
-  } else if (OPERATIONS_API.startsWith("http://")) {
-    wsBase = "ws://" + OPERATIONS_API.slice("http://".length);
-  } else {
-    wsBase = "ws://" + OPERATIONS_API;
-  }
-  return `${wsBase}/ci-status/ws?token=${encodeURIComponent(token)}${activeTenantWsParam()}`;
+  return `${operationsWsBase()}/ci-status/ws?token=${encodeURIComponent(token)}${activeTenantWsParam()}`;
 }
 
 /**

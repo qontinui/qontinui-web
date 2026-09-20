@@ -13,7 +13,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { History, Loader2 } from "lucide-react";
+import { Ban, History, Loader2 } from "lucide-react";
 import type {
   PromptDocument,
   PromptDocumentKind,
@@ -179,7 +179,7 @@ export function PromptDocumentEditorDialog({
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
-        className="max-h-[90vh] max-w-2xl overflow-y-auto"
+        className="max-h-[90vh] max-w-[84rem] overflow-y-auto"
         data-testid="prompt-document-editor"
       >
         <DialogHeader>
@@ -225,6 +225,31 @@ export function PromptDocumentEditorDialog({
         ) : (
           <>
             <div className="space-y-4 py-2">
+              {document.withdrawn === true ? (
+                // Field served since the withdraw feature landed (plan
+                // `2026-09-13-decision-records-are-agent-writable-but-policy-says-they-are-not`,
+                // §7 3.1) but, until now, read only by the list row and the
+                // landed-write feed — this dialog let an operator edit a
+                // withdrawn record's body with no sign it was void. Only an
+                // explicit `true` shows this: a coord that predates
+                // withdrawal serves no field, which must not render as
+                // either state.
+                <div
+                  className="flex items-start gap-2 rounded-md border border-border bg-muted/40 px-3 py-2 text-xs text-muted-foreground"
+                  data-testid="doc-editor-withdrawn-notice"
+                >
+                  <Ban className="mt-0.5 size-3.5 shrink-0" />
+                  <span>
+                    This record is withdrawn — it no longer counts as a
+                    decision.
+                    {document.withdrawn_reason
+                      ? ` Reason given: ${document.withdrawn_reason}`
+                      : ""}{" "}
+                    Saving here edits the body directly and does not reinstate
+                    it; use Undo on the landed-write feed instead.
+                  </span>
+                </div>
+              ) : null}
               <div className="space-y-2">
                 <Label htmlFor="doc-description">Description</Label>
                 <Input

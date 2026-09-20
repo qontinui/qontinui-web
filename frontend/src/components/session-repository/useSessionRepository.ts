@@ -5,9 +5,8 @@
  *
  * Copies three idioms from `usePlanLibrary` (the sibling web-owned corpus)
  * because they are already proven here: debounced text filters, a monotonic
- * request-id gate instead of `AbortController` (http-client overwrites the
- * caller's signal with its own timeout controller, so an abort never reaches
- * the request), and "no rows WITH an error is UNKNOWN, not empty".
+ * request-id gate (it decides which settled read may land, which cancelling a
+ * request does not), and "no rows WITH an error is UNKNOWN, not empty".
  *
  * What is NEW is {@link FilterHonesty}. Three of this page's filters —
  * attribution source, body source, and the secret-detector audit bucket — are
@@ -196,9 +195,9 @@ export function useSessionRepository() {
    * Monotonic id of the newest list request. EVERY write below is gated on
    * still owning it — an ungated late failure paints "couldn't load" over
    * rows that are in fact fresh, and an ungated late success clears a banner
-   * that was telling the truth. `AbortController` cannot do this job here:
-   * `http-client.ts` overwrites the caller's signal with its own timeout
-   * controller, so the abort never reaches the request.
+   * that was telling the truth. Cancelling the superseded request would not do
+   * this job: `http-client.ts` honours a caller's signal, but an abort stops a
+   * read from running rather than deciding which settled read owns the state.
    */
   const requestIdRef = useRef(0);
 

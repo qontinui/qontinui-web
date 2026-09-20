@@ -32,8 +32,9 @@
  *
  * ## Which date (plan `2026-09-02-coord-work-units-carry-no-authoring-date`)
  *
- * The default sort is `authored_desc` on coord's slug-derived `authored_at`,
- * and the "undated" caveat counts rows WITHOUT one. It used to be
+ * The default sort is `authored_desc` on the plan's EFFECTIVE authoring date
+ * (`planAuthoredAt`: the slug's date prefix, else coord's `authored_at`), and
+ * the "undated" caveat counts rows with NEITHER. It used to be
  * `created_desc` on `created_at` — the INGEST time, a bulk-backfill date for
  * most of the corpus — under the label "Newest created", so a plan written in
  * May sorted as a June plan. With a coord that predates the column every row
@@ -47,10 +48,19 @@
  * strictly worse control than the Select, and `coord-plans-status-select` is a
  * frozen authored testid (D4a). The counts operators actually want are in the
  * health strip, derived from the window that WAS fetched.
+ *
+ * ## Difficulty (plan `2026-09-18-plan-library-difficulty-field`)
+ *
+ * Each row carries the plan library's difficulty rating — the model tier the
+ * plan routes to — read from `/api/v1/plan-library/difficulty` by
+ * `usePlanDifficulty` and joined by slug (`planDifficulty.ts`). Unlike the
+ * status Select, the difficulty Select is a CLIENT-side filter over the
+ * fetched window, and it is disabled until the ratings have loaded: filtering
+ * on ratings the page does not have would render an empty list that reads as
+ * "no plan is that hard".
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Button } from "@/components/ui/button";
 import {
   Select,
   SelectContent,
@@ -58,17 +68,44 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { ArrowDownUp, Filter, RefreshCw, TriangleAlert } from "lucide-react";
+import {
+  ArrowDownUp,
+  FileQuestion,
+  Filter,
+  SignalHigh,
+  TriangleAlert,
+} from "lucide-react";
 import {
   CollapsiblePanel,
+  FilterChips,
   HealthStrip,
   RecordList,
+  RefreshButton,
   readIsUnknown,
 } from "@/components/console";
 import { PlanRow } from "@/components/admin/coord/PlanRow";
-import type { CoordPlanRow } from "@/components/admin/coord/planStatus";
+import {
+  planAuthoredAt,
+  type CoordPlanRow,
+} from "@/components/admin/coord/planStatus";
+import {
+  HAS_BODY_FILTERS,
+  PROVENANCE_FILTERS,
+  filterPlansByBodySignal,
+  hasBodyFilterValue,
+  type BodyProvenance,
+  type HasBodyFilter,
+  type PlanBodySignalBlock,
+} from "@/components/admin/coord/planBodySignal";
+import {
+  DIFFICULTY_FILTERS,
+  difficultyCell,
+  matchesDifficulty,
+  type DifficultyFilter,
+} from "@/components/admin/coord/planDifficulty";
 import { httpClient } from "@/services/service-factory";
 import { sortPlans, SORTS, type SortKey } from "./planSort";
+import { usePlanDifficulty } from "./usePlanDifficulty";
 import { derivePlansHealth, SHEPHERD_SLUG_PREFIX } from "./plansHealth";
 
 const API = "/api/v1/operations";
@@ -109,11 +146,39 @@ interface PlansListResponse {
   limit?: number;
   offset?: number;
   count?: number;
+  /**
+   * Why a `has_body: false` on this page is (or is not) evidence — computed
+   * once per request by the proxy. Absent when the page had no rows to
+   * annotate, and on a backend that predates the signals.
+   */
+  body_signal?: PlanBodySignalBlock;
+}
+
+/** Add or remove one value — the `FilterChips` caller owns the set. */
+function toggle<V extends string>(prev: V[], value: V): V[] {
+  return prev.includes(value)
+    ? prev.filter((v) => v !== value)
+    : [...prev, value];
 }
 
 export default function CoordPlansListPage() {
   const [status, setStatus] = useState("any");
   const [sort, setSort] = useState<SortKey>("authored_desc");
+  // Both body filters are CLIENT-side, unlike `status`: the proxy derives
+  // these fields, it does not take them as query parameters, so they filter
+  // the window that was fetched. That also means their counts are real —
+  // computed from the same rows the list renders — rather than R6's `–`.
+  const [provenance, setProvenance] = useState<BodyProvenance[]>([]);
+  const [hasBody, setHasBody] = useState<HasBodyFilter[]>([]);
+  // The difficulty filter is client-side for the same reason, but its ratings
+  // come from a SECOND read (the plan library, not coord) — so unlike the body
+  // signals it can be pending or failed, and the Select stays disabled until
+  // it has loaded.
+  const [difficultyFilter, setDifficultyFilter] =
+    useState<DifficultyFilter>("any");
+  const { index: difficultyIndex, refresh: refreshDifficulty } =
+    usePlanDifficulty();
+  const difficultyLoaded = difficultyIndex.state === "loaded";
   const [data, setData] = useState<PlansListResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   // There is deliberately no `loading` flag. It used to gate the list's
@@ -141,8 +206,10 @@ export default function CoordPlansListPage() {
    *     race window.
    *
    * Same shape as `/notifications`' `queryGen`, `/questions`' three `*Seq`
-   * refs and `usePlanLibrary`'s counter. An `AbortController` cannot do this
-   * job here — `http-client.ts` overwrites the caller's `signal`.
+   * refs and `usePlanLibrary`'s counter. `http-client.ts` now honours a
+   * caller's `signal`, but cancelling a superseded read would not replace
+   * these counters: they decide which settled read may land, not which reads
+   * run.
    *
    * **TWO counters, because the two things being gated are not one question.**
    * A single per-request counter silences a read in every arm at once, and
@@ -171,7 +238,11 @@ export default function CoordPlansListPage() {
    * FAILURE landing after a fresh success shows a banner the newest read
    * disagrees with. That fails safe — it over-reports trouble — where the
    * opposite silences it. `pollInFlight` keeps same-question ticks from
-   * overlapping in the first place, so the window is the refresh button.
+   * overlapping in the first place, and a refresh CLICK takes the same lock
+   * when it is free (`refresh` below), so no tick can stack on a manual read
+   * either. What remains is one narrower window: a click made while a poll
+   * or the first read is already out still issues its own read, which is the
+   * overlap `filterWindowReset.test.tsx` pins as guarded by the two counters.
    */
   const questionGen = useRef(0);
   const reqGen = useRef(0);
@@ -257,18 +328,100 @@ export default function CoordPlansListPage() {
     };
   }, [fetchData]);
 
-  const plans = useMemo(
-    () => data?.work_units ?? data?.plans ?? [],
-    [data]
+  /**
+   * The refresh button's read — the operator's, never the poll's.
+   *
+   * It returns the read's promise so `<RefreshButton>` acknowledges the press
+   * for exactly as long as that read is out; the poll calls `fetchData`
+   * directly and has no path to that state, so the control never pulses on a
+   * tick (plan `2026-09-09-coord-plans-page-controls-do-not-acknowledge-or-name-themselves`
+   * F1).
+   *
+   * It TAKES `pollInFlight` when the lock is free, so the ticks that come due
+   * while a manual read is out skip instead of stacking a second read of the
+   * same question on top of it. When a poll already holds the lock the click
+   * still issues its own read rather than waiting for or joining that one:
+   * the operator asked for a read now, and the resulting overlap is exactly
+   * what `questionGen`/`reqGen` above are for. The release is question-scoped
+   * for the same reason as the effect's `releaseLock`: a filter change while
+   * this read is out hands the lock to the new question's read, which this
+   * one must not free.
+   */
+  const refresh = useCallback(() => {
+    // The ratings refresh with the operator's press too — never with the poll
+    // (see `usePlanDifficulty`). Not awaited: the button acknowledges the
+    // work-unit read, which is the one it is labelled for.
+    void refreshDifficulty();
+    const tookLock = !pollInFlight.current;
+    if (tookLock) pollInFlight.current = true;
+    const question = questionGen.current;
+    return fetchData().finally(() => {
+      if (tookLock && question === questionGen.current) {
+        pollInFlight.current = false;
+      }
+    });
+  }, [fetchData, refreshDifficulty]);
+
+  const plans = useMemo(() => data?.work_units ?? data?.plans ?? [], [data]);
+  // The chip counts describe the WINDOW, so they are derived from `plans` —
+  // before the body filters are applied, or every count but the selected one
+  // would collapse to 0 the moment a chip was clicked.
+  const provenanceCounts = useMemo(() => {
+    const counts = new Map<BodyProvenance, number>();
+    for (const p of plans) {
+      if (p.body_provenance) {
+        counts.set(p.body_provenance, (counts.get(p.body_provenance) ?? 0) + 1);
+      }
+    }
+    return counts;
+  }, [plans]);
+  const hasBodyCounts = useMemo(() => {
+    const counts = new Map<HasBodyFilter, number>();
+    for (const p of plans) {
+      const v = hasBodyFilterValue(p.has_body);
+      if (v) counts.set(v, (counts.get(v) ?? 0) + 1);
+    }
+    return counts;
+  }, [plans]);
+  // A backend that predates the signals serves neither field. Offering a
+  // filter over a vocabulary no row carries would let an operator select a
+  // chip and empty the list — a control that can only ever answer "none" to a
+  // question nobody was told the answer to.
+  const bodySignalsServed = plans.some(
+    (p) => p.body_provenance !== undefined || p.has_body !== undefined
   );
-  const sorted = useMemo(() => sortPlans(plans, sort), [plans, sort]);
+  const filtered = useMemo(
+    () => filterPlansByBodySignal(plans, { provenance, hasBody }),
+    [plans, provenance, hasBody]
+  );
+  const sorted = useMemo(() => sortPlans(filtered, sort), [filtered, sort]);
+  const bodyFiltered = provenance.length > 0 || hasBody.length > 0;
+  // The difficulty filter runs LAST, over the body-filtered window, and only
+  // once the ratings have loaded — see the module docstring.
+  const shown = useMemo(
+    () =>
+      difficultyLoaded && difficultyFilter !== "any"
+        ? sorted.filter((p) =>
+            matchesDifficulty(
+              difficultyCell(difficultyIndex, p.slug),
+              difficultyFilter
+            )
+          )
+        : sorted,
+    [sorted, difficultyFilter, difficultyIndex, difficultyLoaded]
+  );
+  const difficultyFiltered = difficultyLoaded && difficultyFilter !== "any";
   // coord returned a full page, so there are almost certainly more work units
   // than we sorted. Say so: with the list capped at `updated_at DESC`, an
   // "oldest authored" answer drawn from this window can be wrong.
   const truncated = plans.length >= FETCH_LIMIT;
-  // No `authored_at` — an undated slug, or a coord that predates the column.
-  // UNKNOWN either way: these rows sink in the sort and the caveat says so.
-  const missingAuthored = plans.filter((p) => !p.authored_at).length;
+  // No authoring date from EITHER source — the slug carries no date prefix
+  // AND coord holds no `authored_at` (`planAuthoredAt`, the deriver the chip,
+  // the row time and the sort all read). Counting the bare column here would
+  // call a dated slug with a NULL column "undated" while its own chip shows
+  // the date. UNKNOWN either way: these rows sink in the sort and the caveat
+  // says so.
+  const missingAuthored = plans.filter((p) => !planAuthoredAt(p)).length;
   const loaded = data !== null;
   // R6 — "not fetched" includes "fetched and FAILED". The shared deriver grew
   // this arm for `/spawn`; this route reads the same list from the same
@@ -329,15 +482,91 @@ export default function CoordPlansListPage() {
             ))}
           </SelectContent>
         </Select>
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={fetchData}
-          data-testid="coord-plans-refresh"
+        <SignalHigh className="h-4 w-4 text-muted-foreground ml-1" />
+        <Select
+          value={difficultyLoaded ? difficultyFilter : "any"}
+          onValueChange={(v) => setDifficultyFilter(v as DifficultyFilter)}
+          disabled={!difficultyLoaded}
         >
-          <RefreshCw className="h-3 w-3" />
-        </Button>
+          <SelectTrigger
+            className="w-[180px]"
+            data-testid="coord-plans-difficulty-select"
+            title={
+              difficultyIndex.state === "failed"
+                ? `Difficulty ratings could not be read: ${difficultyIndex.reason}`
+                : difficultyIndex.state === "pending"
+                  ? "Difficulty ratings are loading"
+                  : "Filter by the plan library's difficulty rating (applied to the rows fetched)"
+            }
+          >
+            <SelectValue placeholder="difficulty" />
+          </SelectTrigger>
+          <SelectContent>
+            {DIFFICULTY_FILTERS.map((opt) => (
+              <SelectItem key={opt.value} value={opt.value}>
+                {opt.label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        {/* Keyed on the question: a press whose read was superseded by a filter
+            change must not leave the NEW question's control busy for up to the
+            60s request timeout, over a read whose answer will be discarded. */}
+        <RefreshButton
+          key={status}
+          onRefresh={refresh}
+          label="Refresh plans"
+          title={`Re-reads the work-unit list now; it also refreshes itself every ${POLL_INTERVAL_MS / 1000} s`}
+          data-testid="coord-plans-refresh"
+        />
       </div>
+
+      {/* Does this "Plan" have a plan? Plan `2026-09-02-bodyless-work-units-…`.
+          A second row rather than more controls on the first: these two answer
+          a different question from status/sort, and the strips are only
+          rendered at all once a backend has actually told us the answer. */}
+      {bodySignalsServed && (
+        <div
+          className="flex flex-wrap items-center gap-2"
+          data-testid="coord-plans-body-filters"
+        >
+          <FileQuestion className="h-4 w-4 text-muted-foreground" />
+          <FilterChips
+            label="document"
+            testIdPrefix="coord-plans-has-body-filter"
+            options={HAS_BODY_FILTERS.map((o) => ({
+              ...o,
+              count: hasBodyCounts.get(o.value) ?? 0,
+            }))}
+            selected={hasBody}
+            onToggle={(v) => setHasBody((prev) => toggle(prev, v))}
+            onClear={() => setHasBody([])}
+            title={
+              data?.body_signal?.miss_reason
+                ? "This page could not establish whether a document exists — " +
+                  `${data.body_signal.miss_reason}. Every miss is reported ` +
+                  "unknown rather than as a missing document."
+                : "Whether a plan artifact exists for this work unit."
+            }
+          />
+          <FilterChips
+            label="scanner"
+            testIdPrefix="coord-plans-provenance-filter"
+            options={PROVENANCE_FILTERS.map((o) => ({
+              ...o,
+              count: provenanceCounts.get(o.value) ?? 0,
+            }))}
+            selected={provenance}
+            onToggle={(v) => setProvenance((prev) => toggle(prev, v))}
+            onClear={() => setProvenance([])}
+            title={
+              "Whether a plan scanner has ever seen a file for this work " +
+              "unit. A SCREEN, not a verdict — measured 2026-09-02 on one " +
+              "device it has 27.6% precision and 90.4% recall."
+            }
+          />
+        </div>
+      )}
 
       {/* R7 — the window caveats are infrastructural, so they collapse; the
           summary badge keeps the signal visible while they are closed. */}
@@ -368,9 +597,9 @@ export default function CoordPlansListPage() {
               data-testid="coord-plans-truncated-notice"
             >
               Showing the {FETCH_LIMIT} most-recently-updated work units — coord
-              caps this list. Sorting applies to these only, so a
-              &ldquo;{SORTS.find((s) => s.value === sort)?.label}&rdquo; result
-              may not be the corpus-wide answer.
+              caps this list. Sorting applies to these only, so a &ldquo;
+              {SORTS.find((s) => s.value === sort)?.label}&rdquo; result may not
+              be the corpus-wide answer.
             </p>
           )}
           {missingAuthored > 0 && (
@@ -378,8 +607,9 @@ export default function CoordPlansListPage() {
               className="text-xs text-muted-foreground"
               data-testid="coord-plans-missing-authored-notice"
             >
-              {missingAuthored} of {plans.length} have no authoring date
-              recorded; they sort last rather than being treated as oldest.
+              {missingAuthored} of {plans.length} have no authoring date — no
+              date prefix on the slug and no authored_at in coord; they sort
+              last rather than being treated as oldest.
             </p>
           )}
         </CollapsiblePanel>
@@ -389,8 +619,27 @@ export default function CoordPlansListPage() {
         <p className="text-sm text-destructive">Failed to load: {error}</p>
       )}
 
+      {difficultyIndex.state === "failed" && (
+        <p
+          className="text-xs text-muted-foreground"
+          data-testid="coord-plans-difficulty-unknown"
+        >
+          Difficulty ratings could not be read ({difficultyIndex.reason}) — each
+          row&apos;s difficulty is unknown, not unrated.
+        </p>
+      )}
+      {difficultyIndex.state === "loaded" && difficultyIndex.staleReason && (
+        <p
+          className="text-xs text-muted-foreground"
+          data-testid="coord-plans-difficulty-stale"
+        >
+          Some difficulty ratings may predate the current rubric — re-rating
+          failed: {difficultyIndex.staleReason}
+        </p>
+      )}
+
       <RecordList
-        items={sorted}
+        items={shown}
         itemKey={(p) => p.slug}
         // "Has this question been ANSWERED, one way or the other?" — never
         // "is a request outstanding?". The two diverge, and the gap is where a
@@ -404,7 +653,33 @@ export default function CoordPlansListPage() {
         loaded={data !== null || error !== null}
         skeletonRows={6}
         empty={
-          plansUnknown ? (
+          // ORDER MATTERS. A client-side filter that emptied the list is a
+          // statement about the WINDOW — rows were fetched — so it is checked
+          // BEFORE the unknown/stale copy, which is about the work-unit read
+          // and would blame the wrong control. Difficulty first, then the
+          // document filters, because difficulty runs over their output.
+          difficultyFiltered && sorted.length > 0 ? (
+            <p
+              className="text-sm text-muted-foreground italic"
+              data-testid="coord-plans-difficulty-empty"
+            >
+              {difficultyFilter === "unrated"
+                ? `None of the ${sorted.length} fetched plans is unrated.`
+                : `None of the ${sorted.length} fetched plans is rated ${difficultyFilter}.`}
+            </p>
+          ) : bodyFiltered && plans.length > 0 ? (
+            // The body filters are client-side, so "nothing matched" here is a
+            // statement about the WINDOW, not about coord. Saying
+            // "No plans matching status=any" over a window that holds
+            // {plans.length} rows would blame the wrong control.
+            <p
+              className="text-sm text-muted-foreground italic"
+              data-testid="coord-plans-body-filtered-empty"
+            >
+              None of the {plans.length} work units in this window match the
+              document filter.
+            </p>
+          ) : plansUnknown ? (
             <p
               className="text-sm text-muted-foreground italic"
               data-testid="coord-plans-unknown"
@@ -434,6 +709,7 @@ export default function CoordPlansListPage() {
             plan={p}
             expanded={ctx.expanded}
             onToggle={ctx.onToggle}
+            difficulty={difficultyCell(difficultyIndex, p.slug)}
           />
         )}
       />

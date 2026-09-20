@@ -983,7 +983,7 @@ class TestConsolidationConsumesEpisodesOnly:
         assert stats["cluster_candidates"] == 0
         assert stats["clusters"] == 0
         assert stats["enqueued"] == 0
-        assert _job_rows(db, tenant) == []
+        assert _job_rows(db, tenant, input_hash=job_input_hash(members)) == []
         _assert_live(db, *members)
 
     def test_episode_cluster_still_enqueues(self, db: AsyncEngine) -> None:
@@ -998,17 +998,50 @@ class TestConsolidationConsumesEpisodesOnly:
         assert stats["enqueued"] == 1
 
 
-def _job_rows(db: AsyncEngine, tenant: UUID) -> list[dict[str, Any]]:
+def _job_rows(
+    db: AsyncEngine,
+    tenant: UUID,
+    *,
+    input_hash: str | None = None,
+    kind: str | None = None,
+) -> list[dict[str, Any]]:
+    """Job rows for ``tenant``, optionally narrowed to a discriminator the
+    CALLER controls.
+
+    ``tenant`` alone is not such a discriminator, which is the whole reason
+    these keywords exist. ``conftest.py`` boots the app session-scoped and
+    autouse, so the lifespan's ``scheduler.start()`` leaves ``memory_consolidate``
+    live for the entire session (only ``scheduled_dispatch`` is switched off),
+    and its ``_async_consolidate_all`` sweeps EVERY tenant with live records —
+    including the fresh ``uuid4()`` tenant a test just seeded. An unfiltered
+    ``len(_job_rows(db, tenant)) == N`` is therefore an assertion about shared
+    state, and it reddened an alembic-only PR (qontinui-web#1103) with
+    ``assert 2 == 1``.
+
+    ``input_hash`` is the strongest discriminator available: ``job_input_hash``
+    is sha256 over the comma-joined SORTED ids, so a concurrent sweeper's
+    partial-member job hashes differently by construction and cannot collide
+    with the set under test. ``kind`` separates an ``embedding`` job from a
+    ``synthesis`` one.
+
+    Plan: 2026-08-31-global-state-assertion-inventory-survives-its-plan
+    """
+
     async def _go() -> list[dict[str, Any]]:
+        sql = (
+            "SELECT job_id, kind, target_ids, input_texts, status, "
+            "input_hash FROM coord.memory_jobs "
+            "WHERE tenant_id = :t"
+        )
+        params: dict[str, Any] = {"t": tenant}
+        if input_hash is not None:
+            sql += " AND input_hash = :h"
+            params["h"] = input_hash
+        if kind is not None:
+            sql += " AND kind = :k"
+            params["k"] = kind
         async with db.connect() as conn:
-            rows = await conn.execute(
-                text(
-                    "SELECT job_id, kind, target_ids, input_texts, status, "
-                    "input_hash FROM coord.memory_jobs "
-                    "WHERE tenant_id = :t"
-                ),
-                {"t": tenant},
-            )
+            rows = await conn.execute(text(sql), params)
             return [dict(r) for r in rows.mappings()]
 
     return asyncio.run(_go())
@@ -1023,14 +1056,16 @@ class TestConsolidationEnqueue:
         assert stats["clusters"] == 1
         assert stats["enqueued"] == 1
 
-        jobs = _job_rows(db, tenant)
+        # Select by the hash THIS test computed, not by "every job this
+        # tenant has" — a concurrent memory_consolidate sweep enqueues
+        # against the same fresh tenant and hashes differently.
+        jobs = _job_rows(db, tenant, input_hash=job_input_hash(members))
         assert len(jobs) == 1
         job = jobs[0]
         assert job["status"] == "pending"
         assert {UUID(str(m)) for m in job["target_ids"]} == set(members)
         assert len(job["input_texts"]) == 5
         assert job["kind"] == "synthesis"
-        assert job["input_hash"] == job_input_hash(members)
 
         # Synthesis is deferred to the runner: no mental_model yet, and
         # the members are still live (not superseded).
@@ -1049,7 +1084,7 @@ class TestConsolidationEnqueue:
 
     def test_reconsolidation_is_deduped(self, db: AsyncEngine) -> None:
         tenant = uuid4()
-        _seed_episode_cluster(db, tenant)
+        members = _seed_episode_cluster(db, tenant)
 
         first = _run(db, lambda s: consolidate_tenant(s, tenant, now=NOW))
         assert first["enqueued"] == 1
@@ -1057,7 +1092,9 @@ class TestConsolidationEnqueue:
         # Same cluster, live job already present → input_hash dedupe.
         assert second["clusters"] == 1
         assert second["enqueued"] == 0
-        assert len(_job_rows(db, tenant)) == 1
+        # The dedupe claim is about THIS member set's hash, so scope the
+        # count to it rather than to the tenant's whole job table.
+        assert len(_job_rows(db, tenant, input_hash=job_input_hash(members))) == 1
 
 
 # ---------------------------------------------------------------------------
@@ -1262,7 +1299,7 @@ class TestLifecycleHoldClustering:
         assert stats["cluster_candidates"] == 0
         assert stats["clusters"] == 0
         assert stats["enqueued"] == 0
-        assert _job_rows(db, tenant) == []
+        assert _job_rows(db, tenant, input_hash=job_input_hash(members)) == []
         _assert_live(db, *members)
 
     def test_unheld_cluster_still_enqueues(self, db: AsyncEngine) -> None:
@@ -1576,7 +1613,23 @@ class TestReindex:
         assert stats["enqueued_jobs"] == 1
 
         # One embedding job covering exactly the two stale/NULL rows.
-        jobs = _job_rows(db, tenant)
+        #
+        # Scoped by the job's own input_hash, NOT by kind. The interferer here
+        # is `memory_reindex` — registered `*/10 * * * *` with run_at_boot
+        # (app/core/scheduler.py), and conftest disables only
+        # `scheduled_dispatch`, so it sweeps for the whole session and enqueues
+        # `kind='embedding'` jobs of its own. A `kind=` filter would not
+        # separate this test's job from that one. `job_input_hash` sorts the
+        # ids and folds in EMBEDDING_MODEL_TAG exactly as `embedding_job_input`
+        # does, so this hash names this member set and no other set.
+        #
+        # It does NOT make the row unique on its own: a sweeper picking up the
+        # same two rows produces the SAME hash. What holds the count at 1 is
+        # the `uq_memory_jobs_live_input` partial-unique dedupe. The residual
+        # race runs the other way — if the sweeper wins, `enqueued_jobs == 1`
+        # above goes red, which is a visible failure rather than a silent one.
+        expected_hash = job_input_hash([stale, null_emb], model_tag=EMBEDDING_MODEL_TAG)
+        jobs = _job_rows(db, tenant, input_hash=expected_hash)
         assert len(jobs) == 1
         assert jobs[0]["kind"] == "embedding"
         assert jobs[0]["status"] == "pending"
@@ -1595,7 +1648,7 @@ class TestReindex:
         stats = _run(db, lambda s: reindex_once(s, now=NOW))
         assert stats["enqueued_rows"] == 0
         assert stats["enqueued_jobs"] == 0
-        assert len(_job_rows(db, tenant)) == 1
+        assert len(_job_rows(db, tenant, input_hash=expected_hash)) == 1
 
     def test_tombstones_never_enqueued(self, db: AsyncEngine) -> None:
         tenant = uuid4()
@@ -1609,21 +1662,57 @@ class TestReindex:
         )
         stats = _run(db, lambda s: reindex_once(s, now=NOW))
         assert stats["enqueued_rows"] == 0
-        assert _job_rows(db, tenant) == []
+        # No embedding job was enqueued for the TOMBSTONED row specifically —
+        # the hash of `[dead]` is what `reindex_once` would have produced had
+        # it wrongly selected it, so this names the defect rather than asking
+        # whether the tenant has any embedding job at all (the live
+        # `memory_reindex` sweeper answers that question, not this test).
+        assert (
+            _job_rows(
+                db,
+                tenant,
+                input_hash=job_input_hash([dead], model_tag=EMBEDDING_MODEL_TAG),
+            )
+            == []
+        )
         assert _row(db, dead, "embedding") is None
 
     def test_rows_are_enqueued_per_tenant(self, db: AsyncEngine) -> None:
         # The batch sweep is tenant-agnostic but a claim is tenant-bound,
         # so a batch spanning tenants must split into one job per tenant.
         tenant_a, tenant_b = uuid4(), uuid4()
-        _seed(db, tenant_a, content="a row", embedding=None, embedding_model=None)
-        _seed(db, tenant_b, content="b row", embedding=None, embedding_model=None)
+        row_a = _seed(
+            db, tenant_a, content="a row", embedding=None, embedding_model=None
+        )
+        row_b = _seed(
+            db, tenant_b, content="b row", embedding=None, embedding_model=None
+        )
 
         stats = _run(db, lambda s: reindex_once(s, now=NOW))
         assert stats["enqueued_rows"] == 2
         assert stats["enqueued_jobs"] == 2
-        assert len(_job_rows(db, tenant_a)) == 1
-        assert len(_job_rows(db, tenant_b)) == 1
+        # Each tenant's own row's hash — the live `memory_reindex` sweeper
+        # enqueues embedding jobs too, so `kind=` would not separate them.
+        assert (
+            len(
+                _job_rows(
+                    db,
+                    tenant_a,
+                    input_hash=job_input_hash([row_a], model_tag=EMBEDDING_MODEL_TAG),
+                )
+            )
+            == 1
+        )
+        assert (
+            len(
+                _job_rows(
+                    db,
+                    tenant_b,
+                    input_hash=job_input_hash([row_b], model_tag=EMBEDDING_MODEL_TAG),
+                )
+            )
+            == 1
+        )
 
 
 class TestSupersedeGuard:
@@ -1983,7 +2072,7 @@ class TestAnchoredRowsAreConsolidationExempt:
         assert stats["cluster_candidates"] == 0
         assert stats["clusters"] == 0
         assert stats["enqueued"] == 0
-        assert _job_rows(db, tenant) == []
+        assert _job_rows(db, tenant, input_hash=job_input_hash(members)) == []
         _assert_live(db, *members)
 
     def test_unanchored_cluster_still_enqueues(self, db: AsyncEngine) -> None:

@@ -70,5 +70,8 @@ export const UNKNOWN_COUNTS_DETAIL =
  * that sentence is the one being qualified.
  */
 export function staleDetail(window: string): string {
-  return `Last refresh failed — these counts are stale. ${window}`;
+  const qualifier = "Last refresh failed — these counts are stale.";
+  // A strip whose counts all live in its badges may have no window sentence
+  // left to qualify; the qualifier still stands, without a dangling space.
+  return window ? `${qualifier} ${window}` : qualifier;
 }

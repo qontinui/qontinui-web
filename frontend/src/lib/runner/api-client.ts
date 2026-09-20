@@ -2,6 +2,11 @@
 
 import { useState, useEffect, useCallback, useRef } from "react";
 import { isRunnerReachable } from "@/lib/ui-bridge/discovered-specs";
+import {
+  describeRunnerOriginRefusal,
+  readRunnerOriginRefusal,
+  type RunnerOriginRefusal,
+} from "./origin-refusal";
 
 // =============================================================================
 // Configuration
@@ -68,12 +73,20 @@ export function onRunnerApiBaseChange(
 // =============================================================================
 
 export class RunnerApiError extends Error {
+  /** The runner's machine-readable error code, when it sent a typed one. */
+  readonly code?: string;
+  /** Set when the runner's origin guard refused this page's origin. */
+  readonly originRefusal?: RunnerOriginRefusal;
+
   constructor(
     public status: number,
-    message: string
+    message: string,
+    originRefusal?: RunnerOriginRefusal
   ) {
     super(message);
     this.name = "RunnerApiError";
+    this.originRefusal = originRefusal;
+    this.code = originRefusal?.code;
   }
 }
 
@@ -120,16 +133,38 @@ export async function runnerFetch<T>(
       );
     }
     throw error;
-  } finally {
-    clearTimeout(timeoutId);
   }
 
   if (!response.ok) {
+    // A typed origin-guard refusal is not a broken runner — say what was
+    // refused and how to admit it (see ./origin-refusal). Only a 403 can be
+    // that refusal, so only a 403's body is read, and the abort timer stays
+    // armed across the read: a runner that sends headers and then stalls the
+    // body cannot hang the caller. An aborted read degrades to the generic
+    // message below.
+    let refusal: RunnerOriginRefusal | null = null;
+    if (response.status === 403) {
+      try {
+        refusal = await readRunnerOriginRefusal(response);
+      } finally {
+        clearTimeout(timeoutId);
+      }
+    } else {
+      clearTimeout(timeoutId);
+    }
+    if (refusal) {
+      throw new RunnerApiError(
+        response.status,
+        describeRunnerOriginRefusal(refusal),
+        refusal
+      );
+    }
     throw new RunnerApiError(
       response.status,
       `Runner API error: ${response.status} ${response.statusText}`
     );
   }
+  clearTimeout(timeoutId);
 
   const text = await response.text();
   if (!text) return undefined as T;

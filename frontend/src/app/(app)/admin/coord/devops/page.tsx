@@ -22,21 +22,41 @@
  *  4. **CI capacity** — how much is it ALLOWED to take? Phase 2 mounts the
  *     shared `CiNodeConfigPanel` as a per-row disclosure on the machine list,
  *     collapsed, rather than as a fourth section: the knob and the telemetry
- *     that says what to set it to belong in one viewport.
+ *     that says what to set it to belong in one viewport. Each row also
+ *     carries its drain state and the Drain/Undrain lever (plan
+ *     `2026-09-01-device-drain-does-not-reach-agent-session-spawning`
+ *     Phase 4b) on the same principle.
+ *  5. **Who changed it** — the operator audit feed, last and collapsed (plan
+ *     `2026-08-20-fleet-page-runner-enable-disable-switch` Phase 5). It is
+ *     history rather than liveness, and it is HERE rather than on a sibling
+ *     route because the writes it explains are on this page: the drain lever
+ *     shows the drain in force now, and this is the durable answer to "who
+ *     took this host out, when, and why".
  *
- * ## The health strip answers TWO questions, not one
+ * ## The health strip answers THREE questions, not one
  *
- * The badge cluster carries machine liveness AND coord's unresolved-alert
- * severity rollup, because those are different claims and the page used to
- * make only the first. `by_state: {healthy: 8}` is liveness; it says nothing
- * about alerts, and a steward read it as an all-clear while thousands of
- * unresolved criticals stood (plan
- * `2026-08-31-devops-surface-renders-no-alert-signal`). Coord had been
- * publishing the rollup on this page's own poll the whole time — it was
+ * The badge cluster carries machine liveness, coord's unresolved-alert
+ * severity rollup, AND whether the machines can still reach coord, because
+ * those are different claims and the page used to make only the first.
+ * `by_state: {healthy: 8}` is liveness; it says nothing about alerts, and a
+ * steward read it as an all-clear while thousands of unresolved criticals
+ * stood (plan `2026-08-31-devops-surface-renders-no-alert-signal`). Coord had
+ * been publishing the rollup on this page's own poll the whole time — it was
  * discarded by a hook type that declared only `devices`.
  *
- * This costs NO new read: `alerts` rides the `/fleet/health` body the page
- * already polls, which is R1's "derived from data already on the page".
+ * The third question is the same shape one field over, and was found the same
+ * way (plan
+ * `2026-09-12-runner-loads-with-an-expired-coord-credential-and-tells-nobody`
+ * Phase 5). Liveness is coord reaching the machine; a runner that boots with
+ * an expired coord device JWT answers every probe and reads `healthy` here
+ * while every session it spawns silently has no coord access. Coord joins that
+ * fact onto each device row as `credential_dark` and raises a critical alert
+ * per dark device — and this page discarded the field and rendered the alert
+ * only as a count with no machine attached.
+ *
+ * This costs NO new read: `alerts` and `credential_dark` both ride the
+ * `/fleet/health` body the page already polls, which is R1's "derived from
+ * data already on the page".
  *
  * ## What this page does NOT do
  *
@@ -46,21 +66,29 @@
  * have stopped sending it work, and that is only true while both consumers
  * read one definition of the number AND the verdict.
  *
- * It opens THREE POLLS: `/fleet/health` here at 10 s,
- * `/fleet/resource-samples` inside `FleetResourcesSection`, which passes the
- * same rows to both the strip and the CI panel, and `/fleet/drain` here at
- * 30 s. Two polls of ONE route would be two chances to disagree about what the
- * fleet looks like right now; three polls of three routes is one read per
- * fact, which is the shape this page is built on.
+ * It opens FOUR POLLS, each of a DIFFERENT route: `/fleet/health` here at
+ * 10 s, `/fleet/resource-samples` inside `FleetResourcesSection` (which passes
+ * the same rows to both the strip and the CI panel), `/fleet/drain` here at
+ * 30 s, and `/fleet/ci-runners` here at coord's own registrar cadence. Two
+ * polls of ONE route would be two chances to disagree about what the fleet
+ * looks like right now; one poll per route is one read per fact, which is the
+ * shape this page is built on.
  *
- * The drain poll is the newest (plan
+ * The drain poll (plan
  * `2026-09-01-device-drain-does-not-reach-agent-session-spawning` Phase 4b)
- * and is the one read here that is NOT a telemetry cadence — a drain changes
+ * is the one read here that is NOT a telemetry cadence — a drain changes
  * on an operator action. It polls anyway, and slowly, because a drain also
  * **expires by itself**: coord evaluates `until` on read and runs no sweeper,
  * so a machine re-enters the fleet with nothing writing anything anywhere. A
  * once-only read would leave "Drained until 14:03" on screen at 15:00, which
  * is a false claim rather than a stale one.
+ *
+ * The CI-runner mirror poll was added by plan
+ * `2026-08-20-fleet-page-runner-enable-disable-switch` Phase 2 and is not a
+ * second view of an existing one: the GitHub fleet's rows are structurally
+ * invisible to `/fleet`'s device read, so nothing else on this page can see
+ * the labels GitHub routes on. It polls at 60 s because coord's registrar
+ * rewrites those rows on that cadence; faster reads the same row twice.
  *
  * The fourth read is `/devenv/machines`, read ONCE (`useDevenvMachines`) and
  * not polled: it carries the CI-capacity JOIN, and the roster it indexes
@@ -71,14 +99,21 @@
  * points one implementation instead of a fork.
  */
 
-import { useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ExternalLink } from "lucide-react";
 import { HealthStrip } from "@/components/console";
 import type { HealthBadge } from "@/components/console";
-import { FleetOverview, FleetResourcesSection } from "@/components/operations";
+import {
+  FleetOverview,
+  FleetResourcesSection,
+  OperatorAuditPanel,
+} from "@/components/operations";
+import { summarizeCoordCredentials } from "@/components/operations/coordCredentialStatus";
 import { summarizeFleetLiveness } from "@/components/operations/fleetLiveness";
+import { useCiRunnerMirror } from "@/components/operations/useCiRunnerMirror";
+import { useDeviceStatusStream } from "@/components/operations/useDeviceStatusStream";
 import { useDevenvMachines } from "@/components/operations/useDevenvMachines";
 import { useFleetDrain } from "@/components/operations/useFleetDrain";
 import { useFleetHealth } from "@/components/operations/useFleetHealth";
@@ -111,7 +146,29 @@ export default function CoordDevOpsPage() {
   // rows can disagree about what is drained. Its `refresh` is handed down so a
   // drain or undrain is visible immediately rather than on the next tick.
   const drain = useFleetDrain();
+  // The live device-status stream. The hook opens a REST seed and a WebSocket
+  // PER CALL, so it is subscribed exactly once, here, and shared: the machine
+  // list and its tile read it through `FleetOverview`, and the strip's
+  // credential rollup below reads the same `details` bag the rows do.
+  const deviceStatus = useDeviceStatusStream();
+  // Coord's mirror of the GitHub-side CI runners and the labels GitHub routes
+  // on. Owned here, one poll, passed down — the machine rows resolve their own
+  // row from it rather than fetching per card.
+  const ciRunnerMirror = useCiRunnerMirror();
   const devices = fleet.data?.devices ?? EMPTY_DEVICES;
+  // The page's clock, advanced independently of every read. A runner's
+  // `coord_credential` report goes stale by TIME alone
+  // (`resolveCoordCredential`), and the runner that stopped reporting is
+  // exactly the one that sends no frame to re-render anything — so without
+  // this tick a quiet stream, or a fleet-health outage that pins `devices`,
+  // would keep counting that machine `ok` on the strip and `live` on its row.
+  // 15 s is well under the 900 s staleness bound, so the transition can't be
+  // missed. Same tick `FleetResourceStrip` keeps for its row ages.
+  const [nowMs, setNowMs] = useState(() => Date.now());
+  useEffect(() => {
+    const t = setInterval(() => setNowMs(Date.now()), 15_000);
+    return () => clearInterval(t);
+  }, []);
 
   // R1: derived from data already on the page, never a second fetch. The
   // derivation itself is pure and unit-tested (`fleetLiveness.ts`).
@@ -203,6 +260,119 @@ export default function CoordDevOpsPage() {
     ];
   }, [alertCounts, alertsScrapeUp, router]);
 
+  /**
+   * **The third question the strip answers: can the machines still reach
+   * COORD?** Plan
+   * `2026-09-12-runner-loads-with-an-expired-coord-credential-and-tells-nobody`
+   * Phase 5.
+   *
+   * `by_state` is coord reaching the machine, `alerts` is anything wrong
+   * anywhere; neither can see a runner that booted with an expired device JWT
+   * and kept working. That machine answers every probe, so it reads `healthy`
+   * here while every session it spawns has no coord access and does not know
+   * it. The only thing that made it visible was a critical alert whose COUNT
+   * was on this page and whose MACHINE was not.
+   *
+   * Derived from data already on the page (R1, never a second fetch or
+   * subscription). Both badges are conditional, and the two are deliberately
+   * separate counts:
+   *
+   * * `credential dark N` — measured, and someone must go and fix those
+   *   machines. The only badge here that borrows red besides `unreachable`.
+   * * `credential unknown N` — nothing measured them. **Never folded into the
+   *   healthy side and never rendered as `0`**, which is the same rule the
+   *   `alerts unknown` badge above follows and the rule this whole plan is
+   *   about (`[policy: silent-empty-is-unknown]`).
+   *
+   * **The strip and the machine rows resolve each device from the same two
+   * sources, so they agree for every device they both key the same way.**
+   * A device reads a stream report only when the row's `device_id` is its
+   * own, so two coord devices sharing a hostname never borrow each other's
+   * report; the one gap left is that they are counted twice here but share
+   * one machine row. Coord's fleet-health join alone can conclude
+   * `dark` and nothing else: its `dark: false` is a roster stamp for "the
+   * scan did not name this device", which pools the healthy with the
+   * never-reported. The affirmative half comes from the runner's own
+   * `coord_credential` bag on the device-status stream — the one subscription
+   * above, which `FleetOverview` also receives — joined per device exactly as
+   * each row joins it (`coordDeviceHostKey` + `reportedCoordCredentialFor`,
+   * which is what a row matched to a coord device uses). So a
+   * machine whose runner reported `ok: true` is counted measured here and
+   * reads `live` on its row, and `credential unknown N` counts only the
+   * machines nothing measured. Counting those as healthy is what an earlier
+   * cut of `coordCredentialStatus` did, and it put a calm `credential live`
+   * badge on precisely the machines the plan was written about.
+   */
+  const credentials = useMemo(
+    () =>
+      summarizeCoordCredentials(
+        devices,
+        deviceStatus.byHostname,
+        fleet.data?.credential_dark_scrape_up,
+        nowMs
+      ),
+    [
+      devices,
+      deviceStatus.byHostname,
+      fleet.data?.credential_dark_scrape_up,
+      nowMs,
+    ]
+  );
+
+  const credentialBadges = useMemo<HealthBadge[]>(() => {
+    const badges: HealthBadge[] = [];
+    if (credentials.needsAction > 0) {
+      badges.push({
+        key: "credential-dark",
+        label: `credential dark ${credentials.needsAction}`,
+        tone: "attention",
+        title:
+          "Machines whose coord credential needs a person: coord's dark scan named them, or their own runner reported a dark posture (dark, expired, absent, unrefreshable). Sessions spawned on them work without coord and do not know it. Opens the alerts list, where coord raises a critical runner_coord_credentials_missing alert for each machine its scan names.",
+        onClick: () => router.push(ALERTS_HREF),
+        "data-testid": "coord-devops-credential-dark-badge",
+      });
+    }
+    if (credentials.unknown > 0) {
+      // WHY nothing measured them, worded per cause. A failed read on either
+      // side is not the machines' silence, and the tooltip must not blame the
+      // runners for a read this page could not make. The count stands in every
+      // case: those machines really are unmeasured on this read.
+      //
+      // The stream has two failure shapes and they are different claims:
+      // no FULL fleet read has succeeded yet (rows may still have arrived one
+      // device at a time by frame, so they may be incomplete), and a full read
+      // succeeded earlier but the latest one failed (rows are being served,
+      // possibly stale). A single failed re-seed behind a working socket must
+      // read as "may be stale", never as "nothing was read".
+      const causes: string[] = [];
+      if (credentials.scrapeUp === false) {
+        causes.push(
+          "Coord could not read the per-device credential join on this poll. This is not 'their credentials are fine' — it is no measurement."
+        );
+      }
+      if (!deviceStatus.everSeeded) {
+        causes.push(
+          `No full device-status read has succeeded yet (${deviceStatus.error ?? "not loaded yet"}); runner reports that arrived since may be incomplete, so machines coord did not name dark are UNKNOWN — not healthy.`
+        );
+      } else if (deviceStatus.error !== null) {
+        causes.push(
+          `The last device-status read failed (${deviceStatus.error}); runner reports may be stale, so a machine counted here may have reported since.`
+        );
+      }
+      badges.push({
+        key: "credential-unknown",
+        label: `credential unknown ${credentials.unknown}`,
+        tone: "muted",
+        title:
+          causes.length > 0
+            ? causes.join(" ")
+            : "Neither coord's dark scan nor the machine's own runner reported a credential verdict for these machines. UNKNOWN, not healthy — go look at the machine.",
+        "data-testid": "coord-devops-credential-unknown-badge",
+      });
+    }
+    return badges;
+  }, [credentials, deviceStatus.error, deviceStatus.everSeeded, router]);
+
   return (
     // `overflow-x-auto`: the resource strip is wide, and it must scroll rather
     // than strand its right-hand columns off-screen. Vertical scroll comes
@@ -274,6 +444,11 @@ export default function CoordDevOpsPage() {
                 },
               ]
             : []),
+          // Credentials next: "are the machines there?" is answered above,
+          // and this answers "can the ones that ARE there still reach coord?"
+          // — an independent axis, because the incident it exists for is a
+          // machine that answered every probe with a dead coord credential.
+          ...credentialBadges,
           // Alerts last, after the liveness cluster: the four above answer
           // "are the machines there?", these answer "is anything wrong?", and
           // the second question is the one this page could not previously ask.
@@ -339,13 +514,39 @@ export default function CoordDevOpsPage() {
           4. CI capacity rides on each row as a collapsed disclosure, resolved
           from `ciMachines` — one read, no per-row fetch. Each row also carries
           its drain state and the Drain/Undrain lever, resolved from `drain` —
-          the one read, again, never one per card. */}
-      <FleetOverview health={fleet} ciMachines={ciMachines} drain={drain} />
+          the one read, again, never one per card. `deviceStatus` is the page's
+          one device-status subscription, shared with the strip above.
+          `ciRunnerMirror` is coord's CI-runner label mirror, one poll. */}
+      <FleetOverview
+        health={fleet}
+        ciMachines={ciMachines}
+        ciRunnerMirror={ciRunnerMirror}
+        drain={drain}
+        deviceStatus={deviceStatus}
+        nowMs={nowMs}
+      />
 
       {/* 2. Resources and 3. CI occupancy, over the section's own single
           poll of /fleet/resource-samples. `devices` is the spine: a machine
           that publishes no sample still gets a row, as `unknown`. */}
       <FleetResourcesSection devices={devices} />
+
+      {/* 5. Who changed what. Plan
+          `2026-08-20-fleet-page-runner-enable-disable-switch` Phase 5.
+
+          It belongs on THIS page because the writes it explains are on this
+          page: each row's Drain/Undrain lever shows the drain in force NOW,
+          and this panel is the durable record of who set or released it, when,
+          and with what reach. Putting the record of an action on a
+          different page from the action is the shape the merge kill switch was
+          deliberately moved out of.
+
+          Last, and collapsed: it is history, not liveness, so it must not
+          compete with the three sections above that answer "what is happening
+          right now". Unlike the drain dialog it persists being open — it is
+          read-only, so there is no consent surface to keep out from under a
+          cursor. */}
+      <OperatorAuditPanel />
     </div>
   );
 }

@@ -18,6 +18,8 @@ __all__ = [
     "get_current_user_from_ws",
     "get_authenticated_device",
     "get_authenticated_device_user",
+    "get_reporting_device",
+    "DEVICE_ONLY_REFUSAL",
     "get_audit_actor_user_id",
     "get_audit_actor_user",
     "get_audit_actor_principal",
@@ -397,6 +399,96 @@ async def get_audit_actor_principal(
     distinction it has no use for.
     """
     return await _resolve_actor_principal(user, credentials)
+
+
+#: The 403 detail :func:`get_reporting_device` returns to an operator. One
+#: string, so the route's docs and its tests quote the same words.
+DEVICE_ONLY_REFUSAL = (
+    "This route accepts only a coord device token. It records what a DEVICE "
+    "measured about its own scan source, so the reporting device is taken from "
+    "the token's device_id claim — an operator session carries no device "
+    "identity and cannot report on a device's behalf. Read the readings with "
+    "GET instead."
+)
+
+
+async def get_reporting_device(
+    user: User | None = Depends(current_active_user_optional),
+    credentials: HTTPAuthorizationCredentials | None = Depends(_optional_bearer_scheme),
+) -> DeviceTokenContext:
+    """Resolve a caller that MUST be a paired device, refusing an operator.
+
+    For write routes whose subject is the device itself — the row is keyed on
+    the token's ``device_id`` claim — where the dual-auth doors
+    (:func:`get_audit_actor_user` and friends) are wrong twice over: they
+    discard the claim set, and they would admit an operator, who has no
+    device id to key on.
+
+    Same inputs and same precedence as :func:`_resolve_actor_principal`, with
+    the operator arm turned into a refusal rather than a success:
+
+    * A resolved Cognito user → **403** :data:`DEVICE_ONLY_REFUSAL`. Checked
+      FIRST, exactly as the dual-auth tree lets that arm win: a browser user
+      whose request also carries a device bearer is still the operator, and a
+      forwarded device token must not let them report as the device.
+    * A bearer that verifies as a device token → the
+      :class:`DeviceTokenContext`, with ``device_id`` read eagerly so a token
+      missing the claim is a 401 here rather than inside the handler.
+    * A bearer that fails device verification propagates that 401 (or the
+      503 from an unreachable coord JWKS) — never a fall-through.
+    * Neither → 401.
+
+    ``_verify_device_jwt`` is looked up at call time, which is what lets the
+    test suites stub coord's JWKS at ``deps._verify_device_jwt``.
+    """
+    if user is not None:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=DEVICE_ONLY_REFUSAL,
+        )
+    if credentials is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Device authentication required.",
+        )
+    claims, device_user = await _verify_device_jwt(credentials.credentials)
+    context = DeviceTokenContext(claims=claims, user=device_user)
+    # Eager: raises the 401 for a token without a usable device_id claim.
+    _ = context.device_id
+    return context
+
+
+async def get_audit_actor_user_optional(
+    user: User | None = Depends(current_active_user_optional),
+    credentials: HTTPAuthorizationCredentials | None = Depends(_optional_bearer_scheme),
+) -> User | None:
+    """:func:`get_audit_actor_user`, but ``None`` instead of a 401.
+
+    For a route that is ALREADY authenticated by some other dependency and
+    wants the organization-scoped principal as an EXTRA, not as a gate. The
+    motivating one is ``/operations/plans``: it is gated by ``get_tenant_id``
+    (a coord-resolvable bearer) and additionally joins the org-scoped plan
+    library to say whether each work unit has a document. Depending on the
+    strict variant there would newly 401 any caller whose bearer coord
+    resolves but this decision tree does not — narrowing a route's auth as a
+    side effect of adding a signal to it.
+
+    ``None`` is therefore "no organization-scoped principal on this request",
+    and the caller must render that as UNKNOWN rather than as an empty scope.
+    Scoping such a request to the shared NULL bucket would report one
+    principal's corpus as another's, which is the failure the strict variant's
+    401 exists to prevent — so this returns ``None`` and does not guess.
+
+    Every 401/503 the decision tree raises is folded into that ``None``: a
+    bearer that fails device verification is not a principal, and neither is
+    an unreachable coord JWKS. Both are honestly "we do not know who this is",
+    and neither is a reason to fail a route this dependency does not gate.
+    """
+    try:
+        principal = await _resolve_actor_principal(user, credentials)
+    except HTTPException:
+        return None
+    return principal.user
 
 
 async def get_audit_actor_user_id(

@@ -65,11 +65,6 @@ const CATEGORY_META: Record<string, CategoryMeta> = {
     label: "Project updates",
     description: "Status changes and milestones on your projects",
   },
-  gate_action: {
-    label: "Merge-gate actions",
-    description:
-      "When the coord merge gate holds, approves, or acts on a PR you are responsible for",
-  },
 };
 
 // ============================================================================

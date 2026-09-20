@@ -144,6 +144,27 @@ export interface WorkArtifactDetail extends WorkArtifactSummary {
   coord: CandidateCoordLink;
 }
 
+/**
+ * What the corpus a page was drawn from actually holds — UNFILTERED by the
+ * page's own query, org-scoped like it. `plan_count: 0` beside an empty page
+ * reads "the corpus holds no plans", which is a different sentence from "no
+ * such plan" (2026-08-27-plan-corpus-read-path-is-dark, D1).
+ */
+export interface CorpusHealth {
+  artifact_count: number;
+  plan_count: number;
+  /** `max(updated_at)` in scope; `null` on an EMPTY corpus, never an epoch. */
+  newest_updated_at: string | null;
+  /** The `/capture-health` census, from the same query and builder. */
+  capture: CaptureHealthResponse;
+  /**
+   * `GET /plan-library/scan-roots`, from the same builder: how far each
+   * feeding device's scan source is from its default branch. `state:
+   * "unknown"` with no rows is "no device has reported", never "current".
+   */
+  scan_roots: ScanRootListResponse;
+}
+
 export interface WorkArtifactListResponse {
   items: WorkArtifactSummary[];
   /** This page's length (`items.length`); `total` is the unpaged total. */
@@ -151,6 +172,7 @@ export interface WorkArtifactListResponse {
   total: number;
   offset: number;
   limit: number;
+  corpus_health: CorpusHealth;
 }
 
 // ───────────────────────────── divergence ─────────────────────────────
@@ -219,6 +241,8 @@ export interface CaptureDoorHealth {
 export interface CaptureHealthResponse {
   total: number;
   doors: CaptureDoorHealth[];
+  /** `max(updated_at)` across every door; `null` on an empty corpus. */
+  newest_updated_at: string | null;
 }
 
 // ──────────────────── coord link (candidates read) ────────────────────
@@ -316,6 +340,13 @@ export interface PlanCandidateResponse {
   coord_available: boolean;
   work_unit_population_state: WorkUnitPopulationState;
   work_unit_population_reason: string | null;
+  /**
+   * The whole corpus's health — the same block every list page carries.
+   * `null` when it could not be read (report-only here): UNKNOWN, not healthy.
+   */
+  corpus_health: CorpusHealth | null;
+  /** Why `corpus_health` is null (a `read_failed:` line); null when it was read. */
+  corpus_health_unavailable_reason: string | null;
 }
 
 // ───────────────────────────── fleet policy ─────────────────────────────
@@ -333,3 +364,465 @@ export type {
   FleetPolicyView,
   FleetPolicyWriteResult,
 } from "../_shared/fleetPolicy";
+
+// ──────────────────── scan sources (per-device readings) ────────────────────
+
+/**
+ * The four states a device's runner can report for the directory its
+ * plan-library body sync scans. Mirrors `ScanRootState` in
+ * `backend/app/schemas/plan_library_scan_roots.py`, which mirrors the runner's
+ * `ScanDivergenceState`.
+ *
+ * Pinned, not merely mirrored: `types.wire.test.ts` compares it with the
+ * `state` and `reported_state` enums in the committed OpenAPI snapshots, which
+ * backend CI regenerates from the live schema and refuses to let drift. A state
+ * added on the backend therefore fails a frontend test, rather than reaching
+ * this console as a value nothing here was written for.
+ */
+export const SCAN_ROOT_STATES = [
+  "measured",
+  "not_scanning",
+  "not_a_git_work_tree",
+  "unknown",
+] as const;
+
+export type ScanRootState = (typeof SCAN_ROOT_STATES)[number];
+
+export const SCAN_ROOT_STATE_LABELS: Record<ScanRootState, string> = {
+  measured: "Measured",
+  not_scanning: "Not scanning",
+  not_a_git_work_tree: "Not a git work tree",
+  unknown: "Unknown",
+};
+
+/** Render an unrecognised state as itself rather than as blank. */
+export function scanRootStateLabel(state: string): string {
+  return SCAN_ROOT_STATE_LABELS[state as ScanRootState] ?? state;
+}
+
+/**
+ * One device's latest reading, as the READ route renders it.
+ *
+ * The distinction this type must never collapse — the same one
+ * `CoordLinkState` and `CoordPrState` carry above — is `state` vs
+ * `reported_state`. `state` is the backend's VERDICT, and it is the field that
+ * decides WHAT MAY BE CLAIMED: it is `"unknown"` whenever the reading cannot
+ * support a claim about NOW, even though the device reported `"measured"`.
+ * Three rules produce that, in precedence order, each naming itself in
+ * `detail`:
+ *
+ * * `observation_stale:` — nothing received from the device inside
+ *   `fresh_within_secs`. A device that went quiet has established nothing.
+ * * `reading_superseded:` — its latest report was observed BEFORE the stored
+ *   reading (a clock step-back, or a late delivery), so the stored reading may
+ *   not be what it says now.
+ * * `ref_stale:` — a `measured` reading whose counts are floors and whose
+ *   `behind` is 0. Zero commits behind a ref that may itself be days old is a
+ *   lower bound of nothing, never "in step".
+ *
+ * `reported_state` / `reported_detail` keep what the device actually sent, so
+ * the panel can show both without a reader mistaking one for the other.
+ *
+ * A SECOND question has a different answer, and conflating the two is a live
+ * defect rather than a nicety: what TENSE may a claim be made in? That is
+ * decided by `observation_fresh` and `last_report_applied`, NOT by `state` —
+ * because `ref_stale` is a verdict of `unknown` on a row that is perfectly
+ * fresh. The device reported seconds ago; what is stale is the ref it measured
+ * against. A reader that took `state` as the answer to both would write "when
+ * last measured" over a live device and send an operator after the wrong box.
+ * `ScanSourcesPanel`'s `readingIsCurrent` is the worked example.
+ */
+export interface ScanRootRow {
+  device_id: string;
+  /** The VERDICT. Key on this, never on `reported_state`. */
+  state: ScanRootState;
+  detail: string | null;
+  /** What the device sent, verbatim. Never a verdict. */
+  reported_state: ScanRootState;
+  reported_detail: string | null;
+  plans_dir: string | null;
+  repo_root: string | null;
+  source_repo: string | null;
+  default_ref: string | null;
+  ref_sha: string | null;
+  head_sha: string | null;
+  /** `null` is NOT MEASURED. Never render it as `0`. */
+  behind: number | null;
+  ahead: number | null;
+  ref_age_secs: number | null;
+  /** `true` = the counts are LOWER BOUNDS ("at least N"), not exact. */
+  counts_are_floors: boolean;
+  observed_at: string;
+  received_at: string;
+  last_report_applied: boolean;
+  last_report_observed_at: string;
+  observed_skew_secs: number;
+  observation_age_secs: number;
+  observation_fresh: boolean;
+}
+
+/**
+ * Every reporting device's latest reading.
+ *
+ * `state: "unknown"` is the no-rows answer and it is load-bearing: an empty
+ * list is NOT "every feeder is current". A runner whose build predates the
+ * report, or whose body sync is off, sends nothing at all — indistinguishable
+ * here from a fleet with no drift, which is why the backend refuses to render
+ * the empty case as agreement and this panel must not either.
+ */
+export interface ScanRootListResponse {
+  state: ScanRootListState;
+  detail: string | null;
+  fresh_within_secs: number;
+  count: number;
+  /** `count > 0` with `fresh_count === 0` means every feeder has gone quiet. */
+  fresh_count: number;
+  rows: ScanRootRow[];
+  /** One roll-up per distinct `source_repo`; empty exactly when `rows` is. */
+  by_source_repo: ScanRootSourceRollup[];
+  /**
+   * What the corpus holds against what exists, per scan source — a SET
+   * DIFFERENCE, never a ratio.
+   *
+   * Populated by `GET /plan-library/scan-roots` ONLY. On
+   * `corpus_health.scan_roots` — the same shape, riding every
+   * `GET /plan-library` page — it is deliberately empty, because an anti-join
+   * over every authored stem must not be charged to a list request. So an
+   * empty array is NOT "full coverage" and NOT "no scan source":
+   * `coverage_detail` says which of the three reasons produced it.
+   */
+  coverage: PlanCoverage[];
+  /** Why `coverage` is empty; `null` exactly when it is not. */
+  coverage_detail: string | null;
+}
+
+/** A coverage entry's verdict. `unknown` = every number is `null`, never `0`. */
+export const PLAN_COVERAGE_STATES = ["measured", "unknown"] as const;
+
+export type PlanCoverageState = (typeof PLAN_COVERAGE_STATES)[number];
+
+/** Which side of the difference a stem listing is. */
+export const PLAN_CENSUS_SOURCES = ["ref", "work_tree"] as const;
+
+export type PlanCensusSource = (typeof PLAN_CENSUS_SOURCES)[number];
+
+/**
+ * One side of the coverage set difference, as the scanning device enumerated
+ * it.
+ *
+ * There are TWO, and they answer different questions: `authored_at_ref` is
+ * what EXISTS at the default branch, `visible_to_scanner` is what the body
+ * sync could possibly have seen in the working tree it scans. A percentage
+ * over one of them read 101.8% in production, which is why the backend emits
+ * no ratio at all — a presentation layer may compute one only beside both.
+ */
+export interface PlanCensusSide {
+  source: PlanCensusSource;
+  /** What `default_ref` pointed at; `null` on the `work_tree` side. */
+  ref_sha: string | null;
+  /** Age of that fetch, from the reading; `null` = unknown, never fresh. */
+  ref_age_secs: number | null;
+  /** Stems ENUMERATED. Exceeds `listed_count` exactly when `truncated`. */
+  count: number;
+  /** Stems SENT — what the difference was actually taken over. */
+  listed_count: number;
+  /** A sorted prefix: membership proves existence, absence proves nothing. */
+  truncated: boolean;
+  digest: string;
+}
+
+/**
+ * What the corpus holds for ONE scan source, against what exists there.
+ *
+ * `unknown` means every number is `null` — not `0`. A key with no usable
+ * census is still emitted, because an omitted key reads as "no such scan
+ * source" and a zeroed one reads as "the corpus holds none of it".
+ *
+ * `authored_not_captured - authored_not_captured_but_invisible` is the number
+ * an operator can act on: a stem missing from the scanned working tree could
+ * not have been captured, so it is checkout freshness rather than a capture
+ * defect.
+ */
+export interface PlanCoverage {
+  source_repo: string | null;
+  state: PlanCoverageState;
+  /** `no_census:`, `census_truncated:` or `source_repo_unnamed:`. */
+  detail: string | null;
+  device_count: number;
+  /** The device whose census these numbers came from — the freshest ref. */
+  census_device_id: string | null;
+  /** Other devices with a usable census; they may disagree. */
+  other_census_device_ids: string[];
+  /** Denominator 1 — what exists. */
+  authored_at_ref: PlanCensusSide | null;
+  /** Denominator 2 — what the body sync could possibly have seen. */
+  visible_to_scanner: PlanCensusSide | null;
+  /** Corpus `kind: 'plan'` rows under exactly this `source_repo`. */
+  captured: number | null;
+  both: number | null;
+  authored_not_captured: number | null;
+  /** NOT a coverage defect, and never subtracted from anything. */
+  captured_not_authored: number | null;
+  /** The attribution field: missing AND not in the tree the sync scans. */
+  authored_not_captured_but_invisible: number | null;
+  /** Plan rows under a DIFFERENT key or none — what a naive ratio swept in. */
+  out_of_scope_artifact_count: number | null;
+  missing_sample: string[];
+  sample_truncated: boolean;
+  /** The ROLL-UP's minimum, copied so no join is needed to read the numbers. */
+  min_behind: number | null;
+  min_behind_is_floor: boolean | null;
+  /** The CENSUS DEVICE's own qualification. */
+  observation_age_secs: number | null;
+  observation_fresh: boolean | null;
+  counts_are_floors: boolean | null;
+  ref_sha: string | null;
+}
+
+/**
+ * A roll-up's verdict. `unknown` = no device feeding this source has a
+ * comparable reading, or the fewest commits behind is a floor of 0 ("at least
+ * 0" establishes nothing) — `min_behind` is then `null`, never `0`. The id
+ * lists of an `unknown` roll-up may still carry an order the readings
+ * establish; `unknown` is about the distance, not the order.
+ */
+export const SCAN_ROOT_ROLLUP_STATES = ["measured", "unknown"] as const;
+
+export type ScanRootRollupState = (typeof SCAN_ROOT_ROLLUP_STATES)[number];
+
+/**
+ * Every device feeding ONE scan source, folded to the corpus's question: how
+ * far behind is its least-behind COMPARABLE feeder?
+ *
+ * Every claim is over the COMPARISON SET: readings that are fresh, applied and
+ * carry a count — a `measured` verdict, or a 0-behind floor the verdict marks
+ * `ref_stale`. A device in `unmeasured_device_ids` may be less behind than
+ * anything stated. `min_behind` is a lower bound on the least-behind
+ * comparable feeder's distance — NOT a ceiling on what the corpus lacks; a
+ * `min_behind_is_floor: false` means exact against a ref some device had
+ * fetched within six hours of its reading (the runner's definition), never
+ * against the live tip.
+ *
+ * The four id lists PARTITION the feeders, and a device is named least-behind
+ * or lagging only when the readings ORDER it: one shared `ref_sha` that is
+ * fresh (the order then holds as of that ref), or stale with every device at
+ * `ahead === 0`. Otherwise every comparable device is `lag_unknown_device_ids`
+ * — so an empty `lagging_device_ids` is NOT ESTABLISHED, never "none lagging".
+ * Placement is often empty on an active repository, where devices fetch at
+ * different times.
+ */
+export interface ScanRootSourceRollup {
+  source_repo: string | null;
+  state: ScanRootRollupState;
+  /**
+   * Why an `unknown` roll-up is unknown; `null` on a `measured` one. The
+   * backend starts it with the cause (`rollup_source` in
+   * `plan_scan_root_health.py`):
+   *
+   * * `no_comparable_reading:` — no device has a comparable reading.
+   * * `ref_stale:` — a floor of 0 where every comparable reading counted
+   *   against ONE ref that is stale or of unknown age.
+   * * `refs_not_shared:` — a 0 where the comparable readings name different
+   *   refs, or at least one names none. The prefix does not say any ref is
+   *   stale (each device may be exact against a recently fetched ref), though
+   *   a row's own `detail` may; no device is named least behind or lagging.
+   *
+   * Displayed verbatim, never matched: unlike a row's `detail`, no rendering
+   * decision keys on these prefixes.
+   */
+  detail: string | null;
+  device_count: number;
+  /** Devices with a fresh, applied reading carrying a count. */
+  comparable_count: number;
+  /** `null` is NOT ESTABLISHED. Never render it as `0`. */
+  min_behind: number | null;
+  /** `null` exactly when `min_behind` is. */
+  min_behind_is_floor: boolean | null;
+  /**
+   * Comparable devices at the fewest commits behind, when the readings order
+   * them.
+   */
+  least_behind_device_ids: string[];
+  /**
+   * Comparable devices above the fewest commits behind, when the readings
+   * order them.
+   */
+  lagging_device_ids: string[];
+  /** Comparable devices the readings do not order. */
+  lag_unknown_device_ids: string[];
+  /** No comparable reading; each row's `state` and `detail` say why. */
+  unmeasured_device_ids: string[];
+}
+
+/**
+ * The list route's top-level verdict. `unknown` is the no-rows answer.
+ *
+ * A const rather than an inline union for the same reason
+ * [`SCAN_ROOT_STATES`] is one: a union does not exist at runtime, so no test
+ * could compare it with the backend's enum.
+ */
+export const SCAN_ROOT_LIST_STATES = ["reported", "unknown"] as const;
+
+export type ScanRootListState = (typeof SCAN_ROOT_LIST_STATES)[number];
+
+/**
+ * Which fields of a wire type admit `null` — as a VALUE that tsc checks
+ * against the type, so that a test can compare it with the backend's schema.
+ *
+ * `ScanRootRow`, `ScanRootListResponse` and `ScanRootSourceRollup` are
+ * hand-written mirrors of the backend's response models, and an interface
+ * does not exist at runtime, so no test can compare one with anything. This
+ * mapped type is the bridge. A value annotated `WireNullability<T>` must name
+ * EVERY key of `T` (a missing
+ * one is an error) and no other (the excess-property check), and must set each
+ * to `true` exactly when the field admits `null`. An OPTIONAL field maps to
+ * `never`, which no value satisfies: every field on these responses is
+ * required on the wire, and `-?` would otherwise let a stray `?` through.
+ *
+ * `npm run type-check` holds each witness to its interface — and it only can
+ * because the witnesses live HERE. That config excludes `*.test.ts`, so a
+ * type-level assertion written in a test file is checked by nothing at all.
+ * `types.wire.test.ts` then holds each witness to the committed OpenAPI
+ * snapshots. The chain is interface = witness = snapshot = backend, each link
+ * enforced by CI rather than by a reviewer noticing — for FIELD NAMES,
+ * REQUIRED-NESS AND NULLABILITY, and nothing more. It does not pin base types:
+ * `WireNullability<{ n: number }>` and `WireNullability<{ n: string }>` are
+ * the same type. The closed vocabularies are pinned separately — the consts by
+ * that test, and their use by the four verdict fields by
+ * [`ScanRootVocabulariesPinned`] below.
+ *
+ * The witnesses are read by that test and nothing else; tree-shaking drops
+ * them from every bundle.
+ */
+export type WireNullability<T> = {
+  [K in keyof T]-?: Record<never, never> extends Pick<T, K>
+    ? never
+    : null extends T[K]
+      ? true
+      : false;
+};
+
+/** `ScanRootRow`'s nullability, as a value. See [`WireNullability`]. */
+export const SCAN_ROOT_ROW_NULLABLE: WireNullability<ScanRootRow> = {
+  device_id: false,
+  state: false,
+  detail: true,
+  reported_state: false,
+  reported_detail: true,
+  plans_dir: true,
+  repo_root: true,
+  source_repo: true,
+  default_ref: true,
+  ref_sha: true,
+  head_sha: true,
+  behind: true,
+  ahead: true,
+  ref_age_secs: true,
+  counts_are_floors: false,
+  observed_at: false,
+  received_at: false,
+  last_report_applied: false,
+  last_report_observed_at: false,
+  observed_skew_secs: false,
+  observation_age_secs: false,
+  observation_fresh: false,
+};
+
+/** `ScanRootListResponse`'s nullability, as a value. See [`WireNullability`]. */
+export const SCAN_ROOT_LIST_NULLABLE: WireNullability<ScanRootListResponse> = {
+  state: false,
+  detail: true,
+  fresh_within_secs: false,
+  count: false,
+  fresh_count: false,
+  rows: false,
+  by_source_repo: false,
+  coverage: false,
+  coverage_detail: true,
+};
+
+/** `PlanCensusSide`'s nullability, as a value. See [`WireNullability`]. */
+export const PLAN_CENSUS_SIDE_NULLABLE: WireNullability<PlanCensusSide> = {
+  source: false,
+  ref_sha: true,
+  ref_age_secs: true,
+  count: false,
+  listed_count: false,
+  truncated: false,
+  digest: false,
+};
+
+/**
+ * `PlanCoverage`'s nullability, as a value. See [`WireNullability`].
+ *
+ * Every count here is nullable, and that is the contract, not an oversight:
+ * an entry whose census could not be read establishes NOTHING, and a
+ * non-nullable number is how "we cannot see what exists" becomes a `0`.
+ */
+export const PLAN_COVERAGE_NULLABLE: WireNullability<PlanCoverage> = {
+  source_repo: true,
+  state: false,
+  detail: true,
+  device_count: false,
+  census_device_id: true,
+  other_census_device_ids: false,
+  authored_at_ref: true,
+  visible_to_scanner: true,
+  captured: true,
+  both: true,
+  authored_not_captured: true,
+  captured_not_authored: true,
+  authored_not_captured_but_invisible: true,
+  out_of_scope_artifact_count: true,
+  missing_sample: false,
+  sample_truncated: false,
+  min_behind: true,
+  min_behind_is_floor: true,
+  observation_age_secs: true,
+  observation_fresh: true,
+  counts_are_floors: true,
+  ref_sha: true,
+};
+
+/** `ScanRootSourceRollup`'s nullability, as a value. See [`WireNullability`]. */
+export const SCAN_ROOT_ROLLUP_NULLABLE: WireNullability<ScanRootSourceRollup> =
+  {
+    source_repo: true,
+    state: false,
+    detail: true,
+    device_count: false,
+    comparable_count: false,
+    min_behind: true,
+    min_behind_is_floor: true,
+    least_behind_device_ids: false,
+    lagging_device_ids: false,
+    lag_unknown_device_ids: false,
+    unmeasured_device_ids: false,
+  };
+
+/** `true` exactly when `A` and `B` are the same type, not merely assignable. */
+type Equal<A, B> =
+  (<X>() => X extends A ? 1 : 2) extends <X>() => X extends B ? 1 : 2
+    ? true
+    : false;
+
+type Expect<T extends true> = T;
+
+/**
+ * The four verdict fields carry the pinned vocabularies, not a wider
+ * `string`.
+ *
+ * Widening one would pass every other check here: the wire test pins the
+ * CONSTS, and a witness says nothing about base types. Meanwhile the panel
+ * would lose exhaustiveness on the one field it keys every claim on.
+ * Type-only, and exported solely so it is not an unused local;
+ * `npm run type-check` is what evaluates it.
+ */
+export type ScanRootVocabulariesPinned = [
+  Expect<Equal<ScanRootRow["state"], ScanRootState>>,
+  Expect<Equal<ScanRootRow["reported_state"], ScanRootState>>,
+  Expect<Equal<ScanRootListResponse["state"], ScanRootListState>>,
+  Expect<Equal<ScanRootSourceRollup["state"], ScanRootRollupState>>,
+  Expect<Equal<PlanCoverage["state"], PlanCoverageState>>,
+  Expect<Equal<PlanCensusSide["source"], PlanCensusSource>>,
+];

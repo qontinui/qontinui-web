@@ -532,10 +532,11 @@ export function useWebExtraction({
       return;
     }
 
-    const runnerAvailable = await runnerClient.isAvailable();
-    if (!runnerAvailable) {
+    const runner = await runnerClient.getAvailability();
+    if (!runner.available) {
       toast.error(
-        "Desktop Runner is not connected. Please start the qontinui-runner application."
+        runner.refusalMessage ??
+          "Desktop Runner is not connected. Please start the qontinui-runner application."
       );
       return;
     }

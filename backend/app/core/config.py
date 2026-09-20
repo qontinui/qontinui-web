@@ -51,6 +51,22 @@ _LOOPBACK_ISSUER_HOSTS = frozenset(
 _SHARED_DEV_DB_NAMES = frozenset({"qontinui_db", "db"})
 
 
+def derived_cognito_issuer(*, region: str, pool_id: str) -> str:
+    """The issuer URL ``COGNITO_REGION`` + ``COGNITO_USER_POOL_ID`` produce.
+
+    One spelling of the canonical Cognito issuer, shared by the
+    ``COGNITO_ISSUER`` validator (which uses it to fill a blank issuer) and
+    :func:`cognito_issuer_setting_name` (which uses it to tell an explicit
+    issuer from a derived one). Either half re-typing the format would let
+    the two disagree — and then the log line naming "the setting to turn"
+    would name the wrong one. Empty when either input is blank: a blank pool
+    id disables the Cognito accept path, and there is no issuer to derive.
+    """
+    if not pool_id or not region:
+        return ""
+    return f"https://cognito-idp.{region}.amazonaws.com/{pool_id}"
+
+
 class Settings(BaseSettings):
     """Application settings loaded from environment variables.
 
@@ -284,11 +300,10 @@ class Settings(BaseSettings):
         """
         if v:
             return v.rstrip("/")
-        pool_id = info.data.get("COGNITO_USER_POOL_ID") or ""
-        region = info.data.get("COGNITO_REGION") or ""
-        if not pool_id or not region:
-            return ""
-        return f"https://cognito-idp.{region}.amazonaws.com/{pool_id}"
+        return derived_cognito_issuer(
+            region=info.data.get("COGNITO_REGION") or "",
+            pool_id=info.data.get("COGNITO_USER_POOL_ID") or "",
+        )
 
     @property
     def cognito_allowed_audiences_list(self) -> list[str]:
@@ -734,6 +749,51 @@ def coord_device_setting_name() -> str:
     advice cannot drift from the value in force.
     """
     return "COORD_DEVICE_URL" if settings.COORD_DEVICE_URL else "COORD_URL"
+
+
+def cognito_issuer_setting_name(cfg: Settings | None = None) -> str:
+    """Which setting(s) actually govern ``settings.COGNITO_ISSUER``.
+
+    The Cognito twin of :func:`coord_device_setting_name`, for the same
+    reader: an operator handed a "Cognito JWKS unavailable" log line needs
+    the knob to turn, and TWO spellings produce the issuer. An explicit
+    ``COGNITO_ISSUER`` always wins; when it is blank the validator derives
+    the issuer from ``COGNITO_REGION`` + ``COGNITO_USER_POOL_ID``. Those are
+    not interchangeable — with an explicit issuer in force, repointing the
+    region or the pool id changes NOTHING, and a wrong region baked into a
+    derived issuer fails every login with no configuration error
+    (``tests/test_cognito_region_agrees_with_pool.py``).
+
+    Which one is in force cannot be read back from the field alone: the
+    validator overwrites a blank ``COGNITO_ISSUER`` with the derived value,
+    so both paths leave the same value behind. Two signals settle it:
+
+    - ``model_fields_set`` says whether ``COGNITO_ISSUER`` was SUPPLIED at
+      all (env, ``.env`` and init kwargs all register there — verified
+      against pydantic-settings 2.14). Never supplied means the pair
+      produced it, for certain.
+    - Supplied and DIFFERENT from what the pair would derive means an
+      explicit override is in force.
+    - Supplied and EQUAL to the derivation is ambiguous — a blank env value
+      the validator filled, or an explicit issuer that happens to be spelled
+      the same — and the two cases want different knobs. The answer errs in
+      the one direction that never misdirects: setting ``COGNITO_ISSUER``
+      moves the issuer in BOTH cases, while repointing the pair moves it in
+      only one. So the explicit knob is named, with the agreement stated.
+
+    ``cfg`` defaults to the process-wide :data:`settings`; tests pass a
+    constructed instance so the predicate is exercised against real
+    ``model_fields_set`` state rather than monkeypatched attributes.
+    """
+    cfg = settings if cfg is None else cfg
+    derived = derived_cognito_issuer(
+        region=cfg.COGNITO_REGION, pool_id=cfg.COGNITO_USER_POOL_ID
+    )
+    if "COGNITO_ISSUER" not in cfg.model_fields_set:
+        return "COGNITO_REGION + COGNITO_USER_POOL_ID"
+    if cfg.COGNITO_ISSUER == derived:
+        return "COGNITO_ISSUER (currently equal to the COGNITO_REGION + COGNITO_USER_POOL_ID derivation)"
+    return "COGNITO_ISSUER"
 
 
 def coord_device_split_active() -> bool:

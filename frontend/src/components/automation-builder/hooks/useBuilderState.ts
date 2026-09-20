@@ -332,12 +332,18 @@ export function useBuilderState() {
   const handleRun = useCallback(async () => {
     if (!selectedItem) return;
 
-    const isAvailable = await runnerClient.isAvailable();
-    if (!isAvailable) {
-      toast.error("Desktop Runner not connected", {
-        description:
-          "Start the qontinui-runner desktop app and ensure it's connected.",
-      });
+    const runner = await runnerClient.getAvailability();
+    if (!runner.available) {
+      if (runner.refusalMessage) {
+        toast.error("Desktop Runner refused this page", {
+          description: runner.refusalMessage,
+        });
+      } else {
+        toast.error("Desktop Runner not connected", {
+          description:
+            "Start the qontinui-runner desktop app and ensure it's connected.",
+        });
+      }
       return;
     }
 

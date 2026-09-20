@@ -37,7 +37,10 @@ export class PatternClient {
       clearTimeout(timeoutId);
 
       if (!response.ok) {
-        const errorText = await response.text();
+        const message = await this.base.failureMessage(
+          response,
+          "Failed to find pattern"
+        );
         return {
           success: false,
           matches: [],
@@ -46,7 +49,7 @@ export class PatternClient {
           screenshot_height: 0,
           template_width: 0,
           template_height: 0,
-          error: `Failed to find pattern: ${response.status} - ${errorText}`,
+          error: message,
         };
       }
 
@@ -99,7 +102,10 @@ export class PatternClient {
       clearTimeout(timeoutId);
 
       if (!response.ok) {
-        const errorText = await response.text();
+        const message = await this.base.failureMessage(
+          response,
+          "Failed to find all patterns"
+        );
         return {
           success: false,
           matches: [],
@@ -108,7 +114,7 @@ export class PatternClient {
           screenshot_height: 0,
           template_width: 0,
           template_height: 0,
-          error: `Failed to find all patterns: ${response.status} - ${errorText}`,
+          error: message,
         };
       }
 

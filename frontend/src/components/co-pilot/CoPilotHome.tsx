@@ -12,12 +12,15 @@
  * It renders at the Home route `/prompt-home` (the web Home nav item IS the
  * co-pilot — there is no separate co-pilot page). `/co-pilot` redirects here.
  *
- * Consent gating (Phase 4 — §4.5 of the production-safe plan):
- *   - preference OFF                 → opt-in CTA card → /settings/co-pilot.
- *   - preference ON, consent !granted → "grant consent" affordance that
- *     re-arms the GLOBAL <CoPilotConsentModal> (mounted in the UI Bridge
- *     provider) by resetting the per-session decision to null.
- *   - preference ON, consent granted → the prompt surface.
+ * Consent gating (Phase 4 — §4.5 of the production-safe plan), read from the
+ * shared `lib/ui-bridge/co-pilot-gates` predicate the relay listener mounts on:
+ *   - preference OFF (off loopback dev) → opt-in CTA card → /settings/co-pilot.
+ *   - consent not satisfied → "grant consent" affordance that clears the
+ *     per-session decision to null — re-arming the GLOBAL
+ *     <CoPilotConsentModal> (mounted in the UI Bridge provider), or on
+ *     loopback dev restoring the auto-grant.
+ *   - consent satisfied (explicit grant, or loopback-dev auto-grant not
+ *     revoked) → the prompt surface.
  *
  * Error affordances: each {@link ExecutionErrorKind} maps to a distinct,
  * actionable card — never a generic toast.
@@ -59,6 +62,10 @@ import { Badge } from "@/components/ui/badge";
 import { useCoPilotPreference } from "@/hooks/useCoPilotPreference";
 import { useCoPilotSessionConsent } from "@/hooks/useCoPilotSessionConsent";
 import { CoPilotReadyStatus } from "@/components/co-pilot/CoPilotReadyStatus";
+import {
+  isCoPilotConsentSatisfied,
+  useIsLoopbackDev,
+} from "@/lib/ui-bridge/co-pilot-gates";
 import { useActiveRunner } from "@/contexts/active-runner-context";
 import {
   usePromptExecution,
@@ -428,9 +435,8 @@ function ConsentCta({ onGrant }: { onGrant: () => void }) {
           <div className="min-w-0 flex-1">
             <CardTitle>Grant consent for this session</CardTitle>
             <CardDescription className="mt-1">
-              The co-pilot is enabled on your account, but it needs a
-              per-session OK before it can drive this tab. This applies to the
-              current browser session only.
+              The co-pilot needs a per-session OK before it can drive this
+              tab. This applies to the current browser session only.
             </CardDescription>
           </div>
         </div>
@@ -452,6 +458,7 @@ function ConsentCta({ onGrant }: { onGrant: () => void }) {
 export function CoPilotHome() {
   const preference = useCoPilotPreference();
   const consent = useCoPilotSessionConsent();
+  const loopbackDev = useIsLoopbackDev();
   const { activeRunner } = useActiveRunner();
   const { state, run, reset } = usePromptExecution();
 
@@ -500,8 +507,10 @@ export function CoPilotHome() {
     void run(trimmed, { explain });
   }, [prompt, busy, explain, pushHistory, run]);
 
-  // Re-arm the GLOBAL <CoPilotConsentModal> (mounted in the UI Bridge
-  // provider) by clearing the per-session decision back to null.
+  // Clear the per-session decision back to null: off loopback dev this
+  // re-arms the GLOBAL <CoPilotConsentModal> (mounted in the UI Bridge
+  // provider); on loopback dev, where no modal is mounted, it restores the
+  // auto-grant.
   const reConsent = useCallback(() => {
     consent.reset();
   }, [consent]);
@@ -543,7 +552,9 @@ export function CoPilotHome() {
   ) : null;
 
   // ---- Gate 2: preference OFF → opt-in CTA ----
-  if (!preference.enabled) {
+  // Not on loopback dev: there consent is auto-granted without the
+  // preference, so sending the developer to settings would be a detour.
+  if (!preference.enabled && !loopbackDev) {
     return (
       // data-bridge-invisible: the co-pilot only ever drives OTHER pages
       // (after it soft-navigates away), so its OWN surface must never be a
@@ -562,8 +573,14 @@ export function CoPilotHome() {
     );
   }
 
-  // ---- Gate 3: consent not granted → consent affordance ----
-  if (consent.state !== "granted") {
+  // ---- Gate 3: consent not satisfied → consent affordance ----
+  if (
+    !isCoPilotConsentSatisfied({
+      loopbackDev,
+      preferenceEnabled: preference.enabled,
+      consentState: consent.state,
+    })
+  ) {
     return (
       // data-bridge-invisible — see the opt-in branch above. Keeps the
       // co-pilot's own surface off the bridge so the planner can't target it.

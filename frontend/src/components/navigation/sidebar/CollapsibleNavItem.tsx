@@ -234,6 +234,7 @@ export function CollapsibleNavItem({
                 onActivate={() => onNavigate(child.route)}
               >
                 <button
+                  data-nav-id={child.id}
                   data-route={child.route}
                   onClick={() => onNavigate(child.route)}
                   className={cn(

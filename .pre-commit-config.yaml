@@ -108,7 +108,9 @@ repos:
         files: ^backend/alembic/versions/.*\.py$
         # Two checks: (1) op.<gated_func>(..., schema=...) kwarg
         # presence, (2) raw SQL inside op.execute("...") names a
-        # schema for every CREATE/ALTER/DROP/REFERENCES/INDEX-ON.
+        # schema for every CREATE/ALTER/DROP TABLE, REFERENCES, INDEX-ON
+        # and DROP INDEX (every name in a DROP INDEX list).
+        # The hook's tests run in CI: .github/workflows/pre-commit-hook-tests.yml.
         # Pre-commit invokes with the changed-file list so the audit
         # only runs on migrations actually being touched — already-
         # applied legacy revisions aren't re-audited.
@@ -192,6 +194,27 @@ repos:
         pass_filenames: false
         always_run: true
 
+      - id: path-case-collisions
+        name: no tracked paths collide case-insensitively
+        # SAME SCRIPT as .github/workflows/path-case-collisions.yml and
+        # .qontinui/ci.toml's `path-case-collisions` step. This hook is the lane
+        # that matters most, because the defect it catches is one CI cannot see:
+        # `8f053ba47` (PR #1282) had TranscriptStores.tsx tracked beside
+        # transcriptStores.ts, which is fine on a case-sensitive Linux runner and
+        # breaks `import "./TranscriptStores"` on every Windows and macOS box —
+        # where it surfaced as the `tsc-typecheck` hook above refusing EVERY
+        # frontend commit, whatever the diff. Reads the index (`git ls-files`),
+        # so it gives the same answer on either kind of filesystem.
+        #
+        # `always_run` with `pass_filenames: false`: a collision is a property
+        # of the PAIR of tracked paths, and the commit that creates it adds only
+        # the second spelling — which may be a rename, an untouched `.ts` beside
+        # a new `.tsx`, or a directory. No `files:` pattern names that reliably.
+        entry: python scripts/ci/check_path_case_collisions.py
+        language: system
+        pass_filenames: false
+        always_run: true
+
       - id: forbid-fixed-sleeps-in-e2e
         name: forbid fixed sleeps in e2e
         # SAME SCRIPT as .github/workflows/forbid-fixed-sleeps-in-e2e.yml and
@@ -221,6 +244,36 @@ repos:
         # types). `backend/app/api/embeddings.py` is allowlisted defensively
         # pending Phase 8 (embeddings runner-bridge). See the script's module
         # docstring for the rule itself.
+
+      - id: global-state-assertions
+        name: no new global-state assertion in the backend suite
+        entry: python scripts/ci/check_global_state_assertions.py
+        language: system
+        pass_filenames: false
+        # SAME SCRIPT as .github/workflows/global-state-assertions.yml and
+        # .qontinui/ci.toml's `global-state-assertions` step — the shift-left
+        # lane, so the ratchet catches a new global-state assertion at commit
+        # rather than after a 17-minute CI wait. `pass_filenames: false`
+        # because the gate scans the whole suite and compares it to the
+        # allowlist as a WHOLE: a per-file invocation cannot see that a row
+        # exists for a file this commit did not touch ("remove the row"), and
+        # cannot compute the "lower the row" direction either.
+        #
+        # `files:` only scopes WHEN the hook runs, never what it scans — the
+        # gate always walks the whole backend test tree. This pattern is the
+        # set of paths whose edit most often changes the verdict: a test file
+        # and the allowlist itself (lowering a row is a commit that must be
+        # re-checked).
+        #
+        # It is deliberately NOT a claim that nothing else can change the
+        # verdict — two things can and match nothing here. Editing
+        # `scripts/ci/check_global_state_assertions.py` or
+        # `scripts/ci/_gate_lib.py` changes the rule; and DELETING a test file
+        # that carries a row trips the "remove the row" arm while pre-commit
+        # passes no deleted paths at all. Both are caught by the CI and
+        # ci_node lanes, which run unconditionally. This is the shift-left
+        # lane, not the authority.
+        files: ^backend/tests/(.*\.py|\.global-state-assertions-allowlist)$
 
 ci:
   autofix_prs: true

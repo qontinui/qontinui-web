@@ -44,11 +44,14 @@ export class WorkflowClient {
       clearTimeout(timeoutId);
 
       if (!response.ok) {
-        const errorText = await response.text();
+        const message = await this.base.failureMessage(
+          response,
+          "Failed to run workflow"
+        );
         return {
           success: false,
           workflow_name: workflowName,
-          error: `Failed to run workflow: ${response.status} - ${errorText}`,
+          error: message,
         };
       }
 
@@ -95,10 +98,13 @@ export class WorkflowClient {
       });
 
       if (!response.ok) {
-        const errorText = await response.text();
+        const message = await this.base.failureMessage(
+          response,
+          "Failed to stop workflow"
+        );
         return {
           success: false,
-          error: `Failed to stop workflow: ${response.status} - ${errorText}`,
+          error: message,
         };
       }
 

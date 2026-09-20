@@ -180,15 +180,47 @@ type ClaimTarget = { installation_id: number } | { account_login: string };
 /**
  * The P2 runner-native return: hand the OAuth code back to the desktop runner,
  * which validates the nonce (single-use, time-bounded) and claims with its OWN
- * Cognito bearer — binding to the runner's tenant, not the browser session's.
- * Mirrors `wake_handler.rs`'s `github-connected` host contract.
+ * Cognito bearer. Mirrors `wake_handler.rs`'s `github-connected` host contract.
+ *
+ * The link carries the coord-minted `connect_state` as well as the code. It is
+ * not optional: with `COORD_REQUIRE_CONNECT_STATE` armed — which coord's
+ * deployed taskdef does; read it there, not here — a claim that presents no
+ * token is refused `connect_state_required` before anything is bound, whoever
+ * files it. The
+ * runner has no token of its own; the only one that exists for this flow is
+ * the one the browser minted before the GitHub hop, and it is exactly what the
+ * "Complete in this browser instead" fallback would spend. So the runner gets
+ * the same one. What that means for the bind, stated plainly because the
+ * original P2 text said the opposite: the token is tenant- AND operator-bound
+ * to whoever started the flow on `/connect-runner-github`, so coord accepts
+ * the runner's claim when the runner is signed in as that same person (the
+ * ordinary case — the runner opened that page) and refuses it otherwise
+ * (`connect_state_operator_mismatch`, or the tenant check). It never binds to
+ * "the runner's tenant" independently of the browser account. The fallback
+ * button recovers THAT refusal — coord makes both checks before the OAuth
+ * exchange and before consuming the token, so both are still spendable here.
+ * A refusal later in the claim (a cross-tenant 409 or not-org-admin 403 at
+ * the bind) has already consumed both, and the fallback lands on the
+ * "start again" card instead.
+ *
+ * Handing the token over the custom-scheme channel widens nothing: a local
+ * scheme-hijacker already receives the OAuth code, and the token is useless
+ * without the minting operator's own bearer — see coord
+ * `ConnectStateBinding::assert_operator`. A runner build that predates reading
+ * it (`qontinui-runner` before the matching follow-up) ignores the extra
+ * parameter and claims stateless, which is what it did before this change.
  */
 function buildRunnerDeepLink(
   code: string,
   target: ClaimTarget,
-  runnerState: string
+  runnerState: string,
+  connectState: string
 ): string {
-  const params = new URLSearchParams({ code, state: runnerState });
+  const params = new URLSearchParams({
+    code,
+    state: runnerState,
+    connect_state: connectState,
+  });
   if ("installation_id" in target) {
     params.set("installation_id", String(target.installation_id));
   } else {
@@ -603,7 +635,7 @@ export default function OnboardingStatusPage() {
       // Hand the code to the runner instead of spending it here. Keep the
       // (code, target) around for the explicit browser fallback. The URL was
       // already stripped by the effect above, so a refresh cannot replay this.
-      const link = buildRunnerDeepLink(code, target, runnerState);
+      const link = buildRunnerDeepLink(code, target, runnerState, stateToken);
       pendingClaimRef.current = { code, target, connectState: stateToken };
       setDeepLink(link);
       setPhase("handoff");

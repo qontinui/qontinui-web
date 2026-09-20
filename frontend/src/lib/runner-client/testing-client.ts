@@ -48,10 +48,13 @@ export class TestingClient {
       clearTimeout(timeoutId);
 
       if (!response.ok) {
-        const errorText = await response.text();
+        const message = await this.base.failureMessage(
+          response,
+          "Failed to start test"
+        );
         return {
           success: false,
-          error: `Failed to start test: ${response.status} - ${errorText}`,
+          error: message,
         };
       }
 
@@ -98,9 +101,16 @@ export class TestingClient {
       );
 
       if (!response.ok) {
+        const message = await this.base.failureMessage(
+          response,
+          "Failed to get status",
+          {
+            includeBody: false,
+          }
+        );
         return {
           success: false,
-          error: `Failed to get status: ${response.status}`,
+          error: message,
         };
       }
 
@@ -136,9 +146,16 @@ export class TestingClient {
       );
 
       if (!response.ok) {
+        const message = await this.base.failureMessage(
+          response,
+          "Failed to get results",
+          {
+            includeBody: false,
+          }
+        );
         return {
           success: false,
-          error: `Failed to get results: ${response.status}`,
+          error: message,
         };
       }
 
@@ -173,9 +190,16 @@ export class TestingClient {
       );
 
       if (!response.ok) {
+        const message = await this.base.failureMessage(
+          response,
+          "Failed to list runs",
+          {
+            includeBody: false,
+          }
+        );
         return {
           success: false,
-          error: `Failed to list runs: ${response.status}`,
+          error: message,
         };
       }
 
@@ -210,9 +234,16 @@ export class TestingClient {
       );
 
       if (!response.ok) {
+        const message = await this.base.failureMessage(
+          response,
+          "Failed to end test",
+          {
+            includeBody: false,
+          }
+        );
         return {
           success: false,
-          error: `Failed to end test: ${response.status}`,
+          error: message,
         };
       }
 
@@ -246,9 +277,16 @@ export class TestingClient {
       });
 
       if (!response.ok) {
+        const message = await this.base.failureMessage(
+          response,
+          "Failed to get states",
+          {
+            includeBody: false,
+          }
+        );
         return {
           success: false,
-          error: `Failed to get states: ${response.status}`,
+          error: message,
         };
       }
 
@@ -281,9 +319,16 @@ export class TestingClient {
       });
 
       if (!response.ok) {
+        const message = await this.base.failureMessage(
+          response,
+          "Failed to get transitions",
+          {
+            includeBody: false,
+          }
+        );
         return {
           success: false,
-          error: `Failed to get transitions: ${response.status}`,
+          error: message,
         };
       }
 
@@ -320,9 +365,16 @@ export class TestingClient {
       });
 
       if (!response.ok) {
+        const message = await this.base.failureMessage(
+          response,
+          "Failed to find path",
+          {
+            includeBody: false,
+          }
+        );
         return {
           success: false,
-          error: `Failed to find path: ${response.status}`,
+          error: message,
         };
       }
 
@@ -359,9 +411,16 @@ export class TestingClient {
       });
 
       if (!response.ok) {
+        const message = await this.base.failureMessage(
+          response,
+          "Failed to traverse",
+          {
+            includeBody: false,
+          }
+        );
         return {
           success: false,
-          error: `Failed to traverse: ${response.status}`,
+          error: message,
         };
       }
 
@@ -401,9 +460,16 @@ export class TestingClient {
       );
 
       if (!response.ok) {
+        const message = await this.base.failureMessage(
+          response,
+          "Failed to get active states",
+          {
+            includeBody: false,
+          }
+        );
         return {
           success: false,
-          error: `Failed to get active states: ${response.status}`,
+          error: message,
         };
       }
 
@@ -441,9 +507,16 @@ export class TestingClient {
       });
 
       if (!response.ok) {
+        const message = await this.base.failureMessage(
+          response,
+          "Failed to set mock mode",
+          {
+            includeBody: false,
+          }
+        );
         return {
           success: false,
-          error: `Failed to set mock mode: ${response.status}`,
+          error: message,
         };
       }
 
@@ -476,9 +549,16 @@ export class TestingClient {
       });
 
       if (!response.ok) {
+        const message = await this.base.failureMessage(
+          response,
+          "Failed to mock action",
+          {
+            includeBody: false,
+          }
+        );
         return {
           success: false,
-          error: `Failed to mock action: ${response.status}`,
+          error: message,
         };
       }
 
@@ -514,9 +594,16 @@ export class TestingClient {
       );
 
       if (!response.ok) {
+        const message = await this.base.failureMessage(
+          response,
+          "Failed to get mocked actions",
+          {
+            includeBody: false,
+          }
+        );
         return {
           success: false,
-          error: `Failed to get mocked actions: ${response.status}`,
+          error: message,
         };
       }
 
@@ -551,9 +638,16 @@ export class TestingClient {
       );
 
       if (!response.ok) {
+        const message = await this.base.failureMessage(
+          response,
+          "Failed to clear mocked actions",
+          {
+            includeBody: false,
+          }
+        );
         return {
           success: false,
-          error: `Failed to clear mocked actions: ${response.status}`,
+          error: message,
         };
       }
 
@@ -599,9 +693,16 @@ export class TestingClient {
       });
 
       if (!response.ok) {
+        const message = await this.base.failureMessage(
+          response,
+          "Failed to run assertion",
+          {
+            includeBody: false,
+          }
+        );
         return {
           success: false,
-          error: `Failed to run assertion: ${response.status}`,
+          error: message,
         };
       }
 

@@ -38,8 +38,27 @@
 /** The two verdicts that produce a proposal (coord-side Rust vocabulary). */
 export type ProposalDirection = "loosening" | "unclassifiable";
 
-/** Lifecycle of a proposal (`coord.prompt_document_proposals.status`). */
-export type ProposalStatus = "pending" | "approved" | "rejected";
+/**
+ * Lifecycle of a proposal (`coord.prompt_document_proposals.status`).
+ *
+ * `stale` is TERMINAL and is coord's, not this page's. coord retires a pending
+ * proposal inside the same transaction that bumps its target document's version
+ * (plan
+ * `2026-09-13-policy-proposals-agent-decidable-dial-driven-self-retiring`,
+ * Phase 1): the row is stamped `status='stale'`,
+ * `decided_by='system:proposal-staleness'`, and a `decision_note` saying which
+ * version it moved to. Nothing can approve it afterwards.
+ *
+ * Distinguish it from the CLIENT-side `stale` kind in `./proposalStatus.ts`,
+ * which covers the race window — a pending row this page has not re-read since
+ * the document moved. Same word, two layers: that one is a warning on a live
+ * row, this one is a closed record.
+ *
+ * A coord build predating Phase 1 never emits it, and rejects `?status=stale`
+ * with `400 invalid status` — which the hook treats as "section unavailable",
+ * never as an error or as an empty section.
+ */
+export type ProposalStatus = "pending" | "approved" | "rejected" | "stale";
 
 /**
  * Autonomy tier, strictest → loosest. Mirrors `ClauseTier` in the sibling
@@ -106,6 +125,47 @@ export interface PromptDocumentProposal {
   base_version: number;
   status: ProposalStatus;
   created_at: string;
+  /**
+   * **OPTIONAL — absent means "this coord build does not report it", never
+   * "nobody decided it".** Coord's actor label for whoever decided the
+   * proposal, stamped server-side. Three producers matter here:
+   * `operator:<email>` (the console), an agent spelling
+   * (`session:`/`agent:`/`device:`) now that ownership is no longer a criterion
+   * for deciding, and `system:proposal-staleness` for a self-retirement.
+   * `_lib/authorship.ts` is the only place that decides what one means — and it
+   * already files the `system:` spelling as `system`, not as an agent.
+   */
+  decided_by?: string | null;
+  /** When the decision was recorded. Absent on a pending row. */
+  decided_at?: string | null;
+  /**
+   * The note recorded with the decision. For a self-retirement coord writes the
+   * explanation of the move here, which is what the retired section shows
+   * instead of leaving a row that merely vanished from the queue.
+   */
+  decision_note?: string | null;
+  /**
+   * **OPTIONAL, and PREFERRED over comparing strings when present.** Coord's
+   * own answer to "did the proposer decide this?" — true once ownership stopped
+   * being a criterion for deciding and an agent could approve or reject its own
+   * proposal. A build that predates the flag omits it, and the page then falls
+   * back to `decided_by === proposed_by` (`_lib/authorship.ts`
+   * `isSelfDecided`).
+   *
+   * The preference is NOT because the server knows something the comparison
+   * cannot see: coord derives this field as exactly `decided_by == proposed_by`
+   * with no normalization (`with_derived_self_decided()`), so on today's builds
+   * the two agree by construction. It is preferred because it is coord's
+   * ANSWER: the console should report the server's verdict rather than compute
+   * a second one that drifts independently, and a future coord that does start
+   * normalizing (one principal reaching it under two spellings) changes what
+   * this page says without a web deploy.
+   *
+   * This is INFORMATION, not a warning: the fleet removed ownership as a
+   * decision criterion deliberately, so the page states the fact plainly and
+   * never paints it as a caution.
+   */
+  self_decided?: boolean | null;
 }
 
 /**
@@ -196,6 +256,22 @@ export interface PromptDocumentWrite {
    * Served by the same not-yet-landed coord change as `loosening`.
    */
   notification_ref?: string | null;
+  /**
+   * **OPTIONAL — DOCUMENT state, not this version's.** `true` when the
+   * document this write belongs to is currently withdrawn — a
+   * `decision_record` whose frontmatter `status` is `withdrawn` (plan
+   * `2026-09-13-decision-records-are-agent-writable-but-policy-says-they-are-not`,
+   * §7 3.1). Carried from coord's document row as `withdrawn`, renamed by the
+   * web proxy so a v1 row does not read as "this version was withdrawn" when a
+   * later version is what withdrew it.
+   *
+   * A coord build that predates withdrawal omits it. Absent is UNKNOWN, never
+   * "live": the page marks only an explicit `true` and asserts nothing
+   * otherwise.
+   */
+  document_withdrawn?: boolean | null;
+  /** The reason recorded with the withdrawal, when coord served one. */
+  document_withdrawn_reason?: string | null;
 }
 
 /**

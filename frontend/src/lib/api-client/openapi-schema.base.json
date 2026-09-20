@@ -6527,6 +6527,17 @@
             "title": "Doors",
             "type": "array"
           },
+          "newest_updated_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Newest Updated At"
+          },
           "total": {
             "title": "Total",
             "type": "integer"
@@ -10713,6 +10724,44 @@
           }
         },
         "title": "CoreSettingsSchema",
+        "type": "object"
+      },
+      "CorpusHealth": {
+        "description": "What the corpus this page was drawn from actually holds.\n\n``2026-08-27-plan-corpus-read-path-is-dark`` design decision D1: a read\npath that cannot report its own health is not a read path. Without this\nblock a ``200`` with ``items: []`` was two indistinguishable sentences \u2014\n\"no such plan\" and \"the corpus holds no plans at all\" (the body sync\nis opt-in and its off-state is unlogged, so the second was the live\nstate on the operator box for weeks). With it, ``plan_count: 0`` beside\nan empty page says which, and ``newest_updated_at`` says how long ago the\ncorpus last moved.\n\nEvery figure is org-scoped like the page, and UNFILTERED by the page's\nown query: the caller's filter is what they asked about, this is what\nthey asked it of. ``capture`` is the ``/capture-health`` census from the\nSAME query and the same builder, so the two apply one rule to one census\n(two reads can still differ by when they happen).",
+        "properties": {
+          "artifact_count": {
+            "title": "Artifact Count",
+            "type": "integer"
+          },
+          "capture": {
+            "$ref": "#/components/schemas/CaptureHealthResponse"
+          },
+          "newest_updated_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Newest Updated At"
+          },
+          "plan_count": {
+            "title": "Plan Count",
+            "type": "integer"
+          },
+          "scan_roots": {
+            "$ref": "#/components/schemas/ScanRootListResponse"
+          }
+        },
+        "required": [
+          "artifact_count",
+          "plan_count",
+          "capture",
+          "scan_roots"
+        ],
+        "title": "CorpusHealth",
         "type": "object"
       },
       "CostTrendDataPoint": {
@@ -28998,12 +29047,6 @@
             "title": "Email Comments",
             "type": "boolean"
           },
-          "email_gate_action": {
-            "default": true,
-            "description": "Email for merge-gate actions on your PRs",
-            "title": "Email Gate Action",
-            "type": "boolean"
-          },
           "email_mentions": {
             "default": true,
             "description": "Email for mentions",
@@ -29037,12 +29080,6 @@
             "default": true,
             "description": "In-app for comments",
             "title": "In App Comments",
-            "type": "boolean"
-          },
-          "in_app_gate_action": {
-            "default": true,
-            "description": "In-app for merge-gate actions on your PRs",
-            "title": "In App Gate Action",
             "type": "boolean"
           },
           "in_app_mentions": {
@@ -29108,17 +29145,6 @@
             ],
             "title": "Email Comments"
           },
-          "email_gate_action": {
-            "anyOf": [
-              {
-                "type": "boolean"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Email Gate Action"
-          },
           "email_mentions": {
             "anyOf": [
               {
@@ -29173,17 +29199,6 @@
               }
             ],
             "title": "In App Comments"
-          },
-          "in_app_gate_action": {
-            "anyOf": [
-              {
-                "type": "boolean"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "In App Gate Action"
           },
           "in_app_mentions": {
             "anyOf": [
@@ -30874,7 +30889,7 @@
         "type": "object"
       },
       "PairCliRequest": {
-        "description": "Request body for ``POST /api/v1/devices/pair-cli``.\n\nHeadless analogue of the browser-mediated pair-confirm flow: the\nrunner authenticates with its existing user access token (no browser\nredirect) and asks the web backend to mint a device-token JWT via\ncoord. The backend resolves the calling user's ``tenant_id`` and\nproxies the request to coord's ``POST /coord/devices/pair-cli``.\n\nThe runner sends the same ``(device_id, hostname, name)`` triple it\nused to send directly to coord; ``tenant_id`` and ``user_id`` are\ninjected server-side so the runner never has to know about tenancy.",
+        "description": "Request body for ``POST /api/v1/devices/pair-cli``.\n\nHeadless analogue of the browser-mediated pair-confirm flow: the\nrunner authenticates with its existing user access token (no browser\nredirect) and asks the web backend to mint a device-token JWT via\ncoord. The backend proxies the request to coord's\n``POST /coord/devices/pair-cli``, forwarding the caller's operator\nbearer and injecting ``user_id`` server-side.\n\n``tenant_id`` is an optional HINT, not an authority: when a real tenant\nis supplied it is forwarded and coord validates it\n(``authorize_pairing_tenant`` refuses a tenant the principal cannot\npair). When it is absent, coord derives the tenant from the operator\nbearer. The nil UUID is treated as absent \u2014 runner UI sign-in sends it\nas a placeholder on every first pairing, and forwarding it would fail\ncoord's membership check. A refresh MUST send the tenant its credential\nis for, or coord's derivation silently re-points the device at the\nuser's home tenant (plan\n``2026-09-17-device-jwt-refresh-drops-the-requested-tenant-and-coord-mints-the-home-tenant``).",
         "properties": {
           "device_id": {
             "description": "Stable device UUID the runner generated on first launch.",
@@ -30901,6 +30916,19 @@
             ],
             "description": "Optional display name; defaults to hostname server-side.",
             "title": "Name"
+          },
+          "tenant_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Optional tenant the device JWT should be minted for. Coord validates membership; absent or the nil UUID means coord derives the tenant from the operator bearer.",
+            "title": "Tenant Id"
           }
         },
         "required": [
@@ -31612,6 +31640,69 @@
             "title": "Created At",
             "type": "string"
           },
+          "difficulty": {
+            "anyOf": [
+              {
+                "enum": [
+                  "low",
+                  "medium",
+                  "high"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Difficulty"
+          },
+          "difficulty_conceptual": {
+            "anyOf": [
+              {
+                "enum": [
+                  "low",
+                  "medium",
+                  "high"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Difficulty Conceptual"
+          },
+          "difficulty_implementation": {
+            "anyOf": [
+              {
+                "enum": [
+                  "low",
+                  "medium",
+                  "high"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Difficulty Implementation"
+          },
+          "difficulty_source": {
+            "anyOf": [
+              {
+                "enum": [
+                  "declared",
+                  "computed"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Difficulty Source"
+          },
           "document_state": {
             "default": "present",
             "enum": [
@@ -31742,6 +31833,27 @@
             "title": "Coord Available",
             "type": "boolean"
           },
+          "corpus_health": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CorpusHealth"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "corpus_health_unavailable_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Corpus Health Unavailable Reason"
+          },
           "count": {
             "title": "Count",
             "type": "integer"
@@ -31809,9 +31921,541 @@
           "count",
           "total",
           "offset",
-          "limit"
+          "limit",
+          "corpus_health",
+          "corpus_health_unavailable_reason"
         ],
         "title": "PlanCandidateResponse",
+        "type": "object"
+      },
+      "PlanCensusSide": {
+        "description": "One side of the set difference, as the device that scans enumerated it.\n\nA coverage entry carries TWO of these, and they answer DIFFERENT questions\n-- which is the whole reason this block emits no ratio:\n\n* ``authored_at_ref`` is **what exists**: the stems the device listed at\n  ``ref_sha`` on its ``default_ref``.\n* ``visible_to_scanner`` is **what the body sync could possibly have\n  seen**: the stems the device enumerated in the WORKING TREE it scans.\n\nA checkout behind its default branch makes the second a strict subset of\nthe first, and a plan missing from the corpus because of that gap is\ncheckout freshness, not a capture defect. One number over two denominators\nwould hide exactly that distinction.",
+        "properties": {
+          "count": {
+            "title": "Count",
+            "type": "integer"
+          },
+          "digest": {
+            "title": "Digest",
+            "type": "string"
+          },
+          "listed_count": {
+            "title": "Listed Count",
+            "type": "integer"
+          },
+          "ref_age_secs": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ref Age Secs"
+          },
+          "ref_sha": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ref Sha"
+          },
+          "source": {
+            "enum": [
+              "ref",
+              "work_tree"
+            ],
+            "title": "Source",
+            "type": "string"
+          },
+          "truncated": {
+            "title": "Truncated",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "source",
+          "ref_sha",
+          "ref_age_secs",
+          "count",
+          "listed_count",
+          "truncated",
+          "digest"
+        ],
+        "title": "PlanCensusSide",
+        "type": "object"
+      },
+      "PlanCoverage": {
+        "description": "What the corpus holds, against what exists -- as a SET DIFFERENCE.\n\nOne entry per ``source_repo`` key any device reports, **never omitted and\nnever zeroed**: a key with no usable census reads ``unknown`` with a\n``detail``, because \"we cannot see the authored side\" and \"the corpus holds\nnone of it\" are different answers and only one of them is actionable.\n\n**There is no ratio field here, and that is the point.** A percentage is\none number over two denominators that answer different questions\n(:class:`PlanCensusSide`), and computed off a single git ref the naive\nanswers for one corpus have read 76.5% and 101.8% -- the second impossible,\nand produced by counting corpus rows written under a DIFFERENT\n``source_repo`` against one key's authored set.\n``out_of_scope_artifact_count`` names those rows instead, which is what\nmakes the >100% reading unconstructible from anything served here. A\npresentation layer may compute a ratio only beside BOTH denominators.\n\nEvery entry carries the honesty vocabulary the readings already have --\n``min_behind``, ``min_behind_is_floor``, ``observation_age_secs``,\n``observation_fresh``, ``counts_are_floors``, ``ref_sha`` -- so a reader\nnever has to join this block to ``by_source_repo`` to know whether the\nnumbers mean anything. No second vocabulary is minted for coverage.\n\n\u26a0\ufe0f **What a ``measured`` entry does NOT establish: that the two sides\nagree about what ``source_repo`` MEANS.** The join is on that string\nexactly, and it is written independently on the two sides -- the device\nreports it on its reading, the artifact upsert stores it on every row. The\nscanner's form is two components (``<repo>/<dir relative to the repo\nroot>``, e.g. ``qontinui-dev-notes/plans``); a hand-``POST``ed row under\nthe bare ``qontinui-dev-notes`` is a DIFFERENT key. So a device reporting\na key the corpus spells differently is measured with perfect confidence\nand reads ``captured: 0``, ``authored_not_captured`` equal to every stem\nthat exists, and ``both: 0`` -- the shape of a total capture failure.\n\n**This is deliberately not given an arm of its own**, because no rule here\ncan tell a form mismatch from a genuinely uncaptured source: both are \"the\ncorpus holds no row under this key\", and inventing a fuzzy match would\nreintroduce exactly the near-miss folding that\n``out_of_scope_artifact_count`` exists to forbid. What the entry does\ninstead is SERVE THE TELL: on a mismatch, ``out_of_scope_artifact_count``\nis the whole plan corpus (every row is under some other key), which beside\na zero ``captured`` is the signature to read. A genuinely uncaptured\nsource shows the same zero beside an out-of-scope count that accounts only\nfor OTHER keys' rows. A reader seeing ``captured: 0`` with an out-of-scope\ncount at or near the organization's plan-row total should compare the two\nspellings before concluding the sync is broken.",
+        "properties": {
+          "authored_at_ref": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PlanCensusSide"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "authored_not_captured": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Authored Not Captured"
+          },
+          "authored_not_captured_but_invisible": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Authored Not Captured But Invisible"
+          },
+          "both": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Both"
+          },
+          "captured": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Captured"
+          },
+          "captured_not_authored": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Captured Not Authored"
+          },
+          "census_device_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Census Device Id"
+          },
+          "counts_are_floors": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Counts Are Floors"
+          },
+          "detail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Detail"
+          },
+          "device_count": {
+            "title": "Device Count",
+            "type": "integer"
+          },
+          "min_behind": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Min Behind"
+          },
+          "min_behind_is_floor": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Min Behind Is Floor"
+          },
+          "missing_sample": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Missing Sample",
+            "type": "array"
+          },
+          "observation_age_secs": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Observation Age Secs"
+          },
+          "observation_fresh": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Observation Fresh"
+          },
+          "other_census_device_ids": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "title": "Other Census Device Ids",
+            "type": "array"
+          },
+          "out_of_scope_artifact_count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Out Of Scope Artifact Count"
+          },
+          "ref_sha": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ref Sha"
+          },
+          "sample_truncated": {
+            "title": "Sample Truncated",
+            "type": "boolean"
+          },
+          "source_repo": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Repo"
+          },
+          "state": {
+            "enum": [
+              "measured",
+              "unknown"
+            ],
+            "title": "State",
+            "type": "string"
+          },
+          "visible_to_scanner": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PlanCensusSide"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "source_repo",
+          "state",
+          "detail",
+          "device_count",
+          "census_device_id",
+          "other_census_device_ids",
+          "authored_at_ref",
+          "visible_to_scanner",
+          "captured",
+          "both",
+          "authored_not_captured",
+          "captured_not_authored",
+          "authored_not_captured_but_invisible",
+          "out_of_scope_artifact_count",
+          "missing_sample",
+          "sample_truncated",
+          "min_behind",
+          "min_behind_is_floor",
+          "observation_age_secs",
+          "observation_fresh",
+          "counts_are_floors",
+          "ref_sha"
+        ],
+        "title": "PlanCoverage",
+        "type": "object"
+      },
+      "PlanDifficultyItem": {
+        "description": "One plan's rating, keyed the ways a consumer joins it.\n\n``work_unit_slug`` is the join key onto coord's work units (the\n``/admin/coord/plans`` console); ``slug`` is the artifact's own stem, which\nthe scanner writes identically for a plan. Both are served because a\nhand-POSTed row may carry no ``work_unit_slug``.",
+        "properties": {
+          "difficulty": {
+            "enum": [
+              "low",
+              "medium",
+              "high"
+            ],
+            "title": "Difficulty",
+            "type": "string"
+          },
+          "difficulty_conceptual": {
+            "enum": [
+              "low",
+              "medium",
+              "high"
+            ],
+            "title": "Difficulty Conceptual",
+            "type": "string"
+          },
+          "difficulty_implementation": {
+            "enum": [
+              "low",
+              "medium",
+              "high"
+            ],
+            "title": "Difficulty Implementation",
+            "type": "string"
+          },
+          "difficulty_rubric_version": {
+            "title": "Difficulty Rubric Version",
+            "type": "integer"
+          },
+          "difficulty_signals": {
+            "additionalProperties": true,
+            "title": "Difficulty Signals",
+            "type": "object"
+          },
+          "difficulty_source": {
+            "enum": [
+              "declared",
+              "computed"
+            ],
+            "title": "Difficulty Source",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "slug": {
+            "title": "Slug",
+            "type": "string"
+          },
+          "source_repo": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Repo"
+          },
+          "work_unit_slug": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Work Unit Slug"
+          }
+        },
+        "required": [
+          "id",
+          "slug",
+          "difficulty",
+          "difficulty_conceptual",
+          "difficulty_implementation",
+          "difficulty_source",
+          "difficulty_rubric_version"
+        ],
+        "title": "PlanDifficultyItem",
+        "type": "object"
+      },
+      "PlanDifficultyResponse": {
+        "description": "Every rated plan in the caller's scope \u2014 not paged: the console joins\nit onto a coord window of up to 500 work units, and a row is ~300 bytes.\n\n``count`` is ``len(items)``. ``rerated`` is how many rows THIS read rated\nbefore answering (non-zero once after a deploy or a rubric bump). A plan\nrow that is still unrated is left OUT of ``items`` \u2014 absent here means\n\"no rating\", which the console renders as unrated, never as \"low\".\n``model_tiers`` maps each level to the model tier it routes to, served so\nevery consumer names the same models.",
+        "properties": {
+          "count": {
+            "title": "Count",
+            "type": "integer"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/PlanDifficultyItem"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "model_tiers": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "Model Tiers",
+            "type": "object"
+          },
+          "rerate_failed_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rerate Failed Reason"
+          },
+          "rerate_pending": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rerate Pending"
+          },
+          "rerated": {
+            "title": "Rerated",
+            "type": "integer"
+          },
+          "rubric_version": {
+            "title": "Rubric Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "count",
+          "rerated",
+          "rubric_version",
+          "model_tiers"
+        ],
+        "title": "PlanDifficultyResponse",
+        "type": "object"
+      },
+      "PlanSlugCensus": {
+        "additionalProperties": false,
+        "description": "One side's plan-stem listing, as the device that scans enumerated it.\n\nThis is the denominator the plan corpus has never had. Every shipped\ncapture surface counts a numerator; none owns a denominator, so the fleet\nhas never been able to answer *\"of the plans that exist, how many did the\ncorpus capture?\"* \u2014 and the naive answers computed off a single git ref\nhave read 76.5% and 101.8% for the same corpus. The set the device\nenumerated, carried per ``source`` and joined by ``source_repo``, is what\nmakes the answer a SET DIFFERENCE instead.\n\nRead the module docstring for the four rules (digest, the withheld-set\nheartbeat, the truncation floor, and absent-never-empty) and why each is a\n422 rather than a coerced value.",
+        "properties": {
+          "count": {
+            "maximum": 9.223372036854776e+18,
+            "minimum": 0.0,
+            "title": "Count",
+            "type": "integer"
+          },
+          "digest": {
+            "maxLength": 64,
+            "minLength": 64,
+            "title": "Digest",
+            "type": "string"
+          },
+          "ref_sha": {
+            "anyOf": [
+              {
+                "maxLength": 64,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ref Sha"
+          },
+          "slugs": {
+            "anyOf": [
+              {
+                "items": {
+                  "maxLength": 512,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "maxItems": 5000,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Slugs"
+          },
+          "source": {
+            "enum": [
+              "ref",
+              "work_tree"
+            ],
+            "title": "Source",
+            "type": "string"
+          },
+          "truncated": {
+            "title": "Truncated",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "source",
+          "count",
+          "digest",
+          "truncated"
+        ],
+        "title": "PlanSlugCensus",
         "type": "object"
       },
       "PopularPackageResponse": {
@@ -37828,6 +38472,601 @@
         "title": "SavedApiRequestUpdate",
         "type": "object"
       },
+      "ScanRootListResponse": {
+        "description": "Every device's latest reading for the caller's organization.\n\nServed by ``GET /plan-library/scan-roots`` and, through the same builder,\nas ``corpus_health.scan_roots`` on every plan-library list page and on\n``/candidates`` \u2014 where a failed read degrades to ``read_failed`` instead\nof an error.",
+        "properties": {
+          "by_source_repo": {
+            "items": {
+              "$ref": "#/components/schemas/ScanRootSourceRollup"
+            },
+            "title": "By Source Repo",
+            "type": "array"
+          },
+          "count": {
+            "title": "Count",
+            "type": "integer"
+          },
+          "coverage": {
+            "items": {
+              "$ref": "#/components/schemas/PlanCoverage"
+            },
+            "title": "Coverage",
+            "type": "array"
+          },
+          "coverage_detail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Coverage Detail"
+          },
+          "detail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Detail"
+          },
+          "fresh_count": {
+            "title": "Fresh Count",
+            "type": "integer"
+          },
+          "fresh_within_secs": {
+            "title": "Fresh Within Secs",
+            "type": "integer"
+          },
+          "rows": {
+            "items": {
+              "$ref": "#/components/schemas/ScanRootRow"
+            },
+            "title": "Rows",
+            "type": "array"
+          },
+          "state": {
+            "enum": [
+              "reported",
+              "unknown"
+            ],
+            "title": "State",
+            "type": "string"
+          }
+        },
+        "required": [
+          "state",
+          "detail",
+          "fresh_within_secs",
+          "count",
+          "fresh_count",
+          "rows",
+          "by_source_repo",
+          "coverage",
+          "coverage_detail"
+        ],
+        "title": "ScanRootListResponse",
+        "type": "object"
+      },
+      "ScanRootReport": {
+        "additionalProperties": false,
+        "description": "One device's reading of the directory its plan-library body sync scans.",
+        "properties": {
+          "ahead": {
+            "anyOf": [
+              {
+                "maximum": 9.223372036854776e+18,
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ahead"
+          },
+          "behind": {
+            "anyOf": [
+              {
+                "maximum": 9.223372036854776e+18,
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Behind"
+          },
+          "censuses": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/PlanSlugCensus"
+                },
+                "maxItems": 2,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Censuses"
+          },
+          "counts_are_floors": {
+            "title": "Counts Are Floors",
+            "type": "boolean"
+          },
+          "default_ref": {
+            "anyOf": [
+              {
+                "maxLength": 255,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default Ref"
+          },
+          "detail": {
+            "anyOf": [
+              {
+                "maxLength": 4096,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Detail"
+          },
+          "head_sha": {
+            "anyOf": [
+              {
+                "maxLength": 64,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Head Sha"
+          },
+          "observed_at": {
+            "format": "date-time",
+            "title": "Observed At",
+            "type": "string"
+          },
+          "plans_dir": {
+            "anyOf": [
+              {
+                "maxLength": 4096,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Plans Dir"
+          },
+          "ref_age_secs": {
+            "anyOf": [
+              {
+                "maximum": 9.223372036854776e+18,
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ref Age Secs"
+          },
+          "ref_sha": {
+            "anyOf": [
+              {
+                "maxLength": 64,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ref Sha"
+          },
+          "repo_root": {
+            "anyOf": [
+              {
+                "maxLength": 4096,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Repo Root"
+          },
+          "source_repo": {
+            "anyOf": [
+              {
+                "maxLength": 255,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Repo"
+          },
+          "state": {
+            "enum": [
+              "measured",
+              "not_scanning",
+              "not_a_git_work_tree",
+              "unknown"
+            ],
+            "title": "State",
+            "type": "string"
+          }
+        },
+        "required": [
+          "state",
+          "counts_are_floors",
+          "observed_at"
+        ],
+        "title": "ScanRootReport",
+        "type": "object"
+      },
+      "ScanRootReportResponse": {
+        "description": "The stored row after a report.",
+        "properties": {
+          "applied": {
+            "title": "Applied",
+            "type": "boolean"
+          },
+          "created": {
+            "title": "Created",
+            "type": "boolean"
+          },
+          "row": {
+            "$ref": "#/components/schemas/ScanRootRow"
+          }
+        },
+        "required": [
+          "created",
+          "applied",
+          "row"
+        ],
+        "title": "ScanRootReportResponse",
+        "type": "object"
+      },
+      "ScanRootRow": {
+        "description": "One device's stored reading, with the read route's VERDICT on top.\n\n``state`` / ``detail`` are the verdict a reader should key on, not the\nstored values. ``state`` is ``unknown`` with:\n\n* an ``observation_stale:`` detail once the device has not reported within\n  ``fresh_within_secs`` (by ``received_at``);\n* a ``reading_superseded:`` detail when the device's latest report was\n  observed before the stored reading (a clock step-back or a\n  late-delivered report), so the stored reading may not be what it reports\n  now (``last_report_applied: false``);\n* a ``ref_stale:`` detail for a ``measured`` floor reading that is 0\n  behind.\n\nPrecedence: ``observation_stale`` > ``reading_superseded`` > ``ref_stale``.\nWhat the device actually sent is in ``reported_state`` /\n``reported_detail``. The counts and ``ref_age_secs`` are served as reported\nwhatever the verdict \u2014 a reader keying on ``state`` does not trust them\nwhen it is ``unknown``.",
+        "properties": {
+          "ahead": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ahead"
+          },
+          "behind": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Behind"
+          },
+          "counts_are_floors": {
+            "title": "Counts Are Floors",
+            "type": "boolean"
+          },
+          "default_ref": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default Ref"
+          },
+          "detail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Detail"
+          },
+          "device_id": {
+            "format": "uuid",
+            "title": "Device Id",
+            "type": "string"
+          },
+          "head_sha": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Head Sha"
+          },
+          "last_report_applied": {
+            "title": "Last Report Applied",
+            "type": "boolean"
+          },
+          "last_report_observed_at": {
+            "title": "Last Report Observed At",
+            "type": "string"
+          },
+          "observation_age_secs": {
+            "title": "Observation Age Secs",
+            "type": "integer"
+          },
+          "observation_fresh": {
+            "title": "Observation Fresh",
+            "type": "boolean"
+          },
+          "observed_at": {
+            "title": "Observed At",
+            "type": "string"
+          },
+          "observed_skew_secs": {
+            "title": "Observed Skew Secs",
+            "type": "integer"
+          },
+          "plans_dir": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Plans Dir"
+          },
+          "received_at": {
+            "title": "Received At",
+            "type": "string"
+          },
+          "ref_age_secs": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ref Age Secs"
+          },
+          "ref_sha": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ref Sha"
+          },
+          "repo_root": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Repo Root"
+          },
+          "reported_detail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reported Detail"
+          },
+          "reported_state": {
+            "enum": [
+              "measured",
+              "not_scanning",
+              "not_a_git_work_tree",
+              "unknown"
+            ],
+            "title": "Reported State",
+            "type": "string"
+          },
+          "source_repo": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Repo"
+          },
+          "state": {
+            "enum": [
+              "measured",
+              "not_scanning",
+              "not_a_git_work_tree",
+              "unknown"
+            ],
+            "title": "State",
+            "type": "string"
+          }
+        },
+        "required": [
+          "device_id",
+          "state",
+          "detail",
+          "reported_state",
+          "reported_detail",
+          "plans_dir",
+          "repo_root",
+          "source_repo",
+          "default_ref",
+          "ref_sha",
+          "head_sha",
+          "behind",
+          "ahead",
+          "ref_age_secs",
+          "counts_are_floors",
+          "observed_at",
+          "received_at",
+          "last_report_applied",
+          "last_report_observed_at",
+          "observed_skew_secs",
+          "observation_age_secs",
+          "observation_fresh"
+        ],
+        "title": "ScanRootRow",
+        "type": "object"
+      },
+      "ScanRootSourceRollup": {
+        "description": "Every device feeding ONE scan source, folded to the corpus's question.\n\nAny feeder can add a plan to the corpus, so how far behind the corpus is\nis bounded by its LEAST-behind current feeder. ``min_behind`` is NOT a\nceiling on what the corpus lacks: it bounds the least-behind COMPARABLE\nfeeder's distance from BELOW (\"at least 41\" may really be 300), and only\nan exact value bounds the corpus \u2014 and then only as of that ref. Every\nclaim here is taken over the COMPARISON SET: readings that are fresh,\napplied (not contradicted by a later, declined report) and carry a count\n\u2014 a ``measured`` verdict, or a 0-behind floor the verdict marks\n``ref_stale``. A silent or contradicted device's old number stays out, and\na device in ``unmeasured_device_ids`` may be less behind than anything\nstated.\n\nThe roll-up names EVERY feeder, because a lagging device is not harmless\njust because a current one exists: it can write an older body over a newer\nhead. The four id lists PARTITION the devices, and a device is placed as\nleast-behind or lagging only when the readings ORDER it: all comparable\ndevices on one ``ref_sha`` that is either fresh or, if stale, with every\ndevice reporting ``ahead == 0``. Counts against different refs do not order\ndevices (exactly 3 behind a five-hour-old ref can be 13 behind the ref\nanother device is exactly 5 behind). On a fresh ref the order holds AS OF\nthat ref: a lagging device carrying commits of its own may already hold\nsome merged since, within the runner's window. On an active repository\ndevices fetch at different moments, so placement is often empty: an empty\n``lagging_device_ids`` means NOT ESTABLISHED, never \"none lagging\".",
+        "properties": {
+          "comparable_count": {
+            "title": "Comparable Count",
+            "type": "integer"
+          },
+          "detail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Detail"
+          },
+          "device_count": {
+            "title": "Device Count",
+            "type": "integer"
+          },
+          "lag_unknown_device_ids": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "title": "Lag Unknown Device Ids",
+            "type": "array"
+          },
+          "lagging_device_ids": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "title": "Lagging Device Ids",
+            "type": "array"
+          },
+          "least_behind_device_ids": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "title": "Least Behind Device Ids",
+            "type": "array"
+          },
+          "min_behind": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Min Behind"
+          },
+          "min_behind_is_floor": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Min Behind Is Floor"
+          },
+          "source_repo": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Repo"
+          },
+          "state": {
+            "enum": [
+              "measured",
+              "unknown"
+            ],
+            "title": "State",
+            "type": "string"
+          },
+          "unmeasured_device_ids": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "title": "Unmeasured Device Ids",
+            "type": "array"
+          }
+        },
+        "required": [
+          "source_repo",
+          "state",
+          "detail",
+          "device_count",
+          "comparable_count",
+          "min_behind",
+          "min_behind_is_floor",
+          "least_behind_device_ids",
+          "lagging_device_ids",
+          "lag_unknown_device_ids",
+          "unmeasured_device_ids"
+        ],
+        "title": "ScanRootSourceRollup",
+        "type": "object"
+      },
       "ScheduledWorkflowRunCreate": {
         "description": "POST body: create a new scheduled run for ``workflow_id``.",
         "properties": {
@@ -39957,6 +41196,37 @@
           "artifact"
         ],
         "title": "SessionArtifactUpsertResponse",
+        "type": "object"
+      },
+      "SessionControlRequestBody": {
+        "additionalProperties": false,
+        "description": "Closed body for ``POST /operations/sessions/{session_id}/control``.\n\nAssembled into coord's wire body field by field rather than forwarded\nverbatim, for the same reason the drain body is: the operator's browser\nnever gets to put a key on this write that the contract does not name.\nIn particular there is no ``requested_by`` \u2014 coord stamps the author from\nits authenticated operator context, and an audit row with a\nclient-asserted author is not an audit row.\n\n``action`` is a closed vocabulary. ``finish_and_close`` declares the\nsession finished and asks the runner to close it once it is idle (D4/D9 \u2014\nthe operator's click IS the declaration a runner never infers).\n``stop_at_boundary`` asks a loop or steward session to stop at its next\niteration boundary (D6). Anything else is a local 422 before coord is\nasked.",
+        "properties": {
+          "action": {
+            "enum": [
+              "finish_and_close",
+              "stop_at_boundary"
+            ],
+            "title": "Action",
+            "type": "string"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "maxLength": 2000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          }
+        },
+        "required": [
+          "action"
+        ],
+        "title": "SessionControlRequestBody",
         "type": "object"
       },
       "SessionRelaunchRequest": {
@@ -52324,6 +53594,80 @@
             "title": "Current Version",
             "type": "integer"
           },
+          "difficulty": {
+            "anyOf": [
+              {
+                "enum": [
+                  "low",
+                  "medium",
+                  "high"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Difficulty"
+          },
+          "difficulty_conceptual": {
+            "anyOf": [
+              {
+                "enum": [
+                  "low",
+                  "medium",
+                  "high"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Difficulty Conceptual"
+          },
+          "difficulty_implementation": {
+            "anyOf": [
+              {
+                "enum": [
+                  "low",
+                  "medium",
+                  "high"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Difficulty Implementation"
+          },
+          "difficulty_rubric_version": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Difficulty Rubric Version"
+          },
+          "difficulty_source": {
+            "anyOf": [
+              {
+                "enum": [
+                  "declared",
+                  "computed"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Difficulty Source"
+          },
           "edges": {
             "items": {
               "$ref": "#/components/schemas/WorkArtifactEdgeRead"
@@ -52664,8 +54008,11 @@
         "type": "object"
       },
       "WorkArtifactListResponse": {
-        "description": "A page of list rows. ``count`` is this page's length; ``total`` is the\nunpaged total.",
+        "description": "A page of list rows, plus the health of the corpus it was drawn from.\n\n``corpus_health`` is reported on EVERY page, filtered or not, so an\nempty ``items`` can always be read against ``plan_count`` \u2014 a zero on a\nfrozen corpus and a zero on a real absence are different findings.",
         "properties": {
+          "corpus_health": {
+            "$ref": "#/components/schemas/CorpusHealth"
+          },
           "count": {
             "title": "Count",
             "type": "integer"
@@ -52695,7 +54042,8 @@
           "count",
           "total",
           "offset",
-          "limit"
+          "limit",
+          "corpus_health"
         ],
         "title": "WorkArtifactListResponse",
         "type": "object"
@@ -52741,6 +54089,80 @@
           "current_version": {
             "title": "Current Version",
             "type": "integer"
+          },
+          "difficulty": {
+            "anyOf": [
+              {
+                "enum": [
+                  "low",
+                  "medium",
+                  "high"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Difficulty"
+          },
+          "difficulty_conceptual": {
+            "anyOf": [
+              {
+                "enum": [
+                  "low",
+                  "medium",
+                  "high"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Difficulty Conceptual"
+          },
+          "difficulty_implementation": {
+            "anyOf": [
+              {
+                "enum": [
+                  "low",
+                  "medium",
+                  "high"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Difficulty Implementation"
+          },
+          "difficulty_rubric_version": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Difficulty Rubric Version"
+          },
+          "difficulty_source": {
+            "anyOf": [
+              {
+                "enum": [
+                  "declared",
+                  "computed"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Difficulty Source"
           },
           "id": {
             "format": "uuid",
@@ -54025,6 +55447,31 @@
           "email"
         ],
         "title": "_GroupMemberBody",
+        "type": "object"
+      },
+      "_TenantMemberAddBody": {
+        "additionalProperties": false,
+        "description": "Body for ``POST /coord/tenant-members``: an email and a role. Period.\n\n``extra=\"forbid\"`` is load-bearing, not tidiness. The whole point of this\nroute is that the CALLER never supplies identity-provider fields \u2014 the\nserver resolves them. Accepting an ``sso_subject`` or ``sso_provider``\nhere (even ignored) would re-open the surface where a client decides\nwhich Cognito identity a tenant grant lands on, which is exactly the\ndefect this route exists to remove. A body carrying either is a 422.\n\n``role`` is the two-value set a tenant admin actually grants. Coord's\nrole enum is wider (``operator|agent_supervisor|admin|owner``); the extra\ntwo are fleet/ownership concerns that do not belong on a \"add my\ncolleague\" form, and coord re-validates whatever is sent regardless.\n\n``email`` is a plain string rather than ``EmailStr`` on purpose: Cognito\nis the authority on what its own pool accepts, and it answers a filter it\ncannot parse with an ``InvalidParameterException`` that\n``_invalid_parameter_http`` turns into a 400 carrying AWS's real reason.\nA pydantic pre-validation would replace that specific answer with a\ngeneric one, and would reject addresses Cognito accepts.",
+        "properties": {
+          "email": {
+            "minLength": 1,
+            "title": "Email",
+            "type": "string"
+          },
+          "role": {
+            "enum": [
+              "admin",
+              "operator"
+            ],
+            "title": "Role",
+            "type": "string"
+          }
+        },
+        "required": [
+          "email",
+          "role"
+        ],
+        "title": "_TenantMemberAddBody",
         "type": "object"
       },
       "app__api__v1__endpoints__batch_import__FileInfo": {
@@ -68414,7 +69861,7 @@
     },
     "/api/v1/devices/pair-cli": {
       "post": {
-        "description": "Headless analogue of :func:`pair_confirm`.\n\nThe runner POSTs here with its existing user access-token in\n``Authorization: Bearer \u2026`` (the same token it just exchanged via\n``/api/v1/auth/jwt/login``) and the ``(device_id, hostname, name)``\ntriple it already knows.\n\nThe backend forwards the caller's **Cognito operator bearer** (cookie\n``access_token`` or ``Authorization: Bearer``) straight through to\ncoord's ``POST /coord/devices/pair-cli``. Coord's mounted\n``resolve_operator_optional`` middleware builds an ``OperatorContext``\nfrom that bearer and DERIVES ``tenant_id`` itself when the body omits\nit \u2014 so web no longer resolves or sends a ``tenant_id``. The\n``X-Qontinui-User-Id`` header is still sent; coord now cross-checks it\nagainst the operator's OWN ``auth.users`` row (matched by Cognito\nsubject) and refuses ``user_mismatch`` if it names anyone else \u2014 it is\nan assertion coord verifies, not an identity coord trusts.\n\nSee follow-up #1 of plan\n``D:/qontinui-root/plans/2026-05-30-coord-operator-resolver-removal.md``.\nCoord already accepts the optional ``tenant_id`` + derives it from the\noperator bearer (``routes_phase3.rs::post_pair_cli``); this change just\nforwards the right credential.",
+        "description": "Headless analogue of :func:`pair_confirm`.\n\nThe runner POSTs here with its existing user access-token in\n``Authorization: Bearer \u2026`` (the same token it just exchanged via\n``/api/v1/auth/jwt/login``) and the ``(device_id, hostname, name)``\ntriple it already knows.\n\nThe backend forwards the caller's **Cognito operator bearer** (cookie\n``access_token`` or ``Authorization: Bearer``) straight through to\ncoord's ``POST /coord/devices/pair-cli``. Coord's mounted\n``resolve_operator_optional`` middleware builds an ``OperatorContext``\nfrom that bearer. The ``X-Qontinui-User-Id`` header is still sent;\ncoord cross-checks it against the operator's OWN ``auth.users`` row\n(matched by Cognito subject) and refuses ``user_mismatch`` if it names\nanyone else \u2014 it is an assertion coord verifies, not an identity coord\ntrusts.\n\nTenant: web never RESOLVES a tenant, but it FORWARDS a real\ncaller-supplied ``tenant_id``. Coord validates it\n(``authorize_pairing_tenant``) and derives the tenant from the operator\nbearer (``principal.home_tenant()``) only when the body names none.\nPlan ``2026-05-30-coord-operator-resolver-removal`` (follow-up #1)\nstopped forwarding ``tenant_id`` altogether; plan\n``2026-09-17-device-jwt-refresh-drops-the-requested-tenant-and-coord-mints-the-home-tenant``\nrestores forwarding of a real one, because a runner's device-JWT\nrefresh after expiry otherwise gets the user's HOME tenant minted \u2014\nand coord records that pairing, silently re-pointing the device.\n\nThe nil UUID is treated as absent and is NOT forwarded: runner UI\nsign-in sends ``tenant_id = 00000000-\u2026`` as a placeholder on every\nfirst pairing, and forwarding it would 403 at coord's membership check\n(surfacing here as a 502) and break every sign-in.",
         "operationId": "api_v1_devices_pair_cli_post",
         "requestBody": {
           "content": {
@@ -80462,7 +81909,7 @@
     },
     "/api/v1/operations/claude-accounts": {
       "get": {
-        "description": "Return the per-device Claude account roster from coord (tenant-scoped).\n\nProxies coord ``GET /coord/claude-accounts/usage``. Response envelope::\n\n    {\n      \"accounts\": [\n        {\n          \"device_id\": \"<uuid>\",\n          \"account_label\": \".claude-gmail\",\n          \"weekly_utilization\": 0.34,\n          \"weekly_resets_at\": \"<iso8601|null>\",\n          \"session_utilization\": 0.11,\n          \"session_resets_at\": \"<iso8601|null>\",\n          \"model_limits\": [{\"model\": \"...\", \"utilization\": 0.2, ...}],\n          \"exhausted\": false,\n          \"source\": \"...\",\n          \"error\": false,\n          \"stale\": false,\n          \"is_active\": true,       // null until the device's runner reports it\n          \"account_selection_mode\": \"least_usage\"  // manual | least_usage | null\n        }\n      ],\n      \"table_provisioned\": true,\n      \"columns_provisioned\": true\n    }\n\n**An absent roster is UNKNOWN, not \"no accounts\".** Three distinct\nstates have to stay distinguishable, because a false \"this machine has\nno Claude accounts\" is worse than an honest unknown \u2014 it would tell an\noperator a machine cannot run an agent when it can:\n\n* ``table_provisioned: false`` \u2014 coord's ``coord.claude_account_usage``\n  does not exist yet on that deployment. Nothing has been observed.\n* ``columns_provisioned: false`` \u2014 the table exists but predates the\n  ``is_active`` / ``account_selection_mode`` columns (alembic\n  ``coord_claude_acct_usage_02``). Usage is real; the *selection* half is\n  unknown, and ``is_active`` / ``account_selection_mode`` will be null.\n* both true with ``accounts: []`` \u2014 genuinely no account has reported\n  for this tenant.\n\nSo the two flags are passed THROUGH rather than flattened into an empty\nlist. When coord omits them entirely (a build predating its own read\nroute's flags) they are surfaced as ``None`` \u2014 unknown \u2014 and never\ndefaulted to ``true``, which would assert provisioning we did not observe.\nConsumers must render null as \"unknown\", not as ``false`` and not as the\n``least_usage`` default.\n\n``stale`` is coord's own computed freshness verdict (30 minutes since the\nlast report); it is forwarded untouched, not recomputed here.",
+        "description": "Return the per-device Claude account roster from coord (tenant-scoped).\n\nProxies coord ``GET /coord/claude-accounts/usage``. Response envelope::\n\n    {\n      \"accounts\": [\n        {\n          \"device_id\": \"<uuid>\",\n          \"account_label\": \".claude-gmail\",\n          \"weekly_utilization\": 0.34,\n          \"weekly_resets_at\": \"<iso8601|null>\",\n          \"session_utilization\": 0.11,\n          \"session_resets_at\": \"<iso8601|null>\",\n          \"model_limits\": [{\"model\": \"...\", \"utilization\": 0.2, ...}],\n          \"exhausted\": false,\n          \"source\": \"...\",\n          \"error\": false,\n          \"stale\": false,\n          \"is_active\": true,       // null until the device's runner reports it\n          \"account_selection_mode\": \"least_usage\"  // manual | least_usage | null\n        }\n      ],\n      \"prepaid\": [\n        {\n          \"device_id\": \"<uuid>\",\n          \"provider\": \"deepseek\",\n          \"label\": \"DeepSeek\",\n          \"currency\": \"USD\",\n          \"balance_micros\": 19280000,   // 1e-6 units; null = NOT REPORTED\n          \"granted_micros\": 5000000,\n          \"topped_up_micros\": 14280000,\n          \"is_available\": true,\n          \"error\": null,               // provider message when the probe failed\n          \"stale\": false,\n          \"updated_at\": \"<rfc3339>\"\n        }\n      ],\n      \"table_provisioned\": true,\n      \"columns_provisioned\": true,\n      \"prepaid_table_provisioned\": true\n    }\n\n``prepaid`` is a **different object family** from ``accounts`` and lives in\nits own ``coord.prepaid_balances`` table, keyed ``(tenant, device,\nprovider)``. It rides this feed rather than a route of its own so the fleet\nkeeps one reporting cadence and one staleness model for a machine's AI\naccount posture \u2014 plan\n``2026-09-12-prepaid-balance-is-a-fleet-fact-with-no-ingest``, which also\nrecords why these are NOT two extra columns on ``claude_account_usage``\n(that table's ``weekly_utilization`` is ``NOT NULL DEFAULT 0``, so every\nprepaid row would read as a Claude account at 0%).\n\n**A ``null`` money field is NOT zero.** It means the device's runner build\npredates the report, or its probe errored \u2014 UNKNOWN. A real ``0`` means the\naccount is out of credit, which is a very different thing to show an\noperator. ``error IS NOT NULL`` is the \"these numbers are not a reading\"\npredicate.\n\n**An absent roster is UNKNOWN, not \"no accounts\".** Three distinct\nstates have to stay distinguishable, because a false \"this machine has\nno Claude accounts\" is worse than an honest unknown \u2014 it would tell an\noperator a machine cannot run an agent when it can:\n\n* ``table_provisioned: false`` \u2014 coord's ``coord.claude_account_usage``\n  does not exist yet on that deployment. Nothing has been observed.\n* ``columns_provisioned: false`` \u2014 the table exists but predates the\n  ``is_active`` / ``account_selection_mode`` columns (alembic\n  ``coord_claude_acct_usage_02``). Usage is real; the *selection* half is\n  unknown, and ``is_active`` / ``account_selection_mode`` will be null.\n* both true with ``accounts: []`` \u2014 genuinely no account has reported\n  for this tenant.\n\nSo the two flags are passed THROUGH rather than flattened into an empty\nlist. When coord omits them entirely (a build predating its own read\nroute's flags) they are surfaced as ``None`` \u2014 unknown \u2014 and never\ndefaulted to ``true``, which would assert provisioning we did not observe.\nConsumers must render null as \"unknown\", not as ``false`` and not as the\n``least_usage`` default.\n\n``stale`` is coord's own computed freshness verdict (30 minutes since the\nlast report); it is forwarded untouched, not recomputed here.",
         "operationId": "api_v1_operations_claude_accounts_get",
         "parameters": [
           {
@@ -80554,6 +82001,154 @@
           }
         },
         "summary": "Report Claude Sessions",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
+    "/api/v1/operations/coord/audit/recent": {
+      "get": {
+        "description": "Return recent ``coord.operator_audit`` rows for the caller's tenant.\n\nCoord answers ``{\"audit\": [...], \"count\": <n>}`` ordered\n``occurred_at DESC``, each row carrying ``audit_id``, ``operator_id``,\n``action``, ``resource_kind``, ``resource_key``, ``metadata`` and\n``occurred_at``.\n\n**``metadata`` is where the blast radius lives**, and it is per-action\nrather than a fixed schema \u2014 `operator_disable.rs` computes\n``affected_tenant_ids`` before stamping, the kill switch stamps\n``affected_repos``, and ``fleet.drain.set`` stamps ``device_id`` / ``until``\n/ ``drained`` / ``version``. It is forwarded UNTOUCHED: a proxy that\nnormalised it into a fixed shape would silently drop whatever the next\nwriter computes, which is the one field an operator reading this feed\nactually needs.\n\n``operator_id`` is the acting operator coord resolved from the bearer. A\nrow reading ``00000000-0000-0000-0000-000000000000`` is the nil-UUID\nsignature of a coord writer that used ``resolve_operator_id(&headers)``\ninstead of ``ctx.operator_id`` \u2014 the header it reads is one this service\nnever sends. That is a coord-side defect to report, not a real operator,\nand the console labels it as such rather than rendering a plausible id.",
+        "operationId": "api_v1_operations_coord_audit_recent_get",
+        "parameters": [
+          {
+            "description": "Filter by action. A trailing `*` is a PREFIX match (`fleet.*` catches `fleet.drain.set` and `fleet.drain.clear`); anything else is an exact match. Forwarded to coord verbatim \u2014 the prefix grammar is coord's, not this proxy's.",
+            "in": "query",
+            "name": "action",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter by action. A trailing `*` is a PREFIX match (`fleet.*` catches `fleet.drain.set` and `fleet.drain.clear`); anything else is an exact match. Forwarded to coord verbatim \u2014 the prefix grammar is coord's, not this proxy's.",
+              "title": "Action"
+            }
+          },
+          {
+            "description": "Filter by resource_kind \u2014 the table/object class a handler-stamped row names (e.g. the fleet runtime policy table). Same exact-or-trailing-`*` grammar as `action`. `require_role` stamps `http.route` on every authorized request, GETs included, so `resource_kind=http.route` selects exactly that authorization-check class rather than a real write.",
+            "in": "query",
+            "name": "resource_kind",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter by resource_kind \u2014 the table/object class a handler-stamped row names (e.g. the fleet runtime policy table). Same exact-or-trailing-`*` grammar as `action`. `require_role` stamps `http.route` on every authorized request, GETs included, so `resource_kind=http.route` selects exactly that authorization-check class rather than a real write.",
+              "title": "Resource Kind"
+            }
+          },
+          {
+            "description": "Filter by resource_key \u2014 WHICH resource of that kind (a device id, an operator id, a tenant slug). Same grammar as `action`. This is how 'who touched THIS host' is answered without pulling an action family and scanning client-side for a row that may have scrolled past `limit`.",
+            "in": "query",
+            "name": "resource_key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter by resource_key \u2014 WHICH resource of that kind (a device id, an operator id, a tenant slug). Same grammar as `action`. This is how 'who touched THIS host' is answered without pulling an action family and scanning client-side for a row that may have scrolled past `limit`.",
+              "title": "Resource Key"
+            }
+          },
+          {
+            "description": "RFC 3339. Restrict to rows where `occurred_at >= since`.",
+            "in": "query",
+            "name": "since",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "RFC 3339. Restrict to rows where `occurred_at >= since`.",
+              "title": "Since"
+            }
+          },
+          {
+            "description": "RFC 3339. Restrict to rows where `occurred_at < before`.",
+            "in": "query",
+            "name": "before",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "RFC 3339. Restrict to rows where `occurred_at < before`.",
+              "title": "Before"
+            }
+          },
+          {
+            "description": "Max rows. Coord clamps to `[1, 1000]` and defaults to 200.",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Max rows. Coord clamps to `[1, 1000]` and defaults to 200.",
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Get Coord Audit Recent Api V1 Operations Coord Audit Recent Get"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Get Coord Audit Recent",
         "tags": [
           "operations"
         ]
@@ -80706,6 +82301,58 @@
           }
         ],
         "summary": "Delete Cognito Group",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
+    "/api/v1/operations/coord/cognito/groups/{group_name}/blast-radius": {
+      "get": {
+        "description": "What deleting this group would take down \u2014 the DELETE's own verdict,\nread ahead of time so the confirmation dialog shows it BEFORE the click.\n\nSuperuser-gated like the delete it previews. Read-only, so no audit row\nand no rate limit, matching the sibling ``\u2026/users`` read.\n\nThis exists because the dashboard's pre-delete preview used to be derived\nfrom coord's tenant-scoped mappings LIST \u2014 the same read the guards\nthemselves were derived from until 2026-08-28, and wrong in the same way\n(see the module comment above :data:`HOME_GROUP_SUFFIX`). After the guards\nmoved to the pool-wide verdict the backend could see MORE than the dialog:\nthe dialog said \"no coord tenant mappings reference this group\" and the\ndelete then 409'd. Nothing was destroyed, but a preview that contradicts\nthe guard it previews is one an operator learns to ignore. The dialog now\nreads THIS route, which is the SAME reader the delete runs\n(:func:`_coord_group_blast_radius`), so the two cannot disagree except by\nthe state changing between the read and the click \u2014 and the delete still\nre-runs the check itself.\n\nSame fail-closed contract as the delete: a coord failure is a **502**\n``mapping_check_unavailable`` / ``mapping_check_unreadable``, never a\nzeroed verdict. The caller renders that as UNKNOWN. The response is the\nparsed verdict with the same partial disclosure the 409 details carry \u2014\nown-tenant slugs named (sorted, deduplicated, via :func:`_display_slugs`),\nevery other tenant an integer \u2014 plus the two totals, so nothing here\ncan be read as \"the list is the whole blast radius\".",
+        "operationId": "api_v1_operations_coord_cognito_groups_group_name_blast_radius_get",
+        "parameters": [
+          {
+            "description": "Cognito group name.",
+            "in": "path",
+            "name": "group_name",
+            "required": true,
+            "schema": {
+              "description": "Cognito group name.",
+              "title": "Group Name",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Get Cognito Group Blast Radius Api V1 Operations Coord Cognito Groups  Group Name  Blast Radius Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Get Cognito Group Blast Radius",
         "tags": [
           "operations"
         ]
@@ -82237,7 +83884,7 @@
     },
     "/api/v1/operations/coord/prompt-document-proposals": {
       "get": {
-        "description": "List the tenant's policy-edit proposals, newest first. Any tenant member.\n\n``status`` is forwarded verbatim (coord owns the ``pending`` | ``approved`` |\n``rejected`` vocabulary \u2014 the web tier deliberately does not re-encode it, so\na coord-side vocabulary addition needs no web change). Coord returns\n``{\"proposals\": [...]}``.\n\nDegrades rather than 502s while coord's Phase 5 half is undeployed: the\nresponse then carries an empty list plus an ``unavailable`` note (and its\n``unavailable_kind``, so the page can style a benign pre-deploy window\ndifferently from coord actually being down), so an unreadable queue is never\ndisplayed as an empty one.",
+        "description": "List the tenant's policy-edit proposals, newest first. Any tenant member.\n\n``status`` is forwarded verbatim (coord owns the ``pending`` | ``approved`` |\n``rejected`` | ``stale`` vocabulary \u2014 the web tier deliberately does not\nre-encode it, so a coord-side vocabulary addition needs no web change).\nCoord returns ``{\"proposals\": [...]}``.\n\n``stale`` is coord's TERMINAL self-retirement: coord closes a pending\nproposal inside the same transaction that bumps its target document's\nversion, stamping ``decided_by='system:proposal-staleness'`` and a\n``decision_note`` (plan\n``2026-09-13-policy-proposals-agent-decidable-dial-driven-self-retiring``).\nIt was added to this sentence, and to nothing else, on purpose: forwarding\nverbatim is what made the vocabulary addition a docstring change rather than\na code one, and re-encoding the set here would turn every future one into a\ndeploy-ordered edit.\n\nA coord older than that change rejects ``?status=stale`` with ``400 invalid\nstatus``, which passes through unaltered \u2014 the console reads that as \"the\nretired section is unavailable\" and leaves the pending queue alone, so the\ntwo tiers have no deploy-order dependency in either direction.\n\n``limit`` IS declared, unlike ``status``'s vocabulary \u2014 because an\nundeclared query parameter is not forwarded, it is DISCARDED. FastAPI only\nbinds what the signature names, so a caller's ``?limit=20`` used to vanish\nhere and coord fell back to its own ``unwrap_or(100)`` \u2014 five times the\nbound the caller asked for, while the caller's own constant documented 20 as\nhonoured. Declaring it is safe in both deploy directions: coord has accepted\n``limit`` on this route since before the proposal console existed, and the\ndefault is coord's own ``100``, so the pending queue's behaviour is\nunchanged. The collapsed sections that DO pass a smaller bound (the retired\nand recently-decided reads) now get the page size they ask for.\n\nDegrades rather than 502s while coord's Phase 5 half is undeployed: the\nresponse then carries an empty list plus an ``unavailable`` note (and its\n``unavailable_kind``, so the page can style a benign pre-deploy window\ndifferently from coord actually being down), so an unreadable queue is never\ndisplayed as an empty one.",
         "operationId": "api_v1_operations_coord_prompt_document_proposals_get",
         "parameters": [
           {
@@ -82248,6 +83895,18 @@
               "default": "pending",
               "title": "Status",
               "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 100,
+              "maximum": 500,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
             }
           }
         ],
@@ -83814,6 +85473,81 @@
         ]
       }
     },
+    "/api/v1/operations/coord/prompt-documents/{kind}/{name}/withdraw": {
+      "post": {
+        "description": "Withdraw a decision record. Tenant-admin only.\n\nPlan ``2026-09-13-decision-records-are-agent-writable-but-policy-says-they-are-not``\n\u00a77 (3.1-3.3). The undo for a CREATED record: a v1 has no earlier body, so\nneither the landed-write feed's Undo (a PATCH of the prior version) nor\n:func:`restore_prompt_document_version` can reverse it. Coord answers by\nwriting a NEW version that rewrites only the frontmatter ``status`` (to\n``withdrawn``) and ``withdrawn_reason`` keys and keeps the body below the\nfence byte-for-byte. Nothing is deleted \u2014 the row and its history remain,\nand the feed's ordinary head-version Undo reinstates it.\n\nOnly valid for kind ``decision_record``; coord is the authority on that and\nits 4xx passes through, as do unknown-document and non-admin refusals.\n\nBody: ``{reason}``. Only ``reason`` is forwarded. The withdrawer is NOT\nstamped here and never taken from the browser: coord derives it from its own\nauthenticated ``OperatorContext``, for the same reason the version-restore\nproxy above declines to stamp ``updated_by``. Whether a reason is required\n(and what counts as blank) is coord's rule, not a second copy of it here.",
+        "operationId": "api_v1_operations_coord_prompt_documents_kind_name_withdraw_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "kind",
+            "required": true,
+            "schema": {
+              "title": "Kind",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "title": "Name",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "additionalProperties": true,
+                    "type": "object"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Body"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Withdraw Prompt Document Api V1 Operations Coord Prompt Documents  Kind   Name  Withdraw Post"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Withdraw Prompt Document",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
     "/api/v1/operations/coord/pull-decisions": {
       "get": {
         "description": "Return the ``repo_pull`` decision audit feed from coord (tenant-scoped).\n\nForwards to coord's ``GET /coord/policies/resolutions`` with\n``decision_domain=repo_pull`` always pinned, plus the optional\n``device_id`` / ``repo`` / ``limit`` / ``since`` filters. Drives the\n``/admin/coord/pull-decisions`` activity page.",
@@ -84109,6 +85843,55 @@
           }
         },
         "summary": "List Session Compliance Sessions",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
+    "/api/v1/operations/coord/tenant-members": {
+      "post": {
+        "description": "Add a person to the caller's tenant by EMAIL \u2014 no IdP fields.\n\nResolves the email against the Cognito pool, then composes coord's two\nexisting operator writes:\n\n1. ``POST /admin/coord/operators`` with the resolved ``sub`` \u2014 an upsert\n   on ``(sso_provider, sso_subject)`` that never touches ``tenant_id`` on\n   conflict, so it is safe for somebody who already exists in another\n   tenant. It is sent with NO ``roles``: the upsert guarantees the row\n   exists, it does not grant.\n2. ``POST /admin/coord/operators/{id}/roles`` with the requested role and\n   an explicit ``target_tenant_id``, which coord re-checks the caller is\n   admin in (``403 not_admin_in_target_tenant``).\n\nAnswers:\n\n* ``{\"status\": \"added\", \"operator_id\", \"role\"}`` \u2014 they had an account\n  and now hold ``role`` in this tenant.\n* ``{\"status\": \"invited\", \"operator_id\", \"role\"}`` \u2014 SUPERUSER ONLY. They\n  had no account (or an unaccepted invitation): the account is created\n  with nothing sent, the grant is made, and only then is the invitation\n  emailed. Re-adding a pending invitee re-sends it, which is how an admin\n  recovers a lost or expired one.\n* ``{\"status\": \"invitation_pending\", \"operator_id\", \"role\"}`` \u2014 a tenant\n  admin added somebody holding an invitation they have not accepted. The\n  grant is made; nothing is sent, since sending is a superuser act.\n* ``{\"status\": \"invite_required\"}`` \u2014 a tenant admin named an email with\n  no account. NOTHING is written or sent.\n* ``409`` \u2014 more than one account matches the email, so picking one\n  would be guessing which human gets access.\n\n**Why creating an account is superuser-only.** Qontinui is invite-only:\nself sign-up is disabled on the pool and its PreSignUp trigger enforces an\nallowlist \u2014 for every trigger EXCEPT ``AdminCreateUser``. Every signed-in\nuser is admin of their own personal tenant, so letting any tenant admin\nreach ``AdminCreateUser`` would let anybody already inside hand out\naccounts to arbitrary addresses, and send email from the product's sender\nidentity to them. Operator decision, 2026-09-17: tenant admins add people\nwho already have an account; creating one is a platform admin's act.\n\nA grant that landed without its email is a ``502`` whose ``message`` says\nexactly that, and a retry converges: the account then resolves as a\npending invitation, the grant is idempotent, and the email is re-sent.\n\nRate-limited per caller \u2014 see ``_TENANT_MEMBER_ADD_RATE_LIMIT``.",
+        "operationId": "api_v1_operations_coord_tenant_members_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/_TenantMemberAddBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Post Coord Tenant Member Api V1 Operations Coord Tenant Members Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Post Coord Tenant Member",
         "tags": [
           "operations"
         ]
@@ -84798,6 +86581,33 @@
         ]
       }
     },
+    "/api/v1/operations/fleet/ci-runners": {
+      "get": {
+        "description": "Return coord's mirror of the self-hosted CI runners and their labels.\n\nCoord answers::\n\n    {\n      \"runners\": [\n        {\n          \"device_id\": \"<uuid>\",\n          \"hostname\": \"<str>\",\n          \"ci_runner_status\": \"<str|null>\",\n          \"ci_runner_labels\": [\"self-hosted\", \"qontinui\", ...],\n          \"last_seen_at\": \"<rfc3339|null>\"\n        }\n      ],\n      \"as_of\": \"<rfc3339>\",\n      \"freshness_secs\": <int>\n    }\n\n``ci_runner_labels`` is the set coord's registrar last mirrored from\nGitHub's `actions/runners` listing \u2014 the same set GitHub matches a job's\n`runs-on` against. A host missing the custom `qontinui` label draws no\n`[self-hosted, qontinui]` job, which is what makes this read worth\nsurfacing: it is the only place the console can see routing eligibility.\n\n``as_of`` / ``freshness_secs`` describe the READ, not GitHub, and\n``freshness_secs`` is coord's SELECTION WINDOW \u2014 not an age. Coord's own\nwords: \"the freshness window the query was executed under, in seconds\",\nsourced from ``merge_scheduler::ci_runner_freshness_secs()``\n(``COORD_CI_RUNNER_FRESHNESS_SECS``, a configured constant, default 180).\nThe rows are those coord saw in ``(as_of - freshness_secs, as_of]``. A\nconsumer that renders it as \"N seconds old\" prints a constant as if it were\na measurement; the real per-row age is ``as_of - last_seen_at``, which is\nwhy ``last_seen_at`` is on the wire. All three pass through untouched.\n\nForwarded verbatim \u2014 this proxy adds no shape of its own, so a coord that\ngrows a field serves it to the console without a change here.",
+        "operationId": "api_v1_operations_fleet_ci_runners_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Get Fleet Ci Runners Api V1 Operations Fleet Ci Runners Get"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Get Fleet Ci Runners",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
     "/api/v1/operations/fleet/drain": {
       "get": {
         "description": "Return which machines coord is currently holding out of the fleet.\n\nProxies coord's ``GET /coord/fleet/drain``, body passed through untouched\n\u2014 this route declares no ``response_model``, so nothing here filters a\nfield coord adds.\n\nThe body carries the ACTIVE drain entries keyed by device UUID, each with\n``until``, ``reason``, ``drained_by`` and ``drained_at``. Expiry is\nevaluated by coord on READ (there is no sweeper and no expiry job), so an\nentry that has lapsed simply stops appearing; a caller holding a response\nacross the deadline must re-read rather than assume.\n\n``drained_by`` may come back as coord's ``[redacted]`` placeholder for a\nprincipal that may not see operator identities. That is a value, not an\nabsence \u2014 \"someone drained this and you are not being told who\" is a\ndifferent fact from \"nobody is recorded\", and a caller that renders the\nplaceholder as blank reports the second.\n\n**The one thing a caller must not do with a failure here.** Coord keeps\n``DrainSet::Known(vec![])`` and ``DrainSet::Unknown`` apart on purpose, and\nso must every hop after it: a 404 (this coord predates the read route), a\n502/504 from the transport, or a body in an unrecognised shape is UNKNOWN,\nnever \"no machine is drained\" (``[policy: silent-empty-is-unknown]``,\n``[policy: unknown-must-not-render-as-a-default]``). The browser client\n(`useFleetDrain.ts`) is written to that rule and renders UNKNOWN on each\nof them; the 404 arm in particular is the EXPECTED reading during the\nwindow where this console is a deploy ahead of coord.",
@@ -84949,7 +86759,7 @@
     },
     "/api/v1/operations/fleet/resource-samples": {
       "get": {
-        "description": "Proxy coord's ``GET /coord/devices/resource-samples`` (tenant-scoped).\n\nResponse shape (coord-authored \u2014 this proxy adds and removes\nnothing)::\n\n    {\n      \"latest\": [ResourceSampleRow, ...],   # newest per anchor\n      \"count\": <int>,\n      \"history\": [HistorySeries, ...],      # bounded sparkline window\n      \"window_secs\": <float>,               # EFFECTIVE, post-clamp\n      \"latest_lookback_secs\": <float>,\n      \"history_points_per_anchor\": <int>,\n      \"history_truncated\": <bool>,\n      \"schema_pending\": <bool>\n    }\n\nEach ``ResourceSampleRow`` carries a **server-computed** ``pressure``\n(``{ratio, basis}``, or ``null`` for \"no opinion\"), ``age_secs``, and\nthe admission fields ``floor`` / ``disk_floor``\n(``{basis, bytes, source, verdict, reject_bytes, reject_source}``),\n``pressure_floor``\n(``{basis, ratio, source, verdict, reject_ratio, reject_source}``),\n``saturation`` (``{ratio, basis}``), ``saturation_floor``\n(the same shape as ``pressure_floor``) and ``headroom``\n(``ok | warn | breach | unknown``). All are passed through untouched\non purpose:\n\n* ``pressure`` is the ONE lane-pressure definition that coord's CI\n  ranker also reads. Recomputing it here (or in the browser) is\n  exactly the dashboard/dispatcher drift \u00a7C0 exists to prevent.\n* ``age_secs`` is computed by Postgres in the same statement as the\n  row, so a browser never subtracts its own clock from a server\n  timestamp.\n* ``headroom`` is the VERDICT coord's admission acts on, and the\n  strip colours rows from it rather than from a client-side band\n  over ``pressure`` \u2014 the two could otherwise disagree exactly at\n  the boundary. It is not defaultable here: a row arriving without\n  these fields (a coord that predates them) must reach the browser\n  without them, which renders as *unknown*, never as healthy. Note\n  ``floor.basis`` \u2014 the floor is on a different column from the\n  ratio's divisors, so it cannot be collapsed into a pressure\n  threshold anywhere along this path.\n* ``reject_bytes`` is the SECOND enforcer on the same column: a\n  column can be guarded twice with deliberately different numbers\n  (host commit \u2014 supervisor defers at 5 GiB, ``ci_node`` rejects at\n  4 GiB), and the rejecting one sits lower so the recoverable wait\n  trips first. ``null`` means no rejecting enforcer governs the\n  column and must not be defaulted to ``bytes`` or to zero; absent\n  means an older coord. The envelope's ``headroom_warn_margin``\n  travels the same way \u2014 the client reads the amber margin off the\n  response rather than naming one.\n* ``pressure_floor`` is a threshold on the RATIO axis, not the byte\n  axis, and the two run in opposite directions: a byte floor is\n  crossed going down, a pressure ceiling going up. The Linux lanes\n  have no byte memory floor at all (nothing in the fleet floors\n  ``mem_available_bytes``) \u2014 their only guard is ``ci_node``'s\n  swap-ratio defer \u2014 so dropping this field would render a WSL row\n  under an active guard as unguarded. ``null`` on the Windows host\n  lane, whose guards are byte-based, is a fact about that lane and\n  is not the same as the field being absent.\n* A ``verdict`` of ``null`` means a threshold coord reports and\n  NOTHING enforces (``min_free_mem_bytes_wsl`` is exactly that: a\n  \u00a7D1 control that validates and versions with no consumer). It must\n  reach the browser as null so it can render \"set, not enforced\"\n  instead of inheriting a verb it does not have.\n* The **saturation** fields \u2014 ``threads_max``, ``threads_used``,\n  ``pids_max``, ``pids_used`` and ``saturation_source`` (alembic\n  ``fleet_res_tel_04``, qontinui-web#1104) \u2014 are a THIRD axis, and\n  the only one that is instrumentally independent of memory. On\n  2026-08-27 a container sat at 190,840 of a 192,146 kernel thread\n  ceiling (99.3%), no ``fork()`` on the box could succeed, and every\n  memory and disk figure this route returned was green *and\n  accurate*: they were all measuring a resource that had not run\n  out. Passed through untouched like everything else here, and with\n  the same rule doing more work than usual \u2014 **NULL must stay NULL**.\n  A fabricated ``0`` does not merely misreport on this axis, it\n  inverts the reading: ``threads_used = 0`` renders as *perfectly\n  idle* on the one column built to catch a saturated box, and a\n  ``NULLS LAST`` ranking would then promote the blind machine to the\n  front of the dispatch queue.\n* ``saturation_source`` (``cgroup`` | ``proc`` | ``job_object`` |\n  null) is not bookkeeping and must not be dropped as a label: a\n  cgroup counts **tasks (threads)** and ``/proc`` counts\n  **thread-group leaders**, which coord's own ``process_health.rs``\n  records as \"different quantities\" \u2014 they can differ by an order of\n  magnitude. A publisher that probes the cgroup, fails, and falls\n  back to ``/proc`` emits a number whose meaning changed with\n  nothing else in the row saying so. It carries no CHECK in the\n  schema (an unrecognised provenance label would otherwise fail the\n  whole INSERT and discard the memory and disk metrics on the same\n  row), so an unexpected value reaches the browser and renders as an\n  explicit unknown rather than being coerced here.\n* ``saturation`` and ``saturation_floor`` are the SERVER-COMPUTED\n  half of that axis, and the half the browser actually renders \u2014 the\n  five raw columns above only caption it. ``saturation`` is\n  ``{ratio, basis}`` with ``basis: \"threads\"``, computed as\n  ``threads_used / threads_max`` and falling back to the ``pids_*``\n  pair where a cgroup or job-object ceiling is the binding one;\n  ``saturation_floor`` is ``pressure_floor``'s shape on\n  ``basis: \"thread_ratio\"``. **The threshold travels on the wire for\n  the same reason the ratio does.** coord's dispatch ranking reads\n  this floor, so a client that named its own number could render\n  amber while the ranker had already stopped electing the machine \u2014\n  \u00a7C1's defect, one axis over. Both are optional and independently\n  nullable, and the caller reads the difference: keys **absent** is a\n  coord that predates the axis, ``null`` on every count is a\n  publisher whose runner predates the probe, and a count without its\n  ceiling is a probe that FAILED. All three render *unknown* \u2014 never\n  healthy, and never ``0``.\n* ``headroom`` composes all three axes, not two: coord grades the\n  worst of memory, disk and task saturation into the one verdict the\n  strip colours from. That is why the saturation ratio must not be\n  banded client-side \u2014 the composition is coord's, and a second one\n  in the browser would disagree with it exactly at the boundary. A\n  coord predating the axis sends no saturation fields, and the row's\n  ``headroom`` is then the worst of the two axes it does send; the\n  caller renders the third as *unreported* rather than inferring that\n  it is clear.\n* The **spawn-capacity** fields \u2014 ``thread_count`` and\n  ``active_terminal_sessions`` (alembic ``lasac_01``) \u2014 are a FOURTH\n  axis and, unlike ``threads_used``, are scoped to the *publishing\n  process* rather than to the lane. That distinction is the whole\n  point: on 2026-08-29 the primary runner wedged carrying 540 OS\n  threads against tokio's 512-slot blocking pool, 119 of them parked\n  mid-``CreateProcess``, so new spawns silently stopped while the box\n  sat at a few percent of its kernel thread ceiling and every memory,\n  commit and disk figure on this row read healthy *and accurate*. A\n  lane-wide saturation number cannot see that; a per-process thread\n  count is the direct proxy for it. Passed through untouched, with\n  the same NULL rule doing the same extra work: a fabricated ``0``\n  inverts rather than under-reports, since a live process cannot have\n  zero threads and zero renders as *maximally idle* on the one column\n  built to catch a saturated one.\n* ``active_terminal_sessions`` is the EXPLANATORY half and is never a\n  trip condition on its own \u2014 a machine can carry N sessions\n  comfortably or N sessions each leaking a stuck ``spawn_blocking``\n  call, and only the thread count separates those. It travels beside\n  ``thread_count`` for the same reason ``EffectiveFloor`` carries both\n  the threshold and the raw value: a verdict that prints only the\n  number it tripped on leaves the next incident's forensics unable to\n  ask whether it was work or a leak.\n\n``schema_pending: true`` means the sibling alembic migration\n(qontinui-web#949) has not reached coord's database yet \u2014 coord\ndegrades to an empty set rather than 500ing, and the caller must\nrender that as **unknown**, never as healthy.\n\nQuery params are forwarded verbatim WITHOUT local range validation:\ncoord clamps out-of-range values and echoes the effective bounds, and\na 422 here would turn a slightly-greedy render into a blank panel.",
+        "description": "Proxy coord's ``GET /coord/devices/resource-samples`` (tenant-scoped).\n\nResponse shape (coord-authored \u2014 this proxy adds and removes\nnothing)::\n\n    {\n      \"latest\": [ResourceSampleRow, ...],   # newest per anchor\n      \"count\": <int>,\n      \"history\": [HistorySeries, ...],      # bounded sparkline window\n      \"window_secs\": <float>,               # EFFECTIVE, post-clamp\n      \"latest_lookback_secs\": <float>,\n      \"history_points_per_anchor\": <int>,\n      \"history_truncated\": <bool>,\n      \"schema_pending\": <bool>\n    }\n\nEach ``ResourceSampleRow`` carries a **server-computed** ``pressure``\n(``{ratio, basis}``, or ``null`` for \"no opinion\"), ``age_secs``, and\nthe admission fields ``floor`` / ``disk_floor``\n(``{basis, bytes, source, verdict, reject_bytes, reject_source}``),\n``pressure_floor``\n(``{basis, ratio, source, verdict, reject_ratio, reject_source}``),\n``saturation`` (``{ratio, basis}``), ``saturation_floor``\n(the same shape as ``pressure_floor``) and ``headroom``\n(``ok | warn | breach | unknown``). All are passed through untouched\non purpose:\n\n* ``pressure`` is the ONE lane-pressure definition that coord's CI\n  ranker also reads. Recomputing it here (or in the browser) is\n  exactly the dashboard/dispatcher drift \u00a7C0 exists to prevent.\n* ``age_secs`` is computed by Postgres in the same statement as the\n  row, so a browser never subtracts its own clock from a server\n  timestamp.\n* ``headroom`` is the VERDICT coord's admission acts on, and the\n  strip colours rows from it rather than from a client-side band\n  over ``pressure`` \u2014 the two could otherwise disagree exactly at\n  the boundary. It is not defaultable here: a row arriving without\n  these fields (a coord that predates them) must reach the browser\n  without them, which renders as *unknown*, never as healthy. Note\n  ``floor.basis`` \u2014 the floor is on a different column from the\n  ratio's divisors, so it cannot be collapsed into a pressure\n  threshold anywhere along this path.\n* ``reject_bytes`` is the SECOND enforcer on the same column: a\n  column can be guarded twice with deliberately different numbers\n  (host commit \u2014 supervisor defers at 5 GiB, ``ci_node`` rejects at\n  4 GiB), and the rejecting one sits lower so the recoverable wait\n  trips first. ``null`` means no rejecting enforcer governs the\n  column and must not be defaulted to ``bytes`` or to zero; absent\n  means an older coord. The envelope's ``headroom_warn_margin``\n  travels the same way \u2014 the client reads the amber margin off the\n  response rather than naming one.\n* ``pressure_floor`` is a threshold on the RATIO axis, not the byte\n  axis, and the two run in opposite directions: a byte floor is\n  crossed going down, a pressure ceiling going up. The Linux lanes\n  have no byte memory floor at all (nothing in the fleet floors\n  ``mem_available_bytes``) \u2014 their only guard is ``ci_node``'s\n  swap-ratio defer \u2014 so dropping this field would render a WSL row\n  under an active guard as unguarded. ``null`` on the Windows host\n  lane, whose guards are byte-based, is a fact about that lane and\n  is not the same as the field being absent.\n* A ``verdict`` of ``null`` means a threshold coord reports and\n  NOTHING enforces (``min_free_mem_bytes_wsl`` is exactly that: a\n  \u00a7D1 control that validates and versions with no consumer). It must\n  reach the browser as null so it can render \"set, not enforced\"\n  instead of inheriting a verb it does not have.\n* The **saturation** fields \u2014 ``threads_max``, ``threads_used``,\n  ``pids_max``, ``pids_used`` and ``saturation_source`` (alembic\n  ``fleet_res_tel_04``, qontinui-web#1104) \u2014 are a THIRD axis, and\n  the only one that is instrumentally independent of memory. On\n  2026-08-27 a container sat at 190,840 of a 192,146 kernel thread\n  ceiling (99.3%), no ``fork()`` on the box could succeed, and every\n  memory and disk figure this route returned was green *and\n  accurate*: they were all measuring a resource that had not run\n  out. Passed through untouched like everything else here, and with\n  the same rule doing more work than usual \u2014 **NULL must stay NULL**.\n  A fabricated ``0`` does not merely misreport on this axis, it\n  inverts the reading: ``threads_used = 0`` renders as *perfectly\n  idle* on the one column built to catch a saturated box, and a\n  ``NULLS LAST`` ranking would then promote the blind machine to the\n  front of the dispatch queue.\n* ``saturation_source`` (``cgroup`` | ``proc`` | ``job_object`` |\n  null) is not bookkeeping and must not be dropped as a label: a\n  cgroup counts **tasks (threads)** and ``/proc`` counts\n  **thread-group leaders**, which coord's own ``process_health.rs``\n  records as \"different quantities\" \u2014 they can differ by an order of\n  magnitude. A publisher that probes the cgroup, fails, and falls\n  back to ``/proc`` emits a number whose meaning changed with\n  nothing else in the row saying so. It carries no CHECK in the\n  schema (an unrecognised provenance label would otherwise fail the\n  whole INSERT and discard the memory and disk metrics on the same\n  row), so an unexpected value reaches the browser and renders as an\n  explicit unknown rather than being coerced here.\n* ``saturation`` and ``saturation_floor`` are the SERVER-COMPUTED\n  half of that axis, and the half the browser actually renders \u2014 the\n  five raw columns above only caption it. ``saturation`` is\n  ``{ratio, basis}`` with ``basis: \"threads\"``, computed as\n  ``threads_used / threads_max`` and falling back to the ``pids_*``\n  pair where a cgroup or job-object ceiling is the binding one;\n  ``saturation_floor`` is ``pressure_floor``'s shape on\n  ``basis: \"thread_ratio\"``. **The threshold travels on the wire for\n  the same reason the ratio does.** coord's dispatch ranking reads\n  this floor, so a client that named its own number could render\n  amber while the ranker had already stopped electing the machine \u2014\n  \u00a7C1's defect, one axis over. Both are optional and independently\n  nullable, and the caller reads the difference: keys **absent** is a\n  coord that predates the axis, ``null`` on every count is a\n  publisher whose runner predates the probe, and a count without its\n  ceiling is a probe that FAILED. All three render *unknown* \u2014 never\n  healthy, and never ``0``.\n* ``headroom`` composes all three axes, not two: coord grades the\n  worst of memory, disk and task saturation into the one verdict the\n  strip colours from. That is why the saturation ratio must not be\n  banded client-side \u2014 the composition is coord's, and a second one\n  in the browser would disagree with it exactly at the boundary. A\n  coord predating the axis sends no saturation fields, and the row's\n  ``headroom`` is then the worst of the two axes it does send; the\n  caller renders the third as *unreported* rather than inferring that\n  it is clear.\n* The **spawn-capacity** fields \u2014 ``thread_count`` and\n  ``active_terminal_sessions`` (alembic ``lasac_01``) \u2014 are a FOURTH\n  axis and, unlike ``threads_used``, are scoped to the *publishing\n  process* rather than to the lane. That distinction is the whole\n  point: on 2026-08-29 the primary runner wedged carrying 540 OS\n  threads against tokio's 512-slot blocking pool, 119 of them parked\n  mid-``CreateProcess``, so new spawns silently stopped while the box\n  sat at a few percent of its kernel thread ceiling and every memory,\n  commit and disk figure on this row read healthy *and accurate*. A\n  lane-wide saturation number cannot see that; a per-process thread\n  count is the direct proxy for it. Passed through untouched, with\n  the same NULL rule doing the same extra work: a fabricated ``0``\n  inverts rather than under-reports, since a live process cannot have\n  zero threads and zero renders as *maximally idle* on the one column\n  built to catch a saturated one.\n* ``active_terminal_sessions`` is the EXPLANATORY half and is never a\n  trip condition on its own \u2014 a machine can carry N sessions\n  comfortably or N sessions each leaking a stuck ``spawn_blocking``\n  call, and only the thread count separates those. It travels beside\n  ``thread_count`` for the same reason ``EffectiveFloor`` carries both\n  the threshold and the raw value: a verdict that prints only the\n  number it tripped on leaves the next incident's forensics unable to\n  ask whether it was work or a leak.\n* The **readiness** fields (plan\n  ``2026-09-13-drained-runner-never-reaches-idle`` D8) \u2014\n  ``readiness_safe``, ``readiness_reason``, ``readiness_blocking``,\n  ``readiness_finished``, ``wind_down_candidates``,\n  ``wind_down_exit_stuck``, the bounded ``wind_down_sessions`` array\n  (with ``wind_down_sessions_truncated`` when coord cut it), and, on the\n  NEWEST sample per device, the server-computed ``readiness_age_secs`` and\n  ``readiness_state`` (``fresh | stale | absent``). This is the device's\n  restart-readiness verdict, pushed by the runner on the same 30 s sample\n  rather than read through a relay into the runner. There is deliberately\n  no separate readiness route: ``/admin/coord/runners`` reads it here with\n  ``device_id`` and ``history=false``. Passed through untouched, with the\n  NULL rule once more doing real work \u2014 ``readiness_safe: null`` is \"the\n  runner could not decide\", and ``readiness_state`` is coord's freshness\n  verdict so no browser subtracts its own clock from ``sampled_at``. A\n  ``stale`` or ``absent`` row renders UNKNOWN, never the last verdict.\n\n``schema_pending: true`` means the sibling alembic migration\n(qontinui-web#949) has not reached coord's database yet \u2014 coord\ndegrades to an empty set rather than 500ing, and the caller must\nrender that as **unknown**, never as healthy.\n\nQuery params are forwarded verbatim WITHOUT local range validation:\ncoord clamps out-of-range values and echoes the effective bounds, and\na 422 here would turn a slightly-greedy render into a blank panel.",
         "operationId": "api_v1_operations_fleet_resource_samples_get",
         "parameters": [
           {
@@ -87244,7 +89054,7 @@
     },
     "/api/v1/operations/plans": {
       "get": {
-        "description": "List work-units from coord (tenant-scoped).\n\nProxies coord ``GET /coord/work-units``; the response envelope is\n``{\"work_units\": [...], \"limit\": N, \"offset\": N}``.\n\ncoord's ``ListQuery`` has always accepted ``slug_prefix`` and ``offset``;\nthis proxy simply never forwarded them, so the console could neither page\npast the first window nor ask for a slug subset. Forwarding them needs no\ncoord change.\n\n``exclude_slug_prefix`` is the one genuinely new parameter, and it ships\nahead of its coord half deliberately. ``ListQuery`` is\n``#[derive(Debug, Deserialize, Default)]`` with ``#[serde(default)]`` on\nevery field and no ``deny_unknown_fields``, so a coord that does not know\nthe parameter **ignores** it and returns the unfiltered page rather than\nerroring. Callers must therefore treat the exclusion as best-effort until\ncoord's half deploys \u2014 a page that renders shepherd rows is a coord that\nhas not caught up, not a bug here. (coord's side now documents that\npermissiveness as a contract rather than leaving it an accident; drop this\nparagraph once that build is deployed everywhere.)\n\nBoth prefix filters take ``min_length=1``. An empty ``exclude_slug_prefix``\nwould reach coord as ``slug NOT LIKE '' || '%'`` \u2014 i.e. ``NOT LIKE '%'``,\nwhich excludes EVERY row. A console that forwarded an empty input box would\nthen render a blank list, and the paragraph above tells the operator to\nread an unexpected page as \"coord has not caught up\". Rejecting the empty\nstring here is the honest failure; coord normalizes it as well, so neither\nside depends on the other for this.",
+        "description": "List work-units from coord, annotated with the two body signals.\n\nProxies coord ``GET /coord/work-units``; the response envelope is\n``{\"work_units\": [...], \"limit\": N, \"offset\": N}`` \u2014 plus, when the page\nholds rows, a ``body_signal`` block, and per row ``body_provenance``,\n``has_body`` and ``body_unknown_reason``. See :func:`_apply_body_signals`\nand :mod:`app.services.plan_body_signal`.\n\nThis used to ``return await _proxy_coord_get(...)`` verbatim. It cannot:\ncoord's list already carries ``metadata`` per row, but a verbatim\npass-through has no derivation hook, and the alternative \u2014 deriving in the\nReact components \u2014 is one rule implemented three times (list, detail,\nspawn guard) that would disagree with itself the first time a value was\nadded to it.\n\nThe signals are computed only when there are rows to annotate. An empty\npage has nothing to explain, and paying a coord round trip plus two\nqueries to say so about no rows is waste, not honesty.\n\ncoord's ``ListQuery`` has always accepted ``slug_prefix`` and ``offset``;\nthis proxy simply never forwarded them, so the console could neither page\npast the first window nor ask for a slug subset. Forwarding them needs no\ncoord change.\n\n``exclude_slug_prefix`` is the one genuinely new parameter, and it ships\nahead of its coord half deliberately. ``ListQuery`` is\n``#[derive(Debug, Deserialize, Default)]`` with ``#[serde(default)]`` on\nevery field and no ``deny_unknown_fields``, so a coord that does not know\nthe parameter **ignores** it and returns the unfiltered page rather than\nerroring. Callers must therefore treat the exclusion as best-effort until\ncoord's half deploys \u2014 a page that renders shepherd rows is a coord that\nhas not caught up, not a bug here. (coord's side now documents that\npermissiveness as a contract rather than leaving it an accident; drop this\nparagraph once that build is deployed everywhere.)\n\nBoth prefix filters take ``min_length=1``. An empty ``exclude_slug_prefix``\nwould reach coord as ``slug NOT LIKE '' || '%'`` \u2014 i.e. ``NOT LIKE '%'``,\nwhich excludes EVERY row. A console that forwarded an empty input box would\nthen render a blank list, and the paragraph above tells the operator to\nread an unexpected page as \"coord has not caught up\". Rejecting the empty\nstring here is the honest failure; coord normalizes it as well, so neither\nside depends on the other for this.",
         "operationId": "api_v1_operations_plans_get",
         "parameters": [
           {
@@ -87361,6 +89171,14 @@
             "description": "Validation Error"
           }
         },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          },
+          {
+            "HTTPBearer": []
+          }
+        ],
         "summary": "List Coord Plans",
         "tags": [
           "operations"
@@ -87369,7 +89187,7 @@
     },
     "/api/v1/operations/plans/{slug}": {
       "get": {
-        "description": "Return a single work-unit from coord (tenant-scoped).\n\nProxies coord ``GET /coord/work-units/{slug}``; the response envelope\nis ``{\"work_unit\": {...}, \"recent_history\": [...]}``.",
+        "description": "Return a single work-unit from coord, annotated with the body signals.\n\nProxies coord ``GET /coord/work-units/{slug}``; the response envelope\nis ``{\"work_unit\": {...}, \"recent_history\": [...], \"citations\": [...]}``.\n\nThe same annotation the list route applies, through the same helper and\nover a one-row page: the detail surface must not be able to disagree with\nthe row the operator clicked to reach it.",
         "operationId": "api_v1_operations_plans_slug_get",
         "parameters": [
           {
@@ -87404,6 +89222,14 @@
             "description": "Validation Error"
           }
         },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          },
+          {
+            "HTTPBearer": []
+          }
+        ],
         "summary": "Get Coord Plan",
         "tags": [
           "operations"
@@ -89589,6 +91415,131 @@
         ]
       }
     },
+    "/api/v1/operations/sessions/fleet": {
+      "get": {
+        "description": "Proxy coord's ``GET /coord/sessions/fleet`` (tenant-scoped).\n\nThe body is coord's ``FleetSessionsResponse``, passed through untouched,\nand it is **camelCase** \u2014 ``sessionId``, ``claudeCodeSessionId``,\n``sessionStatus``, ``startedAt``, ``nextCursor`` and the three\n``\u2026ColumnPresent`` capability flags. Plan D7 adds ``spawnOrigin``,\n``continuationGateId`` and ``dispatchSource`` to each row in the same\ncasing. No ``response_model`` is declared, so nothing here filters a\nfield coord adds, and a coord predating D7 simply omits the three keys \u2014\nwhich the page renders as an unknown origin, never as a default one.\n\n``nextCursor != null`` is coord's statement that more rows match this\nscope than it served. The caller must say so rather than present the page\nas the device's whole census.\n\nA failure passes through with coord's status (``_proxy_coord_get`` raises\non \u2265400, and a transport failure is a 502/504). It is never degraded to an\nempty list here: \"coord could not tell us\" and \"this device runs no\nsessions\" call for opposite next steps.",
+        "operationId": "api_v1_operations_sessions_fleet_get",
+        "parameters": [
+          {
+            "description": "Restrict to one coord device. Applied in coord's SQL.",
+            "in": "query",
+            "name": "device_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Restrict to one coord device. Applied in coord's SQL.",
+              "title": "Device Id"
+            }
+          },
+          {
+            "description": "Restrict to one coord session state (e.g. active, closed). Forwarded verbatim.",
+            "in": "query",
+            "name": "state",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Restrict to one coord session state (e.g. active, closed). Forwarded verbatim.",
+              "title": "State"
+            }
+          },
+          {
+            "description": "Include closed sessions. Coord defaults to false.",
+            "in": "query",
+            "name": "include_closed",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Include closed sessions. Coord defaults to false.",
+              "title": "Include Closed"
+            }
+          },
+          {
+            "description": "Page size. Coord CLAMPS this and echoes the applied value as `limit`; deliberately not range-validated here.",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Page size. Coord CLAMPS this and echoes the applied value as `limit`; deliberately not range-validated here.",
+              "title": "Limit"
+            }
+          },
+          {
+            "description": "An opaque `nextCursor` from a previous page of the same scope.",
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "An opaque `nextCursor` from a previous page of the same scope.",
+              "title": "Cursor"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Get Coord Sessions Fleet Api V1 Operations Sessions Fleet Get"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Coord Sessions Fleet",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
     "/api/v1/operations/sessions/{session_id}": {
       "delete": {
         "description": "Close a session (DELETE \u2192 `state='closed'`, releases claim).",
@@ -89763,6 +91714,65 @@
           }
         },
         "summary": "Get Session Claims",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
+    "/api/v1/operations/sessions/{session_id}/control": {
+      "post": {
+        "description": "Ask the runner holding a session to finish-and-close it, or to stop it\nat its next iteration boundary.\n\nProxies coord's ``POST /coord/sessions/{session_id}/control``. Coord\nrecords the request as a durable ``control_request`` session event and\npublishes it to the device, so a runner that is offline right now still\nreceives it on its next catch-up read (plan D9). The runner acts only on\na ``claude_code_session_id`` present in its OWN lifecycle store; nothing\nhere, and nothing in coord, forces a process kill.\n\nCoord answers ``202`` with ``{event_id, session_id, device_id, action}``\nand that status is echoed verbatim \u2014 a bare JSON return would be wrapped\nas ``200`` and hide that the request was ACCEPTED, not carried out. A 2xx\nwhose body is not JSON comes back as ``{}`` with coord's status, never as\na 500.\n\nRefusals are typed and pass through with coord's status and body\n(``structured_errors=True``): ``404 session_not_found``,\n``409 session_closed`` and a ``422`` for an action coord does not know.\nThey mean different things \u2014 \"no such session\", \"already over\" and \"this\ncoord predates the action\" \u2014 and the console tells them apart rather than\nrendering one \"failed\".\n\nAdmin-gated here (``require_coord_tenant_admin``) as a UX and\ndefence-in-depth layer; coord re-checks on its own.",
+        "operationId": "api_v1_operations_sessions_session_id_control_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SessionControlRequestBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Post Coord Session Control Api V1 Operations Sessions  Session Id  Control Post"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Post Coord Session Control",
         "tags": [
           "operations"
         ]
@@ -91225,6 +93235,7 @@
     },
     "/api/v1/plan-library": {
       "get": {
+        "description": "A filtered page, with the health of the corpus it came from.\n\n``corpus_health`` (design decision D1 of\n``2026-08-27-plan-corpus-read-path-is-dark``) rides on every page so that\n``items: []`` is never the whole answer: ``plan_count: 0`` beside it says\n\"the corpus holds no plans\", which is a different sentence from \"no such\nplan\". Its ``capture`` block is ``/capture-health``'s census from the\nsame query and builder, and its ``scan_roots`` block is\n``GET /plan-library/scan-roots`` rendered by the same builder (two reads\ncan still differ by when they happen):\nhow far behind its default branch each device's scan source is, so a page\ndrawn from a stale corpus can say so. Two extra reads per list call \u2014 one\naggregate, and one over a table of one row per device inside a savepoint\n(four round trips in all).\n\n``slug`` is a QUERY key, not a path segment: this adds no route, so the\nliteral-before-pattern ordering below (``/divergent``, ``/capture-health``\n\u2026 declared before ``/{artifact_id}``) is untouched.",
         "operationId": "api_v1_plan_library_get",
         "parameters": [
           {
@@ -91319,7 +93330,7 @@
             }
           },
           {
-            "description": "Soft link to a coord work unit. Not resolved; a slug with no matching work unit simply returns its artifacts.",
+            "description": "Soft link to a coord work unit. Not resolved; a slug with no matching work unit simply returns its artifacts. The scanner writes it for kind=plan only and a hand-POSTed row may carry none \u2014 for a by-stem lookup that must find the row whoever wrote it, use `slug`.",
             "in": "query",
             "name": "work_unit_slug",
             "required": false,
@@ -91332,8 +93343,26 @@
                   "type": "null"
                 }
               ],
-              "description": "Soft link to a coord work unit. Not resolved; a slug with no matching work unit simply returns its artifacts.",
+              "description": "Soft link to a coord work unit. Not resolved; a slug with no matching work unit simply returns its artifacts. The scanner writes it for kind=plan only and a hand-POSTed row may carry none \u2014 for a by-stem lookup that must find the row whoever wrote it, use `slug`.",
               "title": "Work Unit Slug"
+            }
+          },
+          {
+            "description": "Exact match on the artifact's OWN slug \u2014 part of its identity, never null, written by every door (the scanner writes the file stem). Distinct from `work_unit_slug`, the nullable soft link; `q` does not search identifiers.",
+            "in": "query",
+            "name": "slug",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Exact match on the artifact's OWN slug \u2014 part of its identity, never null, written by every door (the scanner writes the file stem). Distinct from `work_unit_slug`, the nullable soft link; `q` does not search identifiers.",
+              "title": "Slug"
             }
           },
           {
@@ -91464,7 +93493,7 @@
     },
     "/api/v1/plan-library/candidates": {
       "get": {
-        "description": "Candidate selection for agents \u2014 signals, never a verdict.\n\nReturns unshipped plans, each carrying the inputs an agent needs to decide\nwhat to pick up next: ``status``, ``repos``, ``unmet_depends_on``,\n``linked_prs`` with their merged state, ``age_days``, ``last_touched``, and\nthe ``prompt_chain`` that produced the plan.\n\n**The population is the UNION of both corpus layers** \u2014 non-terminal\n``kind='plan'`` artifacts, plus coord's non-terminal, date-slugged,\nnon-``shepherd-*`` work units that no artifact already claims. Plan\n``2026-09-03-vet-imp-sweep-selects-from-the-sparse-document-layer``: drawn\nfrom the document layer alone this read saw 13 of 606 addressable plans,\nbecause that layer holds plan BODIES and fills only under an opt-in body\nsync, while the question this route answers is settled by fields the\nOPERATIONAL layer owns. Each item's ``document_state`` says which layer it\ncame from, and a work-unit-only row carries a null ``id`` \u2014 there is no\nartifact to give it one, so it is resolved by ``source_path`` instead.\n\nThe union can only ADD rows: coord's half is a best-effort read, and when\nit fails the population degrades to exactly the artifact-only one this\nroute returned before, flagged by ``work_unit_population_state:\n\"unavailable\"``. That flag is separate from ``coord_available`` on\npurpose \u2014 a 403 on the population door is coord ANSWERING, so it never\ntrips the page-wide circuit, and without its own flag the route would\nsilently fall back to a 2% view of the corpus while reporting coord\nhealthy.\n\n**There is no criticality score** (design decision D6). A hardcoded score\nwould be a guess frozen into SQL; the read exposes the evidence and the\nagent ranks. The only ordering is a stable default \u2014 oldest-vetted-first\n(``coalesce(authored_at, created_at) ASC``, ``id`` breaking ties; work-unit\nrows on ``coalesce(first_in_progress_at, created_at)``, and losing a tie to\nan artifact so a page without them is unchanged) \u2014 with no weighting of any\nkind. Work-unit rows are neither capped nor re-weighted toward ``vetted``:\n411 of the 635 carried an empty status, which would make that a guess over\nthe least-known rows.\n\nCoord-owned fields (the work unit and its PR citations) come over coord's\nHTTP API, never from coord's Postgres schema. Two things the payload is\ncareful about:\n\n* ``work_unit_slug`` is a soft link with NO foreign key and it may dangle.\n  A missing work unit is a NORMAL result \u2014 null-joined as\n  ``work_unit_state: \"dangling\"``, never a 404 and never an error.\n* An unreachable or slow coord degrades to ``\"unavailable\"`` on the\n  affected fields, and the whole read still returns the local signals.\n  ``unavailable`` is UNKNOWN \u2014 it is NOT \"this plan has no PRs\". The two\n  are distinct values precisely so a consumer cannot confuse them.\n\n``open_followups`` (Phase 7, additive) carries work that has **no plan\nyet** \u2014 open ``spawned_followup`` edges, oldest first. It is a separate\nlist rather than extra ``items`` because a follow-up nobody has written is\nnot an artifact and has no id to be a candidate with; folding it into\n``items`` would mean inventing one. ``items`` is unchanged.\n\nTwo principals reach this route (module docstring, invariant 7) and the\ncoord half is fetched with whichever bearer they presented, so the coord\nreads follow the credential to the door tier that accepts it \u2014 the\noperator routes for a Cognito user, the ``agent-`` twins for the runner's\ndevice JWT. Nothing else about the response differs between them.",
+        "description": "Candidate selection for agents \u2014 signals, never a verdict.\n\nReturns unshipped plans, each carrying the inputs an agent needs to decide\nwhat to pick up next: ``status``, ``repos``, ``unmet_depends_on``,\n``linked_prs`` with their merged state, ``age_days``, ``last_touched``, and\nthe ``prompt_chain`` that produced the plan.\n\n**The population is the UNION of both corpus layers** \u2014 non-terminal\n``kind='plan'`` artifacts, plus coord's non-terminal, date-slugged,\nnon-``shepherd-*`` work units that no artifact already claims. Plan\n``2026-09-03-vet-imp-sweep-selects-from-the-sparse-document-layer``: drawn\nfrom the document layer alone this read saw 13 of 606 addressable plans,\nbecause that layer holds plan BODIES and fills only under an opt-in body\nsync, while the question this route answers is settled by fields the\nOPERATIONAL layer owns. Each item's ``document_state`` says which layer it\ncame from, and a work-unit-only row carries a null ``id`` \u2014 there is no\nartifact to give it one, so it is resolved by ``source_path`` instead.\n\nThe union can only ADD rows: coord's half is a best-effort read, and when\nit fails the population degrades to exactly the artifact-only one this\nroute returned before, flagged by ``work_unit_population_state:\n\"unavailable\"``. That flag is separate from ``coord_available`` on\npurpose \u2014 a 403 on the population door is coord ANSWERING, so it never\ntrips the page-wide circuit, and without its own flag the route would\nsilently fall back to a 2% view of the corpus while reporting coord\nhealthy.\n\n**There is no criticality score** (design decision D6). A hardcoded score\nwould be a guess frozen into SQL; the read exposes the evidence and the\nagent ranks. The only ordering is a stable default \u2014 oldest-vetted-first\n(``coalesce(authored_at, created_at) ASC``, ``id`` breaking ties; work-unit\nrows on ``coalesce(first_in_progress_at, created_at)``, and losing a tie to\nan artifact so a page without them is unchanged) \u2014 with no weighting of any\nkind. Work-unit rows are neither capped nor re-weighted toward ``vetted``:\n411 of the 635 carried an empty status, which would make that a guess over\nthe least-known rows.\n\nCoord-owned fields (the work unit and its PR citations) come over coord's\nHTTP API, never from coord's Postgres schema. Two things the payload is\ncareful about:\n\n* ``work_unit_slug`` is a soft link with NO foreign key and it may dangle.\n  A missing work unit is a NORMAL result \u2014 null-joined as\n  ``work_unit_state: \"dangling\"``, never a 404 and never an error.\n* An unreachable or slow coord degrades to ``\"unavailable\"`` on the\n  affected fields, and the whole read still returns the local signals.\n  ``unavailable`` is UNKNOWN \u2014 it is NOT \"this plan has no PRs\". The two\n  are distinct values precisely so a consumer cannot confuse them.\n\n``open_followups`` (Phase 7, additive) carries work that has **no plan\nyet** \u2014 open ``spawned_followup`` edges, oldest first. It is a separate\nlist rather than extra ``items`` because a follow-up nobody has written is\nnot an artifact and has no id to be a candidate with; folding it into\n``items`` would mean inventing one. ``items`` is unchanged.\n\n``corpus_health`` is the block every list page carries \u2014 the corpus's\ncounts, capture census, and each feeding device's scan-source drift \u2014 so\na consumer ranking these candidates can see, in the same read, whether\nthe corpus they were drawn from is stale. Report-only: a stale corpus is\nstill the best available answer, and nothing here refuses to serve it.\n\nTwo principals reach this route (module docstring, invariant 7) and the\ncoord half is fetched with whichever bearer they presented, so the coord\nreads follow the credential to the door tier that accepts it \u2014 the\noperator routes for a Cognito user, the ``agent-`` twins for the runner's\ndevice JWT. Nothing else about the response differs between them.",
         "operationId": "api_v1_plan_library_candidates_get",
         "parameters": [
           {
@@ -91564,6 +93593,36 @@
           }
         ],
         "summary": "Corpus census by capture door (scan / agent / operator)",
+        "tags": [
+          "plan-library"
+        ]
+      }
+    },
+    "/api/v1/plan-library/difficulty": {
+      "get": {
+        "description": "The difficulty map ``/admin/coord/plans`` joins onto coord's work units.\n\nPlan ``2026-09-18-plan-library-difficulty-field``. The rating is computed\nfrom each plan's body by ``app.services.plan_difficulty`` \u2014 two axes,\nconceptual and implementation, folded into a routing level (``high`` \u2192\nFable 5.1, ``medium`` \u2192 Opus 5, ``low`` \u2192 a fast tier), with a plan's own\n``Difficulty:`` stamp overriding the computed level.\n\nBefore answering, plans rated under an older rubric (or none) are re-rated,\nup to a per-request cap, newest first \u2014 see\n:func:`crud.rerate_stale_plan_difficulty` \u2014 so these reads are also the\ncorpus backfill. ``rerate_pending`` says how many plans the next reads\nstill have to rate. Unrated plans are\nOMITTED, never served as ``low``.",
+        "operationId": "api_v1_plan_library_difficulty_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlanDifficultyResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          },
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Every plan's difficulty rating (the model tier it routes to)",
         "tags": [
           "plan-library"
         ]
@@ -91794,6 +93853,24 @@
             }
           },
           {
+            "description": "Exact match on the artifact's own slug (see the list route).",
+            "in": "query",
+            "name": "slug",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Exact match on the artifact's own slug (see the list route).",
+              "title": "Slug"
+            }
+          },
+          {
             "description": "Hard bound on archived artifacts. When it truncates, the response says so in `X-Export-Truncated` \u2014 a silently short export is indistinguishable from a short corpus.",
             "in": "query",
             "name": "limit",
@@ -91977,6 +94054,121 @@
           }
         ],
         "summary": "Does each plan's record agree with reality? (three-way reconciliation)",
+        "tags": [
+          "plan-library"
+        ]
+      }
+    },
+    "/api/v1/plan-library/scan-roots": {
+      "get": {
+        "description": "The caller's organization's readings, one per reporting device.\n\nSame credentials as the plan-library list (an operator session or a device\ntoken). Each row carries its age and a ``state`` VERDICT that is\n``unknown`` when the device has not reported within ``fresh_within_secs``\n(by ``received_at``; ``observation_stale:``), when its latest report was\nobserved before the stored reading (``reading_superseded:``), or when its\nreading is 0 behind a stale ref (``ref_stale:``) \u2014 in that order of\nprecedence: ``observation_stale`` > ``reading_superseded`` >\n``ref_stale``. The device's own values stay in ``reported_state`` /\n``reported_detail``. An organization with no rows answers\n``state: \"unknown\"``, never an empty \"all current\".\n\n``by_source_repo`` folds the rows per scan source over its comparison set \u2014\nreadings that are fresh, applied and carry a count, including a\n``ref_stale`` 0-behind floor: the fewest commits behind, whether that is a\nfloor, and which devices the readings order as least behind or lagging,\ncannot order (``lag_unknown``), or have no comparable reading\n(``unmeasured``). A roll-up whose fewest commits behind is a floor of 0\nreads ``unknown`` with a null minimum \u2014 \"at least 0\" is no distance \u2014 and a\ndetail naming the cause: ``ref_stale:`` when every comparable reading\ncounted against one ref that is stale or of unknown age,\n``refs_not_shared:`` when they counted against different or unidentified\nrefs. Its lists keep whatever order the readings establish. The same builder renders the ``corpus_health.scan_roots``\nblock the list and ``/candidates`` carry, so both apply the same rules to\nthe same rows; two reads can still differ by when they happen (ages, and a\nverdict that flips at the freshness boundary), and the block degrades a\nfailed read to ``read_failed`` where this route, whose whole answer the\nreadings are, lets it surface as an error.\n\n``coverage`` is computed HERE AND NOWHERE ELSE (design decision D2 of\n``2026-09-15-captured-vs-authored-coverage-is-a-set-difference``): it is a\nset difference between the stems a device enumerated at its default ref and\nthe corpus rows under that ``source_repo``, and ``corpus_health.scan_roots``\n\u2014 the same response object \u2014 rides every ``GET /plan-library`` page\nincluding the runner's loopback search, which must not pay for an anti-join\nover every authored stem. There it is empty with ``coverage_detail`` saying\nwhich of the three reasons produced the empty list.\n\n**No ratio is served.** The entry carries two denominators (what exists at\nthe ref, and what the scanned working tree could possibly have shown the\nbody sync), the corpus rows under OTHER keys as\n``out_of_scope_artifact_count``, and the attribution field\n``authored_not_captured_but_invisible`` \u2014 a lagging checkout's plans are\nnot a capture defect. A percentage over one of those denominators read\n101.8% in production for a real corpus; nothing served here can express\nthat number. A key with no usable census reads ``unknown`` with a detail,\nnever a zero and never an omitted key.\n\n``coverage`` (the query parameter, default ``true``) lets a caller that\nonly wants the per-device readings and roll-up \u2014 ``ScanSourcesPanel`` on\nthe console, which renders no coverage field at all \u2014 say so and skip the\nstem census load and the corpus anti-join. Passing ``false`` reads\n``coverage: []`` with ``coverage_detail`` starting ``not_requested:``,\nnever an unexplained empty list. Follow-up to Phase 4 of the same plan,\nwhich shipped the two panels as two separate reads of this one route\nwithout a way for either to opt out of the other's cost.",
+        "operationId": "api_v1_plan_library_scan_roots_get",
+        "parameters": [
+          {
+            "description": "Compute the coverage set difference (default). false skips the stem census load and the corpus anti-join for a caller that only needs the per-device readings and roll-up.",
+            "in": "query",
+            "name": "coverage",
+            "required": false,
+            "schema": {
+              "default": true,
+              "description": "Compute the coverage set difference (default). false skips the stem census load and the corpus anti-join for a caller that only needs the per-device readings and roll-up.",
+              "title": "Coverage",
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScanRootListResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          },
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Every device's latest plan-scan-source reading, judged for age",
+        "tags": [
+          "plan-library"
+        ]
+      },
+      "post": {
+        "description": "Store the reporting device's latest reading, replacing an older one.\n\nOne row per ``(organization, device)``. ``device_id`` is the verified\ntoken's claim; the organization is the device's paired operator's personal\norganization \u2014 the same scope its artifact upserts land in. ``201`` on the\ndevice's first report, ``200`` on every later one.\n\nA report observed EARLIER than the stored reading (a late or retried\ndelivery, or a runner clock that stepped back) does not replace it:\n``200`` with ``applied: false`` and the stored row \u2014 but it still refreshes\n``received_at``, because the device demonstrably reported, and marks the\nrow ``reading_superseded`` until a newer report applies. A report whose\n``observed_at`` is more than 300 s ahead of this server's clock is a 422.",
+        "operationId": "api_v1_plan_library_scan_roots_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ScanRootReport"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScanRootReportResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScanRootReportResponse"
+                }
+              }
+            },
+            "description": "The device's first reading for this organization."
+          },
+          "403": {
+            "description": "The caller is an operator session, not a device."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          },
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "A device reports its latest plan-scan-source reading (upsert)",
         "tags": [
           "plan-library"
         ]

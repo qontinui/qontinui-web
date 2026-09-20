@@ -39,7 +39,7 @@
  * write is always a counted write.
  */
 
-import type { PromptDocumentWrite } from "../types";
+import type { PromptDocumentProposal, PromptDocumentWrite } from "../types";
 
 /**
  * What kind of actor wrote a version.
@@ -61,7 +61,17 @@ const AGENT_PREFIXES = ["session:", "agent:", "device:"] as const;
 /** Operator spellings — both the three-segment and the two-segment producer. */
 const OPERATOR_PREFIX = "operator:";
 
-/** The shipped defaults coord seeds a tenant with. Nobody authored these. */
+/**
+ * The shipped defaults coord seeds a tenant with. Nobody authored these.
+ *
+ * This prefix also covers coord's self-retirement actor,
+ * `system:proposal-staleness` (plan
+ * `2026-09-13-policy-proposals-agent-decidable-dial-driven-self-retiring`), so
+ * a proposal coord retired itself classifies as `system` — not as an agent and
+ * not as an operator. That fell out of the existing allowlist rather than
+ * needing a new arm, and `authorship.test.ts` pins it so a future re-spelling
+ * of the allowlist cannot quietly refile a machine decision as a human one.
+ */
 const SYSTEM_PREFIX = "system:";
 
 /** Classify one actor label. Absent/blank ⇒ `unknown`, never `agent`. */
@@ -112,3 +122,76 @@ export const AUTHOR_CLASS_LABEL: Record<WriteAuthorClass, string> = {
   system: "coord's shipped default",
   unknown: "unrecognised author",
 };
+
+/**
+ * Did the proposer decide its own proposal?
+ *
+ * **This is INFORMATION, never a warning.** Ownership was removed as a
+ * criterion for deciding a proposal (plan
+ * `2026-09-13-policy-proposals-agent-decidable-dial-driven-self-retiring`, §1
+ * operator decision 1): an agent may now approve, reject or withdraw any
+ * proposal, its own included, and authority comes from the document's write
+ * tier and the tenant's `policy_write` dial instead. So a row that says
+ * "decided by its author" is stating a permitted, expected fact — the page
+ * renders it in the same calm chrome as the rest of the provenance line and
+ * gives it no badge, colour or icon.
+ *
+ * Coord's own `self_decided` boolean WINS when it is present — but not because
+ * it is a cleverer test. Coord derives it as exactly `decided_by ==
+ * proposed_by`, with no normalization
+ * (`with_derived_self_decided()`), so against today's coord it and the
+ * comparison below cannot disagree. It wins because it is the SERVER'S answer:
+ * the console reports coord's verdict rather than maintaining a second one that
+ * drifts independently of it, and a coord that later starts normalizing (one
+ * principal reaching it under two spellings) changes what this page says with
+ * no web deploy at all.
+ *
+ * The comparison is the fallback for a build that predates the field, and it is
+ * deliberately conservative — a blank on either side is `false`, because
+ * "unknown" must not render as an assertion about who decided what.
+ *
+ * `system:proposal-staleness` never matches: coord's retirement actor is not
+ * the proposer, so a self-retired proposal is not a self-decided one.
+ *
+ * **RETAINED without a production caller.** `ProposalCard` moved to
+ * `selfDecidedOrUnknown` when `data-self-decided` went tri-state, so nothing in
+ * the app calls this today. It stays because it is the documented SENTENCE-level
+ * collapse — the boolean a renderer wants when it has one sentence that only
+ * speaks for `true` — and `authorship.test.ts` pins it against
+ * `selfDecidedOrUnknown` over the whole case table, which is the assertion that
+ * keeps the two from drifting apart. Delete it and that pairing goes with it.
+ */
+export function isSelfDecided(
+  proposal: Pick<PromptDocumentProposal, "proposed_by"> &
+    Partial<Pick<PromptDocumentProposal, "decided_by" | "self_decided">>
+): boolean {
+  return selfDecidedOrUnknown(proposal) === true;
+}
+
+/**
+ * The same question as `isSelfDecided`, but with UNKNOWN kept as its own answer
+ * instead of folded into `false`.
+ *
+ * `null` means the question is unanswerable from what coord served: no
+ * `self_decided` flag, and at least one of the two identities blank or absent.
+ * `isSelfDecided` collapses that to `false` on purpose — the rendered sentence
+ * has nothing to say about an unanswerable case, so saying nothing is right.
+ *
+ * A MACHINE-READABLE channel cannot collapse it the same way. `false` there is
+ * an assertion ("coord answered, and the decider was somebody else"), and
+ * spending it on "we could not tell" is the absence-is-not-zero defect this
+ * page's `staleRead`/`unavailable` distinctions exist to avoid — left open in
+ * the one channel a UI-Bridge or spec-CI assertion actually reads. So the
+ * `data-self-decided` attribute is tri-state and this function is what fills
+ * it.
+ */
+export function selfDecidedOrUnknown(
+  proposal: Pick<PromptDocumentProposal, "proposed_by"> &
+    Partial<Pick<PromptDocumentProposal, "decided_by" | "self_decided">>
+): boolean | null {
+  if (typeof proposal.self_decided === "boolean") return proposal.self_decided;
+  const decided = (proposal.decided_by ?? "").trim();
+  const proposed = (proposal.proposed_by ?? "").trim();
+  if (!decided || !proposed) return null;
+  return decided === proposed;
+}
