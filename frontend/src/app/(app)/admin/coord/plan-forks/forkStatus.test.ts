@@ -204,7 +204,7 @@ describe("a clean read is a measurement; a failed one is not", () => {
     expect(health.detail).toMatch(/served no total/i);
   });
 
-  it("does not say 'kind forks only — the scanner can heal' over an unserved kind total", () => {
+  it("says 'the scanner can heal' from the ROWS, and still dashes the unserved count", () => {
     const census = deriveForkCensus({
       groups: [],
       total: 0,
@@ -215,6 +215,44 @@ describe("a clean read is a measurement; a failed one is not", () => {
     expect(health.headline).toMatch(/scanner can heal/i);
     expect(health.badges.find((b) => b.key === "kind")?.label).toBe(
       "kind forks –"
+    );
+  });
+
+  it("does not promise the scanner will heal forks the route never listed", () => {
+    // `kind_fork_total: 3` with no `kind_forks` at all. The `?? []` made
+    // `operatorForks` 0 because the list was EMPTY, not because every fork was
+    // self-healing — and the strip then promised a self-heal over three forks
+    // it had never seen.
+    const census = deriveForkCensus({
+      groups: [],
+      total: 0,
+      kind_fork_total: 3,
+    });
+    expect(census.kindForksUnstated).toBe(true);
+    expect(census.kindForkTotal).toBe(3);
+
+    const health = deriveForkHealth(census, true, false);
+    expect(health.headline).not.toMatch(/scanner can heal/i);
+    expect(health.headline).toMatch(/unknown, not clean/i);
+    expect(health.level).toBe("amber");
+    expect(health.detail).toMatch(/absent list is not a measured empty/i);
+  });
+
+  it("does not answer the content-fork question from an unserved groups list", () => {
+    // Neither a `groups` list nor a `total`: the `?? []` answered "no fork in
+    // what this read returned" — a presence claim about a list that never
+    // arrived. The kind half IS served and clean here, so nothing but the
+    // absent groups list is in play.
+    const health = deriveForkHealth(
+      deriveForkCensus({ kind_forks: [], kind_fork_total: 0 }),
+      true,
+      false
+    );
+    expect(health.headline).not.toMatch(/No fork in what this read returned/i);
+    expect(health.headline).not.toMatch(/No copy of any plan disagrees/i);
+    expect(health.headline).toMatch(/unknown, not clean/i);
+    expect(health.badges.find((b) => b.key === "content")?.label).toBe(
+      "content forks –"
     );
   });
 

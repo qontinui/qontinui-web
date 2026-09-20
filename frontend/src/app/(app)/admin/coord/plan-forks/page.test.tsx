@@ -232,4 +232,31 @@ describe("/admin/coord/plan-forks consumes /plan-library/divergent", () => {
       "fresh zero"
     );
   });
+
+  it("never calls an unserved groups list a measured empty under a positive total", async () => {
+    // `total: 4` and no `groups`. The `?? []` printed "no two copies of one
+    // plan disagree, as measured by this read" directly under a header
+    // reading (4) — a measurement claim about rows the response never carried.
+    get.mockResolvedValue({ total: 4, kind_forks: [], kind_fork_total: 0 });
+    render(<CoordPlanForksPage />);
+
+    const unstated = await screen.findByTestId("coord-fork-content-unstated");
+    expect(unstated).toHaveTextContent("unknown — not none");
+    expect(screen.queryByTestId("coord-fork-content-empty")).toBeNull();
+    expect(screen.getByTestId("coord-fork-content-total")).toHaveTextContent(
+      "4"
+    );
+  });
+
+  it("never calls an unserved kind_forks list a measured empty", async () => {
+    get.mockResolvedValue({ groups: [], total: 0, kind_fork_total: 3 });
+    render(<CoordPlanForksPage />);
+
+    const unstated = await screen.findByTestId("coord-fork-kind-unstated");
+    expect(unstated).toHaveTextContent("unknown — not none");
+    expect(screen.queryByTestId("coord-fork-kind-empty")).toBeNull();
+    expect(screen.getByTestId("coord-plan-forks-health")).not.toHaveTextContent(
+      /scanner can heal/i
+    );
+  });
 });

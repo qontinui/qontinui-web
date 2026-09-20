@@ -260,6 +260,18 @@ export default function CoordPlansListPage() {
     [rows, status]
   );
   const statusFiltered = status !== "any";
+  /**
+   * Nothing on this page has a READABLE coord status.
+   *
+   * The filter narrows on axis A, and an unreadable axis A matches nothing but
+   * `any`. When every row is unreadable — the degraded population arm — the
+   * empty list is the absence of a measurement, not a measured zero, so the
+   * empty slot says that instead of "none of them has status X".
+   */
+  const statusAxisAllUnreadable = useMemo(
+    () => rows.length > 0 && rows.every((row) => !row.axis_a.readable),
+    [rows]
+  );
   const window = useMemo(() => (data ? describeWindow(data) : null), [data]);
   const disclosure = useMemo(
     () => (data ? deriveDisclosure(data) : null),
@@ -495,6 +507,20 @@ export default function CoordPlansListPage() {
             >
               No rows — the route refused this read (above). Whether any plan
               matches is unknown, not none.
+            </p>
+          ) : statusFiltered && rows.length > 0 && statusAxisAllUnreadable ? (
+            // `matchesStatus` returns false for an unreadable axis A — which
+            // is right — but on the degraded population arm EVERY row is
+            // unreadable, so "none of them has status X" is a negative
+            // MEASUREMENT of something nothing measured. The filter's own
+            // docstring names this exact situation; stating it as a finding
+            // about the corpus is the collapse this page exists to refuse.
+            <p
+              className="text-sm text-muted-foreground italic"
+              data-testid="coord-plans-status-unreadable-empty"
+            >
+              coord&rsquo;s stored status is unreadable for every stem on this
+              page, so whether any has status {status} is unknown — not none.
             </p>
           ) : statusFiltered && rows.length > 0 ? (
             <p

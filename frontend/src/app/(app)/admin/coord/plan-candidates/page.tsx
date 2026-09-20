@@ -231,8 +231,18 @@ function CandidateRow({
                 className="text-muted-foreground"
                 data-testid="coord-candidate-unmet-empty"
               >
+                {/* FOUR readings, not three. `unmet` above is `?? []` so the
+                    list renders, but an ABSENT list is not an empty one: with
+                    `document_state: "present"` and no `unmet_depends_on`,
+                    `describeReadiness` badges the row "blockers not served",
+                    and a panel one click below saying "every target is
+                    terminal" contradicts the badge it sits under. The copy is
+                    what has to split, and it carries `describeReadiness`'s own
+                    sentence so the two cannot drift. */}
                 {documentState === "present"
-                  ? "No unmet dependency — its depends_on edges were walked and every target is terminal."
+                  ? candidate.unmet_depends_on === undefined
+                    ? "No dependency list was served for this row, so whether anything blocks it is UNKNOWN — not “nothing does”."
+                    : "No unmet dependency — its depends_on edges were walked and every target is terminal."
                   : documentState === null
                     ? "No dependency list, and no document_state to say whether there were edges to walk. Empty here is UNKNOWN, not unblocked."
                     : "No dependency list: this row has no artifact, so there were no edges to walk. Empty here is UNKNOWN, not unblocked."}
