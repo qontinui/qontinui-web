@@ -79,9 +79,9 @@ import {
   candidateChurnBadgeTitle,
   deriveCandidateChurn,
   derivePipelineHealth,
+  fusePipelinePrs,
   matchesFilter,
   matchesQuery,
-  singleKey,
   UNKNOWN_DWELL_NOTE,
   unstableHasFailure,
   type PipelineFilter,
@@ -738,24 +738,21 @@ export function MergePipeline() {
 
   const loaded = proposals !== null && prs !== null;
   const rows = useMemo(() => {
-    // The merged read returns landed rows the open poll can ALSO be carrying:
-    // an ff-landed PR sits "phantom-open" (GitHub never auto-closed it) until
-    // coord's straggler sweep, so it is in both lists at once. The merged row
-    // is the truthful one — it knows the PR landed — so it wins, and the open
-    // copy is dropped. Without this the same PR renders twice, once as live
-    // work, under a colliding row key.
+    // ONE row per PR, across AND within the two reads — see `fusePipelinePrs`.
     //
-    // Keyed by `singleKey` — the SAME identity buildPipelineRows gives the row
-    // and React renders it under, so what is collapsed here is exactly what
-    // would collide there. (PR number is the tempting key and the wrong one:
-    // it is not what collides.)
-    const merged = mergedPrs ?? [];
-    const landed = new Set(merged.map((p) => singleKey(p.repo, p.branch)));
-    const open = (prs ?? []).filter(
-      (p) => !landed.has(singleKey(p.repo, p.branch))
-    );
+    // This used to be built here by hand, and it collapsed only `open` against
+    // `merged`. That missed the case coord actually serves: `?include_merged=`
+    // returns the phantom-open copy of an ff-landed PR and its landed twin in
+    // the SAME response, so both arrive inside `mergedPrs` where an
+    // array-vs-array subtraction never looks. The PR then rendered twice under
+    // a colliding React key (operator-reported 2026-09-20).
+    //
+    // The collapse is keyed by `singleKey` — the SAME identity
+    // `buildPipelineRows` gives the row and React renders it under, so what is
+    // collapsed is exactly what would collide. (PR number is the tempting key
+    // and the wrong one: it is not what collides.)
     return buildPipelineRows(
-      [...open, ...merged],
+      fusePipelinePrs(prs ?? [], mergedPrs ?? []),
       proposals ?? [],
       economicsByRepo
     );
