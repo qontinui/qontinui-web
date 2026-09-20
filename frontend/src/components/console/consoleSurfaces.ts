@@ -52,6 +52,11 @@ import {
   PLAN_TONE_CLASS,
 } from "@/components/admin/coord/planStatus";
 import {
+  RECONCILIATION_ATTENTION_BY_VERDICT,
+  RECONCILIATION_AUTHOR_GLYPH_VERDICTS,
+  RECONCILIATION_BADGE_CLASS,
+} from "@/components/admin/coord/planReconciliationStatus";
+import {
   TREE_ATTENTION_BY_KIND,
   TREE_AUTHOR_GLYPH_KINDS,
   TREE_BADGE_CLASS,
@@ -225,6 +230,21 @@ export const CONSOLE_PALETTES: ReadonlyArray<ConsoleSurface> = [
     palette: {
       badgeClass: PLAN_TONE_CLASS,
       authorGlyphKinds: PLAN_AUTHOR_GLYPH_TONES as ReadonlySet<string>,
+    },
+  },
+  {
+    // The plan CORPUS, reconciled three ways — a different surface from the
+    // work-unit list above and a different vocabulary: its kinds are the
+    // route's three VERDICTS, not a status tone. `unknown` is amber by the
+    // guide's stated exception (an amber painted on ignorance), and it is the
+    // largest bucket here because axis C is page-scoped.
+    surface: "plan reconciliation (/admin/coord/plans)",
+    module: "components/admin/coord/planReconciliationStatus.ts",
+    attentionByKind: RECONCILIATION_ATTENTION_BY_VERDICT,
+    palette: {
+      badgeClass: RECONCILIATION_BADGE_CLASS,
+      authorGlyphKinds:
+        RECONCILIATION_AUTHOR_GLYPH_VERDICTS as ReadonlySet<string>,
     },
   },
   {
