@@ -26,8 +26,17 @@ from datetime import datetime
 from uuid import UUID, uuid4
 
 from qontinui_schemas.common import utc_now
-from sqlalchemy import BigInteger, Boolean, DateTime, ForeignKey, Integer, String, text
-from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy import (
+    BigInteger,
+    Boolean,
+    DateTime,
+    ForeignKey,
+    Integer,
+    String,
+    Text,
+    text,
+)
+from sqlalchemy.dialects.postgresql import ARRAY, JSONB
 from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -193,8 +202,20 @@ class Device(Base):
         nullable=True,
         comment="idle | busy | offline — NULL when the device has no CI runner.",
     )
+    #
+    # ``TEXT[]``, NOT ``JSONB`` — a correctness fix to the MODEL, not a live
+    # bug. alembic, the sole author of ``coord.*`` DDL, created the column as
+    # ``TEXT[]`` (``c5d6e7f8a9b0_add_ci_runner_columns_to_devices.py``), and
+    # coord declares the same. Reads work either way today: asyncpg decodes a
+    # ``text[]`` column into a Python list whatever SQLAlchemy type is declared
+    # (``GET /operations/fleet``'s ``ci_runners`` map reads it that way). What
+    # the ``JSONB`` mapping gets wrong is everything that consults the DECLARED
+    # type — a bind parameter, a comparison or cast in a query, or DDL emitted
+    # from this metadata would be ``jsonb`` against a ``text[]`` column. **No
+    # migration** — the DDL was always ``TEXT[]``; this is the model catching
+    # up to it.
     ci_runner_labels: Mapped[list[str] | None] = mapped_column(
-        JSONB,
+        ARRAY(Text),
         nullable=True,
         comment='CI runner labels, e.g. ["self-hosted", "linux", "x64"].',
     )

@@ -3,7 +3,7 @@ import { useRouter, usePathname, useSearchParams } from "next/navigation";
 import { setProductMode, setShowHiddenItems } from "@qontinui/navigation";
 import type { NavItem } from "../types";
 import { getWebNavItems } from "../shared-nav-adapter";
-import { devNavItems } from "../nav-items";
+import { devNavItems, OVERVIEW_GROUP } from "../nav-items";
 import { cloudNavItems } from "@cloud/nav-items";
 import { useAuth } from "@/contexts/auth-context";
 import { useProductMode } from "@/contexts/product-mode-context";
@@ -108,7 +108,14 @@ export function useSidebarNavigation() {
         }))
         .filter((item) => !item.children || item.children.length > 0);
     },
-    [mounted, isDevelopment, authLoading, user, productMode, showAdvancedAutomation]
+    [
+      mounted,
+      isDevelopment,
+      authLoading,
+      user,
+      productMode,
+      showAdvancedAutomation,
+    ]
   );
 
   // Sync product mode to the shared navigation package and rebuild items
@@ -141,15 +148,24 @@ export function useSidebarNavigation() {
     const systemIdx = shared.findIndex((item) => item.group === "SYSTEM");
     const mainItems = local.filter((item) => !item.adminOnly);
     const adminItems = local.filter((item) => item.adminOnly);
-    if (systemIdx >= 0) {
-      return [
-        ...shared.slice(0, systemIdx),
-        ...mainItems,
-        ...shared.slice(systemIdx),
-        ...adminItems,
-      ];
-    }
-    return [...shared, ...local];
+    const composed =
+      systemIdx >= 0
+        ? [
+            ...shared.slice(0, systemIdx),
+            ...mainItems,
+            ...shared.slice(systemIdx),
+            ...adminItems,
+          ]
+        : [...shared, ...local];
+    // The Project Overview always leads the menu. Local items only come first
+    // today because every shared group above SYSTEM happens to be hidden in AI
+    // Dev mode; "Show advanced automation features" puts shared groups above
+    // them. A stable partition keeps Overview first either way and leaves the
+    // relative order of everything else untouched.
+    return [
+      ...composed.filter((item) => item.group === OVERVIEW_GROUP),
+      ...composed.filter((item) => item.group !== OVERVIEW_GROUP),
+    ];
   }, [productMode, showAdvancedAutomation]);
 
   const visibleNavItems = useMemo(() => {

@@ -115,6 +115,25 @@ export interface FleetHealthDevice {
    *   place that turns this into something an operator reads.
    */
   credential_dark?: DeviceCredentialDark | null;
+  /**
+   * Coord's raw CI-runner measurement (`idle` | `busy` | `offline`).
+   *
+   * Coord serves it as a STRING only for a device carrying the `ci_runner`
+   * capability and as `null` for every other device (`fleet_health.rs`
+   * `DeviceHealthSnapshot::ci_runner_status`), so `typeof === "string"` is the
+   * capability test — see {@link isCiRunnerDevice}. Absent means this coord
+   * predates the field: UNKNOWN, and treated as "not known to be a CI runner".
+   */
+  ci_runner_status?: string | null;
+}
+
+/**
+ * Whether coord says this device carries the `ci_runner` capability. Read off
+ * coord's own device read rather than the CI-runner mirror, so a mirror poll
+ * that is loading or has failed cannot reclassify the machine.
+ */
+export function isCiRunnerDevice(device: FleetHealthDevice): boolean {
+  return typeof device.ci_runner_status === "string";
 }
 
 /**
