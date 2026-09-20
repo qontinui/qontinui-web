@@ -30,11 +30,73 @@ on:
       - '.github/workflows/backend-coverage-producer.yml'
   workflow_dispatch: {}
 
-# Don't pile up producer runs if several main pushes land quickly; the latest
-# head_sha is the one worth mapping.
+# SERIALIZE, never cancel. `cancel-in-progress: true` until 2026-09-20, under the
+# reasoning "don't pile up producer runs if several main pushes land quickly; the
+# latest head_sha is the one worth mapping". Sound in isolation, self-defeating
+# here: a CANCELLED RUN MAPS NO HEAD AT ALL.
+#
+# This job runs the full backend pytest suite -- measured 54-80 min wall clock on
+# its own successful runs -- while `main` takes a `backend/**` push every 30-45
+# min in working hours. Runtime exceeds inter-arrival time, so every run was
+# killed by the next push before it could export anything. Measured on the 8 runs
+# in the 2026-09-20 15:08-20:39Z window: 5 `cancelled`, 2 `failure`, 0 `success`.
+# The successes on that same 25-run page (12 of them) all sit in quiet windows --
+# overnight or mid-afternoon -- not in working-hours bursts. Read that as the
+# pattern it is, not as a law: at least one success (35309612069) had another run
+# created 26 s later, so a success is not proof of a long gap. The load-bearing
+# claim is the window above, which is exact.
+#
+# Two facts decided the fix, both read from qontinui-coord's source rather than
+# assumed:
+#
+#  1. THE CONSUMER DEGRADES ON A STALE SHA; IT DOES NOT DROP OUT.
+#     `edit_effects::read_test_coverage_context` reads `coord.test_coverage_map`
+#     as a freshest-row-per-test union across ALL shas (`DISTINCT ON (test_id)
+#     ... ORDER BY test_id, observed_at DESC`, no sha predicate), explicitly so
+#     that "a CI lane that did not re-run at the request's sha keeps its
+#     last-known map instead of dropping out". Freshness is NOT free: when some
+#     row predates the request's sha, `tests_subprediction` discounts the
+#     prediction to `STALE_SHA_COVERAGE` (0.6) instead of 1.0 -- coord's own
+#     "useful but do not trust as ground truth" band. But 0.6 beats the `unknown`
+#     you get from no map at all, which is what cancellation was delivering. So
+#     freshness is cheap RELATIVE TO completion, and the old setting traded the
+#     dear thing for the cheap one.
+#  2. A CANCELLED RUN CANNOT CLEAR A RED BASELINE. `ci_baseline::is_supersession_conclusion`
+#     matches `cancelled`/`stale` and `ingest_workflow_run` returns BEFORE writing
+#     for those, so they "never overwrite the last conclusive verdict". Once this
+#     workflow concluded `failure` once, only another CONCLUSIVE run could replace
+#     it -- and under starvation none ever happened. That is how a red main
+#     baseline stayed pinned on a tree that may already have been repaired.
+#
+# What `false` actually buys, given GitHub's concurrency semantics: at most ONE
+# run in progress and ONE pending per group -- a third arrival cancels the
+# previously PENDING run, never the running one. So the in-flight run always
+# finishes and always exports; the pending slot always holds the newest head;
+# queue depth is bounded at 1 by the platform (the pile-up the old comment feared
+# is handled by GitHub, only its remedy was wrong); and superseded runs are
+# cancelled WHILE PENDING, costing zero runner minutes rather than the 7-70 each
+# that mid-flight cancellation was burning. Note this is cost-NEUTRAL, not a
+# saving: both regimes occupy a runner roughly continuously. The difference is
+# that this one yields a coverage map for the minutes it spends.
+#
+# Rejected alternatives, briefly, so they are not re-litigated:
+#   - `group: ...-${{ github.sha }}` (never cancel anything): 2-3x the compute for
+#     a non-gating best-effort job whose consumer does not read per-sha.
+#   - move to `schedule:`: runs when `backend/**` never changed, and reacts slowly
+#     when it does. The existing `paths:` filter is better information than a clock.
+#   - a debounce job that skips while a producer is in flight: same throughput,
+#     but the LAST push of a burst gets skipped, so a burst's final state can stay
+#     unmapped indefinitely -- whereas queueing always leaves a pending run.
+#
+# Note `frontend-coverage-producer.yml` keeps `cancel-in-progress: true` on
+# purpose: at ~14 min it is far under the push interval and measured 18/20
+# `success`. The defect was never the flag -- it is the ratio of runtime to push
+# cadence. If this suite is ever sharded down near that ratio, revisit.
+#
+# Plan: 2026-09-20-backend-coverage-producer-cancels-itself-into-producing-nothing
 concurrency:
   group: backend-coverage-producer-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 env:
   PYTHON_VERSION: '3.12'
@@ -60,9 +122,16 @@ jobs:
     # running the same suite from disagreeing about how long it takes.
     #
     # Non-gating, so the wall-clock blocks nothing; but a budget this job cannot
-    # meet is not "harmless slack", it is a permanent red on main's baseline
-    # (`cancelled` is not in coord's passing set) plus a coverage export that
-    # silently never runs.
+    # meet is not "harmless slack": it is a coverage export that silently never
+    # runs, and a main baseline FROZEN on whatever its last conclusive verdict
+    # was. Corrected 2026-09-20 -- this used to say a permanent "red on main's
+    # baseline (`cancelled` is not in coord's passing set)". `cancelled` is
+    # indeed not in that set, but it never reaches it:
+    # `ci_baseline::is_supersession_conclusion` matches `cancelled`/`stale` and
+    # `ingest_workflow_run` returns BEFORE writing for those, so they "never
+    # overwrite the last conclusive verdict". A timing-out job therefore does not
+    # turn main red -- it makes main UNFALSIFIABLE, which is worse, because no
+    # later run can clear a red already standing.
     #
     # !! Keep `JOB_TIMEOUT_MINUTES` below in lockstep with this value. !!
     # The duplication is forced: GitHub does not expose a job's own timeout to
@@ -341,7 +410,7 @@ jobs:
           echo "Job wall-clock: ${elapsed_min} min (soft budget ${SOFT_BUDGET_MINUTES} min, job budget ${JOB_TIMEOUT_MINUTES} min)."
 
           if [ "$elapsed_min" -ge "$SOFT_BUDGET_MINUTES" ]; then
-            echo "::warning title=${JOB_LABEL} is approaching its job budget::This job took ${elapsed_min} min, at or past the ${SOFT_BUDGET_MINUTES}-minute soft budget and closing on the ${JOB_TIMEOUT_MINUTES}-minute job budget. This run PASSED - this is an early warning, not a failure. ${BUDGET_STAKES} Act on it before it becomes a timeout: this repo has already paid for a budget set below this suite's own median - every main push then produced a 'cancelled' run, no coverage export, and a red main baseline. Either make the suite faster (sharding is the obvious lever) or raise BOTH 'timeout-minutes' and 'JOB_TIMEOUT_MINUTES' together."
+            echo "::warning title=${JOB_LABEL} is approaching its job budget::This job took ${elapsed_min} min, at or past the ${SOFT_BUDGET_MINUTES}-minute soft budget and closing on the ${JOB_TIMEOUT_MINUTES}-minute job budget. This run PASSED - this is an early warning, not a failure. ${BUDGET_STAKES} Act on it before it becomes a timeout: this repo has already paid for a budget set below this suite's own median - every main push then produced a 'cancelled' run and no coverage export, which coord discards without writing, so main's baseline froze on its last conclusive verdict and no later run could clear it. Either make the suite faster (sharding is the obvious lever) or raise BOTH 'timeout-minutes' and 'JOB_TIMEOUT_MINUTES' together."
           fi
 
       # Per-test -> touched-file coverage producer. Best-effort (the script
@@ -351,6 +420,26 @@ jobs:
       # POSTs the observations + the JUnit results to coord's existing ingest
       # routes.
       - name: Export per-test coverage to coord (best-effort)
+        # Run on a RED suite too. A step with no `if:` defaults to `if: success()`,
+        # which silently skipped this export whenever the tests failed -- verified
+        # on both runs that actually concluded in the 2026-09-20 window
+        # (35528617045, 35520123562): `Run tests with coverage` failure, this step
+        # `skipped`. Serializing the workflow (see `concurrency` above) lets runs
+        # CONCLUDE; without this `if:` a concluding-but-red run would still export
+        # nothing, so the fix above would not have met its own goal.
+        #
+        # A failing test still has coverage contexts: `--cov-context=test` records
+        # which test touched which lines regardless of assertion outcome, and
+        # `--junitxml` is written either way. A partial map is real signal --
+        # coord's reader unions the freshest row PER TEST
+        # (`edit_effects::read_test_coverage_context`), so tests missing from one
+        # run keep their last-known rows rather than being erased.
+        #
+        # `!cancelled()` and NOT `always()`: a cancelled run (external cancel, or a
+        # job timeout, which this file's marker step below notes also concludes as
+        # `cancelled`) has a truncated `.coverage` db, and POSTing from it would
+        # publish a partial map as if it were a whole one.
+        if: ${{ !cancelled() }}
         env:
           GITHUB_SHA: ${{ github.sha }}
           # COORD_HTTP_URL defaults to https://coord.qontinui.io inside the
