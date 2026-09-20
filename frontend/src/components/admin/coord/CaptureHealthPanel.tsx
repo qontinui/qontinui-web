@@ -180,7 +180,14 @@ export function CaptureHealthPanel({
           ? `${silent.length} of ${census.doors.length} doors have written nothing`
           : unstated.length === census.doors.length && census.doors.length > 0
             ? `${census.doors.length} doors, none of them counted on this read`
-            : `${census.doors.length} doors, all of them writing`;
+            : // SOME doors uncounted is its own reading, and it has to be here
+              // rather than only in the per-door cell: this string is what the
+              // panel shows while CLOSED, and "all of them writing" over a door
+              // whose count the response never carried states exactly the thing
+              // the cell below it refuses to state.
+              unstated.length > 0
+              ? `${census.doors.length} doors; ${unstated.length} uncounted on this read`
+              : `${census.doors.length} doors, all of them writing`;
   const summary = stale
     ? `${measured} — last good read, not refreshed`
     : measured;

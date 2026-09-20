@@ -132,4 +132,34 @@ describe("the strip", () => {
       )?.label
     ).toBe("oldest –");
   });
+
+  it("gives the dash its OWN reason when the route served no age", () => {
+    // `oldest` is null for four distinct causes and the title had arms for
+    // two. On page 1 with a row carrying no `age_days`, the dash explained
+    // itself with "the oldest row is only on the first page" — a confident
+    // sentence about a state that is not this one.
+    const first = response().items![0];
+    const health = deriveFollowupHealth(
+      response({ items: [{ ...first, age_days: undefined }] }),
+      true,
+      false
+    );
+    const oldest = health.badges.find((b) => b.key === "oldest");
+    expect(oldest?.label).toBe("oldest –");
+    expect(oldest?.title).not.toMatch(/only on the first page/i);
+    expect(oldest?.title).toMatch(/served no age/i);
+    expect(oldest?.title).toMatch(/UNKNOWN/);
+  });
+
+  it("gives the dash its OWN reason when the page returned no row at all", () => {
+    const health = deriveFollowupHealth(
+      response({ items: [], count: 0, total: 0 }),
+      true,
+      false
+    );
+    const oldest = health.badges.find((b) => b.key === "oldest");
+    expect(oldest?.label).toBe("oldest –");
+    expect(oldest?.title).not.toMatch(/only on the first page/i);
+    expect(oldest?.title).toMatch(/no row to read an age from/i);
+  });
 });

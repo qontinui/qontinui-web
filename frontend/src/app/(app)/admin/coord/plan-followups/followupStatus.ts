@@ -199,12 +199,21 @@ export function deriveFollowupHealth(
         key: "oldest",
         label: `oldest ${oldest === null ? DASH : `${Math.round(oldest)}d`}`,
         tone: "default",
+        // `oldest` is null for FOUR distinct causes, and each gets its own
+        // sentence. Two arms once covered all four, so on page 1 of a route
+        // that served no `age_days` the dash explained itself with "the
+        // oldest row is only on the first page" — a confident reason for a
+        // state that is not the one it describes.
         title:
-          oldest === null
-            ? orderingWarrantsOldest
-              ? "The oldest row is only on the first page, so it is not measured from here."
-              : `The route declared its ordering as "${ordering}", not ${EXPECTED_ORDERING}, so nothing warrants reading the first row as the oldest.`
-            : "Days since the follow-up was recorded. An old unowned follow-up is work the fleet has known about and repeatedly not picked up.",
+          oldest !== null
+            ? "Days since the follow-up was recorded. An old unowned follow-up is work the fleet has known about and repeatedly not picked up."
+            : !orderingWarrantsOldest
+              ? `The route declared its ordering as "${ordering}", not ${EXPECTED_ORDERING}, so nothing warrants reading the first row as the oldest.`
+              : (res.offset ?? 0) !== 0
+                ? "The oldest row is only on the first page, so it is not measured from here."
+                : items.length === 0
+                  ? "This page returned no follow-up, so there is no row to read an age from — unknown, not zero."
+                  : "The route served no age for the first row, so how old the oldest follow-up is is UNKNOWN — it is not 'new'.",
       },
     ],
   };

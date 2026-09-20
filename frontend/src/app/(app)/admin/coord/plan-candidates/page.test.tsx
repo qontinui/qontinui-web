@@ -152,6 +152,29 @@ describe("/admin/coord/plan-candidates consumes /plan-library/candidates", () =>
     ).toHaveTextContent("UNKNOWN, not unblocked");
   });
 
+  it("does not say the edges were walked when no dependency list was served", async () => {
+    // `document_state: "present"` and an ABSENT `unmet_depends_on`:
+    // `describeReadiness` badges the row "blockers not served", and the panel
+    // one click below it used to answer from a `?? []` default — "every
+    // target is terminal" — so the badge and the detail contradicted each
+    // other about the same row.
+    const user = userEvent.setup();
+    const row = candidate();
+    delete row.unmet_depends_on;
+    get.mockResolvedValue(response({ items: [row] }));
+    render(<CoordPlanCandidatesPage />);
+
+    const rendered = await screen.findByTestId("coord-candidate-row");
+    expect(
+      within(rendered).getByTestId("coord-candidate-readiness")
+    ).toHaveTextContent("blockers not served");
+
+    await user.click(within(rendered).getByRole("button"));
+    const empty = await screen.findByTestId("coord-candidate-unmet-empty");
+    expect(empty).toHaveTextContent("UNKNOWN");
+    expect(empty).not.toHaveTextContent(/every target is terminal/i);
+  });
+
   it("keeps 'PRs unreadable' from reading as 'this plan has no PRs'", async () => {
     const user = userEvent.setup();
     get.mockResolvedValue(

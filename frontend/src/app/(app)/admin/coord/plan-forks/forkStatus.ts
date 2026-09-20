@@ -252,6 +252,21 @@ export interface ForkCensus {
   /** The route's own `total`; `null` when unserved — UNKNOWN, never a length. */
   contentTotal: number | null;
   kindForkTotal: number | null;
+  /**
+   * The response carried no `groups` / `kind_forks` LIST at all.
+   *
+   * The `?? []` below keeps the renderers simple, and these two flags are what
+   * stops that default being read as a measurement: both fields are optional
+   * on the wire for this module's own stated reason — *"an older backend that
+   * omits one must read UNKNOWN, never false"* — and the totals beside them
+   * have always honoured it. An absent list collapsed to a measured empty is
+   * the same `?? 0` defect, one type over: `kind_fork_total: 3` with no
+   * `kind_forks` promised the scanner would heal three forks nobody saw, and
+   * `total: 4` with no `groups` printed "no two copies disagree" under a
+   * header reading `(4)`.
+   */
+  groupsUnstated: boolean;
+  kindForksUnstated: boolean;
   /** Both lists empty AND both totals zero — a measured "no fork". */
   measuredClean: boolean;
 }
@@ -267,6 +282,8 @@ export function deriveForkCensus(res: DivergentResponse | null): ForkCensus {
     kindForks,
     contentTotal,
     kindForkTotal,
+    groupsUnstated: res !== null && !Array.isArray(res.groups),
+    kindForksUnstated: res !== null && !Array.isArray(res.kind_forks),
     measuredClean:
       res !== null &&
       groups.length === 0 &&
@@ -338,11 +355,30 @@ export function deriveForkHealth(
   // carried. The ROWS are the fact that survives a missing total, so the
   // presence question is answered from them; `measuredClean` at the top of
   // this module is the counterpart and was already right.
-  const contentForksPresent =
-    content !== null ? content > 0 : census.groups.length > 0;
-  const kindForksPresent =
-    kind !== null ? kind > 0 : census.kindForks.length > 0;
-  const needsPerson = contentForksPresent || operatorForks > 0;
+  // `true` / `false` / `null`, and `null` is a THIRD answer: neither a count
+  // nor a list was served, so whether a fork is there is UNKNOWN. Reading the
+  // absent list as an empty one is the mirror of the `?? 0` above.
+  const contentForksPresent: boolean | null =
+    content !== null
+      ? content > 0
+      : census.groupsUnstated
+        ? null
+        : census.groups.length > 0;
+  const kindForksPresent: boolean | null =
+    kind !== null
+      ? kind > 0
+      : census.kindForksUnstated
+        ? null
+        : census.kindForks.length > 0;
+  // "The scanner can heal every one of them" is a claim about `resolvable` on
+  // rows this read actually returned. With `kind_fork_total: 3` and no
+  // `kind_forks`, `operatorForks` is 0 because the list is empty, not because
+  // every fork is self-healing — so the promise is withdrawn rather than made
+  // from an unserved list.
+  const kindHealClaimable =
+    kindForksPresent === true && !census.kindForksUnstated;
+  const forkListUnstated = census.groupsUnstated || census.kindForksUnstated;
+  const needsPerson = contentForksPresent === true || operatorForks > 0;
   // A count the route did not serve stays a dash on the badge either way —
   // the strip may say a fork is THERE without inventing how many.
   const totalsUnserved =
@@ -356,36 +392,58 @@ export function deriveForkHealth(
     // and `deriveFollowupHealth` now take.
     level: needsPerson
       ? "red"
-      : kindForksPresent || readFailed || !census.measuredClean
+      : kindForksPresent === true ||
+          forkListUnstated ||
+          readFailed ||
+          !census.measuredClean
         ? "amber"
         : "green",
     headline: needsPerson
       ? "Copies of a plan disagree, and only a person can settle it"
-      : kindForksPresent
+      : kindHealClaimable
         ? "Kind forks only — the scanner can heal every one of them"
-        : census.measuredClean
-          ? "No copy of any plan disagrees with another"
-          : "No fork in what this read returned",
+        : forkListUnstated
+          ? "The route served no fork list — unknown, not clean"
+          : census.measuredClean
+            ? "No copy of any plan disagrees with another"
+            : "No fork in what this read returned",
+    // An unserved LIST and an unserved TOTAL are different gaps, and one
+    // response carries both when a served `groups` has no `total` beside an
+    // absent `kind_forks`. So the two readings COMPOSE rather than shadow each
+    // other — a cascade would have deleted whichever one lost.
     detail: readFailed
       ? "Last refresh failed — these counts are stale."
-      : totalsUnserved
-        ? "The route served no total for a list it did return, so the forks " +
-          "below are real and their count is UNKNOWN — the badge is a dash, " +
-          "not a zero."
-        : census.measuredClean
-          ? "Measured now: the route recomputes on every read, so this is a " +
-            "fresh zero rather than a cached one."
-          : undefined,
+      : [
+          forkListUnstated
+            ? "This response carried no list for one of the two fork kinds, " +
+              "so what it holds is UNKNOWN — an absent list is not a measured " +
+              "empty, and a count beside it describes rows this page never saw."
+            : null,
+          totalsUnserved
+            ? "The route served no total for a list it did return, so the " +
+              "forks below are real and their count is UNKNOWN — the badge " +
+              "is a dash, not a zero."
+            : null,
+          !forkListUnstated && !totalsUnserved && census.measuredClean
+            ? "Measured now: the route recomputes on every read, so this is " +
+              "a fresh zero rather than a cached one."
+            : null,
+        ]
+          .filter((s): s is string => s !== null)
+          .join(" ") || undefined,
     badges: [
       {
         key: "content",
         label: `content forks ${content ?? DASH}`,
-        tone: contentForksPresent ? "attention" : "muted",
+        tone: contentForksPresent === true ? "attention" : "muted",
         title:
           "Same kind and slug, different content digests. Nothing but a " +
           "person reconciles these." +
           (content === null
             ? " The route served no total for this read, so the count is unknown."
+            : "") +
+          (census.groupsUnstated
+            ? " The route served no groups list either, so these rows were never seen."
             : ""),
       },
       {
@@ -393,8 +451,11 @@ export function deriveForkHealth(
         label: `kind forks ${kind ?? DASH}`,
         tone: operatorForks > 0 ? "attention" : "muted",
         title:
-          `${operatorForks} of them need an operator to pick; the rest have ` +
-          "exactly one locked kind and heal on the scanner's next pass." +
+          (census.kindForksUnstated
+            ? "The route served no kind_forks list for this read, so how many " +
+              "need an operator and how many heal themselves is unknown."
+            : `${operatorForks} of them need an operator to pick; the rest have ` +
+              "exactly one locked kind and heal on the scanner's next pass.") +
           (kind === null
             ? " The route served no total for this read, so the count is unknown."
             : ""),

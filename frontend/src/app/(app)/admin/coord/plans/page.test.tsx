@@ -579,6 +579,41 @@ describe("the five read states", () => {
     );
   });
 
+  it("does not report 'none has status X' when no row's status is readable", async () => {
+    // The degraded population arm: axis A is UNREADABLE for every row, so
+    // `matchesStatus` rejects them all — correctly. What is NOT correct is
+    // then reporting that as a negative measurement ("none of the N stems
+    // has coord status shipped") of something nothing measured.
+    const user = userEvent.setup();
+    get.mockResolvedValue(
+      degraded({
+        items: [
+          row({
+            axis_a: {
+              readable: false,
+              present: false,
+              unreadable_reason:
+                "coord's work-unit list could not be read, so axis A is UNKNOWN for every row",
+            },
+          }),
+        ],
+      })
+    );
+    render(<CoordPlansListPage />);
+
+    await screen.findByTestId("coord-plan-reconciliation-row");
+    await user.click(screen.getByTestId("coord-plans-status-select"));
+    await user.click(await screen.findByRole("option", { name: "Shipped" }));
+
+    const empty = await screen.findByTestId(
+      "coord-plans-status-unreadable-empty"
+    );
+    expect(empty).toHaveTextContent("unknown — not none");
+    expect(
+      screen.queryByTestId("coord-plans-status-filtered-empty")
+    ).toBeNull();
+  });
+
   it("says a genuinely empty window is empty, once coord has answered", async () => {
     get.mockResolvedValue(healthy({ items: [] }));
     render(<CoordPlansListPage />);
@@ -789,6 +824,14 @@ describe("the capture census beside the document-axis line", () => {
     expect(
       within(agent).getByTestId("coord-capture-door-count-unstated")
     ).toHaveTextContent("unknown, not zero");
+
+    // And the SUMMARY — the text the panel shows while CLOSED — must not
+    // republish what the cell just refused. "all of them writing" over a door
+    // whose count never arrived is the collapsed-panel reading of a number
+    // nobody served.
+    const summary = screen.getByTestId("coord-capture-health-summary");
+    expect(summary).not.toHaveTextContent(/all of them writing/i);
+    expect(summary).toHaveTextContent("1 uncounted on this read");
   });
 
   it("calls a response with no door list a shape it does not understand", async () => {

@@ -403,6 +403,18 @@ export default function CoordPlanForksPage() {
                 No content fork at the last good read — it has not refreshed
                 since, so whether any copy disagrees NOW is unknown.
               </p>
+            ) : census?.groupsUnstated ? (
+              // The list is optional on the wire, so an absent one is not an
+              // empty one — and `total` may be a positive number right above
+              // this sentence. "As measured by this read" would then be a
+              // measurement claim about rows the read never carried.
+              <p
+                className="text-sm text-muted-foreground italic"
+                data-testid="coord-fork-content-unstated"
+              >
+                This response carried no groups list, so whether two copies of a
+                plan disagree on content is unknown — not none.
+              </p>
             ) : (
               <p
                 className="text-sm text-muted-foreground italic"
@@ -460,6 +472,15 @@ export default function CoordPlanForksPage() {
               >
                 No kind fork at the last good read — it has not refreshed since,
                 so whether any slug is forked NOW is unknown.
+              </p>
+            ) : census?.kindForksUnstated ? (
+              <p
+                className="text-sm text-muted-foreground italic"
+                data-testid="coord-fork-kind-unstated"
+              >
+                This response carried no kind_forks list, so whether any slug is
+                forked across kinds is unknown — not none. A kind_fork_total
+                beside it counts rows this page never saw.
               </p>
             ) : (
               <p
