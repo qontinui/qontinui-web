@@ -146,12 +146,19 @@ function looksLikeTaskMeta(value: string): boolean {
   //
   // What separates them is the SPACE: mermaid's task separator is written
   // ` :`, while a colon inside prose attaches to the word before it. A
-  // heuristic rather than a law — `Task:2026-01-05, 5d` is still missed —
-  // but it recovers the common form without warning on either false
-  // positive.
+  // heuristic rather than a law — `Title review:2026-01-05, 2026-01-20`
+  // (two dates, no duration, no space) is still missed — but it recovers
+  // the common form without warning on either false positive. A task
+  // carrying a DURATION is caught whether or not it has the space, on the
+  // other arm.
+  // The space is looked for in the HEAD — up to and including the first
+  // colon — because that is the separator the rule is about. Scanning the
+  // whole value also matched a colon further along, so `title Release: v1,
+  // see note :below` warned on a separator that is not one.
+  const head = value.slice(0, value.indexOf(":") + 1);
   return (
     tokens.length >= 3 ||
-    (tokens.length >= 2 && (tokens.some(isDurationToken) || /\s:/.test(value)))
+    (tokens.length >= 2 && (tokens.some(isDurationToken) || /\s:/.test(head)))
   );
 }
 
@@ -183,8 +190,9 @@ function isDurationToken(token: string): boolean {
  * Still no warning for a genuine single-field value that carries a colon —
  * `axisFormat %H:%M`, `todayMarker stroke-width:5px` — because one field
  * that is neither a date, a duration nor an `after` is not task meta. A
- * MULTI-property `todayMarker stroke-width:5px,stroke:#0f0` does warn: it
- * is three fields and indistinguishable from task meta by any rule here.
+ * MULTI-property `todayMarker stroke-width:5px,stroke:#0f0` does warn: the
+ * split is on the FIRST colon, giving `5px` and `stroke:#0f0` — two fields,
+ * and indistinguishable from task meta by any rule here.
  * That is the trade this function is named for — these five directives are
  * discarded, so noise costs a line and silence costs a task.
  */

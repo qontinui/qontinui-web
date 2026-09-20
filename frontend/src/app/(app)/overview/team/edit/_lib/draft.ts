@@ -218,8 +218,11 @@ export function draftProblems(draft: Draft): DraftProblem[] {
   // backend refuses the save with a 422 naming a task the editor never
   // pointed at; different roles, the removed task's days are silently added
   // to whatever took its number — and `draftProblems` could not see either,
-  // because it only ever asked whether the key EXISTS. However good the
-  // matcher gets, this is what makes the collision visible.
+  // because it only ever asked whether the key EXISTS.
+  //
+  // It catches the SAME-ROLE collision. Different roles on one task is a
+  // legal shape, so nothing here can distinguish it from an intended entry;
+  // that half stays invisible by design.
   const effortSeen = new Set<string>();
   for (const effort of draft.efforts) {
     const key = `${effort.phase_code}:${effort.task_number}:${effort.role_code}`;
@@ -342,9 +345,25 @@ export function draftToContent(draft: Draft): EstimateContentWrite {
  * walks off with its refs.
  *
  * The positional second pass then runs ONLY when the two lists are the same
- * length, i.e. when nothing was inserted or removed and position still means
- * something. That is deliberately conservative, and it is the third attempt
- * at this rule:
+ * LENGTH. Say what that does and does not mean, because an earlier wording
+ * here claimed more than the code delivers:
+ *
+ * - It is not "nothing was inserted or removed". It is "the COUNT did not
+ *   change", which also covers one removal and one insertion in the same
+ *   import. In that case the rule resolves the pair as a RENAME, and a
+ *   brand-new task inherits the removed task's refs and person-days.
+ * - That case is genuinely undecidable, not merely unhandled: `[A, B, C]`
+ *   becoming `[A, X, C]` is the same text whether B was renamed to X or
+ *   removed and replaced by it. Any rule that got it "right" for one reading
+ *   would be wrong for the other, so a gap-constrained pairing resolves it
+ *   identically. Resolving it as a rename is the choice, and it is the one
+ *   that preserves work more often.
+ *
+ * What the length gate DOES buy is that an edit which changes the count —
+ * the common shape, and the one three review passes found defects in —
+ * carries what the titles prove and nothing else.
+ *
+ * It is the third attempt at this rule:
  *
  * - Position first lost every ref below an insertion, or handed each one to
  *   the task that took its place.
@@ -377,7 +396,9 @@ function matchTasks(
     }
   });
 
-  // Position only means something when nothing was inserted or removed.
+  // The COUNT is unchanged — which includes a one-in-one-out edit, resolved
+  // here as a rename because it is indistinguishable from one. See the
+  // docstring; this is a weaker guarantee than "nothing was inserted".
   if (saved.length === imported.length) {
     imported.forEach((_task, index) => {
       if (matched[index] !== undefined) return;

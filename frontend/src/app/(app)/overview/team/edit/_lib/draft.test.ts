@@ -504,7 +504,7 @@ describe("applyGanttImport", () => {
     expect(after.phases[0]?.tasks[0]?.requirement_refs).toBe("R1, R2");
   });
 
-  it("would rather LOSE a ref than attribute it to the wrong task", () => {
+  it("loses rather than mis-attributes when the task COUNT changes", () => {
     // An insertion and a rename in one import. `index` is the imported
     // index against the raw saved index, so an unconstrained positional
     // fallback is wrong by exactly the shift the title anchors prove
@@ -514,6 +514,10 @@ describe("applyGanttImport", () => {
     // With the lists at different lengths the fallback declines: the
     // renamed task loses its ref, which is visible and re-enterable, and
     // NOTHING wears a ref that was never its own.
+    //
+    // The guarantee is this shape only — an edit that changes the COUNT. A
+    // one-in-one-out edit keeps the length and is resolved as a rename,
+    // because it is indistinguishable from one; see `matchTasks`.
     const savedThree = {
       ...LOADED,
       phases: [
@@ -549,6 +553,66 @@ describe("applyGanttImport", () => {
       null, // renamed — lost, not stolen from
       "RC", // matched by title
     ]);
+  });
+
+  it("resolves a one-in-one-out edit as a RENAME, refs and days included", () => {
+    // The limit of the length gate, pinned so the docstring is enforced
+    // rather than merely asserted: removing B and adding X keeps the count,
+    // so position is trusted and X inherits B's refs and B's days.
+    //
+    // This is a choice, not an oversight. `[A, B, C]` becoming `[A, X, C]`
+    // is the same text whether B was renamed to X or replaced by it, so no
+    // rule can tell them apart; resolving it as a rename preserves work
+    // more often than discarding it would.
+    const savedThree = {
+      ...LOADED,
+      phases: [
+        {
+          ...LOADED.phases[0]!,
+          tasks: ["A", "B", "C"].map((title, i) => ({
+            ...LOADED.phases[0]!.tasks[0]!,
+            number: `1.${i + 1}`,
+            title,
+            requirement_refs: `R${title}`,
+            efforts:
+              title === "B"
+                ? [
+                    {
+                      role_id: "r1",
+                      role_code: "BE",
+                      planned_person_days: "99.00",
+                    },
+                  ]
+                : [],
+          })),
+        },
+      ],
+    };
+    const oneInOneOut = [
+      {
+        ...IMPORTED[0]!,
+        tasks: ["A", "X", "C"].map((title, i) => ({
+          number: `1.${i + 1}`,
+          title,
+          planned_start: "2026-01-05",
+          planned_end: "2026-01-09",
+          is_critical: false,
+          status: "planned" as const,
+        })),
+      },
+    ];
+    const after = applyGanttImport(draftFromEstimate(savedThree), oneInOneOut);
+    expect(after.phases[0]?.tasks.map((t) => t.requirement_refs)).toEqual([
+      "RA",
+      "RB", // X is read as B renamed
+      "RC",
+    ]);
+    expect(
+      after.efforts.find((e) => e.task_number === "1.2")?.planned_person_days
+    ).toBe("99.00");
+    expect(draftProblems(after).filter((p) => p.severity === "error")).toEqual(
+      []
+    );
   });
 
   it("gives a phase the chart introduces an empty gate, not a borrowed one", () => {

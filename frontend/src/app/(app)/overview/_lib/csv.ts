@@ -395,21 +395,18 @@ export function parseEffortsCsv(text: string): CsvResult<ParsedEffortRow> {
  */
 const PERSON_DAY_DECIMALS = 2;
 
+/** The `p` of the column's `NUMERIC(p, s)` — its total significant digits. */
+const PERSON_DAY_PRECISION = 10;
+
 /**
- * The largest value that column holds: `NUMERIC(10, 2)` is ten significant
- * digits with two after the point, so 99 999 999.99 days — a quarter of a
- * million working years, and nothing a delivery plan can mean.
+ * The largest value the column holds. `NUMERIC(p, s)` keeps `p` significant
+ * digits with `s` after the point, so the maximum is `10^p - 1` at the
+ * scale's grain — 9 999 999 999 hundredths, i.e. 99 999 999.99 days, a
+ * quarter of a million working years and nothing a delivery plan can mean.
  *
  * Anything larger is not "finer than the store keeps", it is unstorable:
  * Postgres raises `numeric_field_overflow` and the save 500s. Refusing it
  * where it is pasted is what turns that into a named row.
- */
-const PERSON_DAY_PRECISION = 10;
-
-/**
- * `NUMERIC(p, s)` holds `p` significant digits with `s` after the point, so
- * the largest value is `10^p - 1` at the scale's grain — 9 999 999 999
- * hundredths, i.e. 99 999 999.99 days.
  */
 const PERSON_DAY_MAX_HUNDREDTHS = 10 ** PERSON_DAY_PRECISION - 1;
 
