@@ -220,6 +220,14 @@ _SECTION_BASE_SEVERITY: dict[str, SeverityT] = {
     # ``_REMOVED_SEVERITY_OVERRIDE`` for the half of this that actually decides
     # the motivating case.
     "repos": "warning",
+    # The fleet harness section. The default ``info`` would keep a box holding
+    # the plan-corpus invariant by clause (c) — a second writable corpus — out
+    # of the rollup entirely, which is the one condition the section exists to
+    # surface. Its values are deliberately root-RELATIVE (``plans_dir_relative``
+    # is ``qontinui-dev-notes/plans`` on every compliant box, never an absolute
+    # path) so two compliant machines with different workspace roots compare
+    # ``in_sync`` and this severity fires only on a real difference.
+    "harness": "warning",
 }
 
 # Per-section override of the ``removed``-delta severity.
@@ -238,6 +246,11 @@ _SECTION_BASE_SEVERITY: dict[str, SeverityT] = {
 # nothing that existed before it.
 _REMOVED_SEVERITY_OVERRIDE: dict[str, SeverityT] = {
     "repos": "warning",
+    # Same reasoning as ``repos``: a box whose runner build predates the
+    # ``harness`` section publishes no such section at all, so every canonical
+    # key reads ``removed`` there and nothing the box can do short of a runner
+    # upgrade clears it. A permanently-critical rollup is a dead signal.
+    "harness": "warning",
 }
 
 # ---------------------------------------------------------------------------

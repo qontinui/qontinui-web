@@ -13,9 +13,58 @@
 //     derivation; coordinator jargon never reaches a primary surface),
 //   - expandable per-row detail: why, what to do, links (GitHub PR,
 //     merge-candidate CI run, agent session), attempt history, raw ids,
-//   - multi-repo proposals as grouped rows with per-repo sub-rows,
-//   - the actionable side-channels (suggestions, gate decisions) and the raw
-//     proposal stream demoted to a collapsed "Merge internals" section.
+//   - multi-repo proposals as grouped rows with per-repo sub-rows.
+//
+// ============================================================================
+// 2026-09-19 — ONE LIST, ONE AXIS
+// ============================================================================
+//
+// The surface had grown into FOUR per-PR lists stacked vertically, in four
+// vocabularies, over overlapping populations, which the operator joined by
+// reading `repo#number` with their eyes:
+//
+//   the pipeline rows | Suggestions | Gate decisions | Merge internals
+//
+// ...and then a fifth list below them on a different axis entirely
+// (`CiStatusPanel`, one row per REPO). Each addition was locally reasonable
+// and the sum was a page that answers "where is my PR?" five times.
+//
+// The rule this redesign applies: **anything that is about a PR belongs in
+// that PR's row; anything that is about all of them belongs in the health
+// strip; anything on a different axis belongs on the view that owns that
+// axis.** What is left over is audit residue, and it goes behind ONE
+// disclosure rather than becoming a section.
+//
+// Concretely, and each of the three named sections had a distinct defect:
+//
+//  - **Gate decisions — was a second list, and it was not what it looked
+//    like.** Its own footnote admitted a listed PR "is not necessarily still
+//    held": coord returns the newest decision per PR within its retention
+//    window, so the section was an AUDIT LOG rendered directly beneath a LIVE
+//    list, in the position that reads as "and these are also blocked". It is
+//    now three things in their right places — the decision for a listed PR is
+//    evidence inside that row (`GateDecisionDetail`), the tenant-wide count is
+//    a health-strip badge carrying its own provenance caveat, and decisions
+//    whose PR is not on this page at all are the residue (`Coord internals`).
+//
+//  - **Merge internals — was a duplicate.** `buildPipelineRows` already emits
+//    a row for every proposal INCLUDING proposal-only ones with no PR, and
+//    every attempt rides `row.attempts`. So the raw stream re-rendered, in
+//    scheduler vocabulary, rows that were already on screen. The per-attempt
+//    facts it uniquely showed (each attempt's status, age, requeue count and
+//    error — not just the active one's) moved into the row's own history slot,
+//    which previously said `"queued, conflict"` and now says when and why. The
+//    stream itself survives as a nested, collapsed-by-default disclosure for
+//    maintainers, so nothing is lost — it is just no longer a section.
+//
+//  - **CI status — was on the wrong axis, and it polled while collapsed.**
+//    See `CiRepoStrip`'s header; it now lives on the Train tab, which is
+//    already the repo-axis view, and it owns its own transport so a visitor
+//    who never opens that tab pays nothing for it.
+//
+// Net effect on the page: five top-level sections become two (the list, and
+// one collapsed residue panel), and the row gained the three things an
+// operator previously had to scroll and cross-reference to find.
 
 import { useMemo, useState } from "react";
 import { Badge } from "@/components/ui/badge";
@@ -56,10 +105,17 @@ import {
 } from "@/components/console/statusRow";
 import {
   GateDecisionCounts,
+  GateDecisionDetail,
   GateDecisionRow,
   MergeTrainRow,
   SuggestionCard,
 } from "./MergeTrain";
+import {
+  gateBlockKey,
+  gateProvenanceTitle,
+  indexGateBlocks,
+  unattachedGateBlocks,
+} from "./gateDecision";
 import { PrDraftStateControl } from "./PrDraftStateControl";
 import { MergeTrainActivity } from "./MergeTrainActivity";
 import { MergeDependencyGraph } from "./MergeDependencyGraph";
@@ -72,7 +128,7 @@ import { useTrainHealth } from "./useTrainHealth";
 import { usePrCheckDetails } from "./usePrCheckDetails";
 import { buildRepoTrainRows, buildTrainSummary } from "./trainActivity";
 import { redactSecrets } from "./mergeTypes";
-import type { MergeEconomics } from "./mergeTypes";
+import type { BlastRadiusBlock, MergeEconomics } from "./mergeTypes";
 import {
   buildPipelineRows,
   candidateChurnBadgeLabel,
@@ -177,11 +233,15 @@ function PipelineHealthStrip({
   rows,
   economicsByRepo,
   loaded,
+  gateTotalBlocks,
+  gateTotalEvals,
   onShowAttention,
 }: {
   rows: PipelineRow[];
   economicsByRepo: Record<string, MergeEconomics>;
   loaded: boolean;
+  gateTotalBlocks: number | null;
+  gateTotalEvals: number | null;
   onShowAttention: () => void;
 }) {
   const health = useMemo(
@@ -222,6 +282,27 @@ function PipelineHealthStrip({
     title: candidateChurnBadgeTitle(churn),
     "data-testid": "pipeline-green-discarded",
   });
+  // The blast-radius gate's tenant-wide reading. This is the SIGNAL half of
+  // the deleted "Gate decisions" section (R7: secondary material may lose its
+  // section, never its signal) — the per-PR half went into the rows.
+  //
+  // Rendered only when coord answered at all: `null` is "not fetched / read
+  // failed", and a badge reading `gate holds 0` on that basis would be a
+  // false all-clear. A measured 0 IS a fact and prints.
+  //
+  // `gateProvenanceTitle` carries the honesty the section's header badge used
+  // to: against a pre-Phase-2 coord this number may be a raw audit-row count
+  // rather than a count of held PRs, and the hover says so rather than the
+  // label asserting "decisions" it cannot substantiate.
+  if (gateTotalBlocks !== null) {
+    badges.push({
+      key: "gate-holds",
+      label: `gate holds ${gateTotalBlocks}`,
+      tone: gateTotalBlocks > 0 ? "attention" : "muted",
+      title: gateProvenanceTitle(gateTotalBlocks, gateTotalEvals),
+      "data-testid": "pipeline-gate-holds",
+    });
+  }
   badges.push({
     key: "last-merged",
     label: `last merged ${relativeTime(health.lastMergedAt)}`,
@@ -389,17 +470,97 @@ function LandedDetail({ row }: { row: PipelineRow }) {
   );
 }
 
+/**
+ * Every attempt coord made on this PR, newest first — the replacement for the
+ * page-level "Merge internals" stream.
+ *
+ * The old slot rendered two lines: `Attempt started {created_at}` for the
+ * ACTIVE attempt, then `earlier.map(a => a.status).join(", ")` for the rest —
+ * so the earlier attempts were a list of bare words with no when and no why,
+ * and a reader chasing "why did this requeue four times?" had to leave the
+ * row, scroll to a flat cross-PR list, and find this PR's proposals by eye.
+ * The fix for the duplicate section is to make the row answer the question.
+ *
+ * **Both timestamps are rendered, for every attempt, and that is deliberate
+ * rather than thorough.** They are different facts and the gap between them is
+ * the interesting one: a proposal that has sat queued for six hours while
+ * coord re-ticks it has a `created_at` six hours old and an `updated_at`
+ * minutes old. Nothing else on the page recovers that — the row's dwell
+ * escalation (`escalateIfStale`) clocks the PrRow, never the proposal — so
+ * dropping `created_at` here would have made a stalled attempt indistinguishable
+ * from a fresh one everywhere on the surface.
+ *
+ * The ACTIVE attempt is rendered by the caller above this (it owns the row's
+ * status); this lists it too, marked, because "the current attempt is the
+ * third" is the fact the list is read for.
+ */
+function AttemptHistory({ row }: { row: PipelineRow }) {
+  const active = row.activeProposal;
+  if (row.attempts.length === 0) return null;
+  return (
+    <div
+      className="text-[11px] text-muted-foreground space-y-0.5"
+      data-testid="attempt-history"
+    >
+      <p className="m-0">
+        {row.attempts.length} merge attempt
+        {row.attempts.length === 1 ? "" : "s"}
+      </p>
+      {row.attempts.map((a) => (
+        <p
+          key={a.proposal_id}
+          className="m-0 flex items-center gap-1.5 flex-wrap"
+          data-testid="attempt-row"
+          data-proposal-id={a.proposal_id}
+        >
+          <span
+            className={
+              a.proposal_id === active?.proposal_id
+                ? "text-foreground/85 font-medium"
+                : undefined
+            }
+          >
+            {a.status}
+          </span>
+          {/* Labelled, because two bare relative times side by side are not
+              readable as "how long it has been trying" and "when it last
+              moved" — which is the whole reason both are here. */}
+          <span className="tabular-nums" data-testid="attempt-started">
+            started {relativeTime(a.created_at)}
+          </span>
+          <span className="tabular-nums">
+            updated {relativeTime(a.updated_at)}
+          </span>
+          {typeof a.requeue_count === "number" && a.requeue_count > 0 && (
+            <span className="text-orange-200">
+              <RotateCcw className="inline h-3 w-3" /> ×{a.requeue_count}
+            </span>
+          )}
+          {/* Redacted at the boundary, same as every other place a coord
+              error string reaches the DOM. An earlier attempt's error is the
+              one thing the flat stream showed that nothing else did. */}
+          {a.error && (
+            <span className="text-red-300 truncate" title={redactSecrets(a.error)}>
+              {redactSecrets(a.error)}
+            </span>
+          )}
+        </p>
+      ))}
+    </div>
+  );
+}
+
 function RowDetail({
   row,
+  gateBlock,
   onActed,
 }: {
   row: PipelineRow;
+  /** coord's blast-radius decision for THIS PR, when it has one. */
+  gateBlock: BlastRadiusBlock | null;
   onActed: () => void;
 }) {
   const active = row.activeProposal;
-  const earlier = row.attempts.filter(
-    (a) => a.proposal_id !== active?.proposal_id
-  );
   // The five R5 slots, in the order `<RecordDetail>` fixes them: why →
   // problems → actions → history → raw. Each slot is a fragment, so the
   // panel's `space-y-3` spaces the real content nodes exactly as it did when
@@ -436,11 +597,17 @@ function RowDetail({
       }
       problems={
         <>
-          {/* how a landed PR reached its base branch (explains ff-land closes) */}
-          <LandedDetail row={row} />
+          {/* Ordered by what must be acted on, not by what is cheapest to
+              render. The gate is first because it is the only blocker here
+              that no amount of waiting clears: a held PR needs the removed
+              export restored or its callers updated. */}
+          {gateBlock && <GateDecisionDetail block={gateBlock} />}
 
           {/* which checks failed, with links to the runs */}
           <FailingChecks row={row} />
+
+          {/* how a landed PR reached its base branch (explains ff-land closes) */}
+          <LandedDetail row={row} />
 
           {/* The cross-repo dependency DAG for THIS PR, keyed on the row —
               no repo field, no PR field, nothing to re-type.
@@ -550,30 +717,7 @@ function RowDetail({
           )}
         </>
       }
-      history={
-        active ? (
-          <div className="text-[11px] text-muted-foreground space-y-0.5">
-            <p className="m-0">
-              Attempt started {relativeTime(active.created_at)}
-              {typeof active.requeue_count === "number" &&
-                active.requeue_count > 0 && (
-                  <span className="text-orange-200">
-                    {" "}
-                    <RotateCcw className="inline h-3 w-3" /> requeued ×
-                    {active.requeue_count}
-                  </span>
-                )}
-            </p>
-            {earlier.length > 0 && (
-              <p className="m-0">
-                {earlier.length} earlier attempt
-                {earlier.length === 1 ? "" : "s"}:{" "}
-                {earlier.map((a) => a.status).join(", ")}
-              </p>
-            )}
-          </div>
-        ) : null
-      }
+      history={<AttemptHistory row={row} />}
       raw={
         /* raw state for support/debugging — the ONLY place internals show */
         <p className="m-0 font-mono text-[10px] text-muted-foreground/60 break-all">
@@ -633,11 +777,13 @@ function GroupMembers({ row }: { row: PipelineRow }) {
 
 function PipelineRowDisplay({
   row,
+  gateBlock,
   expanded,
   onToggle,
   onActed,
 }: {
   row: PipelineRow;
+  gateBlock: BlastRadiusBlock | null;
   expanded: boolean;
   onToggle: () => void;
   onActed: () => void;
@@ -675,7 +821,7 @@ function PipelineRowDisplay({
       reason={row.status.reason}
       time={<PipelineRowTime row={row} />}
     >
-      <RowDetail row={row} onActed={onActed} />
+      <RowDetail row={row} gateBlock={gateBlock} onActed={onActed} />
       <GroupMembers row={row} />
     </RecordRow>
   );
@@ -801,8 +947,44 @@ export function MergePipeline() {
     [rows, filter, query]
   );
 
+  // The gate join (see gateDecision.ts). Built over EVERY row the page holds,
+  // never the FILTERED ones — `matchesFilter` must not move a decision between
+  // "in a row" and "residue".
+  //
+  // ONE honest caveat, because the obvious stronger claim is false: the tab
+  // does move the boundary, via the DATA rather than the filter. `mergedPrs`
+  // is fetched only while the Merged tab is open (`includeMerged` above — that
+  // read is expensive enough to have taken the API down once), so a decision
+  // on a PR that landed inside the lookback window counts as unlisted on the
+  // other tabs and attaches to its row when Merged is opened. There is no
+  // client-side fix: the rows genuinely have not been fetched. Naming it here
+  // is the alternative to a comment that would read as a guarantee.
+  const gateByPr = useMemo(() => indexGateBlocks(gateBlocks), [gateBlocks]);
+  const presentPrKeys = useMemo(() => {
+    const keys = new Set<string>();
+    for (const r of rows) {
+      if (r.prNumber !== null) keys.add(gateBlockKey(r.repo, r.prNumber));
+      // Insurance, NOT a live requirement — stated precisely because the
+      // plausible-sounding version ("without this, a group's members read as
+      // residue") is false today. `buildPipelineRows` gives every member PR
+      // its OWN single-PR row: a group proposal is keyed by the combined
+      // repo-set key, so the member never consumes its own `singleKey` and
+      // the PR loop emits it independently. Every key this adds, `:prNumber`
+      // above already added. It stays so that a future row model which DOES
+      // fold members into the group row cannot silently strand their gate
+      // decisions.
+      for (const m of r.members ?? []) {
+        if (m.pr) keys.add(gateBlockKey(m.repo.repo, m.pr.pr_number));
+      }
+    }
+    return keys;
+  }, [rows]);
+  const orphanGateBlocks = useMemo(
+    () => unattachedGateBlocks(gateBlocks, presentPrKeys),
+    [gateBlocks, presentPrKeys]
+  );
+
   const showSuggestions = suggestions !== null && suggestions.length > 0;
-  const showGateDecisions = gateBlocks !== null && gateBlocks.length > 0;
 
   return (
     <section className="space-y-3" data-testid="merge-pipeline">
@@ -810,6 +992,8 @@ export function MergePipeline() {
         rows={rows}
         economicsByRepo={economicsByRepo}
         loaded={loaded}
+        gateTotalBlocks={gateTotalBlocks}
+        gateTotalEvals={gateTotalEvals}
         onShowAttention={() => setFilter("attention")}
       />
 
@@ -890,6 +1074,11 @@ export function MergePipeline() {
           renderRow={(row, { expanded, onToggle }) => (
             <PipelineRowDisplay
               row={row}
+              gateBlock={
+                row.prNumber === null
+                  ? null
+                  : (gateByPr.get(gateBlockKey(row.repo, row.prNumber)) ?? null)
+              }
               expanded={expanded}
               onToggle={onToggle}
               onActed={refetch}
@@ -920,34 +1109,94 @@ export function MergePipeline() {
           </div>
         </div>
       )}
-      {showGateDecisions && gateBlocks && (
-        <div data-testid="gate-decisions">
-          <h4 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-2 flex items-center gap-1">
-            <ShieldQuestion className="h-3 w-3" />
-            Gate decisions
-            <GateDecisionCounts
-              totalBlocks={gateTotalBlocks}
-              totalEvals={gateTotalEvals}
-            />
-          </h4>
-          <div className="space-y-2">
-            {gateBlocks.map((b) => (
-              <GateDecisionRow
-                key={`${b.repo}#${b.pr_number}@${b.at}`}
-                block={b}
+      {/* ------------------------------------------------------------------
+          Coord internals — ONE disclosure for everything that is coord state
+          with no PR row on this page to attach it to.
+
+          This replaces both the "Gate decisions" section and the "Merge
+          internals" section. What they had in common, and what nobody had
+          said out loud, is that each was a list of coord records the operator
+          was expected to join to the live list themselves. The records that
+          CAN be joined now are (they are in their rows); what is left here is
+          genuinely unattached, which is a much smaller and much more honest
+          population.
+
+          Collapsed by default and `CollapsiblePanel` unmounts its children,
+          so on a normal day this costs one line of chrome and nothing else.
+          R7's signal rule is satisfied by the summary badges, which stay
+          visible while closed, and by the health strip's `gate holds N`.
+          ------------------------------------------------------------------ */}
+      <CollapsiblePanel
+        storageKey="fleet:coord-internals"
+        defaultOpen={false}
+        icon={<GitMerge className="h-4 w-4" />}
+        title="Coord internals"
+        data-testid="coord-internals"
+        summary={
+          <>
+            {orphanGateBlocks.length > 0 && (
+              <Badge
+                variant="outline"
+                className="ml-2 font-mono text-[10px] normal-case"
+                data-testid="coord-internals-orphan-gates"
+                title="Gate decisions whose PR is not in the list above — closed, or outside the window this page reads."
+              >
+                {orphanGateBlocks.length} unlisted
+              </Badge>
+            )}
+            {proposals && (
+              <Badge
+                variant="outline"
+                className="ml-1 font-mono text-[10px] normal-case text-muted-foreground"
+              >
+                {proposals.length} proposals
+              </Badge>
+            )}
+          </>
+        }
+      >
+        <div className="space-y-4">
+          {/* ---- gate decisions with no row above -------------------------
+              The counts are tenant-wide and belong with the honesty copy that
+              qualifies them, which is why `GateDecisionCounts` stays here
+              rather than following the badge onto the strip: the strip has
+              room for a number and a tooltip, not for the paragraph that says
+              what the number is NOT. */}
+          <div data-testid="gate-decisions">
+            <h4 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-2 flex items-center gap-1">
+              <ShieldQuestion className="h-3 w-3" />
+              Gate decisions
+              <GateDecisionCounts
+                totalBlocks={gateTotalBlocks}
+                totalEvals={gateTotalEvals}
               />
-            ))}
-            {/* What this list IS, said once rather than left to be inferred.
-                Coord's Phase 2 (plan 2026-08-20-predicate-eval-surface-counts-
-                evals-not-decisions) returns the newest row per PR, so the
-                population became "PRs the gate has held inside coord's
+            </h4>
+            {orphanGateBlocks.length > 0 ? (
+              <div className="space-y-2">
+                {orphanGateBlocks.map((b) => (
+                  <GateDecisionRow
+                    key={`${b.repo}#${b.pr_number}@${b.at}`}
+                    block={b}
+                  />
+                ))}
+              </div>
+            ) : (
+              <p className="text-[11px] text-muted-foreground m-0">
+                Every gate decision coord returned belongs to a PR in the list
+                above, and is shown inside that PR&rsquo;s row.
+              </p>
+            )}
+            {/* What these records ARE, said once rather than left to be
+                inferred. Coord's Phase 2 (plan 2026-08-20-predicate-eval-
+                surface-counts-evals-not-decisions) returns the newest row per
+                PR, so the population is "PRs the gate has held inside coord's
                 retention window" — a PR unblocked weeks ago still appears,
                 carrying its own last-seen timestamp. A row is an audit record
                 of a decision, NOT an assertion that the PR is held right now,
                 and that was already true of the pre-Phase-2 raw-row list. So
                 this is stated unconditionally: unlike the header counts, it
                 does not depend on which coord is answering. */}
-            <p className="text-[11px] text-muted-foreground pt-1">
+            <p className="text-[11px] text-muted-foreground pt-1 m-0">
               Coverage labels reflect how complete the code graph was when the
               gate ran — a degraded decision is never authoritative. Each row is
               the most recent time the gate reached that decision, within
@@ -955,45 +1204,53 @@ export function MergePipeline() {
               still held.
             </p>
           </div>
-        </div>
-      )}
 
-      {/* raw scheduler stream, for maintainers — collapsed by default */}
-      <CollapsiblePanel
-        storageKey="fleet:merge-internals"
-        defaultOpen={false}
-        icon={<GitMerge className="h-4 w-4" />}
-        title="Merge internals"
-        summary={
-          proposals && (
-            <Badge variant="outline" className="ml-2 font-mono text-xs">
-              {proposals.length} proposals
-            </Badge>
-          )
-        }
-      >
-        {/* The cross-repo dependency DAG used to be linked from here by a
-            `#merge-dep-graph` anchor into a standalone panel that then asked
-            for the repo and PR number by hand. It lives in each row's own
-            expansion now, keyed on that row (Phase 4 of
-            `2026-08-25-coord-console-intent-and-devops-sections`). */}
-        <p className="text-[11px] text-muted-foreground mb-2">
-          Raw scheduler proposals, one per attempt (the unified list above
-          collapses these per PR). A PR&rsquo;s cross-repo dependency DAG is in
-          that PR&rsquo;s own row — expand the row and open &ldquo;Cross-repo PR
-          dependency graph&rdquo;.
-        </p>
-        {proposals && proposals.length > 0 ? (
-          <div className="space-y-2">
-            {proposals.map((p) => (
-              <MergeTrainRow key={p.proposal_id} proposal={p} />
-            ))}
-          </div>
-        ) : (
-          <p className="text-xs text-muted-foreground">
-            No in-flight proposals.
-          </p>
-        )}
+          {/* ---- the raw scheduler stream --------------------------------
+              Kept, and nested one level deeper, because deleting a
+              maintainer's escape hatch to make a page tidier is a trade the
+              page does not get to make on their behalf. What changed is its
+              RANK: it is no longer a top-level section competing with the live
+              list, because every proposal it shows is already a row up there
+              (`buildPipelineRows` emits proposal-only rows too) and every
+              attempt is in that row's history. Nested + collapsed means it is
+              unmounted unless someone deliberately asks for it. */}
+          <CollapsiblePanel
+            titleAs="h3"
+            storageKey="fleet:raw-proposals"
+            defaultOpen={false}
+            title="Raw scheduler proposals"
+            data-testid="raw-proposals"
+            summary={
+              proposals && (
+                <Badge
+                  variant="outline"
+                  className="ml-2 font-mono text-[10px] normal-case"
+                >
+                  {proposals.length}
+                </Badge>
+              )
+            }
+          >
+            <p className="text-[11px] text-muted-foreground mb-2 m-0">
+              One entry per attempt, flat and in scheduler vocabulary. The list
+              above already collapses these per PR, and a PR&rsquo;s own
+              attempts — with their errors and requeue counts — are in that
+              row&rsquo;s detail; this is the cross-PR ordering, for reading
+              what the scheduler did rather than what happened to one PR.
+            </p>
+            {proposals && proposals.length > 0 ? (
+              <div className="space-y-2">
+                {proposals.map((p) => (
+                  <MergeTrainRow key={p.proposal_id} proposal={p} />
+                ))}
+              </div>
+            ) : (
+              <p className="text-xs text-muted-foreground m-0">
+                No in-flight proposals.
+              </p>
+            )}
+          </CollapsiblePanel>
+        </div>
       </CollapsiblePanel>
     </section>
   );
