@@ -93,8 +93,11 @@ Phase 2 arm ships omits all nine.
 ``peak_mem_used_mb`` is SYSTEM-WIDE, not a process
 ==================================================
 
-The sampler contains no ``ps``, no ``/proc/<pid>/status`` and no cgroup read: it
-is ``free -m`` plus ``df -m /`` and nothing else. The 13.4/14.3/15.2 GB rustc
+The sampler contains no ``ps``, no ``/proc/<pid>/status`` and no cgroup read:
+its memory and disk readings are ``free -m`` plus ``df -m /``, and its only
+other ``/proc`` read is ``/proc/sys/kernel/osrelease`` for WSL lane detection,
+which measures nothing. So no per-process resident set is sampled anywhere in
+this pipeline. The 13.4/14.3/15.2 GB rustc
 figures in the dossier come from a separate hand method on a developer box, not
 from CI. This column is named ``peak_mem_used_mb`` rather than ``peak_rss_mb``
 so that no consumer can read it as a process's resident set, and the COMMENT
@@ -333,8 +336,11 @@ def upgrade() -> None:
             'MEGABYTES, from free -m over the whole runner. This is NOT a '
             'process resident set and must never be read as one. '
             'resource-sampler.sh contains no ps, no /proc/<pid>/status and no '
-            'cgroup read - it is free -m plus df -m / and nothing else - so '
-            'per-process rustc RSS is never sampled by this pipeline at all. '
+            'cgroup read - its memory and disk readings are free -m plus '
+            'df -m /, and its only other /proc read is '
+            '/proc/sys/kernel/osrelease for WSL lane detection, which measures '
+            'nothing - so per-process rustc RSS is never sampled by this '
+            'pipeline at all. '
             'The 13422 / 14264 / 15209 MB rustc figures in the '
             'coord-ci-memory-cliff dossier come from a separate hand method '
             'run on a developer box against origin/main, and must not be '
@@ -421,8 +427,12 @@ def upgrade() -> None:
             'the vocabulary is open, ingest is best-effort, and a CHECK '
             'violation would fail the whole UPSERT and discard the timing, '
             'conclusion and outcome of the job over a provenance label. Adding '
-            'a class stays a Rust PR rather than a migration. Validated '
-            'app-side at the door.'
+            'a class stays a Rust PR rather than a migration. The writer that '
+            'will populate it is coord Phase 2 of plan '
+            '2026-09-20-ci-memory-headroom-in-the-dev-ops-console, which has '
+            'not shipped as of this revision; validation of the label will be '
+            'app-side at that door when it does. Until then this column is '
+            'NULL on every row, which is UNKNOWN and not an empty vocabulary.'
         """
     )
 

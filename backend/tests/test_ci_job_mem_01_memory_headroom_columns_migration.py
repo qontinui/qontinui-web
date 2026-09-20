@@ -114,6 +114,16 @@ _TABLE = "ci_job_observations"
 # spellings. `ADD COLUMN IF NOT EXISTS` matches on NAME alone, so a column of
 # the right name and the wrong type is a silent no-op here and a panic in
 # coord's `row.get` — this table is the only place that can fail loudly.
+# DDL spelling -> the `information_schema.columns.data_type` spelling Postgres
+# reports for it. Small on purpose: it covers exactly the types this revision
+# uses, and a type added without an entry here fails loudly in the seam test
+# rather than silently comparing unequal.
+_INFORMATION_SCHEMA_TYPE: dict[str, str] = {
+    "INTEGER": "integer",
+    "BIGINT": "bigint",
+    "TEXT": "text",
+}
+
 _EXPECTED: tuple[tuple[str, str], ...] = (
     ("peak_swap_used_mb", "integer"),
     ("swap_total_mb", "integer"),
@@ -164,25 +174,39 @@ _NEVER_ZERO_COLUMNS: tuple[str, ...] = (
     "resource_span_secs",
 )
 
-# The latest measured green main run of coord-db-tests (run 34714587244),
-# written as coord's Phase 2 arm will write it.
+# The latest measured green main run of coord-db-tests, written as coord's
+# Phase 2 arm will write it. EVERY value below was reduced from that run's OWN
+# job log — `gh api repos/qontinui/qontinui-coord/actions/jobs/103609425712/logs`
+# (run 34714587244, workflow CI, branch main, conclusion success, 2026-09-12),
+# 77 `[sample]` lines — and NOT from the illustrative sample line that appears
+# in the sampler's own documentation. An earlier draft of this block mixed the
+# two, which is the exact defect class this revision exists to close: a value
+# presented as measured whose provenance cannot carry it. Anything not in that
+# reduction is absent here rather than invented.
 #
 # `mem_total_mb` is None on purpose and is the most load-bearing value here:
 # resource-sampler.sh never reads `total` off free's `Mem:` row, so there is no
 # `mem_total=` key in the wire format and memory headroom is not computable.
 # NULL is how the schema says that, on a row where every other reading arrived.
 #
-# The arithmetic is the point of the other two: 7981/12288 = 64.9% of the job's
-# own swap ceiling, and a 194 MB floor. The plan's proposed bands put that run
-# in `breach` on a run GitHub reported GREEN, which is the whole claim this
-# surface has to be able to make.
+# `min_disk_avail_mb` is None for a duller reason worth stating: the reduction
+# above did not carry a disk floor, so the honest value is UNKNOWN. A plausible
+# number copied from the documentation's example line would have been fiction.
+#
+# The arithmetic is the point of the rest, and the ceiling is where it bites:
+# 7981/12287 = 64.95%. NOT /12288 — `fallocate -l 12G` yields 12,288 MiB and
+# `mkswap` spends one page on the swap header, so `free -m` reports 12287. A
+# band or fixture pinned to the round number is wrong on day one, which is why
+# `swap_total_mb` is stored per row instead of assumed. With a 194 MB floor,
+# the plan's bands put this run in `breach` on a run GitHub reported GREEN —
+# the whole claim this surface has to be able to make.
 _GREEN_RUN_PEAK_SWAP_MB = 7_981
-_GREEN_RUN_SWAP_TOTAL_MB = 12_288
+_GREEN_RUN_SWAP_TOTAL_MB = 12_287
 _GREEN_RUN_MIN_MEM_AVAIL_MB = 194
-_GREEN_RUN_PEAK_MEM_USED_MB = 5_210
-_GREEN_RUN_MIN_DISK_AVAIL_MB = 31_204
-_GREEN_RUN_SAMPLE_COUNT = 71
-_GREEN_RUN_SPAN_SECS = 1_400
+_GREEN_RUN_PEAK_MEM_USED_MB = 7_743
+_GREEN_RUN_MIN_DISK_AVAIL_MB = None
+_GREEN_RUN_SAMPLE_COUNT = 77
+_GREEN_RUN_SPAN_SECS = 1_520
 
 
 # ---------------------------------------------------------------------------
@@ -266,14 +290,37 @@ def test_the_two_column_tables_describe_the_same_nine() -> None:
     A tenth column would therefore fail the revision-list guard, be fixed by
     extending `_EXPECTED_DDL` alone, and then ship a column no walk in this file
     ever looked at — present, removed and round-tripped by the revision, and
-    unchecked for type, nullability or default. This is a name-level pin only:
-    the type SPELLINGS differ on purpose (``INTEGER`` in DDL, ``integer`` in
-    ``information_schema``).
+    unchecked for type, nullability or default.
+
+    It pins the TYPE as well as the name. The two spellings differ on purpose
+    (``INTEGER`` in DDL, ``integer`` in ``information_schema``), so the compare
+    goes through [`_INFORMATION_SCHEMA_TYPE`] rather than string equality.
+    Without that, a type widened in ``_MEMORY_COLUMNS`` and ``_EXPECTED_DDL``
+    together while ``_EXPECTED`` stayed at ``integer`` would be caught only by
+    the live-schema walk — i.e. only when a Postgres is reachable — so the drift
+    would ship green from a database-less CI run.
     """
     assert [name for name, _ in _EXPECTED] == [name for name, _ in _EXPECTED_DDL], (
         "the catalogue table and the DDL table list different columns; every "
         "live-schema walk below iterates the FORMER, so a column present only "
         "in the latter is added by the revision and asserted about by nothing"
+    )
+
+    unmapped = sorted(
+        {ddl_type for _, ddl_type in _EXPECTED_DDL} - set(_INFORMATION_SCHEMA_TYPE)
+    )
+    assert not unmapped, (
+        f"no information_schema spelling is mapped for {unmapped}; add it to "
+        "_INFORMATION_SCHEMA_TYPE so the type pin below can compare it, rather "
+        "than leaving the type unchecked in a database-less run"
+    )
+    assert [
+        (name, _INFORMATION_SCHEMA_TYPE[ddl_type]) for name, ddl_type in _EXPECTED_DDL
+    ] == list(_EXPECTED), (
+        "the catalogue table and the DDL table disagree about a column's TYPE. "
+        "Only the live-schema walk would otherwise catch that, and it skips "
+        "without a Postgres — so the drift ships green from a database-less CI "
+        "run"
     )
 
 
@@ -344,7 +391,7 @@ def test_every_comment_says_null_is_unknown_and_never_zero() -> None:
         )
 
 
-def test_the_system_wide_and_no_denominator_warnings_are_in_the_database() -> None:
+def test_the_system_wide_and_no_denominator_warnings_are_in_the_comments() -> None:
     """Two facts a consumer gets wrong by default, pinned into the COMMENTs.
 
     `peak_mem_used_mb` is `free -m` over the whole runner. The sampler has no
@@ -437,6 +484,19 @@ def test_the_downgrade_helper_is_reachable_only_from_downgrade() -> None:
     assert "_drop_columns" in source[downgrade_start:], (
         "downgrade() no longer calls _drop_columns, so the nine columns it "
         "added are not removed"
+    )
+    # The span scan above cannot see a call from `_add_columns` into
+    # `_drop_columns`: both are defined ABOVE `upgrade()`, so such a call lies
+    # outside [upgrade_start, downgrade_start) and would pass while making the
+    # helper reachable from the upgrade path — precisely what reds the required
+    # `coord-column-drop-guard` check. Counting closes that: the only two
+    # mentions in the whole module are the `def` and the one call in
+    # `downgrade()`.
+    assert source.count("_drop_columns") == 2, (
+        f"_drop_columns is mentioned {source.count('_drop_columns')} times; "
+        "exactly two are expected (its `def`, and the single call in "
+        "downgrade()). A third mention may make it reachable from the upgrade "
+        "path even when the span scan above passes"
     )
 
 
