@@ -11,7 +11,10 @@
  *   the reader can choose to open instead.
  */
 
+import React from "react";
 import ReactMarkdown, { type Components } from "react-markdown";
+
+type HeadingTag = "h1" | "h2" | "h3" | "h4" | "h5" | "h6";
 import remarkGfm from "remark-gfm";
 import { cn } from "@/lib/utils";
 
@@ -43,24 +46,51 @@ const components: Components = {
 export function MarkdownView({
   children,
   className,
+  headingOffset = 0,
 }: {
   children: string;
   className?: string;
+  /**
+   * Push the document's own heading levels down by this much, so an embedded
+   * document's `##` sits under the page's heading for it instead of
+   * out-ranking it. Screen readers and the document outline both read the
+   * result as one hierarchy rather than two interleaved ones.
+   */
+  headingOffset?: number;
 }) {
+  const shifted: Components | undefined =
+    headingOffset > 0
+      ? Object.fromEntries(
+          ([1, 2, 3, 4, 5] as const).map((level) => {
+            const tag = `h${Math.min(level + headingOffset, 6)}` as HeadingTag;
+            const Shifted = ({
+              children: inner,
+            }: {
+              children?: React.ReactNode;
+            }) => React.createElement(tag, null, inner);
+            Shifted.displayName = `ShiftedH${level}`;
+            return [`h${level}`, Shifted];
+          })
+        )
+      : undefined;
   return (
     <div
       className={cn(
         "prose prose-invert max-w-none",
         "prose-p:text-[15px] prose-p:leading-[1.7] prose-li:text-[15px] prose-li:leading-[1.7]",
         "prose-headings:font-[family-name:var(--font-overview-serif)] prose-headings:font-medium prose-headings:tracking-[-0.005em]",
-        "prose-h1:text-2xl prose-h2:text-xl prose-h3:text-lg",
+        "prose-h1:text-2xl prose-h2:text-xl prose-h3:text-lg prose-h4:text-[1.05rem] prose-h5:text-base prose-h6:text-base",
+        "prose-h4:mt-6 prose-h4:mb-1.5 prose-h5:mt-5 prose-h5:mb-1",
         "prose-a:text-primary prose-a:no-underline hover:prose-a:underline",
         "prose-table:text-sm prose-th:text-left prose-th:font-medium",
         "prose-strong:text-foreground prose-code:before:content-none prose-code:after:content-none",
         className
       )}
     >
-      <ReactMarkdown remarkPlugins={[remarkGfm]} components={components}>
+      <ReactMarkdown
+        remarkPlugins={[remarkGfm]}
+        components={{ ...components, ...shifted }}
+      >
         {children}
       </ReactMarkdown>
     </div>

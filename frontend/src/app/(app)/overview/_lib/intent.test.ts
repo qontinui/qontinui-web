@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
+  bodyWithoutLeadHeading,
   classifyIntent,
+  sortIntentEntries,
+  titleOfDocument,
   hasContent,
   skeletonEntry,
   stripFrontmatter,
@@ -123,5 +126,82 @@ describe("hasContent", () => {
     const entry = unreadableEntry(summary, "GET /x failed: 502 - {}");
     expect(hasContent(entry)).toBe(true);
     expect(entry.error).toContain("502");
+  });
+});
+
+describe("titleOfDocument", () => {
+  it("takes the document's own opening heading, not its description", () => {
+    expect(
+      titleOfDocument(
+        "vision",
+        "---\nsubject: Qontinui\n---\n\n# Vision — the autonomy ratchet\n\nBody."
+      )
+    ).toBe("Vision — the autonomy ratchet");
+  });
+
+  it("reads a slug as words when the body opens with none", () => {
+    expect(titleOfDocument("non-goals", "Just prose, no heading.")).toBe(
+      "Non goals"
+    );
+    expect(titleOfDocument("current-initiative", "")).toBe(
+      "Current initiative"
+    );
+  });
+
+  it("accepts a heading that follows opening prose", () => {
+    expect(
+      titleOfDocument("x", "Opening prose.\n\n## A section\n\nMore.")
+    ).toBe("A section");
+  });
+});
+
+describe("bodyWithoutLeadHeading", () => {
+  it("removes the heading the page now renders itself", () => {
+    const body = "---\na: b\n---\n\n# Vision\n\n## What it is for\n\nText.";
+    expect(bodyWithoutLeadHeading(body)).toBe("## What it is for\n\nText.");
+  });
+
+  it("leaves a body that opens with prose alone", () => {
+    expect(bodyWithoutLeadHeading("Prose first.\n\n# Later heading")).toBe(
+      "Prose first.\n\n# Later heading"
+    );
+  });
+});
+
+describe("sortIntentEntries", () => {
+  const entry = (kind: string, name: string, title: string) =>
+    ({
+      kind,
+      name,
+      title,
+      description: null,
+      state: "authored",
+      body: "x",
+      updatedAt: null,
+    }) as never;
+
+  it("puts the vision first, which coord's alphabetical order did not", () => {
+    // The live corpus: coord lists non-goals, open-questions, vision.
+    const sorted = sortIntentEntries([
+      entry("product_intent", "non-goals", "Non-goals"),
+      entry("product_intent", "open-questions", "Open questions"),
+      entry("product_intent", "vision", "Vision — the autonomy ratchet"),
+    ]);
+    expect(sorted.map((e) => e.name)).toEqual([
+      "vision",
+      "non-goals",
+      "open-questions",
+    ]);
+  });
+
+  it("sorts unlisted documents after listed ones, by title", () => {
+    const sorted = sortIntentEntries([
+      entry("audience_profile", "z-team", "The operating team"),
+      entry("audience_profile", "a-agent", "The AI development agent"),
+    ]);
+    expect(sorted.map((e) => e.title)).toEqual([
+      "The AI development agent",
+      "The operating team",
+    ]);
   });
 });
