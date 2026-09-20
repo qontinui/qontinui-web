@@ -9608,10 +9608,13 @@ async def publish_all_prompt_documents(
 
     Body: ``{release_note?, items?, dry_run?}``.
 
-    * ``dry_run`` defaults to ``true`` SERVER-SIDE (coord's default, matching
-      ``/publish`` and ``/reconcile``). It is forwarded only when the caller
-      names it, so the safe default is coord's one rather than a second copy of
-      it here that could drift the other way.
+    * ``dry_run`` defaults to ``true`` SERVER-SIDE, which is the OPPOSITE of
+      the single-document ``/publish`` default. It is forwarded only when the
+      caller names it, so the safe default stays coord's rather than a second
+      copy here that could drift the other way — and note that an explicit
+      ``false`` IS forwarded: the guard below is ``is not None``, not a
+      truthiness test, because ``dry_run: false`` is the whole armed run and a
+      falsy-drop would turn every publication into a silent preview.
     * ``items`` is the armed run's list, ``[{kind, name, expected_version}]``.
       Each ``expected_version`` is the optimistic-lock guard, and it must be the
       version the DRY RUN returned: a document edited between the preview and

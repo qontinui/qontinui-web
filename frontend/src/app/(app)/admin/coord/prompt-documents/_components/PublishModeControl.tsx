@@ -102,6 +102,16 @@ interface PublishModeControlProps {
   /** True while any document write is in flight — disables the picker. */
   saving: boolean;
   /**
+   * What the auto-publisher WILL set on its first pass over this document,
+   * from coord's status read. Only ever present while the mode is undecided.
+   *
+   * Never derived here. Coord decides it from its carve-out predicate and its
+   * five lint patterns, and a browser copy of either would name the wrong
+   * default with total confidence the day one changes — the same reason
+   * `agent_write_source` is computed server-side.
+   */
+  undecidedDefault?: string | null;
+  /**
    * Set this document's mode. Resolves `true` when coord accepted it.
    *
    * Takes only the mode: the `(kind, name)` address and the change note are the
@@ -126,7 +136,10 @@ function resolve(doc: PromptDocumentSummary): Resolved {
   return { state: "unknown", raw };
 }
 
-function describe(resolved: Resolved): {
+function describe(
+  resolved: Resolved,
+  undecidedDefault?: string | null
+): {
   label: string;
   variant: "secondary" | "outline" | "success" | "warning";
   title: string;
@@ -135,8 +148,13 @@ function describe(resolved: Resolved): {
     return {
       label: "Publish: undecided",
       variant: "outline",
-      title:
-        "Nobody has ruled on whether this document may distribute itself. Coord's first auto-publisher pass will decide — manual if the body carries fleet-specific tokens or the document is one the fleet never overwrites, auto otherwise — and tell you which. Set it here to decide it yourself instead.",
+      title: undecidedDefault
+        ? // Coord named the answer, so say it. "Something will be decided" and
+          // "`auto` will be set" are different facts, and only the second one
+          // tells an operator whether they need to intervene before the next
+          // worker pass — which is the only moment intervening is cheap.
+          `Nobody has ruled on whether this document may distribute itself. Coord's first auto-publisher pass will set it to "${undecidedDefault}" and tell you. Set it here to decide it yourself instead.`
+        : "Nobody has ruled on whether this document may distribute itself. Coord's first auto-publisher pass will decide — manual if the body carries fleet-specific tokens or the document is one the fleet never overwrites, auto otherwise — and tell you which. Set it here to decide it yourself instead.",
     };
   }
   if (resolved.state === "unknown") {
@@ -156,12 +174,13 @@ function describe(resolved: Resolved): {
 export function PublishModeControl({
   doc,
   saving,
+  undecidedDefault,
   onSet,
 }: PublishModeControlProps) {
   /** The mode awaiting confirmation, or `null` when nothing is pending. */
   const [pending, setPending] = useState<PublishMode | null>(null);
   const resolved = resolve(doc);
-  const { label, variant, title } = describe(resolved);
+  const { label, variant, title } = describe(resolved, undecidedDefault);
 
   const choose = (mode: PublishMode) => {
     if (PUBLISH_MODE_CONFIRMED.includes(mode)) {
@@ -220,8 +239,12 @@ export function PublishModeControl({
             <>
               <DropdownMenuSeparator />
               <DropdownMenuLabel className="text-xs font-normal text-muted-foreground">
-                Nobody has ruled on this document yet. There is no way back to
-                undecided once you choose — coord has no encoding for it.
+                Nobody has ruled on this document yet.
+                {undecidedDefault
+                  ? ` Coord's next auto-publisher pass will set it to "${undecidedDefault}".`
+                  : ""}{" "}
+                There is no way back to undecided once you choose — coord has no
+                encoding for it.
               </DropdownMenuLabel>
             </>
           ) : null}

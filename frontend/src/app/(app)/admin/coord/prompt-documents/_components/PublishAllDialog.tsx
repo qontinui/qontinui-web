@@ -17,12 +17,29 @@ import {
   PUBLICATION_LINT_CATEGORY_LABEL,
   type PublishAllArmedResponse,
   type PublishAllCandidate,
-  type PublishAllResult,
 } from "../types";
 
 /** `kind/name` — the key every map and checkbox in this dialog is keyed on. */
 function addressOf(c: { kind: string; name: string }): string {
   return `${c.kind}/${c.name}`;
+}
+
+/**
+ * The change notes since the last publication, as one line.
+ *
+ * Coord serves `versions_since_publication` as VERSION ROWS, not as notes —
+ * `[{version_number, change_note, edited_by, created_at, loosening?}]`. The
+ * note is one nullable field of each row, so the mapping is explicit here
+ * rather than a `join` over the array: a row saved without a note is ordinary,
+ * and joining the raw objects (or their nulls) would print `[object Object]`
+ * or the word "null" in the one place an operator reads what they are about to
+ * send to every tenant.
+ */
+function changeNotesOf(candidate: PublishAllCandidate): string {
+  return (candidate.versions_since_publication ?? [])
+    .map((v) => v.change_note)
+    .filter((note): note is string => typeof note === "string" && note !== "")
+    .join(" · ");
 }
 
 interface PublishAllDialogProps {
@@ -101,7 +118,7 @@ export function PublishAllDialog({
 }: PublishAllDialogProps) {
   const [releaseNote, setReleaseNote] = useState("");
   const [excluded, setExcluded] = useState<Set<string>>(new Set());
-  const [results, setResults] = useState<PublishAllResult[] | null>(null);
+  const [armed, setArmed] = useState<PublishAllArmedResponse | null>(null);
   const candidates = useMemo(() => preview ?? [], [preview]);
 
   // A re-open starts clean. A release note left over from the previous batch
@@ -111,7 +128,7 @@ export function PublishAllDialog({
   useEffect(() => {
     setReleaseNote("");
     setExcluded(new Set());
-    setResults(null);
+    setArmed(null);
   }, [open, candidates]);
 
   const withLint = useMemo(
@@ -135,7 +152,7 @@ export function PublishAllDialog({
 
   const confirm = async () => {
     const res = await onPublishAll(selected, releaseNote);
-    if (res) setResults(res.results ?? []);
+    if (res) setArmed(res);
   };
 
   return (
@@ -150,7 +167,7 @@ export function PublishAllDialog({
             Publish all changed
           </DialogTitle>
           <DialogDescription>
-            {results !== null
+            {armed !== null
               ? "What shipped, item by item."
               : preview === null
                 ? "Reading which documents have changed…"
@@ -179,8 +196,8 @@ export function PublishAllDialog({
             </p>
           </div>
 
-          {results !== null ? (
-            <PublishAllResults results={results} />
+          {armed !== null ? (
+            <PublishAllResults armed={armed} />
           ) : preview === null ? (
             <p
               className="flex items-center gap-2 py-6 text-sm text-muted-foreground"
@@ -294,9 +311,9 @@ export function PublishAllDialog({
                             ? ` · mode ${candidate.publish_mode}`
                             : " · mode undecided"}
                         </p>
-                        {(candidate.change_notes ?? []).length > 0 ? (
+                        {changeNotesOf(candidate) ? (
                           <p className="mt-0.5 truncate text-xs italic text-muted-foreground">
-                            {(candidate.change_notes ?? []).join(" · ")}
+                            {changeNotesOf(candidate)}
                           </p>
                         ) : null}
                       </div>
@@ -332,9 +349,9 @@ export function PublishAllDialog({
 
         <div className="flex shrink-0 items-center justify-end gap-2 pt-2">
           <Button variant="outline" onClick={() => onOpenChange(false)}>
-            {results === null ? "Cancel" : "Close"}
+            {armed === null ? "Cancel" : "Close"}
           </Button>
-          {results === null && (
+          {armed === null && (
             <Button
               disabled={publishing || previewing || selected.length === 0}
               onClick={confirm}
@@ -360,7 +377,8 @@ export function PublishAllDialog({
  * outcomes are coord's own vocabulary and an unrecognized one renders as
  * itself — a release that adds an outcome must not show as blank.
  */
-function PublishAllResults({ results }: { results: PublishAllResult[] }) {
+function PublishAllResults({ armed }: { armed: PublishAllArmedResponse }) {
+  const results = armed.results ?? [];
   const published = results.filter((r) => r.outcome === "published");
   const failed = results.filter((r) => r.outcome !== "published");
   return (
@@ -377,6 +395,24 @@ function PublishAllResults({ results }: { results: PublishAllResult[] }) {
           "."
         )}
       </p>
+      {/*
+        Whether the fleet fan-out started. A batch that published nothing and a
+        batch whose fan-out was lost look identical from outside — and the lost
+        one logs nothing at all, which is the gap the daily recovery reconcile
+        exists to close. Saying which happened costs one line.
+      */}
+      {armed.fan_out ? (
+        <p
+          className="text-xs text-muted-foreground"
+          data-testid="publish-all-fan-out"
+        >
+          {armed.fan_out === "spawned"
+            ? "Distribution to the fleet has started. Each tenant takes the publication, is offered it, or queues it as a proposal, by its own upstream dial."
+            : armed.fan_out === "skipped_nothing_published"
+              ? "No fan-out ran, because nothing published. That is the expected answer here, not a lost distribution."
+              : `Fan-out: ${armed.fan_out}.`}
+        </p>
+      ) : null}
       <ul className="space-y-1.5">
         {results.map((result) => (
           <li

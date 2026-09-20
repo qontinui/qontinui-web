@@ -1090,6 +1090,36 @@ class TestPublishAllPromptDocuments:
             {"kind": "policy", "name": "ux-priorities", "expected_version": 4},
         ]
 
+    def test_explicit_dry_run_false_is_forwarded_not_dropped(
+        self, auth_client: TestClient
+    ):
+        """``dry_run: false`` is the whole armed run, and it is FALSY.
+
+        On publish-all ``dry_run`` defaults to **true** server-side — the
+        opposite of the single-document ``/publish``, whose default is false.
+        So a proxy that filtered its allowlist on truthiness rather than on
+        ``is not None`` would drop the one field that turns a preview into a
+        publication, and coord would answer a cheerful dry-run envelope for a
+        click that published nothing. That is a silent no-op on the button
+        whose entire job is to ship the corpus in one go, and nothing
+        downstream would report it.
+        """
+        with _patch_httpx() as MockClient:
+            instance = AsyncMock()
+            instance.post.return_value = _mock_response(
+                json_data={"dry_run": False, "published": 0, "results": []}
+            )
+            _configure_mock_client(MockClient, instance)
+
+            auth_client.post(
+                f"{API_PREFIX}/coord/prompt-documents/publish-all",
+                json={"dry_run": False, "items": []},
+            )
+
+        sent = instance.post.call_args.kwargs["json"]
+        assert "dry_run" in sent, "an explicit dry_run=False must survive the allowlist"
+        assert sent["dry_run"] is False
+
     def test_publisher_identity_is_never_taken_from_the_browser(
         self, auth_client: TestClient
     ):
