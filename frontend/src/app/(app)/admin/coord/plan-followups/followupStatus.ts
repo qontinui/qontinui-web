@@ -18,8 +18,13 @@
  * 1. **`note` is the whole payload.** With no far end there is nowhere else
  *    for the finding to live, which is why the schema requires it non-blank.
  *    A surface that truncates it to a headline destroys the only copy of the
- *    finding that is queryable at all. {@link noteIsTruncatable} exists to be
- *    a place this is written down, and its answer is always `false`.
+ *    finding that is queryable at all. The invariant is PINNED by
+ *    `page.test.tsx` — *"renders the whole note, never a headline"* — which
+ *    asserts the rendered text against a note long enough that truncation
+ *    would show. It used to be "written down" as a `noteIsTruncatable()`
+ *    returning a literal `false`, with a test asserting that literal: a
+ *    tautology no render path called, which could not fail and therefore
+ *    guarded nothing.
  * 2. **Open only, and "open" is not "undone".** A claimed follow-up becomes an
  *    ordinary two-ended edge and drops out of this list — *but it is not
  *    deleted*, and it stays on the originating artifact's edge list. So an
@@ -57,19 +62,6 @@ export interface OpenFollowupResponse {
   limit?: number;
   /** Declared by the route: `"oldest_first"`. */
   ordering?: string;
-}
-
-/**
- * May a surface shorten `note`?
- *
- * No, and this function exists so the answer is a thing a reader can find
- * rather than a convention a redesign quietly drops. The finding has no other
- * home: there is no far-end artifact holding the detail, and the plan body it
- * came from is prose the data cannot be recovered from. A "… more" link on
- * this field would put the product back where it was before the route existed.
- */
-export function noteIsTruncatable(): false {
-  return false;
 }
 
 export interface FollowupWindow {
@@ -159,14 +151,31 @@ export function deriveFollowupHealth(
   }
   const total = res.total;
   const items = res.items ?? [];
-  // Oldest first is declared, so the first row IS the oldest — but only when
-  // this page sits at the head of the queue.
+  const ordering = typeof res.ordering === "string" ? res.ordering : null;
+  /**
+   * "The first row is the oldest" is warranted by the route's DECLARED
+   * ordering, so it is withdrawn whenever that declaration is not the one
+   * this build expects — the same predicate `describeFollowupWindow` exposes
+   * as `orderingUnexpected`, and which the page already renders as *"nothing
+   * here warrants reading the first row as the oldest"*. Without this the
+   * strip went on publishing `oldest 2d` while the paragraph underneath it
+   * retracted the claim: one half of the page contradicting the other.
+   *
+   * An ABSENT ordering is not a changed one (the window agrees), so it keeps
+   * the reading — the route has always declared `oldest_first` and a build
+   * that omits the field has said nothing against it.
+   */
+  const orderingWarrantsOldest =
+    ordering === null || ordering === EXPECTED_ORDERING;
   const oldest =
-    (res.offset ?? 0) === 0 && items.length > 0
+    orderingWarrantsOldest && (res.offset ?? 0) === 0 && items.length > 0
       ? (items[0]?.age_days ?? null)
       : null;
   return {
-    level: "green",
+    // Finding 13's shape: a failed refresh is not green. The detail already
+    // said the counts were stale while the colour said everything was fine,
+    // and the colour is what gets read.
+    level: readFailed ? "amber" : "green",
     headline:
       typeof total === "number"
         ? total === 0
@@ -192,7 +201,9 @@ export function deriveFollowupHealth(
         tone: "default",
         title:
           oldest === null
-            ? "The oldest row is only on the first page, so it is not measured from here."
+            ? orderingWarrantsOldest
+              ? "The oldest row is only on the first page, so it is not measured from here."
+              : `The route declared its ordering as "${ordering}", not ${EXPECTED_ORDERING}, so nothing warrants reading the first row as the oldest.`
             : "Days since the follow-up was recorded. An old unowned follow-up is work the fleet has known about and repeatedly not picked up.",
       },
     ],

@@ -185,6 +185,51 @@ describe("a clean read is a measurement; a failed one is not", () => {
     expect(census.kindForkTotal).toBeNull();
   });
 
+  it("does NOT say 'no fork' over a list that returned one", () => {
+    // `?? 0` on an unserved `total` turned UNKNOWN into a measured zero, and
+    // the strip then contradicted its own page: "No fork in what this read
+    // returned" printed above a list rendering that very fork.
+    const census = deriveForkCensus({ groups: RESPONSE.groups });
+    expect(census.contentTotal).toBeNull();
+    expect(census.groups).toHaveLength(1);
+
+    const health = deriveForkHealth(census, true, false);
+    expect(health.headline).not.toMatch(/No fork/i);
+    expect(health.headline).toMatch(/only a person can settle it/i);
+    expect(health.level).toBe("red");
+    // The COUNT is still unknown — the rows answer presence, not how many.
+    expect(health.badges.find((b) => b.key === "content")?.label).toBe(
+      "content forks –"
+    );
+    expect(health.detail).toMatch(/served no total/i);
+  });
+
+  it("does not say 'kind forks only — the scanner can heal' over an unserved kind total", () => {
+    const census = deriveForkCensus({
+      groups: [],
+      total: 0,
+      kind_forks: [{ ...RESPONSE.kind_forks![0], resolvable: true }],
+    });
+    expect(census.kindForkTotal).toBeNull();
+    const health = deriveForkHealth(census, true, false);
+    expect(health.headline).toMatch(/scanner can heal/i);
+    expect(health.badges.find((b) => b.key === "kind")?.label).toBe(
+      "kind forks –"
+    );
+  });
+
+  it("is not green on a failed refresh, whatever the detail says", () => {
+    const census = deriveForkCensus({
+      groups: [],
+      total: 0,
+      kind_forks: [],
+      kind_fork_total: 0,
+    });
+    const health = deriveForkHealth(census, true, true);
+    expect(health.level).toBe("amber");
+    expect(health.detail).toMatch(/stale/i);
+  });
+
   it("dashes both counts on an unread page — never a zero", () => {
     const health = deriveForkHealth(null, false, true);
     expect(health.headline).toMatch(/unknown, not clean/i);

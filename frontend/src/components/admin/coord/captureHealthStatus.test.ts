@@ -74,14 +74,37 @@ describe("a door with zero artifacts is the finding, so it survives", () => {
     expect(census.doors.map((d) => d.doorId)).toEqual([...KNOWN_DOOR_ORDER]);
   });
 
-  it("treats a door with no count field as zero, not as absent", () => {
-    const reading = describeDoor({
-      captured_by: "agent",
-    } as unknown as CaptureHealthResponse["doors"] extends (infer T)[]
-      ? T
-      : never);
+  it("reads a door with NO count field as unknown — never as the silence finding", () => {
+    // The panel's loudest claim is "this door has written nothing". Reading
+    // an absent field as `0` would manufacture that accusation about a door
+    // out of a field the response did not carry, on the one panel whose
+    // entire purpose is that accusation.
+    const reading = describeDoor({ captured_by: "agent" });
+    expect(reading.count).toBeNull();
+    expect(reading.countUnstated).toBe(true);
+    expect(reading.silent).toBe(false);
+  });
+
+  it("keeps a SERVED zero as the finding", () => {
+    const reading = describeDoor({ captured_by: "agent", count: 0 });
     expect(reading.count).toBe(0);
     expect(reading.silent).toBe(true);
+    expect(reading.countUnstated).toBe(false);
+  });
+
+  it("separates the unstated doors from the silent ones in the census", () => {
+    const census = deriveCaptureCensus({
+      total: 7,
+      doors: [
+        { captured_by: "runner_scan", count: 7 },
+        { captured_by: "agent", count: 0 },
+        { captured_by: "operator" },
+      ],
+    });
+    expect(census.silentDoors.map((d) => d.doorId)).toEqual(["agent"]);
+    expect(census.countUnstatedDoors.map((d) => d.doorId)).toEqual([
+      "operator",
+    ]);
   });
 });
 

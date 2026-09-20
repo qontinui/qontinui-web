@@ -216,11 +216,34 @@ export const CANDIDATE_PALETTE: StatusPalette<CandidateKind> = {
  * not because nothing blocks it. A length check alone would render every such
  * row "ready" — and on this fleet the document layer has been as little as a
  * 2% view of the corpus, so that is the majority reading, not an edge case.
+ *
+ * The field is OPTIONAL on the wire type, so there are FOUR arms, not three:
+ * an unstated `document_state` is UNKNOWN and takes the unknown arm. A
+ * default of `"present"` would have let a backend that omits the field walk
+ * straight into the confident arm — the cascade's first question answered
+ * cheerfully by a renderer instead of by the route.
  */
 export function describeReadiness(
   candidate: PlanCandidate
 ): RowStatus<CandidateKind> {
-  const documentState = candidate.document_state ?? "present";
+  const documentState = candidate.document_state;
+  // NOT `?? "present"`. The cascade's first question is "which corpus layer
+  // is this row from?", and a response that did not answer it has not said
+  // "the document layer" — the confident arm below would then walk an empty
+  // `unmet_depends_on` and call the row READY on the strength of a field
+  // nobody served.
+  if (documentState === undefined) {
+    return {
+      kind: "unknown",
+      label: "corpus layer unstated",
+      reason:
+        "This response carried no document_state for this row, so which " +
+        "corpus layer it came from is unknown — and with it whether its " +
+        "depends_on edges could be walked at all. An empty dependency list " +
+        "here is UNKNOWN, not 'nothing blocks it'.",
+      attention: CANDIDATE_ATTENTION_BY_KIND.unknown,
+    };
+  }
   if (documentState !== "present") {
     return {
       kind: "unknown",
@@ -236,7 +259,21 @@ export function describeReadiness(
       attention: CANDIDATE_ATTENTION_BY_KIND.unknown,
     };
   }
-  const unmet = candidate.unmet_depends_on ?? [];
+  const unmet = candidate.unmet_depends_on;
+  // The list is optional on the wire, and an ABSENT list is not an empty one.
+  // The cascade's whole point is that "nothing was walked" may not render as
+  // "nothing blocks it" — a `?? []` here would reach the ready arm for a
+  // response that never carried the field.
+  if (unmet === undefined) {
+    return {
+      kind: "unknown",
+      label: "blockers not served",
+      reason:
+        "This response carried no dependency list for this row, so whether " +
+        "anything blocks it is UNKNOWN — not 'nothing does'.",
+      attention: CANDIDATE_ATTENTION_BY_KIND.unknown,
+    };
+  }
   if (unmet.length > 0) {
     return {
       kind: "blocked",
@@ -280,21 +317,51 @@ export interface CoordLinkReading {
  * The PR side is the subtler one: `unlinked` really is zero citations (they
  * carry a hard FK to the work unit), while `unavailable` is UNKNOWN. Merging
  * the two would turn "coord is down" into "this plan has no PRs".
+ *
+ * **ABSENCE is a third reading, and it is not `unlinked`.** `coord` is
+ * optional on the wire type and `linked_prs_state` is optional inside it, so
+ * either can simply not be served — by an older backend, or by one that
+ * dropped the block. Neither is a measured zero, and defaulting them to
+ * `"unlinked"` published exactly the sentence above: "coord is down" rendered
+ * as "this plan has no PRs" [policy: `verification-and-evidence`
+ * `silent-empty-is-unknown`].
  */
 export function describeCoordLink(
   link: CandidateCoordLink | undefined
 ): CoordLinkReading {
-  const state = link?.work_unit_state ?? "unlinked";
-  const prState = link?.linked_prs_state ?? "unlinked";
-  const prs = link?.linked_prs ?? [];
+  // An ABSENT block is the third reading, and it is neither of the two this
+  // function exists to keep apart. `coord` is optional on the wire type, so a
+  // backend that omits it has said NOTHING about the link or the citations —
+  // defaulting either half to `"unlinked"` would publish this function's own
+  // named failure ("coord is down" rendered as "this plan has no PRs") for
+  // the one input where nothing was measured at all.
+  if (link === undefined) {
+    return {
+      label: "coord block unstated",
+      detail:
+        "This response carried no coord block for this row, so whether it " +
+        "has a work unit — and whether any PR cites it — is UNKNOWN. It is " +
+        "not 'no unit link' and it is not 'no PR cited'.",
+      unknown: true,
+      prs: [],
+      prLabel: "PR citations unstated",
+      prUnknown: true,
+    };
+  }
+  // Absent is UNKNOWN on this half too: only an explicit `"unlinked"` is the
+  // real zero — the link is FK-less by design and genuinely optional, which
+  // is a thing coord SAYS, not a thing a renderer infers from silence.
+  const state = link.work_unit_state;
+  const prState = link.linked_prs_state;
+  const prs = link.linked_prs ?? [];
 
   const unit: Pick<CoordLinkReading, "label" | "detail" | "unknown"> =
     state === "linked"
       ? {
-          label: link?.work_unit_status
+          label: link.work_unit_status
             ? `unit ${link.work_unit_status}`
             : "unit linked",
-          detail: `coord returned the work unit${link?.work_unit_slug ? ` ${link.work_unit_slug}` : ""}.`,
+          detail: `coord returned the work unit${link.work_unit_slug ? ` ${link.work_unit_slug}` : ""}.`,
           unknown: false,
         }
       : state === "dangling"
@@ -310,17 +377,26 @@ export function describeCoordLink(
           ? {
               label: "unit unreadable",
               detail:
-                link?.unavailable_reason ??
+                link.unavailable_reason ??
                 "coord could not be read for this row. UNKNOWN — never 'no work unit'.",
               unknown: true,
             }
-          : {
-              label: "no unit link",
-              detail:
-                "This candidate carries no work_unit_slug at all. The link " +
-                "is optional and most artifacts have none.",
-              unknown: false,
-            };
+          : state === undefined
+            ? {
+                label: "unit link unstated",
+                detail:
+                  "This response carried no work_unit_state for this row, " +
+                  "so whether coord holds a work unit for it is UNKNOWN — " +
+                  "it is not 'no unit link'.",
+                unknown: true,
+              }
+            : {
+                label: "no unit link",
+                detail:
+                  "This candidate carries no work_unit_slug at all. The link " +
+                  "is optional and most artifacts have none.",
+                unknown: false,
+              };
 
   const pr =
     prState === "available"
@@ -336,10 +412,17 @@ export function describeCoordLink(
             prLabel: "no PR cited",
             prUnknown: false,
           }
-        : {
-            prLabel: "PRs unreadable",
-            prUnknown: true,
-          };
+        : prState === undefined
+          ? {
+              // The block came, this half did not. Still UNKNOWN: only an
+              // explicit `"unlinked"` is the real zero a hard FK guarantees.
+              prLabel: "PR citations unstated",
+              prUnknown: true,
+            }
+          : {
+              prLabel: "PRs unreadable",
+              prUnknown: true,
+            };
 
   return { ...unit, prs, ...pr };
 }
@@ -565,7 +648,11 @@ export function deriveCandidateHealth(
   const total = res.total;
   const followups = res.open_followup_total;
   return {
-    level: admissible ? "green" : "amber",
+    // `readFailed` is in the level, not only in the detail. A green strip
+    // whose own detail reads "Last refresh failed — these counts are stale"
+    // is a contradiction the colour wins, because the colour is what gets
+    // read. `deriveReconciliationHealth` already gets this right.
+    level: admissible && !readFailed ? "green" : "amber",
     headline: admissible
       ? typeof total === "number"
         ? total === 0

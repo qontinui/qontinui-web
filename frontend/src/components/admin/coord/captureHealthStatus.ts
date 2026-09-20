@@ -10,7 +10,8 @@
  * Everything here is pure (R8). Four readings the route's own schema states
  * and a renderer gets wrong by default:
  *
- * ## 1. A door with ZERO artifacts is the finding, so it must RENDER
+ * ## 1. A door with ZERO artifacts is the finding, so it must RENDER — and an
+ * ABSENT count is not one
  *
  * `CaptureHealthResponse`'s docstring is explicit: *"Every door in
  * `CapturedBy` appears, **including the ones with zero artifacts**. That is
@@ -21,6 +22,13 @@
  * {@link CaptureDoorReading.silent} so the renderer can say it in words. A
  * panel that quietly drops the zero row re-creates the exact
  * `capability-ships-enabled` blindness this whole plan opens by naming.
+ *
+ * The other half of that rule is what a `?? 0` costs here: an ABSENT `count`
+ * would render as the accusation "this door has written nothing" — the
+ * loudest claim on the panel, manufactured out of a field the response did
+ * not carry. {@link CaptureDoorReading.count} is therefore `number | null`,
+ * `silent` fires only on a served `0`, and an unstated count gets its own
+ * cell [policy: `verification-and-evidence` `silent-empty-is-unknown`].
  *
  * ## 2. `last_touched_at` is LAST TOUCHED, not last captured
  *
@@ -66,7 +74,17 @@
 export interface CaptureDoorHealth {
   /** `runner_scan` / `agent` / `operator` — or a value this build has not heard of. */
   captured_by: string;
-  count: number;
+  /**
+   * How many artifacts this door wrote.
+   *
+   * OPTIONAL here although the route declares it required, for the reason
+   * stated at the top of this block: reading a missing field wrongly would
+   * manufacture a claim, and on THIS field the manufactured claim is the
+   * loudest one the panel makes — *"this door has written nothing"*, a false
+   * accusation about a door, on the one panel whose whole purpose is that
+   * accusation. An absent count is UNKNOWN; only a served `0` is silence.
+   */
+  count?: number;
   /** `false` when the corpus holds a door this build does not recognise. */
   known?: boolean;
   first_at?: string | null;
@@ -113,9 +131,15 @@ export interface CaptureDoorReading {
   doorId: string;
   /** Human label; the raw `captured_by` for a door this build does not know. */
   label: string;
-  count: number;
-  /** `true` when this door has written NOTHING. The finding, not a gap. */
+  /** `null` when the response carried no count — UNKNOWN, never a zero. */
+  count: number | null;
+  /**
+   * `true` when this door has written NOTHING — a SERVED `0`. The finding,
+   * not a gap, and never inferred from a missing field.
+   */
   silent: boolean;
+  /** `true` when the response carried no count for this door at all. */
+  countUnstated: boolean;
   /**
    * `true` when the corpus carries a `captured_by` this build's vocabulary
    * does not contain — surfaced, never bucketed as "other".
@@ -145,17 +169,21 @@ function doorLabel(id: string, known: boolean): string {
 }
 
 /**
- * One door's reading. A zero count is a value, never a reason to drop a row.
+ * One door's reading. A zero count is a value, never a reason to drop a row —
+ * and an ABSENT count is neither a value nor a zero.
  */
 export function describeDoor(door: CaptureDoorHealth): CaptureDoorReading {
   const known = door.known !== false;
-  const count = typeof door.count === "number" ? door.count : 0;
+  // NOT `?? 0`. The zero is this panel's headline finding, so it may only be
+  // rendered where the route actually served one.
+  const count = typeof door.count === "number" ? door.count : null;
   const lastTouchedAt = door.last_touched_at ?? null;
   return {
     doorId: door.captured_by,
     label: doorLabel(door.captured_by, known),
     count,
     silent: count === 0,
+    countUnstated: count === null,
     unrecognised: !known,
     firstAt: door.first_at ?? null,
     lastTouchedAt,
@@ -174,8 +202,10 @@ export interface CaptureCensus {
   doors: CaptureDoorReading[];
   /** The route's own `total`; `null` when it served none — UNKNOWN. */
   total: number | null;
-  /** Doors that have written nothing. The panel's headline finding. */
+  /** Doors that have written nothing — a served `0`. The headline finding. */
   silentDoors: CaptureDoorReading[];
+  /** Doors whose count this response did not carry. UNKNOWN, not silent. */
+  countUnstatedDoors: CaptureDoorReading[];
   /** Doors whose name this build does not recognise. */
   unrecognisedDoors: CaptureDoorReading[];
   /**
@@ -208,6 +238,7 @@ export function deriveCaptureCensus(
     doors,
     total: typeof res?.total === "number" ? res.total : null,
     silentDoors: doors.filter((d) => d.silent),
+    countUnstatedDoors: doors.filter((d) => d.countUnstated),
     unrecognisedDoors: doors.filter((d) => d.unrecognised),
     doorsUnstated: !Array.isArray(raw),
   };
@@ -222,7 +253,13 @@ export interface CorpusFreshness {
   unknown: boolean;
   /** The timestamp, when there is one. */
   at: string | null;
-  /** What to render. Never "fresh", never an epoch, never a bare dash. */
+  /**
+   * What to render — the WHOLE reading, so a caller renders it and nothing
+   * else. Never "fresh", never an epoch, never a bare dash, and on an unknown
+   * arm it says so itself: a renderer that prefixes its own `unknown —` in
+   * front of a sentence that already ends *"…is unknown"* labels the value
+   * twice.
+   */
   text: string;
 }
 
@@ -250,9 +287,9 @@ export function describeCorpusFreshness(
       unknown: true,
       at: null,
       text:
-        "the route served no newest-touched timestamp — the corpus is empty, " +
-        "or this backend does not report it. Either way nothing here says the " +
-        "corpus is current.",
+        "unknown — the route served no newest-touched timestamp: the corpus " +
+        "is empty, or this backend does not report it. Either way nothing " +
+        "here says the corpus is current.",
     };
   }
   return { unknown: false, at, text: TOUCHED_CAVEAT };
@@ -280,6 +317,22 @@ export const SECOND_READ_CAVEAT =
   "that verdict is about the population coord could not serve. The two " +
   "totals may also disagree simply because they were read at different " +
   "moments.";
+
+/**
+ * The label a census that is still on screen after a FAILED refresh must
+ * carry.
+ *
+ * Keeping the previous census beside a failed read is the right call — an
+ * empty panel would be a fabricated absence — but only *"and labelled"*.
+ * Unlabelled, the summary goes on reading "3 doors, all of them writing" and
+ * `Corpus last touched: 4m ago` keeps drifting as though it were being
+ * re-measured, which is the stale-read defect the two lists on this page
+ * already guard with their own `plansStale` arm.
+ */
+export const STALE_CENSUS_NOTE =
+  "The last refresh of this census FAILED, so everything below is the last " +
+  "good read and has not been re-measured since. The relative times keep " +
+  "drifting; they are ages of an old observation, not a current one.";
 
 /** The same caveat's shorter form, for a read where nothing was suppressed. */
 export const SECOND_READ_NOTE =

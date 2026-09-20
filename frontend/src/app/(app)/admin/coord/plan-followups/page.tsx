@@ -17,8 +17,9 @@
  * it non-blank for exactly that reason — and before this route existed it was
  * prose in a plan body, unrecoverable from the data. A one-line row with a
  * `…` and a click would put the product back there, so every note is rendered
- * in full. `followupStatus.ts` `noteIsTruncatable` is where that decision is
- * written down.
+ * in full. `followupStatus.ts`'s module docstring is where that decision is
+ * written down, and `page.test.tsx` — *"renders the note IN FULL, not
+ * truncated to a headline"* — is what pins it.
  *
  * Nothing on this page is red. An unowned follow-up is a backlog item the
  * fleet deliberately deferred, not an incident; R3 reserves red for "someone
@@ -34,7 +35,7 @@
  * reading.
  */
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import Link from "next/link";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -44,6 +45,10 @@ import {
   absoluteTime,
   relativeTime,
 } from "@/components/console";
+import {
+  useGuardedPoll,
+  type ReadGuard,
+} from "@/components/admin/coord/useGuardedPoll";
 import { httpClient } from "@/services/service-factory";
 import {
   EXPECTED_ORDERING,
@@ -62,28 +67,42 @@ export default function CoordPlanFollowupsPage() {
   const [data, setData] = useState<OpenFollowupResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const fetchData = useCallback(async () => {
-    try {
-      const qs = new URLSearchParams();
-      qs.set("offset", String(offset));
-      qs.set("limit", String(PAGE_SIZE));
-      const body = await httpClient.get<OpenFollowupResponse>(
-        `${ENDPOINT}?${qs.toString()}`
-      );
-      setData(body);
-      setError(null);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
-    }
-  }, [offset]);
+  /**
+   * Guarded by `useGuardedPoll` — the two generation counters and the
+   * in-flight lock, one spelling shared with `/admin/coord/plans`. The offset
+   * control makes both races it documents reachable here.
+   */
+  const fetchData = useCallback(
+    async (guard: ReadGuard) => {
+      try {
+        const qs = new URLSearchParams();
+        qs.set("offset", String(offset));
+        qs.set("limit", String(PAGE_SIZE));
+        const body = await httpClient.get<OpenFollowupResponse>(
+          `${ENDPOINT}?${qs.toString()}`
+        );
+        if (!guard.isNewest()) return;
+        setData(body);
+        setError(null);
+      } catch (e) {
+        if (!guard.isCurrentQuestion()) return;
+        setError(e instanceof Error ? e.message : String(e));
+      }
+    },
+    [offset]
+  );
 
-  useEffect(() => {
+  // The offset is the question: rows already held answer the previous one.
+  const resetWindow = useCallback(() => {
     setData(null);
     setError(null);
-    void fetchData();
-    const id = setInterval(() => void fetchData(), POLL_INTERVAL_MS);
-    return () => clearInterval(id);
-  }, [fetchData]);
+  }, []);
+
+  const { refresh } = useGuardedPoll({
+    read: fetchData,
+    intervalMs: POLL_INTERVAL_MS,
+    onQuestionChange: resetWindow,
+  });
 
   const loaded = data !== null;
   const readFailed = error !== null;
@@ -113,7 +132,7 @@ export default function CoordPlanFollowupsPage() {
       <div className="flex flex-wrap items-center gap-2">
         <RefreshButton
           key={offset}
-          onRefresh={fetchData}
+          onRefresh={refresh}
           label="Refresh follow-ups"
           title={`Re-reads the queue now; it also refreshes itself every ${POLL_INTERVAL_MS / 1000} s`}
           data-testid="coord-followups-refresh"
@@ -189,7 +208,18 @@ export default function CoordPlanFollowupsPage() {
         </p>
       )}
 
-      {loaded && items.length === 0 && (
+      {loaded && items.length === 0 && readFailed && (
+        <p
+          className="text-sm text-muted-foreground italic"
+          data-testid="coord-followups-stale"
+        >
+          This window held no follow-up at the last good read — it has not
+          refreshed since. Whether anything is waiting for an owner NOW is
+          unknown.
+        </p>
+      )}
+
+      {loaded && items.length === 0 && !readFailed && (
         <p
           className="text-sm text-muted-foreground italic"
           data-testid="coord-followups-empty"
@@ -210,7 +240,7 @@ export default function CoordPlanFollowupsPage() {
               data-edge-id={f.edge_id}
             >
               {/* IN FULL. The note is the finding and it has no other home —
-                  see `followupStatus.ts` `noteIsTruncatable`. */}
+                  see `followupStatus.ts`'s module docstring, property 1. */}
               <p
                 className="text-sm text-foreground/90 whitespace-pre-wrap"
                 data-testid="coord-followup-note"

@@ -21,9 +21,17 @@
  *
  * `variant_count > 1` — a divergent document copy the route collapsed to the
  * newest — is surfaced as a marker rather than left silent, and since Phase 4b
- * the marker is a LINK to `/admin/coord/plan-forks`, the consumer for
+ * there is somewhere to go: `/admin/coord/plan-forks`, the consumer for
  * `GET /plan-library/divergent`. It had nowhere to go before that page
  * existed, which made it a notice rather than a route to the answer.
+ *
+ * **That route is a link in the DETAIL panel, and the row's marker is a plain
+ * `<span>`.** `RecordRow` renders the whole line as one `<button>`, and
+ * interactive content nested inside a `<button>` is invalid HTML with
+ * undefined browser behaviour — the anchor's accessible name is absorbed and
+ * a keyboard user gets two ambiguous focus stops on one row. Stopping click
+ * propagation fixes the mouse and nothing else, so the marker states the
+ * fact and the detail panel carries the navigation.
  */
 
 import Link from "next/link";
@@ -136,28 +144,37 @@ export function ReconciliationRow({
             <AxisCell axis="C" reading={c} testId="coord-plan-axis-c" />
           </span>
           {divergent && (
-            <Link
+            // NON-INTERACTIVE, deliberately. `RecordRow` renders this whole
+            // line as one `<button type="button">` and interpolates `status`
+            // inside it, and interactive content inside a `<button>` is
+            // forbidden: the anchor's accessible name is absorbed into the
+            // button's, a keyboard user gets two ambiguous focus stops, and
+            // the rendered behaviour is left to the browser.
+            // `stopPropagation` would have fixed the mouse case only.
+            //
+            // The route to the fork list is not lost — the detail panel
+            // below carries a real, valid `coord-plan-divergent-link`, one
+            // click away — so the row keeps the MARKER and the `title` says
+            // where to go.
+            <span
               // R3/§4.1 — `statusRow.tsx` is the only module allowed to spell
               // an attention colour. This marker is the "we do not know which
               // copy is the plan" amber, so it interpolates UNKNOWN_AMBER
               // rather than re-typing a tint next to it.
               className={`inline-flex items-center gap-1 rounded border px-1.5 py-0.5 text-[11px] whitespace-nowrap ${UNKNOWN_AMBER}`}
-              href="/admin/coord/plan-forks"
-              // The row itself is a toggle button, so a click on the marker
-              // must not also open the detail panel underneath it.
-              onClick={(e) => e.stopPropagation()}
               data-testid="coord-plan-divergent"
               data-variant-count={variantCount(row.axis_b)}
               title={
                 `${variantCount(row.axis_b)} artifact rows share this stem — a divergent ` +
                 "document copy. The newest is the one compared here; the " +
                 "others are not shown, which is why this marker exists. " +
-                "Opens the fork list, which shows every copy."
+                "Open this row for a link to the fork list, which shows " +
+                "every copy."
               }
             >
               <GitFork className="h-3 w-3" aria-hidden="true" />
               {variantCount(row.axis_b)} copies
-            </Link>
+            </span>
           )}
         </>
       }
@@ -216,8 +233,10 @@ export function ReconciliationRow({
                   coord&apos;s evidence gaps, verbatim:
                 </span>
                 <ul className="list-disc pl-5 text-muted-foreground">
-                  {c.gaps.map((gap) => (
-                    <li key={gap}>{gap}</li>
+                  {/* Keyed by INDEX: coord's own gap strings, verbatim and
+                      with no uniqueness guarantee. */}
+                  {c.gaps.map((gap, i) => (
+                    <li key={i}>{gap}</li>
                   ))}
                 </ul>
               </div>
