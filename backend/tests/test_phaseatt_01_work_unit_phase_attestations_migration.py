@@ -392,8 +392,20 @@ def _attest(engine: Engine, work_unit_id: uuid.UUID, **overrides: object) -> uui
     return _insert(engine, _row(work_unit_id, **overrides))
 
 
-def _count(engine: Engine) -> int:
-    value = scalar(engine, f"SELECT count(*) FROM coord.{_TABLE}")
+def _count(engine: Engine, work_unit_id: uuid.UUID) -> int:
+    """How many attestations exist for ONE work unit.
+
+    Scoped by ``work_unit_id`` rather than a bare ``count(*)``: an exact count
+    over an unscoped read is a claim about the whole store rather than about
+    this test's own rows, which is what
+    ``scripts/ci/check_global_state_assertions.py`` rule A refuses. The unit id
+    is minted by this test, so it is a discriminator the test controls.
+    """
+    value = scalar(
+        engine,
+        f"SELECT count(*) FROM coord.{_TABLE} WHERE work_unit_id = :unit",
+        unit=work_unit_id,
+    )
     assert isinstance(value, int)
     return value
 
@@ -510,7 +522,8 @@ def test_the_identity_key_refuses_a_duplicate_and_nothing_else() -> None:
         _attest(engine, unit, evidence_kind="prompt_document")
         _attest(engine, unit, evidence_ref="another-finding-id")
         _attest(engine, other_unit)
-        assert _count(engine) == 5
+        assert _count(engine, unit) == 4
+        assert _count(engine, other_unit) == 1
 
         # A retraction is an UPDATE on the colliding row — never a delete, never
         # a second row — and re-attesting the same evidence afterwards still
@@ -529,7 +542,7 @@ def test_the_identity_key_refuses_a_duplicate_and_nothing_else() -> None:
             )
         with pytest.raises(sqlalchemy.exc.IntegrityError):
             _attest(engine, unit)
-        assert _count(engine) == 5
+        assert _count(engine, unit) == 4
 
         with engine.connect() as conn:
             row = conn.execute(
@@ -575,12 +588,12 @@ def test_defaults_not_nulls_and_the_cascade_back_to_the_work_unit() -> None:
             assert orig.diag.column_name == column  # type: ignore[union-attr]
 
         # An attestation about a unit that no longer exists is not evidence.
-        assert _count(engine) == 2
+        assert _count(engine, unit) == 2
         with engine.begin() as conn:
             conn.execute(
                 text("DELETE FROM coord.work_units WHERE id = :id"), {"id": unit}
             )
-        assert _count(engine) == 0
+        assert _count(engine, unit) == 0
 
 
 @_needs_pg
@@ -624,7 +637,7 @@ def test_upgrade_is_idempotent() -> None:
         assert table_exists(engine, _SCHEMA, _TABLE)
         assert index_exists(engine, _DEDUPE_INDEX)
         assert index_exists(engine, _UNIT_INDEX)
-        assert _count(engine) == 1
+        assert _count(engine, unit) == 1
 
 
 @_needs_pg
@@ -644,4 +657,4 @@ def test_up_down_up_leaves_no_residue() -> None:
 
         run_alembic(backend_root(), db_url, "upgrade", _REVISION_ID)
         assert table_exists(engine, _SCHEMA, _TABLE)
-        assert _count(engine) == 0
+        assert _count(engine, unit) == 0
