@@ -38,10 +38,12 @@ vi.mock("sonner", () => ({
 }));
 
 import {
+  RECONCILIATION_PAGE_SIZE,
   useCaptureHealth,
   useDivergentArtifacts,
   usePlanCoverage,
   usePlanLibrary,
+  useReconciliation,
   useScanRoots,
 } from "./usePlanLibrary";
 
@@ -810,6 +812,110 @@ describe("usePlanCoverage", () => {
 
     // Synthesising an empty coverage list here renders as "nothing is
     // missing" on the evidence of a network failure.
+    expect(result.current.data).toBeNull();
+    expect(result.current.error).toContain("backend down");
+  });
+});
+
+describe("useReconciliation", () => {
+  /** A minimal but SHAPE-FAITHFUL reconciliation response. */
+  function reconciliation(overrides: Record<string, unknown> = {}) {
+    return {
+      items: [],
+      total: 0,
+      offset: 0,
+      limit: RECONCILIATION_PAGE_SIZE,
+      ordering: "slug_asc",
+      document_axis_source: "artifact_store",
+      document_axis_complete: true,
+      document_present_count: 0,
+      document_missing_count: 0,
+      coord_available: true,
+      work_unit_population_state: "included",
+      work_unit_population_reason: null,
+      axis_c_scope: "page",
+      axis_c_computed_count: 0,
+      facets: {
+        denominator: 0,
+        by_class: {},
+        by_verdict: {},
+        corpus_complete: true,
+        corpus_incomplete_reasons: [],
+      },
+      ...overrides,
+    };
+  }
+
+  it("pins the query the route actually parses", async () => {
+    // The spelling is the whole contract with the backend, and nothing else
+    // pins it: a misspelled `include_coord` falls through to the route's own
+    // `true` default, so the hook would silently ask a DIFFERENT question and
+    // every test that mocks the hook would still pass.
+    getMock.mockResolvedValue(reconciliation());
+
+    const { result } = renderHook(() => useReconciliation());
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
+    expect(getMock).toHaveBeenCalledWith(
+      "/api/v1/plan-library/reconciliation?offset=0&limit=25&include_coord=true"
+    );
+  });
+
+  it("sends include_coord EXPLICITLY in both directions", async () => {
+    // Not "omit it when true". The route's default may move; this hook's claim
+    // is which axes were read, so it states it rather than inheriting it.
+    getMock.mockResolvedValue(reconciliation());
+    const { result } = renderHook(() => useReconciliation());
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
+    await act(async () => {
+      result.current.setIncludeCoord(false);
+    });
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
+    expect(getMock).toHaveBeenLastCalledWith(
+      "/api/v1/plan-library/reconciliation?offset=0&limit=25&include_coord=false"
+    );
+  });
+
+  it("resets the offset when the axes being read change", async () => {
+    // A page number is only meaningful within one population. The reset lives
+    // in the hook, not the panel, so a second consumer of the exported setter
+    // cannot carry a stale offset across the change.
+    getMock.mockResolvedValue(reconciliation({ total: 900 }));
+    const { result } = renderHook(() => useReconciliation());
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
+    await act(async () => {
+      result.current.setOffset(RECONCILIATION_PAGE_SIZE);
+    });
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    expect(getMock).toHaveBeenLastCalledWith(
+      "/api/v1/plan-library/reconciliation?offset=25&limit=25&include_coord=true"
+    );
+
+    await act(async () => {
+      result.current.setIncludeCoord(false);
+    });
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    expect(result.current.offset).toBe(0);
+    expect(getMock).toHaveBeenLastCalledWith(
+      "/api/v1/plan-library/reconciliation?offset=0&limit=25&include_coord=false"
+    );
+  });
+
+  it("asks for a page the route will accept", async () => {
+    // `limit` is `Query(25, ge=1, le=100)`; a page size above the ceiling is a
+    // 422, and axis C is computed per page, so the size is a real cost.
+    expect(RECONCILIATION_PAGE_SIZE).toBeGreaterThanOrEqual(1);
+    expect(RECONCILIATION_PAGE_SIZE).toBeLessThanOrEqual(100);
+  });
+
+  it("a failed read is not a corpus that agrees", async () => {
+    getMock.mockRejectedValue(new Error("backend down"));
+    const { result } = renderHook(() => useReconciliation());
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
     expect(result.current.data).toBeNull();
     expect(result.current.error).toContain("backend down");
   });

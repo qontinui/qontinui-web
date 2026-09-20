@@ -496,13 +496,25 @@ export const RECONCILIATION_PAGE_SIZE = 25;
  * `include_coord=false` is a document-layer-only read in which BOTH coord
  * axes report UNKNOWN — never agreement. It is offered because the coord
  * round trips are the slow half and an operator reading the document layer
- * should not have to pay for them, but it is **off by default**: a read that
- * silently skipped two of three axes would make this surface answer a
- * narrower question than its title.
+ * should not have to pay for them. **`includeCoord` defaults to `true`**, i.e.
+ * the document-only mode is OFF until asked for: a read that silently skipped
+ * two of three axes would make this surface answer a narrower question than
+ * its title.
+ *
+ * Changing it RESETS `offset`, and that reset lives here rather than in the
+ * panel — the same place `updateFilter` puts it — so a second consumer of the
+ * exported setter cannot get a stale offset.
  */
 export function useReconciliation() {
   const [offset, setOffset] = useState(0);
-  const [includeCoord, setIncludeCoord] = useState(true);
+  const [includeCoord, setIncludeCoordState] = useState(true);
+
+  const setIncludeCoord = useCallback((next: boolean) => {
+    // A page number is only meaningful within one population; carrying it
+    // across a change of which axes are read points it at a different answer.
+    setOffset(0);
+    setIncludeCoordState(next);
+  }, []);
 
   const url = useMemo(() => {
     const qs = new URLSearchParams();

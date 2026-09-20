@@ -159,14 +159,24 @@ beforeEach(() => {
 });
 
 describe("classRows", () => {
-  it("keeps every class INCLUDING the zeros, in cascade order", () => {
+  it("keeps every class INCLUDING the served zeros, in cascade order", () => {
     // D3's whole point: "no rows of class X" is a stated fact. Iterating the
     // served object's keys would drop exactly the classes an operator most
     // wants to see read zero.
-    const rows = classRows({ AGREE_OPEN: 3 });
+    const rows = classRows({ ...zeroClasses(), AGREE_OPEN: 3 });
     expect(rows).toHaveLength(RECONCILIATION_CLASS_ORDER.length);
     expect(rows.map((r) => r.name)).toEqual([...RECONCILIATION_CLASS_ORDER]);
     expect(rows.find((r) => r.name === "UNKNOWN_NO_UNIT")?.count).toBe(0);
+    expect(rows.find((r) => r.name === "AGREE_OPEN")?.count).toBe(3);
+  });
+
+  it("distinguishes a SERVED zero from a class the response omitted", () => {
+    // The backend serves all twelve including the zeros, so a missing key is
+    // "not served", not "none of these". `StatCluster` renders null as an em
+    // dash and 0 as 0 — collapsing the two with `?? 0` would state a count
+    // nobody measured, on the panel whose thesis is absence-is-not-zero.
+    const rows = classRows({ AGREE_OPEN: 3 });
+    expect(rows.find((r) => r.name === "UNKNOWN_NO_UNIT")?.count).toBeNull();
     expect(rows.find((r) => r.name === "AGREE_OPEN")?.count).toBe(3);
   });
 
@@ -203,11 +213,59 @@ describe("axisCSentence — evidence_complete is read BEFORE shipped", () => {
     ).toContain("has not shipped");
   });
 
-  it("an un-computed row says so rather than reporting nothing found", () => {
-    // Axis C is per-page; an off-page row is UNKNOWN, not undelivered.
-    expect(axisCSentence(axisC({ computed: false }))).toContain(
-      "outside the page"
+  it("an OFF-PAGE row says so, keyed on the reason and not on `computed`", () => {
+    // The backend's off-page arm: readable=false with its own reason.
+    expect(
+      axisCSentence(
+        axisC({
+          computed: false,
+          readable: false,
+          present: false,
+          unreadable_reason:
+            "axis C (coord's derived delivery verdict) is computed only for the page being returned \u2014 coord's delivery door is per-unit. Page to this row to have it derived.",
+        })
+      )
+    ).toContain("outside the page");
+  });
+
+  it("an ON-PAGE unreadable row prints its reason, NOT “outside the page”", () => {
+    // `computed: false` fires on FOUR backend arms and only ONE is off-page.
+    // Checking it first claimed three on-page rows were off-page, told the
+    // operator to "page to it" (which can never help), and swallowed the
+    // `unreadable_reason` entirely. With `include_coord=false` that was EVERY
+    // row on screen.
+    const text = axisCSentence(
+      axisC({
+        computed: false,
+        readable: false,
+        present: false,
+        unreadable_reason: "coord could not be read",
+      })
     );
+    expect(text).toContain("coord could not be read");
+    expect(text).not.toContain("outside the page");
+    expect(text).toContain("unknown, not undelivered");
+  });
+
+  it("a row whose stem has no work unit is an absence, not an unread page", () => {
+    // readable=true, present=false, computed=false — an OBSERVATION of
+    // absence, which must not read as "we did not ask".
+    const text = axisCSentence(
+      axisC({ computed: false, readable: true, present: false })
+    );
+    expect(text).toContain("no delivery verdict");
+    expect(text).not.toContain("outside the page");
+  });
+
+  it("`shipped: null` under COMPLETE evidence is unknown, never “has not shipped”", () => {
+    // `shipped` is `boolean | null` and pinned nullable against both OpenAPI
+    // snapshots. A ternary sent null into the falsy arm and announced a
+    // definite negative delivery claim.
+    const text = axisCSentence(
+      axisC({ shipped: null, evidence_complete: true })
+    );
+    expect(text).toContain("unknown");
+    expect(text).not.toContain("has not shipped");
   });
 
   it("a null evidence_complete is unreadable either way", () => {
@@ -276,7 +334,7 @@ describe("ReconciliationPanel", () => {
     );
   });
 
-  it("raises the blind-spot banner when the corpus read is incomplete", () => {
+  it("renders the SERVED blind-spot reasons", () => {
     mount(
       response({
         facets: {
@@ -291,9 +349,45 @@ describe("ReconciliationPanel", () => {
     expect(banner).toHaveTextContent("the document layer is frozen");
   });
 
+  it("raises the banner on `corpus_complete: false` even with NO reasons served", () => {
+    // The critical one. `corpus_complete` is REQUIRED on the wire;
+    // `corpus_incomplete_reasons` is defaulted and may be absent. Keying the
+    // banner off the reasons array let an incomplete corpus render as a whole
+    // one — the exact failure this panel exists to prevent, reachable through
+    // the one field the wire marks optional.
+    mount(
+      response({
+        facets: {
+          ...response().facets,
+          corpus_complete: false,
+          corpus_incomplete_reasons: [],
+        },
+      })
+    );
+    const banner = screen.getByTestId("reconciliation-blind-spots");
+    expect(banner).toHaveTextContent("not whole, so it is not agreement");
+    expect(
+      screen.getByTestId("reconciliation-blind-spots-unexplained")
+    ).toHaveTextContent("named no blind spot");
+  });
+
+  it("does not throw when the defaulted reasons array is absent entirely", () => {
+    // Deploy skew: the field is `default_factory=list` on the wire, so an
+    // older/newer backend may omit it. A bare spread threw and took the route
+    // segment down.
+    const r = response();
+    // @ts-expect-error — modelling a response that omits a defaulted field.
+    delete r.facets.corpus_incomplete_reasons;
+    r.facets.corpus_complete = false;
+    mount(r);
+    expect(
+      screen.getByTestId("reconciliation-blind-spots")
+    ).toBeInTheDocument();
+  });
+
   it("has NO banner when the read really was whole", () => {
-    // The mutation partner of the test above: without this, a banner that
-    // always rendered would pass it and say nothing.
+    // The mutation partner: without this, a banner that always rendered would
+    // pass every test above and say nothing.
     mount(response());
     expect(
       screen.queryByTestId("reconciliation-blind-spots")
@@ -301,10 +395,42 @@ describe("ReconciliationPanel", () => {
   });
 
   it("an unavailable work-unit population is unknown for EVERY row", () => {
+    // ROUTABLE fixture: the route appends a reason and clears
+    // `corpus_complete` for this condition, so a fixture that set the flag
+    // alone taught a shape the backend cannot emit — and hid the fact that
+    // the panel was printing every blind spot twice.
     mount(
       response({
         work_unit_population_state: "unavailable",
         work_unit_population_reason: "coord 503",
+        facets: {
+          ...response().facets,
+          corpus_complete: false,
+          corpus_incomplete_reasons: [
+            "coord's work unit list could not be read",
+          ],
+        },
+      })
+    );
+    const banner = screen.getByTestId("reconciliation-blind-spots");
+    // The SERVED sentence is shown, and our local gloss is NOT added on top
+    // of it — one blind spot, stated once.
+    expect(banner).toHaveTextContent("work unit list could not be read");
+    expect(banner).not.toHaveTextContent("unknown for EVERY row");
+  });
+
+  it("adds its own sentence only when the served reasons do not cover the flag", () => {
+    // The other side of the de-duplication: a flag the served list says
+    // nothing about must still be explained.
+    mount(
+      response({
+        work_unit_population_state: "unavailable",
+        work_unit_population_reason: "coord 503",
+        facets: {
+          ...response().facets,
+          corpus_complete: false,
+          corpus_incomplete_reasons: ["something unrelated"],
+        },
       })
     );
     const banner = screen.getByTestId("reconciliation-blind-spots");
@@ -312,19 +438,35 @@ describe("ReconciliationPanel", () => {
     expect(banner).toHaveTextContent("coord 503");
   });
 
-  it("a degraded coord read is stated above the counts", () => {
-    mount(response({ coord_available: false }));
+  it("a degraded coord read is stated", () => {
+    mount(
+      response({
+        coord_available: false,
+        facets: {
+          ...response().facets,
+          corpus_complete: false,
+          corpus_incomplete_reasons: [],
+        },
+      })
+    );
     expect(screen.getByTestId("reconciliation-blind-spots")).toHaveTextContent(
       "coord read degraded"
     );
   });
 
-  it("an incomplete document layer names both halves of the split", () => {
+  it("an incomplete document layer is measured against the served denominator", () => {
     mount(
       response({
         document_axis_complete: false,
         document_present_count: 18,
         document_missing_count: 1482,
+        total: 1500,
+        facets: {
+          ...response().facets,
+          denominator: 1500,
+          corpus_complete: false,
+          corpus_incomplete_reasons: [],
+        },
       })
     );
     expect(screen.getByTestId("reconciliation-blind-spots")).toHaveTextContent(
@@ -358,11 +500,78 @@ describe("ReconciliationPanel", () => {
     ).toHaveTextContent("0");
   });
 
+  it("a verdict the response did not serve renders \u2013, never 0", () => {
+    mount(
+      response({
+        facets: {
+          ...response().facets,
+          // `disagree` withheld entirely — absence, not zero.
+          by_verdict: { agree: 1, unknown: 0 },
+        },
+      })
+    );
+    expect(
+      screen.getByTestId("reconciliation-verdict-disagree")
+    ).not.toHaveTextContent("0");
+  });
+
+  it("a verdict the backend ADDED is surfaced, not dropped from the strip", () => {
+    mount(
+      response({
+        facets: {
+          ...response().facets,
+          by_verdict: { agree: 1, disagree: 0, unknown: 0, contested: 7 },
+        },
+      })
+    );
+    expect(
+      screen.getByTestId("reconciliation-verdict-contested")
+    ).toHaveTextContent("7");
+  });
+
   it("warns that a document-only read is never agreement", () => {
     mount(response(), { includeCoord: false });
     expect(
       screen.getByTestId("reconciliation-document-only")
     ).toHaveTextContent("never agreement");
+  });
+
+  it("never prints an inverted range on a past-the-end page", () => {
+    // The route echoes `offset` and `limit` verbatim with no clamping, so
+    // `offset + limit` rendered "901-900 of 900".
+    mount(
+      response({
+        items: [],
+        total: 900,
+        offset: 900,
+        facets: { ...response().facets, denominator: 900 },
+      })
+    );
+    return userEvent
+      .click(screen.getByTestId("reconciliation-toggle-rows"))
+      .then(() => {
+        expect(screen.getByTestId("reconciliation-page")).not.toHaveTextContent(
+          "901"
+        );
+        expect(screen.getByTestId("reconciliation-page")).toHaveTextContent(
+          "of 900"
+        );
+      });
+  });
+
+  it("a partial last page counts the rows it actually has", async () => {
+    mount(
+      response({
+        items: [row({ slug: "a" }), row({ slug: "b" })],
+        total: 27,
+        offset: 25,
+        facets: { ...response().facets, denominator: 27 },
+      })
+    );
+    await userEvent.click(screen.getByTestId("reconciliation-toggle-rows"));
+    expect(screen.getByTestId("reconciliation-page")).toHaveTextContent(
+      "26\u201327 of 27"
+    );
   });
 
   it("an empty page is a position, not an empty corpus", () => {

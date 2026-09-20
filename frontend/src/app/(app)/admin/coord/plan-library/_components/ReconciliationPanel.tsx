@@ -87,13 +87,13 @@ const VERDICT_ORDER: readonly ReconciliationVerdict[] = [
   "agree",
 ] as const;
 
-const VERDICT_TONE: Record<ReconciliationVerdict, StatTone> = {
+const VERDICT_TONE: Partial<Record<string, StatTone>> = {
   disagree: "attention",
   unknown: "warning",
   agree: "success",
 };
 
-const VERDICT_LABEL: Record<ReconciliationVerdict, string> = {
+const VERDICT_LABEL: Partial<Record<string, string>> = {
   disagree: "Disagree",
   unknown: "Unknown",
   agree: "Agree",
@@ -144,15 +144,33 @@ function classLabel(name: string): string {
  */
 export function classRows(
   byClass: Record<string, number>
-): ReadonlyArray<{ name: string; count: number }> {
+): ReadonlyArray<{ name: string; count: number | null }> {
   const seen = new Set<string>(RECONCILIATION_CLASS_ORDER);
   const extra = Object.keys(byClass)
     .filter((k) => !seen.has(k))
     .sort();
   return [...RECONCILIATION_CLASS_ORDER, ...extra].map((name) => ({
     name,
-    count: byClass[name] ?? 0,
+    count: byClass[name] ?? null,
   }));
+}
+
+/**
+ * The verdict groups to render, union-ed with whatever the server served.
+ *
+ * The same rule as [`classRows`], and it was asymmetric at first: a class the
+ * backend added became a visible row while a VERDICT it added was silently
+ * dropped from the strip — which would make `sum(by_verdict) === denominator`
+ * visibly stop holding on screen with nothing saying why.
+ */
+export function verdictRows(
+  byVerdict: Record<string, number>
+): readonly string[] {
+  const known = new Set<string>(VERDICT_ORDER);
+  const extra = Object.keys(byVerdict)
+    .filter((k) => !known.has(k))
+    .sort();
+  return [...VERDICT_ORDER, ...extra];
 }
 
 /** Axis A in one sentence — never a bare status word. */
@@ -199,35 +217,67 @@ export function axisBSentence(axis: ReconciliationAxisB): string {
 }
 
 /**
+ * A stable fragment of the backend's own off-page reason.
+ *
+ * `computed: false` does NOT mean "off page" — that was this panel's first
+ * bug. The backend sets it on FOUR arms (`plan_library.py` `_reconcile_row`),
+ * and three of them are rows ON the page: coord's work-unit list was
+ * unreadable, the stem has no work unit, or coord was unreachable for that
+ * row. Only the first arm is off-page, and the thing that distinguishes it is
+ * the `unreadable_reason` the backend supplies, not the boolean.
+ *
+ * Matching a fragment rather than the whole sentence is deliberate: the prose
+ * may be reworded, and a miss degrades to printing the reason verbatim — which
+ * is still correct, just without the "page to it" remedy. A false POSITIVE
+ * would be the harmful direction, and this fragment is specific enough that
+ * no other arm's reason contains it.
+ */
+const AXIS_C_OFF_PAGE_MARKER = "computed only for the page";
+
+/**
  * Axis C in one sentence, reading `evidence_complete` BEFORE `shipped`.
  *
  * This ordering is the whole contract. `shipped: false` under
  * `evidence_complete: false` is "coord could not establish delivery", which is
  * UNKNOWN — rendering it as "did not ship" is the defect the cascade's arm
  * order prevents on the server and that this function prevents on the screen.
+ *
+ * `shipped: null` is the same defect once more removed, and it is the reason
+ * the last branch is not a ternary: a null under COMPLETE evidence still
+ * establishes nothing, and `shipped ? … : …` would announce it as a definite
+ * negative.
  */
 export function axisCSentence(axis: ReconciliationAxisC): string {
-  if (!axis.computed) {
-    return "Coord's delivery verdict was not computed for this row — it is outside the page this read established. Page to it to establish it.";
-  }
+  // Unreadable FIRST. Checking `computed` before this swallowed the
+  // `unreadable_reason` the backend went to trouble to supply — the branch
+  // that prints it was unreachable.
   if (!axis.readable) {
+    const reason = axis.unreadable_reason ?? "";
+    if (reason.includes(AXIS_C_OFF_PAGE_MARKER)) {
+      return "Coord's delivery verdict was not asked for this row — it is outside the page this read established, so it is unknown rather than undelivered. Page to it to establish it.";
+    }
     return `Coord's delivery verdict could not be read${
-      axis.unreadable_reason ? ` (${axis.unreadable_reason})` : ""
+      reason ? ` (${reason})` : ""
     } — unknown, not undelivered.`;
   }
-  if (!axis.present) return "Coord holds no delivery verdict for this stem.";
+  if (!axis.present) {
+    return "Coord holds no delivery verdict for this stem.";
+  }
   const citations =
     axis.citation_count === null
       ? ""
       : ` ${axis.citation_count} citation${axis.citation_count === 1 ? "" : "s"}.`;
   if (axis.evidence_complete === false) {
-    const gaps = axis.evidence_gaps.length
+    const gaps = axis.evidence_gaps?.length
       ? ` Gaps: ${axis.evidence_gaps.join("; ")}.`
       : "";
     return `Coord could not establish delivery — this is unknown, NOT “did not ship”.${gaps}${citations}`;
   }
   if (axis.evidence_complete === null) {
     return `Coord did not say whether its delivery evidence was complete, so its verdict cannot be read either way.${citations}`;
+  }
+  if (axis.shipped === null) {
+    return `Coord's evidence is complete but it stated no delivery verdict, so whether this shipped is unknown — not “no”.${citations}`;
   }
   return `Coord's evidence is complete and says ${
     axis.shipped ? "this shipped" : "this has not shipped"
@@ -280,7 +330,14 @@ function RowView({ row }: { row: ReconciliationRow }) {
           <dd className="inline">{axisASentence(row.axis_a)}</dd>
         </div>
         <div data-testid={id("axis-b")}>
-          <dt className="inline font-medium">Document (artifact store): </dt>
+          {/* The SERVED source, not a hardcoded one. The field exists so a
+              reader can tell which axis B they are looking at — the git-side
+              reconciler in qontinui-dev-notes is the primary surface, and a
+              panel asserting "artifact store" from a constant would keep
+              saying it after the backend served something else. */}
+          <dt className="inline font-medium">
+            Document ({row.axis_b.source.replace(/_/g, " ")}):{" "}
+          </dt>
           <dd className="inline">{axisBSentence(row.axis_b)}</dd>
         </div>
         <div data-testid={id("axis-c")}>
@@ -294,31 +351,74 @@ function RowView({ row }: { row: ReconciliationRow }) {
   );
 }
 
-/** The blind-spot banner — rendered whenever the read was not whole. */
+/**
+ * The blind-spot banner — rendered whenever the read was not whole.
+ *
+ * Two rules this got wrong at first, both of which made it render agreement:
+ *
+ * 1. **`corpus_complete` is the flag, and `corpus_incomplete_reasons` is only
+ *    its explanation.** Keying the banner off the reasons array alone meant a
+ *    response with `corpus_complete: false` and no reasons served rendered NO
+ *    banner and the counts read as a whole corpus. `corpus_complete` is in the
+ *    wire's `required` list; `corpus_incomplete_reasons` is NOT (it is
+ *    `default_factory=list`), so the optional field was gating the required
+ *    one.
+ * 2. **The backend already appends a reason for most of these.** It covers the
+ *    unreadable work-unit list, missing document bodies, a degraded coord read
+ *    and a partial axis C. Adding our own sentence for each printed every
+ *    blind spot twice in different words. So the served reasons are the
+ *    primary text, and a local sentence is added only where nothing served
+ *    already covers that flag.
+ *
+ * Every array read here is `?? []`: all three are defaulted rather than
+ * required on the wire, so a deploy-skewed response that omits one must not
+ * throw and take down the route segment.
+ */
 function BlindSpots({ data }: { data: ReconciliationResponse }) {
-  const reasons = [...data.facets.corpus_incomplete_reasons];
-  if (!data.coord_available) {
-    reasons.push(
-      "A coord read degraded on this page, so at least one coord axis is unknown for at least one row."
-    );
+  const served = data.facets.corpus_incomplete_reasons ?? [];
+  const reasons: { key: string; text: string }[] = served.map((text, i) => ({
+    key: `served-${i}`,
+    text,
+  }));
+
+  // Only ADD a sentence where the served list does not already speak to that
+  // flag. `some(includes)` is a deliberately loose test: a near-duplicate is
+  // worse than a missing gloss, because the flag itself is already visible.
+  const covered = (needle: string) =>
+    served.some((r) => r.toLowerCase().includes(needle));
+
+  if (!data.coord_available && !covered("coord")) {
+    reasons.push({
+      key: "coord",
+      text: "A coord read degraded on this page, so at least one coord axis is unknown for at least one row.",
+    });
   }
-  if (data.work_unit_population_state === "unavailable") {
-    reasons.push(
-      `Coord's work-unit list could not be read, so the stored-status axis is unknown for EVERY row — not "coord has no work units"${
+  if (
+    data.work_unit_population_state === "unavailable" &&
+    !covered("work unit")
+  ) {
+    reasons.push({
+      key: "population",
+      text: `Coord's work-unit list could not be read, so the stored-status axis is unknown for EVERY row — not "coord has no work units"${
         data.work_unit_population_reason
           ? ` (${data.work_unit_population_reason})`
           : ""
-      }.`
-    );
+      }.`,
+    });
   }
-  if (!data.document_axis_complete) {
-    reasons.push(
-      `The document layer is incomplete: ${data.document_present_count} of ${
-        data.document_present_count + data.document_missing_count
-      } stems in the denominator carry a body. A stem with no artifact is classified unknown, never agreement.`
-    );
+  if (!data.document_axis_complete && !covered("document")) {
+    reasons.push({
+      key: "document",
+      text: `The document layer is incomplete: ${data.document_present_count} of ${data.facets.denominator} stems in the denominator carry a body. A stem with no artifact is classified unknown, never agreement.`,
+    });
   }
-  if (reasons.length === 0) return null;
+
+  // The REQUIRED flag decides whether the banner shows; the reasons only say
+  // why. An incomplete corpus with nothing to show still gets a banner, and
+  // says that the explanation itself is missing.
+  const incomplete = !data.facets.corpus_complete || reasons.length > 0;
+  if (!incomplete) return null;
+
   return (
     <div
       className="mt-3 flex items-start gap-2 rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2"
@@ -329,23 +429,52 @@ function BlindSpots({ data }: { data: ReconciliationResponse }) {
         <p className="font-medium">
           This read is not whole, so it is not agreement:
         </p>
-        <ul className="mt-1 list-disc space-y-0.5 pl-4">
-          {reasons.map((r) => (
-            <li key={r}>{r}</li>
-          ))}
-        </ul>
+        {reasons.length === 0 ? (
+          <p
+            className="mt-1"
+            data-testid="reconciliation-blind-spots-unexplained"
+          >
+            The response reports the corpus read as incomplete but named no
+            blind spot, so which part is missing is itself unknown.
+          </p>
+        ) : (
+          <ul className="mt-1 list-disc space-y-0.5 pl-4">
+            {reasons.map((r) => (
+              <li key={r.key}>{r.text}</li>
+            ))}
+          </ul>
+        )}
       </div>
     </div>
+  );
+}
+
+/**
+ * "Read at …" — the moment the numbers on screen were measured.
+ *
+ * This panel RETAINS the previous page across a page change and across a
+ * failed read, which is the right behaviour and also the reason a stamp is
+ * owed: without one, a retained page is indistinguishable from a fresh one.
+ */
+function ReadAt({ at }: { at: Date | null }) {
+  if (!at) return null;
+  return (
+    <span
+      className="ml-1 text-muted-foreground"
+      data-testid="reconciliation-read-at"
+    >
+      Read at {at.toLocaleTimeString()}.
+    </span>
   );
 }
 
 export function ReconciliationPanel() {
   const {
     data,
+    fetchedAt,
     loading,
     error,
     reload,
-    offset,
     setOffset,
     includeCoord,
     setIncludeCoord,
@@ -354,7 +483,15 @@ export function ReconciliationPanel() {
   const [showRows, setShowRows] = useState(false);
 
   const facets = data?.facets ?? null;
-  const pageEnd = data ? Math.min(data.offset + data.limit, data.total) : 0;
+  // `items.length`, NOT `offset + limit`. The route echoes `offset` and `limit`
+  // back verbatim with no clamping, so a past-the-end offset rendered
+  // "901-900 of 900". This is also correct on a partial last page.
+  const pageEnd = data ? data.offset + (data.items?.length ?? 0) : 0;
+  // Both the label and the BUTTONS read the delivered response, never the
+  // hook's `offset` state. `useRetainedRead` keeps the last good `data` when a
+  // read fails, so driving `disabled` from one and the arithmetic from the
+  // other stranded Previous and skipped a page after any failed page read.
+  const shownOffset = data?.offset ?? 0;
 
   return (
     <section
@@ -370,8 +507,9 @@ export function ReconciliationPanel() {
             the others: coord&apos;s stored status, the plan document&apos;s
             stamp, and coord&apos;s derived delivery verdict. Every class is
             listed including the ones that are zero, because &ldquo;no rows of
-            this class&rdquo; is a fact worth stating. The document axis here is
-            the <strong>artifact store</strong>, not a git ref.
+            this class&rdquo; is a fact worth stating. The document axis is
+            whatever the response names — today the artifact store, not a git
+            ref.
           </p>
         </div>
         <Button
@@ -407,18 +545,30 @@ export function ReconciliationPanel() {
           className="mt-4 h-24 w-full"
           data-testid="reconciliation-loading"
         />
-      ) : data == null || facets == null ? null : (
+      ) : data == null ? null : facets == null ? (
+        <p
+          className="mt-3 text-xs text-amber-700 dark:text-amber-300"
+          data-testid="reconciliation-no-facets"
+        >
+          The response carried no facet block, so nothing about agreement is
+          established here. The facet block IS this surface&apos;s answer —
+          without it an item list is a page, not a verdict.
+          <ReadAt at={fetchedAt} />
+        </p>
+      ) : (
         <>
           <BlindSpots data={data} />
 
           <StatCluster
             className="mt-3 flex flex-wrap items-center gap-2"
             data-testid="reconciliation-verdicts"
-            stats={VERDICT_ORDER.map((v) => ({
+            stats={verdictRows(facets.by_verdict).map((v) => ({
               key: v,
-              label: `${VERDICT_LABEL[v]} `,
-              value: facets.by_verdict[v] ?? 0,
-              tone: VERDICT_TONE[v],
+              label: `${VERDICT_LABEL[v] ?? v} `,
+              // `?? null` renders an em dash, never `0` — `StatCluster`'s own
+              // absence rule, and this panel's whole thesis.
+              value: facets.by_verdict[v] ?? null,
+              tone: VERDICT_TONE[v] ?? "muted",
               title:
                 v === "unknown"
                   ? "An axis could not be read, or the row is outside the page whose delivery verdict was computed. Not agreement."
@@ -439,6 +589,7 @@ export function ReconciliationPanel() {
             {data.axis_c_computed_count} of them (it is read per page, so every
             row outside this page is counted as unknown rather than dropped);
             page through to establish more.
+            <ReadAt at={fetchedAt} />
           </p>
 
           <div className="mt-3" data-testid="reconciliation-classes">
@@ -453,7 +604,7 @@ export function ReconciliationPanel() {
                 key: name,
                 label: `${classLabel(name)} `,
                 value: count,
-                tone: count === 0 ? "muted" : classTone(name),
+                tone: count ? classTone(name) : "muted",
                 title: name,
                 "data-testid": `reconciliation-class-${name}`,
               }))}
@@ -465,10 +616,7 @@ export function ReconciliationPanel() {
               <input
                 type="checkbox"
                 checked={includeCoord}
-                onChange={(e) => {
-                  setOffset(0);
-                  setIncludeCoord(e.target.checked);
-                }}
+                onChange={(e) => setIncludeCoord(e.target.checked)}
                 data-testid="reconciliation-include-coord"
               />
               Read coord&apos;s two axes
@@ -515,16 +663,16 @@ export function ReconciliationPanel() {
 
               <div className="mt-2 flex items-center gap-2 text-[11px] text-muted-foreground">
                 <span data-testid="reconciliation-page">
-                  {data.total === 0
-                    ? "No rows"
-                    : `${data.offset + 1}–${pageEnd} of ${data.total}`}
+                  {data.total === 0 || data.items.length === 0
+                    ? `No rows on this page, of ${data.total}`
+                    : `${shownOffset + 1}–${pageEnd} of ${data.total}`}
                 </span>
                 <Button
                   variant="ghost"
                   size="sm"
                   className="ml-auto h-7 px-2 text-xs"
-                  disabled={loading || data.offset === 0}
-                  onClick={() => setOffset(Math.max(0, offset - pageSize))}
+                  disabled={loading || shownOffset === 0}
+                  onClick={() => setOffset(Math.max(0, shownOffset - pageSize))}
                   data-testid="reconciliation-prev"
                 >
                   Previous
@@ -534,7 +682,7 @@ export function ReconciliationPanel() {
                   size="sm"
                   className="h-7 px-2 text-xs"
                   disabled={loading || pageEnd >= data.total}
-                  onClick={() => setOffset(offset + pageSize)}
+                  onClick={() => setOffset(shownOffset + pageSize)}
                   data-testid="reconciliation-next"
                 >
                   Next
