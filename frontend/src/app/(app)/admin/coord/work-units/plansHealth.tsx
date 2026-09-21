@@ -47,6 +47,12 @@ function capitalize(word: string): string {
   return word.charAt(0).toUpperCase() + word.slice(1);
 }
 
+/** The optional trailing arguments to {@link derivePlansHealth}. */
+export interface DerivePlansHealthOptions {
+  noun?: PlansHealthNoun;
+  incomplete?: boolean;
+}
+
 export interface PlansHealth {
   level: HealthStripLevel;
   headline: string;
@@ -137,16 +143,55 @@ export const SHEPHERD_FILTERS: { value: ShepherdFilter; label: string }[] = [
  * as well as the detail. Blocked still outranks both: a red row is red whether
  * or not the window refreshed.
  *
+ * **`incomplete` is the third thing `loaded` cannot express**, and it is the
+ * same rule one level out. `loaded`/`readFailed` ask whether these rows are an
+ * ANSWER; `incomplete` asks what they are an answer ABOUT. The corpus walk
+ * (`planWalk.ts`) can stop early, and a single `limit=500` page can come back
+ * full — either way the rows on the page are known NOT to be the whole corpus,
+ * and counting them as if they were is how "No plan is blocked" gets painted
+ * over a list that simply never reached the blocked plan. Until this argument
+ * existed that was exactly what happened: the fetch-window badge said
+ * INCOMPLETE while the strip above it rendered the partial rows as a
+ * whole-corpus verdict, in bigger type and with a green dot.
+ *
+ * So an incomplete list: keeps its counts (they are real — those rows were
+ * fetched), says in the detail line that they cover part of the list, carries a
+ * `list INCOMPLETE` badge so the caveat survives the strip being read alone,
+ * and — like a stale read — cannot be GREEN. A blocked row still outranks it:
+ * one blocked plan found in half a list is still a blocked plan.
+ *
+ * **BOTH callers pass it, because neither of them fetches a whole window by
+ * construction.** `/work-units` derives it from the walk's outcome; `/spawn` reads
+ * ONE page and derives it from whether that page came back full. It briefly
+ * looked as though `/spawn` needed nothing here — the argument shipped
+ * defaulting false with a note saying so — and that was wrong twice over:
+ * `/spawn` sent no `limit` at all, the proxy forwards none
+ * (`operations.py` `list_coord_plans`), and coord's own default is
+ * `q.limit.unwrap_or(100)` with no truncation signal in the body, so its strip
+ * could paint the green "No plan is blocked" over the first 100 rows of a
+ * ~1.8k-row corpus — the exact over-claim this argument exists to stop, on the
+ * page that was assumed exempt. `/spawn` now asks for an explicit limit so that
+ * a full page is a legible signal, and passes it. The default stays `false` for
+ * a future caller that really does hold the whole list.
+ *
  * @param readFailed the page's last fetch threw.
- * @param noun what one row IS on the calling surface — see
+ * @param opts.noun what one row IS on the calling surface — see
  *   {@link PlansHealthNoun}. Defaults to plan/plans.
+ * @param opts.incomplete these rows are known to be less than the whole
+ *   corpus. Defaults to false.
+ *
+ * The two trailing arguments are an options object rather than positions
+ * because they arrived from two independent changes that each claimed the
+ * fourth slot; a bare `true` there could not say which of them it meant.
  */
 export function derivePlansHealth(
   plans: CoordPlanRow[],
   loaded: boolean,
   readFailed = false,
-  noun: PlansHealthNoun = DEFAULT_NOUN
+  opts: DerivePlansHealthOptions = {}
 ): PlansHealth {
+  const noun = opts.noun ?? DEFAULT_NOUN;
+  const incomplete = opts.incomplete ?? false;
   if (readIsUnknown(loaded, readFailed)) {
     return {
       level: "amber",
@@ -195,7 +240,7 @@ export function derivePlansHealth(
   const level: HealthStripLevel =
     blocked > 0
       ? "red"
-      : unrecognised > 0 || readFailed
+      : unrecognised > 0 || readFailed || incomplete
         ? "amber"
         : "green";
   // **Every count is said ONCE, in the badges.** The headline and the detail
@@ -218,13 +263,29 @@ export function derivePlansHealth(
           // truncated (`FETCH_LIMIT`) — so it says the one thing that is
           // certainly true.
           "Last refresh failed — these counts are not current"
-        : plans.length === 0
-          ? "No work units in this window"
-          : `No ${noun.one} is blocked`;
-  const window =
+        : incomplete
+          ? // The all-clear, scoped to what was actually read. Unqualified,
+            // "No plan is blocked" is a claim about the corpus, and this list
+            // is not the corpus — the blocked plan may be on the part that
+            // was never fetched.
+            `No ${noun.one} is blocked in the part of the list that was read`
+          : plans.length === 0
+            ? "No work units in this window"
+            : `No ${noun.one} is blocked`;
+  // The headline above already scopes itself when it is the one doing the
+  // scoping; where something else owns the headline (a blocked row, a failed
+  // refresh) the qualifier has to be in the detail line or it is nowhere.
+  const incompleteQualifies = incomplete && blocked === 0 && !readFailed;
+  const window = [
+    incomplete && !incompleteQualifies
+      ? "These counts cover an incomplete list, not the whole corpus."
+      : "",
     unrecognised > 0
       ? "A status this build has no label for is shown verbatim."
-      : "";
+      : "",
+  ]
+    .filter(Boolean)
+    .join(" ");
   // Stale, not unknown: the rows are real, only their age is not. The
   // qualifier is why the detail line is de-duplicated rather than deleted:
   // under a BLOCKED headline nothing else says the counts are old. Where the
@@ -233,7 +294,9 @@ export function derivePlansHealth(
   // this strip just removed for the numbers.
   const headlineQualifies = readFailed && blocked === 0;
   const detail =
-    readFailed && !headlineQualifies ? staleDetail(window) : window || undefined;
+    readFailed && !headlineQualifies
+      ? staleDetail(window)
+      : window || undefined;
 
   return {
     level,
@@ -253,10 +316,27 @@ export function derivePlansHealth(
         key: "blocked",
         label: <>blocked {blocked}</>,
         tone: blocked > 0 ? "attention" : "muted",
-        title: "work units whose status is blocked — nothing downstream clears these",
+        title:
+          "work units whose status is blocked — nothing downstream clears these",
       },
       { key: "active", label: <>in progress {active}</>, tone: "default" },
       { key: "shipped", label: <>shipped {shipped}</>, tone: "muted" },
+      // Carried in the badge cluster as well as the detail line, because the
+      // badges are the one part of this strip that is always on screen — and
+      // an operator who reads "blocked 0" without "list INCOMPLETE" beside it
+      // has been told something the page does not know. No number: the count
+      // of what was NOT read is exactly what an incomplete list cannot state.
+      ...(incomplete
+        ? [
+            {
+              key: "incomplete",
+              label: <>list INCOMPLETE</>,
+              tone: "attention" as const,
+              title:
+                "these counts are derived from the rows fetched so far, which are not the whole corpus — see the fetch-window panel",
+            },
+          ]
+        : []),
       ...(unrecognised > 0
         ? [
             {
