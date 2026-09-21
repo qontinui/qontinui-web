@@ -1,7 +1,7 @@
 """coord.work_units — authored-order list index, plus derive_checked_at for the derive rotation
 
 Revision ID: coord_wu_list_order_01
-Revises: plan_library_07_plan_difficulty
+Revises: notif_gate_action_04_drop_dead_prefs
 Create Date: 2026-09-19
 
 Phases 1 and 3 (their alembic halves only) of plan
@@ -152,9 +152,9 @@ created (in that order — see its own docstring); ``authored_at``
 ``down_revision`` chains off the single live head on ``origin/main``. It was
 authored against ``agent_questions_alert_episode_01`` (the single head per
 ``scripts/ci/count_alembic_heads.py`` on ``7a5a6f07f``) and RE-POINTED onto
-``notif_gate_action_03_drop_enum_value``, then onto
-``plan_library_07_plan_difficulty`` — each time a peer revision landed while
-this PR was open — a re-point, not an ``alembic merge``, because the forked revision here
+``notif_gate_action_03_drop_enum_value``, then
+``plan_library_07_plan_difficulty``, then ``notif_gate_action_04_drop_dead_prefs``
+— each time a peer revision landed while this PR was open — a re-point, not an ``alembic merge``, because the forked revision here
 had not landed and so leaves nothing behind. The fork became visible in this
 PR's own tree once the branch was rebased onto the landed head, and was
 re-pointed here on the branch. Do NOT read that as "a required check always
@@ -175,7 +175,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "coord_wu_list_order_01"
-down_revision: str | Sequence[str] | None = "plan_library_07_plan_difficulty"
+down_revision: str | Sequence[str] | None = "notif_gate_action_04_drop_dead_prefs"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
