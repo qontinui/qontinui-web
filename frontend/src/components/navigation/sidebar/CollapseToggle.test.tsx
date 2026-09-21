@@ -64,7 +64,9 @@ describe("CollapseToggle", () => {
       controlsDrawer: { open: false, id: "shell-sidebar-drawer" },
     });
     const button = screen.getByRole("button", { name: "Open menu" });
-    expect(button).toHaveAccessibleName("Open menu");
+    // The tablet rail: collapsed wins over drawer mode, so the button stays an
+    // icon — a text label would overflow the 64px column.
+    expect(button).not.toHaveTextContent(/\S/);
     expect(button).toHaveAttribute("aria-expanded", "false");
     // The drawer is unmounted when closed, so naming its id here would point
     // at nothing.

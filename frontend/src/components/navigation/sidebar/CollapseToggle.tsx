@@ -74,7 +74,7 @@ export function CollapseToggle({
         className="flex h-8 shrink-0 items-center justify-center gap-2 rounded-md px-2 text-text-muted transition-colors hover:bg-surface-hover hover:text-text-primary motion-reduce:transition-none"
       >
         <PanelLeftClose className="size-3.5" aria-hidden />
-        <span className="text-xs">{label ?? "Collapse sidebar"}</span>
+        <span className="text-xs">{label ?? "Close menu"}</span>
       </button>
     );
   }
