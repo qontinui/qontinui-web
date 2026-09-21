@@ -61,8 +61,26 @@ export function CollapseToggle({
     );
   }
 
-  // Expanded, it shares the footer's bottom row with the runner status, so it
-  // is an icon button too — its name lives in `aria-label` and the tooltip.
+  // As the phone drawer's disclosure button it is the only visible way to
+  // close the menu, and a touch user never sees a hover tooltip — so it keeps
+  // its visible wording there.
+  if (controlsDrawer) {
+    return (
+      <button
+        type="button"
+        onClick={onToggle}
+        data-sidebar-collapse-toggle=""
+        {...disclosureProps}
+        className="flex h-8 shrink-0 items-center justify-center gap-2 rounded-md px-2 text-text-muted transition-colors hover:bg-surface-hover hover:text-text-primary motion-reduce:transition-none"
+      >
+        <PanelLeftClose className="size-3.5" aria-hidden />
+        <span className="text-xs">{label ?? "Collapse sidebar"}</span>
+      </button>
+    );
+  }
+
+  // Otherwise it shares the footer's bottom row with the runner status, so it
+  // is an icon button — its name lives in `aria-label` and the tooltip.
   const expandedLabel = label ?? "Collapse sidebar";
   return (
     <Tooltip>

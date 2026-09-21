@@ -31,7 +31,8 @@ describe("CollapseToggle", () => {
   it("is a plain collapse toggle by default", () => {
     renderToggle();
     const button = screen.getByRole("button", { name: "Collapse sidebar" });
-    expect(button).toHaveAccessibleName("Collapse sidebar");
+    // Icon-only in the footer row: the name is carried by aria-label alone.
+    expect(button).not.toHaveTextContent(/\S/);
     expect(button).not.toHaveAttribute("aria-expanded");
     expect(button).not.toHaveAttribute("aria-controls");
   });
@@ -49,6 +50,9 @@ describe("CollapseToggle", () => {
       controlsDrawer: { open: true, id: "shell-sidebar-drawer" },
     });
     const button = screen.getByRole("button", { name: "Close menu" });
+    // The drawer's only visible close control keeps its wording on screen —
+    // a touch user never sees the hover tooltip.
+    expect(button).toHaveTextContent("Close menu");
     expect(button).toHaveAttribute("aria-expanded", "true");
     expect(button).toHaveAttribute("aria-controls", "shell-sidebar-drawer");
   });
