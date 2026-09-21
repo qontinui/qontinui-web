@@ -31,6 +31,7 @@ from unittest.mock import AsyncMock, MagicMock
 from uuid import uuid4
 
 import pytest
+from starlette.websockets import WebSocketState
 
 from app.services.runner_websocket_manager import RunnerWebSocketManager
 
@@ -60,6 +61,22 @@ def _make_manager() -> tuple[RunnerWebSocketManager, MagicMock]:
     redis.pubsub = MagicMock(return_value=pubsub)
 
     return RunnerWebSocketManager(redis), redis
+
+
+def _live_runner_ws() -> MagicMock:
+    """A registered runner socket whose handler is still alive.
+
+    The send-path gate (``WebSocketConnectionRegistry.can_send_to_runner``)
+    reads ``client_state`` / ``application_state``, and a bare ``MagicMock``
+    auto-creates both as non-``CONNECTED`` values — i.e. it reads as a
+    registration that outlived its socket. A "local" socket in these tests
+    is a LIVE one, so say so.
+    """
+    ws = MagicMock()
+    ws.send_json = AsyncMock()
+    ws.client_state = WebSocketState.CONNECTED
+    ws.application_state = WebSocketState.CONNECTED
+    return ws
 
 
 def _mobile_ws() -> MagicMock:
@@ -111,9 +128,7 @@ async def test_unsubscribe_unchanged_when_runner_socket_is_local() -> None:
     """
     manager, redis = _make_manager()
     runner_id = str(uuid4())
-    runner_ws = MagicMock()
-    runner_ws.send_json = AsyncMock()
-    manager.registry.register_runner(runner_id, runner_ws)
+    manager.registry.register_runner(runner_id, _live_runner_ws())
     assert manager.registry.is_runner_connected(runner_id) is True
 
     ws = _mobile_ws()
@@ -151,9 +166,7 @@ async def test_subscribe_published_when_runner_socket_is_local() -> None:
     """...and still fires normally when the socket IS local."""
     manager, redis = _make_manager()
     runner_id = str(uuid4())
-    runner_ws = MagicMock()
-    runner_ws.send_json = AsyncMock()
-    manager.registry.register_runner(runner_id, runner_ws)
+    manager.registry.register_runner(runner_id, _live_runner_ws())
 
     ws = _mobile_ws()
     connected = await manager.connect_mobile_terminal(runner_id, ws, uuid4())
