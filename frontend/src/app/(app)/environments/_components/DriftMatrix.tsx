@@ -350,7 +350,7 @@ function DeltaRow({ delta }: { delta: KeyDelta }) {
           {delta.observation_only && !delta.derived && (
             <span
               className="ml-1.5 font-sans font-normal text-muted-foreground"
-              title="Real drift on this machine, but not a key anyone can set — it is a measurement of the installed environment. The box converges by installing packages; this value follows. Deliberately absent from the copy-remediation plan."
+              title="Real drift on this machine, but not a key anyone can set — it is a measurement, not a value. The box converges by taking the action that produces it (installing the packages, running the harness bootstrap) and this reading then follows. Deliberately absent from the copy-remediation plan."
             >
               (measured, not settable)
             </span>
