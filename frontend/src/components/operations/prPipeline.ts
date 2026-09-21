@@ -555,14 +555,25 @@ export function hasPendingChecks(
  * read, and gating on the sha ALONE would miss any coord deploy that does not
  * serialize it (older deploys did not) — there the ff-landed rows would fall
  * through to the GitHub derivation and pollute the LIVE list as "Ready".
+ *
+ * coord's `landed-open` merge_status is the third signal, and the only one a
+ * phantom-open row on the OPEN listing carries: coord keeps
+ * `merge_commit_sha` null on open rows, while `classify_merge_status` emits
+ * `landed-open` when coord ff-landed the PR at its CURRENT head (`land_stamp
+ * == current_head`). Without it the row fell through to `statusFromGitHub`,
+ * whose GitHub signals froze at the moment before the land — and read as
+ * `conflict`, red, about work already on the base branch. Keyed on the
+ * current head by coord, so a PR pushed to after its land is NOT covered and
+ * falls back to its live signals, as it should.
  */
 export function isMergedPr(
-  pr: Pick<PrRow, "pr_state" | "merge_commit_sha">
+  pr: Pick<PrRow, "pr_state" | "merge_commit_sha" | "merge_status">
 ): boolean {
   return (
     pr.pr_state === "merged" ||
     pr.pr_state === "closed" ||
-    pr.merge_commit_sha != null
+    pr.merge_commit_sha != null ||
+    pr.merge_status === "landed-open"
   );
 }
 
@@ -798,7 +809,9 @@ function statusFromGitHub(
       label: "Merged",
       reason: pr.merge_commit_sha
         ? `landed on ${pr.base_branch} as ${pr.merge_commit_sha.slice(0, 7)}`
-        : `landed on ${pr.base_branch}`,
+        : pr.merge_status === "landed-open"
+          ? `landed on ${pr.base_branch} by coord — GitHub has not closed the PR yet`
+          : `landed on ${pr.base_branch}`,
       attention: "none",
     };
   }
@@ -1148,6 +1161,71 @@ function escalateIfStale(
     waitingDwellCapMs(kind, repo, economics)
   );
   return pr === null ? escalated : withDwellEvidence(escalated, dwellMs);
+}
+
+/**
+ * Of two rows coord served for the SAME PR, is `candidate` the more truthful?
+ *
+ * The only discriminator that matters is `merge_commit_sha`. A phantom-open
+ * row knows the PR landed (coord classified it `landed-open`) but not WHERE or
+ * WHEN; its landed twin carries the sha and `merged_at`. Rendering the former
+ * on the Merged tab shows strictly less than coord reported, on the one
+ * surface whose entire purpose is the landing record.
+ *
+ * Deliberately NOT a general "newer wins": both rows come from one response,
+ * so there is no ordering between them to appeal to, and `merged_at` is absent
+ * from exactly the row we want to lose. Ties keep the incumbent, which makes
+ * the collapse stable and order-independent.
+ */
+function landedRowWins(candidate: PrRow, held: PrRow): boolean {
+  return held.merge_commit_sha == null && candidate.merge_commit_sha != null;
+}
+
+/**
+ * Fuse the pipeline's two PR reads into ONE row per PR.
+ *
+ * ## The duplicate this exists for
+ *
+ * coord ff-lands by pushing rebased commits straight to the base branch, so
+ * GitHub never auto-closes the PR: it sits "phantom-open" until coord's
+ * straggler sweep. `GET /pr-merge/prs?include_merged=` then returns the SAME
+ * PR twice **inside one response** — once in the open/draft list it always
+ * serves, and once among the recently-landed rows it appends. `isMergedPr`
+ * accepts both (one for `merge_status === "landed-open"`, one for its sha), so
+ * both reach the caller's merged array.
+ *
+ * Two PrRows sharing a `singleKey` become two `PipelineRow`s sharing a React
+ * key, and the PR renders twice — operator-reported 2026-09-20 against
+ * `qontinui-runner#1538` and `qontinui-coord#2258`, each appearing once as
+ * "landed on main by coord — GitHub has not closed the PR yet" and once as
+ * "landed on main as <sha>".
+ *
+ * ## Why the previous fix did not cover it
+ *
+ * The caller already subtracted `merged` from `open`, with a comment about
+ * this exact ff-land mechanic. That collapse is real and still applies — but
+ * it only ever compared the two ARRAYS. When coord puts both copies in the
+ * SAME array, the comparison never looks at them, and the guard reads as
+ * complete while the duplicate walks straight through it. Collapsing within
+ * `merged` first is what closes that, and doing it here rather than in the
+ * component is R8: the derivation is exhaustively testable without a render.
+ *
+ * Returns live-open rows first, then one row per landed PR, preserving each
+ * input's relative order — the same shape the caller built by hand before.
+ */
+export function fusePipelinePrs(open: PrRow[], merged: PrRow[]): PrRow[] {
+  const landedByKey = new Map<string, PrRow>();
+  for (const pr of merged) {
+    const key = singleKey(pr.repo, pr.branch);
+    const held = landedByKey.get(key);
+    if (!held || landedRowWins(pr, held)) landedByKey.set(key, pr);
+  }
+  // A PR whose land coord already knows about is not live work, whichever of
+  // its two shapes survived above.
+  const liveOpen = open.filter(
+    (pr) => !landedByKey.has(singleKey(pr.repo, pr.branch))
+  );
+  return [...liveOpen, ...landedByKey.values()];
 }
 
 export function buildPipelineRows(

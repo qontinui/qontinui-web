@@ -22,7 +22,16 @@
  *  4. **CI capacity** — how much is it ALLOWED to take? Phase 2 mounts the
  *     shared `CiNodeConfigPanel` as a per-row disclosure on the machine list,
  *     collapsed, rather than as a fourth section: the knob and the telemetry
- *     that says what to set it to belong in one viewport.
+ *     that says what to set it to belong in one viewport. Each row also
+ *     carries its drain state and the Drain/Undrain lever (plan
+ *     `2026-09-01-device-drain-does-not-reach-agent-session-spawning`
+ *     Phase 4b) on the same principle.
+ *  5. **Who changed it** — the operator audit feed, last and collapsed (plan
+ *     `2026-08-20-fleet-page-runner-enable-disable-switch` Phase 5). It is
+ *     history rather than liveness, and it is HERE rather than on a sibling
+ *     route because the writes it explains are on this page: the drain lever
+ *     shows the drain in force now, and this is the durable answer to "who
+ *     took this host out, when, and why".
  *
  * ## The health strip answers THREE questions, not one
  *
@@ -57,21 +66,29 @@
  * have stopped sending it work, and that is only true while both consumers
  * read one definition of the number AND the verdict.
  *
- * It opens THREE POLLS: `/fleet/health` here at 10 s,
- * `/fleet/resource-samples` inside `FleetResourcesSection`, which passes the
- * same rows to both the strip and the CI panel, and `/fleet/drain` here at
- * 30 s. Two polls of ONE route would be two chances to disagree about what the
- * fleet looks like right now; three polls of three routes is one read per
- * fact, which is the shape this page is built on.
+ * It opens FOUR POLLS, each of a DIFFERENT route: `/fleet/health` here at
+ * 10 s, `/fleet/resource-samples` inside `FleetResourcesSection` (which passes
+ * the same rows to both the strip and the CI panel), `/fleet/drain` here at
+ * 30 s, and `/fleet/ci-runners` here at coord's own registrar cadence. Two
+ * polls of ONE route would be two chances to disagree about what the fleet
+ * looks like right now; one poll per route is one read per fact, which is the
+ * shape this page is built on.
  *
- * The drain poll is the newest (plan
+ * The drain poll (plan
  * `2026-09-01-device-drain-does-not-reach-agent-session-spawning` Phase 4b)
- * and is the one read here that is NOT a telemetry cadence — a drain changes
+ * is the one read here that is NOT a telemetry cadence — a drain changes
  * on an operator action. It polls anyway, and slowly, because a drain also
  * **expires by itself**: coord evaluates `until` on read and runs no sweeper,
  * so a machine re-enters the fleet with nothing writing anything anywhere. A
  * once-only read would leave "Drained until 14:03" on screen at 15:00, which
  * is a false claim rather than a stale one.
+ *
+ * The CI-runner mirror poll was added by plan
+ * `2026-08-20-fleet-page-runner-enable-disable-switch` Phase 2 and is not a
+ * second view of an existing one: the GitHub fleet's rows are structurally
+ * invisible to `/fleet`'s device read, so nothing else on this page can see
+ * the labels GitHub routes on. It polls at 60 s because coord's registrar
+ * rewrites those rows on that cadence; faster reads the same row twice.
  *
  * The fourth read is `/devenv/machines`, read ONCE (`useDevenvMachines`) and
  * not polled: it carries the CI-capacity JOIN, and the roster it indexes
@@ -88,9 +105,14 @@ import { useRouter } from "next/navigation";
 import { ExternalLink } from "lucide-react";
 import { HealthStrip } from "@/components/console";
 import type { HealthBadge } from "@/components/console";
-import { FleetOverview, FleetResourcesSection } from "@/components/operations";
+import {
+  FleetOverview,
+  FleetResourcesSection,
+  OperatorAuditPanel,
+} from "@/components/operations";
 import { summarizeCoordCredentials } from "@/components/operations/coordCredentialStatus";
 import { summarizeFleetLiveness } from "@/components/operations/fleetLiveness";
+import { useCiRunnerMirror } from "@/components/operations/useCiRunnerMirror";
 import { useDeviceStatusStream } from "@/components/operations/useDeviceStatusStream";
 import { useDevenvMachines } from "@/components/operations/useDevenvMachines";
 import { useFleetDrain } from "@/components/operations/useFleetDrain";
@@ -129,6 +151,10 @@ export default function CoordDevOpsPage() {
   // list and its tile read it through `FleetOverview`, and the strip's
   // credential rollup below reads the same `details` bag the rows do.
   const deviceStatus = useDeviceStatusStream();
+  // Coord's mirror of the GitHub-side CI runners and the labels GitHub routes
+  // on. Owned here, one poll, passed down — the machine rows resolve their own
+  // row from it rather than fetching per card.
+  const ciRunnerMirror = useCiRunnerMirror();
   const devices = fleet.data?.devices ?? EMPTY_DEVICES;
   // The page's clock, advanced independently of every read. A runner's
   // `coord_credential` report goes stale by TIME alone
@@ -489,10 +515,12 @@ export default function CoordDevOpsPage() {
           from `ciMachines` — one read, no per-row fetch. Each row also carries
           its drain state and the Drain/Undrain lever, resolved from `drain` —
           the one read, again, never one per card. `deviceStatus` is the page's
-          one device-status subscription, shared with the strip above. */}
+          one device-status subscription, shared with the strip above.
+          `ciRunnerMirror` is coord's CI-runner label mirror, one poll. */}
       <FleetOverview
         health={fleet}
         ciMachines={ciMachines}
+        ciRunnerMirror={ciRunnerMirror}
         drain={drain}
         deviceStatus={deviceStatus}
         nowMs={nowMs}
@@ -502,6 +530,23 @@ export default function CoordDevOpsPage() {
           poll of /fleet/resource-samples. `devices` is the spine: a machine
           that publishes no sample still gets a row, as `unknown`. */}
       <FleetResourcesSection devices={devices} />
+
+      {/* 5. Who changed what. Plan
+          `2026-08-20-fleet-page-runner-enable-disable-switch` Phase 5.
+
+          It belongs on THIS page because the writes it explains are on this
+          page: each row's Drain/Undrain lever shows the drain in force NOW,
+          and this panel is the durable record of who set or released it, when,
+          and with what reach. Putting the record of an action on a
+          different page from the action is the shape the merge kill switch was
+          deliberately moved out of.
+
+          Last, and collapsed: it is history, not liveness, so it must not
+          compete with the three sections above that answer "what is happening
+          right now". Unlike the drain dialog it persists being open — it is
+          read-only, so there is no consent surface to keep out from under a
+          cursor. */}
+      <OperatorAuditPanel />
     </div>
   );
 }

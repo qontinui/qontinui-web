@@ -17,12 +17,14 @@
 // What remains is presentation only — no fetching, no state, no transport.
 // Every export here is rendered by `MergePipeline`:
 //
-//   - `MergeTrainRow`      — one raw scheduler proposal ("Merge internals")
-//   - `SuggestionCard`     — one pending drift/audit suggestion
-//   - `GateDecisionCounts` — the "Gate decisions" header counts
-//   - `GateDecisionRow`    — one blast-radius gate decision
+//   - `MergeTrainRow`       — one raw scheduler proposal (Coord internals)
+//   - `SuggestionCard`      — one pending drift/audit suggestion
+//   - `GateDecisionCounts`  — the gate-decision header counts
+//   - `GateDecisionRow`     — one blast-radius gate decision, standalone
+//   - `GateDecisionDetail`  — the same decision as EVIDENCE inside a PR's row
 //
-// Data for all four comes from `useMergePipelineData`.
+// Data for all five comes from `useMergePipelineData`; the pure derivation
+// behind the last three lives in `gateDecision.ts` (R8).
 
 import { useMemo } from "react";
 import { Badge } from "@/components/ui/badge";
@@ -36,6 +38,12 @@ import {
 import { AUTHOR_RED, WAITING_AMBER } from "@/components/console";
 import { relativeTime } from "./utils";
 import { redactSecrets } from "./mergeTypes";
+import {
+  gateFirstSeenDay,
+  gateRepeatCount,
+  honestyLabel,
+  type HonestyTone,
+} from "./gateDecision";
 import type {
   BlastRadiusBlock,
   ProposalDetail,
@@ -269,78 +277,10 @@ export function SuggestionCard({ sug, busy, onAction }: SuggestionCardProps) {
 // tenant-scoped, any-member auth).
 //
 // Honesty rendering (binding cross-cutting gate): a degraded decision is NEVER
-// presented as authoritative.
-//   - coverage < 1            -> "partial coverage"
-//   - graph_available === false -> "non-authoritative (no resolved graph)"
-//   - block_reason_code absent  -> "gate did not run" (distinct from "passed")
-//   - coverage/graph absent     -> "coverage not reported" (NOT full coverage)
-// The empty-list case ("no gate blocks") is handled at the section level and is
+// presented as authoritative. The derivation is `gateDecision.ts` — pure and
+// directly unit-tested, rather than reachable only through a rendered row.
+// The empty-list case ("no gate blocks") is handled by the caller and is
 // explicitly NOT an error.
-
-type HonestyTone = "ok" | "degraded" | "unknown";
-
-interface HonestyLabel {
-  text: string;
-  tone: HonestyTone;
-}
-
-/**
- * Derive the coverage / honesty label for a gate block. Pure + total — every
- * branch returns a label, so a row never renders an undefined honesty state.
- */
-function honestyLabel(b: BlastRadiusBlock): HonestyLabel {
-  // The gate did not run on this PR — the decision is not a gate verdict at
-  // all. Distinct from "passed" and from a degraded run.
-  if (b.block_reason_code === null || b.block_reason_code === undefined) {
-    return { text: "gate did not run", tone: "unknown" };
-  }
-  // Ran without a resolved code graph — explicitly non-authoritative.
-  if (b.graph_available === false) {
-    return { text: "non-authoritative (no resolved graph)", tone: "degraded" };
-  }
-  // Ran on a partial/cold mirror — honest about incompleteness.
-  if (typeof b.coverage === "number" && b.coverage < 1) {
-    const pct = Math.round(b.coverage * 100);
-    return { text: `partial coverage (${pct}%)`, tone: "degraded" };
-  }
-  // Authoritative full-coverage run.
-  if (b.coverage === 1 && b.graph_available === true) {
-    return { text: "full coverage", tone: "ok" };
-  }
-  // Coverage/graph fields not yet plumbed through coord — do NOT claim full
-  // coverage we can't substantiate.
-  return { text: "coverage not reported", tone: "unknown" };
-}
-
-/**
- * How many evaluations a gate-decision row stands for.
- *
- * Coord coalesces byte-identical repeat evaluations onto the newest row and
- * reports the run length as `repeat_count`; a coord that has not shipped that
- * yet omits the field, in which case the row is exactly one evaluation.
- * Clamped to >= 1 on purpose — rendering `×0` would claim the decision never
- * happened, which is the opposite of what the row proves.
- */
-function gateRepeatCount(b: BlastRadiusBlock): number {
-  const n = b.repeat_count;
-  if (typeof n !== "number" || !Number.isFinite(n) || n < 1) return 1;
-  return Math.floor(n);
-}
-
-/**
- * `YYYY-MM-DD` (UTC) for the repeat badge's "since" clause. Returns null both
- * when coord sent no `first_seen_at` AND when what it sent will not parse —
- * the badge then states the count alone rather than substituting `at`, which
- * would falsely claim a zero-length run. The two null causes are deliberately
- * NOT distinguished by the caller's copy: "unknown" is true of both, whereas
- * "not reported" would be a lie about the malformed case.
- */
-function gateFirstSeenDay(iso: string | null | undefined): string | null {
-  if (!iso) return null;
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return null;
-  return d.toISOString().slice(0, 10);
-}
 
 function honestyBadgeClass(tone: HonestyTone): string {
   switch (tone) {
@@ -429,11 +369,18 @@ export function GateDecisionCounts({
   );
 }
 
-export function GateDecisionRow({ block }: { block: BlastRadiusBlock }) {
+/**
+ * The decision's chips — reason code, outer state, honesty, repetition, age.
+ *
+ * Shared verbatim by the standalone `GateDecisionRow` and the in-row
+ * `GateDecisionDetail`, because the honesty contract is the same claim in both
+ * places and a second copy is how the two drift. The PR link is NOT in here:
+ * the standalone row needs it (nothing else on screen says which PR), and the
+ * in-row form must not have it (the row it sits inside IS the PR, and
+ * re-stating the identity is the duplication this redesign removes).
+ */
+function GateDecisionChips({ block }: { block: BlastRadiusBlock }) {
   const honesty = honestyLabel(block);
-  const repoShort = block.repo.includes("/")
-    ? block.repo.split("/").slice(1).join("/")
-    : block.repo;
   // Repetition, stated rather than enumerated: coord returns the newest row
   // per PR, so a run of identical evaluations collapses to one row carrying
   // its own length. `1` (or an older coord's absent field) renders no chip —
@@ -441,6 +388,103 @@ export function GateDecisionRow({ block }: { block: BlastRadiusBlock }) {
   // and only the second one is worth an operator's attention.
   const repeats = gateRepeatCount(block);
   const firstSeenDay = gateFirstSeenDay(block.first_seen_at);
+  return (
+    <>
+      {block.block_reason_code && (
+        <Badge variant="outline" className="font-mono text-[10px] normal-case">
+          {block.block_reason_code}
+        </Badge>
+      )}
+      {block.outer_state && (
+        <Badge variant="outline" className="font-mono text-[10px] uppercase">
+          {block.outer_state}
+        </Badge>
+      )}
+      <Badge
+        variant="outline"
+        className={`font-mono text-[10px] normal-case ${honestyBadgeClass(
+          honesty.tone
+        )}`}
+        data-honesty-label={honesty.text}
+      >
+        {honesty.text}
+      </Badge>
+      {repeats > 1 && (
+        <Badge
+          variant="outline"
+          className={`font-mono text-[10px] normal-case ${WAITING_AMBER}`}
+          data-repeat-count={repeats}
+          data-first-seen-at={block.first_seen_at ?? ""}
+          title={
+            firstSeenDay
+              ? `Coord re-evaluated this PR and reached the identical decision ${repeats} times since ${firstSeenDay}; this row is the most recent occurrence.`
+              : `Coord re-evaluated this PR and reached the identical decision ${repeats} times; this row is the most recent occurrence. First occurrence unknown.`
+          }
+        >
+          ×{repeats}
+          {firstSeenDay ? ` since ${firstSeenDay}` : ""}
+        </Badge>
+      )}
+      <span className="text-xs text-muted-foreground tabular-nums">
+        {relativeTime(block.at)}
+      </span>
+    </>
+  );
+}
+
+/** The removed export and the files still importing it — the gate's evidence. */
+function GateDecisionEvidence({ block }: { block: BlastRadiusBlock }) {
+  if (!block.removed_export_name && block.referenced_by.length === 0) {
+    return null;
+  }
+  return (
+    <>
+      {block.removed_export_name && (
+        <p className="text-xs mt-1 m-0">
+          <span className="font-semibold">Removed export:</span>{" "}
+          <code className="font-mono">{block.removed_export_name}</code>
+          {block.file && (
+            <>
+              {" "}
+              from <code className="font-mono">{block.file}</code>
+            </>
+          )}
+        </p>
+      )}
+      {block.referenced_by.length > 0 && (
+        <div className="mt-1">
+          <p className="text-xs font-semibold m-0">
+            Still referenced by ({block.referenced_by.length}):
+          </p>
+          <ul className="mt-0.5 space-y-0.5">
+            {block.referenced_by.map((ref, i) => (
+              <li
+                key={`${ref.file}:${ref.line}:${i}`}
+                className="text-[11px] text-muted-foreground font-mono"
+              >
+                {ref.file}:{ref.line}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </>
+  );
+}
+
+/**
+ * A gate decision on its own, identifying the PR it is about.
+ *
+ * After the 2026-09-19 redesign this form is used ONLY for decisions whose PR
+ * is not in the pipeline list (see `unattachedGateBlocks`) — the audit residue.
+ * A decision about a PR that IS listed renders as `GateDecisionDetail` inside
+ * that PR's own row instead.
+ */
+export function GateDecisionRow({ block }: { block: BlastRadiusBlock }) {
+  const honesty = honestyLabel(block);
+  const repoShort = block.repo.includes("/")
+    ? block.repo.split("/").slice(1).join("/")
+    : block.repo;
   return (
     <div
       className="border rounded-md p-3 border-border bg-muted/10"
@@ -462,82 +506,52 @@ export function GateDecisionRow({ block }: { block: BlastRadiusBlock }) {
               {repoShort}#{block.pr_number}
               <ExternalLink className="h-3 w-3" />
             </a>
-            {block.block_reason_code && (
-              <Badge
-                variant="outline"
-                className="font-mono text-[10px] normal-case"
-              >
-                {block.block_reason_code}
-              </Badge>
-            )}
-            {block.outer_state && (
-              <Badge
-                variant="outline"
-                className="font-mono text-[10px] uppercase"
-              >
-                {block.outer_state}
-              </Badge>
-            )}
-            <Badge
-              variant="outline"
-              className={`font-mono text-[10px] normal-case ${honestyBadgeClass(
-                honesty.tone
-              )}`}
-              data-honesty-label={honesty.text}
-            >
-              {honesty.text}
-            </Badge>
-            {repeats > 1 && (
-              <Badge
-                variant="outline"
-                className={`font-mono text-[10px] normal-case ${WAITING_AMBER}`}
-                data-repeat-count={repeats}
-                data-first-seen-at={block.first_seen_at ?? ""}
-                title={
-                  firstSeenDay
-                    ? `Coord re-evaluated this PR and reached the identical decision ${repeats} times since ${firstSeenDay}; this row is the most recent occurrence.`
-                    : `Coord re-evaluated this PR and reached the identical decision ${repeats} times; this row is the most recent occurrence. First occurrence unknown.`
-                }
-              >
-                ×{repeats}
-                {firstSeenDay ? ` since ${firstSeenDay}` : ""}
-              </Badge>
-            )}
-            <span className="text-xs text-muted-foreground tabular-nums">
-              {relativeTime(block.at)}
-            </span>
+            <GateDecisionChips block={block} />
           </div>
-          {block.removed_export_name && (
-            <p className="text-xs mt-1">
-              <span className="font-semibold">Removed export:</span>{" "}
-              <code className="font-mono">{block.removed_export_name}</code>
-              {block.file && (
-                <>
-                  {" "}
-                  from <code className="font-mono">{block.file}</code>
-                </>
-              )}
-            </p>
-          )}
-          {block.referenced_by.length > 0 && (
-            <div className="mt-1">
-              <p className="text-xs font-semibold">
-                Still referenced by ({block.referenced_by.length}):
-              </p>
-              <ul className="mt-0.5 space-y-0.5">
-                {block.referenced_by.map((ref, i) => (
-                  <li
-                    key={`${ref.file}:${ref.line}:${i}`}
-                    className="text-[11px] text-muted-foreground font-mono"
-                  >
-                    {ref.file}:{ref.line}
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
+          <GateDecisionEvidence block={block} />
         </div>
       </div>
+    </div>
+  );
+}
+
+/**
+ * The same decision as EVIDENCE inside the PR's own expanded row.
+ *
+ * This is where a gate decision belongs, and the reason the page-level "Gate
+ * decisions" section is gone: for a PR on this page, "the blast-radius gate
+ * held you, here is the export you removed and who still imports it" is an
+ * answer to *why is my PR stuck* — the question the row was already opened to
+ * ask. As a section it was a second list the operator joined by eye.
+ *
+ * It carries the SAME honesty chips as the standalone row, and one caveat the
+ * standalone form does not need: coord's row is the most recent time the gate
+ * reached this decision within its retention window, so it is an audit record
+ * rather than an assertion that the PR is held *right now*. That caveat used
+ * to be a footnote under the whole section; attached to one decision it can
+ * finally be said about the thing it is true of.
+ */
+export function GateDecisionDetail({ block }: { block: BlastRadiusBlock }) {
+  const honesty = honestyLabel(block);
+  return (
+    <div
+      className="space-y-1"
+      data-testid="row-gate-decision"
+      data-block-reason-code={block.block_reason_code ?? ""}
+      data-honesty-tone={honesty.tone}
+    >
+      <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground m-0 flex items-center gap-1">
+        <ShieldQuestion className="h-3 w-3" />
+        Blast-radius gate
+      </p>
+      <div className="flex items-center gap-2 flex-wrap">
+        <GateDecisionChips block={block} />
+      </div>
+      <GateDecisionEvidence block={block} />
+      <p className="text-[11px] text-muted-foreground m-0">
+        The most recent time the gate reached this decision, within
+        coord&apos;s retention window — not proof the PR is still held.
+      </p>
     </div>
   );
 }

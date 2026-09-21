@@ -1,0 +1,80 @@
+name: global state assertions
+
+# Phase 2 deliverable of plan
+# `2026-08-31-global-state-assertion-inventory-survives-its-plan`.
+#
+# WHAT IT FORBIDS: a NEW exact-count or global-emptiness assertion under
+# `backend/tests/` over SHARED state — any file whose count exceeds the row it
+# carries in `backend/tests/.global-state-assertions-allowlist` (no row = 0
+# allowed). Two rules, both mechanical:
+#
+#   Rule A (unfiltered SQL) — the measured value comes from a query with no
+#   WHERE clause at all, so it counts every row any writer put in the table.
+#
+#   Rule B (unused discriminator) — the value comes from a same-file helper
+#   that DECLARES keyword-only discriminators and the call site passes none of
+#   them. A helper grows those keywords precisely because someone established
+#   the unfiltered read was unsafe, so every call that ignores them is a member
+#   of the class by construction.
+#
+# WHY IT EXISTS: the predecessor plan
+# `2026-08-01-web-tests-global-state-assertions` closed 8 such sites from a
+# hand-authored markdown table and shipped. A 9th site it never enumerated
+# reddened an alembic-only PR (qontinui-web#1103) with `assert 2 == 1` six days
+# later — `conftest.py` boots the app session-scoped and autouse, leaving
+# `memory_consolidate` live for the whole session, and its sweep enqueues
+# against every tenant with live records including a test's fresh `uuid4()`
+# one. An inventory-driven remediation closes its inventory, not its defect
+# class: the table was written before the site existed and nothing recomputed
+# it. This gate is that recomputation.
+#
+# THE ALLOWLIST IS A RATCHET, matched EXACTLY (the posture of
+# forbid-fixed-sleeps-in-e2e.yml, whose shape this mirrors): a row may go down
+# or away, never up, and a fixed test must lower its row in the same commit — a
+# stale row is a hole the count could silently climb back into. A green here
+# means no file carries more global-state assertions than it did when the
+# ratchet was set; it does NOT mean the suite has none. The rows say how many
+# remain, per file.
+#
+# The logic lives in ONE place, `scripts/ci/check_global_state_assertions.py`,
+# shared with `.qontinui/ci.toml` and `.pre-commit-config.yaml` (the
+# `_gate_lib` convention). Pure stdlib — no `pip install`, so this leg cannot
+# go red on a package-index outage, and the runner's argv-only ci_node lane
+# carries it unchanged.
+#
+# NOT PATH-FILTERED, deliberately: it creates a check-run on EVERY pull
+# request, so it is eligible to become a required context without the
+# "Expected forever" wedge a path-filtered required check produces (the
+# 2026-06-26 fleet wedge). It is NOT registered as required today — that is an
+# operator ruleset decision, not a side effect of adding a workflow. The push
+# branch list matches the repo's other guard workflows, so coord's
+# merge-candidate refs get the same verdict as the PR did.
+
+on:
+  workflow_dispatch:
+  pull_request:
+    branches: [main, develop]
+  push:
+    branches:
+      - main
+      - develop
+      - 'merge-candidate/**'
+      - 'merge-candidate-spec/**'
+      - 'merge-candidate-batch/**'
+
+permissions:
+  contents: read
+
+jobs:
+  global-state-assertions:
+    name: Forbid new global-state assertions in the backend suite
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Count global-state assertions in backend/tests against the allowlist
+        run: python scripts/ci/check_global_state_assertions.py

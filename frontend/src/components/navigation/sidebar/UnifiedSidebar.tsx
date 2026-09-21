@@ -8,7 +8,6 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { useAuth } from "@/contexts/auth-context";
 import { useSidebar } from "@/contexts/sidebar-context";
 import { useProductMode } from "@/contexts/product-mode-context";
-import { STORAGE_KEYS } from "@qontinui/navigation";
 import { toast } from "sonner";
 import { useSlotComponent } from "@/lib/extension-slots";
 import { ErrorBoundary } from "@/components/error-boundary";
@@ -21,6 +20,7 @@ import { SidebarHeader } from "./_components/SidebarHeader";
 import { SidebarNav } from "./_components/SidebarNav";
 import { SidebarFooter } from "./_components/SidebarFooter";
 import { ProjectSwitcher } from "./ProjectSwitcher";
+import { SidebarDrawer, SIDEBAR_DRAWER_ID } from "./SidebarDrawer";
 
 interface UnifiedSidebarProps {
   className?: string;
@@ -28,10 +28,19 @@ interface UnifiedSidebarProps {
 }
 
 export const UnifiedSidebar: React.FC<UnifiedSidebarProps> = (props) => {
+  const { preferredCollapsed } = useSidebar();
   return (
     <React.Suspense
       fallback={
-        <aside className="fixed inset-y-0 left-0 z-50 flex w-64 flex-col border-r border-border-subtle bg-surface-canvas" />
+        // In step with `SidebarSkeleton` in `app/(app)/layout.tsx`: nothing
+        // below `md` (the phone shell has no inline sidebar), the rail at
+        // `md`, and the saved preference at `lg`.
+        <aside
+          className={cn(
+            "fixed inset-y-0 left-0 z-50 hidden w-16 flex-col border-r border-border-subtle bg-surface-canvas md:flex",
+            preferredCollapsed ? "lg:w-16" : "lg:w-64"
+          )}
+        />
       }
     >
       <UnifiedSidebarContent {...props} />
@@ -44,7 +53,14 @@ const UnifiedSidebarContent: React.FC<UnifiedSidebarProps> = ({
   projectId: propProjectId,
 }) => {
   const { user, logout } = useAuth();
-  const { isCollapsed, setIsCollapsed } = useSidebar();
+  const {
+    isCollapsed,
+    setIsCollapsed,
+    layout,
+    drawerOpen,
+    setDrawerOpen,
+    menuButtonRef,
+  } = useSidebar();
   const { mode } = useProductMode();
   const router = useRouter();
 
@@ -81,78 +97,175 @@ const UnifiedSidebarContent: React.FC<UnifiedSidebarProps> = ({
     toast.success("Logged out successfully");
   }, [logout, router]);
 
+  const isDesktop = layout === "desktop";
+
+  /**
+   * The drawer is the only way to see the full menu below `lg`, so the same
+   * control that collapses and expands on desktop opens and closes it there.
+   * Persisting a preference from a narrow screen is exactly what
+   * `setIsCollapsed` refuses to do (see `contexts/sidebar-context.tsx`).
+   */
   const toggleCollapse = useCallback(() => {
-    const newState = !isCollapsed;
-    setIsCollapsed(newState);
-    localStorage.setItem(STORAGE_KEYS.collapsed, JSON.stringify(newState));
-  }, [isCollapsed, setIsCollapsed]);
+    if (isDesktop) {
+      setIsCollapsed(!isCollapsed);
+      return;
+    }
+    setDrawerOpen(!drawerOpen);
+  }, [isDesktop, isCollapsed, setIsCollapsed, drawerOpen, setDrawerOpen]);
+
+  /**
+   * Below `lg` the menu is an overlay, so following a link has to dismiss it —
+   * otherwise the page changes behind a sheet the operator has to close by
+   * hand.
+   */
+  const navigateAndDismiss = useCallback(
+    (route: string, pid: string | null) => {
+      setDrawerOpen(false);
+      handleNavigation(route, pid);
+    },
+    [handleNavigation, setDrawerOpen]
+  );
+
+  // Where the menu lives right now. The body below is rendered into exactly
+  // one of these two containers — see `SidebarDrawer`'s doc block for why it
+  // is moved rather than duplicated.
+  const inDrawer = drawerOpen && !isDesktop;
+
+  const inlineRef = React.useRef<HTMLElement | null>(null);
+  /**
+   * Resolved when the drawer closes, not before — the tablet target does not
+   * exist while the drawer is open. Phone: the top bar's menu button, which
+   * stays mounted throughout. Tablet: the rail's collapse toggle, which is
+   * the control that opened the drawer and which React has already re-created
+   * by the time Radix asks.
+   */
+  const getRestoreFocusTarget = useCallback(() => {
+    const menu = menuButtonRef.current;
+    // `getClientRects()` rather than `offsetParent`, which is null for a
+    // fixed-position element even when it is on screen.
+    if (menu && menu.getClientRects().length > 0) return menu;
+    return (
+      inlineRef.current?.querySelector<HTMLElement>(
+        "[data-sidebar-collapse-toggle]"
+      ) ?? null
+    );
+  }, [menuButtonRef]);
+  // The drawer always shows the full menu, whatever the inline sidebar is.
+  const bodyCollapsed = inDrawer ? false : isCollapsed;
+
+  const body = (
+    <>
+      <SidebarHeader
+        isCollapsed={bodyCollapsed}
+        mounted={mounted}
+        loading={orgLoading}
+        switcherOrganizations={switcherOrganizations}
+        switcherCurrentOrg={switcherCurrentOrg}
+        onOrganizationChange={handleOrganizationChange}
+        onCreateOrganization={handleCreateOrganization}
+        showOrganizationSwitcher={mode === "visual"}
+      />
+
+      <div
+        className={cn(
+          "flex flex-col gap-2 p-2 border-b border-border-subtle",
+          bodyCollapsed && "items-center"
+        )}
+      >
+        {mode === "visual" &&
+          (mounted ? (
+            <ProjectSwitcher
+              isCollapsed={bodyCollapsed}
+              projects={projects}
+              currentProject={currentProject}
+              onProjectChange={handleProjectChange}
+              onCreateProject={handleCreateProject}
+              loading={projectsLoading}
+            />
+          ) : (
+            <div
+              className={cn(
+                "h-8 rounded-md bg-surface-raised/50 animate-pulse",
+                bodyCollapsed ? "w-8" : "w-full"
+              )}
+            />
+          ))}
+        <SearchTrigger isCollapsed={bodyCollapsed} />
+      </div>
+
+      <SidebarNav
+        isCollapsed={bodyCollapsed}
+        mounted={mounted}
+        visibleNavItems={visibleNavItems}
+        projectId={projectId}
+        isRouteActive={isRouteActive}
+        onNavigate={navigateAndDismiss}
+      />
+
+      <SidebarFooter
+        isCollapsed={bodyCollapsed}
+        user={user}
+        onLogout={handleLogout}
+        onDocs={handleDocs}
+        onToggleCollapse={toggleCollapse}
+        // Below `lg` this control opens and closes the drawer, so it is a
+        // disclosure button and has to say so — and say what it does. Left as
+        // "Expand sidebar", the one control that opens a tablet's menu named
+        // an action that width has no equivalent of.
+        toggleLabel={
+          isDesktop ? undefined : inDrawer ? "Close menu" : "Open menu"
+        }
+        toggleControlsDrawer={
+          isDesktop ? undefined : { open: drawerOpen, id: SIDEBAR_DRAWER_ID }
+        }
+      />
+    </>
+  );
 
   return (
     <TooltipProvider delayDuration={0}>
+      {/* The inline sidebar is ALWAYS rendered from `md` up, empty while the
+          drawer holds the menu. It is what the content column's `md:ml-16` /
+          `lg:ml-*` offset reserves space for, so unmounting it would leave the
+          page indented for an element that is not there. `hidden md:flex`
+          rather than a layout-band check: a pure CSS switch cannot disagree
+          with the top bar's own `md:hidden` about where the breakpoint is. */}
       <aside
-        data-sidebar="true"
-        data-tutorial-id="sidebar-main"
+        ref={inlineRef}
+        // Both identities travel WITH the menu, never duplicated: while the
+        // drawer holds the body, this element is an empty spacer and the
+        // drawer is the sidebar. The body itself is moved, not copied, so
+        // nothing beneath it is ever mounted twice either.
+        data-sidebar={inDrawer ? undefined : "true"}
+        data-tutorial-id={inDrawer ? undefined : "sidebar-main"}
         className={cn(
-          "fixed inset-y-0 left-0 z-50 flex flex-col border-r border-border-subtle bg-surface-canvas transition-all duration-200 ease-linear",
+          "fixed inset-y-0 left-0 z-50 hidden flex-col border-r border-border-subtle bg-surface-canvas transition-all duration-200 ease-linear motion-reduce:transition-none md:flex",
+          // `isCollapsed`, NOT `bodyCollapsed`: this element's width is the
+          // space the content column's offset reserves, and that does not
+          // change because the menu is temporarily somewhere else. Keyed to
+          // the body's state instead, the empty spacer took the drawer's full
+          // width and visibly snapped back from 256px to the rail's 64px when
+          // the drawer closed.
           isCollapsed ? "w-16" : "w-64",
-          className
+          // Follows whichever element is currently BEING the sidebar, the same
+          // rule `data-sidebar` and `data-tutorial-id` follow above — the
+          // drawer takes it while it holds the menu.
+          inDrawer ? undefined : className
         )}
       >
-        <SidebarHeader
-          isCollapsed={isCollapsed}
-          mounted={mounted}
-          loading={orgLoading}
-          switcherOrganizations={switcherOrganizations}
-          switcherCurrentOrg={switcherCurrentOrg}
-          onOrganizationChange={handleOrganizationChange}
-          onCreateOrganization={handleCreateOrganization}
-          showOrganizationSwitcher={mode === "visual"}
-        />
-
-        <div
-          className={cn(
-            "flex flex-col gap-2 p-2 border-b border-border-subtle",
-            isCollapsed && "items-center"
-          )}
-        >
-          {mode === "visual" &&
-            (mounted ? (
-              <ProjectSwitcher
-                isCollapsed={isCollapsed}
-                projects={projects}
-                currentProject={currentProject}
-                onProjectChange={handleProjectChange}
-                onCreateProject={handleCreateProject}
-                loading={projectsLoading}
-              />
-            ) : (
-              <div
-                className={cn(
-                  "h-8 rounded-md bg-surface-raised/50 animate-pulse",
-                  isCollapsed ? "w-8" : "w-full"
-                )}
-              />
-            ))}
-          <SearchTrigger isCollapsed={isCollapsed} />
-        </div>
-
-        <SidebarNav
-          isCollapsed={isCollapsed}
-          mounted={mounted}
-          visibleNavItems={visibleNavItems}
-          projectId={projectId}
-          isRouteActive={isRouteActive}
-          onNavigate={handleNavigation}
-        />
-
-        <SidebarFooter
-          isCollapsed={isCollapsed}
-          user={user}
-          onLogout={handleLogout}
-          onDocs={handleDocs}
-          onToggleCollapse={toggleCollapse}
-        />
+        {inDrawer ? null : body}
       </aside>
+
+      {inDrawer && (
+        <SidebarDrawer
+          open
+          onOpenChange={setDrawerOpen}
+          className={className}
+          getRestoreFocusTarget={getRestoreFocusTarget}
+        >
+          {body}
+        </SidebarDrawer>
+      )}
 
       <CreateOrganizationDialogSlot
         open={showCreateOrgDialog}
@@ -202,7 +315,7 @@ export function CreateOrganizationDialogSlot(
   // render regardless of `open` — an early return above it would break the
   // rules of hooks AND drop the late-registration subscription.
   const Slot = useSlotComponent<CreateOrganizationDialogProps>(
-    "createOrganizationDialog",
+    "createOrganizationDialog"
   );
   if (!Slot || !props.open) return null;
   return (

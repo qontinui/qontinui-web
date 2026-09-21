@@ -45,6 +45,7 @@ from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.coord_proxy import _extract_caller_token
 from app.api.deps import get_async_db, get_current_active_user_async
 from app.config.redis_config import get_redis
 from app.core.config import settings
@@ -538,8 +539,8 @@ async def dispatch_enroll(
     if machine.environment_id is not None:
         coord_body["environment_id"] = str(machine.environment_id)
 
-    auth = request.headers.get("Authorization")
-    headers = {"Authorization": auth} if auth else {}
+    token = _extract_caller_token(request)
+    headers = {"Authorization": f"Bearer {token}"} if token else {}
 
     try:
         resp = await post_to_coord(
@@ -606,8 +607,8 @@ async def dispatch_repos_apply(
             "to ask. Enroll it from the device first.",
         )
 
-    auth = request.headers.get("Authorization")
-    headers = {"Authorization": auth} if auth else {}
+    token = _extract_caller_token(request)
+    headers = {"Authorization": f"Bearer {token}"} if token else {}
 
     try:
         resp = await post_to_coord(
@@ -1223,8 +1224,8 @@ async def set_ci_node_config(
             ),
         )
 
-    auth = request.headers.get("Authorization")
-    headers = {"Authorization": auth} if auth else {}
+    token = _extract_caller_token(request)
+    headers = {"Authorization": f"Bearer {token}"} if token else {}
     coord_body: dict[str, object] = {
         "target_device_id": str(machine.coord_device_id),
         "machine_id": str(machine.id),

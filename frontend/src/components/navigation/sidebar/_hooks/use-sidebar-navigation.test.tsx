@@ -35,8 +35,9 @@ vi.mock("@/contexts/product-mode-context", () => ({
   useProductMode: () => ({ mode: "ai", setMode: vi.fn() }),
 }));
 
+let showAdvanced = false;
 vi.mock("@/contexts/advanced-automation-context", () => ({
-  useAdvancedAutomation: () => ({ showAdvancedAutomation: false }),
+  useAdvancedAutomation: () => ({ showAdvancedAutomation: showAdvanced }),
 }));
 
 vi.mock("@cloud/nav-items", () => ({
@@ -75,20 +76,20 @@ describe("useSidebarNavigation — AI Dev menu", () => {
   beforeEach(() => {
     pathname = "/admin/coord/pipeline";
     isSuperuser = false;
+    showAdvanced = false;
   });
 
-  it("opens with the Coord Console's sections, in order", () => {
+  it("opens with the Project Overview, then the Coord Console's sections", () => {
     const top = menu().visibleNavItems;
     const sections = [...new Set(top.map((i) => i.group).filter(Boolean))];
-    expect(sections.slice(0, 4)).toEqual([
+    expect(sections.slice(0, 5)).toEqual([
+      "Overview",
       "Coord",
       "Sessions",
       "Fleet",
       "Access",
     ]);
-    expect(
-      top.filter((i) => i.group === "Coord").map((i) => i.label)
-    ).toEqual([
+    expect(top.filter((i) => i.group === "Coord").map((i) => i.label)).toEqual([
       "Pipeline",
       "Pull Requests",
       "Gates",
@@ -101,10 +102,13 @@ describe("useSidebarNavigation — AI Dev menu", () => {
     ]);
     expect(
       top.filter((i) => i.group === "Sessions").map((i) => i.route)
-    ).toEqual(["/sessions", "/sessions/repository", "/commits", "/admin/agent-claims"]);
-    expect(
-      top.filter((i) => i.group === "Fleet").map((i) => i.label)
     ).toEqual([
+      "/sessions",
+      "/sessions/repository",
+      "/commits",
+      "/admin/agent-claims",
+    ]);
+    expect(top.filter((i) => i.group === "Fleet").map((i) => i.label)).toEqual([
       "Runners",
       "Dev Ops",
       "Environments",
@@ -113,9 +117,51 @@ describe("useSidebarNavigation — AI Dev menu", () => {
     ]);
   });
 
+  it("lists every overview page, Summary first", () => {
+    const overview = menu().visibleNavItems.filter(
+      (i) => i.group === "Overview"
+    );
+    expect(overview.map((i) => i.route)).toEqual([
+      "/overview",
+      "/overview/timeline",
+      "/overview/financials",
+      "/overview/team",
+      "/overview/risks",
+      "/overview/diagrams",
+      "/overview/documents",
+      "/overview/wiki",
+      "/overview/slides",
+    ]);
+  });
+
+  it("keeps the Overview first when advanced features reveal shared groups", () => {
+    showAdvanced = true;
+    const top = menu().visibleNavItems;
+    expect(top[0].group).toBe("Overview");
+    const firstNonOverview = top.findIndex((i) => i.group !== "Overview");
+    expect(
+      top.slice(firstNonOverview).some((i) => i.group === "Overview")
+    ).toBe(false);
+  });
+
+  it("does not highlight Summary on the other overview pages", () => {
+    pathname = "/overview/timeline";
+    const { visibleNavItems, isRouteActive } = menu();
+    const summary = visibleNavItems.find((i) => i.route === "/overview")!;
+    const timeline = visibleNavItems.find(
+      (i) => i.route === "/overview/timeline"
+    )!;
+    expect(isRouteActive(summary.route, summary)).toBe(false);
+    expect(isRouteActive(timeline.route, timeline)).toBe(true);
+  });
+
   it("hides Home, the duplicate coordination entry, and the old console entry", () => {
     const ids = flatten(menu().visibleNavItems).map((i) => i.id);
-    for (const hidden of ["prompt-home", "ai-dev-coordination", "admin-coord"]) {
+    for (const hidden of [
+      "prompt-home",
+      "ai-dev-coordination",
+      "admin-coord",
+    ]) {
       expect(ids).not.toContain(hidden);
     }
     const routes = flatten(menu().visibleNavItems).map((i) => i.route);
@@ -126,9 +172,7 @@ describe("useSidebarNavigation — AI Dev menu", () => {
   it("lists no leaf route twice", () => {
     isSuperuser = true;
     // A collapsible's own route is its first child's, so compare leaves only.
-    const leaves = flatten(menu().visibleNavItems).filter(
-      (i) => !i.children
-    );
+    const leaves = flatten(menu().visibleNavItems).filter((i) => !i.children);
     const routes = leaves.map((i) => i.route);
     expect(routes.filter((r, i) => routes.indexOf(r) !== i)).toEqual([]);
   });

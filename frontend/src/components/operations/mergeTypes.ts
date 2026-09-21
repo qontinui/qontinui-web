@@ -233,6 +233,15 @@ export type MergeStatusToken =
   /** Green + CLEAN + open, but no fresh proposal — the orchestrator is
    *  stalled. The single highest-signal token for "why the pause". */
   | "ready-but-unlanded"
+  /** coord LANDED this PR at its CURRENT head and GitHub still shows it open —
+   *  the phantom-open ff-land window, keyed on coord's `land_stamp ==
+   *  current_head`. NOT a pause: the work is on the base branch already.
+   *  coord emits it from `classify_merge_status`'s second arm, above every
+   *  live-signal arm, because those signals froze at the moment before the
+   *  land. Plan
+   *  `2026-09-14-coord-phantom-open-close-uses-owner-blind-installation-token`
+   *  Phase 5. */
+  | "landed-open"
   | "unknown";
 
 // ============================================================================

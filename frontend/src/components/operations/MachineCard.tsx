@@ -49,6 +49,18 @@ import type { CiCapacityJoin } from "./ciCapacity";
 import type { DeviceDrainState, DrainTarget } from "./fleetDrain";
 import type { MachineGroup, MachineVolumes, VolumeReading } from "./types";
 
+/**
+ * What draining a GitHub Actions runner registration does and does not do.
+ * Exported so the test asserts the rendered sentence rather than a copy.
+ */
+export const CI_RUNNER_DRAIN_SCOPE =
+  "GitHub Actions runner: draining it removes this runner from coord's " +
+  "merge-capacity count, but GitHub still routes jobs to it by label. " +
+  "Removing its `qontinui` label on GitHub is what stops fleet CI jobs " +
+  "arriving. A host registered on N repos has N such rows: draining this one " +
+  "leaves the other registrations counted as capacity, and coord's " +
+  "`POST /coord/fleet/drain-host` drains the whole host.";
+
 interface MachineCardProps {
   machine: MachineGroup;
   /**
@@ -887,6 +899,22 @@ export function MachineCard({
           />
         )}
 
+        {/* A GitHub Actions runner registration is drainable, and the drain is
+            real: coord's merge scheduler stops counting a drained `ci_runner`
+            device as merge-slot capacity. What it does NOT do is stop GitHub
+            routing jobs to the host — GitHub matches `runs-on` against the
+            runner's labels and never reads coord's drain map. Keyed off coord's
+            own capability read, not the CI-runner mirror, which can be loading
+            or down. */}
+        {machine.coordHealth?.matched && machine.coordHealth.ciRunner && (
+          <p
+            className="text-[11px] leading-snug break-words text-muted-foreground"
+            data-testid="ci-runner-drain-scope"
+          >
+            {CI_RUNNER_DRAIN_SCOPE}
+          </p>
+        )}
+
         {/* CI capacity — how much CI this machine is ALLOWED to take, next to
             the telemetry that says what to set it to. Deliberately adjacent to
             the CI-runner badge above, which says what it is taking right now:
@@ -911,9 +939,17 @@ export function MachineCard({
               </span>
             </>
           )}
-          {machine.ciRunner && machine.ciRunner.status !== "offline" && (
-            <span>CI runner active</span>
-          )}
+          {/* `idle`/`busy` explicitly, never `!== "offline"`. With `unknown` a
+              real status (a mirrored row whose `ci_runner_status` coord did not
+              report), the negative form calls a runner nobody has heard from
+              "active" — a wrong claim in the direction that hides a problem,
+              and the exact form `FleetOverview`'s CI stat was fixed away from.
+              A row's own badge says `status unknown`; this line must agree. */}
+          {machine.ciRunner &&
+            (machine.ciRunner.status === "idle" ||
+              machine.ciRunner.status === "busy") && (
+              <span>CI runner active</span>
+            )}
           {/* The cross-links HealthSummaryCard carried per device. They only
               resolve for a matched coord device — the trees view is keyed on
               `device_id`. */}

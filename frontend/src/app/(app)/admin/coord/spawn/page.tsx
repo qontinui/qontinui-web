@@ -80,7 +80,10 @@ import { SpawnModal } from "@/components/admin/coord/SpawnModal";
 import { SpawnPlanRow } from "@/components/admin/coord/SpawnPlanRow";
 import type { CoordPlanRow } from "@/components/admin/coord/planStatus";
 import { httpClient } from "@/services/service-factory";
-import { derivePlansHealth, SHEPHERD_SLUG_PREFIX } from "../plans/plansHealth";
+import {
+  derivePlansHealth,
+  SHEPHERD_SLUG_PREFIX,
+} from "../work-units/plansHealth";
 
 const API = "/api/v1/operations";
 const POLL_INTERVAL_MS = 15_000;
@@ -329,6 +332,14 @@ export default function CoordSpawnPage() {
           open={spawnTarget !== null}
           onClose={() => setSpawnTarget(null)}
           planSlug={spawnTarget.slug}
+          // The whole row, for the body guard (plan
+          // `2026-09-02-bodyless-work-units-…` Phase 3). `/plans` already
+          // serves the three signal fields on every row, so this costs no
+          // extra read — the modal simply stops being the one surface on
+          // this path that cannot tell a plan from a slug. A row served by a
+          // backend predating the fields carries none of them, and the modal
+          // then behaves exactly as it did before.
+          workUnit={spawnTarget}
           initialPhase={spawnTarget.current_phase ?? ""}
         />
       )}

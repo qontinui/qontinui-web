@@ -579,6 +579,72 @@ class TestReadFreshness:
         assert resp.status_code == 422, resp.text
 
 
+class TestCoverageParameter:
+    """``?coverage=false`` — the follow-up to Phase 3/4 of
+    ``2026-09-15-captured-vs-authored-coverage-is-a-set-difference``.
+
+    ``useScanRoots`` (``ScanSourcesPanel``) renders no coverage field at all,
+    so before this parameter existed it paid the FULL coverage computation —
+    the census-loading read plus the corpus anti-join — on every mount,
+    identically to ``usePlanCoverage``. ``coverage=false`` lets it opt out.
+    """
+
+    async def test_coverage_false_serves_an_empty_list_with_its_own_reason(
+        self, app_no_cognito: FastAPI
+    ) -> None:
+        async with _client(app_no_cognito, TOKEN_A) as device:
+            assert (await device.post(SCAN_ROOTS, json=_reading())).status_code == 201
+            resp = await device.get(SCAN_ROOTS, params={"coverage": "false"})
+        assert resp.status_code == 200, resp.text
+        body = resp.json()
+        assert body["coverage"] == []
+        assert body["coverage_detail"] is not None
+        assert body["coverage_detail"].startswith("not_requested:")
+        # The reading itself is unaffected — this is a coverage-only knob.
+        assert [r["device_id"] for r in body["rows"]] == [str(DEVICE_A)]
+
+    async def test_coverage_false_on_an_empty_organization_still_reads_unknown(
+        self, app_no_cognito: FastAPI
+    ) -> None:
+        async with _client(app_no_cognito, TOKEN_A) as client:
+            resp = await client.get(SCAN_ROOTS, params={"coverage": "false"})
+        assert resp.status_code == 200, resp.text
+        body = resp.json()
+        assert body["state"] == "unknown"
+        assert body["coverage"] == []
+        assert body["coverage_detail"].startswith("not_requested:")
+
+    async def test_coverage_defaults_true_and_is_unaffected_by_the_parameter(
+        self, app_no_cognito: FastAPI
+    ) -> None:
+        """Omitting the parameter, and passing ``coverage=true`` explicitly,
+        both compute coverage exactly as before this parameter existed — the
+        no-census case reads ``no_census:``, never the new ``not_requested:``
+        string."""
+        async with _client(app_no_cognito, TOKEN_A) as device:
+            assert (await device.post(SCAN_ROOTS, json=_reading())).status_code == 201
+            omitted = await device.get(SCAN_ROOTS)
+            explicit = await device.get(SCAN_ROOTS, params={"coverage": "true"})
+        for resp in (omitted, explicit):
+            assert resp.status_code == 200, resp.text
+            body = resp.json()
+            assert body["coverage_detail"] is None
+            (entry,) = body["coverage"]
+            # No slug census was ever reported for this device, so the one
+            # named key reads `unknown` — proving coverage really was
+            # computed (a skipped computation would read `not_requested:`
+            # at the top level with an empty list, not a per-key `unknown`).
+            assert entry["state"] == "unknown"
+            assert entry["detail"].startswith("no_census:")
+
+    async def test_an_invalid_coverage_value_is_a_422(
+        self, app_no_cognito: FastAPI
+    ) -> None:
+        async with _client(app_no_cognito, TOKEN_A) as client:
+            resp = await client.get(SCAN_ROOTS, params={"coverage": "sometimes"})
+        assert resp.status_code == 422, resp.text
+
+
 class TestFloorRule:
     async def test_a_fresh_zero_floor_reads_unknown_ref_stale(
         self, app_no_cognito: FastAPI

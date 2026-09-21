@@ -391,10 +391,16 @@ export function useCaptureHealth() {
  * ago". That is the very defect this feature exists to remove, reappearing one
  * level up, at the panel instead of the row. The panel renders it beside the
  * summary.
+ *
+ * `coverage=false`: `ScanSourcesPanel` renders no coverage field at all, so
+ * this asks the route to skip the stem census load and the corpus anti-join
+ * — see [`usePlanCoverage`], whose own read pays that cost. Before this
+ * parameter existed the two hooks were two full-cost reads of one route per
+ * mount of this page; `data.coverage` here is always `[]`.
  */
 export function useScanRoots() {
   return useRetainedRead<ScanRootListResponse>(
-    `${API}/scan-roots`,
+    `${API}/scan-roots?coverage=false`,
     "Failed to load scan sources"
   );
 }
@@ -404,24 +410,22 @@ export function useScanRoots() {
  * set difference.
  *
  * Reads the same route as [`useScanRoots`] and is deliberately a separate
- * hook rather than a second consumer of one shared read.
+ * hook rather than a second consumer of one shared read, so this is still TWO
+ * HTTP round trips per mount of `/admin/coord/plan-library` — but only ONE of
+ * them pays the server-side coverage computation. `GET /scan-roots` is the
+ * one route that computes the set difference, and serving it means: the
+ * census-LOADING observation read, which UNDEFERS the two stem JSONB columns
+ * (~208 KB per device for both sides at 1837 stems, per the measurement on
+ * `crud.plan_scan_root.list_observations`), plus the corpus statement over
+ * every `kind = 'plan'` row in the organization. [`useScanRoots`] asks with
+ * `?coverage=false`, which is exactly the concentrated cost design decision
+ * D2 moved onto this route and off `corpus_health` — that panel renders no
+ * coverage field at all, so it should not be the one paying for it either.
+ * Before the parameter existed, mounting this page paid the full computation
+ * TWICE; grep history for `coverage=false` on `useScanRoots` if that ever
+ * needs re-measuring.
  *
- * ⚠️ **What that costs is not one extra HTTP round trip — it is the whole
- * SERVER-SIDE coverage computation, run twice per mount of
- * `/admin/coord/plan-library`, once for a panel that reads no coverage field
- * at all.** `GET /scan-roots` is the one route that computes the set
- * difference, and serving it means: the census-LOADING observation read,
- * which UNDEFERS the two stem JSONB columns (~208 KB per device for both
- * sides at 1837 stems, per the measurement on
- * `crud.plan_scan_root.list_observations`, against a page read that defers
- * them precisely because it never renders them), plus the corpus statement
- * over every
- * `kind = 'plan'` row in the organization. That is exactly the concentrated
- * cost design decision D2 moved ONTO this route and off the `corpus_health`
- * rendering that rides every list page — and mounting this page pays it
- * twice. [`useScanRoots`] needs none of it.
- *
- * It is paid deliberately, for this phase only:
+ * Two reads instead of one shared read, still deliberately:
  *
  * * The two panels are siblings on one page, each with its own Refresh, and
  *   `useRetainedRead` has no cross-hook cache to share. Lifting the read into
@@ -433,14 +437,11 @@ export function useScanRoots() {
  *   versa. The panels state different things about different moments; one
  *   `fetchedAt` for both would make one of the two stamps a lie.
  *
- * The honest fix is an HTTP-layer cache or a page-level provider, and neither
- * is this phase's — both mean `ScanSourcesPanel` taking its data as a prop,
- * and that component has an open pull request against it (#1332). If a third
- * consumer of `/scan-roots` ever appears, build that instead of adding a
- * third read; and if the doubled server cost is what bites first, the cheaper
- * half-measure is a `coverage=false` query parameter on the route so
- * [`useScanRoots`] can ask for the readings WITHOUT the stem load and the
- * corpus statement.
+ * The honest fix for the remaining extra round trip is an HTTP-layer cache or
+ * a page-level provider, and neither is this phase's — both mean
+ * `ScanSourcesPanel` taking its data as a prop, and that component has an
+ * open pull request against it (#1332). If a third consumer of `/scan-roots`
+ * ever appears, build that instead of adding a third read.
  *
  * `data` carries the WHOLE response — `coverage` plus the `coverage_detail`
  * that says why it is empty — because an empty `coverage` is not "nothing is

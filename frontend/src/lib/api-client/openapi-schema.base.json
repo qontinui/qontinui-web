@@ -29047,12 +29047,6 @@
             "title": "Email Comments",
             "type": "boolean"
           },
-          "email_gate_action": {
-            "default": true,
-            "description": "Email for merge-gate actions on your PRs",
-            "title": "Email Gate Action",
-            "type": "boolean"
-          },
           "email_mentions": {
             "default": true,
             "description": "Email for mentions",
@@ -29086,12 +29080,6 @@
             "default": true,
             "description": "In-app for comments",
             "title": "In App Comments",
-            "type": "boolean"
-          },
-          "in_app_gate_action": {
-            "default": true,
-            "description": "In-app for merge-gate actions on your PRs",
-            "title": "In App Gate Action",
             "type": "boolean"
           },
           "in_app_mentions": {
@@ -29157,17 +29145,6 @@
             ],
             "title": "Email Comments"
           },
-          "email_gate_action": {
-            "anyOf": [
-              {
-                "type": "boolean"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Email Gate Action"
-          },
           "email_mentions": {
             "anyOf": [
               {
@@ -29222,17 +29199,6 @@
               }
             ],
             "title": "In App Comments"
-          },
-          "in_app_gate_action": {
-            "anyOf": [
-              {
-                "type": "boolean"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "In App Gate Action"
           },
           "in_app_mentions": {
             "anyOf": [
@@ -29518,7 +29484,7 @@
       },
       "NotifyWhenGreenRequest": {
         "additionalProperties": false,
-        "description": "Body for ``POST /operations/ci-status/notify-when-green``.\n\nRegisters a ``CiGreen`` gate bound to ``(repo, head_sha)``. The\noptional ``continuation_prompt`` becomes the gate's continuation\nspawn ``initial_prompt`` so the gate engine can hand a follow-up\nprompt to an agent when the repo goes green.\n\n``gate_class`` is coord's freeform gate-classification string\n(recommended vocabulary: ``security-surface`` / ``routine-review`` /\n``ops-confirm``). Coord's per-tenant ``gate_clearance`` policy matrix\nkeys off it to decide who may clear the resulting gate, so dropping\nit silently would silently change an authorization outcome.\n\n``extra=\"forbid\"`` is deliberate: before ``gate_class`` was declared\nhere, a caller that sent it had the field swallowed at validation \u2014\nno 400, no log line, and a gate registered under the wrong clearance\nrules. Rejecting unknown keys makes the NEXT such drift a typed 422\ninstead of another silent swallow. The only in-tree caller\n(``CiStatusPanel.tsx``) sends exactly ``repo`` + ``head_sha``.\n\nA BLANK ``gate_class`` is rejected rather than forwarded. Coord's\n``normalize_gate_class`` trims and empty-filters it back to ``None``,\nso ``\"\"`` / ``\"   \"`` would register an UNCLASSIFIED gate under the\ndefault clearance authority with no 4xx and no warning \u2014 the same\nsilent-authorization-downgrade this model exists to close, just moved\none layer down. Coord calls a blank class \"an authoring accident, not\na class\"; this rejects it at the edge, where the caller can see it.",
+        "description": "Body for ``POST /operations/ci-status/notify-when-green``.\n\nRegisters a ``CiGreen`` gate bound to ``(repo, head_sha)``. The\noptional ``continuation_prompt`` becomes the gate's continuation\nspawn ``initial_prompt`` so the gate engine can hand a follow-up\nprompt to an agent when the repo goes green.\n\n``gate_class`` is coord's freeform gate-classification string\n(recommended vocabulary: ``security-surface`` / ``routine-review`` /\n``ops-confirm``). Coord's per-tenant ``gate_clearance`` policy matrix\nkeys off it to decide who may clear the resulting gate, so dropping\nit silently would silently change an authorization outcome.\n\n``extra=\"forbid\"`` is deliberate: before ``gate_class`` was declared\nhere, a caller that sent it had the field swallowed at validation \u2014\nno 400, no log line, and a gate registered under the wrong clearance\nrules. Rejecting unknown keys makes the NEXT such drift a typed 422\ninstead of another silent swallow. The only in-tree caller\n(``CiRepoStrip.tsx``) sends exactly ``repo`` + ``head_sha``.\n\nA BLANK ``gate_class`` is rejected rather than forwarded. Coord's\n``normalize_gate_class`` trims and empty-filters it back to ``None``,\nso ``\"\"`` / ``\"   \"`` would register an UNCLASSIFIED gate under the\ndefault clearance authority with no 4xx and no warning \u2014 the same\nsilent-authorization-downgrade this model exists to close, just moved\none layer down. Coord calls a blank class \"an authoring accident, not\na class\"; this rejects it at the edge, where the caller can see it.",
         "properties": {
           "continuation_prompt": {
             "anyOf": [
@@ -30923,7 +30889,7 @@
         "type": "object"
       },
       "PairCliRequest": {
-        "description": "Request body for ``POST /api/v1/devices/pair-cli``.\n\nHeadless analogue of the browser-mediated pair-confirm flow: the\nrunner authenticates with its existing user access token (no browser\nredirect) and asks the web backend to mint a device-token JWT via\ncoord. The backend resolves the calling user's ``tenant_id`` and\nproxies the request to coord's ``POST /coord/devices/pair-cli``.\n\nThe runner sends the same ``(device_id, hostname, name)`` triple it\nused to send directly to coord; ``tenant_id`` and ``user_id`` are\ninjected server-side so the runner never has to know about tenancy.",
+        "description": "Request body for ``POST /api/v1/devices/pair-cli``.\n\nHeadless analogue of the browser-mediated pair-confirm flow: the\nrunner authenticates with its existing user access token (no browser\nredirect) and asks the web backend to mint a device-token JWT via\ncoord. The backend proxies the request to coord's\n``POST /coord/devices/pair-cli``, forwarding the caller's operator\nbearer and injecting ``user_id`` server-side.\n\n``tenant_id`` is an optional HINT, not an authority: when a real tenant\nis supplied it is forwarded and coord validates it\n(``authorize_pairing_tenant`` refuses a tenant the principal cannot\npair). When it is absent, coord derives the tenant from the operator\nbearer. The nil UUID is treated as absent \u2014 runner UI sign-in sends it\nas a placeholder on every first pairing, and forwarding it would fail\ncoord's membership check. A refresh MUST send the tenant its credential\nis for, or coord's derivation silently re-points the device at the\nuser's home tenant (plan\n``2026-09-17-device-jwt-refresh-drops-the-requested-tenant-and-coord-mints-the-home-tenant``).",
         "properties": {
           "device_id": {
             "description": "Stable device UUID the runner generated on first launch.",
@@ -30950,6 +30916,19 @@
             ],
             "description": "Optional display name; defaults to hostname server-side.",
             "title": "Name"
+          },
+          "tenant_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Optional tenant the device JWT should be minted for. Coord validates membership; absent or the nil UUID means coord derives the tenant from the operator bearer.",
+            "title": "Tenant Id"
           }
         },
         "required": [
@@ -31661,6 +31640,69 @@
             "title": "Created At",
             "type": "string"
           },
+          "difficulty": {
+            "anyOf": [
+              {
+                "enum": [
+                  "low",
+                  "medium",
+                  "high"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Difficulty"
+          },
+          "difficulty_conceptual": {
+            "anyOf": [
+              {
+                "enum": [
+                  "low",
+                  "medium",
+                  "high"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Difficulty Conceptual"
+          },
+          "difficulty_implementation": {
+            "anyOf": [
+              {
+                "enum": [
+                  "low",
+                  "medium",
+                  "high"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Difficulty Implementation"
+          },
+          "difficulty_source": {
+            "anyOf": [
+              {
+                "enum": [
+                  "declared",
+                  "computed"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Difficulty Source"
+          },
           "document_state": {
             "default": "present",
             "enum": [
@@ -32194,6 +32236,159 @@
           "ref_sha"
         ],
         "title": "PlanCoverage",
+        "type": "object"
+      },
+      "PlanDifficultyItem": {
+        "description": "One plan's rating, keyed the ways a consumer joins it.\n\n``work_unit_slug`` is the join key onto coord's work units (the\n``/admin/coord/plans`` console); ``slug`` is the artifact's own stem, which\nthe scanner writes identically for a plan. Both are served because a\nhand-POSTed row may carry no ``work_unit_slug``.",
+        "properties": {
+          "difficulty": {
+            "enum": [
+              "low",
+              "medium",
+              "high"
+            ],
+            "title": "Difficulty",
+            "type": "string"
+          },
+          "difficulty_conceptual": {
+            "enum": [
+              "low",
+              "medium",
+              "high"
+            ],
+            "title": "Difficulty Conceptual",
+            "type": "string"
+          },
+          "difficulty_implementation": {
+            "enum": [
+              "low",
+              "medium",
+              "high"
+            ],
+            "title": "Difficulty Implementation",
+            "type": "string"
+          },
+          "difficulty_rubric_version": {
+            "title": "Difficulty Rubric Version",
+            "type": "integer"
+          },
+          "difficulty_signals": {
+            "additionalProperties": true,
+            "title": "Difficulty Signals",
+            "type": "object"
+          },
+          "difficulty_source": {
+            "enum": [
+              "declared",
+              "computed"
+            ],
+            "title": "Difficulty Source",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "slug": {
+            "title": "Slug",
+            "type": "string"
+          },
+          "source_repo": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Repo"
+          },
+          "work_unit_slug": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Work Unit Slug"
+          }
+        },
+        "required": [
+          "id",
+          "slug",
+          "difficulty",
+          "difficulty_conceptual",
+          "difficulty_implementation",
+          "difficulty_source",
+          "difficulty_rubric_version"
+        ],
+        "title": "PlanDifficultyItem",
+        "type": "object"
+      },
+      "PlanDifficultyResponse": {
+        "description": "Every rated plan in the caller's scope \u2014 not paged: the console joins\nit onto a coord window of up to 500 work units, and a row is ~300 bytes.\n\n``count`` is ``len(items)``. ``rerated`` is how many rows THIS read rated\nbefore answering (non-zero once after a deploy or a rubric bump). A plan\nrow that is still unrated is left OUT of ``items`` \u2014 absent here means\n\"no rating\", which the console renders as unrated, never as \"low\".\n``model_tiers`` maps each level to the model tier it routes to, served so\nevery consumer names the same models.",
+        "properties": {
+          "count": {
+            "title": "Count",
+            "type": "integer"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/PlanDifficultyItem"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "model_tiers": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "Model Tiers",
+            "type": "object"
+          },
+          "rerate_failed_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rerate Failed Reason"
+          },
+          "rerate_pending": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rerate Pending"
+          },
+          "rerated": {
+            "title": "Rerated",
+            "type": "integer"
+          },
+          "rubric_version": {
+            "title": "Rubric Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "count",
+          "rerated",
+          "rubric_version",
+          "model_tiers"
+        ],
+        "title": "PlanDifficultyResponse",
         "type": "object"
       },
       "PlanSlugCensus": {
@@ -53432,6 +53627,80 @@
             "title": "Current Version",
             "type": "integer"
           },
+          "difficulty": {
+            "anyOf": [
+              {
+                "enum": [
+                  "low",
+                  "medium",
+                  "high"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Difficulty"
+          },
+          "difficulty_conceptual": {
+            "anyOf": [
+              {
+                "enum": [
+                  "low",
+                  "medium",
+                  "high"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Difficulty Conceptual"
+          },
+          "difficulty_implementation": {
+            "anyOf": [
+              {
+                "enum": [
+                  "low",
+                  "medium",
+                  "high"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Difficulty Implementation"
+          },
+          "difficulty_rubric_version": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Difficulty Rubric Version"
+          },
+          "difficulty_source": {
+            "anyOf": [
+              {
+                "enum": [
+                  "declared",
+                  "computed"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Difficulty Source"
+          },
           "edges": {
             "items": {
               "$ref": "#/components/schemas/WorkArtifactEdgeRead"
@@ -53853,6 +54122,80 @@
           "current_version": {
             "title": "Current Version",
             "type": "integer"
+          },
+          "difficulty": {
+            "anyOf": [
+              {
+                "enum": [
+                  "low",
+                  "medium",
+                  "high"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Difficulty"
+          },
+          "difficulty_conceptual": {
+            "anyOf": [
+              {
+                "enum": [
+                  "low",
+                  "medium",
+                  "high"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Difficulty Conceptual"
+          },
+          "difficulty_implementation": {
+            "anyOf": [
+              {
+                "enum": [
+                  "low",
+                  "medium",
+                  "high"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Difficulty Implementation"
+          },
+          "difficulty_rubric_version": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Difficulty Rubric Version"
+          },
+          "difficulty_source": {
+            "anyOf": [
+              {
+                "enum": [
+                  "declared",
+                  "computed"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Difficulty Source"
           },
           "id": {
             "format": "uuid",
@@ -69551,7 +69894,7 @@
     },
     "/api/v1/devices/pair-cli": {
       "post": {
-        "description": "Headless analogue of :func:`pair_confirm`.\n\nThe runner POSTs here with its existing user access-token in\n``Authorization: Bearer \u2026`` (the same token it just exchanged via\n``/api/v1/auth/jwt/login``) and the ``(device_id, hostname, name)``\ntriple it already knows.\n\nThe backend forwards the caller's **Cognito operator bearer** (cookie\n``access_token`` or ``Authorization: Bearer``) straight through to\ncoord's ``POST /coord/devices/pair-cli``. Coord's mounted\n``resolve_operator_optional`` middleware builds an ``OperatorContext``\nfrom that bearer and DERIVES ``tenant_id`` itself when the body omits\nit \u2014 so web no longer resolves or sends a ``tenant_id``. The\n``X-Qontinui-User-Id`` header is still sent; coord now cross-checks it\nagainst the operator's OWN ``auth.users`` row (matched by Cognito\nsubject) and refuses ``user_mismatch`` if it names anyone else \u2014 it is\nan assertion coord verifies, not an identity coord trusts.\n\nSee follow-up #1 of plan\n``D:/qontinui-root/plans/2026-05-30-coord-operator-resolver-removal.md``.\nCoord already accepts the optional ``tenant_id`` + derives it from the\noperator bearer (``routes_phase3.rs::post_pair_cli``); this change just\nforwards the right credential.",
+        "description": "Headless analogue of :func:`pair_confirm`.\n\nThe runner POSTs here with its existing user access-token in\n``Authorization: Bearer \u2026`` (the same token it just exchanged via\n``/api/v1/auth/jwt/login``) and the ``(device_id, hostname, name)``\ntriple it already knows.\n\nThe backend forwards the caller's **Cognito operator bearer** (cookie\n``access_token`` or ``Authorization: Bearer``) straight through to\ncoord's ``POST /coord/devices/pair-cli``. Coord's mounted\n``resolve_operator_optional`` middleware builds an ``OperatorContext``\nfrom that bearer. The ``X-Qontinui-User-Id`` header is still sent;\ncoord cross-checks it against the operator's OWN ``auth.users`` row\n(matched by Cognito subject) and refuses ``user_mismatch`` if it names\nanyone else \u2014 it is an assertion coord verifies, not an identity coord\ntrusts.\n\nTenant: web never RESOLVES a tenant, but it FORWARDS a real\ncaller-supplied ``tenant_id``. Coord validates it\n(``authorize_pairing_tenant``) and derives the tenant from the operator\nbearer (``principal.home_tenant()``) only when the body names none.\nPlan ``2026-05-30-coord-operator-resolver-removal`` (follow-up #1)\nstopped forwarding ``tenant_id`` altogether; plan\n``2026-09-17-device-jwt-refresh-drops-the-requested-tenant-and-coord-mints-the-home-tenant``\nrestores forwarding of a real one, because a runner's device-JWT\nrefresh after expiry otherwise gets the user's HOME tenant minted \u2014\nand coord records that pairing, silently re-pointing the device.\n\nThe nil UUID is treated as absent and is NOT forwarded: runner UI\nsign-in sends ``tenant_id = 00000000-\u2026`` as a placeholder on every\nfirst pairing, and forwarding it would 403 at coord's membership check\n(surfacing here as a 502) and break every sign-in.",
         "operationId": "api_v1_devices_pair_cli_post",
         "requestBody": {
           "content": {
@@ -81696,6 +82039,154 @@
         ]
       }
     },
+    "/api/v1/operations/coord/audit/recent": {
+      "get": {
+        "description": "Return recent ``coord.operator_audit`` rows for the caller's tenant.\n\nCoord answers ``{\"audit\": [...], \"count\": <n>}`` ordered\n``occurred_at DESC``, each row carrying ``audit_id``, ``operator_id``,\n``action``, ``resource_kind``, ``resource_key``, ``metadata`` and\n``occurred_at``.\n\n**``metadata`` is where the blast radius lives**, and it is per-action\nrather than a fixed schema \u2014 `operator_disable.rs` computes\n``affected_tenant_ids`` before stamping, the kill switch stamps\n``affected_repos``, and ``fleet.drain.set`` stamps ``device_id`` / ``until``\n/ ``drained`` / ``version``. It is forwarded UNTOUCHED: a proxy that\nnormalised it into a fixed shape would silently drop whatever the next\nwriter computes, which is the one field an operator reading this feed\nactually needs.\n\n``operator_id`` is the acting operator coord resolved from the bearer. A\nrow reading ``00000000-0000-0000-0000-000000000000`` is the nil-UUID\nsignature of a coord writer that used ``resolve_operator_id(&headers)``\ninstead of ``ctx.operator_id`` \u2014 the header it reads is one this service\nnever sends. That is a coord-side defect to report, not a real operator,\nand the console labels it as such rather than rendering a plausible id.",
+        "operationId": "api_v1_operations_coord_audit_recent_get",
+        "parameters": [
+          {
+            "description": "Filter by action. A trailing `*` is a PREFIX match (`fleet.*` catches `fleet.drain.set` and `fleet.drain.clear`); anything else is an exact match. Forwarded to coord verbatim \u2014 the prefix grammar is coord's, not this proxy's.",
+            "in": "query",
+            "name": "action",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter by action. A trailing `*` is a PREFIX match (`fleet.*` catches `fleet.drain.set` and `fleet.drain.clear`); anything else is an exact match. Forwarded to coord verbatim \u2014 the prefix grammar is coord's, not this proxy's.",
+              "title": "Action"
+            }
+          },
+          {
+            "description": "Filter by resource_kind \u2014 the table/object class a handler-stamped row names (e.g. the fleet runtime policy table). Same exact-or-trailing-`*` grammar as `action`. `require_role` stamps `http.route` on every authorized request, GETs included, so `resource_kind=http.route` selects exactly that authorization-check class rather than a real write.",
+            "in": "query",
+            "name": "resource_kind",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter by resource_kind \u2014 the table/object class a handler-stamped row names (e.g. the fleet runtime policy table). Same exact-or-trailing-`*` grammar as `action`. `require_role` stamps `http.route` on every authorized request, GETs included, so `resource_kind=http.route` selects exactly that authorization-check class rather than a real write.",
+              "title": "Resource Kind"
+            }
+          },
+          {
+            "description": "Filter by resource_key \u2014 WHICH resource of that kind (a device id, an operator id, a tenant slug). Same grammar as `action`. This is how 'who touched THIS host' is answered without pulling an action family and scanning client-side for a row that may have scrolled past `limit`.",
+            "in": "query",
+            "name": "resource_key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter by resource_key \u2014 WHICH resource of that kind (a device id, an operator id, a tenant slug). Same grammar as `action`. This is how 'who touched THIS host' is answered without pulling an action family and scanning client-side for a row that may have scrolled past `limit`.",
+              "title": "Resource Key"
+            }
+          },
+          {
+            "description": "RFC 3339. Restrict to rows where `occurred_at >= since`.",
+            "in": "query",
+            "name": "since",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "RFC 3339. Restrict to rows where `occurred_at >= since`.",
+              "title": "Since"
+            }
+          },
+          {
+            "description": "RFC 3339. Restrict to rows where `occurred_at < before`.",
+            "in": "query",
+            "name": "before",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "RFC 3339. Restrict to rows where `occurred_at < before`.",
+              "title": "Before"
+            }
+          },
+          {
+            "description": "Max rows. Coord clamps to `[1, 1000]` and defaults to 200.",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Max rows. Coord clamps to `[1, 1000]` and defaults to 200.",
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Get Coord Audit Recent Api V1 Operations Coord Audit Recent Get"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Get Coord Audit Recent",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
     "/api/v1/operations/coord/cognito/groups": {
       "get": {
         "description": "List every Cognito group in the shared pool. Superuser-gated.\n\nRead-only: no audit row and no rate limit (it changes nothing and the\ndashboard polls it), but it shares the error mapper so a throttle reads\n429 and a bad pool id reads 500 rather than both reading 502.",
@@ -84545,6 +85036,279 @@
         ]
       }
     },
+    "/api/v1/operations/coord/prompt-documents/{kind}/{name}/upstream-adopt": {
+      "post": {
+        "description": "``Adopt upstream``: replace this tenant's body with a publication and\nadvance the tracked version, in one coord transaction. Tenant-admin only.\n\nBody: ``{publication_version, expected_version?}``. ``publication_version``\nis REQUIRED \u2014 the operator reviewed a specific body, and \"the latest\" may\nhave moved since the dialog loaded it. ``expected_version`` is the\noptimistic-lock guard; coord answers ``409 document_moved`` if the document\nchanged underneath. ``409 already_current`` when the document already IS\nthat publication. The local edits stay recoverable from version history.",
+        "operationId": "api_v1_operations_coord_prompt_documents_kind_name_upstream_adopt_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "kind",
+            "required": true,
+            "schema": {
+              "title": "Kind",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "title": "Name",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "Body",
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Adopt Upstream Prompt Document Api V1 Operations Coord Prompt Documents  Kind   Name  Upstream Adopt Post"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Adopt Upstream Prompt Document",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
+    "/api/v1/operations/coord/prompt-documents/{kind}/{name}/upstream-keep": {
+      "post": {
+        "description": "``Keep mine``: record \"reviewed publication N, declined\" \u2014 advance the\ntracked version WITHOUT changing the body. Tenant-admin only.\n\nNot a no-op, and the plan is explicit about why: this is the mechanism that\nclears the ``update available`` badge for a tenant that means to keep its\nedits; without it the badge nags forever. Same body shape as the adopt\nroute. Coord answers ``409 already_reviewed`` when the tracked version is\nalready at or past ``publication_version`` \u2014 the pointer only moves\nforward.",
+        "operationId": "api_v1_operations_coord_prompt_documents_kind_name_upstream_keep_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "kind",
+            "required": true,
+            "schema": {
+              "title": "Kind",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "title": "Name",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "Body",
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Keep Local Prompt Document Api V1 Operations Coord Prompt Documents  Kind   Name  Upstream Keep Post"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Keep Local Prompt Document",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
+    "/api/v1/operations/coord/prompt-documents/{kind}/{name}/upstream-merge": {
+      "get": {
+        "description": "The clause-grained three-way merge PREVIEW for a ``policy`` document\n(Phase 7). Read-only: it decides nothing and writes nothing. Any tenant\nmember.\n\nCoord answers ``mode: \"clauses\"`` with one entry per clause name \u2014 the\ndecision, ``requires_choice``, and the ``base`` / ``local`` / ``upstream``\nsides for a three-column diff \u2014 or ``mode: \"whole_body\"`` with the reason a\nclause merge is not defined for this pair (no clause blocks on one side,\nduplicate clause names, or prose before the first clause header that a\nclause recompile could not reconstruct). ``publication_version`` absent\nmeans the latest. Coord's own ``400`` for a non-``policy`` kind passes\nthrough.",
+        "operationId": "api_v1_operations_coord_prompt_documents_kind_name_upstream_merge_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "kind",
+            "required": true,
+            "schema": {
+              "title": "Kind",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "title": "Name",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "publication_version",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Publication Version"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Preview Upstream Merge Api V1 Operations Coord Prompt Documents  Kind   Name  Upstream Merge Get"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Preview Upstream Merge",
+        "tags": [
+          "operations"
+        ]
+      },
+      "post": {
+        "description": "``Merge clauses``: land a reviewed clause-grained merge (Phase 7).\nTenant-admin only.\n\nBody: ``{publication_version, expected_version?, resolutions?}``.\n``resolutions`` maps each CONFLICTED clause name to ``\"local\"`` or\n``\"upstream\"``; a conflicted clause missing from it is ``409\nunresolved_conflicts`` naming the clauses \u2014 coord never picks a side. The\nother ``409`` codes are ``document_moved``, ``whole_body_fallback`` (use\nAdopt / Keep instead) and ``nothing_to_merge``. Forwarded verbatim; the\nper-clause choices are the operator's and this proxy adds none.",
+        "operationId": "api_v1_operations_coord_prompt_documents_kind_name_upstream_merge_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "kind",
+            "required": true,
+            "schema": {
+              "title": "Kind",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "title": "Name",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "Body",
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Apply Upstream Merge Api V1 Operations Coord Prompt Documents  Kind   Name  Upstream Merge Post"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Apply Upstream Merge",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
     "/api/v1/operations/coord/prompt-documents/{kind}/{name}/versions": {
       "get": {
         "description": "Version-history metadata for one prompt document (newest first, no\nbodies). Any authenticated tenant member.",
@@ -85845,6 +86609,33 @@
           }
         ],
         "summary": "Put Fleet Policy",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
+    "/api/v1/operations/fleet/ci-runners": {
+      "get": {
+        "description": "Return coord's mirror of the self-hosted CI runners and their labels.\n\nCoord answers::\n\n    {\n      \"runners\": [\n        {\n          \"device_id\": \"<uuid>\",\n          \"hostname\": \"<str>\",\n          \"ci_runner_status\": \"<str|null>\",\n          \"ci_runner_labels\": [\"self-hosted\", \"qontinui\", ...],\n          \"last_seen_at\": \"<rfc3339|null>\"\n        }\n      ],\n      \"as_of\": \"<rfc3339>\",\n      \"freshness_secs\": <int>\n    }\n\n``ci_runner_labels`` is the set coord's registrar last mirrored from\nGitHub's `actions/runners` listing \u2014 the same set GitHub matches a job's\n`runs-on` against. A host missing the custom `qontinui` label draws no\n`[self-hosted, qontinui]` job, which is what makes this read worth\nsurfacing: it is the only place the console can see routing eligibility.\n\n``as_of`` / ``freshness_secs`` describe the READ, not GitHub, and\n``freshness_secs`` is coord's SELECTION WINDOW \u2014 not an age. Coord's own\nwords: \"the freshness window the query was executed under, in seconds\",\nsourced from ``merge_scheduler::ci_runner_freshness_secs()``\n(``COORD_CI_RUNNER_FRESHNESS_SECS``, a configured constant, default 180).\nThe rows are those coord saw in ``(as_of - freshness_secs, as_of]``. A\nconsumer that renders it as \"N seconds old\" prints a constant as if it were\na measurement; the real per-row age is ``as_of - last_seen_at``, which is\nwhy ``last_seen_at`` is on the wire. All three pass through untouched.\n\nForwarded verbatim \u2014 this proxy adds no shape of its own, so a coord that\ngrows a field serves it to the console without a change here.",
+        "operationId": "api_v1_operations_fleet_ci_runners_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Get Fleet Ci Runners Api V1 Operations Fleet Ci Runners Get"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Get Fleet Ci Runners",
         "tags": [
           "operations"
         ]
@@ -88296,7 +89087,7 @@
     },
     "/api/v1/operations/plans": {
       "get": {
-        "description": "List work-units from coord (tenant-scoped).\n\nProxies coord ``GET /coord/work-units``; the response envelope is\n``{\"work_units\": [...], \"limit\": N, \"offset\": N}``.\n\ncoord's ``ListQuery`` has always accepted ``slug_prefix`` and ``offset``;\nthis proxy simply never forwarded them, so the console could neither page\npast the first window nor ask for a slug subset. Forwarding them needs no\ncoord change.\n\n``exclude_slug_prefix`` is the one genuinely new parameter, and it ships\nahead of its coord half deliberately. ``ListQuery`` is\n``#[derive(Debug, Deserialize, Default)]`` with ``#[serde(default)]`` on\nevery field and no ``deny_unknown_fields``, so a coord that does not know\nthe parameter **ignores** it and returns the unfiltered page rather than\nerroring. Callers must therefore treat the exclusion as best-effort until\ncoord's half deploys \u2014 a page that renders shepherd rows is a coord that\nhas not caught up, not a bug here. (coord's side now documents that\npermissiveness as a contract rather than leaving it an accident; drop this\nparagraph once that build is deployed everywhere.)\n\nBoth prefix filters take ``min_length=1``. An empty ``exclude_slug_prefix``\nwould reach coord as ``slug NOT LIKE '' || '%'`` \u2014 i.e. ``NOT LIKE '%'``,\nwhich excludes EVERY row. A console that forwarded an empty input box would\nthen render a blank list, and the paragraph above tells the operator to\nread an unexpected page as \"coord has not caught up\". Rejecting the empty\nstring here is the honest failure; coord normalizes it as well, so neither\nside depends on the other for this.",
+        "description": "List work-units from coord, annotated with the two body signals.\n\nProxies coord ``GET /coord/work-units``; the response envelope is\n``{\"work_units\": [...], \"limit\": N, \"offset\": N}`` \u2014 plus, when the page\nholds rows, a ``body_signal`` block, and per row ``body_provenance``,\n``has_body`` and ``body_unknown_reason``. See :func:`_apply_body_signals`\nand :mod:`app.services.plan_body_signal`.\n\nThis used to ``return await _proxy_coord_get(...)`` verbatim. It cannot:\ncoord's list already carries ``metadata`` per row, but a verbatim\npass-through has no derivation hook, and the alternative \u2014 deriving in the\nReact components \u2014 is one rule implemented three times (list, detail,\nspawn guard) that would disagree with itself the first time a value was\nadded to it.\n\nThe signals are computed only when there are rows to annotate. An empty\npage has nothing to explain, and paying a coord round trip plus two\nqueries to say so about no rows is waste, not honesty.\n\ncoord's ``ListQuery`` has always accepted ``slug_prefix`` and ``offset``;\nthis proxy simply never forwarded them, so the console could neither page\npast the first window nor ask for a slug subset. Forwarding them needs no\ncoord change.\n\n``exclude_slug_prefix`` is the one genuinely new parameter, and it ships\nahead of its coord half deliberately. ``ListQuery`` is\n``#[derive(Debug, Deserialize, Default)]`` with ``#[serde(default)]`` on\nevery field and no ``deny_unknown_fields``, so a coord that does not know\nthe parameter **ignores** it and returns the unfiltered page rather than\nerroring. Callers must therefore treat the exclusion as best-effort until\ncoord's half deploys \u2014 a page that renders shepherd rows is a coord that\nhas not caught up, not a bug here. (coord's side now documents that\npermissiveness as a contract rather than leaving it an accident; drop this\nparagraph once that build is deployed everywhere.)\n\nBoth prefix filters take ``min_length=1``. An empty ``exclude_slug_prefix``\nwould reach coord as ``slug NOT LIKE '' || '%'`` \u2014 i.e. ``NOT LIKE '%'``,\nwhich excludes EVERY row. A console that forwarded an empty input box would\nthen render a blank list, and the paragraph above tells the operator to\nread an unexpected page as \"coord has not caught up\". Rejecting the empty\nstring here is the honest failure; coord normalizes it as well, so neither\nside depends on the other for this.",
         "operationId": "api_v1_operations_plans_get",
         "parameters": [
           {
@@ -88413,6 +89204,14 @@
             "description": "Validation Error"
           }
         },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          },
+          {
+            "HTTPBearer": []
+          }
+        ],
         "summary": "List Coord Plans",
         "tags": [
           "operations"
@@ -88421,7 +89220,7 @@
     },
     "/api/v1/operations/plans/{slug}": {
       "get": {
-        "description": "Return a single work-unit from coord (tenant-scoped).\n\nProxies coord ``GET /coord/work-units/{slug}``; the response envelope\nis ``{\"work_unit\": {...}, \"recent_history\": [...]}``.",
+        "description": "Return a single work-unit from coord, annotated with the body signals.\n\nProxies coord ``GET /coord/work-units/{slug}``; the response envelope\nis ``{\"work_unit\": {...}, \"recent_history\": [...], \"citations\": [...]}``.\n\nThe same annotation the list route applies, through the same helper and\nover a one-row page: the detail surface must not be able to disagree with\nthe row the operator clicked to reach it.",
         "operationId": "api_v1_operations_plans_slug_get",
         "parameters": [
           {
@@ -88456,6 +89255,14 @@
             "description": "Validation Error"
           }
         },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          },
+          {
+            "HTTPBearer": []
+          }
+        ],
         "summary": "Get Coord Plan",
         "tags": [
           "operations"
@@ -92883,6 +93690,36 @@
         ]
       }
     },
+    "/api/v1/plan-library/difficulty": {
+      "get": {
+        "description": "The difficulty map ``/admin/coord/plans`` joins onto coord's work units.\n\nPlan ``2026-09-18-plan-library-difficulty-field``. The rating is computed\nfrom each plan's body by ``app.services.plan_difficulty`` \u2014 two axes,\nconceptual and implementation, folded into a routing level (``high`` \u2192\nFable 5.1, ``medium`` \u2192 Opus 5, ``low`` \u2192 a fast tier), with a plan's own\n``Difficulty:`` stamp overriding the computed level.\n\nBefore answering, plans rated under an older rubric (or none) are re-rated,\nup to a per-request cap, newest first \u2014 see\n:func:`crud.rerate_stale_plan_difficulty` \u2014 so these reads are also the\ncorpus backfill. ``rerate_pending`` says how many plans the next reads\nstill have to rate. Unrated plans are\nOMITTED, never served as ``low``.",
+        "operationId": "api_v1_plan_library_difficulty_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlanDifficultyResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          },
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Every plan's difficulty rating (the model tier it routes to)",
+        "tags": [
+          "plan-library"
+        ]
+      }
+    },
     "/api/v1/plan-library/divergent": {
       "get": {
         "description": "Two distinct forks, reported side by side.\n\n``groups`` \u2014 same ``(kind, slug)``, different ``content_sha256``: the same\ndocument captured from two repos/checkouts that have drifted apart.\n\n``kind_forks`` \u2014 same ``(slug, source_repo)``, different ``kind``: the\nclass the kind-lock fix prevents, and the one the scan-safe upsert now\nrefuses to resolve on its own (it 409s rather than pick a winner). Grouping\nby ``(kind, slug)`` structurally cannot see these, which is why they are\nreported separately rather than folded into ``groups``.",
@@ -93316,8 +94153,22 @@
     },
     "/api/v1/plan-library/scan-roots": {
       "get": {
-        "description": "The caller's organization's readings, one per reporting device.\n\nSame credentials as the plan-library list (an operator session or a device\ntoken). Each row carries its age and a ``state`` VERDICT that is\n``unknown`` when the device has not reported within ``fresh_within_secs``\n(by ``received_at``; ``observation_stale:``), when its latest report was\nobserved before the stored reading (``reading_superseded:``), or when its\nreading is 0 behind a stale ref (``ref_stale:``) \u2014 in that order of\nprecedence: ``observation_stale`` > ``reading_superseded`` >\n``ref_stale``. The device's own values stay in ``reported_state`` /\n``reported_detail``. An organization with no rows answers\n``state: \"unknown\"``, never an empty \"all current\".\n\n``by_source_repo`` folds the rows per scan source over its comparison set \u2014\nreadings that are fresh, applied and carry a count, including a\n``ref_stale`` 0-behind floor: the fewest commits behind, whether that is a\nfloor, and which devices the readings order as least behind or lagging,\ncannot order (``lag_unknown``), or have no comparable reading\n(``unmeasured``). A roll-up whose fewest commits behind is a floor of 0\nreads ``unknown`` with a null minimum \u2014 \"at least 0\" is no distance \u2014 and a\ndetail naming the cause: ``ref_stale:`` when every comparable reading\ncounted against one ref that is stale or of unknown age,\n``refs_not_shared:`` when they counted against different or unidentified\nrefs. Its lists keep whatever order the readings establish. The same builder renders the ``corpus_health.scan_roots``\nblock the list and ``/candidates`` carry, so both apply the same rules to\nthe same rows; two reads can still differ by when they happen (ages, and a\nverdict that flips at the freshness boundary), and the block degrades a\nfailed read to ``read_failed`` where this route, whose whole answer the\nreadings are, lets it surface as an error.\n\n``coverage`` is computed HERE AND NOWHERE ELSE (design decision D2 of\n``2026-09-15-captured-vs-authored-coverage-is-a-set-difference``): it is a\nset difference between the stems a device enumerated at its default ref and\nthe corpus rows under that ``source_repo``, and ``corpus_health.scan_roots``\n\u2014 the same response object \u2014 rides every ``GET /plan-library`` page\nincluding the runner's loopback search, which must not pay for an anti-join\nover every authored stem. There it is empty with ``coverage_detail`` saying\nwhich of the three reasons produced the empty list.\n\n**No ratio is served.** The entry carries two denominators (what exists at\nthe ref, and what the scanned working tree could possibly have shown the\nbody sync), the corpus rows under OTHER keys as\n``out_of_scope_artifact_count``, and the attribution field\n``authored_not_captured_but_invisible`` \u2014 a lagging checkout's plans are\nnot a capture defect. A percentage over one of those denominators read\n101.8% in production for a real corpus; nothing served here can express\nthat number. A key with no usable census reads ``unknown`` with a detail,\nnever a zero and never an omitted key.",
+        "description": "The caller's organization's readings, one per reporting device.\n\nSame credentials as the plan-library list (an operator session or a device\ntoken). Each row carries its age and a ``state`` VERDICT that is\n``unknown`` when the device has not reported within ``fresh_within_secs``\n(by ``received_at``; ``observation_stale:``), when its latest report was\nobserved before the stored reading (``reading_superseded:``), or when its\nreading is 0 behind a stale ref (``ref_stale:``) \u2014 in that order of\nprecedence: ``observation_stale`` > ``reading_superseded`` >\n``ref_stale``. The device's own values stay in ``reported_state`` /\n``reported_detail``. An organization with no rows answers\n``state: \"unknown\"``, never an empty \"all current\".\n\n``by_source_repo`` folds the rows per scan source over its comparison set \u2014\nreadings that are fresh, applied and carry a count, including a\n``ref_stale`` 0-behind floor: the fewest commits behind, whether that is a\nfloor, and which devices the readings order as least behind or lagging,\ncannot order (``lag_unknown``), or have no comparable reading\n(``unmeasured``). A roll-up whose fewest commits behind is a floor of 0\nreads ``unknown`` with a null minimum \u2014 \"at least 0\" is no distance \u2014 and a\ndetail naming the cause: ``ref_stale:`` when every comparable reading\ncounted against one ref that is stale or of unknown age,\n``refs_not_shared:`` when they counted against different or unidentified\nrefs. Its lists keep whatever order the readings establish. The same builder renders the ``corpus_health.scan_roots``\nblock the list and ``/candidates`` carry, so both apply the same rules to\nthe same rows; two reads can still differ by when they happen (ages, and a\nverdict that flips at the freshness boundary), and the block degrades a\nfailed read to ``read_failed`` where this route, whose whole answer the\nreadings are, lets it surface as an error.\n\n``coverage`` is computed HERE AND NOWHERE ELSE (design decision D2 of\n``2026-09-15-captured-vs-authored-coverage-is-a-set-difference``): it is a\nset difference between the stems a device enumerated at its default ref and\nthe corpus rows under that ``source_repo``, and ``corpus_health.scan_roots``\n\u2014 the same response object \u2014 rides every ``GET /plan-library`` page\nincluding the runner's loopback search, which must not pay for an anti-join\nover every authored stem. There it is empty with ``coverage_detail`` saying\nwhich of the three reasons produced the empty list.\n\n**No ratio is served.** The entry carries two denominators (what exists at\nthe ref, and what the scanned working tree could possibly have shown the\nbody sync), the corpus rows under OTHER keys as\n``out_of_scope_artifact_count``, and the attribution field\n``authored_not_captured_but_invisible`` \u2014 a lagging checkout's plans are\nnot a capture defect. A percentage over one of those denominators read\n101.8% in production for a real corpus; nothing served here can express\nthat number. A key with no usable census reads ``unknown`` with a detail,\nnever a zero and never an omitted key.\n\n``coverage`` (the query parameter, default ``true``) lets a caller that\nonly wants the per-device readings and roll-up \u2014 ``ScanSourcesPanel`` on\nthe console, which renders no coverage field at all \u2014 say so and skip the\nstem census load and the corpus anti-join. Passing ``false`` reads\n``coverage: []`` with ``coverage_detail`` starting ``not_requested:``,\nnever an unexplained empty list. Follow-up to Phase 4 of the same plan,\nwhich shipped the two panels as two separate reads of this one route\nwithout a way for either to opt out of the other's cost.",
         "operationId": "api_v1_plan_library_scan_roots_get",
+        "parameters": [
+          {
+            "description": "Compute the coverage set difference (default). false skips the stem census load and the corpus anti-join for a caller that only needs the per-device readings and roll-up.",
+            "in": "query",
+            "name": "coverage",
+            "required": false,
+            "schema": {
+              "default": true,
+              "description": "Compute the coverage set difference (default). false skips the stem census load and the corpus anti-join for a caller that only needs the per-device readings and roll-up.",
+              "title": "Coverage",
+              "type": "boolean"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "content": {
@@ -93328,6 +94179,16 @@
               }
             },
             "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
           }
         },
         "security": [

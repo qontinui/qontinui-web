@@ -281,6 +281,13 @@ export type PrMergeStatus =
   // future non-specific predicate block all land here, with the specific code
   // named in `blocking_summary`.
   | "predicate-blocked"
+  // coord LANDED this PR at its CURRENT head and GitHub still shows it open —
+  // the phantom-open ff-land window, keyed on coord's `land_stamp ==
+  // current_head`. Not a block and not a stall: the work is on the base branch
+  // already. Plan
+  // `2026-09-14-coord-phantom-open-close-uses-owner-blind-installation-token`
+  // Phase 5.
+  | "landed-open"
   | "unknown";
 
 /**
@@ -440,9 +447,7 @@ class AdminDevService {
     if (opts?.includeArchived) p.set("include_archived", "1");
     if (opts?.wouldReap) p.set("would_reap", "1");
     const qs = p.toString();
-    return httpClient.get<DevOverview>(
-      `${API}/overview${qs ? `?${qs}` : ""}`,
-    );
+    return httpClient.get<DevOverview>(`${API}/overview${qs ? `?${qs}` : ""}`);
   }
 
   /**

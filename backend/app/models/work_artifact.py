@@ -27,11 +27,12 @@ from sqlalchemy import (
     Text,
     text,
 )
-from sqlalchemy.dialects.postgresql import ARRAY
+from sqlalchemy.dialects.postgresql import ARRAY, JSONB
 from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
+from app.services.plan_difficulty import DifficultyLevel, DifficultySource
 
 #: The sentinel a NULL ``organization_id`` collapses onto in the functional
 #: unique index. Kept here (not just in the migration) because the upsert has
@@ -210,6 +211,23 @@ class WorkArtifact(Base):
             text(SEARCH_TSVECTOR_SQL),
             postgresql_using="gin",
         ),
+        # Mirror ``plan_library_07_plan_difficulty``. NULL passes: unrated.
+        CheckConstraint(
+            "difficulty IN ('low', 'medium', 'high')",
+            name="ck_work_artifacts_difficulty",
+        ),
+        CheckConstraint(
+            "difficulty_conceptual IN ('low', 'medium', 'high')",
+            name="ck_work_artifacts_difficulty_conceptual",
+        ),
+        CheckConstraint(
+            "difficulty_implementation IN ('low', 'medium', 'high')",
+            name="ck_work_artifacts_difficulty_implementation",
+        ),
+        CheckConstraint(
+            "difficulty_source IN ('declared', 'computed')",
+            name="ck_work_artifacts_difficulty_source",
+        ),
         {"schema": "agent"},
     )
 
@@ -302,6 +320,34 @@ class WorkArtifact(Base):
         nullable=False,
         server_default=text("'{}'"),
         default=list,
+    )
+
+    # ── Difficulty rating (``plan_library_07_plan_difficulty``) ──────────
+    #
+    # Derived from ``body`` by ``app.services.plan_difficulty`` for
+    # ``kind = 'plan'`` rows only; NULL on every other kind, and NULL on a
+    # plan means UNRATED — never "low". ``crud.work_artifact.assign_difficulty``
+    # is the one writer. The CHECKs mirror the migration's.
+    difficulty: Mapped[DifficultyLevel | None] = mapped_column(Text, nullable=True)
+    difficulty_conceptual: Mapped[DifficultyLevel | None] = mapped_column(
+        Text, nullable=True
+    )
+    difficulty_implementation: Mapped[DifficultyLevel | None] = mapped_column(
+        Text, nullable=True
+    )
+    #: ``declared`` (the plan's own ``Difficulty:`` stamp) or ``computed``.
+    difficulty_source: Mapped[DifficultySource | None] = mapped_column(
+        Text, nullable=True
+    )
+    #: The rubric version that produced the rating; a row below the running
+    #: ``RUBRIC_VERSION`` is re-rated by ``GET /plan-library/difficulty``.
+    difficulty_rubric_version: Mapped[int | None] = mapped_column(
+        Integer, nullable=True
+    )
+    #: The measured inputs. ``none_as_null`` so an unrated row is SQL NULL,
+    #: not the JSONB scalar ``null`` (see ``plan_scan_root.py``).
+    difficulty_signals: Mapped[dict[str, object] | None] = mapped_column(
+        JSONB(none_as_null=True), nullable=True
     )
 
     authored_at: Mapped[datetime | None] = mapped_column(

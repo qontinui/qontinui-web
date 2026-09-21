@@ -165,12 +165,20 @@ class PairCliRequest(BaseModel):
     Headless analogue of the browser-mediated pair-confirm flow: the
     runner authenticates with its existing user access token (no browser
     redirect) and asks the web backend to mint a device-token JWT via
-    coord. The backend resolves the calling user's ``tenant_id`` and
-    proxies the request to coord's ``POST /coord/devices/pair-cli``.
+    coord. The backend proxies the request to coord's
+    ``POST /coord/devices/pair-cli``, forwarding the caller's operator
+    bearer and injecting ``user_id`` server-side.
 
-    The runner sends the same ``(device_id, hostname, name)`` triple it
-    used to send directly to coord; ``tenant_id`` and ``user_id`` are
-    injected server-side so the runner never has to know about tenancy.
+    ``tenant_id`` is an optional HINT, not an authority: when a real tenant
+    is supplied it is forwarded and coord validates it
+    (``authorize_pairing_tenant`` refuses a tenant the principal cannot
+    pair). When it is absent, coord derives the tenant from the operator
+    bearer. The nil UUID is treated as absent — runner UI sign-in sends it
+    as a placeholder on every first pairing, and forwarding it would fail
+    coord's membership check. A refresh MUST send the tenant its credential
+    is for, or coord's derivation silently re-points the device at the
+    user's home tenant (plan
+    ``2026-09-17-device-jwt-refresh-drops-the-requested-tenant-and-coord-mints-the-home-tenant``).
     """
 
     device_id: UUID = Field(
@@ -187,6 +195,14 @@ class PairCliRequest(BaseModel):
         default=None,
         max_length=255,
         description="Optional display name; defaults to hostname server-side.",
+    )
+    tenant_id: UUID | None = Field(
+        default=None,
+        description=(
+            "Optional tenant the device JWT should be minted for. Coord "
+            "validates membership; absent or the nil UUID means coord derives "
+            "the tenant from the operator bearer."
+        ),
     )
 
 

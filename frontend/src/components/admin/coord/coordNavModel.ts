@@ -11,8 +11,9 @@
  * operator), carried over unchanged from the console's own dropdown nav:
  *
  *   Pipeline · Pull Requests · Gates · Alerts · Notifications   ← direct
- *   Work ▸    Plans / Plan Library / Questions / Agents / Agent Commands /
- *             Agent Skills / Prompt Log / History / Lands
+ *   Work ▸    Plans / Work Units / Plan Library / Plan Candidates /
+ *             Plan Forks / Plan Follow-ups / Questions / Agents /
+ *             Agent Commands / Agent Skills / Prompt Log / History / Lands
  *   Merge ▸   Pull Decisions / Automation Rules / Gate Clearance /
  *             Merge Settings°
  *   Intent ▸  Prompt Documents / Policies / Decision Policies /
@@ -35,11 +36,13 @@ import {
   Bot,
   Boxes,
   Compass,
+  CornerDownRight,
   Cpu,
   FileText,
   Gauge,
   Gavel,
   GitBranch,
+  GitFork,
   GitMerge,
   GitPullRequest,
   Hammer,
@@ -48,6 +51,8 @@ import {
   KeyRound,
   Layers,
   Library,
+  ListChecks,
+  ListTodo,
   MessageSquare,
   NotebookText,
   Package,
@@ -155,6 +160,26 @@ export const GROUPS: NavGroup[] = [
         testId: "coord-nav-plans",
       },
       {
+        // Sits beside Plans deliberately, and the two are NOT two views of one
+        // thing. Plans is the plan CORPUS reconciled three ways
+        // (`/plan-library/reconciliation`, slug-ordered, paged, with a stated
+        // total); this is coord's OPERATIONAL work-unit store — a recency
+        // window over `coord.work_units`, including the `shepherd-*` merge
+        // escalations no other surface shows. It was `/admin/coord/plans`
+        // until Phase 3 of plan
+        // `2026-09-20-the-operator-plans-page-reads-the-wrong-store`, which
+        // moved it here rather than deleting it: it answers a real question
+        // for a real population, just not the one its old name promised.
+        //
+        // Distinct path (not `/plans/work-units`) so the Plans item's
+        // startsWith active-match doesn't double-highlight — same reasoning as
+        // the Plan Library and Onboarding pairs.
+        href: "/admin/coord/work-units",
+        label: "Work Units",
+        icon: ListTodo,
+        testId: "coord-nav-work-units",
+      },
+      {
         // Sits beside Plans deliberately: Plans is coord's work units, this is
         // the prompt/plan CORPUS those units are authored from. Distinct path
         // (not /plans/library) so the Plans item's startsWith active-match
@@ -163,6 +188,35 @@ export const GROUPS: NavGroup[] = [
         label: "Plan Library",
         icon: Library,
         testId: "coord-nav-plan-library",
+      },
+      // Phase 4 of `2026-09-20-the-operator-plans-page-reads-the-wrong-store`.
+      // Three purpose-built plan-library joins had shipped with tests, an
+      // OpenAPI entry and a contract — and ZERO consumers; a `git grep` for
+      // each route name across `frontend/**` matched only the two generated
+      // snapshots. An unconsumed route is not neutral [policy:
+      // `capability-ships-enabled`], so each gets a leaf here as well as its
+      // in-page entry point. No href prefixes another (`/plans` does not
+      // prefix `/plan-candidates`), which is what keeps the sidebar's
+      // startsWith active-match from double-highlighting.
+      {
+        href: "/admin/coord/plan-candidates",
+        label: "Plan Candidates",
+        icon: ListChecks,
+        testId: "coord-nav-plan-candidates",
+      },
+      {
+        // Reached from the `coord-plan-divergent` marker on Plans as well —
+        // that marker had nowhere to go until this page existed.
+        href: "/admin/coord/plan-forks",
+        label: "Plan Forks",
+        icon: GitFork,
+        testId: "coord-nav-plan-forks",
+      },
+      {
+        href: "/admin/coord/plan-followups",
+        label: "Plan Follow-ups",
+        icon: CornerDownRight,
+        testId: "coord-nav-plan-followups",
       },
       {
         href: "/admin/coord/questions",

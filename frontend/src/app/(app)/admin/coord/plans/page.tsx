@@ -1,56 +1,81 @@
 "use client";
 
 /**
- * /admin/coord/plans — list coord work-units, filter by status.
+ * /admin/coord/plans — the plan CORPUS, reconciled three ways.
  *
- * Plan `2026-05-19-coordinator-production-readiness.md` Phase 2 (Wave 2);
- * repointed onto the generic work-unit primitive
- * (`2026-06-18-coord-generic-work-unit-primitive`).
+ * Plan `2026-09-20-the-operator-plans-page-reads-the-wrong-store`, Phases 1
+ * and 2.
  *
- * Operators still author markdown plans; coord now stores them as generic
- * slug-keyed work-units (`coord.work_units`). The operator UX stays "Plans"
- * — this is a data-source repoint, not a rename. The web proxy still serves
- * `/api/v1/operations/plans*`; only the coord upstream moved to
- * `/coord/work-units*`, whose list envelope is `{work_units: [...]}`.
+ * ## What this replaced, and why a repoint rather than a join
  *
- * ## Console style (Phase 3 Wave 1)
+ * This route used to read `coord.work_units` through
+ * `/api/v1/operations/plans*` — `updated_at DESC`, clamped at 500. That is a
+ * recency window over coord's OPERATIONAL store, not a corpus: rank depends on
+ * when a unit was last touched, so stalled work is exactly what falls out of
+ * view. An operator who could not find a three-week-old plan on it read "not
+ * here" as "absent", and the plan was in the library the whole time with its
+ * digest matching `origin/main`. That page is not gone — it moved to
+ * `/admin/coord/work-units` (Phase 3), where it answers the question it always
+ * actually answered.
  *
- * Migrated onto `components/console` by plan
- * `2026-08-16-coord-console-ui-unification-pipeline-style.md`, against
- * `frontend/docs/console-ui-style-guide.md`:
+ * The join this page needs already existed, twice, with zero frontend
+ * consumers: `GET /api/v1/plan-library/reconciliation` returns, per plan stem,
+ * coord's stored status (axis A), the document's own stamp from the artifact
+ * store (axis B) and coord's derived delivery verdict (axis C), plus a
+ * classification, a verdict and a plain sentence naming the values that
+ * decided it. Building a third join would have been the exact defect the
+ * parent plan documents.
  *
- * - **R9** — the page-level `<Card><CardHeader><CardTitle>Plans` wrapper is
- *   gone. `coord/layout.tsx` already renders the console `<h1>` and the nav
- *   crumb, so that header was a second title costing ~72px above the fold.
- * - **R1** — a `<HealthStrip>` derived from the rows ALREADY FETCHED opens the
- *   page. No second request: the counts come from the same list the rows do.
- * - **R2/R5** — one work unit is one `<PlanRow>` line; detail expands in place
- *   (`<RecordList>` keeps one open at a time).
- * - **R7** — the fetch-window caveats (truncation, missing authoring dates)
- *   collapse into a `<CollapsiblePanel>` whose summary badge stays visible, so
- *   the warning cannot hide behind the click.
+ * **`ordering: slug_asc` is the real fix, not the limit.** Plan stems are
+ * date-prefixed, so slug order is chronological order — and stable across
+ * requests in a way a mutable timestamp is not. New plans carry today's date
+ * and therefore APPEND, which is what makes offset paging over this route
+ * sound.
  *
- * ## Which date (plan `2026-09-02-coord-work-units-carry-no-authoring-date`)
+ * ## Five read states, not four
  *
- * The default sort is `authored_desc` on the plan's EFFECTIVE authoring date
- * (`planAuthoredAt`: the slug's date prefix, else coord's `authored_at`), and
- * the "undated" caveat counts rows with NEITHER. It used to be
- * `created_desc` on `created_at` — the INGEST time, a bulk-backfill date for
- * most of the corpus — under the label "Newest created", so a plan written in
- * May sorted as a June plan. With a coord that predates the column every row
- * is undated: they all sink, the caveat says "N of N", and the row falls back
- * to "Ingested <created_at>" — true, and labelled as what it is.
+ * The four the old page derived are correct and transfer unchanged — unknown,
+ * stale, filtered, genuinely-empty. The fifth is this route's own: when its
+ * contract check fails it raises **HTTP 500** with
+ * `{"error": "reconciliation_contract_violated", "violations": [...]}` rather
+ * than returning a degraded body. That is neither a transport failure nor a
+ * stale read — it is the route deliberately refusing to emit a facet block it
+ * cannot stand behind, and the violations text is the only description of what
+ * broke. `planReconciliationStatus.ts` `parseContractViolation` recovers it.
  *
- * **The status `<Select>` deliberately stays a Select, not `<FilterTabs>`.**
- * It is a SERVER-side filter — the value goes to coord as `?status=` and
- * changes what is fetched — so tab counts would be `–` for all nine options on
- * every render but one. R6's dash rule permits that; it would still be a
- * strictly worse control than the Select, and `coord-plans-status-select` is a
- * frozen authored testid (D4a). The counts operators actually want are in the
- * health strip, derived from the window that WAS fetched.
+ * ## The status filter is CLIENT-side here, and says so
+ *
+ * `/reconciliation` takes `offset`, `limit` and `include_coord` — there is no
+ * `status` parameter. So unlike the old page's server-side filter, this one
+ * narrows the ROWS ON THIS PAGE and nothing else. A control that silently
+ * turned into a page-scoped filter would be the same class of mislabel this
+ * plan exists to fix, so the page states the scope wherever the filter is
+ * capable of emptying the list.
+ *
+ * ## The rule that governs the disclosure block
+ *
+ * **Render the population state before any flag derived from the population.**
+ * `document_axis_complete` is not readable on its own: it is
+ * `document_missing_count == 0` over whatever population was read, so when
+ * coord's work-unit arm fails the population collapses to the artifact store
+ * and the flag is vacuously true. Measured 2026-09-20, five of eight live
+ * probes took that arm and reported `document_axis_complete: true` with
+ * `total 1887`, against `false` / `total 1991` on the three good ones — **the
+ * degraded read is the MORE optimistic one.** `deriveDisclosure` therefore
+ * suppresses that claim, the document counts and the class histogram on that
+ * arm and quotes `work_unit_population_reason` and
+ * `facets.corpus_incomplete_reasons` verbatim instead.
+ *
+ * ## Console style
+ *
+ * R9 (no page-level card — the coord layout owns the `<h1>`), R1 (a
+ * `<HealthStrip>` derived from the response already fetched, no second read),
+ * R2/R5 (one stem is one `<ReconciliationRow>`, detail expands in place),
+ * R6 (`–`, never `0`, for anything unfetched or inadmissible), R8 (every
+ * reading is derived in `planReconciliationStatus.ts`, nothing inline here).
  */
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Select,
   SelectContent,
@@ -58,277 +83,227 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { ArrowDownUp, Filter, TriangleAlert } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { ChevronLeft, ChevronRight, Filter, Rows3 } from "lucide-react";
+import { HealthStrip, RecordList, RefreshButton } from "@/components/console";
+import { CaptureHealthPanel } from "@/components/admin/coord/CaptureHealthPanel";
+import { ReconciliationDisclosure } from "@/components/admin/coord/ReconciliationDisclosure";
+import { ReconciliationRow } from "@/components/admin/coord/ReconciliationRow";
 import {
-  CollapsiblePanel,
-  HealthStrip,
-  RecordList,
-  RefreshButton,
-  readIsUnknown,
-} from "@/components/console";
-import { PlanRow } from "@/components/admin/coord/PlanRow";
+  deriveCaptureCensus,
+  describeCorpusFreshness,
+  type CaptureHealthResponse,
+} from "@/components/admin/coord/captureHealthStatus";
 import {
-  planAuthoredAt,
-  type CoordPlanRow,
-} from "@/components/admin/coord/planStatus";
+  DEFAULT_PAGE_SIZE,
+  PAGE_SIZES,
+  STATUS_FILTERS,
+  matchesStatus,
+} from "@/components/admin/coord/planReconciliationFilters";
+import {
+  describeWindow,
+  deriveDisclosure,
+  deriveReconciliationHealth,
+  parseContractViolation,
+  type ReconciliationResponse,
+} from "@/components/admin/coord/planReconciliationStatus";
+import {
+  useGuardedPoll,
+  type ReadGuard,
+} from "@/components/admin/coord/useGuardedPoll";
 import { httpClient } from "@/services/service-factory";
-import { sortPlans, SORTS, type SortKey } from "./planSort";
-import { derivePlansHealth, SHEPHERD_SLUG_PREFIX } from "./plansHealth";
 
-const API = "/api/v1/operations";
-const POLL_INTERVAL_MS = 10_000;
+const ENDPOINT = "/api/v1/plan-library/reconciliation";
+/**
+ * Phase 4a — the capture census, read SEPARATELY and deliberately so.
+ *
+ * It is a different question about a different store (the artifact store, axis
+ * B's source), and it answers on the degraded population arm where the
+ * reconciliation's own document flags do not. Folding it into the
+ * reconciliation read would tie the two together and lose exactly that.
+ */
+const CAPTURE_ENDPOINT = "/api/v1/plan-library/capture-health";
+const POLL_INTERVAL_MS = 30_000;
 
 /**
- * Ask for coord's maximum page.
+ * The contract refusal is a 500 — and it is DETERMINISTIC.
  *
- * Sorting happens client-side, so the window we sort over is the window we
- * fetched. coord's list is `ORDER BY updated_at DESC LIMIT $3` with a default
- * of 100 and a hard clamp of 500 (`work_unit_registry.rs` `list_work_units`),
- * and the proxy forwards no sort parameter — so requesting the clamp is the
- * widest honest window available. When the result fills it, the corpus is
- * larger than what is sorted and the page says so; see `truncated` below.
+ * `httpClient` retries every 5xx on a GET, so without this the route's own
+ * "I checked my facet block and it no longer means what it says" costs five
+ * requests and ~7 s of backoff per poll tick, against a route computing a
+ * three-way join over ~1,991 stems, every 30 s. The route will refuse
+ * identically on each one: nothing about it is transient.
+ *
+ * `http-client.ts` documents `noRetryStatuses` for exactly this shape. The
+ * generic-500 path loses nothing — `parseContractViolation` returns `null`
+ * and the page degrades to the ordinary error state either way, one request
+ * sooner.
  */
-const FETCH_LIMIT = 500;
-
-// Work-unit lifecycle statuses (coord stores status as an opaque string;
-// these are the canonical lifecycle words the filter offers as a convenience
-// — an exact-match `status=` filter on the coord list).
-const STATUS_FILTERS = [
-  { value: "any", label: "All statuses" },
-  { value: "draft", label: "Draft" },
-  { value: "vetted", label: "Vetted" },
-  { value: "in_progress", label: "In progress" },
-  { value: "blocked", label: "Blocked" },
-  { value: "ready", label: "Ready" },
-  { value: "shipped", label: "Shipped" },
-  { value: "superseded", label: "Superseded" },
-  { value: "obsolete", label: "Obsolete" },
-];
-
-interface PlansListResponse {
-  // coord `/coord/work-units` returns rows under `work_units`. `plans` is
-  // kept for backwards-tolerance during the cutover (harmless if absent).
-  work_units?: CoordPlanRow[];
-  plans?: CoordPlanRow[];
-  limit?: number;
-  offset?: number;
-  count?: number;
-}
+const RECONCILIATION_REQUEST_OPTIONS: { noRetryStatuses: number[] } = {
+  noRetryStatuses: [500],
+};
 
 export default function CoordPlansListPage() {
   const [status, setStatus] = useState("any");
-  const [sort, setSort] = useState<SortKey>("authored_desc");
-  const [data, setData] = useState<PlansListResponse | null>(null);
+  const [offset, setOffset] = useState(0);
+  const [limit, setLimit] = useState(DEFAULT_PAGE_SIZE);
+  const [data, setData] = useState<ReconciliationResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
-  // There is deliberately no `loading` flag. It used to gate the list's
-  // `loaded` prop, and the two questions it conflated are what let a
-  // fabricated absence through: "is a request outstanding?" is not "has this
-  // question been answered?", and only the second one may decide whether the
-  // page is allowed to say "no plans match". `data !== null || error !== null`
-  // answers the second directly, so the flag had no reader left.
+  /**
+   * The route's 500 refusal, held separately from `error`.
+   *
+   * It is its own read state (see the module docstring), so folding it into
+   * the generic error string would render the one failure that describes
+   * itself as an anonymous one.
+   */
+  const [violations, setViolations] = useState<string[] | null>(null);
 
   /**
-   * Generation guard — a read may only speak while it is still the newest one.
+   * Phase 4a — the capture census, on its own read state.
    *
-   * Without it the reset below narrows the bug instead of closing it: the read
-   * issued under the PREVIOUS `status` is still live, still holds its own
-   * closure, and lands on `setData`/`setError` unconditionally. Both arms are
-   * reachable by changing the filter while the first load is in flight, which
-   * is the ordinary case, not a corner:
-   *
-   *   - the superseded SUCCESS repaints the discarded window under the new
-   *     filter, for a whole poll interval;
-   *   - worse, it lands on top of a new read that FAILED — `setError(null)`
-   *     clears the banner, `loaded` flips true, and the old window is stated
-   *     as a confident answer to a question that errored. That is the
-   *     fabricated-answer class this change exists to close, re-created in a
-   *     race window.
-   *
-   * Same shape as `/notifications`' `queryGen`, `/questions`' three `*Seq`
-   * refs and `usePlanLibrary`'s counter. `http-client.ts` now honours a
-   * caller's `signal`, but cancelling a superseded read would not replace
-   * these counters: they decide which settled read may land, not which reads
-   * run.
-   *
-   * **TWO counters, because the two things being gated are not one question.**
-   * A single per-request counter silences a read in every arm at once, and
-   * that is how a page ends up stuck: `httpClient`'s request timeout is 60s
-   * and its 5xx retry spends ~7s in backoff over four round trips, both far
-   * longer than this page's 10s tick, so under a slow or retrying backend
-   * every read is superseded before it settles and the failure is never
-   * surfaced at all — the page waits on coord forever with nothing to show for
-   * it. That is exactly the defect `readFailed` exists to prevent —
-   * `plansHealth.tsx`: *"a first load that errors leaves `loaded` false and
-   * renders 'Waiting for coord…' over a request that is never arriving"* —
-   * re-created by the fix for a different one.
-   *
-   * So:
-   *
-   *   - `questionGen` (bumped in the effect, once per FILTER change) gates the
-   *     ERROR. "This read failed" is true of the filter currently on screen
-   *     whether or not a newer request has overtaken it, so an overtaken
-   *     failure still gets to speak; a failure belonging to a filter the
-   *     operator has left does not.
-   *   - `reqGen` (bumped per call) additionally gates `setData`, so the newest
-   *     response is the one rendered and two overlapping reads cannot land out
-   *     of order.
-   *
-   * The residue is the asymmetry `/questions` states and accepts: a stale
-   * FAILURE landing after a fresh success shows a banner the newest read
-   * disagrees with. That fails safe — it over-reports trouble — where the
-   * opposite silences it. `pollInFlight` keeps same-question ticks from
-   * overlapping in the first place, and a refresh CLICK takes the same lock
-   * when it is free (`refresh` below), so no tick can stack on a manual read
-   * either. What remains is one narrower window: a click made while a poll
-   * or the first read is already out still issues its own read, which is the
-   * overlap `filterWindowReset.test.tsx` pins as guarded by the two counters.
+   * It is NOT re-read when the window changes: offset and limit are questions
+   * about the reconciliation page, and this census is about the whole artifact
+   * store. `captureFailed` is kept beside the body rather than replacing it,
+   * so a failed refresh leaves the previous census on screen and labelled,
+   * never an empty one [policy: `verification-and-evidence`
+   * `silent-empty-is-unknown`].
    */
-  const questionGen = useRef(0);
-  const reqGen = useRef(0);
-  /** One poll at a time — see the retry arithmetic above. */
-  const pollInFlight = useRef(false);
+  const [capture, setCapture] = useState<CaptureHealthResponse | null>(null);
+  const [captureLoaded, setCaptureLoaded] = useState(false);
+  const [captureFailed, setCaptureFailed] = useState(false);
 
-  const fetchData = useCallback(async () => {
-    const question = questionGen.current;
-    const req = ++reqGen.current;
-    try {
-      const qs = new URLSearchParams();
-      if (status && status !== "any") qs.set("status", status);
-      qs.set("limit", String(FETCH_LIMIT));
-      qs.set("exclude_slug_prefix", SHEPHERD_SLUG_PREFIX);
-      const suffix = qs.toString() ? `?${qs.toString()}` : "";
-      const body = await httpClient.get<PlansListResponse>(
-        `${API}/plans${suffix}`
-      );
-      if (question !== questionGen.current || req !== reqGen.current) return;
-      setData(body);
-      setError(null);
-    } catch (e) {
-      if (question !== questionGen.current) return;
-      setError(e instanceof Error ? e.message : String(e));
-    }
-  }, [status]);
+  /**
+   * The two generation counters and the in-flight lock now live in
+   * `useGuardedPoll` — one spelling for every coord console list, after a
+   * review found the guard implemented twice in this change and then dropped
+   * on the three surfaces added beside it. The reasoning is in that hook's
+   * docstring; what stays here is which state each arm may set, which is this
+   * page's own business (the contract refusal is a third read state).
+   */
+  const fetchData = useCallback(
+    async (guard: ReadGuard) => {
+      try {
+        const qs = new URLSearchParams();
+        qs.set("offset", String(offset));
+        qs.set("limit", String(limit));
+        const body = await httpClient.get<ReconciliationResponse>(
+          `${ENDPOINT}?${qs.toString()}`,
+          RECONCILIATION_REQUEST_OPTIONS
+        );
+        if (!guard.isNewest()) return;
+        setData(body);
+        setError(null);
+        setViolations(null);
+      } catch (e) {
+        if (!guard.isCurrentQuestion()) return;
+        const contract = parseContractViolation(e);
+        if (contract !== null) {
+          // A named refusal replaces whatever was on screen: the route is
+          // telling us the last body's facets stopped meaning what they say,
+          // and continuing to render rows under them would be the defect.
+          setViolations(contract);
+          setData(null);
+          setError(null);
+          return;
+        }
+        setViolations(null);
+        setError(e instanceof Error ? e.message : String(e));
+      }
+    },
+    [offset, limit]
+  );
 
-  useEffect(() => {
-    // `status` is `fetchData`'s only dependency, so this effect re-runs
-    // exactly when the QUESTION changes — and the rows still in `data` answer
-    // the previous one. Dropping them is not cosmetic: `loaded` is `data !==
-    // null`, so keeping them leaves every read-state derivation on this page
-    // reporting the OLD query while the new one is in flight — the list shows
-    // the previous filter's records instead of skeletons, the strip describes
-    // the previous window, and a new fetch that FAILS lands on the STALE arm
-    // ("the last counts that landed") when nothing has ever landed for this
-    // query. That is R6's own `loaded`-means-"answered-THIS-question" clause,
-    // one level up from a count.
-    //
-    // It is cleared HERE and not in `fetchData`, which the poll also calls: a
-    // poll must never blank a loaded page.
-    //
-    // The question generation is bumped here for the same reason — this is the
-    // one place the QUESTION changes.
-    questionGen.current += 1;
-    const question = questionGen.current;
-    /**
-     * Release the poll lock only if it is still the one this read took.
-     *
-     * A read superseded by a filter change settles LATE — after the cleanup
-     * has released the lock and the new question has taken it — so an
-     * unconditional release would free a lock the NEW question's read is still
-     * holding, and the next tick would issue a second concurrent read. Not
-     * harmful (`reqGen` still picks the winner), but it would quietly falsify
-     * the "one poll at a time" claim after every filter change, and a guard is
-     * only worth having while its comment is true.
-     */
-    const releaseLock = () => {
-      if (question === questionGen.current) pollInFlight.current = false;
-    };
+  // The WINDOW is the question. Changing it makes the rows in `data` answers
+  // to a question nobody asked, and keeping them would leave every read-state
+  // derivation reporting the old window while the new one is in flight.
+  const resetWindow = useCallback(() => {
     setData(null);
     setError(null);
-    // The FIRST read holds the lock too. Without that a tick 10s in issues a
-    // second read of the same question while the first is still out, and the
-    // first is then dropped for being superseded — which is only ever safe
-    // when nothing downstream mistakes "no answer yet" for "no answer".
-    pollInFlight.current = true;
-    void fetchData().finally(releaseLock);
-    const id = setInterval(() => {
-      // A tick that outruns the previous read would otherwise stack: the
-      // request timeout is 60s against a 10s interval, so a hung backend
-      // accumulates six concurrent reads a minute for nothing.
-      if (pollInFlight.current) return;
-      pollInFlight.current = true;
-      void fetchData().finally(releaseLock);
-    }, POLL_INTERVAL_MS);
-    return () => {
-      clearInterval(id);
-      // The lock was taken for a question that is over. Leaving it set would
-      // have the new question's first few ticks skip while a read nobody is
-      // waiting for finishes — bounded by the 60s timeout, but pointless.
-      pollInFlight.current = false;
-    };
-  }, [fetchData]);
+    setViolations(null);
+  }, []);
 
+  const { refresh: refreshReconciliation } = useGuardedPoll({
+    read: fetchData,
+    intervalMs: POLL_INTERVAL_MS,
+    onQuestionChange: resetWindow,
+  });
+
+  const fetchCapture = useCallback(async () => {
+    try {
+      const body =
+        await httpClient.get<CaptureHealthResponse>(CAPTURE_ENDPOINT);
+      setCapture(body);
+      setCaptureFailed(false);
+    } catch {
+      // The census could not be read. Which door feeds this corpus is
+      // UNKNOWN — it is never "no door does".
+      setCaptureFailed(true);
+    } finally {
+      setCaptureLoaded(true);
+    }
+  }, []);
+
+  useEffect(() => {
+    void fetchCapture();
+  }, [fetchCapture]);
+
+  // Both reads, because the control says "refresh" and a stale census beside
+  // a fresh reconciliation is the misreading this page exists to stop.
+  const refresh = useCallback(
+    () => refreshReconciliation(fetchCapture),
+    [refreshReconciliation, fetchCapture]
+  );
+
+  const rows = useMemo(() => data?.items ?? [], [data]);
+  const shown = useMemo(
+    () => rows.filter((row) => matchesStatus(row, status)),
+    [rows, status]
+  );
+  const statusFiltered = status !== "any";
   /**
-   * The refresh button's read — the operator's, never the poll's.
+   * Nothing on this page has a READABLE coord status.
    *
-   * It returns the read's promise so `<RefreshButton>` acknowledges the press
-   * for exactly as long as that read is out; the poll calls `fetchData`
-   * directly and has no path to that state, so the control never pulses on a
-   * tick (plan `2026-09-09-coord-plans-page-controls-do-not-acknowledge-or-name-themselves`
-   * F1).
-   *
-   * It TAKES `pollInFlight` when the lock is free, so the ticks that come due
-   * while a manual read is out skip instead of stacking a second read of the
-   * same question on top of it. When a poll already holds the lock the click
-   * still issues its own read rather than waiting for or joining that one:
-   * the operator asked for a read now, and the resulting overlap is exactly
-   * what `questionGen`/`reqGen` above are for. The release is question-scoped
-   * for the same reason as the effect's `releaseLock`: a filter change while
-   * this read is out hands the lock to the new question's read, which this
-   * one must not free.
+   * The filter narrows on axis A, and an unreadable axis A matches nothing but
+   * `any`. When every row is unreadable — the degraded population arm — the
+   * empty list is the absence of a measurement, not a measured zero, so the
+   * empty slot says that instead of "none of them has status X".
    */
-  const refresh = useCallback(() => {
-    const tookLock = !pollInFlight.current;
-    if (tookLock) pollInFlight.current = true;
-    const question = questionGen.current;
-    return fetchData().finally(() => {
-      if (tookLock && question === questionGen.current) {
-        pollInFlight.current = false;
-      }
-    });
-  }, [fetchData]);
-
-  const plans = useMemo(
-    () => data?.work_units ?? data?.plans ?? [],
+  const statusAxisAllUnreadable = useMemo(
+    () => rows.length > 0 && rows.every((row) => !row.axis_a.readable),
+    [rows]
+  );
+  const window = useMemo(() => (data ? describeWindow(data) : null), [data]);
+  const disclosure = useMemo(
+    () => (data ? deriveDisclosure(data) : null),
     [data]
   );
-  const sorted = useMemo(() => sortPlans(plans, sort), [plans, sort]);
-  // coord returned a full page, so there are almost certainly more work units
-  // than we sorted. Say so: with the list capped at `updated_at DESC`, an
-  // "oldest authored" answer drawn from this window can be wrong.
-  const truncated = plans.length >= FETCH_LIMIT;
-  // No authoring date from EITHER source — the slug carries no date prefix
-  // AND coord holds no `authored_at` (`planAuthoredAt`, the deriver the chip,
-  // the row time and the sort all read). Counting the bare column here would
-  // call a dated slug with a NULL column "undated" while its own chip shows
-  // the date. UNKNOWN either way: these rows sink in the sort and the caveat
-  // says so.
-  const missingAuthored = plans.filter((p) => !planAuthoredAt(p)).length;
   const loaded = data !== null;
-  // R6 — "not fetched" includes "fetched and FAILED". The shared deriver grew
-  // this arm for `/spawn`; this route reads the same list from the same
-  // endpoint and had the same hole, so it consults it too.
   const readFailed = error !== null;
-  const plansUnknown = readIsUnknown(loaded, readFailed);
-  // ...and the third state, for the `empty=` slot. A poll that fails over a
-  // window coord confirmed EMPTY leaves `data` non-null (the poll does not
-  // blank a loaded page, deliberately), so the plain copy would otherwise
-  // claim "No plans matching status=X" in the present tense while the read is
-  // currently failing.
+  // R6 — "not fetched" includes "fetched and FAILED".
+  const plansUnknown = readFailed && !loaded;
   const plansStale = readFailed && loaded;
   const health = useMemo(
-    () => derivePlansHealth(plans, loaded, readFailed),
-    [plans, loaded, readFailed]
+    () => deriveReconciliationHealth(data, loaded, readFailed, violations),
+    [data, loaded, readFailed, violations]
   );
+  const census = useMemo(
+    () => (capture === null ? null : deriveCaptureCensus(capture)),
+    [capture]
+  );
+  const freshness = useMemo(() => describeCorpusFreshness(capture), [capture]);
+  /**
+   * Did the reconciliation read suppress its document-layer completeness
+   * claim? The census is allowed to render either way — it read a store that
+   * answered — but on `true` it must say, in words, that it does not restore
+   * that claim. `false` while the reconciliation is unread is not a
+   * contradiction: the panel's unsuppressed note claims no restoration
+   * either.
+   */
+  const documentAxisSuppressed =
+    disclosure !== null && !disclosure.documentAxisAdmissible;
+
+  const canPageBack = offset > 0;
+  const canPageForward = window?.hasMore ?? false;
 
   return (
     <div className="p-3 sm:p-6 space-y-4" data-testid="coord-plans-page">
@@ -344,8 +319,14 @@ export default function CoordPlansListPage() {
         <Filter className="h-4 w-4 text-muted-foreground" />
         <Select value={status} onValueChange={setStatus}>
           <SelectTrigger
-            className="w-[180px]"
+            className="w-[200px]"
             data-testid="coord-plans-status-select"
+            title={
+              "Filters the rows ON THIS PAGE by coord's stored status " +
+              "(axis A). The reconciliation route takes no status parameter, " +
+              "so this is a client-side filter over the current window — not " +
+              "a corpus-wide question."
+            }
           >
             <SelectValue placeholder="status" />
           </SelectTrigger>
@@ -357,79 +338,151 @@ export default function CoordPlansListPage() {
             ))}
           </SelectContent>
         </Select>
-        <ArrowDownUp className="h-4 w-4 text-muted-foreground ml-1" />
-        <Select value={sort} onValueChange={(v) => setSort(v as SortKey)}>
+        <Rows3 className="h-4 w-4 text-muted-foreground ml-1" />
+        <Select
+          value={String(limit)}
+          onValueChange={(v) => {
+            setOffset(0);
+            setLimit(Number(v));
+          }}
+        >
           <SelectTrigger
-            className="w-[200px]"
-            data-testid="coord-plans-sort-select"
+            className="w-[150px]"
+            data-testid="coord-plans-page-size-select"
+            title="Rows per page. The route caps this at 100, which is why paging is the only way the corpus is reachable."
           >
-            <SelectValue placeholder="sort" />
+            <SelectValue placeholder="page size" />
           </SelectTrigger>
           <SelectContent>
-            {SORTS.map((opt) => (
-              <SelectItem key={opt.value} value={opt.value}>
-                {opt.label}
+            {PAGE_SIZES.map((size) => (
+              <SelectItem key={size} value={String(size)}>
+                {size} per page
               </SelectItem>
             ))}
           </SelectContent>
         </Select>
-        {/* Keyed on the question: a press whose read was superseded by a filter
-            change must not leave the NEW question's control busy for up to the
-            60s request timeout, over a read whose answer will be discarded. */}
         <RefreshButton
-          key={status}
+          key={`${offset}:${limit}`}
           onRefresh={refresh}
-          label="Refresh plans"
-          title={`Re-reads the work-unit list now; it also refreshes itself every ${POLL_INTERVAL_MS / 1000} s`}
+          label="Refresh reconciliation"
+          title={`Re-reads the reconciliation now; it also refreshes itself every ${POLL_INTERVAL_MS / 1000} s`}
           data-testid="coord-plans-refresh"
         />
       </div>
 
-      {/* R7 — the window caveats are infrastructural, so they collapse; the
-          summary badge keeps the signal visible while they are closed. */}
-      {(truncated || missingAuthored > 0) && (
-        <CollapsiblePanel
-          titleAs="h2"
-          className="p-2.5"
-          defaultOpen={false}
-          storageKey="coord-plans-window-caveats"
-          icon={<TriangleAlert className="h-3.5 w-3.5 text-amber-400" />}
-          title="Fetch-window caveats"
-          summary={
-            <span className="text-xs text-amber-300/90 normal-case tracking-normal">
-              {[
-                truncated ? `capped at ${FETCH_LIMIT}` : null,
-                missingAuthored > 0 ? `${missingAuthored} undated` : null,
-              ]
-                .filter(Boolean)
-                .join(" · ")}
-            </span>
-          }
-          contentClassName="space-y-1"
-          data-testid="coord-plans-window-caveats"
+      {/* The population state, and every flag derived from it — in that order,
+          and never collapsed behind a click.
+
+          It renders ABOVE the window line, and the order is STRUCTURAL rather
+          than a convention to be careful about: the window's denominator is
+          one of the figures derived from the population, so a reader who has
+          not yet met "coord's work-unit list could not be read" has no way to
+          read `1887 plan stems` correctly. The general rule this page states
+          in its docstring — render the population state before any flag
+          derived from the population — is now enforced by the JSX order and
+          not only by `deriveDisclosure`'s internal ordering. */}
+      {disclosure && <ReconciliationDisclosure lines={disclosure.lines} />}
+
+      {/* Phase 2 — the window as a MEASUREMENT: what was asked for, what came
+          back, on which declared axis, and the boundary stems. A disclosure
+          without a denominator is a disclaimer. */}
+      {window && (
+        <p
+          className="text-xs text-muted-foreground"
+          data-testid="coord-plans-window"
         >
-          {truncated && (
-            <p
-              className="text-xs text-amber-300/90"
-              data-testid="coord-plans-truncated-notice"
+          Showing {window.shown} of{" "}
+          {window.totalAdmissible && window.total !== null ? (
+            window.total
+          ) : (
+            /* R6, one widget up. `total` on the degraded arm is 1887 against
+               a real corpus of 1991 — the health strip dashes it, and
+               reprinting it here as a bare count of "plan stems" republishes
+               exactly what the strip refused. */
+            <span data-testid="coord-plans-window-total-unknown">
+              {window.total === null
+                ? "an unknown total — the route served no count"
+                : `a total (${window.total}) that is not a corpus count on this read — coord's work-unit population was not read`}
+            </span>
+          )}{" "}
+          plan stems
+          {window.firstStem && window.lastStem && (
+            <>
+              , stems <span className="font-mono">{window.firstStem}</span>…
+              <span className="font-mono">{window.lastStem}</span>
+            </>
+          )}
+          , offset {window.offset}, page size {window.limit ?? "unstated"},
+          ordered{" "}
+          <span
+            className="font-mono"
+            data-testid="coord-plans-window-ordering"
+            title="The route DECLARES its ordering so a consumer can assert it did not silently become something else. Plan stems are date-prefixed, so slug order is chronological order."
+          >
+            {window.ordering ?? "unstated"}
+          </span>
+          .
+        </p>
+      )}
+
+      {/* Phase 4a — the companion to the document-axis line above: the
+          document layer is N% complete BY WHICH DOOR, and is that door still
+          alive? A separate read, and it never repairs a suppressed claim. */}
+      <CaptureHealthPanel
+        census={census}
+        freshness={freshness}
+        documentAxisSuppressed={documentAxisSuppressed}
+        readFailed={captureFailed}
+        loaded={captureLoaded}
+      />
+
+      {statusFiltered && (
+        <p
+          className="text-xs text-muted-foreground"
+          data-testid="coord-plans-status-filter-scope"
+        >
+          The status filter narrows the {rows.length} rows on this page only —
+          the route takes no status parameter, so a plan with this status on
+          another page is not shown and is not absent.
+        </p>
+      )}
+
+      {violations !== null && (
+        <div
+          className="rounded border border-red-500/40 bg-red-500/10 px-3 py-2 text-sm text-red-100"
+          data-testid="coord-plans-contract-violation"
+        >
+          <p className="font-semibold">
+            The reconciliation route refused this read.
+          </p>
+          <p className="text-xs text-red-100/90 mt-1">
+            Its own contract check failed, so it returned no rows rather than a
+            facet block that stopped meaning what it says. This is not a failed
+            request and not a stale window — nothing here is a count of
+            anything.
+          </p>
+          {violations.length > 0 ? (
+            <ul
+              className="list-disc pl-5 mt-1.5 space-y-0.5 font-mono text-[11px]"
+              data-testid="coord-plans-contract-violation-list"
             >
-              Showing the {FETCH_LIMIT} most-recently-updated work units — coord
-              caps this list. Sorting applies to these only, so a
-              &ldquo;{SORTS.find((s) => s.value === sort)?.label}&rdquo; result
-              may not be the corpus-wide answer.
+              {/* Keyed by INDEX: these are route-supplied strings with no
+                  uniqueness guarantee, and two identical violations would
+                  collide on a value key. The list is static per render and
+                  never reordered, so the index is the stable identity. */}
+              {violations.map((v, i) => (
+                <li key={i}>{v}</li>
+              ))}
+            </ul>
+          ) : (
+            <p
+              className="text-xs text-red-100/80 mt-1.5"
+              data-testid="coord-plans-contract-violation-empty"
+            >
+              The refusal named no violation, so what failed is unknown.
             </p>
           )}
-          {missingAuthored > 0 && (
-            <p
-              className="text-xs text-muted-foreground"
-              data-testid="coord-plans-missing-authored-notice"
-            >
-              {missingAuthored} of {plans.length} have no authoring date —
-              no date prefix on the slug and no authored_at in coord; they
-              sort last rather than being treated as oldest.
-            </p>
-          )}
-        </CollapsiblePanel>
+        </div>
       )}
 
       {error && (
@@ -437,53 +490,112 @@ export default function CoordPlansListPage() {
       )}
 
       <RecordList
-        items={sorted}
-        itemKey={(p) => p.slug}
+        items={shown}
+        itemKey={(row) => row.slug}
         // "Has this question been ANSWERED, one way or the other?" — never
-        // "is a request outstanding?". The two diverge, and the gap is where a
-        // fabricated absence gets in: a read overtaken by a newer request of
-        // the SAME question is dropped without setting `data` or `error`, so a
-        // flag tracking requests would report "not loading" over a question
-        // coord has never answered, and this slot would render the plain "No
-        // plans matching status=X." underneath a strip still reading "Waiting
-        // for coord…". Derived from the answer instead, that state is what it
-        // is — still waiting, so still skeletons.
-        loaded={data !== null || error !== null}
+        // "is a request outstanding?". A contract refusal is an answer.
+        loaded={data !== null || error !== null || violations !== null}
         skeletonRows={6}
         empty={
-          plansUnknown ? (
+          // ORDER MATTERS, and the refusal goes first: it is the only state
+          // that is neither a window nor a read, and describing it as either
+          // would lose the only text that says what broke.
+          violations !== null ? (
+            <p
+              className="text-sm text-muted-foreground italic"
+              data-testid="coord-plans-refused"
+            >
+              No rows — the route refused this read (above). Whether any plan
+              matches is unknown, not none.
+            </p>
+          ) : statusFiltered && rows.length > 0 && statusAxisAllUnreadable ? (
+            // `matchesStatus` returns false for an unreadable axis A — which
+            // is right — but on the degraded population arm EVERY row is
+            // unreadable, so "none of them has status X" is a negative
+            // MEASUREMENT of something nothing measured. The filter's own
+            // docstring names this exact situation; stating it as a finding
+            // about the corpus is the collapse this page exists to refuse.
+            <p
+              className="text-sm text-muted-foreground italic"
+              data-testid="coord-plans-status-unreadable-empty"
+            >
+              coord&rsquo;s stored status is unreadable for every stem on this
+              page, so whether any has status {status} is unknown — not none.
+            </p>
+          ) : statusFiltered && rows.length > 0 ? (
+            <p
+              className="text-sm text-muted-foreground italic"
+              data-testid="coord-plans-status-filtered-empty"
+            >
+              None of the {rows.length} stems on this page has coord status{" "}
+              {status}. The filter is page-scoped, so the corpus may hold
+              plenty.
+            </p>
+          ) : plansUnknown ? (
             <p
               className="text-sm text-muted-foreground italic"
               data-testid="coord-plans-unknown"
             >
-              Could not read the work-unit list — whether any plan matches
-              status={status === "any" ? "any" : status} is unknown, not none.
+              Could not read the plan reconciliation — whether the corpus holds
+              any plan is unknown, not none.
             </p>
           ) : plansStale ? (
             <p
               className="text-sm text-muted-foreground italic"
               data-testid="coord-plans-stale"
             >
-              No plans matched status={status === "any" ? "any" : status} at the
-              last good read — this list has not refreshed since.
+              This window held no plan stem at the last good read — it has not
+              refreshed since.
             </p>
           ) : (
             <p
               className="text-sm text-muted-foreground italic"
               data-testid="coord-plans-empty"
             >
-              No plans matching status={status === "any" ? "any" : status}.
+              No plan stems in this window.
             </p>
           )
         }
-        renderRow={(p, ctx) => (
-          <PlanRow
-            plan={p}
+        renderRow={(row, ctx) => (
+          <ReconciliationRow
+            row={row}
             expanded={ctx.expanded}
             onToggle={ctx.onToggle}
           />
         )}
       />
+
+      <div className="flex items-center gap-2" data-testid="coord-plans-paging">
+        <Button
+          variant="outline"
+          size="sm"
+          disabled={!canPageBack}
+          onClick={() => setOffset((o) => Math.max(0, o - limit))}
+          data-testid="coord-plans-page-prev"
+        >
+          <ChevronLeft className="h-4 w-4" aria-hidden="true" />
+          Previous
+        </Button>
+        <Button
+          variant="outline"
+          size="sm"
+          disabled={!canPageForward}
+          onClick={() => setOffset((o) => o + limit)}
+          data-testid="coord-plans-page-next"
+          title={
+            window?.total === null
+              ? "The route served no total, so 'more' is inferred from a full page."
+              : undefined
+          }
+        >
+          Next
+          <ChevronRight className="h-4 w-4" aria-hidden="true" />
+        </Button>
+        <span className="text-xs text-muted-foreground">
+          The route caps a page at 100 rows, so paging is the only way the
+          corpus is reachable.
+        </span>
+      </div>
     </div>
   );
 }

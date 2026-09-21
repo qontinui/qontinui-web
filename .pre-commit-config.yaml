@@ -245,6 +245,36 @@ repos:
         # pending Phase 8 (embeddings runner-bridge). See the script's module
         # docstring for the rule itself.
 
+      - id: global-state-assertions
+        name: no new global-state assertion in the backend suite
+        entry: python scripts/ci/check_global_state_assertions.py
+        language: system
+        pass_filenames: false
+        # SAME SCRIPT as .github/workflows/global-state-assertions.yml and
+        # .qontinui/ci.toml's `global-state-assertions` step — the shift-left
+        # lane, so the ratchet catches a new global-state assertion at commit
+        # rather than after a 17-minute CI wait. `pass_filenames: false`
+        # because the gate scans the whole suite and compares it to the
+        # allowlist as a WHOLE: a per-file invocation cannot see that a row
+        # exists for a file this commit did not touch ("remove the row"), and
+        # cannot compute the "lower the row" direction either.
+        #
+        # `files:` only scopes WHEN the hook runs, never what it scans — the
+        # gate always walks the whole backend test tree. This pattern is the
+        # set of paths whose edit most often changes the verdict: a test file
+        # and the allowlist itself (lowering a row is a commit that must be
+        # re-checked).
+        #
+        # It is deliberately NOT a claim that nothing else can change the
+        # verdict — two things can and match nothing here. Editing
+        # `scripts/ci/check_global_state_assertions.py` or
+        # `scripts/ci/_gate_lib.py` changes the rule; and DELETING a test file
+        # that carries a row trips the "remove the row" arm while pre-commit
+        # passes no deleted paths at all. Both are caught by the CI and
+        # ci_node lanes, which run unconditionally. This is the shift-left
+        # lane, not the authority.
+        files: ^backend/tests/(.*\.py|\.global-state-assertions-allowlist)$
+
 ci:
   autofix_prs: true
   autofix_commit_msg: "chore: pre-commit auto fixes"

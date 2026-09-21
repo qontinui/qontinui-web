@@ -38,6 +38,7 @@ from pydantic import ValidationError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.crud import devenv_machine_crud
+from app.models.organization import Organization
 from app.schemas.devenv import ConfigEnvelope
 from app.services import devenv_drift
 
@@ -164,6 +165,135 @@ class TestDiffEnvelopes:
             delta = _delta(_section(report, section_name), "b")
             assert delta.status == "removed"
             assert delta.severity == "critical", f"{section_name} must stay critical"
+
+    def test_harness_compliant_sections_with_different_roots_are_in_sync(self) -> None:
+        """Two compliant boxes with different workspace roots read ``in_sync``.
+
+        The plan's gate (``2026-09-13-a-new-machine-cannot-discover-apply-or-
+        verify-the-fleet-harness-config`` Phase 3). The runner publishes
+        ``plans_dir_relative`` root-RELATIVE for exactly this reason: had it
+        published the absolute path, ``C:/qontinui-root/qontinui-dev-notes/plans``
+        against ``/home/dev/qontinui-root/qontinui-dev-notes/plans`` would be a
+        ``changed`` / ``warning`` delta on every pair of machines by
+        construction — pinning the rollup at ``warning`` forever, the same
+        "drift signal rots" failure ``_REMOVED_SEVERITY_OVERRIDE`` records for
+        ``repos``. The first half of this test shows that counterfactual would
+        indeed drift; the second shows the shipped rendering does not.
+        """
+        # Counterfactual: the absolute path would have drifted.
+        absolute_a = _envelope(
+            {"harness": {"plans_dir": "C:/qontinui-root/qontinui-dev-notes/plans"}}
+        )
+        absolute_b = _envelope(
+            {
+                "harness": {
+                    "plans_dir": "/home/dev/qontinui-root/qontinui-dev-notes/plans"
+                }
+            }
+        )
+        counterfactual = devenv_drift.diff_envelopes(absolute_a, absolute_b)
+        assert counterfactual.in_sync is False
+        assert counterfactual.severity == "warning"
+
+        # Shipped: the root-relative rendering is identical on every compliant box.
+        compliant = {
+            "link_claude_dir": "present",
+            "link_claude_md": "present",
+            "link_dev_start": "present",
+            "config_repo": "present",
+            "root_settings_hooks": "present",
+            "installer_agent_skills": "present",
+            "installer_claude_accounts": "present",
+            "installer_git_hooks": "present",
+            "plans_dir_relative": "qontinui-dev-notes/plans",
+            "invariant_class": "(a)",
+        }
+        canonical = _envelope({"harness": dict(compliant)})
+        actual = _envelope({"harness": dict(compliant)})
+        report = devenv_drift.diff_envelopes(canonical, actual)
+
+        assert report.in_sync is True
+        assert report.severity == "info"
+        # An in-sync section carries no deltas and is not listed at all.
+        assert [sec.section for sec in report.sections] == []
+
+    def test_harness_second_plan_corpus_is_warning_drift(self) -> None:
+        """A box holding the invariant by clause (c) surfaces as ``warning``.
+
+        Clause (c) — a real ``<root>/plans`` directory beside the tracked
+        corpus — is the exact defect plan ``2026-08-21-consolidate-the-two-
+        plan-corpora`` spent three weeks closing, re-opened silently. The
+        default base severity is ``info``, which keeps a section OUT of the
+        environment rollup; ``_SECTION_BASE_SEVERITY["harness"]`` is what
+        makes this visible on the dashboard.
+        """
+        canonical = _envelope(
+            {
+                "harness": {
+                    "plans_dir_relative": "qontinui-dev-notes/plans",
+                    "invariant_class": "(a)",
+                }
+            }
+        )
+        actual = _envelope(
+            {
+                "harness": {
+                    "plans_dir_relative": "qontinui-dev-notes/plans",
+                    "invariant_class": "(c)",
+                }
+            }
+        )
+        report = devenv_drift.diff_envelopes(canonical, actual)
+
+        delta = _delta(_section(report, "harness"), "invariant_class")
+        assert delta.status == "changed"
+        assert delta.severity == "warning"
+        assert delta.expected == "(a)"
+        assert delta.actual == "(c)"
+        assert delta.derived is False
+        assert report.in_sync is False
+        assert report.severity == "warning"
+
+    def test_harness_missing_on_an_old_runner_is_warning_not_critical(self) -> None:
+        """A box whose runner predates the section reads ``removed``/``warning``.
+
+        Such a box publishes no ``harness`` section at all, so every canonical
+        key is ``removed`` there and nothing short of a runner upgrade clears
+        it — the same shape as a private repo the developer cannot clone. The
+        blanket ``removed``-is-``critical`` rule would pin the rollup at
+        ``critical`` permanently; ``_REMOVED_SEVERITY_OVERRIDE["harness"]``
+        softens it to ``warning`` while keeping it real drift.
+        """
+        canonical = _envelope(
+            {
+                "harness": {
+                    "plans_dir_relative": "qontinui-dev-notes/plans",
+                    "invariant_class": "(a)",
+                },
+                "services": {"redis": "6379"},
+            }
+        )
+        actual = _envelope({"services": {"redis": "6379"}})
+        report = devenv_drift.diff_envelopes(canonical, actual)
+
+        section = _section(report, "harness")
+        for key in ("plans_dir_relative", "invariant_class"):
+            delta = _delta(section, key)
+            assert delta.status == "removed"
+            assert delta.severity == "warning", key
+        assert report.in_sync is False
+        assert report.severity == "warning"
+
+    def test_harness_base_severity_is_registered_as_warning(self) -> None:
+        """The registry rows are explicit, not the ``info`` default.
+
+        An unregistered section is indistinguishable from a forgotten one, and
+        the default would silently keep harness drift out of the rollup.
+        """
+        assert devenv_drift._SECTION_BASE_SEVERITY["harness"] == "warning"
+        assert devenv_drift._REMOVED_SEVERITY_OVERRIDE["harness"] == "warning"
+        assert devenv_drift._section_base_severity("harness") == "warning"
+        assert devenv_drift._removed_severity("harness") == "warning"
 
     def test_repos_scope_kind_difference_is_derived_and_info(self) -> None:
         """Capture provenance is reported, never actionable, never drift.
@@ -1618,6 +1748,20 @@ class TestSectionPolicy:
 
         assert sp.policy_for("repos") == "report_only"
 
+    def test_harness_is_report_only_by_design(self) -> None:
+        """``harness`` is registered ``report_only`` explicitly (plan D3).
+
+        The value coincides with the default, and that is the point of pinning
+        it: an unregistered section is indistinguishable from a forgotten one.
+        There is no apply module for the harness on purpose — remediating the
+        plan-corpus invariant means replacing a real ``plans`` directory, which
+        is destructive and stays a deliberate session.
+        """
+        from app.services import devenv_section_policy as sp
+
+        assert "harness" in sp._SECTION_POLICY
+        assert sp.policy_for("harness") == "report_only"
+
     def test_policy_map(self) -> None:
         """policy_map returns section -> policy for the given names."""
         from app.services import devenv_section_policy as sp
@@ -1880,6 +2024,35 @@ async def _mk_coord_device(db: AsyncSession, *, user_id, hostname: str = "box") 
     db.add(device)
     await db.flush()
     return str(device.device_id)
+
+
+# The credential a caller presents. The browser sends it as the ``access_token``
+# COOKIE and never as an ``Authorization`` header, so a route that reads only
+# the header forwards coord nothing at all — see ``TestCallerTokenForwarding``.
+_CALLER_TOKEN = "caller-session-token"
+
+
+def _cookie_client(app: FastAPI, token: str = _CALLER_TOKEN) -> httpx.AsyncClient:
+    """A client carrying the session as the ``access_token`` cookie ONLY.
+
+    This is the real browser shape: no ``Authorization`` header anywhere.
+    """
+    transport = httpx.ASGITransport(app=app)
+    return httpx.AsyncClient(
+        transport=transport,
+        base_url="http://test",
+        cookies={"access_token": token},
+    )
+
+
+def _bearer_client(app: FastAPI, token: str = _CALLER_TOKEN) -> httpx.AsyncClient:
+    """A client carrying the session as an ``Authorization: Bearer`` header ONLY."""
+    transport = httpx.ASGITransport(app=app)
+    return httpx.AsyncClient(
+        transport=transport,
+        base_url="http://test",
+        headers={"Authorization": f"Bearer {token}"},
+    )
 
 
 def _config_body(sections: dict, *, unknown_keys: dict | None = None) -> dict:
@@ -2428,11 +2601,13 @@ class TestDispatchEnroll:
         async def _fake_post(path, *, headers, json_body, log_event, **kw):
             captured["path"] = path
             captured["body"] = json_body
+            captured["headers"] = headers
             return httpx.Response(200, json={"dispatched": True})
 
         monkeypatch.setattr("app.api.v1.endpoints.devenv.post_to_coord", _fake_post)
         device_id = await _mk_coord_device(async_db_session, user_id=test_user.id)
-        async with _client(app) as client:
+        # Cookie-only, the browser shape — the credential must still reach coord.
+        async with _cookie_client(app) as client:
             r = await client.post(
                 f"{API_PREFIX}/machines/dispatch-enroll",
                 json={"name": "dispatch-me", "target_device_id": device_id},
@@ -2451,6 +2626,9 @@ class TestDispatchEnroll:
         assert captured["body"]["enrollment_code"] == machine["enrollment_code"]
         assert captured["body"]["machine_id"] == machine["id"]
         assert machine["enrollment_origin"] == "dispatched"
+        # ...with the caller's credential, or coord answers 401 and this route
+        # reports that refusal inside a 200 body nobody reads.
+        assert captured["headers"] == {"Authorization": f"Bearer {_CALLER_TOKEN}"}
 
     @pytest.mark.asyncio
     async def test_dashboard_created_machine_is_stamped_manual(
@@ -3074,11 +3252,13 @@ class TestDispatchReposApply:
         async def _fake_post(path, *, headers, json_body, log_event, **kw):
             captured["path"] = path
             captured["body"] = json_body
+            captured["headers"] = headers
             return httpx.Response(200, json={"dispatched": True})
 
         monkeypatch.setattr("app.api.v1.endpoints.devenv.post_to_coord", _fake_post)
         device_id = await _mk_coord_device(async_db_session, user_id=test_user.id)
-        async with _client(app) as client:
+        # Cookie-only, the browser shape — the credential must still reach coord.
+        async with _cookie_client(app) as client:
             r = await client.post(
                 f"{API_PREFIX}/machines/dispatch-enroll",
                 json={"name": "repos-box", "target_device_id": device_id},
@@ -3097,6 +3277,7 @@ class TestDispatchReposApply:
             "target_device_id": device_id,
             "confirm": True,
         }
+        assert captured["headers"] == {"Authorization": f"Bearer {_CALLER_TOKEN}"}
 
     @pytest.mark.asyncio
     async def test_an_omitted_confirm_dispatches_a_dry_run(
@@ -3203,6 +3384,219 @@ class TestDispatchReposApply:
         assert r.json()["detail"]["code"] == "machine_not_found"
 
 
+def _capturing_post(captured: dict):
+    """A ``post_to_coord`` double that records what was sent, keyed by path."""
+
+    async def _fake_post(path, *, headers, json_body, log_event, **kw):
+        captured[path] = {"headers": headers, "body": json_body}
+        return httpx.Response(200, json={"dispatched": True})
+
+    return _fake_post
+
+
+def _stub_ci_node_reachability(monkeypatch) -> None:
+    """Keep ``_ci_node_reachability`` off the network.
+
+    It asks coord whether the device could receive a directive at all; without
+    this the CI-node tests would pay a real coord round-trip (and its timeout)
+    for a value they do not assert on.
+    """
+
+    async def _no_routing(*a, **kw):
+        return None
+
+    monkeypatch.setattr("app.services.coord_device.get_device_routing", _no_routing)
+
+
+class TestCallerTokenForwarding:
+    """The coord-dispatching devenv routes must forward the caller's credential
+    from EITHER source the backend's own ``CookieOrBearerScheme`` accepts —
+    the ``access_token`` cookie first, then ``Authorization: Bearer``.
+
+    Why this needs dedicated tests: the browser sends the session as the
+    COOKIE and never as a header, and all three routes swallow coord's refusal
+    into an HTTP **200** — ``dispatched: false`` with a soft detail string for
+    the two dispatch routes, ``dispatch_status: 401`` inside the body for the
+    CI-node PUT. So a header-only extraction forwards ``{}``, coord refuses for
+    want of a credential, and the user is told "we couldn't send it, try again"
+    forever. Nothing about that is visible in a status code, so every assertion
+    below is on the ``headers`` handed to ``post_to_coord``.
+    """
+
+    @pytest.mark.asyncio
+    async def test_dispatch_enroll_forwards_a_cookie_only_caller(
+        self, async_db_session: AsyncSession, test_user, monkeypatch
+    ) -> None:
+        app = _build_app(db_session=async_db_session, user=test_user)
+        captured: dict = {}
+        monkeypatch.setattr(
+            "app.api.v1.endpoints.devenv.post_to_coord", _capturing_post(captured)
+        )
+        device_id = await _mk_coord_device(async_db_session, user_id=test_user.id)
+        async with _cookie_client(app) as client:
+            r = await client.post(
+                f"{API_PREFIX}/machines/dispatch-enroll",
+                json={"name": "cookie-box", "target_device_id": device_id},
+            )
+        assert r.status_code == 201, r.text
+        assert r.json()["dispatched"] is True
+        assert captured["/devenv/enroll-dispatch"]["headers"] == {
+            "Authorization": f"Bearer {_CALLER_TOKEN}"
+        }
+
+    @pytest.mark.asyncio
+    async def test_dispatch_enroll_forwards_a_bearer_header_caller(
+        self, async_db_session: AsyncSession, test_user, monkeypatch
+    ) -> None:
+        """The header arm must keep working — the fix adds a source, not swaps one."""
+        app = _build_app(db_session=async_db_session, user=test_user)
+        captured: dict = {}
+        monkeypatch.setattr(
+            "app.api.v1.endpoints.devenv.post_to_coord", _capturing_post(captured)
+        )
+        device_id = await _mk_coord_device(async_db_session, user_id=test_user.id)
+        async with _bearer_client(app) as client:
+            r = await client.post(
+                f"{API_PREFIX}/machines/dispatch-enroll",
+                json={"name": "header-box", "target_device_id": device_id},
+            )
+        assert r.status_code == 201, r.text
+        assert captured["/devenv/enroll-dispatch"]["headers"] == {
+            "Authorization": f"Bearer {_CALLER_TOKEN}"
+        }
+
+    @pytest.mark.asyncio
+    async def test_dispatch_enroll_with_no_credential_forwards_no_header(
+        self, async_db_session: AsyncSession, test_user, monkeypatch
+    ) -> None:
+        """No cookie and no header → an empty dict, never a forged ``Bearer None``."""
+        app = _build_app(db_session=async_db_session, user=test_user)
+        captured: dict = {}
+        monkeypatch.setattr(
+            "app.api.v1.endpoints.devenv.post_to_coord", _capturing_post(captured)
+        )
+        device_id = await _mk_coord_device(async_db_session, user_id=test_user.id)
+        async with _client(app) as client:
+            r = await client.post(
+                f"{API_PREFIX}/machines/dispatch-enroll",
+                json={"name": "anon-box", "target_device_id": device_id},
+            )
+        assert r.status_code == 201, r.text
+        assert captured["/devenv/enroll-dispatch"]["headers"] == {}
+
+    @pytest.mark.asyncio
+    async def test_repos_apply_forwards_a_cookie_only_caller(
+        self, async_db_session: AsyncSession, test_user, monkeypatch
+    ) -> None:
+        app = _build_app(db_session=async_db_session, user=test_user)
+        captured: dict = {}
+        monkeypatch.setattr(
+            "app.api.v1.endpoints.devenv.post_to_coord", _capturing_post(captured)
+        )
+        device_id = await _mk_coord_device(async_db_session, user_id=test_user.id)
+        async with _cookie_client(app) as client:
+            r = await client.post(
+                f"{API_PREFIX}/machines/dispatch-enroll",
+                json={"name": "cookie-repos-box", "target_device_id": device_id},
+            )
+            machine_id = r.json()["machine"]["id"]
+            r = await client.post(
+                f"{API_PREFIX}/machines/{machine_id}/repos-apply-dispatch",
+                json={"confirm": True},
+            )
+        assert r.status_code == 200, r.text
+        assert r.json()["dispatched"] is True
+        assert captured["/devenv/repos-apply-dispatch"]["headers"] == {
+            "Authorization": f"Bearer {_CALLER_TOKEN}"
+        }
+
+    @pytest.mark.asyncio
+    async def test_repos_apply_forwards_a_bearer_header_caller(
+        self, async_db_session: AsyncSession, test_user, monkeypatch
+    ) -> None:
+        app = _build_app(db_session=async_db_session, user=test_user)
+        captured: dict = {}
+        monkeypatch.setattr(
+            "app.api.v1.endpoints.devenv.post_to_coord", _capturing_post(captured)
+        )
+        device_id = await _mk_coord_device(async_db_session, user_id=test_user.id)
+        async with _bearer_client(app) as client:
+            r = await client.post(
+                f"{API_PREFIX}/machines/dispatch-enroll",
+                json={"name": "header-repos-box", "target_device_id": device_id},
+            )
+            machine_id = r.json()["machine"]["id"]
+            r = await client.post(
+                f"{API_PREFIX}/machines/{machine_id}/repos-apply-dispatch",
+                json={"confirm": True},
+            )
+        assert r.status_code == 200, r.text
+        assert captured["/devenv/repos-apply-dispatch"]["headers"] == {
+            "Authorization": f"Bearer {_CALLER_TOKEN}"
+        }
+
+    @pytest.mark.asyncio
+    async def test_ci_node_put_forwards_a_cookie_only_caller(
+        self, async_db_session: AsyncSession, test_user, monkeypatch
+    ) -> None:
+        """The CI-node PUT is the worst of the three: its refusal rides the body
+        as ``dispatch_status: 401`` on a 200, so a missing credential reads as
+        "saved but not sent" rather than as an auth failure."""
+        app = _build_app(db_session=async_db_session, user=test_user)
+        captured: dict = {}
+        monkeypatch.setattr(
+            "app.api.v1.endpoints.devenv.post_to_coord", _capturing_post(captured)
+        )
+        _stub_ci_node_reachability(monkeypatch)
+        device_id = await _mk_coord_device(async_db_session, user_id=test_user.id)
+        async with _cookie_client(app) as client:
+            r = await client.post(
+                f"{API_PREFIX}/machines/dispatch-enroll",
+                json={"name": "cookie-ci-box", "target_device_id": device_id},
+            )
+            machine_id = r.json()["machine"]["id"]
+            r = await client.put(
+                f"{API_PREFIX}/machines/{machine_id}/ci-node",
+                json={
+                    "enabled": True,
+                    "max_concurrent_builds": 2,
+                    "repo_allowlist": ["qontinui/qontinui-web"],
+                    "min_free_disk_gb": 20,
+                },
+            )
+        assert r.status_code == 200, r.text
+        assert r.json()["dispatched"] is True
+        assert captured["/devenv/ci-node-dispatch"]["headers"] == {
+            "Authorization": f"Bearer {_CALLER_TOKEN}"
+        }
+
+    @pytest.mark.asyncio
+    async def test_ci_node_put_forwards_a_bearer_header_caller(
+        self, async_db_session: AsyncSession, test_user, monkeypatch
+    ) -> None:
+        app = _build_app(db_session=async_db_session, user=test_user)
+        captured: dict = {}
+        monkeypatch.setattr(
+            "app.api.v1.endpoints.devenv.post_to_coord", _capturing_post(captured)
+        )
+        _stub_ci_node_reachability(monkeypatch)
+        device_id = await _mk_coord_device(async_db_session, user_id=test_user.id)
+        async with _bearer_client(app) as client:
+            r = await client.post(
+                f"{API_PREFIX}/machines/dispatch-enroll",
+                json={"name": "header-ci-box", "target_device_id": device_id},
+            )
+            machine_id = r.json()["machine"]["id"]
+            r = await client.put(
+                f"{API_PREFIX}/machines/{machine_id}/ci-node",
+                json={"enabled": False},
+            )
+        assert r.status_code == 200, r.text
+        assert captured["/devenv/ci-node-dispatch"]["headers"] == {
+            "Authorization": f"Bearer {_CALLER_TOKEN}"
+        }
+
+
 async def _new_user(db: AsyncSession, label: str):
     """Create + persist a real ``auth.users`` row (devenv FKs require one)."""
     from app.models.user import User
@@ -3264,11 +3658,13 @@ class TestOrgSharing:
 
     async def _seed_shared_env(
         self, db: AsyncSession, owner, *, role_members: dict | None = None
-    ) -> tuple[object, str]:
+    ) -> tuple[Organization, str]:
         """Create an org (owner enrolled with role ``owner``) + a shared env.
 
         ``role_members`` maps user -> role for extra memberships. Returns
-        ``(org, env_id)``.
+        ``(org, env_id)``. The org is typed as what ``_new_org`` builds — an
+        ``object`` annotation here made ``org.id`` at the call sites a mypy
+        ``attr-defined`` error under the pre-commit hook's file-scoped run.
         """
         org = await _new_org(db, owner)
         await _add_member(db, org, owner, "owner")

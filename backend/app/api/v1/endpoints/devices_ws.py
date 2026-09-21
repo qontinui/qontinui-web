@@ -543,10 +543,26 @@ async def _route_device_message(
         return
 
     # This device is a TARGET answering a remote attach: ``terminal_attached``
-    # (new with D6) and refusals correlated by ``remote`` / ``grant_jti``
-    # rather than ``request_id``. Only the remote path consumes these, so they
+    # (new with D6), refusals correlated by ``remote`` / ``grant_jti`` rather
+    # than ``request_id``, and refusals the target typed
+    # ``remote_terminal_error``. Only the remote path consumes these, so they
     # ride a remote-only channel and the mobile watchers below see exactly the
     # frames they saw before.
+    #
+    # That third kind is the one this arm used to miss, and missing it was
+    # silent: qontinui-runner's ``AttachRefusal::SessionNotLocal`` spells its
+    # refusal ``remote_terminal_error`` where every other target refusal
+    # spells it ``error``, so the frame matched no arm here — not the source
+    # arm above, not this one, not the mobile terminal-RPC arm below — and
+    # died at ``devices_ws_unhandled_message``. One refusal class, unreachable
+    # by the source under any conditions. It is a LATENT gap and no observed
+    # attach failure is attributed to it; see ``TARGET_REFUSAL_FRAME_TYPES``,
+    # which owns which types those are. This arm must not grow a second,
+    # drifting copy of that list.
+    #
+    # Publishing it is NOT forwarding it: the relay rebuilds every refusal
+    # payload and namespaces the target's ``code``, so a target typing its
+    # frame ``remote_terminal_error`` buys no authority to spell a RELAY code.
     if remote_terminal_relay.is_remote_only_target_frame(msg):
         try:
             await remote_terminal_relay.publish_target_frame(device_id, msg)
