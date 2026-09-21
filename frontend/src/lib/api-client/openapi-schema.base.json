@@ -47684,6 +47684,39 @@
         "title": "TenantCreateIn",
         "type": "object"
       },
+      "TenantRenameIn": {
+        "description": "Body for ``PATCH /operations/tenants/{tenant_id}`` \u2014 a partial rename.\n\nBoth fields are optional and at least one must be present (a body with\nneither is a 422 here, before any coord round-trip; coord would answer\n``400 empty_patch``). Only the fields the caller sent are forwarded, so a\ndisplay-name-only rename never pays coord's slug validation.\n\nUnlike ``TenantCreateIn`` the slug IS supplied by the caller, and it is\ncanonical-or-refused (plan ``2026-09-17-tenant-rename`` D4): these bounds\nmirror coord's so an obviously malformed slug costs no round-trip, but\ncoord stays the authority \u2014 it also runs the reserved-name, historical,\npinned and group-mapped checks nothing here can mirror.",
+        "properties": {
+          "display_name": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Display Name"
+          },
+          "slug": {
+            "anyOf": [
+              {
+                "maxLength": 63,
+                "minLength": 3,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Slug"
+          }
+        },
+        "title": "TenantRenameIn",
+        "type": "object"
+      },
       "TestRunComplete": {
         "description": "Request schema for completing a test run.",
         "properties": {
@@ -92132,7 +92165,7 @@
     },
     "/api/v1/operations/tenants": {
       "get": {
-        "description": "Return the tenants the current operator belongs to.\n\nSourced from coord's ``GET /admin/coord/me`` over the HTTP boundary\n(no cross-schema read): an operator with rows in N tenants comes back\nwith N entries; single-tenant operators come back with one. The\n``active_tenant_id`` field is the operator's home tenant \u2014 the natural\ndefault for first-load selection; the frontend persists subsequent\nswitches in localStorage (`tenant-context.tsx`).\n\nCoord returns ``tenants[]`` home-tenant-first (slug-asc otherwise);\n``CoordIdentity.tenant_ids()`` re-confirms the home-first ordering so\nthe first entry is the active default. A coord 403 for an unlinked\noperator propagates as ``tenant_not_resolved``.\n\nThe per-tenant ``name`` is coord's ``display_name`` \u2014 the human-chosen\n\"Project\" name a user typed into ``POST /tenants``. It is optional on\nthe ``/me`` wire (absent on a coord that predates it, and null for the\nSSO auto-provisioned tenants that only ever got a slug), so ``name``\nfalls back to the slug. The dashboard tenant chip renders whichever\nit gets.\n\nWire shape::\n\n    { \"tenants\": [ { \"id\": \"<uuid>\", \"slug\": \"<str>\", \"name\": \"<str>\" } ],\n      \"active_tenant_id\": \"<uuid>\" }",
+        "description": "Return the tenants the current operator belongs to.\n\nSourced from coord's ``GET /admin/coord/me`` over the HTTP boundary\n(no cross-schema read): an operator with rows in N tenants comes back\nwith N entries; single-tenant operators come back with one. The\n``active_tenant_id`` field is the operator's home tenant \u2014 the natural\ndefault for first-load selection; the frontend persists subsequent\nswitches in localStorage (`tenant-context.tsx`).\n\nCoord returns ``tenants[]`` home-tenant-first (slug-asc otherwise);\n``CoordIdentity.tenant_ids()`` re-confirms the home-first ordering so\nthe first entry is the active default. A coord 403 for an unlinked\noperator propagates as ``tenant_not_resolved``.\n\nThe per-tenant ``name`` is coord's ``display_name`` \u2014 the human-chosen\n\"Project\" name a user typed into ``POST /tenants``. It is optional on\nthe ``/me`` wire (absent on a coord that predates it, and null for the\nSSO auto-provisioned tenants that only ever got a slug), so ``name``\nfalls back to the slug. The dashboard tenant chip renders whichever\nit gets.\n\nWire shape::\n\n    { \"tenants\": [ { \"id\": \"<uuid>\", \"slug\": \"<str>\", \"name\": \"<str>\",\n                     \"roles\": [\"<role>\", ...] } ],\n      \"active_tenant_id\": \"<uuid>\" }",
         "operationId": "api_v1_operations_tenants_get",
         "responses": {
           "200": {
@@ -92199,6 +92232,65 @@
           }
         ],
         "summary": "Create User Tenant",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
+    "/api/v1/operations/tenants/{tenant_id}": {
+      "patch": {
+        "description": "Rename a tenant (\"Project\") \u2014 its display name, its slug, or both.\n\nA thin bearer-forwarding proxy to coord's ``PATCH /coord/tenants/:tenant_id``\n(plan ``2026-09-17-tenant-rename`` D1), plus the D5 home-group\nfollow-through. Authorization is coord's, and two-layer there: the admin\nSSO router's ``require_role(\"admin\")`` for the ACTIVE tenant, then\n``path tenant_id == active tenant`` and ``is_tenant_admin`` under the row\nlock. So the active-tenant header is set to the PATH tenant here \u2014 the\noperator is renaming that tenant, whatever the switcher currently shows.\n\nOnly the fields the caller sent cross the wire. Coord answers::\n\n    { \"tenant_id\", \"slug\", \"display_name\",\n      \"previous\": {\"slug\", \"display_name\"}, \"changed\",\n      \"group_mappings_moved\", \"home_group_to_migrate\" }\n\nforwarded verbatim, with ``home_group_migration`` merged in whenever coord\nnames a ``home_group_to_migrate`` (see ``_migrate_home_group``). Coord's\n4xx answers pass through with coord's body as ``detail``:\n``400 empty_patch|invalid_name|invalid_slug|reserved_name``,\n``403 tenant_mismatch|admin_required``,\n``404 tenant_not_found``,\n``409 slug_taken|slug_pinned|concurrent_group_mapping``; ``502`` when coord\nis unreachable.\n\n``request`` is also required by the slowapi limiter.",
+        "operationId": "api_v1_operations_tenants_tenant_id_patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "tenant_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Tenant Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TenantRenameIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Rename User Tenant Api V1 Operations Tenants  Tenant Id  Patch"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Rename User Tenant",
         "tags": [
           "operations"
         ]

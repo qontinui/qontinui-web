@@ -305,3 +305,81 @@ class TestAuthGate:
         client = TestClient(_build_test_app(authenticated=False))
         resp = client.get(f"{API_PREFIX}/coord/priority-sets")
         assert resp.status_code in (401, 403)
+
+
+# ---------------------------------------------------------------------------
+# The shared PATCH/PUT write contract (``_proxy_coord_write``), pinned through
+# callers OTHER than the tenant rename, so a change to the helper cannot pass
+# on the rename's tests alone. 502 = coord never saw it; 504 = it may have
+# been applied; an empty 2xx is a success.
+# ---------------------------------------------------------------------------
+
+_WRITE_CALLERS = [
+    ("patch", "/coord/priority-sets/ps1", {"name": "renamed"}),
+    ("put", "/coord/next-step-settings", {"domains": []}),
+]
+
+
+class TestSharedWriteProxyContract:
+    @staticmethod
+    def _send(auth_client, method, path, body, *, response=None, side_effect=None):
+        with _patch_httpx() as MockClient:
+            instance = AsyncMock()
+            sender = getattr(instance, method)
+            if side_effect is not None:
+                sender.side_effect = side_effect
+            else:
+                sender.return_value = response
+            _configure_mock_client(MockClient, instance)
+            return getattr(auth_client, method)(f"{API_PREFIX}{path}", json=body)
+
+    @pytest.mark.parametrize(("method", "path", "body"), _WRITE_CALLERS)
+    def test_connect_error_is_502_not_reachable(
+        self, auth_client: TestClient, method, path, body
+    ):
+        resp = self._send(
+            auth_client, method, path, body, side_effect=httpx.ConnectError("no")
+        )
+        assert resp.status_code == 502
+        assert resp.json()["detail"] == "coord is not reachable"
+
+    @pytest.mark.parametrize(("method", "path", "body"), _WRITE_CALLERS)
+    @pytest.mark.parametrize(
+        "exc",
+        [
+            httpx.ReadError("reset"),
+            httpx.RemoteProtocolError("cut"),
+            httpx.ReadTimeout("slow"),
+        ],
+    )
+    def test_a_lost_answer_is_504(
+        self, auth_client: TestClient, method, path, body, exc
+    ):
+        resp = self._send(auth_client, method, path, body, side_effect=exc)
+        assert resp.status_code == 504
+
+    @pytest.mark.parametrize(("method", "path", "body"), _WRITE_CALLERS)
+    def test_a_present_non_json_body_is_504(
+        self, auth_client: TestClient, method, path, body
+    ):
+        import json
+
+        bad = _mock_response(status_code=200, text="<html>")
+        bad.content = b"<html>"
+        bad.headers = {"content-type": "text/html"}
+        bad.json.side_effect = json.JSONDecodeError("Expecting value", "", 0)
+        resp = self._send(auth_client, method, path, body, response=bad)
+        assert resp.status_code == 504
+        assert "may have been applied" in resp.json()["detail"]
+
+    @pytest.mark.parametrize(("method", "path", "body"), _WRITE_CALLERS)
+    @pytest.mark.parametrize("status", [200, 204])
+    def test_an_empty_2xx_is_success(
+        self, auth_client: TestClient, method, path, body, status
+    ):
+        empty = _mock_response(status_code=status)
+        empty.content = b""
+        empty.json.side_effect = AssertionError("an empty body must not be parsed")
+        resp = self._send(auth_client, method, path, body, response=empty)
+        assert resp.status_code == 200
+        assert resp.json() is None

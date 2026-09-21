@@ -80,6 +80,19 @@ def client() -> TestClient:
     return TestClient(_build_test_app())
 
 
+@pytest.fixture(autouse=True)
+def _fresh_rate_limit_bucket():
+    """One budget per test. ``PATCH /tenants/{tenant_id}`` and the Cognito
+    group create are rate-limited per caller, and every test here presents the
+    same credential, so an unreset bucket would leak one test's calls into the
+    next one's and turn an assertion into a 429."""
+    from app.middleware.rate_limit import user_limiter
+
+    user_limiter.reset()
+    yield
+    user_limiter.reset()
+
+
 @pytest.fixture()
 def admin_client() -> TestClient:
     """A client whose user IS a superuser — required by `require_admin`."""
@@ -480,3 +493,615 @@ class TestInvalidGroupNameReason:
         from app.services.cognito_admin import invalid_group_name_reason
 
         assert invalid_group_name_reason("team+ops_2026!") is None
+
+
+# ---------------------------------------------------------------------------
+# GET /tenants — per-tenant roles (plan 2026-09-17-tenant-rename, Phase C.3)
+# ---------------------------------------------------------------------------
+
+
+class TestListUserTenantsRoles:
+    def test_each_tenant_carries_its_own_roles_not_a_union(self, client: TestClient):
+        """The Rename control is gated per tenant, so the list must say which
+        roles the caller holds IN EACH tenant. A union would put `admin` on the
+        home row too and offer a Rename coord then refuses."""
+        identity = _identity(display_names={_HOME: None, _OTHER: None})
+        with _patch_identity(identity):
+            resp = client.get(f"{API_PREFIX}/tenants")
+
+        assert resp.status_code == 200
+        by_id = {t["id"]: t for t in resp.json()["tenants"]}
+        assert by_id[str(_HOME)]["roles"] == ["operator"]
+        assert by_id[str(_OTHER)]["roles"] == ["admin"]
+
+
+# ---------------------------------------------------------------------------
+# PATCH /tenants/{tenant_id} — the rename proxy (Phase C.2) + D5 follow-through
+# ---------------------------------------------------------------------------
+
+
+def _rename_payload(
+    *,
+    slug: str = "new-name",
+    display_name: str = "New Name",
+    home_group_to_migrate: str | None = None,
+) -> dict[str, Any]:
+    return {
+        "tenant_id": str(_OTHER),
+        "slug": slug,
+        "display_name": display_name,
+        "previous": {"slug": "my-pizzeria", "display_name": "My Pizzeria"},
+        "changed": True,
+        "group_mappings_moved": 0,
+        "home_group_to_migrate": home_group_to_migrate,
+    }
+
+
+def _patch_rename(client: TestClient, json: Any, **kwargs: Any):
+    return client.patch(f"{API_PREFIX}/tenants/{_OTHER}", json=json, **kwargs)
+
+
+class TestRenameUserTenant:
+    def test_forwards_only_sent_fields_bearer_and_path_active_tenant(
+        self, client: TestClient
+    ):
+        coord_payload = _rename_payload()
+        mock_resp = _mock_response(json_data=coord_payload)
+        with _patch_httpx() as MockClient:
+            instance = MagicMock()
+            instance.patch = AsyncMock(return_value=mock_resp)
+            _configure_mock_client(MockClient, instance)
+            resp = _patch_rename(
+                client,
+                {"display_name": "New Name"},
+                headers={
+                    "Authorization": f"Bearer {_CALLER_TOKEN}",
+                    # The switcher points at a DIFFERENT tenant — the path
+                    # tenant must win, or coord's role check evaluates the
+                    # wrong tenant and answers `403 tenant_mismatch`.
+                    "X-Qontinui-Active-Tenant": str(_HOME),
+                },
+            )
+
+        assert resp.status_code == 200
+        # Verbatim, and no `home_group_migration` when coord names no group.
+        assert resp.json() == coord_payload
+
+        call = instance.patch.call_args
+        assert call.args[0].endswith(f"/coord/tenants/{_OTHER}")
+        # Only the field that was sent: a `"slug": null` would read coord-side
+        # as a slug change to nothing.
+        assert call.kwargs["json"] == {"display_name": "New Name"}
+        headers = call.kwargs["headers"]
+        assert headers["Authorization"] == f"Bearer {_CALLER_TOKEN}"
+        assert headers["X-Qontinui-Active-Tenant"] == str(_OTHER)
+
+    def test_both_fields_are_forwarded(self, client: TestClient):
+        mock_resp = _mock_response(json_data=_rename_payload())
+        with _patch_httpx() as MockClient:
+            instance = MagicMock()
+            instance.patch = AsyncMock(return_value=mock_resp)
+            _configure_mock_client(MockClient, instance)
+            resp = _patch_rename(
+                client, {"display_name": "New Name", "slug": "new-name"}
+            )
+        assert resp.status_code == 200
+        assert instance.patch.call_args.kwargs["json"] == {
+            "display_name": "New Name",
+            "slug": "new-name",
+        }
+
+    def test_bearer_capture_survives_a_cookie_only_session(self, client: TestClient):
+        mock_resp = _mock_response(json_data=_rename_payload())
+        with _patch_httpx() as MockClient:
+            instance = MagicMock()
+            instance.patch = AsyncMock(return_value=mock_resp)
+            _configure_mock_client(MockClient, instance)
+            client.cookies.set("access_token", _CALLER_TOKEN)
+            resp = _patch_rename(client, {"display_name": "New Name"})
+
+        assert resp.status_code == 200
+        headers = instance.patch.call_args.kwargs["headers"]
+        assert headers["Authorization"] == f"Bearer {_CALLER_TOKEN}"
+        assert headers["X-Qontinui-Active-Tenant"] == str(_OTHER)
+
+    @pytest.mark.parametrize(
+        ("status", "body", "code"),
+        [
+            (400, '{"error":"invalid_slug","reason":"too_short"}', "invalid_slug"),
+            (
+                400,
+                '{"error":"reserved_name","reason":"historical_slug"}',
+                "historical_slug",
+            ),
+            # What coord's landed route ACTUALLY answers when its
+            # in-transaction admin re-check fails. `not_admin_in_target_tenant`
+            # is this module's own code for a different door and appears
+            # nowhere in the rename route.
+            (403, '{"error":"admin_required"}', "admin_required"),
+            (403, '{"error":"tenant_mismatch"}', "tenant_mismatch"),
+            (404, '{"error":"tenant_not_found"}', "tenant_not_found"),
+            # Coord answers a bare `{"error":"slug_taken"}` — no `slug` key
+            # (routes_phase3.rs). This is the shape production actually gets;
+            # the `slug`-carrying row below is a forward-compat pin, kept
+            # deliberately and labelled so it is not mistaken for the live one.
+            (409, '{"error":"slug_taken"}', "slug_taken"),
+            (409, '{"error":"slug_taken","slug":"new-name"}', "slug_taken"),
+            (
+                409,
+                '{"error":"slug_pinned","reason":"configured_default_tenant"}',
+                "configured_default_tenant",
+            ),
+            (409, '{"error":"concurrent_group_mapping"}', "concurrent_group_mapping"),
+        ],
+    )
+    def test_coord_4xx_passes_through_with_coord_body(
+        self, client: TestClient, status: int, body: str, code: str
+    ):
+        mock_resp = _mock_response(status_code=status, text=body)
+        with _patch_httpx() as MockClient:
+            instance = MagicMock()
+            instance.patch = AsyncMock(return_value=mock_resp)
+            _configure_mock_client(MockClient, instance)
+            resp = _patch_rename(client, {"slug": "new-name"})
+
+        assert resp.status_code == status
+        assert code in resp.json()["detail"]
+
+    def test_coord_unreachable_returns_502(self, client: TestClient):
+        with _patch_httpx() as MockClient:
+            instance = MagicMock()
+            instance.patch = AsyncMock(side_effect=httpx.ConnectError("refused"))
+            _configure_mock_client(MockClient, instance)
+            resp = _patch_rename(client, {"display_name": "X"})
+        assert resp.status_code == 502
+
+    @pytest.mark.parametrize(
+        "body",
+        [
+            {},
+            {"display_name": None, "slug": None},
+            {"display_name": ""},
+            {"slug": "ab"},
+            {"slug": "Has-Caps"},
+            {"slug": "double--hyphen"},
+            {"slug": "-leading"},
+            {"slug": "trailing-"},
+            {"display_name": "x" * 201},
+        ],
+    )
+    def test_malformed_body_is_422_before_coord(self, client: TestClient, body: Any):
+        with _patch_httpx() as MockClient:
+            instance = MagicMock()
+            instance.patch = AsyncMock()
+            _configure_mock_client(MockClient, instance)
+            resp = _patch_rename(client, body)
+        assert resp.status_code == 422
+        instance.patch.assert_not_awaited()
+
+    def test_the_route_is_rate_limited_under_its_own_scope(self):
+        """A rename may create a Cognito group and add every member of the old
+        home group, so it carries the group-create ceiling — in its OWN bucket,
+        so renames and group admin do not throttle each other."""
+        from app.api.v1.endpoints import operations
+        from app.middleware.rate_limit import user_limiter
+
+        limits = user_limiter._route_limits[
+            "app.api.v1.endpoints.operations.rename_user_tenant"
+        ]
+        assert [limit.scope for limit in limits] == ["tenant-rename"]
+        # NOT `assert _TENANT_RENAME_RATE_LIMIT == "10 per minute"`: that
+        # restates a constant defined one line as
+        # `_TENANT_RENAME_RATE_LIMIT = _CREATE_GROUP_RATE_LIMIT`, so it can only
+        # fail when someone edits the literal — which is the change it would be
+        # guarding. What is worth pinning is the COUPLING the comment claims:
+        # the rename carries the group-create ceiling, whatever that is.
+        assert (
+            operations._TENANT_RENAME_RATE_LIMIT == operations._CREATE_GROUP_RATE_LIMIT
+        )
+
+
+class TestRenameOutcomeHonesty:
+    """502 must mean "coord never saw it"; everything after the request may
+    have been sent is 504 — the rename may have been applied."""
+
+    def test_connect_error_is_502_not_reachable(self, client: TestClient):
+        with _patch_httpx() as MockClient:
+            instance = MagicMock()
+            instance.patch = AsyncMock(side_effect=httpx.ConnectError("refused"))
+            _configure_mock_client(MockClient, instance)
+            resp = _patch_rename(client, {"display_name": "X"})
+        assert resp.status_code == 502
+        assert resp.json()["detail"] == "coord is not reachable"
+
+    @pytest.mark.parametrize(
+        "exc",
+        [
+            httpx.ReadError("connection reset"),
+            httpx.RemoteProtocolError("server disconnected"),
+            httpx.ReadTimeout("slow"),
+        ],
+    )
+    def test_a_lost_answer_is_504(self, client: TestClient, exc: Exception):
+        with _patch_httpx() as MockClient:
+            instance = MagicMock()
+            instance.patch = AsyncMock(side_effect=exc)
+            _configure_mock_client(MockClient, instance)
+            resp = _patch_rename(client, {"display_name": "X"})
+        assert resp.status_code == 504
+
+    def test_a_non_json_2xx_is_504(self, client: TestClient):
+        import json
+
+        mock_resp = _mock_response(status_code=200, text="<html>ok</html>")
+        mock_resp.json.side_effect = json.JSONDecodeError("Expecting value", "", 0)
+        with _patch_httpx() as MockClient:
+            instance = MagicMock()
+            instance.patch = AsyncMock(return_value=mock_resp)
+            _configure_mock_client(MockClient, instance)
+            resp = _patch_rename(client, {"display_name": "X"})
+        assert resp.status_code == 504
+        assert "may have been applied" in resp.json()["detail"]
+
+
+class _FakeCognito:
+    """Stands in for the four ``cognito_admin`` helpers the follow-through
+    uses, recording every call — including any delete, which must never
+    happen."""
+
+    def __init__(
+        self,
+        *,
+        groups: list[str],
+        members: list[dict[str, Any]] | None = None,
+        fail_on_add: bool = False,
+        add_error: Exception | None = None,
+        fail_on_list_users: bool = False,
+        create_raises_exists: bool = False,
+    ) -> None:
+        self.groups = list(groups)
+        self.members = members or []
+        self.fail_on_add = fail_on_add
+        self.add_error = add_error
+        self.fail_on_list_users = fail_on_list_users
+        self.create_raises_exists = create_raises_exists
+        self.created: list[str] = []
+        self.added: list[tuple[str, str]] = []
+        self.deleted: list[str] = []
+        self.list_calls = 0
+
+    def list_groups(self) -> list[dict[str, Any]]:
+        self.list_calls += 1
+        return [{"group_name": g} for g in self.groups]
+
+    def create_group(self, name: str, description: str | None = None) -> dict:
+        if self.create_raises_exists:
+            from app.services.cognito_admin import CognitoGroupExistsError
+
+            raise CognitoGroupExistsError(f"Group already exists: {name}")
+        self.created.append(name)
+        self.groups.append(name)
+        return {"group_name": name}
+
+    def list_users_in_group(self, name: str) -> list[dict[str, Any]]:
+        if self.fail_on_list_users:
+            from app.services.cognito_admin import CognitoAdminError
+
+            raise CognitoAdminError("ListUsersInGroup failed: throttled out")
+        return list(self.members)
+
+    def add_user_to_group(self, username: str, group: str) -> None:
+        if self.add_error is not None and self.added:
+            raise self.add_error
+        if self.fail_on_add:
+            from app.services.cognito_admin import CognitoAdminError
+
+            raise CognitoAdminError("AdminAddUserToGroup failed: boom")
+        self.added.append((username, group))
+
+    def delete_group(self, name: str) -> None:
+        self.deleted.append(name)
+
+    def remove_user_from_group(self, username: str, group: str) -> None:
+        self.deleted.append(f"{username}@{group}")
+
+
+def _blast_radius(mapped_total: int = 0) -> Any:
+    from app.api.v1.endpoints.operations import _BlastRadius
+
+    return _BlastRadius(
+        mapped_total=mapped_total,
+        mapped_own_tenant_slugs=(),
+        mapped_other_tenant_rows=mapped_total,
+        mapped_unmaterialized_rows=0,
+        strands_own_tenant=(),
+        strands_other_tenant_count=0,
+    )
+
+
+def _run_rename_with_cognito(
+    test_client: TestClient,
+    fake: _FakeCognito,
+    *,
+    home_group_to_migrate: str = "my-pizzeria-home",
+    blast_radius: Any = None,
+    drop_keys: tuple[str, ...] = (),
+) -> tuple[Any, MagicMock]:
+    from app.services import cognito_admin
+
+    payload = _rename_payload(home_group_to_migrate=home_group_to_migrate)
+    for key in drop_keys:
+        payload.pop(key)
+    mock_resp = _mock_response(json_data=payload)
+    audit = AsyncMock()
+    radius = (
+        blast_radius
+        if blast_radius is not None
+        else AsyncMock(return_value=_blast_radius(0))
+    )
+    with (
+        _patch_httpx() as MockClient,
+        patch.object(cognito_admin, "list_groups", fake.list_groups),
+        patch.object(cognito_admin, "create_group", fake.create_group),
+        patch.object(cognito_admin, "list_users_in_group", fake.list_users_in_group),
+        patch.object(cognito_admin, "add_user_to_group", fake.add_user_to_group),
+        patch.object(cognito_admin, "delete_group", fake.delete_group),
+        patch.object(
+            cognito_admin, "remove_user_from_group", fake.remove_user_from_group
+        ),
+        patch("app.api.v1.endpoints.operations._write_cognito_group_audit", new=audit),
+        patch("app.api.v1.endpoints.operations._coord_group_blast_radius", new=radius),
+    ):
+        instance = MagicMock()
+        instance.patch = AsyncMock(return_value=mock_resp)
+        _configure_mock_client(MockClient, instance)
+        resp = _patch_rename(test_client, {"slug": "new-name"})
+    return resp, audit
+
+
+class TestRenameHomeGroupMigration:
+    _MEMBERS = [
+        {"username": "u-1", "email": "one@example.com"},
+        {"username": "u-2", "email": "two@example.com"},
+    ]
+
+    def test_superuser_migrates_copies_members_audits_and_keeps_old(
+        self, admin_client: TestClient
+    ):
+        fake = _FakeCognito(groups=["my-pizzeria-home"], members=self._MEMBERS)
+        resp, audit = _run_rename_with_cognito(admin_client, fake)
+
+        assert resp.status_code == 200
+        outcome = resp.json()["home_group_migration"]
+        assert outcome["status"] == "migrated"
+        assert outcome["new_group"] == "new-name-home"
+        assert outcome["members_copied"] == 2
+        assert fake.created == ["new-name-home"]
+        assert fake.added == [("u-1", "new-name-home"), ("u-2", "new-name-home")]
+        assert fake.deleted == []
+        # One audit row per landed Cognito write: the create + each add.
+        actions = [c.kwargs["action"] for c in audit.await_args_list]
+        assert actions == ["create_group", "add_user_to_group", "add_user_to_group"]
+
+    def test_the_budget_stops_the_copy_and_REPORTS_the_partial(
+        self, admin_client: TestClient, monkeypatch
+    ):
+        """A home group too large for one request stops at the budget and says
+        so, instead of running until the caller gives up.
+
+        This is the finding the outcome lives in the response body: each member
+        costs a Cognito write plus an audit INSERT, sequentially, so a big
+        group outruns the client's own ceiling. When that happened the operator
+        was told the outcome was unknown and the record that a half-populated
+        group exists in the SHARED pool died with the response nobody received.
+        Stopping at the budget converts that into a reported `partial`, with
+        the count, while the answer can still be delivered.
+
+        The budget is driven to zero rather than waited out: a test that sleeps
+        for the real budget is a test nobody runs twice.
+        """
+        from app.api.v1.endpoints import operations
+
+        monkeypatch.setattr(
+            operations, "_HOME_GROUP_MIGRATION_BUDGET_SECONDS", 0, raising=True
+        )
+        fake = _FakeCognito(groups=["my-pizzeria-home"], members=self._MEMBERS)
+        resp, _audit = _run_rename_with_cognito(admin_client, fake)
+
+        assert resp.status_code == 200
+        migration = resp.json()["home_group_migration"]
+        assert migration["status"] == "partial"
+        # The group WAS created, and nothing was copied before the budget
+        # expired — so the sentence has to say both, and name the group the
+        # operator now has to finish or delete.
+        assert fake.created == ["new-name-home"]
+        assert fake.added == []
+        assert migration["new_group_created"] is True
+        assert migration["members_copied"] == 0
+        assert "new-name-home" in migration["detail"]
+        assert "ran out of time" in migration["detail"]
+        # The invariant every arm of this suite asserts: the old group is never
+        # deleted, and the rename itself is never reported as a failure.
+        assert fake.deleted == []
+        assert resp.json()["slug"] == "new-name"
+
+    def test_non_superuser_gets_requires_superuser_and_no_aws_call(
+        self, client: TestClient
+    ):
+        fake = _FakeCognito(groups=["my-pizzeria-home"], members=self._MEMBERS)
+        resp, audit = _run_rename_with_cognito(client, fake)
+
+        assert resp.status_code == 200
+        assert resp.json()["home_group_migration"]["status"] == "requires_superuser"
+        assert fake.list_calls == 0
+        assert fake.created == [] and fake.added == [] and fake.deleted == []
+        audit.assert_not_awaited()
+        # The rename itself still reached the caller.
+        assert resp.json()["slug"] == "new-name"
+
+    def test_existing_target_is_left_untouched(self, admin_client: TestClient):
+        fake = _FakeCognito(
+            groups=["my-pizzeria-home", "new-name-home"], members=self._MEMBERS
+        )
+        resp, audit = _run_rename_with_cognito(admin_client, fake)
+
+        assert resp.json()["home_group_migration"]["status"] == "target_exists"
+        assert fake.created == [] and fake.added == [] and fake.deleted == []
+        audit.assert_not_awaited()
+
+    def test_absent_old_group_is_absent(self, admin_client: TestClient):
+        fake = _FakeCognito(groups=["engineering"])
+        resp, _audit = _run_rename_with_cognito(admin_client, fake)
+
+        assert resp.json()["home_group_migration"]["status"] == "absent"
+        assert fake.created == [] and fake.deleted == []
+
+    def test_cognito_failure_is_failed_and_rename_still_200(
+        self, admin_client: TestClient
+    ):
+        fake = _FakeCognito(
+            groups=["my-pizzeria-home"], members=self._MEMBERS, fail_on_add=True
+        )
+        resp, _audit = _run_rename_with_cognito(admin_client, fake)
+
+        assert resp.status_code == 200
+        outcome = resp.json()["home_group_migration"]
+        assert outcome["status"] == "failed"
+        assert "boom" in outcome["detail"]
+        assert fake.deleted == []
+
+    def test_failure_after_create_says_the_new_group_exists(
+        self, admin_client: TestClient
+    ):
+        """A half-done move leaves a real group in the SHARED pool. The outcome
+        must say so, not just "failed"."""
+        fake = _FakeCognito(
+            groups=["my-pizzeria-home"],
+            members=self._MEMBERS,
+            fail_on_list_users=True,
+        )
+        resp, _audit = _run_rename_with_cognito(admin_client, fake)
+
+        assert resp.status_code == 200
+        outcome = resp.json()["home_group_migration"]
+        assert outcome["status"] == "failed"
+        assert outcome["new_group_created"] is True
+        assert (
+            "“new-name-home” WAS created and holds 0 member(s)" in (outcome["detail"])
+        )
+        assert fake.created == ["new-name-home"]
+        assert fake.deleted == []
+
+    def test_partial_copy_names_n_of_m(self, admin_client: TestClient):
+        from app.services.cognito_admin import CognitoAdminError
+
+        fake = _FakeCognito(
+            groups=["my-pizzeria-home"],
+            members=self._MEMBERS,
+            add_error=CognitoAdminError("AdminAddUserToGroup failed: second"),
+        )
+        resp, _audit = _run_rename_with_cognito(admin_client, fake)
+
+        outcome = resp.json()["home_group_migration"]
+        assert outcome["status"] == "failed"
+        assert outcome["members_copied"] == 1
+        assert "holds 1 of 2 member(s)" in outcome["detail"]
+
+    def test_an_unexpected_exception_is_failed_never_a_500(
+        self, admin_client: TestClient
+    ):
+        """Coord has already committed the rename; a 500 here would read as
+        "not renamed" and invite a retry against the NEW slug."""
+        fake = _FakeCognito(
+            groups=["my-pizzeria-home"],
+            members=self._MEMBERS,
+            add_error=RuntimeError("not a Cognito error"),
+        )
+        resp, _audit = _run_rename_with_cognito(admin_client, fake)
+
+        assert resp.status_code == 200
+        outcome = resp.json()["home_group_migration"]
+        assert outcome["status"] == "failed"
+        assert "RuntimeError" in outcome["detail"]
+        assert "The rename itself is complete" in outcome["detail"]
+        assert outcome["new_group_created"] is True
+        assert resp.json()["slug"] == "new-name"
+
+    def test_create_race_is_target_exists(self, admin_client: TestClient):
+        fake = _FakeCognito(
+            groups=["my-pizzeria-home"],
+            members=self._MEMBERS,
+            create_raises_exists=True,
+        )
+        resp, audit = _run_rename_with_cognito(admin_client, fake)
+
+        outcome = resp.json()["home_group_migration"]
+        assert outcome["status"] == "target_exists"
+        assert outcome["new_group_created"] is False
+        assert fake.added == [] and fake.deleted == []
+        audit.assert_not_awaited()
+
+    def test_home_group_not_matching_previous_slug_makes_no_aws_call(
+        self, admin_client: TestClient
+    ):
+        """`home_group_to_migrate` must be `<previous slug>-home`. Anything
+        else is a response this code does not understand, so no writes."""
+        fake = _FakeCognito(groups=["someone-elses-home"], members=self._MEMBERS)
+        resp, audit = _run_rename_with_cognito(
+            admin_client, fake, home_group_to_migrate="someone-elses-home"
+        )
+
+        assert resp.status_code == 200
+        outcome = resp.json()["home_group_migration"]
+        assert outcome["status"] == "failed"
+        assert "my-pizzeria-home" in outcome["detail"]
+        assert fake.list_calls == 0
+        assert fake.created == [] and fake.added == [] and fake.deleted == []
+        audit.assert_not_awaited()
+
+    def test_a_target_coord_already_maps_is_not_created(self, admin_client: TestClient):
+        """A mapping naming a not-yet-existing group goes live when the group
+        appears, so creating it would grant the copied members those roles."""
+        fake = _FakeCognito(groups=["my-pizzeria-home"], members=self._MEMBERS)
+        radius = AsyncMock(return_value=_blast_radius(2))
+        resp, audit = _run_rename_with_cognito(admin_client, fake, blast_radius=radius)
+
+        outcome = resp.json()["home_group_migration"]
+        assert outcome["status"] == "target_mapped"
+        radius.assert_awaited_once_with("new-name-home")
+        assert fake.created == [] and fake.added == [] and fake.deleted == []
+        audit.assert_not_awaited()
+
+    def test_an_unreadable_mapping_check_refuses_to_create(
+        self, admin_client: TestClient
+    ):
+        from fastapi import HTTPException
+
+        fake = _FakeCognito(groups=["my-pizzeria-home"], members=self._MEMBERS)
+        radius = AsyncMock(
+            side_effect=HTTPException(
+                status_code=502, detail={"error": "mapping_check_unavailable"}
+            )
+        )
+        resp, _audit = _run_rename_with_cognito(admin_client, fake, blast_radius=radius)
+
+        assert resp.status_code == 200
+        outcome = resp.json()["home_group_migration"]
+        assert outcome["status"] == "failed"
+        assert "was not created" in outcome["detail"]
+        assert fake.created == []
+
+    def test_an_answer_without_previous_fails_closed(self, admin_client: TestClient):
+        """Without `previous`, `home_group_to_migrate` cannot be checked against
+        the old slug — so nothing is written on its say-so."""
+        fake = _FakeCognito(groups=["my-pizzeria-home"], members=self._MEMBERS)
+        resp, audit = _run_rename_with_cognito(
+            admin_client, fake, drop_keys=("previous",)
+        )
+
+        assert resp.status_code == 200
+        outcome = resp.json()["home_group_migration"]
+        assert outcome["status"] == "failed"
+        assert fake.list_calls == 0
+        assert fake.created == [] and fake.added == [] and fake.deleted == []
+        audit.assert_not_awaited()

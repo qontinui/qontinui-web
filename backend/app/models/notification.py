@@ -38,15 +38,6 @@ class NotificationType(StrEnum):
     TEAM_INVITE = "team_invite"
     ACCESS_GRANTED = "access_granted"
     ACCESS_REVOKED = "access_revoked"
-    # RETIRED — no producer since coord's gate-action receiver was deleted
-    # (254eb398e). Kept ONLY so a row stored before migration
-    # notif_gate_action_03 deleted them still loads if this image serves
-    # first (Enum(NotificationType) maps stored member NAMES). Nothing may
-    # write it. Removed, with the dead preference columns and
-    # project.test_notification_preferences, by the follow-up phase of plan
-    # 2026-09-18-delete-dead-project-notifications-producers once this
-    # image is the one serving.
-    GATE_ACTION = "gate_action"
 
 
 class Notification(Base):
