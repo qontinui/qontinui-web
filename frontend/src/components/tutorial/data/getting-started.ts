@@ -162,19 +162,6 @@ export const gettingStartedTutorial: Tutorial = {
       ],
     },
     {
-      id: "help-button",
-      title: "Help & Tutorials",
-      content:
-        "Click here anytime to restart this tutorial or access other help resources.\n\n" +
-        "You can also find documentation and community support through this menu.",
-      targetElement: {
-        selector: '[data-tutorial-id="sidebar-help"]',
-        highlightType: "spotlight",
-        position: "right",
-        allowInteraction: false,
-      },
-    },
-    {
       id: "complete",
       title: "You're Ready to Go!",
       content:
@@ -227,17 +214,6 @@ export const quickTourTutorial: Tutorial = {
         "Switch between projects or create new ones using the project switcher.",
       targetElement: {
         selector: '[data-tutorial-id="sidebar-project-switcher"]',
-        highlightType: "spotlight",
-        position: "right",
-        allowInteraction: false,
-      },
-    },
-    {
-      id: "help",
-      title: "Need Help?",
-      content: "Click here anytime to access tutorials and documentation.",
-      targetElement: {
-        selector: '[data-tutorial-id="sidebar-help"]',
         highlightType: "spotlight",
         position: "right",
         allowInteraction: false,
