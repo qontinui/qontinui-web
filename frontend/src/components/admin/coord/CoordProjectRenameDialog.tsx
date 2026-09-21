@@ -39,7 +39,7 @@
  * group, and only a platform superuser gets it copied.
  */
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Loader2 } from "lucide-react";
 import { useUIComponent } from "@qontinui/ui-bridge";
 import { Button } from "@/components/ui/button";
@@ -221,14 +221,35 @@ export function isRenameOutcomeUnknown(err: unknown): boolean {
   return err.status >= 500;
 }
 
+/**
+ * What an UNKNOWN outcome may say — and what it must not.
+ *
+ * It must not claim anything about the home-group follow-through. That runs
+ * on the web backend AFTER coord commits, and its cost is one Cognito write
+ * per member of the old home group, unbatched; on a large group it is the
+ * likeliest reason the answer never arrives. So on almost every arm that
+ * reaches this message the migration may have run to completion, created
+ * `<new>-home` and copied every member into it — or stopped half way.
+ *
+ * An earlier version of this string ended "No home-group move was attempted",
+ * unconditionally. That is provable only on the one arm this message is NOT
+ * used for (the proxy's own connect failure, where coord never saw the
+ * request), and false on the arm that produces it most often. A test asserted
+ * the sentence verbatim, which made a wrong statement look reviewed.
+ */
 const RENAME_OUTCOME_UNKNOWN_MESSAGE =
-  "Coord didn't answer cleanly, so the rename may have been applied. The project list is being reloaded to check — look for the new name before trying again. No home-group move was attempted; check the Cognito groups panel if the short id did change.";
+  "Coord didn't answer cleanly, so the rename may have been applied. The project list is being reloaded to check — look for the new name before trying again. If the short id did change, the `<old-id>-home` Cognito group may also have been moved, partly or completely — check the Cognito groups panel rather than assuming either way.";
 
 /** One line on what happened to the `<old-id>-home` Cognito group. */
 export function homeGroupHeadline(outcome: HomeGroupMigration): string {
   switch (outcome.status) {
     case "migrated":
       return "Home group moved";
+    case "partial":
+      // Not "failed": the copy was working and ran out of time. The headline
+      // has to say the group is incomplete, because the operator's next step
+      // is to finish it rather than to retry the rename.
+      return "Home group partly moved";
     case "requires_superuser":
       return "Home group not moved";
     case "target_exists":
@@ -270,6 +291,8 @@ export function CoordProjectRenameDialog({
   const [name, setName] = useState("");
   const [slug, setSlug] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  /** Synchronous in-flight latch — see `submitRename` for why state is not enough. */
+  const inFlightRef = useRef(false);
   // Coord's answer is about the values SUBMITTED, so it is kept with them and
   // hidden once either field is edited — a sentence must not outlive its input.
   const [error, setError] = useState<{
@@ -319,6 +342,20 @@ export function CoordProjectRenameDialog({
    * rather than resolving `undefined` either way.
    */
   const submitRename = async (): Promise<TenantRenameResponse> => {
+    // The in-flight latch is a REF, not `submitting`.
+    //
+    // `submitting` is render-time state captured in this closure, and
+    // `setSubmitting` is async, so two callers that read the same render see
+    // `false` and both proceed: a UI Bridge `rename-tenant` invocation
+    // concurrent with a click, or two bridge invocations in one tick. Two
+    // mouse clicks are already safe (React flushes between discrete events and
+    // the button disables), which is exactly why this gap is easy to miss.
+    // PATCH here is not idempotent — a second one can refuse the first's own
+    // result as `slug_taken` — so the latch is checked and set synchronously,
+    // before any await.
+    if (inFlightRef.current) {
+      throw new Error("rename-tenant: a rename is already in flight");
+    }
     if (!canSubmit || tenant === null) {
       throw new Error(
         submitting
@@ -332,11 +369,25 @@ export function CoordProjectRenameDialog({
     const body: TenantRenameRequest = {};
     if (nameChanged) body.display_name = trimmedName;
     if (slugChanged) body.slug = trimmedSlug;
+    inFlightRef.current = true;
     setSubmitting(true);
     setError(null);
     let renamed: TenantRenameResponse;
     try {
       renamed = await renameTenant(tenant.id, body);
+      // An empty 2xx. `_proxy_coord_write` answers `None` for a body-less 2xx,
+      // and the route passes that straight through as a 200 with `null`.
+      // Coord's current code never does this, but the empty-2xx arm is real
+      // and this caller must not render a success view with nothing in it (or
+      // hand `null` to `onRenamed`, where `result.previous?.slug` throws).
+      // Treated as an UNKNOWN outcome, which is what it is: the rename may
+      // well have happened, and nothing came back to say what it did.
+      if (renamed === null || typeof renamed !== "object") {
+        // Thrown, not handled here: the catch below already treats a
+        // non-`TenantRenameError` as UNKNOWN — same message, same refresh,
+        // same `onOutcomeUnknown` — and handling it twice would refresh twice.
+        throw new Error("rename-tenant: coord answered 2xx with no body");
+      }
     } catch (err) {
       setError({
         name: trimmedName,
@@ -352,6 +403,7 @@ export function CoordProjectRenameDialog({
       throw err;
     } finally {
       setSubmitting(false);
+      inFlightRef.current = false;
     }
     // From here on the rename HAS happened. Nothing below may turn it into a
     // reported failure: not a stale list, and not a throwing caller callback.
@@ -399,14 +451,43 @@ export function CoordProjectRenameDialog({
         className="max-w-md"
         data-testid="coord-tenant-rename"
         data-ui-bridge-id="coord.tenant-rename"
+        // Cancel is disabled while a rename is in flight; these are the other
+        // three ways out of a Radix dialog, and leaving them live made that
+        // decision cosmetic. Dismissing mid-flight unmounts the dialog, so the
+        // operator never sees the new slug, never sees whether the home group
+        // moved, and reasonably concludes they cancelled something that in
+        // fact committed.
+        onEscapeKeyDown={(e) => {
+          if (submitting) e.preventDefault();
+        }}
+        onInteractOutside={(e) => {
+          if (submitting) e.preventDefault();
+        }}
+        onPointerDownOutside={(e) => {
+          if (submitting) e.preventDefault();
+        }}
+        showCloseButton={!submitting}
       >
         <DialogHeader>
           <DialogTitle>
-            {result ? "Project renamed" : "Rename project"}
+            {result
+              ? result.changed === false
+                ? "Already up to date"
+                : "Project renamed"
+              : "Rename project"}
           </DialogTitle>
           <DialogDescription>
             {result
-              ? "The new name and short id are in effect now."
+              ? // `changed: false` is coord saying it wrote NOTHING — no
+                // commit, no audit row — because the patch matched what the
+                // tenant already carried. Reachable when another admin renamed
+                // it first and this dialog's view is stale. Claiming "renamed"
+                // there would report an action that did not happen, and
+                // `changed` is on the wire precisely so it can be said
+                // honestly.
+                result.changed === false
+                ? "This project already had that name and short id, so nothing was changed."
+                : "The new name and short id are in effect now."
               : "Change what this project is called. Its members, repos and sessions stay as they are."}
           </DialogDescription>
         </DialogHeader>

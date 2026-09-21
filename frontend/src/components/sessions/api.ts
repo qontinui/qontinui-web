@@ -689,6 +689,14 @@ export async function renameTenant(
     method: "PATCH",
     body: JSON.stringify(body),
     noRetryStatuses: NON_IDEMPOTENT_POST_NO_RETRY_STATUSES,
+    // Longer than the default 60s ceiling, on purpose. A rename that changes
+    // the slug is followed on the backend by the home-group migration, which
+    // costs one Cognito write per member of the old group and is bounded by
+    // its own budget. If the browser gives up first, the operator is told the
+    // outcome is UNKNOWN for work the backend went on to finish and report —
+    // the answer exists, we just stopped listening for it. This ceiling sits
+    // above the backend's own so the report wins that race.
+    timeoutMs: 120_000,
   });
   if (!res.ok) {
     const raw = await res.text().catch(() => "");

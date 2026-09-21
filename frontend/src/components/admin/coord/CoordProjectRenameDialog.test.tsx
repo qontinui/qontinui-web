@@ -544,6 +544,16 @@ describe("smaller contracts", () => {
     expect(screen.queryByTestId("coord-tenant-rename-error")).toBeNull();
   });
 
+  it("partial is not failed, and says the group is incomplete", () => {
+    // The backend stops the member copy at its own budget and reports
+    // `partial` with the count. The operator's next step is to FINISH the
+    // group, not to retry the rename, so the headline must not read as a
+    // failure.
+    expect(homeGroupHeadline({ status: "partial", detail: "" })).toBe(
+      "Home group partly moved"
+    );
+  });
+
   it("target_mapped has its own headline", () => {
     expect(homeGroupHeadline({ status: "target_mapped", detail: "" })).toBe(
       "Home group not moved \u2014 its new name is already mapped"
@@ -595,10 +605,20 @@ describe("5xx outcome honesty", () => {
     const err = proxyStringError(status, detail);
     const want =
       expected === UNKNOWN
-        ? "Coord didn't answer cleanly, so the rename may have been applied. The project list is being reloaded to check \u2014 look for the new name before trying again. No home-group move was attempted; check the Cognito groups panel if the short id did change."
+        ? "Coord didn't answer cleanly, so the rename may have been applied. The project list is being reloaded to check \u2014 look for the new name before trying again. If the short id did change, the `<old-id>-home` Cognito group may also have been moved, partly or completely \u2014 check the Cognito groups panel rather than assuming either way."
         : expected;
     expect(renameErrorMessage(err)).toBe(want);
     expect(isRenameOutcomeUnknown(err)).toBe(expected === UNKNOWN);
+    // The property that matters, asserted separately from the copy: an
+    // UNKNOWN outcome must never claim the home-group move did not happen.
+    // It runs on the web backend AFTER coord commits, one Cognito write per
+    // member, so on these arms it may have run to completion \u2014 the previous
+    // wording said "No home-group move was attempted" and this test pinned
+    // it, which is how a false statement survived three review rounds.
+    if (expected === UNKNOWN) {
+      expect(renameErrorMessage(err)).not.toContain("No home-group move");
+      expect(renameErrorMessage(err)).toMatch(/may also have been moved/);
+    }
   });
 
   it("reads the proxy detail out of the PRODUCTION envelope too", () => {
@@ -769,5 +789,57 @@ describe("a non-HTTP failure after the request may have gone", () => {
     } finally {
       process.off("unhandledRejection", unhandled);
     }
+  });
+});
+
+describe("an answer that is not a rename", () => {
+  async function submitSlugChange(to = "new-pizzeria") {
+    const user = userEvent.setup();
+    await user.clear(slugInput());
+    await user.type(slugInput(), to);
+    await user.click(submitButton());
+  }
+
+  /**
+   * Coord answers `changed: false` when the patch matched what the tenant
+   * already carried: no commit, no audit row, nothing written. Reachable when
+   * another admin renamed it first and this dialog's view is stale. Reporting
+   * "Project renamed" there claims an action that did not happen, and
+   * `changed` is on the wire precisely so it can be said honestly.
+   */
+  it("changed:false says nothing was changed, not renamed", async () => {
+    renameTenantMock.mockResolvedValue(renameResult({ changed: false }));
+    renderDialog();
+    await submitSlugChange();
+
+    expect(
+      await screen.findByTestId("coord-tenant-rename-success")
+    ).toBeInTheDocument();
+    expect(screen.getByText("Already up to date")).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        "This project already had that name and short id, so nothing was changed."
+      )
+    ).toBeInTheDocument();
+    expect(screen.queryByText("Project renamed")).toBeNull();
+  });
+
+  /**
+   * `_proxy_coord_write` answers `None` for a body-less 2xx and the route
+   * passes that through as a 200 with `null`. Coord never does this today, but
+   * the arm is real: a success view rendered from nothing would tell the
+   * operator the rename worked while showing them no slug and no home-group
+   * outcome, and `onRenamed(null)` throws on `result.previous?.slug`.
+   */
+  it("an empty 2xx is an UNKNOWN outcome, not a silent success", async () => {
+    renameTenantMock.mockResolvedValue(null);
+    const { onRenamed, onOutcomeUnknown } = renderDialog();
+    await submitSlugChange();
+
+    const alert = await screen.findByTestId("coord-tenant-rename-error");
+    expect(alert.textContent).toContain("may have been applied");
+    expect(screen.queryByTestId("coord-tenant-rename-success")).toBeNull();
+    expect(onOutcomeUnknown).toHaveBeenCalledTimes(1);
+    expect(onRenamed).not.toHaveBeenCalled();
   });
 });

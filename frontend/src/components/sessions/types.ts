@@ -336,6 +336,10 @@ export interface TenantRenameRequest {
  *  after a slug change (D5). Never a delete. */
 export type HomeGroupMigrationStatus =
   | "migrated"
+  // Some members copied, then the backend's budget ran out — nothing
+  // failed, the group is simply incomplete and `members_copied` says how far
+  // it got.
+  | "partial"
   | "requires_superuser"
   | "target_exists"
   /** Coord already maps `<new>-home`; creating it would grant those roles. */

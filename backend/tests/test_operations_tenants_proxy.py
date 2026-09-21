@@ -614,13 +614,18 @@ class TestRenameUserTenant:
                 '{"error":"reserved_name","reason":"historical_slug"}',
                 "historical_slug",
             ),
-            (
-                403,
-                '{"error":"not_admin_in_target_tenant"}',
-                "not_admin_in_target_tenant",
-            ),
+            # What coord's landed route ACTUALLY answers when its
+            # in-transaction admin re-check fails. `not_admin_in_target_tenant`
+            # is this module's own code for a different door and appears
+            # nowhere in the rename route.
+            (403, '{"error":"admin_required"}', "admin_required"),
             (403, '{"error":"tenant_mismatch"}', "tenant_mismatch"),
             (404, '{"error":"tenant_not_found"}', "tenant_not_found"),
+            # Coord answers a bare `{"error":"slug_taken"}` — no `slug` key
+            # (routes_phase3.rs). This is the shape production actually gets;
+            # the `slug`-carrying row below is a forward-compat pin, kept
+            # deliberately and labelled so it is not mistaken for the live one.
+            (409, '{"error":"slug_taken"}', "slug_taken"),
             (409, '{"error":"slug_taken","slug":"new-name"}', "slug_taken"),
             (
                 409,
@@ -685,7 +690,15 @@ class TestRenameUserTenant:
             "app.api.v1.endpoints.operations.rename_user_tenant"
         ]
         assert [limit.scope for limit in limits] == ["tenant-rename"]
-        assert operations._TENANT_RENAME_RATE_LIMIT == "10 per minute"
+        # NOT `assert _TENANT_RENAME_RATE_LIMIT == "10 per minute"`: that
+        # restates a constant defined one line as
+        # `_TENANT_RENAME_RATE_LIMIT = _CREATE_GROUP_RATE_LIMIT`, so it can only
+        # fail when someone edits the literal — which is the change it would be
+        # guarding. What is worth pinning is the COUPLING the comment claims:
+        # the rename carries the group-create ceiling, whatever that is.
+        assert (
+            operations._TENANT_RENAME_RATE_LIMIT == operations._CREATE_GROUP_RATE_LIMIT
+        )
 
 
 class TestRenameOutcomeHonesty:
@@ -869,6 +882,48 @@ class TestRenameHomeGroupMigration:
         # One audit row per landed Cognito write: the create + each add.
         actions = [c.kwargs["action"] for c in audit.await_args_list]
         assert actions == ["create_group", "add_user_to_group", "add_user_to_group"]
+
+    def test_the_budget_stops_the_copy_and_REPORTS_the_partial(
+        self, admin_client: TestClient, monkeypatch
+    ):
+        """A home group too large for one request stops at the budget and says
+        so, instead of running until the caller gives up.
+
+        This is the finding the outcome lives in the response body: each member
+        costs a Cognito write plus an audit INSERT, sequentially, so a big
+        group outruns the client's own ceiling. When that happened the operator
+        was told the outcome was unknown and the record that a half-populated
+        group exists in the SHARED pool died with the response nobody received.
+        Stopping at the budget converts that into a reported `partial`, with
+        the count, while the answer can still be delivered.
+
+        The budget is driven to zero rather than waited out: a test that sleeps
+        for the real budget is a test nobody runs twice.
+        """
+        from app.api.v1.endpoints import operations
+
+        monkeypatch.setattr(
+            operations, "_HOME_GROUP_MIGRATION_BUDGET_SECONDS", 0, raising=True
+        )
+        fake = _FakeCognito(groups=["my-pizzeria-home"], members=self._MEMBERS)
+        resp, _audit = _run_rename_with_cognito(admin_client, fake)
+
+        assert resp.status_code == 200
+        migration = resp.json()["home_group_migration"]
+        assert migration["status"] == "partial"
+        # The group WAS created, and nothing was copied before the budget
+        # expired — so the sentence has to say both, and name the group the
+        # operator now has to finish or delete.
+        assert fake.created == ["new-name-home"]
+        assert fake.added == []
+        assert migration["new_group_created"] is True
+        assert migration["members_copied"] == 0
+        assert "new-name-home" in migration["detail"]
+        assert "ran out of time" in migration["detail"]
+        # The invariant every arm of this suite asserts: the old group is never
+        # deleted, and the rename itself is never reported as a failure.
+        assert fake.deleted == []
+        assert resp.json()["slug"] == "new-name"
 
     def test_non_superuser_gets_requires_superuser_and_no_aws_call(
         self, client: TestClient
