@@ -5457,9 +5457,7 @@ async def get_fleet_worktree_slots(
     an idle/empty machine and never a healthy ``0/8`` — see the frontend
     hook and `FleetResourceStrip`'s existing honesty rules.
     """
-    return await _proxy_coord_get(
-        "/coord/fleet/worktree-slots", tenant_id=tenant_id
-    )
+    return await _proxy_coord_get("/coord/fleet/worktree-slots", tenant_id=tenant_id)
 
 
 # ---- Wave-3 prep (decision queue + agent-logs + memory) ------------------
