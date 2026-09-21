@@ -1,7 +1,7 @@
 """coord.worker_heartbeats — add nullable ``body_started_at``
 
 Revision ID: worker_hb_body_started_01
-Revises: notif_gate_action_03_drop_enum_value
+Revises: notif_gate_action_04_drop_dead_prefs
 Create Date: 2026-09-20
 
 Adds one nullable ``TIMESTAMPTZ`` column to ``coord.worker_heartbeats`` (created
@@ -255,7 +255,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "worker_hb_body_started_01"
-down_revision: str | Sequence[str] | None = "notif_gate_action_03_drop_enum_value"
+down_revision: str | Sequence[str] | None = "notif_gate_action_04_drop_dead_prefs"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

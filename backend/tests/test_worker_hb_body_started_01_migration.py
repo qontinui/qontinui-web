@@ -69,7 +69,7 @@ from tests._alembic_harness import (
 # treats a re-point as THREE edits: `down_revision`, the `Revises:` docstring
 # line, and this pin. Move all three together.
 _REVISION_ID = "worker_hb_body_started_01"
-_PARENT_REVISION_ID = "notif_gate_action_03_drop_enum_value"
+_PARENT_REVISION_ID = "notif_gate_action_04_drop_dead_prefs"
 _REVISION_FILENAME = "worker_hb_body_started_01_add_body_started_at.py"
 
 _TABLE = "worker_heartbeats"
