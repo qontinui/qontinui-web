@@ -89331,6 +89331,28 @@
         ]
       }
     },
+    "/api/v1/operations/fleet/worktree-slots": {
+      "get": {
+        "description": "Proxy coord's ``GET /coord/fleet/worktree-slots`` (tenant-scoped).\n\nFleet-wide worktree-allocation-slot occupancy: how many of each device's\n``COORD_MAX_WORKTREES`` slots are occupied, and by what. Response shape\nis coord-authored and passed through untouched::\n\n    {\"tenant_id\": \"<uuid>\", \"device_count\": <int>, \"truncated\": false,\n     \"device_cap\": 100, \"census_window_secs\": 900,\n     \"devices\": [{\"device_id\": \"<uuid>\", \"hostname\": \"<string>|null\",\n         \"active_worktrees\": <int>, \"max_worktrees\": 8,\n         \"census_recent_rows\": <int>,\n         \"occupants\": {\"shown\": 0, \"total\": 0, \"truncated\": false,\n                        \"rows\": []}}]}\n\n``census_recent_rows == 0`` means coord has no recent census hit for\nthat device within the narrow (``census_window_secs``, default 900s)\nwindow, so ``active_worktrees`` for that device could not be\ncorroborated as live and the caller MUST render that row UNKNOWN \u2014 never\nan idle/empty machine and never a healthy ``0/8`` \u2014 see the frontend\nhook and `FleetResourceStrip`'s existing honesty rules.",
+        "operationId": "api_v1_operations_fleet_worktree_slots_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Get Fleet Worktree Slots Api V1 Operations Fleet Worktree Slots Get"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Fleet Worktree Slots",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
     "/api/v1/operations/gates/list": {
       "get": {
         "description": "List gates, optionally filtered by verdict.\n\nForwards the operator bearer (fleet-auth P2/D6).",
