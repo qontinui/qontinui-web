@@ -45,7 +45,7 @@ from tests._alembic_harness import (
     table_exists,
 )
 
-_PARENT_REVISION_ID = "plan_library_07_plan_difficulty"
+_PARENT_REVISION_ID = "phaseatt_01"
 _REVISION_ID = "notif_gate_action_04_drop_dead_prefs"
 
 _PREF_COLUMNS = ("email_gate_action", "in_app_gate_action")
