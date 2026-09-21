@@ -856,6 +856,17 @@ export function useMergePipelineData(
       running = true;
       try {
         if (!stopped && !document.hidden) await readMergedIfStale();
+      } catch (err) {
+        // `fetchMergedPrs` reports its own failures, so reaching here means
+        // something in it threw where it should not have. It must neither end
+        // the chain nor surface as an unhandled rejection (`tick` is called
+        // with `void`, and a test runner treats that as a failed run). Log a
+        // string, not the object: a rejection with no prototype cannot be
+        // stringified, which is exactly how this was found.
+        log.warn(
+          "merged read chain: unexpected failure",
+          err instanceof Error ? err.message : "non-Error rejection"
+        );
       } finally {
         running = false;
         // Re-armed in the `finally`: a throw from the read must not end polling
