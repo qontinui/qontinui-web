@@ -67,6 +67,13 @@ export const PROJECT_SLUG_REASONS = [
   "too_short",
   "too_long",
   "must_start_with_letter_or_digit",
+  // Only the RENAME path can produce this one: it is the caller-supplied-slug
+  // arm of coord's `validate_explicit_slug`, and the create dialog derives its
+  // slug rather than accepting one, so nothing there can be non-canonical.
+  // Listed here anyway because this array is the single source both dialogs
+  // type-check against, and a reason missing from it renders as a raw
+  // parenthesised code instead of a sentence.
+  "not_canonical",
 ] as const;
 
 export type ProjectSlugReason = (typeof PROJECT_SLUG_REASONS)[number];
@@ -186,5 +193,7 @@ export function projectSlugProblemMessage(
       return `A short id can be at most ${MAX_SLUG_LEN} characters — this name makes a longer one.`;
     case "must_start_with_letter_or_digit":
       return "A short id has to start with a letter or a digit.";
+    case "not_canonical":
+      return "A short id can only use lowercase letters, digits and single hyphens, and can't start or end with one.";
   }
 }

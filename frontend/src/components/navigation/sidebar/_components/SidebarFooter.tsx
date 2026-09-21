@@ -8,6 +8,10 @@ import { MentionNotificationsDropdown } from "@/app/(app)/strategy/_components/M
 interface SidebarFooterProps extends Omit<UserMenuProps, "isCollapsed"> {
   isCollapsed: boolean;
   onToggleCollapse: () => void;
+  /** Overrides the collapse control's wording — see `CollapseToggle`. */
+  toggleLabel?: string;
+  /** Set when the collapse control is the drawer's disclosure button. */
+  toggleControlsDrawer?: { open: boolean; id: string };
 }
 
 export function SidebarFooter({
@@ -16,6 +20,8 @@ export function SidebarFooter({
   onLogout,
   onDocs,
   onToggleCollapse,
+  toggleLabel,
+  toggleControlsDrawer,
 }: SidebarFooterProps) {
   return (
     <div
@@ -30,9 +36,7 @@ export function SidebarFooter({
           identity context. Hidden in the dropdown content when the
           user has no unread mentions (the trigger stays so the
           user can click to confirm "nothing here"). */}
-      {user && (
-        <MentionNotificationsDropdown isCollapsed={isCollapsed} />
-      )}
+      {user && <MentionNotificationsDropdown isCollapsed={isCollapsed} />}
       <HelpButton isCollapsed={isCollapsed} />
       <UserMenu
         isCollapsed={isCollapsed}
@@ -40,7 +44,12 @@ export function SidebarFooter({
         onLogout={onLogout}
         onDocs={onDocs}
       />
-      <CollapseToggle isCollapsed={isCollapsed} onToggle={onToggleCollapse} />
+      <CollapseToggle
+        isCollapsed={isCollapsed}
+        onToggle={onToggleCollapse}
+        label={toggleLabel}
+        controlsDrawer={toggleControlsDrawer}
+      />
     </div>
   );
 }
