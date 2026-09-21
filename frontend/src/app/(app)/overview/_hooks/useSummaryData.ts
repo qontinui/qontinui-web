@@ -19,10 +19,11 @@ import type {
   PromptDocumentSummary,
 } from "@/app/(app)/admin/coord/prompt-documents/types";
 import type { CoordPlanRow } from "@/components/admin/coord/planStatus";
-import { SHEPHERD_SLUG_PREFIX } from "@/app/(app)/admin/coord/plans/plansHealth";
+import { SHEPHERD_SLUG_PREFIX } from "@/app/(app)/admin/coord/work-units/plansHealth";
 import {
   SUMMARY_INTENT_KINDS,
   classifyIntent,
+  sortIntentEntries,
   skeletonEntry,
   toIntentEntry,
   unreadableEntry,
@@ -83,10 +84,16 @@ async function loadIntent(): Promise<IntentData> {
       }
     })
   );
+  // Kind order is the page's section order; within a kind, reading order.
+  // Two passes, and the second must not disturb the first: Array#sort has
+  // been stable since ES2019, which is what keeps the reading order intact
+  // while the kinds are grouped.
   const order = (k: string) =>
     SUMMARY_INTENT_KINDS.indexOf(k as SummaryIntentKind);
   return {
-    entries: entries.sort((a, b) => order(a.kind) - order(b.kind)),
+    entries: sortIntentEntries(entries).sort(
+      (a, b) => order(a.kind) - order(b.kind)
+    ),
     degraded: list.degraded ?? null,
   };
 }

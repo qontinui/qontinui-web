@@ -3,7 +3,7 @@
 /**
  * PlanRow — one coord work-unit, on one line, with its detail behind a click.
  *
- * Replaces `PlanCard` on `/admin/coord/plans`. Plan
+ * Replaces `PlanCard` on `/admin/coord/work-units`. Plan
  * `2026-08-16-coord-console-ui-unification-pipeline-style.md` Phase 3 Wave 1;
  * conventions from `frontend/docs/console-ui-style-guide.md` and from
  * `AlertRow.tsx`, this wave's reference implementation.
@@ -15,7 +15,7 @@
  *    moved into the detail panel, which costs a click only when the operator
  *    wants them. The row keeps ONE time, chosen by {@link planRowTime}:
  *    shipped → authored → ingested, never the scanner's `updated_at`.
- * 2. **D1 — the whole card was a `<Link>` to `/admin/coord/plans/[slug]`.**
+ * 2. **D1 — the whole card was a `<Link>` to the work-unit detail route.**
  *    Clicking a row now expands it in place; the detail route survives and is
  *    reached by the explicit "Open full page ↗" action, which keeps the
  *    `coord-plan-card-link` testid it always had. Clicking a row no longer
@@ -154,7 +154,7 @@ export function PlanRow({
   // a dated slug with a NULL column never says "ingested" under a chip that
   // shows its authoring date.
   const authoredAt = planAuthoredAt(plan);
-  const href = `/admin/coord/plans/${encodeURIComponent(plan.slug)}`;
+  const href = `/admin/coord/work-units/${encodeURIComponent(plan.slug)}`;
   const markers = bodyMarkers(plan);
   /** Non-null on a row whose Spawn deserves a confirm first. */
   const spawnConfirm = deriveSpawnBodyConfirm(plan);

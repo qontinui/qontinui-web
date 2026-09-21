@@ -38,6 +38,7 @@ from pydantic import ValidationError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.crud import devenv_machine_crud
+from app.models.organization import Organization
 from app.schemas.devenv import ConfigEnvelope
 from app.services import devenv_drift
 
@@ -164,6 +165,135 @@ class TestDiffEnvelopes:
             delta = _delta(_section(report, section_name), "b")
             assert delta.status == "removed"
             assert delta.severity == "critical", f"{section_name} must stay critical"
+
+    def test_harness_compliant_sections_with_different_roots_are_in_sync(self) -> None:
+        """Two compliant boxes with different workspace roots read ``in_sync``.
+
+        The plan's gate (``2026-09-13-a-new-machine-cannot-discover-apply-or-
+        verify-the-fleet-harness-config`` Phase 3). The runner publishes
+        ``plans_dir_relative`` root-RELATIVE for exactly this reason: had it
+        published the absolute path, ``C:/qontinui-root/qontinui-dev-notes/plans``
+        against ``/home/dev/qontinui-root/qontinui-dev-notes/plans`` would be a
+        ``changed`` / ``warning`` delta on every pair of machines by
+        construction — pinning the rollup at ``warning`` forever, the same
+        "drift signal rots" failure ``_REMOVED_SEVERITY_OVERRIDE`` records for
+        ``repos``. The first half of this test shows that counterfactual would
+        indeed drift; the second shows the shipped rendering does not.
+        """
+        # Counterfactual: the absolute path would have drifted.
+        absolute_a = _envelope(
+            {"harness": {"plans_dir": "C:/qontinui-root/qontinui-dev-notes/plans"}}
+        )
+        absolute_b = _envelope(
+            {
+                "harness": {
+                    "plans_dir": "/home/dev/qontinui-root/qontinui-dev-notes/plans"
+                }
+            }
+        )
+        counterfactual = devenv_drift.diff_envelopes(absolute_a, absolute_b)
+        assert counterfactual.in_sync is False
+        assert counterfactual.severity == "warning"
+
+        # Shipped: the root-relative rendering is identical on every compliant box.
+        compliant = {
+            "link_claude_dir": "present",
+            "link_claude_md": "present",
+            "link_dev_start": "present",
+            "config_repo": "present",
+            "root_settings_hooks": "present",
+            "installer_agent_skills": "present",
+            "installer_claude_accounts": "present",
+            "installer_git_hooks": "present",
+            "plans_dir_relative": "qontinui-dev-notes/plans",
+            "invariant_class": "(a)",
+        }
+        canonical = _envelope({"harness": dict(compliant)})
+        actual = _envelope({"harness": dict(compliant)})
+        report = devenv_drift.diff_envelopes(canonical, actual)
+
+        assert report.in_sync is True
+        assert report.severity == "info"
+        # An in-sync section carries no deltas and is not listed at all.
+        assert [sec.section for sec in report.sections] == []
+
+    def test_harness_second_plan_corpus_is_warning_drift(self) -> None:
+        """A box holding the invariant by clause (c) surfaces as ``warning``.
+
+        Clause (c) — a real ``<root>/plans`` directory beside the tracked
+        corpus — is the exact defect plan ``2026-08-21-consolidate-the-two-
+        plan-corpora`` spent three weeks closing, re-opened silently. The
+        default base severity is ``info``, which keeps a section OUT of the
+        environment rollup; ``_SECTION_BASE_SEVERITY["harness"]`` is what
+        makes this visible on the dashboard.
+        """
+        canonical = _envelope(
+            {
+                "harness": {
+                    "plans_dir_relative": "qontinui-dev-notes/plans",
+                    "invariant_class": "(a)",
+                }
+            }
+        )
+        actual = _envelope(
+            {
+                "harness": {
+                    "plans_dir_relative": "qontinui-dev-notes/plans",
+                    "invariant_class": "(c)",
+                }
+            }
+        )
+        report = devenv_drift.diff_envelopes(canonical, actual)
+
+        delta = _delta(_section(report, "harness"), "invariant_class")
+        assert delta.status == "changed"
+        assert delta.severity == "warning"
+        assert delta.expected == "(a)"
+        assert delta.actual == "(c)"
+        assert delta.derived is False
+        assert report.in_sync is False
+        assert report.severity == "warning"
+
+    def test_harness_missing_on_an_old_runner_is_warning_not_critical(self) -> None:
+        """A box whose runner predates the section reads ``removed``/``warning``.
+
+        Such a box publishes no ``harness`` section at all, so every canonical
+        key is ``removed`` there and nothing short of a runner upgrade clears
+        it — the same shape as a private repo the developer cannot clone. The
+        blanket ``removed``-is-``critical`` rule would pin the rollup at
+        ``critical`` permanently; ``_REMOVED_SEVERITY_OVERRIDE["harness"]``
+        softens it to ``warning`` while keeping it real drift.
+        """
+        canonical = _envelope(
+            {
+                "harness": {
+                    "plans_dir_relative": "qontinui-dev-notes/plans",
+                    "invariant_class": "(a)",
+                },
+                "services": {"redis": "6379"},
+            }
+        )
+        actual = _envelope({"services": {"redis": "6379"}})
+        report = devenv_drift.diff_envelopes(canonical, actual)
+
+        section = _section(report, "harness")
+        for key in ("plans_dir_relative", "invariant_class"):
+            delta = _delta(section, key)
+            assert delta.status == "removed"
+            assert delta.severity == "warning", key
+        assert report.in_sync is False
+        assert report.severity == "warning"
+
+    def test_harness_base_severity_is_registered_as_warning(self) -> None:
+        """The registry rows are explicit, not the ``info`` default.
+
+        An unregistered section is indistinguishable from a forgotten one, and
+        the default would silently keep harness drift out of the rollup.
+        """
+        assert devenv_drift._SECTION_BASE_SEVERITY["harness"] == "warning"
+        assert devenv_drift._REMOVED_SEVERITY_OVERRIDE["harness"] == "warning"
+        assert devenv_drift._section_base_severity("harness") == "warning"
+        assert devenv_drift._removed_severity("harness") == "warning"
 
     def test_repos_scope_kind_difference_is_derived_and_info(self) -> None:
         """Capture provenance is reported, never actionable, never drift.
@@ -1617,6 +1747,20 @@ class TestSectionPolicy:
         from app.services import devenv_section_policy as sp
 
         assert sp.policy_for("repos") == "report_only"
+
+    def test_harness_is_report_only_by_design(self) -> None:
+        """``harness`` is registered ``report_only`` explicitly (plan D3).
+
+        The value coincides with the default, and that is the point of pinning
+        it: an unregistered section is indistinguishable from a forgotten one.
+        There is no apply module for the harness on purpose — remediating the
+        plan-corpus invariant means replacing a real ``plans`` directory, which
+        is destructive and stays a deliberate session.
+        """
+        from app.services import devenv_section_policy as sp
+
+        assert "harness" in sp._SECTION_POLICY
+        assert sp.policy_for("harness") == "report_only"
 
     def test_policy_map(self) -> None:
         """policy_map returns section -> policy for the given names."""
@@ -3514,11 +3658,13 @@ class TestOrgSharing:
 
     async def _seed_shared_env(
         self, db: AsyncSession, owner, *, role_members: dict | None = None
-    ) -> tuple[object, str]:
+    ) -> tuple[Organization, str]:
         """Create an org (owner enrolled with role ``owner``) + a shared env.
 
         ``role_members`` maps user -> role for extra memberships. Returns
-        ``(org, env_id)``.
+        ``(org, env_id)``. The org is typed as what ``_new_org`` builds — an
+        ``object`` annotation here made ``org.id`` at the call sites a mypy
+        ``attr-defined`` error under the pre-commit hook's file-scoped run.
         """
         org = await _new_org(db, owner)
         await _add_member(db, org, owner, "owner")

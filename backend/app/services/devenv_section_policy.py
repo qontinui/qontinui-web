@@ -42,6 +42,15 @@ _SECTION_POLICY: dict[str, SectionPolicyT] = {
     # ``report_only``, so the promise buys nothing until the module exists.
     # Flip this to "applyable" in the same change that adds the module.
     "repos": "report_only",
+    # The fleet harness (`qontinui-claude-config`: the workspace-root links,
+    # the installers' renders, the root-relative ``paths.plans_dir`` and the
+    # plan-corpus invariant class). Report-only BY DESIGN, not by omission:
+    # remediating an invariant violation means replacing a real ``plans``
+    # directory, which is destructive and stays a deliberate session (plan
+    # ``2026-09-13-a-new-machine-cannot-discover-apply-or-verify-the-fleet-
+    # harness-config`` D3). Spelled out even though it is the default because
+    # an unregistered section is indistinguishable from a forgotten one.
+    "harness": "report_only",
 }
 
 

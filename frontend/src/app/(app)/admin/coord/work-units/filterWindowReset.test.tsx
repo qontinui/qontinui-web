@@ -47,7 +47,7 @@ const get = vi.fn();
 // router mounted under `render()`. The navigation is not what is under test.
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ push: vi.fn(), replace: vi.fn(), prefetch: vi.fn() }),
-  usePathname: () => "/admin/coord/plans",
+  usePathname: () => "/admin/coord/work-units",
   useSearchParams: () => new URLSearchParams(),
   useParams: () => ({}),
 }));
@@ -76,7 +76,7 @@ vi.mock("@/services/service-factory", () => ({
   },
 }));
 
-import CoordPlansListPage from "./page";
+import CoordWorkUnitsListPage from "./page";
 import CoordSpawnPage from "../spawn/page";
 
 /** A work unit that comes back only for the FIRST filter. */
@@ -113,15 +113,15 @@ interface Surface {
 
 const SURFACES: Surface[] = [
   {
-    name: "/admin/coord/plans",
-    Page: CoordPlansListPage,
+    name: "/admin/coord/work-units",
+    Page: CoordWorkUnitsListPage,
     toLabel: "Blocked",
     toValue: "blocked",
-    selectTestId: "coord-plans-status-select",
-    emptyTestId: "coord-plans-empty",
-    unknownTestId: "coord-plans-unknown",
-    staleTestId: "coord-plans-stale",
-    refreshTestId: "coord-plans-refresh",
+    selectTestId: "coord-work-units-status-select",
+    emptyTestId: "coord-work-units-empty",
+    unknownTestId: "coord-work-units-unknown",
+    staleTestId: "coord-work-units-stale",
+    refreshTestId: "coord-work-units-refresh",
   },
   {
     name: "/admin/coord/spawn",
