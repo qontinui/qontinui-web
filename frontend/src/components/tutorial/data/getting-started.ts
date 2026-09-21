@@ -23,7 +23,6 @@ export const gettingStartedTutorial: Tutorial = {
     "Navigate the Qontinui interface",
     "Create a new automation project",
     "Understand the main sections of the app",
-    "Learn where to find help and documentation",
   ],
   steps: [
     {
