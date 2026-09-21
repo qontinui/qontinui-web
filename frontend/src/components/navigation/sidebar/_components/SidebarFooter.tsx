@@ -1,5 +1,4 @@
 import { cn } from "@/lib/utils";
-import { HelpButton } from "../HelpButton";
 import { UserMenu, type UserMenuProps } from "../UserMenu";
 import { CollapseToggle } from "../CollapseToggle";
 import { RunnerSelector } from "./RunnerSelector";
@@ -37,7 +36,6 @@ export function SidebarFooter({
           user has no unread mentions (the trigger stays so the
           user can click to confirm "nothing here"). */}
       {user && <MentionNotificationsDropdown isCollapsed={isCollapsed} />}
-      <HelpButton isCollapsed={isCollapsed} />
       <UserMenu
         isCollapsed={isCollapsed}
         user={user}
