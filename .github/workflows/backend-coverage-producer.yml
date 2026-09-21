@@ -507,7 +507,7 @@ jobs:
           # and the job-timeout arm misfires or fails to fire.
           JOB_TIMEOUT_MINUTES: '90'
           EXTERNAL_CANCEL_NOTE: >-
-            this workflow declares `concurrency: cancel-in-progress: true`, so a newer push to the same ref supersedes the run - that or a manual cancel are the external causes
+            this workflow declares `concurrency: cancel-in-progress: false`, so a RUNNING job is never auto-superseded - only a run still PENDING is cancelled when a newer push to the same ref supersedes the run, which costs no runner minutes and never reaches this step; for a job that got this far, a manual cancel is the external cause
           # `<step name>|<outcome>|<conclusion>` per apt-dependent step in this
           # job. BOTH values are carried on purpose:
           #   * `.outcome` is the value BEFORE `continue-on-error` rewrites it,
