@@ -2590,4 +2590,82 @@ describe("/admin/coord/devops — Worktree slots (Phase 3)", () => {
     expect(ghostRow).toHaveAttribute("data-worktree-slots-state", "unknown");
     expect(ghostRow).toHaveTextContent("not reported");
   });
+
+  it("shows a friendly notice, not coord's raw body, when the coord route isn't deployed yet", async () => {
+    // Phase 1 (coord's `GET /coord/fleet/worktree-slots`) ships in a
+    // separate qontinui-coord PR and had not landed as of this PR — every
+    // real read of this route legitimately 404s until it does. `httpClient`
+    // formats that as `GET <url> failed: 404 - <coord's raw body>`; the
+    // banner must show the friendly reading, never that raw string verbatim.
+    mockRoutes({
+      devices: [coordDevice("d-1", "msi", "healthy")],
+      runners: [runner("msi")],
+      samples: [],
+    });
+    httpGet.mockImplementation((url: unknown) => {
+      const u = String(url);
+      if (u.includes("worktree-slots")) {
+        return Promise.reject(
+          new Error(
+            'GET /api/v1/operations/fleet/worktree-slots failed: 404 - {"error":"NOT_FOUND"}'
+          )
+        );
+      }
+      if (u.includes("resource-samples")) {
+        return Promise.resolve({ latest: [], history: [] });
+      }
+      if (u.includes("fleet/health")) {
+        return Promise.resolve({
+          devices: [coordDevice("d-1", "msi", "healthy")],
+        });
+      }
+      return Promise.reject(new Error(`unexpected GET ${u}`));
+    });
+
+    render(<CoordDevOpsPage />);
+
+    const banner = await screen.findByTestId("fleet-worktree-slots-error");
+    expect(banner).toHaveTextContent(
+      "coord does not serve the fleet worktree-slots route yet"
+    );
+    // Never coord's raw, doubly-JSON-encoded transport string.
+    expect(banner).not.toHaveTextContent("NOT_FOUND");
+    expect(banner).not.toHaveTextContent("failed: 404");
+    // The device list stays the spine even with no data — unknown, not gone.
+    const row = await screen.findByTestId("fleet-worktree-slots-row");
+    expect(row).toHaveAttribute("data-worktree-slots-state", "unknown");
+  });
+
+  it("still shows the transport detail for a genuine failure, not the route-unavailable notice", async () => {
+    mockRoutes({
+      devices: [coordDevice("d-1", "msi", "healthy")],
+      runners: [runner("msi")],
+      samples: [],
+    });
+    httpGet.mockImplementation((url: unknown) => {
+      const u = String(url);
+      if (u.includes("worktree-slots")) {
+        return Promise.reject(
+          new Error(
+            "GET /api/v1/operations/fleet/worktree-slots failed: 502 - coord is not reachable"
+          )
+        );
+      }
+      if (u.includes("resource-samples")) {
+        return Promise.resolve({ latest: [], history: [] });
+      }
+      if (u.includes("fleet/health")) {
+        return Promise.resolve({
+          devices: [coordDevice("d-1", "msi", "healthy")],
+        });
+      }
+      return Promise.reject(new Error(`unexpected GET ${u}`));
+    });
+
+    render(<CoordDevOpsPage />);
+
+    const banner = await screen.findByTestId("fleet-worktree-slots-error");
+    expect(banner).toHaveTextContent("coord is not reachable");
+    expect(banner).not.toHaveTextContent("does not serve");
+  });
 });
