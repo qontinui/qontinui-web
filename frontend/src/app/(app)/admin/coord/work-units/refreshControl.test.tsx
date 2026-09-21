@@ -53,11 +53,11 @@ import CoordWorkUnitsListPage from "./page";
 
 /**
  * The DEFAULT sort walks the corpus, so this page's tick is the walked one —
- * 60 s, not the 10 s a single-page view keeps (`page.tsx` `POLL_INTERVAL_MS`).
+ * 120 s, not the 10 s a single-page view keeps (`page.tsx` `POLL_INTERVAL_MS`).
  * Every lock assertion below is about the tick that actually fires, so the
  * number has to be the one in force for the view under test.
  */
-const POLL_INTERVAL_MS = 60_000;
+const POLL_INTERVAL_MS = 120_000;
 
 /** A read the test settles by hand. */
 function deferred() {
@@ -91,7 +91,7 @@ describe("/admin/coord/work-units refresh control", () => {
     expect(button).toBe(refreshButton());
     expect(button).toHaveAttribute(
       "title",
-      "Re-reads the work-unit list now; it also refreshes itself every 60 s"
+      "Re-reads the work-unit list now; it also refreshes itself every 120 s"
     );
     // The icon is decoration; the name is the label, not an SVG. (lucide-react
     // currently stamps aria-hidden on a bare icon by itself, so this is a guard
@@ -319,7 +319,7 @@ describe("/admin/coord/work-units refresh control", () => {
    * so on a slow link the steady state was continuous polling.
    */
   describe("poll cadence is proportionate to what one tick costs", () => {
-    it("a walked view ticks once a minute, not every 10 s", async () => {
+    it("a walked view ticks every 120 s, not every 10 s — and not every 60 s either", async () => {
       vi.useFakeTimers({ shouldAdvanceTime: true });
       get.mockResolvedValue({ work_units: [] });
       render(<CoordWorkUnitsListPage />);
@@ -333,6 +333,19 @@ describe("/admin/coord/work-units refresh control", () => {
       expect(get).toHaveBeenCalledTimes(1);
       await act(async () => {
         vi.advanceTimersByTime(40_000);
+      });
+      expect(get).toHaveBeenCalledTimes(1);
+      // Now at 60 s — the OLD walked tick. The default view walks ~7 pages
+      // with the shepherd rows included, so 60 s put it at ~15 coord reads a
+      // minute, over the single-slice baseline (`page.tsx`
+      // `POLL_INTERVAL_MS`) — nothing may fire here either.
+      await act(async () => {
+        vi.advanceTimersByTime(10_000);
+      });
+      expect(get).toHaveBeenCalledTimes(1);
+      // ...nor anywhere short of the new tick.
+      await act(async () => {
+        vi.advanceTimersByTime(POLL_INTERVAL_MS - 70_000);
       });
       expect(get).toHaveBeenCalledTimes(1);
 

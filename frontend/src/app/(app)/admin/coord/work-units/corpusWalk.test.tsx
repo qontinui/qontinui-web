@@ -11,7 +11,7 @@
  */
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
 const get = vi.fn();
@@ -173,7 +173,12 @@ describe("/admin/coord/work-units — corpus walk", () => {
     // and the difference is stated as a difference — not excused as unlike
     // sets. The excluded arm is pinned in its own test below.
     expect(complete).toHaveTextContent("counts 2400 work units in total");
-    expect(complete).toHaveTextContent("over the same set — a difference of");
+    // Stated as a direction and a size, with no cause attached (R3 of the
+    // copy review): the page cannot know which read the gap lies in.
+    expect(complete).toHaveTextContent(
+      `over the same set — ${2400 - (LIMIT + 1)} more than this read.`
+    );
+    expect(complete).not.toHaveTextContent("can account for");
     expect(complete).not.toHaveTextContent("measured over different sets");
     expect(
       screen.queryByTestId("coord-work-units-truncated-notice")
@@ -214,7 +219,7 @@ describe("/admin/coord/work-units — corpus walk", () => {
   });
 
   it("names when the list was read, and how often it re-reads itself", async () => {
-    // The walked cadence is 60 s, not 10 s, so "how old is this?" stops being
+    // The walked cadence is 120 s, not 10 s, so "how old is this?" stops being
     // answerable by assuming the page is a few seconds fresh.
     get.mockImplementation(async (url: string) => {
       if (url.endsWith("/plans/overview")) return OVERVIEW;
@@ -231,7 +236,7 @@ describe("/admin/coord/work-units — corpus walk", () => {
 
     const readAt = screen.getByTestId("coord-work-units-read-at");
     expect(readAt).toHaveTextContent(/^Read \d{4}-\d{2}-\d{2} \d{2}:\d{2}Z; /);
-    expect(readAt).toHaveTextContent("re-reads itself every 60 s");
+    expect(readAt).toHaveTextContent("re-reads itself every 120 s");
   });
 
   /**
@@ -240,11 +245,11 @@ describe("/admin/coord/work-units — corpus walk", () => {
    * The stamp used to live inside the collapsible fetch-window panel, which
    * renders only when `truncated || walkComplete || walkPartial ||
    * missingAuthored > 0`. This arm satisfies none of those and is perfectly
-   * reachable: an authored sort (so the 60 s cadence is in force) against a
+   * reachable: an authored sort (so the 120 s cadence is in force) against a
    * coord that PREDATES the walk — no `order` echo, so `single_page` — over a
    * corpus under `WALK_PAGE_LIMIT` rows, every row dated. The panel is absent,
    * and before the fix nothing on the page said when the list was read or that
-   * it only re-reads once a minute, so a 59-second-old list was presented as
+   * it only re-reads every two minutes, so a 59-second-old list was presented as
    * current.
    */
   it("legacy coord, small corpus, authored sort: no panel, and the read stamp is still on screen", async () => {
@@ -277,7 +282,7 @@ describe("/admin/coord/work-units — corpus walk", () => {
     // The age of the list is on screen anyway — this is the whole point.
     const readAt = screen.getByTestId("coord-work-units-read-at");
     expect(readAt).toHaveTextContent(/^Read \d{4}-\d{2}-\d{2} \d{2}:\d{2}Z; /);
-    expect(readAt).toHaveTextContent("re-reads itself every 60 s");
+    expect(readAt).toHaveTextContent("re-reads itself every 120 s");
   });
 
   /**
@@ -330,7 +335,9 @@ describe("/admin/coord/work-units — corpus walk", () => {
     await openPanel(user);
     expect(
       screen.getByTestId("coord-work-units-walk-complete")
-    ).toHaveTextContent("not cross-checked");
+    ).toHaveTextContent(
+      "coord's overview could not be read, so this count is not cross-checked."
+    );
   });
 
   it("a page failing mid-walk keeps the rows and says INCOMPLETE, never complete", async () => {
@@ -359,6 +366,11 @@ describe("/admin/coord/work-units — corpus walk", () => {
     // "No plan is blocked" all-clear over a list that stopped before the end.
     const strip = screen.getByTestId("coord-work-units-health");
     expect(strip).toHaveTextContent("list INCOMPLETE");
+    // This page HAS a fetch-window panel, so its badge may point there.
+    expect(within(strip).getByText("list INCOMPLETE")).toHaveAttribute(
+      "title",
+      expect.stringContaining("— see the fetch-window panel")
+    );
     // F6 of round 4 — `not.toHaveTextContent(/^No plan is blocked$/)` could
     // never fail: jest-dom matches the regex against the ELEMENT's whole
     // normalized textContent, which here also carries the badge cluster, so
@@ -384,7 +396,7 @@ describe("/admin/coord/work-units — corpus walk", () => {
     expect(partial).toHaveTextContent("a page read failed (HTTP 502)");
     // The authored_at range actually covered is named.
     expect(partial).toHaveTextContent(
-      "authored 2026-09-18 00:00Z back to 2026-09-10 00:00Z"
+      "with authored_at 2026-09-18 00:00Z back to 2026-09-10 00:00Z"
     );
     expect(screen.queryByTestId("coord-work-units-walk-complete")).toBeNull();
     expect(screen.queryByText(new RegExp(QUIET_TARGET.title))).toBeNull();
@@ -660,6 +672,36 @@ describe("/admin/coord/work-units — corpus walk", () => {
     );
   });
 
+  it("one row read and filtered away is said in the singular", async () => {
+    get.mockImplementation(async (url: string) => {
+      if (url.endsWith("/plans/overview")) return OVERVIEW;
+      return {
+        order: "authored_desc",
+        work_units: [
+          {
+            ...QUIET_TARGET,
+            body_provenance: "never_scanned",
+            has_body: false,
+          },
+        ],
+        body_signal: BODY_SIGNAL,
+        next_cursor: null,
+      };
+    });
+    const user = userEvent.setup();
+    render(<CoordWorkUnitsListPage />);
+    await screen.findByText(new RegExp(QUIET_TARGET.title));
+
+    await user.click(
+      screen.getByTestId("coord-work-units-has-body-filter-yes")
+    );
+    expect(
+      await screen.findByTestId("coord-work-units-body-filtered-empty")
+    ).toHaveTextContent(
+      "The one work unit read — the whole list — does not match the document and scanner filters."
+    );
+  });
+
   /**
    * F1 of round 4 — the `document` strip's tooltip states of the whole read
    * what may be true of one page of it.
@@ -864,5 +906,211 @@ describe("/admin/coord/work-units — corpus walk × shepherd control", () => {
       "excluding coord's shepherd-* merge escalations"
     );
     expect(complete).toHaveTextContent("measured over different sets");
+  });
+});
+
+/**
+ * What the panel says about coord's overview total, and about where a partial
+ * walk reached — each sentence limited to what the page actually knows.
+ */
+describe("/admin/coord/work-units — overview comparison and partial-walk wording", () => {
+  const ONE_PAGE = {
+    order: "authored_desc",
+    work_units: [
+      QUIET_TARGET,
+      unit("2026-09-08-a-second-dated-plan"),
+      unit("2026-09-07-a-third-dated-plan"),
+    ],
+    next_cursor: null,
+  };
+
+  it("a read LARGER than coord's total is stated as a size, never a negative difference", async () => {
+    get.mockImplementation(async (url: string) => {
+      if (url.endsWith("/plans/overview")) return { ...OVERVIEW, row_count: 1 };
+      return ONE_PAGE;
+    });
+    const user = userEvent.setup();
+    render(<CoordWorkUnitsListPage />);
+    await screen.findByText(new RegExp(QUIET_TARGET.title));
+    await openPanel(user);
+
+    const complete = screen.getByTestId("coord-work-units-walk-complete");
+    expect(complete).toHaveTextContent(
+      "coord's overview counts 1 work unit in total over the same set — 2 fewer than this read. The two are separate reads taken moments apart, and this page cannot tell which of them the difference lies in; reload to re-check."
+    );
+    expect(complete).not.toHaveTextContent("-2");
+    expect(complete).not.toHaveTextContent("can account for");
+  });
+
+  it("an overview that ANSWERED without a total is not called unread", async () => {
+    get.mockImplementation(async (url: string) => {
+      if (url.endsWith("/plans/overview")) return { facets: {} };
+      return ONE_PAGE;
+    });
+    const user = userEvent.setup();
+    render(<CoordWorkUnitsListPage />);
+    await screen.findByText(new RegExp(QUIET_TARGET.title));
+    await openPanel(user);
+
+    const complete = screen.getByTestId("coord-work-units-walk-complete");
+    expect(complete).toHaveTextContent(
+      "coord's overview was read but carries no total, so this count is not cross-checked."
+    );
+    expect(complete).not.toHaveTextContent("could not be read");
+  });
+
+  it("a truncated by_status that lacks the selected status says the overview does not break it out", async () => {
+    get.mockImplementation(async (url: string) => {
+      if (url.endsWith("/plans/overview")) {
+        return {
+          ...OVERVIEW,
+          facets: {
+            ...OVERVIEW.facets,
+            by_status: { shipped: 2400 },
+            by_status_truncated: true,
+          },
+        };
+      }
+      return {
+        ...ONE_PAGE,
+        work_units: ONE_PAGE.work_units.map((u) => ({
+          ...u,
+          status: "blocked",
+        })),
+      };
+    });
+    const user = userEvent.setup();
+    render(<CoordWorkUnitsListPage />);
+    await screen.findByText(new RegExp(QUIET_TARGET.title));
+
+    await user.click(screen.getByTestId("coord-work-units-status-select"));
+    await user.click(await screen.findByRole("option", { name: "Blocked" }));
+    await waitFor(() =>
+      expect(listCalls().some((u) => u.includes("status=blocked"))).toBe(true)
+    );
+    await screen.findByText(new RegExp(QUIET_TARGET.title));
+    await openPanel(user);
+
+    const complete = await screen.findByTestId(
+      "coord-work-units-walk-complete"
+    );
+    expect(complete).toHaveTextContent(
+      "coord's overview was read but does not break out status=blocked, so this count is not cross-checked."
+    );
+    expect(complete).not.toHaveTextContent("could not be read");
+  });
+
+  it("a partial walk into coord's NULL authored_at tail names the COLUMN, not 'no authoring date'", async () => {
+    // Every row's SLUG is dated, so each row's chip shows a date — only
+    // coord's `authored_at` column is NULL on the tail the keyset reached.
+    const WITH_TAIL = [
+      ...PAGE_ONE.slice(0, LIMIT - 2),
+      unit("2026-09-05-slug-dated-null-column-a", { authored_at: null }),
+      unit("2026-09-04-slug-dated-null-column-b", { authored_at: null }),
+    ];
+    get.mockImplementation(async (url: string) => {
+      if (url.endsWith("/plans/overview")) throw new Error("HTTP 503");
+      if (url.includes("after_slug=")) throw new Error("HTTP 502");
+      return {
+        order: "authored_desc",
+        work_units: WITH_TAIL,
+        next_cursor: {
+          after_authored_at: null,
+          after_slug: WITH_TAIL[LIMIT - 1].slug,
+        },
+      };
+    });
+    const user = userEvent.setup();
+    render(<CoordWorkUnitsListPage />);
+    await screen.findByText(`INCOMPLETE — ${LIMIT} read`);
+    // No "undated" badge: by the page's own definition these rows are dated.
+    expect(screen.queryByText(/\d+ undated/)).toBeNull();
+    await openPanel(user);
+
+    const partial = screen.getByTestId("coord-work-units-walk-partial");
+    expect(partial).toHaveTextContent(
+      ", plus some with no authored_at in coord;"
+    );
+    expect(partial).toHaveTextContent(
+      "Every work unit with an authored_at in coord was reached; ones with none, further along the list, are missing from this page."
+    );
+    expect(partial).not.toHaveTextContent("no authoring date");
+    expect(partial).not.toHaveTextContent("undated");
+    // The overview request itself failed: that one IS unread.
+    expect(partial).toHaveTextContent(
+      "coord's overview could not be read, so there is no coord total to set this against."
+    );
+  });
+});
+
+/**
+ * R7 of the copy review — the shepherd control changes the QUESTION, so a
+ * page of the OLD walk still in flight when it flips must land nowhere, and
+ * the new walk must start again from page one carrying the new parameter.
+ */
+describe("/admin/coord/work-units — shepherd control flipped mid-walk", () => {
+  it("drops the old walk's page 2 and restarts from page 1 with exclude_slug_prefix", async () => {
+    const OLD_PAGE_TWO_ROW = unit("2026-08-01-old-question-page-two-row");
+    const NEW_ROW = unit("2026-09-09-new-question-row");
+    let releaseOldPageTwo!: (body: unknown) => void;
+    const oldPageTwo = new Promise((r) => {
+      releaseOldPageTwo = r;
+    });
+    get.mockImplementation(async (url: string) => {
+      if (url.endsWith("/plans/overview")) return OVERVIEW;
+      if (url.includes("exclude_slug_prefix=")) {
+        return {
+          order: "authored_desc",
+          work_units: [NEW_ROW],
+          next_cursor: null,
+        };
+      }
+      if (url.includes("after_slug=")) return oldPageTwo;
+      return {
+        order: "authored_desc",
+        work_units: PAGE_ONE,
+        next_cursor: {
+          after_authored_at: "2026-09-10T00:00:00Z",
+          after_slug: PAGE_ONE[LIMIT - 1].slug,
+        },
+      };
+    });
+    const user = userEvent.setup();
+    render(<CoordWorkUnitsListPage />);
+
+    // The old walk is on page 2, and that page has not answered.
+    await waitFor(() =>
+      expect(listCalls().some((u) => u.includes("after_slug="))).toBe(true)
+    );
+    const before = listCalls().length;
+
+    await user.click(screen.getByTestId("coord-work-units-shepherd-select"));
+    await user.click(
+      await screen.findByRole("option", { name: "Excl. merge escalations" })
+    );
+    await screen.findByText(new RegExp(NEW_ROW.title));
+
+    // Now the OLD question's page 2 answers — late.
+    await act(async () => {
+      releaseOldPageTwo({
+        order: "authored_desc",
+        work_units: [OLD_PAGE_TWO_ROW],
+        next_cursor: null,
+      });
+      await oldPageTwo;
+    });
+
+    // Nothing of the old question landed: not its page-2 row, not its page-1
+    // rows, and the summary counts the new walk alone.
+    expect(screen.queryByText(new RegExp(OLD_PAGE_TWO_ROW.title))).toBeNull();
+    expect(screen.queryByText(new RegExp(PAGE_ONE[0].title))).toBeNull();
+    expect(screen.getByText("all 1 read*")).toBeInTheDocument();
+
+    // The new walk began at page ONE (no cursor) with the new parameter, and
+    // the old walk issued no further page after the flip.
+    const after = listCalls().slice(before);
+    expect(after).toHaveLength(1);
+    expect(after[0]).not.toContain("after_slug=");
+    expect(after[0]).toContain("exclude_slug_prefix=shepherd-");
   });
 });

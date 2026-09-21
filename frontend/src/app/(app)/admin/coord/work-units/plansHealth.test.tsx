@@ -311,6 +311,33 @@ describe("derivePlansHealth", () => {
       );
     });
 
+    /**
+     * The badge's title is shared by `/work-units` and `/spawn`, and only
+     * `/work-units` has a fetch-window panel — so the pointer is the CALLER's
+     * to supply, and without one the title points nowhere (R2 of the copy
+     * review: `/spawn` used to be sent to a panel it does not have).
+     */
+    it("the INCOMPLETE badge points only where the caller says it can", () => {
+      const titleOf = (h: ReturnType<typeof derivePlansHealth>) =>
+        h.badges.find((b) => b.key === "incomplete")?.title;
+
+      const neutral = derivePlansHealth(clean, true, false, {
+        incomplete: true,
+      });
+      expect(titleOf(neutral)).toBe(
+        "these counts are derived from the rows that were read, which are not the whole corpus"
+      );
+      expect(titleOf(neutral)).not.toContain("see ");
+
+      const pointed = derivePlansHealth(clean, true, false, {
+        incomplete: true,
+        incompleteDetailsAt: "the fetch-window panel",
+      });
+      expect(titleOf(pointed)).toBe(
+        "these counts are derived from the rows that were read, which are not the whole corpus — see the fetch-window panel"
+      );
+    });
+
     it("changes nothing for a caller that read one whole window", () => {
       // Both shipped callers pass the flag now (`/spawn` too — it reads one
       // bounded page and derives it from a full page). The default is kept for

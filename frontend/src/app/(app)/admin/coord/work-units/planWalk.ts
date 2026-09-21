@@ -66,9 +66,10 @@ export const WALK_PAGE_LIMIT = 500;
 
 /**
  * A hard stop on the walk, so a coord that kept handing out cursors could not
- * spin the page forever. 20 × 500 = 10k units — ~5× the non-shepherd corpus
- * measured 2026-09-19 (~1.8k). Hitting it is reported as `partial`, never
- * rendered as complete.
+ * spin the page forever. 20 × 500 = 10k units — ~3× the whole store the
+ * page walks by default (shepherd rows included: ~3.2k on 2026-09-20, 7
+ * pages), ~5× the non-shepherd set alone (~2.0k, 4 pages). Hitting it is
+ * reported as `partial`, never rendered as complete.
  */
 export const WALK_MAX_PAGES = 20;
 
@@ -377,9 +378,17 @@ export interface WorkUnitOverview {
 }
 
 /**
- * coord's own total for the question the page asked — or `null` when the
- * overview cannot answer it (unread, malformed, or a truncated `by_status`
- * that may have dropped this status).
+ * coord's own total for the question the page asked — or WHY there is none.
+ *
+ * "No total" has two causes the page must not merge into one sentence:
+ *
+ * - `unread` — the overview request failed or was never answered. Nothing is
+ *   known about coord's total.
+ * - `not_broken_out` — the overview WAS read, but it does not carry the number
+ *   this question needs: no `row_count` for status=any, or a status the
+ *   `by_status` facet does not list while that facet is truncated (or absent),
+ *   so an absent key may be one of the long-tail spellings it dropped. Saying
+ *   "could not be read" over an overview that answered would be false.
  *
  * The overview takes NO filters by coord's design, so it always counts the
  * `shepherd-*` rows. Whether the page read them too is the caller's shepherd
@@ -388,25 +397,37 @@ export interface WorkUnitOverview {
  * them, and it carries that difference to the copy rather than letting two
  * totals over different sets be compared as like with like.
  */
+export type OverviewTotal =
+  | { kind: "total"; total: number; includesExcluded: boolean }
+  | { kind: "unread" }
+  | { kind: "not_broken_out" };
+
 export function overviewTotalFor(
   overview: WorkUnitOverview | null,
   status: string,
   shepherdExcluded: boolean
-): { total: number; includesExcluded: boolean } | null {
-  if (!overview) return null;
+): OverviewTotal {
+  if (!overview) return { kind: "unread" };
   const includesExcluded = shepherdExcluded;
+  const total = (n: number): OverviewTotal => ({
+    kind: "total",
+    total: n,
+    includesExcluded,
+  });
   if (status === "any") {
     return typeof overview.row_count === "number"
-      ? { total: overview.row_count, includesExcluded }
-      : null;
+      ? total(overview.row_count)
+      : { kind: "not_broken_out" };
   }
   const byStatus = overview.facets?.by_status;
-  if (!byStatus || typeof byStatus !== "object") return null;
+  if (!byStatus || typeof byStatus !== "object") {
+    return { kind: "not_broken_out" };
+  }
   const n = byStatus[status];
-  if (typeof n === "number") return { total: n, includesExcluded };
+  if (typeof n === "number") return total(n);
   // An absent key is a stated zero ONLY when the facet was not truncated —
   // otherwise the status may be one of the long-tail spellings it dropped.
   return overview.facets?.by_status_truncated === false
-    ? { total: 0, includesExcluded }
-    : null;
+    ? total(0)
+    : { kind: "not_broken_out" };
 }

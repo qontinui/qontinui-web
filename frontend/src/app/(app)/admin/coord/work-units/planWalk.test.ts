@@ -429,12 +429,14 @@ describe("overviewTotalFor", () => {
       by_status_truncated: false,
     },
   };
+  const totalOf = (t: ReturnType<typeof overviewTotalFor>) =>
+    t.kind === "total" ? t.total : null;
   it("uses row_count for any, by_status for a filter", () => {
-    expect(overviewTotalFor(overview, "any", true)?.total).toBe(1800);
-    expect(overviewTotalFor(overview, "draft", true)?.total).toBe(300);
+    expect(totalOf(overviewTotalFor(overview, "any", true))).toBe(1800);
+    expect(totalOf(overviewTotalFor(overview, "draft", true))).toBe(300);
   });
   it("an absent status is zero only when the facet was not truncated", () => {
-    expect(overviewTotalFor(overview, "blocked", true)?.total).toBe(0);
+    expect(totalOf(overviewTotalFor(overview, "blocked", true))).toBe(0);
     expect(
       overviewTotalFor(
         {
@@ -444,24 +446,37 @@ describe("overviewTotalFor", () => {
         "blocked",
         true
       )
-    ).toBeNull();
+    ).toEqual({ kind: "not_broken_out" });
   });
   it("says the overview counts rows the page excluded ONLY when it excluded them", () => {
     // The overview takes no filters, so it always counts `shepherd-*` rows.
     // `/work-units` includes them by default, and then the two totals ARE
     // over the same set — the copy may compare them like with like.
     expect(overviewTotalFor(overview, "any", false)).toEqual({
+      kind: "total",
       total: 1800,
       includesExcluded: false,
     });
     expect(overviewTotalFor(overview, "any", true)).toEqual({
+      kind: "total",
       total: 1800,
       includesExcluded: true,
     });
   });
-  it("an unread overview is UNKNOWN, not zero", () => {
-    expect(overviewTotalFor(null, "any", true)).toBeNull();
-    expect(overviewTotalFor({}, "any", true)).toBeNull();
+  /**
+   * Two different "no total"s, kept apart so the copy cannot say "could not be
+   * read" over an overview that answered (R3 of the copy review).
+   */
+  it("an unread overview is UNKNOWN, not zero — and says it was UNREAD", () => {
+    expect(overviewTotalFor(null, "any", true)).toEqual({ kind: "unread" });
+  });
+  it("an overview that answered without the number is NOT_BROKEN_OUT, not unread", () => {
+    expect(overviewTotalFor({}, "any", true)).toEqual({
+      kind: "not_broken_out",
+    });
+    expect(overviewTotalFor({ row_count: 5 }, "draft", false)).toEqual({
+      kind: "not_broken_out",
+    });
   });
 });
 

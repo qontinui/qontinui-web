@@ -3960,8 +3960,11 @@ async def get_coord_plans_overview(
     "by_status": {...}, "by_status_truncated": bool, "by_status_omitted": N},
     "corpus_complete": bool}``. It takes no filters by coord's design (a
     filtered overview would move its denominator), so ``row_count`` counts
-    EVERY unit — including the ``shepherd-*`` rows the Plans list excludes.
-    The console states that difference rather than comparing unlike totals.
+    EVERY unit — including the ``shepherd-*`` rows. The work-units list
+    (``/admin/coord/work-units``) includes those rows by default and excludes
+    them only when the operator asks (``exclude_slug_prefix``); under that
+    exclusion the console states the difference rather than comparing unlike
+    totals.
     """
     return await _proxy_coord_get("/coord/work-units/overview", tenant_id=tenant_id)
 

@@ -51,6 +51,14 @@ function capitalize(word: string): string {
 export interface DerivePlansHealthOptions {
   noun?: PlansHealthNoun;
   incomplete?: boolean;
+  /**
+   * Where on the CALLING page the operator can read how much of the list was
+   * read — appended to the `list INCOMPLETE` badge's title as "see …". Only a
+   * caller that has such a place passes it: `/work-units` has its fetch-window
+   * panel, `/spawn` has none, and a pointer baked into this shared deriver
+   * sent `/spawn`'s operator to a panel that does not exist on that page.
+   */
+  incompleteDetailsAt?: string;
 }
 
 export interface PlansHealth {
@@ -179,6 +187,9 @@ export const SHEPHERD_FILTERS: { value: ShepherdFilter; label: string }[] = [
  *   {@link PlansHealthNoun}. Defaults to plan/plans.
  * @param opts.incomplete these rows are known to be less than the whole
  *   corpus. Defaults to false.
+ * @param opts.incompleteDetailsAt where the calling page says how much was
+ *   read, for the `list INCOMPLETE` badge's title. Omitted, the title points
+ *   nowhere rather than at a place the caller may not have.
  *
  * The two trailing arguments are an options object rather than positions
  * because they arrived from two independent changes that each claimed the
@@ -332,8 +343,11 @@ export function derivePlansHealth(
               key: "incomplete",
               label: <>list INCOMPLETE</>,
               tone: "attention" as const,
-              title:
-                "these counts are derived from the rows fetched so far, which are not the whole corpus — see the fetch-window panel",
+              title: `these counts are derived from the rows that were read, which are not the whole corpus${
+                opts.incompleteDetailsAt
+                  ? ` — see ${opts.incompleteDetailsAt}`
+                  : ""
+              }`,
             },
           ]
         : []),
