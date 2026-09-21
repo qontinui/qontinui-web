@@ -173,6 +173,11 @@ export function renameErrorMessage(err: unknown): string {
     case "tenant_mismatch":
       return "The rename was checked against a different project than this one. Reload the page and try again.";
     case "not_admin_in_target_tenant":
+    // What coord's rename route actually answers when the admin re-check
+    // inside the transaction fails. It reaches the same sentence as the 403
+    // fallback below, but naming it here keeps the mapping readable against
+    // coord's vocabulary rather than relying on a status-code catch.
+    case "admin_required":
       return "Only an administrator of this project can rename it.";
     case "tenant_not_found":
       return "This project no longer exists.";
