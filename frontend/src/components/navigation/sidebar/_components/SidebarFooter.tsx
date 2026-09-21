@@ -41,7 +41,7 @@ export function SidebarFooter({
         onDocs={onDocs}
       />
       <div
-        data-sidebar-footer-status-row=""
+        data-ui-bridge-id="shell.sidebar-footer-status"
         className={cn(
           "flex gap-1",
           isCollapsed ? "flex-col items-center" : "items-center"
