@@ -994,7 +994,9 @@ async def test_expired_unanswered_attach_is_reaped_on_the_next_unrelated_frame(
     assert redis.empty()
     assert pubsub.close_count == 1
     manager.relay.send_command_to_runner.assert_awaited_with(
-        TARGET_DEVICE, {"type": "terminal_unsubscribe", "runner_id": TARGET_DEVICE}
+        TARGET_DEVICE,
+        {"type": "terminal_unsubscribe", "runner_id": TARGET_DEVICE},
+        require_local_connection=False,
     )
     # The target is told to unbind the grant; the source learns the attach it
     # is still waiting on is over, under the attach's own request id.
@@ -1119,7 +1121,9 @@ async def test_terminal_exit_routes_then_drops_the_attachment(
     # Last attachment to that target went away, so its listener did too.
     assert session.listeners == {}
     manager.relay.send_command_to_runner.assert_awaited_with(
-        TARGET_DEVICE, {"type": "terminal_unsubscribe", "runner_id": TARGET_DEVICE}
+        TARGET_DEVICE,
+        {"type": "terminal_unsubscribe", "runner_id": TARGET_DEVICE},
+        require_local_connection=False,
     )
     await relay.release_source(ws)
 
@@ -1601,7 +1605,9 @@ async def test_release_source_detaches_and_reclaims_everything(
     assert pubsub.closed is True
     assert pubsub.close_count == 1
     manager.relay.send_command_to_runner.assert_awaited_with(
-        TARGET_DEVICE, {"type": "terminal_unsubscribe", "runner_id": TARGET_DEVICE}
+        TARGET_DEVICE,
+        {"type": "terminal_unsubscribe", "runner_id": TARGET_DEVICE},
+        require_local_connection=False,
     )
     # A stranger socket is a no-op.
     await relay.release_source(_FakeWS())
@@ -1681,7 +1687,9 @@ async def test_dying_listener_closes_its_pubsub_and_unregisters(
     assert detach["type"] == "terminal_detach"
     assert detach["remote"]["grant_jti"] == claims["jti"]
     manager.relay.send_command_to_runner.assert_awaited_once_with(
-        TARGET_DEVICE, {"type": "terminal_unsubscribe", "runner_id": TARGET_DEVICE}
+        TARGET_DEVICE,
+        {"type": "terminal_unsubscribe", "runner_id": TARGET_DEVICE},
+        require_local_connection=False,
     )
     # A later attach to the same target gets a fresh listener.
     await _attached(relay, ws, manager, terminal_id="t2", request_id="r2")
@@ -1711,7 +1719,9 @@ async def test_listener_stopped_from_inside_itself_closes_once(
     assert session.listeners == {}
     assert pubsub.close_count == 1
     manager.relay.send_command_to_runner.assert_awaited_with(
-        TARGET_DEVICE, {"type": "terminal_unsubscribe", "runner_id": TARGET_DEVICE}
+        TARGET_DEVICE,
+        {"type": "terminal_unsubscribe", "runner_id": TARGET_DEVICE},
+        require_local_connection=False,
     )
     await relay.release_source(ws)
 
@@ -1889,9 +1899,165 @@ async def test_runner_disconnected_settles_the_pending_attach_and_unsubscribes(
     assert redis.empty()
     # The ratchet: one subscribe in, one unsubscribe out.
     manager.relay.send_command_to_runner.assert_awaited_once_with(
-        TARGET_DEVICE, {"type": "terminal_unsubscribe", "runner_id": TARGET_DEVICE}
+        TARGET_DEVICE,
+        {"type": "terminal_unsubscribe", "runner_id": TARGET_DEVICE},
+        require_local_connection=False,
     )
     await relay.release_source(ws)
+
+
+async def test_unsubscribe_is_published_cross_replica_on_every_teardown_path(
+    relay: RemoteTerminalRelay, redis: _FakeRedis
+) -> None:
+    """The ``terminal_unsubscribe`` never rides the in-process runner gate.
+
+    The runner's ``terminal_subscriber_count`` is process-lifetime and
+    forwarding latches on ``count > 0``, so an unsubscribe dropped because the
+    target's socket moved to another replica (or was momentarily deregistered
+    here) leaves that device's terminal firehose on for good. Both teardown
+    paths — ``_stop_listener`` via the last detach, and ``_listener_lost`` via
+    a self-terminated listener — must publish with
+    ``require_local_connection=False`` so Redis carries it to whichever replica
+    holds the socket. The subscribe stays locally gated, by decision: the
+    attach already fails closed when the target is not local.
+    """
+    # Path 1: the last attachment to the target is dropped -> _stop_listener.
+    ws = _FakeWS()
+    manager = _manager()
+    claims = await _attached(relay, ws, manager)
+    manager.relay.send_command_to_runner.assert_awaited_once_with(
+        TARGET_DEVICE, {"type": "terminal_subscribe", "runner_id": TARGET_DEVICE}
+    )
+    manager.relay.send_command_to_runner.reset_mock()
+    await _send(
+        relay,
+        ws,
+        manager,
+        {
+            "type": "remote_terminal_detach",
+            "grant_jti": claims["jti"],
+            "terminal_id": "t1",
+        },
+    )
+    await _settle(lambda: not relay._background)
+    assert ws.of_type("remote_terminal_error") == [], ws.sent
+    assert relay._sessions[id(ws)].listeners == {}
+    assert relay._sessions[id(ws)].subscribed == set()
+    manager.relay.send_command_to_runner.assert_awaited_once_with(
+        TARGET_DEVICE,
+        {"type": "terminal_unsubscribe", "runner_id": TARGET_DEVICE},
+        require_local_connection=False,
+    )
+    await relay.release_source(ws)
+
+    # Path 2: the listener dies on its own -> _listener_lost.
+    ws2 = _FakeWS()
+    manager2 = _manager()
+    await _attached(relay, ws2, manager2)
+    session = relay._sessions[id(ws2)]
+    pubsub, task = session.listeners[TARGET_DEVICE]
+    manager2.relay.send_command_to_runner.reset_mock()
+    pubsub.push(RuntimeError("pubsub connection lost"))
+    await _settle(lambda: task.done() and not relay._background)
+    assert session.listeners == {}
+    assert session.subscribed == set()
+    manager2.relay.send_command_to_runner.assert_awaited_once_with(
+        TARGET_DEVICE,
+        {"type": "terminal_unsubscribe", "runner_id": TARGET_DEVICE},
+        require_local_connection=False,
+    )
+    await relay.release_source(ws2)
+
+
+async def test_no_unsubscribe_without_a_published_subscribe(
+    relay: RemoteTerminalRelay, redis: _FakeRedis
+) -> None:
+    """One unsubscribe per PUBLISHED subscribe — never one for a dropped one.
+
+    The subscribe rides the local gate and the unsubscribe does not, and the
+    runner's counter is shared by every subscriber. So a socket whose
+    subscribe was dropped (target not local: ``send_command_to_runner``
+    returned ``False``) must send NO unsubscribe on teardown — published
+    cross-replica, that frame would decrement a count a PEER subscriber on
+    the replica holding the socket is relying on, and switch that peer's
+    output off. Drives two of the teardown routes: the attach refused for a
+    non-local target (``_drop_attachment`` -> ``_stop_listener``), and
+    ``release_source`` on a socket that was attached over a dropped
+    subscribe. Every other route (``_evict``, ``_reap_expired``,
+    ``runner_disconnected``, ``_listener_lost``) reaches the same
+    ``_unsubscribe_runner`` gate.
+    """
+    # Route 1: the subscribe is dropped and the attach is refused.
+    ws = _FakeWS()
+    manager = _manager(target_connected=False)
+    manager.relay.send_command_to_runner.return_value = False
+    await _attach(relay, ws, manager, _claims())
+    await _settle(lambda: not relay._background)
+    assert [f["code"] for f in ws.of_type("error")] == ["target_not_connected"]
+    session = relay._sessions[id(ws)]
+    assert session.grants == {} and session.listeners == {}
+    assert session.subscribed == set()
+    assert [
+        c.args[1]["type"] for c in manager.relay.send_command_to_runner.await_args_list
+    ] == ["terminal_subscribe"]
+    await relay.release_source(ws)
+    assert [
+        c.args[1]["type"] for c in manager.relay.send_command_to_runner.await_args_list
+    ] == ["terminal_subscribe"]
+
+    # Route 2: the subscribe is dropped but the attach goes through (the two
+    # gates differ: a registered-but-dead socket can pass one and not the
+    # other, and a publish failure also reads back False). Release must still
+    # send nothing.
+    ws2 = _FakeWS()
+    manager2 = _manager()
+    manager2.relay.send_command_to_runner.return_value = False
+    await _attached(relay, ws2, manager2)
+    assert relay._sessions[id(ws2)].subscribed == set()
+    await relay.release_source(ws2)
+    await _settle(lambda: not relay._background)
+    assert [
+        c.args[1]["type"] for c in manager2.relay.send_command_to_runner.await_args_list
+    ] == ["terminal_subscribe"]
+
+
+async def test_subscribe_landing_after_its_listener_is_gone_is_matched_at_once(
+    relay: RemoteTerminalRelay, redis: _FakeRedis
+) -> None:
+    """A listener torn down during the subscribe's own await orphans nothing.
+
+    ``_ensure_listener`` registers the listener, then awaits the publish. If
+    the listener is stopped during that await, its teardown's unsubscribe
+    finds no record and sends nothing — and had the publish then merely
+    recorded the subscribe, nothing later would ever match that increment.
+    The publish must notice the listener is gone and send the matching
+    unsubscribe immediately.
+    """
+    ws = _FakeWS()
+    manager = _manager()
+    sent: list[str] = []
+
+    async def _publish(target: str, cmd: dict[str, Any], **_: Any) -> bool:
+        sent.append(cmd["type"])
+        if cmd["type"] == "terminal_subscribe":
+            # Tear the listener down while the subscribe is in flight.
+            session = relay._sessions[id(ws)]
+            await relay._stop_listener(session, target)
+        return True
+
+    manager.relay.send_command_to_runner = AsyncMock(side_effect=_publish)
+    await _attach(relay, ws, manager, _claims())
+    await _settle(lambda: not relay._background)
+
+    session = relay._sessions[id(ws)]
+    assert session.listeners == {}
+    assert session.subscribed == set()
+    assert sent == ["terminal_subscribe", "terminal_unsubscribe"]
+    assert manager.relay.send_command_to_runner.await_args_list[-1].kwargs == {
+        "require_local_connection": False
+    }
+    await relay.release_source(ws)
+    assert sent == ["terminal_subscribe", "terminal_unsubscribe"]
 
 
 async def test_runner_disconnected_for_a_target_we_hold_nothing_on_is_not_ours(

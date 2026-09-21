@@ -702,6 +702,14 @@ class _SourceSession:
     # rather than open (keep it forever, the leak being fixed).
     pending_buffer_deadline: dict[str, float] = field(default_factory=dict)
     listeners: dict[str, tuple[Any, asyncio.Task[None]]] = field(default_factory=dict)
+    # Targets whose ``terminal_subscribe`` this socket actually PUBLISHED, so
+    # the matching ``terminal_unsubscribe`` is sent for exactly those. The
+    # subscribe is locally gated and the unsubscribe is not (see
+    # ``_unsubscribe_runner``), so without this record an attach refused for
+    # a non-local target would decrement a count it never incremented —
+    # switching off a peer subscriber's output on the replica that holds the
+    # socket.
+    subscribed: set[str] = field(default_factory=set)
     send_lock: asyncio.Lock = field(default_factory=asyncio.Lock)
 
     def sweep_pending_buffer(self, now: float) -> list[str]:
@@ -1736,10 +1744,21 @@ class RemoteTerminalRelay:
         # subscriber, and keeps a counter, so one subscribe per listener is
         # matched by one unsubscribe in ``_stop_listener``.
         try:
-            await session.manager.relay.send_command_to_runner(
+            if await session.manager.relay.send_command_to_runner(
                 target_device_id,
                 {"type": "terminal_subscribe", "runner_id": target_device_id},
-            )
+            ):
+                if target_device_id in session.listeners:
+                    session.subscribed.add(target_device_id)
+                else:
+                    # The listener was torn down while the subscribe was in
+                    # flight (a ``runner_disconnected`` or a dead pubsub
+                    # reached ``_stop_listener`` / ``_listener_lost`` before
+                    # the record existed, so their unsubscribe was a no-op).
+                    # Nothing will tear this record down later — match the
+                    # increment now instead of orphaning it.
+                    session.subscribed.add(target_device_id)
+                    await self._unsubscribe_runner(session, target_device_id)
         except Exception as exc:  # noqa: BLE001 - the attach itself still stands
             logger.warning(
                 "remote_terminal_subscribe_failed",
@@ -1785,17 +1804,7 @@ class RemoteTerminalRelay:
         # connection desynchronise its reply stream.
         await asyncio.gather(task, return_exceptions=True)
         await self._close_pubsub(pubsub)
-        try:
-            await session.manager.relay.send_command_to_runner(
-                target_device_id,
-                {"type": "terminal_unsubscribe", "runner_id": target_device_id},
-            )
-        except Exception as exc:  # noqa: BLE001 - the runner may already be gone
-            logger.debug(
-                "remote_terminal_unsubscribe_failed",
-                target_device_id=target_device_id,
-                error=str(exc),
-            )
+        await self._unsubscribe_runner(session, target_device_id)
 
     async def _close_pubsub(self, pubsub: Any) -> None:
         try:
@@ -1873,10 +1882,53 @@ class RemoteTerminalRelay:
                 message="return route to the target was lost",
             )
         await self._close_pubsub(pubsub)
+        await self._unsubscribe_runner(session, target_device_id)
+
+    async def _unsubscribe_runner(
+        self, session: _SourceSession, target_device_id: str
+    ) -> None:
+        """Send the ``terminal_unsubscribe`` matching ``_ensure_listener``.
+
+        Sent only when ``_ensure_listener`` actually published this socket's
+        subscribe (``session.subscribed``): the runner's counter is shared by
+        every subscriber, so an unsubscribe with no matching subscribe would
+        take down a PEER's subscription rather than being a no-op. Saturation
+        at zero only protects the count when nobody else is subscribed.
+
+        When it is sent, it is published UNCONDITIONALLY — never gated on the
+        target's socket being registered in *this* process. The runner's
+        ``terminal_subscriber_count``
+        is a process-lifetime counter it never resets, and terminal-output
+        forwarding is latched on ``count > 0``, so a *dropped* unsubscribe is
+        not a benign miss: it leaves the target's device-wide terminal
+        firehose on for the rest of that runner's process life. The default
+        in-process gate dropped exactly the two cases that matter — the
+        target reconnecting to a *different* backend replica between attach
+        and detach, and a momentary local deregistration at detach time — so
+        the counter never came back down.
+
+        ``require_local_connection=False`` hands the frame to Redis pub/sub on
+        ``runner:commands:{rid}``, the channel the replica holding the socket
+        is subscribed to, so the unsubscribe reaches the runner wherever it is
+        terminated. Publishing to an absent runner is harmless: nothing is
+        subscribed to the channel, and the runner's decrement saturates at
+        zero.
+
+        The matching ``terminal_subscribe`` stays on the local gate on
+        purpose, mirroring the mobile watcher path: a dropped subscribe is
+        transient and the attach itself already fails closed when the target
+        is not local (``_forward`` -> ``send_terminal`` gates on the socket
+        being live here, with no opt-out), whereas a dropped unsubscribe is
+        permanent.
+        """
+        if target_device_id not in session.subscribed:
+            return
+        session.subscribed.discard(target_device_id)
         try:
             await session.manager.relay.send_command_to_runner(
                 target_device_id,
                 {"type": "terminal_unsubscribe", "runner_id": target_device_id},
+                require_local_connection=False,
             )
         except Exception as exc:  # noqa: BLE001 - the runner may already be gone
             logger.debug(

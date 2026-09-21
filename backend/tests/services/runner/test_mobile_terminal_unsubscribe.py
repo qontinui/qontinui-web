@@ -20,7 +20,10 @@ holds the socket. These tests assert, in both directions:
 - the unsubscribe IS published when the runner socket is not local;
 - behaviour is unchanged when the socket IS local (still exactly one publish,
   same channel, same payload);
-- the *subscribe* path is untouched — still gated locally, by decision.
+- the *subscribe* path is untouched — still gated locally, by decision;
+- one unsubscribe per PUBLISHED subscribe: a viewer whose subscribe was
+  skipped never sends an unsubscribe, because the runner's counter is shared
+  and an unmatched decrement would take a PEER viewer's output down.
 """
 
 from __future__ import annotations
@@ -68,6 +71,13 @@ def _mobile_ws() -> MagicMock:
     return ws
 
 
+def _register_runner(manager: RunnerWebSocketManager, runner_id: str) -> None:
+    runner_ws = MagicMock()
+    runner_ws.send_json = AsyncMock()
+    manager.registry.register_runner(runner_id, runner_ws)
+    assert manager.registry.is_runner_connected(runner_id) is True
+
+
 def _published(redis: MagicMock) -> list[tuple[str, dict[str, Any]]]:
     """Decode every ``redis.publish`` call into ``(channel, payload)``."""
     out: list[tuple[str, dict[str, Any]]] = []
@@ -89,7 +99,16 @@ async def test_unsubscribe_is_published_when_runner_socket_is_not_local() -> Non
     runner_id = str(uuid4())
     ws = _mobile_ws()
 
-    # Precondition: the runner is NOT registered in this process.
+    # The viewer subscribed while the runner WAS local, so the runner's
+    # counter went up on this viewer's behalf...
+    _register_runner(manager, runner_id)
+    assert await manager.connect_mobile_terminal(runner_id, ws, uuid4()) is True
+    redis.publish.reset_mock()
+
+    # ...and by the time it leaves, the runner socket is no longer registered
+    # in this process (it reconnected to another replica, or was momentarily
+    # deregistered here).
+    manager.registry.unregister_runner(runner_id)
     assert manager.registry.is_runner_connected(runner_id) is False
 
     await manager.disconnect_mobile_terminal(runner_id, ws)
@@ -111,21 +130,28 @@ async def test_unsubscribe_unchanged_when_runner_socket_is_local() -> None:
     """
     manager, redis = _make_manager()
     runner_id = str(uuid4())
-    runner_ws = MagicMock()
-    runner_ws.send_json = AsyncMock()
-    manager.registry.register_runner(runner_id, runner_ws)
-    assert manager.registry.is_runner_connected(runner_id) is True
+    _register_runner(manager, runner_id)
 
     ws = _mobile_ws()
+    assert await manager.connect_mobile_terminal(runner_id, ws, uuid4()) is True
     await manager.disconnect_mobile_terminal(runner_id, ws)
 
     published = _published(redis)
     assert published == [
         (
             f"runner:commands:{runner_id}",
+            {"type": "terminal_subscribe", "runner_id": runner_id},
+        ),
+        (
+            f"runner:commands:{runner_id}",
             {"type": "terminal_unsubscribe", "runner_id": runner_id},
-        )
+        ),
     ]
+
+    # A second disconnect of the same socket is a no-op: the one published
+    # subscribe has already been matched.
+    await manager.disconnect_mobile_terminal(runner_id, ws)
+    assert len(_published(redis)) == 2
 
 
 async def test_subscribe_still_gated_on_local_connection() -> None:
@@ -144,16 +170,52 @@ async def test_subscribe_still_gated_on_local_connection() -> None:
     assert connected is False
     assert _published(redis) == []
 
+    # The load-bearing half of one-in/one-out: this viewer never incremented
+    # the runner's counter, so its disconnect must NOT publish an unsubscribe
+    # — cross-replica, that frame would reach the runner and decrement a
+    # count some OTHER viewer (on the replica holding the socket) is relying
+    # on, switching that viewer's output off.
     await manager.disconnect_mobile_terminal(runner_id, ws)
+    assert _published(redis) == []
+
+
+async def test_unsubscribe_is_per_socket_not_per_runner() -> None:
+    """Two viewers on one runner: each disconnect matches its own subscribe.
+
+    The record is keyed by the viewer's socket, so a viewer whose subscribe
+    was skipped leaving does not spend the subscribe a peer viewer published.
+    """
+    manager, redis = _make_manager()
+    runner_id = str(uuid4())
+
+    # Viewer A connects while the runner is elsewhere: no subscribe.
+    ws_a = _mobile_ws()
+    assert await manager.connect_mobile_terminal(runner_id, ws_a, uuid4()) is False
+    assert _published(redis) == []
+
+    # The runner lands here; viewer B connects and subscribes.
+    _register_runner(manager, runner_id)
+    ws_b = _mobile_ws()
+    assert await manager.connect_mobile_terminal(runner_id, ws_b, uuid4()) is True
+    assert [p[1]["type"] for p in _published(redis)] == ["terminal_subscribe"]
+
+    # A leaves: nothing goes out, B's subscription stands.
+    await manager.disconnect_mobile_terminal(runner_id, ws_a)
+    assert [p[1]["type"] for p in _published(redis)] == ["terminal_subscribe"]
+
+    # B leaves: exactly its own unsubscribe.
+    await manager.disconnect_mobile_terminal(runner_id, ws_b)
+    assert [p[1]["type"] for p in _published(redis)] == [
+        "terminal_subscribe",
+        "terminal_unsubscribe",
+    ]
 
 
 async def test_subscribe_published_when_runner_socket_is_local() -> None:
     """...and still fires normally when the socket IS local."""
     manager, redis = _make_manager()
     runner_id = str(uuid4())
-    runner_ws = MagicMock()
-    runner_ws.send_json = AsyncMock()
-    manager.registry.register_runner(runner_id, runner_ws)
+    _register_runner(manager, runner_id)
 
     ws = _mobile_ws()
     connected = await manager.connect_mobile_terminal(runner_id, ws, uuid4())

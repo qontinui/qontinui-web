@@ -85,6 +85,14 @@ class RunnerWebSocketManager:
         # runner-direction channels onto one pooled Redis connection (see
         # ``register``). runner_id -> (pubsub, task).
         self._inbound_listeners: dict[str, tuple[Any, asyncio.Task]] = {}
+        # Mobile terminal sockets whose ``terminal_subscribe`` was actually
+        # PUBLISHED to the runner, so ``disconnect_mobile_terminal`` sends the
+        # matching ``terminal_unsubscribe`` for exactly those. The subscribe is
+        # locally gated and the unsubscribe is not; without this record a
+        # viewer that connected while the runner was elsewhere would, on
+        # leaving, decrement a count it never incremented — switching off a
+        # peer viewer's output on the replica that holds the socket.
+        self._terminal_subscribed: set[WebSocket] = set()
 
         logger.info("runner_websocket_manager_initialized")
 
@@ -457,9 +465,10 @@ class RunnerWebSocketManager:
             # per-message error on every keystroke. Making cross-replica
             # terminals actually work is a coherent separate change (subscribe
             # + send + response fan-in), not a gate flip here.
-            await self._relay.send_command_to_runner(
+            if await self._relay.send_command_to_runner(
                 rid, {"type": "terminal_subscribe", "runner_id": rid}
-            )
+            ):
+                self._terminal_subscribed.add(websocket)
         return runner_connected
 
     async def disconnect_mobile_terminal(
@@ -467,6 +476,15 @@ class RunnerWebSocketManager:
     ) -> None:
         rid = _rid(runner_id)
         await self._terminal_relay.stop_mobile_listener(rid, websocket)
+        # One unsubscribe per PUBLISHED subscribe. A viewer whose subscribe was
+        # skipped (runner not local at connect time) never incremented the
+        # runner's counter, and that counter is shared with every other
+        # viewer — so an unmatched unsubscribe would not be a no-op, it would
+        # take a peer's subscription down. Saturation at zero only protects
+        # the count when nobody else is subscribed.
+        if websocket not in self._terminal_subscribed:
+            return
+        self._terminal_subscribed.discard(websocket)
         # The unsubscribe is published UNCONDITIONALLY — never gated on the
         # runner socket being registered in *this* process.
         #
@@ -485,8 +503,8 @@ class RunnerWebSocketManager:
         # the replica that actually holds the socket is subscribed to (see
         # ``RunnerWebSocketManager.register``'s shared inbound listener), so
         # the unsubscribe reaches the runner wherever it is terminated.
-        # Publishing to an absent runner is harmless: nothing is subscribed,
-        # and an unsubscribe is idempotent on the runner side anyway.
+        # Publishing to an absent runner is harmless: nothing is subscribed to
+        # the channel, and the runner's decrement saturates at zero.
         try:
             await self._relay.send_command_to_runner(
                 rid,
