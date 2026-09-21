@@ -333,6 +333,16 @@ class TestDiffEnvelopes:
         # runner's ``paths.plans_dir``, so it stays a real apply line.
         assert sp.is_observation_only_key("harness", "plans_dir_relative") is False
 
+        # ``link_`` and ``installer_`` are PREFIXES on purpose, not an
+        # enumeration: the Phase 1 bootstrap composes the installers, so a link
+        # or installer key this table has never seen must be classified the day
+        # the runner ships it rather than the day someone remembers to come
+        # back here. That is the property that let
+        # ``python_installed_interpreter`` land correctly while the oracle's
+        # hand-written twin silently missed it.
+        assert sp.is_observation_only_key("harness", "link_something_new") is True
+        assert sp.is_observation_only_key("harness", "installer_something_new") is True
+
         # Keyed by SECTION like every other table in that module: these do not
         # leak into other sections, and ``python_installed_`` does not leak here.
         assert sp.is_observation_only_key("versions", "invariant_class") is False
