@@ -154,7 +154,7 @@ Idempotency / authorship posture
   design, as in the template.
 
 Revision ID: coordnotif_02_prune_non_agent_kinds
-Revises: agent_questions_alert_episode_01
+Revises: coord_wu_list_order_02
 Create Date: 2026-09-19
 
 """
@@ -168,7 +168,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "coordnotif_02_prune_non_agent_kinds"
-down_revision: str | Sequence[str] | None = "agent_questions_alert_episode_01"
+down_revision: str | Sequence[str] | None = "coord_wu_list_order_02"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

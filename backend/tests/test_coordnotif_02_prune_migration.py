@@ -72,7 +72,7 @@ from tests._alembic_harness import (
 
 # Pinned rather than "head" so a later revision cannot change what this walks.
 _REVISION_ID = "coordnotif_02_prune_non_agent_kinds"
-_PARENT_REVISION_ID = "agent_questions_alert_episode_01"
+_PARENT_REVISION_ID = "coord_wu_list_order_02"
 
 # More alert_paged rows than one batch. The test asserts this against the
 # migration module's own BATCH_ROWS, so a later batch-size bump cannot quietly
