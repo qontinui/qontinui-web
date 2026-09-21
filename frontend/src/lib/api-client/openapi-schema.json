@@ -91422,7 +91422,7 @@
     },
     "/api/v1/operations/plans/overview": {
       "get": {
-        "description": "Return coord's CORPUS-wide work-unit status tally (tenant-scoped).\n\nProxies coord ``GET /coord/work-units/overview``: ``{\"row_count\": N,\n\"distinct_status_count\": N, \"facets\": {\"by_status_class\": {...},\n\"by_status\": {...}, \"by_status_truncated\": bool, \"by_status_omitted\": N},\n\"corpus_complete\": bool}``. It takes no filters by coord's design (a\nfiltered overview would move its denominator), so ``row_count`` counts\nEVERY unit \u2014 including the ``shepherd-*`` rows the Plans list excludes.\nThe console states that difference rather than comparing unlike totals.",
+        "description": "Return coord's CORPUS-wide work-unit status tally (tenant-scoped).\n\nProxies coord ``GET /coord/work-units/overview``: ``{\"row_count\": N,\n\"distinct_status_count\": N, \"facets\": {\"by_status_class\": {...},\n\"by_status\": {...}, \"by_status_truncated\": bool, \"by_status_omitted\": N},\n\"corpus_complete\": bool}``. It takes no filters by coord's design (a\nfiltered overview would move its denominator), so ``row_count`` counts\nEVERY unit \u2014 including the ``shepherd-*`` rows. The work-units list\n(``/admin/coord/work-units``) includes those rows by default and excludes\nthem only when the operator asks (``exclude_slug_prefix``); under that\nexclusion the console states the difference rather than comparing unlike\ntotals.",
         "operationId": "api_v1_operations_plans_overview_get",
         "responses": {
           "200": {

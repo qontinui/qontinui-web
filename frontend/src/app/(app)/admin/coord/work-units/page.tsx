@@ -67,7 +67,7 @@
  * the explicit "recently touched" view.
  *
  * Walking costs several reads where a slice cost one, so the POLL CADENCE is
- * per server order (`POLL_INTERVAL_MS`) — 60 s for a walked view, 10 s for the
+ * per server order (`POLL_INTERVAL_MS`) — 120 s for a walked view, 10 s for the
  * single-page one — and a read stamp under the controls states when the list on
  * screen was read, in EVERY arm where a list is shown (it sits outside the
  * collapsible fetch-window panel, which renders only when there is a caveat).
@@ -179,6 +179,7 @@ import {
   serverOrderFor,
   timeSpan,
   walkWorkUnits,
+  type OverviewTotal,
   type ServerOrder,
   type WalkOutcome,
   type WorkUnitOverview,
@@ -196,14 +197,52 @@ const API = "/api/v1/operations";
 /** What one row IS here — see `PlansHealthNoun` in `plansHealth.tsx`. */
 const WORK_UNIT_NOUN = { one: "work unit", many: "work units" };
 
+/** "1 work unit" / "N work units" — the overview sentences take any count. */
+function workUnits(n: number): string {
+  return `${n} work unit${n === 1 ? "" : "s"}`;
+}
+
+/** Which of coord's overview counts a status filter is compared against. */
+function overviewScope(status: string): string {
+  return status === "any" ? "in total" : `with status=${status}`;
+}
+
+/**
+ * The gap between coord's overview total and the rows read, stated as a
+ * direction and a size — never a signed number ("a difference of -3"), and
+ * never with a cause attached: the two are separate reads, and a gap of any
+ * size is reported rather than explained away.
+ */
+function describeGap(overviewTotal: number, read: number): string {
+  const gap = overviewTotal - read;
+  if (gap === 0) return "none";
+  return gap > 0
+    ? `${gap} more than this read`
+    : `${-gap} fewer than this read`;
+}
+
+/**
+ * Why there is no overview total to compare against — the two causes kept
+ * apart (`overviewTotalFor`): an overview that never answered, and one that
+ * answered without breaking out this question.
+ */
+function overviewMissSentence(
+  miss: Exclude<OverviewTotal, { kind: "total" }>,
+  status: string
+): string {
+  if (miss.kind === "unread") return "coord's overview could not be read";
+  return status === "any"
+    ? "coord's overview was read but carries no total"
+    : `coord's overview was read but does not break out status=${status}`;
+}
+
 /**
  * The poll cadence, per SERVER ORDER — because the order is what decides
  * whether one tick costs one read or a whole walk.
  *
  * Before the corpus walk this page made ONE `limit=500` read per tick. The
  * walk makes ceil(N/500) SEQUENTIAL list reads instead, each a 500-row coord
- * read with a LATERAL sub-select per row — 4 pages over the ~1.8k-row
- * non-shepherd corpus measured 2026-09-19 — plus `/plans/overview` once.
+ * read with a LATERAL sub-select per row, plus `/plans/overview` once.
  *
  * **And every page now pays a SECOND coord read of its own.** The body signals
  * (plan `2026-09-02-bodyless-work-units-are-listed-and-spawnable-as-plans`)
@@ -212,30 +251,50 @@ const WORK_UNIT_NOUN = { one: "work unit", many: "work units" };
  * `resolve_body_knowledge` call against qontinui-web's own schema
  * (`operations.py`) that issues THREE queries of its own, not one —
  * `resolve_personal_organization`, `crud.count_artifacts` and
- * `crud.work_unit_slugs_with_artifacts` (`plan_body_signal.py`). So that
- * 4-page walk is ~9 coord round trips (4 list + 4 dial + 1 overview) and ~12
- * local DB queries — not the 5 reads this docstring counted before those
- * signals landed.
+ * `crud.work_unit_slugs_with_artifacts` (`plan_body_signal.py`). So a P-page
+ * walk costs 2P + 1 coord round trips (P list + P dial + 1 overview) and 3P
+ * local DB queries.
  *
- * On a 10 s tick that is ~54 coord reads a minute per tab, and `pollInFlight`
- * is not a bound on it: it stops ticks STACKING, so on a link where one walk
- * takes longer than the interval the steady state is back-to-back walks —
- * continuous polling, which is what this table exists to prevent.
+ * **The rule this cadence is held to:** the DEFAULT view's steady-state coord
+ * read rate may not exceed what the single 500-row slice this plan REPLACED
+ * cost on the same backend — one list read plus its dial read per 10 s tick,
+ * ~12 coord reads a minute. The walk buys completeness; it may not pay for it
+ * by multiplying the read rate.
+ *
+ * The corpus, as measured: the `shepherd-*` merge escalations were 1,264 rows
+ * on 2026-09-20, 39% of `coord.work_units` (`plansHealth.tsx`) — so ~3.2k rows
+ * in all, of which ~2.0k are not shepherd rows (~1.8k when first measured on
+ * 2026-09-19). Under each setting of the shepherd control:
+ *
+ * - **include (the DEFAULT, and the setting that sets the bound)** — 7 pages:
+ *   7 list + 7 dial + 1 overview = 15 coord reads and ~21 local DB queries per
+ *   walk. At 60 s that was 15 coord reads a minute, ABOVE the ~12 baseline;
+ *   an earlier revision of this comment priced the walk at 4 pages, which was
+ *   only ever true of the non-shepherd set this route no longer defaults to.
+ *   At 120 s it is 7.5 coord reads (~10.5 DB queries) a minute.
+ * - **exclude** — 4 pages: 4 + 4 + 1 = 9 coord reads and ~12 DB queries per
+ *   walk; 4.5 coord reads a minute at 120 s.
+ *
+ * 120 s holds the rule with room for the corpus to grow: the default view stays
+ * at or under ~12 coord reads a minute up to 11 pages (2·11 + 1 = 23 reads per
+ * two minutes), i.e. ~5.5k rows. Past that the arithmetic has to be redone.
+ *
+ * On a 10 s tick the default walk would be ~90 coord reads a minute per tab,
+ * and `pollInFlight` is not a bound on it: it stops ticks STACKING, so on a
+ * link where one walk takes longer than the interval the steady state is
+ * back-to-back walks — continuous polling, which is what this table exists to
+ * prevent.
  *
  * - `updated_desc` — one page by design, so one list read plus its dial read.
- *   Unchanged at 10 s: ~12 coord reads a minute.
- * - `authored_desc` — a walk. 60 s puts it at ~9 coord reads a minute, at or
- *   under what the single 500-row slice this plan REPLACED costs on the same
- *   backend (~12): the walk buys completeness, and it may not pay for it by
- *   multiplying the read rate. The conclusion is unchanged by the arithmetic
- *   above — it was conservative before and is still on the right side of it.
+ *   Unchanged at 10 s: ~12 coord reads a minute — the baseline itself.
+ * - `authored_desc` — a walk, at 120 s, per the arithmetic above.
  *
  * Freshness is not lost, only un-automated: `<RefreshButton>` is unthrottled,
  * so a current answer is one press away, and its `title` names the cadence
  * actually in force rather than a constant baked into the copy.
  *
  * Two deliberate imprecisions. A coord that PREDATES the walk answers one page
- * under `authored_desc` and still polls at 60 s — which arm answered is only
+ * under `authored_desc` and still polls at 120 s — which arm answered is only
  * knowable after a read, and erring slow costs freshness, not correctness.
  * And the interval is derived from `order` (a property of the QUESTION) rather
  * than from the last outcome, which would put `data` in the polling effect's
@@ -244,7 +303,7 @@ const WORK_UNIT_NOUN = { one: "work unit", many: "work units" };
  */
 const POLL_INTERVAL_MS: Record<ServerOrder, number> = {
   updated_desc: 10_000,
-  authored_desc: 60_000,
+  authored_desc: 120_000,
 };
 
 // Work-unit lifecycle statuses (coord stores status as an opaque string;
@@ -709,6 +768,7 @@ export default function CoordWorkUnitsListPage() {
       derivePlansHealth(plans, loaded, readFailed, {
         noun: WORK_UNIT_NOUN,
         incomplete: listIncomplete,
+        incompleteDetailsAt: "the fetch-window panel",
       }),
     [plans, loaded, readFailed, listIncomplete]
   );
@@ -943,23 +1003,25 @@ export default function CoordWorkUnitsListPage() {
                   shepherd control's to say: the overview takes no filters, so
                   it counts shepherd rows always, and the walk counts them only
                   under the default "include". */}
-              {coordTotal
+              {coordTotal.kind === "total"
                 ? coordTotal.includesExcluded
-                  ? `coord's overview counts ${coordTotal.total} work units ${
-                      status === "any" ? "in total" : `with status=${status}`
-                    }, INCLUDING its ${SHEPHERD_SLUG_PREFIX}* records, which this read excluded — so the two totals are measured over different sets, and the difference (${
-                      coordTotal.total - plans.length
-                    }) is not by itself a count of missing work units.`
+                  ? `coord's overview counts ${workUnits(coordTotal.total)} ${overviewScope(
+                      status
+                    )}, INCLUDING its ${SHEPHERD_SLUG_PREFIX}* records, which this read excluded — so the two totals are measured over different sets, and the difference between them (${describeGap(
+                      coordTotal.total,
+                      plans.length
+                    )}) is not by itself a count of missing work units.`
                   : coordTotal.total === plans.length
-                    ? `coord's overview counts the same ${coordTotal.total} work units ${
-                        status === "any" ? "in total" : `with status=${status}`
-                      }, over the same set.`
-                    : `coord's overview counts ${coordTotal.total} work units ${
-                        status === "any" ? "in total" : `with status=${status}`
-                      } over the same set — a difference of ${
-                        coordTotal.total - plans.length
-                      }. The two were read moments apart, so a work unit created, deleted or re-dated in between can account for it; reload to re-check.`
-                : "coord's corpus total could not be read, so this count is not cross-checked."}{" "}
+                    ? `coord's overview counts the same ${workUnits(coordTotal.total)} ${overviewScope(
+                        status
+                      )}, over the same set.`
+                    : `coord's overview counts ${workUnits(coordTotal.total)} ${overviewScope(
+                        status
+                      )} over the same set — ${describeGap(
+                        coordTotal.total,
+                        plans.length
+                      )}. The two are separate reads taken moments apart, and this page cannot tell which of them the difference lies in; reload to re-check.`
+                : `${overviewMissSentence(coordTotal, status)}, so this count is not cross-checked.`}{" "}
               {/* The one thing a keyset walk cannot promise, said plainly
                   rather than left for the reader to work out: the walk orders
                   by `authored_at`, and coord heals a NULL one on the row's next
@@ -980,25 +1042,34 @@ export default function CoordWorkUnitsListPage() {
               work unit{plans.length === 1 ? " was" : "s were"} read (
               {shepherdScope})
               {authoredSpan
-                ? `, authored ${formatInstant(authoredSpan.newest)} back to ${formatInstant(authoredSpan.oldest)}`
+                ? `, with authored_at ${formatInstant(authoredSpan.newest)} back to ${formatInstant(authoredSpan.oldest)}`
                 : ""}
-              {reachedUndatedTail ? ", plus some with no authoring date" : ""};
-              the walk stopped after {outcome.pages} page
+              {reachedUndatedTail
+                ? ", plus some with no authored_at in coord"
+                : ""}
+              ; the walk stopped after {outcome.pages} page
               {outcome.pages === 1 ? "" : "s"} because{" "}
               {PARTIAL_REASON_COPY[outcome.reason]}
               {outcome.error ? ` (${outcome.error})` : ""}.{" "}
+              {/* "authored_at in coord", not "authoring date": the walk's
+                  keyset runs on coord's `authored_at` COLUMN, so that is what
+                  bounds where it reached — but everywhere else on this page an
+                  "undated" row means no slug date AND no column
+                  (`missingAuthored`), and the row chips show slug-derived
+                  dates. Naming the column keeps this sentence from calling
+                  rows "undated" whose chips show a date. */}
               {reachedUndatedTail
-                ? "Every dated work unit was reached; undated ones further along the list are missing from this page."
-                : "Work units authored before that range, and every undated one, are missing from this page."}
-              {coordTotal
-                ? ` coord's overview counts ${coordTotal.total} work units ${
-                    status === "any" ? "in total" : `with status=${status}`
-                  }${
+                ? "Every work unit with an authored_at in coord was reached; ones with none, further along the list, are missing from this page."
+                : "Work units with an earlier authored_at, and every one with no authored_at in coord, are missing from this page."}
+              {coordTotal.kind === "total"
+                ? ` coord's overview counts ${workUnits(coordTotal.total)} ${overviewScope(
+                    status
+                  )}${
                     coordTotal.includesExcluded
                       ? ` (including its ${SHEPHERD_SLUG_PREFIX}* records, which this read excluded).`
                       : "."
                   }`
-                : " coord's corpus total could not be read either."}
+                : ` ${overviewMissSentence(coordTotal, status)}, so there is no coord total to set this against.`}
               {shownUnderFilter}
             </p>
           )}
@@ -1065,7 +1136,7 @@ export default function CoordWorkUnitsListPage() {
       )}
 
       {/* WHEN this list was read, and how often it re-reads itself. A walked
-          order ticks once a minute rather than every 10 s
+          order ticks every two minutes rather than every 10 s
           (`POLL_INTERVAL_MS`), which is only honest if the page says how old
           the answer on screen may be.
 
@@ -1073,11 +1144,11 @@ export default function CoordWorkUnitsListPage() {
           used to live INSIDE that panel, which renders only when there is a
           caveat to state (`truncated || walkComplete || walkPartial ||
           missingAuthored > 0`) — so a reachable arm dropped the stamp
-          entirely: an authored sort (60 s cadence) against a coord that
+          entirely: an authored sort (walked cadence) against a coord that
           PREDATES the walk, over a corpus under `WALK_PAGE_LIMIT` rows, is
           `single_page` with `truncated` false and no undated rows, and nothing
-          on the page then said when the list was read or that it re-reads only
-          once a minute. A 59-second-old list presented as current is the
+          on the page then said when the list was read or how seldom it
+          re-reads. A 59-second-old list presented as current is the
           defect the cadence change was supposed to avoid, so the stamp is
           unconditional on a loaded list and the panel is free to be
           conditional. */}
@@ -1140,9 +1211,21 @@ export default function CoordWorkUnitsListPage() {
               className="text-sm text-muted-foreground italic"
               data-testid="coord-work-units-difficulty-empty"
             >
-              {difficultyFilter === "unrated"
-                ? `None of the ${sorted.length} fetched work units is unrated.`
-                : `None of the ${sorted.length} fetched work units is rated ${difficultyFilter}.`}
+              {/* `sorted` is counted AFTER the document and scanner chips, so
+                  it is the rows READ only when neither strip has a selection —
+                  the same read/shown rule as `shownUnderFilter`. "fetched"
+                  called a filtered count the read. */}
+              {`None of the ${sorted.length} work unit${
+                sorted.length === 1 ? "" : "s"
+              } ${
+                bodyFiltered
+                  ? "left by the document and scanner filters"
+                  : "read"
+              } is ${
+                difficultyFilter === "unrated"
+                  ? "unrated"
+                  : `rated ${difficultyFilter}`
+              }.`}
             </p>
           ) : bodyFiltered && plans.length > 0 ? (
             // The body filters are client-side, so "nothing matched" here is a
@@ -1162,10 +1245,12 @@ export default function CoordWorkUnitsListPage() {
               className="text-sm text-muted-foreground italic"
               data-testid="coord-work-units-body-filtered-empty"
             >
-              None of the {plans.length} work unit
-              {plans.length === 1 ? "" : "s"}{" "}
+              {plans.length === 1
+                ? "The one work unit"
+                : `None of the ${plans.length} work units`}{" "}
               {walkComplete ? "read — the whole list —" : "in this window"}{" "}
-              match the document and scanner filters.
+              {plans.length === 1 ? "does not match" : "match"} the document and
+              scanner filters.
             </p>
           ) : plansUnknown ? (
             <p

@@ -16,7 +16,7 @@
  */
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 
 const get = vi.fn();
 
@@ -76,6 +76,14 @@ describe("/admin/coord/spawn — a bounded read that admits its bound", () => {
       "No plan is blocked in the part of the list that was read"
     );
     expect(strip).not.toHaveTextContent(/^No plan is blocked$/);
+    // `/spawn` has no fetch-window panel, so the badge may not send the
+    // operator to one (R2 of the copy review).
+    const badge = within(strip).getByText("list INCOMPLETE");
+    expect(badge).toHaveAttribute(
+      "title",
+      "these counts are derived from the rows that were read, which are not the whole corpus"
+    );
+    expect(badge.getAttribute("title")).not.toContain("fetch-window");
   });
 
   it("a page short of the limit keeps the unqualified verdict", async () => {
