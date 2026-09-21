@@ -119,6 +119,40 @@ class WebSocketConnectionRegistry:
                 return False
         return True
 
+    def can_send_to_runner(
+        self, runner_id: str, *, path: str, message_type: object = None
+    ) -> bool:
+        """The send-path gate: :meth:`is_runner_socket_live`, refusals logged.
+
+        Every relay that publishes onto a runner-direction channel and reports
+        the publish as a receipt (``send_terminal``, ``send_chat``,
+        ``send_command``, ``dispatch_and_wait``) asks THIS question, not
+        ``is_runner_connected``. A ``True`` from the registration check for a
+        socket that is gone is worse than a slow send — it is a FALSE RECEIPT:
+        the caller reports "forwarded" (a ``command_sent`` frame, an HTTP 200
+        ``status: forwarded``, a ``remote_terminal_attach_forwarded`` log line)
+        and the refusal that exists for the dead-socket case never fires, so
+        the far end waits out its own timeout in silence.
+
+        The stale-entry case — registered but unsendable — is logged apart
+        from "never registered here" because they want different fixes, and
+        because a refusal the caller reports as "not connected" is otherwise
+        indistinguishable from a device that is simply on another replica.
+        ``path`` names the relay that asked so one log query answers "which
+        send paths are hitting stale sockets"; ``message_type`` is whatever
+        the caller had, admitted as an opaque log field.
+        """
+        if self.is_runner_socket_live(runner_id):
+            return True
+        if runner_id in self._runner_websockets:
+            logger.warning(
+                "runner_send_refused_stale_socket",
+                runner_id=runner_id,
+                path=path,
+                message_type=message_type,
+            )
+        return False
+
     def get_connected_runner_ids(self) -> list[str]:
         """Get list of connected runner IDs in this process."""
         return list(self._runner_websockets.keys())
