@@ -76,7 +76,7 @@ Every constraint and index name here is the one PostgreSQL already assigned
 naming convention, so the defaults reproduce them.
 
 Revision ID: notif_gate_action_04_drop_dead_prefs
-Revises: plan_library_07_plan_difficulty
+Revises: phaseatt_01
 Create Date: 2026-09-20
 """
 
@@ -88,7 +88,7 @@ from sqlalchemy.dialects import postgresql
 
 # revision identifiers, used by Alembic.
 revision: str = "notif_gate_action_04_drop_dead_prefs"
-down_revision: str | Sequence[str] | None = "plan_library_07_plan_difficulty"
+down_revision: str | Sequence[str] | None = "phaseatt_01"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
