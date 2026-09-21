@@ -17,6 +17,7 @@ import asyncio
 import contextvars
 import json
 import re
+import time
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Any, Literal, NoReturn
@@ -13207,8 +13208,19 @@ async def remove_cognito_group_user(
 #: can do.
 _TENANT_RENAME_RATE_LIMIT = _CREATE_GROUP_RATE_LIMIT
 
+# How long the post-rename home-group migration may spend copying members
+# before it stops and REPORTS a partial. Sized under the frontend's own
+# request ceiling so the answer still reaches the operator: see the loop in
+# `_migrate_home_group` for why an unreported partial is the failure mode
+# worth spending a constant on.
+_HOME_GROUP_MIGRATION_BUDGET_SECONDS = 25
+
 HomeGroupMigrationStatus = Literal[
     "migrated",
+    # Some members copied, then the budget ran out. Distinct from "failed":
+    # nothing went wrong, the work was simply larger than one request, and
+    # the count in `members_copied` is what the operator needs to finish it.
+    "partial",
     "requires_superuser",
     "target_exists",
     "target_mapped",
@@ -13391,7 +13403,42 @@ async def _migrate_home_group(
         users = await asyncio.to_thread(cognito_admin.list_users_in_group, old_group)
         members = [u for u in users if u.get("username")]
         total = len(members)
+        # A WALL-CLOCK BUDGET, because this loop is the only unbounded work in
+        # the request and its outcome lives ONLY in the response body.
+        #
+        # Each member costs one `AdminAddUserToGroup` plus one audit INSERT,
+        # sequentially, and `list_users_in_group` paginates without a cap — so
+        # a home group with hundreds of members runs for minutes. Nothing
+        # cancels it when the caller gives up: the browser's own 60s ceiling
+        # fires first, the operator is told the outcome is unknown, and the
+        # record that a half-populated group now exists in the SHARED Cognito
+        # pool dies with the response nobody received.
+        #
+        # Stopping at the budget converts that into a reported partial: the
+        # same `_partial()` sentence the failure arms already carry, with the
+        # count, while the answer can still be delivered. Deliberately smaller
+        # than the client ceiling so the response wins the race.
+        deadline = time.monotonic() + _HOME_GROUP_MIGRATION_BUDGET_SECONDS
         for user in members:
+            if time.monotonic() >= deadline:
+                logger.warning(
+                    "tenant_rename_home_group_migration_budget_exhausted",
+                    old_group=old_group,
+                    new_group=new_group,
+                    members_copied=copied,
+                    members_total=total,
+                    budget_seconds=_HOME_GROUP_MIGRATION_BUDGET_SECONDS,
+                )
+                return _home_group_outcome(
+                    "partial",
+                    f"Moving “{old_group}” to “{new_group}” ran out of time after "
+                    f"{_HOME_GROUP_MIGRATION_BUDGET_SECONDS}s. {_partial()} "
+                    f"The rename itself is complete; “{old_group}” was not deleted.",
+                    old_group=old_group,
+                    new_group=new_group,
+                    members_copied=copied,
+                    new_group_created=created,
+                )
             username = user["username"]
             await asyncio.to_thread(
                 cognito_admin.add_user_to_group, username, new_group
@@ -13490,7 +13537,7 @@ async def rename_user_tenant(
     names a ``home_group_to_migrate`` (see ``_migrate_home_group``). Coord's
     4xx answers pass through with coord's body as ``detail``:
     ``400 empty_patch|invalid_name|invalid_slug|reserved_name``,
-    ``403 tenant_mismatch|not_admin_in_target_tenant``,
+    ``403 tenant_mismatch|admin_required``,
     ``404 tenant_not_found``,
     ``409 slug_taken|slug_pinned|concurrent_group_mapping``; ``502`` when coord
     is unreachable.
