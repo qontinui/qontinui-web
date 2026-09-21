@@ -106,9 +106,12 @@ class WebSocketConnectionRegistry:
         ``app.websockets.safe_send.safe_send_json`` applies, for the same
         reason.
 
-        An object exposing neither attribute (a test double) reads as live:
-        this check narrows a real Starlette socket and never invents a refusal
-        for a stub.
+        An object exposing neither attribute — a plain object or a
+        ``SimpleNamespace`` — reads as live: this check narrows a real
+        Starlette socket and never invents a refusal for a stub. A bare
+        ``MagicMock`` is NOT such an object: it auto-creates both attributes
+        as non-``CONNECTED`` values and so reads as DEAD; a mock socket that
+        must pass this check sets both states to ``CONNECTED`` explicitly.
         """
         websocket = self._runner_websockets.get(runner_id)
         if websocket is None:

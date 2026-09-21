@@ -21,11 +21,15 @@ socket whose ``client_state`` has gone DISCONNECTED:
   and each still forwards over a live socket (the positive control, so the
   gate is shown to narrow rather than to refuse everything);
 * ``dispatch_and_wait`` refuses BEFORE subscribing — a stale target must not
-  cost the caller its timeout.
+  cost the caller its timeout;
+* ``require_local_connection=False`` skips the gate on both functions that
+  carry it — a dead LOCAL entry says nothing about the replica that holds
+  the socket.
 """
 
 from __future__ import annotations
 
+import json
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
@@ -91,7 +95,7 @@ def _registry_with(ws: MagicMock | None) -> WebSocketConnectionRegistry:
 # ---------------------------------------------------------------------------
 
 
-def test_gate_refuses_a_registration_that_outlived_its_socket_and_logs_it() -> None:
+async def test_gate_refuses_a_stale_registration_and_logs_it() -> None:
     registry = _registry_with(_dead_socket())
     # The premise the whole module rests on: the stale entry still LOOKS
     # connected to the registration check.
@@ -109,7 +113,7 @@ def test_gate_refuses_a_registration_that_outlived_its_socket_and_logs_it() -> N
     assert refusals[0]["log_level"] == "warning"
 
 
-def test_gate_refuses_an_unregistered_runner_without_the_stale_log() -> None:
+async def test_gate_refuses_an_unregistered_runner_without_the_stale_log() -> None:
     """Never-registered-here is a different condition and must not be logged as stale."""
     registry = _registry_with(None)
 
@@ -120,7 +124,7 @@ def test_gate_refuses_an_unregistered_runner_without_the_stale_log() -> None:
     assert [e for e in logs if e["event"] == "runner_send_refused_stale_socket"] == []
 
 
-def test_gate_admits_a_live_socket() -> None:
+async def test_gate_admits_a_live_socket() -> None:
     registry = _registry_with(_live_socket())
 
     with structlog.testing.capture_logs() as logs:
@@ -158,6 +162,7 @@ _SEND_PATHS = [
     pytest.param(_send_terminal, "terminal", "terminal_input", id="terminal"),
     pytest.param(_send_command, "command", "command", id="command"),
 ]
+_SENDS = [pytest.param(p.values[0], id=p.id) for p in _SEND_PATHS]
 
 
 @pytest.mark.parametrize(("send", "path", "message_type"), _SEND_PATHS)
@@ -178,20 +183,20 @@ async def test_send_path_refuses_a_stale_registration_and_publishes_nothing(
     assert [(e["path"], e["message_type"]) for e in refusals] == [(path, message_type)]
 
 
-@pytest.mark.parametrize(("send", "path", "message_type"), _SEND_PATHS)
-async def test_send_path_still_forwards_over_a_live_socket(
-    send: Any, path: str, message_type: str
-) -> None:
+@pytest.mark.parametrize("send", _SENDS)
+async def test_send_path_still_forwards_over_a_live_socket(send: Any) -> None:
     """The positive control — the gate narrows, it does not refuse everything."""
     registry = _registry_with(_live_socket())
     redis = _redis()
 
-    sent = await send(registry, redis)
+    with structlog.testing.capture_logs() as logs:
+        sent = await send(registry, redis)
 
     assert sent is True
     redis.publish.assert_awaited_once()
     channel = redis.publish.await_args.args[0]
     assert channel.endswith(f":{RUNNER}"), channel
+    assert [e for e in logs if e["event"] == "runner_send_refused_stale_socket"] == []
 
 
 async def test_dispatch_refuses_a_stale_registration_before_subscribing() -> None:
@@ -206,7 +211,12 @@ async def test_dispatch_refuses_a_stale_registration_before_subscribing() -> Non
                 RUNNER,
                 {"command": "state_machine.discover_ui_bridge", "payload": {}},
                 request_id="rid-stale",
-                timeout_s=30.0,
+                # Small on purpose: under the mutation this guards (gate back
+                # to registration) the dispatcher would otherwise spin out the
+                # whole timeout before the wrong exception surfaced. The
+                # "no wait" property is proven by the pre-subscribe refusal
+                # below, not by this number.
+                timeout_s=0.05,
             )
 
     assert exc_info.value.runner_id == RUNNER
@@ -219,13 +229,15 @@ async def test_dispatch_refuses_a_stale_registration_before_subscribing() -> Non
     ]
 
 
-async def test_dispatch_skips_the_gate_when_told_the_socket_is_elsewhere() -> None:
-    """``require_local_connection=False`` is the cross-replica arm and is untouched.
+# ``require_local_connection=False`` is the cross-replica arm and is untouched on
+# BOTH functions that carry it. The stale-entry refusal is an in-process fact; a
+# caller that already confirmed connectivity via Redis is asking this replica
+# to publish, not to vouch for its own socket, so the gate must not run at all.
+# ``device_bridge_ws`` relies on the dispatch arm for horizontal scaling and
+# ``disconnect_mobile_terminal`` (#1432) on the send arm.
 
-    The stale-entry refusal is an in-process fact; a caller that already
-    confirmed connectivity via Redis is asking this replica to publish, not
-    to vouch for its own socket, so the gate must not run at all.
-    """
+
+async def test_send_command_skips_the_gate_when_told_the_socket_is_elsewhere() -> None:
     registry = _registry_with(_dead_socket())
     redis = _redis()
     relay = CommandRelayService(redis, registry)
@@ -236,5 +248,33 @@ async def test_dispatch_skips_the_gate_when_told_the_socket_is_elsewhere() -> No
         )
 
     assert sent is True
+    redis.publish.assert_awaited_once()
+    assert [e for e in logs if e["event"] == "runner_send_refused_stale_socket"] == []
+
+
+async def test_dispatch_skips_the_gate_when_told_the_socket_is_elsewhere() -> None:
+    registry = _registry_with(_dead_socket())
+    redis = _redis()
+    pubsub = redis.pubsub.return_value
+    pubsub.get_message = AsyncMock(
+        return_value={
+            "type": "message",
+            "data": json.dumps({"type": "command_response", "request_id": "rid-x"}),
+        }
+    )
+    relay = CommandRelayService(redis, registry)
+
+    with structlog.testing.capture_logs() as logs:
+        result = await relay.dispatch_and_wait(
+            RUNNER,
+            {"command": "probe"},
+            request_id="rid-x",
+            timeout_s=1.0,
+            require_local_connection=False,
+        )
+
+    # Subscribed, published, answered — the dead LOCAL entry never consulted.
+    assert result["request_id"] == "rid-x"
+    pubsub.subscribe.assert_awaited_once_with(f"runner:responses:{RUNNER}")
     redis.publish.assert_awaited_once()
     assert [e for e in logs if e["event"] == "runner_send_refused_stale_socket"] == []
