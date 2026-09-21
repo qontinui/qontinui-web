@@ -254,10 +254,22 @@ describe("coord refusals — one sentence each", () => {
       "A short id needs at least 3 letters or digits.",
     ],
     [
-      "invalid_slug / unknown reason",
+      // `not_canonical` is the reason ONLY the rename path can produce — the
+      // create dialog derives its slug, so nothing there supplies one to be
+      // non-canonical. It now has its own sentence rather than falling to the
+      // parenthesised-code fallback below.
+      "invalid_slug / not_canonical",
       400,
       { error: "invalid_slug", reason: "not_canonical" },
-      "That short id can't be used (not_canonical).",
+      "A short id can only use lowercase letters, digits and single hyphens, and can't start or end with one.",
+    ],
+    [
+      // The fallback still has to work for a reason this build has never seen
+      // — a coord deployed ahead of this frontend can send one.
+      "invalid_slug / unknown reason",
+      400,
+      { error: "invalid_slug", reason: "reason_from_a_newer_coord" },
+      "That short id can't be used (reason_from_a_newer_coord).",
     ],
     [
       "reserved_name / historical_slug",
