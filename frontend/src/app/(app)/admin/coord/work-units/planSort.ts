@@ -1,19 +1,24 @@
 /**
  * Client-side ordering for the coord work-unit list.
  *
- * ## Why this is client-side, and what that costs
+ * ## Why this is client-side, and what the page fetches for it
  *
- * The web proxy (`operations.py` `list_coord_plans`) forwards only `status`
- * and `limit` — there is no sort parameter to pass through — and coord's own
- * list is fixed at `ORDER BY updated_at DESC LIMIT $3 OFFSET $4`
- * (`work_unit_registry.rs` `list_work_units`), default 100, clamped to 500.
+ * The web proxy (`operations.py` `list_coord_plans`) forwards `status`,
+ * `slug_prefix`, `exclude_slug_prefix`, `limit`, `offset`, and — since plan
+ * `2026-09-12-admin-coord-plans-shows-a-rotating-3-minute-slice-so-plans-get-lost`
+ * — coord's `order` (`authored_desc` | `updated_desc`) and its keyset cursor
+ * (`after_authored_at` + `after_slug`). coord clamps a page to 500.
  *
- * So the page sorts the window it fetched, not the corpus. That is fine for
- * "recently updated" (coord already ordered by it) but genuinely lossy for
- * "oldest authored" or "oldest ingested": if the corpus exceeds the fetch
- * limit, the oldest unit may simply not be in the window. The page renders a
- * truncation notice whenever the result fills the limit rather than letting
- * the control imply a corpus-wide answer.
+ * Every key here except the two `updated_*` ones makes the page WALK the whole
+ * list in `order=authored_desc` (`planWalk.ts`), so these sorts run over the
+ * corpus under the status filter, not over one window, and are exact. The
+ * `updated_*` keys read a single `order=updated_desc` page — the explicit
+ * "recently touched" view — and are the lossy ones: when that page is full,
+ * the page says so and names the `updated_at` span it covers. So does a coord
+ * that predates the walk, which ignores `order` and answers every sort with
+ * one `updated_at DESC` page. A walk that stops early (a failed page, the page
+ * cap) is labelled INCOMPLETE rather than letting the control imply a
+ * corpus-wide answer.
  *
  * ## Three timestamps, three different questions
  *

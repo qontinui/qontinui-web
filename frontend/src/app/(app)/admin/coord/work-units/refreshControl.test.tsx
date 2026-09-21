@@ -51,7 +51,13 @@ vi.mock("@/services/service-factory", () => ({
 
 import CoordWorkUnitsListPage from "./page";
 
-const POLL_INTERVAL_MS = 10_000;
+/**
+ * The DEFAULT sort walks the corpus, so this page's tick is the walked one —
+ * 60 s, not the 10 s a single-page view keeps (`page.tsx` `POLL_INTERVAL_MS`).
+ * Every lock assertion below is about the tick that actually fires, so the
+ * number has to be the one in force for the view under test.
+ */
+const POLL_INTERVAL_MS = 60_000;
 
 /** A read the test settles by hand. */
 function deferred() {
@@ -85,7 +91,7 @@ describe("/admin/coord/work-units refresh control", () => {
     expect(button).toBe(refreshButton());
     expect(button).toHaveAttribute(
       "title",
-      "Re-reads the work-unit list now; it also refreshes itself every 10 s"
+      "Re-reads the work-unit list now; it also refreshes itself every 60 s"
     );
     // The icon is decoration; the name is the label, not an SVG. (lucide-react
     // currently stamps aria-hidden on a bare icon by itself, so this is a guard
@@ -300,6 +306,67 @@ describe("/admin/coord/work-units refresh control", () => {
     await act(async () => {
       clickRead.resolve({ work_units: [] });
       switchedRead.resolve({ work_units: [] });
+    });
+  });
+
+  /**
+   * F2 of the review of plan
+   * `2026-09-12-admin-coord-plans-shows-a-rotating-3-minute-slice-so-plans-get-lost`:
+   * the tick is per SERVER ORDER, because the order decides whether one tick
+   * costs one read or a whole walk. A walked view on the old 10 s tick was
+   * ~30 coord reads a minute per open tab, each a 500-row read with a LATERAL
+   * sub-select per row, and `pollInFlight` bounds overlap rather than rate —
+   * so on a slow link the steady state was continuous polling.
+   */
+  describe("poll cadence is proportionate to what one tick costs", () => {
+    it("a walked view ticks once a minute, not every 10 s", async () => {
+      vi.useFakeTimers({ shouldAdvanceTime: true });
+      get.mockResolvedValue({ work_units: [] });
+      render(<CoordWorkUnitsListPage />);
+      await screen.findByTestId("coord-work-units-empty");
+      expect(get).toHaveBeenCalledTimes(1);
+
+      // The cadence the single-page view keeps: nothing may fire here.
+      await act(async () => {
+        vi.advanceTimersByTime(10_000);
+      });
+      expect(get).toHaveBeenCalledTimes(1);
+      await act(async () => {
+        vi.advanceTimersByTime(40_000);
+      });
+      expect(get).toHaveBeenCalledTimes(1);
+
+      // ...and it does fire on the walked tick, so this pins a SLOWER poll
+      // rather than a page that quietly stopped polling.
+      await act(async () => {
+        vi.advanceTimersByTime(10_000);
+      });
+      expect(get).toHaveBeenCalledTimes(2);
+    });
+
+    it("the single-page 'Recently updated' view keeps the 10 s tick, and says so", async () => {
+      vi.useFakeTimers({ shouldAdvanceTime: true });
+      get.mockResolvedValue({ order: "updated_desc", work_units: [] });
+      const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+      render(<CoordWorkUnitsListPage />);
+      await screen.findByTestId("coord-work-units-empty");
+
+      await user.click(screen.getByTestId("coord-work-units-sort-select"));
+      await user.click(
+        await screen.findByRole("option", { name: "Recently updated" })
+      );
+      await waitFor(() =>
+        expect(refreshButton()).toHaveAttribute(
+          "title",
+          "Re-reads the work-unit list now; it also refreshes itself every 10 s"
+        )
+      );
+      const afterSwitch = get.mock.calls.length;
+
+      await act(async () => {
+        vi.advanceTimersByTime(10_000);
+      });
+      expect(get.mock.calls.length).toBe(afterSwitch + 1);
     });
   });
 });

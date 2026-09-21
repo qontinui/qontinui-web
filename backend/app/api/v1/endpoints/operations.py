@@ -3648,6 +3648,7 @@ async def get_dev_action_detail(
 # Routes (read-only unless noted):
 #
 # - GET    /operations/plans                            — list coord.work_units
+# - GET    /operations/plans/overview                    — corpus status tally
 # - GET    /operations/plans/{slug}                      — single work-unit
 # - GET    /operations/plans/{slug}/history              — status history
 # - POST   /operations/plans/{slug}/transition           — set work-unit status
@@ -3809,6 +3810,29 @@ async def list_coord_plans(
     ),
     limit: int | None = Query(default=None, ge=1, le=500),
     offset: int | None = Query(default=None, ge=0),
+    order: Literal["authored_desc", "updated_desc"] | None = Query(
+        default=None,
+        description=(
+            "Server-side order. ``authored_desc`` walks the corpus by "
+            "authoring date (keyset cursor below); ``updated_desc`` (coord's "
+            "default when absent) is the mutation-time order. Ignored by a "
+            "coord that predates it."
+        ),
+    ),
+    after_authored_at: str | None = Query(
+        default=None,
+        min_length=1,
+        description=(
+            "Keyset cursor half: the ``after_authored_at`` of the previous "
+            "page's ``next_cursor``. Omitted while walking the NULL-authored "
+            "tail (the cursor's value is null there)."
+        ),
+    ),
+    after_slug: str | None = Query(
+        default=None,
+        min_length=1,
+        description="Keyset cursor half: the previous page's ``next_cursor.after_slug``.",
+    ),
     tenant_id: UUID = Depends(get_tenant_id),
     db: AsyncSession = Depends(get_async_db),
     # OPTIONAL, and that is deliberate: this route is gated by
@@ -3861,6 +3885,29 @@ async def list_coord_plans(
     read an unexpected page as "coord has not caught up". Rejecting the empty
     string here is the honest failure; coord normalizes it as well, so neither
     side depends on the other for this.
+
+    ``order`` / ``after_authored_at`` / ``after_slug`` are the corpus walk
+    (plan ``2026-09-12-admin-coord-plans-shows-a-rotating-3-minute-slice-so-plans-get-lost``
+    Phase 1). ``order=authored_desc`` makes coord answer in
+    ``authored_at DESC NULLS LAST, slug`` order with a ``next_cursor`` the
+    console follows until it is null, so no work unit can fall past a 500-row
+    cap. Like ``exclude_slug_prefix`` they ship ahead of coord safely: an older
+    coord ignores all three and returns its ``updated_at``-ordered page with no
+    ``order`` echo and no ``next_cursor``, which is how the console tells the
+    two apart. ``order`` is a ``Literal`` so a junk value is a 422 here rather
+    than a silently-ignored parameter upstream; the cursor halves take
+    ``min_length=1`` so an empty box never reaches coord as a cursor.
+
+    The body signals and the walk compose per PAGE, and deliberately so: every
+    page of a walk is a full request, so each one carries its own rows
+    annotated and its own ``body_signal`` block. That block describes the reads
+    THIS request made — the capture dial and the artifact surface are read once
+    per page, not once per walk — so two pages of one walk can legitimately
+    disagree when a dial read fails mid-walk. Folding them is the console's
+    job (``planBodySignal.ts`` ``foldBodySignalBlocks``), because only the
+    caller knows which pages belong to one answer; a proxy that cached the
+    dial across requests to make them agree would be inventing an agreement it
+    did not measure.
     """
     params: dict[str, Any] = {}
     if status is not None:
@@ -3873,6 +3920,12 @@ async def list_coord_plans(
         params["limit"] = limit
     if offset is not None:
         params["offset"] = offset
+    if order is not None:
+        params["order"] = order
+    if after_authored_at is not None:
+        params["after_authored_at"] = after_authored_at
+    if after_slug is not None:
+        params["after_slug"] = after_slug
     payload = await _proxy_coord_get(
         "/coord/work-units", params=params or None, tenant_id=tenant_id
     )
@@ -3891,6 +3944,26 @@ async def list_coord_plans(
             rows, db=db, user=actor, tenant_id=tenant_id
         )
     return payload
+
+
+# Declared BEFORE ``/plans/{slug}`` on purpose: FastAPI matches in declaration
+# order, so after it the static ``overview`` segment would be captured as a
+# slug and proxied to ``/coord/work-units/overview`` by the wrong handler.
+@router.get("/plans/overview")
+async def get_coord_plans_overview(
+    tenant_id: UUID = Depends(get_tenant_id),
+) -> Any:
+    """Return coord's CORPUS-wide work-unit status tally (tenant-scoped).
+
+    Proxies coord ``GET /coord/work-units/overview``: ``{"row_count": N,
+    "distinct_status_count": N, "facets": {"by_status_class": {...},
+    "by_status": {...}, "by_status_truncated": bool, "by_status_omitted": N},
+    "corpus_complete": bool}``. It takes no filters by coord's design (a
+    filtered overview would move its denominator), so ``row_count`` counts
+    EVERY unit — including the ``shepherd-*`` rows the Plans list excludes.
+    The console states that difference rather than comparing unlike totals.
+    """
+    return await _proxy_coord_get("/coord/work-units/overview", tenant_id=tenant_id)
 
 
 @router.get("/plans/{slug}")
