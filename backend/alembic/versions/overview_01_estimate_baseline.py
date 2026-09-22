@@ -1,7 +1,7 @@
 """overview.* — the project estimate (the baseline): phases, tasks, roles, tiers
 
 Revision ID: overview_01_estimate_baseline
-Revises: phaseatt_01
+Revises: tenant_policies_02_transcript_sync_enabled
 Create Date: 2026-09-20
 
 Phase 2 of ``2026-09-19-project-overview-for-business-leaders``. Ten tables in
@@ -109,7 +109,7 @@ revision: str = "overview_01_estimate_baseline"
 # its own and reads nothing from the chain, so ordering is all that changes,
 # and chaining off the single existing head is what keeps the count at one
 # without a merge revision.
-down_revision: str = "phaseatt_01"
+down_revision: str = "tenant_policies_02_transcript_sync_enabled"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
