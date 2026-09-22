@@ -155,6 +155,26 @@ repos:
         # `down_revision` TOKEN instead of a 17-minute wait for a red check —
         # naming that token was the entire fix in 3 of 3 cases.
 
+      - id: alembic-lock-timeout-restored
+        name: Alembic SET LOCAL lock_timeout is restored in the same function
+        entry: python scripts/ci/check_lock_timeout_restored.py
+        language: system
+        pass_filenames: false
+        files: ^backend/alembic/versions/.*\.py$
+        # SAME SCRIPT as .github/workflows/alembic-graph-pr.yml's "Check
+        # lock_timeout is restored" step and .qontinui/ci.toml's
+        # `alembic-lock-timeout-restored` step. A third lane on one script,
+        # the same pattern as alembic-single-head above.
+        #
+        # `pass_filenames: false` with a NARROW `files:`, same reasoning as
+        # alembic-single-head: this guards a property of the revision SET
+        # (env.py runs every pending revision in one transaction, so a
+        # SET LOCAL left unrestored in one file leaks into whichever revision
+        # runs next), which only a commit touching
+        # backend/alembic/versions/ can break, and the scan is over the whole
+        # dir either way. Coord finding
+        # b4782f88-49f2-464e-92f9-4f44194dee34 (qontinui-web#1423).
+
       - id: coord-column-drop-guard
         name: coord.* DROP/RENAME is not still read by a deployed or main coord
         entry: python scripts/ci/check_coord_column_drops.py --files
