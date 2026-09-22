@@ -18,7 +18,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { renderHook, waitFor } from "@testing-library/react";
 
-import { runnerFetch } from "./api-client";
+import { RUNNER_API_BASE, runnerFetch, setRunnerTransport } from "./api-client";
 import { useRunningTaskRuns } from "./hooks/task-run-hooks";
 import type { RunningTaskRunsResponse } from "./types/task-run";
 
@@ -41,6 +41,9 @@ function jsonResponse(body: unknown): Response {
 const fetchMock = vi.fn();
 
 beforeEach(() => {
+  // No ActiveRunnerProvider here: stand in for "list loaded, no runner
+  // selected", which is the default local base.
+  setRunnerTransport({ kind: "loopback", base: RUNNER_API_BASE });
   fetchMock.mockReset();
   vi.stubGlobal("fetch", fetchMock);
 });

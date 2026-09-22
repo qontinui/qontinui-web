@@ -3,13 +3,17 @@
 import { useRef, useCallback, useEffect } from "react";
 import {
   getRunnerApiBase,
-  onRunnerApiBaseChange,
+  onRunnerTransportChange,
 } from "@/lib/runner/api-client";
 
 // Derive the runner WebSocket URL from the current API base.
 // Uses 127.0.0.1 to force IPv4 (runner only listens on IPv4).
-function getRunnerWsUrl(): string {
-  const base = getRunnerApiBase(); // e.g. "http://localhost:9876"
+// Null when the active runner has no loopback base from this browser (it is
+// not proven to be on this machine): no socket is opened rather than one to
+// whatever owns the port locally.
+function getRunnerWsUrl(): string | null {
+  const base = getRunnerApiBase(); // e.g. "http://127.0.0.1:9876"
+  if (base === null) return null;
   // Extract port from the base URL
   try {
     const url = new URL(base);
@@ -106,8 +110,11 @@ export function useRunnerEventStream(enabled: boolean = true) {
     // reconnects start fresh instead of permanently giving up after exhaustion.
     reconnectAttemptsRef.current = 0;
 
+    const wsUrl = getRunnerWsUrl();
+    if (wsUrl === null) return;
+
     try {
-      const ws = new WebSocket(getRunnerWsUrl());
+      const ws = new WebSocket(wsUrl);
       wsRef.current = ws;
 
       ws.onopen = () => {
@@ -240,9 +247,9 @@ export function useRunnerEventStream(enabled: boolean = true) {
     };
   }, [enabled, connect, disconnect]);
 
-  // Reconnect when the active runner's API base URL changes
+  // Reconnect when the active runner's transport changes
   useEffect(() => {
-    const unsubscribe = onRunnerApiBaseChange(() => {
+    const unsubscribe = onRunnerTransportChange(() => {
       if (enabledRef.current) {
         disconnect();
         // Brief delay so the new base URL is fully settled before connecting

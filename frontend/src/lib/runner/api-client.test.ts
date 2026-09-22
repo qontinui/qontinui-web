@@ -14,9 +14,18 @@
  * timers at all.
  */
 
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { act, renderHook, waitFor } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { runnerFetch, RunnerApiError } from "./api-client";
+import {
+  RUNNER_API_BASE,
+  RUNNER_ORIGIN_UNREACHABLE,
+  runnerFetch,
+  RunnerApiError,
+  isRunnerNotLocalError,
+  setRunnerTransport,
+  useRunnerQuery,
+} from "./api-client";
 import { CROSS_ORIGIN_REFUSED } from "./origin-refusal";
 
 const originalLocation = window.location;
@@ -27,6 +36,12 @@ function stubOrigin(origin: string) {
     writable: true,
   });
 }
+
+// No ActiveRunnerProvider here: stand in for "list loaded, no runner
+// selected", which is the default local base.
+beforeEach(() => {
+  setRunnerTransport({ kind: "loopback", base: RUNNER_API_BASE });
+});
 
 describe("runnerFetch loopback-origin gate", () => {
   afterEach(() => {
@@ -42,10 +57,14 @@ describe("runnerFetch loopback-origin gate", () => {
     const fetchSpy = vi.fn();
     vi.stubGlobal("fetch", fetchSpy);
 
-    await expect(runnerFetch("/health")).rejects.toMatchObject({
+    const err = await runnerFetch("/health").catch((e: unknown) => e);
+    expect(err).toMatchObject({
       name: "RunnerApiError",
       status: 0,
+      code: RUNNER_ORIGIN_UNREACHABLE,
     });
+    // An unreachable origin says nothing about which machine the runner is on.
+    expect(isRunnerNotLocalError(err)).toBe(false);
     expect(fetchSpy).not.toHaveBeenCalled();
   });
 
@@ -196,5 +215,87 @@ describe("runnerFetch origin-guard refusal", () => {
     )) as RunnerApiError;
     expect(err.message).toBe("Runner API error: 403 Forbidden");
     expect(err.code).toBeUndefined();
+  });
+});
+
+/**
+ * useRunnerQuery while the active runner's locality is re-measured: a refusal
+ * from a previous measurement must not linger as the current state.
+ */
+describe("useRunnerQuery measuring state", () => {
+  afterEach(() => {
+    Object.defineProperty(window, "location", {
+      value: originalLocation,
+      writable: true,
+    });
+    vi.unstubAllGlobals();
+  });
+
+  it("clears a previous refusal's error and offline flag while measuring", async () => {
+    stubOrigin("http://localhost:3001");
+    const fetchSpy = vi.fn();
+    vi.stubGlobal("fetch", fetchSpy);
+    setRunnerTransport({
+      kind: "no_loopback",
+      reason: "not_local",
+      runnerName: "remote-box",
+    });
+
+    const { result } = renderHook(() => useRunnerQuery("/health"));
+    await waitFor(() => expect(result.current.isOffline).toBe(true));
+    expect(result.current.error).toMatch(/another machine/);
+
+    act(() => {
+      setRunnerTransport({ kind: "no_loopback", reason: "measuring" });
+    });
+    await waitFor(() => expect(result.current.error).toBeNull());
+    expect(result.current.isOffline).toBe(false);
+    expect(result.current.isLoading).toBe(true);
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * A shared poll is pinned to the transport it was created for. A tick that
+ * fires after the active runner changed, but before React has torn the old
+ * subscription down, must fetch the OLD runner — the result is delivered to
+ * (and tagged for) the old runner's subscribers.
+ */
+describe("shared poll transport pinning", () => {
+  afterEach(() => {
+    Object.defineProperty(window, "location", {
+      value: originalLocation,
+      writable: true,
+    });
+    vi.unstubAllGlobals();
+  });
+
+  it("a tick between a transport change and cleanup fetches the entry's own runner", async () => {
+    stubOrigin("http://localhost:3001");
+    const fetchSpy = vi.fn(
+      async () =>
+        new Response(JSON.stringify({ ok: true }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        })
+    );
+    vi.stubGlobal("fetch", fetchSpy);
+    setRunnerTransport({ kind: "loopback", base: "http://127.0.0.1:9876" });
+
+    const { result } = renderHook(() =>
+      useRunnerQuery("/pinned", { pollInterval: 60_000 })
+    );
+    await waitFor(() => expect(result.current.data).toEqual({ ok: true }));
+    fetchSpy.mockClear();
+
+    // Synchronously: switch runners, then a poll tick fires (the
+    // visibility-resume path runs every shared poll at once) before React
+    // has re-rendered and cleaned the old subscription up.
+    setRunnerTransport({ kind: "loopback", base: "http://127.0.0.1:9877" });
+    document.dispatchEvent(new Event("visibilitychange"));
+
+    await act(async () => {});
+    const urls = fetchSpy.mock.calls.map((call) => String(call[0]));
+    expect(urls[0]).toBe("http://127.0.0.1:9876/pinned");
   });
 });
