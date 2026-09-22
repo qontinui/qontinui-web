@@ -276,6 +276,26 @@ describe("CoordNotificationsPage", () => {
     expect(Object.keys(body)).toEqual(["all"]);
   });
 
+  it("filters to agent escalate clearances with ?via=agent_evidence", async () => {
+    // Plan 2026-09-13-escalate-path-block-is-agent-clearable-on-evidence 4.3:
+    // the operator reads what agents cleared (notify, not ask). The filter is
+    // coord's (`detail.via`), so the page only has to ASK for it — and must
+    // not send it until the operator does.
+    httpGet.mockResolvedValue({ notifications: [], total: 0, unread_count: 0 });
+    const user = userEvent.setup();
+    render(<CoordNotificationsPage />);
+
+    await waitFor(() => expect(httpGet).toHaveBeenCalled());
+    expect(String(httpGet.mock.calls[0][0])).not.toContain("via=");
+
+    httpGet.mockClear();
+    await user.click(
+      screen.getByTestId("coord-notifications-agent-clearances-only")
+    );
+    await waitFor(() => expect(httpGet).toHaveBeenCalled());
+    expect(String(httpGet.mock.calls[0][0])).toContain("via=agent_evidence");
+  });
+
   it("scopes mark-all to the LOADED rows once a filter is active", async () => {
     // The trap: an operator filters, sees 4 rows, clicks a button labelled
     // "Mark all read" and irreversibly marks the several hundred unread events
@@ -628,9 +648,9 @@ describe("CoordNotificationsPage", () => {
     // The strip goes amber-stale — that IS its job — while the list holds the
     // answer coord actually gave.
     await waitFor(() =>
-      expect(screen.getByTestId("coord-notifications-health")).toHaveTextContent(
-        /stopped updating/
-      )
+      expect(
+        screen.getByTestId("coord-notifications-health")
+      ).toHaveTextContent(/stopped updating/)
     );
     expect(
       screen.queryByTestId("coord-notifications-unknown")
@@ -745,10 +765,7 @@ describe("CoordNotificationsPage", () => {
     await screen.findByTestId("coord-notifications-pending");
 
     const button = screen.getByTestId("coord-notifications-mark-all-read");
-    expect(button).not.toHaveAttribute(
-      "title",
-      expect.stringContaining("137")
-    );
+    expect(button).not.toHaveAttribute("title", expect.stringContaining("137"));
     // The warning survives the figure, exactly as it does on the stale arm.
     expect(button).toHaveAttribute(
       "title",
@@ -889,9 +906,9 @@ describe("CoordNotificationsPage", () => {
 
     await user.click(screen.getByTestId("coord-notifications-refresh"));
     await waitFor(() =>
-      expect(screen.getByTestId("coord-notifications-health")).toHaveTextContent(
-        "These counts stopped updating"
-      )
+      expect(
+        screen.getByTestId("coord-notifications-health")
+      ).toHaveTextContent("These counts stopped updating")
     );
     // Same `unreadCount === 0` in state; different answer, because the read
     // behind it is no longer current.
@@ -985,9 +1002,9 @@ describe("CoordNotificationsPage", () => {
 
     await user.click(screen.getByTestId("coord-notifications-refresh"));
     await waitFor(() =>
-      expect(screen.getByTestId("coord-notifications-health")).toHaveTextContent(
-        "These counts stopped updating"
-      )
+      expect(
+        screen.getByTestId("coord-notifications-health")
+      ).toHaveTextContent("These counts stopped updating")
     );
     expect(
       screen.getByTestId("coord-notifications-mark-all-read")
@@ -1060,9 +1077,9 @@ describe("CoordNotificationsPage", () => {
 
     // The page landed and appended; the HEAD counts are the poller's business
     // and are untouched.
-    expect(
-      screen.getByTestId("coord-notifications-health")
-    ).toHaveTextContent("7 unread events");
+    expect(screen.getByTestId("coord-notifications-health")).toHaveTextContent(
+      "7 unread events"
+    );
     expect(
       screen.getByTestId("coord-notifications-mark-all-read")
     ).toHaveAttribute("title", expect.stringContaining("ALL 7 unread"));
@@ -1227,7 +1244,9 @@ describe("CoordNotificationsPage", () => {
     // Its number may be applied — it is the newest one anybody delivered — but
     // the verdict stands, because a newer READ finished without confirming it.
     expect(strip).toHaveTextContent("These counts stopped updating");
-    expect(strip).not.toHaveTextContent("you have seen everything coord recorded");
+    expect(strip).not.toHaveTextContent(
+      "you have seen everything coord recorded"
+    );
   });
 
   describe("the ?ref= banner", () => {
@@ -1453,7 +1472,10 @@ describe("CoordNotificationsPage — agent actions", () => {
             summary: "A — page 1, read",
             read_at: "2026-09-18T11:00:00Z",
           }),
-          notification({ notification_id: UUID_B, summary: "B — page 1, unread" }),
+          notification({
+            notification_id: UUID_B,
+            summary: "B — page 1, unread",
+          }),
         ],
         next_cursor: "page-1-cursor",
         total: 3,
@@ -1461,7 +1483,10 @@ describe("CoordNotificationsPage — agent actions", () => {
       })
       .mockResolvedValueOnce({
         notifications: [
-          notification({ notification_id: UUID_C, summary: "C — page 2, unread" }),
+          notification({
+            notification_id: UUID_C,
+            summary: "C — page 2, unread",
+          }),
         ],
         next_cursor: null,
         total: 3,
@@ -1483,11 +1508,7 @@ describe("CoordNotificationsPage — agent actions", () => {
       screen
         .getAllByTestId("coord-notification-summary")
         .map((el) => el.textContent)
-    ).toEqual([
-      "B — page 1, unread",
-      "C — page 2, unread",
-      "A — page 1, read",
-    ]);
+    ).toEqual(["B — page 1, unread", "C — page 2, unread", "A — page 1, read"]);
     expect(httpGet).toHaveBeenCalledTimes(2);
     expect(String(httpGet.mock.calls[1][0])).toContain("cursor=page-1-cursor");
   });

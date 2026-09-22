@@ -3,6 +3,7 @@ import {
   AUDIT_FILTERS,
   AUTHORIZATION_CHECK_RESOURCE_KIND,
   DEFAULT_AUDIT_FILTER_ID,
+  ESCALATE_OVERRIDE_ACTION,
   NIL_OPERATOR_ID,
   blastRadiusOf,
   describeAuditAction,
@@ -51,12 +52,46 @@ describe("filters", () => {
     expect(resolveAuditFilter("nope").id).toBe(AUDIT_FILTERS[0]?.id);
   });
 
+  it("offers the agent escalate clearances, filtered by coord's via", () => {
+    // Plan 2026-09-13-escalate-path-block-is-agent-clearable-on-evidence 4.3.
+    const agent = resolveAuditFilter("escalate-agent");
+    expect(agent.action).toBe(ESCALATE_OVERRIDE_ACTION);
+    expect(agent.via).toBe("agent_evidence");
+    // …and the unsplit view beside it, so an operator clearance is one
+    // click away rather than invisible.
+    const all = resolveAuditFilter("escalate");
+    expect(all.action).toBe(ESCALATE_OVERRIDE_ACTION);
+    expect(all.via ?? null).toBeNull();
+    expect(describeAuditAction(ESCALATE_OVERRIDE_ACTION).mapped).toBe(true);
+  });
+
   it("gives every filter a hint stating its reach", () => {
     for (const f of AUDIT_FILTERS) expect(f.hint.length).toBeGreaterThan(0);
   });
 });
 
 describe("blastRadiusOf", () => {
+  it("states an escalate clearance's reach: one head, one writer", () => {
+    const blast = blastRadiusOf(
+      row({
+        action: ESCALATE_OVERRIDE_ACTION,
+        resource_kind: "coord.pr_events",
+        resource_key: "o/r#12",
+        metadata: { via: "agent_evidence", head_sha: "a".repeat(40) },
+      })
+    );
+    expect(blast.unstated).toBe(false);
+    expect(blast.items.map((i) => i.key)).toEqual(["head_sha", "via"]);
+    expect(blast.items[0]?.value).toBe("a".repeat(12));
+  });
+
+  it("does not read another writer's via as a clearance", () => {
+    // agent-registry rows stamp `via: self` — not an escalate clearance.
+    const blast = blastRadiusOf(row({ metadata: { via: "self" } }));
+    expect(blast.items).toEqual([]);
+    expect(blast.unstated).toBe(true);
+  });
+
   it("promotes the drain stamp coord writes", () => {
     const blast = blastRadiusOf(
       row({
