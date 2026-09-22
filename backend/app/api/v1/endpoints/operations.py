@@ -17,6 +17,7 @@ import asyncio
 import contextvars
 import json
 import re
+import time
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Any, Literal, NoReturn
@@ -38,7 +39,7 @@ from fastapi import (
     WebSocketDisconnect,
 )
 from fastapi.responses import JSONResponse, StreamingResponse
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 from qontinui_schemas.generated.per_type.memory_restore_request import (
     MemoryRestoreRequest,
 )
@@ -1209,38 +1210,108 @@ async def get_migrations_queue(
 # tenant resolution before forwarding.
 
 
-async def _proxy_coord_patch(
+async def _proxy_coord_write(
+    method: Literal["patch", "put"],
     path: str,
     body: Any,
     *,
-    tenant_id: UUID | None = None,
+    headers: dict[str, str] | None,
 ) -> Any:
-    """Proxy a PATCH request to coord. Returns the JSON body.
+    """Send one PATCH/PUT to coord and say honestly what came back.
 
-    Used by the PR Merge Orchestrator Phase 2 settings endpoints
-    (``PATCH /pr-merge/settings`` + ``PATCH /pr-merge/repos/:repo/profile``).
-    Same posture as ``_proxy_coord_post`` — tenant header,
-    timeout/connect-error mapping. Sticking to the existing httpx
-    pattern keeps the proxy footprint minimal.
+    The single implementation behind ``_proxy_coord_patch`` and
+    ``_proxy_coord_put``, so the two cannot drift. Both are WRITES, so the
+    status has to say whether coord may have applied the change:
+
+    * ``ConnectError`` → **502** ``coord is not reachable``: no connection was
+      made, so coord never saw the request. The only arm that is safe to
+      report as "nothing changed".
+    * a timeout, any OTHER transport failure after the request may have been
+      sent (``ReadError``, ``RemoteProtocolError`` — a load balancer cutting
+      the response), or a 2xx whose body is PRESENT but not JSON → **504**:
+      coord may well have committed, and only a re-read can tell. Each is
+      logged, because a 504 the operator retries is otherwise invisible.
+    * a coord ≥400 → coord's own status with ``detail=resp.text``.
+    * a 204, or any 2xx with an empty body → ``None``: a success that carries
+      nothing to return is still a success.
     """
     url = f"{settings.COORD_URL}{path}"
-    headers = _tenant_headers(tenant_id) if tenant_id is not None else None
+    event = f"coord_{method}_answer_lost"
     async with httpx.AsyncClient(timeout=_COORD_TIMEOUT) as client:
+        send = client.patch if method == "patch" else client.put
         try:
-            resp = await client.patch(url, json=body, headers=headers)
+            resp = await send(url, json=body, headers=headers)
         except httpx.ConnectError:
             raise HTTPException(
                 status_code=502,
                 detail="coord is not reachable",
             )
-        except httpx.TimeoutException:
+        except httpx.TimeoutException as exc:
+            logger.warning(event, path=path, exc_type=type(exc).__name__)
             raise HTTPException(
                 status_code=504,
                 detail="timeout waiting for coord",
-            )
+            ) from exc
+        except httpx.HTTPError as exc:
+            logger.warning(event, path=path, exc_type=type(exc).__name__)
+            raise HTTPException(
+                status_code=504,
+                detail=(
+                    f"coord's answer was lost in transit ({type(exc).__name__}); "
+                    "the change may have been applied"
+                ),
+            ) from exc
     if resp.status_code >= 400:
         raise HTTPException(status_code=resp.status_code, detail=resp.text)
-    return resp.json()
+    if resp.status_code == 204 or not resp.content:
+        return None
+    try:
+        return resp.json()
+    except (json.JSONDecodeError, UnicodeDecodeError) as exc:
+        logger.warning(
+            event,
+            path=path,
+            exc_type=type(exc).__name__,
+            status=resp.status_code,
+            # `getattr`: a log line on an error path must never raise itself.
+            content_type=getattr(resp, "headers", {}).get("content-type"),
+        )
+        raise HTTPException(
+            status_code=504,
+            detail=(
+                f"coord answered {resp.status_code} with a body that is not "
+                "JSON; the change may have been applied"
+            ),
+        ) from exc
+
+
+async def _proxy_coord_patch(
+    path: str,
+    body: Any,
+    *,
+    tenant_id: UUID | None = None,
+    forward_bearer: bool = False,
+) -> Any:
+    """Proxy a PATCH request to coord. Returns the JSON body (``None`` for an
+    empty 2xx).
+
+    Used by the PR Merge Orchestrator Phase 2 settings endpoints
+    (``PATCH /pr-merge/settings`` + ``PATCH /pr-merge/repos/:repo/profile``)
+    and every other PATCH proxy here. Same posture as ``_proxy_coord_post`` —
+    tenant header, timeout/connect-error mapping; the status contract (502 is
+    "not applied", 504 is "unknown") is ``_proxy_coord_write``'s.
+
+    ``forward_bearer`` — forward the captured caller bearer EVEN WHEN
+    ``tenant_id is None``, exactly as on ``_proxy_coord_post``. The tenant
+    rename (``PATCH /tenants/{tenant_id}``) authorizes on the operator's
+    own identity coord-side and resolves no home tenant web-side, so it
+    needs the bearer without the resolution. Default False preserves the
+    prior behavior exactly.
+    """
+    headers = (
+        _tenant_headers(tenant_id) if tenant_id is not None or forward_bearer else None
+    )
+    return await _proxy_coord_write("patch", path, body, headers=headers)
 
 
 async def _proxy_coord_put(
@@ -1249,32 +1320,16 @@ async def _proxy_coord_put(
     *,
     tenant_id: UUID | None = None,
 ) -> Any:
-    """Proxy a PUT request to coord. Returns the JSON body.
+    """Proxy a PUT request to coord. Returns the JSON body (``None`` for an
+    empty 2xx).
 
-    Clone of ``_proxy_coord_patch`` for HTTP PUT semantics. Used by the
-    decision-engine next-step-settings endpoint (§5.3 of plan
-    ``2026-05-30-decision-engine-tenant-ui.md``) where coord expects a
-    full-replacement PUT rather than a partial PATCH. Same posture:
-    tenant header, timeout/connect-error mapping.
+    The PUT twin of ``_proxy_coord_patch`` — same ``_proxy_coord_write``, so
+    the two cannot drift. Used by the decision-engine next-step-settings
+    endpoint (§5.3 of plan ``2026-05-30-decision-engine-tenant-ui.md``) where
+    coord expects a full-replacement PUT rather than a partial PATCH.
     """
-    url = f"{settings.COORD_URL}{path}"
     headers = _tenant_headers(tenant_id) if tenant_id is not None else None
-    async with httpx.AsyncClient(timeout=_COORD_TIMEOUT) as client:
-        try:
-            resp = await client.put(url, json=body, headers=headers)
-        except httpx.ConnectError:
-            raise HTTPException(
-                status_code=502,
-                detail="coord is not reachable",
-            )
-        except httpx.TimeoutException:
-            raise HTTPException(
-                status_code=504,
-                detail="timeout waiting for coord",
-            )
-    if resp.status_code >= 400:
-        raise HTTPException(status_code=resp.status_code, detail=resp.text)
-    return resp.json()
+    return await _proxy_coord_write("put", path, body, headers=headers)
 
 
 @router.get("/pr-merge/settings")
@@ -2775,33 +2830,6 @@ async def get_pr_merge_slo(
     )
 
 
-@router.post("/pr-merge/red-main/{repo:path}/spawn-fix")
-async def post_pr_merge_red_main_spawn_fix(
-    repo: str,
-    tenant_id: UUID = Depends(require_coord_tenant_admin),
-) -> Any:
-    """Operator-driven red-main remediation (red-main auto-remediation
-    Phase 4b). Spawn a visible fix session on the operator's device for
-    ``repo``'s current red episode, proxying coord's
-    ``POST /pr-merge/red-main/:repo/spawn-fix``.
-
-    ``repo`` is ``owner/name`` and is captured inline via ``{repo:path}``
-    (the same shape as ``/pr-merge/repos/:repo/profile``). No request body
-    is required — coord resolves the live red episode + tenant from the
-    forwarded operator bearer.
-
-    Coord returns ``200 {"agent_id": "<uuid>"}`` on success, or ``409`` when
-    a fix session is already running for the current red episode or the repo
-    has no live red-main alert. ``_proxy_coord_post`` re-raises coord's
-    status + JSON body so the banner can surface the 409 message inline.
-    """
-    return await _proxy_coord_post(
-        f"/pr-merge/red-main/{repo}/spawn-fix",
-        {},
-        tenant_id=tenant_id,
-    )
-
-
 # ---- Tenant self-service merge recovery ----------------------------------
 #
 # Plan `2026-07-30-coord-tenant-self-service-merge-recovery.md` Phase 4.
@@ -3195,14 +3223,18 @@ async def post_agents_allocate(
 # ---- Coord claims-dashboard proxy ---------------------------------------
 #
 # Plan `2026-05-18-agent-spawn-coordination.md` Phase 5 — the
-# `/admin/agent-claims` dashboard backend. Five read-only proxy
+# `/admin/agent-claims` dashboard backend. Four read-only proxy
 # endpoints that forward to coord:
 #
 # - `/operations/claims/list`             → coord `/coord/claims/list`
 # - `/operations/claims/recent-conflicts` → coord `/coord/claims/recent-conflicts`
 # - `/operations/claims/recent-expirations` → coord `/coord/claims/recent-expirations`
 # - `/operations/claims/steals`           → coord `/coord/claims/steals`
-# - `/operations/claims/alerts`           → coord `/coord/alerts` (filtered)
+#
+# A fifth, `/operations/claims/alerts` (the `claim-` slice of `/coord/alerts`),
+# was deleted with the dashboard's stale-claim alerts section by plan
+# `2026-09-18-notifications-are-agent-actions-and-alerts-are-agent-work`
+# Phase 8: raw alert rows are agents' work, not an operator surface.
 #
 # Same proxy posture as the merge endpoints above — read-only, no
 # mutating coord routes exposed through this surface. Steal +
@@ -3541,63 +3573,6 @@ async def get_claims_steals(
     )
 
 
-#: Page size asked of coord for the claim-alert slice. Coord's documented hard
-#: maximum, and it clamps rather than erroring, so this cannot 4xx if the cap
-#: ever moves down. See the comment in :func:`get_claims_alerts` for why this
-#: is a constant and not a query parameter.
-_CLAIMS_ALERTS_LIMIT = 1000
-
-
-@router.get("/claims/alerts")
-async def get_claims_alerts(
-    tenant_id: UUID = Depends(get_tenant_id),
-) -> Any:
-    """Return active claim-related alerts from coord.
-
-    Asks coord for the ``claim-`` slice directly (``?source=claim-`` —
-    ``source`` is matched as an ``alert_key`` prefix, the convention used
-    by
-    [`claims_alert_watcher`](https://github.com/qontinui/qontinui-coord/blob/main/src/claims_alert_watcher.rs)).
-    Other alert kinds (fleet-health, alembic-status, etc.) stay scoped
-    to the Operations page's general alerts surface.
-
-    ⚠️ This used to pull the WHOLE rollup and filter ``alert_key`` in
-    Python, which measured **0 rows** on 2026-08-14: coord caps the
-    unfiltered rollup at 500 rows ordered by severity/recency, and claim
-    alerts never survived the cap, so the Python filter was always
-    filtering an already-claimless window. A targeted ``source`` query is
-    filtered in SQL and cannot be evicted by another watcher's tick.
-
-    Forwards the operator bearer (fleet-auth P2/D6).
-    """
-    # `limit` is EXPLICIT, and it is not a style choice. This endpoint sends
-    # no page size, so it inherits coord's default — and the coord half of
-    # plan `2026-08-05-coord-alerts-surface-and-fleet-style-ui` dropped that
-    # default from 500 to 100 when it added paging. Silently, from here: the
-    # narrowing lives in another repo and there is no signal on this side.
-    #
-    # The single consumer (`AgentClaimsDashboard`'s stale-claim section) does
-    # not page and does not read `total_count`, so above the ceiling it would
-    # render a truncated list as the whole truth — the exact defect that plan
-    # exists to kill, re-created one endpoint over. 1000 is coord's own hard
-    # maximum (it clamps rather than erroring), which is 2x the ceiling this
-    # endpoint had before the coord change and 10x the one it has now.
-    #
-    # Deliberately a constant in the params dict rather than a `limit` query
-    # parameter: a new FastAPI parameter changes the OpenAPI schema, and this
-    # endpoint has exactly one caller, which wants all active claim alerts.
-    # Give it a real `limit` when a second caller needs a different answer.
-    payload = await _proxy_coord_get(
-        "/coord/alerts",
-        params={"source": "claim-", "limit": _CLAIMS_ALERTS_LIMIT},
-        tenant_id=tenant_id,
-    )
-    # coord returns either a list or `{"alerts": [...]}` depending on the
-    # version; pass either through untouched. No Python-side filtering —
-    # coord's `source` prefix match is the filter now.
-    return payload
-
-
 # ---- Coord dev-action ledger proxy ----------------------------------------
 #
 # Plan ``2026-06-07-twin-dev-event-cause-effect-ledger.md``. Surfaces the
@@ -3673,6 +3648,7 @@ async def get_dev_action_detail(
 # Routes (read-only unless noted):
 #
 # - GET    /operations/plans                            — list coord.work_units
+# - GET    /operations/plans/overview                    — corpus status tally
 # - GET    /operations/plans/{slug}                      — single work-unit
 # - GET    /operations/plans/{slug}/history              — status history
 # - POST   /operations/plans/{slug}/transition           — set work-unit status
@@ -3834,6 +3810,29 @@ async def list_coord_plans(
     ),
     limit: int | None = Query(default=None, ge=1, le=500),
     offset: int | None = Query(default=None, ge=0),
+    order: Literal["authored_desc", "updated_desc"] | None = Query(
+        default=None,
+        description=(
+            "Server-side order. ``authored_desc`` walks the corpus by "
+            "authoring date (keyset cursor below); ``updated_desc`` (coord's "
+            "default when absent) is the mutation-time order. Ignored by a "
+            "coord that predates it."
+        ),
+    ),
+    after_authored_at: str | None = Query(
+        default=None,
+        min_length=1,
+        description=(
+            "Keyset cursor half: the ``after_authored_at`` of the previous "
+            "page's ``next_cursor``. Omitted while walking the NULL-authored "
+            "tail (the cursor's value is null there)."
+        ),
+    ),
+    after_slug: str | None = Query(
+        default=None,
+        min_length=1,
+        description="Keyset cursor half: the previous page's ``next_cursor.after_slug``.",
+    ),
     tenant_id: UUID = Depends(get_tenant_id),
     db: AsyncSession = Depends(get_async_db),
     # OPTIONAL, and that is deliberate: this route is gated by
@@ -3886,6 +3885,29 @@ async def list_coord_plans(
     read an unexpected page as "coord has not caught up". Rejecting the empty
     string here is the honest failure; coord normalizes it as well, so neither
     side depends on the other for this.
+
+    ``order`` / ``after_authored_at`` / ``after_slug`` are the corpus walk
+    (plan ``2026-09-12-admin-coord-plans-shows-a-rotating-3-minute-slice-so-plans-get-lost``
+    Phase 1). ``order=authored_desc`` makes coord answer in
+    ``authored_at DESC NULLS LAST, slug`` order with a ``next_cursor`` the
+    console follows until it is null, so no work unit can fall past a 500-row
+    cap. Like ``exclude_slug_prefix`` they ship ahead of coord safely: an older
+    coord ignores all three and returns its ``updated_at``-ordered page with no
+    ``order`` echo and no ``next_cursor``, which is how the console tells the
+    two apart. ``order`` is a ``Literal`` so a junk value is a 422 here rather
+    than a silently-ignored parameter upstream; the cursor halves take
+    ``min_length=1`` so an empty box never reaches coord as a cursor.
+
+    The body signals and the walk compose per PAGE, and deliberately so: every
+    page of a walk is a full request, so each one carries its own rows
+    annotated and its own ``body_signal`` block. That block describes the reads
+    THIS request made — the capture dial and the artifact surface are read once
+    per page, not once per walk — so two pages of one walk can legitimately
+    disagree when a dial read fails mid-walk. Folding them is the console's
+    job (``planBodySignal.ts`` ``foldBodySignalBlocks``), because only the
+    caller knows which pages belong to one answer; a proxy that cached the
+    dial across requests to make them agree would be inventing an agreement it
+    did not measure.
     """
     params: dict[str, Any] = {}
     if status is not None:
@@ -3898,6 +3920,12 @@ async def list_coord_plans(
         params["limit"] = limit
     if offset is not None:
         params["offset"] = offset
+    if order is not None:
+        params["order"] = order
+    if after_authored_at is not None:
+        params["after_authored_at"] = after_authored_at
+    if after_slug is not None:
+        params["after_slug"] = after_slug
     payload = await _proxy_coord_get(
         "/coord/work-units", params=params or None, tenant_id=tenant_id
     )
@@ -3916,6 +3944,29 @@ async def list_coord_plans(
             rows, db=db, user=actor, tenant_id=tenant_id
         )
     return payload
+
+
+# Declared BEFORE ``/plans/{slug}`` on purpose: FastAPI matches in declaration
+# order, so after it the static ``overview`` segment would be captured as a
+# slug and proxied to ``/coord/work-units/overview`` by the wrong handler.
+@router.get("/plans/overview")
+async def get_coord_plans_overview(
+    tenant_id: UUID = Depends(get_tenant_id),
+) -> Any:
+    """Return coord's CORPUS-wide work-unit status tally (tenant-scoped).
+
+    Proxies coord ``GET /coord/work-units/overview``: ``{"row_count": N,
+    "distinct_status_count": N, "facets": {"by_status_class": {...},
+    "by_status": {...}, "by_status_truncated": bool, "by_status_omitted": N},
+    "corpus_complete": bool}``. It takes no filters by coord's design (a
+    filtered overview would move its denominator), so ``row_count`` counts
+    EVERY unit — including the ``shepherd-*`` rows. The work-units list
+    (``/admin/coord/work-units``) includes those rows by default and excludes
+    them only when the operator asks (``exclude_slug_prefix``); under that
+    exclusion the console states the difference rather than comparing unlike
+    totals.
+    """
+    return await _proxy_coord_get("/coord/work-units/overview", tenant_id=tenant_id)
 
 
 @router.get("/plans/{slug}")
@@ -4060,7 +4111,7 @@ async def get_pull_decisions(
     )
 
 
-# ---- Alerts (full rollup; sibling of /claims/alerts) ---------------------
+# ---- Alerts (full rollup; read API for agents and the red-main banner) ---
 
 
 def _nonblank(values: list[str] | None) -> list[str] | None:
@@ -4089,12 +4140,14 @@ async def get_coord_alerts(
 ) -> Any:
     """Return the full ``coord.alerts`` rollup with optional filters.
 
-    Sibling of ``/operations/claims/alerts`` (which narrows to
-    ``alert_key`` prefix ``claim-``). This endpoint exposes ALL alert
-    kinds for the dashboard's Alerts page. The kind vocabulary is
-    **served by the API** — coord returns the distinct kind list in the
-    response, so neither this proxy nor the UI hardcodes it (an
-    enumeration here went stale the moment a new watcher shipped).
+    Exposes ALL alert kinds. Its operator PAGE is gone (plan
+    ``2026-09-18-notifications-are-agent-actions-and-alerts-are-agent-work``
+    D7), but the read API stays for its consumers: the console's
+    ``RedMainBanner`` (``?kind=red_main``, reading each row's ``claimed`` /
+    ``claim`` fields) and agent tooling. The kind vocabulary is **served by
+    the API** — coord returns the distinct kind list in the response, so
+    neither this proxy nor a caller hardcodes it (an enumeration here went
+    stale the moment a new watcher shipped).
 
     ``severity`` and ``kind`` are REPEATABLE
     (``?kind=stale_wip&kind=red_main``) so the UI can multi-select; they
@@ -4333,14 +4386,34 @@ async def get_fleet_health(
     ``kv_bucket`` and ``as_of``. This route declares no
     ``response_model``, so nothing here filters a field coord adds.
 
-    Those nine are what coord emits **today**. Two more are read by this
-    repo's client and appear nowhere in coord's source: ``FleetHealthPayload``
-    declares ``alerts_scrape_up`` and ``pageout``, and the Dev Ops page
-    branches on ``alerts_scrape_up === false``. They are FORWARD
-    declarations — deliberately absence-tolerant, since the client must
-    treat an absent flag as *measured* — so they are not part of this
-    contract and this route synthesises neither. The branch reading them
-    is unreachable until coord grows them.
+    Coord also serves ``alerts_scrape_up`` (beside the ``alerts``
+    severity rollup, for API consumers), ``credential_dark_scrape_up``,
+    ``pageout`` (the page-out sink's posture) and — since plan
+    ``2026-09-18-notifications-are-agent-actions-and-alerts-are-agent-work``
+    Phase 7 — the ``conditions`` block. The web app reads
+    ``credential_dark_scrape_up`` and ``conditions``; it no longer reads
+    ``alerts`` / ``alerts_scrape_up`` or ``pageout`` (the severity badges and
+    the pageout-sink note they fed were replaced by the Dev Ops Conditions
+    panel in Phase 8).
+
+    ``conditions`` answers "is anything degraded that no agent is
+    handling?", computed under the same visibility predicate as
+    ``/coord/alerts``: ``open`` / ``claimed`` / ``unclaimed`` (agent work by
+    lease state), ``unclaimed_oldest_age_secs``, ``unclaimed_by_domain``,
+    ``awaiting_operator`` + ``awaiting_operator_question_ids`` (open
+    operator questions; the id list is capped, the count exact),
+    ``awaiting_operator_alerts`` (open operator-responder alerts — NOT
+    comparable with ``awaiting_operator`` by subtraction, because an
+    answered alert that has not yet cleared is never re-asked),
+    ``awaiting_operator_unasked`` (open operator alerts with no question at
+    all) and ``awaiting_operator_answered_uncleared`` (answered, still open)
+    — the two exact counts the panel reads, absent on an older coord,
+    ``settings_in_effect`` (capped list of ``{alert_id, kind, since,
+    summary}``) + ``settings_in_effect_count``, and ``scrape_up``. On a
+    failed read coord sends ``scrape_up: false`` with every count ``null``
+    and an ``unavailable_reason`` — never zeros. The block is ABSENT on a
+    coord predating Phase 7, which callers render as UNKNOWN, not as
+    "nothing unhandled". This route synthesises none of it.
 
     The contract is written down because the sibling resource-samples
     route learned the lesson first: this
@@ -5332,6 +5405,59 @@ async def get_fleet_volumes(
     That is UNKNOWN, not zero — see the section note above.
     """
     return await _proxy_coord_get("/coord/fleet/volumes", tenant_id=tenant_id)
+
+
+# ---- Worktree allocation slots (Dev Ops dashboard) ------------------------
+#
+# Plan: `2026-09-21-worktree-slots-devops-dashboard-view.md` Phase 2. Backs
+# the "Worktree slots" section on `/admin/coord/devops`.
+#
+# **Why this is a new route rather than a fan-out of the existing per-device
+# allocation-budget door.** `GET /coord/agent-worktrees/allocation-budget/:id`
+# reads a 24h-windowed census scan that measured 11-15s (sometimes timing
+# out) per call — see plan
+# `2026-09-20-allocation-budget-door-reads-the-whole-census-to-compute-three-scalars-so-it-times-out`.
+# Against this module's 5s ``_COORD_TIMEOUT`` that door would 504 on
+# essentially every call, independent of how many devices are fanned out
+# over. `/coord/fleet/worktree-slots` is a cheap, batched, indexed route that
+# reuses only the fast half of that door's data (the ledger/census LATERAL
+# join within the narrow ``building_ttl_secs()`` window, not the slow 24h
+# scan) — see the plan's Design decision.
+#
+# **Honesty.** `census_recent_rows == 0` means coord has no recent census hit
+# for that device within the narrow window, so `active_worktrees` for that
+# device could not be corroborated as live and MUST be rendered UNKNOWN by
+# the caller — never as an idle/empty machine and never as a healthy `0/8`.
+# This is a different, narrower-windowed field from the per-device door's
+# `census_rows_observed` (24h) and must not be confused with it.
+
+
+@router.get("/fleet/worktree-slots")
+async def get_fleet_worktree_slots(
+    tenant_id: UUID = Depends(get_tenant_id),
+) -> Any:
+    """Proxy coord's ``GET /coord/fleet/worktree-slots`` (tenant-scoped).
+
+    Fleet-wide worktree-allocation-slot occupancy: how many of each device's
+    ``COORD_MAX_WORKTREES`` slots are occupied, and by what. Response shape
+    is coord-authored and passed through untouched::
+
+        {"tenant_id": "<uuid>", "device_count": <int>, "truncated": false,
+         "device_cap": 100, "census_window_secs": 900,
+         "devices": [{"device_id": "<uuid>", "hostname": "<string>|null",
+             "active_worktrees": <int>, "max_worktrees": 8,
+             "census_recent_rows": <int>,
+             "occupants": {"shown": 0, "total": 0, "truncated": false,
+                            "rows": []}}]}
+
+    ``census_recent_rows == 0`` means coord has no recent census hit for
+    that device within the narrow (``census_window_secs``, default 900s)
+    window, so ``active_worktrees`` for that device could not be
+    corroborated as live and the caller MUST render that row UNKNOWN — never
+    an idle/empty machine and never a healthy ``0/8`` — see the frontend
+    hook and `FleetResourceStrip`'s existing honesty rules.
+    """
+    return await _proxy_coord_get("/coord/fleet/worktree-slots", tenant_id=tenant_id)
 
 
 # ---- Wave-3 prep (decision queue + agent-logs + memory) ------------------
@@ -6872,7 +6998,7 @@ class NotifyWhenGreenRequest(BaseModel):
     no 400, no log line, and a gate registered under the wrong clearance
     rules. Rejecting unknown keys makes the NEXT such drift a typed 422
     instead of another silent swallow. The only in-tree caller
-    (``CiStatusPanel.tsx``) sends exactly ``repo`` + ``head_sha``.
+    (``CiRepoStrip.tsx``) sends exactly ``repo`` + ``head_sha``.
 
     A BLANK ``gate_class`` is rejected rather than forwarded. Coord's
     ``normalize_gate_class`` trims and empty-filters it back to ``None``,
@@ -8451,7 +8577,8 @@ async def list_user_tenants(
 
     Wire shape::
 
-        { "tenants": [ { "id": "<uuid>", "slug": "<str>", "name": "<str>" } ],
+        { "tenants": [ { "id": "<uuid>", "slug": "<str>", "name": "<str>",
+                         "roles": ["<role>", ...] } ],
           "active_tenant_id": "<uuid>" }
     """
     identity = await get_coord_identity(request)
@@ -8460,7 +8587,7 @@ async def list_user_tenants(
         raise HTTPException(status_code=403, detail="tenant_not_resolved")
 
     by_id = {t.tenant_id: t for t in identity.tenants}
-    tenants_out: list[dict[str, str]] = []
+    tenants_out: list[dict[str, Any]] = []
     for tid in ordered_ids:
         member = by_id.get(tid)
         slug = member.slug if member is not None else ""
@@ -8473,6 +8600,12 @@ async def list_user_tenants(
                 # tenant; the slug otherwise (older coord, or an
                 # SSO-auto-provisioned tenant that never got a name).
                 "name": display_name or slug,
+                # The caller's roles IN THIS tenant (coord's per-tenant
+                # `tenants[].roles`, never a union across tenants). The UI
+                # gates per-tenant controls on it — the Rename action
+                # renders only where this contains exactly `admin`, which
+                # is what coord's `is_tenant_admin` accepts.
+                "roles": list(member.roles) if member is not None else [],
             }
         )
     return {
@@ -8498,6 +8631,49 @@ class TenantCreateIn(BaseModel):
     """
 
     display_name: str = Field(min_length=1, max_length=120)
+
+
+#: Coord's canonical slug shape (``slugify_user_tenant_name``'s output):
+#: ``[a-z0-9-]``, starting and ending alphanumeric, no doubled hyphen. The
+#: 3..=63 length bound rides ``Field`` below. Checked with Python ``re``
+#: rather than ``Field(pattern=)`` because pydantic-core's Rust regex engine
+#: has no lookahead.
+_TENANT_SLUG_RE = re.compile(r"^[a-z0-9](?:[a-z0-9]|-(?!-))*[a-z0-9]$")
+
+
+class TenantRenameIn(BaseModel):
+    """Body for ``PATCH /operations/tenants/{tenant_id}`` — a partial rename.
+
+    Both fields are optional and at least one must be present (a body with
+    neither is a 422 here, before any coord round-trip; coord would answer
+    ``400 empty_patch``). Only the fields the caller sent are forwarded, so a
+    display-name-only rename never pays coord's slug validation.
+
+    Unlike ``TenantCreateIn`` the slug IS supplied by the caller, and it is
+    canonical-or-refused (plan ``2026-09-17-tenant-rename`` D4): these bounds
+    mirror coord's so an obviously malformed slug costs no round-trip, but
+    coord stays the authority — it also runs the reserved-name, historical,
+    pinned and group-mapped checks nothing here can mirror.
+    """
+
+    display_name: str | None = Field(default=None, min_length=1, max_length=200)
+    slug: str | None = Field(default=None, min_length=3, max_length=63)
+
+    @field_validator("slug")
+    @classmethod
+    def _slug_is_canonical(cls, value: str | None) -> str | None:
+        if value is not None and not _TENANT_SLUG_RE.fullmatch(value):
+            raise ValueError(
+                "slug must be lowercase letters, digits and single hyphens, "
+                "starting and ending with a letter or digit"
+            )
+        return value
+
+    @model_validator(mode="after")
+    def _at_least_one_field(self) -> "TenantRenameIn":
+        if self.display_name is None and self.slug is None:
+            raise ValueError("empty_patch: send display_name, slug, or both")
+        return self
 
 
 @router.post("/tenants")
@@ -9659,6 +9835,129 @@ async def get_prompt_document_publication(
     return await _proxy_coord_get(
         f"/coord/prompt-document-publications/{quote(kind, safe='')}"
         f"/{quote(name, safe='')}/{version}",
+        tenant_id=tenant_id,
+    )
+
+
+# The MODIFIED-tenant decisions (plan ``2026-09-04-cross-tenant-policy-publishing``
+# D4 and Phase 7). A document whose body diverged from the publication it tracks
+# is never overwritten by the fan-out; the operator resolves it from the upstream
+# dialog with one of three acts, each proxied verbatim to coord's tenant-scoped
+# route. All three are WRITES into the caller's own tenant and gate on
+# ``require_coord_tenant_admin`` like every other prompt-document mutation
+# (coord re-checks admin on every write). The merge PREVIEW is a read and gates
+# on tenant membership, matching the clause list beside it.
+#
+# Every one of these needs the D3 columns provisioned; coord answers ``503
+# schema_migration_pending`` otherwise, which passes through — a decision coord
+# cannot record must not look like one it took.
+
+
+@router.post("/coord/prompt-documents/{kind}/{name}/upstream-adopt")
+async def adopt_upstream_prompt_document(
+    kind: str,
+    name: str,
+    body: dict[str, Any],
+    tenant_id: UUID = Depends(require_coord_tenant_admin),
+) -> Any:
+    """``Adopt upstream``: replace this tenant's body with a publication and
+    advance the tracked version, in one coord transaction. Tenant-admin only.
+
+    Body: ``{publication_version, expected_version?}``. ``publication_version``
+    is REQUIRED — the operator reviewed a specific body, and "the latest" may
+    have moved since the dialog loaded it. ``expected_version`` is the
+    optimistic-lock guard; coord answers ``409 document_moved`` if the document
+    changed underneath. ``409 already_current`` when the document already IS
+    that publication. The local edits stay recoverable from version history.
+    """
+    return await _proxy_coord_post(
+        f"/coord/prompt-documents/{quote(kind, safe='')}/{quote(name, safe='')}"
+        "/upstream-adopt",
+        body,
+        tenant_id=tenant_id,
+    )
+
+
+@router.post("/coord/prompt-documents/{kind}/{name}/upstream-keep")
+async def keep_local_prompt_document(
+    kind: str,
+    name: str,
+    body: dict[str, Any],
+    tenant_id: UUID = Depends(require_coord_tenant_admin),
+) -> Any:
+    """``Keep mine``: record "reviewed publication N, declined" — advance the
+    tracked version WITHOUT changing the body. Tenant-admin only.
+
+    Not a no-op, and the plan is explicit about why: this is the mechanism that
+    clears the ``update available`` badge for a tenant that means to keep its
+    edits; without it the badge nags forever. Same body shape as the adopt
+    route. Coord answers ``409 already_reviewed`` when the tracked version is
+    already at or past ``publication_version`` — the pointer only moves
+    forward.
+    """
+    return await _proxy_coord_post(
+        f"/coord/prompt-documents/{quote(kind, safe='')}/{quote(name, safe='')}"
+        "/upstream-keep",
+        body,
+        tenant_id=tenant_id,
+    )
+
+
+@router.get("/coord/prompt-documents/{kind}/{name}/upstream-merge")
+async def preview_upstream_merge(
+    kind: str,
+    name: str,
+    publication_version: int | None = None,
+    tenant_id: UUID = Depends(get_tenant_id),
+) -> Any:
+    """The clause-grained three-way merge PREVIEW for a ``policy`` document
+    (Phase 7). Read-only: it decides nothing and writes nothing. Any tenant
+    member.
+
+    Coord answers ``mode: "clauses"`` with one entry per clause name — the
+    decision, ``requires_choice``, and the ``base`` / ``local`` / ``upstream``
+    sides for a three-column diff — or ``mode: "whole_body"`` with the reason a
+    clause merge is not defined for this pair (no clause blocks on one side,
+    duplicate clause names, or prose before the first clause header that a
+    clause recompile could not reconstruct). ``publication_version`` absent
+    means the latest. Coord's own ``400`` for a non-``policy`` kind passes
+    through.
+    """
+    params = (
+        {"publication_version": publication_version}
+        if publication_version is not None
+        else None
+    )
+    return await _proxy_coord_get(
+        f"/coord/prompt-documents/{quote(kind, safe='')}/{quote(name, safe='')}"
+        "/upstream-merge",
+        params=params,
+        tenant_id=tenant_id,
+    )
+
+
+@router.post("/coord/prompt-documents/{kind}/{name}/upstream-merge")
+async def apply_upstream_merge(
+    kind: str,
+    name: str,
+    body: dict[str, Any],
+    tenant_id: UUID = Depends(require_coord_tenant_admin),
+) -> Any:
+    """``Merge clauses``: land a reviewed clause-grained merge (Phase 7).
+    Tenant-admin only.
+
+    Body: ``{publication_version, expected_version?, resolutions?}``.
+    ``resolutions`` maps each CONFLICTED clause name to ``"local"`` or
+    ``"upstream"``; a conflicted clause missing from it is ``409
+    unresolved_conflicts`` naming the clauses — coord never picks a side. The
+    other ``409`` codes are ``document_moved``, ``whole_body_fallback`` (use
+    Adopt / Keep instead) and ``nothing_to_merge``. Forwarded verbatim; the
+    per-clause choices are the operator's and this proxy adds none.
+    """
+    return await _proxy_coord_post(
+        f"/coord/prompt-documents/{quote(kind, safe='')}/{quote(name, safe='')}"
+        "/upstream-merge",
+        body,
         tenant_id=tenant_id,
     )
 
@@ -12963,3 +13262,388 @@ async def remove_cognito_group_user(
         target_username=username,
     )
     return {"ok": True, "username": username}
+
+
+# ---- Tenant RENAME (plan 2026-09-17-tenant-rename, Phases C + D5) --------
+#
+# Defined HERE, at the end of the module, rather than beside
+# ``create_user_tenant``: the route is rate-limited with the same
+# ``user_limiter.shared_limit`` wrapper the Cognito group routes carry, and a
+# decorator is evaluated at import time in file order — so it must sit below
+# ``_rate_limiting_disabled`` and ``_CREATE_GROUP_RATE_LIMIT``. Its body model,
+# ``TenantRenameIn``, stays beside ``TenantCreateIn``.
+
+#: One rename can CREATE a Cognito group and add every member of the old home
+#: group to it (the D5 follow-through below), so it is paced like the group
+#: create route it may perform — never looser than the most expensive thing it
+#: can do.
+_TENANT_RENAME_RATE_LIMIT = _CREATE_GROUP_RATE_LIMIT
+
+# How long the post-rename home-group migration may spend copying members
+# before it stops and REPORTS a partial. Sized under the frontend's own
+# request ceiling so the answer still reaches the operator: see the loop in
+# `_migrate_home_group` for why an unreported partial is the failure mode
+# worth spending a constant on.
+_HOME_GROUP_MIGRATION_BUDGET_SECONDS = 25
+
+HomeGroupMigrationStatus = Literal[
+    "migrated",
+    # Some members copied, then the budget ran out. Distinct from "failed":
+    # nothing went wrong, the work was simply larger than one request, and
+    # the count in `members_copied` is what the operator needs to finish it.
+    "partial",
+    "requires_superuser",
+    "target_exists",
+    "target_mapped",
+    "absent",
+    "failed",
+]
+
+
+def _home_group_outcome(
+    status: HomeGroupMigrationStatus,
+    detail: str,
+    *,
+    old_group: str,
+    new_group: str,
+    members_copied: int = 0,
+    new_group_created: bool = False,
+) -> dict[str, Any]:
+    return {
+        "status": status,
+        "detail": detail,
+        "old_group": old_group,
+        "new_group": new_group,
+        "members_copied": members_copied,
+        # True whenever THIS call created `new_group` — including on `failed`,
+        # where a half-populated group now exists in the shared pool and the
+        # operator has to know it is there.
+        "new_group_created": new_group_created,
+    }
+
+
+async def _migrate_home_group(
+    db: AsyncSession | None,
+    *,
+    current_user: UserModel,
+    old_group: str,
+    new_group: str,
+    expected_old_group: str | None,
+) -> dict[str, Any]:
+    """Carry ``<old>-home`` to ``<new>-home`` after a coord slug rename (D5).
+
+    Never raises and never rolls the coord rename back: the rename is already
+    committed coord-side, and coord's slug history makes a stale home group
+    harmless (it still resolves to the renamed tenant), so this is hygiene
+    whose outcome is REPORTED rather than enforced. Every failure — a Cognito
+    error, an unreadable mapping check, or anything unexpected — becomes
+    ``failed`` with "the rename is complete" wording, never a 500 the caller
+    would read as "the rename failed" and retry.
+
+    The rules, each a refusal to widen what a tenant admin can do:
+
+    * **Coord's answer must be self-consistent.** ``home_group_to_migrate``
+      must be ``<previous slug>-home``; anything else means the response is not
+      what this code understands, and no AWS write is made on its say-so.
+    * **Superuser only.** Web's Cognito group routes are ``require_admin``
+      (``is_superuser``); a tenant-admin rename must not side-step that gate by
+      reaching the same pool through this route. A non-superuser gets
+      ``requires_superuser`` and no AWS call is made at all.
+    * **Never delete ``<old>-home``.** Delete is the one irreversible Cognito
+      act (no undelete) and has its own blast-radius guards on its own route.
+    * **Never touch an existing ``<new>-home``.** The pool is SHARED; a group
+      by that name may already belong to someone else — ``target_exists``.
+    * **Never create a ``<new>-home`` coord already maps.** A mapping naming a
+      group that does not exist yet is live the moment the group appears:
+      creating it and copying members in would grant them whatever roles that
+      mapping carries, in whichever tenant it points at — ``target_mapped``.
+      Checked with ``_coord_group_blast_radius``, the pool-wide read the delete
+      route's guard uses; an unreadable answer is UNKNOWN and refuses.
+    * **Through the same audited helpers** the group routes use: every
+      ``create_group`` / ``add_user_to_group`` that lands writes its
+      ``auth.cognito_group_admin_events`` row via
+      ``_write_cognito_group_audit``.
+    """
+    if old_group != expected_old_group:
+        logger.warning(
+            "tenant_rename_home_group_mismatch",
+            home_group_to_migrate=old_group,
+            expected=expected_old_group,
+        )
+        return _home_group_outcome(
+            "failed",
+            f"Coord named “{old_group}” as the home group to move, but the "
+            "previous short id implies "
+            f"“{expected_old_group or 'unknown'}”. Nothing was changed in "
+            "Cognito. The rename itself is complete.",
+            old_group=old_group,
+            new_group=new_group,
+        )
+
+    if not getattr(current_user, "is_superuser", False):
+        return _home_group_outcome(
+            "requires_superuser",
+            f"Cognito group “{old_group}” was not moved: moving a home group "
+            "needs a platform superuser. The rename is complete and the old "
+            "group still resolves to this tenant.",
+            old_group=old_group,
+            new_group=new_group,
+        )
+
+    created = False
+    copied = 0
+    total: int | None = None
+
+    def _partial() -> str:
+        if not created:
+            return f"“{new_group}” was not created."
+        of_total = f" of {total}" if total is not None else ""
+        return (
+            f"“{new_group}” WAS created and holds {copied}{of_total} member(s) "
+            f"of “{old_group}” — finish or delete it from the Cognito groups "
+            "panel."
+        )
+
+    try:
+        groups = await asyncio.to_thread(cognito_admin.list_groups)
+        names = {g.get("group_name") for g in groups}
+        if old_group not in names:
+            return _home_group_outcome(
+                "absent",
+                f"No Cognito group “{old_group}” exists, so there was nothing to move.",
+                old_group=old_group,
+                new_group=new_group,
+            )
+        if new_group in names:
+            return _home_group_outcome(
+                "target_exists",
+                f"Cognito group “{new_group}” already exists, so it was left "
+                f"untouched and “{old_group}” was not copied into it.",
+                old_group=old_group,
+                new_group=new_group,
+            )
+        try:
+            radius = await _coord_group_blast_radius(new_group)
+        except HTTPException as exc:
+            logger.warning(
+                "tenant_rename_home_group_mapping_check_failed",
+                new_group=new_group,
+                status=exc.status_code,
+            )
+            return _home_group_outcome(
+                "failed",
+                f"Could not check whether coord already maps “{new_group}”, so "
+                "it was not created. The rename itself is complete; "
+                f"“{old_group}” was not deleted.",
+                old_group=old_group,
+                new_group=new_group,
+            )
+        if radius.mapped_total > 0:
+            return _home_group_outcome(
+                "target_mapped",
+                f"Coord already has {radius.mapped_total} SSO group mapping(s) "
+                f"naming “{new_group}”, so creating it would grant its members "
+                "those roles. It was not created and nothing was copied. The "
+                "rename itself is complete.",
+                old_group=old_group,
+                new_group=new_group,
+            )
+        try:
+            await asyncio.to_thread(
+                cognito_admin.create_group,
+                new_group,
+                f"Home group (moved from {old_group} by a tenant rename)",
+            )
+        except CognitoGroupExistsError:
+            # Created between the list and the create — somebody else's now.
+            return _home_group_outcome(
+                "target_exists",
+                f"Cognito group “{new_group}” was created by someone else "
+                "while this rename ran, so it was left untouched.",
+                old_group=old_group,
+                new_group=new_group,
+            )
+        created = True
+        await _write_cognito_group_audit(
+            db,
+            actor_user_id=current_user.id,
+            action="create_group",
+            group_name=new_group,
+            details={"reason": "tenant_rename_home_group", "from": old_group},
+        )
+        users = await asyncio.to_thread(cognito_admin.list_users_in_group, old_group)
+        members = [u for u in users if u.get("username")]
+        total = len(members)
+        # A WALL-CLOCK BUDGET, because this loop is the only unbounded work in
+        # the request and its outcome lives ONLY in the response body.
+        #
+        # Each member costs one `AdminAddUserToGroup` plus one audit INSERT,
+        # sequentially, and `list_users_in_group` paginates without a cap — so
+        # a home group with hundreds of members runs for minutes. Nothing
+        # cancels it when the caller gives up: the browser's own 60s ceiling
+        # fires first, the operator is told the outcome is unknown, and the
+        # record that a half-populated group now exists in the SHARED Cognito
+        # pool dies with the response nobody received.
+        #
+        # Stopping at the budget converts that into a reported partial: the
+        # same `_partial()` sentence the failure arms already carry, with the
+        # count, while the answer can still be delivered. Deliberately smaller
+        # than the client ceiling so the response wins the race.
+        deadline = time.monotonic() + _HOME_GROUP_MIGRATION_BUDGET_SECONDS
+        for user in members:
+            if time.monotonic() >= deadline:
+                logger.warning(
+                    "tenant_rename_home_group_migration_budget_exhausted",
+                    old_group=old_group,
+                    new_group=new_group,
+                    members_copied=copied,
+                    members_total=total,
+                    budget_seconds=_HOME_GROUP_MIGRATION_BUDGET_SECONDS,
+                )
+                return _home_group_outcome(
+                    "partial",
+                    f"Moving “{old_group}” to “{new_group}” ran out of time after "
+                    f"{_HOME_GROUP_MIGRATION_BUDGET_SECONDS}s. {_partial()} "
+                    f"The rename itself is complete; “{old_group}” was not deleted.",
+                    old_group=old_group,
+                    new_group=new_group,
+                    members_copied=copied,
+                    new_group_created=created,
+                )
+            username = user["username"]
+            await asyncio.to_thread(
+                cognito_admin.add_user_to_group, username, new_group
+            )
+            copied += 1
+            await _write_cognito_group_audit(
+                db,
+                actor_user_id=current_user.id,
+                action="add_user_to_group",
+                group_name=new_group,
+                target_email=user.get("email"),
+                target_username=username,
+                details={"reason": "tenant_rename_home_group", "from": old_group},
+            )
+    except CognitoAdminError as exc:
+        logger.warning(
+            "tenant_rename_home_group_migration_failed",
+            old_group=old_group,
+            new_group=new_group,
+            new_group_created=created,
+            members_copied=copied,
+            error=str(exc),
+        )
+        return _home_group_outcome(
+            "failed",
+            f"Moving “{old_group}” to “{new_group}” failed: {exc}. {_partial()} "
+            f"The rename itself is complete; “{old_group}” was not deleted.",
+            old_group=old_group,
+            new_group=new_group,
+            members_copied=copied,
+            new_group_created=created,
+        )
+    except Exception as exc:  # noqa: BLE001 - coord already committed the rename
+        # Anything else (a non-Cognito bug, a malformed helper answer) must not
+        # become a 500: coord has committed, and a 500 reads as "not renamed".
+        logger.exception(
+            "tenant_rename_home_group_migration_crashed",
+            old_group=old_group,
+            new_group=new_group,
+            new_group_created=created,
+            members_copied=copied,
+        )
+        return _home_group_outcome(
+            "failed",
+            f"Moving “{old_group}” to “{new_group}” hit an unexpected error "
+            f"({type(exc).__name__}). {_partial()} The rename itself is "
+            f"complete; “{old_group}” was not deleted.",
+            old_group=old_group,
+            new_group=new_group,
+            members_copied=copied,
+            new_group_created=created,
+        )
+    return _home_group_outcome(
+        "migrated",
+        f"Created “{new_group}” and copied {copied} member(s) from "
+        f"“{old_group}”. “{old_group}” was kept — delete it from the Cognito "
+        "groups panel once nothing depends on it.",
+        old_group=old_group,
+        new_group=new_group,
+        members_copied=copied,
+        new_group_created=True,
+    )
+
+
+@router.patch("/tenants/{tenant_id}")
+@user_limiter.shared_limit(
+    _TENANT_RENAME_RATE_LIMIT,
+    scope="tenant-rename",
+    key_func=get_authorization_identifier,
+    exempt_when=_rate_limiting_disabled,
+)
+async def rename_user_tenant(
+    request: Request,
+    tenant_id: UUID,
+    body: TenantRenameIn,
+    current_user: UserModel = Depends(get_current_active_user_async),
+    db: AsyncSession = Depends(get_async_db),
+) -> Any:
+    """Rename a tenant ("Project") — its display name, its slug, or both.
+
+    A thin bearer-forwarding proxy to coord's ``PATCH /coord/tenants/:tenant_id``
+    (plan ``2026-09-17-tenant-rename`` D1), plus the D5 home-group
+    follow-through. Authorization is coord's, and two-layer there: the admin
+    SSO router's ``require_role("admin")`` for the ACTIVE tenant, then
+    ``path tenant_id == active tenant`` and ``is_tenant_admin`` under the row
+    lock. So the active-tenant header is set to the PATH tenant here — the
+    operator is renaming that tenant, whatever the switcher currently shows.
+
+    Only the fields the caller sent cross the wire. Coord answers::
+
+        { "tenant_id", "slug", "display_name",
+          "previous": {"slug", "display_name"}, "changed",
+          "group_mappings_moved", "home_group_to_migrate" }
+
+    forwarded verbatim, with ``home_group_migration`` merged in whenever coord
+    names a ``home_group_to_migrate`` (see ``_migrate_home_group``). Coord's
+    4xx answers pass through with coord's body as ``detail``:
+    ``400 empty_patch|invalid_name|invalid_slug|reserved_name``,
+    ``403 tenant_mismatch|admin_required``,
+    ``404 tenant_not_found``,
+    ``409 slug_taken|slug_pinned|concurrent_group_mapping``; ``502`` when coord
+    is unreachable.
+
+    ``request`` is also required by the slowapi limiter.
+    """
+    # Captured INLINE, deliberately NOT as ``Depends(capture_caller_bearer)``
+    # — the same trap ``create_user_tenant`` documents: FastAPI runs a sync
+    # dependency in a threadpool with a COPIED context, so its
+    # ``ContextVar.set()`` never reaches this coroutine and coord would answer
+    # ``401 missing operator Bearer token``. Do not "tidy" it into a Depends.
+    capture_caller_bearer(request)
+    # The rename targets the PATH tenant, so coord's role check must evaluate
+    # that tenant rather than whatever the switcher header carried. Set after
+    # the capture, which would otherwise overwrite it with the header value.
+    _caller_active_tenant.set(str(tenant_id))
+    result = await _proxy_coord_patch(
+        f"/coord/tenants/{tenant_id}",
+        body.model_dump(exclude_none=True),
+        forward_bearer=True,
+    )
+
+    if isinstance(result, dict):
+        old_home = result.get("home_group_to_migrate")
+        new_slug = result.get("slug")
+        previous = result.get("previous")
+        prev_slug = previous.get("slug") if isinstance(previous, dict) else None
+        if isinstance(old_home, str) and old_home and isinstance(new_slug, str):
+            result["home_group_migration"] = await _migrate_home_group(
+                db,
+                current_user=current_user,
+                old_group=old_home,
+                new_group=f"{new_slug}-home",
+                expected_old_group=(
+                    f"{prev_slug}-home" if isinstance(prev_slug, str) else None
+                ),
+            )
+    return result

@@ -2,8 +2,8 @@
  * Memory row → operator-facing status tag.
  *
  * Created by plan `2026-08-16-coord-console-ui-unification-pipeline-style.md`
- * Phase 3 Wave 2, in the shape `alertStatus.ts` established and `planStatus.ts`
- * repeated: a pure derivation module beside the row that renders it, carrying
+ * Phase 3 Wave 2, in the shape `planStatus.ts` carries (first established by the
+ * since-retired `alertStatus.ts`): a pure derivation module beside the row that renders it, carrying
  * the two things R3 requires of a console surface — an audited kind→attention
  * table and a palette keyed off it — plus a unit test that asserts the two
  * agree (`memoryStatus.test.ts`, via the shared `paletteDisagreements`).
@@ -29,7 +29,7 @@
  *
  * This is R3's stated exception — *"amber also covers we do not know"*, shipped
  * in `attention.ts` (`attentionOf`'s `waiting` floor), `planStatus.ts`
- * (`unknown`) and `alertStatus.ts` (`unknown`). An amber painted on ignorance
+ * (`unknown`) — and `alertStatus.ts` did too, before it was retired. An amber painted on ignorance
  * is a statement about our knowledge, not a promise about the row. Painting an
  * unrecognised type calm would assert "nothing is odd here", which is the one
  * thing we do not know.
@@ -140,7 +140,7 @@ export const MEMORY_TONE_CLASS: Record<MemoryStatusTone, string> = {
  *   learn something that should be there.)
  * - `unknown` — **`waiting`**. Reserved for a type this build does not
  *   recognise. That IS ignorance: `attentionOf`'s floor, the same one
- *   `planStatus.unknown` and `alertStatus.unknown` carry. Only a human
+ *   `planStatus.unknown` carries (as the retired `alertStatus.unknown` did). Only a human
  *   extending the vocabulary resolves it, so read literally R3's
  *   name-the-clearer test would forbid amber — and R3 states the exception,
  *   because rendering ignorance as calm is `silent-empty-is-unknown` with a

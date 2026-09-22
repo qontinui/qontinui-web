@@ -57,9 +57,31 @@ class TerminalRelayService:
         Send a terminal message from mobile to runner via Redis pub/sub.
 
         Returns:
-            True if sent successfully, False if runner not connected
+            True if sent successfully, False if the runner is not connected —
+            which includes a runner whose registry entry is stale.
         """
-        if not self._registry.is_runner_connected(runner_id):
+        # ``is_runner_socket_live``, NOT ``is_runner_connected``: the latter
+        # answers registration, and a registry entry outlives its socket
+        # whenever the device-WS teardown took the superseded path and skipped
+        # ``manager.unregister`` (see that method's docstring). Returning True
+        # there is worse than a slow send — it is a FALSE RECEIPT: the remote
+        # terminal relay reads it as "forwarded", logs
+        # ``remote_terminal_attach_forwarded`` as a success, and never emits
+        # the ``target_not_connected`` refusal that exists for exactly this
+        # case, so the source waits out its 20s attach timeout in silence
+        # instead of being told the counterparty is gone.
+        if not self._registry.is_runner_socket_live(runner_id):
+            if self._registry.is_runner_connected(runner_id):
+                # Registered but unsendable — the stale-entry case. Logged
+                # apart from "never registered" because they want different
+                # fixes, and because a refusal the relay reports as
+                # ``target_not_connected`` is otherwise indistinguishable
+                # from a device that is simply on another replica.
+                logger.warning(
+                    "terminal_send_refused_stale_socket",
+                    runner_id=runner_id,
+                    message_type=message.get("type"),
+                )
             return False
 
         channel = f"runner:terminal:{runner_id}"

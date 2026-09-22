@@ -45,6 +45,9 @@ export interface Tenant {
   id: string;
   slug: string;
   name: string;
+  /** The caller's roles in THIS tenant. Absent on a web backend that predates
+   *  plan `2026-09-17-tenant-rename` Phase C — treat absent as unknown. */
+  roles?: string[];
 }
 
 interface TenantContextValue {
@@ -60,6 +63,17 @@ interface TenantContextValue {
   error: string | null;
   /** Switch the active tenant id (persisted in localStorage). */
   setActiveTenantId: (id: string) => void;
+  /**
+   * Re-fetch `/tenants` in place. The list is otherwise fetched once on mount,
+   * so a write that changes a tenant's name or slug (the rename dialog) calls
+   * this instead of reloading the page. `loading` is true while it runs.
+   *
+   * Resolves `true` when the list was re-read and `false` when the re-read
+   * failed. A failed REFRESH never sets `error` and never clears `tenants`:
+   * the previous list is still a real answer, and a global error after a
+   * write that succeeded would tell every consumer the tenants are unknown.
+   */
+  refresh: () => Promise<boolean>;
 }
 
 const TenantContext = createContext<TenantContextValue | undefined>(undefined);
@@ -77,11 +91,17 @@ export function TenantProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    const ctrl = new AbortController();
-    void (async () => {
+  /**
+   * Fetch the list. `isRefresh` distinguishes a re-read of a list we already
+   * hold from the first load: only the first load's failure is a global
+   * `error` (there is no list at all); a refresh failure keeps the last good
+   * list and is reported to the caller as `false`.
+   */
+  const load = useCallback(
+    async (signal?: AbortSignal, isRefresh = false): Promise<boolean> => {
+      if (isRefresh) setLoading(true);
       try {
-        const data: TenantListResponse = await listTenants(ctrl.signal);
+        const data: TenantListResponse = await listTenants(signal);
         setTenants(data.tenants);
 
         // Reconcile localStorage selection against the server's
@@ -107,17 +127,29 @@ export function TenantProvider({ children }: { children: ReactNode }) {
           return data.active_tenant_id;
         });
         setError(null);
+        return true;
       } catch (err) {
-        if ((err as { name?: string })?.name === "AbortError") return;
-        setError(
-          err instanceof Error ? err.message : "failed to load tenants"
-        );
+        if ((err as { name?: string })?.name === "AbortError") return false;
+        if (!isRefresh) {
+          setError(
+            err instanceof Error ? err.message : "failed to load tenants"
+          );
+        }
+        return false;
       } finally {
         setLoading(false);
       }
-    })();
+    },
+    []
+  );
+
+  useEffect(() => {
+    const ctrl = new AbortController();
+    void load(ctrl.signal);
     return () => ctrl.abort();
-  }, []);
+  }, [load]);
+
+  const refresh = useCallback(() => load(undefined, true), [load]);
 
   const setActiveTenantId = useCallback((id: string) => {
     setActiveTenantIdState(id);
@@ -138,8 +170,9 @@ export function TenantProvider({ children }: { children: ReactNode }) {
       loading,
       error,
       setActiveTenantId,
+      refresh,
     }),
-    [tenants, activeTenantId, loading, error, setActiveTenantId]
+    [tenants, activeTenantId, loading, error, setActiveTenantId, refresh]
   );
 
   return (

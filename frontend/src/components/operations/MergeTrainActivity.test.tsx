@@ -27,6 +27,16 @@ vi.mock("@/services/service-factory", () => ({
   httpClient: { fetch: (...args: unknown[]) => fetchMock(...args) },
 }));
 
+// The tab mounts the per-repo CI strip (moved here from the page by the
+// 2026-09-19 redesign). It owns its own REST+WS transport — which is the whole
+// point of putting it here — so leaving it real would make every assertion in
+// this file about the emergency stop's request also see the CI seed, and
+// `getWebSocketToken` is not on the mock above. `CiRepoStrip.test.tsx` covers
+// it; here it is stubbed so `fetchMock` measures the train's requests only.
+vi.mock("./CiRepoStrip", () => ({
+  CiRepoStrip: () => <div data-testid="stub-ci-repo-strip" />,
+}));
+
 // The emergency stop is CoordAdminOnly-gated. Mutable rather than a constant
 // `true`, so one test can prove the gate is actually wired — a hard-coded
 // admin mock would let an accidental unwrap ship undetected.

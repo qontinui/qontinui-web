@@ -122,20 +122,6 @@ export function ciStatusWsUrl(token: string): string {
  */
 export const CI_STATUS_POLL_FALLBACK_MS = 5_000;
 
-/**
- * POST endpoint that spawns a red-main fix session for a repo (red-main
- * auto-remediation Phase 4b). The web backend forwards to coord's
- * `POST /pr-merge/red-main/:repo/spawn-fix`, which opens a visible fix
- * session on the operator's device for the repo's current red episode.
- * Coord 409s when a fix session is already running for that episode or the
- * repo has no live red-main alert. `repo` is `owner/name` and is inlined
- * inside the path (the backend route captures it as `{repo:path}`, the same
- * shape as `/pr-merge/repos/:repo/profile`).
- */
-export function redMainSpawnFixUrl(repo: string): string {
-  return `${OPERATIONS_API}/pr-merge/red-main/${repo}/spawn-fix`;
-}
-
 // ---------------------------------------------------------------------------
 // Tenant self-service merge recovery (plan
 // `2026-07-30-coord-tenant-self-service-merge-recovery` Phase 4)
@@ -464,6 +450,40 @@ export const DEVICE_STATUS_POLL_FALLBACK_MS = 5_000;
  * a zero-argument call is unchanged.
  */
 export { relativeTime } from "@/components/console/time";
+
+/**
+ * Chronological comparison of two RFC3339 stamps.
+ *
+ * NOT a string compare: coord serialises `DateTime<Utc>` with chrono's default,
+ * whose fractional-second width varies (0/3/6/9 digits), so lexicographic order
+ * is not chronological — `…59.999500Z` sorts BEFORE `…59.999Z`. That is enough
+ * to pick the wrong driver proposal in a tie-break.
+ *
+ * **It lives here rather than in one consumer because it has been the right
+ * answer twice and the wrong one once.** It was private to `trainActivity.ts`
+ * (pinned by that module's "orders proposals chronologically, not
+ * lexicographically" test), and `gateDecision.ts` — a new file in the same
+ * directory, picking the newest of two coord rows for the same reason —
+ * reached for `a.at > b.at` instead, because there was nothing importable to
+ * reach for. Review measured the cost: across the three widths coord can emit,
+ * a `Z`-suffixed pair inverts on 28 of 156 ordered pairs spanning one second.
+ *
+ * The `+00:00` offset form chrono's `to_rfc3339()` produces happens to be
+ * safe under string compare (`+` sorts below every digit, so a short fraction
+ * compares as zero-padded), which is exactly why the bug survives review by
+ * inspection: it is correct against today's producer and wrong against the
+ * serde default, and both reach this frontend.
+ *
+ * One honest limit: `Date.parse` truncates to milliseconds, so `…59.999Z` and
+ * `…59.999500Z` compare EQUAL rather than ordering. That degrades to "keep the
+ * row already held", which is a stable tie-break — not an inversion.
+ */
+export function isAfter(a: string, b: string): boolean {
+  const ta = Date.parse(a);
+  const tb = Date.parse(b);
+  if (Number.isNaN(ta) || Number.isNaN(tb)) return a > b;
+  return ta > tb;
+}
 
 /**
  * Format a stall age (seconds) as a compact human label, e.g. "45s", "12m",

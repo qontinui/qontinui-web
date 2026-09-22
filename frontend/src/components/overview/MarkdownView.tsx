@@ -11,9 +11,12 @@
  *   the reader can choose to open instead.
  */
 
+import React from "react";
 import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { cn } from "@/lib/utils";
+
+type HeadingTag = "h1" | "h2" | "h3" | "h4" | "h5" | "h6";
 
 /** Same-origin (relative) sources only; anything with a scheme or a
  *  protocol-relative `//host` is remote. */
@@ -40,27 +43,66 @@ const components: Components = {
   },
 };
 
+/**
+ * Heading components per offset, built once. React compares element types by
+ * reference, so rebuilding these per render would remount every heading in the
+ * document — losing focus and jumping the scroll anchor on the very
+ * interaction ("Read all of it") that reveals more of it.
+ */
+const shiftedByOffset = new Map<number, Components>();
+
+function shiftedHeadings(offset: number): Components {
+  const cached = shiftedByOffset.get(offset);
+  if (cached) return cached;
+  const built = Object.fromEntries(
+    ([1, 2, 3, 4, 5] as const).map((level) => {
+      const tag = `h${Math.min(level + offset, 6)}` as HeadingTag;
+      const Shifted = ({ children }: { children?: React.ReactNode }) =>
+        React.createElement(tag, null, children);
+      Shifted.displayName = `ShiftedH${level}`;
+      return [`h${level}`, Shifted];
+    })
+  ) as Components;
+  shiftedByOffset.set(offset, built);
+  return built;
+}
+
 export function MarkdownView({
   children,
   className,
+  headingOffset = 0,
 }: {
   children: string;
   className?: string;
+  /**
+   * Push the document's own heading levels down by this much, so an embedded
+   * document's `##` sits under the page's heading for it instead of
+   * out-ranking it. Screen readers and the document outline both read the
+   * result as one hierarchy rather than two interleaved ones.
+   */
+  headingOffset?: number;
 }) {
+  const shifted =
+    headingOffset > 0 ? shiftedHeadings(headingOffset) : undefined;
   return (
     <div
       className={cn(
         "prose prose-invert max-w-none",
         "prose-p:text-[15px] prose-p:leading-[1.7] prose-li:text-[15px] prose-li:leading-[1.7]",
         "prose-headings:font-[family-name:var(--font-overview-serif)] prose-headings:font-medium prose-headings:tracking-[-0.005em]",
-        "prose-h1:text-2xl prose-h2:text-xl prose-h3:text-lg",
+        "prose-h1:text-2xl prose-h2:text-xl prose-h3:text-lg prose-h4:text-[1.05rem] prose-h5:text-base prose-h6:text-base",
+        "prose-h4:mt-6 prose-h4:mb-1.5 prose-h5:mt-5 prose-h5:mb-1 prose-h6:mt-4 prose-h6:mb-1",
+        "prose-h5:text-foreground prose-h6:text-foreground",
         "prose-a:text-primary prose-a:no-underline hover:prose-a:underline",
         "prose-table:text-sm prose-th:text-left prose-th:font-medium",
         "prose-strong:text-foreground prose-code:before:content-none prose-code:after:content-none",
         className
       )}
     >
-      <ReactMarkdown remarkPlugins={[remarkGfm]} components={components}>
+      <ReactMarkdown
+        remarkPlugins={[remarkGfm]}
+        components={{ ...components, ...shifted }}
+      >
         {children}
       </ReactMarkdown>
     </div>

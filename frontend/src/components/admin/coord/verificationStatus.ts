@@ -37,8 +37,8 @@
  *   waiting on anything is how amber stops meaning what it says.
  * - **An unrecognised / absent outcome was `outline` (neutral grey). It is now
  *   amber.** R3's ignorance floor: `attentionOf` floors an unknown kind at
- *   `waiting`, never calm, and `planStatus`/`alertStatus`/`releaseStatus` all
- *   carry it. Painting "we could not read coord's verdict" as calm asserts
+ *   `waiting`, never calm, and `planStatus`/`releaseStatus` both
+ *   carry it (as the retired `alertStatus` did). Painting "we could not read coord's verdict" as calm asserts
  *   nothing is wrong, which is the one thing we do not know.
  *
  * `confirmed`, `partial`, `failure` and `contradiction` keep their hues.

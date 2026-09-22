@@ -136,6 +136,10 @@ import {
   rowAccentProps,
   type Stat,
 } from "@/components/console";
+import {
+  CoordProjectRenameDialog,
+  type RenameTarget,
+} from "@/components/admin/coord/CoordProjectRenameDialog";
 import { deriveMemberStatus, MEMBER_STATUS_PALETTE } from "./memberStatus";
 import {
   backendErrorMessage,
@@ -254,7 +258,26 @@ interface TenantRoleEntry {
   /** coord `/admin/coord/me` returns the slug here; `tenant_slug` is a fallback. */
   slug?: string;
   tenant_slug?: string;
+  /** The tenant's human-chosen name; null/absent for a tenant that never got one. */
+  display_name?: string | null;
   roles?: string[];
+}
+
+/**
+ * The rename target for a "Your tenant & roles" row, or `null` when the row
+ * gets no Rename action.
+ *
+ * Offered only where the caller holds `admin` IN THAT tenant — the one role
+ * coord's `is_tenant_admin` accepts for `PATCH /coord/tenants/:tenant_id`
+ * (plan `2026-09-17-tenant-rename` D1/D6). `owner` is deliberately not enough:
+ * a control coord would refuse is a control that lies. A row with no id or
+ * slug cannot be addressed or pre-filled, so it gets none either.
+ */
+function renameTargetFor(t: TenantRoleEntry): RenameTarget | null {
+  const slug = t.slug ?? t.tenant_slug;
+  if (!t.tenant_id || !slug) return null;
+  if (!(t.roles ?? []).includes("admin")) return null;
+  return { id: t.tenant_id, slug, name: t.display_name || slug };
 }
 
 interface MyTenantsResponse {
@@ -424,10 +447,20 @@ function GroupNameHint({
 // Section a — Your tenant + roles
 // ===========================================================================
 
-function MyTenantsCard() {
+/**
+ * @param onSlugChanged called when a tenant's SHORT ID may have changed (a
+ *   rename that moved the slug, or one whose outcome is unknown). Other panels
+ *   on this page render slugs — the group-mapping list and the Cognito groups'
+ *   mapping chips — so the page re-reads them.
+ */
+function MyTenantsCard({ onSlugChanged }: { onSlugChanged: () => void }) {
   const [data, setData] = useState<MyTenantsResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  // The row whose Rename dialog is open. The dialog is MOUNTED only while this
+  // is set, so the rest of the page never pays for its tenant-context and UI
+  // Bridge hooks.
+  const [renaming, setRenaming] = useState<RenameTarget | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -562,21 +595,36 @@ function MyTenantsCard() {
             </div>
             {data.tenants && data.tenants.length > 0 ? (
               <div className="space-y-1.5">
-                {data.tenants.map((t, i) => (
-                  <div
-                    key={t.tenant_id ?? t.slug ?? t.tenant_slug ?? i}
-                    className="flex flex-wrap items-center gap-2"
-                  >
-                    <span className="font-medium">{tenantName(t)}</span>
-                    <span className="flex flex-wrap gap-1">
-                      {(t.roles ?? []).map((r) => (
-                        <Badge key={r} variant="secondary">
-                          {tierLabel(r)}
-                        </Badge>
-                      ))}
-                    </span>
-                  </div>
-                ))}
+                {data.tenants.map((t, i) => {
+                  const renameTarget = renameTargetFor(t);
+                  return (
+                    <div
+                      key={t.tenant_id ?? t.slug ?? t.tenant_slug ?? i}
+                      className="flex flex-wrap items-center gap-2"
+                    >
+                      <span className="font-medium">{tenantName(t)}</span>
+                      <span className="flex flex-wrap gap-1">
+                        {(t.roles ?? []).map((r) => (
+                          <Badge key={r} variant="secondary">
+                            {tierLabel(r)}
+                          </Badge>
+                        ))}
+                      </span>
+                      {renameTarget ? (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="h-7"
+                          onClick={() => setRenaming(renameTarget)}
+                          data-testid={`coord-tenant-rename-open-${renameTarget.id}`}
+                          data-ui-bridge-id={`coord.tenant-rename.open.${renameTarget.id}`}
+                        >
+                          Rename
+                        </Button>
+                      ) : null}
+                    </div>
+                  );
+                })}
               </div>
             ) : data.roles && data.roles.length > 0 ? (
               <div className="flex flex-wrap items-center gap-2">
@@ -594,6 +642,25 @@ function MyTenantsCard() {
         ) : null}
       </>
     </CollapsiblePanel>
+    {renaming ? (
+      <CoordProjectRenameDialog
+        open
+        tenant={renaming}
+        onOpenChange={(open) => {
+          if (!open) setRenaming(null);
+        }}
+        // The rows above show what this section's read returned, so re-read.
+        onRenamed={(result) => {
+          void load();
+          // `previous` absent is UNKNOWN, so it reloads rather than not.
+          if (result.previous?.slug !== result.slug) onSlugChanged();
+        }}
+        onOutcomeUnknown={() => {
+          void load();
+          onSlugChanged();
+        }}
+      />
+    ) : null}
     </div>
   );
 }
@@ -1285,7 +1352,14 @@ function AddTenantMemberForm({ onAdded }: { onAdded: () => void }) {
 // Section d — Group → tenant → role mappings
 // ===========================================================================
 
-function GroupTenantRolesSection({ isSuperuser }: { isSuperuser: boolean }) {
+function GroupTenantRolesSection({
+  isSuperuser,
+  refreshKey = 0,
+}: {
+  isSuperuser: boolean;
+  /** Bumped when a tenant slug changed elsewhere on the page. */
+  refreshKey?: number;
+}) {
   const [rows, setRows] = useState<GroupTenantRoleRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -1345,7 +1419,7 @@ function GroupTenantRolesSection({ isSuperuser }: { isSuperuser: boolean }) {
 
   useEffect(() => {
     void load();
-  }, [load]);
+  }, [load, refreshKey]);
 
   const addMapping = useCallback(async () => {
     if (!groupId.trim() || !tenantSlug.trim()) {
@@ -2682,7 +2756,15 @@ function MountedOnce({ onMount }: { onMount: () => void }) {
  * require staff/superuser access. A coord admin who is NOT a superuser sees a
  * muted note instead of the controls.
  */
-function CognitoGroupsSection({ isSuperuser }: { isSuperuser: boolean }) {
+function CognitoGroupsSection({
+  isSuperuser,
+  refreshKey = 0,
+}: {
+  isSuperuser: boolean;
+  /** Bumped when a tenant slug changed elsewhere on the page: the mapping
+   *  chips on each group name tenants by slug. */
+  refreshKey?: number;
+}) {
   const [groups, setGroups] = useState<CognitoGroupRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -2746,9 +2828,11 @@ function CognitoGroupsSection({ isSuperuser }: { isSuperuser: boolean }) {
     }
   }, []);
 
+  // `refreshKey` too: a slug rename can create `<new>-home`, which this list
+  // must then show.
   useEffect(() => {
     if (isSuperuser) void load();
-  }, [load, isSuperuser]);
+  }, [load, isSuperuser, refreshKey]);
 
   // coord's group -> tenant -> role mappings. Read here as well as in the
   // section above: this is the reason the backend refuses a delete, so the
@@ -2801,7 +2885,7 @@ function CognitoGroupsSection({ isSuperuser }: { isSuperuser: boolean }) {
     return () => {
       cancelled = true;
     };
-  }, [isSuperuser, panelOpened, countsToken]);
+  }, [isSuperuser, panelOpened, countsToken, refreshKey]);
 
   // Member counts, one probe per group, in parallel.
   useEffect(() => {
@@ -3058,6 +3142,10 @@ export default function MembersPage() {
   // Bumped after any membership mutation so dependent sections refetch.
   const [refreshKey, setRefreshKey] = useState(0);
   const bump = useCallback(() => setRefreshKey((k) => k + 1), []);
+  // Bumped when a tenant rename moved (or may have moved) a slug, so every
+  // panel that renders slugs re-reads.
+  const [slugKey, setSlugKey] = useState(0);
+  const bumpSlugs = useCallback(() => setSlugKey((k) => k + 1), []);
 
   if (loading) {
     return (
@@ -3113,7 +3201,7 @@ export default function MembersPage() {
           count, the group count), which is R7's actual contract — the panel
           folds, its signal does not. */}
       <MembersTable refreshKey={refreshKey} onChanged={bump} />
-      <MyTenantsCard />
+      <MyTenantsCard onSlugChanged={bumpSlugs} />
       {/* R7 + the plan's Design decision 1 — the SSO-group machinery is one
           tool for a different job (pre-authorizing an entire IdP group's
           current and future members), not a second way to do what the form at
@@ -3148,8 +3236,14 @@ export default function MembersPage() {
             To give one colleague access, use the form at the top of this page
             instead.
           </p>
-          <GroupTenantRolesSection isSuperuser={user?.is_superuser === true} />
-          <CognitoGroupsSection isSuperuser={user?.is_superuser === true} />
+          <GroupTenantRolesSection
+            isSuperuser={user?.is_superuser === true}
+            refreshKey={slugKey}
+          />
+          <CognitoGroupsSection
+            isSuperuser={user?.is_superuser === true}
+            refreshKey={slugKey}
+          />
         </>
       </CollapsiblePanel>
     </div>

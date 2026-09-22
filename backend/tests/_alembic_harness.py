@@ -71,7 +71,12 @@ def backend_root() -> Path:
     return Path(__file__).resolve().parent.parent
 
 
-def run_alembic(cwd: Path, db_url: str, *args: str) -> subprocess.CompletedProcess[str]:
+def run_alembic(
+    cwd: Path,
+    db_url: str,
+    *args: str,
+    expect_success: bool = True,
+) -> subprocess.CompletedProcess[str]:
     """Run alembic against ``db_url`` and return the completed process.
 
     Deliberately NOT ``check=True``: with ``capture_output=True`` a
@@ -79,6 +84,16 @@ def run_alembic(cwd: Path, db_url: str, *args: str) -> subprocess.CompletedProce
     traceback in the captured streams. A migration test that fails only in CI is
     exactly where that traceback is needed, so the failure is raised as an
     assertion carrying both streams instead.
+
+    ``expect_success=False`` INVERTS that assertion, for the migration that is
+    supposed to refuse. A revision whose job is to fail closed — one that raises
+    on a catalog state it must not accept — needs a test that drives it there,
+    and the default assertion makes the correct outcome indistinguishable from a
+    broken migration: the helper fires first and reports "alembic ... failed with
+    exit 1" for a refusal the test was asking for. Passing the expectation in
+    keeps that knowledge here rather than forking a second ``subprocess.run`` in
+    the test, which would re-introduce the ``sys.executable`` / double-URL /
+    Windows-PATH handling this docstring exists to explain.
 
     The URL is passed both ways (``-x db_url=`` and ``DATABASE_URL``) so the
     call does not depend on which side ``alembic/env.py`` reads.
@@ -116,10 +131,17 @@ def run_alembic(cwd: Path, db_url: str, *args: str) -> subprocess.CompletedProce
         text=True,
         check=False,
     )
-    assert proc.returncode == 0, (
-        f"alembic {' '.join(args)} failed with exit {proc.returncode}\n"
-        f"--- stdout ---\n{proc.stdout}\n--- stderr ---\n{proc.stderr}"
-    )
+    if expect_success:
+        assert proc.returncode == 0, (
+            f"alembic {' '.join(args)} failed with exit {proc.returncode}\n"
+            f"--- stdout ---\n{proc.stdout}\n--- stderr ---\n{proc.stderr}"
+        )
+    else:
+        assert proc.returncode != 0, (
+            f"alembic {' '.join(args)} unexpectedly SUCCEEDED (exit 0) when the "
+            "test required it to refuse\n"
+            f"--- stdout ---\n{proc.stdout}\n--- stderr ---\n{proc.stderr}"
+        )
     return proc
 
 

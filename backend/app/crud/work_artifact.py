@@ -61,6 +61,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import re
+import typing
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -71,6 +72,7 @@ from sqlalchemy import (
     Select,
     Text,
     cast,
+    false,
     func,
     or_,
     select,
@@ -249,6 +251,123 @@ def _org_scope(org_id: UUID | None):
     ) == func.coalesce(org_id, NIL_ORGANIZATION_ID)
 
 
+#: Characters that glue words into one identifier — ``-``, ``_``, ``/``,
+#: ``\`` — plus whitespace, folded to a single space for the full-text arm.
+_Q_WORD_GLUE = re.compile(r"[-_/\\\s]+")
+
+#: A trailing ``.md``, so a pasted filename reads as its stem.
+_Q_MD_SUFFIX = re.compile(r"\.md$", re.IGNORECASE)
+
+#: The escape character of the slug arm's ``ILIKE``.
+_LIKE_ESCAPE = "\\"
+
+
+def _full_text_query(q: str) -> str:
+    """``q`` as the words ``plainto_tsquery`` should AND together.
+
+    The ``english`` parser reads ``devops-unfiltered-push-trigger`` as ONE
+    compound token and emits the whole-compound lexeme AND-ed with its parts,
+    so the query matches only a document carrying that exact hyphenated
+    string — prose saying "unfiltered push trigger" misses. Folding the glue
+    characters to spaces first means only the part-words are ever asked for.
+    ``""`` when nothing but glue is left.
+    """
+    return _Q_WORD_GLUE.sub(" ", _Q_MD_SUFFIX.sub("", q.strip())).strip()
+
+
+#: The shortest needle the slug arm will take. Below this, a substring match
+#: stops being an identifier lookup and becomes a corpus-wide sweep: every
+#: plan slug is date-prefixed, so ``-``, ``2`` and ``a`` each appear in
+#: nearly every row.
+_SLUG_NEEDLE_MIN_LEN = 3
+
+#: A needle must carry at least one letter or digit. Pure punctuation is glue,
+#: never an identifier. (``[^\W_]`` is "alphanumeric", underscore excluded.)
+_HAS_ALNUM = re.compile(r"[^\W_]", re.UNICODE)
+
+
+def _slug_needle(q: str) -> str:
+    """``q`` as the slug substring a pasted identifier denotes, or ``""``.
+
+    Trimmed, minus a trailing ``.md`` and any leading directory, so
+    ``plans/2026-08-31-some-plan.md`` reads as ``2026-08-31-some-plan``.
+
+    Returns ``""`` — i.e. NO slug arm — for anything not identifier-shaped:
+    nothing left after trimming, no alphanumeric character at all, or fewer
+    than :data:`_SLUG_NEEDLE_MIN_LEN` characters. That guard is the whole
+    reason this is a function and not an expression. A slug substring match
+    is unanchored at both ends and every plan slug opens with
+    ``YYYY-MM-DD-``, so a one-character needle is not a weak query — ``q="-"``
+    is ``slug ILIKE '%-%'``, which matches EVERY row, and the same predicate
+    backs ``/export``, so it would export the corpus. Short and
+    punctuation-only inputs therefore fall back to the full-text arm alone,
+    which drops them (``plainto_tsquery`` yields nothing for glue or a
+    stopword) and so correctly matches nothing.
+    """
+    stem = _Q_MD_SUFFIX.sub("", q.strip())
+    needle = re.split(r"[/\\]", stem)[-1].strip()
+    if len(needle) < _SLUG_NEEDLE_MIN_LEN or not _HAS_ALNUM.search(needle):
+        return ""
+    return needle
+
+
+def _escape_like(value: str) -> str:
+    """Escape LIKE metacharacters so user text matches literally."""
+    return (
+        value.replace(_LIKE_ESCAPE, _LIKE_ESCAPE * 2)
+        .replace("%", f"{_LIKE_ESCAPE}%")
+        .replace("_", f"{_LIKE_ESCAPE}_")
+    )
+
+
+def _search_predicate(q: str) -> ColumnElement[bool]:
+    """The ``q`` filter: full text over title/body OR a substring of ``slug``.
+
+    Two arms, because ``q`` gets two kinds of input and the vector serves only
+    one of them. Prose goes to the full-text arm, normalized by
+    :func:`_full_text_query`. A pasted slug or filename is an IDENTIFIER
+    lookup the vector cannot answer — ``slug`` is not indexed text, and a
+    plan's body need not repeat its own filename — so the raw ``q`` is also
+    matched as a case-insensitive substring of ``slug``, with LIKE
+    metacharacters escaped so ``%`` and ``_`` match themselves rather than
+    everything.
+
+    The slug arm is unindexed, and it is gated on :func:`_slug_needle`
+    judging the input identifier-shaped — which is not only about matching
+    too much. A leading-wildcard ``ILIKE`` that no index can serve, OR-ed
+    with the full-text arm, leaves the planner nothing to combine and costs
+    the GIN arm its index too; the gate is what keeps an ordinary prose query
+    on the indexed path.
+
+    A ``q`` that leaves neither arm anything to ask for — whitespace, bare
+    glue, or a needle too short to be an identifier — matches NOTHING, the
+    reading ``plainto_tsquery`` of an empty string always had. Never
+    everything: :func:`_slug_needle` says why that distinction is the
+    load-bearing one.
+    """
+    arms: list[ColumnElement[bool]] = []
+    words = _full_text_query(q)
+    if words:
+        # Spelled to match ix_work_artifacts_search's indexed expression.
+        # A ``TextClause`` is a boolean SQL expression here, which the stubs
+        # cannot know; ``or_`` accepts it at runtime exactly as ``where`` does.
+        # (`typing.cast`, not the bare name — `cast` is SQLAlchemy's in this
+        # module.) The OR list is parenthesised by ``BooleanClauseList`` when
+        # it is AND-ed with the other filters, not by anything asked for here.
+        full_text = text(
+            f"{SEARCH_TSVECTOR_SQL} @@ plainto_tsquery('english', :plan_lib_q)"
+        ).bindparams(plan_lib_q=words)
+        arms.append(typing.cast("ColumnElement[bool]", full_text))
+    needle = _slug_needle(q)
+    if needle:
+        arms.append(
+            WorkArtifact.slug.ilike(f"%{_escape_like(needle)}%", escape=_LIKE_ESCAPE)
+        )
+    if not arms:
+        return false()
+    return or_(*arms)
+
+
 def _apply_filters(
     stmt: Select,
     *,
@@ -279,8 +398,10 @@ def _apply_filters(
     So ``?slug=<stem>`` is the exact by-stem door that finds a plan whoever
     wrote it, and ``?work_unit_slug=<stem>`` finds the rows that DECLARE a
     link to that unit. Both are exact equality; neither is a prefix or a
-    full-text match (``q`` is the only full-text filter, and it does not
-    search identifiers).
+    full-text match. ``q`` is the one free-text filter, and it is two arms
+    OR-ed together — full text over ``title || body`` and a case-insensitive
+    substring match on ``slug`` — so a pasted filename finds its plan; see
+    :func:`_search_predicate`. It never reads ``work_unit_slug``.
     """
     stmt = stmt.where(_org_scope(org_id))
     if kind is not None:
@@ -301,12 +422,7 @@ def _apply_filters(
             )
         )
     if q:
-        # Spelled to match ix_work_artifacts_search's indexed expression.
-        stmt = stmt.where(
-            text(
-                f"{SEARCH_TSVECTOR_SQL} @@ plainto_tsquery('english', :plan_lib_q)"
-            ).bindparams(plan_lib_q=q)
-        )
+        stmt = stmt.where(_search_predicate(q))
     if since is not None:
         stmt = stmt.where(WorkArtifact.updated_at >= since)
     if work_unit_slug is not None:

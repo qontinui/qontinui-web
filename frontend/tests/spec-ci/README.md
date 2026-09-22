@@ -154,8 +154,28 @@ source-controlled registry, `crawl-baseline.ts`:
 
 - `GLOBAL_SERVER_WAIVERS` — same-origin-5xx **URL classes** that are
   CI-environment-unavoidable on any route (`/coord-api/*` — no coord process in
-  CI; `/api/vga/*` — Next server routes hitting a private-subnet RDS). These
-  mirror the two classes the spec waivers already documented.
+  CI; `/api/vga/*` — Next server routes hitting a private-subnet RDS; the
+  coord-backed `/api/v1/operations/*`, `/api/v1/strategy/*` and similar
+  backend proxies). Both lanes apply them: the crawl lane through
+  `applyCrawlWaivers`, the spec lane through `isGloballyWaivedServerUrl`.
+
+  An entry may carry an optional **`statuses`** list. Absent, the entry waives
+  every 5xx on a matching URL (every entry that predates the field). Present,
+  it waives ONLY the listed statuses, and any other 5xx on the same URL still
+  gates. Use it whenever the URLs are first-party code that merely *depends* on
+  an absent upstream, rather than a proxy that *is* the upstream: a URL
+  substring cannot tell "coord is unreachable in CI" from "this handler
+  crashed", but the status can. `/api/v1/overview/*` is the worked example —
+  it waives exactly `502` and `504`, the two statuses
+  `coord_identity._fetch_identity` returns when coord is unreachable or times
+  out. Be precise about what that buys: in hermetic CI the coord dependency
+  fails before any handler body runs, so a bug inside a handler cannot surface
+  in this lane at all. What still gates is a `500` from anything that runs
+  before or instead of the coord call — authentication, the DB-session
+  dependency, an uncaught transport error, a proxy fault — and, once coord or
+  a stub exists for these routes, their handler bodies too, with no change to
+  the entry. Never write `statuses: []`: it reads like a restriction and
+  waives nothing.
 - `PER_ROUTE_WAIVERS` — keyed by the exact route path, listing the SPECIFIC
   console-text / 5xx-URL patterns expected on that route (+ optional
   `allowNavFail`), each with a mandatory `class` (`ci-env` | `real-bug` |

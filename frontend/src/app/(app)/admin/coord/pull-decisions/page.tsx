@@ -14,9 +14,9 @@
  * runner/agent requests the `repo_pull` verdict (the executor path, off by
  * default via `COORD_PULL_EXECUTOR_ENABLED`) or via a manual
  * `coord_request_policy` call. The pull-decision *watcher* emits
- * `repo_pull_hold` *alerts* (see /admin/coord/alerts), not resolution rows —
- * so an empty feed alongside active hold alerts is expected until the
- * executor runs.
+ * `repo_pull_hold` *alerts* — agents' work, counted in the Dev Ops
+ * overview's Conditions panel — not resolution rows, so an empty feed
+ * alongside active hold alerts is expected until the executor runs.
  *
  * ## Console style (Phase 3 Wave 2)
  *
@@ -268,11 +268,9 @@ export default function CoordPullDecisionsPage() {
             (<code>POST /coord/trees/pull-decision</code>, the executor path,
             off by default via <code>COORD_PULL_EXECUTOR_ENABLED</code>) or via
             a manual <code>coord_request_policy</code> call. The pull-decision{" "}
-            <em>watcher</em> emits <code>repo_pull_hold</code> alerts (see{" "}
-            <a className="underline" href="/admin/coord/alerts">
-              /admin/coord/alerts
-            </a>
-            ), not resolution rows — so an empty feed with active hold alerts is
+            <em>watcher</em> emits <code>repo_pull_hold</code> alerts (agents&apos;
+            work, counted in the Dev Ops overview&apos;s Conditions panel), not
+            resolution rows — so an empty feed with active hold alerts is
             expected until the executor runs.
           </p>
           )

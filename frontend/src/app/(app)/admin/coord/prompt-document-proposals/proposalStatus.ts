@@ -10,7 +10,8 @@
  * shadcn `<Card>`, which is why a `<Card>`-keyed audit missed it.
  *
  * Status derivation lives here, in a pure unit-tested module, rather than
- * inline in JSX (R8) — the same shape `alertStatus.ts` established.
+ * inline in JSX (R8) — the same shape `planStatus.ts` carries (first established by
+ * `alertStatus.ts`, since retired with the alerts page).
  *
  * ## The R3 correction this module makes, stated plainly
  *

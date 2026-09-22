@@ -272,7 +272,9 @@ describe("HttpClient method-aware retry", () => {
     expect(counter.calls()).toBe(1);
     expect(methodRuleWarns()).toBe(1);
     expect(console.warn).toHaveBeenCalledWith(
-      expect.stringContaining("[HttpClient] POST https://api.test/things answered 500")
+      expect.stringContaining(
+        "[HttpClient] POST https://api.test/things answered 500"
+      )
     );
   });
 
@@ -757,6 +759,12 @@ describe("HttpClient X-Qontinui-Active-Tenant forwarding", () => {
     "https://api.test/api/v1/operations/fleet",
     "https://api.test/api/v1/admin-dev/overview",
     "https://api.test/api/v1/admin/agent-sessions",
+    // Project Overview. Every `overview.*` row is keyed on the active tenant
+    // and the backend resolves it from this header ALONE, so a missing entry
+    // here silently serves (and writes) the operator's home project under
+    // another project's name.
+    "https://api.test/api/v1/overview/estimates",
+    "https://api.test/api/v1/overview/settings",
   ];
 
   for (const url of SCOPED_URLS) {

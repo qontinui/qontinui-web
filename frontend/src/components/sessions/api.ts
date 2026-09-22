@@ -33,6 +33,8 @@ import type {
   TenantCreateRequest,
   TenantCreateResponse,
   TenantListResponse,
+  TenantRenameRequest,
+  TenantRenameResponse,
 } from "./types";
 
 export type ListSessionsScope = "active" | "all";
@@ -418,52 +420,170 @@ export function parseTenantCreateError(rawBody: string): {
   code: string | null;
   detail: string;
 } & TenantCreateErrorFields {
+  const unwrapped = unwrapProxiedCoordError(rawBody);
+  if (unwrapped.kind === "non_string") {
+    // A FastAPI 422 validation list, or any object body. No coord code to
+    // find; stringify so the operator still sees the real answer.
+    return { code: null, detail: unwrapped.text };
+  }
+
+  let code: string | null = null;
+  let text = unwrapped.text;
+  const fields: TenantCreateErrorFields = {};
+  // `inner` is null when coord answered plain text — `text` is already it.
+  const obj = unwrapped.inner;
+  if (obj) {
+    const rawCode = obj.error ?? obj.code;
+    if (typeof rawCode === "string") code = rawCode;
+    const rawMessage = obj.message ?? obj.detail ?? obj.reason;
+    if (typeof rawMessage === "string") text = rawMessage;
+    else if (code) text = code;
+    // The structured operands. Type-checked one at a time and dropped
+    // individually — coord sending `cap` but not `created` (or a future
+    // coord sending a string where a number was) must cost the numbers in
+    // one sentence, never the whole parse.
+    if (typeof obj.cap === "number" && Number.isFinite(obj.cap)) {
+      fields.cap = obj.cap;
+    }
+    if (typeof obj.created === "number" && Number.isFinite(obj.created)) {
+      fields.created = obj.created;
+    }
+    if (typeof obj.slug === "string" && obj.slug !== "") {
+      fields.slug = obj.slug;
+    }
+  }
+  return { code, detail: text, ...fields };
+}
+
+/**
+ * The two-layer unwrap shared by every tenant write's error parser.
+ *
+ * Two envelopes, because there are two hops:
+ *   1. the web proxy's `HTTPException`, in EITHER of its two shapes:
+ *      - FastAPI's bare `{ "detail": <x> }` (what a router mounted without
+ *        the app's handlers — every unit test — returns), or
+ *      - the app's standardized envelope `{ "error": <STATUS_CODE_NAME>,
+ *        "message": <x>, "timestamp", "path" }`, which is what production
+ *        serves: `app/main.py` registers `http_exception_handler` for every
+ *        route, and it moves a string `detail` into `message`. Reading only
+ *        `detail` would take the envelope's generic status token for coord's
+ *        code and never reach coord's body;
+ *   2. coord's own JSON, which arrives as a STRING inside that layer
+ *      (the proxies pass `resp.text`, not `resp.json()`).
+ *
+ * `kind: "non_string"` is a detail that was not a string at all (a FastAPI 422
+ * validation list) — `text` is its JSON. Otherwise `text` is the detail string
+ * and `inner` is coord's parsed object when that string was a JSON object.
+ */
+function unwrapProxiedCoordError(rawBody: string):
+  | { kind: "non_string"; text: string; envelopeCode: string | null }
+  | {
+      kind: "string";
+      text: string;
+      inner: Record<string, unknown> | null;
+      envelopeCode: string | null;
+    } {
   let detail: unknown = rawBody;
+  // The production envelope's own status token (`CONFLICT`, `BAD_GATEWAY`).
+  // Kept apart from coord's code on purpose: it is a fallback label for the
+  // STATUS, and reporting it as coord's code would claim coord said it.
+  let envelopeCode: string | null = null;
   try {
     const outer: unknown = JSON.parse(rawBody);
     if (outer && typeof outer === "object" && "detail" in outer) {
       detail = (outer as { detail: unknown }).detail;
+    } else if (outer && typeof outer === "object") {
+      const envelope = outer as Record<string, unknown>;
+      // The production envelope — see above. `path` is what distinguishes it
+      // from coord's own `{error, message}` body arriving unwrapped.
+      if (
+        "error" in envelope &&
+        "path" in envelope &&
+        typeof envelope.message === "string"
+      ) {
+        detail = envelope.message;
+        if (typeof envelope.error === "string" && envelope.error !== "") {
+          envelopeCode = envelope.error;
+        }
+      }
     }
   } catch {
     // Not JSON at all — keep the raw text.
   }
-
   if (typeof detail !== "string") {
-    // A FastAPI 422 validation list, or any object body. No coord code to
-    // find; stringify so the operator still sees the real answer.
-    return { code: null, detail: JSON.stringify(detail) };
+    return { kind: "non_string", text: JSON.stringify(detail), envelopeCode };
   }
-
-  let code: string | null = null;
-  let text = detail;
-  const fields: TenantCreateErrorFields = {};
+  let inner: Record<string, unknown> | null = null;
   try {
-    const inner: unknown = JSON.parse(detail);
-    if (inner && typeof inner === "object") {
-      const obj = inner as Record<string, unknown>;
-      const rawCode = obj.error ?? obj.code;
-      if (typeof rawCode === "string") code = rawCode;
-      const rawMessage = obj.message ?? obj.detail ?? obj.reason;
-      if (typeof rawMessage === "string") text = rawMessage;
-      else if (code) text = code;
-      // The structured operands. Type-checked one at a time and dropped
-      // individually — coord sending `cap` but not `created` (or a future
-      // coord sending a string where a number was) must cost the numbers in
-      // one sentence, never the whole parse.
-      if (typeof obj.cap === "number" && Number.isFinite(obj.cap)) {
-        fields.cap = obj.cap;
-      }
-      if (typeof obj.created === "number" && Number.isFinite(obj.created)) {
-        fields.created = obj.created;
-      }
-      if (typeof obj.slug === "string" && obj.slug !== "") {
-        fields.slug = obj.slug;
-      }
+    const parsed: unknown = JSON.parse(detail);
+    if (parsed && typeof parsed === "object") {
+      inner = parsed as Record<string, unknown>;
     }
   } catch {
-    // coord answered plain text — `text` is already it.
+    // coord answered plain text.
   }
-  return { code, detail: text, ...fields };
+  return { kind: "string", text: detail, inner, envelopeCode };
+}
+
+/**
+ * Error from `PATCH /api/v1/operations/tenants/{tenant_id}`.
+ *
+ * `code` is coord's error token (`invalid_slug`, `reserved_name`,
+ * `slug_pinned`, `slug_taken`, `tenant_mismatch`, …) or `null` when none could
+ * be recovered. `reason` is coord's SECOND-level discriminator, carried
+ * separately rather than folded into `detail`, because three of the rename's
+ * codes mean nothing actionable without it (`invalid_slug` → which rule,
+ * `reserved_name` → which list, `slug_pinned` → which pin). `detail` is the
+ * most specific human-readable text recovered, for the verbatim fallback.
+ */
+export class TenantRenameError extends Error {
+  status: number;
+  code: string | null;
+  reason: string | null;
+  detail: string;
+  /** The slug coord named, when it named one (`slug_taken`). */
+  slug?: string;
+  /** The production error envelope's status token (`BAD_GATEWAY`, …), when
+   *  the body came through it — the fallback label when coord sent no code. */
+  envelopeCode: string | null;
+  constructor(
+    status: number,
+    code: string | null,
+    reason: string | null,
+    detail: string,
+    slug?: string,
+    envelopeCode: string | null = null
+  ) {
+    super(detail || `PATCH tenant failed: ${status}`);
+    this.status = status;
+    this.code = code;
+    this.reason = reason;
+    this.detail = detail;
+    this.slug = slug;
+    this.envelopeCode = envelopeCode;
+    this.name = "TenantRenameError";
+  }
+}
+
+/**
+ * Parse a rename failure body: `parseTenantCreateError`'s code/detail/slug
+ * (the same two-layer unwrap), plus coord's `reason` when it sent a string
+ * one. Exported for unit tests.
+ */
+export function parseTenantRenameError(rawBody: string): {
+  code: string | null;
+  reason: string | null;
+  detail: string;
+  slug?: string;
+  envelopeCode: string | null;
+} {
+  const { code, detail, slug } = parseTenantCreateError(rawBody);
+  const unwrapped = unwrapProxiedCoordError(rawBody);
+  const rawReason =
+    unwrapped.kind === "string" ? unwrapped.inner?.reason : undefined;
+  const reason =
+    typeof rawReason === "string" && rawReason !== "" ? rawReason : null;
+  return { code, reason, detail, slug, envelopeCode: unwrapped.envelopeCode };
 }
 
 /**
@@ -546,6 +666,52 @@ export async function createTenant(
     throw new TenantCreateError(res.status, code, detail, fields);
   }
   return (await res.json()) as TenantCreateResponse;
+}
+
+/**
+ * Rename a tenant ("Project") — its display name, its slug, or both.
+ *
+ * PATCHes `/api/v1/operations/tenants/{tenant_id}`, which proxies coord's
+ * `PATCH /coord/tenants/:tenant_id` (plan `2026-09-17-tenant-rename`). Send
+ * only the fields that changed. Coord allows it only for an `admin` of that
+ * tenant; the web proxy sets the active-tenant header to the path tenant.
+ *
+ * **Never retried**, for the same reason as `createTenant`: a rename that
+ * committed at 5.1s answers 504, and a retry is then judged against the NEW
+ * slug — a no-op at best, a false failure the operator acts on at worst.
+ */
+export async function renameTenant(
+  tenantId: string,
+  body: TenantRenameRequest
+): Promise<TenantRenameResponse> {
+  const url = `${OPERATIONS_API}/tenants/${encodeURIComponent(tenantId)}`;
+  const res = await httpClient.fetch(url, {
+    method: "PATCH",
+    body: JSON.stringify(body),
+    noRetryStatuses: NON_IDEMPOTENT_POST_NO_RETRY_STATUSES,
+    // Longer than the default 60s ceiling, on purpose. A rename that changes
+    // the slug is followed on the backend by the home-group migration, which
+    // costs one Cognito write per member of the old group and is bounded by
+    // its own budget. If the browser gives up first, the operator is told the
+    // outcome is UNKNOWN for work the backend went on to finish and report —
+    // the answer exists, we just stopped listening for it. This ceiling sits
+    // above the backend's own so the report wins that race.
+    timeoutMs: 120_000,
+  });
+  if (!res.ok) {
+    const raw = await res.text().catch(() => "");
+    const { code, reason, detail, slug, envelopeCode } =
+      parseTenantRenameError(raw);
+    throw new TenantRenameError(
+      res.status,
+      code,
+      reason,
+      detail,
+      slug,
+      envelopeCode
+    );
+  }
+  return (await res.json()) as TenantRenameResponse;
 }
 
 // ---- Registered repos (module-level cache) --------------------------------
