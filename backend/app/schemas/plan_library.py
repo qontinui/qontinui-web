@@ -128,6 +128,14 @@ class WorkArtifactUpsert(BaseModel):
     #: Getting this backwards is what silently forks a corrected artifact into
     #: a second row — see alembic ``plan_library_02_kind_lock``.
     kind_is_heuristic: bool = False
+    #: Which COORD TENANT this artifact belongs to — the OPERATOR arm's way
+    #: to declare it. **Ignored on the device arm**, which takes the tenant
+    #: from its own verified JWT claim: a credential's assertion always beats
+    #: a request body's, exactly as ``organization_id`` is never accepted
+    #: from a body at all (see the module docstring). Absent on either arm
+    #: records ``tenant_source = "unknown"`` rather than a guess. Plan
+    #: ``2026-09-22-the-plan-corpus-has-no-tenant-axis-...``.
+    tenant_id: UUID | None = None
 
 
 class WorkArtifactKindPatch(BaseModel):
@@ -320,6 +328,13 @@ class WorkArtifactSummary(BaseORMSchema):
     intent_refs: list[str]
     authored_at: IsoDatetime | None
     captured_by: str
+    #: Which coord tenant this artifact belongs to, and HOW that was
+    #: established (``declared`` / ``derived_repo`` / ``derived_sole_binding``
+    #: / ``ambiguous`` / ``unknown``). ``tenant_id: null`` beside
+    #: ``tenant_source: "unknown"`` is "no attribution available" — UNKNOWN,
+    #: never "no tenant". The pair is NOT part of identity in this phase.
+    tenant_id: UUID | None = None
+    tenant_source: str = "unknown"
     current_version: int
     created_at: IsoDatetime
     updated_at: IsoDatetime
@@ -421,6 +436,11 @@ class DivergentVariant(BaseORMSchema):
     status: str
     current_version: int
     updated_at: IsoDatetime
+    #: Which coord tenant this copy names, and how that was established.
+    #: Present on every variant so a reader of ``groups`` can SEE that an
+    #: apparent content divergence is really a cross-tenant collision.
+    tenant_id: UUID | None = None
+    tenant_source: str = "unknown"
 
 
 class DivergentGroup(BaseModel):
@@ -455,6 +475,42 @@ class KindForkGroup(BaseModel):
     variants: list[DivergentVariant]
 
 
+class ContestedTenantRow(BaseModel):
+    """One artifact whose tenancy is CONTESTED — two tenants wrote the same row.
+
+    A THIRD failure class, structurally distinct from both siblings above and
+    reported under its own key.
+
+    **Why a row and not a group.** ``uq_work_artifacts_identity`` is UNIQUE
+    over ``(organization, kind, slug, source_repo)``, so two tenants' copies
+    of one stem CANNOT coexist as two rows — they arrive as two writes to ONE
+    row, in turn, each overwriting the last. That is why the fusion was
+    silent, and why no query over the stored corpus could find it: the
+    evidence is destroyed by the act. The collision is therefore detected at
+    the WRITE and recorded as ``tenant_source = "ambiguous"``.
+
+    A :class:`DivergentGroup` is one document captured twice and is disposed
+    of by picking a winner; this is two documents that were never the same
+    document, and picking a winner IS the data loss. Never fold them.
+
+    ``tenant_id`` is the tenant that wrote LAST — the same writer that won the
+    body. It is reported so the row is identifiable, NOT as an answer to
+    "whose is this": ``tenant_source: "ambiguous"`` is that answer, and it
+    says the question is open.
+
+    Plan
+    ``2026-09-22-the-plan-corpus-has-no-tenant-axis-so-a-multi-bound-device-cannot-scope-its-plans``
+    Phase 3. This is the measurement Phase 4's identity re-key is gated on.
+    """
+
+    id: UUID
+    kind: str
+    slug: str
+    source_repo: str | None
+    tenant_id: UUID | None
+    updated_at: IsoDatetime
+
+
 class DivergentResponse(BaseModel):
     """All divergence groups visible to the caller."""
 
@@ -463,6 +519,17 @@ class DivergentResponse(BaseModel):
     #: Same-slug/different-kind forks. Additive: ``groups``/``total`` keep
     #: their phase-1 meaning exactly.
     kind_forks: list[KindForkGroup] = Field(default_factory=list)
+    #: Artifacts whose tenancy is contested — two coord tenants wrote the
+    #: same row. Additive; never folded into ``groups``.
+    contested_tenants: list[ContestedTenantRow] = Field(default_factory=list)
+    #: How many rows in scope state no usable tenant (``tenant_source`` of
+    #: ``unknown`` or ``ambiguous``). **Read this before reading an empty
+    #: ``cross_tenant`` as clean.** A corpus that has not yet been re-pushed
+    #: under the Phase 2 write path is entirely ``unknown``, and its rows are
+    #: indistinguishable from each other on the tenant axis — so an empty
+    #: list there is UNKNOWN, not a clean bill of health, and the Phase 4
+    #: re-key does not open on it.
+    tenant_unattributed_count: int = 0
     kind_fork_total: int = 0
 
 

@@ -63,7 +63,7 @@ import hashlib
 import re
 import typing
 from collections.abc import Iterable, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from uuid import UUID
 
@@ -380,6 +380,8 @@ def _apply_filters(
     work_unit_slug: str | None,
     intent_ref: str | None = None,
     slug: str | None = None,
+    tenant_id: UUID | None = None,
+    tenant_source: str | None = None,
 ) -> Select:
     """Apply the shared list/count filters to a statement.
 
@@ -436,6 +438,19 @@ def _apply_filters(
         )
     if slug is not None:
         stmt = stmt.where(WorkArtifact.slug == slug)
+    if tenant_id is not None:
+        # Which COORD TENANT the row belongs to — a different axis from
+        # ``org_id`` above, which is access scope and is ALWAYS applied. This
+        # narrows WITHIN the caller's organization; it never widens it.
+        stmt = stmt.where(WorkArtifact.tenant_id == tenant_id)
+    if tenant_source is not None:
+        # The separate door for the rows a ``tenant_id`` filter cannot name:
+        # ``tenant_source="unknown"`` is how a caller asks for the
+        # unattributed population, which is exactly the rows whose
+        # ``tenant_id`` IS NULL. A ``tenant_id=None`` argument means "no
+        # tenant filter", never "the NULL tenant" — collapsing the two would
+        # make an absent filter indistinguishable from a filter for absence.
+        stmt = stmt.where(WorkArtifact.tenant_source == tenant_source)
     return stmt
 
 
@@ -451,6 +466,8 @@ async def list_artifacts(
     work_unit_slug: str | None = None,
     intent_ref: str | None = None,
     slug: str | None = None,
+    tenant_id: UUID | None = None,
+    tenant_source: str | None = None,
     offset: int = 0,
     limit: int = 50,
 ) -> tuple[list[WorkArtifact], int]:
@@ -466,6 +483,8 @@ async def list_artifacts(
         work_unit_slug=work_unit_slug,
         intent_ref=intent_ref,
         slug=slug,
+        tenant_id=tenant_id,
+        tenant_source=tenant_source,
     )
 
     count_stmt = _apply_filters(
@@ -479,6 +498,8 @@ async def list_artifacts(
         work_unit_slug=work_unit_slug,
         intent_ref=intent_ref,
         slug=slug,
+        tenant_id=tenant_id,
+        tenant_source=tenant_source,
     )
     total = int((await db.execute(count_stmt)).scalar_one())
 
@@ -847,6 +868,53 @@ class _HeadMetadata:
     intent_refs: list[str]
     authored_at: datetime | None
     captured_by: str
+    #: Which coord TENANT the writing credential asserted, and HOW that was
+    #: established. Head metadata rather than identity: this phase records
+    #: the axis, it does not key on it (plan
+    #: ``2026-09-22-the-plan-corpus-has-no-tenant-axis-...``, P1/P2). Both
+    #: default so every existing caller keeps compiling and keeps writing the
+    #: honest ``unknown``.
+    tenant_id: UUID | None = None
+    tenant_source: str = "unknown"
+
+
+def _settle_tenant(existing: WorkArtifact, metadata: _HeadMetadata) -> _HeadMetadata:
+    """Detect a CROSS-TENANT overwrite and record it, without changing who wins.
+
+    Plan
+    ``2026-09-22-the-plan-corpus-has-no-tenant-axis-so-a-multi-bound-device-cannot-scope-its-plans``
+    Phase 3. This is where the defect is OBSERVABLE, and it is the only place
+    it is: ``uq_work_artifacts_identity`` is unique over ``(org, kind, slug,
+    source_repo)``, so two tenants' copies of one stem cannot coexist as two
+    rows. They arrive as two writes to ONE row, in turn, each overwriting the
+    last — which is exactly why the fusion was silent, and why no query over
+    the stored corpus could have found it.
+
+    When a write that ASSERTS a tenant lands on a row another tenant already
+    asserted, the row's tenancy is contested. The vocabulary already has the
+    word: ``ambiguous`` — the sibling ``session_artifacts`` store's value for
+    "two legitimate writers that do not agree".
+
+    **It deliberately does not change the outcome.** The incoming tenant still
+    wins the row, exactly as the incoming body does; nothing is refused and no
+    existing behaviour moves. The write is RECORDED, not arbitrated — arbitration
+    is a content judgement and belongs to the operator, and re-keying identity
+    so the two stop colliding at all is Phase 4, gated on this measurement.
+
+    Once contested, a row stays ``ambiguous`` until a write with no competing
+    claim settles it: a later push from ONE tenant alone cannot clear a flag
+    raised by two, because that push is indistinguishable from the one that
+    raised it.
+    """
+    incoming = metadata.tenant_id
+    held = existing.tenant_id
+    contested = (incoming is not None and held is not None and incoming != held) or (
+        # Already contested and the new write does not disprove it.
+        existing.tenant_source == "ambiguous" and incoming is not None
+    )
+    if not contested:
+        return metadata
+    return replace(metadata, tenant_source="ambiguous")
 
 
 def _assign_head_metadata(existing: WorkArtifact, metadata: _HeadMetadata) -> bool:
@@ -857,7 +925,12 @@ def _assign_head_metadata(existing: WorkArtifact, metadata: _HeadMetadata) -> bo
     value, not the session's dirty state, and does not commit for nothing.
     ``captured_by`` is among them on purpose: it records the door that last
     ASSERTED this metadata, which is exactly what a metadata-only write is.
+
+    The ONE choke point both upsert arms pass through, which is why the
+    cross-tenant detection hangs off it (:func:`_settle_tenant`) rather than
+    being repeated in each arm — the same reason ``_HeadMetadata`` exists.
     """
+    metadata = _settle_tenant(existing, metadata)
     moved = False
     for field, value in (
         ("title", metadata.title),
@@ -868,6 +941,8 @@ def _assign_head_metadata(existing: WorkArtifact, metadata: _HeadMetadata) -> bo
         ("intent_refs", metadata.intent_refs),
         ("authored_at", metadata.authored_at),
         ("captured_by", metadata.captured_by),
+        ("tenant_id", metadata.tenant_id),
+        ("tenant_source", metadata.tenant_source),
     ):
         if getattr(existing, field) != value:
             setattr(existing, field, value)
@@ -935,6 +1010,8 @@ async def upsert_artifact(
     created_by: str | None = None,
     kind_is_heuristic: bool = False,
     intent_refs: list[str] | None = None,
+    tenant_id: UUID | None = None,
+    tenant_source: str = "unknown",
 ) -> tuple[WorkArtifact, bool, bool]:
     """Insert-or-update by the functional unique key.
 
@@ -1006,6 +1083,8 @@ async def upsert_artifact(
             intent_refs=list(intent_refs or []),
             authored_at=authored_at,
             captured_by=captured_by,
+            tenant_id=tenant_id,
+            tenant_source=tenant_source,
             current_version=1,
         )
         assign_difficulty(artifact)
@@ -1057,6 +1136,8 @@ async def upsert_artifact(
         intent_refs=list(intent_refs or []),
         authored_at=authored_at,
         captured_by=captured_by,
+        tenant_id=tenant_id,
+        tenant_source=tenant_source,
     )
 
     if existing.content_sha256 == digest:
@@ -1808,6 +1889,72 @@ async def find_divergent(
             bucket.append(row)
 
     return [(g.kind, g.slug, buckets[(g.kind, g.slug)]) for g in groups]
+
+
+async def find_contested_tenants(
+    db: AsyncSession,
+    *,
+    org_id: UUID | None,
+    kind: str | None = None,
+    limit: int = 200,
+) -> list[WorkArtifact]:
+    """Rows whose tenancy is CONTESTED — ``tenant_source == 'ambiguous'``.
+
+    The measurement Phase 3 of plan
+    ``2026-09-22-the-plan-corpus-has-no-tenant-axis-so-a-multi-bound-device-cannot-scope-its-plans``
+    exists to produce, and the gate on Phase 4's re-key.
+
+    **Why this is a row flag and not a GROUP query — the correction that made
+    this phase implementable.** The obvious spelling is "``(kind, slug,
+    source_repo)`` groups whose rows name different tenants". That query can
+    never return anything: ``uq_work_artifacts_identity`` is UNIQUE over
+    exactly that tuple (plus the org), so two such rows CANNOT coexist. The
+    fusion this plan is about does not produce a pair of rows — it produces
+    ONE row that two tenants overwrite in turn, which is precisely why it was
+    invisible. A coexistence query would have reported a clean corpus forever
+    and the Phase 4 gate would have opened on nothing.
+
+    So the collision is detected where it actually happens — at the upsert,
+    when a write resolves onto a row another tenant already claimed — and
+    recorded on the row as ``ambiguous``. See :func:`_settle_tenant`.
+
+    ``ambiguous`` is the sibling store's own vocabulary word for "writers that
+    do not agree", already in ``ck_session_artifacts_tenant_source`` and
+    mirrored into ``ck_work_artifacts_tenant_source``; nothing new is
+    invented.
+    """
+    stmt = (
+        select(WorkArtifact)
+        .where(_org_scope(org_id), WorkArtifact.tenant_source == "ambiguous")
+        .order_by(WorkArtifact.updated_at.desc(), WorkArtifact.id)
+        .limit(limit)
+    )
+    if kind is not None:
+        stmt = stmt.where(WorkArtifact.kind == kind)
+    return list((await db.execute(stmt)).scalars().all())
+
+
+async def count_unattributed_tenants(
+    db: AsyncSession, *, org_id: UUID | None, kind: str | None = None
+) -> int:
+    """How many rows state no usable tenant (``unknown`` or ``ambiguous``).
+
+    Reported beside :func:`find_contested_tenants` so an empty contested list
+    can be read honestly. Until every writing device has pushed once under
+    Phase 2 the corpus is entirely ``unknown``, and an empty list then means
+    "for want of data", not "for want of collisions".
+    """
+    stmt = (
+        select(func.count())
+        .select_from(WorkArtifact)
+        .where(
+            _org_scope(org_id),
+            WorkArtifact.tenant_source.in_(("unknown", "ambiguous")),
+        )
+    )
+    if kind is not None:
+        stmt = stmt.where(WorkArtifact.kind == kind)
+    return int((await db.execute(stmt)).scalar_one())
 
 
 async def find_kind_forks(

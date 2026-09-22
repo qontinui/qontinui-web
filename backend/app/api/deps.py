@@ -170,6 +170,59 @@ class DeviceTokenContext:
     def user_id(self) -> UUID:
         return self.user.id
 
+    @property
+    def tenant_id(self) -> UUID:
+        """The COORD TENANT this token asserts. 401 on missing or malformed.
+
+        Modelled on :attr:`device_id` — the only other property here that
+        reads a CLAIM. (:attr:`user_id` is not a precedent: it returns the
+        already-resolved ``User`` row's id and reads no claim at all.)
+
+        Use this where the tenant IS the answer the route owes — ``GET
+        /devices/me`` is the whole population today. Where the tenant is one
+        recorded FACT among others, take :attr:`tenant_id_optional`: coord
+        mints ``Claims.tenant_id`` as an ``Option``, so a tenant-less device
+        token is a supported credential and refusing it would break writes
+        that work today.
+        """
+        raw = self.claims.get("tenant_id")
+        if not raw:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Device token missing tenant_id claim",
+            )
+        return self._parse_tenant(raw)
+
+    @property
+    def tenant_id_optional(self) -> UUID | None:
+        """The asserted tenant, or ``None`` when the token carries none.
+
+        Deliberately asymmetric, and the asymmetry is the point:
+
+        * **missing** -> ``None``. Coord's ``Claims.tenant_id`` is an
+          ``Option<Uuid>`` and its own routes branch on the absence rather
+          than treating it as an error, so a token with no tenant is a real
+          population. A recorder files it as ``tenant_source = 'unknown'``.
+        * **malformed** -> **401**, exactly as :attr:`tenant_id`. A token
+          carrying a tenant that is not a UUID is a BROKEN credential, and
+          silently downgrading it to ``unknown`` would file a real tenant's
+          row in the unattributed bucket — the one outcome ``tenant_source``
+          exists to prevent.
+        """
+        raw = self.claims.get("tenant_id")
+        if not raw:
+            return None
+        return self._parse_tenant(raw)
+
+    def _parse_tenant(self, raw: object) -> UUID:
+        try:
+            return UUID(str(raw))
+        except (TypeError, ValueError) as exc:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Device token tenant_id malformed",
+            ) from exc
+
 
 async def _verify_device_jwt(token: str) -> tuple[dict, User]:
     """Verify a coord-issued device JWT and resolve the owning user."""
@@ -372,12 +425,48 @@ async def _resolve_actor_principal(
       from an unreachable coord JWKS) — it never falls through to success.
     * Neither a Cognito user nor a bearer → 401. There is no anonymous path.
     """
+    principal, _device_ctx = await _resolve_actor_context(user, credentials)
+    return principal
+
+
+async def _resolve_actor_context(
+    user: User | None,
+    credentials: HTTPAuthorizationCredentials | None,
+) -> tuple[ActorPrincipal, DeviceTokenContext | None]:
+    """The same dual-auth decision tree, ALSO handing back the device claims.
+
+    :func:`_resolve_actor_principal` is expressed over this, so there is still
+    ONE implementation of the tree and the "same precedence, same failure
+    modes" property stays structural rather than a promise two copies keep.
+
+    The second element is the verified :class:`DeviceTokenContext` on the
+    device arm and ``None`` on the operator arm — ``None`` means "this caller
+    is not a device", never "the claims were unavailable".
+
+    **Why this exists rather than depending on
+    :func:`get_authenticated_device` alongside a dual-auth dependency.** That
+    dependency is built on ``_device_bearer_scheme = HTTPBearer(auto_error=True)``,
+    so it raises BEFORE the handler runs on any request with no bearer — which
+    is every browser request on a cookie. Adding it to a dual-auth route would
+    401 that route's entire operator arm. It is also the only way to read the
+    claims without verifying the JWT twice: a second dependency would re-run
+    :func:`_verify_device_jwt`, paying a second coord-JWKS check and a second
+    ``User`` select per request.
+
+    ``ActorPrincipal`` is deliberately NOT widened to carry the claims — it
+    stays the narrow "which arm authenticated" answer its own docstring
+    insists on, and the claims stay in :class:`DeviceTokenContext`, the door
+    built for claims.
+    """
     if user is not None:
-        return ActorPrincipal(user=user, kind="operator")
+        return ActorPrincipal(user=user, kind="operator"), None
 
     if credentials is not None:
-        _claims, device_user = await _verify_device_jwt(credentials.credentials)
-        return ActorPrincipal(user=device_user, kind="device")
+        claims, device_user = await _verify_device_jwt(credentials.credentials)
+        return (
+            ActorPrincipal(user=device_user, kind="device"),
+            DeviceTokenContext(claims=claims, user=device_user),
+        )
 
     raise HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
@@ -539,3 +628,25 @@ async def get_audit_actor_user(
     """
     principal = await _resolve_actor_principal(user, credentials)
     return principal.user
+
+
+async def get_audit_actor_context(
+    user: User | None = Depends(current_active_user_optional),
+    credentials: HTTPAuthorizationCredentials | None = Depends(_optional_bearer_scheme),
+) -> tuple[ActorPrincipal, DeviceTokenContext | None]:
+    """Resolve the acting principal AND, on the device arm, its verified claims.
+
+    The claims-carrying variant of :func:`get_audit_actor_principal`, with
+    IDENTICAL precedence and failure modes — both delegate to
+    :func:`_resolve_actor_context`.
+
+    For a dual-auth route that must record something the CREDENTIAL asserts
+    rather than something the person owns: the plan library records the coord
+    tenant its writer's device JWT declares, which is a different question
+    from ``organization_id`` (the person's personal organization, which
+    continues to be derived exactly as before and governs access).
+
+    The second element is ``None`` for an operator, which is the honest answer
+    — a browser session asserts no device tenant — and NOT a degraded read.
+    """
+    return await _resolve_actor_context(user, credentials)

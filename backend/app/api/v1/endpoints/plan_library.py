@@ -140,8 +140,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.deps import (
     ActorKind,
     ActorPrincipal,
+    DeviceTokenContext,
     current_active_user,
     get_async_db,
+    get_audit_actor_context,
     get_audit_actor_principal,
     get_audit_actor_user,
 )
@@ -169,6 +171,7 @@ from app.schemas.plan_library import (
     CapturedBy,
     CaptureDoorHealth,
     CaptureHealthResponse,
+    ContestedTenantRow,
     CorpusHealth,
     DivergentGroup,
     DivergentResponse,
@@ -289,6 +292,13 @@ ARTIFACT_EXPORT_HEADERS: tuple[str, ...] = (
     "X-Artifact-Kind",
     "X-Artifact-Slug",
     "X-Artifact-Version",
+    # The tenant axis travels BESIDE the bytes, never inside them — the body
+    # is byte-verbatim and re-scannable, which is the property the export
+    # exists to guarantee. ``X-Artifact-Tenant`` is the empty string when the
+    # row names no tenant; the SOURCE header always carries a value, so an
+    # empty tenant reads as "unattributed" rather than as a dropped header.
+    "X-Artifact-Tenant",
+    "X-Artifact-Tenant-Source",
 )
 
 #: The custom response headers the whole-corpus ZIP export carries.
@@ -319,6 +329,8 @@ def _artifact_export_provenance(
         "X-Artifact-Kind": row.kind,
         "X-Artifact-Slug": row.slug,
         "X-Artifact-Version": str(exported_version),
+        "X-Artifact-Tenant": str(row.tenant_id) if row.tenant_id else "",
+        "X-Artifact-Tenant-Source": row.tenant_source,
     }
 
 
@@ -2214,6 +2226,21 @@ async def list_work_artifacts(
         "the file stem). Distinct from `work_unit_slug`, the nullable soft "
         "link; `q` does not search identifiers.",
     ),
+    tenant_id: UUID | None = Query(
+        None,
+        description="Exact match on the coord tenant this artifact belongs "
+        "to. NARROWS within your organization; it never widens access. "
+        "Absent = today's behaviour (every tenant), which is NOT the same as "
+        "`tenant_source=unknown` — see that filter.",
+    ),
+    tenant_source: str | None = Query(
+        None,
+        description="Exact match on HOW the tenant was established "
+        "(`declared`, `derived_repo`, `derived_sole_binding`, `ambiguous`, "
+        "`unknown`). The door for the UNATTRIBUTED population, which a "
+        "`tenant_id` filter cannot name because those rows carry a NULL "
+        "tenant.",
+    ),
     intent_ref: str | None = Query(
         None,
         description="Exact member of intent_refs[] — a served coord Intent "
@@ -2256,6 +2283,8 @@ async def list_work_artifacts(
         work_unit_slug=work_unit_slug,
         intent_ref=intent_ref,
         slug=slug,
+        tenant_id=tenant_id,
+        tenant_source=tenant_source,
         offset=offset,
         limit=limit,
     )
@@ -2389,10 +2418,35 @@ async def list_divergent_artifacts(
     refuses to resolve on its own (it 409s rather than pick a winner). Grouping
     by ``(kind, slug)`` structurally cannot see these, which is why they are
     reported separately rather than folded into ``groups``.
+
+    ``contested_tenants`` — ONE row that two coord tenants both wrote,
+    stamped ``tenant_source = "ambiguous"`` at the upsert that collided. Their
+    plans fused onto one identity bucket because the corpus had no tenant axis
+    and every route derives its scope from the operator's PERSONAL
+    organization. Reported under its own key, never folded into ``groups``: a
+    digest divergence is one document captured twice and is disposed of by
+    picking a winner, while these were never the same document and picking a
+    winner IS the data loss. Plan
+    ``2026-09-22-the-plan-corpus-has-no-tenant-axis-...`` Phase 3; this is the
+    measurement Phase 4's identity re-key is gated on.
+
+    Note it is a ROW list and not a group list, and the reason is the whole
+    shape of the defect: ``uq_work_artifacts_identity`` is unique over
+    ``(organization, kind, slug, source_repo)``, so two tenants' copies of one
+    stem cannot coexist as two rows to be grouped. They overwrite in turn. The
+    collision is caught at the WRITE or not at all.
+
+    ⚠️ **Read ``tenant_unattributed_count`` before reading an empty
+    ``contested_tenants`` as clean.** A corpus not yet re-pushed under the
+    Phase 2 write path is entirely ``unknown``: no write has asserted a tenant,
+    so no write can have contested one, and the list is empty for want of DATA
+    rather than for want of collisions — UNKNOWN, never a clean bill of health.
     """
     org_id = await _resolve_org_id(db, current_user)
     groups = await crud.find_divergent(db, org_id=org_id, kind=kind)
     forks = await crud.find_kind_forks(db, org_id=org_id)
+    contested = await crud.find_contested_tenants(db, org_id=org_id, kind=kind)
+    unattributed = await crud.count_unattributed_tenants(db, org_id=org_id, kind=kind)
     if kind is not None:
         forks = [f for f in forks if any(row.kind == kind for row in f[2])]
 
@@ -2421,6 +2475,11 @@ async def list_divergent_artifacts(
             for f_slug, f_repo, variants in forks
         ],
         kind_fork_total=len(forks),
+        contested_tenants=[
+            ContestedTenantRow.model_validate(row, from_attributes=True)
+            for row in contested
+        ],
+        tenant_unattributed_count=unattributed,
     )
 
 
@@ -3799,6 +3858,49 @@ async def export_work_artifact(
     )
 
 
+def _resolve_tenant(
+    device_ctx: DeviceTokenContext | None,
+    declared: UUID | None,
+) -> tuple[UUID | None, str]:
+    """Which COORD TENANT this write belongs to, and HOW that was established.
+
+    A different question from :func:`_resolve_org_id`, which answers "whose
+    organization scopes this write" for ACCESS CONTROL and is unchanged by
+    this. One operator's device can be bound to N coord tenants and still
+    resolve to ONE personal organization, so the org cannot stand in for the
+    tenant — the tenants' plans fuse and a shared stem overwrites across them.
+    Plan
+    ``2026-09-22-the-plan-corpus-has-no-tenant-axis-so-a-multi-bound-device-cannot-scope-its-plans``.
+
+    * **Device arm, claim present** → the verified claim, ``declared``.
+      The credential asserted it; nothing is inferred.
+    * **Device arm, claim ABSENT** → ``(None, "unknown")`` — deliberately NOT
+      a 401. Coord mints ``Claims.tenant_id`` as an ``Option``, so a
+      tenant-less device token is a supported credential, and refusing it
+      would break pushes that work today. ``GET /devices/me`` 401s on the
+      same absence because the tenant IS its answer; here it is one recorded
+      fact among many, and ``unknown`` is the vocabulary's word for it.
+    * **Operator arm** → whatever the request declares, ``declared``; nothing
+      declared is ``(None, "unknown")``. A browser session asserts no device
+      tenant, and NEVER the personal organization: a guessed tenant that
+      renders identically to a declared one is the exact defect
+      ``tenant_source`` exists to prevent.
+
+    A MALFORMED claim still 401s — that is ``tenant_id_optional``'s own
+    posture, and it is the right one: silently filing a broken credential's
+    row as ``unknown`` would put a real tenant's plan in the unattributed
+    bucket.
+    """
+    if device_ctx is not None:
+        claimed = device_ctx.tenant_id_optional
+        if claimed is not None:
+            return claimed, "declared"
+        return None, "unknown"
+    if declared is not None:
+        return declared, "declared"
+    return None, "unknown"
+
+
 # ───────────────────────────── writes ─────────────────────────────
 
 
@@ -3811,7 +3913,9 @@ async def upsert_work_artifact(
     payload: WorkArtifactUpsert,
     response: Response,
     db: AsyncSession = Depends(get_async_db),
-    current_user: User = Depends(get_audit_actor_user),
+    actor: tuple[ActorPrincipal, DeviceTokenContext | None] = Depends(
+        get_audit_actor_context
+    ),
 ) -> WorkArtifactUpsertResponse:
     """Insert or update one artifact.
 
@@ -3820,13 +3924,18 @@ async def upsert_work_artifact(
     That is the plan's "304-equivalent" — a literal 304 cannot carry the body
     the caller needs to assert the version did not move. The head row's
     METADATA (``title``, ``status``, ``repos``, ``intent_refs``,
-    ``work_unit_slug``, ``authored_at``, ``source_path``, ``captured_by``) is
+    ``work_unit_slug``, ``authored_at``, ``source_path``, ``captured_by``,
+    ``tenant_id``, ``tenant_source``) is
     still stored when
     it differs, so ``changed`` reports whether THIS request moved anything:
     a byte-identical re-post answers ``changed=false`` with
     ``X-Artifact-Unchanged: true``; a corrected ``status`` against a stored
     body answers ``changed=true`` and no header, with the version untouched.
     """
+    principal, device_ctx = actor
+    current_user = principal.user
+    tenant_id, tenant_source = _resolve_tenant(device_ctx, payload.tenant_id)
+
     computed = crud.compute_content_sha256(payload.body)
     if payload.content_sha256 is not None and payload.content_sha256 != computed:
         # The caller's digest disagrees with its own body. Rejecting is the
@@ -3861,6 +3970,8 @@ async def upsert_work_artifact(
             change_description=payload.change_description,
             created_by=_actor(current_user),
             kind_is_heuristic=payload.kind_is_heuristic,
+            tenant_id=tenant_id,
+            tenant_source=tenant_source,
         )
     except crud.AmbiguousArtifactKind as exc:
         # A heuristic scan whose kind-less key matched several rows with no

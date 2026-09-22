@@ -517,18 +517,19 @@ async def get_device_identity(
 
     Declared before ``GET /{device_id}`` so ``me`` is never captured as a
     device-id path parameter.
-    """
-    raw_tenant = device_ctx.claims.get("tenant_id")
-    if not raw_tenant:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Device token missing tenant_id claim",
-        )
 
+    The tenant read is :attr:`~app.api.deps.DeviceTokenContext.tenant_id` —
+    the 401-on-missing accessor — rather than a hand-rolled ``claims.get``.
+    This route is where the strict posture BELONGS: the tenant is the answer
+    it owes, so a token that asserts none leaves it nothing to return. A
+    recorder that files the tenant as one fact among others takes
+    ``tenant_id_optional`` instead and records ``unknown``; see plan
+    ``2026-09-22-the-plan-corpus-has-no-tenant-axis-...``.
+    """
     return DeviceIdentityResponse(
         device_id=str(device_ctx.device_id),
         user_id=str(device_ctx.user_id),
-        tenant_id=str(raw_tenant),
+        tenant_id=str(device_ctx.tenant_id),
     )
 
 
