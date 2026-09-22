@@ -6,7 +6,8 @@
  * Replaces `QuestionCard` on `/admin/coord/questions`. Plan
  * `2026-08-16-coord-console-ui-unification-pipeline-style.md` Phase 3 Wave 1;
  * conventions from `frontend/docs/console-ui-style-guide.md` and from
- * `AlertRow.tsx`, this wave's reference implementation.
+ * `AlertRow.tsx`, this wave's reference implementation — since retired with
+ * the alerts page; `PlanRow.tsx` is the live reference.
  *
  * **D1 — the whole card used to be a `<Link>` to
  * `/admin/coord/questions/[id]`.** Triaging an inbox meant navigating away and

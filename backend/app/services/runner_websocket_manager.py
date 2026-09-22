@@ -85,6 +85,14 @@ class RunnerWebSocketManager:
         # runner-direction channels onto one pooled Redis connection (see
         # ``register``). runner_id -> (pubsub, task).
         self._inbound_listeners: dict[str, tuple[Any, asyncio.Task]] = {}
+        # Mobile terminal sockets whose ``terminal_subscribe`` was actually
+        # PUBLISHED to the runner, so ``disconnect_mobile_terminal`` sends the
+        # matching ``terminal_unsubscribe`` for exactly those. The subscribe is
+        # locally gated and the unsubscribe is not; without this record a
+        # viewer that connected while the runner was elsewhere would, on
+        # leaving, decrement a count it never incremented — switching off a
+        # peer viewer's output on the replica that holds the socket.
+        self._terminal_subscribed: set[WebSocket] = set()
 
         logger.info("runner_websocket_manager_initialized")
 
@@ -442,9 +450,25 @@ class RunnerWebSocketManager:
             # starts forwarding terminal_output/terminal_exit frames. The
             # runner keeps a subscriber counter, so one subscribe per connect
             # is correct even with multiple mobiles on the same runner.
-            await self._relay.send_command_to_runner(
+            #
+            # The subscribe stays on the LOCAL gate, deliberately — it is not
+            # symmetric with the unsubscribe in
+            # :meth:`disconnect_mobile_terminal`. A dropped subscribe is
+            # transient and self-correcting (the next connect re-sends it),
+            # whereas a dropped unsubscribe latches the firehose on for the
+            # runner's process life. More importantly, widening only this gate
+            # would not make a cross-replica terminal session work: the
+            # keystroke path (``send_terminal`` ->
+            # ``TerminalRelayService.send_terminal_to_runner``) applies the
+            # same in-process check with no opt-out, so the viewer would lose
+            # the accurate up-front "not connected" warning and instead get a
+            # per-message error on every keystroke. Making cross-replica
+            # terminals actually work is a coherent separate change (subscribe
+            # + send + response fan-in), not a gate flip here.
+            if await self._relay.send_command_to_runner(
                 rid, {"type": "terminal_subscribe", "runner_id": rid}
-            )
+            ):
+                self._terminal_subscribed.add(websocket)
         return runner_connected
 
     async def disconnect_mobile_terminal(
@@ -452,11 +476,40 @@ class RunnerWebSocketManager:
     ) -> None:
         rid = _rid(runner_id)
         await self._terminal_relay.stop_mobile_listener(rid, websocket)
-        # Best-effort: the runner may already be gone on disconnect, which is
-        # fine — its subscriber counter is decremented per unsubscribe.
+        # One unsubscribe per PUBLISHED subscribe. A viewer whose subscribe was
+        # skipped (runner not local at connect time) never incremented the
+        # runner's counter, and that counter is shared with every other
+        # viewer — so an unmatched unsubscribe would not be a no-op, it would
+        # take a peer's subscription down. Saturation at zero only protects
+        # the count when nobody else is subscribed.
+        if websocket not in self._terminal_subscribed:
+            return
+        self._terminal_subscribed.discard(websocket)
+        # The unsubscribe is published UNCONDITIONALLY — never gated on the
+        # runner socket being registered in *this* process.
+        #
+        # The runner's ``terminal_subscriber_count`` is a process-lifetime
+        # counter that it never resets, and forwarding is latched on
+        # ``count > 0``. So a *dropped* unsubscribe is not a benign no-op: it
+        # leaves the device-wide terminal-output firehose on for the rest of
+        # the runner's process life. The in-process gate dropped exactly the
+        # two cases that matter — a viewer leaving while the runner socket
+        # lives on a *different* backend replica, and a viewer leaving during
+        # a momentary local deregistration — so the counter never came back
+        # down.
+        #
+        # Publishing with ``require_local_connection=False`` hands the frame
+        # to Redis pub/sub on ``runner:commands:{rid}``, which is the channel
+        # the replica that actually holds the socket is subscribed to (see
+        # ``RunnerWebSocketManager.register``'s shared inbound listener), so
+        # the unsubscribe reaches the runner wherever it is terminated.
+        # Publishing to an absent runner is harmless: nothing is subscribed to
+        # the channel, and the runner's decrement saturates at zero.
         try:
             await self._relay.send_command_to_runner(
-                rid, {"type": "terminal_unsubscribe", "runner_id": rid}
+                rid,
+                {"type": "terminal_unsubscribe", "runner_id": rid},
+                require_local_connection=False,
             )
         except Exception as exc:
             logger.debug(

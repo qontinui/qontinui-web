@@ -756,7 +756,7 @@ jobs:
           echo "Job wall-clock: ${elapsed_min} min (soft budget ${SOFT_BUDGET_MINUTES} min, job budget ${JOB_TIMEOUT_MINUTES} min)."
 
           if [ "$elapsed_min" -ge "$SOFT_BUDGET_MINUTES" ]; then
-            echo "::warning title=${JOB_LABEL} is approaching its job budget::This job took ${elapsed_min} min, at or past the ${SOFT_BUDGET_MINUTES}-minute soft budget and closing on the ${JOB_TIMEOUT_MINUTES}-minute job budget. This run PASSED - this is an early warning, not a failure. ${BUDGET_STAKES} Act on it before it becomes a timeout: this repo has already paid for a budget set below this suite's own median - every main push then produced a 'cancelled' run, no coverage export, and a red main baseline. Either make the suite faster (sharding is the obvious lever) or raise BOTH 'timeout-minutes' and 'JOB_TIMEOUT_MINUTES' together."
+            echo "::warning title=${JOB_LABEL} is approaching its job budget::This job took ${elapsed_min} min, at or past the ${SOFT_BUDGET_MINUTES}-minute soft budget and closing on the ${JOB_TIMEOUT_MINUTES}-minute job budget. This run PASSED - this is an early warning, not a failure. ${BUDGET_STAKES} Act on it before it becomes a timeout: this repo has already paid for a budget set below this suite's own median - every main push then produced a 'cancelled' run and no coverage export, which coord discards without writing, so main's baseline froze on its last conclusive verdict and no later run could clear it. Either make the suite faster (sharding is the obvious lever) or raise BOTH 'timeout-minutes' and 'JOB_TIMEOUT_MINUTES' together."
           fi
 
       - name: Upload coverage to Codecov

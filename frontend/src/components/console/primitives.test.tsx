@@ -745,7 +745,8 @@ describe("RecordDetail (R5)", () => {
     // and therefore a 12px gap at the foot of the panel. Two of the misses
     // arrive by ordinary means: `str && <div/>` yields `""`, and a `||` chain
     // over a nullable string yields it too — which is the exact shape of
-    // `<AlertRow>`'s raw slot over a `device_id` typed `string | null`.
+    // the retired `<AlertRow>`'s raw slot over a `device_id` typed
+    // `string | null`.
     render(<RecordDetail data-testid="detail" why={<p>WHY</p>} raw={raw} />);
     expect(document.querySelector("[data-console-raw]")).toBeNull();
     expect(screen.getByTestId("detail").children).toHaveLength(1);

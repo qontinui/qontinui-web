@@ -122,15 +122,39 @@ export {
 } from "./FleetHealthSummary";
 export { FLEET_HEALTH_API, useFleetHealth } from "./useFleetHealth";
 export type {
-  FleetHealthAlertCounts,
+  FleetConditionsDomain,
+  FleetHealthConditions,
   FleetHealthDevice,
-  FleetHealthPageout,
   FleetHealthPayload,
+  FleetHealthSettingInEffect,
   UseFleetHealthResult,
 } from "./useFleetHealth";
 export { summarizeFleetLiveness } from "./fleetLiveness";
 export type { FleetLivenessLevel, FleetLivenessSummary } from "./fleetLiveness";
+export { summarizeFleetConditions } from "./fleetConditions";
+export type {
+  FleetConditionsLevel,
+  FleetConditionsState,
+  FleetConditionsSummary,
+} from "./fleetConditions";
+export { FleetConditionsPanel } from "./FleetConditionsPanel";
+export type { FleetConditionsPanelProps } from "./FleetConditionsPanel";
 export { FleetResourcesSection } from "./FleetResourcesSection";
+export {
+  buildWorktreeSlotRows,
+  FleetWorktreeSlotsSection,
+} from "./FleetWorktreeSlotsSection";
+export {
+  FLEET_WORKTREE_SLOTS_API,
+  useFleetWorktreeSlots,
+} from "./useFleetWorktreeSlots";
+export type {
+  UseFleetWorktreeSlotsResult,
+  WorktreeSlotDevice,
+  WorktreeSlotOccupancy,
+  WorktreeSlotOccupantRow,
+  WorktreeSlotsResponse,
+} from "./useFleetWorktreeSlots";
 export { FleetTestTargetsPanel } from "./FleetTestTargetsPanel";
 export { MachineCard } from "./MachineCard";
 export { DeviceStatusTile } from "./DeviceStatusTile";

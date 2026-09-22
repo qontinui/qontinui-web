@@ -6,7 +6,8 @@
  * Replaces `TreeCard` on `/admin/coord/trees`. Plan
  * `2026-08-16-coord-console-ui-unification-pipeline-style.md` Phase 3 Wave 1;
  * conventions from `frontend/docs/console-ui-style-guide.md` and from
- * `AlertRow.tsx`, this wave's reference implementation.
+ * `AlertRow.tsx`, this wave's reference implementation — since retired with
+ * the alerts page; `PlanRow.tsx` is the live reference.
  *
  * `/trees` is the route the plan singled out (§4): `TreeCard` had **zero**
  * `useState` and **zero** `onClick` — everything it knew was already on the

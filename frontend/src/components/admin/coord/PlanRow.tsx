@@ -6,7 +6,8 @@
  * Replaces `PlanCard` on `/admin/coord/work-units`. Plan
  * `2026-08-16-coord-console-ui-unification-pipeline-style.md` Phase 3 Wave 1;
  * conventions from `frontend/docs/console-ui-style-guide.md` and from
- * `AlertRow.tsx`, this wave's reference implementation.
+ * `AlertRow.tsx`, this wave's reference implementation — since retired with
+ * the alerts page, so this file is now the reference row.
  *
  * Two things changed and both are the point:
  *

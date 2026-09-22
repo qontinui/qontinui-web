@@ -37,12 +37,11 @@ const memberLabels = (id: string) =>
     .map((i) => i.label);
 
 describe("coordNavModel", () => {
-  it("keeps the five daily destinations as direct tabs", () => {
+  it("keeps the four daily destinations as direct tabs", () => {
     expect(DIRECT_TABS.map((t) => [t.label, t.href])).toEqual([
       ["Pipeline", "/admin/coord/pipeline"],
       ["Pull Requests", "/admin/coord/prs"],
       ["Gates", "/admin/coord/gates"],
-      ["Alerts", "/admin/coord/alerts"],
       ["Notifications", "/admin/coord/notifications"],
     ]);
   });

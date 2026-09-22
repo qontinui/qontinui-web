@@ -18,8 +18,8 @@ import { CloudProviders } from "@/components/CloudProviders";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { BetaBannerSlot } from "@/components/cloud-slots/BetaBannerSlot";
 import { useAuth } from "@/contexts/auth-context";
-import { MentionRealtimeSubscriber } from "@/app/(app)/strategy/_components/MentionRealtimeSubscriber";
 import { HelperRedirectGate } from "@/components/helper-portal/HelperRedirectGate";
+import { MobileTopBar } from "@/components/navigation/MobileTopBar";
 import { cn } from "@/lib/utils";
 
 // Dynamic imports with ssr:false to avoid hydration mismatches
@@ -65,12 +65,25 @@ const CoPilotActiveBanner = nextDynamic(
   { ssr: false }
 );
 
-function SidebarSkeleton({ isCollapsed }: { isCollapsed: boolean }) {
+/**
+ * Holds the sidebar's place while its chunk loads.
+ *
+ * In step with `UnifiedSidebar`'s own Suspense fallback and with the sidebar
+ * itself: nothing below `md` (the phone shell has no inline sidebar), the
+ * 64px rail at `md`, and the saved preference at `lg`. A skeleton that kept
+ * reserving 256px at every width is the defect this plan exists to fix — it
+ * would flash the broken layout on every cold load.
+ */
+function SidebarSkeleton({
+  preferredCollapsed,
+}: {
+  preferredCollapsed: boolean;
+}) {
   return (
     <div
       className={cn(
-        "fixed left-0 top-0 h-screen bg-surface-canvas border-r border-border-subtle",
-        isCollapsed ? "w-16" : "w-64"
+        "fixed left-0 top-0 hidden h-dvh w-16 border-r border-border-subtle bg-surface-canvas md:block",
+        preferredCollapsed ? "lg:w-16" : "lg:w-64"
       )}
     />
   );
@@ -139,11 +152,15 @@ function AppAuthGate({ children }: { children: React.ReactNode }) {
 }
 
 function AppLayoutContent({ children }: { children: React.ReactNode }) {
-  const { isCollapsed } = useSidebar();
-  const { user } = useAuth();
+  const { preferredCollapsed } = useSidebar();
 
   return (
-    <div className="flex h-screen bg-background overflow-hidden">
+    // `h-dvh`, not `h-screen`: on a phone `100vh` is the viewport WITHOUT the
+    // browser's collapsible toolbars, so the bottom of every page sat under
+    // them. The dynamic unit tracks the toolbars. (Pages still carry their own
+    // `calc(100vh - 44px)` root height; unifying those on one shell-provided
+    // variable is a follow-up.)
+    <div className="flex h-dvh bg-background overflow-hidden">
       {/* §4.5 "AI in control" banner — fixed-top, z-9999, only renders
           when the co-pilot is actively driving the tab. The component
           itself is wrapped in data-bridge-invisible so the SDK auto-
@@ -152,7 +169,9 @@ function AppLayoutContent({ children }: { children: React.ReactNode }) {
       <Suspense fallback={null}>
         <CoPilotActiveBanner />
       </Suspense>
-      <Suspense fallback={<SidebarSkeleton isCollapsed={isCollapsed} />}>
+      <Suspense
+        fallback={<SidebarSkeleton preferredCollapsed={preferredCollapsed} />}
+      >
         <UnifiedSidebar />
       </Suspense>
       <div
@@ -164,10 +183,19 @@ function AppLayoutContent({ children }: { children: React.ReactNode }) {
           // `overflow-hidden` clips the right edge — stranding off-screen
           // controls with no scroll escape. `min-w-0` lets it shrink to the
           // available width so page content fits instead of overflowing.
-          "flex-1 flex flex-col min-h-0 min-w-0 transition-all duration-300",
-          isCollapsed ? "ml-16" : "ml-64"
+          "flex-1 flex flex-col min-h-0 min-w-0 transition-all duration-300 motion-reduce:transition-none",
+          // The offset the sidebar actually occupies at each width: nothing on
+          // a phone (no inline sidebar — the menu is the drawer), the 64px
+          // rail on a tablet, and the saved preference from `lg` up. Plain
+          // breakpoint classes rather than a JS branch, so the column is
+          // correct on the first paint; `preferredCollapsed` is read (not the
+          // effective `isCollapsed`, which is forced true below `lg`) because
+          // only the `lg:` half of this is a preference.
+          "ml-0 md:ml-16",
+          preferredCollapsed ? "lg:ml-16" : "lg:ml-64"
         )}
       >
+        <MobileTopBar />
         <BetaBannerSlot />
         <main className="flex-1 min-h-0 overflow-hidden">{children}</main>
       </div>
@@ -180,10 +208,6 @@ function AppLayoutContent({ children }: { children: React.ReactNode }) {
       <Suspense fallback={null}>
         <RecordingIndicator />
       </Suspense>
-      {/* Strategy Phase 2.5 — headless subscriber for the
-          per-user mention WS channel. Mounted once at the app-
-          shell level so the badge updates anywhere in the app. */}
-      <MentionRealtimeSubscriber userId={user?.id ?? null} />
     </div>
   );
 }

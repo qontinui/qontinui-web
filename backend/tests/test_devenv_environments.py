@@ -295,6 +295,112 @@ class TestDiffEnvelopes:
         assert devenv_drift._section_base_severity("harness") == "warning"
         assert devenv_drift._removed_severity("harness") == "warning"
 
+    def test_harness_state_labels_are_observation_only_never_apply_lines(
+        self,
+    ) -> None:
+        """Every harness key but ``plans_dir_relative`` is a label, not a value.
+
+        The runner builds them all from ``presence()`` / ``link_state()`` /
+        ``invariant_class()``, so each value is a VERDICT about the box rather
+        than something an operator can set: "set ``link_claude_dir`` to
+        ``present``" is not an instruction anyone can carry out, and neither is
+        "set ``invariant_class`` to ``(a)``" — the box converges by running the
+        Phase 1 bootstrap (or, for the invariant, by a deliberate destructive
+        session, which D3 reserves) and the label then follows.
+
+        Unclassified they reach ``buildRemediation``, which allow-lists
+        ``changed``/``removed`` and skips only ``derived`` and
+        ``observation_only``. It never reads the section policy — and
+        ``MachineDriftReport`` does not carry one — so ``report_only`` does not
+        keep them out, and ``harness`` has no apply module on the runner at all.
+        """
+        from app.services import devenv_section_policy as sp
+
+        for key in (
+            "link_claude_dir",
+            "link_claude_md",
+            "link_dev_start",
+            "config_repo",
+            "root_settings_hooks",
+            "installer_agent_skills",
+            "installer_claude_accounts",
+            "installer_git_hooks",
+            "invariant_class",
+        ):
+            assert sp.is_observation_only_key("harness", key) is True, key
+
+        # The one key whose VALUE is the payload: it names where to point the
+        # runner's ``paths.plans_dir``, so it stays a real apply line.
+        assert sp.is_observation_only_key("harness", "plans_dir_relative") is False
+
+        # ``link_`` and ``installer_`` are PREFIXES on purpose, not an
+        # enumeration: the Phase 1 bootstrap composes the installers, so a link
+        # or installer key this table has never seen must be classified the day
+        # the runner ships it rather than the day someone remembers to come
+        # back here. That is the property that let
+        # ``python_installed_interpreter`` land correctly while the oracle's
+        # hand-written twin silently missed it.
+        assert sp.is_observation_only_key("harness", "link_something_new") is True
+        assert sp.is_observation_only_key("harness", "installer_something_new") is True
+
+        # Keyed by SECTION like every other table in that module: these do not
+        # leak into other sections, and ``python_installed_`` does not leak here.
+        assert sp.is_observation_only_key("versions", "invariant_class") is False
+        assert sp.is_observation_only_key("repos", "link_claude_dir") is False
+        assert sp.is_observation_only_key("harness", "python_installed_count") is False
+
+        # ``observation_only`` and ``derived`` are different flags with
+        # different effects on ``in_sync``; these keys are the box's OWN state.
+        assert sp.is_derived_key("harness", "invariant_class") is False
+
+    def test_harness_observation_only_keys_still_break_in_sync(self) -> None:
+        """The flag removes the apply line, never the drift.
+
+        This is the whole reason there are two flags rather than one: marking
+        these ``derived`` would ALSO drop them out of ``in_sync``, letting a box
+        that holds the plan-corpus invariant by clause (c) — a second writable
+        corpus — read CLEAN. That is the precise signal
+        ``_SECTION_BASE_SEVERITY["harness"] = "warning"`` was registered to
+        surface, so ``observation_only`` must not take it back out.
+        """
+        canonical = _envelope(
+            {
+                "harness": {
+                    "invariant_class": "(a)",
+                    "link_claude_dir": "present",
+                    "plans_dir_relative": "qontinui-dev-notes/plans",
+                }
+            }
+        )
+        actual = _envelope(
+            {
+                "harness": {
+                    "invariant_class": "(c)",
+                    "link_claude_dir": "absent",
+                    "plans_dir_relative": "unset",
+                }
+            }
+        )
+        report = devenv_drift.diff_envelopes(canonical, actual)
+        section = _section(report, "harness")
+
+        for key in ("invariant_class", "link_claude_dir"):
+            delta = _delta(section, key)
+            assert delta.observation_only is True, key
+            assert delta.derived is False, key
+            # Still full drift at full severity — only the apply line is gone.
+            assert delta.status == "changed", key
+            assert delta.severity == "warning", key
+
+        # The payload-carrying key keeps its remediation line.
+        payload = _delta(section, "plans_dir_relative")
+        assert payload.observation_only is False
+        assert payload.status == "changed"
+        assert payload.expected == "qontinui-dev-notes/plans"
+
+        assert report.in_sync is False
+        assert report.severity == "warning"
+
     def test_repos_scope_kind_difference_is_derived_and_info(self) -> None:
         """Capture provenance is reported, never actionable, never drift.
 

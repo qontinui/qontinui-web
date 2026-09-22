@@ -67,7 +67,9 @@ function fullWindow(extra: Record<string, unknown> = {}) {
 async function openCaveats() {
   // R7 — the panel is collapsed by default and unmounts its children, so the
   // notice has to be opened before it can be read.
-  const trigger = await screen.findByText("Fetch-window caveats");
+  // "Fetch window", not "Fetch-window caveats": since the corpus walk the
+  // panel also carries the COMPLETE verdict, which is not a caveat.
+  const trigger = await screen.findByText("Fetch window");
   trigger.click();
 }
 
@@ -88,7 +90,13 @@ describe("/admin/coord/work-units fetch-window caveats", () => {
     const notice = await screen.findByTestId(
       "coord-work-units-truncated-notice"
     );
-    expect(notice).toHaveTextContent("Showing 500 of 3268 work units");
+    // "were READ", not "Showing": the count is the read, taken before any
+    // client-side filter narrows what is rendered (the corpus walk's
+    // "read, never shown" rule).
+    expect(notice).toHaveTextContent(
+      "500 most-recently-updated work units were READ, of 3268 matching this question"
+    );
+    expect(notice).not.toHaveTextContent("Showing");
   });
 
   it("says the denominator is UNKNOWN rather than inventing one", async () => {
@@ -102,7 +110,7 @@ describe("/admin/coord/work-units fetch-window caveats", () => {
       "coord-work-units-truncated-notice"
     );
     expect(notice).toHaveTextContent("unknown");
-    expect(notice).not.toHaveTextContent("Showing 500 of 500");
+    expect(notice).not.toHaveTextContent("of 500");
   });
 
   it("names the boundary — the oldest row in the window", async () => {

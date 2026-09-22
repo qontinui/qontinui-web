@@ -53,7 +53,7 @@ function IntentBody({ entry, id }: { entry: IntentEntry; id: string }) {
         id={id}
         className={open ? undefined : "relative max-h-72 overflow-hidden"}
       >
-        <MarkdownView>{entry.body}</MarkdownView>
+        <MarkdownView headingOffset={2}>{entry.body}</MarkdownView>
         {!open && (
           <div
             className="pointer-events-none absolute inset-x-0 bottom-0 h-20 bg-gradient-to-t from-background to-transparent"
@@ -130,11 +130,17 @@ export function IntentSection({
         <div className="mt-3 space-y-8">
           {written.map((entry) => (
             <article key={entry.name}>
-              {written.length > 1 && (
-                <h3 className="mb-2 text-base font-medium text-foreground">
-                  {entry.description ?? entry.name}
-                </h3>
-              )}
+              {/* Always rendered: the document's own opening heading is
+                  removed from its body, so this IS that heading. Rendering it
+                  only for multi-document sections dropped the title of every
+                  single-document one, and left the heading levels skipping
+                  from the section's h2 to the body's h4. */}
+              <h3
+                className="mb-2 font-[family-name:var(--font-overview-serif)] text-xl leading-snug text-foreground"
+                data-ui-bridge-id={`overview.summary.${sectionId}-${entry.name}.title`}
+              >
+                {entry.title}
+              </h3>
               {entry.state === "unreadable" ? (
                 <LoadFailure
                   what="this part of the description"

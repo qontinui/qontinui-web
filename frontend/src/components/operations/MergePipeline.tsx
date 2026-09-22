@@ -133,11 +133,13 @@ import {
   buildPipelineRows,
   candidateChurnBadgeLabel,
   candidateChurnBadgeTitle,
+  compareBySubmitted,
   deriveCandidateChurn,
   derivePipelineHealth,
   fusePipelinePrs,
   matchesFilter,
   matchesQuery,
+  rowSubmittedMs,
   UNKNOWN_DWELL_NOTE,
   unstableHasFailure,
   type PipelineFilter,
@@ -176,12 +178,47 @@ const PIPELINE_PALETTE: StatusPalette<UnifiedStatusKind> = {
 };
 
 /**
- * The pipeline's timestamp: a merged row reports its LAND time (what the
- * merged tab is a record of); every other row reports its last state change.
- * A merged row from a coord deploy that does not project `merged_at` says so
- * rather than passing a refresh time off as a merge time.
+ * Which clock a row's time cell reports. The All PRs tab is ordered by time
+ * SUBMITTED, so it shows that clock — a list sorted by one time and labelled
+ * with another reads as unsorted. Every other tab is a working list and shows
+ * the activity clock.
  */
-function PipelineRowTime({ row }: { row: PipelineRow }) {
+type RowTimeBasis = "submitted" | "activity";
+
+/**
+ * The pipeline's timestamp. Submitted basis: GitHub's open time (or, for a
+ * PR-less proposal, when it was submitted to the train), with an explicit
+ * "unknown" when coord reports none. Activity basis: a merged row reports its
+ * LAND time (what the merged tab is a record of); every other row reports its
+ * last state change. A merged row from a coord deploy that does not project
+ * `merged_at` says so rather than passing a refresh time off as a merge time.
+ */
+function PipelineRowTime({
+  row,
+  basis,
+}: {
+  row: PipelineRow;
+  basis: RowTimeBasis;
+}) {
+  if (basis === "submitted") {
+    const noun = row.pr !== null ? "opened" : "submitted";
+    return (
+      <RowTime
+        // Only a parseable time counts as one: `RowTime` substitutes `absent`
+        // for an EMPTY value only, so a non-empty unparseable string would
+        // otherwise render "opened never" while the sort treats it as unknown.
+        at={rowSubmittedMs(row) === null ? null : row.submittedAt}
+        verb={noun === "opened" ? "Opened" : "Submitted"}
+        prefix={`${noun} `}
+        absent={{
+          label: `${noun} ?`,
+          title: `coord did not report when this ${
+            row.pr !== null ? "PR was opened" : "proposal was submitted"
+          }`,
+        }}
+      />
+    );
+  }
   const isMerged = row.status.kind === "merged";
   return (
     <RowTime
@@ -781,12 +818,14 @@ function PipelineRowDisplay({
   expanded,
   onToggle,
   onActed,
+  timeBasis,
 }: {
   row: PipelineRow;
   gateBlock: BlastRadiusBlock | null;
   expanded: boolean;
   onToggle: () => void;
   onActed: () => void;
+  timeBasis: RowTimeBasis;
 }) {
   return (
     <RecordRow
@@ -819,7 +858,7 @@ function PipelineRowDisplay({
       }
       status={<StatusBadge status={row.status} palette={PIPELINE_PALETTE} />}
       reason={row.status.reason}
-      time={<PipelineRowTime row={row} />}
+      time={<PipelineRowTime row={row} basis={timeBasis} />}
     >
       <RowDetail row={row} gateBlock={gateBlock} onActed={onActed} />
       <GroupMembers row={row} />
@@ -852,13 +891,15 @@ const FILTERS: Array<{ id: PipelineFilter; label: string }> = [
 
 export function MergePipeline() {
   // Declared before the data hook: the merged rows are an expensive read, so
-  // the hook only fetches them while this tab is the visible one.
+  // the hook only fetches them while a tab that lists landed PRs (All PRs or
+  // Merged) is the visible one.
   const [filter, setFilter] = useState<PipelineFilter>("all");
 
   const {
     proposals,
     prs,
     mergedPrs,
+    mergedError,
     mergedCount,
     economicsByRepo,
     suggestions,
@@ -869,7 +910,11 @@ export function MergePipeline() {
     suggestionBusy,
     onSuggestionAction,
     refetch,
-  } = useMergePipelineData({ includeMerged: filter === "merged" });
+  } = useMergePipelineData({
+    // Merged rows feed both the Merged tab and the All PRs tab (which lists
+    // landed PRs alongside open ones), so either being open turns the read on.
+    includeMerged: filter === "merged" || filter === "all",
+  });
 
   const [query, setQuery] = useState("");
   const [expandedKey, setExpandedKey] = useState<string | null>(null);
@@ -941,11 +986,15 @@ export function MergePipeline() {
       ) as Record<PipelineFilter, number>,
     [rows, trainRows]
   );
-  const visible = useMemo(
-    () =>
-      rows.filter((r) => matchesFilter(r, filter) && matchesQuery(r, query)),
-    [rows, filter, query]
-  );
+  const visible = useMemo(() => {
+    const matched = rows.filter(
+      (r) => matchesFilter(r, filter) && matchesQuery(r, query)
+    );
+    // `rows` arrives in triage order (status band, then time within the band).
+    // That is what the working tabs want; All PRs is a chronological list, so
+    // it re-sorts across the bands by time submitted, newest first.
+    return filter === "all" ? [...matched].sort(compareBySubmitted) : matched;
+  }, [rows, filter, query]);
 
   // The gate join (see gateDecision.ts). Built over EVERY row the page holds,
   // never the FILTERED ones — `matchesFilter` must not move a decision between
@@ -1001,8 +1050,9 @@ export function MergePipeline() {
           pass `null` for a count nobody has fetched and the primitive renders
           the dash.
 
-          The merged ROWS are only fetched while that tab is open, so until
-          then `counts.merged` would be 0 for want of looking, not because
+          The merged ROWS are only fetched while the All PRs or Merged tab is
+          open, so until then `counts.merged` would be 0 for want of looking,
+          not because
           nothing landed. coord answers the cheap half — `merged_recent_count`
           — on the hot poll, so the label is a real number from the first
           render; `null` (coord too old to answer, or its count failed) is the
@@ -1033,6 +1083,38 @@ export function MergePipeline() {
       />
 
       {error && <p className="text-xs text-red-300">{error}</p>}
+
+      {/* A failed merged read is an INCOMPLETE history, not an empty one, and
+          the list would otherwise pass for the whole thing: the only landed rows
+          left are the open list's `landed-open` ones (coord ff-landed, GitHub
+          still open), which carry no merge time — all N of them dateless was
+          exactly how the 5s proxy timeout presented on 2026-09-19. Say what is
+          missing on the two tabs that list landed PRs. */}
+      {/* The first merged read takes 14-21s. Until it lands the only landed rows
+          held are the same dateless `landed-open` ones, so say the rest is on
+          its way rather than let them stand in as the whole history. */}
+      {mergedPrs === null &&
+        mergedError === null &&
+        (filter === "all" || filter === "merged") && (
+          <p
+            className="text-xs text-muted-foreground"
+            role="status"
+            data-testid="merged-read-loading"
+          >
+            Loading merge history…
+          </p>
+        )}
+      {mergedError && (filter === "all" || filter === "merged") && (
+        <p
+          className="text-xs text-amber-300"
+          role="status"
+          data-testid="merged-read-failed"
+        >
+          {mergedPrs === null
+            ? `Merge history could not be loaded (${mergedError}). The landed PRs listed here are only those coord still reports as open, so their merge times are unknown and PRs that have already closed are missing.`
+            : `Merge history could not be refreshed (${mergedError}). Showing the last successful read, which may be out of date.`}
+        </p>
+      )}
 
       {/* The Train tab is a row-per-REPO view of the merge train itself, not a
           filter over the PR rows — so it replaces the list entirely. */}
@@ -1082,6 +1164,7 @@ export function MergePipeline() {
               expanded={expanded}
               onToggle={onToggle}
               onActed={refetch}
+              timeBasis={filter === "all" ? "submitted" : "activity"}
             />
           )}
         />

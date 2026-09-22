@@ -18,7 +18,8 @@
  * 1. **Each surface declares a total kind→attention table** (an
  *    {@link AttentionMap}) — the audit table, one line per kind, answering
  *    "must a human act now, or will something else clear this?". `prPipeline`'s
- *    `ATTENTION_BY_KIND` and `alertStatus`'s are both instances.
+ *    `ATTENTION_BY_KIND` and `planStatus`'s `PLAN_ATTENTION_BY_TONE` are both
+ *    instances (the retired `alertStatus` was the second one first).
  * 2. **A unit test asserts the surface's PALETTE agrees with that table** —
  *    {@link paletteDisagreements} is that assertion, generalised out of
  *    `MergePipeline.test.tsx`'s two palette tests so it binds every future
@@ -49,7 +50,7 @@ export type AttentionMap<K extends string> = Readonly<Record<K, Attention>>;
  * statement of ignorance, and rendering ignorance as calm is the
  * `silent-empty-is-unknown` mistake applied to a badge — the same discipline
  * R6 applies to an unfetched count (`–`, never `0`). `alertStatus`'s `unknown`
- * kind already carries exactly this floor; this is that decision, generalised.
+ * kind (since retired with the alerts page) carried exactly this floor; this is that decision, generalised.
  */
 export function attentionOf<K extends string>(
   map: AttentionMap<K>,
@@ -120,7 +121,7 @@ export interface AuditablePalette<K extends string> {
  * kind must still have a badge class, must still not be painted red unless it
  * is an author kind, and must still obey red ⇔ `✕`. This is deliberately
  * NARROWER than "skip the hue clauses" would be: the inline carve-out this
- * generalises (`alertStatus.test.ts`, `attention === "waiting" && kind !==
+ * generalises (`alertStatus.test.ts`, since retired, `attention === "waiting" && kind !==
  * "unknown"`) only ever exempted amber, and a shared audit that is weaker than
  * the inline check it replaced is a regression dressed as a refactor. The
  * surface's own test still has to cover the per-row resolution.
@@ -144,7 +145,7 @@ export function paletteDisagreements<K extends string>(
     const red = /\bbg-red-/.test(cls);
     const amber = /\bbg-amber-/.test(cls);
     // Clause 2 runs for EVERY kind, `perRowKinds` included. The carve-out
-    // this parameter generalises (`alertStatus.test.ts`'s inline
+    // this parameter generalises (the retired `alertStatus.test.ts`'s inline
     // `attention === "waiting" && kind !== "unknown"`) skipped only the AMBER
     // clause. Exempting red as well would make the shared audit strictly
     // WEAKER than the inline check it replaced, for no gain — a per-row

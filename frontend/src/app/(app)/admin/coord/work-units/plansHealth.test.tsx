@@ -137,7 +137,9 @@ describe("derivePlansHealth", () => {
       expect(strip).not.toHaveTextContent("plans –");
       // What does NOT survive is the present-tense headline: "No work units in
       // this window" is a claim about now, off a read that is failing now.
-      expect(h.headline).toBe("Last refresh failed — these counts are not current");
+      expect(h.headline).toBe(
+        "Last refresh failed — these counts are not current"
+      );
       // The headline IS the failure sentence here, so the detail line does not
       // say it a second time — and has nothing else left to say.
       expect(h.detail).toBeUndefined();
@@ -155,7 +157,9 @@ describe("derivePlansHealth", () => {
       // level and the headline, not just the detail line. Qualifying it in one
       // line of small print under a pulsing green dot is not qualifying it.
       expect(h.headline).not.toBe("No plan is blocked");
-      expect(h.headline).toBe("Last refresh failed — these counts are not current");
+      expect(h.headline).toBe(
+        "Last refresh failed — these counts are not current"
+      );
       expect(h.level).toBe("amber");
       expect(h.detail).toBeUndefined();
     });
@@ -163,7 +167,11 @@ describe("derivePlansHealth", () => {
     it("keeps the all-clear green while the read is current", () => {
       // The other half of the pin: the stale arm must not swallow the real
       // green state, or the fix would be indistinguishable from breaking it.
-      const h = derivePlansHealth([{ slug: "a", status: "shipped" }], true, false);
+      const h = derivePlansHealth(
+        [{ slug: "a", status: "shipped" }],
+        true,
+        false
+      );
       expect(h.level).toBe("green");
       expect(h.headline).toBe("No plan is blocked");
     });
@@ -171,7 +179,11 @@ describe("derivePlansHealth", () => {
     it("still outranks staleness with a blocked plan", () => {
       // Red is about a row, not about the window's age: a blocked plan stays
       // red whether or not the last refresh landed.
-      const h = derivePlansHealth([{ slug: "a", status: "blocked" }], true, true);
+      const h = derivePlansHealth(
+        [{ slug: "a", status: "blocked" }],
+        true,
+        true
+      );
       expect(h.level).toBe("red");
       expect(h.headline).toBe("A plan is blocked on a human");
       // The blocked headline says nothing about the read, so the staleness
@@ -197,7 +209,9 @@ describe("derivePlansHealth", () => {
         true,
         true
       );
-      expect(h.headline).toBe("Last refresh failed — these counts are not current");
+      expect(h.headline).toBe(
+        "Last refresh failed — these counts are not current"
+      );
       expect(h.detail).toBe(
         "A status this build has no label for is shown verbatim."
       );
@@ -215,6 +229,131 @@ describe("derivePlansHealth", () => {
       expect(h.detail).toBe(
         "Last refresh failed — these counts are stale. A status this build has no label for is shown verbatim."
       );
+    });
+  });
+
+  /**
+   * F5 of the review of plan
+   * `2026-09-12-admin-coord-plans-shows-a-rotating-3-minute-slice-so-plans-get-lost`:
+   * after a partial walk (or a full single page) the strip derived its numbers
+   * from the rows fetched SO FAR while only the fetch-window badge said
+   * INCOMPLETE — so a partial read rendered as a whole-corpus verdict, in
+   * bigger type and with a green dot.
+   */
+  describe("an incomplete list is not a whole-corpus verdict", () => {
+    const clean: CoordPlanRow[] = [
+      { slug: "a", status: "shipped" },
+      { slug: "b", status: "in_progress" },
+    ];
+
+    it("scopes the all-clear to the rows that were read, and is not green", () => {
+      const h = derivePlansHealth(clean, true, false, { incomplete: true });
+      expect(h.headline).toBe(
+        "No plan is blocked in the part of the list that was read"
+      );
+      expect(h.level).toBe("amber");
+      // The headline is doing the scoping here, so the detail line does not
+      // say it a second time — the same de-duplication the stale arm uses.
+      expect(h.detail).toBeUndefined();
+    });
+
+    it("carries the caveat in the badge cluster, which is always on screen", () => {
+      renderBadges(true, clean, false);
+      expect(screen.getByTestId("strip")).not.toHaveTextContent("INCOMPLETE");
+      const h = derivePlansHealth(clean, true, false, { incomplete: true });
+      render(
+        <HealthStrip
+          level={h.level}
+          headline={h.headline}
+          detail={h.detail}
+          badges={h.badges}
+          data-testid="incomplete-strip"
+        />
+      );
+      const strip = screen.getByTestId("incomplete-strip");
+      expect(strip).toHaveTextContent("list INCOMPLETE");
+      // The counts still render — those rows were really fetched.
+      expect(strip).toHaveTextContent("plans 2");
+    });
+
+    it("says it in the detail line when the headline is owned by something else", () => {
+      const blockedTooDetail = derivePlansHealth(
+        [{ slug: "c", status: "blocked" }],
+        true,
+        false,
+        { incomplete: true }
+      );
+      expect(blockedTooDetail.headline).toBe("A plan is blocked on a human");
+      expect(blockedTooDetail.level).toBe("red");
+      expect(blockedTooDetail.detail).toBe(
+        "These counts cover an incomplete list, not the whole corpus."
+      );
+
+      const stale = derivePlansHealth(clean, true, true, { incomplete: true });
+      expect(stale.headline).toBe(
+        "Last refresh failed — these counts are not current"
+      );
+      expect(stale.detail).toBe(
+        "These counts cover an incomplete list, not the whole corpus."
+      );
+
+      const both = derivePlansHealth(
+        [
+          { slug: "c", status: "blocked" },
+          { slug: "d", status: "weird_new_state" },
+        ],
+        true,
+        true,
+        { incomplete: true }
+      );
+      expect(both.detail).toBe(
+        "Last refresh failed — these counts are stale. These counts cover an incomplete list, not the whole corpus. A status this build has no label for is shown verbatim."
+      );
+    });
+
+    /**
+     * The badge's title is shared by `/work-units` and `/spawn`, and only
+     * `/work-units` has a fetch-window panel — so the pointer is the CALLER's
+     * to supply, and without one the title points nowhere (R2 of the copy
+     * review: `/spawn` used to be sent to a panel it does not have).
+     */
+    it("the INCOMPLETE badge points only where the caller says it can", () => {
+      const titleOf = (h: ReturnType<typeof derivePlansHealth>) =>
+        h.badges.find((b) => b.key === "incomplete")?.title;
+
+      const neutral = derivePlansHealth(clean, true, false, {
+        incomplete: true,
+      });
+      expect(titleOf(neutral)).toBe(
+        "these counts are derived from the rows that were read, which are not the whole corpus"
+      );
+      expect(titleOf(neutral)).not.toContain("see ");
+
+      const pointed = derivePlansHealth(clean, true, false, {
+        incomplete: true,
+        incompleteDetailsAt: "the fetch-window panel",
+      });
+      expect(titleOf(pointed)).toBe(
+        "these counts are derived from the rows that were read, which are not the whole corpus — see the fetch-window panel"
+      );
+    });
+
+    it("changes nothing for a caller that read one whole window", () => {
+      // Both shipped callers pass the flag now (`/spawn` too — it reads one
+      // bounded page and derives it from a full page). The default is kept for
+      // a caller that really does hold the whole list, and it must be inert.
+      const defaulted = derivePlansHealth(clean, true, false);
+      const explicit = derivePlansHealth(clean, true, false, {
+        incomplete: false,
+      });
+      expect(defaulted.level).toBe("green");
+      expect(defaulted.level).toBe(explicit.level);
+      expect(defaulted.headline).toBe(explicit.headline);
+      expect(defaulted.detail).toBe(explicit.detail);
+      expect(defaulted.badges.map((b) => b.key)).toEqual(
+        explicit.badges.map((b) => b.key)
+      );
+      expect(defaulted.badges.some((b) => b.key === "incomplete")).toBe(false);
     });
   });
 
@@ -302,7 +441,7 @@ describe("derivePlansHealth noun", () => {
   });
 
   it("labels the badge with the caller's plural", () => {
-    const h = derivePlansHealth(rows, true, false, noun);
+    const h = derivePlansHealth(rows, true, false, { noun });
     render(
       <HealthStrip
         level={h.level}
@@ -318,7 +457,7 @@ describe("derivePlansHealth noun", () => {
   });
 
   it("dashes the caller's plural before coord has answered", () => {
-    const h = derivePlansHealth([], false, false, noun);
+    const h = derivePlansHealth([], false, false, { noun });
     render(
       <HealthStrip
         level={h.level}
@@ -335,8 +474,9 @@ describe("derivePlansHealth noun", () => {
 
   it("uses the caller's noun in both blocked headlines and the all-clear", () => {
     expect(
-      derivePlansHealth([{ slug: "c", status: "blocked" }], true, false, noun)
-        .headline
+      derivePlansHealth([{ slug: "c", status: "blocked" }], true, false, {
+        noun,
+      }).headline
     ).toBe("A work unit is blocked on a human");
     expect(
       derivePlansHealth(
@@ -346,12 +486,27 @@ describe("derivePlansHealth noun", () => {
         ],
         true,
         false,
-        noun
+        { noun }
       ).headline
     ).toBe("Work units are blocked on a human");
     expect(
-      derivePlansHealth([{ slug: "a", status: "shipped" }], true, false, noun)
-        .headline
+      derivePlansHealth([{ slug: "a", status: "shipped" }], true, false, {
+        noun,
+      }).headline
     ).toBe("No work unit is blocked");
+  });
+
+  it("composes with `incomplete` — the scoped all-clear carries the caller's noun", () => {
+    const h = derivePlansHealth(
+      [{ slug: "a", status: "shipped" }],
+      true,
+      false,
+      { noun, incomplete: true }
+    );
+    expect(h.headline).toBe(
+      "No work unit is blocked in the part of the list that was read"
+    );
+    expect(h.level).toBe("amber");
+    expect(h.badges.some((b) => b.key === "incomplete")).toBe(true);
   });
 });

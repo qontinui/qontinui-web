@@ -231,6 +231,18 @@ const nextConfig = {
         destination: '/admin/coord/pipeline',
         permanent: true,
       },
+      // Plan 2026-09-18-notifications-are-agent-actions-and-alerts-are-agent-work
+      // D7: the raw `coord.alerts` list is agents' work, so its operator page
+      // is deleted. The operator's rollup of it — which open conditions no
+      // agent is handling, what is waiting on him, which settings are in
+      // effect — is the Conditions panel on the Dev Ops overview, which is
+      // where bookmarks and older links now land. The read API
+      // (`/api/v1/operations/alerts`) stays for its agent and banner consumers.
+      {
+        source: '/admin/coord/alerts',
+        destination: '/admin/coord/devops',
+        permanent: true,
+      },
       // Plan 2026-08-26-sessions-console-consolidation Phase 3: the six
       // session surfaces collapse onto `/sessions`. These four 308s are the
       // ONLY compatibility this phase ships — the retired pages are deleted,
