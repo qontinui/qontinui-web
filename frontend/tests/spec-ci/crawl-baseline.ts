@@ -192,16 +192,6 @@ export const GLOBAL_SERVER_WAIVERS: readonly GlobalServerWaiver[] = [
       "those too. It also means the day coord or a hermetic stub exists for " +
       "these routes, their handler 500s gate with no change here.",
   },
-  {
-    pattern: "/api/v1/strategy/",
-    class: "ci-env",
-    note:
-      "CI-ENV-UNAVOIDABLE (hermetic lane). The strategy bridge (coord) is " +
-      "disabled in CI — the backend 503s by design. The strategy SPEC " +
-      "renders via prod-parity stubs (docs list + content); this waiver " +
-      "absorbs the page's un-stubbed background calls (presence/heartbeat " +
-      "POSTs, doc thread reads).",
-  },
 ];
 
 // ---------------------------------------------------------------------------
