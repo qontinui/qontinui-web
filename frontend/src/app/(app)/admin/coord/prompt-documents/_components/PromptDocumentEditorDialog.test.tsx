@@ -26,12 +26,20 @@ import userEvent from "@testing-library/user-event";
 import { PromptDocumentEditorDialog } from "./PromptDocumentEditorDialog";
 import type { PromptDocument, PromptDocumentKind } from "../types";
 
-function doc(kind: PromptDocumentKind): PromptDocument {
+function doc(
+  kind: PromptDocumentKind,
+  overrides: Partial<PromptDocument> = {}
+): PromptDocument {
   return {
     id: "doc-1",
     tenant_id: "tenant-1",
     kind,
-    name: kind === "session_briefing" ? "runner-session" : "session-protocol",
+    name:
+      kind === "session_briefing"
+        ? "runner-session"
+        : kind === "product_intent"
+          ? "vision"
+          : "session-protocol",
     description: "the briefing",
     format: "markdown",
     default_source: "prompt_doc/x/y/v1",
@@ -40,18 +48,20 @@ function doc(kind: PromptDocumentKind): PromptDocument {
     updated_at: "2026-08-20T10:00:00Z",
     body: "Original body.",
     attrs: null,
+    ...overrides,
   };
 }
 
 function renderDialog(
   kind: PromptDocumentKind,
-  onUpdate = vi.fn().mockResolvedValue(true)
+  onUpdate = vi.fn().mockResolvedValue(true),
+  overrides: Partial<PromptDocument> = {}
 ) {
   render(
     <PromptDocumentEditorDialog
       open
       onOpenChange={vi.fn()}
-      document={doc(kind)}
+      document={doc(kind, overrides)}
       loadingBody={false}
       saving={false}
       onUpdate={onUpdate}
@@ -140,5 +150,81 @@ describe("PromptDocumentEditorDialog — session_briefing change note", () => {
 
     await user.type(screen.getByTestId("doc-change-note"), "a note");
     expect(screen.getByTestId("doc-save")).toBeDisabled();
+  });
+});
+
+/**
+ * `attrs.overview_order` — the reading-order position the Summary page's
+ * `sortIntentEntries` reads (`overview/_lib/intent.ts`). Before this control
+ * existed, the only way to set it was a hand-crafted PATCH: the field was
+ * read but had no write path an operator could reach.
+ */
+describe("PromptDocumentEditorDialog — overview_order", () => {
+  it("shows the order control only for a Summary intent kind", () => {
+    renderDialog("product_intent");
+    expect(screen.getByTestId("doc-overview-order")).toBeInTheDocument();
+  });
+
+  it("hides the order control for a kind the Summary does not read", () => {
+    renderDialog("policy");
+    expect(screen.queryByTestId("doc-overview-order")).not.toBeInTheDocument();
+  });
+
+  it("pre-fills the current order, blank when unset", () => {
+    renderDialog("product_intent", undefined, {
+      attrs: { overview_order: 2 },
+    });
+    expect(screen.getByTestId("doc-overview-order")).toHaveValue("2");
+  });
+
+  it("rejects a non-integer and keeps Save disabled", async () => {
+    const user = userEvent.setup();
+    renderDialog("product_intent");
+
+    await user.type(screen.getByTestId("doc-overview-order"), "1.5");
+    expect(screen.getByTestId("doc-overview-order-error")).toBeInTheDocument();
+    expect(screen.getByTestId("doc-save")).toBeDisabled();
+  });
+
+  it("sends the new order merged into attrs, preserving other keys", async () => {
+    const user = userEvent.setup();
+    const { onUpdate } = renderDialog("product_intent", undefined, {
+      attrs: { default_tier: "allow", overview_order: 3 },
+    });
+
+    const input = screen.getByTestId("doc-overview-order");
+    await user.clear(input);
+    await user.type(input, "1");
+
+    const save = screen.getByTestId("doc-save");
+    expect(save).toBeEnabled();
+    await user.click(save);
+
+    expect(onUpdate).toHaveBeenCalledWith(
+      "product_intent",
+      "vision",
+      expect.objectContaining({
+        attrs: { default_tier: "allow", overview_order: 1 },
+      })
+    );
+  });
+
+  it("clearing the field to blank drops the key from attrs", async () => {
+    const user = userEvent.setup();
+    const { onUpdate } = renderDialog("product_intent", undefined, {
+      attrs: { overview_order: 2 },
+    });
+
+    await user.clear(screen.getByTestId("doc-overview-order"));
+
+    const save = screen.getByTestId("doc-save");
+    expect(save).toBeEnabled();
+    await user.click(save);
+
+    expect(onUpdate).toHaveBeenCalledWith(
+      "product_intent",
+      "vision",
+      expect.objectContaining({ attrs: {} })
+    );
   });
 });

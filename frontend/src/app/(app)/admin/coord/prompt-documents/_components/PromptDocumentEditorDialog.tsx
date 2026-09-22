@@ -16,6 +16,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Ban, History, Loader2 } from "lucide-react";
 import type {
   PromptDocument,
+  PromptDocumentAttrs,
   PromptDocumentKind,
   PromptDocumentUpdate,
 } from "../types";
@@ -26,6 +27,24 @@ import {
   validateBodyForKind,
 } from "../_lib/sessionBriefingBody";
 import { PromptDocumentClaims } from "./PromptDocumentClaims";
+import { SUMMARY_INTENT_KINDS } from "@/app/(app)/overview/_lib/intent";
+
+/** Documents of these kinds are the ones the Summary page's reading-order
+ *  control (`attrs.overview_order`) applies to — see `sortIntentEntries` in
+ *  `overview/_lib/intent`. Every other kind's attrs are left untouched. */
+const ORDERABLE_KINDS: readonly PromptDocumentKind[] = SUMMARY_INTENT_KINDS;
+
+/**
+ * `attrs.overview_order` read off the document, as the text the input shows.
+ * Blank means "no order set" — never `"0"`, since `readOrder` on the Summary
+ * side treats only a finite number as a position and 0 is a valid one.
+ */
+function orderFieldValue(doc: PromptDocument): string {
+  const value = doc.attrs?.overview_order;
+  return typeof value === "number" && Number.isFinite(value)
+    ? String(value)
+    : "";
+}
 
 interface PromptDocumentEditorDialogProps {
   open: boolean;
@@ -78,18 +97,34 @@ export function PromptDocumentEditorDialog({
   const [description, setDescription] = useState("");
   const [body, setBody] = useState("");
   const [changeNote, setChangeNote] = useState("");
+  const [overviewOrder, setOverviewOrder] = useState("");
 
   useEffect(() => {
     if (!open || !document) return;
     setDescription(document.description ?? "");
     setBody(document.body);
     setChangeNote("");
+    setOverviewOrder(orderFieldValue(document));
   }, [open, document]);
 
   const bodyDirty = document !== null && body !== document.body;
+  const orderable = document !== null && ORDERABLE_KINDS.includes(document.kind);
+  /**
+   * Blank clears the order (matches `readOrder`'s `null` for "unset"); a
+   * value must be a non-negative integer — `readOrder` accepts any finite
+   * number, but nothing on the Summary side gives a fractional or negative
+   * position a meaning, so this control offers only the positions
+   * `sortOneKind` can actually place.
+   */
+  const orderError =
+    orderable && overviewOrder.trim() !== "" && !/^\d+$/.test(overviewOrder.trim())
+      ? "Must be a whole number (1 = first), or blank to clear."
+      : null;
+  const orderDirty =
+    document !== null && orderable && overviewOrder !== orderFieldValue(document);
   const dirty =
     document !== null &&
-    (description !== (document.description ?? "") || bodyDirty);
+    (description !== (document.description ?? "") || bodyDirty || orderDirty);
 
   /**
    * `session_briefing` is the one kind whose PATCH coord REJECTS without a
@@ -136,7 +171,8 @@ export function PromptDocumentEditorDialog({
     dirty &&
     body.trim().length > 0 &&
     !changeNoteMissing &&
-    bodyError === null;
+    bodyError === null &&
+    orderError === null;
 
   const handleSubmit = async () => {
     if (!document || !canSubmit) return;
@@ -145,6 +181,16 @@ export function PromptDocumentEditorDialog({
       patch.description = description;
     }
     if (body !== document.body) patch.body = body;
+    if (orderDirty) {
+      // Coord replaces `attrs` wholesale, so every other key on it has to
+      // survive this write — merge client-side, the same rule
+      // `PromptDocumentUpdate.attrs` documents for the kind-tier control.
+      const next: PromptDocumentAttrs = { ...(document.attrs ?? {}) };
+      const trimmed = overviewOrder.trim();
+      if (trimmed === "") delete next.overview_order;
+      else next.overview_order = Number(trimmed);
+      patch.attrs = next;
+    }
     // Safe as an unconditional guard: `canSubmit` already blocks submit while a
     // REQUIRED note is blank, so the only path that reaches here with an empty
     // note is a kind where coord treats it as optional.
@@ -260,6 +306,40 @@ export function PromptDocumentEditorDialog({
                   placeholder="What this document is for"
                 />
               </div>
+
+              {orderable && (
+                <div className="space-y-2">
+                  <Label htmlFor="doc-overview-order">
+                    Order on the Summary page
+                  </Label>
+                  <Input
+                    id="doc-overview-order"
+                    data-testid="doc-overview-order"
+                    inputMode="numeric"
+                    value={overviewOrder}
+                    onChange={(e) => setOverviewOrder(e.target.value)}
+                    placeholder="Default order"
+                    className="max-w-40"
+                    aria-invalid={orderError !== null}
+                    aria-describedby={
+                      orderError !== null ? "doc-overview-order-error" : undefined
+                    }
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    1 = first among this kind&apos;s documents on the project
+                    Summary. Leave blank to use the default reading order.
+                  </p>
+                  {orderError !== null ? (
+                    <p
+                      id="doc-overview-order-error"
+                      className="text-xs text-destructive"
+                      data-testid="doc-overview-order-error"
+                    >
+                      {orderError}
+                    </p>
+                  ) : null}
+                </div>
+              )}
 
               <div className="space-y-2">
                 <Label htmlFor="doc-body">Body</Label>
