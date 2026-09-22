@@ -2441,11 +2441,22 @@ async def list_divergent_artifacts(
     Phase 2 write path is entirely ``unknown``: no write has asserted a tenant,
     so no write can have contested one, and the list is empty for want of DATA
     rather than for want of collisions — UNKNOWN, never a clean bill of health.
+    ``contested_tenant_total`` is the unclipped count beside the clipped list,
+    for the same reason: a truncation nobody is told about would defeat a
+    report whose entire job is "an absence is not a verdict".
+
+    ⚠️ **A latched row has no settling door yet.** Once ``ambiguous``, a row
+    stays so: no write can clear it (a push from ONE of the contesting tenants
+    is byte-indistinguishable from the push that raised the flag), and this
+    change ships no ``PATCH .../tenant``. Settling a contest is a content
+    judgement and lands with Phase 4's disposition work; until then the flag
+    is a durable finding, which is what a gate needs it to be.
     """
     org_id = await _resolve_org_id(db, current_user)
     groups = await crud.find_divergent(db, org_id=org_id, kind=kind)
     forks = await crud.find_kind_forks(db, org_id=org_id)
     contested = await crud.find_contested_tenants(db, org_id=org_id, kind=kind)
+    contested_total = await crud.count_contested_tenants(db, org_id=org_id, kind=kind)
     unattributed = await crud.count_unattributed_tenants(db, org_id=org_id, kind=kind)
     if kind is not None:
         forks = [f for f in forks if any(row.kind == kind for row in f[2])]
@@ -2479,6 +2490,7 @@ async def list_divergent_artifacts(
             ContestedTenantRow.model_validate(row, from_attributes=True)
             for row in contested
         ],
+        contested_tenant_total=contested_total,
         tenant_unattributed_count=unattributed,
     )
 
@@ -3860,7 +3872,6 @@ async def export_work_artifact(
 
 def _resolve_tenant(
     device_ctx: DeviceTokenContext | None,
-    declared: UUID | None,
 ) -> tuple[UUID | None, str]:
     """Which COORD TENANT this write belongs to, and HOW that was established.
 
@@ -3880,25 +3891,29 @@ def _resolve_tenant(
       would break pushes that work today. ``GET /devices/me`` 401s on the
       same absence because the tenant IS its answer; here it is one recorded
       fact among many, and ``unknown`` is the vocabulary's word for it.
-    * **Operator arm** → whatever the request declares, ``declared``; nothing
-      declared is ``(None, "unknown")``. A browser session asserts no device
-      tenant, and NEVER the personal organization: a guessed tenant that
-      renders identically to a declared one is the exact defect
-      ``tenant_source`` exists to prevent.
+    * **Operator arm** → ``(None, "unknown")``, always. A browser session
+      asserts no device tenant, and the request body is NOT a source: an
+      unverified UUID recorded as ``declared`` would be indistinguishable
+      from a cryptographically verified claim — the vocabulary has no word
+      for "asserted by a person" — which is the exact defect
+      ``tenant_source`` exists to prevent, and it would hand any operator a
+      way to stamp an arbitrary row ``ambiguous``. ``WorkArtifactUpsert``
+      therefore carries no ``tenant_id`` field at all and ``extra="forbid"``
+      422s one, exactly as it does for ``organization_id``. An operator edit
+      does not BLANK a tenant either — :func:`_settle_tenant` preserves what
+      the row already holds when a write asserts nothing.
 
     A MALFORMED claim still 401s — that is ``tenant_id_optional``'s own
     posture, and it is the right one: silently filing a broken credential's
     row as ``unknown`` would put a real tenant's plan in the unattributed
     bucket.
     """
-    if device_ctx is not None:
-        claimed = device_ctx.tenant_id_optional
-        if claimed is not None:
-            return claimed, "declared"
+    if device_ctx is None:
         return None, "unknown"
-    if declared is not None:
-        return declared, "declared"
-    return None, "unknown"
+    claimed = device_ctx.tenant_id_optional
+    if claimed is None:
+        return None, "unknown"
+    return claimed, "declared"
 
 
 # ───────────────────────────── writes ─────────────────────────────
@@ -3934,7 +3949,7 @@ async def upsert_work_artifact(
     """
     principal, device_ctx = actor
     current_user = principal.user
-    tenant_id, tenant_source = _resolve_tenant(device_ctx, payload.tenant_id)
+    tenant_id, tenant_source = _resolve_tenant(device_ctx)
 
     computed = crud.compute_content_sha256(payload.body)
     if payload.content_sha256 is not None and payload.content_sha256 != computed:

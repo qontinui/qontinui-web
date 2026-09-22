@@ -444,12 +444,19 @@ def _apply_filters(
         # narrows WITHIN the caller's organization; it never widens it.
         stmt = stmt.where(WorkArtifact.tenant_id == tenant_id)
     if tenant_source is not None:
-        # The separate door for the rows a ``tenant_id`` filter cannot name:
+        # The separate door for the rows a ``tenant_id`` filter cannot name.
+        # A ``tenant_id=None`` ARGUMENT means "no tenant filter", never "the
+        # NULL tenant" — collapsing the two would make an absent filter
+        # indistinguishable from a filter for absence — so
         # ``tenant_source="unknown"`` is how a caller asks for the
-        # unattributed population, which is exactly the rows whose
-        # ``tenant_id`` IS NULL. A ``tenant_id=None`` argument means "no
-        # tenant filter", never "the NULL tenant" — collapsing the two would
-        # make an absent filter indistinguishable from a filter for absence.
+        # unattributed population.
+        #
+        # By CONVENTION the two write sites pair ``unknown`` with a NULL
+        # ``tenant_id``, so today that filter selects exactly the null-tenant
+        # rows. It is a convention and not an invariant: no CHECK links the
+        # columns, and a direct SQL fix-up or a future ``derived_*`` writer
+        # could break the pairing. Do not read this filter as a guarantee
+        # about ``tenant_id``; it is a filter on ``tenant_source``.
         stmt = stmt.where(WorkArtifact.tenant_source == tenant_source)
     return stmt
 
@@ -879,42 +886,68 @@ class _HeadMetadata:
 
 
 def _settle_tenant(existing: WorkArtifact, metadata: _HeadMetadata) -> _HeadMetadata:
-    """Detect a CROSS-TENANT overwrite and record it, without changing who wins.
+    """Decide the head row's tenancy from what the incoming write ASSERTS.
 
     Plan
     ``2026-09-22-the-plan-corpus-has-no-tenant-axis-so-a-multi-bound-device-cannot-scope-its-plans``
-    Phase 3. This is where the defect is OBSERVABLE, and it is the only place
-    it is: ``uq_work_artifacts_identity`` is unique over ``(org, kind, slug,
+    Phase 3. Four cases, and each one is a claim about evidence rather than a
+    preference:
+
+    ===================  ===============  ====================================
+    incoming asserts     row holds        result
+    ===================  ===============  ====================================
+    nothing              anything         **unchanged** — see below
+    a tenant             nothing          that tenant, ``declared`` (healing)
+    a tenant             the same one     that tenant, ``declared``
+    a tenant             a DIFFERENT one  that tenant, ``ambiguous``
+    ===================  ===============  ====================================
+
+    **"Nothing asserted" must not overwrite what the row already knows, and
+    that is the case most easily got wrong.** ``tenant_source = 'unknown'`` on
+    an incoming write means *this writer could not attribute a tenant* — coord
+    mints ``Claims.tenant_id`` as an ``Option``, so a tenant-less device token
+    is an ordinary credential. It does not mean *this row has no tenant*.
+    Letting it through would make any unattributed re-scan blank a
+    ``declared`` row back to ``unknown``, and — worse — silently CLEAR a
+    contested flag, erasing the one record of the collision this phase exists
+    to surface. Absence is not evidence of absence; that is the same
+    ``silent-empty-is-unknown`` reading applied to a column.
+
+    **Why the cross-tenant case is detected HERE and nowhere else.**
+    ``uq_work_artifacts_identity`` is UNIQUE over ``(organization, kind, slug,
     source_repo)``, so two tenants' copies of one stem cannot coexist as two
-    rows. They arrive as two writes to ONE row, in turn, each overwriting the
-    last — which is exactly why the fusion was silent, and why no query over
-    the stored corpus could have found it.
+    rows to be found by a query — they arrive as two writes to ONE row, each
+    overwriting the last. That is why the fusion was silent: the act destroys
+    its own evidence. This function runs at the moment both values are in hand.
 
-    When a write that ASSERTS a tenant lands on a row another tenant already
-    asserted, the row's tenancy is contested. The vocabulary already has the
-    word: ``ambiguous`` — the sibling ``session_artifacts`` store's value for
-    "two legitimate writers that do not agree".
+    **It records; it does not arbitrate.** The incoming tenant still wins the
+    row, exactly as the incoming body does. Nothing is refused and no existing
+    behaviour moves — arbitration is a content judgement and belongs to the
+    operator, and re-keying identity so the two stop colliding at all is
+    Phase 4, gated on this measurement.
 
-    **It deliberately does not change the outcome.** The incoming tenant still
-    wins the row, exactly as the incoming body does; nothing is refused and no
-    existing behaviour moves. The write is RECORDED, not arbitrated — arbitration
-    is a content judgement and belongs to the operator, and re-keying identity
-    so the two stop colliding at all is Phase 4, gated on this measurement.
-
-    Once contested, a row stays ``ambiguous`` until a write with no competing
-    claim settles it: a later push from ONE tenant alone cannot clear a flag
-    raised by two, because that push is indistinguishable from the one that
-    raised it.
+    ``ambiguous`` LATCHES: once contested, a row stays contested until an
+    operator settles it. A later push from ONE tenant cannot clear it, because
+    that push is byte-indistinguishable from the one that raised it, and a
+    flag that clears on the next re-scan is not a measurement.
     """
     incoming = metadata.tenant_id
+    if incoming is None:
+        # Preserve. The row's existing attribution is better evidence than
+        # this writer's silence.
+        return replace(
+            metadata,
+            tenant_id=existing.tenant_id,
+            tenant_source=existing.tenant_source,
+        )
+
     held = existing.tenant_id
-    contested = (incoming is not None and held is not None and incoming != held) or (
-        # Already contested and the new write does not disprove it.
-        existing.tenant_source == "ambiguous" and incoming is not None
+    contested = (held is not None and held != incoming) or (
+        existing.tenant_source == "ambiguous"
     )
-    if not contested:
-        return metadata
-    return replace(metadata, tenant_source="ambiguous")
+    if contested:
+        return replace(metadata, tenant_source="ambiguous")
+    return metadata
 
 
 def _assign_head_metadata(existing: WorkArtifact, metadata: _HeadMetadata) -> bool:
@@ -1923,34 +1956,60 @@ async def find_contested_tenants(
     mirrored into ``ck_work_artifacts_tenant_source``; nothing new is
     invented.
     """
-    stmt = (
-        select(WorkArtifact)
-        .where(_org_scope(org_id), WorkArtifact.tenant_source == "ambiguous")
-        .order_by(WorkArtifact.updated_at.desc(), WorkArtifact.id)
-        .limit(limit)
+    stmt = select(WorkArtifact).where(
+        _org_scope(org_id), WorkArtifact.tenant_source == "ambiguous"
     )
     if kind is not None:
         stmt = stmt.where(WorkArtifact.kind == kind)
+    stmt = stmt.order_by(WorkArtifact.updated_at.desc(), WorkArtifact.id).limit(limit)
     return list((await db.execute(stmt)).scalars().all())
+
+
+async def count_contested_tenants(
+    db: AsyncSession, *, org_id: UUID | None, kind: str | None = None
+) -> int:
+    """How many rows are contested, which is NOT ``len(find_contested_tenants())``.
+
+    :func:`find_contested_tenants` is capped, and a capped list with no count
+    beside it is a silent truncation — in the one report whose stated job is
+    "do not read an absence as clean", and which gates Phase 4's identity
+    re-key. Its two siblings on that route already carry ``total`` and
+    ``kind_fork_total``; this is the third.
+    """
+    stmt = (
+        select(func.count())
+        .select_from(WorkArtifact)
+        .where(_org_scope(org_id), WorkArtifact.tenant_source == "ambiguous")
+    )
+    if kind is not None:
+        stmt = stmt.where(WorkArtifact.kind == kind)
+    return int((await db.execute(stmt)).scalar_one())
 
 
 async def count_unattributed_tenants(
     db: AsyncSession, *, org_id: UUID | None, kind: str | None = None
 ) -> int:
-    """How many rows state no usable tenant (``unknown`` or ``ambiguous``).
+    """How many rows have had NO tenant attributed at all (``unknown``).
 
     Reported beside :func:`find_contested_tenants` so an empty contested list
     can be read honestly. Until every writing device has pushed once under
-    Phase 2 the corpus is entirely ``unknown``, and an empty list then means
-    "for want of data", not "for want of collisions".
+    Phase 2 the corpus is entirely ``unknown``: no write has asserted a
+    tenant, so none can have contested one, and the empty list means "for
+    want of data", not "for want of collisions".
+
+    **``ambiguous`` is deliberately excluded**, although it is also "no usable
+    tenant". A contested row HAS an attribution (the last writer's) and is
+    already enumerated by :func:`find_contested_tenants` / counted by
+    :func:`count_contested_tenants`. Counting it here too would overlap the
+    two populations, so this number could not be differenced against that
+    count to recover the genuinely un-measured one — and a corpus with many
+    contested rows would inflate the number that is supposed to mean "not yet
+    measured", which is the opposite of what this field is for.
     """
     stmt = (
         select(func.count())
         .select_from(WorkArtifact)
-        .where(
-            _org_scope(org_id),
-            WorkArtifact.tenant_source.in_(("unknown", "ambiguous")),
-        )
+        .where(_org_scope(org_id), WorkArtifact.tenant_source == "unknown")
     )
     if kind is not None:
         stmt = stmt.where(WorkArtifact.kind == kind)

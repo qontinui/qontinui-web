@@ -228,12 +228,22 @@ async def test_operator_arm_still_writes_with_no_bearer_at_all(cognito_client) -
     assert artifact["tenant_source"] == "unknown"
 
 
-async def test_operator_may_declare_a_tenant_in_the_body(cognito_client) -> None:
+async def test_no_caller_may_declare_a_tenant_in_the_body(cognito_client) -> None:
+    """The body is not a source of tenancy, for EITHER arm.
+
+    An unverified UUID recorded as ``declared`` would be indistinguishable
+    from a cryptographically verified device-JWT claim — the vocabulary has no
+    word for "asserted by a person" — and that is the exact defect
+    ``tenant_source`` exists to prevent. It would also hand any operator a way
+    to stamp an arbitrary row ``ambiguous`` with an arbitrary UUID.
+
+    ``organization_id`` is refused from a body for the same reason, and this
+    is the same refusal. ``extra="forbid"`` makes it a **422 rather than a
+    silent drop**, so a client that tries learns that it did not work.
+    """
     resp = await cognito_client.post(API_PREFIX, json=_payload(tenant_id=str(TENANT_B)))
-    assert resp.status_code in (200, 201), resp.text
-    artifact = resp.json()["artifact"]
-    assert artifact["tenant_id"] == str(TENANT_B)
-    assert artifact["tenant_source"] == "declared"
+    assert resp.status_code == 422, resp.text
+    assert "tenant_id" in resp.text
 
 
 # ===========================================================================
@@ -293,18 +303,30 @@ async def test_device_with_a_malformed_tenant_claim_is_a_401(
 # ===========================================================================
 
 
-async def test_device_payload_cannot_override_the_claimed_tenant(
+async def test_a_device_body_tenant_is_refused_not_silently_ignored(
     async_db_session: AsyncSession, stub_device_jwt
 ) -> None:
+    """A 422 is a stronger guarantee than "the claim wins".
+
+    Silently discarding the field would leave a misconfigured client believing
+    it had set the tenant, with nothing in the response to say otherwise.
+    """
     async with _device_client(async_db_session, DEVICE_BEARER_WITH_TENANT) as client:
         resp = await client.post(API_PREFIX, json=_payload(tenant_id=str(TENANT_B)))
 
+    assert resp.status_code == 422, resp.text
+
+
+async def test_the_device_claim_is_the_only_source(
+    async_db_session: AsyncSession, stub_device_jwt
+) -> None:
+    """With the body field gone, the credential is the ONLY source."""
+    async with _device_client(async_db_session, DEVICE_BEARER_WITH_TENANT) as client:
+        resp = await client.post(API_PREFIX, json=_payload())
+
     assert resp.status_code in (200, 201), resp.text
     artifact = resp.json()["artifact"]
-    assert artifact["tenant_id"] == str(TENANT_A), (
-        "the verified claim must win over the request body, exactly as "
-        "organization_id is never accepted from a body"
-    )
+    assert artifact["tenant_id"] == str(TENANT_A)
     assert artifact["tenant_source"] == "declared"
 
 
@@ -423,8 +445,16 @@ async def test_a_second_tenant_writing_the_same_row_stamps_it_ambiguous(
     # Never folded into the digest-divergence key — a reader who disposed of
     # this by picking a winner would be performing the data loss.
     assert all(g["slug"] != slug for g in payload["groups"])
-    # And the count that stops an empty list reading as clean is present.
+    # The row is self-describing: its own docstring tells a reader that
+    # ``tenant_source``, not ``tenant_id``, is the answer to "whose is this",
+    # so the field it points at has to be on the model.
+    assert contested[0]["tenant_source"] == "ambiguous"
+    # The counts that stop an empty OR A CLIPPED list reading as clean. The
+    # list is capped; a truncation nobody is told about would defeat the one
+    # report whose whole job is "an absence is not a verdict".
     assert payload["tenant_unattributed_count"] >= 0
+    assert payload["contested_tenant_total"] >= 1
+    assert payload["contested_tenant_total"] >= len(payload["contested_tenants"])
 
 
 async def test_an_uncontested_repush_is_not_stamped_ambiguous(
@@ -475,4 +505,167 @@ async def test_an_unattributed_row_is_not_contested_by_an_attributed_one(
     assert healed.status_code in (200, 201), healed.text
     artifact = healed.json()["artifact"]
     assert artifact["tenant_source"] == "declared"
+    assert artifact["tenant_id"] == str(TENANT_A)
+
+
+# ===========================================================================
+# 7. Silence is not evidence — an unattributed write preserves what is known.
+# ===========================================================================
+
+
+async def test_a_metadata_only_edit_does_not_blank_a_declared_tenant(
+    async_db_session: AsyncSession, stub_device_jwt
+) -> None:
+    """The unchanged-digest arm preserves the tenant too.
+
+    This is the path an editor correcting a ``status`` actually takes — the
+    body is byte-identical, only metadata moves — and it settles through
+    ``_settle_unchanged_digest`` rather than the version-bumping arm. Both go
+    through ``_assign_head_metadata``, which is why one rule covers both, and
+    this is the test that says so.
+    """
+    repo = f"metaonly/{uuid4().hex[:8]}"
+    slug = _slug("metaonly")
+
+    async with _device_client(async_db_session, DEVICE_BEARER_WITH_TENANT) as client:
+        first = await client.post(
+            API_PREFIX, json=_payload(slug=slug, source_repo=repo, body="# same")
+        )
+        assert first.json()["artifact"]["tenant_source"] == "declared"
+
+    async with _device_client(async_db_session, DEVICE_BEARER_NO_TENANT) as client:
+        again = await client.post(
+            API_PREFIX,
+            json=_payload(slug=slug, source_repo=repo, body="# same", status="SHIPPED"),
+        )
+
+    assert again.status_code in (200, 201), again.text
+    artifact = again.json()["artifact"]
+    assert artifact["status"] == "SHIPPED", "the metadata edit must still land"
+    assert artifact["tenant_id"] == str(TENANT_A)
+    assert artifact["tenant_source"] == "declared"
+
+
+async def test_an_unattributed_push_does_not_blank_a_declared_tenant(
+    async_db_session: AsyncSession, stub_device_jwt
+) -> None:
+    """``tenant_source='unknown'`` means "this WRITER could not attribute one".
+
+    It does not mean "this ROW has no tenant". Letting an unattributed re-scan
+    through would downgrade every ``declared`` row it touched back to
+    ``unknown`` — and since a tenant-less device token is an ordinary
+    credential (coord mints the claim as an ``Option``), that is not a rare
+    path. Absence of evidence is not evidence of absence.
+    """
+    repo = f"preserve/{uuid4().hex[:8]}"
+    slug = _slug("preserve")
+
+    async with _device_client(async_db_session, DEVICE_BEARER_WITH_TENANT) as client:
+        first = await client.post(
+            API_PREFIX, json=_payload(slug=slug, source_repo=repo, body="# v1")
+        )
+    assert first.json()["artifact"]["tenant_source"] == "declared"
+
+    async with _device_client(async_db_session, DEVICE_BEARER_NO_TENANT) as client:
+        silent = await client.post(
+            API_PREFIX, json=_payload(slug=slug, source_repo=repo, body="# v2")
+        )
+
+    assert silent.status_code in (200, 201), silent.text
+    artifact = silent.json()["artifact"]
+    assert artifact["tenant_id"] == str(TENANT_A)
+    assert artifact["tenant_source"] == "declared"
+
+
+async def test_an_unattributed_push_does_not_clear_a_contested_flag(
+    async_db_session: AsyncSession, stub_device_jwt, monkeypatch
+) -> None:
+    """The measurement must survive the next ordinary re-scan.
+
+    A flag that any unattributed writer can erase is not a measurement — and
+    the erasure would be silent, on the one record of a collision whose own
+    evidence the overwrite already destroyed.
+    """
+    from app.api import deps
+
+    repo = f"latch/{uuid4().hex[:8]}"
+    slug = _slug("latch")
+
+    async with _device_client(async_db_session, DEVICE_BEARER_WITH_TENANT) as client:
+        await client.post(
+            API_PREFIX, json=_payload(slug=slug, source_repo=repo, body="# A")
+        )
+
+    second_bearer = "device-jwt-for-tenant-b-latch"
+    original = deps._verify_device_jwt
+
+    async def _verify(token: str):
+        if token == second_bearer:
+            claims, user = await original(DEVICE_BEARER_WITH_TENANT)
+            return ({**claims, "tenant_id": str(TENANT_B)}, user)
+        return await original(token)
+
+    monkeypatch.setattr(deps, "_verify_device_jwt", _verify)
+
+    async with _device_client(async_db_session, second_bearer) as client:
+        contested = await client.post(
+            API_PREFIX, json=_payload(slug=slug, source_repo=repo, body="# B")
+        )
+    assert contested.json()["artifact"]["tenant_source"] == "ambiguous"
+
+    async with _device_client(async_db_session, DEVICE_BEARER_NO_TENANT) as client:
+        rescan = await client.post(
+            API_PREFIX, json=_payload(slug=slug, source_repo=repo, body="# C")
+        )
+
+    assert rescan.status_code in (200, 201), rescan.text
+    assert rescan.json()["artifact"]["tenant_source"] == "ambiguous"
+
+
+async def test_a_single_tenant_repush_does_not_clear_a_contested_flag(
+    async_db_session: AsyncSession, stub_device_jwt, monkeypatch
+) -> None:
+    """Nor does a push from ONE of the two contesting tenants.
+
+    It is byte-indistinguishable from the push that raised the flag, so
+    treating it as a settlement would let whichever tenant re-scanned last
+    quietly claim the row. Settling a contest is the operator's call.
+    """
+    from app.api import deps
+
+    repo = f"latch2/{uuid4().hex[:8]}"
+    slug = _slug("latch2")
+
+    async with _device_client(async_db_session, DEVICE_BEARER_WITH_TENANT) as client:
+        await client.post(
+            API_PREFIX, json=_payload(slug=slug, source_repo=repo, body="# A")
+        )
+
+    second_bearer = "device-jwt-for-tenant-b-latch2"
+    original = deps._verify_device_jwt
+
+    async def _verify(token: str):
+        if token == second_bearer:
+            claims, user = await original(DEVICE_BEARER_WITH_TENANT)
+            return ({**claims, "tenant_id": str(TENANT_B)}, user)
+        return await original(token)
+
+    monkeypatch.setattr(deps, "_verify_device_jwt", _verify)
+
+    async with _device_client(async_db_session, second_bearer) as client:
+        contested = await client.post(
+            API_PREFIX, json=_payload(slug=slug, source_repo=repo, body="# B")
+        )
+    assert contested.json()["artifact"]["tenant_source"] == "ambiguous"
+
+    async with _device_client(async_db_session, DEVICE_BEARER_WITH_TENANT) as client:
+        rescan = await client.post(
+            API_PREFIX, json=_payload(slug=slug, source_repo=repo, body="# A2")
+        )
+
+    assert rescan.status_code in (200, 201), rescan.text
+    artifact = rescan.json()["artifact"]
+    assert artifact["tenant_source"] == "ambiguous"
+    # The last writer still wins the row, exactly as its body does — what is
+    # refused is the claim that the contest is over.
     assert artifact["tenant_id"] == str(TENANT_A)

@@ -22,6 +22,7 @@ __all__ = [
     "DEVICE_ONLY_REFUSAL",
     "get_audit_actor_user_id",
     "get_audit_actor_user",
+    "get_audit_actor_context",
     "get_audit_actor_principal",
     "ActorPrincipal",
     "ActorKind",

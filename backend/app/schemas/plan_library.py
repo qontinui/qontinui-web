@@ -128,14 +128,22 @@ class WorkArtifactUpsert(BaseModel):
     #: Getting this backwards is what silently forks a corrected artifact into
     #: a second row — see alembic ``plan_library_02_kind_lock``.
     kind_is_heuristic: bool = False
-    #: Which COORD TENANT this artifact belongs to — the OPERATOR arm's way
-    #: to declare it. **Ignored on the device arm**, which takes the tenant
-    #: from its own verified JWT claim: a credential's assertion always beats
-    #: a request body's, exactly as ``organization_id`` is never accepted
-    #: from a body at all (see the module docstring). Absent on either arm
-    #: records ``tenant_source = "unknown"`` rather than a guess. Plan
-    #: ``2026-09-22-the-plan-corpus-has-no-tenant-axis-...``.
-    tenant_id: UUID | None = None
+
+    # NOTE the absence of ``tenant_id``, for the same reason
+    # ``organization_id`` is absent: it is derived SERVER-SIDE from the
+    # credential, never accepted from a body. ``model_config`` is
+    # ``extra="forbid"``, so sending one is a 422 rather than a silent drop.
+    #
+    # An earlier draft of this change let the operator arm declare a tenant in
+    # the payload and recorded it as ``declared`` — the same value a
+    # cryptographically verified device-JWT claim produces. The vocabulary has
+    # no word for "asserted by a person, unverified", so the two would have
+    # been indistinguishable, which is precisely the defect ``tenant_source``
+    # exists to prevent (``work_artifact.py``'s own column comment says so).
+    # It would also have handed any operator a way to stamp an arbitrary row
+    # ``ambiguous`` with an arbitrary UUID. Plan
+    # ``2026-09-22-the-plan-corpus-has-no-tenant-axis-...``, §2: the tenant is
+    # resolved per artifact FROM THE CREDENTIAL THAT ASSERTED IT.
 
 
 class WorkArtifactKindPatch(BaseModel):
@@ -439,8 +447,14 @@ class DivergentVariant(BaseORMSchema):
     #: Which coord tenant this copy names, and how that was established.
     #: Present on every variant so a reader of ``groups`` can SEE that an
     #: apparent content divergence is really a cross-tenant collision.
-    tenant_id: UUID | None = None
-    tenant_source: str = "unknown"
+    #:
+    #: NO DEFAULTS, deliberately. Every producer validates a full ORM row
+    #: today, so a default would never fire — and if a future caller hands in
+    #: a partial one, this must fail loudly rather than report a confident
+    #: ``"unknown"`` nobody declared. Same policy as
+    #: ``tests/test_plan_library_export_headers.py``'s ``_Row`` stub.
+    tenant_id: UUID | None
+    tenant_source: str
 
 
 class DivergentGroup(BaseModel):
@@ -508,6 +522,11 @@ class ContestedTenantRow(BaseModel):
     slug: str
     source_repo: str | None
     tenant_id: UUID | None
+    #: Always ``"ambiguous"`` for a row in this list — carried anyway so the
+    #: row is self-describing, because the docstring above tells the reader
+    #: that this field, not ``tenant_id``, is the answer to "whose is this".
+    #: A pointer to a field the model does not expose is not a pointer.
+    tenant_source: str
     updated_at: IsoDatetime
 
 
@@ -522,14 +541,29 @@ class DivergentResponse(BaseModel):
     #: Artifacts whose tenancy is contested — two coord tenants wrote the
     #: same row. Additive; never folded into ``groups``.
     contested_tenants: list[ContestedTenantRow] = Field(default_factory=list)
-    #: How many rows in scope state no usable tenant (``tenant_source`` of
-    #: ``unknown`` or ``ambiguous``). **Read this before reading an empty
-    #: ``cross_tenant`` as clean.** A corpus that has not yet been re-pushed
-    #: under the Phase 2 write path is entirely ``unknown``, and its rows are
-    #: indistinguishable from each other on the tenant axis — so an empty
-    #: list there is UNKNOWN, not a clean bill of health, and the Phase 4
-    #: re-key does not open on it.
+    #: How many rows in scope have had NO tenant attributed to them at all
+    #: (``tenant_source == 'unknown'``). **Read this before reading an empty
+    #: ``contested_tenants`` as clean.** A corpus that has not yet been
+    #: re-pushed under the Phase 2 write path is entirely ``unknown``, so no
+    #: write has asserted a tenant and none can have contested one: the empty
+    #: list means "for want of DATA", not "for want of collisions". UNKNOWN,
+    #: never a clean bill of health, and the Phase 4 re-key does not open on
+    #: it.
+    #:
+    #: ``ambiguous`` is deliberately NOT counted here, although it is also
+    #: "no usable tenant". A contested row HAS a tenant attributed (the last
+    #: writer's) and is already enumerated in ``contested_tenants``; counting
+    #: it twice would make the two populations overlap, so this number could
+    #: not be differenced against that list to recover the genuinely
+    #: un-measured count — and inflating "not yet measured" with rows that
+    #: HAVE been measured is the opposite of what this field is for.
     tenant_unattributed_count: int = 0
+    #: How many contested rows exist in scope, which is NOT
+    #: ``len(contested_tenants)`` when the list was capped. Emitted
+    #: unconditionally, like ``total`` and ``kind_fork_total`` beside it: this
+    #: is the one report whose whole job is "do not read an absence as
+    #: clean", so a silently truncated list would defeat it.
+    contested_tenant_total: int = 0
     kind_fork_total: int = 0
 
 
