@@ -18,6 +18,7 @@ import {
   describeVerdict,
   describeWindow,
   documentAxisAdmissible,
+  facetsAdmissible,
   isDivergent,
   parseContractViolation,
   type ReconciliationAxisB,
@@ -419,6 +420,22 @@ describe("the population state gates every flag derived from the population", ()
     expect(deriveDisclosure(silent).lines[0]?.level).toBe("critical");
   });
 
+  it("`deriveDisclosure`'s `facetsAdmissible` field is the shared predicate, not a respelling of it", () => {
+    // `facetsAdmissible` had no production consumer: the field existed and
+    // was tested, but every reader of `facets.by_verdict` re-derived its own
+    // ad hoc admissibility check instead. Pinning both directions here so
+    // the field and the exported predicate cannot drift apart the way
+    // `documentAxisAdmissible`'s own docstring warns two spellings will.
+    expect(facetsAdmissible(degraded)).toBe(false);
+    expect(facetsAdmissible(healthy)).toBe(true);
+    expect(deriveDisclosure(degraded).facetsAdmissible).toBe(
+      facetsAdmissible(degraded)
+    );
+    expect(deriveDisclosure(healthy).facetsAdmissible).toBe(
+      facetsAdmissible(healthy)
+    );
+  });
+
   it("publishes the document claim on the good arm, and names the store", () => {
     const d = deriveDisclosure(healthy);
     expect(d.documentAxisAdmissible).toBe(true);
@@ -478,6 +495,17 @@ describe("the health strip never publishes an inadmissible histogram", () => {
     expect(deriveReconciliationHealth(degraded, true, false).level).not.toBe(
       "green"
     );
+  });
+
+  it("names the ALSO-failed refresh on the degraded arm — a stale read is not just a degraded one", () => {
+    // Verified to fail against the pre-fix behaviour: before this fix,
+    // `readFailed=true` on the `!admissible` branch was silently dropped —
+    // the detail said only the population reason, with no staleness note,
+    // while every other arm of this function does carry one.
+    const fresh = deriveReconciliationHealth(degraded, true, false);
+    const stale = deriveReconciliationHealth(degraded, true, true);
+    expect(fresh.detail).not.toMatch(/last refresh/i);
+    expect(stale.detail).toMatch(/last refresh also failed/i);
   });
 
   it("dashes before coord has answered — `–`, never `0`", () => {

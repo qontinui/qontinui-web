@@ -7,8 +7,11 @@
  * repointed onto the generic work-unit primitive
  * (`2026-06-18-coord-generic-work-unit-primitive`).
  *
- * The operator UX stays "Plans"; coord now stores plans as generic
- * slug-keyed work-units. The web proxy serves the same
+ * The operator UX calls this "Work Units" (plan
+ * `2026-09-20-the-operator-plans-page-reads-the-wrong-store` Phase 3 renamed
+ * it from "Plans", which now names the plan-corpus reconciliation page at
+ * `/admin/coord/plans`); coord still stores plans as generic slug-keyed
+ * work-units. The web proxy serves the same
  * `/api/v1/operations/plans/{slug}*` paths, now backed by coord
  * `/coord/work-units/{slug}*`.
  *
@@ -332,7 +335,7 @@ export default function CoordPlanDetailPage() {
           data-testid="coord-plan-back-btn"
         >
           <ArrowLeft className="h-3.5 w-3.5 mr-1" />
-          Plans
+          Work Units
         </Button>
         <span className="text-muted-foreground">/</span>
         <span className="font-mono text-sm">{slug}</span>
