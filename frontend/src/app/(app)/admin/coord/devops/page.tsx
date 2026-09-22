@@ -75,13 +75,17 @@
  * have stopped sending it work, and that is only true while both consumers
  * read one definition of the number AND the verdict.
  *
- * It opens FOUR POLLS, each of a DIFFERENT route: `/fleet/health` here at
+ * It opens FIVE POLLS, each of a DIFFERENT route: `/fleet/health` here at
  * 10 s, `/fleet/resource-samples` inside `FleetResourcesSection` (which passes
  * the same rows to both the strip and the CI panel), `/fleet/drain` here at
- * 30 s, and `/fleet/ci-runners` here at coord's own registrar cadence. Two
+ * 30 s, `/fleet/ci-runners` here at coord's own registrar cadence, and
+ * `/fleet/worktree-slots` inside `FleetWorktreeSlotsSection` at 30 s (plan
+ * `2026-09-21-worktree-slots-devops-dashboard-view.md` Phase 3). Two
  * polls of ONE route would be two chances to disagree about what the fleet
  * looks like right now; one poll per route is one read per fact, which is the
- * shape this page is built on.
+ * shape this page is built on — worktree-slot occupancy is a fact from a
+ * DIFFERENT coord route than resource samples, so it gets its own poll
+ * rather than folding into `FleetResourcesSection`'s.
  *
  * The drain poll (plan
  * `2026-09-01-device-drain-does-not-reach-agent-session-spawning` Phase 4b)
@@ -118,6 +122,7 @@ import {
   FleetConditionsPanel,
   FleetOverview,
   FleetResourcesSection,
+  FleetWorktreeSlotsSection,
   OperatorAuditPanel,
 } from "@/components/operations";
 import { QUESTION_QUEUE_HREF } from "@/components/operations/fleetConditions";
@@ -442,6 +447,18 @@ export default function CoordDevOpsPage() {
           poll of /fleet/resource-samples. `devices` is the spine: a machine
           that publishes no sample still gets a row, as `unknown`. */}
       <FleetResourcesSection devices={devices} />
+
+      {/* Worktree allocation-slot occupancy — its own list, its own poll of
+          /fleet/worktree-slots (plan
+          `2026-09-21-worktree-slots-devops-dashboard-view.md` Phase 3). A
+          worktree-slot cap is closer to a capacity fact than a live
+          occupancy fact, and per
+          `2026-08-25-coord-console-intent-and-devops-sections`'s "two lists
+          with two notions of healthy" rule it does not merge into either
+          existing section. `devices` is the same spine `FleetResourcesSection`
+          uses, so a machine with no worktree-slots entry still gets a row,
+          rendered unknown rather than dropped. */}
+      <FleetWorktreeSlotsSection devices={devices} />
 
       {/* 5. Who changed what. Plan
           `2026-08-20-fleet-page-runner-enable-disable-switch` Phase 5.

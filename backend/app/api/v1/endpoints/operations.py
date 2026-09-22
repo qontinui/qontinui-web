@@ -5407,6 +5407,59 @@ async def get_fleet_volumes(
     return await _proxy_coord_get("/coord/fleet/volumes", tenant_id=tenant_id)
 
 
+# ---- Worktree allocation slots (Dev Ops dashboard) ------------------------
+#
+# Plan: `2026-09-21-worktree-slots-devops-dashboard-view.md` Phase 2. Backs
+# the "Worktree slots" section on `/admin/coord/devops`.
+#
+# **Why this is a new route rather than a fan-out of the existing per-device
+# allocation-budget door.** `GET /coord/agent-worktrees/allocation-budget/:id`
+# reads a 24h-windowed census scan that measured 11-15s (sometimes timing
+# out) per call — see plan
+# `2026-09-20-allocation-budget-door-reads-the-whole-census-to-compute-three-scalars-so-it-times-out`.
+# Against this module's 5s ``_COORD_TIMEOUT`` that door would 504 on
+# essentially every call, independent of how many devices are fanned out
+# over. `/coord/fleet/worktree-slots` is a cheap, batched, indexed route that
+# reuses only the fast half of that door's data (the ledger/census LATERAL
+# join within the narrow ``building_ttl_secs()`` window, not the slow 24h
+# scan) — see the plan's Design decision.
+#
+# **Honesty.** `census_recent_rows == 0` means coord has no recent census hit
+# for that device within the narrow window, so `active_worktrees` for that
+# device could not be corroborated as live and MUST be rendered UNKNOWN by
+# the caller — never as an idle/empty machine and never as a healthy `0/8`.
+# This is a different, narrower-windowed field from the per-device door's
+# `census_rows_observed` (24h) and must not be confused with it.
+
+
+@router.get("/fleet/worktree-slots")
+async def get_fleet_worktree_slots(
+    tenant_id: UUID = Depends(get_tenant_id),
+) -> Any:
+    """Proxy coord's ``GET /coord/fleet/worktree-slots`` (tenant-scoped).
+
+    Fleet-wide worktree-allocation-slot occupancy: how many of each device's
+    ``COORD_MAX_WORKTREES`` slots are occupied, and by what. Response shape
+    is coord-authored and passed through untouched::
+
+        {"tenant_id": "<uuid>", "device_count": <int>, "truncated": false,
+         "device_cap": 100, "census_window_secs": 900,
+         "devices": [{"device_id": "<uuid>", "hostname": "<string>|null",
+             "active_worktrees": <int>, "max_worktrees": 8,
+             "census_recent_rows": <int>,
+             "occupants": {"shown": 0, "total": 0, "truncated": false,
+                            "rows": []}}]}
+
+    ``census_recent_rows == 0`` means coord has no recent census hit for
+    that device within the narrow (``census_window_secs``, default 900s)
+    window, so ``active_worktrees`` for that device could not be
+    corroborated as live and the caller MUST render that row UNKNOWN — never
+    an idle/empty machine and never a healthy ``0/8`` — see the frontend
+    hook and `FleetResourceStrip`'s existing honesty rules.
+    """
+    return await _proxy_coord_get("/coord/fleet/worktree-slots", tenant_id=tenant_id)
+
+
 # ---- Wave-3 prep (decision queue + agent-logs + memory) ------------------
 #
 # These endpoints are added now so the Wave-3 frontend (decision queue

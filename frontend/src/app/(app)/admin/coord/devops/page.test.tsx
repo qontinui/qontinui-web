@@ -254,6 +254,13 @@ interface Fixture {
    * 4a read route, which every row must render as UNKNOWN rather than calm.
    */
   drain?: unknown;
+  /**
+   * What `GET /operations/fleet/worktree-slots` answers with (Phase 3).
+   * `undefined` defaults to a zero-device payload — benign for every test
+   * that predates this section; the Worktree-slots describe block below
+   * overrides it per case.
+   */
+  worktreeSlots?: unknown;
 }
 
 function mockRoutes(fixture: Fixture) {
@@ -261,6 +268,18 @@ function mockRoutes(fixture: Fixture) {
     const u = String(url);
     if (u.includes("resource-samples")) {
       return Promise.resolve({ latest: fixture.samples, history: [] });
+    }
+    if (u.includes("worktree-slots")) {
+      return Promise.resolve(
+        fixture.worktreeSlots ?? {
+          tenant_id: "t-1",
+          device_count: 0,
+          truncated: false,
+          device_cap: 100,
+          census_window_secs: 900,
+          devices: [],
+        }
+      );
     }
     if (u.includes("fleet/health")) {
       return Promise.resolve({
@@ -1183,9 +1202,7 @@ describe("/admin/coord/devops — the Conditions panel", () => {
     render(<CoordDevOpsPage />);
 
     const strip = await screen.findByTestId("coord-devops-conditions-strip");
-    await waitFor(() =>
-      expect(strip).toHaveTextContent("Nothing unhandled")
-    );
+    await waitFor(() => expect(strip).toHaveTextContent("Nothing unhandled"));
     expect(strip).toHaveAttribute("data-health-level", "green");
     expect(
       within(strip).getByTestId("coord-devops-conditions-unclaimed-badge")
@@ -1293,9 +1310,10 @@ describe("/admin/coord/devops — the Conditions panel", () => {
       "coord-devops-conditions-awaiting-badge"
     );
     expect(badge).toHaveTextContent("waiting on you 1");
-    expect(
-      screen.getByTestId("coord-devops-conditions-strip")
-    ).toHaveAttribute("data-health-level", "red");
+    expect(screen.getByTestId("coord-devops-conditions-strip")).toHaveAttribute(
+      "data-health-level",
+      "red"
+    );
     fireEvent.click(badge);
     expect(routerPush).toHaveBeenCalledWith(
       "/admin/coord/questions/11111111-2222-3333-4444-555555555555"
@@ -1322,9 +1340,21 @@ describe("/admin/coord/devops — the Conditions panel", () => {
     healthyFleet({
       conditions: conditions({
         settings_in_effect: [
-          { alert_id: 11, kind: "kill_switch_fired", since: "2026-09-18T09:00:00Z" },
-          { alert_id: 12, kind: "fleet_device_drained", since: "2026-09-18T10:00:00Z" },
-          { alert_id: 13, kind: "fleet_device_drained", since: "2026-09-18T10:30:00Z" },
+          {
+            alert_id: 11,
+            kind: "kill_switch_fired",
+            since: "2026-09-18T09:00:00Z",
+          },
+          {
+            alert_id: 12,
+            kind: "fleet_device_drained",
+            since: "2026-09-18T10:00:00Z",
+          },
+          {
+            alert_id: 13,
+            kind: "fleet_device_drained",
+            since: "2026-09-18T10:30:00Z",
+          },
         ],
         settings_in_effect_count: 3,
       }),
@@ -1345,9 +1375,10 @@ describe("/admin/coord/devops — the Conditions panel", () => {
       within(settings).getByTestId("coord-devops-conditions-setting-13")
     ).toHaveTextContent("machine drained");
     // A setting is context, not a fault: the verdict stays calm.
-    expect(
-      screen.getByTestId("coord-devops-conditions-strip")
-    ).toHaveAttribute("data-health-level", "green");
+    expect(screen.getByTestId("coord-devops-conditions-strip")).toHaveAttribute(
+      "data-health-level",
+      "green"
+    );
   });
 
   it("reads 'not yet asked' from coord's exact count, and does not go green", async () => {
@@ -1460,7 +1491,11 @@ describe("/admin/coord/devops — the Conditions panel", () => {
     healthyFleet({
       conditions: conditions({
         settings_in_effect: [
-          { alert_id: 9, kind: "kill_switch_fired", since: "2026-09-18T10:00:00Z" },
+          {
+            alert_id: 9,
+            kind: "kill_switch_fired",
+            since: "2026-09-18T10:00:00Z",
+          },
         ],
         settings_in_effect_count: null,
       }),
@@ -1468,7 +1503,9 @@ describe("/admin/coord/devops — the Conditions panel", () => {
     render(<CoordDevOpsPage />);
 
     expect(
-      await screen.findByTestId("coord-devops-conditions-settings-count-unknown")
+      await screen.findByTestId(
+        "coord-devops-conditions-settings-count-unknown"
+      )
     ).toHaveTextContent("(count unknown)");
     expect(
       screen.queryByTestId("coord-devops-conditions-settings-more")
@@ -1497,9 +1534,7 @@ describe("/admin/coord/devops — the Conditions panel", () => {
     ]) {
       expect(screen.queryByTestId(id)).toBeNull();
     }
-    expect(
-      container.querySelector('a[href="/admin/coord/alerts"]')
-    ).toBeNull();
+    expect(container.querySelector('a[href="/admin/coord/alerts"]')).toBeNull();
   });
 
   it("adds NO read: the panel rides the fleet-health poll already made", async () => {
@@ -2313,5 +2348,324 @@ describe("/admin/coord/devops — a CI-runner registration with the mirror down"
     expect(
       ws.querySelector('[data-testid="ci-runner-drain-scope"]')
     ).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Worktree slots — plan `2026-09-21-worktree-slots-devops-dashboard-view.md`
+// Phase 3.
+// ---------------------------------------------------------------------------
+
+/**
+ * One device row as `GET /operations/fleet/worktree-slots` serves it
+ * (coord's `GET /coord/fleet/worktree-slots`, passed through untouched).
+ */
+function worktreeSlotDevice(
+  deviceId: string,
+  hostname: string,
+  overrides: Record<string, unknown> = {}
+) {
+  return {
+    device_id: deviceId,
+    hostname,
+    active_worktrees: 0,
+    max_worktrees: 8,
+    census_recent_rows: 12,
+    occupants: { shown: 0, total: 0, truncated: false, rows: [] },
+    ...overrides,
+  };
+}
+
+describe("/admin/coord/devops — Worktree slots (Phase 3)", () => {
+  beforeEach(() => {
+    httpGet.mockReset();
+    httpFetch.mockReset();
+    window.localStorage.clear();
+  });
+
+  it("renders a device with occupants, expandable on demand", async () => {
+    mockRoutes({
+      devices: [coordDevice("d-1", "msi", "healthy")],
+      runners: [runner("msi")],
+      samples: [],
+      worktreeSlots: {
+        tenant_id: "t-1",
+        device_count: 1,
+        truncated: false,
+        device_cap: 100,
+        census_window_secs: 900,
+        devices: [
+          worktreeSlotDevice("d-1", "msi", {
+            active_worktrees: 3,
+            occupants: {
+              shown: 3,
+              total: 3,
+              truncated: false,
+              rows: [
+                {
+                  repo: "qontinui-web",
+                  worktree_path: "agent-worktrees/abc/qontinui-web",
+                  age_secs: 412.5,
+                },
+              ],
+            },
+          }),
+        ],
+      },
+    });
+
+    render(<CoordDevOpsPage />);
+
+    const row = await screen.findByTestId("fleet-worktree-slots-row");
+    expect(row).toHaveAttribute("data-device-id", "d-1");
+    expect(row).toHaveAttribute("data-worktree-slots-state", "known");
+    expect(row).toHaveTextContent("3/8");
+    // Collapsed by default — no occupant row text on screen yet.
+    expect(row).not.toHaveTextContent("qontinui-web");
+
+    const trigger = within(row).getByRole("button", {
+      name: /Occupants \(3\)/i,
+    });
+    fireEvent.click(trigger);
+    await waitFor(() => expect(row).toHaveTextContent("qontinui-web"));
+    expect(row).toHaveTextContent("agent-worktrees/abc/qontinui-web");
+  });
+
+  it("renders a genuinely idle device as 0/8, not unknown", async () => {
+    mockRoutes({
+      devices: [coordDevice("d-1", "msi", "healthy")],
+      runners: [runner("msi")],
+      samples: [],
+      worktreeSlots: {
+        tenant_id: "t-1",
+        device_count: 1,
+        truncated: false,
+        device_cap: 100,
+        census_window_secs: 900,
+        devices: [worktreeSlotDevice("d-1", "msi")],
+      },
+    });
+
+    render(<CoordDevOpsPage />);
+
+    const row = await screen.findByTestId("fleet-worktree-slots-row");
+    expect(row).toHaveAttribute("data-worktree-slots-state", "known");
+    expect(row).toHaveTextContent("0/8");
+    expect(
+      within(row).queryByTestId("fleet-worktree-slots-unknown-cell")
+    ).toBeNull();
+  });
+
+  it("renders census_recent_rows: 0 as unknown, never a healthy 0/8", async () => {
+    mockRoutes({
+      devices: [coordDevice("d-1", "stale-box", "healthy")],
+      runners: [runner("stale-box")],
+      samples: [],
+      worktreeSlots: {
+        tenant_id: "t-1",
+        device_count: 1,
+        truncated: false,
+        device_cap: 100,
+        census_window_secs: 900,
+        devices: [
+          worktreeSlotDevice("d-1", "stale-box", { census_recent_rows: 0 }),
+        ],
+      },
+    });
+
+    render(<CoordDevOpsPage />);
+
+    const row = await screen.findByTestId("fleet-worktree-slots-row");
+    expect(row).toHaveAttribute("data-worktree-slots-state", "unknown");
+    const cell = within(row).getByTestId("fleet-worktree-slots-unknown-cell");
+    expect(cell).toHaveTextContent("unknown");
+    // Never the raw ratio, which would read as a healthy, idle machine.
+    expect(row).not.toHaveTextContent("0/8");
+    expect(
+      screen.getByTestId("fleet-worktree-slots-unknown-badge")
+    ).toHaveTextContent("1 unknown");
+  });
+
+  it("badges a device at cap, with no client-derived colour verdict", async () => {
+    mockRoutes({
+      devices: [coordDevice("d-1", "msi", "healthy")],
+      runners: [runner("msi")],
+      samples: [],
+      worktreeSlots: {
+        tenant_id: "t-1",
+        device_count: 1,
+        truncated: false,
+        device_cap: 100,
+        census_window_secs: 900,
+        devices: [
+          worktreeSlotDevice("d-1", "msi", {
+            active_worktrees: 8,
+            occupants: { shown: 8, total: 8, truncated: false, rows: [] },
+          }),
+        ],
+      },
+    });
+
+    render(<CoordDevOpsPage />);
+
+    const row = await screen.findByTestId("fleet-worktree-slots-row");
+    expect(row).toHaveTextContent("8/8");
+    expect(
+      within(row).getByTestId("fleet-worktree-slots-at-cap")
+    ).toHaveTextContent("at cap");
+    expect(
+      screen.getByTestId("fleet-worktree-slots-at-cap-badge")
+    ).toHaveTextContent("1 at cap");
+  });
+
+  it("renders a truncated occupants list with a +N more note", async () => {
+    mockRoutes({
+      devices: [coordDevice("d-1", "msi", "healthy")],
+      runners: [runner("msi")],
+      samples: [],
+      worktreeSlots: {
+        tenant_id: "t-1",
+        device_count: 1,
+        truncated: false,
+        device_cap: 100,
+        census_window_secs: 900,
+        devices: [
+          worktreeSlotDevice("d-1", "msi", {
+            active_worktrees: 8,
+            occupants: {
+              shown: 5,
+              total: 8,
+              truncated: true,
+              rows: Array.from({ length: 5 }, (_, i) => ({
+                repo: `repo-${i}`,
+                worktree_path: `agent-worktrees/x/repo-${i}`,
+                age_secs: 60,
+              })),
+            },
+          }),
+        ],
+      },
+    });
+
+    render(<CoordDevOpsPage />);
+
+    const row = await screen.findByTestId("fleet-worktree-slots-row");
+    fireEvent.click(
+      within(row).getByRole("button", { name: /Occupants \(8\)/i })
+    );
+    await waitFor(() => expect(row).toHaveTextContent("repo-0"));
+    expect(row).toHaveTextContent("+3 more (showing 5 of 8)");
+  });
+
+  it("keeps a device registered but absent from the payload as its own unknown row", async () => {
+    // `d-2` is in coord's device list (the spine) but the worktree-slots
+    // route names only `d-1` — truncated out by the cap, or simply never
+    // observed. It must still get a row, never silently vanish.
+    mockRoutes({
+      devices: [
+        coordDevice("d-1", "msi", "healthy"),
+        coordDevice("d-2", "ghost", "healthy"),
+      ],
+      runners: [runner("msi"), runner("ghost")],
+      samples: [],
+      worktreeSlots: {
+        tenant_id: "t-1",
+        device_count: 1,
+        truncated: false,
+        device_cap: 100,
+        census_window_secs: 900,
+        devices: [worktreeSlotDevice("d-1", "msi")],
+      },
+    });
+
+    render(<CoordDevOpsPage />);
+
+    await waitFor(() =>
+      expect(screen.getAllByTestId("fleet-worktree-slots-row")).toHaveLength(2)
+    );
+    const ghostRow = document.querySelector(
+      '[data-testid="fleet-worktree-slots-row"][data-device-id="d-2"]'
+    ) as HTMLElement;
+    expect(ghostRow).not.toBeNull();
+    expect(ghostRow).toHaveAttribute("data-worktree-slots-state", "unknown");
+    expect(ghostRow).toHaveTextContent("not reported");
+  });
+
+  it("shows a friendly notice, not coord's raw body, when the coord route isn't deployed yet", async () => {
+    // Phase 1 (coord's `GET /coord/fleet/worktree-slots`) ships in a
+    // separate qontinui-coord PR and had not landed as of this PR — every
+    // real read of this route legitimately 404s until it does. `httpClient`
+    // formats that as `GET <url> failed: 404 - <coord's raw body>`; the
+    // banner must show the friendly reading, never that raw string verbatim.
+    mockRoutes({
+      devices: [coordDevice("d-1", "msi", "healthy")],
+      runners: [runner("msi")],
+      samples: [],
+    });
+    httpGet.mockImplementation((url: unknown) => {
+      const u = String(url);
+      if (u.includes("worktree-slots")) {
+        return Promise.reject(
+          new Error(
+            'GET /api/v1/operations/fleet/worktree-slots failed: 404 - {"error":"NOT_FOUND"}'
+          )
+        );
+      }
+      if (u.includes("resource-samples")) {
+        return Promise.resolve({ latest: [], history: [] });
+      }
+      if (u.includes("fleet/health")) {
+        return Promise.resolve({
+          devices: [coordDevice("d-1", "msi", "healthy")],
+        });
+      }
+      return Promise.reject(new Error(`unexpected GET ${u}`));
+    });
+
+    render(<CoordDevOpsPage />);
+
+    const banner = await screen.findByTestId("fleet-worktree-slots-error");
+    expect(banner).toHaveTextContent(
+      "coord does not serve the fleet worktree-slots route yet"
+    );
+    // Never coord's raw, doubly-JSON-encoded transport string.
+    expect(banner).not.toHaveTextContent("NOT_FOUND");
+    expect(banner).not.toHaveTextContent("failed: 404");
+    // The device list stays the spine even with no data — unknown, not gone.
+    const row = await screen.findByTestId("fleet-worktree-slots-row");
+    expect(row).toHaveAttribute("data-worktree-slots-state", "unknown");
+  });
+
+  it("still shows the transport detail for a genuine failure, not the route-unavailable notice", async () => {
+    mockRoutes({
+      devices: [coordDevice("d-1", "msi", "healthy")],
+      runners: [runner("msi")],
+      samples: [],
+    });
+    httpGet.mockImplementation((url: unknown) => {
+      const u = String(url);
+      if (u.includes("worktree-slots")) {
+        return Promise.reject(
+          new Error(
+            "GET /api/v1/operations/fleet/worktree-slots failed: 502 - coord is not reachable"
+          )
+        );
+      }
+      if (u.includes("resource-samples")) {
+        return Promise.resolve({ latest: [], history: [] });
+      }
+      if (u.includes("fleet/health")) {
+        return Promise.resolve({
+          devices: [coordDevice("d-1", "msi", "healthy")],
+        });
+      }
+      return Promise.reject(new Error(`unexpected GET ${u}`));
+    });
+
+    render(<CoordDevOpsPage />);
+
+    const banner = await screen.findByTestId("fleet-worktree-slots-error");
+    expect(banner).toHaveTextContent("coord is not reachable");
+    expect(banner).not.toHaveTextContent("does not serve");
   });
 });
