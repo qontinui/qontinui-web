@@ -86,6 +86,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import load_only
 
 from app.models.work_artifact import (
+    EDGE_SOURCE_CORRECTED,
     NIL_ORGANIZATION_ID,
     NOTE_TRIM_CHARS,
     SEARCH_TSVECTOR_SQL,
@@ -723,7 +724,10 @@ async def list_for_export(
 
 
 async def list_edges(
-    db: AsyncSession, artifact_id: UUID
+    db: AsyncSession,
+    artifact_id: UUID,
+    *,
+    include_retracted: bool = False,
 ) -> list[tuple[WorkArtifactEdge, str, WorkArtifact | None]]:
     """Edges touching ``artifact_id`` in BOTH directions.
 
@@ -732,17 +736,21 @@ async def list_edges(
     ``"incoming"`` when it is the ``to_id``, and ``peer`` is the artifact at
     the far end (``None`` should not happen — the FKs cascade — but the read
     tolerates it rather than 500ing).
+
+    **Retracted edges are excluded by default.** A retracted edge
+    (``DELETE /plan-library/edges/{id}``) is a soft-deleted row kept only for
+    its audit trail — it must not keep asserting its relation on ordinary
+    reads. ``include_retracted=True`` is the audit-trail escape hatch.
     """
-    stmt = (
-        select(WorkArtifactEdge)
-        .where(
-            or_(
-                WorkArtifactEdge.from_id == artifact_id,
-                WorkArtifactEdge.to_id == artifact_id,
-            )
+    stmt = select(WorkArtifactEdge).where(
+        or_(
+            WorkArtifactEdge.from_id == artifact_id,
+            WorkArtifactEdge.to_id == artifact_id,
         )
-        .order_by(WorkArtifactEdge.created_at, WorkArtifactEdge.id)
     )
+    if not include_retracted:
+        stmt = stmt.where(WorkArtifactEdge.retracted_at.is_(None))
+    stmt = stmt.order_by(WorkArtifactEdge.created_at, WorkArtifactEdge.id)
     edges = list((await db.execute(stmt)).scalars().all())
     if not edges:
         return []
@@ -1354,6 +1362,13 @@ async def create_edge(
     ``(from, to, relation)`` triple is idempotent rather than a 409 — the
     library is fed by repeatable scans.
 
+    **A RETRACTED edge never shadows this call.** The dedup lookups below
+    are scoped to ``retracted_at IS NULL``, matching the partial unique
+    indexes ``plan_library_08_edge_correction`` made of both uniqueness
+    guards — a retracted (soft-deleted) row is dead, and re-posting the same
+    triple after a retraction must create a fresh, live edge rather than
+    silently resurrect the dead one.
+
     ``to_artifact`` may be ``None`` for :data:`SPAWNED_FOLLOWUP_RELATION`, the
     ONE-ENDED edge that records work a plan surfaced but did not do
     (``plan_library_03_spawned_followup``). The DB CHECK
@@ -1381,6 +1396,7 @@ async def create_edge(
             WorkArtifactEdge.from_id == from_artifact.id,
             WorkArtifactEdge.to_id.is_(None),
             WorkArtifactEdge.relation == relation,
+            WorkArtifactEdge.retracted_at.is_(None),
             func.btrim(WorkArtifactEdge.note, NOTE_TRIM_CHARS)
             == func.btrim(note or "", NOTE_TRIM_CHARS),
         )
@@ -1389,6 +1405,7 @@ async def create_edge(
             WorkArtifactEdge.from_id == from_artifact.id,
             WorkArtifactEdge.to_id == to_artifact.id,
             WorkArtifactEdge.relation == relation,
+            WorkArtifactEdge.retracted_at.is_(None),
         )
     found = (await db.execute(stmt)).scalars().first()
     if found is not None:
@@ -1557,6 +1574,184 @@ async def claim_followup(
         # not this one.
         await db.rollback()
         raise FollowupAlreadyClaimed(edge_id=edge_id, to_id=to_id) from exc
+    await db.refresh(edge)
+    return edge
+
+
+# ===========================================================================
+# Edge correction / retraction (Phase 5 of
+# ``2026-09-20-a-recorded-delivery-scope-is-permanent-so-a-mis-declared-phase-is-uncorrectable``)
+# ===========================================================================
+
+
+class EdgeAlreadyRetracted(Exception):
+    """A correction (``PUT``) was attempted on an edge that is already retracted.
+
+    A retracted edge is dead; correcting it in place would resurrect a claim
+    someone deliberately killed with no trace of that decision. Surfaced as a
+    409 naming when and why it was retracted, so the caller can decide whether
+    to record a brand new edge instead.
+    """
+
+    def __init__(self, *, edge_id: UUID, retracted_reason: str | None) -> None:
+        self.edge_id = edge_id
+        self.retracted_reason = retracted_reason
+        super().__init__(
+            f"edge {edge_id} is retracted and cannot be corrected in place "
+            f"(retracted_reason={retracted_reason!r}); record a new edge instead"
+        )
+
+
+class EdgeCorrectionConflict(Exception):
+    """The corrected ``(from_id, to_id, relation)`` triple already belongs to
+    a DIFFERENT live edge.
+
+    Mirrors the ordinary create-time idempotency rule, one level up: two
+    different edge ROWS may never assert the same live triple. Surfaced as a
+    409 naming the existing edge so the caller can retract or reuse it instead
+    of quietly losing the correction to an ``IntegrityError`` 500.
+    """
+
+    def __init__(self, *, edge_id: UUID, existing_edge_id: UUID) -> None:
+        self.edge_id = edge_id
+        self.existing_edge_id = existing_edge_id
+        super().__init__(
+            f"correcting edge {edge_id} to this (from, to, relation) triple "
+            f"conflicts with the already-live edge {existing_edge_id}"
+        )
+
+
+async def retract_edge(
+    db: AsyncSession, edge_id: UUID, *, reason: str, actor: str | None
+) -> WorkArtifactEdge:
+    """Soft-delete a wrongly-recorded edge. ``DELETE /plan-library/edges/{id}``.
+
+    **Idempotent, matching DELETE's own semantics**: retracting an
+    already-retracted edge is a no-op that returns the row UNCHANGED — the
+    original ``retracted_at`` / ``retracted_by`` / ``retracted_reason`` are
+    never overwritten by a second call, so the first retraction's reason
+    (and its author) is the one that survives.
+
+    Callers MUST have resolved ``edge_id`` through :func:`get_edge` first —
+    this function is not an authorization boundary.
+    """
+    edge = (
+        (
+            await db.execute(
+                select(WorkArtifactEdge)
+                .where(WorkArtifactEdge.id == edge_id)
+                .with_for_update()
+            )
+        )
+        .scalars()
+        .first()
+    )
+    if edge is None:  # pragma: no cover — the caller resolved it a moment ago
+        raise LookupError(f"work artifact edge not found: {edge_id}")
+
+    if edge.retracted_at is not None:
+        return edge
+
+    edge.retracted_at = datetime.now(UTC)
+    edge.retracted_by = actor
+    edge.retracted_reason = reason
+    await db.commit()
+    await db.refresh(edge)
+    return edge
+
+
+async def correct_edge(
+    db: AsyncSession,
+    edge_id: UUID,
+    *,
+    relation: str,
+    to_id: UUID | None,
+    note: str | None,
+    reason: str,
+    actor: str | None,
+) -> WorkArtifactEdge:
+    """Replace a recorded edge's ``relation`` / ``to_id`` / ``note`` in place.
+
+    ``PUT /plan-library/edges/{id}``. The row's identity — ``id``, ``from_id``,
+    ``created_at``, ``created_by`` — never moves; only the claim itself does,
+    and ``source`` / ``corrected_by`` / ``corrected_at`` record that it was
+    overwritten rather than freshly observed.
+
+    Raises :class:`EdgeAlreadyRetracted` if the edge is retracted (correcting
+    a dead row would resurrect it with no trace), and
+    :class:`EdgeCorrectionConflict` if the resulting triple already belongs to
+    a different live edge. Callers MUST have resolved ``edge_id`` through
+    :func:`get_edge` first and validated ``relation``/``to_id`` the same way
+    :func:`create_edge`'s caller does — this function is not a validation
+    boundary.
+    """
+    edge = (
+        (
+            await db.execute(
+                select(WorkArtifactEdge)
+                .where(WorkArtifactEdge.id == edge_id)
+                .with_for_update()
+            )
+        )
+        .scalars()
+        .first()
+    )
+    if edge is None:  # pragma: no cover — the caller resolved it a moment ago
+        raise LookupError(f"work artifact edge not found: {edge_id}")
+
+    if edge.retracted_at is not None:
+        raise EdgeAlreadyRetracted(
+            edge_id=edge_id, retracted_reason=edge.retracted_reason
+        )
+
+    # Captured BEFORE the commit attempt: a rollback expires every attribute
+    # on ``edge`` (AsyncSession's default ``expire_on_rollback``), and
+    # touching an expired attribute afterwards tries to lazy-load it, which
+    # raises ``MissingGreenlet`` in an async context rather than quietly
+    # re-fetching. The conflict lookup below needs ``from_id`` after exactly
+    # that rollback, so it is read while the object is still fresh.
+    from_id = edge.from_id
+
+    edge.relation = relation
+    edge.to_id = to_id
+    edge.note = note
+    edge.source = EDGE_SOURCE_CORRECTED
+    edge.corrected_by = actor
+    edge.corrected_at = datetime.now(UTC)
+    edge.corrected_reason = reason
+    try:
+        await db.commit()
+    except IntegrityError as exc:
+        await db.rollback()
+        # Find the live edge already holding this triple, so the 409 can
+        # name it rather than merely say "conflict". Same two shapes
+        # :func:`create_edge`'s own dedup lookup uses — a null ``to_id`` is
+        # the open-``spawned_followup`` case, whose real key is
+        # ``(from_id, relation, btrim(note))`` rather than the triple, since
+        # SQL NULLs never equal each other and several open follow-ups may
+        # legitimately share ``(from_id, to_id=NULL, relation)``.
+        if to_id is None:
+            conflict_stmt = select(WorkArtifactEdge.id).where(
+                WorkArtifactEdge.from_id == from_id,
+                WorkArtifactEdge.to_id.is_(None),
+                WorkArtifactEdge.relation == relation,
+                WorkArtifactEdge.retracted_at.is_(None),
+                WorkArtifactEdge.id != edge_id,
+                func.btrim(WorkArtifactEdge.note, NOTE_TRIM_CHARS)
+                == func.btrim(note or "", NOTE_TRIM_CHARS),
+            )
+        else:
+            conflict_stmt = select(WorkArtifactEdge.id).where(
+                WorkArtifactEdge.from_id == from_id,
+                WorkArtifactEdge.to_id == to_id,
+                WorkArtifactEdge.relation == relation,
+                WorkArtifactEdge.retracted_at.is_(None),
+                WorkArtifactEdge.id != edge_id,
+            )
+        existing_id = (await db.execute(conflict_stmt)).scalars().first()
+        raise EdgeCorrectionConflict(
+            edge_id=edge_id, existing_edge_id=existing_id or edge_id
+        ) from exc
     await db.refresh(edge)
     return edge
 
