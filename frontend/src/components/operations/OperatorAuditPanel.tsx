@@ -484,7 +484,7 @@ export function OperatorAuditPanel() {
                   No <span className="font-mono">{filter.action ?? "*"}</span>{" "}
                   {filter.via ? (
                     <>
-                      rows with{" "}
+                      with{" "}
                       <span className="font-mono">via: {filter.via}</span>{" "}
                     </>
                   ) : null}
