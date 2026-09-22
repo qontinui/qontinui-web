@@ -43,15 +43,14 @@ function operationsWsBase(): string {
 /**
  * The named subscriptions the web backend's coord-events bridge forwards
  * to coord's generic `/ws`. Coord takes a CLOSED set (`?subscribe=<name>`,
- * each mapped server-side to a fixed pattern — `strategy` →
- * `events.strategy.*`, `merge` → `events.merge.*`, `claims` →
- * `events.claims`, `branches` → `events.branches`); a caller-supplied glob
- * is refused. Mirrors `COORD_EVENTS_SUBSCRIPTIONS` in
+ * each mapped server-side to a fixed pattern — `merge` → `events.merge.*`,
+ * `claims` → `events.claims`, `branches` → `events.branches`); a
+ * caller-supplied glob is refused. Mirrors `COORD_EVENTS_SUBSCRIPTIONS` in
  * `backend/app/services/coord_device_status.py`, which is the gate: a name
  * absent there closes 1008 `unknown_subscription` before any auth. The
  * runner-only `device` / `device_ci` names are deliberately not here.
  */
-export type CoordEventSubscription = "strategy" | "merge" | "claims" | "branches";
+export type CoordEventSubscription = "merge" | "claims" | "branches";
 
 /**
  * WebSocket URL for the coord-events bridge,
