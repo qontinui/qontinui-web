@@ -71,7 +71,7 @@ export const OVERVIEW_SECTIONS: readonly OverviewSection[] = [
     route: "/overview/team",
     icon: Users,
     description: "Roles, allocation by phase, and who is doing the work",
-    available: false,
+    available: true,
   },
   {
     id: "overview-risks",

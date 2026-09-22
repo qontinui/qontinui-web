@@ -94,6 +94,18 @@ from app.models.organization import (
     TeamMember,
     TeamRole,
 )
+from app.models.overview import (
+    CalendarBreak,
+    CostLine,
+    Estimate,
+    EstimateRole,
+    OverviewSettings,
+    Phase,
+    PhaseAllocation,
+    PhaseTask,
+    PriceTier,
+    TaskEffort,
+)
 from app.models.pair_code import PairCode
 from app.models.path_discovery import PathDiscovery
 from app.models.phase_result import PhaseResult
@@ -526,6 +538,18 @@ __all__ = [
     # Claude Code Session Repository (agent.session_artifacts — archived
     # sessions; bodies live in the object store, not in a column)
     "SessionArtifact",
+    # Project Overview — the estimate baseline (overview.*), Phase 2 of
+    # 2026-09-19-project-overview-for-business-leaders
+    "OverviewSettings",
+    "Estimate",
+    "Phase",
+    "PhaseTask",
+    "EstimateRole",
+    "TaskEffort",
+    "PhaseAllocation",
+    "PriceTier",
+    "CostLine",
+    "CalendarBreak",
 ]
 
 # Cloud-control extension hook — no-op when no cloud-control package has

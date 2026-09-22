@@ -1800,7 +1800,7 @@ async function main(): Promise<number> {
       // CI makes the coord/strategy upstream classes reachable from spec'd
       // pages (background pollers), not just crawl routes. See
       // crawl-baseline.ts GLOBAL_SERVER_WAIVERS.
-      .filter((e) => !isGloballyWaivedServerUrl(e.url));
+      .filter((e) => !isGloballyWaivedServerUrl(e.url, e.status));
     const { kept: serverKept, dropped: serverDropped } = await confirmGatewayPersistence(page, sliced);
     r.serverErrors = serverKept;
     for (const d of serverDropped) {

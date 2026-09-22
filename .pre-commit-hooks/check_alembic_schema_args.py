@@ -4,7 +4,7 @@ Walks alembic revision files (``backend/alembic/versions/*.py``) and
 verifies every DDL ``op.<func>(...)`` call carries an explicit ``schema=``
 keyword argument with one of the canonical schemas:
 
-    project, coord, agent, auth, cloud, strategy, web
+    project, coord, agent, auth, cloud, strategy, web, overview
 
 The ``cloud`` schema was added per the cloud-control carve-out
 (tmp_cloud_control_carve_out.md §5). The ``strategy`` schema was
@@ -14,7 +14,10 @@ added for the Strategy Collaboration product (Phase 1, design
 schema was added for web-side operational tables that don't belong
 to any product surface (e.g. ``web.bridge_audit_log`` per the
 production-safe UI Bridge plan §4.8) — 7th canonical schema, same
-precedent.
+precedent. The ``overview`` schema was added for the
+business-leader Project Overview's own tenant-scoped tables (plan
+``2026-09-19-project-overview-for-business-leaders`` §"Data model") —
+8th canonical schema, same precedent.
 Plan reference: ``D:/qontinui-root/tmp_migration_consolidation_plan.md``
 Phase 6.
 
@@ -84,7 +87,20 @@ GATED_OPS = {
     "batch_alter_table",
 }
 
-ALLOWED_SCHEMAS = {"project", "coord", "agent", "auth", "cloud", "strategy", "web"}
+ALLOWED_SCHEMAS = {
+    "project",
+    "coord",
+    "agent",
+    "auth",
+    "cloud",
+    "strategy",
+    "web",
+    # ``overview`` holds the business-leader Project Overview's own
+    # tenant-scoped tables (estimates, phases, roles, costs, governance,
+    # content) — plan ``2026-09-19-project-overview-for-business-leaders``.
+    # 8th canonical schema, same precedent as ``strategy`` and ``web``.
+    "overview",
+}
 
 # Schemas accepted by the raw-SQL audit. ``public`` is included here
 # (and only here) because Phase 7 revisions legitimately reference
