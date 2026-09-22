@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback, useMemo, useEffect } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 // Tabs removed — using plain buttons + hidden divs for UI Bridge assertion compatibility
 import { Button } from "@/components/ui/button";
@@ -38,9 +38,21 @@ import { useStateMachineDiscovery } from "../_hooks/useStateMachineDiscovery";
 import { useSDKApps, type SDKApp } from "../_hooks/useSDKApps";
 import { SdkRecordingPanel } from "@/components/ui-bridge/SdkRecordingPanel";
 import { useUIBridgeRecording } from "@/hooks/useUIBridgeRecording";
+import { useRunnerTargetById } from "@/hooks/ui-bridge/runnerTargetById";
+import {
+  RUNNER_NEEDS_LOCAL,
+  isRunnerNeedsLocalError,
+  routeOfTarget,
+  runnerRequest,
+  targetKey,
+  useRunnerTarget,
+} from "@/lib/runner";
 
-const LOCAL_RUNNER_URL = "http://localhost:9876";
-/** Sentinel ID for the local-runner option (used when no backend runners are registered). */
+/**
+ * Sentinel ID for the "runner on this machine" option: the active runner, when
+ * the resolver has proven it local (used when no backend runners are
+ * registered).
+ */
 const LOCAL_RUNNER_SENTINEL = "__local__";
 
 interface DiscoveryPanelProps {
@@ -59,68 +71,58 @@ export function DiscoveryPanel({
   const sdkRecording = useUIBridgeRecording();
   const { runners, isLoading: runnersLoading } = useRealtimeConnections();
 
-  // Check if local runner is available directly (fallback when backend WS registration fails)
-  const { data: localRunnerAvailable = false, isLoading: checkingLocalRunner } =
-    useQuery({
-      queryKey: ["local-runner-status"],
-      queryFn: async () => {
-        const res = await fetch(`${LOCAL_RUNNER_URL}/status`);
-        return res.ok;
-      },
-      retry: false,
-      staleTime: 30000,
-    });
+  // The active runner, offered as "this machine" only when the resolver has
+  // proven it local.
+  const runnerTarget = useRunnerTarget();
+  const localRunnerAvailable = routeOfTarget(runnerTarget).kind === "loopback";
+  const localRunnerName =
+    runnerTarget.kind === "runner" ? runnerTarget.runner.name : undefined;
 
   // Auto-select local runner when no backend runners but local runner is available
   useEffect(() => {
     if (
       !runnersLoading &&
-      !checkingLocalRunner &&
       runners.length === 0 &&
       localRunnerAvailable &&
       selectedRunnerId === null
     ) {
       setSelectedRunnerId(LOCAL_RUNNER_SENTINEL);
     }
-  }, [
-    runnersLoading,
-    checkingLocalRunner,
-    runners.length,
-    localRunnerAvailable,
-    selectedRunnerId,
-  ]);
+  }, [runnersLoading, runners.length, localRunnerAvailable, selectedRunnerId]);
 
-  // Derive runner URL from selected runner
-  const selectedRunner = useMemo(
-    () => runners.find((r) => r.id === selectedRunnerId) ?? null,
-    [runners, selectedRunnerId]
+  // The selected runner as a TARGET — addressed by its id and resolved per
+  // request (loopback when proven local, the relay otherwise). Never a URL
+  // built from the IP address or hostname the runner reports: the runner
+  // binds 127.0.0.1 only, so such a URL never answers, and a reported address
+  // proves nothing about which machine answers. A runner that reports only a
+  // hostname (or nothing) is selectable like any other.
+  const listedTarget = useRunnerTargetById(
+    selectedRunnerId === LOCAL_RUNNER_SENTINEL ? null : selectedRunnerId
   );
-
-  const runnerUrl = useMemo(() => {
-    if (selectedRunnerId === LOCAL_RUNNER_SENTINEL) return LOCAL_RUNNER_URL;
-    if (!selectedRunner) return null;
-    const host =
-      selectedRunner.ipAddress || selectedRunner.hostname || "localhost";
-    const port = selectedRunner.port ?? 9876;
-    return `http://${host}:${port}`;
-  }, [selectedRunnerId, selectedRunner]);
+  const selectedTarget =
+    selectedRunnerId === LOCAL_RUNNER_SENTINEL
+      ? localRunnerAvailable
+        ? runnerTarget
+        : null
+      : listedTarget;
+  const hasRunner = selectedTarget !== null;
 
   // SDK app discovery and connection
-  const sdk = useSDKApps(runnerUrl);
+  const sdk = useSDKApps(selectedTarget);
   const { refreshConnections: sdkRefreshConnections } = sdk;
 
-  // Auto-refresh SDK connections and trigger scan when runner URL changes
+  // Auto-refresh SDK connections and trigger scan when the runner changes
   useEffect(() => {
-    if (runnerUrl) {
+    if (selectedTarget) {
       sdkRefreshConnections();
       // Auto-scan for apps when runner becomes available
       if (sdk.apps.length === 0 && !sdk.isScanning) {
         sdk.scanForApps();
       }
     }
-    // Only trigger on runnerUrl change, not on sdk state changes
+    // Only trigger on runner change, not on sdk state changes
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [runnerUrl, sdkRefreshConnections]);
+  }, [selectedTarget, sdkRefreshConnections]);
 
   // Auto-configure exploration when an SDK app is connected
   const { updateConfig: explorationUpdateConfig } = exploration;
@@ -134,48 +136,60 @@ export function DiscoveryPanel({
   }, [sdk.activeApp, explorationUpdateConfig]);
 
   // Auto-load completed exploration results from runner (survives page navigation)
-  const { data: pendingExplorationResults } = useQuery({
-    queryKey: ["exploration-pending-results", runnerUrl],
-    queryFn: async () => {
-      const statusRes = await fetch(`${runnerUrl}/ui-bridge/explore/status`);
-      if (!statusRes.ok) return null;
-      const statusData = await statusRes.json();
-      const status = statusData.data || statusData;
-      if (status.status !== "completed" || !status.has_results) return null;
+  const { data: pendingExplorationResults, error: pendingResultsError } =
+    useQuery({
+      queryKey: [
+        "exploration-pending-results",
+        selectedTarget ? targetKey(selectedTarget) : null,
+      ],
+      queryFn: async () => {
+        if (!selectedTarget) return null;
+        const statusRes = await runnerRequest(
+          selectedTarget,
+          "/ui-bridge/explore/status"
+        );
+        if (!statusRes.ok) return null;
+        const statusData = await statusRes.json();
+        const status = statusData.data || statusData;
+        if (status.status !== "completed" || !status.has_results) return null;
 
-      const resultsRes = await fetch(`${runnerUrl}/ui-bridge/explore/results`);
-      if (!resultsRes.ok) return null;
-      const resultsData = await resultsRes.json();
-      const results = resultsData.data?.data || resultsData.data || resultsData;
-      const renderLogs = results?.render_logs || [];
-      if (renderLogs.length === 0) return null;
+        const resultsRes = await runnerRequest(
+          selectedTarget,
+          "/ui-bridge/explore/results"
+        );
+        if (!resultsRes.ok) return null;
+        const resultsData = await resultsRes.json();
+        const results =
+          resultsData.data?.data || resultsData.data || resultsData;
+        const renderLogs = results?.render_logs || [];
+        if (renderLogs.length === 0) return null;
 
-      return renderLogs.map(
-        (
-          log: {
-            id?: string;
-            type?: string;
-            url?: string;
-            timestamp?: string;
-            snapshot?: Record<string, unknown>;
-          },
-          idx: number
-        ) => ({
-          id: log.id || `render_${idx}`,
-          type: "dom_snapshot" as const,
-          page_url: log.url || "",
-          snapshot: log.snapshot || { root: {} },
-          timestamp: log.timestamp
-            ? new Date(log.timestamp).getTime()
-            : Date.now(),
-          trigger: idx === 0 ? "initial_load" : "action",
-        })
-      );
-    },
-    enabled: !!runnerUrl && !discovery.renders,
-    retry: false,
-    staleTime: 10000,
-  });
+        return renderLogs.map(
+          (
+            log: {
+              id?: string;
+              type?: string;
+              url?: string;
+              timestamp?: string;
+              snapshot?: Record<string, unknown>;
+            },
+            idx: number
+          ) => ({
+            id: log.id || `render_${idx}`,
+            type: "dom_snapshot" as const,
+            page_url: log.url || "",
+            snapshot: log.snapshot || { root: {} },
+            timestamp: log.timestamp
+              ? new Date(log.timestamp).getTime()
+              : Date.now(),
+            trigger: idx === 0 ? "initial_load" : "action",
+          })
+        );
+      },
+      enabled: hasRunner && !discovery.renders,
+      retry: false,
+      staleTime: 10000,
+    });
 
   // Apply pending exploration results when they arrive
   const { renders: discoveryRenders, setRenders: discoverySetRenders } =
@@ -188,8 +202,15 @@ export function DiscoveryPanel({
 
   // Exploration handlers
   const handleStartExploration = useCallback(async () => {
-    if (!runnerUrl) return;
-    const results = await exploration.startUIBridgeExploration(runnerUrl);
+    if (!selectedTarget) return;
+    let results;
+    try {
+      results = await exploration.startUIBridgeExploration(selectedTarget);
+    } catch {
+      // The failure (including the typed needs-local one) is already in
+      // exploration.progress and rendered from there.
+      return;
+    }
     if (results && results.renderLogs.length > 0) {
       // Use returned results directly — React state hasn't committed yet
       const renderLogs = results.renderLogs.map((log) => ({
@@ -202,17 +223,28 @@ export function DiscoveryPanel({
       }));
       discovery.setRenders(renderLogs, "explore");
     }
-  }, [runnerUrl, exploration, discovery]);
+  }, [selectedTarget, exploration, discovery]);
 
   const handleStopExploration = useCallback(async () => {
-    if (!runnerUrl) return;
-    await exploration.stopExploration(runnerUrl);
+    if (!selectedTarget) return;
+    await exploration.stopExploration(selectedTarget);
     // After stop, state may have committed — try both approaches
     const renderLogs = exploration.getRenderLogsForDiscovery();
     if (renderLogs.length > 0) {
       discovery.setRenders(renderLogs, "explore");
     }
-  }, [runnerUrl, exploration, discovery]);
+  }, [selectedTarget, exploration, discovery]);
+
+  // The typed "needs the runner on this machine" state: the selected runner
+  // is reached through the relay, which carries none of the SDK, exploration
+  // or recording routes this panel uses.
+  const needsLocalMessage =
+    sdk.needsLocalError ??
+    (exploration.progress.errorCode === RUNNER_NEEDS_LOCAL
+      ? (exploration.progress.error ?? null)
+      : isRunnerNeedsLocalError(pendingResultsError)
+        ? (pendingResultsError as Error).message
+        : null);
 
   // Recording handlers (SDK-based)
   const handleStopRecording = useCallback(() => {
@@ -266,9 +298,7 @@ export function DiscoveryPanel({
                     <SelectTrigger className="h-8 text-sm">
                       <SelectValue
                         placeholder={
-                          runnersLoading && checkingLocalRunner
-                            ? "Loading..."
-                            : "Select a runner..."
+                          runnersLoading ? "Loading..." : "Select a runner..."
                         }
                       />
                     </SelectTrigger>
@@ -277,16 +307,20 @@ export function DiscoveryPanel({
                         <SelectItem value={LOCAL_RUNNER_SENTINEL}>
                           <span className="flex items-center gap-1.5">
                             <MonitorSmartphone className="size-3.5 text-green-500" />
-                            Local Runner (localhost:9876)
+                            {localRunnerName
+                              ? `${localRunnerName} (this machine)`
+                              : "Runner on this machine"}
                           </span>
                         </SelectItem>
                       )}
-                      {runners.map((runner) => (
-                        <SelectItem key={runner.id} value={runner.id}>
-                          {runner.name} (
-                          {runner.hostname ?? runner.ipAddress ?? "localhost"})
-                        </SelectItem>
-                      ))}
+                      {runners.map((runner) => {
+                        const host = runner.hostname ?? runner.ipAddress;
+                        return (
+                          <SelectItem key={runner.id} value={runner.id}>
+                            {host ? `${runner.name} (${host})` : runner.name}
+                          </SelectItem>
+                        );
+                      })}
                     </SelectContent>
                   </Select>
                 </div>
@@ -294,7 +328,7 @@ export function DiscoveryPanel({
                 <Button
                   variant="outline"
                   size="sm"
-                  className={`h-8 shrink-0 ${runnerUrl ? "" : "hidden"}`}
+                  className={`h-8 shrink-0 ${hasRunner && !needsLocalMessage ? "" : "hidden"}`}
                   onClick={sdk.scanForApps}
                   disabled={sdk.isScanning}
                 >
@@ -310,7 +344,6 @@ export function DiscoveryPanel({
               <p
                 className={`text-xs text-text-muted ${
                   !runnersLoading &&
-                  !checkingLocalRunner &&
                   runners.length === 0 &&
                   !localRunnerAvailable
                     ? ""
@@ -320,8 +353,19 @@ export function DiscoveryPanel({
                 No runners detected. Start the qontinui-runner app to connect.
               </p>
 
+              {/* The selected runner needs to be on this machine */}
+              {needsLocalMessage && (
+                <p
+                  role="alert"
+                  data-testid="runner-needs-local"
+                  className="text-xs text-amber-600 dark:text-amber-400"
+                >
+                  {needsLocalMessage}
+                </p>
+              )}
+
               {/* SDK app discovery results — always in DOM */}
-              <div className={runnerUrl ? "" : "hidden"}>
+              <div className={hasRunner && !needsLocalMessage ? "" : "hidden"}>
                 {/* Active connection banner */}
                 <div
                   className={

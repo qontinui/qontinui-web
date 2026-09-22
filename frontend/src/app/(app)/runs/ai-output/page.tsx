@@ -2,6 +2,9 @@
 
 import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import {
+  RUNNER_NEEDS_LOCAL,
+  useRunnerPoll,
+  useRunnerTarget,
   useRunningTaskRuns,
   useTaskRunOutput,
   type TaskRun,
@@ -254,17 +257,30 @@ function RunListPanel({
 // =============================================================================
 
 function ConversationPanel({ runId }: { runId: string }) {
+  const target = useRunnerTarget();
   const {
     data: outputData,
     isLoading: outputLoading,
+    error: outputError,
+    errorCode: outputErrorCode,
     refetch: refetchOutput,
   } = useTaskRunOutput(runId);
+  // The runner refused the output route over the relay: shown instead of
+  // "No output yet", and polling stops (asking again cannot change it).
+  const needsLocalMessage =
+    outputErrorCode === RUNNER_NEEDS_LOCAL ? outputError : null;
 
-  // Poll for output updates
-  useEffect(() => {
-    const interval = setInterval(refetchOutput, 2000);
-    return () => clearInterval(interval);
-  }, [refetchOutput]);
+  // Poll for output updates. The cadence is re-evaluated every tick (never
+  // faster than the relay cadence for a relayed or unresolved target).
+  useRunnerPoll(target, {
+    enabled: true,
+    requestedMs: 2000,
+    tick: async () => {
+      if (needsLocalMessage) return "stop";
+      await refetchOutput();
+      return undefined;
+    },
+  });
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const [autoScroll, setAutoScroll] = useState(true);
@@ -335,7 +351,15 @@ function ConversationPanel({ runId }: { runId: string }) {
         onScroll={handleScroll}
         className="flex-1 min-h-0 overflow-y-auto p-4 space-y-3"
       >
-        {segments.length === 0 ? (
+        {segments.length === 0 && needsLocalMessage ? (
+          <div
+            role="status"
+            className="flex flex-col items-center justify-center h-full text-muted-foreground"
+          >
+            <MessageSquare className="size-10 mb-3 opacity-30" />
+            <p className="text-sm">{needsLocalMessage}</p>
+          </div>
+        ) : segments.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-full text-muted-foreground">
             <MessageSquare className="size-10 mb-3 opacity-30" />
             <p className="text-sm">No output yet...</p>

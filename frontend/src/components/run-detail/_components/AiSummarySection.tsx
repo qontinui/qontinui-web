@@ -12,7 +12,7 @@ import {
   FileText,
   User,
 } from "lucide-react";
-import { runnerApi, type TaskRun } from "@/lib/runner-api";
+import { useRunnerApi, type TaskRun } from "@/lib/runner-api";
 import type { TaskRunView } from "@/lib/task-run-mappers";
 import { toast } from "sonner";
 import {
@@ -81,6 +81,7 @@ interface AiSummarySectionProps {
 }
 
 export function AiSummarySection({ run, onRefresh }: AiSummarySectionProps) {
+  const runnerApi = useRunnerApi();
   const [summaryExpanded, setSummaryExpanded] = useState(false);
   const [isGeneratingSummary, setIsGeneratingSummary] = useState(false);
 

@@ -29,6 +29,14 @@ vi.mock("@/contexts/active-runner-context", () => ({
     selectRunner: vi.fn(),
     isMultiRunner: false,
   }),
+  useRunnerTarget: () =>
+    mockActiveRunner
+      ? {
+          kind: "runner",
+          runner: { id: mockActiveRunner.id },
+          locality: "not_local",
+        }
+      : { kind: "pending" },
 }));
 
 // ---- Mock the plan + relay clients. `requestPlan` is the unit under test's

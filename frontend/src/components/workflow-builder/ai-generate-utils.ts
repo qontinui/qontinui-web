@@ -1,9 +1,10 @@
-import { runnerApi } from "@/lib/runner-api";
+import type { RunnerApi } from "@/lib/runner-api";
 
 /**
  * Auto-save a generation prompt to the prompt library (best-effort, fire-and-forget).
  */
 export async function autoSaveGenerationPrompt(
+  runnerApi: RunnerApi,
   promptText: string
 ): Promise<void> {
   try {

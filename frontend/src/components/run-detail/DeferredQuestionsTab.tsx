@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { runnerFetch } from "@/lib/runner/api-client";
+import { useRunnerTarget } from "@/contexts/active-runner-context";
 import { httpClient } from "@/services/service-factory";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -38,6 +39,7 @@ interface DeferredQuestionsTabProps {
 }
 
 export function DeferredQuestionsTab({ taskRunId }: DeferredQuestionsTabProps) {
+  const target = useRunnerTarget();
   const [questions, setQuestions] = useState<DeferredQuestion[]>([]);
   const [loading, setLoading] = useState(true);
   const [reviewingId, setReviewingId] = useState<string | null>(null);
@@ -51,6 +53,7 @@ export function DeferredQuestionsTab({ taskRunId }: DeferredQuestionsTabProps) {
       let data: DeferredQuestion[];
       try {
         data = await runnerFetch<DeferredQuestion[]>(
+          target,
           `/task-runs/${taskRunId}/deferred-questions`
         );
       } catch {
@@ -65,7 +68,7 @@ export function DeferredQuestionsTab({ taskRunId }: DeferredQuestionsTabProps) {
     } finally {
       setLoading(false);
     }
-  }, [taskRunId]);
+  }, [taskRunId, target]);
 
   useEffect(() => {
     fetchQuestions();
@@ -81,11 +84,15 @@ export function DeferredQuestionsTab({ taskRunId }: DeferredQuestionsTabProps) {
       const result = await runnerFetch<{
         reviewed: boolean;
         rework_task_run_id?: string;
-      }>(`/task-runs/${taskRunId}/deferred-questions/${questionId}/review`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ status, comment }),
-      });
+      }>(
+        target,
+        `/task-runs/${taskRunId}/deferred-questions/${questionId}/review`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ status, comment }),
+        }
+      );
       toast.success(
         status === "approved"
           ? "Decision approved"
@@ -93,7 +100,11 @@ export function DeferredQuestionsTab({ taskRunId }: DeferredQuestionsTabProps) {
       );
       fetchQuestions();
     } catch (err) {
-      toast.error("Failed to submit review");
+      toast.error(
+        err instanceof Error
+          ? `Failed to submit review: ${err.message}`
+          : "Failed to submit review"
+      );
       console.error(err);
     } finally {
       setReviewingId(null);
@@ -108,6 +119,7 @@ export function DeferredQuestionsTab({ taskRunId }: DeferredQuestionsTabProps) {
 
     try {
       await runnerFetch(
+        target,
         `/task-runs/${taskRunId}/deferred-questions/bulk-review`,
         {
           method: "POST",
@@ -120,8 +132,12 @@ export function DeferredQuestionsTab({ taskRunId }: DeferredQuestionsTabProps) {
       );
       toast.success(`Approved ${pendingIds.length} decision(s)`);
       fetchQuestions();
-    } catch {
-      toast.error("Bulk approve failed");
+    } catch (err) {
+      toast.error(
+        err instanceof Error
+          ? `Bulk approve failed: ${err.message}`
+          : "Bulk approve failed"
+      );
     }
   };
 

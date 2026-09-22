@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { runnerFetch } from "@/lib/runner/api-client";
-import { runnerApi } from "@/lib/runner/runner-api-object";
+import { useRunnerApi } from "@/lib/runner/runner-api-object";
+import { useRunnerTarget } from "@/contexts/active-runner-context";
 import type { SavedApiRequest } from "@/lib/runner/types/library";
 import type {
   TestType,
@@ -14,6 +15,8 @@ import type {
 export function useTestOrchestrator({
   onTestGenerated,
 }: Pick<TestOrchestratorProps, "onTestGenerated">) {
+  const target = useRunnerTarget();
+  const runnerApi = useRunnerApi();
   // Phase management
   const [phase, setPhase] = useState<OrchestratorPhase>("selection");
 
@@ -65,7 +68,7 @@ export function useTestOrchestrator({
     } finally {
       setLoadingRequests(false);
     }
-  }, []);
+  }, [runnerApi]);
 
   useEffect(() => {
     loadSavedRequests();
@@ -130,6 +133,7 @@ export function useTestOrchestrator({
 
     try {
       const response = await runnerFetch<OrchestrationPlan>(
+        target,
         "/test-orchestration/plan",
         {
           method: "POST",
@@ -151,7 +155,7 @@ export function useTestOrchestrator({
     } finally {
       setPlanning(false);
     }
-  }, [selectedRequestIds, testDescription, additionalContext]);
+  }, [selectedRequestIds, testDescription, additionalContext, target]);
 
   // ---------------------------------------------------------------------------
   // Phase: Execution - Run the Plan
@@ -167,6 +171,7 @@ export function useTestOrchestrator({
 
     try {
       const response = await runnerFetch<OrchestrationExecutionResult>(
+        target,
         "/test-orchestration/execute",
         {
           method: "POST",
@@ -201,7 +206,7 @@ export function useTestOrchestrator({
     } finally {
       setExecuting(false);
     }
-  }, [plan]);
+  }, [plan, target]);
 
   // ---------------------------------------------------------------------------
   // Phase: Generation - Generate Test Code
@@ -216,6 +221,7 @@ export function useTestOrchestrator({
 
     try {
       const response = await runnerFetch<GeneratedTest>(
+        target,
         "/test-orchestration/generate",
         {
           method: "POST",
@@ -236,7 +242,7 @@ export function useTestOrchestrator({
     } finally {
       setGenerating(false);
     }
-  }, [plan, executionResult, testType]);
+  }, [plan, executionResult, testType, target]);
 
   // ---------------------------------------------------------------------------
   // Actions

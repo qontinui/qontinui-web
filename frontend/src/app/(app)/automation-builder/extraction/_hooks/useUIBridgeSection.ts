@@ -8,6 +8,13 @@ import type { RenderLogEntry, RenderLogSession } from "../_types";
 import { createLogger } from "@/lib/logger";
 import { httpClient } from "@/services/service-factory";
 import { ApiConfig } from "@/services/api-config";
+import {
+  routeOfTarget,
+  useRunnerTarget,
+  type RunnerTarget,
+} from "@/lib/runner";
+import { useActiveRunner } from "@/contexts/active-runner-context";
+import { runnerTargetById } from "@/hooks/ui-bridge/runnerTargetById";
 const logger = createLogger("UseUIBridgeSection");
 const API = `${ApiConfig.API_BASE_URL}/api/v1`;
 
@@ -23,6 +30,8 @@ export function useUIBridgeSection({
   const exploration = useUIBridgeExploration();
   const recording = useUIBridgeRecording();
   const { runners, isLoading: runnersLoading } = useRealtimeConnections();
+  const runnerTarget = useRunnerTarget();
+  const { localityById } = useActiveRunner();
 
   // Keep a ref to state so callbacks can access setters without re-creating
   const stateRef = useRef(state);
@@ -49,42 +58,33 @@ export function useUIBridgeSection({
     [state.setSelectedRunnerId]
   );
 
-  // Construct runner URL from runner UUID
-  const getRunnerUrl = useCallback(
-    (runnerId: string | null): string | null => {
+  // The runner the downstream helpers call, as a TARGET: addressed by its
+  // id and resolved per request (loopback only when proven local, the relay
+  // otherwise). Never a URL built from the IP address or hostname a runner
+  // reports — the runner binds 127.0.0.1 only, so such a URL never answers,
+  // and a reported address proves nothing about which machine answers.
+  //
+  // Extension mode drives the browser extension on THIS machine: through the
+  // active runner when it is proven local, otherwise (null) through the
+  // extension's own postMessage bridge — never a runner on another machine.
+  const getRunnerTarget = useCallback(
+    (runnerId: string | null): RunnerTarget | null => {
       if (exploration.config.targetType === "extension") {
-        return "http://127.0.0.1:9876";
+        return routeOfTarget(runnerTarget).kind === "loopback"
+          ? runnerTarget
+          : null;
       }
-
-      if (runnerId === null) return null;
-
-      const runner = runners.find((r) => r.id === runnerId);
-      if (!runner) return null;
-
-      const ip = runner.ipAddress;
-      const host = runner.hostname;
-      const port = runner.port ?? 9876;
-      if (
-        !ip ||
-        ip === "127.0.0.1" ||
-        ip === "::1" ||
-        ip.startsWith("localhost")
-      ) {
-        return `http://127.0.0.1:${port}`;
-      }
-      const target = ip || host;
-      return `http://${target}:${port}`;
+      return runnerTargetById(runners, localityById, runnerId);
     },
-    [runners, exploration.config.targetType]
+    [runners, localityById, exploration.config.targetType, runnerTarget]
   );
 
   // Refresh browser tabs
   const handleRefreshBrowserTabs = useCallback(() => {
-    const runnerUrl = getRunnerUrl(state.selectedRunnerId);
-    logger.info("[Extraction] Fetching browser tabs, runnerUrl:", runnerUrl);
-    exploration.fetchBrowserTabs(runnerUrl);
+    logger.info("[Extraction] Fetching browser tabs");
+    exploration.fetchBrowserTabs(getRunnerTarget(state.selectedRunnerId));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [exploration.fetchBrowserTabs, getRunnerUrl, state.selectedRunnerId]);
+  }, [exploration.fetchBrowserTabs, getRunnerTarget, state.selectedRunnerId]);
 
   // Auto-fetch browser tabs when extension mode is selected
   useEffect(() => {
@@ -96,18 +96,22 @@ export function useUIBridgeSection({
   // Select browser tab
   const handleSelectBrowserTab = useCallback(
     async (tabId: number | null) => {
-      const runnerUrl = getRunnerUrl(state.selectedRunnerId);
-      await exploration.selectBrowserTab(runnerUrl, tabId);
+      await exploration.selectBrowserTab(
+        getRunnerTarget(state.selectedRunnerId),
+        tabId
+      );
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [exploration.selectBrowserTab, getRunnerUrl, state.selectedRunnerId]
+    [exploration.selectBrowserTab, getRunnerTarget, state.selectedRunnerId]
   );
 
   // Load render log sessions
   const loadRenderLogSessions = useCallback(async () => {
     stateRef.current.setIsLoadingSessions(true);
     try {
-      const response = await httpClient.fetch(`${API}/render-logs/sessions?limit=20`);
+      const response = await httpClient.fetch(
+        `${API}/render-logs/sessions?limit=20`
+      );
 
       if (response.ok) {
         const sessions: RenderLogSession[] = await response.json();
@@ -213,7 +217,7 @@ export function useUIBridgeSection({
     runners,
     runnersLoading,
     onRunnerChange,
-    getRunnerUrl,
+    getRunnerTarget,
     handleRefreshBrowserTabs,
     handleSelectBrowserTab,
     loadRenderLogSessions,

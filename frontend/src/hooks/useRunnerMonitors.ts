@@ -1,7 +1,13 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import { runnerClient } from "@/lib/runner-client";
+import { useRunnerTarget } from "@/contexts/active-runner-context";
+import {
+  isRunnerNeedsLocalError,
+  runnerPollInterval,
+} from "@/lib/runner/api-client";
+import { targetKey, type RunnerTarget } from "@/lib/runner/target";
+import { useRunnerClient } from "@/lib/runner-client";
 import type { RunnerMonitor } from "@/lib/schemas/geometry";
 import { createLogger } from "@/lib/logger";
 
@@ -24,6 +30,29 @@ const DEFAULT_MONITORS: RunnerMonitor[] = [
     description: "Monitor 0 (primary, 1920x1080)",
   },
 ];
+
+/**
+ * A react-query `refetchInterval` for a runner poll: re-evaluated on every
+ * refetch through runnerPollInterval (never faster than the relay cadence for
+ * a relayed or unresolved target), and `false` for good once the query failed
+ * with RUNNER_NEEDS_LOCAL — the runner refused the path over the relay, and
+ * asking again cannot change that.
+ */
+function runnerRefetchInterval(
+  target: RunnerTarget,
+  requestedMs: number | false
+) {
+  return (query: { state: { error: unknown } }): number | false =>
+    requestedMs === false || isRunnerNeedsLocalError(query.state.error)
+      ? false
+      : runnerPollInterval(target, requestedMs);
+}
+
+/** Never retry a RUNNER_NEEDS_LOCAL refusal: it cannot change by asking again. */
+function retryUnlessNeedsLocal(maxRetries: number) {
+  return (failureCount: number, error: unknown): boolean =>
+    !isRunnerNeedsLocalError(error) && failureCount < maxRetries;
+}
 
 /**
  * Query keys for runner monitor queries
@@ -49,6 +78,11 @@ export function useRunnerMonitors(options?: {
   refetchInterval?: number;
   staleTime?: number;
 }) {
+  const runnerClient = useRunnerClient();
+  const target = useRunnerTarget();
+  // Keyed by the runner (and route): one runner's monitors are never served
+  // as another's after the active runner changes.
+  const runnerKey = targetKey(target);
   const {
     enabled = true,
     refetchInterval = 30000, // Refetch every 30 seconds
@@ -56,21 +90,23 @@ export function useRunnerMonitors(options?: {
   } = options || {};
 
   const query = useQuery({
-    queryKey: runnerMonitorKeys.monitors(),
+    queryKey: [...runnerMonitorKeys.monitors(), runnerKey],
     queryFn: async () => {
       try {
         const response = await runnerClient.getMonitors();
         return response.data;
       } catch (error) {
-        // Silently fail - runner might be offline
+        // A relay refusal is kept as the query error (it stops the poll);
+        // anything else fails silently - runner might be offline.
+        if (isRunnerNeedsLocalError(error)) throw error;
         log.debug("Failed to fetch monitors:", error);
         return null;
       }
     },
     enabled,
-    refetchInterval,
+    refetchInterval: runnerRefetchInterval(target, refetchInterval),
     staleTime,
-    retry: 1, // Only retry once - runner might be offline
+    retry: retryUnlessNeedsLocal(1), // Only retry once - runner might be offline
     retryDelay: 1000,
     // Never throw errors to the UI - always use fallback data
     throwOnError: false,
@@ -121,13 +157,16 @@ export function useRunnerAvailability(options?: {
   enabled?: boolean;
   refetchInterval?: number;
 }) {
+  const runnerClient = useRunnerClient();
+  const target = useRunnerTarget();
+  const runnerKey = targetKey(target);
   const { enabled = true, refetchInterval = 10000 } = options || {};
 
   return useQuery({
-    queryKey: runnerMonitorKeys.availability(),
+    queryKey: [...runnerMonitorKeys.availability(), runnerKey],
     queryFn: () => runnerClient.isAvailable(),
     enabled,
-    refetchInterval,
+    refetchInterval: runnerRefetchInterval(target, refetchInterval),
     staleTime: 5000,
     retry: false,
   });

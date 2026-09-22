@@ -2,6 +2,10 @@
 // Service for Integration Testing API calls to runner
 
 import { ApiConfig } from "./api-config";
+import { useMemo } from "react";
+import { useRunnerTarget } from "@/contexts/active-runner-context";
+import { runnerRequest } from "@/lib/runner/api-client";
+import type { RunnerTarget } from "@/lib/runner/target";
 import { httpClient } from "@/services/service-factory";
 import type {
   IntegrationTestResponse,
@@ -18,10 +22,11 @@ import type {
  * Integration tests execute workflows using historical data instead of live GUI.
  */
 class IntegrationTestingService {
-  private apiUrl: string;
+  /** The runner every runner call is for; the transport is resolved per request. */
+  private target: RunnerTarget;
 
-  constructor() {
-    this.apiUrl = ApiConfig.getRunnerUrl();
+  constructor(target: RunnerTarget) {
+    this.target = target;
   }
 
   /**
@@ -76,8 +81,9 @@ class IntegrationTestingService {
       includeVisualData: options?.record_screenshots ?? false,
     };
 
-    const response = await fetch(
-      `${this.apiUrl}/api/v1/integration-test/run/${projectId}`,
+    const response = await runnerRequest(
+      this.target,
+      `/api/v1/integration-test/run/${projectId}`,
       {
         method: "POST",
         headers: {
@@ -394,9 +400,9 @@ class IntegrationTestingService {
    */
   async checkApiHealth(): Promise<boolean> {
     try {
-      const response = await fetch(`${this.apiUrl}/health`, {
+      const response = await runnerRequest(this.target, "/health", {
         method: "GET",
-        signal: AbortSignal.timeout(5000),
+        timeoutMs: 5000,
       });
       return response.ok;
     } catch {
@@ -472,8 +478,18 @@ function transformExecutionRunToIntegrationTest(
   };
 }
 
-// Export singleton instance
-export const integrationTestingService = new IntegrationTestingService();
+/** An IntegrationTestingService bound to one runner target. */
+export function createIntegrationTestingService(
+  target: RunnerTarget
+): IntegrationTestingService {
+  return new IntegrationTestingService(target);
+}
+
+/** An IntegrationTestingService bound to the active runner; stable while it is. */
+export function useIntegrationTestingService(): IntegrationTestingService {
+  const target = useRunnerTarget();
+  return useMemo(() => createIntegrationTestingService(target), [target]);
+}
 
 // Export class for testing
 export { IntegrationTestingService };

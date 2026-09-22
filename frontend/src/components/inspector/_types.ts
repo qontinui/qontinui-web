@@ -1,5 +1,3 @@
-export const RUNNER_API_BASE = "http://localhost:9876";
-
 export interface AccessibilityNode {
   role: string;
   name?: string;

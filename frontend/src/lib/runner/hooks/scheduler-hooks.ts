@@ -1,6 +1,8 @@
 "use client";
 
 import { useRunnerQuery, useRunnerMutation, runnerFetch } from "../api-client";
+import type { RunnerTarget } from "../target";
+import { useRunnerTarget } from "@/contexts/active-runner-context";
 import type {
   ScheduledTask,
   SchedulerSettings,
@@ -16,12 +18,13 @@ import type {
 
 /** Fetch all scheduled tasks */
 export function useScheduledTasks() {
-  return useRunnerQuery<ScheduledTask[]>("/scheduler/tasks");
+  return useRunnerQuery<ScheduledTask[]>(useRunnerTarget(), "/scheduler/tasks");
 }
 
 /** Fetch a single scheduled task by ID */
 export function useScheduledTask(id: string | null) {
   return useRunnerQuery<ScheduledTask>(
+    useRunnerTarget(),
     id != null ? `/scheduler/tasks/${id}` : null,
     { enabled: id != null }
   );
@@ -29,19 +32,27 @@ export function useScheduledTask(id: string | null) {
 
 /** Fetch scheduler settings */
 export function useSchedulerSettings() {
-  return useRunnerQuery<SchedulerSettings>("/scheduler/settings");
+  return useRunnerQuery<SchedulerSettings>(
+    useRunnerTarget(),
+    "/scheduler/settings"
+  );
 }
 
 /** Fetch scheduler status with polling */
 export function useSchedulerStatus() {
-  return useRunnerQuery<SchedulerStatus>("/scheduler/status", {
-    pollInterval: 30000,
-  });
+  return useRunnerQuery<SchedulerStatus>(
+    useRunnerTarget(),
+    "/scheduler/status",
+    {
+      pollInterval: 30000,
+    }
+  );
 }
 
 /** Fetch execution history for a scheduled task */
 export function useTaskHistory(taskId: string | null) {
   return useRunnerQuery<TaskExecutionRecord[]>(
+    useRunnerTarget(),
     taskId != null ? `/scheduler/tasks/${taskId}/history` : null,
     { enabled: taskId != null }
   );
@@ -54,6 +65,7 @@ export function useTaskHistory(taskId: string | null) {
 /** Create a new scheduled task */
 export function useCreateScheduledTask() {
   return useRunnerMutation<CreateScheduledTaskRequest, ScheduledTask>(
+    useRunnerTarget(),
     "/scheduler/tasks"
   );
 }
@@ -64,21 +76,32 @@ export function useCreateScheduledTask() {
 
 /** Update an existing scheduled task */
 export async function updateScheduledTask(
+  target: RunnerTarget,
   id: string,
   data: UpdateScheduledTaskRequest
 ): Promise<ScheduledTask> {
-  return runnerFetch<ScheduledTask>(`/scheduler/tasks/${id}`, {
+  return runnerFetch<ScheduledTask>(target, `/scheduler/tasks/${id}`, {
     method: "PUT",
     body: JSON.stringify(data),
   });
 }
 
 /** Delete a scheduled task */
-export async function deleteScheduledTask(id: string): Promise<void> {
-  return runnerFetch<void>(`/scheduler/tasks/${id}`, { method: "DELETE" });
+export async function deleteScheduledTask(
+  target: RunnerTarget,
+  id: string
+): Promise<void> {
+  return runnerFetch<void>(target, `/scheduler/tasks/${id}`, {
+    method: "DELETE",
+  });
 }
 
 /** Trigger immediate execution of a scheduled task */
-export async function runScheduledTaskNow(id: string): Promise<void> {
-  return runnerFetch<void>(`/scheduler/tasks/${id}/run`, { method: "POST" });
+export async function runScheduledTaskNow(
+  target: RunnerTarget,
+  id: string
+): Promise<void> {
+  return runnerFetch<void>(target, `/scheduler/tasks/${id}/run`, {
+    method: "POST",
+  });
 }

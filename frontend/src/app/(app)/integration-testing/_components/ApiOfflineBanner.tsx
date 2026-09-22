@@ -8,9 +8,8 @@ export function ApiOfflineBanner() {
         <div className="flex items-center gap-2 text-yellow-400">
           <AlertCircle className="w-5 h-5" />
           <span>
-            Runner is not reachable at{" "}
-            {process.env.NEXT_PUBLIC_RUNNER_URL || "http://localhost:9876"}.
-            Start the runner to run integration tests.
+            The selected runner is not reachable. Start the runner to run
+            integration tests.
           </span>
         </div>
       </CardContent>

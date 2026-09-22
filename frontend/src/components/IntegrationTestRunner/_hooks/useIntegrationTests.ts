@@ -1,7 +1,8 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { runnerClient, type MockMode } from "@/lib/runner-client";
+import { useRunnerClient, type MockMode } from "@/lib/runner-client";
+import { useRunnerPoll, useRunnerTarget } from "@/lib/runner";
 import type {
   TestConfig,
   NewAssertion,
@@ -23,6 +24,8 @@ const DEFAULT_ASSERTION: NewAssertion = {
 
 export function useIntegrationTests(): IntegrationTestState &
   IntegrationTestActions {
+  const runnerClient = useRunnerClient();
+  const target = useRunnerTarget();
   const [testRuns, setTestRuns] = useState<IntegrationTestState["testRuns"]>(
     []
   );
@@ -41,37 +44,46 @@ export function useIntegrationTests(): IntegrationTestState &
     useState<NewAssertion>(DEFAULT_ASSERTION);
   const [isRunnerConnected, setIsRunnerConnected] = useState(false);
 
-  // Check runner connection
-  useEffect(() => {
-    const checkConnection = async () => {
-      const available = await runnerClient.isAvailable();
-      setIsRunnerConnected(available);
-    };
-    checkConnection();
-    const interval = setInterval(checkConnection, 5000);
-    return () => clearInterval(interval);
-  }, []);
+  // Check runner connection. The cadence is re-evaluated every tick (never
+  // faster than the relay cadence for a relayed or unresolved target). When
+  // the runner answers but refuses (it needs the runner on this machine, or
+  // refuses this page's origin), asking again cannot change that: the
+  // refusal is shown as the error and the check stops.
+  useRunnerPoll(target, {
+    enabled: true,
+    requestedMs: 5000,
+    immediate: true,
+    tick: async () => {
+      const availability = await runnerClient.getAvailability();
+      setIsRunnerConnected(availability.available);
+      if (availability.refusalMessage) {
+        setError(availability.refusalMessage);
+        return "stop";
+      }
+      return undefined;
+    },
+  });
 
   const loadTestRuns = useCallback(async () => {
     const result = await runnerClient.listTestRuns(20);
     if (result.success && result.runs) {
       setTestRuns(result.runs);
     }
-  }, []);
+  }, [runnerClient]);
 
   const loadStates = useCallback(async () => {
     const result = await runnerClient.getTestingStates();
     if (result.success && result.states) {
       setStates(result.states);
     }
-  }, []);
+  }, [runnerClient]);
 
   const loadActiveStates = useCallback(async () => {
     const result = await runnerClient.getActiveStates();
     if (result.success && result.active_states) {
       setActiveStates(result.active_states);
     }
-  }, []);
+  }, [runnerClient]);
 
   // Initial load
   useEffect(() => {
@@ -93,7 +105,7 @@ export function useIntegrationTests(): IntegrationTestState &
       };
       loadResults();
     }
-  }, [selectedRunId]);
+  }, [selectedRunId, runnerClient]);
 
   const startTestRun = async () => {
     if (!testConfig.name) {

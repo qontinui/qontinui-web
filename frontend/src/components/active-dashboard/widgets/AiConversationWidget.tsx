@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import {
-  runnerApi,
+  useRunnerApi,
   type SessionState,
   type TaskRunOutput,
 } from "@/lib/runner-api";
@@ -195,6 +195,7 @@ function MessageInput({
   canSend: boolean;
   sessionState: string;
 }) {
+  const runnerApi = useRunnerApi();
   const [message, setMessage] = useState("");
   const [sending, setSending] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -215,7 +216,7 @@ function MessageInput({
     } finally {
       setSending(false);
     }
-  }, [message, runId, sending]);
+  }, [message, runId, sending, runnerApi]);
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === "Enter" && !e.shiftKey) {

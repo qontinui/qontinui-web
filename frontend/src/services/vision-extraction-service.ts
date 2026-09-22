@@ -3,12 +3,15 @@
  *
  * Client for vision extraction (SAM3, Edge Detection, OCR).
  *
- * Uses the runner (port 9876) which calls the qontinui library via IPC.
+ * Uses the target runner (which calls the qontinui library via IPC); the
+ * transport is resolved per request (loopback for a runner proven local, the
+ * backend relay otherwise).
  */
 
-// Use 127.0.0.1 instead of localhost to force IPv4 (runner only listens on IPv4)
-const RUNNER_URL =
-  process.env.NEXT_PUBLIC_RUNNER_URL || "http://127.0.0.1:9876";
+import { useMemo } from "react";
+import { useRunnerTarget } from "@/contexts/active-runner-context";
+import { runnerRequest } from "@/lib/runner/api-client";
+import type { RunnerTarget } from "@/lib/runner/target";
 
 export interface BoundingBox {
   x: number;
@@ -90,10 +93,11 @@ export interface VisionExtractionRequest {
 }
 
 export class VisionExtractionService {
-  private runnerUrl: string;
+  /** The runner every call is for. */
+  private target: RunnerTarget;
 
-  constructor(runnerUrl: string = RUNNER_URL) {
-    this.runnerUrl = runnerUrl;
+  constructor(target: RunnerTarget) {
+    this.target = target;
   }
 
   /**
@@ -101,9 +105,9 @@ export class VisionExtractionService {
    */
   async checkHealth(): Promise<boolean> {
     try {
-      const response = await fetch(`${this.runnerUrl}/health`, {
+      const response = await runnerRequest(this.target, "/health", {
         method: "GET",
-        signal: AbortSignal.timeout(5000),
+        timeoutMs: 5000,
       });
       return response.ok;
     } catch {
@@ -132,15 +136,17 @@ export class VisionExtractionService {
       iou_threshold: request.iou_threshold ?? 0.5,
     };
 
-    const url = `${this.runnerUrl}/vision-extraction/extract`;
-
-    const response = await fetch(url, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(requestBody),
-    });
+    const response = await runnerRequest(
+      this.target,
+      "/vision-extraction/extract",
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(requestBody),
+      }
+    );
 
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({}));
@@ -228,12 +234,15 @@ export class VisionExtractionService {
   }
 }
 
-// Singleton instance
-let visionExtractionServiceInstance: VisionExtractionService | null = null;
+/** A VisionExtractionService bound to one runner target. */
+export function createVisionExtractionService(
+  target: RunnerTarget
+): VisionExtractionService {
+  return new VisionExtractionService(target);
+}
 
-export function getVisionExtractionService(): VisionExtractionService {
-  if (!visionExtractionServiceInstance) {
-    visionExtractionServiceInstance = new VisionExtractionService();
-  }
-  return visionExtractionServiceInstance;
+/** A VisionExtractionService bound to the active runner; stable while it is. */
+export function useVisionExtractionService(): VisionExtractionService {
+  const target = useRunnerTarget();
+  return useMemo(() => createVisionExtractionService(target), [target]);
 }

@@ -9,7 +9,6 @@ import type {
 } from "@qontinui/shared-types/accessibility";
 
 interface UseAccessibilityExplorerOptions {
-  apiUrl: string;
   cdpHost: string;
   cdpPort: number;
   onSelectorConfigured?: (
@@ -19,7 +18,6 @@ interface UseAccessibilityExplorerOptions {
 }
 
 export function useAccessibilityExplorer({
-  apiUrl,
   cdpHost: initialCdpHost,
   cdpPort: initialCdpPort,
   onSelectorConfigured,
@@ -62,7 +60,6 @@ export function useAccessibilityExplorer({
     findElements,
     disconnect,
   } = useAccessibilityTree({
-    apiUrl,
     cdpHost,
     cdpPort,
   });

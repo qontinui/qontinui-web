@@ -183,8 +183,8 @@ export function ConfigurationTabContent({
                   </div>
                   <div className="mt-4 p-3 bg-yellow-500/10 border border-yellow-500/20 rounded-md">
                     <p className="text-xs text-yellow-400">
-                      <strong>Note:</strong> This feature requires the runner to
-                      be running on port 9876.
+                      <strong>Note:</strong> This feature requires a running
+                      runner.
                     </p>
                   </div>
                 </div>

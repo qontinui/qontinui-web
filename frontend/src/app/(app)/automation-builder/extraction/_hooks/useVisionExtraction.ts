@@ -5,6 +5,7 @@ import {
   type AnnotatedElement,
 } from "@/stores/extraction-annotation-store";
 import type { ExtractionState } from "./useExtractionState";
+import { runnerRequest, type RunnerTarget } from "@/lib/runner";
 
 interface UseVisionExtractionArgs {
   state: ExtractionState;
@@ -37,19 +38,20 @@ interface UseVisionExtractionArgs {
       maxCandidates: number;
     };
   };
-  getRunnerUrl: (runnerId: string | null) => string | null;
+  /** The selected runner's target (see useUIBridgeSection), or null. */
+  getRunnerTarget: (runnerId: string | null) => RunnerTarget | null;
 }
 
 export function useVisionExtraction({
   state,
   visionConfig,
-  getRunnerUrl,
+  getRunnerTarget,
 }: UseVisionExtractionArgs) {
   const annotationStore = useExtractionAnnotationStore();
 
   const startVisionExtraction = useCallback(async () => {
-    const runnerUrl = getRunnerUrl(state.selectedRunnerId);
-    if (!runnerUrl) {
+    const target = getRunnerTarget(state.selectedRunnerId);
+    if (!target) {
       toast.error("Please select a connected runner");
       return;
     }
@@ -92,7 +94,10 @@ export function useVisionExtraction({
       max_candidates: visionConfig.fusion.maxCandidates,
     };
 
-    const response = await fetch(`${runnerUrl}/extraction/vision`, {
+    // Throws a typed RUNNER_NEEDS_LOCAL error when the runner is reached
+    // through the relay, which does not carry extraction; the caller shows
+    // its message.
+    const response = await runnerRequest(target, "/extraction/vision", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(requestBody),
@@ -160,7 +165,7 @@ export function useVisionExtraction({
       throw new Error(data.error || "Vision extraction failed");
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- setters are stable
-  }, [getRunnerUrl, state.selectedRunnerId, visionConfig, annotationStore]);
+  }, [getRunnerTarget, state.selectedRunnerId, visionConfig, annotationStore]);
 
   return {
     startVisionExtraction,

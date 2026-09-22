@@ -12,7 +12,7 @@ import {
 } from "@/components/builders/hooks/useRunnerEntity";
 import { useBuilderPage } from "@/components/builders/hooks/useBuilderPage";
 import type { ExecutionResult } from "@/components/builders/editors";
-import { runnerApi } from "@/lib/runner/runner-api-object";
+import { useRunnerApi } from "@/lib/runner/runner-api-object";
 import { toast } from "sonner";
 import type { AnalyzedElement } from "@/components/test-builder/SpecWorkflowBuilder";
 import type { AnalysisData } from "@/components/test-builder/PageAnalyzer";
@@ -26,6 +26,7 @@ import {
 import { isCodeEmptyOrTemplate } from "../test-utils";
 
 export function useTestsPage() {
+  const runnerApi = useRunnerApi();
   // =========================================================================
   // UI State
   // =========================================================================

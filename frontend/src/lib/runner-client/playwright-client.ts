@@ -4,6 +4,10 @@
  * Handles start/stop/status/results for Playwright-based state collection.
  */
 
+import {
+  isRunnerNeedsLocalError,
+  runnerRequest,
+} from "@/lib/runner/api-client";
 import { BaseClient } from "./base-client";
 import type {
   StartPlaywrightCollectionRequest,
@@ -25,12 +29,10 @@ export class PlaywrightClient {
   async startPlaywrightCollection(
     request: StartPlaywrightCollectionRequest
   ): Promise<PlaywrightCollectionStartResponse> {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 60000); // 60 second timeout
-
     try {
-      const response = await fetch(
-        `${this.base.baseUrl}/playwright-collection/start`,
+      const response = await runnerRequest(
+        this.base.target,
+        "/playwright-collection/start",
         {
           method: "POST",
           headers: {
@@ -38,11 +40,9 @@ export class PlaywrightClient {
             Accept: "application/json",
           },
           body: JSON.stringify(request),
-          signal: controller.signal,
+          timeoutMs: 60000,
         }
       );
-
-      clearTimeout(timeoutId);
 
       if (!response.ok) {
         const message = await this.base.failureMessage(
@@ -57,7 +57,6 @@ export class PlaywrightClient {
 
       return response.json();
     } catch (error) {
-      clearTimeout(timeoutId);
       return {
         success: false,
         error:
@@ -80,14 +79,14 @@ export class PlaywrightClient {
         params.set("job_id", jobId);
       }
 
-      const url = `${this.base.baseUrl}/playwright-collection/status${params.toString() ? `?${params.toString()}` : ""}`;
+      const path = `/playwright-collection/status${params.toString() ? `?${params.toString()}` : ""}`;
 
-      const response = await fetch(url, {
+      const response = await runnerRequest(this.base.target, path, {
         method: "GET",
         headers: {
           Accept: "application/json",
         },
-        signal: AbortSignal.timeout(10000),
+        timeoutMs: 10000,
       });
 
       if (!response.ok) {
@@ -103,6 +102,9 @@ export class PlaywrightClient {
 
       return response.json();
     } catch (error) {
+      // A relay refusal is final for this route: rethrow it typed so the
+      // poller stops (and can show it) instead of retrying a flattened error.
+      if (isRunnerNeedsLocalError(error)) throw error;
       return {
         success: false,
         error:
@@ -119,26 +121,22 @@ export class PlaywrightClient {
   async getPlaywrightCollectionResults(
     jobId?: string
   ): Promise<PlaywrightCollectionResultsResponse> {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 120000); // 2 minute timeout for large results
-
     try {
       const params = new URLSearchParams();
       if (jobId) {
         params.set("job_id", jobId);
       }
 
-      const url = `${this.base.baseUrl}/playwright-collection/results${params.toString() ? `?${params.toString()}` : ""}`;
+      const path = `/playwright-collection/results${params.toString() ? `?${params.toString()}` : ""}`;
 
-      const response = await fetch(url, {
+      const response = await runnerRequest(this.base.target, path, {
         method: "GET",
         headers: {
           Accept: "application/json",
         },
-        signal: controller.signal,
+        // Large result sets take a while to serialize.
+        timeoutMs: 120000,
       });
-
-      clearTimeout(timeoutId);
 
       if (!response.ok) {
         const message = await this.base.failureMessage(
@@ -153,7 +151,6 @@ export class PlaywrightClient {
 
       return response.json();
     } catch (error) {
-      clearTimeout(timeoutId);
       return {
         success: false,
         error:
@@ -172,8 +169,9 @@ export class PlaywrightClient {
     error?: string;
   }> {
     try {
-      const response = await fetch(
-        `${this.base.baseUrl}/playwright-collection/stop`,
+      const response = await runnerRequest(
+        this.base.target,
+        "/playwright-collection/stop",
         {
           method: "POST",
           headers: {
