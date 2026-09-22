@@ -7,6 +7,17 @@
  * standalone, dependency-free module (no Playwright import) so it can be
  * exercised by a vitest unit test directly.
  *
+ * MIRROR — `qontinui-claude-config/scripts/uibridge-to-elementsnapshot.py`
+ * projects the runner's `/ui-bridge/control/discover` payload into the same
+ * `Element` shape for targets this adapter structurally cannot reach (a Tauri
+ * WebView has no URL to drive). That script's header says the duplication is
+ * a KNOWN drift risk and that "a change to one belongs in the other"; this
+ * comment is the other half of that declaration. The field decisions that
+ * must stay in step are `deriveInteractable` / `derive_interactable`,
+ * `inertReason` / `inert_reason`, `parseCssColor` / `parse_color`,
+ * `parsePx` / `parse_px`, `parseOpacity` / `parse_opacity` and the bbox
+ * origin/extent sign rules in `normalizeBboxes` / `project_element`.
+ *
  * SOURCE shape (per element from `/control/snapshot`, see
  * ui-bridge/packages/ui-bridge/src/server/handlers.ts `materializeElements`):
  *   {
@@ -159,6 +170,25 @@ export function parsePx(input: unknown): number | null {
   return Number.isFinite(n) ? n : null;
 }
 
+/**
+ * Parse a computed `opacity` value to a number, or null for UNKNOWN.
+ * Unparseable yields null, which the caller reads as UNKNOWN — never as 0 and
+ * never as 1. Mirrors `parse_opacity` in the Python projector.
+ */
+export function parseOpacity(input: unknown): number | null {
+  if (typeof input === "number") {
+    return Number.isFinite(input) ? input : null;
+  }
+  if (typeof input !== "string") return null;
+  const s = input.trim();
+  // `Number("")` and `Number("   ")` are 0 — Python's `float("")` RAISES, and
+  // reading an empty opacity as 0 would mark every such element inert. Guard
+  // the empty string explicitly before converting.
+  if (!s) return null;
+  const n = Number(s);
+  return Number.isFinite(n) ? n : null;
+}
+
 /** Narrow an unknown to a plain record. */
 function asRecord(v: unknown): Record<string, unknown> | null {
   return v && typeof v === "object" && !Array.isArray(v)
@@ -167,9 +197,74 @@ function asRecord(v: unknown): Record<string, unknown> | null {
 }
 
 /**
+ * Why this element cannot be clicked, or null when nothing says it can't.
+ * Mirrors `inert_reason` in the Python projector; the returned string is a
+ * short diagnostic label, and only `null` vs non-null is load-bearing.
+ *
+ * Three signals, all of them REAL fields of the `discover` payload and all of
+ * them measured on the runner's Terminal page (112 elements, live capture):
+ *
+ *   - `state.disabled` / `state.ariaDisabled` — the two DOM disabled signals,
+ *     the same pair the SDK's own `readDisabledSignals` reads (2 elements).
+ *   - `state.computedStyles.pointerEvents === "none"` — the COMPUTED value, so
+ *     an ancestor's `none` is already folded in, `pointer-events` being an
+ *     inherited property (12 elements).
+ *   - `state.computedStyles.opacity` parsing to 0, or the SDK's own spelling of
+ *     exactly that fact, `state.opacityHidden` — `registry.ts` defines the
+ *     latter as `parseFloat(opacity) === 0`, so it is the SAME fact, not a
+ *     second signal (6 elements, the same 6 under either spelling).
+ *
+ * `state.enabled === false` is accepted as a fourth SPELLING of the first
+ * two-plus-one: `core/a11y.ts` `isInteractionBlocked` derives it as exactly
+ * `disabled || ariaDisabled || pointerEventsNone`, so it adds no signal — but
+ * it keeps the gate correct on a payload carrying `enabled` without
+ * `computedStyles` (12 elements).
+ *
+ * ⚠️ ABSENCE IS UNKNOWN, NEVER INERT — and never interactable either. Every
+ * test below fires only on a PRESENT field reading its inert value. An element
+ * with no `state`, no `computedStyles`, an unparseable `opacity` (`"inherit"`)
+ * or `pointerEvents: ""` (the SDK's own "could not read") is NOT reported
+ * inert, and falls through to the tag/role decision. A producer poorer than
+ * `discover` says nothing about pointer-events, and suppressing on that silence
+ * would empty the overlap pass and hand back a clean bill of health on a broken
+ * page — the exact failure this tooling exists to catch.
+ *
+ * `visibility: hidden`, `display: none` and `aria-hidden` are the adjacent
+ * signals, and this function deliberately does NOT read them: the first two
+ * never appear in a non-inert value in a `discover` payload (the SDK does not
+ * register such elements) and `aria-hidden` is not projected at all, so keying
+ * on them would be keying on fields absent by construction. `state.visible` is
+ * carried through to the snapshot verbatim by `enrichElement` and stays the
+ * analyzer's business, not this one's.
+ */
+export function inertReason(el: Record<string, unknown>): string | null {
+  const state = asRecord(el.state) ?? {};
+  const computed = asRecord(state.computedStyles) ?? {};
+
+  if (state.disabled === true) return "disabled";
+  if (state.ariaDisabled === true) return "aria-disabled";
+  // `=== false`, NOT `!state.enabled`: an ABSENT `enabled` is UNKNOWN.
+  if (state.enabled === false) return "state.enabled=false";
+
+  const pe = computed.pointerEvents;
+  if (typeof pe === "string" && pe.trim().toLowerCase() === "none") {
+    return "pointer-events:none";
+  }
+
+  if (state.opacityHidden === true) return "opacity:0";
+  // Parsed-and-equals-zero, NOT `op == null || op === 0`: an absent or
+  // unparseable opacity is UNKNOWN.
+  const op = parseOpacity(computed.opacity);
+  if (op !== null && op === 0) return "opacity:0";
+
+  return null;
+}
+
+/**
  * Decide `interactable` from real interactivity signals (NOT mere presence of
- * text). Mirrors the SDK's own categorization where available, then falls back
- * to interactive tag/role:
+ * text). Inert elements first, then the SDK's own categorization where
+ * available, then interactive tag/role:
+ *   - an `inertReason` (see above)         -> FALSE, before anything else, OR
  *   - category === 'interactive'           (the SDK's own classification), OR
  *   - a non-empty `actions` array          (registered handlers), OR
  *   - a non-empty `customActions` array    (registered custom handlers), OR
@@ -177,8 +272,20 @@ function asRecord(v: unknown): Record<string, unknown> | null {
  *   - an interactive ARIA role.
  * Plain content/containers (category 'content'/'media', no actions, non-
  * interactive tag/role) stay false.
+ *
+ * WHY THE INERT GATE COMES FIRST: the `layout` analyzer's overlap pass is
+ * pairwise over `interactable` elements, so one inert zone overlay stacked
+ * across a band reports a spurious collision per live control underneath it —
+ * 9 of them on the runner's Terminal page, against controls nothing can hit.
+ * `category === "interactive"` is a statement about what an element IS, not
+ * about whether it currently accepts a click, and the SDK marks a
+ * `pointer-events: none` button `interactive` all the same. Measured on a live
+ * 112-element Terminal capture: `interactable` 96 -> 78, `overlap` findings
+ * 23 -> 14, exactly the 9 spurious ones gone.
  */
 export function deriveInteractable(el: Record<string, unknown>): boolean {
+  if (inertReason(el) !== null) return false;
+
   const category = typeof el.category === "string" ? el.category : undefined;
   if (category === "interactive") return true;
   if (category === "content" || category === "media") {
