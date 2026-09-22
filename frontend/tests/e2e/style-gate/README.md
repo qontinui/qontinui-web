@@ -64,8 +64,11 @@ write (see `normalize.ts` + `normalizeSnapshotForAnalyzer` in the spec):
   element as flush against the viewport edge and fabricated overlaps against
   whatever really lives at the origin. A negative width/height is meaningless,
   so `w`/`h` are still floored at 0.
-- **analyzer visual/interactivity fields** — `interactable` (from
-  category/actions/tag/role), `fg_color`/`bg_color` (parsed from
+- **analyzer visual/interactivity fields** — `interactable` (forced
+  `false` first for an **inert** element — `state.disabled`/`ariaDisabled`,
+  `state.enabled === false`, computed `pointer-events: none`, or opacity 0 —
+  then from category/actions/tag/role; an _absent_ inert signal is UNKNOWN and
+  never suppresses, see `inertReason`), `fg_color`/`bg_color` (parsed from
   `state.computedStyles.color`/`backgroundColor`), `font_size_px`/
   `line_height_px` (parsed from computed px), `font_family` (if the SDK ever
   exposes it), `text`/`role` (visible text / a11y role). Absent fields are
