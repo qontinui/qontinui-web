@@ -854,7 +854,8 @@ export function deriveReconciliationHealth(
   // return above already implies the first half here, but this is the
   // predicate a facets-derived claim should be read against, not a
   // respelling of it — see `facetsAdmissible`'s own docstring.
-  const disagreeMeasured = facetsAdmissible(res) && typeof disagree === "number";
+  const disagreeMeasured =
+    facetsAdmissible(res) && typeof disagree === "number";
   const level: ReconciliationHealth["level"] =
     disagreeMeasured && disagree > 0
       ? "red"
