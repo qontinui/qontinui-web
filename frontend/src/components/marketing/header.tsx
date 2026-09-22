@@ -93,6 +93,11 @@ export function Header() {
                   <ArrowRight className="ml-2 h-4 w-4 hidden sm:inline" />
                 </Button>
                 {user.is_superuser && (
+                  // Hidden outright below `sm`, unlike Download/Sign In/GitHub:
+                  // no distinctive icon to fall back to (a bare ArrowRight
+                  // would be meaningless standing alone), and no e2e
+                  // assertion needs it visible on the Mobile projects. It's
+                  // one tap away via Dashboard for the superusers this gates.
                   <Button
                     variant="outline"
                     onClick={() => router.push("/admin")}
