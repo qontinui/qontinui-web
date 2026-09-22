@@ -310,6 +310,21 @@ another column of its own row must agree with that column.** Four of the six
 reasons make such a claim; ``manual`` and ``probe_error`` name no other column,
 so there is nothing for them to disagree with and they are left alone.
 
+⚠️ **``manual`` is the one that looks like a counter-example and is not.**
+``source_query_type`` has a member spelled ``manual`` too, so the reason reads
+at a glance like a claim about that column — it is not. The reason names a
+**remedy** ("a human has to go and look"), the type names **how the query is
+executed**, and the two are independent: coord may legitimately want a human to
+look at an ``http:`` metric. Both spellings are accepted today and should stay
+that way.
+
+The trap this closes is the CONVERSE. §3 couples them in one direction only —
+a ``manual:`` query is *"never executed … always UNKNOWN + ``manual``"*, i.e.
+``type = 'manual'`` ⇒ ``reason = 'manual'`` — and it is easy to read that as
+licence to add ``reason = 'manual'`` ⇒ ``type = 'manual'`` to constraint 7.
+§3 does not support that, and it would reject rows this schema accepts today.
+Do not add it.
+
 Neither is a precedence rule, and the distinction is what makes them safe. A
 one-directional implication forbids an **inapplicable** reason; it never picks
 between applicable ones. A ``manual:`` metric whose document also lacks a
@@ -482,14 +497,6 @@ def upgrade() -> None:
                                                   'no_direction',
                                                   'no_target'))),
 
-            -- The two reasons that make a claim ABOUT source_query_type
-            -- must agree with it, so a document that HAS a query can
-            -- never be routed to "give this document a query", nor one
-            -- that has none to "type its query". IS DISTINCT FROM keeps
-            -- each arm total across a NULL reason.
-            --
-            -- Only these two. manual / probe_error / no_direction /
-            -- no_target can each legitimately accompany more than one
             -- You cannot be on or off target for a measurement that was
             -- never taken.
             CONSTRAINT ck_success_metric_history_value_present
