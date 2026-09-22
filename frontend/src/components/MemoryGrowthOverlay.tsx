@@ -3,7 +3,8 @@
 /**
  * Memory Growth Overlay
  *
- * Always-on in-page overlay that shows heap usage and growth trends.
+ * Dev-only in-page overlay (mounted by `ClientOverlays` when
+ * NODE_ENV === "development") that shows heap usage and growth trends.
  * Designed for diagnosing memory leaks when DevTools is unavailable
  * (e.g., page is too frozen to open F12).
  *
