@@ -567,6 +567,15 @@ def _detail(
         intent_refs=list(row.intent_refs or []),
         authored_at=row.authored_at,
         captured_by=row.captured_by,
+        # The tenant pair is easy to forget HERE and nowhere else, because
+        # this is the one response assembled field-by-field rather than by
+        # ``model_validate(row)``. Omitted, the route reported a confident
+        # ``tenant_source: "unknown"`` for every artifact whatever the row
+        # said. Dropping the schema default is what turned that into a mypy
+        # error instead of a silent wrong answer -- which is the whole
+        # argument for not defaulting a field that describes evidence.
+        tenant_id=row.tenant_id,
+        tenant_source=row.tenant_source,
         current_version=row.current_version,
         created_at=row.created_at,
         updated_at=row.updated_at,
@@ -3939,13 +3948,20 @@ async def upsert_work_artifact(
     That is the plan's "304-equivalent" — a literal 304 cannot carry the body
     the caller needs to assert the version did not move. The head row's
     METADATA (``title``, ``status``, ``repos``, ``intent_refs``,
-    ``work_unit_slug``, ``authored_at``, ``source_path``, ``captured_by``,
-    ``tenant_id``, ``tenant_source``) is
+    ``work_unit_slug``, ``authored_at``, ``source_path``, ``captured_by``) is
     still stored when
     it differs, so ``changed`` reports whether THIS request moved anything:
     a byte-identical re-post answers ``changed=false`` with
     ``X-Artifact-Unchanged: true``; a corrected ``status`` against a stored
     body answers ``changed=true`` and no header, with the version untouched.
+
+    **``tenant_id`` / ``tenant_source`` are NOT in that list, deliberately.**
+    They are not ordinary payload metadata: they are resolved from the
+    CREDENTIAL (:func:`_resolve_tenant`), and a write that asserts no tenant
+    PRESERVES what the row already holds rather than overwriting it with
+    ``unknown`` (:func:`~app.crud.work_artifact._settle_tenant`). Absence of
+    evidence is not evidence of absence, so an unattributed re-scan cannot
+    blank a recorded tenant — nor clear a contested flag.
     """
     principal, device_ctx = actor
     current_user = principal.user

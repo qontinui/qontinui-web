@@ -879,8 +879,9 @@ class _HeadMetadata:
     #: established. Head metadata rather than identity: this phase records
     #: the axis, it does not key on it (plan
     #: ``2026-09-22-the-plan-corpus-has-no-tenant-axis-...``, P1/P2). Both
-    #: default so every existing caller keeps compiling and keeps writing the
-    #: honest ``unknown``.
+    #: default so every existing caller keeps compiling. On an INSERT that
+    #: writes the honest ``unknown``; on an UPDATE it asserts nothing and
+    #: :func:`_settle_tenant` preserves whatever the row already holds.
     tenant_id: UUID | None = None
     tenant_source: str = "unknown"
 
@@ -926,13 +927,28 @@ def _settle_tenant(existing: WorkArtifact, metadata: _HeadMetadata) -> _HeadMeta
     operator, and re-keying identity so the two stop colliding at all is
     Phase 4, gated on this measurement.
 
-    ``ambiguous`` LATCHES: once contested, a row stays contested until an
-    operator settles it. A later push from ONE tenant cannot clear it, because
-    that push is byte-indistinguishable from the one that raised it, and a
-    flag that clears on the next re-scan is not a measurement.
+    ``ambiguous`` LATCHES: once contested, a row stays contested. A later push
+    from ONE tenant cannot clear it — that push is byte-indistinguishable from
+    the one that raised it, and a flag that clears on the next re-scan is not
+    a measurement.
+
+    ⚠️ **Nothing ships that can clear it.** No write clears the flag by
+    design, and there is no ``PATCH .../tenant`` door. Settling a contest is a
+    content judgement that belongs with Phase 4's disposition work; until then
+    the flag is a durable finding, which is what a gate needs it to be. Do not
+    read "latches" as "until someone settles it" — there is no someone yet.
+
+    **The predicate is "asserts nothing", which is BOTH columns, not just the
+    id.** A caller that passes ``tenant_id=X`` beside
+    ``tenant_source='unknown'`` is not asserting a tenant — it is saying it
+    could not attribute one — and letting that reach the healing branch would
+    write a non-null tenant stamped ``unknown``, a pairing
+    :func:`count_unattributed_tenants` would then count as unattributed
+    forever. The ``unknown`` <-> NULL pairing is a CONVENTION (see
+    :func:`_apply_filters`), so this function must not silently depend on it.
     """
     incoming = metadata.tenant_id
-    if incoming is None:
+    if incoming is None or metadata.tenant_source == "unknown":
         # Preserve. The row's existing attribution is better evidence than
         # this writer's silence.
         return replace(

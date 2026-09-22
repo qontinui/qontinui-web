@@ -172,19 +172,24 @@ class DeviceTokenContext:
         return self.user.id
 
     @property
-    def tenant_id(self) -> UUID:
-        """The COORD TENANT this token asserts. 401 on missing or malformed.
+    def tenant_claim(self) -> str:
+        """The COORD TENANT this token asserts, VERBATIM. 401 on missing.
 
-        Modelled on :attr:`device_id` — the only other property here that
-        reads a CLAIM. (:attr:`user_id` is not a precedent: it returns the
-        already-resolved ``User`` row's id and reads no claim at all.)
+        Deliberately a ``str`` and deliberately unparsed. ``GET /devices/me``
+        returns the claim as the token spelled it — its test says so by name
+        ("sourced from claims ... verbatim, not derived") and pins values like
+        ``personal-jspinak`` that are not UUIDs at all. Parsing here would
+        401 every such deployment, and normalising would make a caller
+        string-comparing this against its own copy of the claim disagree.
 
-        Use this where the tenant IS the answer the route owes — ``GET
-        /devices/me`` is the whole population today. Where the tenant is one
-        recorded FACT among others, take :attr:`tenant_id_optional`: coord
-        mints ``Claims.tenant_id`` as an ``Option``, so a tenant-less device
-        token is a supported credential and refusing it would break writes
-        that work today.
+        Modelled on :attr:`device_id` — the other property here that reads a
+        CLAIM — for the missing case only. (:attr:`user_id` is not a
+        precedent either way: it returns the already-resolved ``User`` row's
+        id and reads no claim at all.)
+
+        A recorder that must store the tenant in a UUID COLUMN takes
+        :attr:`tenant_id_optional`, which parses, because there the value has
+        to be a UUID or it cannot be stored.
         """
         raw = self.claims.get("tenant_id")
         if not raw:
@@ -192,11 +197,14 @@ class DeviceTokenContext:
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Device token missing tenant_id claim",
             )
-        return self._parse_tenant(raw)
+        return str(raw)
 
     @property
     def tenant_id_optional(self) -> UUID | None:
-        """The asserted tenant, or ``None`` when the token carries none.
+        """The asserted tenant as a ``UUID``, or ``None`` when none is claimed.
+
+        For a caller that STORES the tenant in a UUID column, where the value
+        must parse or it cannot be recorded at all.
 
         Deliberately asymmetric, and the asymmetry is the point:
 
@@ -204,11 +212,15 @@ class DeviceTokenContext:
           ``Option<Uuid>`` and its own routes branch on the absence rather
           than treating it as an error, so a token with no tenant is a real
           population. A recorder files it as ``tenant_source = 'unknown'``.
-        * **malformed** -> **401**, exactly as :attr:`tenant_id`. A token
-          carrying a tenant that is not a UUID is a BROKEN credential, and
-          silently downgrading it to ``unknown`` would file a real tenant's
-          row in the unattributed bucket — the one outcome ``tenant_source``
-          exists to prevent.
+        * **malformed** -> **401**. A token carrying a tenant that is not a
+          UUID is unusable by a UUID column, and silently downgrading it to
+          ``unknown`` would file a real tenant's row in the unattributed
+          bucket — the one outcome ``tenant_source`` exists to prevent. The
+          two absences must not collapse onto each other.
+
+        Note this is STRICTER than :attr:`tenant_claim`, which is what
+        ``/devices/me`` returns: that route echoes whatever the token says and
+        stores nothing, so a non-UUID tenant is none of its business.
         """
         raw = self.claims.get("tenant_id")
         if not raw:

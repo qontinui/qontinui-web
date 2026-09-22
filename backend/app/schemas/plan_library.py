@@ -341,8 +341,16 @@ class WorkArtifactSummary(BaseORMSchema):
     #: / ``ambiguous`` / ``unknown``). ``tenant_id: null`` beside
     #: ``tenant_source: "unknown"`` is "no attribution available" — UNKNOWN,
     #: never "no tenant". The pair is NOT part of identity in this phase.
-    tenant_id: UUID | None = None
-    tenant_source: str = "unknown"
+    #:
+    #: NO DEFAULT on ``tenant_source``, for the same reason as
+    #: :class:`DivergentVariant`: every producer here is ``_summary(row)`` over
+    #: a full ORM row, and the column is ``NOT NULL`` with a server default, so
+    #: a default could only ever fire for a caller that built this by kwargs —
+    #: which would then report a confident ``"unknown"`` nobody declared. This
+    #: is the highest-traffic model on the route, so it is the one where that
+    #: would matter most.
+    tenant_id: UUID | None
+    tenant_source: str
     current_version: int
     created_at: IsoDatetime
     updated_at: IsoDatetime
@@ -550,6 +558,10 @@ class DivergentResponse(BaseModel):
     #: never a clean bill of health, and the Phase 4 re-key does not open on
     #: it.
     #:
+    #: NO DEFAULT, matching ``total`` above: a count that silently reads 0
+    #: because a producer forgot to pass it is the exact failure this field
+    #: exists to prevent on the list beside it.
+    #:
     #: ``ambiguous`` is deliberately NOT counted here, although it is also
     #: "no usable tenant". A contested row HAS a tenant attributed (the last
     #: writer's) and is already enumerated in ``contested_tenants``; counting
@@ -557,13 +569,14 @@ class DivergentResponse(BaseModel):
     #: not be differenced against that list to recover the genuinely
     #: un-measured count — and inflating "not yet measured" with rows that
     #: HAVE been measured is the opposite of what this field is for.
-    tenant_unattributed_count: int = 0
+    tenant_unattributed_count: int
     #: How many contested rows exist in scope, which is NOT
     #: ``len(contested_tenants)`` when the list was capped. Emitted
-    #: unconditionally, like ``total`` and ``kind_fork_total`` beside it: this
-    #: is the one report whose whole job is "do not read an absence as
-    #: clean", so a silently truncated list would defeat it.
-    contested_tenant_total: int = 0
+    #: unconditionally and with no default, like ``total`` beside it: this is
+    #: the one report whose whole job is "do not read an absence as clean", so
+    #: a silently truncated list — or a count that defaulted to 0 — would
+    #: defeat it.
+    contested_tenant_total: int
     kind_fork_total: int = 0
 
 

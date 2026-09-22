@@ -16187,7 +16187,6 @@
         "description": "All divergence groups visible to the caller.",
         "properties": {
           "contested_tenant_total": {
-            "default": 0,
             "title": "Contested Tenant Total",
             "type": "integer"
           },
@@ -16218,7 +16217,6 @@
             "type": "array"
           },
           "tenant_unattributed_count": {
-            "default": 0,
             "title": "Tenant Unattributed Count",
             "type": "integer"
           },
@@ -16229,7 +16227,9 @@
         },
         "required": [
           "groups",
-          "total"
+          "total",
+          "tenant_unattributed_count",
+          "contested_tenant_total"
         ],
         "title": "DivergentResponse",
         "type": "object"
@@ -53885,7 +53885,6 @@
             "title": "Tenant Id"
           },
           "tenant_source": {
-            "default": "unknown",
             "title": "Tenant Source",
             "type": "string"
           },
@@ -53933,6 +53932,8 @@
           "intent_refs",
           "authored_at",
           "captured_by",
+          "tenant_id",
+          "tenant_source",
           "current_version",
           "created_at",
           "updated_at",
@@ -54391,7 +54392,6 @@
             "title": "Tenant Id"
           },
           "tenant_source": {
-            "default": "unknown",
             "title": "Tenant Source",
             "type": "string"
           },
@@ -54432,6 +54432,8 @@
           "intent_refs",
           "authored_at",
           "captured_by",
+          "tenant_id",
+          "tenant_source",
           "current_version",
           "created_at",
           "updated_at"
@@ -69996,7 +69998,7 @@
     },
     "/api/v1/devices/me": {
       "get": {
-        "description": "Resolve the device principal for a coord-issued device-token JWT.\n\nThe relay's ``_auth.ts`` forwards the device-token JWT as a bearer to\nthis route to resolve the caller into a ``(device_id, user_id,\ntenant_id)`` principal. This is the disjoint device path: the\nCognito-only ``/api/v1/auth/users/me`` rejects a device-JWT.\n\nDeclared before ``GET /{device_id}`` so ``me`` is never captured as a\ndevice-id path parameter.\n\nThe tenant read is :attr:`~app.api.deps.DeviceTokenContext.tenant_id` \u2014\nthe 401-on-missing accessor \u2014 rather than a hand-rolled ``claims.get``.\nThis route is where the strict posture BELONGS: the tenant is the answer\nit owes, so a token that asserts none leaves it nothing to return. A\nrecorder that files the tenant as one fact among others takes\n``tenant_id_optional`` instead and records ``unknown``; see plan\n``2026-09-22-the-plan-corpus-has-no-tenant-axis-...``.",
+        "description": "Resolve the device principal for a coord-issued device-token JWT.\n\nThe relay's ``_auth.ts`` forwards the device-token JWT as a bearer to\nthis route to resolve the caller into a ``(device_id, user_id,\ntenant_id)`` principal. This is the disjoint device path: the\nCognito-only ``/api/v1/auth/users/me`` rejects a device-JWT.\n\nDeclared before ``GET /{device_id}`` so ``me`` is never captured as a\ndevice-id path parameter.\n\nThe tenant read is\n:attr:`~app.api.deps.DeviceTokenContext.tenant_claim` \u2014 the\n401-on-missing, VERBATIM accessor \u2014 rather than a hand-rolled\n``claims.get``. Two postures are in play and this route wants the looser\none on BOTH axes:\n\n* **missing -> 401** is right here and only here: the tenant IS the answer\n  this route owes, so a token that asserts none leaves it nothing to\n  return. A recorder that files the tenant as one fact among others takes\n  ``tenant_id_optional`` and records ``unknown`` instead.\n* **malformed -> returned anyway.** The claim is echoed as the token\n  spelled it, never parsed and never normalised. This route stores\n  nothing, so a tenant that is not a UUID is none of its business, and\n  ``test_device_identity_endpoint`` pins exactly that (\"sourced from\n  claims ... verbatim, not derived\") with non-UUID values.\n\nPlan ``2026-09-22-the-plan-corpus-has-no-tenant-axis-...``.",
         "operationId": "api_v1_devices_me_get",
         "responses": {
           "200": {
@@ -93735,7 +93737,7 @@
         ]
       },
       "post": {
-        "description": "Insert or update one artifact.\n\nUnchanged content keeps the version log: neither ``current_version`` nor\na snapshot moves, and the response carries an ``ETag`` of the digest.\nThat is the plan's \"304-equivalent\" \u2014 a literal 304 cannot carry the body\nthe caller needs to assert the version did not move. The head row's\nMETADATA (``title``, ``status``, ``repos``, ``intent_refs``,\n``work_unit_slug``, ``authored_at``, ``source_path``, ``captured_by``,\n``tenant_id``, ``tenant_source``) is\nstill stored when\nit differs, so ``changed`` reports whether THIS request moved anything:\na byte-identical re-post answers ``changed=false`` with\n``X-Artifact-Unchanged: true``; a corrected ``status`` against a stored\nbody answers ``changed=true`` and no header, with the version untouched.",
+        "description": "Insert or update one artifact.\n\nUnchanged content keeps the version log: neither ``current_version`` nor\na snapshot moves, and the response carries an ``ETag`` of the digest.\nThat is the plan's \"304-equivalent\" \u2014 a literal 304 cannot carry the body\nthe caller needs to assert the version did not move. The head row's\nMETADATA (``title``, ``status``, ``repos``, ``intent_refs``,\n``work_unit_slug``, ``authored_at``, ``source_path``, ``captured_by``) is\nstill stored when\nit differs, so ``changed`` reports whether THIS request moved anything:\na byte-identical re-post answers ``changed=false`` with\n``X-Artifact-Unchanged: true``; a corrected ``status`` against a stored\nbody answers ``changed=true`` and no header, with the version untouched.\n\n**``tenant_id`` / ``tenant_source`` are NOT in that list, deliberately.**\nThey are not ordinary payload metadata: they are resolved from the\nCREDENTIAL (:func:`_resolve_tenant`), and a write that asserts no tenant\nPRESERVES what the row already holds rather than overwriting it with\n``unknown`` (:func:`~app.crud.work_artifact._settle_tenant`). Absence of\nevidence is not evidence of absence, so an unattributed re-scan cannot\nblank a recorded tenant \u2014 nor clear a contested flag.",
         "operationId": "api_v1_plan_library_post",
         "requestBody": {
           "content": {

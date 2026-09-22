@@ -8,18 +8,24 @@ that only holds where the suite happens to have a Postgres is not pinned.
 
 The split under test
 --------------------
-``tenant_id`` and ``tenant_id_optional`` differ on ONE input and agree on the
-other, deliberately:
+The two accessors are split by WHAT THE CALLER DOES WITH THE VALUE, not by
+strictness-in-the-abstract, and they differ on both axes:
 
-* **missing claim** — ``tenant_id`` 401s (``GET /devices/me`` owes the tenant
-  as its answer and has nothing to return), ``tenant_id_optional`` yields
-  ``None`` (coord mints ``Claims.tenant_id`` as an ``Option``, so a
+* **missing claim** — ``tenant_claim`` 401s (``GET /devices/me`` owes the
+  tenant as its answer and has nothing to return), ``tenant_id_optional``
+  yields ``None`` (coord mints ``Claims.tenant_id`` as an ``Option``, so a
   tenant-less token is a supported credential and the corpus records
   ``unknown``).
-* **malformed claim** — BOTH 401. A broken credential filed as ``unknown``
-  would put a real tenant's row in the unattributed bucket, which is the one
-  outcome ``tenant_source`` exists to prevent. If these two ever converge on
-  "return None", the two absences have collapsed and the axis is lying.
+* **malformed claim** — ``tenant_claim`` returns it VERBATIM;
+  ``tenant_id_optional`` 401s. ``/devices/me`` echoes the claim and stores
+  nothing, so a non-UUID tenant is none of its business — and non-UUID tenant
+  slugs are real, which ``tests/api/test_device_identity_endpoint.py`` pins
+  with ``personal-jspinak``. The recorder stores into a UUID COLUMN, where an
+  unparseable value cannot be written at all, and filing it as ``unknown``
+  instead would put a real tenant's row in the unattributed bucket — the one
+  outcome ``tenant_source`` exists to prevent. If ``tenant_id_optional`` ever
+  converges on "return None" for both, the two absences have collapsed and the
+  axis is lying.
 """
 
 from __future__ import annotations
@@ -44,29 +50,40 @@ def _ctx(**claims) -> DeviceTokenContext:
 
 
 # --------------------------------------------------------------------------
-# The strict accessor.
+# The VERBATIM accessor -- what `/devices/me` returns.
 # --------------------------------------------------------------------------
 
 
-def test_tenant_id_returns_the_claim() -> None:
-    assert _ctx(tenant_id=str(TENANT)).tenant_id == TENANT
+def test_tenant_claim_returns_the_claim() -> None:
+    assert _ctx(tenant_id=str(TENANT)).tenant_claim == str(TENANT)
 
 
-def test_tenant_id_401s_on_a_missing_claim() -> None:
+def test_tenant_claim_401s_on_a_missing_claim() -> None:
     with pytest.raises(HTTPException) as exc:
-        _ = _ctx().tenant_id
+        _ = _ctx().tenant_claim
     assert exc.value.status_code == 401
     assert "tenant_id" in str(exc.value.detail)
 
 
-def test_tenant_id_401s_on_a_malformed_claim() -> None:
-    with pytest.raises(HTTPException) as exc:
-        _ = _ctx(tenant_id="not-a-uuid").tenant_id
-    assert exc.value.status_code == 401
+def test_tenant_claim_returns_a_non_uuid_verbatim() -> None:
+    """The half a "make it strict everywhere" change would delete.
+
+    ``/devices/me`` echoes the claim and stores nothing. Parsing here would
+    401 every deployment whose tenant slug is not a UUID — and
+    ``tests/api/test_device_identity_endpoint.py`` pins two such values by
+    name — while normalising would make a caller string-comparing this against
+    its own copy of the claim newly disagree.
+    """
+    assert _ctx(tenant_id="personal-jspinak").tenant_claim == "personal-jspinak"
+
+
+def test_tenant_claim_does_not_normalise_a_uuid() -> None:
+    upper = str(TENANT).upper()
+    assert _ctx(tenant_id=upper).tenant_claim == upper
 
 
 # --------------------------------------------------------------------------
-# The optional accessor — asymmetric ON PURPOSE.
+# The PARSING accessor -- what a UUID column records. Asymmetric ON PURPOSE.
 # --------------------------------------------------------------------------
 
 
@@ -168,7 +185,7 @@ async def test_device_arm_verifies_once_and_hands_back_the_claims(
     principal, device_ctx = await deps._resolve_actor_context(None, _Creds())  # type: ignore[arg-type]
     assert principal.kind == "device"
     assert device_ctx is not None
-    assert device_ctx.tenant_id == TENANT
+    assert device_ctx.tenant_id_optional == TENANT
     assert calls == ["a-device-jwt"]
 
 

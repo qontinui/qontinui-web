@@ -29,9 +29,12 @@ What is asserted here, and why each one earns its place
    credential silently filed as ``unknown`` would put a real tenant's plan in
    the unattributed bucket — the one outcome ``tenant_source`` exists to
    prevent, so the two absences must NOT collapse.
-5. **The credential beats the body.** A device declaring some other tenant in
-   its payload still records the one its JWT asserts, exactly as
-   ``organization_id`` is never accepted from a body.
+5. **The body is not a source of tenancy at all.** ``WorkArtifactUpsert``
+   carries no ``tenant_id`` field and ``extra="forbid"`` makes sending one a
+   **422 rather than a silent drop** — on BOTH arms, exactly as
+   ``organization_id`` is refused. An earlier draft let the operator declare
+   one and recorded it as ``declared``, indistinguishable from a verified
+   claim in a vocabulary with no word for "asserted by a person".
 6. **The read filters** narrow within the caller's org and never widen it.
 
 Layering matches ``tests/test_plan_library_device_auth.py``:
@@ -299,7 +302,7 @@ async def test_device_with_a_malformed_tenant_claim_is_a_401(
 
 
 # ===========================================================================
-# 5. The credential beats the body.
+# 5. The body is not a source of tenancy — on either arm.
 # ===========================================================================
 
 
@@ -315,19 +318,6 @@ async def test_a_device_body_tenant_is_refused_not_silently_ignored(
         resp = await client.post(API_PREFIX, json=_payload(tenant_id=str(TENANT_B)))
 
     assert resp.status_code == 422, resp.text
-
-
-async def test_the_device_claim_is_the_only_source(
-    async_db_session: AsyncSession, stub_device_jwt
-) -> None:
-    """With the body field gone, the credential is the ONLY source."""
-    async with _device_client(async_db_session, DEVICE_BEARER_WITH_TENANT) as client:
-        resp = await client.post(API_PREFIX, json=_payload())
-
-    assert resp.status_code in (200, 201), resp.text
-    artifact = resp.json()["artifact"]
-    assert artifact["tenant_id"] == str(TENANT_A)
-    assert artifact["tenant_source"] == "declared"
 
 
 # ===========================================================================
@@ -452,9 +442,34 @@ async def test_a_second_tenant_writing_the_same_row_stamps_it_ambiguous(
     # The counts that stop an empty OR A CLIPPED list reading as clean. The
     # list is capped; a truncation nobody is told about would defeat the one
     # report whose whole job is "an absence is not a verdict".
-    assert payload["tenant_unattributed_count"] >= 0
     assert payload["contested_tenant_total"] >= 1
     assert payload["contested_tenant_total"] >= len(payload["contested_tenants"])
+
+    # THE TWO POPULATIONS ARE DISJOINT, and this is the assertion that says so.
+    # `tenant_unattributed_count` used to count `ambiguous` as well, which made
+    # it impossible to difference against the contested count — and inflated
+    # the number that is supposed to mean "not yet measured" with rows that
+    # HAVE been measured. Reverting that narrowing must fail here.
+    unattributed_before = payload["tenant_unattributed_count"]
+    async with _device_client(async_db_session, DEVICE_BEARER_WITH_TENANT) as client:
+        # One more contested row in the same organization.
+        other = _slug("collide2")
+        await client.post(
+            API_PREFIX,
+            json=_payload(slug=other, source_repo=repo, body="# A2"),
+        )
+    async with _device_client(async_db_session, second_bearer) as client:
+        await client.post(
+            API_PREFIX,
+            json=_payload(slug=other, source_repo=repo, body="# B2"),
+        )
+        after = (await client.get(f"{API_PREFIX}/divergent")).json()
+
+    assert after["contested_tenant_total"] == payload["contested_tenant_total"] + 1
+    assert after["tenant_unattributed_count"] == unattributed_before, (
+        "a newly contested row must not move the UNATTRIBUTED count — the two "
+        "populations are disjoint"
+    )
 
 
 async def test_an_uncontested_repush_is_not_stamped_ambiguous(
@@ -622,14 +637,25 @@ async def test_an_unattributed_push_does_not_clear_a_contested_flag(
     assert rescan.json()["artifact"]["tenant_source"] == "ambiguous"
 
 
-async def test_a_single_tenant_repush_does_not_clear_a_contested_flag(
+async def test_the_holding_tenant_repushing_does_not_clear_the_flag(
     async_db_session: AsyncSession, stub_device_jwt, monkeypatch
 ) -> None:
-    """Nor does a push from ONE of the two contesting tenants.
+    """The LATCH clause itself, and the only test that reaches it.
 
-    It is byte-indistinguishable from the push that raised the flag, so
-    treating it as a settlement would let whichever tenant re-scanned last
-    quietly claim the row. Settling a contest is the operator's call.
+    The distinction matters and is easy to get wrong. After A then B, the row
+    holds **B**. If A pushes again, ``held != incoming`` is true and the
+    contest is re-detected by the FIRST disjunct — that path is covered by
+    ``test_the_other_tenant_repushing_does_not_clear_the_flag`` below and it
+    exercises the latch clause not at all.
+
+    The latch is only reached when the tenant that currently HOLDS the row
+    pushes again: ``held == incoming``, so nothing about this write disagrees
+    with anything, and only ``existing.tenant_source == "ambiguous"`` keeps
+    the flag up. Delete that clause and this test fails while every other one
+    still passes — which is exactly why it had to be written.
+
+    It is also the likeliest real sequence: whichever tenant wrote last is the
+    one whose scanner runs next.
     """
     from app.api import deps
 
@@ -658,6 +684,57 @@ async def test_a_single_tenant_repush_does_not_clear_a_contested_flag(
         )
     assert contested.json()["artifact"]["tenant_source"] == "ambiguous"
 
+    # The HOLDING tenant (B) pushes again: held == incoming, so only the latch
+    # clause can keep this contested.
+    async with _device_client(async_db_session, second_bearer) as client:
+        rescan = await client.post(
+            API_PREFIX, json=_payload(slug=slug, source_repo=repo, body="# B2")
+        )
+
+    assert rescan.status_code in (200, 201), rescan.text
+    artifact = rescan.json()["artifact"]
+    assert artifact["tenant_source"] == "ambiguous", (
+        "the holding tenant re-pushing must not settle the contest — this is "
+        "the latch clause, and nothing else in the suite reaches it"
+    )
+    assert artifact["tenant_id"] == str(TENANT_B)
+
+
+async def test_the_other_tenant_repushing_does_not_clear_the_flag(
+    async_db_session: AsyncSession, stub_device_jwt, monkeypatch
+) -> None:
+    """The sibling path: the tenant that does NOT hold the row pushes again.
+
+    Re-detected by the ``held != incoming`` disjunct rather than by the latch.
+    Worth keeping separately so a future reader can see which clause each
+    sequence exercises — collapsing them is how the latch went uncovered.
+    """
+    from app.api import deps
+
+    repo = f"latch3/{uuid4().hex[:8]}"
+    slug = _slug("latch3")
+
+    async with _device_client(async_db_session, DEVICE_BEARER_WITH_TENANT) as client:
+        await client.post(
+            API_PREFIX, json=_payload(slug=slug, source_repo=repo, body="# A")
+        )
+
+    second_bearer = "device-jwt-for-tenant-b-latch3"
+    original = deps._verify_device_jwt
+
+    async def _verify(token: str):
+        if token == second_bearer:
+            claims, user = await original(DEVICE_BEARER_WITH_TENANT)
+            return ({**claims, "tenant_id": str(TENANT_B)}, user)
+        return await original(token)
+
+    monkeypatch.setattr(deps, "_verify_device_jwt", _verify)
+
+    async with _device_client(async_db_session, second_bearer) as client:
+        await client.post(
+            API_PREFIX, json=_payload(slug=slug, source_repo=repo, body="# B")
+        )
+
     async with _device_client(async_db_session, DEVICE_BEARER_WITH_TENANT) as client:
         rescan = await client.post(
             API_PREFIX, json=_payload(slug=slug, source_repo=repo, body="# A2")
@@ -669,3 +746,25 @@ async def test_a_single_tenant_repush_does_not_clear_a_contested_flag(
     # The last writer still wins the row, exactly as its body does — what is
     # refused is the claim that the contest is over.
     assert artifact["tenant_id"] == str(TENANT_A)
+
+
+async def test_the_detail_route_reports_the_stored_tenant(
+    async_db_session: AsyncSession, stub_device_jwt
+) -> None:
+    """``GET /plan-library/{id}`` is assembled FIELD BY FIELD, not by
+    ``model_validate(row)`` — so it is the one response that can silently omit
+    a column and still typecheck, and it did: every artifact came back
+    ``tenant_source: "unknown"`` whatever the row held. Nothing else in the
+    suite reads this route's tenant fields.
+    """
+    async with _device_client(async_db_session, DEVICE_BEARER_WITH_TENANT) as client:
+        created = await client.post(API_PREFIX, json=_payload())
+        assert created.status_code in (200, 201), created.text
+        artifact_id = created.json()["artifact"]["id"]
+
+        detail = await client.get(f"{API_PREFIX}/{artifact_id}")
+
+    assert detail.status_code == 200, detail.text
+    body = detail.json()
+    assert body["tenant_id"] == str(TENANT_A)
+    assert body["tenant_source"] == "declared"
