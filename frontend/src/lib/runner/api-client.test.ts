@@ -17,16 +17,24 @@
 import { act, renderHook, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+const relayFetch = vi.fn();
+vi.mock("@/services/service-factory", () => ({
+  httpClient: { fetch: (...args: unknown[]) => relayFetch(...args) },
+}));
+vi.mock("@/services/api-config", () => ({
+  ApiConfig: { API_BASE_URL: "https://api.test" },
+}));
+
 import {
-  RUNNER_API_BASE,
   RUNNER_ORIGIN_UNREACHABLE,
   runnerFetch,
   RunnerApiError,
-  isRunnerNotLocalError,
-  setRunnerTransport,
+  isRunnerNeedsLocalError,
   useRunnerQuery,
 } from "./api-client";
 import { CROSS_ORIGIN_REFUSED } from "./origin-refusal";
+import { __resetRunnerLocalityCache } from "./locality";
+import type { RunnerTarget } from "./target";
 
 const originalLocation = window.location;
 
@@ -37,10 +45,12 @@ function stubOrigin(origin: string) {
   });
 }
 
-// No ActiveRunnerProvider here: stand in for "list loaded, no runner
-// selected", which is the default local base.
+// "List loaded, no runner listed": the default local base.
+const DEFAULT: RunnerTarget = { kind: "default_local" };
+
 beforeEach(() => {
-  setRunnerTransport({ kind: "loopback", base: RUNNER_API_BASE });
+  relayFetch.mockReset();
+  __resetRunnerLocalityCache();
 });
 
 describe("runnerFetch loopback-origin gate", () => {
@@ -57,15 +67,16 @@ describe("runnerFetch loopback-origin gate", () => {
     const fetchSpy = vi.fn();
     vi.stubGlobal("fetch", fetchSpy);
 
-    const err = await runnerFetch("/health").catch((e: unknown) => e);
+    const err = await runnerFetch(DEFAULT, "/health").catch((e: unknown) => e);
     expect(err).toMatchObject({
       name: "RunnerApiError",
       status: 0,
       code: RUNNER_ORIGIN_UNREACHABLE,
     });
-    // An unreachable origin says nothing about which machine the runner is on.
-    expect(isRunnerNotLocalError(err)).toBe(false);
+    // An unreachable origin is not a relay refusal, and nothing was sent.
+    expect(isRunnerNeedsLocalError(err)).toBe(false);
     expect(fetchSpy).not.toHaveBeenCalled();
+    expect(relayFetch).not.toHaveBeenCalled();
   });
 
   it("still fetches from a localhost origin", async () => {
@@ -78,10 +89,12 @@ describe("runnerFetch loopback-origin gate", () => {
     );
     vi.stubGlobal("fetch", fetchSpy);
 
-    await expect(runnerFetch("/health")).resolves.toEqual({ ok: true });
+    await expect(runnerFetch(DEFAULT, "/health")).resolves.toEqual({
+      ok: true,
+    });
     expect(fetchSpy).toHaveBeenCalledTimes(1);
-    expect(String(fetchSpy.mock.calls[0][0])).toContain(
-      "http://localhost:9876/health"
+    expect(String(fetchSpy.mock.calls[0][0])).toBe(
+      "http://127.0.0.1:9876/health"
     );
   });
 
@@ -92,7 +105,9 @@ describe("runnerFetch loopback-origin gate", () => {
       vi.fn().mockRejectedValue(new TypeError("Failed to fetch"))
     );
 
-    await expect(runnerFetch("/health")).rejects.toBeInstanceOf(RunnerApiError);
+    await expect(runnerFetch(DEFAULT, "/health")).rejects.toBeInstanceOf(
+      RunnerApiError
+    );
   });
 });
 
@@ -135,7 +150,7 @@ describe("runnerFetch origin-guard refusal", () => {
       )
     );
 
-    const err = await runnerFetch("/shell-commands/x/run", {
+    const err = await runnerFetch(DEFAULT, "/shell-commands/x/run", {
       method: "POST",
     }).catch((e: unknown) => e);
 
@@ -173,7 +188,7 @@ describe("runnerFetch origin-guard refusal", () => {
     );
 
     const started = Date.now();
-    const err = (await runnerFetch("/x", { timeoutMs: 50 }).catch(
+    const err = (await runnerFetch(DEFAULT, "/x", { timeoutMs: 50 }).catch(
       (e: unknown) => e
     )) as RunnerApiError;
     expect(err).toBeInstanceOf(RunnerApiError);
@@ -190,7 +205,7 @@ describe("runnerFetch origin-guard refusal", () => {
     );
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(resp));
 
-    const err = (await runnerFetch("/x").catch(
+    const err = (await runnerFetch(DEFAULT, "/x").catch(
       (e: unknown) => e
     )) as RunnerApiError;
     expect(err.message).toBe("Runner API error: 500 Internal Server Error");
@@ -210,7 +225,7 @@ describe("runnerFetch origin-guard refusal", () => {
       )
     );
 
-    const err = (await runnerFetch("/x").catch(
+    const err = (await runnerFetch(DEFAULT, "/x").catch(
       (e: unknown) => e
     )) as RunnerApiError;
     expect(err.message).toBe("Runner API error: 403 Forbidden");
@@ -235,33 +250,35 @@ describe("useRunnerQuery measuring state", () => {
     stubOrigin("http://localhost:3001");
     const fetchSpy = vi.fn();
     vi.stubGlobal("fetch", fetchSpy);
-    setRunnerTransport({
-      kind: "no_loopback",
-      reason: "not_local",
-      runnerName: "remote-box",
-    });
+    let target: RunnerTarget = {
+      kind: "unavailable",
+      reason: "selection_required",
+    };
 
-    const { result } = renderHook(() => useRunnerQuery("/health"));
+    const { result, rerender } = renderHook(() =>
+      useRunnerQuery(target, "/health")
+    );
     await waitFor(() => expect(result.current.isOffline).toBe(true));
-    expect(result.current.error).toMatch(/another machine/);
+    expect(result.current.error).toMatch(/choose one/);
+    expect(result.current.errorCode).toBe("RUNNER_SELECTION_REQUIRED");
 
-    act(() => {
-      setRunnerTransport({ kind: "no_loopback", reason: "measuring" });
-    });
+    target = { kind: "pending" };
+    rerender();
     await waitFor(() => expect(result.current.error).toBeNull());
     expect(result.current.isOffline).toBe(false);
     expect(result.current.isLoading).toBe(true);
     expect(fetchSpy).not.toHaveBeenCalled();
+    expect(relayFetch).not.toHaveBeenCalled();
   });
 });
 
 /**
- * A shared poll is pinned to the transport it was created for. A tick that
+ * A shared poll is pinned to the target+route it was created for. A tick that
  * fires after the active runner changed, but before React has torn the old
  * subscription down, must fetch the OLD runner — the result is delivered to
  * (and tagged for) the old runner's subscribers.
  */
-describe("shared poll transport pinning", () => {
+describe("shared poll route pinning", () => {
   afterEach(() => {
     Object.defineProperty(window, "location", {
       value: originalLocation,
@@ -270,7 +287,7 @@ describe("shared poll transport pinning", () => {
     vi.unstubAllGlobals();
   });
 
-  it("a tick between a transport change and cleanup fetches the entry's own runner", async () => {
+  it("a tick between a target change and cleanup fetches the entry's own runner", async () => {
     stubOrigin("http://localhost:3001");
     const fetchSpy = vi.fn(
       async () =>
@@ -280,22 +297,35 @@ describe("shared poll transport pinning", () => {
         })
     );
     vi.stubGlobal("fetch", fetchSpy);
-    setRunnerTransport({ kind: "loopback", base: "http://127.0.0.1:9876" });
+    const a: RunnerTarget = {
+      kind: "runner",
+      runner: { id: "a", port: 9876 },
+      locality: "local",
+    };
+    const b: RunnerTarget = {
+      kind: "runner",
+      runner: { id: "b", port: 9877 },
+      locality: "local",
+    };
+    let target = a;
 
-    const { result } = renderHook(() =>
-      useRunnerQuery("/pinned", { pollInterval: 60_000 })
+    const { result, rerender } = renderHook(() =>
+      useRunnerQuery(target, "/pinned", { pollInterval: 60_000 })
     );
     await waitFor(() => expect(result.current.data).toEqual({ ok: true }));
     fetchSpy.mockClear();
 
-    // Synchronously: switch runners, then a poll tick fires (the
-    // visibility-resume path runs every shared poll at once) before React
-    // has re-rendered and cleaned the old subscription up.
-    setRunnerTransport({ kind: "loopback", base: "http://127.0.0.1:9877" });
+    // A poll tick fires (the visibility-resume path runs every shared poll
+    // at once) as the target switches — the old entry still fetches its own
+    // runner.
+    target = b;
     document.dispatchEvent(new Event("visibilitychange"));
+    rerender();
 
     await act(async () => {});
     const urls = fetchSpy.mock.calls.map((call) => String(call[0]));
     expect(urls[0]).toBe("http://127.0.0.1:9876/pinned");
+    // And the new target's subscription fetched the new runner.
+    expect(urls).toContain("http://127.0.0.1:9877/pinned");
   });
 });

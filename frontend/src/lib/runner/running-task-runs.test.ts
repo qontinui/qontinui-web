@@ -18,7 +18,14 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { renderHook, waitFor } from "@testing-library/react";
 
-import { RUNNER_API_BASE, runnerFetch, setRunnerTransport } from "./api-client";
+// No ActiveRunnerProvider here: stand in for "list loaded, no runner
+// listed", which is the default local base.
+vi.mock("@/contexts/active-runner-context", () => ({
+  useRunnerTarget: () => ({ kind: "default_local" }),
+}));
+
+import { runnerFetch } from "./api-client";
+import type { RunnerTarget } from "./target";
 import { useRunningTaskRuns } from "./hooks/task-run-hooks";
 import type { RunningTaskRunsResponse } from "./types/task-run";
 
@@ -40,10 +47,9 @@ function jsonResponse(body: unknown): Response {
 
 const fetchMock = vi.fn();
 
+const DEFAULT_TARGET: RunnerTarget = { kind: "default_local" };
+
 beforeEach(() => {
-  // No ActiveRunnerProvider here: stand in for "list loaded, no runner
-  // selected", which is the default local base.
-  setRunnerTransport({ kind: "loopback", base: RUNNER_API_BASE });
   fetchMock.mockReset();
   vi.stubGlobal("fetch", fetchMock);
 });
@@ -58,8 +64,10 @@ describe("runnerFetch on /task-runs/running", () => {
       jsonResponse(envelope([{ id: "run-1", status: "running" }]))
     );
 
-    const result =
-      await runnerFetch<RunningTaskRunsResponse>("/task-runs/running");
+    const result = await runnerFetch<RunningTaskRunsResponse>(
+      DEFAULT_TARGET,
+      "/task-runs/running"
+    );
 
     // Not unwrapped: runnerFetch only strips `{ success, data }`.
     expect(result.scope).toBe(SCOPE);

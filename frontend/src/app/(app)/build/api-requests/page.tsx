@@ -7,7 +7,7 @@ import { AiGeneratorPanel } from "@/components/builders/AiGeneratorPanel";
 import { TagInput } from "@/components/builders/TagInput";
 import {
   type SavedApiRequest,
-  runnerApi,
+  useRunnerApi,
   useSavedApiRequestsDetailed,
 } from "@/lib/runner-api";
 import { toast } from "sonner";
@@ -87,6 +87,7 @@ const defaultForm: Omit<SavedApiRequest, "id"> = {
 };
 
 function ApiRequestsBuilderPageContent() {
+  const runnerApi = useRunnerApi();
   const searchParams = useSearchParams();
   const initialId = searchParams.get("id");
 
@@ -174,7 +175,7 @@ function ApiRequestsBuilderPageContent() {
         `Failed to save: ${err instanceof Error ? err.message : "Unknown error"}`
       );
     }
-  }, [editForm, headerEntries, isNew, selectedRequest, refetch]);
+  }, [editForm, headerEntries, isNew, selectedRequest, refetch, runnerApi]);
 
   const handleDelete = useCallback(
     async (ids: string[]) => {
@@ -196,7 +197,7 @@ function ApiRequestsBuilderPageContent() {
         );
       }
     },
-    [refetch, selectedRequest]
+    [refetch, selectedRequest, runnerApi]
   );
 
   const handleDeleteCurrent = useCallback(async () => {
@@ -216,7 +217,7 @@ function ApiRequestsBuilderPageContent() {
         `Failed to duplicate: ${err instanceof Error ? err.message : "Unknown error"}`
       );
     }
-  }, [selectedRequest, isNew, refetch]);
+  }, [selectedRequest, isNew, refetch, runnerApi]);
 
   const updateField = <K extends keyof Omit<SavedApiRequest, "id">>(
     field: K,

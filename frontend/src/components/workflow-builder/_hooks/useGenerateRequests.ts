@@ -1,6 +1,6 @@
 import { useCallback } from "react";
 import { toast } from "sonner";
-import { runnerApi } from "@/lib/runner-api";
+import { useRunnerApi } from "@/lib/runner-api";
 import type { GenerateWorkflowRequest } from "@/lib/runner/types/workflow";
 import type { SpecSourceState } from "../SpecSourceSection";
 import { buildSpecPrompt } from "@/lib/spec-prompt-builder";
@@ -47,6 +47,7 @@ interface UseGenerateRequestsParams {
 }
 
 export function useGenerateRequests(params: UseGenerateRequestsParams) {
+  const runnerApi = useRunnerApi();
   const {
     description,
     selectedContextIds,
@@ -224,7 +225,7 @@ export function useGenerateRequests(params: UseGenerateRequestsParams) {
         firstTaskRunId = response.task_run_id;
       }
       if (description.trim()) {
-        autoSaveGenerationPrompt(description); // fire-and-forget
+        autoSaveGenerationPrompt(runnerApi, description); // fire-and-forget
       }
       // Persist generation overrides for "Copy from Last Generation" in workflow builder
       if (
@@ -288,7 +289,7 @@ export function useGenerateRequests(params: UseGenerateRequestsParams) {
         toast.dismiss(toastId);
       }
       if (description.trim()) {
-        autoSaveGenerationPrompt(description); // fire-and-forget
+        autoSaveGenerationPrompt(runnerApi, description); // fire-and-forget
       }
       // Persist generation overrides for "Copy from Last Generation" in workflow builder
       if (

@@ -1,5 +1,6 @@
 "use client";
 
+import { useRunnerPoll, useRunnerTarget } from "@/lib/runner";
 import { useState, useEffect, useCallback } from "react";
 import { createLogger } from "@/lib/logger";
 
@@ -23,7 +24,7 @@ import {
   AlertCircle,
 } from "lucide-react";
 import {
-  ragSetupService,
+  useRAGSetupService,
   type RAGSetupProgress,
   type RAGAvailability,
 } from "@/services/rag-setup-service";
@@ -52,13 +53,16 @@ export function RAGSetupDialog({
   onSkip,
   onDownload,
 }: RAGSetupDialogProps) {
+  const ragSetupService = useRAGSetupService();
+  const target = useRunnerTarget();
   const [state, setState] = useState<DialogState>("checking");
   const [availability, setAvailability] = useState<RAGAvailability | null>(
     null
   );
   const [progress, setProgress] = useState<RAGSetupProgress | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [pollInterval, setPollInterval] = useState<NodeJS.Timeout | null>(null);
+  // Whether the setup-progress poll runs (only while the dialog is open).
+  const [isPolling, setIsPolling] = useState(false);
 
   // Count StateImages that will be processed
   const elementCount =
@@ -72,11 +76,6 @@ export function RAGSetupDialog({
     if (open) {
       checkAvailability();
     }
-    return () => {
-      if (pollInterval) {
-        clearInterval(pollInterval);
-      }
-    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
@@ -135,30 +134,7 @@ export function RAGSetupDialog({
       log.debug("startRAGSetup result:", result);
 
       // Start polling for progress
-      const interval = setInterval(async () => {
-        try {
-          const currentProgress =
-            await ragSetupService.getRAGSetupProgress(projectId);
-          setProgress(currentProgress);
-
-          if (currentProgress.status === "completed") {
-            clearInterval(interval);
-            setPollInterval(null);
-            setState("complete");
-            onSetupComplete?.(currentProgress);
-          } else if (currentProgress.status === "failed") {
-            clearInterval(interval);
-            setPollInterval(null);
-            setError(currentProgress.error || "RAG setup failed");
-            setState("error");
-          }
-        } catch (err) {
-          // Don't fail on poll errors, just log them
-          console.warn("Progress poll failed:", err);
-        }
-      }, 1000);
-
-      setPollInterval(interval);
+      setIsPolling(true);
     } catch (err) {
       setError(
         err instanceof Error ? err.message : "Failed to start RAG setup"
@@ -167,18 +143,49 @@ export function RAGSetupDialog({
     }
   };
 
+  // Setup progress poll: the cadence is re-evaluated every tick (never faster
+  // than the relay cadence for a relayed or unresolved target), and a
+  // RUNNER_NEEDS_LOCAL refusal stops it with its message shown.
+  useRunnerPoll(target, {
+    enabled: open && isPolling,
+    requestedMs: 1000,
+    tick: async () => {
+      const currentProgress =
+        await ragSetupService.getRAGSetupProgress(projectId);
+      setProgress(currentProgress);
+
+      if (currentProgress.status === "completed") {
+        setIsPolling(false);
+        setState("complete");
+        onSetupComplete?.(currentProgress);
+        return "stop";
+      }
+      if (currentProgress.status === "failed") {
+        setIsPolling(false);
+        setError(currentProgress.error || "RAG setup failed");
+        setState("error");
+        return "stop";
+      }
+      return undefined;
+    },
+    onNeedsLocal: (err) => {
+      setIsPolling(false);
+      setError(err.message);
+      setState("error");
+    },
+    // Don't fail on other poll errors, just log them
+    onError: (err) => console.warn("Progress poll failed:", err),
+  });
+
   const cancelSetup = useCallback(async () => {
-    if (pollInterval) {
-      clearInterval(pollInterval);
-      setPollInterval(null);
-    }
+    setIsPolling(false);
     try {
       await ragSetupService.cancelRAGSetup(projectId);
     } catch {
       // Ignore cancel errors
     }
     setState("initial");
-  }, [pollInterval, projectId]);
+  }, [projectId, ragSetupService]);
 
   const handleSkip = () => {
     onSkip?.();

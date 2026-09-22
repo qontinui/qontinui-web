@@ -2,7 +2,7 @@
 
 import { useRef, useEffect, useCallback } from "react";
 import {
-  runnerApi,
+  useRunnerApi,
   type CurrentExecutionStepsResponse,
   type TaskRun,
 } from "@/lib/runner-api";
@@ -28,6 +28,7 @@ export function useRunMonitoring(
   onRefresh: () => void,
   activeRuns: TaskRun[] | undefined
 ): RunMonitoringResult {
+  const runnerApi = useRunnerApi();
   const { data: stepsData } = useSharedStepsData();
   const completionRefetchedRef = useRef(false);
 
@@ -162,7 +163,7 @@ export function useRunMonitoring(
         );
       }
     })();
-  }, [activeRuns, onRefresh]);
+  }, [activeRuns, onRefresh, runnerApi]);
 
   const handleCompletionRefresh = useCallback(() => {
     completionRefetchedRef.current = false;

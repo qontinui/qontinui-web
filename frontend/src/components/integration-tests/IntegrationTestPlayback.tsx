@@ -17,7 +17,7 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Slider } from "@/components/ui/slider";
-import { ApiConfig } from "@/services/api-config";
+import { runnerRequest, targetKey, useRunnerTarget } from "@/lib/runner";
 
 /**
  * Frame data from the API for playback
@@ -74,16 +74,18 @@ export const IntegrationTestPlayback: React.FC<
   const playbackRef = useRef<NodeJS.Timeout | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
-  // Load frames from API
+  // Load frames from the active runner
+  const target = useRunnerTarget();
   const {
     data: frames = [],
     isLoading,
     error: framesError,
   } = useQuery({
-    queryKey: ["playback-frames", historicalResultIds],
+    queryKey: ["playback-frames", historicalResultIds, targetKey(target)],
     queryFn: async () => {
-      const response = await fetch(
-        `${ApiConfig.RUNNER_URL}/api/capture/frames/playback`,
+      const response = await runnerRequest(
+        target,
+        "/api/capture/frames/playback",
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },

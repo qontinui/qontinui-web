@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import {
-  runnerApi,
+  useRunnerApi,
   useContextsDetailed,
   type ContextItem,
 } from "@/lib/runner-api";
@@ -48,6 +48,7 @@ export interface GenerateFormState {
 }
 
 export function useGenerateFormState(): GenerateFormState {
+  const runnerApi = useRunnerApi();
   // Form state — description is persisted to localStorage
   const [description, setDescription] = useState("");
   const [selectedContextIds, setSelectedContextIds] = useState<string[]>([]);

@@ -5,7 +5,10 @@
  * pathfinding algorithm via the runner.
  */
 
-import { ApiConfig } from "./api-config";
+import { useMemo } from "react";
+import { useRunnerTarget } from "@/contexts/active-runner-context";
+import { runnerRequest } from "@/lib/runner/api-client";
+import type { RunnerTarget } from "@/lib/runner/target";
 import type {
   State,
   OutgoingTransition,
@@ -50,10 +53,11 @@ export interface ReachabilityAnalysis {
 // ============================================================================
 
 class PathfindingService {
-  private baseUrl: string;
+  /** The runner every call is for; the transport is resolved per request. */
+  private target: RunnerTarget;
 
-  constructor() {
-    this.baseUrl = ApiConfig.getRunnerUrl();
+  constructor(target: RunnerTarget) {
+    this.target = target;
   }
 
   /**
@@ -85,29 +89,33 @@ class PathfindingService {
     }
 
     try {
-      const response = await fetch(`${this.baseUrl}/api/pathfinding/validate`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          states: states.map((s) => ({
-            id: s.id,
-            name: s.name,
-            isInitial: s.initial ?? false,
-            isBlocking: false, // Could be enhanced to detect modal states
-          })),
-          transitions: transitions.map((t) => ({
-            id: t.id,
-            fromState: t.fromState,
-            activateStates: t.activateStates,
-            deactivateStates: t.deactivateStates,
-            staysVisible: t.staysVisible,
-          })),
-          fromStates: fromStateIds ?? [],
-          targetStates: targetStateIds,
-        }),
-      });
+      const response = await runnerRequest(
+        this.target,
+        "/api/pathfinding/validate",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            states: states.map((s) => ({
+              id: s.id,
+              name: s.name,
+              isInitial: s.initial ?? false,
+              isBlocking: false, // Could be enhanced to detect modal states
+            })),
+            transitions: transitions.map((t) => ({
+              id: t.id,
+              fromState: t.fromState,
+              activateStates: t.activateStates,
+              deactivateStates: t.deactivateStates,
+              staysVisible: t.staysVisible,
+            })),
+            fromStates: fromStateIds ?? [],
+            targetStates: targetStateIds,
+          }),
+        }
+      );
 
       if (!response.ok) {
         const errorText = await response.text();
@@ -172,8 +180,9 @@ class PathfindingService {
     fromStateIds?: string[]
   ): Promise<ReachabilityAnalysis | null> {
     try {
-      const response = await fetch(
-        `${this.baseUrl}/api/pathfinding/analyze-reachability`,
+      const response = await runnerRequest(
+        this.target,
+        "/api/pathfinding/analyze-reachability",
         {
           method: "POST",
           headers: {
@@ -225,9 +234,9 @@ class PathfindingService {
    */
   async isAvailable(): Promise<boolean> {
     try {
-      const response = await fetch(`${this.baseUrl}/health`, {
+      const response = await runnerRequest(this.target, "/health", {
         method: "GET",
-        signal: AbortSignal.timeout(3000),
+        timeoutMs: 3000,
       });
       return response.ok;
     } catch {
@@ -236,5 +245,15 @@ class PathfindingService {
   }
 }
 
-// Export singleton instance
-export const pathfindingService = new PathfindingService();
+/** A PathfindingService bound to one runner target. */
+export function createPathfindingService(
+  target: RunnerTarget
+): PathfindingService {
+  return new PathfindingService(target);
+}
+
+/** A PathfindingService bound to the active runner; stable while it is. */
+export function usePathfindingService(): PathfindingService {
+  const target = useRunnerTarget();
+  return useMemo(() => createPathfindingService(target), [target]);
+}

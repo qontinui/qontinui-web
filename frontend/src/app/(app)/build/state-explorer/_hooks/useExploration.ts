@@ -1,8 +1,9 @@
 import { useState } from "react";
-import { runnerApi } from "@/lib/runner/runner-api-object";
+import { useRunnerApi } from "@/lib/runner/runner-api-object";
 import type { ExplorationForm, ExplorationStrategy } from "../types";
 
 export function useExploration(form: ExplorationForm) {
+  const runnerApi = useRunnerApi();
   const [executing, setExecuting] = useState(false);
   const [execResult, setExecResult] = useState<string | null>(null);
   const [execError, setExecError] = useState<string | null>(null);
@@ -43,6 +44,7 @@ export function useAiAdvisor(
     value: ExplorationForm[K]
   ) => void
 ) {
+  const runnerApi = useRunnerApi();
   const [aiGenerating, setAiGenerating] = useState(false);
   const [aiError, setAiError] = useState<string | null>(null);
   const [aiResult, setAiResult] = useState<Record<string, unknown> | null>(null);

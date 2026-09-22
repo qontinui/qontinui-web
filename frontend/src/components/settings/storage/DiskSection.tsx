@@ -13,8 +13,8 @@
  *    (`GET /operations/devices/{id}/volumes`, via `deviceVolumesUrl()`), read
  *    through the backend proxy. This section is that route's first consumer;
  *    Phase 1 shipped it deliberately unwired.
- * 2. **Reclaim candidates** — the runner's own loopback survey
- *    (`GET :9876/disk/reclaimable`), which classifies cargo target roots and
+ * 2. **Reclaim candidates** — the runner's own survey
+ *    (`GET /disk/reclaimable` on the active runner), which classifies cargo target roots and
  *    reports bytes per class.
  *
  * ## The honesty contract, restated where it is rendered
@@ -53,7 +53,12 @@ import {
   ShieldAlert,
 } from "lucide-react";
 import { httpClient } from "@/services/service-factory";
-import { runnerFetch, RunnerApiError, useDeviceInfo } from "@/lib/runner-api";
+import {
+  runnerFetch,
+  RunnerApiError,
+  useDeviceInfo,
+  useRunnerTarget,
+} from "@/lib/runner-api";
 import {
   deviceVolumesUrl,
   formatBytes,
@@ -853,6 +858,7 @@ function SurveyBody({ survey }: { survey: DiskSurvey }) {
 // ---------------------------------------------------------------------------
 
 export function DiskSection() {
+  const target = useRunnerTarget();
   const {
     data: deviceInfo,
     isLoading: deviceLoading,
@@ -951,49 +957,52 @@ export function DiskSection() {
     });
   }, []);
 
-  const loadSurvey = useCallback(async (refresh: boolean) => {
-    const seq = ++surveySeq.current;
-    setSurveyInFlight(true);
-    const settle = (next: DiskSurveyFetch) => {
-      if (!mounted.current || seq !== surveySeq.current) return;
-      setSurvey(next);
-      setSurveyInFlight(false);
-    };
-    const path = refresh ? `${DISK_SURVEY_PATH}?refresh=1` : DISK_SURVEY_PATH;
-    let raw: unknown;
-    try {
-      // The survey answers from a cached census snapshot, but a cold runner
-      // may block briefly waiting for one — a longer budget than the 5s
-      // default, still bounded.
-      raw = await runnerFetch<unknown>(path, { timeoutMs: 20_000 });
-    } catch (err) {
-      if (err instanceof RunnerApiError && err.status === 404) {
+  const loadSurvey = useCallback(
+    async (refresh: boolean) => {
+      const seq = ++surveySeq.current;
+      setSurveyInFlight(true);
+      const settle = (next: DiskSurveyFetch) => {
+        if (!mounted.current || seq !== surveySeq.current) return;
+        setSurvey(next);
+        setSurveyInFlight(false);
+      };
+      const path = refresh ? `${DISK_SURVEY_PATH}?refresh=1` : DISK_SURVEY_PATH;
+      let raw: unknown;
+      try {
+        // The survey answers from a cached census snapshot, but a cold runner
+        // may block briefly waiting for one — a longer budget than the 5s
+        // default, still bounded.
+        raw = await runnerFetch<unknown>(target, path, { timeoutMs: 20_000 });
+      } catch (err) {
+        if (err instanceof RunnerApiError && err.status === 404) {
+          settle({
+            state: "unavailable",
+            reason:
+              `The runner does not serve ${DISK_SURVEY_PATH} (HTTP 404). This ` +
+              `build predates the disk-reclaim survey, so it cannot answer the ` +
+              `question — which is NOT the same as answering "nothing to ` +
+              `reclaim". Nothing here describes what is on this disk.`,
+          });
+          return;
+        }
         settle({
           state: "unavailable",
           reason:
-            `The runner does not serve ${DISK_SURVEY_PATH} (HTTP 404). This ` +
-            `build predates the disk-reclaim survey, so it cannot answer the ` +
-            `question — which is NOT the same as answering "nothing to ` +
-            `reclaim". Nothing here describes what is on this disk.`,
+            `The disk survey request failed: ` +
+            `${err instanceof Error ? err.message : "unknown error"}. This is a ` +
+            `failed read, not an empty result.`,
         });
         return;
       }
-      settle({
-        state: "unavailable",
-        reason:
-          `The disk survey request failed: ` +
-          `${err instanceof Error ? err.message : "unknown error"}. This is a ` +
-          `failed read, not an empty result.`,
-      });
-      return;
-    }
-    const parsed = parseDiskSurvey(raw);
-    if (parsed.state === "unparseable") {
-      settle({ state: "unavailable", reason: parsed.reason });
-      return;
-    }
-    settle({ state: "ok", survey: parsed.survey });
-  }, []);
+      const parsed = parseDiskSurvey(raw);
+      if (parsed.state === "unparseable") {
+        settle({ state: "unavailable", reason: parsed.reason });
+        return;
+      }
+      settle({ state: "ok", survey: parsed.survey });
+    },
+    [target]
+  );
 
   // First read on mount, without asking for a refresh walk: a page visit must
   // not kick a minutes-long filesystem census. The button does that.

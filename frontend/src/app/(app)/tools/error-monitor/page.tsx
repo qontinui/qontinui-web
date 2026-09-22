@@ -1,13 +1,16 @@
 "use client";
 
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo } from "react";
 import { usePageSpecs } from "@/hooks/usePageSpecs";
 import { useDiscoveredSpec } from "@/lib/ui-bridge/use-discovered-specs";
 import type { SpecConfig } from "@qontinui/ui-bridge/specs";
 import {
+  RUNNER_NEEDS_LOCAL,
   useRunnerHealth,
   useErrorMonitorEntries,
-  runnerApi,
+  useRunnerApi,
+  useRunnerPoll,
+  useRunnerTarget,
 } from "@/lib/runner-api";
 import { RunnerPartialState } from "@/components/runner/RunnerPartialState";
 import { ErrorEntryCard } from "@/components/error-monitor/ErrorEntryCard";
@@ -61,6 +64,8 @@ const STATUS_FILTERS: { value: StatusFilter; label: string }[] = [
 // ============================================================================
 
 export default function ErrorMonitorPage() {
+  const runnerApi = useRunnerApi();
+  const target = useRunnerTarget();
   const discoveredSpec = useDiscoveredSpec("error-monitor");
   usePageSpecs(
     discoveredSpec
@@ -72,8 +77,10 @@ export default function ErrorMonitorPage() {
     data: entries,
     isLoading: entriesLoading,
     error: entriesError,
+    errorCode: entriesErrorCode,
     refetch,
   } = useErrorMonitorEntries();
+  const entriesNeedLocal = entriesErrorCode === RUNNER_NEEDS_LOCAL;
 
   const [searchQuery, setSearchQuery] = useState("");
   const [severityFilter, setSeverityFilter] = useState<SeverityFilter>("all");
@@ -85,14 +92,19 @@ export default function ErrorMonitorPage() {
   const [fixError, setFixError] = useState<string | null>(null);
   const [_lastRefresh, setLastRefresh] = useState(new Date());
 
-  // Auto-refresh timer
-  useEffect(() => {
-    const interval = setInterval(() => {
-      refetch();
+  // Auto-refresh. The cadence is re-evaluated every tick (never faster than
+  // the relay cadence for a relayed or unresolved target), and it stops once
+  // the runner refused the route over the relay (shown below).
+  useRunnerPoll(target, {
+    enabled: true,
+    requestedMs: 30000,
+    tick: async () => {
+      if (entriesNeedLocal) return "stop";
+      await refetch();
       setLastRefresh(new Date());
-    }, 30000);
-    return () => clearInterval(interval);
-  }, [refetch]);
+      return undefined;
+    },
+  });
 
   const handleAcknowledge = async (id: number) => {
     setAcknowledgingId(id);
@@ -460,7 +472,11 @@ export default function ErrorMonitorPage() {
             ) : entriesError ? (
               <div className="flex items-center gap-2 text-red-400 py-8 justify-center">
                 <AlertCircle className="w-5 h-5" />
-                <p className="text-sm">Failed to load error entries</p>
+                <p className="text-sm">
+                  {entriesNeedLocal
+                    ? entriesError
+                    : "Failed to load error entries"}
+                </p>
               </div>
             ) : filteredEntries.length === 0 ? (
               <div className="text-center py-12">

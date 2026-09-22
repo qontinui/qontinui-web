@@ -7,6 +7,7 @@ import {
   useRunnerMutation,
   DEFAULT_POLL_INTERVAL,
 } from "../api-client";
+import { useRunnerTarget } from "@/contexts/active-runner-context";
 import type { UseRunnerQueryResult } from "../api-client";
 import type {
   TaskRun,
@@ -33,11 +34,13 @@ export function useTaskRuns(params?: { limit?: number; status?: string }) {
   if (params?.limit) query.set("limit", String(params.limit));
   if (params?.status) query.set("status", params.status);
   const qs = query.toString();
-  return useRunnerQuery<TaskRun[]>(`/task-runs${qs ? `?${qs}` : ""}`);
+  return useRunnerQuery<TaskRun[]>(
+    useRunnerTarget(),
+    `/task-runs${qs ? `?${qs}` : ""}`
+  );
 }
 
-export interface UseRunningTaskRunsResult
-  extends UseRunnerQueryResult<RunningTaskRunsResponse> {
+export interface UseRunningTaskRunsResult extends UseRunnerQueryResult<RunningTaskRunsResponse> {
   /** The envelope's task runs, or `[]` before the first response lands. */
   runs: TaskRun[];
   /**
@@ -50,9 +53,13 @@ export interface UseRunningTaskRunsResult
 }
 
 export function useRunningTaskRuns(): UseRunningTaskRunsResult {
-  const query = useRunnerQuery<RunningTaskRunsResponse>("/task-runs/running", {
-    pollInterval: DEFAULT_POLL_INTERVAL,
-  });
+  const query = useRunnerQuery<RunningTaskRunsResponse>(
+    useRunnerTarget(),
+    "/task-runs/running",
+    {
+      pollInterval: DEFAULT_POLL_INTERVAL,
+    }
+  );
   // Stable identity between polls that return the same object, so callers can
   // use `runs` as an effect dependency without re-running every render.
   const runs = useMemo(() => query.data?.task_runs ?? [], [query.data]);
@@ -60,14 +67,19 @@ export function useRunningTaskRuns(): UseRunningTaskRunsResult {
 }
 
 export function useTaskRun(id: string | number | null) {
-  return useRunnerQuery<TaskRun>(id != null ? `/task-runs/${id}` : null, {
-    enabled: id != null,
-    pollInterval: DEFAULT_POLL_INTERVAL,
-  });
+  return useRunnerQuery<TaskRun>(
+    useRunnerTarget(),
+    id != null ? `/task-runs/${id}` : null,
+    {
+      enabled: id != null,
+      pollInterval: DEFAULT_POLL_INTERVAL,
+    }
+  );
 }
 
 export function useTaskRunOutput(id: string | number | null) {
   return useRunnerQuery<TaskRunOutput>(
+    useRunnerTarget(),
     id != null ? `/task-runs/${id}/output` : null,
     {
       enabled: id != null,
@@ -89,6 +101,7 @@ export function useTaskRunOutput(id: string | number | null) {
 
 export function useTaskRunKnowledge(id: string | number | null) {
   return useRunnerQuery<TaskRunKnowledge>(
+    useRunnerTarget(),
     id != null ? `/task-runs/${id}/knowledge` : null,
     {
       enabled: id != null,
@@ -124,6 +137,7 @@ export function useTaskRunKnowledge(id: string | number | null) {
 
 export function useTaskRunVerification(id: string | number | null) {
   return useRunnerQuery<VerificationData>(
+    useRunnerTarget(),
     id != null ? `/task-runs/${id}/verification-results` : null,
     {
       enabled: id != null,
@@ -150,6 +164,7 @@ export function useTaskRunVerification(id: string | number | null) {
 
 export function useTaskRunPlaywright(id: string | number | null) {
   return useRunnerQuery<PlaywrightResult[]>(
+    useRunnerTarget(),
     id != null ? `/task-runs/${id}/playwright-results` : null,
     {
       enabled: id != null,
@@ -171,6 +186,7 @@ export function useTaskRunPlaywright(id: string | number | null) {
 
 export function useTaskRunVerificationPhaseResults(id: string | number | null) {
   return useRunnerQuery<VerificationPhaseResultsData>(
+    useRunnerTarget(),
     id != null ? `/task-runs/${id}/verification-phase-results` : null,
     {
       enabled: id != null,
@@ -204,6 +220,7 @@ export function useTaskRunVerificationPhaseResults(id: string | number | null) {
 
 export function useTaskRunEvents(id: string | number | null) {
   return useRunnerQuery<TaskRunEvent[]>(
+    useRunnerTarget(),
     id != null ? `/task-runs/${id}/events` : null,
     {
       enabled: id != null,
@@ -225,6 +242,7 @@ export function useTaskRunEvents(id: string | number | null) {
 
 export function useTaskRunScreenshots(id: string | number | null) {
   return useRunnerQuery<Screenshot[]>(
+    useRunnerTarget(),
     id != null ? `/task-runs/${id}/screenshots` : null,
     {
       enabled: id != null,
@@ -248,17 +266,22 @@ export function useTaskRunScreenshots(id: string | number | null) {
 
 export function useSessionState(id: string | number | null) {
   return useRunnerQuery<SessionState>(
+    useRunnerTarget(),
     id != null ? `/task-runs/${id}/session-state` : null,
     { enabled: id != null, pollInterval: DEFAULT_POLL_INTERVAL }
   );
 }
 
 export function useFindingsSummary() {
-  return useRunnerQuery<FindingsSummary>("/findings/summary");
+  return useRunnerQuery<FindingsSummary>(
+    useRunnerTarget(),
+    "/findings/summary"
+  );
 }
 
 export function useTaskRunCheckpoints(id: string | number | null) {
   return useRunnerQuery<Checkpoint[]>(
+    useRunnerTarget(),
     id != null ? `/task-runs/${id}/checkpoints?limit=100` : null,
     {
       enabled: id != null,
@@ -280,6 +303,7 @@ export function useTaskRunCheckpoints(id: string | number | null) {
 
 export function useTaskRunMcpCalls(id: string | number | null) {
   return useRunnerQuery<McpCall[]>(
+    useRunnerTarget(),
     id != null ? `/task-runs/${id}/mcp-calls` : null,
     {
       enabled: id != null,
@@ -300,5 +324,8 @@ export function useTaskRunMcpCalls(id: string | number | null) {
 }
 
 export function useStopTaskRun() {
-  return useRunnerMutation<{ task_run_id: string }, void>("/task-runs/stop");
+  return useRunnerMutation<{ task_run_id: string }, void>(
+    useRunnerTarget(),
+    "/task-runs/stop"
+  );
 }

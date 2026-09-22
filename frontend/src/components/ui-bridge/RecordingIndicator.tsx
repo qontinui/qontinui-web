@@ -6,14 +6,33 @@
  * Shows a persistent red recording badge in the bottom-right corner
  * when a UI Bridge recording session is active. Provides a quick stop button.
  *
- * This component polls the SDK's WebSocket for recording status.
- * Mount it in the app layout so it's visible across all pages.
+ * WHO SERVES THE RECORDING SOCKET. The `recording:status` / `recording:stop`
+ * messages are handled by the UI Bridge SDK's own server
+ * (`@qontinui/ui-bridge` `server/websocket-handler.ts`, run by its
+ * `StandaloneServer` inside the SDK-enabled APP's process, on the app's own
+ * port, any path) — NOT by the runner. The runner's only WebSocket routes are
+ * `/ws/events` and `/ui-bridge/ws`, and neither handles `recording:*`; a
+ * socket to the runner's own port could never report a recording.
+ *
+ * So the indicator asks the ACTIVE runner — only one proven to be on this
+ * machine — which SDK app it is connected to (`GET /ui-bridge/sdk/connections`,
+ * whose app URLs the runner records as its own loopback addresses), and opens
+ * the recording socket to that app ONLY when the URL is a loopback address.
+ * Proven-local runner + loopback app URL = an app on this machine. Anything
+ * else (a runner on another machine, locality unknown, no connected app, an
+ * app URL that is not loopback) opens nothing: the recording state is
+ * UNKNOWN and nothing is shown.
  */
 
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useCallback, useRef } from "react";
 import { Square } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { isRunnerReachable } from "@/lib/ui-bridge/discovered-specs";
+import {
+  routeOfTarget,
+  runnerRequest,
+  useRunnerPoll,
+  useRunnerTarget,
+} from "@/lib/runner";
 
 interface RecordingStatus {
   active: boolean;
@@ -23,6 +42,11 @@ interface RecordingStatus {
   captureCount: number;
 }
 
+interface SdkConnection {
+  url?: string;
+  isActive?: boolean;
+}
+
 function formatDuration(ms: number): string {
   const seconds = Math.floor(ms / 1000);
   const minutes = Math.floor(seconds / 60);
@@ -30,92 +54,140 @@ function formatDuration(ms: number): string {
   return `${minutes}:${remainingSeconds.toString().padStart(2, "0")}`;
 }
 
+/** How often the recording status is polled. */
+const RECORDING_POLL_INTERVAL_MS = 5000;
+/** Budget for the runner's connection list and for the socket probe. */
+const PROBE_TIMEOUT_MS = 2000;
+
+const LOOPBACK_HOSTS = new Set(["127.0.0.1", "localhost", "[::1]"]);
+
 /**
- * Polls known SDK WebSocket ports for active recording sessions.
- * Shows a floating indicator when recording is active.
+ * The recording WebSocket URL of an SDK app at `appUrl` — ONLY when it is an
+ * http(s) loopback address (the app is on the machine of the runner that
+ * reported it); otherwise null.
  */
-export function RecordingIndicator() {
-  const [status, setStatus] = useState<RecordingStatus | null>(null);
-  const [wsUrl, setWsUrl] = useState<string | null>(null);
-  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+export function recordingSocketUrlFor(appUrl: string): string | null {
+  let url: URL;
+  try {
+    url = new URL(appUrl);
+  } catch {
+    return null;
+  }
+  if (url.protocol !== "http:" && url.protocol !== "https:") return null;
+  if (!LOOPBACK_HOSTS.has(url.hostname)) return null;
+  const scheme = url.protocol === "https:" ? "wss:" : "ws:";
+  return `${scheme}//${url.host}`;
+}
 
-  // Poll common SDK ports for recording status.
-  //
-  // Gated on the page itself being served from localhost (same gate as
-  // discovered-specs.ts): the SDK WS server only exists on the
-  // operator's machine, and on production origins (qontinui.io) these
-  // probes can never succeed — the runner that does occupy :9876
-  // serves a different protocol at /ws, so every attempt was a
-  // handshake 404 spamming the console every 5s on all authed pages
-  // (verified live 2026-06-05).
-  useEffect(() => {
-    if (!isRunnerReachable()) return;
-    const ports = [9876, 9877, 9878];
+/** Ask the recording socket at `socketUrl` for the session status. */
+function probeRecordingStatus(
+  socketUrl: string
+): Promise<RecordingStatus | null> {
+  return new Promise<RecordingStatus | null>((resolve) => {
+    let ws: WebSocket;
+    try {
+      ws = new WebSocket(socketUrl);
+    } catch {
+      resolve(null);
+      return;
+    }
+    const timeout = setTimeout(() => {
+      ws.close();
+      resolve(null);
+    }, PROBE_TIMEOUT_MS);
 
-    const checkPorts = async () => {
-      for (const port of ports) {
+    ws.onopen = () => {
+      const reqId = `poll-${Date.now()}`;
+      ws.onmessage = (event) => {
         try {
-          const ws = new WebSocket(`ws://localhost:${port}`);
-          const result = await new Promise<RecordingStatus | null>(
-            (resolve) => {
-              const timeout = setTimeout(() => {
-                ws.close();
-                resolve(null);
-              }, 2000);
-
-              ws.onopen = () => {
-                const reqId = `poll-${Date.now()}`;
-                ws.onmessage = (event) => {
-                  try {
-                    const msg = JSON.parse(event.data);
-                    if (
-                      msg.type === "response" &&
-                      msg.requestId === reqId &&
-                      msg.payload?.success
-                    ) {
-                      clearTimeout(timeout);
-                      ws.close();
-                      resolve(msg.payload.data as RecordingStatus);
-                    }
-                  } catch {
-                    // ignore parse errors
-                  }
-                };
-                ws.send(
-                  JSON.stringify({
-                    id: reqId,
-                    type: "recording:status",
-                    timestamp: Date.now(),
-                  })
-                );
-              };
-
-              ws.onerror = () => {
-                clearTimeout(timeout);
-                resolve(null);
-              };
-            }
-          );
-
-          if (result?.active) {
-            setStatus(result);
-            setWsUrl(`ws://localhost:${port}`);
-            return;
+          const msg = JSON.parse(event.data);
+          if (
+            msg.type === "response" &&
+            msg.requestId === reqId &&
+            msg.payload?.success
+          ) {
+            clearTimeout(timeout);
+            ws.close();
+            resolve(msg.payload.data as RecordingStatus);
           }
         } catch {
-          // Port not available
+          // ignore parse errors
         }
-      }
-      setStatus(null);
-      setWsUrl(null);
+      };
+      ws.send(
+        JSON.stringify({
+          id: reqId,
+          type: "recording:status",
+          timestamp: Date.now(),
+        })
+      );
     };
 
-    checkPorts();
-    pollRef.current = setInterval(checkPorts, 5000);
-    return () => {
-      if (pollRef.current) clearInterval(pollRef.current);
+    ws.onerror = () => {
+      clearTimeout(timeout);
+      resolve(null);
     };
-  }, []);
+  });
+}
+
+/**
+ * Polls the recording socket of the SDK app the active (proven-local) runner
+ * is connected to, and shows a floating indicator while a recording is
+ * active. See the module comment for why the socket is the APP's.
+ */
+export function RecordingIndicator() {
+  const target = useRunnerTarget();
+  const isLocal = routeOfTarget(target).kind === "loopback";
+  const [status, setStatus] = useState<RecordingStatus | null>(null);
+  const [wsUrl, setWsUrl] = useState<string | null>(null);
+  const targetRef = useRef(target);
+  targetRef.current = target;
+
+  // A different runner (or none proven local): forget the old one's state.
+  const [shownFor, setShownFor] = useState(isLocal ? target : null);
+  if ((isLocal ? target : null) !== shownFor) {
+    setShownFor(isLocal ? target : null);
+    setStatus(null);
+    setWsUrl(null);
+  }
+
+  const checkStatus = useCallback(async () => {
+    let socketUrl: string | null = null;
+    try {
+      const res = await runnerRequest(target, "/ui-bridge/sdk/connections", {
+        timeoutMs: PROBE_TIMEOUT_MS,
+      });
+      if (res.ok) {
+        const body = await res.json();
+        const conns: SdkConnection[] = Array.isArray(body?.data)
+          ? body.data
+          : Array.isArray(body)
+            ? body
+            : [];
+        const active = conns.find((c) => c.isActive && c.url);
+        socketUrl = active?.url ? recordingSocketUrlFor(active.url) : null;
+      }
+    } catch {
+      socketUrl = null;
+    }
+    const result = socketUrl ? await probeRecordingStatus(socketUrl) : null;
+    // The runner changed while this tick ran: its answer is not ours.
+    if (targetRef.current !== target) return;
+    if (result?.active) {
+      setStatus(result);
+      setWsUrl(socketUrl);
+    } else {
+      setStatus(null);
+      setWsUrl(null);
+    }
+  }, [target]);
+
+  useRunnerPoll(target, {
+    enabled: isLocal,
+    requestedMs: RECORDING_POLL_INTERVAL_MS,
+    immediate: true,
+    tick: checkStatus,
+  });
 
   const handleStop = useCallback(async () => {
     if (!wsUrl) return;

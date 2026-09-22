@@ -3,7 +3,8 @@
 import { useState, useEffect, useCallback } from "react";
 import {
   useRunnerHealth,
-  runnerApi,
+  useRunnerApi,
+  runnerFailureMessage,
   type MobileSettings,
 } from "@/lib/runner-api";
 import { RunnerOfflineState } from "@/components/runner/RunnerOfflineState";
@@ -29,6 +30,7 @@ import {
 } from "lucide-react";
 
 export default function MobileSettingsPage() {
+  const runnerApi = useRunnerApi();
   const { isOffline, isLoading: healthLoading } = useRunnerHealth();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -54,12 +56,12 @@ export default function MobileSettingsPage() {
       setLogcatLines(data.logcat_lines ?? 500);
       setFilterReactNative(data.filter_react_native ?? false);
       setOutputDir(data.output_dir ?? "");
-    } catch {
-      toast.error("Failed to load mobile settings");
+    } catch (err) {
+      toast.error(runnerFailureMessage(err, "Failed to load mobile settings"));
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [runnerApi]);
 
   const handleRefreshDevices = useCallback(async () => {
     setRefreshingDevices(true);

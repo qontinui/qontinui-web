@@ -3,7 +3,7 @@
 import React, { useState, useEffect, lazy, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useTaskRunDetail } from "@/hooks/useTaskRunData";
-import { useTaskRun, runnerApi } from "@/lib/runner-api";
+import { useTaskRun, useRunnerApi } from "@/lib/runner-api";
 import { RunnerPartialState } from "@/components/runner/RunnerPartialState";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -103,6 +103,7 @@ const VALID_TABS = [
 
 function RunDetailContentInner({ runId }: { runId: string }) {
   const router = useRouter();
+  const runnerApi = useRunnerApi();
   const searchParams = useSearchParams();
   const tabParam = searchParams.get("tab");
   const initialTab =
@@ -137,7 +138,7 @@ function RunDetailContentInner({ runId }: { runId: string }) {
         })
         .catch(() => {});
     }
-  }, [run?.status, run?.id]);
+  }, [run?.status, run?.id, runnerApi]);
 
   if (isLoading) {
     return (

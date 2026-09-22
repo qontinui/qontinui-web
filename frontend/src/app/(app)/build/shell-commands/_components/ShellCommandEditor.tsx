@@ -5,7 +5,7 @@ import { Settings, Tags } from "lucide-react";
 import { EditorHeader, EditorSection, ExecutionPanel, MonacoField, type ExecutionResult } from "@/components/builders/editors";
 import { TagInput } from "@/components/builders/TagInput";
 import { AiGeneratorPanel } from "@/components/builders/AiGeneratorPanel";
-import { runnerApi } from "@/lib/runner/runner-api-object";
+import { useRunnerApi } from "@/lib/runner/runner-api-object";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -34,6 +34,7 @@ interface ShellCommandEditorProps {
 }
 
 export function ShellCommandEditor({ item, form, setForm, isDirty, isNew, isSaving, onSave, onDelete }: ShellCommandEditorProps) {
+  const runnerApi = useRunnerApi();
   const [aiGenerating, setAiGenerating] = useState(false);
   const [aiError, setAiError] = useState<string | null>(null);
   const [templateApplied, setTemplateApplied] = useState(false);

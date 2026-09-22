@@ -4,7 +4,8 @@ import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import {
   useRunnerHealth,
-  runnerApi,
+  useRunnerApi,
+  runnerFailureMessage,
   type GlobalLogSourceSettings,
   type LogSourceAiSelectionMode,
 } from "@/lib/runner-api";
@@ -49,6 +50,7 @@ const AI_MODE_COLORS: Record<LogSourceAiSelectionMode, string> = {
 // ============================================================================
 
 export default function LogSourcesSettingsPage() {
+  const runnerApi = useRunnerApi();
   const router = useRouter();
   const { isOffline, isLoading: healthLoading } = useRunnerHealth();
   const [loading, setLoading] = useState(true);
@@ -60,10 +62,12 @@ export default function LogSourcesSettingsPage() {
     try {
       const data = await runnerApi.getGlobalLogSourceSettings();
       setSettings(data);
-    } catch {
-      toast.error("Failed to load log source settings");
+    } catch (err) {
+      toast.error(
+        runnerFailureMessage(err, "Failed to load log source settings")
+      );
     }
-  }, []);
+  }, [runnerApi]);
 
   useEffect(() => {
     if (isOffline) {

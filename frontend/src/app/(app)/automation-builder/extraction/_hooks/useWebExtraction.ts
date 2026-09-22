@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef } from "react";
 import { toast } from "sonner";
 import { authService, extractionService } from "@/services/service-factory";
 import { useExtractions, useCreateExtraction } from "@/hooks/use-extractions";
-import { runnerClient } from "@/lib/runner-client";
+import { useRunnerClient } from "@/lib/runner-client";
 import {
   useExtractionAnnotationStore,
   type AnnotatedElement,
@@ -37,6 +37,7 @@ export function useWebExtraction({
   webConfig,
   isLoaded: _isLoaded,
 }: UseWebExtractionArgs) {
+  const runnerClient = useRunnerClient();
   const createExtraction = useCreateExtraction();
   const annotationStore = useExtractionAnnotationStore();
 
@@ -610,7 +611,7 @@ export function useWebExtraction({
     toast.info("Starting web extraction...");
     stateRef.current.setIsExtracting(true);
     stateRef.current.setMainTab("results");
-  }, [projectId, webConfig, createExtraction]);
+  }, [projectId, webConfig, createExtraction, runnerClient]);
 
   return {
     extractionHistory,

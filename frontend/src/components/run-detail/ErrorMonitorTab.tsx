@@ -3,7 +3,8 @@
 import { useState, useMemo, useCallback } from "react";
 import {
   useRunnerQuery,
-  runnerApi,
+  useRunnerApi,
+  useRunnerTarget,
   type ErrorMonitorEntry,
 } from "@/lib/runner-api";
 import { ErrorEntryCard } from "@/components/error-monitor/ErrorEntryCard";
@@ -52,12 +53,15 @@ interface ErrorMonitorTabProps {
 }
 
 export function ErrorMonitorTab({ taskRunId }: ErrorMonitorTabProps) {
+  const target = useRunnerTarget();
+  const runnerApi = useRunnerApi();
   const {
     data: entries,
     isLoading,
     error: fetchError,
     refetch,
   } = useRunnerQuery<ErrorMonitorEntry[]>(
+    target,
     `/error-monitor/errors?task_run_id=${taskRunId}`,
     { pollInterval: 30000 }
   );
@@ -81,7 +85,7 @@ export function ErrorMonitorTab({ taskRunId }: ErrorMonitorTabProps) {
         setAcknowledgingId(null);
       }
     },
-    [refetch]
+    [refetch, runnerApi]
   );
 
   const handleResolve = useCallback(
@@ -96,7 +100,7 @@ export function ErrorMonitorTab({ taskRunId }: ErrorMonitorTabProps) {
         setResolvingId(null);
       }
     },
-    [refetch]
+    [refetch, runnerApi]
   );
 
   const filteredEntries = useMemo(() => {

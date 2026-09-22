@@ -28,6 +28,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { AlertTriangle, CheckCircle2, Info, Loader2 } from "lucide-react";
 import { createLogger } from "@/lib/logger";
+import { resolveRunnerRoute, useRunnerTarget } from "@/lib/runner";
 import { httpClient } from "@/services/service-factory";
 import {
   CoordAdminOnly,
@@ -333,6 +334,7 @@ export function PairDeviceStep({
   // pair flow itself is the same one-click flow either way.
   pairedElsewhere?: PairedElsewhereDevice[];
 }) {
+  const target = useRunnerTarget();
   const [pairCode, setPairCode] = useState<string | null>(null);
   const [redirectUrl, setRedirectUrl] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -363,8 +365,21 @@ export function PairDeviceStep({
       // device_hostname per src/routes_phase3.rs::PairStartRequest. The
       // dashboard wizard provides reasonable defaults — operators can
       // run the matching `qontinui_profile device pair` on their host.
+      //
+      // coord echoes callback_url into redirect_url, and the browser that
+      // opens it is sent back to that address — so it must name the runner
+      // on the machine running this browser. That address exists only for
+      // a runner PROVEN local (a loopback route); a guessed default port
+      // could be another runner, and a relayed runner has no address a
+      // browser can be redirected to. With none, refuse rather than guess.
+      const route = await resolveRunnerRoute(target, 5000);
+      if (route.kind !== "loopback") {
+        throw new Error(
+          "Pairing from this page needs the runner on this machine — no runner here is reachable locally. Run `qontinui_profile device pair` on the device instead."
+        );
+      }
       const body = {
-        callback_url: "http://localhost:9876/pair-callback",
+        callback_url: `${route.base}/pair-callback`,
         device_hostname: "operator-workstation",
         web_pair_url: `${window.location.origin}/operations/pair-runner`,
       };
@@ -388,7 +403,7 @@ export function PairDeviceStep({
     } finally {
       setBusy(false);
     }
-  }, []);
+  }, [target]);
 
   return (
     <div className="space-y-3">
