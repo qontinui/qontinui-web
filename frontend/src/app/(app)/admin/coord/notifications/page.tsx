@@ -191,15 +191,26 @@ const POLL_INTERVAL_MS = 10_000;
 /** Page size asked of coord. Coord owns the clamp; this is a request. */
 const PAGE_SIZE = 50;
 
+/**
+ * `via` of an agent escalate clearance — coord stamps `detail.via` on the
+ * notification its evidence door records, and `?via=` filters on it (plan
+ * `2026-09-13-escalate-path-block-is-agent-clearable-on-evidence` 4.3). This is
+ * the feed `notification-not-permission` depends on: the operator reads what
+ * agents cleared rather than approving it first.
+ */
+const AGENT_CLEARANCE_VIA = "agent_evidence";
+
 function buildQuery(params: {
   kind: string;
   unreadOnly: boolean;
+  agentClearancesOnly?: boolean;
   cursor?: string | null;
 }): string {
   const qs = new URLSearchParams();
   qs.set("limit", String(PAGE_SIZE));
   if (params.kind !== "any") qs.set("kind", params.kind);
   if (params.unreadOnly) qs.set("unread_only", "true");
+  if (params.agentClearancesOnly) qs.set("via", AGENT_CLEARANCE_VIA);
   if (params.cursor) qs.set("cursor", params.cursor);
   return qs.toString();
 }
@@ -207,6 +218,7 @@ function buildQuery(params: {
 export default function CoordNotificationsPage() {
   const [kind, setKind] = useState("any");
   const [unreadOnly, setUnreadOnly] = useState(false);
+  const [agentClearancesOnly, setAgentClearancesOnly] = useState(false);
 
   const [rows, setRows] = useState<CoordNotificationRow[]>([]);
   const [nextCursor, setNextCursor] = useState<string | null>(null);
@@ -412,7 +424,7 @@ export default function CoordNotificationsPage() {
       const scalarSeq = scalarSeqRef.current!.issue();
       try {
         const body = await httpClient.get<NotificationsResponse>(
-          `${API}/notifications?${buildQuery({ kind, unreadOnly })}`,
+          `${API}/notifications?${buildQuery({ kind, unreadOnly, agentClearancesOnly })}`,
           NOTIFICATIONS_REQUEST_OPTIONS
         );
         if (queryGenRef.current !== gen) return;
@@ -464,7 +476,7 @@ export default function CoordNotificationsPage() {
         if (queryGenRef.current === gen) setLoading(false);
       }
     },
-    [kind, unreadOnly, applyEnvelope]
+    [kind, unreadOnly, agentClearancesOnly, applyEnvelope]
   );
 
   // Keyset paging: `next_cursor` is opaque and only meaningful for the query
@@ -477,7 +489,12 @@ export default function CoordNotificationsPage() {
     setLoadingMore(true);
     try {
       const body = await httpClient.get<NotificationsResponse>(
-        `${API}/notifications?${buildQuery({ kind, unreadOnly, cursor })}`,
+        `${API}/notifications?${buildQuery({
+          kind,
+          unreadOnly,
+          agentClearancesOnly,
+          cursor,
+        })}`,
         NOTIFICATIONS_REQUEST_OPTIONS
       );
       if (queryGenRef.current !== gen) return;
@@ -510,7 +527,7 @@ export default function CoordNotificationsPage() {
     } finally {
       if (queryGenRef.current === gen) setLoadingMore(false);
     }
-  }, [kind, unreadOnly, nextCursor, applyEnvelope]);
+  }, [kind, unreadOnly, agentClearancesOnly, nextCursor, applyEnvelope]);
 
   // Filter change resets the page walk — a cursor is only meaningful within
   // the query that produced it — and retires every response still in flight
@@ -669,7 +686,7 @@ export default function CoordNotificationsPage() {
    * carries the explicit ids of the loaded unread rows, and the label says so
    * BEFORE the click rather than the toast saying so after.
    */
-  const filterActive = kind !== "any" || unreadOnly;
+  const filterActive = kind !== "any" || unreadOnly || agentClearancesOnly;
   /**
    * Through the module's `isUnread`, not a fourth `!n.read_at`.
    *
@@ -849,6 +866,21 @@ export default function CoordNotificationsPage() {
             className="text-xs text-muted-foreground"
           >
             unread only
+          </label>
+        </div>
+        <div className="ml-2 flex items-center gap-1.5">
+          <Switch
+            id="agent-clearances-only"
+            checked={agentClearancesOnly}
+            onCheckedChange={setAgentClearancesOnly}
+            data-testid="coord-notifications-agent-clearances-only"
+          />
+          <label
+            htmlFor="agent-clearances-only"
+            className="text-xs text-muted-foreground"
+            title="Escalate-path blocks an agent cleared on evidence (via: agent_evidence). Clearances recorded before coord stamped `via` do not match."
+          >
+            agent clearances only
           </label>
         </div>
         <Button

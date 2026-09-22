@@ -86001,6 +86001,24 @@
               "description": "Max rows. Coord clamps to `[1, 1000]` and defaults to 200.",
               "title": "Limit"
             }
+          },
+          {
+            "description": "Filter on `metadata.via` \u2014 the writer of an escalate-path clearance: `agent_evidence` (an agent, on evidence) or `service` (the operator escape hatch). Coord owns the vocabulary and answers 400 `unknown_via` for anything else.",
+            "in": "query",
+            "name": "via",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter on `metadata.via` \u2014 the writer of an escalate-path clearance: `agent_evidence` (an agent, on evidence) or `service` (the operator escape hatch). Coord owns the vocabulary and answers 400 `unknown_via` for anything else.",
+              "title": "Via"
+            }
           }
         ],
         "responses": {
@@ -92883,6 +92901,24 @@
               ],
               "description": "Restrict to notifications the calling principal has not read.",
               "title": "Unread Only"
+            }
+          },
+          {
+            "description": "Filter on the coord-stamped ``detail.via`` \u2014 ``agent_evidence`` is every agent escalate clearance. Coord owns the vocabulary and answers 400 ``unknown_via`` for anything else.",
+            "in": "query",
+            "name": "via",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter on the coord-stamped ``detail.via`` \u2014 ``agent_evidence`` is every agent escalate clearance. Coord owns the vocabulary and answers 400 ``unknown_via`` for anything else.",
+              "title": "Via"
             }
           }
         ],
