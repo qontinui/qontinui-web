@@ -277,6 +277,7 @@ export function OperatorAuditPanel() {
     setRead({ state: "loading" });
     const params = new URLSearchParams({ limit: String(AUDIT_LIMIT) });
     if (filter.action) params.set("action", filter.action);
+    if (filter.via) params.set("via", filter.via);
     if (resourceKeyFilter) params.set("resource_key", resourceKeyFilter);
     try {
       const body = await httpClient.get<unknown>(
@@ -294,7 +295,7 @@ export function OperatorAuditPanel() {
             : "the audit feed could not be read.",
       });
     }
-  }, [filter.action, resourceKeyFilter, isCoordAdmin]);
+  }, [filter.action, filter.via, resourceKeyFilter, isCoordAdmin]);
 
   // Read on mount and on a filter change; NOT polled. An audit trail is
   // append-only history, not liveness — the reason to re-read it is that you
@@ -481,6 +482,12 @@ export function OperatorAuditPanel() {
               ) : (
                 <p className="text-xs text-muted-foreground">
                   No <span className="font-mono">{filter.action ?? "*"}</span>{" "}
+                  {filter.via ? (
+                    <>
+                      rows with{" "}
+                      <span className="font-mono">via: {filter.via}</span>{" "}
+                    </>
+                  ) : null}
                   rows for this tenant at all &mdash; coord applies the filter
                   BEFORE the {AUDIT_LIMIT}-row limit, so this is zero matches,
                   not &ldquo;none in the last {AUDIT_LIMIT}&rdquo;. The read

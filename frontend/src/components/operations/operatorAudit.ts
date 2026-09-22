@@ -76,9 +76,21 @@ export interface AuditFilter {
   label: string;
   /** Sent as coord's `action` param; `null` means no filter. */
   action: string | null;
+  /**
+   * Sent as coord's `via` param — the writer of an `escalate_override` marker
+   * (`agent_evidence` | `service`). Absent/`null` means no filter.
+   */
+  via?: string | null;
   /** Rendered under the picker so the filter's reach is never guessed at. */
   hint: string;
 }
+
+/**
+ * The `coord.operator_audit.action` both `escalate_override` marker writers
+ * stamp (plan `2026-09-13-escalate-path-block-is-agent-clearable-on-evidence`
+ * 4.3); `metadata.via` says which writer.
+ */
+export const ESCALATE_OVERRIDE_ACTION = "pr_merge.escalate_override";
 
 export const AUDIT_FILTERS: readonly AuditFilter[] = [
   {
@@ -92,6 +104,20 @@ export const AUDIT_FILTERS: readonly AuditFilter[] = [
     label: "Merge actions",
     action: "pr_merge.*",
     hint: "Kill switch, merge enablement, and the rest of the merge-train writes.",
+  },
+  {
+    id: "escalate",
+    label: "Escalate clearances",
+    action: ESCALATE_OVERRIDE_ACTION,
+    via: null,
+    hint: "Every escalate-path block cleared — by an operator (via: service) or by an agent on evidence (via: agent_evidence).",
+  },
+  {
+    id: "escalate-agent",
+    label: "Agent escalate clearances",
+    action: ESCALATE_OVERRIDE_ACTION,
+    via: "agent_evidence",
+    hint: "Escalate-path blocks an agent cleared on evidence (via: agent_evidence) — the feed the notify-not-ask rule depends on. Nothing here waited for approval.",
   },
   {
     id: "all",
@@ -185,6 +211,16 @@ const BLAST_RADIUS_KEYS: readonly {
     format: (v) => (v === true ? "drained" : v === false ? "released" : null),
   },
   { key: "until", label: "Expires", format: (v) => String(v) },
+  // An escalate clearance reaches exactly one PR head, via one writer.
+  { key: "head_sha", label: "Head", format: (v) => String(v).slice(0, 12) },
+  // `metadata.via` is a SHARED key (agent-registry writes stamp
+  // `via: self | admin`), so only the escalate-marker spellings are promoted
+  // as a clearance writer; anything else stays in the raw metadata.
+  {
+    key: "via",
+    label: "Cleared via",
+    format: (v) => (v === "agent_evidence" || v === "service" ? v : null),
+  },
   { key: "version", label: "Policy version", format: (v) => String(v) },
 ];
 
@@ -304,6 +340,7 @@ const ACTION_LABELS: Readonly<Record<string, string>> = {
   // cover them.
   "pr_merge.kill_switch.activate": "Fired the merge kill switch",
   "pr_merge.merge_enabled.set": "Changed merge enablement",
+  "pr_merge.escalate_override": "Cleared an escalate-path block",
   "operator.disable": "Disabled an operator",
   "operator.enable": "Re-enabled an operator",
 };
