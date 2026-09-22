@@ -74,6 +74,36 @@ property is ever wanted in the database rather than in the writer, that is a
 deliberate follow-up with its own reversibility story, not a line to slip in
 here.
 
+⛔ **And the unguarded shape named above is the WRONG one. Nothing issues that
+``UPDATE``. The path that actually demotes an established row is
+DELETE-then-reinsert, and it is shipped and runs every tick** (found by
+independent review 2026-09-22, reproduced against PostgreSQL 16):
+
+    -- qontinui-coord/crates/coord/src/prompt_document_claims.rs:470
+    const PRUNE_CLAIMS_SQL: &str = "DELETE FROM coord.prompt_document_claim_states \\
+     WHERE tenant_id = $1 AND kind = $2 AND name = $3 AND claim_id <> ALL($4)";
+
+It runs FIRST, on every tick, unconditionally — including with an empty id
+list, which ``persist_claim_states`` does deliberately (``:488-492``). So a
+document edit that renames a claim id, a frontmatter typo, or one short claim
+list from an exhausted GitHub fetch budget deletes the row; the next tick
+re-inserts it at the ``aspirational`` default. Reproduced end state for a row
+that was ``(state=contradicted, lifecycle=established)`` — an ACTIVELY ALERTING
+regression::
+
+    claim_id |    state     |  lifecycle   | established_by
+    c1       | contradicted | aspirational |
+
+Under the ``established``-only alerting rule this column exists to enable, that
+silently reclassifies a live regression as backlog and raises nothing. It is
+the same loss ``downgrade()`` warns about, except in STEADY-STATE operation
+with no downgrade involved.
+
+**This is a THIRD requirement the coord PR inherits** (see "Deploy ordering"),
+and it cannot be fixed in SQL here. Candidate remedies, all coord-side:
+exclude ``lifecycle = 'established'`` rows from the prune; make the prune a
+soft ``retired_at`` stamp; or re-assert the pair from a pre-delete read.
+
 Columns
 =======
 
@@ -203,8 +233,15 @@ Idempotency
 ===========
 ``ADD COLUMN IF NOT EXISTS`` / ``DROP COLUMN IF EXISTS``, and the backfill is
 itself idempotent: its ``WHERE`` clause excludes rows that are already
-promoted, so a second run matches nothing and re-stamps nothing (measured:
-``UPDATE 1`` then ``UPDATE 0``). It does **not** re-derive the same values on
+promoted, so a second run re-stamps nothing it already stamped. **It does not
+follow that a second run is always ``UPDATE 0``**, and the earlier wording here
+claimed that: the filter is ``lifecycle = 'aspirational' AND state =
+'confirmed'``, so a row that reached ``confirmed`` through coord's own upsert
+BETWEEN the two runs is promoted by the second one — measured, ``UPDATE 1``
+then ``UPDATE 1``, not ``UPDATE 0``. That behaviour is correct and is in fact
+better than the property the docstring used to assert; what is idempotent is
+the per-row effect, not the statement's row count. It does **not** re-derive
+the same values on
 a re-run — it does not touch those rows at all, which is the stronger
 property and the one that matters, since ``observed_at`` may have moved on
 under it. A re-run against an already-applied database is a no-op.

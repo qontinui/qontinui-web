@@ -270,7 +270,7 @@ different order than the DDL sends that reader away with the wrong picture.
 3. ``ck_success_metric_history_target_state`` — the closed three-valued
    verdict vocabulary.
 4. ``ck_success_metric_history_unknown_reason`` — the reason is present
-   **iff** the verdict is ``unknown``, and is one of the five. Written as an
+   **iff** the verdict is ``unknown``, and is one of the six. Written as an
    equality between two booleans, which is total because ``target_state`` is
    ``NOT NULL``. It catches both halves of the defect at once: an ``unknown``
    with no reason (the uninformative UNKNOWN §4 exists to prevent) and an
@@ -436,7 +436,7 @@ def upgrade() -> None:
     # ----------------------------------------------------------------
     # 1. The append-only series. Raw SQL rather than op.create_table for
     #    the same reason as every sibling coord.* revision: the
-    #    IF NOT EXISTS guard, the '{}'::jsonb default and the three
+    #    IF NOT EXISTS guard, the '{}'::jsonb default and the eight
     #    named CHECKs all want to be stated literally.
     # ----------------------------------------------------------------
     op.execute(
@@ -508,17 +508,27 @@ def upgrade() -> None:
             -- rule is that it must resolve unknown instead, carrying
             -- no_target or no_direction to say which one was missing.
             --
-            -- direction <> '' because the rest of this is a presence
-            -- test and an empty string is present. It stays total on a
-            -- NULL direction: `direction IS NOT NULL` is already FALSE
-            -- there, and FALSE AND NULL is FALSE, never NULL. The
-            -- column's VOCABULARY is deliberately coord's, so this
-            -- claims non-blank and nothing more.
+            -- btrim(direction) <> '' because the rest of this is a
+            -- presence test and a blank string is present. It stays
+            -- total on a NULL direction: `direction IS NOT NULL` is
+            -- already FALSE there, and FALSE AND NULL is FALSE, never
+            -- NULL. The column's VOCABULARY is deliberately coord's, so
+            -- this claims non-blank and nothing more.
+            --
+            -- btrim, not `<> ''`: a WHITESPACE-ONLY direction is a
+            -- direction nobody can read, so it must be treated exactly
+            -- as an empty one. With the bare `<> ''` test this clause
+            -- ACCEPTED `direction = '   '` beside an on_target verdict
+            -- (a verdict derived from a direction no reader can
+            -- interpret) while constraint 8 REJECTED the honest
+            -- no_direction row for the same value -- so the schema
+            -- refused the correct row and admitted the guess. Both
+            -- sides are btrim'd, and they must stay symmetric.
             CONSTRAINT ck_success_metric_history_verdict_inputs
                 CHECK (target_state = 'unknown'
                        OR (target IS NOT NULL
                            AND direction IS NOT NULL
-                           AND direction <> '')),
+                           AND btrim(direction) <> '')),
 
             -- A reason that names source_query_type must agree with it,
             -- so a document that HAS a query can never be routed to
@@ -553,7 +563,7 @@ def upgrade() -> None:
                         OR target IS NULL)
                        AND (unknown_reason IS DISTINCT FROM 'no_direction'
                             OR direction IS NULL
-                            OR direction = ''))
+                            OR btrim(direction) = ''))
         )
         """
     )
