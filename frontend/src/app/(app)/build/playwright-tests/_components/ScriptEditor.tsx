@@ -33,7 +33,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { runnerApi } from "@/lib/runner/runner-api-object";
+import { useRunnerApi } from "@/lib/runner/runner-api-object";
 import type { PlaywrightScript } from "@/lib/runner/types/library";
 import type { ScriptForm } from "../script-utils";
 import { DEFAULT_SCRIPT_CONTENT } from "../script-utils";
@@ -66,6 +66,7 @@ export function ScriptEditor({
   onDuplicate,
   onOpenSnippetManager,
 }: ScriptEditorProps) {
+  const runnerApi = useRunnerApi();
   const editor = useScriptEditor({
     item,
     form,

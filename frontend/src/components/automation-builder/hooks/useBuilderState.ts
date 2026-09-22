@@ -14,7 +14,7 @@ import type { PermissionLevel } from "@/types/collaboration";
 import type { ProjectValidationResult } from "@/lib/project-validator";
 import { validateProject } from "@/lib/project-validator";
 import { createLogger } from "@/lib/logger";
-import { runnerClient } from "@/lib/runner-client";
+import { useRunnerClient } from "@/lib/runner-client";
 import {
   BuilderMode,
   LibraryItem,
@@ -28,6 +28,7 @@ import { useProjectSharing } from "./useProjectSharing";
 const logger = createLogger("AutomationBuilder");
 
 export function useBuilderState() {
+  const runnerClient = useRunnerClient();
   // Core selection state
   const [mode, setMode] = useState<BuilderMode>("sequential");
   const [selectedItem, setSelectedItem] = useState<LibraryItem | null>(null);
@@ -374,7 +375,7 @@ export function useBuilderState() {
           error instanceof Error ? error.message : "Unknown error occurred",
       });
     }
-  }, [selectedItem]);
+  }, [selectedItem, runnerClient]);
 
   const handleNavigateToWorkflow = useCallback(
     (workflowId: string) => {

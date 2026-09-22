@@ -6,7 +6,7 @@ import { ActionPropertiesComponentProps } from "../types";
 import { TimingProperties } from "../TimingProperties";
 import type { GoToStateActionConfig } from "@/lib/action-schema/configs/state-actions";
 import {
-  pathfindingService,
+  usePathfindingService,
   type PathValidationResult,
 } from "@/services/pathfinding-service";
 import { useAutomation } from "@/contexts/automation-context";
@@ -22,6 +22,7 @@ export function GoToStateActionProperties({
   updateConfig,
   states,
 }: ActionPropertiesComponentProps) {
+  const pathfindingService = usePathfindingService();
   const config = action.config as unknown as GoToStateActionConfig;
   // Memoize to prevent dependency arrays from changing on every render
   const selectedStates = useMemo(
@@ -69,7 +70,7 @@ export function GoToStateActionProperties({
     } finally {
       setIsValidating(false);
     }
-  }, [selectedStates, states, transitions]);
+  }, [selectedStates, states, transitions, pathfindingService]);
 
   // Trigger validation when selected states change (debounced)
   useEffect(() => {

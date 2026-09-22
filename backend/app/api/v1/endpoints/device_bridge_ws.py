@@ -161,14 +161,39 @@ def _is_browser_provenance_header(name: str) -> bool:
     )
 
 
-# Request headers never forwarded to the runner over the relay. ``authorization``
-# is excluded deliberately: the runner trusts its outbound WS connection, NOT
-# the end user's bearer token, so the token must never cross the relay.
+# Request headers never forwarded to the runner over the relay.
+#
+# Hop-by-hop: ``host``, ``connection``, ``transfer-encoding``,
+# ``content-length``.
+#
+# Ambient credentials — every header by which a caller authenticates TO THIS
+# BACKEND. The runner trusts its outbound WS connection, not the end user's
+# credentials, so none of them may cross the relay: a runner (or anything on
+# its box reading its logs) must never receive a replayable web credential.
+#   - ``authorization`` / ``proxy-authorization`` — the user's bearer.
+#   - ``cookie`` — the browser's session / refresh cookies (the frontend's
+#     httpClient sends ``credentials: "include"``).
+#   - ``x-csrf-token`` — the CSRF token paired with that session.
+#   - ``x-machine-key`` / ``x-device-machine-key`` — machine / device keys
+#     accepted by the devenv-agent and device endpoints.
+#   - ``x-coord-admin-secret`` — the coord admin shared secret.
 #
 # Browser provenance headers are dropped as well, by
 # :func:`_is_browser_provenance_header` (above) at the filter site.
 _RELAY_EXCLUDED_REQUEST_HEADERS = frozenset(
-    {"host", "connection", "transfer-encoding", "content-length", "authorization"}
+    {
+        "host",
+        "connection",
+        "transfer-encoding",
+        "content-length",
+        "authorization",
+        "proxy-authorization",
+        "cookie",
+        "x-csrf-token",
+        "x-machine-key",
+        "x-device-machine-key",
+        "x-coord-admin-secret",
+    }
 )
 
 # Hop-by-hop response headers stripped before returning the runner's reply.

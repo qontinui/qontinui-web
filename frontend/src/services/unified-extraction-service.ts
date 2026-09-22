@@ -23,12 +23,15 @@ import type {
   UnifiedExtractionRequest,
   UnifiedExtractionResult,
 } from "@/types/unified-extraction";
-import { runnerClient } from "@/lib/runner-client";
-
-// Default runner URL
-// Use 127.0.0.1 instead of localhost to force IPv4 (runner only listens on IPv4)
-const RUNNER_URL =
-  process.env.NEXT_PUBLIC_RUNNER_URL || "http://127.0.0.1:9876";
+import { useMemo } from "react";
+import { useRunnerTarget } from "@/contexts/active-runner-context";
+import {
+  isRunnerNeedsLocalError,
+  runnerPollDelay,
+  runnerRequest,
+} from "@/lib/runner/api-client";
+import type { RunnerTarget } from "@/lib/runner/target";
+import { createRunnerClient, type RunnerClient } from "@/lib/runner-client";
 
 // ============================================================================
 // Session Management
@@ -260,7 +263,9 @@ function convertUIBridgeResults(
 // ============================================================================
 
 class UnifiedExtractionService {
-  private baseUrl: string;
+  /** The runner every call is for; the transport is resolved per request. */
+  private target: RunnerTarget;
+  private runnerClient: RunnerClient;
   private sessionId: string;
   private activeJobs: Map<string, UnifiedExtractionJob> = new Map();
   private progressCallbacks: Map<
@@ -268,8 +273,9 @@ class UnifiedExtractionService {
     ((progress: UnifiedExtractionProgress) => void)[]
   > = new Map();
 
-  constructor(baseUrl: string = RUNNER_URL) {
-    this.baseUrl = baseUrl;
+  constructor(target: RunnerTarget) {
+    this.target = target;
+    this.runnerClient = createRunnerClient(target);
     this.sessionId = getOrCreateSessionId();
   }
 
@@ -359,8 +365,9 @@ class UnifiedExtractionService {
 
     // Try to fetch from runner
     try {
-      const response = await fetch(
-        `${this.baseUrl}/extraction/status/${jobId}`,
+      const response = await runnerRequest(
+        this.target,
+        `/extraction/status/${jobId}`,
         {
           headers: {
             "X-Session-ID": this.sessionId,
@@ -374,7 +381,8 @@ class UnifiedExtractionService {
 
       const data = await response.json();
       return this.convertToUnifiedJob(data);
-    } catch {
+    } catch (error) {
+      if (isRunnerNeedsLocalError(error)) throw error;
       return null;
     }
   }
@@ -384,8 +392,9 @@ class UnifiedExtractionService {
    */
   async getJobResults(jobId: string): Promise<UnifiedExtractionResult | null> {
     try {
-      const response = await fetch(
-        `${this.baseUrl}/extraction/results/${jobId}`,
+      const response = await runnerRequest(
+        this.target,
+        `/extraction/results/${jobId}`,
         {
           headers: {
             "X-Session-ID": this.sessionId,
@@ -399,7 +408,8 @@ class UnifiedExtractionService {
 
       const data = await response.json();
       return this.convertToUnifiedResult(data);
-    } catch {
+    } catch (error) {
+      if (isRunnerNeedsLocalError(error)) throw error;
       return null;
     }
   }
@@ -409,8 +419,9 @@ class UnifiedExtractionService {
    */
   async cancelJob(jobId: string): Promise<boolean> {
     try {
-      const response = await fetch(
-        `${this.baseUrl}/extraction/cancel/${jobId}`,
+      const response = await runnerRequest(
+        this.target,
+        `/extraction/cancel/${jobId}`,
         {
           method: "POST",
           headers: {
@@ -424,7 +435,8 @@ class UnifiedExtractionService {
         return true;
       }
       return false;
-    } catch {
+    } catch (error) {
+      if (isRunnerNeedsLocalError(error)) throw error;
       return false;
     }
   }
@@ -444,8 +456,9 @@ class UnifiedExtractionService {
       if (options?.method) params.set("method", options.method);
       if (options?.limit) params.set("limit", options.limit.toString());
 
-      const response = await fetch(
-        `${this.baseUrl}/extraction/jobs?${params.toString()}`,
+      const response = await runnerRequest(
+        this.target,
+        `/extraction/jobs?${params.toString()}`,
         {
           headers: {
             "X-Session-ID": this.sessionId,
@@ -550,14 +563,18 @@ class UnifiedExtractionService {
       body.iou_threshold = request.confidence;
     }
 
-    const response = await fetch(`${this.baseUrl}/vision-extraction/extract`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "X-Session-ID": request.sessionId || this.sessionId,
-      },
-      body: JSON.stringify(body),
-    });
+    const response = await runnerRequest(
+      this.target,
+      "/vision-extraction/extract",
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-Session-ID": request.sessionId || this.sessionId,
+        },
+        body: JSON.stringify(body),
+      }
+    );
 
     if (!response.ok) {
       const errorText = await response.text();
@@ -617,7 +634,7 @@ class UnifiedExtractionService {
       request.maxRiskLevel === "dangerous" || request.maxRiskLevel === "blocked"
         ? "caution"
         : request.maxRiskLevel;
-    const startResponse = await runnerClient.startPlaywrightCollection({
+    const startResponse = await this.runnerClient.startPlaywrightCollection({
       url: request.url,
       max_depth: request.maxDepth,
       max_elements_per_page: request.maxElementsPerPage,
@@ -686,8 +703,8 @@ class UnifiedExtractionService {
     };
 
     const response = request.findAll
-      ? await runnerClient.patternFindAll(patternRequest)
-      : await runnerClient.patternFind(patternRequest);
+      ? await this.runnerClient.patternFindAll(patternRequest)
+      : await this.runnerClient.patternFind(patternRequest);
 
     if (!response.success) {
       throw new Error(response.error || "Pattern matching failed");
@@ -728,7 +745,7 @@ class UnifiedExtractionService {
 
     const startedAt = new Date().toISOString();
 
-    const startResponse = await runnerClient.startExtraction({
+    const startResponse = await this.runnerClient.startExtraction({
       urls,
       viewports: request.viewports || [[1920, 1080]],
       capture_hover_states: request.captureHoverStates || false,
@@ -782,19 +799,39 @@ class UnifiedExtractionService {
       let status: ExtractionStatus;
       let progress = 0;
       let message = "";
+      // Why a status read failed (e.g. the runner refused the path over the
+      // relay — "needs the runner on this machine"), surfaced as the error.
+      let failure: string | undefined;
+
+      // The status methods rethrow a relay refusal (RUNNER_NEEDS_LOCAL)
+      // typed; it ends the job with the runner's own message.
+      const readStatus = async <T>(read: () => Promise<T>) => {
+        try {
+          return await read();
+        } catch (err) {
+          if (isRunnerNeedsLocalError(err)) {
+            return { success: false, error: (err as Error).message } as T;
+          }
+          throw err;
+        }
+      };
 
       if (method === "playwright") {
-        const statusResponse =
-          await runnerClient.getPlaywrightCollectionStatus(jobId);
+        const statusResponse = await readStatus(() =>
+          this.runnerClient.getPlaywrightCollectionStatus(jobId)
+        );
         if (statusResponse.success && statusResponse.data) {
           status = statusResponse.data.status as ExtractionStatus;
           progress = statusResponse.data.progress_percent || 0;
           message = statusResponse.data.progress_message || "";
         } else {
           status = "failed";
+          failure = statusResponse.error;
         }
       } else {
-        const statusResponse = await runnerClient.getExtractionStatus();
+        const statusResponse = await readStatus(() =>
+          this.runnerClient.getExtractionStatus()
+        );
         if (statusResponse.success && statusResponse.data) {
           status = statusResponse.data.is_running ? "running" : "completed";
           progress = statusResponse.data.stats
@@ -805,6 +842,7 @@ class UnifiedExtractionService {
             : 0;
         } else {
           status = "failed";
+          failure = statusResponse.error;
         }
       }
 
@@ -829,7 +867,7 @@ class UnifiedExtractionService {
         // Fetch results
         if (method === "playwright") {
           const resultsResponse =
-            await runnerClient.getPlaywrightCollectionResults(jobId);
+            await this.runnerClient.getPlaywrightCollectionResults(jobId);
           if (resultsResponse.success && resultsResponse.data) {
             const elements = convertPlaywrightResults(
               resultsResponse.data as unknown as Record<string, unknown>
@@ -881,11 +919,14 @@ class UnifiedExtractionService {
 
       if (status === "failed") {
         this.activeJobs.delete(jobId);
-        throw new Error(`${method} extraction failed`);
+        throw new Error(failure || `${method} extraction failed`);
       }
 
-      // Wait before next poll
-      await new Promise((resolve) => setTimeout(resolve, pollInterval));
+      // Wait before next poll — re-evaluated every iteration, so a relayed
+      // (or not yet resolved) target never polls faster than the relay
+      // cadence. A RUNNER_NEEDS_LOCAL refusal from a status call is thrown
+      // out of this loop rather than retried.
+      await runnerPollDelay(this.target, pollInterval);
     }
 
     throw new Error("Extraction timed out");
@@ -1013,10 +1054,21 @@ class UnifiedExtractionService {
 }
 
 // ============================================================================
-// Singleton Export
+// Factory + Hook
 // ============================================================================
 
-export const unifiedExtractionService = new UnifiedExtractionService();
+/** A UnifiedExtractionService bound to one runner target. */
+export function createUnifiedExtractionService(
+  target: RunnerTarget
+): UnifiedExtractionService {
+  return new UnifiedExtractionService(target);
+}
+
+/** A UnifiedExtractionService bound to the active runner; stable while it is. */
+export function useUnifiedExtractionService(): UnifiedExtractionService {
+  const target = useRunnerTarget();
+  return useMemo(() => createUnifiedExtractionService(target), [target]);
+}
 
 // Also export the class for testing
 export { UnifiedExtractionService };

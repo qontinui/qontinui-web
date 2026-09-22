@@ -16,7 +16,12 @@ import type {
   UnifiedExtractionRequest,
   UnifiedExtractionResult,
 } from "@/types/unified-extraction";
-import { unifiedExtractionService } from "@/services/unified-extraction-service";
+import { useUnifiedExtractionService } from "@/services/unified-extraction-service";
+import { useRunnerTarget } from "@/contexts/active-runner-context";
+import {
+  isRunnerNeedsLocalError,
+  runnerPollInterval,
+} from "@/lib/runner/api-client";
 
 // ============================================================================
 // Types
@@ -85,6 +90,8 @@ export interface UseUnifiedExtractionReturn {
 export function useUnifiedExtraction(
   options: UseUnifiedExtractionOptions = {}
 ): UseUnifiedExtractionReturn {
+  const unifiedExtractionService = useUnifiedExtractionService();
+  const target = useRunnerTarget();
   const {
     pollInterval = 2000,
     sessionId: customSessionId,
@@ -96,7 +103,7 @@ export function useUnifiedExtraction(
   // Session ID
   const sessionId = useMemo(
     () => customSessionId || unifiedExtractionService.getSessionId(),
-    [customSessionId]
+    [customSessionId, unifiedExtractionService]
   );
 
   // State
@@ -115,7 +122,7 @@ export function useUnifiedExtraction(
     if (customSessionId) {
       unifiedExtractionService.setSessionId(customSessionId);
     }
-  }, [customSessionId]);
+  }, [customSessionId, unifiedExtractionService]);
 
   // ============================================================================
   // Job Status Query (with polling)
@@ -125,9 +132,23 @@ export function useUnifiedExtraction(
     queryKey: ["unified-extraction-job", currentJobId],
     queryFn: async () => {
       if (!currentJobId) return null;
-      return unifiedExtractionService.getJobStatus(currentJobId);
+      try {
+        return await unifiedExtractionService.getJobStatus(currentJobId);
+      } catch (e) {
+        // The runner cannot serve this over the relay (needs the runner on
+        // this machine): say so and stop polling.
+        const err = e instanceof Error ? e : new Error(String(e));
+        setError(err);
+        onError?.(err);
+        setCurrentJobId(null);
+        return null;
+      }
     },
     enabled: !!currentJobId,
+    // Re-evaluated on every refetch through runnerPollInterval: never faster
+    // than the relay cadence for a relayed or unresolved target. (A failed
+    // status read — RUNNER_NEEDS_LOCAL included — ends the job above, which
+    // disables this query.)
     refetchInterval:
       pollInterval > 0 && currentJobId
         ? (query) => {
@@ -136,7 +157,7 @@ export function useUnifiedExtraction(
             if (status === "completed" || status === "failed") {
               return false;
             }
-            return pollInterval;
+            return runnerPollInterval(target, pollInterval);
           }
         : false,
   });
@@ -147,13 +168,21 @@ export function useUnifiedExtraction(
 
     if (currentJob.status === "completed") {
       // Fetch results
-      unifiedExtractionService.getJobResults(currentJob.jobId).then((res) => {
-        if (res) {
-          setResult(res);
-          onComplete?.(res);
+      unifiedExtractionService.getJobResults(currentJob.jobId).then(
+        (res) => {
+          if (res) {
+            setResult(res);
+            onComplete?.(res);
+          }
+          setCurrentJobId(null);
+        },
+        (e: unknown) => {
+          const err = e instanceof Error ? e : new Error(String(e));
+          setError(err);
+          onError?.(err);
+          setCurrentJobId(null);
         }
-        setCurrentJobId(null);
-      });
+      );
     } else if (currentJob.status === "failed") {
       const err = new Error(currentJob.error || "Extraction failed");
       setError(err);
@@ -174,7 +203,15 @@ export function useUnifiedExtraction(
   } = useQuery({
     queryKey: ["unified-extraction-jobs", sessionId],
     queryFn: () => unifiedExtractionService.listJobs(),
-    refetchInterval: pollInterval > 0 ? pollInterval * 5 : false, // Less frequent for job list
+    // Less frequent for job list; re-evaluated per refetch, and stopped once
+    // the runner refused the path over the relay (RUNNER_NEEDS_LOCAL).
+    refetchInterval:
+      pollInterval > 0
+        ? (query) =>
+            isRunnerNeedsLocalError(query.state.error)
+              ? false
+              : runnerPollInterval(target, pollInterval * 5)
+        : false,
   });
 
   // ============================================================================
@@ -255,7 +292,11 @@ export function useUnifiedExtraction(
 
   const cancelExtraction = useCallback(async () => {
     if (currentJobId) {
-      await unifiedExtractionService.cancelJob(currentJobId);
+      try {
+        await unifiedExtractionService.cancelJob(currentJobId);
+      } catch (e) {
+        setError(e instanceof Error ? e : new Error(String(e)));
+      }
       setCurrentJobId(null);
       setProgress(null);
     }
@@ -263,7 +304,7 @@ export function useUnifiedExtraction(
       unsubscribeRef.current();
       unsubscribeRef.current = null;
     }
-  }, [currentJobId]);
+  }, [currentJobId, unifiedExtractionService]);
 
   const clearResults = useCallback(() => {
     setResult(null);

@@ -1,4 +1,7 @@
 import { useState, useCallback, useEffect } from "react";
+import { runnerRequest } from "@/lib/runner/api-client";
+import type { RunnerTarget } from "@/lib/runner/target";
+import { useRunnerTarget } from "@/contexts/active-runner-context";
 
 export interface BrowserTab {
   id: number;
@@ -8,12 +11,12 @@ export interface BrowserTab {
 }
 
 export async function extensionCommand<T = unknown>(
-  runnerUrl: string,
+  target: RunnerTarget,
   action: string,
   params: Record<string, unknown> = {},
   timeoutSecs = 15
 ): Promise<T> {
-  const res = await fetch(`${runnerUrl}/extension/command`, {
+  const res = await runnerRequest(target, "/extension/command", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ action, params, timeout_secs: timeoutSecs }),
@@ -31,7 +34,9 @@ export async function extensionCommand<T = unknown>(
   return (result.data ?? result) as T;
 }
 
-export function useExtensionConnection(runnerUrl: string) {
+/** Browser-extension connection state on the active runner. */
+export function useExtensionConnection() {
+  const target = useRunnerTarget();
   const [isConnected, setIsConnected] = useState(false);
   const [browserTabs, setBrowserTabs] = useState<BrowserTab[]>([]);
   const [selectedTabId, setSelectedTabId] = useState<number | null>(null);
@@ -39,7 +44,7 @@ export function useExtensionConnection(runnerUrl: string) {
 
   const checkConnection = useCallback(async () => {
     try {
-      const res = await fetch(`${runnerUrl}/extension/status`);
+      const res = await runnerRequest(target, "/extension/status");
       if (!res.ok) {
         setIsConnected(false);
         return;
@@ -49,7 +54,7 @@ export function useExtensionConnection(runnerUrl: string) {
     } catch {
       setIsConnected(false);
     }
-  }, [runnerUrl]);
+  }, [target]);
 
   useEffect(() => {
     checkConnection();
@@ -59,7 +64,7 @@ export function useExtensionConnection(runnerUrl: string) {
     setIsLoadingTabs(true);
     try {
       const data = await extensionCommand<{ tabs?: BrowserTab[] }>(
-        runnerUrl,
+        target,
         "listTabs"
       );
       const tabs = data.tabs || [];
@@ -73,7 +78,7 @@ export function useExtensionConnection(runnerUrl: string) {
     } finally {
       setIsLoadingTabs(false);
     }
-  }, [runnerUrl, selectedTabId]);
+  }, [target, selectedTabId]);
 
   useEffect(() => {
     if (isConnected) {
@@ -85,12 +90,12 @@ export function useExtensionConnection(runnerUrl: string) {
     async (tabId: number) => {
       setSelectedTabId(tabId);
       try {
-        await extensionCommand(runnerUrl, "selectTab", { tabId });
+        await extensionCommand(target, "selectTab", { tabId });
       } catch (err) {
         console.error("Failed to select tab:", err);
       }
     },
-    [runnerUrl]
+    [target]
   );
 
   return {

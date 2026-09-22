@@ -199,6 +199,55 @@ async def test_relay_builds_http_request_envelope_and_translates_response(
 
 
 @pytest.mark.asyncio
+async def test_relay_never_forwards_ambient_credentials(monkeypatch):
+    """No header that authenticates a caller to THIS backend crosses the relay.
+
+    The browser's httpClient sends the session cookie (``credentials:
+    "include"``) and a CSRF token on every state-changing relay call; machine
+    keys and the coord admin secret are accepted by other endpoints. None of
+    them may reach the runner, whatever their spelling.
+    """
+    _install_device_lookup(
+        monkeypatch, {"device_id": DEVICE_ID, "ws_session_id": 12345}
+    )
+    dispatch = AsyncMock(
+        return_value={"type": "command_response", "status": 200, "headers": {}}
+    )
+    _install_manager(monkeypatch, dispatch=dispatch)
+
+    credentials = {
+        "Authorization": "Bearer user-token",
+        "Proxy-Authorization": "Basic cHJveHk=",
+        "Cookie": "session=abc; refresh=def",
+        "X-CSRF-Token": "csrf-123",
+        "X-Machine-Key": "mk_secret",
+        "X-Device-Machine-Key": "dmk_secret",
+        "X-Coord-Admin-Secret": "admin-secret",
+    }
+    request = _FakeRequest(
+        method="POST",
+        headers={
+            "X-Qontinui-Device-Id": DEVICE_ID,
+            "content-type": "application/json",
+            **credentials,
+        },
+        body=b"{}",
+    )
+    await device_bridge_ws.runner_proxy(
+        request, "settings/general", user=SimpleNamespace(id=USER_ID)
+    )
+
+    forwarded = {
+        k.lower(): v for k, v in dispatch.await_args.args[1]["headers"].items()
+    }
+    for name, value in credentials.items():
+        assert name.lower() not in forwarded, name
+        assert value not in forwarded.values(), name
+    # Ordinary headers still cross.
+    assert forwarded["content-type"] == "application/json"
+
+
+@pytest.mark.asyncio
 async def test_relay_empty_body_envelope(monkeypatch):
     """A bodyless GET produces an empty body_b64 string."""
     _install_device_lookup(

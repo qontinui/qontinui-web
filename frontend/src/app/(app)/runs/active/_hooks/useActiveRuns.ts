@@ -2,7 +2,8 @@
 
 import { useState, useRef, useEffect } from "react";
 import {
-  runnerApi,
+  useRunnerApi,
+  useRunnerTarget,
   type TaskRun,
   type RunningTaskRunsResponse,
 } from "@/lib/runner";
@@ -15,6 +16,8 @@ import {
 } from "@/components/workflow-builder/AiGeneratePanel";
 
 export function useActiveRuns() {
+  const runnerApi = useRunnerApi();
+  const target = useRunnerTarget();
   const {
     data: runningTaskRuns,
     isLoading,
@@ -87,6 +90,7 @@ export function useActiveRuns() {
         const taskRun = await runnerApi.getTaskRun(signal.taskRunId);
         if (taskRun.status === "completed") {
           const resultData = await runnerFetch<Record<string, unknown>>(
+            target,
             `/task-runs/${signal.taskRunId}/result-data`
           );
           const workflowId = resultData.generated_workflow_id as
@@ -122,7 +126,7 @@ export function useActiveRuns() {
         );
       }
     })();
-  }, [activeRuns, refetchRuns]);
+  }, [activeRuns, refetchRuns, runnerApi, target]);
 
   const runs = activeRuns || [];
   const selectedRun =

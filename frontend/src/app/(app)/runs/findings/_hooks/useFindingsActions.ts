@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { runnerApi } from "@/lib/runner";
+import { useRunnerApi } from "@/lib/runner";
 import type { FindingsSummaryView } from "@/lib/task-run-mappers";
 import { toast } from "sonner";
 
@@ -8,6 +8,7 @@ export function useFindingsActions(
   isRunnerOffline: boolean,
   refetch: () => void
 ) {
+  const runnerApi = useRunnerApi();
   const [autoFixEnabled, setAutoFixEnabled] = useState(false);
   const [isFixing, setIsFixing] = useState(false);
 

@@ -6,7 +6,7 @@ import { BuilderLayout } from "@/components/builders/BuilderLayout";
 import { TagInput } from "@/components/builders/TagInput";
 import {
   type SavedPrompt,
-  runnerApi,
+  useRunnerApi,
   usePromptsDetailed,
 } from "@/lib/runner-api";
 import { toast } from "sonner";
@@ -70,6 +70,7 @@ function promptToForm(p: SavedPrompt): EditForm {
 }
 
 function ScriptsBuilderPageContent() {
+  const runnerApi = useRunnerApi();
   const searchParams = useSearchParams();
   const { data: prompts, isLoading, error, isOffline, refetch } =
     usePromptsDetailed();

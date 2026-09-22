@@ -2,6 +2,7 @@
 
 import { useState, useMemo, Fragment } from "react";
 import { useRunnerQuery } from "@/lib/runner/api-client";
+import { useRunnerTarget } from "@/contexts/active-runner-context";
 import { Radio, Search, Filter, ChevronDown, ChevronRight } from "lucide-react";
 
 // =============================================================================
@@ -123,9 +124,14 @@ function eventTextColor(name: string): string {
 // =============================================================================
 
 function QueueStatusWidget() {
-  const { data: queue } = useRunnerQuery<DurableQueueStatus>("/inngest/queue", {
-    pollInterval: 5000,
-  });
+  const target = useRunnerTarget();
+  const { data: queue } = useRunnerQuery<DurableQueueStatus>(
+    target,
+    "/inngest/queue",
+    {
+      pollInterval: 5000,
+    }
+  );
 
   if (!queue) return null;
 
@@ -173,7 +179,9 @@ interface CircuitBreakerStatus {
 }
 
 function CircuitBreakerWidget() {
+  const target = useRunnerTarget();
   const { data: cb } = useRunnerQuery<CircuitBreakerStatus>(
+    target,
     "/inngest/circuit-breaker",
     {
       pollInterval: 5000,
@@ -303,6 +311,7 @@ function EventDetailPanel({ evt }: { evt: WorkflowEvent }) {
 // =============================================================================
 
 export default function EventHistoryPage() {
+  const target = useRunnerTarget();
   const [filter, setFilter] = useState("");
   const [selectedIdx, setSelectedIdx] = useState<number | null>(null);
 
@@ -312,12 +321,13 @@ export default function EventHistoryPage() {
     isLoading: eventsLoading,
     error: eventsError,
     isOffline,
-  } = useRunnerQuery<WorkflowEvent[]>("/inngest/events?limit=100", {
+  } = useRunnerQuery<WorkflowEvent[]>(target, "/inngest/events?limit=100", {
     pollInterval: 5000,
   });
 
   // Fetch subscriptions (slower poll — they change infrequently)
   const { data: subscriptions } = useRunnerQuery<SubscriptionInfo[]>(
+    target,
     "/inngest/subscriptions",
     { pollInterval: 15000 }
   );

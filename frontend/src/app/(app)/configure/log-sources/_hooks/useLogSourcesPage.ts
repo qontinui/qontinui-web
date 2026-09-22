@@ -2,7 +2,7 @@ import { useState, useCallback } from "react";
 import {
   useRunnerHealth,
   useGlobalLogSourceSettings,
-  runnerApi,
+  useRunnerApi,
   type GlobalLogSource,
   type GlobalLogSourceProfile,
   type GlobalLogSourceSettings,
@@ -16,6 +16,7 @@ import type {
 } from "../log-sources-types";
 
 export function useLogSourcesPage(): UseLogSourcesPageReturn {
+  const runnerApi = useRunnerApi();
   const { isOffline, isLoading: healthLoading } = useRunnerHealth();
   const {
     data: loadedSettings,

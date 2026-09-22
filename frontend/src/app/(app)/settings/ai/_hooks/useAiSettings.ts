@@ -1,5 +1,10 @@
 import { useState, useEffect, useCallback } from "react";
-import { useRunnerHealth, runnerApi, type AiSettings } from "@/lib/runner-api";
+import {
+  useRunnerHealth,
+  useRunnerApi,
+  runnerFailureMessage,
+  type AiSettings,
+} from "@/lib/runner-api";
 import { toast } from "sonner";
 import type {
   AiProvider,
@@ -10,6 +15,7 @@ import type {
 } from "../types";
 
 export function useAiSettings() {
+  const runnerApi = useRunnerApi();
   const { isLoading: healthLoading, isOffline } = useRunnerHealth();
 
   const [loading, setLoading] = useState(true);
@@ -71,12 +77,12 @@ export function useAiSettings() {
       ]);
       setClaudeApiKeyConfigured(claudeKeyResult.has_key);
       setGeminiApiKeyConfigured(geminiKeyResult.has_key);
-    } catch {
-      toast.error("Failed to load AI settings");
+    } catch (err) {
+      toast.error(runnerFailureMessage(err, "Failed to load AI settings"));
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [runnerApi]);
 
   useEffect(() => {
     if (!isOffline) {
@@ -98,8 +104,8 @@ export function useAiSettings() {
       };
       await runnerApi.saveAiSettings(settings);
       toast.success("AI settings saved");
-    } catch {
-      toast.error("Failed to save AI settings");
+    } catch (err) {
+      toast.error(runnerFailureMessage(err, "Failed to save AI settings"));
     } finally {
       setSaving(false);
     }
@@ -114,8 +120,8 @@ export function useAiSettings() {
       } else {
         toast.error(result.message || "Connection failed");
       }
-    } catch {
-      toast.error("Failed to test AI connection");
+    } catch (err) {
+      toast.error(runnerFailureMessage(err, "Failed to test AI connection"));
     } finally {
       setTesting(false);
     }
@@ -136,8 +142,8 @@ export function useAiSettings() {
       setConfigured(true);
       setInput("");
       toast.success("API key saved securely");
-    } catch {
-      toast.error("Failed to save API key");
+    } catch (err) {
+      toast.error(runnerFailureMessage(err, "Failed to save API key"));
     }
   };
 
@@ -149,8 +155,8 @@ export function useAiSettings() {
       await runnerApi.deleteAiApiKey(providerKey);
       setConfigured(false);
       toast.success("API key deleted");
-    } catch {
-      toast.error("Failed to delete API key");
+    } catch (err) {
+      toast.error(runnerFailureMessage(err, "Failed to delete API key"));
     }
   };
 

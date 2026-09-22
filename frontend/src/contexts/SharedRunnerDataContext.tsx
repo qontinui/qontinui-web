@@ -12,9 +12,14 @@ import React, {
 import {
   useEventTriggeredFetch,
   useRunnerEvent,
+  useRunnerEventStreamState,
 } from "@/contexts/RunnerEventContext";
 import {
+  isRunnerNeedsLocalError,
   runnerFetch,
+  targetKey,
+  useRunnerPoll,
+  useRunnerTarget,
   type CurrentExecutionStepsResponse,
 } from "@/lib/runner-api";
 
@@ -68,6 +73,12 @@ interface SharedRunnerDataValue {
 
 const SharedRunnerDataCtx = createContext<SharedRunnerDataValue | null>(null);
 
+/**
+ * Requested orchestrator-state poll cadence when no event stream pushes it
+ * (useRunnerPoll applies the relay floor per tick).
+ */
+const NO_STREAM_POLL_MS = 15_000;
+
 // =============================================================================
 // Pure-push orchestrator state hook
 // =============================================================================
@@ -97,13 +108,40 @@ function extractStateDataFields(
  * 1. Initial REST fetch on mount / runId change
  * 2. Pure push updates from WS "orchestrator-state-change" events
  * 3. REST refetch on WS reconnect to ensure consistency
+ * 4. When no event stream can exist for the active runner (a relayed runner),
+ *    a REST poll at the relay cadence — silence is never read as "no change"
  *
  * This avoids the per-event REST call that useEventTriggeredFetch would make.
  */
 function useOrchestratorStatePush(runId: string | null): {
   data: OrchestratorState | null;
 } {
-  const [state, setState] = useState<OrchestratorState | null>(null);
+  const target = useRunnerTarget();
+  const streamLive = useRunnerEventStreamState() === "live";
+  // Tagged with the runner (and route) it came from: another runner's state is
+  // never shown as the active one's.
+  const activeKey = targetKey(target);
+  const [entry, setEntry] = useState<{
+    key: string;
+    value: OrchestratorState | null;
+  } | null>(null);
+  const state = entry !== null && entry.key === activeKey ? entry.value : null;
+  const setState = useCallback(
+    (
+      next:
+        | OrchestratorState
+        | null
+        | ((prev: OrchestratorState | null) => OrchestratorState | null)
+    ) => {
+      setEntry((prev) => {
+        const prevValue =
+          prev !== null && prev.key === activeKey ? prev.value : null;
+        const value = typeof next === "function" ? next(prevValue) : next;
+        return { key: activeKey, value };
+      });
+    },
+    [activeKey]
+  );
   const mountedRef = useRef(true);
 
   useEffect(() => {
@@ -122,6 +160,7 @@ function useOrchestratorStatePush(runId: string | null): {
     }
     try {
       const data = await runnerFetch<Record<string, unknown>>(
+        target,
         `/task-runs/${runId}/orchestrator-state`
       );
       if (mountedRef.current && data) {
@@ -145,15 +184,33 @@ function useOrchestratorStatePush(runId: string | null): {
         };
         setState(orchState);
       }
-    } catch {
-      // Silently ignore fetch errors (runner may be offline)
+    } catch (err) {
+      // A relay refusal is rethrown so the no-stream poll below stops;
+      // other fetch errors are ignored (runner may be offline).
+      if (isRunnerNeedsLocalError(err)) throw err;
     }
-  }, [runId]);
+  }, [runId, target, setState]);
+
+  // For the one-shot (initial / event-triggered) fetches: failures are not
+  // shown by this provider.
+  const fetchStateQuietly = useCallback(() => {
+    fetchState().catch(() => undefined);
+  }, [fetchState]);
 
   // Initial fetch + refetch on runId change
   useEffect(() => {
-    fetchState();
-  }, [fetchState]);
+    fetchStateQuietly();
+  }, [fetchStateQuietly]);
+
+  // No event stream for this runner: nothing will be pushed, so poll. The
+  // cadence is re-evaluated every tick (a relayed or unresolved target is
+  // never polled faster than the relay cadence), and a RUNNER_NEEDS_LOCAL
+  // refusal stops the poll.
+  useRunnerPoll(target, {
+    enabled: !streamLive && !!runId,
+    requestedMs: NO_STREAM_POLL_MS,
+    tick: fetchState,
+  });
 
   // Subscribe to WS events for pure push updates
   useRunnerEvent(
@@ -167,7 +224,7 @@ function useOrchestratorStatePush(runId: string | null): {
 
         // Handle WS reconnect: refetch full state from REST for consistency
         if (msg.event_type === "__reconnected__") {
-          fetchState();
+          fetchStateQuietly();
           return;
         }
 
@@ -201,7 +258,7 @@ function useOrchestratorStatePush(runId: string | null): {
             : {}),
         }));
       },
-      [runId, fetchState]
+      [runId, fetchStateQuietly, setState]
     )
   );
 

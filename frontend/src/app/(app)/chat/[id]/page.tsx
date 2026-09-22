@@ -10,11 +10,13 @@ import { ChatMessageArea } from "@/components/chat/ChatMessageArea";
 import { ChatInput } from "@/components/chat/ChatInput";
 import { WorkflowPreviewPanel } from "@/components/chat/WorkflowPreviewPanel";
 import type { UnifiedWorkflow } from "@/types/unified-workflow";
+import { RunnerApiError, runnerRequest, useRunnerTarget } from "@/lib/runner";
 
 export default function ChatSessionPage() {
   const params = useParams();
   const router = useRouter();
   const taskRunId = params.id as string;
+  const runnerTarget = useRunnerTarget();
 
   const { runners } = useRealtimeConnections();
   const activeRunner = runners[0] || null;
@@ -147,8 +149,9 @@ export default function ChatSessionPage() {
   const handleSaveWorkflow = useCallback(async () => {
     if (!generatedWorkflow) return;
     try {
-      const response = await fetch(
-        `${process.env.NEXT_PUBLIC_RUNNER_URL || "http://localhost:9876"}/unified-workflows`,
+      const response = await runnerRequest(
+        runnerTarget,
+        "/unified-workflows",
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -160,10 +163,14 @@ export default function ChatSessionPage() {
       } else {
         toast.error("Failed to save workflow");
       }
-    } catch {
-      toast.error("Failed to save workflow");
+    } catch (err) {
+      toast.error(
+        err instanceof RunnerApiError
+          ? `Failed to save workflow: ${err.message}`
+          : "Failed to save workflow"
+      );
     }
-  }, [generatedWorkflow]);
+  }, [generatedWorkflow, runnerTarget]);
 
   const isStreaming = sessionState === "processing";
 

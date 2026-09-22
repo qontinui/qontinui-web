@@ -1,7 +1,10 @@
 import { useState, useEffect, useCallback } from "react";
 import {
   useRunnerHealth,
-  runnerApi,
+  useRunnerApi,
+  runnerFailureMessage,
+  useRunnerTarget,
+  useRunnerPoll,
   type McpServer,
   type McpServerStatus,
 } from "@/lib/runner-api";
@@ -9,6 +12,8 @@ import { toast } from "sonner";
 import { type ServerFormData, formDataToPayload } from "../types";
 
 export function useMcpServers() {
+  const runnerApi = useRunnerApi();
+  const target = useRunnerTarget();
   const { isOffline, isLoading: healthLoading } = useRunnerHealth();
   const [loading, setLoading] = useState(true);
   const [servers, setServers] = useState<McpServer[]>([]);
@@ -23,23 +28,27 @@ export function useMcpServers() {
     try {
       const data = await runnerApi.getSettingsMcpServers();
       setServers(data ?? []);
-    } catch {
-      toast.error("Failed to load MCP servers");
+    } catch (err) {
+      toast.error(runnerFailureMessage(err, "Failed to load MCP servers"));
     }
-  }, []);
+  }, [runnerApi]);
+
+  const fetchStatuses = useCallback(async () => {
+    const statuses = await runnerApi.getMcpServersStatus();
+    const map: Record<string, McpServerStatus> = {};
+    for (const s of statuses ?? []) {
+      map[s.server_id] = s;
+    }
+    setServerStatuses(map);
+  }, [runnerApi]);
 
   const loadStatuses = useCallback(async () => {
     try {
-      const statuses = await runnerApi.getMcpServersStatus();
-      const map: Record<string, McpServerStatus> = {};
-      for (const s of statuses ?? []) {
-        map[s.server_id] = s;
-      }
-      setServerStatuses(map);
+      await fetchStatuses();
     } catch {
       // Statuses are non-critical; silently ignore
     }
-  }, []);
+  }, [fetchStatuses]);
 
   const loadAll = useCallback(async () => {
     setLoading(true);
@@ -55,12 +64,16 @@ export function useMcpServers() {
     loadAll();
   }, [isOffline, loadAll]);
 
-  // Poll statuses
-  useEffect(() => {
-    if (isOffline) return;
-    const interval = setInterval(loadStatuses, 10000);
-    return () => clearInterval(interval);
-  }, [isOffline, loadStatuses]);
+  // Poll statuses. The cadence is re-evaluated every tick (never faster than
+  // the relay cadence for a relayed or unresolved target); a
+  // RUNNER_NEEDS_LOCAL refusal stops the poll and is shown. Other failures
+  // are non-critical and ignored.
+  useRunnerPoll(target, {
+    enabled: !isOffline,
+    requestedMs: 10000,
+    tick: fetchStatuses,
+    onNeedsLocal: (err) => toast.error(err.message),
+  });
 
   const handleCreate = async (form: ServerFormData) => {
     try {

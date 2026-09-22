@@ -13,6 +13,7 @@ import { useState, useCallback } from "react";
 import type { BrowserTab, UIBridgeExplorationConfig } from "./types";
 import { isCloudEnvironment, sendRunnerCommand } from "./utils";
 import { createLogger } from "@/lib/logger";
+import type { RunnerTarget } from "@/lib/runner";
 const logger = createLogger("UseSafetyGuard");
 
 export interface UseSafetyGuardReturn {
@@ -22,11 +23,14 @@ export interface UseSafetyGuardReturn {
   browserTabsLoading: boolean;
   /** Error message from fetching browser tabs */
   browserTabsError: string | null;
-  /** Fetch available browser tabs from the Chrome extension via runner */
-  fetchBrowserTabs: (runnerUrl: string | null) => Promise<BrowserTab[]>;
+  /**
+   * Fetch available browser tabs from the Chrome extension via the runner
+   * (`target`), or via the extension's own bridge when `target` is null.
+   */
+  fetchBrowserTabs: (target: RunnerTarget | null) => Promise<BrowserTab[]>;
   /** Select a specific browser tab for exploration */
   selectBrowserTab: (
-    runnerUrl: string | null,
+    target: RunnerTarget | null,
     tabId: number | null
   ) => Promise<{ success: boolean; error?: string }>;
 }
@@ -49,10 +53,10 @@ export function useSafetyGuard(
    * Fetch available browser tabs from the Chrome extension via runner
    */
   const fetchBrowserTabs = useCallback(
-    async (runnerUrl: string | null) => {
+    async (target: RunnerTarget | null) => {
       logger.info(
-        "[useSafetyGuard] fetchBrowserTabs called with:",
-        runnerUrl,
+        "[useSafetyGuard] fetchBrowserTabs called for runner:",
+        target?.kind === "runner" ? target.runner.id : (target?.kind ?? null),
         "isCloud:",
         isCloudEnvironment()
       );
@@ -60,7 +64,7 @@ export function useSafetyGuard(
       setBrowserTabsError(null);
 
       try {
-        const result = await sendRunnerCommand(runnerUrl, "listTabs", {}, 10);
+        const result = await sendRunnerCommand(target, "listTabs", {}, 10);
 
         if (!result.success) {
           throw new Error(result.error || "Failed to fetch browser tabs");
@@ -113,9 +117,9 @@ export function useSafetyGuard(
    * Select a browser tab for exploration
    */
   const selectBrowserTab = useCallback(
-    async (runnerUrl: string | null, tabId: number | null) => {
+    async (target: RunnerTarget | null, tabId: number | null) => {
       logger.info("[useSafetyGuard] selectBrowserTab called:", {
-        runnerUrl,
+        runnerId: target?.kind === "runner" ? target.runner.id : null,
         tabId,
         isCloud: isCloudEnvironment(),
       });
@@ -123,7 +127,7 @@ export function useSafetyGuard(
         if (tabId === null) {
           // Clear selection - use active tab
           const result = await sendRunnerCommand(
-            runnerUrl,
+            target,
             "clearSelectedTab",
             {},
             10
@@ -137,7 +141,7 @@ export function useSafetyGuard(
 
         // Select specific tab
         const result = await sendRunnerCommand(
-          runnerUrl,
+          target,
           "selectTab",
           { tabId },
           10

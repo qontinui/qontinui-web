@@ -1,8 +1,10 @@
 import { useState, useCallback, useMemo } from "react";
-import { AccessibilityNode, RUNNER_API_BASE } from "../_types";
+import { runnerRequest, useRunnerTarget } from "@/lib/runner";
+import { AccessibilityNode } from "../_types";
 import { collectInteractiveNodes, countNodes } from "../_utils";
 
 export function useAccessibilityInspector() {
+  const target = useRunnerTarget();
   const [targetUrl, setTargetUrl] = useState("");
   const [isInspecting, setIsInspecting] = useState(false);
   const [inspectError, setInspectError] = useState<string | null>(null);
@@ -26,7 +28,7 @@ export function useAccessibilityInspector() {
     setSelectedNode(null);
 
     try {
-      const res = await fetch(`${RUNNER_API_BASE}/accessibility/inspect`, {
+      const res = await runnerRequest(target, "/accessibility/inspect", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ url: targetUrl.trim() }),
@@ -53,7 +55,7 @@ export function useAccessibilityInspector() {
     setSelectedNode(null);
 
     try {
-      const res = await fetch(`${RUNNER_API_BASE}/execute`, {
+      const res = await runnerRequest(target, "/execute", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

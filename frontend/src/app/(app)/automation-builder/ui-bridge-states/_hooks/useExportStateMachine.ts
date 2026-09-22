@@ -5,12 +5,12 @@ import { toast } from "sonner";
 import { useAutomationStore } from "@/stores/automation";
 import { httpClient } from "@/services/service-factory";
 import { ApiConfig } from "@/services/api-config";
+import { RunnerApiError, runnerRequest, useRunnerTarget } from "@/lib/runner";
 import type { StateMachineExportFormat } from "../_types";
-
-const RUNNER_URL = "http://localhost:9876";
 
 export function useExportStateMachine(configId: string | null) {
   const projectId = useAutomationStore((s) => s.projectId);
+  const runnerTarget = useRunnerTarget();
   const [isExporting, setIsExporting] = useState(false);
   const [isPushing, setIsPushing] = useState(false);
 
@@ -61,7 +61,7 @@ export function useExportStateMachine(configId: string | null) {
 
     setIsPushing(true);
     try {
-      const res = await fetch(`${RUNNER_URL}/state-machine/load`, {
+      const res = await runnerRequest(runnerTarget, "/state-machine/load", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ config: data }),
@@ -84,12 +84,14 @@ export function useExportStateMachine(configId: string | null) {
     } catch (err) {
       console.error("Push to runner failed:", err);
       toast.error(
-        "Cannot connect to runner. Is qontinui-runner running on port 9876?"
+        err instanceof RunnerApiError
+          ? err.message
+          : "Cannot connect to the runner."
       );
     } finally {
       setIsPushing(false);
     }
-  }, [exportConfig]);
+  }, [exportConfig, runnerTarget]);
 
   return { isExporting, isPushing, exportConfig, downloadExport, pushToRunner };
 }

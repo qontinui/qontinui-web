@@ -23,7 +23,7 @@ import {
 } from "@/components/builders/editors";
 import { TagInput } from "@/components/builders/TagInput";
 import { AiGeneratorPanel } from "@/components/builders/AiGeneratorPanel";
-import { runnerApi } from "@/lib/runner/runner-api-object";
+import { useRunnerApi } from "@/lib/runner/runner-api-object";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -263,6 +263,7 @@ interface ContextEditorProps {
 }
 
 function ContextEditor({ item, form, setForm, isDirty, isNew, isSaving, onSave, onDelete, onDuplicate }: ContextEditorProps) {
+  const runnerApi = useRunnerApi();
   const isBuiltIn = item.scope === "builtin" || form.scope === "builtin";
   const [aiGenerating, setAiGenerating] = useState(false);
   const [aiError, setAiError] = useState<string | null>(null);

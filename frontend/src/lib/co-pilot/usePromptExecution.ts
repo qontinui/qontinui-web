@@ -22,7 +22,10 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useActiveRunner } from "@/contexts/active-runner-context";
+import {
+  useActiveRunner,
+  useRunnerTarget,
+} from "@/contexts/active-runner-context";
 import {
   requestPlan,
   PlanError,
@@ -279,6 +282,7 @@ function errorFromPlanFailure(err: PlanError): ExecutionError {
 
 export function usePromptExecution(): UsePromptExecutionReturn {
   const { activeRunner } = useActiveRunner();
+  const runnerTarget = useRunnerTarget();
   const [state, setState] = useState<PromptExecutionState>(INITIAL_STATE);
 
   // Guards: prevent overlapping runs and allow `reset` to abort an in-flight one.
@@ -394,7 +398,7 @@ export function usePromptExecution(): UsePromptExecutionReturn {
       // 2. Plan.
       let plan: PlanIntentResult;
       try {
-        plan = await requestPlan({ prompt, deviceId, explain });
+        plan = await requestPlan({ prompt, target: runnerTarget, explain });
       } catch (err) {
         if (abortRef.current) {
           runningRef.current = false;
@@ -607,7 +611,7 @@ export function usePromptExecution(): UsePromptExecutionReturn {
       });
       runningRef.current = false;
     },
-    [activeRunner],
+    [activeRunner, runnerTarget],
   );
 
   return { state, run, reset };

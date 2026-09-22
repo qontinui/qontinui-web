@@ -1,12 +1,13 @@
-import { useState, useCallback, useEffect, useRef } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { toast } from "sonner";
 import { useAutomation } from "@/contexts/automation-context";
 import { ConfigExporter } from "@/lib/config-exporter";
 import {
-  ragSetupService,
+  useRAGSetupService,
   type RAGSetupProgress,
 } from "@/services/rag-setup-service";
-import { runnerClient } from "@/lib/runner-client";
+import { useRunnerClient } from "@/lib/runner-client";
+import { useRunnerPoll, useRunnerTarget } from "@/lib/runner";
 import { validateProject } from "@/lib/project-validator";
 import type { MonitorValidationError } from "@/lib/monitor-validation";
 import type { MonitorUpdate } from "@/components/export/MissingMonitorsDialog";
@@ -22,6 +23,9 @@ import type {
 } from "../project-export-types";
 
 export function useProjectExport(open: boolean): UseProjectExportReturn {
+  const ragSetupService = useRAGSetupService();
+  const target = useRunnerTarget();
+  const runnerClient = useRunnerClient();
   const {
     projectId,
     projectName,
@@ -56,7 +60,8 @@ export function useProjectExport(open: boolean): UseProjectExportReturn {
   const [ragStatus, setRagStatus] = useState<RagStatus>("idle");
   const [ragProgress, setRagProgress] = useState<RAGSetupProgress | null>(null);
   const [ragError, setRagError] = useState<string | null>(null);
-  const ragPollingRef = useRef<NodeJS.Timeout | null>(null);
+  // The project whose RAG progress is being polled (null = not polling).
+  const [ragPollProjectId, setRagPollProjectId] = useState<string | null>(null);
 
   // Config loading state (into executor)
   const [configLoaded, setConfigLoaded] = useState(false);
@@ -77,46 +82,50 @@ export function useProjectExport(open: boolean): UseProjectExportReturn {
     }
   }, [open, projectName]);
 
-  // Cleanup polling on unmount
-  useEffect(() => {
-    return () => {
-      if (ragPollingRef.current) {
-        clearInterval(ragPollingRef.current);
-      }
-    };
-  }, []);
-
+  // RAG progress poll: the cadence is re-evaluated every tick (never faster
+  // than the relay cadence for a relayed or unresolved target), and a
+  // RUNNER_NEEDS_LOCAL refusal stops it with its message shown.
   const startRagProgressPolling = useCallback((projId: string) => {
-    if (ragPollingRef.current) {
-      clearInterval(ragPollingRef.current);
-    }
-
-    ragPollingRef.current = setInterval(async () => {
-      try {
-        const progress = await ragSetupService.getRAGSetupProgress(projId);
-        setRagProgress(progress);
-
-        if (progress.status === "completed") {
-          clearInterval(ragPollingRef.current!);
-          ragPollingRef.current = null;
-          setRagStatus("completed");
-          toast.success("RAG embeddings generated", {
-            description: `${progress.elementsProcessed} elements processed`,
-          });
-        } else if (progress.status === "failed") {
-          clearInterval(ragPollingRef.current!);
-          ragPollingRef.current = null;
-          setRagStatus("failed");
-          setRagError(progress.error || "RAG processing failed");
-          toast.error("RAG processing failed", {
-            description: progress.error || "Unknown error",
-          });
-        }
-      } catch (error) {
-        console.error("Failed to poll RAG progress:", error);
-      }
-    }, 1500);
+    setRagPollProjectId(projId);
   }, []);
+
+  useRunnerPoll(target, {
+    enabled: ragPollProjectId !== null,
+    requestedMs: 1500,
+    tick: async () => {
+      if (ragPollProjectId === null) return "stop";
+      const progress =
+        await ragSetupService.getRAGSetupProgress(ragPollProjectId);
+      setRagProgress(progress);
+
+      if (progress.status === "completed") {
+        setRagPollProjectId(null);
+        setRagStatus("completed");
+        toast.success("RAG embeddings generated", {
+          description: `${progress.elementsProcessed} elements processed`,
+        });
+        return "stop";
+      }
+      if (progress.status === "failed") {
+        setRagPollProjectId(null);
+        setRagStatus("failed");
+        setRagError(progress.error || "RAG processing failed");
+        toast.error("RAG processing failed", {
+          description: progress.error || "Unknown error",
+        });
+        return "stop";
+      }
+      return undefined;
+    },
+    onNeedsLocal: (error) => {
+      setRagPollProjectId(null);
+      setRagStatus("failed");
+      setRagError(error.message);
+    },
+    onError: (error) => {
+      console.error("Failed to poll RAG progress:", error);
+    },
+  });
 
   const triggerRagProcessing = useCallback(
     async (config: Parameters<typeof ragSetupService.startRAGSetup>[1]) => {
@@ -212,7 +221,7 @@ export function useProjectExport(open: boolean): UseProjectExportReturn {
         });
       }
     },
-    [projectId, startRagProgressPolling]
+    [projectId, startRagProgressPolling, runnerClient, ragSetupService]
   );
 
   const handleApplyMonitorUpdates = useCallback(

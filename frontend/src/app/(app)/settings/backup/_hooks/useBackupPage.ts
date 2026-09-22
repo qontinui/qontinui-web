@@ -3,7 +3,8 @@
 import { useState, useEffect, useCallback } from "react";
 import {
   useRunnerHealth,
-  runnerApi,
+  useRunnerApi,
+  runnerFailureMessage,
   type BackupSummary,
 } from "@/lib/runner-api";
 import { toast } from "sonner";
@@ -15,6 +16,7 @@ import {
 } from "../_types/backup";
 
 export function useBackupPage() {
+  const runnerApi = useRunnerApi();
   const { isOffline, isLoading: healthLoading } = useRunnerHealth();
   const [loading, setLoading] = useState(true);
   const [summary, setSummary] = useState<BackupSummary | null>(null);
@@ -37,10 +39,10 @@ export function useBackupPage() {
     try {
       const data = await runnerApi.getBackupSummary();
       setSummary(data);
-    } catch {
-      toast.error("Failed to load data summary");
+    } catch (err) {
+      toast.error(runnerFailureMessage(err, "Failed to load data summary"));
     }
-  }, []);
+  }, [runnerApi]);
 
   useEffect(() => {
     if (isOffline) {

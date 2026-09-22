@@ -16,9 +16,10 @@ import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { Layers, Loader2, Radio, WifiOff, Eye, History } from "lucide-react";
-import type {
-  ConnectionState,
-  ImageRecognitionEvent,
+import {
+  EXECUTION_EVENTS_UNAVAILABLE_MESSAGE,
+  type ConnectionState,
+  type ImageRecognitionEvent,
 } from "@/hooks/useExecutionEvents";
 import type { State, ImageAsset } from "@/contexts/automation-context/types";
 import type { RunnerMonitor } from "@/lib/schemas/geometry";
@@ -144,6 +145,11 @@ export function ActiveStatesPanel({
             ) : connectionState === "connecting" ||
               connectionState === "reconnecting" ? (
               <span className="text-yellow-600">Connecting to runner...</span>
+            ) : connectionState === "unavailable" ? (
+              <span className="text-muted-foreground flex items-center gap-1">
+                <WifiOff className="h-3 w-3" />
+                {EXECUTION_EVENTS_UNAVAILABLE_MESSAGE}
+              </span>
             ) : (
               <span className="text-muted-foreground flex items-center gap-1">
                 <WifiOff className="h-3 w-3" />

@@ -11,7 +11,7 @@ import { useState, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { Loader2, FileImage, Play } from "lucide-react";
 import { toast } from "sonner";
-import { runnerClient } from "@/lib/runner-client";
+import { useRunnerClient } from "@/lib/runner-client";
 import { createLogger } from "@/lib/logger";
 const logger = createLogger("VisionExtractionPrompt");
 
@@ -28,6 +28,7 @@ export function VisionExtractionPrompt({
   extractionId,
   technique,
 }: VisionExtractionPromptProps) {
+  const runnerClient = useRunnerClient();
   const [selectedScreenshot, setSelectedScreenshot] = useState<string | null>(
     null
   );

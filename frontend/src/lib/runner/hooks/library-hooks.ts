@@ -1,6 +1,7 @@
 "use client";
 
 import { useRunnerQuery } from "../api-client";
+import { useRunnerTarget } from "@/contexts/active-runner-context";
 import type {
   LibraryItem,
   Check,
@@ -15,105 +16,134 @@ import type { ContextItem } from "../types/exploration";
 import type { ShellCommand } from "../types/execution";
 
 export function useLibraryItems() {
-  return useRunnerQuery<LibraryItem[]>("/library/items");
+  return useRunnerQuery<LibraryItem[]>(useRunnerTarget(), "/library/items");
 }
 
 export function usePlaywrightScripts() {
-  return useRunnerQuery<LibraryItem[]>("/playwright-scripts");
+  return useRunnerQuery<LibraryItem[]>(
+    useRunnerTarget(),
+    "/playwright-scripts"
+  );
 }
 
 export function useSavedApiRequests() {
-  return useRunnerQuery<LibraryItem[]>("/saved-api-requests");
+  return useRunnerQuery<LibraryItem[]>(
+    useRunnerTarget(),
+    "/saved-api-requests"
+  );
 }
 
 export function useChecks() {
-  return useRunnerQuery<Check[]>("/checks");
+  return useRunnerQuery<Check[]>(useRunnerTarget(), "/checks");
 }
 
 export function useContexts() {
-  return useRunnerQuery<LibraryItem[]>("/contexts");
+  return useRunnerQuery<LibraryItem[]>(useRunnerTarget(), "/contexts");
 }
 
 export function useContextsDetailed() {
-  return useRunnerQuery<ContextItem[]>("/contexts");
+  return useRunnerQuery<ContextItem[]>(useRunnerTarget(), "/contexts");
 }
 
 export function useScripts() {
-  return useRunnerQuery<LibraryItem[]>("/scripts");
+  return useRunnerQuery<LibraryItem[]>(useRunnerTarget(), "/scripts");
 }
 
 export function useShellCommands() {
-  return useRunnerQuery<ShellCommand[]>("/shell-commands");
+  return useRunnerQuery<ShellCommand[]>(useRunnerTarget(), "/shell-commands");
 }
 
 export function usePlaywrightScriptsDetailed() {
-  return useRunnerQuery<PlaywrightScript[]>("/playwright/tests");
+  return useRunnerQuery<PlaywrightScript[]>(
+    useRunnerTarget(),
+    "/playwright/tests"
+  );
 }
 
 export function useSavedApiRequestsDetailed() {
-  return useRunnerQuery<SavedApiRequest[]>("/saved-api-requests");
+  return useRunnerQuery<SavedApiRequest[]>(
+    useRunnerTarget(),
+    "/saved-api-requests"
+  );
 }
 
 export function usePromptsDetailed() {
-  return useRunnerQuery<SavedPrompt[]>("/prompts");
+  return useRunnerQuery<SavedPrompt[]>(useRunnerTarget(), "/prompts");
 }
 
 export function useCheckGroups() {
-  return useRunnerQuery<CheckGroup[]>("/check-groups");
+  return useRunnerQuery<CheckGroup[]>(useRunnerTarget(), "/check-groups");
 }
 
 export function useCheck(id: string | null) {
-  return useRunnerQuery<Check>(id ? `/checks/${id}` : null, { enabled: !!id });
+  return useRunnerQuery<Check>(useRunnerTarget(), id ? `/checks/${id}` : null, {
+    enabled: !!id,
+  });
 }
 
 export function useCheckGroup(id: string | null) {
-  return useRunnerQuery<CheckGroup>(id ? `/check-groups/${id}` : null, {
-    enabled: !!id,
-  });
+  return useRunnerQuery<CheckGroup>(
+    useRunnerTarget(),
+    id ? `/check-groups/${id}` : null,
+    {
+      enabled: !!id,
+    }
+  );
 }
 
 export function useShellCommand(id: string | null) {
-  return useRunnerQuery<ShellCommand>(id ? `/shell-commands/${id}` : null, {
-    enabled: !!id,
-  });
+  return useRunnerQuery<ShellCommand>(
+    useRunnerTarget(),
+    id ? `/shell-commands/${id}` : null,
+    {
+      enabled: !!id,
+    }
+  );
 }
 
 export function useMacros() {
-  return useRunnerQuery<LibraryItem[]>("/macros");
+  return useRunnerQuery<LibraryItem[]>(useRunnerTarget(), "/macros");
 }
 
 export function useTests() {
-  return useRunnerQuery<LibraryItem[]>("/tests");
+  return useRunnerQuery<LibraryItem[]>(useRunnerTarget(), "/tests");
 }
 
 export function usePrompts() {
-  return useRunnerQuery<LibraryItem[]>("/prompts");
+  return useRunnerQuery<LibraryItem[]>(useRunnerTarget(), "/prompts");
 }
 
 export function usePromptSnippets() {
-  return useRunnerQuery<LibraryItem[]>("/prompt-snippets");
+  return useRunnerQuery<LibraryItem[]>(useRunnerTarget(), "/prompt-snippets");
 }
 
 export function useMacrosDetailed() {
-  return useRunnerQuery<Macro[]>("/macros");
+  return useRunnerQuery<Macro[]>(useRunnerTarget(), "/macros");
 }
 
 export function useMacro(id: string | null) {
-  return useRunnerQuery<Macro>(id ? `/macros/${id}` : null, { enabled: !!id });
+  return useRunnerQuery<Macro>(useRunnerTarget(), id ? `/macros/${id}` : null, {
+    enabled: !!id,
+  });
 }
 
 export function usePromptSnippetsDetailed() {
-  return useRunnerQuery<PromptSnippet[]>("/prompt-snippets");
+  return useRunnerQuery<PromptSnippet[]>(useRunnerTarget(), "/prompt-snippets");
 }
 
 export function usePromptSnippetDetailed(id: string | null) {
-  return useRunnerQuery<PromptSnippet>(id ? `/prompt-snippets/${id}` : null, {
-    enabled: !!id,
-  });
+  return useRunnerQuery<PromptSnippet>(
+    useRunnerTarget(),
+    id ? `/prompt-snippets/${id}` : null,
+    {
+      enabled: !!id,
+    }
+  );
 }
 
 export function useCheckGroupChecks(groupId: string | null) {
   return useRunnerQuery<Check[]>(
+    useRunnerTarget(),
     groupId ? `/check-groups/${groupId}/checks` : null,
     {
       enabled: !!groupId,

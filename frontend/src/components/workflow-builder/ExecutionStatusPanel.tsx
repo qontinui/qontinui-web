@@ -2,7 +2,10 @@
 
 import React, { useState, useEffect, useCallback, useRef } from "react";
 import {
-  RUNNER_API_BASE,
+  isRunnerNeedsLocalError,
+  runnerRequest,
+  useRunnerPoll,
+  useRunnerTarget,
   type TaskRun,
   type RunningTaskRunsResponse,
 } from "@/lib/runner-api";
@@ -22,6 +25,7 @@ import {
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
 
+/** Requested poll cadence (useRunnerPoll slows it over the relay). */
 const POLL_INTERVAL_MS = 3000;
 const TIMER_INTERVAL_MS = 1000;
 
@@ -53,6 +57,7 @@ interface ExecutionStatusPanelProps {
 export function ExecutionStatusPanel({
   workflowId,
 }: ExecutionStatusPanelProps) {
+  const target = useRunnerTarget();
   const [isOpen, setIsOpen] = useState(true);
   const [taskRun, setTaskRun] = useState<TaskRun | null>(null);
   const taskRunRef = useRef<TaskRun | null>(null);
@@ -61,12 +66,16 @@ export function ExecutionStatusPanel({
   );
   const [isPolling, setIsPolling] = useState(false);
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
-  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  // The runner refused these routes over the relay: the message is shown
+  // instead of an empty panel (which would read as "nothing running").
+  const [needsLocalMessage, setNeedsLocalMessage] = useState<string | null>(
+    null
+  );
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const findRunningTask = useCallback(async () => {
     try {
-      const res = await fetch(`${RUNNER_API_BASE}/task-runs/running`);
+      const res = await runnerRequest(target, "/task-runs/running");
       if (!res.ok) return null;
       // Envelope, not a bare array. `running.scope` is deliberately not
       // rendered here: this panel returns null when it finds no run, so it
@@ -77,60 +86,66 @@ export function ExecutionStatusPanel({
       return (
         running.task_runs.find((t) => t.workflow_id === workflowId) ?? null
       );
-    } catch {
+    } catch (err) {
+      if (isRunnerNeedsLocalError(err)) throw err;
       return null;
     }
-  }, [workflowId]);
+  }, [workflowId, target]);
 
-  const fetchWorkflowState = useCallback(async (taskRunId: string) => {
-    try {
-      const res = await fetch(
-        `${RUNNER_API_BASE}/task-runs/${taskRunId}/workflow-state`
-      );
-      if (!res.ok) return null;
-      return (await res.json()) as WorkflowState;
-    } catch {
-      return null;
-    }
-  }, []);
-
-  // Poll for running tasks and their state
-  useEffect(() => {
-    let active = true;
-
-    const poll = async () => {
-      const run = await findRunningTask();
-      if (!active) return;
-
-      if (run) {
-        setTaskRun(run);
-        taskRunRef.current = run;
-        setIsPolling(true);
-        const state = await fetchWorkflowState(run.id);
-        if (active && state) {
-          setWorkflowState(state);
-          if (state.workflow_start_time) {
-            const start = new Date(state.workflow_start_time).getTime();
-            setElapsedSeconds(Math.floor((Date.now() - start) / 1000));
-          }
-        }
-      } else {
-        if (taskRunRef.current) {
-          setIsPolling(false);
-        }
-        setTaskRun(null);
-        taskRunRef.current = null;
+  const fetchWorkflowState = useCallback(
+    async (taskRunId: string) => {
+      try {
+        const res = await runnerRequest(
+          target,
+          `/task-runs/${taskRunId}/workflow-state`
+        );
+        if (!res.ok) return null;
+        return (await res.json()) as WorkflowState;
+      } catch (err) {
+        if (isRunnerNeedsLocalError(err)) throw err;
+        return null;
       }
-    };
+    },
+    [target]
+  );
 
-    poll();
-    pollRef.current = setInterval(poll, POLL_INTERVAL_MS);
+  // Poll for running tasks and their state. The cadence is re-evaluated on
+  // every tick (never faster than the relay cadence for a relayed or
+  // unresolved target), and a RUNNER_NEEDS_LOCAL refusal stops the poll.
+  const poll = useCallback(async () => {
+    const run = await findRunningTask();
+    if (run) {
+      setTaskRun(run);
+      taskRunRef.current = run;
+      setIsPolling(true);
+      const state = await fetchWorkflowState(run.id);
+      if (state) {
+        setWorkflowState(state);
+        if (state.workflow_start_time) {
+          const start = new Date(state.workflow_start_time).getTime();
+          setElapsedSeconds(Math.floor((Date.now() - start) / 1000));
+        }
+      }
+    } else {
+      if (taskRunRef.current) {
+        setIsPolling(false);
+      }
+      setTaskRun(null);
+      taskRunRef.current = null;
+    }
+  }, [findRunningTask, fetchWorkflowState]);
 
-    return () => {
-      active = false;
-      if (pollRef.current) clearInterval(pollRef.current);
-    };
-  }, [workflowId, findRunningTask, fetchWorkflowState]);
+  useEffect(() => {
+    setNeedsLocalMessage(null);
+  }, [target]);
+
+  useRunnerPoll(target, {
+    enabled: true,
+    requestedMs: POLL_INTERVAL_MS,
+    immediate: true,
+    tick: poll,
+    onNeedsLocal: (err) => setNeedsLocalMessage(err.message),
+  });
 
   // Elapsed time ticker
   useEffect(() => {
@@ -148,6 +163,16 @@ export function ExecutionStatusPanel({
 
   // Don't render if no execution data at all
   if (!taskRun && !workflowState) {
+    if (needsLocalMessage) {
+      return (
+        <div
+          role="status"
+          className="rounded-lg border border-zinc-800 bg-zinc-900/50 px-3 py-2 text-xs text-amber-400"
+        >
+          {needsLocalMessage}
+        </div>
+      );
+    }
     return null;
   }
 

@@ -7,10 +7,9 @@
 
 "use client";
 
-import { useState, useEffect, useRef } from "react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Image as ImageIcon, AlertCircle } from "lucide-react";
-import { runnerClient } from "@/lib/runner-client";
+import { useCroppedExtractionScreenshot } from "./_hooks/useCroppedExtractionScreenshot";
 
 interface BoundingBox {
   x: number;
@@ -48,128 +47,14 @@ function StateImageThumbnail({
   isSelected: boolean;
   onClick: () => void;
 }) {
-  const [imageUrl, setImageUrl] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
-  const blobUrlRef = useRef<string | null>(null);
-
-  useEffect(() => {
-    let mounted = true;
-
-    async function loadAndCropImage() {
-      try {
-        setLoading(true);
-        setError(null);
-
-        const result = await runnerClient.getExtractionScreenshot(
-          extractionId,
-          screenshotId
-        );
-
-        if (!mounted) return;
-
-        if (!result.success || !result.blob) {
-          setError("Failed to load");
-          setLoading(false);
-          return;
-        }
-
-        // Cleanup previous blob
-        if (blobUrlRef.current) {
-          URL.revokeObjectURL(blobUrlRef.current);
-        }
-
-        const fullUrl = URL.createObjectURL(result.blob);
-        blobUrlRef.current = fullUrl;
-
-        // Load and crop image
-        const img = new Image();
-        img.onload = () => {
-          if (!mounted) return;
-
-          const bbox = state.bbox;
-
-          // Check bounds
-          if (
-            bbox.y >= img.height ||
-            bbox.x >= img.width ||
-            bbox.y + bbox.height <= 0 ||
-            bbox.x + bbox.width <= 0
-          ) {
-            setError("Out of bounds");
-            setLoading(false);
-            return;
-          }
-
-          // Calculate visible portion
-          const visibleBbox = {
-            x: Math.max(0, bbox.x),
-            y: Math.max(0, bbox.y),
-            width: Math.min(bbox.width, img.width - Math.max(0, bbox.x)),
-            height: Math.min(bbox.height, img.height - Math.max(0, bbox.y)),
-          };
-
-          if (visibleBbox.width <= 0 || visibleBbox.height <= 0) {
-            setError("No visible area");
-            setLoading(false);
-            return;
-          }
-
-          // Crop
-          const canvas = document.createElement("canvas");
-          canvas.width = visibleBbox.width;
-          canvas.height = visibleBbox.height;
-          const ctx = canvas.getContext("2d");
-
-          if (ctx) {
-            ctx.drawImage(
-              img,
-              visibleBbox.x,
-              visibleBbox.y,
-              visibleBbox.width,
-              visibleBbox.height,
-              0,
-              0,
-              visibleBbox.width,
-              visibleBbox.height
-            );
-            setImageUrl(canvas.toDataURL("image/png"));
-          }
-
-          setLoading(false);
-        };
-
-        img.onerror = () => {
-          if (!mounted) return;
-          setError("Failed to process");
-          setLoading(false);
-        };
-
-        img.src = fullUrl;
-      } catch (_e) {
-        if (!mounted) return;
-        setError("Error loading");
-        setLoading(false);
-      }
-    }
-
-    loadAndCropImage();
-
-    return () => {
-      mounted = false;
-      if (blobUrlRef.current) {
-        URL.revokeObjectURL(blobUrlRef.current);
-      }
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [
-    extractionId,
-    screenshotId,
-    state.bbox.x,
-    state.bbox.y,
-    state.bbox.width,
-    state.bbox.height,
-  ]);
+  const {
+    croppedImageUrl: imageUrl,
+    error,
+    loading,
+  } = useCroppedExtractionScreenshot(extractionId, screenshotId, state.bbox, {
+    outOfBounds: "Out of bounds",
+    noVisibleArea: "No visible area",
+  });
 
   return (
     <button

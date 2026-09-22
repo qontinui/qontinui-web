@@ -1,7 +1,11 @@
 "use client";
 
-import { Suspense, useEffect, useState } from "react";
-import { useRunnerHealth, runnerApi, type DeviceInfo } from "@/lib/runner-api";
+import { Suspense, useEffect, useState, useCallback } from "react";
+import {
+  useRunnerHealth,
+  useRunnerApi,
+  type DeviceInfo,
+} from "@/lib/runner-api";
 import { RunnerOfflineState } from "@/components/runner/RunnerOfflineState";
 import { ConnectedAccounts } from "./_components/ConnectedAccounts";
 import { useAuth } from "@/contexts/auth-context";
@@ -20,6 +24,7 @@ import {
 import Link from "next/link";
 
 export default function AccountSettingsPage() {
+  const runnerApi = useRunnerApi();
   const {
     isOffline,
     isLoading: healthLoading,
@@ -30,15 +35,7 @@ export default function AccountSettingsPage() {
   const [loading, setLoading] = useState(true);
   const [runnerName, setRunnerName] = useState("");
 
-  useEffect(() => {
-    if (isOffline) {
-      setLoading(false);
-      return;
-    }
-    loadDeviceInfo();
-  }, [isOffline]);
-
-  const loadDeviceInfo = async () => {
+  const loadDeviceInfo = useCallback(async () => {
     setLoading(true);
     try {
       const data = await runnerApi.getDeviceInfo();
@@ -49,7 +46,15 @@ export default function AccountSettingsPage() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [runnerApi]);
+
+  useEffect(() => {
+    if (isOffline) {
+      setLoading(false);
+      return;
+    }
+    loadDeviceInfo();
+  }, [isOffline, loadDeviceInfo]);
 
   if (healthLoading || loading) {
     return (

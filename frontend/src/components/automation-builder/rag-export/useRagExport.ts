@@ -9,9 +9,15 @@ import type {
   EmbeddingProgress,
 } from "@/services/rag-export-service";
 import type { Runner } from "@qontinui/shared-types";
+import {
+  runnerLoopbackUrl,
+  useRunnerPoll,
+  useRunnerTarget,
+} from "@/lib/runner";
 import type { ExportResult, UseRagExportReturn } from "./types";
 
 export function useRagExport(projectId: string | null): UseRagExportReturn {
+  const target = useRunnerTarget();
   const [exportStatus, setExportStatus] = useState<RAGExportStatus | null>(
     null
   );
@@ -32,6 +38,12 @@ export function useRagExport(projectId: string | null): UseRagExportReturn {
   });
 
   const [selectedRunnerId, setSelectedRunnerId] = useState<string | null>(null);
+  // The embedding-progress poll in flight (null = not polling).
+  const [embeddingPoll, setEmbeddingPoll] = useState<{
+    runnerUrl: string;
+    projectId: string;
+    deadline: number;
+  } | null>(null);
 
   useEffect(() => {
     if (projectId) {
@@ -58,32 +70,50 @@ export function useRagExport(projectId: string | null): UseRagExportReturn {
     runnerUrl: string,
     pollingProjectId: string
   ) => {
-    const pollInterval = setInterval(async () => {
-      try {
-        const progress = await ragExportService.getEmbeddingProgress(
-          runnerUrl,
-          pollingProjectId
-        );
-        setEmbeddingProgress(progress);
-
-        if (progress.status === "completed" || progress.status === "failed") {
-          clearInterval(pollInterval);
-
-          if (progress.status === "completed") {
-            toast.success("Embeddings generated successfully");
-          } else {
-            toast.error(`Embedding generation failed: ${progress.message}`);
-          }
-        }
-      } catch (error) {
-        console.error("Failed to poll embedding progress:", error);
-      }
-    }, 2000);
-
-    setTimeout(() => {
-      clearInterval(pollInterval);
-    }, 600000);
+    // Give up after 10 minutes.
+    setEmbeddingPoll({
+      runnerUrl,
+      projectId: pollingProjectId,
+      deadline: Date.now() + 600000,
+    });
   };
+
+  // Embedding progress poll. The cadence is re-evaluated every tick (never
+  // faster than the relay cadence for a relayed or unresolved target), and a
+  // RUNNER_NEEDS_LOCAL refusal stops it with its message shown.
+  useRunnerPoll(target, {
+    enabled: embeddingPoll !== null,
+    requestedMs: 2000,
+    tick: async () => {
+      if (embeddingPoll === null || Date.now() > embeddingPoll.deadline) {
+        setEmbeddingPoll(null);
+        return "stop";
+      }
+      const progress = await ragExportService.getEmbeddingProgress(
+        embeddingPoll.runnerUrl,
+        embeddingPoll.projectId
+      );
+      setEmbeddingProgress(progress);
+
+      if (progress.status === "completed" || progress.status === "failed") {
+        setEmbeddingPoll(null);
+        if (progress.status === "completed") {
+          toast.success("Embeddings generated successfully");
+        } else {
+          toast.error(`Embedding generation failed: ${progress.message}`);
+        }
+        return "stop";
+      }
+      return undefined;
+    },
+    onNeedsLocal: (error) => {
+      setEmbeddingPoll(null);
+      toast.error(error.message);
+    },
+    onError: (error) => {
+      console.error("Failed to poll embedding progress:", error);
+    },
+  });
 
   const handleDownloadExport = async () => {
     if (!projectId) {
@@ -145,7 +175,25 @@ export function useRagExport(projectId: string | null): UseRagExportReturn {
       return;
     }
 
-    const runnerUrl = "http://127.0.0.1:9876";
+    // The backend delivers the config by POSTing to `runner_url` itself, so
+    // it must name the selected runner's own address. That exists only for
+    // the active runner, and only when it is proven to be on this machine
+    // (a loopback route) — a relayed runner has no address the backend
+    // could post to, and a guessed default port may be another box's runner.
+    if (target.kind === "runner" && target.runner.id !== selectedRunner.id) {
+      const message = `Make ${selectedRunner.name} the active runner to transfer to it.`;
+      toast.error(message);
+      setLastExportResult({ success: false, message });
+      return;
+    }
+    const runnerUrl = runnerLoopbackUrl(target, "");
+    if (!runnerUrl) {
+      const message =
+        "Transfer to runner needs the runner on this machine — the selected runner is not reachable locally.";
+      toast.error(message);
+      setLastExportResult({ success: false, message });
+      return;
+    }
 
     setIsTransferring(true);
     setExportProgress(10);
