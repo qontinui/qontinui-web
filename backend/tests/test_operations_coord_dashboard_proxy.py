@@ -542,6 +542,101 @@ class TestAgentQuestionsEndpoints:
         resp = unresolved_client.get(f"{API_PREFIX}/agent-questions/pending")
         assert resp.status_code == 403
 
+    # -- Paging + audience forwarding ------------------------------------
+    #
+    # Plan
+    # ``2026-09-12-a-correctly-escalated-question-is-unreachable-in-the-operator-inbox``.
+    #
+    # These are REGRESSION tests for a defect the suite could not see. Until
+    # the plan's backend half, ``get_pending_agent_questions`` declared ``gap``
+    # alone — and FastAPI silently DROPS an undeclared query param, so a caller
+    # asking for ``?limit=500&audience=operator`` reached coord with neither
+    # and any frontend-side limit change was a no-op. ``test_pending`` above
+    # asserts status + tenant header only, so it stayed green throughout.
+    #
+    # Asserting on the params dict handed to ``client.get`` is the same shape
+    # ``test_answered`` already uses for its own ``limit``; it is what makes
+    # "the parameter reaches coord" observable at all.
+
+    def test_pending_forwards_limit_offset_and_audience(self, client: TestClient):
+        coord_payload = {
+            "questions": [],
+            "count": 0,
+            "limit": 500,
+            "shown": 0,
+            "total": 442,
+            "truncated": False,
+        }
+        mock_resp = _mock_response(json_data=coord_payload)
+        with _patch_httpx() as MockClient:
+            instance = AsyncMock()
+            instance.get.return_value = mock_resp
+            _configure_mock_client(MockClient, instance)
+            resp = client.get(
+                f"{API_PREFIX}/agent-questions/pending"
+                "?limit=500&offset=100&audience=operator&gap=false"
+            )
+        assert resp.status_code == 200
+        called_url = instance.get.call_args.args[0]
+        assert called_url.endswith("/coord/agent-questions/pending")
+        called_params = instance.get.call_args.kwargs.get("params", {})
+        assert called_params.get("limit") == 500
+        assert called_params.get("offset") == 100
+        assert called_params.get("audience") == "operator"
+        assert called_params.get("gap") is False
+        # The envelope is passed through verbatim — no re-wrap, no re-key — so
+        # the paging metadata coord ships reaches the frontend unchanged.
+        assert resp.json() == coord_payload
+
+    def test_pending_omits_unset_params(self, client: TestClient):
+        """An absent param is OMITTED, never forwarded as None.
+
+        Forwarding ``audience=None`` would ask coord to match the literal
+        string, and forwarding ``limit=None`` would override coord's own
+        default. Absent must mean "no filter".
+        """
+        mock_resp = _mock_response(json_data={"questions": []})
+        with _patch_httpx() as MockClient:
+            instance = AsyncMock()
+            instance.get.return_value = mock_resp
+            _configure_mock_client(MockClient, instance)
+            resp = client.get(f"{API_PREFIX}/agent-questions/pending?audience=agent")
+        assert resp.status_code == 200
+        called_params = instance.get.call_args.kwargs.get("params", {})
+        assert called_params == {"audience": "agent"}
+
+    @pytest.mark.parametrize(
+        "query",
+        [
+            "audience=OPERATOR",  # closed set is case-sensitive
+            "audience=everyone",
+            "audience=",
+            "limit=0",  # ge=1
+            "limit=501",  # le=500
+            "offset=-1",  # ge=0
+        ],
+    )
+    def test_pending_rejects_out_of_range_params(self, client: TestClient, query: str):
+        """Validation happens HERE, not silently at coord.
+
+        ``audience`` is the closed two-value authorization boundary
+        ``coord.agent_questions.audience`` carries a CHECK constraint for.
+        Against a DEPLOYED coord that predates this change set, ``PendingQuery``
+        is a plain serde struct with no ``deny_unknown_fields``, so a bad value
+        forwarded on is dropped and the route answers 200 with the WRONG rows.
+        The coord half of this change set adds a typed 400 for it, but the
+        proxy must not depend on the far side having been deployed yet.
+        A 422 here is the honest answer against either build.
+        """
+        with _patch_httpx() as MockClient:
+            instance = AsyncMock()
+            instance.get.return_value = _mock_response(json_data={"questions": []})
+            _configure_mock_client(MockClient, instance)
+            resp = client.get(f"{API_PREFIX}/agent-questions/pending?{query}")
+        assert resp.status_code == 422
+        # And nothing reached coord.
+        instance.get.assert_not_called()
+
     def test_answered(self, client: TestClient):
         coord_payload = {"questions": []}
         mock_resp = _mock_response(json_data=coord_payload)
@@ -556,6 +651,109 @@ class TestAgentQuestionsEndpoints:
         called_params = instance.get.call_args.kwargs.get("params", {})
         assert called_params.get("limit") == 50
         _assert_tenant_header_forwarded(instance.get.call_args)
+
+    def test_answered_forwards_offset_and_audience(self, client: TestClient):
+        """The answered proxy drops neither, for the same reason pending must not.
+
+        ``get_answered_agent_questions`` declared ``limit`` and ``gap`` only,
+        and FastAPI drops an undeclared query param on the floor — so a caller
+        asking for ``?offset=50&audience=operator`` reached coord with NEITHER
+        and got page 1 of every audience behind a 200. Coord's
+        ``fetch_answered`` takes the same ``PendingQuery`` + ``AudienceFilter``
+        as the pending reader, so both work the moment they are declared here.
+        No visible defect today only because nothing pages this tab yet — which
+        is exactly what would have made the next answered pager a silent no-op
+        its author could not observe.
+        """
+        coord_payload = {
+            "questions": [],
+            "count": 0,
+            "limit": 50,
+            "shown": 0,
+            "offset": 50,
+            "total": 442,
+            "truncated": False,
+        }
+        with _patch_httpx() as MockClient:
+            instance = AsyncMock()
+            instance.get.return_value = _mock_response(json_data=coord_payload)
+            _configure_mock_client(MockClient, instance)
+            resp = client.get(
+                f"{API_PREFIX}/agent-questions/answered"
+                "?limit=50&offset=50&audience=operator&gap=true"
+            )
+        assert resp.status_code == 200
+        called_url = instance.get.call_args.args[0]
+        assert called_url.endswith("/coord/agent-questions/answered")
+        called_params = instance.get.call_args.kwargs.get("params", {})
+        assert called_params.get("limit") == 50
+        assert called_params.get("offset") == 50
+        assert called_params.get("audience") == "operator"
+        assert called_params.get("gap") is True
+        assert resp.json() == coord_payload
+
+    def test_answered_omits_unset_params(self, client: TestClient):
+        """Absent means "no filter" here too — never a forwarded ``None``."""
+        with _patch_httpx() as MockClient:
+            instance = AsyncMock()
+            instance.get.return_value = _mock_response(json_data={"questions": []})
+            _configure_mock_client(MockClient, instance)
+            resp = client.get(f"{API_PREFIX}/agent-questions/answered?audience=agent")
+        assert resp.status_code == 200
+        called_params = instance.get.call_args.kwargs.get("params", {})
+        assert called_params == {"audience": "agent"}
+
+    @pytest.mark.parametrize(
+        "query",
+        [
+            "audience=OPERATOR",  # closed set is case-sensitive
+            "audience=everyone",
+            "audience=",
+            "limit=0",  # ge=1
+            "limit=501",  # le=500
+            "offset=-1",  # ge=0
+        ],
+    )
+    def test_answered_rejects_out_of_range_params(self, client: TestClient, query: str):
+        """Validated identically to the pending handler, not by a second convention."""
+        with _patch_httpx() as MockClient:
+            instance = AsyncMock()
+            instance.get.return_value = _mock_response(json_data={"questions": []})
+            _configure_mock_client(MockClient, instance)
+            resp = client.get(f"{API_PREFIX}/agent-questions/answered?{query}")
+        assert resp.status_code == 422
+        instance.get.assert_not_called()
+
+    def test_pending_passes_through_an_omitted_total_verbatim(self, client: TestClient):
+        """An OMITTED ``total`` must stay omitted all the way to the browser.
+
+        Coord's ``total`` is a ``COUNT(*) OVER ()`` riding on the returned
+        rows, so a window past the end of the match set carries none and coord
+        leaves the KEY OUT rather than sending a ``0`` every reader would take
+        for a measurement. The operator console turns a pending ``0`` into "No
+        agent is waiting on an answer", so a re-wrap here that defaulted the
+        key would manufacture the all-clear over a full queue. Nothing in this
+        path may re-key the envelope; this pins that.
+        """
+        coord_payload = {
+            "questions": [],
+            "count": 0,
+            "limit": 50,
+            "shown": 0,
+            "offset": 23650,
+        }
+        with _patch_httpx() as MockClient:
+            instance = AsyncMock()
+            instance.get.return_value = _mock_response(json_data=coord_payload)
+            _configure_mock_client(MockClient, instance)
+            resp = client.get(
+                f"{API_PREFIX}/agent-questions/pending?limit=50&offset=23650"
+            )
+        assert resp.status_code == 200
+        body = resp.json()
+        assert "total" not in body
+        assert "truncated" not in body
+        assert body == coord_payload
 
     def test_get_single_question(self, client: TestClient):
         coord_payload = {"question_id": "q-1", "agent_id": "a-1"}

@@ -85970,7 +85970,7 @@
     },
     "/api/v1/operations/agent-questions/answered": {
       "get": {
-        "description": "Return recently-answered agent questions.\n\nWave 3a \u2014 surfaces the \"answered\" tab on the questions inbox so\noperators can audit prior decisions without leaving the page.\n\n``gap`` (Phase 3): forwarded to coord as the POLICY_GAP filter so the\nGaps tab can list pre-answered (non-blocking) gap reports.",
+        "description": "Return recently-answered agent questions.\n\nWave 3a \u2014 surfaces the \"answered\" tab on the questions inbox so\noperators can audit prior decisions without leaving the page.\n\n``gap`` (Phase 3): forwarded to coord as the POLICY_GAP filter so the\nGaps tab can list pre-answered (non-blocking) gap reports.\n\n``offset`` / ``audience``: coord's ``fetch_answered`` takes the SAME\n``PendingQuery`` and ``AudienceFilter`` as the pending reader, so both\nreach it \u2014 but only if they are declared HERE. Until they were, this\nhandler declared ``limit`` and ``gap`` alone and **FastAPI dropped the\nrest on the floor**: a caller asking for ``?offset=50&audience=operator``\nreached coord with neither, and got page 1 of every audience with a 200\nin front of it. That is the exact failure the pending docstring above\ndescribes in its own words, still live one handler down \u2014 no visible\ndefect only because nothing pages the answered tab yet, which makes the\nnext answered pager a silent no-op its author cannot observe. Validated\nidentically to the pending handler (``limit`` ``ge=1, le=500``,\n``offset`` ``ge=0``, ``audience`` a closed two-value set), rather than\nwith a second convention.\n\nThe envelope is coord's, verbatim, with the same absence contract the\npending docstring sets out: ``total``/``truncated`` are OMITTED when coord\ncould not observe the count, and an absent key is UNKNOWN, never zero.",
         "operationId": "api_v1_operations_agent_questions_answered_get",
         "parameters": [
           {
@@ -85993,6 +85993,23 @@
           },
           {
             "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Offset"
+            }
+          },
+          {
+            "in": "query",
             "name": "gap",
             "required": false,
             "schema": {
@@ -86005,6 +86022,28 @@
                 }
               ],
               "title": "Gap"
+            }
+          },
+          {
+            "description": "Audience filter, forwarded to coord. ``operator`` is the human inbox; ``agent`` is the agent tier. Closed two-value set \u2014 the same authorization boundary the ``audience`` column in coord's schema carries a CHECK constraint for \u2014 so anything else is a 422 here rather than a filter coord silently ignores. Absent = no audience filter (coord's own default, which is every audience).",
+            "in": "query",
+            "name": "audience",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "operator",
+                    "agent"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Audience filter, forwarded to coord. ``operator`` is the human inbox; ``agent`` is the agent tier. Closed two-value set \u2014 the same authorization boundary the ``audience`` column in coord's schema carries a CHECK constraint for \u2014 so anything else is a 422 here rather than a filter coord silently ignores. Absent = no audience filter (coord's own default, which is every audience).",
+              "title": "Audience"
             }
           }
         ],
@@ -86081,7 +86120,7 @@
     },
     "/api/v1/operations/agent-questions/pending": {
       "get": {
-        "description": "Return pending agent questions awaiting an operator response.\n\n``gap`` (Phase 3 of plan 2026-07-18-policy-clause-schema-web-data-model):\nwhen set, forwarded to coord as the POLICY_GAP filter \u2014\n``gap=true`` returns only gap-marked rows, ``gap=false`` only non-gap rows.\nBacks the Gaps tab on the questions inbox.",
+        "description": "Return pending agent questions awaiting an operator response.\n\n``gap`` (Phase 3 of plan 2026-07-18-policy-clause-schema-web-data-model):\nwhen set, forwarded to coord as the POLICY_GAP filter \u2014\n``gap=true`` returns only gap-marked rows, ``gap=false`` only non-gap rows.\nBacks the Gaps tab on the questions inbox.\n\n``limit`` / ``offset`` / ``audience`` (plan\n2026-09-12-a-correctly-escalated-question-is-unreachable-in-the-operator-inbox).\nUntil these were declared here the proxy took ``gap`` alone, and FastAPI\ndrops an undeclared query param on the floor \u2014 so a caller asking for\n``?limit=500&audience=operator`` reached coord with NEITHER, and any\nfrontend-side limit change was a **no-op it could not observe**. Declaring\nthem is the whole fix on this side; the forwarding below is mechanical.\n\nWhy it mattered: measured 2026-09-12, ``coord.agent_questions`` held\n~23,700 pending rows, 23,258 of them ``pr_fix`` with ``audience='agent'``\nand only ~442 with ``audience='operator'``. Coord's default page is 100\nrows newest-first, so a correctly-escalated operator question sank out of\nreach behind the agent tier's volume and was unanswerable for 10 days.\n``audience=operator`` is what makes the operator's own 442 addressable;\n``limit``/``offset`` are what make the rest of them reachable.\n\n``limit`` is validated exactly as the ANSWERED proxy below validates its\nown (``ge=1, le=500``) rather than with a second convention. ``offset`` is\n``ge=0`` \u2014 the answered proxy has no offset to copy, and the work-units\nproxy's ``offset: int | None = Query(default=None, ge=0)`` is the house\nform.\n\n``audience`` and ``offset`` are **ignored by a DEPLOYED coord that predates\nthe sibling change**, and \"deployed\" is the load-bearing word. Coord's\nsource on ``main`` now DOES parse both \u2014 ``PendingQuery``\n(``agent_questions.rs``:387) carries ``agent_id``, ``agent_session_id``,\n``limit``, ``gap``, ``audience`` and ``offset`` as of the sibling commit in\nthis same change set \u2014 so a grep of that source is not grounds for deleting\nthe degrade path here: what governs is the build answering this box, and it\nlags ``main``. The struct is plain serde with no ``deny_unknown_fields``,\nso on an older build an unknown query key is dropped rather than refused.\nForwarding them is therefore safe in both directions, but a 200 is never\nproof the filter was applied \u2014 the frontend reads the echoed ``limit`` and\n``offset`` back and says which parameter went nowhere. ``limit`` coord has\nalways honoured (default 100, hard max 500), which is the bound the defect\nbelow ran into.\n\nThe response envelope is **unchanged** and deliberately untranslated:\n:func:`_proxy_coord_get` returns coord's JSON body verbatim, and coord\nalready ships ``{questions, count, limit, shown, offset}`` plus ``total``\nand ``truncated`` \u2014 so the paging metadata the frontend needs arrives\nwithout a re-wrap here.\n\n\u26a0\ufe0f **``total`` and ``truncated`` are OMITTED \u2014 the key absent \u2014 when coord\ncould not observe the count**, which is precisely why nothing here\nre-wraps the body. ``total`` is a ``COUNT(*) OVER ()`` riding on the\nreturned rows, so an ``offset`` past the end of the match set returns zero\nrows and no count with them; a ``0`` in its place would be a fabrication,\nand the operator console turns a pending ``0`` into \"No agent is waiting on\nan answer\". Any future re-wrap here MUST preserve the absence \u2014 a\n``body.get(\"total\", 0)`` anywhere in this path recreates the defect.",
         "operationId": "api_v1_operations_agent_questions_pending_get",
         "parameters": [
           {
@@ -86098,6 +86137,63 @@
                 }
               ],
               "title": "Gap"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maximum": 500,
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Limit"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Offset"
+            }
+          },
+          {
+            "description": "Audience filter, forwarded to coord. ``operator`` is the human inbox; ``agent`` is the agent tier. Closed two-value set \u2014 the same authorization boundary the ``audience`` column in coord's schema carries a CHECK constraint for \u2014 so anything else is a 422 here rather than a filter coord silently ignores. Absent = no audience filter (coord's own default, which is every audience).",
+            "in": "query",
+            "name": "audience",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "operator",
+                    "agent"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Audience filter, forwarded to coord. ``operator`` is the human inbox; ``agent`` is the agent tier. Closed two-value set \u2014 the same authorization boundary the ``audience`` column in coord's schema carries a CHECK constraint for \u2014 so anything else is a 422 here rather than a filter coord silently ignores. Absent = no audience filter (coord's own default, which is every audience).",
+              "title": "Audience"
             }
           }
         ],
