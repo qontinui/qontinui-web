@@ -34,6 +34,9 @@ on:
 
 jobs:
   detect:
+    # Job cap (plan 2026-09-07-nothing-escalates-a-pr-wedged-on-one-block-reason Phase 2): 40 green runs measured 2026-09-23,
+    # p50 0.23 / p90 0.28 / max 0.37 min; cap = max(5, 2x max). Replaces the 360-min default.
+    timeout-minutes: 5
     runs-on: ubuntu-latest
     outputs:
       relevant: ${{ steps.detect.outputs.relevant }}
@@ -676,6 +679,9 @@ jobs:
   # were untouched (reverse skipped) or when the reversal test succeeded; fails only
   # on a genuine reversal failure. Never a phantom: it runs on every PR.
   gate:
+    # Job cap (plan 2026-09-07-nothing-escalates-a-pr-wedged-on-one-block-reason Phase 2): 40 green runs measured 2026-09-23,
+    # p50 0.05 / p90 0.07 / max 0.08 min; cap = max(5, 2x max). Replaces the 360-min default.
+    timeout-minutes: 5
     name: Migration Reversal Gate
     needs: [detect, reverse]
     if: always()

@@ -126,6 +126,13 @@ env:
 
 jobs:
   deploy:
+    # Job cap (plan 2026-09-07-nothing-escalates-a-pr-wedged-on-one-block-reason Phase 2). A deliberate number, not the green-run
+    # formula: green runs are p50 6.5 / p90 6.9 / max 7.2 min (n=150), but the
+    # one real failure in 300 runs took 22.4 min (stabilize waiter + serving-revision
+    # retries) and the rollback path adds another stabilize wait. 45 covers both;
+    # a tighter cap would cut off the 'release is not live' verdict. With
+    # cancel-in-progress: false, an unbounded hang would also block every queued deploy.
+    timeout-minutes: 45
     name: Build, push, deploy web backend
     runs-on: ubuntu-latest
     environment: production
