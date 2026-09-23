@@ -296,10 +296,14 @@ class TestTheRouteSurvivesAnUnreadableCheck:
 
 
 class TestThePendingArmSkipsTheCheck:
-    def test_a_pending_account_never_reads_prior_access(self):
-        """Only the `added` arm reads the answer, and a pending account never
-        reaches `added` — so the check is not run there, and a failed read
-        cannot log an ERROR for a request that went fine."""
+    def test_a_pending_account_the_caller_cannot_invite_never_reads_prior_access(
+        self,
+    ):
+        """Only the `added` arm reads the answer, and a pending account the
+        caller may not invite always ends `invitation_pending` — so the check
+        is not run there, and a failed read cannot log an ERROR for a request
+        that went fine. (A superuser's pending add can still end `added` when
+        the invitee accepts mid-request, so that arm keeps the read.)"""
         from app.services.cognito_admin import (
             INVITATION_PENDING_STATUS,
             CognitoIdentity,

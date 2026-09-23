@@ -11650,13 +11650,16 @@ async def post_coord_tenant_member(
     # write is what makes "did they already have access?" unanswerable
     # afterwards. Read it here and carry the answer past the grant.
     #
-    # Skipped on a PENDING account: only the `added` arm reads the answer, and
-    # a pending account never reaches `added`. Reading it there anyway made a
-    # failed read log `tenant_member_prior_access_unreadable` at ERROR for a
-    # request that went fine.
+    # Skipped ONLY on the one arm that can never reach `added`: a pending
+    # account the caller may not invite ends `invitation_pending`, always.
+    # (A pending account the caller MAY invite can still end `added` —
+    # `_send_member_invitation` returns it when the invitee accepts between
+    # the lookup and the send — so that arm keeps the read.) Reading it on the
+    # dead arm made a failed read log `tenant_member_prior_access_unreadable`
+    # at ERROR for a request that went fine.
     had_access = (
         None
-        if pending
+        if pending and not may_invite
         else await _member_had_prior_access(
             tenant_id=tenant_id, sso_subject=identity.sub
         )
