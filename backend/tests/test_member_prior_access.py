@@ -293,3 +293,78 @@ class TestTheRouteSurvivesAnUnreadableCheck:
             "prior_access",
             "coord:/operators/op-1/roles",
         ]
+
+
+class TestThePendingArmSkipsTheCheck:
+    def test_a_pending_account_never_reads_prior_access(self):
+        """Only the `added` arm reads the answer, and a pending account never
+        reaches `added` — so the check is not run there, and a failed read
+        cannot log an ERROR for a request that went fine."""
+        from app.services.cognito_admin import (
+            INVITATION_PENDING_STATUS,
+            CognitoIdentity,
+        )
+
+        prior_access = AsyncMock(side_effect=httpx.ConnectError("refused"))
+        with (
+            patch(
+                "app.services.cognito_admin.resolve_identity_for_email",
+                MagicMock(
+                    return_value=CognitoIdentity(
+                        username="u1", sub=_SUB, status=INVITATION_PENDING_STATUS
+                    )
+                ),
+            ),
+            patch("app.api.v1.endpoints.operations._proxy_coord_get", prior_access),
+            patch("app.api.v1.endpoints.operations.httpx.AsyncClient") as MockClient,
+            patch(
+                "app.api.v1.endpoints.operations._member_added_notice_composer"
+            ) as composer_factory,
+        ):
+            instance = AsyncMock()
+            instance.post.side_effect = [
+                _mock_response({"operator_id": "op-1"}),
+                _mock_response({"ok": True}),
+            ]
+            instance.__aenter__ = AsyncMock(return_value=instance)
+            instance.__aexit__ = AsyncMock(return_value=False)
+            MockClient.return_value = instance
+
+            resp = TestClient(_app()).post(
+                f"{API_PREFIX}/coord/tenant-members",
+                json={"email": "colleague@x.io", "role": "operator"},
+            )
+
+        assert resp.status_code == 200, resp.text
+        assert resp.json()["status"] == "invitation_pending"
+        prior_access.assert_not_called()
+        composer_factory.assert_not_called()
+
+
+class TestTheComposerCacheKeepsOnlyAHealthyTransport:
+    def test_a_failed_ses_build_is_not_pinned_for_the_process(self):
+        from app.api.v1.endpoints import operations
+
+        built: list[MagicMock] = []
+
+        def _transport():
+            t = MagicMock()
+            t.ses_client = None if not built else object()
+            built.append(t)
+            return t
+
+        with (
+            patch.object(operations, "_member_added_composer_cache", None),
+            patch.object(operations.settings, "USE_SES_API", True),
+            patch.object(operations, "EmailTransportService", _transport),
+            patch.object(operations, "EmailTemplateService", MagicMock()),
+        ):
+            first = operations._member_added_notice_composer()
+            second = operations._member_added_notice_composer()
+            third = operations._member_added_notice_composer()
+
+        # The first transport's SES build failed: not cached, so it rebuilt.
+        assert len(built) == 2
+        assert first is not second
+        # The second built its client: cached from then on.
+        assert second is third
