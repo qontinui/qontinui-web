@@ -419,6 +419,61 @@ class TestDiffEnvelopes:
         assert delta.severity == "info"
         assert report.in_sync is True, "a derived-only difference is not drift"
 
+    def test_harness_scope_kind_difference_is_derived_and_info(self) -> None:
+        """The harness section's provenance key is reported, never drift.
+
+        Every other ``harness`` key is a probe under the workspace root, so
+        the runner publishes which rung resolved that root. Two boxes that
+        resolved it differently did not measure the same concept, which is
+        worth SEEING — but no remediation installs a scope, and ``harness`` is
+        report-only by design, so it must not count as drift. Without the
+        ``_DERIVED_KEYS["harness"]`` entry this would break ``in_sync`` on two
+        boxes that are otherwise byte-identical, which the plan's Phase 3 gate
+        forbids.
+        """
+        from app.services import devenv_section_policy as sp
+
+        assert sp.is_derived_key("harness", "harness_scope_kind") is True
+        # Keyed by SECTION: the ``repos`` and ``versions`` entries do not
+        # cover this one, and this one does not leak to them.
+        assert sp.is_derived_key("repos", "harness_scope_kind") is False
+        assert sp.is_derived_key("harness", "repos_scope_kind") is False
+        # A real harness key stays undrived, so genuine drift still counts.
+        assert sp.is_derived_key("harness", "invariant_class") is False
+
+        compliant = {
+            "link_claude_dir": "present",
+            "plans_dir_relative": "qontinui-dev-notes/plans",
+            "invariant_class": "(a)",
+        }
+        canonical = _envelope(
+            {"harness": {**compliant, "harness_scope_kind": "declared"}}
+        )
+        actual = _envelope(
+            {"harness": {**compliant, "harness_scope_kind": "home_default"}}
+        )
+        report = devenv_drift.diff_envelopes(canonical, actual)
+
+        delta = _delta(_section(report, "harness"), "harness_scope_kind")
+        assert delta.status == "changed"
+        assert delta.derived is True
+        assert delta.severity == "info"
+        assert report.in_sync is True, "a derived-only difference is not drift"
+
+        # And the section still detects a REAL difference beside it.
+        drifted = _envelope(
+            {
+                "harness": {
+                    **compliant,
+                    "invariant_class": "(c)",
+                    "harness_scope_kind": "home_default",
+                }
+            }
+        )
+        real = devenv_drift.diff_envelopes(canonical, drifted)
+        assert real.in_sync is False
+        assert _delta(_section(real, "harness"), "invariant_class").derived is False
+
     def test_extra_repo_on_the_target_is_added_and_breaks_in_sync(self) -> None:
         """A repo the box has but canonical does not is `added` — real drift.
 
