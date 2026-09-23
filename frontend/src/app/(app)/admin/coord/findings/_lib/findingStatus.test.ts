@@ -361,6 +361,16 @@ describe("findingLinkNotice", () => {
       findingLinkNotice({ found: true, loading: false, outsideFilters: false })
     ).not.toMatch(/outside the current filters/i);
   });
+
+  it("never claims 'outside the filters' for a row beyond a full page", () => {
+    const beyond = findingLinkNotice({
+      found: true,
+      loading: false,
+      beyondLoadedPage: true,
+    });
+    expect(beyond).toMatch(/not in the loaded page/i);
+    expect(beyond).not.toMatch(/outside the current filters/i);
+  });
 });
 
 describe("isFindingId", () => {
