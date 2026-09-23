@@ -15127,6 +15127,22 @@
             "title": "Id",
             "type": "string"
           },
+          "instances": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/RunnerInstance"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": [],
+            "description": "Currently connected runner instances on this machine, one entry per\ninstance (see [`RunnerInstance`]). Empty when none is connected \u2014 and\nwhen the serving backend predates per-instance rows and omits the\nfield, so absence deserializes to an empty list rather than failing.",
+            "title": "Instances"
+          },
           "ipAddress": {
             "anyOf": [
               {
@@ -39749,6 +39765,56 @@
         ],
         "title": "RunnerHeartbeat",
         "type": "object"
+      },
+      "RunnerInstance": {
+        "additionalProperties": false,
+        "description": "One live runner instance under a [`Runner`] (machine) row.\n\nA machine can host several runner instances at once \u2014 the primary on\n`:9876` and supervisor-spawned secondaries on `:9877-9899` \u2014 all presenting\nthe one machine `device_id`, so they share a single [`Runner`] row. One\nentry per currently connected instance lets a consumer address `:9876` and\n`:9877` on the same box separately rather than seeing only whichever\ninstance wrote the row's `port` last (plan\n`2026-09-20-runner-selector-drives-a-transport-not-a-target`, reading A0.2\nand Phase 6).",
+        "properties": {
+          "connectedAt": {
+            "description": "ISO 8601 timestamp when this instance's current WebSocket connection\nwas established.",
+            "title": "Connectedat",
+            "type": "string"
+          },
+          "instanceKey": {
+            "description": "Per-instance key, reported by the runner as `instanceKey`. Built from\nnamespaced sources so no source can spell another's key: `\"primary\"`\nfor the primary; `\"runner:<id>\"` for a supervisor-spawned secondary\n(supervisor-assigned ids are unique, and a named runner's id is reused\nacross its restarts); `\"name:<name>\"` for a secondary carrying only an\ninstance name; `\"port:<port>\"` for a nameless one (stable only while it\nkeeps that port). NOT guaranteed unique: two processes that each believe\nthemselves the primary both report `\"primary\"`, so a consumer must treat\ntwo live instances with the same key as a conflict, never as one\noverwriting the other.",
+            "title": "Instancekey",
+            "type": "string"
+          },
+          "instanceRole": {
+            "$ref": "#/components/schemas/RunnerInstanceRole",
+            "description": "Whether this instance is the machine's primary or a secondary."
+          },
+          "port": {
+            "anyOf": [
+              {
+                "maximum": 65535.0,
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Port this instance's HTTP API is listening on, if reported.",
+            "title": "Port"
+          }
+        },
+        "required": [
+          "connectedAt",
+          "instanceKey",
+          "instanceRole"
+        ],
+        "title": "RunnerInstance",
+        "type": "object"
+      },
+      "RunnerInstanceRole": {
+        "description": "Which role a runner instance plays on its machine.\n\nEvery runner instance on one box presents the SAME machine `device_id`, so\nthe role is what separates the canonical instance from the supervisor-spawned\nones sharing its row. Reported by the runner in `runner_info` as the\ntop-level `instanceRole`.",
+        "enum": [
+          "primary",
+          "secondary"
+        ],
+        "title": "RunnerInstanceRole",
+        "type": "string"
       },
       "RunnerMetadata": {
         "description": "Metadata about the runner environment.",
