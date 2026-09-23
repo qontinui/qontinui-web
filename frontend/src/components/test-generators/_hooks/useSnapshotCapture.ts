@@ -1,11 +1,11 @@
 import { useState, useCallback } from "react";
 import { extensionCommand } from "./useExtensionConnection";
+import { useRunnerTarget } from "@/contexts/active-runner-context";
 import type { SnapshotData, SnapshotElement } from "../shared/spec-generators";
 import type { SnapshotDiff } from "../snapshot/SnapshotComparer";
 import type { AnnotationData } from "../snapshot/AnnotationEditor";
 
 interface UseSnapshotCaptureArgs {
-  runnerUrl: string;
   selectedTabId: number | null;
   snapshotData: SnapshotData | null;
   setElements: (elements: SnapshotElement[]) => void;
@@ -15,7 +15,6 @@ interface UseSnapshotCaptureArgs {
 }
 
 export function useSnapshotCapture({
-  runnerUrl,
   selectedTabId,
   snapshotData,
   setElements,
@@ -23,6 +22,7 @@ export function useSnapshotCapture({
   setAnnotations,
   setIsConnected,
 }: UseSnapshotCaptureArgs) {
+  const target = useRunnerTarget();
   const [isCapturing, setIsCapturing] = useState(false);
   const [captureError, setCaptureError] = useState<string | null>(null);
   const [previousSnapshot, setPreviousSnapshot] = useState<SnapshotData | null>(
@@ -36,19 +36,19 @@ export function useSnapshotCapture({
     setCaptureError(null);
     try {
       if (selectedTabId !== null) {
-        await extensionCommand(runnerUrl, "selectTab", {
+        await extensionCommand(target, "selectTab", {
           tabId: selectedTabId,
         });
       }
 
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const data = await extensionCommand<any>(runnerUrl, "getElements");
+      const data = await extensionCommand<any>(target, "getElements");
       const rawElements = data.elements || [];
 
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       let pageInfo: any = {};
       try {
-        pageInfo = await extensionCommand(runnerUrl, "getActiveTab");
+        pageInfo = await extensionCommand(target, "getActiveTab");
       } catch {
         // Page info is optional
       }
@@ -125,7 +125,7 @@ export function useSnapshotCapture({
       setIsCapturing(false);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [runnerUrl, snapshotData, selectedTabId]);
+  }, [target, snapshotData, selectedTabId]);
 
   const handleCompare = useCallback(() => {
     if (!snapshotData || !previousSnapshot) return;

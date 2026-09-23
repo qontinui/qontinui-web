@@ -27,18 +27,18 @@ import type {
   GeneratorSpecMetadata,
 } from "./types";
 import { createLogger } from "@/lib/logger";
+import { runnerPollDelay, runnerRequest } from "@/lib/runner/api-client";
+import { useRunnerTarget } from "@/contexts/active-runner-context";
 
 const log = createLogger("NavigationTestGenerator");
 
 type Tab = "explore" | "graph" | "specs" | "output";
 
-interface NavigationTestGeneratorProps {
-  runnerUrl?: string;
-}
+/** Requested exploration status poll cadence (runnerPollDelay slows it over the relay). */
+const EXPLORE_POLL_INTERVAL_MS = 2000;
 
-export function NavigationTestGenerator({
-  runnerUrl = "http://localhost:9876",
-}: NavigationTestGeneratorProps) {
+export function NavigationTestGenerator() {
+  const target = useRunnerTarget();
   // Persisted state (survives navigation)
   const [activeTab, setActiveTab] = useLocalStorage<Tab>(
     "ntg:activeTab",
@@ -90,7 +90,7 @@ export function NavigationTestGenerator({
     try {
       // Start exploration via UI Bridge
       // API expects: connection_url, target_type, max_depth, max_elements_per_page, etc.
-      const res = await fetch(`${runnerUrl}/ui-bridge/explore`, {
+      const res = await runnerRequest(target, "/ui-bridge/explore", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -104,12 +104,18 @@ export function NavigationTestGenerator({
 
       if (!res.ok) throw new Error("Failed to start exploration");
 
-      // Poll for results
+      // Poll the runner the exploration started on. The cadence is
+      // re-evaluated every iteration (never faster than the relay cadence for
+      // a relayed or unresolved target); a RUNNER_NEEDS_LOCAL refusal throws
+      // out of the loop and its message is shown below.
       let explorationDone = false;
       while (!explorationDone) {
-        await new Promise((r) => setTimeout(r, 2000));
+        await runnerPollDelay(target, EXPLORE_POLL_INTERVAL_MS);
 
-        const statusRes = await fetch(`${runnerUrl}/ui-bridge/explore/status`);
+        const statusRes = await runnerRequest(
+          target,
+          "/ui-bridge/explore/status"
+        );
         if (!statusRes.ok) continue;
         const status = await statusRes.json();
 
@@ -125,7 +131,10 @@ export function NavigationTestGenerator({
       }
 
       // Get results
-      const resultsRes = await fetch(`${runnerUrl}/ui-bridge/explore/results`);
+      const resultsRes = await runnerRequest(
+        target,
+        "/ui-bridge/explore/results"
+      );
       if (resultsRes.ok) {
         const results = await resultsRes.json();
 
@@ -174,7 +183,10 @@ export function NavigationTestGenerator({
     } catch (err) {
       console.error("Exploration failed:", err);
       setProgress({
-        status: "Exploration failed",
+        status:
+          err instanceof Error
+            ? `Exploration failed: ${err.message}`
+            : "Exploration failed",
         elementsFound: 0,
         statesFound: 0,
       });
@@ -182,7 +194,7 @@ export function NavigationTestGenerator({
       setIsExploring(false);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [runnerUrl, targetUrl, maxDepth, maxElements]);
+  }, [target, targetUrl, maxDepth, maxElements]);
 
   // Load previous session
   const handleLoadSession = useCallback(async (sessionId: string) => {

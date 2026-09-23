@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { FolderSearch } from "lucide-react";
 import { AiGeneratorPanel } from "@/components/builders/AiGeneratorPanel";
-import { runnerApi } from "@/lib/runner/runner-api-object";
+import { useRunnerApi } from "@/lib/runner/runner-api-object";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -15,6 +15,7 @@ interface AiWorkspaceScannerProps {
 }
 
 export function AiWorkspaceScanner({ onAcceptChecks }: AiWorkspaceScannerProps) {
+  const runnerApi = useRunnerApi();
   const [scanning, setScanning] = useState(false);
   const [generating, setGenerating] = useState(false);
   const [, setScanResult] = useState<Record<string, unknown> | null>(null);

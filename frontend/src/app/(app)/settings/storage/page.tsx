@@ -15,7 +15,12 @@
  */
 
 import { useState, useEffect, useCallback } from "react";
-import { useRunnerHealth, runnerApi, type StorageInfo } from "@/lib/runner-api";
+import {
+  useRunnerHealth,
+  useRunnerApi,
+  runnerFailureMessage,
+  type StorageInfo,
+} from "@/lib/runner-api";
 import { RunnerOfflineState } from "@/components/runner/RunnerOfflineState";
 import { Button } from "@/components/ui/button";
 import { DestructiveButton } from "@/components/ui/destructive-button";
@@ -66,6 +71,7 @@ function StorageProgressBar({
 }
 
 export default function StorageSettingsPage() {
+  const runnerApi = useRunnerApi();
   const { isOffline, isLoading: healthLoading } = useRunnerHealth();
   const [loading, setLoading] = useState(true);
   const [storageInfo, setStorageInfo] = useState<StorageInfo | null>(null);
@@ -81,17 +87,20 @@ export default function StorageSettingsPage() {
    * so a screenshot cleanup would silently destroy an unrelated result. Only
    * the first load blanks the page.
    */
-  const loadStorageInfo = useCallback(async (silent = false) => {
-    if (!silent) setLoading(true);
-    try {
-      const data = await runnerApi.getStorageInfo();
-      setStorageInfo(data);
-    } catch {
-      toast.error("Failed to load storage info");
-    } finally {
-      if (!silent) setLoading(false);
-    }
-  }, []);
+  const loadStorageInfo = useCallback(
+    async (silent = false) => {
+      if (!silent) setLoading(true);
+      try {
+        const data = await runnerApi.getStorageInfo();
+        setStorageInfo(data);
+      } catch (err) {
+        toast.error(runnerFailureMessage(err, "Failed to load storage info"));
+      } finally {
+        if (!silent) setLoading(false);
+      }
+    },
+    [runnerApi]
+  );
 
   useEffect(() => {
     if (isOffline) {

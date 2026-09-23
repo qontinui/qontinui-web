@@ -27,11 +27,10 @@ export class ApiConfig {
       `${process.env.NEXT_PUBLIC_API_URL}/`
     );
 
-  // Runner URL for local automation (pattern matching, state discovery, extraction)
-  // The runner provides a unified API that calls the qontinui library via IPC
-  // Use 127.0.0.1 instead of localhost to force IPv4 (runner only listens on IPv4)
-  static readonly RUNNER_URL =
-    process.env.NEXT_PUBLIC_RUNNER_URL || "http://127.0.0.1:9876";
+  // There is deliberately no runner base URL here: runner calls name a target
+  // and resolve their transport per request (`runnerRequest` in
+  // `@/lib/runner`) — loopback only for a runner proven local, the backend
+  // relay otherwise.
 
   // Current-user endpoint. Authentication is Cognito-only: the access token
   // minted by the hosted-UI flow is attached as `Authorization: Bearer` and the
@@ -46,14 +45,6 @@ export class ApiConfig {
    */
   static getBaseUrl(): string {
     return ApiConfig.API_BASE_URL;
-  }
-
-  /**
-   * Get the runner URL for local automation
-   * The runner provides pattern matching, extraction, and automation via qontinui library
-   */
-  static getRunnerUrl(): string {
-    return ApiConfig.RUNNER_URL;
   }
 
   /**

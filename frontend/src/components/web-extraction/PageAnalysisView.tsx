@@ -13,7 +13,10 @@ import { useState, useEffect, useMemo, useRef } from "react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Card } from "@/components/ui/card";
 import { Loader2, FileImage, Maximize2 } from "lucide-react";
-import { runnerClient } from "@/lib/runner-client";
+import {
+  screenshotErrorText,
+  useExtractionScreenshotCache,
+} from "./_hooks/useExtractionScreenshot";
 import {
   getStateBoundingBox,
   getStateColorByIndex,
@@ -47,12 +50,14 @@ export function PageAnalysisView({
   const [selectedAnnotationId, setSelectedAnnotationId] = useState<
     string | null
   >(null);
-  const [screenshotCache, setScreenshotCache] = useState<Map<string, string>>(
-    new Map()
-  );
-  const [loadingScreenshots, setLoadingScreenshots] = useState<Set<string>>(
-    new Set()
-  );
+  // Screenshots from the active runner; the cache revokes every object URL
+  // it created on unmount and when the runner or extraction changes.
+  const {
+    urls: screenshotCache,
+    loading: loadingScreenshots,
+    errors: screenshotErrors,
+    load: loadScreenshot,
+  } = useExtractionScreenshotCache(extractionId);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -89,44 +94,6 @@ export function PageAnalysisView({
     }
   }, [annotations, selectedAnnotationId]);
 
-  // Load screenshot
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  const loadScreenshot = async (
-    screenshotId: string
-  ): Promise<string | null> => {
-    if (screenshotCache.has(screenshotId)) {
-      return screenshotCache.get(screenshotId) || null;
-    }
-
-    if (loadingScreenshots.has(screenshotId) || !extractionId) {
-      return null;
-    }
-
-    setLoadingScreenshots((prev) => new Set(prev).add(screenshotId));
-
-    try {
-      const result = await runnerClient.getExtractionScreenshot(
-        extractionId,
-        screenshotId
-      );
-      if (result.success && result.blob) {
-        const url = URL.createObjectURL(result.blob);
-        setScreenshotCache((prev) => new Map(prev).set(screenshotId, url));
-        return url;
-      }
-    } catch (error) {
-      console.error("Failed to load screenshot:", error);
-    } finally {
-      setLoadingScreenshots((prev) => {
-        const next = new Set(prev);
-        next.delete(screenshotId);
-        return next;
-      });
-    }
-
-    return null;
-  };
-
   // Track container width for responsive canvas
   const [containerWidth, setContainerWidth] = useState(0);
 
@@ -139,14 +106,6 @@ export function PageAnalysisView({
     });
     observer.observe(containerRef.current);
     return () => observer.disconnect();
-  }, []);
-
-  // Cleanup blob URLs on unmount
-  useEffect(() => {
-    return () => {
-      screenshotCache.forEach((url) => URL.revokeObjectURL(url));
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Draw page with state bounding boxes
@@ -268,6 +227,10 @@ export function PageAnalysisView({
     annotations,
   ]);
 
+  const selectedScreenshotError = selectedAnnotation
+    ? screenshotErrors.get(selectedAnnotation.screenshot_id)
+    : undefined;
+
   return (
     <div className="grid grid-cols-12 gap-4 h-full min-h-0">
       {/* Panel 1: Pages List (Cyan) */}
@@ -379,6 +342,16 @@ export function PageAnalysisView({
                         Scanning Page...
                       </span>
                     </div>
+                  ) : selectedScreenshotError ? (
+                    <div className="flex flex-col items-center gap-3 py-20 max-w-md text-center">
+                      <FileImage className="h-10 w-10 text-text-muted" />
+                      <span className="text-text-muted text-xs font-mono">
+                        {screenshotErrorText(
+                          selectedScreenshotError,
+                          "Failed to load screenshot"
+                        )}
+                      </span>
+                    </div>
                   ) : (
                     <canvas
                       ref={canvasRef}
@@ -400,7 +373,7 @@ interface PageThumbnailProps {
   annotation: ExtractionAnnotation;
   isSelected: boolean;
   extractionId?: string;
-  screenshotCache: Map<string, string>;
+  screenshotCache: ReadonlyMap<string, string>;
   loadScreenshot: (screenshotId: string) => Promise<string | null>;
   onClick: () => void;
 }

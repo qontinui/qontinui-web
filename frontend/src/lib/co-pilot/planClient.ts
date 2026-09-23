@@ -4,20 +4,28 @@
  * Phase 1 of the web co-pilot: turn a natural-language prompt into a grounded
  * action plan by delegating to the paired runner's local Claude Code planner.
  *
- * The request is forwarded by the web backend's device-bridge runner proxy
- * (`POST /api/v1/device-bridge/runner-proxy/prompt-home/plan`) HTTP-over-WS to
- * the runner identified by the `X-Qontinui-Device-Id` header. The runner runs
+ * The request goes through the app's one runner transport resolver
+ * (`runnerRequest`, `@/lib/runner/api-client`): straight to the runner over
+ * loopback when it is proven to be on this machine, otherwise through the web
+ * backend's device-bridge relay (`POST /api/v1/device-bridge/runner-proxy/
+ * prompt-home/plan` with `X-Qontinui-Device-Id`, `@/lib/runner/relay`),
+ * HTTP-over-WS to that runner. The runner runs
  * its `plan_intent_handler` (see
  * `qontinui-runner/src-tauri/src/mcp/prompt_home.rs`) and returns an
  * `ApiResponse<{summary, steps[]}>` envelope (`{success, data, error}`), which
  * the proxy relays verbatim.
  *
  * This module is a pure async client: no React, no global state. The hook
- * (`usePromptExecution`) owns device-id resolution and orchestration.
+ * (`usePromptExecution`) owns target resolution and orchestration.
  */
 
-import { httpClient } from "@/services/service-factory";
-import { ApiConfig } from "@/services/api-config";
+import {
+  runnerRequest,
+  RunnerApiError,
+  RUNNER_NEEDS_LOCAL,
+  RUNNER_RELAY_FAILED,
+} from "@/lib/runner/api-client";
+import type { RunnerTarget } from "@/lib/runner/target";
 import { buildPageCatalog } from "./pageCatalog";
 import { copilotPages } from "./pageMap";
 
@@ -79,23 +87,18 @@ export class PlanError extends Error {
   }
 }
 
-/** Runner-proxy planner endpoint (relative to the API base; httpClient prefixes it). */
-const PLAN_PATH =
-  "/api/v1/device-bridge/runner-proxy/prompt-home/plan";
-
-/** Header the runner-proxy reads to relay to a specific paired runner. */
-const DEVICE_ID_HEADER = "X-Qontinui-Device-Id";
+/** The runner's planner route (relay-allowed: `RELAY_ALLOWED` carries it). */
+const PLAN_PATH = "/prompt-home/plan";
 
 /**
- * Per-request relay timeout, in ms, sent to the web backend via
- * `X-Qontinui-Timeout-Ms`. The backend (`device_bridge_ws.py`) clamps this to
- * [1s, 120s] and uses it instead of the relay's 30s default. Runner planning
- * routinely takes ~20s+ (more with explain-mode / complex prompts), so the 30s
- * default produced spurious 504s. We give planning the largest sync window that
- * still clears the upstream API gateway's hard ~60s request cap.
+ * Per-request relay wait, in ms, sent as `X-Qontinui-Timeout-Ms` by the relay
+ * client. The backend clamps this to [1s, 120s] and uses it instead of the
+ * relay's 30s default. Runner planning routinely takes ~20s+ (more with
+ * explain-mode / complex prompts), so the 30s default produced spurious 504s.
+ * We give planning the largest sync window that still clears the upstream API
+ * gateway's hard ~60s request cap. Over loopback it is the header deadline.
  */
 const PLAN_RELAY_TIMEOUT_MS = 55000;
-const PLAN_TIMEOUT_HEADER = "X-Qontinui-Timeout-Ms";
 
 /**
  * Client-side hard deadline for the whole plan fetch, in ms. Set slightly above
@@ -112,8 +115,11 @@ const PLAN_TIMEOUT_SENTINEL = Symbol("plan-client-timeout");
 export interface RequestPlanInput {
   /** Raw user prompt. */
   prompt: string;
-  /** The active paired runner's id (used as the relay device id). */
-  deviceId: string | null | undefined;
+  /**
+   * The runner to plan on (`useRunnerTarget()`), resolved per request by
+   * runnerRequest. A target with no route is refused with its typed reason.
+   */
+  target: RunnerTarget;
   /** When true, the planner produces detailed per-step explanations. */
   explain: boolean;
 }
@@ -173,6 +179,24 @@ function reasonForStatus(status: number): PlanErrorReason {
   return "planning-failed";
 }
 
+/**
+ * A typed refusal from the runner transport resolver → the plan reason the
+ * hook renders. The resolver's own message (e.g. "choose one in the runner
+ * selector", "the runner list could not be loaded") is always carried; only
+ * the reason is mapped. No runner resolved is `no-device-id`; the relay
+ * refusing the route is `planning-failed` with its "needs the runner on this
+ * machine" text.
+ */
+function planErrorForRunnerRefusal(err: RunnerApiError): PlanError {
+  if (err.code === RUNNER_NEEDS_LOCAL) {
+    return new PlanError("planning-failed", err.message, err.status);
+  }
+  if (err.code === RUNNER_RELAY_FAILED) {
+    return new PlanError("runner-unreachable", err.message);
+  }
+  return new PlanError("no-device-id", err.message);
+}
+
 /** Best-effort extraction of a human message from a JSON or text error body. */
 async function extractErrorMessage(
   response: Response,
@@ -213,14 +237,13 @@ async function extractErrorMessage(
 export async function requestPlan(
   input: RequestPlanInput,
 ): Promise<PlanIntentResult> {
-  const { prompt, deviceId, explain } = input;
+  const { prompt, target, explain } = input;
 
-  if (!deviceId) {
-    throw new PlanError(
-      "no-device-id",
-      "No paired runner selected — connect a runner to run prompts.",
-    );
-  }
+  // No early "no runner" verdict here: every target goes through
+  // runnerRequest, so a pending target waits for the provider like any other
+  // runner call, and a target with no route is refused with its TYPED reason
+  // (list unavailable, choose a runner, …), mapped below by
+  // planErrorForRunnerRefusal.
 
   const trimmed = prompt.trim();
   if (trimmed.length === 0) {
@@ -246,20 +269,16 @@ export async function requestPlan(
   let raced: Response | typeof PLAN_TIMEOUT_SENTINEL;
   try {
     raced = await Promise.race([
-      httpClient.fetch(`${ApiConfig.API_BASE_URL}${PLAN_PATH}`, {
+      runnerRequest(target, PLAN_PATH, {
         method: "POST",
-        // No automatic retries on the planner call. A 502/504/5xx here is a
-        // planning failure the user must see immediately — the default 3x 5xx
-        // retry would chain multiple 60s request timeouts and present as an
-        // indefinite "Planning…" hang (the E2E symptom). Surface it once.
-        maxRetries: 0,
+        // The relay client never retries: a 502/504/5xx here is a planning
+        // failure the user must see immediately — a retry would chain 60s
+        // request timeouts into an indefinite "Planning…" hang.
         signal: clientAbort.signal,
-        headers: {
-          [DEVICE_ID_HEADER]: deviceId,
-          // Give the relay the full sync window (backend clamps to <=120s) so
-          // ~20s+ planning doesn't trip the relay's 30s default → spurious 504.
-          [PLAN_TIMEOUT_HEADER]: String(PLAN_RELAY_TIMEOUT_MS),
-        },
+        // Give the relay the full sync window (backend clamps to <=120s) so
+        // ~20s+ planning doesn't trip the relay's 30s default → spurious 504.
+        timeoutMs: PLAN_RELAY_TIMEOUT_MS,
+        headers: { "Content-Type": "application/json" },
         // The runner accepts a caller-supplied `pages` list and grounds the plan
         // on it; `pageCatalog` additionally carries the discovered element labels.
         body: JSON.stringify({
@@ -273,6 +292,9 @@ export async function requestPlan(
     ]);
   } catch (err) {
     if (timeoutHandle !== undefined) clearTimeout(timeoutHandle);
+    if (err instanceof RunnerApiError && err.code !== undefined) {
+      throw planErrorForRunnerRefusal(err);
+    }
     // An AbortError (our client deadline, or the httpClient's internal 60s
     // timeout) is a planning timeout, not a generic network failure.
     const name = err instanceof Error ? err.name : "";

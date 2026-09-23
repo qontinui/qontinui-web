@@ -12,16 +12,12 @@ import React, {
 } from "react";
 import type { Runner } from "@qontinui/shared-types";
 import { useRealtimeConnectionsContext } from "@/contexts/realtime-connections-context";
+import { useRunnerLocality, type RunnerLocality } from "@/lib/runner/locality";
 import {
-  setRunnerTransport,
-  RUNNER_API_BASE,
-  type RunnerTransport,
-} from "@/lib/runner/api-client";
-import {
-  loopbackBaseForPort,
-  useRunnerLocality,
-  type RunnerLocality,
-} from "@/lib/runner/locality";
+  NO_RUNNER_TARGET,
+  targetKey,
+  type RunnerTarget,
+} from "@/lib/runner/target";
 
 // ============================================================================
 // Context Types
@@ -43,6 +39,12 @@ interface ActiveRunnerContextValue {
    * machine this browser runs on? Absent = not measured yet (render unknown).
    */
   localityById: ReadonlyMap<string, RunnerLocality>;
+  /**
+   * The runner every runner call in this tree targets, resolved per request
+   * into loopback (proven local) or the relay (any other listed runner).
+   * Referentially stable while it does not change.
+   */
+  target: RunnerTarget;
 }
 
 const ActiveRunnerContext = createContext<ActiveRunnerContextValue | undefined>(
@@ -55,51 +57,29 @@ const ActiveRunnerContext = createContext<ActiveRunnerContextValue | undefined>(
 
 const STORAGE_KEY = "qontinui:activeRunnerId";
 
-/**
- * The loopback base URL for a runner, or null when it has none from this
- * browser. Only a runner PROVEN local (its port answered device-info with its
- * own id) gets one. There is deliberately no fallback to `RUNNER_API_BASE`:
- * for a runner on another machine that would reach whatever owns :9876 on
- * this box — the wrong-box defect (plan
- * 2026-09-20-runner-selector-drives-a-transport-not-a-target, Phase 1).
- */
-export function buildRunnerApiBase(
+/** The target for one listed runner, carrying its measured locality. */
+export function buildRunnerTarget(
   runner: Runner,
   locality: RunnerLocality | undefined
-): string | null {
-  if (locality !== "local" || runner.port == null) return null;
-  return loopbackBaseForPort(runner.port);
-}
-
-/**
- * The transport runner calls use for one runner: a loopback base only when it
- * is proven local, otherwise a typed refusal naming why.
- */
-export function buildRunnerTransport(
-  runner: Runner,
-  locality: RunnerLocality | undefined
-): RunnerTransport {
-  const base = buildRunnerApiBase(runner, locality);
-  if (base !== null) return { kind: "loopback", base };
+): RunnerTarget {
   return {
-    kind: "no_loopback",
-    reason:
-      locality === undefined
-        ? "measuring"
-        : locality === "not_local"
-          ? "not_local"
-          : "locality_unknown",
-    runnerName: runner.name,
+    kind: "runner",
+    runner: { id: runner.id, port: runner.port, name: runner.name },
+    locality,
   };
 }
 
-const MEASURING: RunnerTransport = { kind: "no_loopback", reason: "measuring" };
+function pendingTarget(runner?: Runner): RunnerTarget {
+  return runner
+    ? { kind: "pending", runnerName: runner.name }
+    : { kind: "pending" };
+}
 
 export interface RunnerTargetResolution {
   /** The runner the UI shows as active (null when none is listed). */
   activeRunner: Runner | null;
-  /** How runner calls reach it from this browser. */
-  transport: RunnerTransport;
+  /** What runner calls target. */
+  target: RunnerTarget;
   /**
    * Set when auto-select chose a runner BECAUSE it is proven local — the
    * provider keeps it as the sticky auto-selection.
@@ -114,15 +94,19 @@ export interface RunnerTargetResolution {
 export type RunnerListState = "loading" | "failed" | "loaded";
 
 /**
- * Which runner is active, and the transport its calls use.
+ * Which runner is active, and the target its calls use.
  *
- * - While the runner list is loading, nothing is known: `measuring`. (A
+ * - While the runner list is loading, nothing is known: `pending`. (A
  *   stored selection may name a runner on another machine; the list has to
  *   arrive before anything may reach a loopback port.)
  * - A failed load is not an empty fleet: `list_unavailable`, never the
  *   default base.
  * - A loaded, genuinely empty list claims no runner: the default local base.
- * - An explicit selection that is listed is used as chosen.
+ * - An explicit selection that is listed is used as chosen — over loopback if
+ *   proven local, over the relay otherwise.
+ * - A sole listed runner is unambiguous: it is the target even when it is not
+ *   proven local (on a production origin nothing ever is), reached over the
+ *   relay.
  * - Otherwise (auto-select):
  *   - The sticky auto-selection (a runner previously auto-selected because
  *     it was proven local) stays active while it is listed, not measured
@@ -148,19 +132,19 @@ export function resolveRunnerTarget({
   localityById: ReadonlyMap<string, RunnerLocality>;
 }): RunnerTargetResolution {
   if (listState === "loading") {
-    return { activeRunner: null, transport: MEASURING, autoLocalId: null };
+    return { activeRunner: null, target: pendingTarget(), autoLocalId: null };
   }
   if (listState === "failed") {
     return {
       activeRunner: null,
-      transport: { kind: "no_loopback", reason: "list_unavailable" },
+      target: { kind: "unavailable", reason: "list_unavailable" },
       autoLocalId: null,
     };
   }
   if (runners.length === 0) {
     return {
       activeRunner: null,
-      transport: { kind: "loopback", base: RUNNER_API_BASE },
+      target: { kind: "default_local" },
       autoLocalId: null,
     };
   }
@@ -170,7 +154,7 @@ export function resolveRunnerTarget({
   if (selected) {
     return {
       activeRunner: selected,
-      transport: buildRunnerTransport(selected, localityById.get(selected.id)),
+      target: buildRunnerTarget(selected, localityById.get(selected.id)),
       autoLocalId: null,
     };
   }
@@ -194,7 +178,7 @@ export function resolveRunnerTarget({
     const locality = stickyLocality;
     return {
       activeRunner: sticky,
-      transport: buildRunnerTransport(sticky, locality),
+      target: buildRunnerTarget(sticky, locality),
       autoLocalId: locality === "local" ? sticky.id : null,
     };
   }
@@ -203,17 +187,28 @@ export function resolveRunnerTarget({
   if (local) {
     return {
       activeRunner: local,
-      transport: buildRunnerTransport(local, "local"),
+      target: buildRunnerTarget(local, "local"),
       autoLocalId: local.id,
     };
   }
   const first = runners[0]!;
   const allMeasured = runners.every((r) => localityById.has(r.id));
+  if (!allMeasured) {
+    return {
+      activeRunner: first,
+      target: pendingTarget(first),
+      autoLocalId: null,
+    };
+  }
+  // Every runner measured, none proven local. A sole runner is the user's
+  // only choice; among several, picking `runners[0]` would send work to a
+  // machine the user did not pick (plan D2), so they must choose.
   return {
     activeRunner: first,
-    transport: allMeasured
-      ? buildRunnerTransport(first, localityById.get(first.id))
-      : MEASURING,
+    target:
+      runners.length === 1
+        ? buildRunnerTarget(first, localityById.get(first.id))
+        : { kind: "unavailable", reason: "selection_required" },
     autoLocalId: null,
   };
 }
@@ -259,8 +254,12 @@ export function ActiveRunnerProvider({ children }: { children: ReactNode }) {
   // The runner auto-select last chose because it was proven local.
   const [stickyAutoId, setStickyAutoId] = useState<string | null>(null);
 
-  // Resolve the active runner and the transport its calls use
-  const { activeRunner, transport, autoLocalId } = resolveRunnerTarget({
+  // Resolve the active runner and the target its calls use
+  const {
+    activeRunner,
+    target: resolvedTarget,
+    autoLocalId,
+  } = resolveRunnerTarget({
     listState,
     runners,
     selectedId,
@@ -282,11 +281,61 @@ export function ActiveRunnerProvider({ children }: { children: ReactNode }) {
     }
   }, [autoLocalId, stickyAutoId, listState, runners, localityById]);
 
-  // Sync the runner transport whenever it changes (setRunnerTransport
-  // ignores a no-op change, so a fresh object per render is fine).
+  // Waiters for a non-pending target: a call made while the target is
+  // pending waits (bounded) for the provider to resolve one, instead of
+  // failing on page load. Provider-instance state, handed out explicitly on
+  // the pending target — not a module global.
+  const latestTargetRef = useRef<RunnerTarget>(resolvedTarget);
+  const waitersRef = useRef(new Set<(t: RunnerTarget) => void>());
+  const settle = useCallback(
+    (timeoutMs: number) =>
+      new Promise<RunnerTarget>((resolve) => {
+        const current = latestTargetRef.current;
+        if (current.kind !== "pending") {
+          resolve(current);
+          return;
+        }
+        const waiter = (t: RunnerTarget) => {
+          clearTimeout(timer);
+          resolve(t);
+        };
+        const timer = setTimeout(() => {
+          waitersRef.current.delete(waiter);
+          const now = latestTargetRef.current;
+          // Still pending: resolve with a settle-less copy so the caller
+          // refuses instead of waiting again.
+          resolve(now.kind === "pending" ? { ...now, settle: undefined } : now);
+        }, timeoutMs);
+        waitersRef.current.add(waiter);
+      }),
+    []
+  );
+
+  // One stable object per target+route (plus the runner's name), so effects
+  // and callbacks keyed on the target re-run only when it really changes.
+  const resolvedKey = `${targetKey(resolvedTarget)}|${
+    resolvedTarget.kind === "runner"
+      ? `${resolvedTarget.runner.name ?? ""}:${resolvedTarget.locality ?? ""}`
+      : resolvedTarget.kind === "pending"
+        ? (resolvedTarget.runnerName ?? "")
+        : ""
+  }`;
+  const target = useMemo<RunnerTarget>(
+    () =>
+      resolvedTarget.kind === "pending"
+        ? { ...resolvedTarget, settle }
+        : resolvedTarget,
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed on content
+    [resolvedKey, settle]
+  );
+
   useEffect(() => {
-    setRunnerTransport(transport);
-  }, [transport]);
+    latestTargetRef.current = target;
+    if (target.kind === "pending") return;
+    const waiters = [...waitersRef.current];
+    waitersRef.current.clear();
+    waiters.forEach((w) => w(target));
+  }, [target]);
 
   // Clear the selection when the selected runner disconnects — and only
   // then: it was listed and has left the list. An empty, loading or failed
@@ -325,6 +374,7 @@ export function ActiveRunnerProvider({ children }: { children: ReactNode }) {
     isMultiRunner: runners.length > 1,
     listState,
     localityById,
+    target,
   };
 
   return (
@@ -337,6 +387,17 @@ export function ActiveRunnerProvider({ children }: { children: ReactNode }) {
 // ============================================================================
 // Hook
 // ============================================================================
+
+/**
+ * The target for runner calls in this tree: pass it to runnerFetch /
+ * runnerRequest / useRunnerQuery / useRunnerMutation. Outside an
+ * ActiveRunnerProvider it is a pending target that nothing will resolve, so
+ * calls refuse (RUNNER_LOCALITY_UNKNOWN) rather than guess a port.
+ */
+export function useRunnerTarget(): RunnerTarget {
+  const context = useContext(ActiveRunnerContext);
+  return context?.target ?? NO_RUNNER_TARGET;
+}
 
 export function useActiveRunner() {
   const context = useContext(ActiveRunnerContext);

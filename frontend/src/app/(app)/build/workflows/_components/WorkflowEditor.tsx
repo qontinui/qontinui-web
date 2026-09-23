@@ -16,7 +16,9 @@ import { Button } from "@/components/ui/button";
 import { generateStepId, type UnifiedStep, type WorkflowPhase } from "@/types/unified-workflow";
 import { useRunnerHealth } from "@/lib/runner/hooks/misc-hooks";
 import {
-  RUNNER_API_BASE,
+  RunnerApiError,
+  runnerRequest,
+  useRunnerTarget,
   type RunningTaskRunsResponse,
 } from "@/lib/runner-api";
 import { PhaseStepRenderer } from "./PhaseStepRenderer";
@@ -50,6 +52,7 @@ export function WorkflowEditor({
   const { state, addStep, saveWorkflow, exportWorkflow, importWorkflow, setWorkflow, updateWorkflow, hasUnsavedChanges, getActiveSteps } =
     useWorkflowBuilder();
   const router = useRouter();
+  const runnerTarget = useRunnerTarget();
   // Run is an execution affordance — gate it on runner connectivity. Save /
   // Export / Import / step editors stay enabled regardless of runner state.
   const { data: runnerHealth, isOffline: runnerHealthOffline } =
@@ -190,7 +193,7 @@ export function WorkflowEditor({
   const handleStop = useCallback(async () => {
     setIsStopping(true);
     try {
-      const res = await fetch(`${RUNNER_API_BASE}/task-runs/running`);
+      const res = await runnerRequest(runnerTarget, "/task-runs/running");
       if (!res.ok) {
         toast.error("Failed to fetch running tasks");
         return;
@@ -209,8 +212,9 @@ export function WorkflowEditor({
         return;
       }
 
-      const stopRes = await fetch(
-        `${RUNNER_API_BASE}/task-runs/${matchingRun.id}/stop`,
+      const stopRes = await runnerRequest(
+        runnerTarget,
+        `/task-runs/${matchingRun.id}/stop`,
         { method: "POST" },
       );
       if (stopRes.ok) {
@@ -218,12 +222,18 @@ export function WorkflowEditor({
       } else {
         toast.error("Failed to stop workflow execution");
       }
-    } catch {
-      toast.error("Failed to stop workflow execution");
+    } catch (err) {
+      // A typed runner error (e.g. the relay does not carry this route)
+      // names what failed; say it rather than a generic failure.
+      toast.error(
+        err instanceof RunnerApiError
+          ? err.message
+          : "Failed to stop workflow execution",
+      );
     } finally {
       setIsStopping(false);
     }
-  }, [state.workflow.id]);
+  }, [state.workflow.id, runnerTarget]);
 
   return (
     <div className="flex-1 min-w-0 space-y-4">

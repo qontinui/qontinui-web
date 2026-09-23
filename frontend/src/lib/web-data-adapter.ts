@@ -13,30 +13,34 @@ import type {
 } from "@qontinui/shared-types/workflow";
 import type { LibraryItem } from "@qontinui/shared-types/library";
 import { runnerFetch } from "@/lib/runner/api-client";
+import type { RunnerTarget } from "@/lib/runner/target";
 import * as workflowApi from "@/lib/api/unified-workflows";
 
 /**
- * Create a WorkflowDataAdapter backed by the runner API (port 9876).
+ * Create a WorkflowDataAdapter backed by the runner API of `target`.
  *
- * Library items are fetched from the runner's REST endpoints.
- * Workflow CRUD goes through the unified-workflows API client.
+ * Library items are fetched from the target runner's REST endpoints (the
+ * transport is resolved per request). Workflow CRUD goes through the
+ * unified-workflows API client.
  */
-export function createWebDataAdapter(): WorkflowDataAdapter {
+export function createWebDataAdapter(
+  target: RunnerTarget
+): WorkflowDataAdapter {
   return {
     async fetchPrompts(): Promise<LibraryItem[]> {
-      return runnerFetch<LibraryItem[]>("/prompts");
+      return runnerFetch<LibraryItem[]>(target, "/prompts");
     },
 
     async fetchChecks(): Promise<LibraryItem[]> {
-      return runnerFetch<LibraryItem[]>("/checks");
+      return runnerFetch<LibraryItem[]>(target, "/checks");
     },
 
     async fetchCheckGroups(): Promise<LibraryItem[]> {
-      return runnerFetch<LibraryItem[]>("/check-groups");
+      return runnerFetch<LibraryItem[]>(target, "/check-groups");
     },
 
     async fetchShellCommands(): Promise<LibraryItem[]> {
-      return runnerFetch<LibraryItem[]>("/shell-commands");
+      return runnerFetch<LibraryItem[]>(target, "/shell-commands");
     },
 
     async fetchWorkflows(): Promise<UnifiedWorkflow[]> {
@@ -44,16 +48,16 @@ export function createWebDataAdapter(): WorkflowDataAdapter {
     },
 
     async fetchPlaywrightScripts(): Promise<LibraryItem[]> {
-      return runnerFetch<LibraryItem[]>("/playwright/tests");
+      return runnerFetch<LibraryItem[]>(target, "/playwright/tests");
     },
 
     async fetchContexts(): Promise<LibraryItem[]> {
-      return runnerFetch<LibraryItem[]>("/contexts");
+      return runnerFetch<LibraryItem[]>(target, "/contexts");
     },
 
     async fetchSkills(): Promise<SkillDefinition[]> {
       try {
-        const skills = await runnerFetch<SkillDefinition[]>("/skills");
+        const skills = await runnerFetch<SkillDefinition[]>(target, "/skills");
         return (skills ?? []).filter((s) => s.source !== "builtin");
       } catch {
         return [];

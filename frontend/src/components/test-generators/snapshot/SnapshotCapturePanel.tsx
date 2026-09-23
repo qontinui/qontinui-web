@@ -22,7 +22,8 @@ interface SnapshotCapturePanelProps {
   hasPreviousSnapshot: boolean;
   onCapture: () => void;
   onCompare: () => void;
-  runnerUrl: string;
+  /** Display name of the runner the extension is reached through. */
+  runnerLabel: string;
   /** Available browser tabs from the extension */
   browserTabs: BrowserTab[];
   /** Currently selected tab id (null = extension default) */
@@ -42,7 +43,7 @@ export function SnapshotCapturePanel({
   hasPreviousSnapshot,
   onCapture,
   onCompare,
-  runnerUrl,
+  runnerLabel,
   browserTabs,
   selectedTabId,
   onSelectTab,
@@ -72,7 +73,7 @@ export function SnapshotCapturePanel({
             className="text-xs text-neutral-500 truncate max-w-[200px]"
             data-ui-element
           >
-            {runnerUrl}
+            {runnerLabel}
           </span>
         </div>
 

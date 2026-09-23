@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect, useCallback } from "react";
 import {
-  runnerApi,
+  useRunnerApi,
   type TaskRun,
   type RunningTaskRunsResponse,
 } from "@/lib/runner-api";
@@ -33,6 +33,7 @@ import { WidgetContent } from "./WidgetPanel";
 import { IdleState, CompletedState } from "./EmptyStates";
 
 export function ActiveRunsContent() {
+  const runnerApi = useRunnerApi();
   const {
     data: runningTaskRuns,
     isLoading: runsLoading,
@@ -146,7 +147,7 @@ export function ActiveRunsContent() {
         );
       }
     })();
-  }, [activeRuns, refetchRuns]);
+  }, [activeRuns, refetchRuns, runnerApi]);
 
   const isOffline = runsOffline;
   const runs = activeRuns || [];

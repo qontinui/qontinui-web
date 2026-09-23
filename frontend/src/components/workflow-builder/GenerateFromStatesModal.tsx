@@ -2,7 +2,7 @@
 
 import React, { useState, useCallback, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { RUNNER_API_BASE } from "@/lib/runner-api";
+import { runnerRequest, targetKey, useRunnerTarget } from "@/lib/runner-api";
 import {
   GitBranch,
   Loader2,
@@ -46,6 +46,7 @@ export function GenerateFromStatesModal({
   onClose,
   onWorkflowGenerated,
 }: GenerateFromStatesModalProps) {
+  const target = useRunnerTarget();
   const [workflowName, setWorkflowName] = useState(
     "State Machine Verification"
   );
@@ -60,12 +61,16 @@ export function GenerateFromStatesModal({
   const [error, setError] = useState<string | null>(null);
 
   // Load runner config and parse states when modal is open
-  const { data: configData, isLoading: isCheckingConfig } = useQuery({
-    queryKey: ["runnerConfigStates"],
+  const {
+    data: configData,
+    isLoading: isCheckingConfig,
+    error: configError,
+  } = useQuery({
+    queryKey: ["runnerConfigStates", targetKey(target)],
     queryFn: async ({
       signal,
     }): Promise<{ hasConfig: boolean; states: ConfigState[] }> => {
-      const res = await fetch(`${RUNNER_API_BASE}/status`, { signal });
+      const res = await runnerRequest(target, "/status", { signal });
       if (!res.ok) throw new Error("Runner not available");
       const status = await res.json();
       const configPath = status.data?.config_path ?? status.config_path;
@@ -73,7 +78,7 @@ export function GenerateFromStatesModal({
         return { hasConfig: false, states: [] };
       }
 
-      const parseRes = await fetch(`${RUNNER_API_BASE}/configs/parse`, {
+      const parseRes = await runnerRequest(target, "/configs/parse", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ path: configPath }),
@@ -200,6 +205,18 @@ export function GenerateFromStatesModal({
               <span className="text-text-muted">
                 Checking loaded configuration...
               </span>
+            </div>
+          ) : configError ? (
+            <div className="flex items-start gap-3 p-4 bg-red-500/10 border border-red-500/30 rounded-lg">
+              <AlertCircle className="w-5 h-5 text-red-400 shrink-0 mt-0.5" />
+              <div>
+                <p className="text-red-400 font-medium text-sm">
+                  Could Not Read the Runner Configuration
+                </p>
+                <p className="text-xs text-text-muted mt-1">
+                  {configError.message}
+                </p>
+              </div>
             </div>
           ) : !hasConfig ? (
             <div className="flex items-start gap-3 p-4 bg-amber-500/10 border border-amber-500/30 rounded-lg">

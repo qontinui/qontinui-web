@@ -1,7 +1,13 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
-import { useRunnerHealth, runnerApi } from "@/lib/runner-api";
+import { useState } from "react";
+import {
+  useRunnerHealth,
+  useRunnerApi,
+  useRunnerTarget,
+  useRunnerPoll,
+  runnerPollInterval,
+} from "@/lib/runner-api";
 import { RunnerPartialState } from "@/components/runner/RunnerPartialState";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -22,6 +28,8 @@ import {
 import { toast } from "sonner";
 
 export default function CapturePage() {
+  const runnerApi = useRunnerApi();
+  const target = useRunnerTarget();
   const { isOffline, isLoading: healthLoading } = useRunnerHealth();
   const [isRecording, setIsRecording] = useState(false);
   const [fps, setFps] = useState(30);
@@ -33,30 +41,30 @@ export default function CapturePage() {
     events: number;
     sessionId: string;
   } | null>(null);
-  const timerRef = useRef<NodeJS.Timeout | null>(null);
 
-  useEffect(() => {
-    if (isRecording) {
-      timerRef.current = setInterval(async () => {
-        try {
-          const status = await runnerApi.getInteractionRecordingStatus();
-          setElapsedSeconds(Math.floor(status.duration));
-          setEventCount(status.events_count);
-          if (!status.is_recording) {
-            setIsRecording(false);
-          }
-        } catch {
-          // Fallback to local timer if status poll fails
-          setElapsedSeconds((s) => s + 1);
-        }
-      }, 1000);
-    } else if (timerRef.current) {
-      clearInterval(timerRef.current);
-    }
-    return () => {
-      if (timerRef.current) clearInterval(timerRef.current);
-    };
-  }, [isRecording]);
+  // Recording status poll. The cadence is re-evaluated every tick (never
+  // faster than the relay cadence for a relayed or unresolved target); a
+  // RUNNER_NEEDS_LOCAL refusal stops the poll and is shown.
+  useRunnerPoll(target, {
+    enabled: isRecording,
+    requestedMs: 1000,
+    tick: async () => {
+      const status = await runnerApi.getInteractionRecordingStatus();
+      setElapsedSeconds(Math.floor(status.duration));
+      setEventCount(status.events_count);
+      if (!status.is_recording) {
+        setIsRecording(false);
+        return "stop";
+      }
+      return undefined;
+    },
+    onNeedsLocal: (err) => toast.error(err.message),
+    // Fallback to a local timer if a status poll fails
+    onError: () =>
+      setElapsedSeconds(
+        (s) => s + Math.round(runnerPollInterval(target, 1000) / 1000)
+      ),
+  });
 
   const formatTimer = (seconds: number): string => {
     const m = Math.floor(seconds / 60)

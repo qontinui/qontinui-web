@@ -27,7 +27,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import type { Runner } from "@qontinui/shared-types";
-import { isRunnerReachable } from "@/lib/ui-bridge/discovered-specs";
+import { isRunnerReachable } from "./origin";
 
 export type RunnerLocality = "local" | "not_local" | "unknown";
 
@@ -42,6 +42,9 @@ export const LOCALITY_TTL_MS = 30_000;
 
 /** Backoff before the one retry of an inconclusive re-probe of a proven-local runner. */
 export const LOCAL_RECHECK_BACKOFF_MS = 1000;
+
+/** The runner's default port — used only when the runner list is loaded and empty. */
+export const DEFAULT_RUNNER_PORT = 9876;
 
 /** The loopback base URL of a runner port. Spelled 127.0.0.1: the runner binds IPv4 only. */
 export function loopbackBaseForPort(port: number): string {

@@ -11,6 +11,7 @@ import {
   type ExplorationSessionResponse,
   type UIBridgeExplorationConfig,
 } from "./types";
+import { RunnerApiError, runnerRequest, type RunnerTarget } from "@/lib/runner";
 
 const STORAGE_KEY = "qontinui-exploration-config";
 
@@ -85,17 +86,32 @@ export async function sendCommandViaExtension(
   });
 }
 
+/** The outcome of a runner command. `code` carries a typed runner failure (e.g. RUNNER_NEEDS_LOCAL). */
+export interface RunnerCommandResult {
+  success: boolean;
+  data?: unknown;
+  error?: string;
+  code?: string;
+}
+
 /**
- * Send a command to the runner - automatically chooses between direct HTTP or extension based on environment
+ * Send a command to the runner's browser-extension bridge.
+ *
+ * With a target, the command goes to that runner through the resolver
+ * (`runnerRequest`: loopback only when the runner is proven local, the relay
+ * otherwise). The relay does not carry `/extension/command`, so for a runner
+ * that is not on this machine the result is a typed RUNNER_NEEDS_LOCAL failure
+ * whose `error` says so — never a guessed URL. Without a target (or on a
+ * cloud origin, where the extension is the designed path) the command goes
+ * through the Chrome extension's postMessage bridge.
  */
 export async function sendRunnerCommand(
-  runnerUrl: string | null,
+  target: RunnerTarget | null,
   action: string,
   params: Record<string, unknown> = {},
   timeoutSecs: number = 10
-): Promise<{ success: boolean; data?: unknown; error?: string }> {
-  // For cloud environment or when runnerUrl is null, use extension
-  if (isCloudEnvironment() || !runnerUrl) {
+): Promise<RunnerCommandResult> {
+  if (isCloudEnvironment() || !target) {
     try {
       const data = await sendCommandViaExtension(action, params);
       return { success: true, data };
@@ -107,9 +123,8 @@ export async function sendRunnerCommand(
     }
   }
 
-  // For local development, use direct HTTP
   try {
-    const response = await fetch(`${runnerUrl}/extension/command`, {
+    const response = await runnerRequest(target, "/extension/command", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -130,6 +145,7 @@ export async function sendRunnerCommand(
     return {
       success: false,
       error: error instanceof Error ? error.message : "Unknown error",
+      code: error instanceof RunnerApiError ? error.code : undefined,
     };
   }
 }

@@ -3,13 +3,14 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import * as workflowApi from "@/lib/api/unified-workflows";
-import { runnerApi } from "@/lib/runner-api";
+import { useRunnerApi } from "@/lib/runner-api";
 import type { UnifiedWorkflow } from "@/types/unified-workflow";
 import { toast } from "sonner";
 
 export function useWorkflowPageActions(
   setSelectedWorkflow: (w: UnifiedWorkflow) => void,
 ) {
+  const runnerApi = useRunnerApi();
   const router = useRouter();
   const [isCreatingManually, setIsCreatingManually] = useState(false);
 

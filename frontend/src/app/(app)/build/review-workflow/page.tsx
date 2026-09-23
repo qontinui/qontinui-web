@@ -53,12 +53,20 @@ export default function ReviewWorkflowPage() {
       try {
         // Try fetching UI Bridge snapshot
         if (i === 1) {
-          const snapshotUrl = targetUrl.includes("localhost:9876")
-            ? `${targetUrl}/ui-bridge/control/snapshot`
-            : `${targetUrl}/api/ui-bridge/control/snapshot`;
-
+          // The target is a user-entered URL, not the active runner: a web
+          // app serves the snapshot under /api, a runner at its root. Try the
+          // app route first, then the runner route, rather than guessing from
+          // the port.
+          const base = targetUrl.replace(/\/+$/, "");
           try {
-            const res = await fetch(snapshotUrl, { signal: AbortSignal.timeout(10000) });
+            let res = await fetch(`${base}/api/ui-bridge/control/snapshot`, {
+              signal: AbortSignal.timeout(10000),
+            });
+            if (!res.ok) {
+              res = await fetch(`${base}/ui-bridge/control/snapshot`, {
+                signal: AbortSignal.timeout(10000),
+              });
+            }
             if (res.ok) {
               const data = await res.json();
               const elementCount = data?.elements?.length ?? 0;
@@ -168,7 +176,7 @@ export default function ReviewWorkflowPage() {
               <Input
                 value={targetUrl}
                 onChange={(e) => setTargetUrl(e.target.value)}
-                placeholder="http://localhost:3001 or http://localhost:9876"
+                placeholder="Application or runner URL, e.g. http://localhost:3001"
                 className="h-9 text-sm bg-background border-border flex-1"
                 onKeyDown={(e) => {
                   if (e.key === "Enter") handleStartReview();

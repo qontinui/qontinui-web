@@ -2,6 +2,8 @@
 
 import { useState, useCallback } from "react";
 import { toast } from "sonner";
+import { useRunnerTarget } from "@/contexts/active-runner-context";
+import { runnerRequest } from "@/lib/runner/api-client";
 import type {
   AccessibilitySnapshot,
   AccessibilityNode,
@@ -9,8 +11,6 @@ import type {
 } from "@qontinui/shared-types/accessibility";
 
 interface UseAccessibilityTreeOptions {
-  /** Runner API base URL */
-  apiUrl?: string;
   /** CDP host for browser connection */
   cdpHost?: string;
   /** CDP port for browser connection */
@@ -97,12 +97,9 @@ interface CaptureOptions {
 export function useAccessibilityTree(
   options: UseAccessibilityTreeOptions = {}
 ): UseAccessibilityTreeResult {
-  // Use 127.0.0.1 instead of localhost to force IPv4 (runner only listens on IPv4)
-  const {
-    apiUrl = "http://127.0.0.1:9876",
-    cdpHost = "localhost",
-    cdpPort = 9222,
-  } = options;
+  const { cdpHost = "localhost", cdpPort = 9222 } = options;
+  // The active runner; the transport is resolved per request.
+  const target = useRunnerTarget();
 
   const [snapshot, setSnapshot] = useState<AccessibilitySnapshot | null>(null);
   const [selectedNode, setSelectedNode] = useState<AccessibilityNode | null>(
@@ -119,7 +116,7 @@ export function useAccessibilityTree(
       command: string,
       params: Record<string, unknown> = {}
     ): Promise<T> => {
-      const response = await fetch(`${apiUrl}/command`, {
+      const response = await runnerRequest(target, "/command", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -140,7 +137,7 @@ export function useAccessibilityTree(
 
       return result as T;
     },
-    [apiUrl]
+    [target]
   );
 
   // Capture accessibility tree

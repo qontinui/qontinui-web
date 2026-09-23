@@ -6,7 +6,10 @@
  */
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { runnerApi } from "@/lib/runner/runner-api-object";
+import { runnerFetch } from "@/lib/runner/api-client";
+import { useRunnerApi } from "@/lib/runner/runner-api-object";
+import { targetKey } from "@/lib/runner/target";
+import { useRunnerTarget } from "@/contexts/active-runner-context";
 import type {
   PlaywrightScript,
   PromptSnippet,
@@ -25,13 +28,25 @@ export const runnerEntityKeys = {
     [...runnerEntityKeys.type(t), "detail", id] as const,
 };
 
+/**
+ * A list query key scoped to the runner it was fetched from, so one runner's
+ * entities are never served as another's. Invalidation by
+ * `runnerEntityKeys.type(t)` still matches every runner's entry.
+ */
+function useRunnerListKey(t: string) {
+  const target = useRunnerTarget();
+  return [...runnerEntityKeys.list(t), targetKey(target)] as const;
+}
+
 // =============================================================================
 // Playwright Tests
 // =============================================================================
 
 export function usePlaywrightTestsList() {
+  const runnerApi = useRunnerApi();
+  const queryKey = useRunnerListKey("playwright-tests");
   return useQuery({
-    queryKey: runnerEntityKeys.list("playwright-tests"),
+    queryKey,
     queryFn: () => runnerApi.getPlaywrightTests(),
     staleTime: 30000,
   });
@@ -39,6 +54,7 @@ export function usePlaywrightTestsList() {
 
 export function useCreatePlaywrightTest() {
   const qc = useQueryClient();
+  const runnerApi = useRunnerApi();
   return useMutation({
     mutationFn: (data: Partial<PlaywrightScript>) =>
       runnerApi.createPlaywrightTest(data),
@@ -52,6 +68,7 @@ export function useCreatePlaywrightTest() {
 
 export function useUpdatePlaywrightTest() {
   const qc = useQueryClient();
+  const runnerApi = useRunnerApi();
   return useMutation({
     mutationFn: ({
       id,
@@ -70,6 +87,7 @@ export function useUpdatePlaywrightTest() {
 
 export function useDeletePlaywrightTest() {
   const qc = useQueryClient();
+  const runnerApi = useRunnerApi();
   return useMutation({
     mutationFn: (id: string) => runnerApi.deletePlaywrightTest(id),
     onSuccess: () => {
@@ -82,6 +100,7 @@ export function useDeletePlaywrightTest() {
 
 export function useDuplicatePlaywrightTest() {
   const qc = useQueryClient();
+  const runnerApi = useRunnerApi();
   return useMutation({
     mutationFn: ({ id, newName }: { id: string; newName?: string }) =>
       runnerApi.duplicatePlaywrightTest(id, newName),
@@ -98,8 +117,10 @@ export function useDuplicatePlaywrightTest() {
 // =============================================================================
 
 export function useRunnerPromptSnippetsList() {
+  const runnerApi = useRunnerApi();
+  const queryKey = useRunnerListKey("prompt-snippets");
   return useQuery({
-    queryKey: runnerEntityKeys.list("prompt-snippets"),
+    queryKey,
     queryFn: () => runnerApi.getPromptSnippets(),
     staleTime: 30000,
   });
@@ -107,6 +128,7 @@ export function useRunnerPromptSnippetsList() {
 
 export function useCreateRunnerPromptSnippet() {
   const qc = useQueryClient();
+  const runnerApi = useRunnerApi();
   return useMutation({
     mutationFn: (data: Partial<PromptSnippet>) =>
       runnerApi.createPromptSnippet(data),
@@ -120,6 +142,7 @@ export function useCreateRunnerPromptSnippet() {
 
 export function useUpdateRunnerPromptSnippet() {
   const qc = useQueryClient();
+  const runnerApi = useRunnerApi();
   return useMutation({
     mutationFn: ({ id, data }: { id: string; data: Partial<PromptSnippet> }) =>
       runnerApi.updatePromptSnippet(id, data),
@@ -133,6 +156,7 @@ export function useUpdateRunnerPromptSnippet() {
 
 export function useDeleteRunnerPromptSnippet() {
   const qc = useQueryClient();
+  const runnerApi = useRunnerApi();
   return useMutation({
     mutationFn: (id: string) => runnerApi.deletePromptSnippet(id),
     onSuccess: () => {
@@ -148,8 +172,10 @@ export function useDeleteRunnerPromptSnippet() {
 // =============================================================================
 
 export function usePromptsList() {
+  const runnerApi = useRunnerApi();
+  const queryKey = useRunnerListKey("prompts");
   return useQuery({
-    queryKey: runnerEntityKeys.list("prompts"),
+    queryKey,
     queryFn: () => runnerApi.getPrompts(),
     staleTime: 30000,
   });
@@ -157,6 +183,7 @@ export function usePromptsList() {
 
 export function useCreatePrompt() {
   const qc = useQueryClient();
+  const runnerApi = useRunnerApi();
   return useMutation({
     mutationFn: (data: Partial<SavedPrompt>) => runnerApi.createPrompt(data),
     onSuccess: () => {
@@ -167,6 +194,7 @@ export function useCreatePrompt() {
 
 export function useUpdatePrompt() {
   const qc = useQueryClient();
+  const runnerApi = useRunnerApi();
   return useMutation({
     mutationFn: ({ id, data }: { id: string; data: Partial<SavedPrompt> }) =>
       runnerApi.updatePrompt(id, data),
@@ -178,6 +206,7 @@ export function useUpdatePrompt() {
 
 export function useDeletePrompt() {
   const qc = useQueryClient();
+  const runnerApi = useRunnerApi();
   return useMutation({
     mutationFn: (id: string) => runnerApi.deletePrompt(id),
     onSuccess: () => {
@@ -188,6 +217,7 @@ export function useDeletePrompt() {
 
 export function useDuplicatePrompt() {
   const qc = useQueryClient();
+  const runnerApi = useRunnerApi();
   return useMutation({
     mutationFn: (id: string) => runnerApi.duplicatePrompt(id),
     onSuccess: () => {
@@ -213,22 +243,21 @@ export interface RunnerTest {
 }
 
 export function useTestsList() {
+  const target = useRunnerTarget();
+  const queryKey = useRunnerListKey("tests");
   return useQuery({
-    queryKey: runnerEntityKeys.list("tests"),
-    queryFn: async () => {
-      const { runnerFetch } = await import("@/lib/runner/api-client");
-      return runnerFetch<RunnerTest[]>("/tests");
-    },
+    queryKey,
+    queryFn: () => runnerFetch<RunnerTest[]>(target, "/tests"),
     staleTime: 30000,
   });
 }
 
 export function useCreateTest() {
   const qc = useQueryClient();
+  const target = useRunnerTarget();
   return useMutation({
     mutationFn: async (data: Partial<RunnerTest>) => {
-      const { runnerFetch } = await import("@/lib/runner/api-client");
-      return runnerFetch<RunnerTest>("/tests", {
+      return runnerFetch<RunnerTest>(target, "/tests", {
         method: "POST",
         body: JSON.stringify(data),
       });
@@ -241,6 +270,7 @@ export function useCreateTest() {
 
 export function useUpdateTest() {
   const qc = useQueryClient();
+  const target = useRunnerTarget();
   return useMutation({
     mutationFn: async ({
       id,
@@ -249,8 +279,7 @@ export function useUpdateTest() {
       id: string;
       data: Partial<RunnerTest>;
     }) => {
-      const { runnerFetch } = await import("@/lib/runner/api-client");
-      return runnerFetch<RunnerTest>(`/tests/${id}`, {
+      return runnerFetch<RunnerTest>(target, `/tests/${id}`, {
         method: "PUT",
         body: JSON.stringify(data),
       });
@@ -263,10 +292,10 @@ export function useUpdateTest() {
 
 export function useDeleteTest() {
   const qc = useQueryClient();
+  const target = useRunnerTarget();
   return useMutation({
     mutationFn: async (id: string) => {
-      const { runnerFetch } = await import("@/lib/runner/api-client");
-      return runnerFetch<void>(`/tests/${id}`, { method: "DELETE" });
+      return runnerFetch<void>(target, `/tests/${id}`, { method: "DELETE" });
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: runnerEntityKeys.type("tests") });
@@ -276,11 +305,11 @@ export function useDeleteTest() {
 
 export function useDuplicateTest() {
   const qc = useQueryClient();
+  const target = useRunnerTarget();
   return useMutation({
     mutationFn: async ({ id, newName }: { id: string; newName?: string }) => {
-      const { runnerFetch } = await import("@/lib/runner/api-client");
       // Get original, create copy
-      const original = await runnerFetch<RunnerTest>(`/tests/${id}`);
+      const original = await runnerFetch<RunnerTest>(target, `/tests/${id}`);
       const copy = {
         ...original,
         id: undefined,
@@ -288,7 +317,7 @@ export function useDuplicateTest() {
         created_at: undefined,
         updated_at: undefined,
       };
-      return runnerFetch<RunnerTest>("/tests", {
+      return runnerFetch<RunnerTest>(target, "/tests", {
         method: "POST",
         body: JSON.stringify(copy),
       });
@@ -300,13 +329,17 @@ export function useDuplicateTest() {
 }
 
 export function useExecuteTest() {
+  const target = useRunnerTarget();
   return useMutation({
     mutationFn: async (id: string) => {
-      const { runnerFetch } = await import("@/lib/runner/api-client");
-      return runnerFetch<Record<string, unknown>>(`/tests/${id}/execute`, {
-        method: "POST",
-        timeoutMs: 120000,
-      });
+      return runnerFetch<Record<string, unknown>>(
+        target,
+        `/tests/${id}/execute`,
+        {
+          method: "POST",
+          timeoutMs: 120000,
+        }
+      );
     },
   });
 }
