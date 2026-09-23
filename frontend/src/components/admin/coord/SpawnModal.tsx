@@ -15,8 +15,8 @@
  *     plan at all. The anchor keys are then OMITTED from the body, never
  *     sent as `""`; see `buildSpawnRequestBody`.
  *
- * Inputs — only the last three are REQUIRED, because only those three are
- * required by coord (`agents_spawn.rs:228,235`):
+ * Inputs — only repos and the prompt are REQUIRED, because only those are
+ * required by coord (`agents_spawn.rs`):
  *   - work_unit_slug (OPTIONAL; preset by parent — disabled, contextual).
  *     Sent under the `work_unit_slug` wire key since Stage 4a of plan
  *     `2026-07-28-coord-post-plan-slug-surfaces-rename`; the value always
@@ -26,10 +26,18 @@
  *     no digits is omitted from the body rather than sent as a string.)
  *   - intent      (OPTIONAL short free-text description)
  *   - declared_overlap_paths (OPTIONAL newline-delimited list)
- *   - device_id   (REQUIRED; dropdown sourced from /operations/fleet/health,
- *     or typed directly when that roster is empty or unreachable) — sent as
- *     `target_device_id`, the name coord requires. A typed id is validated
- *     against coord's `Uuid` before submit rather than after a 422.
+ *   - device_id   (OPTIONAL since coord#2403 — plan
+ *     `2026-09-20-runner-selector-drives-a-transport-not-a-target` Phase 5).
+ *     Left blank, the spawn is AUTOMATIC: `target_device_id` is omitted and
+ *     coord places the session (fresh heartbeat, capabilities, not drained,
+ *     under its session cap). A device picked from /operations/fleet/health,
+ *     or typed when that roster is empty or unreachable, is sent as
+ *     `target_device_id` and is a CHECKED PIN: coord refuses an ineligible one
+ *     (409 `pin_ineligible`) rather than moving the session. A typed id is
+ *     validated against coord's `Uuid` before submit rather than after a 422.
+ *   - required_capabilities (OPTIONAL; comma/space-separated) — sent only
+ *     when non-empty. Applies to both arms: coord filters its pick by it, and
+ *     checks a pin against it.
  *   - repos       (REQUIRED, ≥1; multi-select checkbox list of known repos) —
  *     sent as `[{ repo }]` objects, not bare strings. Required even for an
  *     unanchored spawn: coord 400s on an empty list, and the session's TENANT
@@ -45,7 +53,8 @@
  *   - initial_prompt (REQUIRED; the agent's first-tick prompt body)
  *
  * Submit → POST /api/v1/operations/agents/spawn. On success: toast + the
- * coord-side agent_id is surfaced; the parent decides whether to
+ * coord-side agent_id, the device it landed on and WHO chose that device
+ * (`placed_by`: coord, or your pin) are surfaced; the parent decides whether to
  * navigate (we don't auto-route — operators are spawning many agents
  * in sequence during readiness waves).
  *
@@ -126,7 +135,17 @@ import type {
   FleetHealthDevice,
   FleetHealthPayload,
 } from "@/components/operations/useFleetHealth";
-import { DevicePicker } from "@/components/operations/DevicePicker";
+import {
+  DevicePicker,
+  findRosterDevice,
+} from "@/components/operations/DevicePicker";
+import {
+  describeSpawnPlacement,
+  describeSpawnRefusal,
+  outcomeUnknownRefusal,
+  parseRequiredCapabilities,
+  type SpawnRefusal,
+} from "@/components/admin/coord/spawnPlacement";
 
 const API = `${ApiConfig.API_BASE_URL}/api/v1/operations`;
 
@@ -263,8 +282,9 @@ export function deriveAccountRoster(input: {
     return {
       kind: "no-device",
       message:
-        "Choose a device first — the account roster and the selection rule " +
-        "are per-machine.",
+        "No device is named, so coord picks the machine and that machine's " +
+        "own rule picks the account. Name a device to pin an account — the " +
+        "roster and the selection rule are per-machine.",
     };
   }
   // Rows in hand are rows in hand. `table_provisioned` is load-bearing ONLY
@@ -419,7 +439,13 @@ export function parsePlanPhase(phase: string): number | undefined {
  *  `device_id` (a key coord does not read, leaving the REQUIRED
  *  `target_device_id` absent), `repos` as bare strings, and `plan_phase`
  *  as free text, so every submit 422'd. Do not "simplify" these back:
- *    - target_device_id: required Uuid, no serde(default)
+ *    - target_device_id: `Option<Uuid>` since coord#2403. OMITTED — never
+ *                        `""`, which is not a Uuid and 422s — for an
+ *                        automatic spawn; present, it is a checked pin.
+ *    - required_capabilities: `Vec<String>`, omitted when empty.
+ *    - override_drain:   sent ONLY with a named device. Coord 400s it
+ *                        without one (`override_drain_requires_target`), and
+ *                        a coord-placed device is never knowingly drained.
  *    - repos:            Vec<AllocateRepoSpec> = [{ repo, parent_sha? }],
  *                        NOT string[]
  *    - plan_phase:       Option<u32>, so a non-numeric phase must be
@@ -450,7 +476,14 @@ export function buildSpawnRequestBody(input: {
   workUnitSlug?: string;
   /** Optional free text; only its leading integer reaches the wire. */
   phase?: string;
+  /** `""` (or blank) = automatic placement: the key is OMITTED and coord
+   *  picks. Anything else is the pin. */
   deviceId: string;
+  /** Optional — omitted from the body when empty. */
+  requiredCapabilities?: string[];
+  /** Override a KNOWN drain on the named device. Ignored — never sent — when
+   *  no device is named. */
+  overrideDrain?: boolean;
   repos: string[];
   /** Optional — omitted from the body when blank. */
   intent?: string;
@@ -470,6 +503,8 @@ export function buildSpawnRequestBody(input: {
   const intent = (input.intent ?? "").trim();
   const overlapPaths = input.declaredOverlapPaths ?? [];
   const account = (input.account ?? "").trim();
+  const deviceId = input.deviceId.trim();
+  const capabilities = input.requiredCapabilities ?? [];
   return {
     // Omitted — never `""` — when the spawn is unanchored. See the
     // empty-string note above: `""` here manufactures a phantom plan.
@@ -477,7 +512,15 @@ export function buildSpawnRequestBody(input: {
     // Omitted entirely when the operator's free-text phase carries no
     // digits — the field is optional, and sending a string 422s.
     ...(planPhase === undefined ? {} : { plan_phase: planPhase }),
-    target_device_id: input.deviceId.trim(),
+    // Omitted — never `""` — for automatic placement: coord places it.
+    ...(deviceId === "" ? {} : { target_device_id: deviceId }),
+    ...(capabilities.length === 0
+      ? {}
+      : { required_capabilities: capabilities }),
+    // Only a NAMED device can have its drain overridden.
+    ...(deviceId !== "" && input.overrideDrain === true
+      ? { override_drain: true }
+      : {}),
     // Omitted — never `""` — when the operator left the machine to choose.
     ...(account === "" ? {} : { account }),
     repos: input.repos.map((repo) => ({ repo })),
@@ -573,7 +616,17 @@ export function SpawnModal({
   const [overlapPaths, setOverlapPaths] = useState("");
   const [initialPrompt, setInitialPrompt] = useState("");
   const [submitting, setSubmitting] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  /** The last refusal, derived by `describeSpawnRefusal` so each coord code
+   *  reads as what happened and what to do — never a raw `HTTP 409: {…}`. */
+  const [refusal, setRefusal] = useState<SpawnRefusal | null>(null);
+  /** The trimmed device id the REFUSED request was sent for (`""` for an
+   *  automatic spawn). The drain override is offered — and sent — only while
+   *  this still equals the device on screen, so a response that lands after
+   *  the operator switched devices can never override a drain on a machine
+   *  nobody was told is drained. */
+  const [refusalDevice, setRefusalDevice] = useState("");
+  /** Free-text `required_capabilities`. */
+  const [capabilities, setCapabilities] = useState("");
   /** Has the operator acknowledged the body guard? Only consulted when
    *  {@link bodyConfirm} is non-null, so it never gates a spawn that was
    *  never flagged. */
@@ -649,6 +702,7 @@ export function SpawnModal({
     setOtherRepos("");
     setIntent("");
     setOverlapPaths("");
+    setCapabilities("");
     // The one field that is NOT always blanked. When the work unit may have
     // no plan, the blank prompt is the hazard: it is what "implement this
     // plan" got typed into. Seed the honest instruction instead — the
@@ -663,7 +717,7 @@ export function SpawnModal({
           })
     );
     setBodyAcknowledged(false);
-    setError(null);
+    setRefusal(null);
     setSubmitting(false);
   }, [open, initialPhase, bodyRisk, planSlug, workUnitTitle]);
 
@@ -830,6 +884,37 @@ export function SpawnModal({
   /** A roster pick is a uuid by construction; a TYPED one is not. Guard here
    *  so an obviously-bad id costs a hint rather than a round trip to a 422. */
   const deviceIdValid = UUID_RE.test(deviceIdValue);
+  /** No device named = coord places the session. The DEFAULT. */
+  const automatic = deviceIdValue === "";
+  const parsedCapabilities = useMemo(
+    () => parseRequiredCapabilities(capabilities),
+    [capabilities]
+  );
+
+  /** A device id as an operator recognises it: the roster's hostname when
+   *  the roster names it, the id otherwise. */
+  const deviceLabel = useCallback(
+    (id: string) => {
+      const row = findRosterDevice(devices, id);
+      return row?.hostname ? `${row.hostname} (${id})` : id;
+    },
+    [devices]
+  );
+  /** The name a refusal HEADLINE may carry: the hostname, or a plain phrase
+   *  when the roster does not know one — never a raw id (R8; the id goes on
+   *  the detail line). */
+  const deviceHeadlineName = useCallback(
+    (id: string) =>
+      findRosterDevice(devices, id)?.hostname || "The device you named",
+    [devices]
+  );
+
+  /** A refusal is about what was sent. Changing the device — including back
+   *  to automatic — or the capability list drops it, and with it any offer
+   *  to override that device's drain. */
+  useEffect(() => {
+    setRefusal(null);
+  }, [deviceIdValue, capabilities]);
 
   /** The chosen machine's accounts, out of the tenant-wide roster. */
   const deviceAccounts = useMemo(
@@ -881,17 +966,16 @@ export function SpawnModal({
 
   /** Exactly what coord requires — nothing more.
    *
-   *  `target_device_id`, a non-empty `repos[]` and `initial_prompt` are the
-   *  three fields `POST /agents/spawn` rejects the body without
-   *  (`agents_spawn.rs:228,235`). Slug / phase / intent / overlap paths are
+   *  A non-empty `repos[]` and `initial_prompt` are the fields
+   *  `POST /agents/spawn` rejects the body without; `target_device_id` has
+   *  been optional since coord#2403 (blank = automatic placement). Slug / phase / intent / overlap paths are
    *  all `Option<…>` there, so requiring them here was a frontend
    *  invention that made "run this prompt on that machine" inexpressible
    *  without inventing a plan to carry it.
    *
-   *  The device predicate stays `deviceIdValid`, NOT `length > 0`: coord
-   *  types `target_device_id` as `Uuid`, so a typed non-uuid is a 422 either
-   *  way — catching it here is strictly cheaper, and relaxing the anchor
-   *  fields is no reason to give that back.
+   *  The device predicate is "blank OR a valid uuid", NOT "anything": coord
+   *  types a present `target_device_id` as `Uuid`, so a typed non-uuid is a
+   *  422 either way — catching it here is strictly cheaper.
    *
    *  The body guard is the ONE frontend-invented predicate here, and it is
    *  deliberate: it costs a single click on the rows that earn it and nothing
@@ -900,80 +984,142 @@ export function SpawnModal({
    *  reads what the session will have to do, not that the spawn is refused. */
   const canSubmit =
     !submitting &&
-    deviceIdValid &&
+    (automatic || deviceIdValid) &&
     allRepos.length > 0 &&
     initialPrompt.trim().length > 0 &&
     (bodyConfirm === null || bodyAcknowledged);
 
-  const handleSubmit = useCallback(async () => {
-    setError(null);
-    setSubmitting(true);
-    try {
-      // Shape is dictated by coord's `SpawnRequest` and pinned by
-      // `SpawnModal.test.ts` — see `buildSpawnRequestBody` above.
-      const body = buildSpawnRequestBody({
-        workUnitSlug: planSlug,
-        phase,
-        deviceId,
-        repos: allRepos,
-        intent,
-        declaredOverlapPaths: parsedOverlapPaths,
-        account: accountPin,
-        initialPrompt,
-      });
-      const res = await fetch(`${API}/agents/spawn`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-      });
-      if (!res.ok) {
-        const text = await res.text();
-        throw new Error(`HTTP ${res.status}: ${text.slice(0, 200)}`);
+  const handleSubmit = useCallback(
+    /** `overrideFor` — the device whose drain the operator chose to
+     *  override. Honoured only when it is still the device being sent. */
+    async (overrideFor?: string) => {
+      setRefusal(null);
+      setSubmitting(true);
+      const sentDevice = deviceId.trim();
+      const pinned = sentDevice !== "";
+      const overrideDrain = pinned && overrideFor === sentDevice;
+      try {
+        // Shape is dictated by coord's `SpawnRequest` and pinned by
+        // `SpawnModal.test.ts` — see `buildSpawnRequestBody` above.
+        const body = buildSpawnRequestBody({
+          workUnitSlug: planSlug,
+          phase,
+          deviceId,
+          requiredCapabilities: parsedCapabilities,
+          overrideDrain,
+          repos: allRepos,
+          intent,
+          declaredOverlapPaths: parsedOverlapPaths,
+          account: accountPin,
+          initialPrompt,
+        });
+        /** No readable answer came back from a request that may have been
+         *  acted on: say so, never "failed" — a blind retry could make two. */
+        const outcomeUnknown = (detail: string) => {
+          const derived = outcomeUnknownRefusal(detail);
+          setRefusalDevice(sentDevice);
+          setRefusal(derived);
+          toast.error(derived.headline);
+        };
+        let res: Response;
+        try {
+          res = await fetch(`${API}/agents/spawn`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(body),
+          });
+        } catch (e) {
+          outcomeUnknown(e instanceof Error ? e.message : String(e));
+          return;
+        }
+        if (!res.ok) {
+          let text = "";
+          try {
+            text = await res.text();
+          } catch {
+            // An unreadable refusal body still has a status to go on.
+          }
+          const derived = describeSpawnRefusal(res.status, text, {
+            pinned,
+            deviceName: pinned ? deviceHeadlineName(sentDevice) : "",
+            deviceId: sentDevice,
+          });
+          setRefusal(derived);
+          setRefusalDevice(sentDevice);
+          toast.error(derived.headline);
+          return;
+        }
+        let result: {
+          agent_id?: string;
+          target_device_id?: string;
+          placed_by?: string;
+          [k: string]: unknown;
+        };
+        try {
+          result = (await res.json()) as typeof result;
+        } catch (e) {
+          // A 2xx IS coord accepting the spawn — but with no readable body we
+          // cannot say where it went, or even confirm it.
+          outcomeUnknown(
+            `coord answered HTTP ${res.status} but the body could not be read (${
+              e instanceof Error ? e.message : String(e)
+            })`
+          );
+          return;
+        }
+        // Where it went and who chose it: "coord placed it" and "your pin"
+        // are different spawns, and the operator should never have to guess.
+        const placement = describeSpawnPlacement(
+          result,
+          deviceLabel,
+          parsedCapabilities.length > 0
+        );
+        // Label the spawn shape in the confirmation: an unanchored session
+        // is legitimate, but the operator should never have to guess which
+        // one they just created.
+        const label = anchored
+          ? `for ${planSlug}`
+          : "(unanchored — no plan anchor)";
+        // Name the account outcome too: "the machine chose" and "you pinned
+        // one" are different spawns, and the operator should not have to
+        // guess which one they just got.
+        const accountLabel =
+          accountPin === ""
+            ? " — account chosen by the machine"
+            : ` — pinned to ${accountPin}`;
+        const summary = result.agent_id
+          ? `Spawned agent ${result.agent_id} ${label} ${placement.text}${accountLabel}`
+          : `Agent spawned ${label} ${placement.text}${accountLabel}`;
+        // Capabilities sent to a coord that ignored them is not a plain
+        // success: the session may be on a machine that lacks them.
+        if (placement.capabilitiesUnchecked) {
+          toast.warning(summary);
+        } else {
+          toast.success(summary);
+        }
+        onSuccess?.(result);
+        onClose();
+      } finally {
+        setSubmitting(false);
       }
-      const result = (await res.json()) as {
-        agent_id?: string;
-        [k: string]: unknown;
-      };
-      // Label the spawn shape in the confirmation: an unanchored session
-      // is legitimate, but the operator should never have to guess which
-      // one they just created.
-      const label = anchored
-        ? `for ${planSlug}`
-        : "(unanchored — no plan anchor)";
-      // Name the account outcome too: "the machine chose" and "you pinned
-      // one" are different spawns, and the operator should not have to
-      // guess which one they just got.
-      const accountLabel =
-        accountPin === ""
-          ? " — account chosen by the machine"
-          : ` — pinned to ${accountPin}`;
-      toast.success(
-        result.agent_id
-          ? `Spawned agent ${result.agent_id} ${label}${accountLabel}`
-          : `Agent spawned ${label}${accountLabel}`
-      );
-      onSuccess?.(result);
-      onClose();
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e);
-      setError(msg);
-      toast.error(msg);
-    } finally {
-      setSubmitting(false);
-    }
-  }, [
-    planSlug,
-    anchored,
-    phase,
-    deviceId,
-    allRepos,
-    intent,
-    parsedOverlapPaths,
-    accountPin,
-    initialPrompt,
-    onSuccess,
-    onClose,
-  ]);
+    },
+    [
+      planSlug,
+      anchored,
+      phase,
+      deviceId,
+      deviceLabel,
+      deviceHeadlineName,
+      parsedCapabilities,
+      allRepos,
+      intent,
+      parsedOverlapPaths,
+      accountPin,
+      initialPrompt,
+      onSuccess,
+      onClose,
+    ]
+  );
 
   return (
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
@@ -987,9 +1133,9 @@ export function SpawnModal({
             {anchored ? "Spawn agent from plan" : "New session"}
           </DialogTitle>
           <DialogDescription>
-            Mint a coord agent pinned to a device. Coord acquires claims,
-            allocates the device, and delivers your initial prompt on first
-            tick.
+            Mint a coord agent on a device coord picks, or on one you name.
+            Coord acquires claims, allocates the worktree, and delivers your
+            initial prompt on first tick.
           </DialogDescription>
         </DialogHeader>
 
@@ -1089,7 +1235,12 @@ export function SpawnModal({
           </div>
 
           <div className="space-y-1.5">
-            <Label htmlFor="spawn-device">Device</Label>
+            <Label htmlFor="spawn-device">
+              Device{" "}
+              <span className="text-xs text-muted-foreground">
+                (optional — blank lets coord pick)
+              </span>
+            </Label>
             {devicesLoading ? (
               // Not a Skeleton: <Label htmlFor="spawn-device"> needs a real
               // labelable control in EVERY branch, and a <div> cannot be one.
@@ -1106,7 +1257,8 @@ export function SpawnModal({
                 data-testid="coord-spawn-device-input"
                 value={deviceId}
                 onChange={(e) => setDeviceId(e.target.value)}
-                placeholder="target device id (uuid)"
+                disabled={submitting}
+                placeholder="blank = automatic, or a device id (uuid) to pin"
                 className="font-mono text-xs"
                 spellCheck={false}
                 aria-invalid={deviceIdValue.length > 0 && !deviceIdValid}
@@ -1120,6 +1272,8 @@ export function SpawnModal({
                 devices={devices}
                 value={deviceId}
                 onChange={setDeviceId}
+                disabled={submitting}
+                placeholder="Automatic — coord picks a device"
                 data-testid="coord-spawn-device-select"
                 aria-describedby={
                   devicesError ? "spawn-device-notice" : undefined
@@ -1158,6 +1312,7 @@ export function SpawnModal({
                 type="button"
                 className="text-xs text-muted-foreground underline underline-offset-2 hover:text-foreground"
                 data-testid="coord-spawn-device-toggle"
+                disabled={submitting}
                 onClick={() => {
                   setManualDevice((v) => !v);
                   setDeviceId("");
@@ -1168,6 +1323,73 @@ export function SpawnModal({
                   : "Enter a device id instead"}
               </button>
             )}
+            {/* Say which arm this spawn is on BEFORE submit. Calm hue on both:
+                neither is waiting on anyone (style guide R3); the difference
+                is stated in words. `data-placement` carries the arm for a
+                spec or test without reading the prose. */}
+            <div
+              className="flex flex-wrap items-center gap-x-2 gap-y-1 rounded-md border border-border bg-muted/40 p-2 text-xs text-muted-foreground"
+              data-testid="coord-spawn-placement-mode"
+              data-placement={automatic ? "automatic" : "pin"}
+              role="status"
+              aria-live="polite"
+            >
+              {automatic ? (
+                <span>
+                  <span className="font-medium text-foreground">Automatic</span>{" "}
+                  — coord picks an online, undrained device of this tenant that
+                  has the required capabilities and room under its session cap.
+                </span>
+              ) : (
+                <>
+                  <span>
+                    <span className="font-medium text-foreground">Pinned</span>{" "}
+                    to{" "}
+                    <span className="font-mono">
+                      {deviceIdValid
+                        ? deviceLabel(deviceIdValue)
+                        : deviceIdValue}
+                    </span>
+                    . Coord checks it and refuses — it never moves the session —
+                    if this device is offline, lacks a required capability, is
+                    not an agent host, or is drained.
+                  </span>
+                  <button
+                    type="button"
+                    className="underline underline-offset-2 hover:text-foreground"
+                    data-testid="coord-spawn-device-automatic"
+                    disabled={submitting}
+                    onClick={() => setDeviceId("")}
+                  >
+                    Use automatic placement
+                  </button>
+                </>
+              )}
+            </div>
+          </div>
+
+          <div className="space-y-1.5">
+            <Label htmlFor="spawn-capabilities">
+              Required capabilities{" "}
+              <span className="text-xs text-muted-foreground">(optional)</span>
+            </Label>
+            <Input
+              id="spawn-capabilities"
+              value={capabilities}
+              onChange={(e) => setCapabilities(e.target.value)}
+              disabled={submitting}
+              placeholder="e.g. os:linux, docker"
+              className="font-mono text-xs"
+              spellCheck={false}
+              data-testid="coord-spawn-capabilities"
+            />
+            <p className="text-xs text-muted-foreground">
+              {automatic
+                ? "Coord only picks a device that advertises every one of these."
+                : "Coord refuses the named device if it lacks any of these — " +
+                  "where coord supports capability checks. If it does not, " +
+                  "the spawn confirmation says the list was not checked."}
+            </p>
           </div>
 
           <div className="space-y-1.5">
@@ -1448,13 +1670,58 @@ export function SpawnModal({
             )}
           </div>
 
-          {error && (
-            <p
-              className="text-sm text-destructive"
-              data-testid="coord-spawn-error"
+          {refusal && (
+            /* A refusal is the operator's move now, so it takes the
+               destructive hue on the headline only (R3); the detail and the
+               remedy are words. `coord-spawn-error` is the frozen testid the
+               plain error line carried; `data-refusal` names the arm. */
+            <div
+              className="space-y-1 rounded-md border border-border p-2"
+              data-testid="coord-spawn-refusal"
+              data-refusal={refusal.kind}
+              role="alert"
             >
-              {error}
-            </p>
+              <p
+                className="text-sm font-medium text-destructive"
+                data-testid="coord-spawn-error"
+              >
+                {refusal.headline}
+              </p>
+              {refusal.detail && (
+                <p
+                  className="text-xs text-muted-foreground"
+                  data-testid="coord-spawn-refusal-detail"
+                >
+                  {refusal.detail}
+                </p>
+              )}
+              {refusal.remedy && (
+                <p
+                  className="text-xs text-foreground"
+                  data-testid="coord-spawn-refusal-remedy"
+                >
+                  {refusal.remedy}
+                </p>
+              )}
+              {/* Only for a drained device the operator NAMED — see
+                  `SpawnRefusal.offerOverride` — and only while that device is
+                  still the one on screen (`refusalDevice`), so a stale
+                  refusal can never override a drain on another device or on
+                  an automatic spawn. */}
+              {refusal.offerOverride &&
+                !automatic &&
+                refusalDevice === deviceIdValue && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={!canSubmit}
+                    onClick={() => void handleSubmit(refusalDevice)}
+                    data-testid="coord-spawn-override-drain"
+                  >
+                    Spawn on this drained device anyway
+                  </Button>
+                )}
+            </div>
           )}
         </div>
 
@@ -1468,7 +1735,7 @@ export function SpawnModal({
             Cancel
           </Button>
           <Button
-            onClick={handleSubmit}
+            onClick={() => void handleSubmit()}
             disabled={!canSubmit}
             data-testid="coord-spawn-submit"
           >
