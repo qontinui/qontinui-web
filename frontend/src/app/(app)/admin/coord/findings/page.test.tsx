@@ -391,6 +391,71 @@ describe("CoordFindingsPage", () => {
       );
     });
 
+    it("does not call a linked row beyond a FULL page 'outside the filters'", async () => {
+      // One page, no paging: 50 newer rows prove nothing about the rows past
+      // them, so the linked row may match the filters and simply sit beyond.
+      withLinkedId();
+      const full = Array.from({ length: 50 }, (_, i) =>
+        finding({
+          finding_id: `00000000-0000-4000-8000-${String(i).padStart(12, "0")}`,
+        })
+      );
+      httpGet.mockImplementation((url: string) =>
+        Promise.resolve(
+          String(url).includes("finding_id=") ? page([finding()]) : page(full)
+        )
+      );
+      render(<CoordFindingsPage />);
+
+      await waitFor(() =>
+        expect(screen.getByTestId("coord-findings-linked")).toHaveTextContent(
+          /not in the loaded page/i
+        )
+      );
+      expect(screen.getByTestId("coord-findings-linked")).not.toHaveTextContent(
+        /outside the current filters/i
+      );
+    });
+
+    it("a by-id throw after a by-id degrade names the failure, not the degrade", async () => {
+      withLinkedId();
+      httpGet.mockImplementation((url: string) =>
+        Promise.resolve(
+          String(url).includes("finding_id=")
+            ? {
+                available: false,
+                count: 0,
+                findings: [],
+                unavailable:
+                  "coord did not answer the findings store (HTTP 503).",
+                unavailable_kind: "unreachable",
+              }
+            : page([])
+        )
+      );
+      render(<CoordFindingsPage />);
+      await waitFor(() =>
+        expect(screen.getByTestId("coord-findings-linked")).toHaveTextContent(
+          /not answering/i
+        )
+      );
+
+      httpGet.mockImplementation((url: string) =>
+        String(url).includes("finding_id=")
+          ? Promise.reject(new Error("GET … failed: 500 - boom"))
+          : Promise.resolve(page([]))
+      );
+      await userEvent.click(
+        screen.getByRole("button", { name: /refresh findings/i })
+      );
+
+      await waitFor(() =>
+        expect(screen.getByTestId("coord-findings-linked")).toHaveTextContent(
+          /refresh to retry/i
+        )
+      );
+    });
+
     it("keeps the linked row expanded across a filter change", async () => {
       withLinkedId();
       httpGet.mockImplementation((url: string) =>

@@ -11317,10 +11317,17 @@ async def get_coord_findings(
     dossier head carrying a 100-year TTL, so a server-side "expiring" flag
     would be true of every row that never expires in practice.
 
-    Degrade rather than 502: coord's ``/coord/findings`` twin lands in a
-    separate PR, so a 404 here is the ordinary pre-deploy window and must read
-    as "not deployed yet", never as an empty findings store. Same
-    ``unavailable`` / ``unavailable_kind`` pair the landed-write feed uses.
+    Degrade rather than 502. coord's ``/coord/findings`` route is on coord's
+    ``main`` (since 2026-09-20), so a 404 here means the DEPLOYED coord predates
+    it or a routing fault, and must read as "not answering", never as an empty
+    findings store. Same ``unavailable`` / ``unavailable_kind`` pair the
+    landed-write feed uses.
+
+    coord ALSO answers ``200 {"available": false}`` when ``coord.findings`` is
+    not provisioned, and says that must read as UNKNOWN. The page branches on
+    ``unavailable`` alone, so that answer is given the same degrade pair here
+    (``unavailable_kind: "unprovisioned"``) — otherwise a store coord just said
+    it cannot read would render as "0 findings".
     """
     params: dict[str, Any] = {}
     if finding_id is not None:
@@ -11336,7 +11343,7 @@ async def get_coord_findings(
     if triaged is not None:
         params["triaged"] = triaged
     try:
-        return await _proxy_coord_get(
+        body = await _proxy_coord_get(
             "/coord/findings", params=params or None, tenant_id=tenant_id
         )
     except HTTPException as exc:
@@ -11346,9 +11353,10 @@ async def get_coord_findings(
                 "count": 0,
                 "findings": [],
                 "unavailable": (
-                    "coord has no findings reader yet — its `/coord/findings` "
-                    "route has not deployed. Findings cannot be listed, which "
-                    "is not the same as there being none."
+                    "coord's findings reader is not answering — its "
+                    "`/coord/findings` route returned 404, so the deployed "
+                    "coord predates it or the route is misrouted. Findings "
+                    "cannot be listed, which is not the same as there being none."
                     if exc.status_code == 404
                     else (
                         "coord did not answer the findings store "
@@ -11360,6 +11368,21 @@ async def get_coord_findings(
                 ),
             }
         raise
+    if (
+        isinstance(body, dict)
+        and body.get("available") is False
+        and not body.get("unavailable")
+    ):
+        return {
+            **body,
+            "unavailable": (
+                "coord reports its findings store is not provisioned "
+                "(`available: false`). Findings cannot be listed, which is not "
+                "the same as there being none."
+            ),
+            "unavailable_kind": "unprovisioned",
+        }
+    return body
 
 
 @router.put("/coord/policies/system/{system_rule_id}/override")
