@@ -205,7 +205,7 @@ function homeTenantName(data: MyTenantsResponse): string {
 
 interface OperatorRow {
   operator_id: string;
-  email: string;
+  email: string | null;
   display_name: string | null;
   sso_provider: string | null;
   last_login_at: string | null;
@@ -900,7 +900,7 @@ function MembersTable({
                             className="h-3.5 w-3.5 shrink-0 text-muted-foreground"
                             aria-hidden
                           />
-                          {op.email}
+                          {op.email ?? "—"}
                         </span>
                       </TableCell>
                       <TableCell>{op.display_name ?? "—"}</TableCell>
@@ -1014,7 +1014,7 @@ function MemberDetail({
           {/* §4.2 clause 4 — a calm kind that is nonetheless owed something
               says so HERE, in words, never by borrowing amber. */}
           {status.reason ??
-            `${op.display_name ?? op.email} holds ${op.roles.length} role${op.roles.length === 1 ? "" : "s"} in this tenant.`}
+            `${op.display_name ?? op.email ?? "—"} holds ${op.roles.length} role${op.roles.length === 1 ? "" : "s"} in this tenant.`}
         </p>
       }
       actions={
