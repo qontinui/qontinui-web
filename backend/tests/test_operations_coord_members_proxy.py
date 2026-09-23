@@ -275,6 +275,31 @@ class TestMembersPost:
         assert instance.post.call_args.kwargs.get("json") == body
 
 
+class TestMembersPostDeleted:
+    """``POST /coord/members`` was deleted (qontinui-web#1474, coord finding
+    130b6938) because it forwarded a caller-chosen ``sso_subject`` +
+    ``sso_provider`` untyped to coord's ``POST /admin/coord/operators``.
+    No other test pins that deletion: re-adding the route would pass every
+    other test here, and the OpenAPI drift check only asks for a regenerated
+    snapshot. The GET on the same path keeps it matched, so FastAPI
+    answers 405 rather than 404 — and coord must never be called.
+    """
+
+    def test_raw_operator_create_proxy_is_gone(self, auth_client: TestClient):
+        body = {
+            "email": "a@b.c",
+            "sso_subject": "attacker-chosen-sub",
+            "sso_provider": "cognito",
+        }
+        with _patch_httpx() as MockClient:
+            instance = AsyncMock()
+            _configure_mock_client(MockClient, instance)
+            resp = auth_client.post(f"{API_PREFIX}/coord/members", json=body)
+        assert resp.status_code == 405
+        instance.post.assert_not_called()
+        instance.request.assert_not_called()
+
+
 class TestMembersDeleteWithBody:
     """The load-bearing case: DELETE must forward the JSON body to coord."""
 
