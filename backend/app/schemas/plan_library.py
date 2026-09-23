@@ -129,6 +129,22 @@ class WorkArtifactUpsert(BaseModel):
     #: a second row — see alembic ``plan_library_02_kind_lock``.
     kind_is_heuristic: bool = False
 
+    # NOTE the absence of ``tenant_id``, for the same reason
+    # ``organization_id`` is absent: it is derived SERVER-SIDE from the
+    # credential, never accepted from a body. ``model_config`` is
+    # ``extra="forbid"``, so sending one is a 422 rather than a silent drop.
+    #
+    # An earlier draft of this change let the operator arm declare a tenant in
+    # the payload and recorded it as ``declared`` — the same value a
+    # cryptographically verified device-JWT claim produces. The vocabulary has
+    # no word for "asserted by a person, unverified", so the two would have
+    # been indistinguishable, which is precisely the defect ``tenant_source``
+    # exists to prevent (``work_artifact.py``'s own column comment says so).
+    # It would also have handed any operator a way to stamp an arbitrary row
+    # ``ambiguous`` with an arbitrary UUID. Plan
+    # ``2026-09-22-the-plan-corpus-has-no-tenant-axis-...``, §2: the tenant is
+    # resolved per artifact FROM THE CREDENTIAL THAT ASSERTED IT.
+
 
 class WorkArtifactKindPatch(BaseModel):
     """Correct one artifact's ``kind`` and lock it against future scans.
@@ -320,6 +336,21 @@ class WorkArtifactSummary(BaseORMSchema):
     intent_refs: list[str]
     authored_at: IsoDatetime | None
     captured_by: str
+    #: Which coord tenant this artifact belongs to, and HOW that was
+    #: established (``declared`` / ``derived_repo`` / ``derived_sole_binding``
+    #: / ``ambiguous`` / ``unknown``). ``tenant_id: null`` beside
+    #: ``tenant_source: "unknown"`` is "no attribution available" — UNKNOWN,
+    #: never "no tenant". The pair is NOT part of identity in this phase.
+    #:
+    #: NO DEFAULT on ``tenant_source``, for the same reason as
+    #: :class:`DivergentVariant`: every producer here is ``_summary(row)`` over
+    #: a full ORM row, and the column is ``NOT NULL`` with a server default, so
+    #: a default could only ever fire for a caller that built this by kwargs —
+    #: which would then report a confident ``"unknown"`` nobody declared. This
+    #: is the highest-traffic model on the route, so it is the one where that
+    #: would matter most.
+    tenant_id: UUID | None
+    tenant_source: str
     current_version: int
     created_at: IsoDatetime
     updated_at: IsoDatetime
@@ -421,6 +452,17 @@ class DivergentVariant(BaseORMSchema):
     status: str
     current_version: int
     updated_at: IsoDatetime
+    #: Which coord tenant this copy names, and how that was established.
+    #: Present on every variant so a reader of ``groups`` can SEE that an
+    #: apparent content divergence is really a cross-tenant collision.
+    #:
+    #: NO DEFAULTS, deliberately. Every producer validates a full ORM row
+    #: today, so a default would never fire — and if a future caller hands in
+    #: a partial one, this must fail loudly rather than report a confident
+    #: ``"unknown"`` nobody declared. Same policy as
+    #: ``tests/test_plan_library_export_headers.py``'s ``_Row`` stub.
+    tenant_id: UUID | None
+    tenant_source: str
 
 
 class DivergentGroup(BaseModel):
@@ -455,6 +497,47 @@ class KindForkGroup(BaseModel):
     variants: list[DivergentVariant]
 
 
+class ContestedTenantRow(BaseModel):
+    """One artifact whose tenancy is CONTESTED — two tenants wrote the same row.
+
+    A THIRD failure class, structurally distinct from both siblings above and
+    reported under its own key.
+
+    **Why a row and not a group.** ``uq_work_artifacts_identity`` is UNIQUE
+    over ``(organization, kind, slug, source_repo)``, so two tenants' copies
+    of one stem CANNOT coexist as two rows — they arrive as two writes to ONE
+    row, in turn, each overwriting the last. That is why the fusion was
+    silent, and why no query over the stored corpus could find it: the
+    evidence is destroyed by the act. The collision is therefore detected at
+    the WRITE and recorded as ``tenant_source = "ambiguous"``.
+
+    A :class:`DivergentGroup` is one document captured twice and is disposed
+    of by picking a winner; this is two documents that were never the same
+    document, and picking a winner IS the data loss. Never fold them.
+
+    ``tenant_id`` is the tenant that wrote LAST — the same writer that won the
+    body. It is reported so the row is identifiable, NOT as an answer to
+    "whose is this": ``tenant_source: "ambiguous"`` is that answer, and it
+    says the question is open.
+
+    Plan
+    ``2026-09-22-the-plan-corpus-has-no-tenant-axis-so-a-multi-bound-device-cannot-scope-its-plans``
+    Phase 3. This is the measurement Phase 4's identity re-key is gated on.
+    """
+
+    id: UUID
+    kind: str
+    slug: str
+    source_repo: str | None
+    tenant_id: UUID | None
+    #: Always ``"ambiguous"`` for a row in this list — carried anyway so the
+    #: row is self-describing, because the docstring above tells the reader
+    #: that this field, not ``tenant_id``, is the answer to "whose is this".
+    #: A pointer to a field the model does not expose is not a pointer.
+    tenant_source: str
+    updated_at: IsoDatetime
+
+
 class DivergentResponse(BaseModel):
     """All divergence groups visible to the caller."""
 
@@ -463,6 +546,37 @@ class DivergentResponse(BaseModel):
     #: Same-slug/different-kind forks. Additive: ``groups``/``total`` keep
     #: their phase-1 meaning exactly.
     kind_forks: list[KindForkGroup] = Field(default_factory=list)
+    #: Artifacts whose tenancy is contested — two coord tenants wrote the
+    #: same row. Additive; never folded into ``groups``.
+    contested_tenants: list[ContestedTenantRow] = Field(default_factory=list)
+    #: How many rows in scope have had NO tenant attributed to them at all
+    #: (``tenant_source == 'unknown'``). **Read this before reading an empty
+    #: ``contested_tenants`` as clean.** A corpus that has not yet been
+    #: re-pushed under the Phase 2 write path is entirely ``unknown``, so no
+    #: write has asserted a tenant and none can have contested one: the empty
+    #: list means "for want of DATA", not "for want of collisions". UNKNOWN,
+    #: never a clean bill of health, and the Phase 4 re-key does not open on
+    #: it.
+    #:
+    #: NO DEFAULT, matching ``total`` above: a count that silently reads 0
+    #: because a producer forgot to pass it is the exact failure this field
+    #: exists to prevent on the list beside it.
+    #:
+    #: ``ambiguous`` is deliberately NOT counted here, although it is also
+    #: "no usable tenant". A contested row HAS a tenant attributed (the last
+    #: writer's) and is already enumerated in ``contested_tenants``; counting
+    #: it twice would make the two populations overlap, so this number could
+    #: not be differenced against that list to recover the genuinely
+    #: un-measured count — and inflating "not yet measured" with rows that
+    #: HAVE been measured is the opposite of what this field is for.
+    tenant_unattributed_count: int
+    #: How many contested rows exist in scope, which is NOT
+    #: ``len(contested_tenants)`` when the list was capped. Emitted
+    #: unconditionally and with no default, like ``total`` beside it: this is
+    #: the one report whose whole job is "do not read an absence as clean", so
+    #: a silently truncated list — or a count that defaulted to 0 — would
+    #: defeat it.
+    contested_tenant_total: int
     kind_fork_total: int = 0
 
 
