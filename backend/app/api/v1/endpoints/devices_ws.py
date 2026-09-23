@@ -40,12 +40,15 @@ from __future__ import annotations
 
 import asyncio
 import json
+from dataclasses import dataclass
 from typing import Any
-from uuid import UUID
+from uuid import UUID, uuid4
 
 import structlog
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect, status
 from qontinui_schemas.common import utc_now
+from sqlalchemy.exc import IntegrityError
+from starlette.websockets import WebSocketState
 
 from app.config.redis_config import get_redis
 from app.crud import device_connection as device_connection_crud
@@ -77,6 +80,553 @@ logger = structlog.get_logger(__name__)
 _TERMINAL_FRAME_LIMIT = 65536
 
 router = APIRouter()
+
+# ---------------------------------------------------------------------------
+# Runner-instance identity (plan
+# 2026-09-20-runner-selector-drives-a-transport-not-a-target, Phase 6).
+#
+# Every runner instance on a machine — the primary on :9876 and each
+# supervisor-spawned secondary on :9877-9899 — authenticates with the SAME
+# machine device JWT, so they all land on ONE ``coord.devices`` row. That row's
+# ``port`` and relay pointer (``ws_session_id``), and the runner WS manager's
+# registration (keyed on ``device_id`` alone), describe ONE socket: the
+# POINTER OWNER's. Before this, whichever instance connected last took all
+# three over, so a temp runner silently stole the device's relay socket.
+#
+# The rule now. Every socket records its own ``coord.device_connections`` row
+# (key, role, port, ``last_seen_at``). The pointer — ``Device.port`` /
+# ``ws_session_id`` / ``ws_connected_at`` plus the manager registration and
+# device-level heartbeat state — belongs to ONE owner:
+#   * a primary (or a legacy runner that predates the fields) ALWAYS takes it
+#     on connect, from a secondary too;
+#   * a secondary takes it only when no live connection holds it (so a lone
+#     secondary does not leave the device relay-less), and gives it up simply
+#     by no longer being what the manager and the pointer name once a primary
+#     arrives;
+#   * a secondary never displaces a live holder.
+# ---------------------------------------------------------------------------
+
+_ROLE_PRIMARY = device_connection_crud.INSTANCE_ROLE_PRIMARY
+_ROLE_SECONDARY = device_connection_crud.INSTANCE_ROLE_SECONDARY
+_MAX_INSTANCE_KEY_LEN = 256
+_LIVE_KEY_INDEX = "uq_device_connections_live_instance_key"
+
+# Close codes for handshake refusals this file owns. qontinui-runner does not
+# interpret close codes at all: ANY close before the ``connected`` ack is
+# recorded verbatim as ``last_error`` (``code=…, reason=…``) and treated as a
+# registration rejection — it kicks the device-JWT refresher for the first
+# ``REGISTRATION_KICK_LIMIT`` (3) consecutive rejections, a no-op unless the
+# token is near expiry, and reconnects on its 2s→max exponential backoff
+# (qontinui-runner ``src-tauri/src/mcp/backend_relay.rs``: close handling
+# ~:1975-1998, kick/backoff ~:1168-1259, ``REGISTRATION_KICK_LIMIT`` ~:76-87).
+# So no code buys a different client behaviour; what an application code buys
+# is an honest ``last_error``: 1008 reads, to the runner's own comments and to
+# an operator, as "stale token", which a duplicate instance is not.
+_CLOSE_INVALID_RUNNER_INFO = 4400
+_CLOSE_DUPLICATE_INSTANCE = 4409
+
+# How long a held socket gets to answer the liveness probe.
+_PROBE_TIMEOUT_S = 5.0
+# The probe is an ``http_request`` relay frame for a path the runner's relay
+# allowlist refuses by construction (``mcp::relay_path_policy``): the runner
+# answers it SYNCHRONOUSLY in its read loop with a 403 ``command_response``
+# echoing ``request_id`` (``handle_http_request`` → ``http_relay_error``) and
+# performs no local I/O. So an answer proves the runner process behind that
+# socket is alive and reading it; silence proves nothing is.
+_PROBE_PATH = "/__qontinui_backend_liveness_probe"
+
+# Sockets open on THIS process, by connection pk. The duplicate-key check can
+# only PROBE a socket it holds; an open row this process does not hold may be
+# alive on another replica or orphaned by a restart, and the two cannot be told
+# apart from here. See :func:`_resolve_instance_key_conflict`.
+_LIVE_SOCKETS: dict[int, Any] = {}
+
+# Outstanding liveness probes, by request_id. Resolved by whichever receive
+# loop owns the probed socket (:func:`_consume_probe_reply`).
+_PROBES: dict[str, asyncio.Future[None]] = {}
+
+# Fire-and-forget closes of superseded sockets, kept referenced until done.
+_BACKGROUND_CLOSES: set[asyncio.Task[None]] = set()
+
+
+def _consume_probe_reply(msg: dict[str, Any]) -> bool:
+    """If ``msg`` answers one of our liveness probes, resolve it and say so."""
+    if msg.get("type") != "command_response":
+        return False
+    request_id = msg.get("request_id")
+    if not isinstance(request_id, str):
+        return False
+    fut = _PROBES.get(request_id)
+    if fut is None:
+        return False
+    if not fut.done():
+        fut.set_result(None)
+    return True
+
+
+def _socket_is_open(ws: Any) -> bool:
+    return (
+        getattr(ws, "application_state", None) == WebSocketState.CONNECTED
+        and getattr(ws, "client_state", WebSocketState.CONNECTED)
+        == WebSocketState.CONNECTED
+    )
+
+
+async def _probe_send_lock(device_id: UUID, ws: Any) -> Any:
+    """The manager's per-device send lock if ``ws`` is its registered socket.
+
+    Routing the probe through it keeps the probe frame from interleaving with
+    a relayed frame the manager's inbound listener is writing to the same
+    socket. A socket the manager does not hold (a non-owner secondary) has no
+    other writer to race, and a manager that cannot be resolved costs only
+    that ordering guarantee, so both fall back to a plain send.
+    """
+    try:
+        manager = await get_runner_websocket_manager(await get_redis())
+        return manager.send_lock_for(device_id, ws)
+    except Exception:
+        return None
+
+
+async def _probe_socket(ws: Any, device_id: UUID) -> bool:
+    """Ask a held runner socket to prove it is alive. ``True`` iff it answered.
+
+    Only meaningful for a socket whose receive loop runs in THIS process —
+    that loop is what sees the reply and resolves the future.
+
+    The SEND is inside the same ``_PROBE_TIMEOUT_S`` budget as the wait: a
+    half-open socket with a full send buffer blocks ``send_json`` itself
+    (for as long as TCP retransmission takes), and a probe stuck there would
+    hold this handshake — and its ``_PENDING_KEYS`` entry — for minutes. A
+    send that does not complete in time is "not alive".
+    """
+    if not _socket_is_open(ws):
+        return False
+    request_id = f"liveness-probe-{uuid4()}"
+    fut: asyncio.Future[None] = asyncio.get_running_loop().create_future()
+    _PROBES[request_id] = fut
+    frame = {
+        "type": "http_request",
+        "request_id": request_id,
+        "method": "GET",
+        "path": _PROBE_PATH,
+    }
+
+    async def _send_and_wait() -> None:
+        lock = await _probe_send_lock(device_id, ws)
+        if lock is not None:
+            async with lock:
+                await ws.send_json(frame)
+        else:
+            await ws.send_json(frame)
+        await fut
+
+    try:
+        await asyncio.wait_for(_send_and_wait(), timeout=_PROBE_TIMEOUT_S)
+        return True
+    except Exception:
+        # TimeoutError (send or reply too slow) or a send failure alike.
+        return False
+    finally:
+        _PROBES.pop(request_id, None)
+
+
+def _close_in_background(ws: Any, *, device_id: UUID, connection_pk: int) -> None:
+    """Close a superseded socket without holding the handshake up on it."""
+
+    async def _run() -> None:
+        try:
+            await safe_close(
+                ws,
+                status.WS_1012_SERVICE_RESTART,
+                reason="superseded by a newer connection with the same instanceKey",
+            )
+        except Exception as e:
+            logger.error(
+                "devices_ws_superseded_socket_close_failed",
+                device_id=str(device_id),
+                connection_pk=connection_pk,
+                error=str(e),
+                error_type=type(e).__name__,
+            )
+
+    task = asyncio.create_task(_run())
+    _BACKGROUND_CLOSES.add(task)
+    task.add_done_callback(_BACKGROUND_CLOSES.discard)
+
+
+# ``(device_id, instance_key)`` pairs whose handshake is between the duplicate
+# check and the moment its socket lands in ``_LIVE_SOCKETS``. Without it, a
+# second same-key handshake on this process that ran its check inside that
+# window would find the first's freshly committed row, see it absent from
+# ``_LIVE_SOCKETS``, and close it as an orphan.
+_PENDING_KEYS: set[tuple[UUID, str]] = set()
+
+
+class InstanceClaimError(ValueError):
+    """``runner_info`` carried a malformed ``instanceKey`` / ``instanceRole``."""
+
+
+@dataclass(frozen=True)
+class InstanceClaim:
+    """Which runner instance on the machine a socket belongs to.
+
+    ``key`` is the runner's namespaced ``instanceKey`` (``primary`` /
+    ``runner:<id>`` / ``name:<name>`` / ``port:<port>``), or ``None`` for a
+    runner predating the field. ``role`` is the EFFECTIVE role the socket is
+    registered under, and is what every write gate below reads.
+    """
+
+    key: str | None
+    role: str
+    legacy: bool
+
+    @property
+    def is_primary(self) -> bool:
+        return self.role == _ROLE_PRIMARY
+
+
+def parse_instance_claim(
+    info_msg: dict[str, Any], devenv_hint: dict[str, Any] | None
+) -> InstanceClaim:
+    """Read the top-level ``instanceKey`` / ``instanceRole`` from ``runner_info``.
+
+    * Both present — used verbatim (role must be ``primary`` | ``secondary``,
+      key a non-empty string of at most 256 chars).
+    * Both absent — a runner predating per-instance identity (legacy). It is
+      registered as the PRIMARY with a NULL key, i.e. exactly as before —
+      UNLESS its ``devenv.instance_role`` block says ``secondary``. That block
+      is older than the top-level fields and is set by the same runner
+      predicate (``owns_shared_root_state``); honouring it is safe under this
+      file's standing asymmetry for client hints — a hint may freely DEMOTE
+      the sender on its own behalf, never name anything — and it stops an
+      older temp runner from still taking over the relay socket.
+    * Exactly one present — a contract violation (qontinui-runner always sends
+      both), refused rather than guessed at.
+    * Inconsistent — ``instanceKey == "primary"`` if and only if
+      ``instanceRole == "primary"`` (qontinui-runner
+      ``RunnerInstanceIdentity::resolve``: a primary keys as ``primary`` and a
+      secondary can never produce that key). A primary with any other key or a
+      secondary claiming ``primary`` is refused rather than trusted either way.
+
+    Raises :class:`InstanceClaimError` with a message fit for the close frame.
+    """
+    raw_key = info_msg.get("instanceKey")
+    raw_role = info_msg.get("instanceRole")
+
+    if raw_key is None and raw_role is None:
+        hinted = devenv_hint.get("instance_role") if devenv_hint else None
+        role = _ROLE_SECONDARY if hinted == _ROLE_SECONDARY else _ROLE_PRIMARY
+        return InstanceClaim(key=None, role=role, legacy=True)
+
+    if raw_key is None or raw_role is None:
+        raise InstanceClaimError(
+            "runner_info must carry instanceKey and instanceRole together"
+        )
+    if raw_role not in (_ROLE_PRIMARY, _ROLE_SECONDARY):
+        raise InstanceClaimError("instanceRole must be 'primary' or 'secondary'")
+    if (
+        not isinstance(raw_key, str)
+        or not raw_key
+        or len(raw_key) > _MAX_INSTANCE_KEY_LEN
+    ):
+        raise InstanceClaimError(
+            f"instanceKey must be a non-empty string of at most "
+            f"{_MAX_INSTANCE_KEY_LEN} characters"
+        )
+    if (raw_key == _ROLE_PRIMARY) != (raw_role == _ROLE_PRIMARY):
+        raise InstanceClaimError(
+            "instanceKey 'primary' is reserved for, and required of, "
+            "instanceRole 'primary'"
+        )
+    return InstanceClaim(key=raw_key, role=raw_role, legacy=False)
+
+
+class InstanceKeyConflict(Exception):
+    """A LIVE socket on this device already holds the newcomer's instance key."""
+
+    def __init__(self, holder_pk: int | None, *, race: bool) -> None:
+        super().__init__(holder_pk)
+        self.holder_pk = holder_pk
+        self.race = race
+
+
+async def _resolve_instance_key_conflict(
+    db: Any, *, device_id: UUID, claim: InstanceClaim
+) -> None:
+    """Refuse or clear the way for a newcomer whose key an OPEN row already holds.
+
+    Two LIVE sockets on one device reporting the same non-null key are a
+    conflict — the runner documents that two processes that each believe
+    themselves primary both report ``primary`` — and must never resolve as a
+    silent overwrite. No time window can decide it: a genuinely live duplicate
+    heartbeats every 30s, while the runner's own reconnect over a half-open
+    socket can arrive with that socket's last frame as young as ~25s. So the
+    holder is PROBED:
+
+    * **Held by this process and answers the probe → refuse the newcomer**
+      (:class:`InstanceKeyConflict`, close ``4409``). The incumbent keeps its
+      row, pointer and relay socket; a second impostor retrying just keeps
+      being refused — loud and stable, instead of two processes flapping the
+      relay socket between them.
+    * **Silent within ``_PROBE_TIMEOUT_S``, already closed, or not held by
+      this process → close the holder's row and admit the newcomer.** A held
+      socket that cannot answer is the runner's own abandoned connection; an
+      open row this process does not hold is an orphan of a restart or an
+      unclean close (the common case after every deploy) or lives on another
+      replica, which cannot be probed from here. Refusing on an unprovable
+      claim would lock runners out of their own reconnects; admitting is what
+      the backend did before, now with a structured
+      ``devices_ws_instance_key_superseded`` record. A held superseded socket
+      is closed in the background.
+
+    The DB transaction is ended before probing, so no pooled connection is
+    held across the probe's wait.
+
+    Legacy (NULL-key) sockets are outside this check, as they are outside the
+    partial unique index that backs it.
+    """
+    if claim.key is None:
+        return
+    rows = await device_connection_crud.get_open_connections_with_key(
+        db, device_id=device_id, instance_key=claim.key
+    )
+    # Plain values, read BEFORE the rollback below expires the ORM rows.
+    holders = [(r.id, r.port, r.connected_at.isoformat()) for r in rows]
+    await db.rollback()  # release the pooled connection before any probe wait
+    if not holders:
+        return
+
+    for holder_pk, holder_port, holder_connected_at in holders:
+        held = _LIVE_SOCKETS.get(holder_pk)
+        if held is not None and await _probe_socket(held, device_id):
+            logger.warning(
+                "devices_ws_instance_key_conflict",
+                device_id=str(device_id),
+                instance_key=claim.key,
+                instance_role=claim.role,
+                holder_connection_pk=holder_pk,
+                holder_port=holder_port,
+                holder_connected_at=holder_connected_at,
+                decision="refuse_newcomer",
+                evidence="holder answered liveness probe",
+                race=False,
+            )
+            raise InstanceKeyConflict(holder_pk, race=False)
+
+    stale_pks = [pk for pk, _, _ in holders]
+    closed = await device_connection_crud.close_connection_records(db, stale_pks)
+    if not claim.is_primary:
+        # A primary newcomer re-points the pointer in its own registration;
+        # clearing it first would only open a window in which the device reads
+        # relay-unroutable. A secondary newcomer may not (it claims only an
+        # unheld pointer), so a pointer left on the superseded row must go.
+        for pk in stale_pks:
+            await device_crud.clear_ws_session_if_current(
+                db, device_id=device_id, connection_pk=pk
+            )
+    held_closed: list[int] = []
+    for pk in stale_pks:
+        held = _LIVE_SOCKETS.pop(pk, None)
+        if held is not None:
+            held_closed.append(pk)
+            _close_in_background(held, device_id=device_id, connection_pk=pk)
+    logger.warning(
+        "devices_ws_instance_key_superseded",
+        device_id=str(device_id),
+        instance_key=claim.key,
+        instance_role=claim.role,
+        superseded_connection_pks=stale_pks,
+        closed_connection_pks=closed,
+        held_sockets_closed=held_closed,
+        decision="close_unverifiable_holder",
+        reason=(
+            "holder did not answer the liveness probe, or is not held by this "
+            "process (orphaned, or on another replica)"
+        ),
+    )
+
+
+async def _register_socket(
+    db: Any,
+    *,
+    token_device_id: UUID,
+    user_id: UUID,
+    claim: InstanceClaim,
+    name: str,
+    hostname: str,
+    port: int,
+    capabilities: list[Any],
+    os_name: str | None,
+    os_version: str | None,
+    client_ip: str | None,
+    websocket: Any,
+) -> tuple[UUID, int, bool]:
+    """Upsert the device row, open this socket's connection row, settle the pointer.
+
+    Returns ``(device_id, connection_pk, owns_pointer)``.
+
+    * A PRIMARY always takes the device's relay pointer — ``ws_session_id``,
+      ``ws_connected_at`` and the device row's runner fields including
+      ``port`` — even from a secondary that held it.
+    * A SECONDARY takes the pointer (and ``port``) ONLY when no live
+      connection holds it (:func:`device_crud.claim_ws_session_if_unheld`), so
+      a lone secondary does not leave the device relay-less and never
+      displaces a live primary. It never rewrites ``name`` or the other
+      primary fields.
+
+    The caller registers the socket with the manager iff ``owns_pointer``.
+    Raises :class:`InstanceKeyConflict` on a duplicate live key. On success
+    the socket is in ``_LIVE_SOCKETS`` under the returned pk, and the caller
+    owns removing it.
+    """
+    pending = (token_device_id, claim.key) if claim.key is not None else None
+    if pending is not None and pending in _PENDING_KEYS:
+        logger.warning(
+            "devices_ws_instance_key_conflict",
+            device_id=str(token_device_id),
+            instance_key=claim.key,
+            instance_role=claim.role,
+            holder_connection_pk=None,
+            decision="refuse_newcomer",
+            race=True,
+        )
+        raise InstanceKeyConflict(None, race=True)
+    if pending is not None:
+        _PENDING_KEYS.add(pending)
+    try:
+        return await _register_socket_unguarded(
+            db,
+            token_device_id=token_device_id,
+            user_id=user_id,
+            claim=claim,
+            name=name,
+            hostname=hostname,
+            port=port,
+            capabilities=capabilities,
+            os_name=os_name,
+            os_version=os_version,
+            client_ip=client_ip,
+            websocket=websocket,
+        )
+    finally:
+        if pending is not None:
+            _PENDING_KEYS.discard(pending)
+
+
+async def _register_socket_unguarded(
+    db: Any,
+    *,
+    token_device_id: UUID,
+    user_id: UUID,
+    claim: InstanceClaim,
+    name: str,
+    hostname: str,
+    port: int,
+    capabilities: list[Any],
+    os_name: str | None,
+    os_version: str | None,
+    client_ip: str | None,
+    websocket: Any,
+) -> tuple[UUID, int, bool]:
+    """Body of :func:`_register_socket`, run under its pending-key guard."""
+    await _resolve_instance_key_conflict(db, device_id=token_device_id, claim=claim)
+
+    async def _upsert_primary_fields() -> Any:
+        # Key the upsert on the JWT-asserted ``token_device_id`` (coord's
+        # identity authority) rather than ``(user_id, name)``. This honors
+        # the unified-devices contract: one ``coord.devices`` row per
+        # physical device, identified by the machine.json UUID coord
+        # assigned at pair time.
+        return await device_crud.register_device(
+            db,
+            device_id=token_device_id,
+            user_id=user_id,
+            name=name,
+            hostname=hostname,
+            port=port,
+            capabilities=list(capabilities),
+            restate_enabled=False,
+            restate_healthy=False,
+            os=os_name,
+            os_version=os_version,
+        )
+
+    # ORDER MATTERS: the connection row is inserted BEFORE a primary writes
+    # the device row's runner fields, so the live-key index decides a
+    # duplicate race first and a refused primary has written nothing. Only a
+    # device row that does not exist yet (the FK parent) is created up front,
+    # and creating it overwrites nothing.
+    device_row = await device_crud.get_device(db, token_device_id)
+    if device_row is None and claim.is_primary:
+        device_row = await _upsert_primary_fields()
+    elif device_row is None:
+        device_row = await device_crud.ensure_device_for_secondary(
+            db,
+            device_id=token_device_id,
+            user_id=user_id,
+            name=name,
+            hostname=hostname,
+            capabilities=list(capabilities),
+            os=os_name,
+            os_version=os_version,
+        )
+
+    try:
+        connection_record = await device_connection_crud.create_connection_record(
+            db,
+            device_id=device_row.device_id,
+            user_id=user_id,
+            ip_address=client_ip,
+            instance_key=claim.key,
+            instance_role=claim.role,
+            port=port,
+        )
+    except IntegrityError as exc:
+        # The partial unique index lost us a race: a concurrent handshake with
+        # the same key committed between the check above and this insert. It
+        # is live by construction (it just registered), so refuse. Any OTHER
+        # integrity failure is not a duplicate and must not be reported as one.
+        await db.rollback()
+        if _LIVE_KEY_INDEX not in str(exc.orig if exc.orig is not None else exc):
+            raise
+        logger.warning(
+            "devices_ws_instance_key_conflict",
+            device_id=str(token_device_id),
+            instance_key=claim.key,
+            instance_role=claim.role,
+            holder_connection_pk=None,
+            decision="refuse_newcomer",
+            race=True,
+            error=str(exc.orig) if exc.orig is not None else str(exc),
+        )
+        raise InstanceKeyConflict(None, race=True) from exc
+
+    # Plain values: the claim below may roll the session back, which expires
+    # every ORM instance it holds.
+    resolved_device_id: UUID = device_row.device_id
+    resolved_pk: int = connection_record.id
+    _LIVE_SOCKETS[resolved_pk] = websocket
+    try:
+        if claim.is_primary:
+            device_row = await _upsert_primary_fields()
+            # Mark the device as WS-connected by pointing at the open
+            # connection. A primary always takes it — from a secondary too.
+            device_row.ws_session_id = connection_record.id
+            device_row.ws_connected_at = connection_record.connected_at
+            await db.commit()
+            owns = True
+        else:
+            owns = await device_crud.claim_ws_session_if_unheld(
+                db,
+                device_id=resolved_device_id,
+                connection_pk=resolved_pk,
+            )
+    except BaseException:
+        _LIVE_SOCKETS.pop(resolved_pk, None)
+        raise
+
+    return resolved_device_id, resolved_pk, owns
 
 
 @router.websocket("/ws")
@@ -217,7 +767,22 @@ async def websocket_device_unified_endpoint(websocket: WebSocket) -> None:
 
     name = info_msg.get("name") or info_msg.get("runner_name") or "Unnamed Device"
     hostname = info_msg.get("hostname") or "localhost"
-    port = int(info_msg.get("port", 9876))
+    try:
+        port = int(info_msg.get("port", 9876))
+    except (TypeError, ValueError):
+        port = -1
+    if not 0 <= port <= 65535:
+        logger.warning(
+            "devices_ws_runner_info_port_invalid",
+            device_id=str(token_device_id),
+            port=str(info_msg.get("port"))[:32],
+        )
+        await reject(
+            websocket,
+            "Invalid runner_info: port must be 0-65535",
+            code=_CLOSE_INVALID_RUNNER_INFO,
+        )
+        return
     os_name = info_msg.get("os")
     os_version = info_msg.get("os_version") or info_msg.get("osVersion")
     capabilities = info_msg.get("capabilities") or []
@@ -239,51 +804,57 @@ async def websocket_device_unified_endpoint(websocket: WebSocket) -> None:
         raw_devenv_hint if isinstance(raw_devenv_hint, dict) else None
     )
 
+    try:
+        claim = parse_instance_claim(info_msg, devenv_hint)
+    except InstanceClaimError as exc:
+        logger.warning(
+            "devices_ws_instance_claim_invalid",
+            device_id=str(token_device_id),
+            user_id=str(user_id),
+            error=str(exc),
+        )
+        await reject(
+            websocket, f"Invalid runner_info: {exc}", code=_CLOSE_INVALID_RUNNER_INFO
+        )
+        return
+
     client_ip = websocket.client.host if websocket.client else None
 
     device_id: UUID | None = None
     connection_pk: int | None = None
     try:
         async with AsyncSessionLocal() as db:
-            # Key the upsert on the JWT-asserted ``token_device_id``
-            # (coord's identity authority) rather than ``(user_id, name)``.
-            # This honors the unified-devices contract: one
-            # ``coord.devices`` row per physical device, identified by
-            # the machine.json UUID coord assigned at pair time. Prior
-            # to this change the upsert was keyed on ``(user_id, name)``
-            # and ``register_device`` ignored the JWT's ``device_id``
-            # entirely, so every temp runner spawn / re-named pair flow
-            # created a fresh row with a web-generated UUID — orphaning
-            # coord's pair-time row.
-            device_row = await device_crud.register_device(
+            device_id, connection_pk, owns = await _register_socket(
                 db,
-                device_id=token_device_id,
+                token_device_id=token_device_id,
                 user_id=user_id,
+                claim=claim,
                 name=name,
                 hostname=hostname,
                 port=port,
                 capabilities=list(capabilities),
-                restate_enabled=False,
-                restate_healthy=False,
-                os=os_name,
+                os_name=os_name,
                 os_version=os_version,
+                client_ip=client_ip,
+                websocket=websocket,
             )
-
-            connection_record = await device_connection_crud.create_connection_record(
-                db,
-                device_id=device_row.device_id,
-                user_id=user_id,
-                ip_address=client_ip,
-            )
-
-            # Mark the device as WS-connected by pointing at the open
-            # connection.
-            device_row.ws_session_id = connection_record.id
-            device_row.ws_connected_at = connection_record.connected_at
-            await db.commit()
-
-            device_id = device_row.device_id
-            connection_pk = connection_record.id
+    except InstanceKeyConflict as conflict:
+        holder = (
+            f"connection {conflict.holder_pk}"
+            if conflict.holder_pk is not None
+            else "a concurrent connection"
+        )
+        await reject(
+            websocket,
+            (
+                f"Duplicate runner instance: instanceKey {claim.key!r} is already "
+                f"connected on this device ({holder}). Two runner processes are "
+                "reporting the same instance identity; stop one of them."
+            ),
+            code=_CLOSE_DUPLICATE_INSTANCE,
+            reason="duplicate runner instanceKey already connected on this device",
+        )
+        return
     except Exception as e:
         logger.error(
             "devices_ws_register_failed",
@@ -316,26 +887,50 @@ async def websocket_device_unified_endpoint(websocket: WebSocket) -> None:
     # ``manager`` is pre-bound so the except-path rollback can reference it
     # safely even when ``get_redis()`` itself raises (Redis unavailable) before
     # the manager is resolved.
+    #
+    #     Only the POINTER OWNER registers and announces: the manager is keyed
+    #     on ``device_id`` alone, so registering a non-owner secondary would
+    #     replace the owner's relay socket, and ``runner_connected`` for it
+    #     would announce a device that did not connect. A non-owner still
+    #     resolves the manager, because it may claim an unheld pointer later
+    #     (see :func:`_handle_non_owner_heartbeat`).
+    # ------------------------------------------------------------------
     manager: Any = None
     try:
         redis = await get_redis()
         manager = await get_runner_websocket_manager(redis)
-        await manager.register(
-            runner_id=device_id,
-            websocket=websocket,
-            user_id=user_id,
-            runner_name=name,
-            ip_address=client_ip,
-            connected_at=utc_now().isoformat(),
-        )
-
-        await manager.publish_runner_connected(
-            runner_id=device_id,
-            user_id=user_id,
-            runner_name=name,
-            connected_at=utc_now().isoformat(),
-            ip_address=client_ip,
-        )
+        if owns and not claim.is_primary:
+            # A secondary's claim was a DB write; the manager registration is
+            # a second step a primary may win in between. Register only if no
+            # other socket holds the device and the pointer still names us —
+            # both re-checked under the manager's per-device lock — and hand
+            # the claim back otherwise.
+            owns = await _register_claimed_secondary(
+                manager,
+                device_id=device_id,
+                user_id=user_id,
+                connection_pk=connection_pk,
+                websocket=websocket,
+                runner_name=name,
+                ip_address=client_ip,
+            )
+        elif owns:
+            await manager.register(
+                runner_id=device_id,
+                websocket=websocket,
+                user_id=user_id,
+                runner_name=name,
+                ip_address=client_ip,
+                connected_at=utc_now().isoformat(),
+            )
+        if owns:
+            await manager.publish_runner_connected(
+                runner_id=device_id,
+                user_id=user_id,
+                runner_name=name,
+                connected_at=utc_now().isoformat(),
+                ip_address=client_ip,
+            )
     except Exception as e:
         logger.error(
             "devices_ws_register_failed",
@@ -345,6 +940,7 @@ async def websocket_device_unified_endpoint(websocket: WebSocket) -> None:
             error_type=type(e).__name__,
             exc_info=True,
         )
+        _LIVE_SOCKETS.pop(connection_pk, None)
         # Tear down any manager-side registration. ``register`` rolls back its
         # OWN partial state, but if it fully succeeded and the subsequent
         # ``publish_runner_connected`` raised, the relay listeners are already
@@ -353,9 +949,9 @@ async def websocket_device_unified_endpoint(websocket: WebSocket) -> None:
         # the same pool-exhaustion class as the register failure itself.
         # ``unregister`` is idempotent and tolerates an unknown/never-registered
         # device_id, so it is safe to call regardless of where the failure hit.
-        if manager is not None:
+        if manager is not None and owns:
             try:
-                await manager.unregister(device_id, user_id)
+                await manager.unregister_if_current(device_id, websocket, user_id)
             except Exception as unregister_err:
                 logger.error(
                     "devices_ws_register_failed_unregister_failed",
@@ -425,6 +1021,8 @@ async def websocket_device_unified_endpoint(websocket: WebSocket) -> None:
                 "type": "connected",
                 "device_id": str(device_id),
                 "user_id": str(user_id),
+                "instance_key": claim.key,
+                "instance_role": claim.role,
                 "timestamp": utc_now().isoformat(),
             }
         )
@@ -434,6 +1032,11 @@ async def websocket_device_unified_endpoint(websocket: WebSocket) -> None:
             device_id=str(device_id),
             user_id=str(user_id),
             name=name,
+            instance_key=claim.key,
+            instance_role=claim.role,
+            port=port,
+            connection_pk=connection_pk,
+            owns_pointer=owns,
         )
 
         # ----------------------------------------------------------------
@@ -449,9 +1052,11 @@ async def websocket_device_unified_endpoint(websocket: WebSocket) -> None:
         # It is flagged off by default (``DEVENV_AUTO_ENROLL_ENABLED``), in
         # which case this costs one attribute read inside the task.
         # ----------------------------------------------------------------
-        devenv_auto_enroll.schedule_auto_enroll(
-            device_id, user_id, devenv_hint, manager
-        )
+        # Primary only: the machine is the primary's to enroll.
+        if claim.is_primary:
+            devenv_auto_enroll.schedule_auto_enroll(
+                device_id, user_id, devenv_hint, manager
+            )
 
         while True:
             try:
@@ -469,8 +1074,16 @@ async def websocket_device_unified_endpoint(websocket: WebSocket) -> None:
             if not isinstance(data, dict):
                 continue
 
+            if _consume_probe_reply(data):
+                continue
             await _route_device_message(
-                data, device_id, user_id, manager, connection_pk, websocket
+                data,
+                device_id,
+                user_id,
+                manager,
+                connection_pk,
+                websocket,
+                instance_role=claim.role,
             )
 
     except BENIGN_SEND_EXCEPTIONS:
@@ -483,7 +1096,14 @@ async def websocket_device_unified_endpoint(websocket: WebSocket) -> None:
             error_type=type(e).__name__,
         )
     finally:
-        await _cleanup(device_id, connection_pk, user_id, manager, websocket)
+        await _cleanup(
+            device_id,
+            connection_pk,
+            user_id,
+            manager,
+            websocket,
+            instance_role=claim.role,
+        )
 
 
 async def _route_device_message(
@@ -493,6 +1113,8 @@ async def _route_device_message(
     manager: Any,
     connection_pk: int | None = None,
     websocket: Any = None,
+    *,
+    instance_role: str = _ROLE_PRIMARY,
 ) -> None:
     """Dispatch a single inbound message from the device.
 
@@ -501,8 +1123,44 @@ async def _route_device_message(
     WS-presence pointer (see :func:`_handle_heartbeat`). It is optional so
     existing callers/tests that only route non-heartbeat traffic keep
     working unchanged.
+
+    ``instance_role`` is the role the socket was REGISTERED under (see
+    :class:`InstanceClaim`). A SECONDARY that does not currently own the
+    device's relay pointer (the manager holds another socket, or none) is not
+    the device's relay socket, so only its heartbeat and ping arms run; every
+    other frame is dropped rather than relayed as the device's, because every
+    consumer below addresses the device — i.e. its pointer owner — and would
+    misattribute a non-owner's status or replies. A secondary that DOES own
+    the pointer (it claimed an unheld one) is the device's relay socket and is
+    routed like a primary.
     """
     msg_type = msg.get("type")
+
+    owns_pointer = (
+        manager is not None
+        and websocket is not None
+        and manager.get_websocket(device_id) is websocket
+    )
+    if instance_role == _ROLE_SECONDARY and not owns_pointer:
+        if msg_type == "heartbeat":
+            await _handle_non_owner_heartbeat(
+                device_id, user_id, manager, connection_pk, websocket
+            )
+        elif msg_type == "ping" and websocket is not None:
+            try:
+                await websocket.send_json(
+                    {"type": "pong", "timestamp": utc_now().isoformat()}
+                )
+            except BENIGN_SEND_EXCEPTIONS:
+                pass
+        else:
+            logger.debug(
+                "devices_ws_secondary_frame_dropped",
+                device_id=str(device_id),
+                connection_pk=connection_pk,
+                msg_type=msg_type,
+            )
+        return
 
     if msg_type == "ping":
         ws = manager.get_websocket(device_id)
@@ -710,11 +1368,21 @@ async def _handle_heartbeat(
     recent_crash = msg.get("recent_crash")
     derived_status = msg.get("derived_status")
 
-    # One session for both writes. This is the hottest path in the file —
+    # One session for every write. This is the hottest path in the file —
     # every device, every ~30s — and registration failures here have already
     # been observed as connection-pool exhaustion, so it must not take two
-    # sessions to do two UPDATEs on the same row.
+    # sessions to do its UPDATEs.
     async with AsyncSessionLocal() as db:
+        # This socket's own row first. If it was closed under a socket that is
+        # still heartbeating (the sweep, a supersede on another replica), this
+        # socket is no longer a registered connection: it must write no
+        # device state and heal no pointer onto a closed row — it is closed so
+        # the runner reconnects and registers a fresh row.
+        if connection_pk is not None and not await _touch_own_row(
+            db, device_id, connection_pk
+        ):
+            await _close_rowless_socket(websocket, device_id, connection_pk)
+            return
         try:
             await device_crud.heartbeat_device(
                 db,
@@ -779,14 +1447,193 @@ async def _handle_heartbeat(
         pass
 
 
+async def _touch_own_row(db: Any, device_id: Any, connection_pk: int) -> bool:
+    """Stamp this socket's row. ``False`` only when it is measurably closed.
+
+    A failed write is UNKNOWN, not "closed", and returns ``True`` — closing a
+    live socket over a transient DB error would be worse than one missed stamp.
+    """
+    try:
+        return await device_connection_crud.touch_connection(db, connection_pk)
+    except Exception as e:
+        logger.error(
+            "devices_ws_heartbeat_touch_failed",
+            device_id=str(device_id),
+            connection_pk=connection_pk,
+            error=str(e),
+        )
+        try:
+            await db.rollback()
+        except Exception:
+            pass
+        return True
+
+
+async def _close_rowless_socket(
+    websocket: Any, device_id: Any, connection_pk: int | None
+) -> None:
+    """Close a socket whose connection row was closed under it (it reconnects)."""
+    logger.warning(
+        "devices_ws_row_closed_under_live_socket",
+        device_id=str(device_id),
+        connection_pk=connection_pk,
+    )
+    if websocket is not None:
+        await safe_close(
+            websocket,
+            status.WS_1012_SERVICE_RESTART,
+            reason="connection row closed; reconnect",
+        )
+
+
+async def _register_claimed_secondary(
+    manager: Any,
+    *,
+    device_id: Any,
+    user_id: Any,
+    connection_pk: int,
+    websocket: Any,
+    runner_name: str | None = None,
+    ip_address: str | None = None,
+) -> bool:
+    """Register a secondary that just claimed the DB pointer — only if it still may.
+
+    ``manager.register_if_unowned`` refuses under its per-device lock when a
+    different socket is registered, and re-reads the DB pointer (must still
+    name ``connection_pk``) before registering. A primary that registered in
+    between therefore wins in BOTH stores. On refusal the claim is handed
+    back with the atomic compare-and-clear, which is a no-op if a primary has
+    already re-pointed it. Returns ``True`` iff registered.
+    """
+
+    async def _still_entitled() -> bool:
+        async with AsyncSessionLocal() as db:
+            return await device_crud.pointer_names(
+                db, device_id=device_id, connection_pk=connection_pk
+            )
+
+    registered = bool(
+        await manager.register_if_unowned(
+            runner_id=device_id,
+            websocket=websocket,
+            user_id=user_id,
+            still_entitled=_still_entitled,
+            runner_name=runner_name,
+            ip_address=ip_address,
+            connected_at=utc_now().isoformat(),
+        )
+    )
+    if not registered:
+        logger.info(
+            "devices_ws_secondary_claim_yielded",
+            device_id=str(device_id),
+            connection_pk=connection_pk,
+            reason="another socket registered, or the pointer moved, first",
+        )
+        async with AsyncSessionLocal() as db:
+            await device_crud.clear_ws_session_if_current(
+                db, device_id=device_id, connection_pk=connection_pk
+            )
+    return registered
+
+
+async def _handle_non_owner_heartbeat(
+    device_id: Any,
+    user_id: Any,
+    manager: Any,
+    connection_pk: int | None,
+    websocket: Any,
+) -> None:
+    """Heartbeat from a SECONDARY that does not own the device's relay pointer.
+
+    Deliberately NOT :func:`_handle_heartbeat`: that writes the DEVICE row's
+    ``last_heartbeat`` / ``derived_status`` / ``ui_error`` / ``recent_crash``
+    — the pointer owner's state — and its heal claims the pointer when it is
+    NULL *or older*, which a secondary (usually newer than the primary) would
+    use to displace a live primary.
+
+    It stamps its own row (closing the socket if the row was closed under it),
+    then claims the pointer ONLY if nobody live holds it
+    (:func:`device_crud.claim_ws_session_if_unheld`) — the recovery path for a
+    lone secondary whose device lost its owner — and on a claim registers with
+    the manager, becoming the device's relay socket.
+    """
+    if connection_pk is None:
+        return
+    claimed = False
+    async with AsyncSessionLocal() as db:
+        if not await _touch_own_row(db, device_id, connection_pk):
+            await _close_rowless_socket(websocket, device_id, connection_pk)
+            return
+        if manager is None or websocket is None:
+            return
+        try:
+            claimed = await device_crud.claim_ws_session_if_unheld(
+                db, device_id=device_id, connection_pk=connection_pk
+            )
+        except Exception as e:
+            logger.error(
+                "devices_ws_secondary_claim_failed",
+                device_id=str(device_id),
+                connection_pk=connection_pk,
+                error=str(e),
+            )
+            return
+    if not claimed:
+        return
+    logger.warning(
+        "devices_ws_secondary_claimed_unheld_pointer",
+        device_id=str(device_id),
+        connection_pk=connection_pk,
+    )
+    try:
+        if not await _register_claimed_secondary(
+            manager,
+            device_id=device_id,
+            user_id=user_id,
+            connection_pk=connection_pk,
+            websocket=websocket,
+        ):
+            return
+        await manager.publish_runner_connected(
+            runner_id=device_id,
+            user_id=user_id,
+            runner_name=None,
+            connected_at=utc_now().isoformat(),
+        )
+    except Exception as e:
+        logger.error(
+            "devices_ws_secondary_claim_register_failed",
+            device_id=str(device_id),
+            connection_pk=connection_pk,
+            error=str(e),
+        )
+        try:
+            async with AsyncSessionLocal() as db:
+                await device_crud.clear_ws_session_if_current(
+                    db, device_id=device_id, connection_pk=connection_pk
+                )
+        except Exception:
+            pass
+
+
 async def _cleanup(
     device_id: Any,
     connection_pk: int | None,
     user_id: Any,
     manager: Any,
     websocket: Any = None,
+    *,
+    instance_role: str = _ROLE_PRIMARY,
 ) -> None:
     """Tear down THIS connection's traces — and only this connection's.
+
+    Role-agnostic on purpose: what a socket tears down is decided by what it
+    OWNS at teardown time, not by its role. A secondary that never owned the
+    pointer finds itself not registered and not pointed at, so every guarded
+    step below is a no-op for it and only its own row is closed; a secondary
+    that claimed an unheld pointer tears down exactly like the owner it is.
+    ``instance_role`` is only logged.
 
     A device's WS presence lives in TWO stores, and a superseded teardown can
     corrupt either: the ``coord.devices.ws_session_id`` pointer (guarded by
@@ -804,7 +1651,8 @@ async def _cleanup(
     while ``GET /api/v1/devices`` reported ``healthy``. So both stores get
     the same "is it still ours?" predicate, from one identity check.
     """
-    still_ours = websocket is None or manager.get_websocket(device_id) is websocket
+    if connection_pk is not None:
+        _LIVE_SOCKETS.pop(connection_pk, None)
 
     # Remote-terminal attachments this socket originated (SOURCE role) are
     # keyed on the socket object, so this is per-connection by construction:
@@ -822,21 +1670,36 @@ async def _cleanup(
                 error=str(e),
             )
 
-    if still_ours:
+    # "Is it still ours?" is decided INSIDE the manager, under its per-device
+    # registration lock, together with the teardown itself
+    # (``unregister_if_current``). Deciding it here and then awaiting — the
+    # release above, or unregister's own Redis round trips — let a newer
+    # socket register in between and be torn down by this older socket's
+    # teardown: its registry entry and inbound listener gone while its row
+    # and pointer said "connected".
+    unregistered = False
+    if manager is not None:
         try:
-            await manager.unregister(device_id, user_id)
+            if websocket is None:
+                await manager.unregister(device_id, user_id)
+                unregistered = True
+            else:
+                unregistered = await manager.unregister_if_current(
+                    device_id, websocket, user_id
+                )
         except Exception as e:
             logger.error(
                 "devices_ws_unregister_failed",
                 device_id=str(device_id) if device_id else None,
                 error=str(e),
             )
-    else:
-        logger.info(
-            "devices_ws_skip_unregister_superseded",
-            device_id=str(device_id) if device_id else None,
-            our_connection_pk=connection_pk,
-        )
+        if not unregistered:
+            logger.info(
+                "devices_ws_skip_unregister_superseded",
+                device_id=str(device_id) if device_id else None,
+                our_connection_pk=connection_pk,
+                instance_role=instance_role,
+            )
 
     try:
         # Only clear ws_session_id if it still points at OUR connection, and
@@ -900,7 +1763,15 @@ async def _cleanup(
     # Same predicate as the unregister above: announcing "runner disconnected"
     # for a device whose replacement socket is already live would tell every
     # mobile and frontend client the device is gone while it is serving.
-    if still_ours:
+    #
+    # Re-checked with NO await between the check and the publish's first
+    # step: a replacement that registered after our unregister must not be
+    # announced as gone.
+    if (
+        unregistered
+        and manager is not None
+        and manager.get_websocket(device_id) is None
+    ):
         try:
             await manager.publish_runner_disconnected(device_id, user_id)
         except Exception as e:

@@ -17,7 +17,17 @@ from datetime import datetime
 from uuid import UUID
 
 from qontinui_schemas.common import to_utc, utc_now
-from sqlalchemy import BigInteger, DateTime, ForeignKey, Integer, String
+from sqlalchemy import (
+    BigInteger,
+    CheckConstraint,
+    DateTime,
+    ForeignKey,
+    Index,
+    Integer,
+    String,
+    Text,
+    text,
+)
 from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -31,7 +41,29 @@ class DeviceConnection(Base):
     """
 
     __tablename__ = "device_connections"
-    __table_args__ = {"schema": "coord"}
+    # Mirrors ``devconn_inst_01_device_connections_instance`` — alembic is the
+    # author; these declarations exist so ``Base.metadata.create_all`` (the
+    # test substrate) builds the same constraints the migration does.
+    __table_args__ = (
+        CheckConstraint(
+            "instance_role IS NULL OR instance_role IN ('primary', 'secondary')",
+            name="ck_device_connections_instance_role",
+        ),
+        CheckConstraint(
+            "port IS NULL OR (port >= 0 AND port <= 65535)",
+            name="ck_device_connections_port_range",
+        ),
+        Index(
+            "uq_device_connections_live_instance_key",
+            "device_id",
+            "instance_key",
+            unique=True,
+            postgresql_where=text(
+                "disconnected_at IS NULL AND instance_key IS NOT NULL"
+            ),
+        ),
+        {"schema": "coord"},
+    )
 
     # Primary key (auto-incrementing integer for simplicity)
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
@@ -91,6 +123,41 @@ class DeviceConnection(Base):
         String(255),
         nullable=True,
         comment="WebSocket session ID for correlation with logs",
+    )
+
+    # Runner-instance identity (plan
+    # 2026-09-20-runner-selector-drives-a-transport-not-a-target, Phase 6).
+    # Every runner instance on a machine shares the machine's device_id, so
+    # the device row cannot say WHICH instance a socket is; this row can.
+    instance_key: Mapped[str | None] = mapped_column(
+        Text,
+        nullable=True,
+        comment=(
+            "Runner-reported per-instance key (primary / runner:<id> / "
+            "name:<name> / port:<port>); NULL for a runner predating it."
+        ),
+    )
+    instance_role: Mapped[str | None] = mapped_column(
+        Text,
+        nullable=True,
+        comment=(
+            "Effective role the socket was registered under: primary | "
+            "secondary. Only a primary socket owns coord.devices.port / "
+            "ws_session_id."
+        ),
+    )
+    port: Mapped[int | None] = mapped_column(
+        Integer,
+        nullable=True,
+        comment="This instance's own HTTP API port.",
+    )
+    last_seen_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+        comment=(
+            "Last heartbeat on this socket. Ages secondary rows; a heartbeat "
+            "that finds its own row closed closes the socket."
+        ),
     )
 
     # Relationships

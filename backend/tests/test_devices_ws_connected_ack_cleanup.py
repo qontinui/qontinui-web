@@ -151,6 +151,17 @@ def _make_manager() -> MagicMock:
 
     manager.register = AsyncMock(side_effect=_register)
     manager.get_websocket = MagicMock(side_effect=lambda _rid: registered.get("ws"))
+
+    async def _unregister_if_current(rid: Any, ws: Any, uid: Any = None) -> bool:
+        # The real manager compares under its registration lock; the stub
+        # compares at call time, which is what the teardown now relies on.
+        if registered.get("ws") is not ws:
+            return False
+        registered.pop("ws", None)
+        await manager.unregister(rid, uid)
+        return True
+
+    manager.unregister_if_current = AsyncMock(side_effect=_unregister_if_current)
     return manager
 
 
