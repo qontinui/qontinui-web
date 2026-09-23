@@ -65,6 +65,20 @@ describe("New chat goes only where new work may go", () => {
         "All your runners are drained — taken out of service for new work."
       )
     ).toBeInTheDocument();
+    // The spec'd no-runner block (specs/pages/chat) is unchanged; coord's
+    // outcome is its own line AFTER the connect paragraph, so the spec's
+    // positional paragraph ids still resolve.
+    expect(
+      screen.getByRole("heading", { name: "Runner Not Connected" })
+    ).toBeInTheDocument();
+    expect(screen.getByText("No active workflow")).toBeInTheDocument();
+    const connect = screen.getByText(/Connect a runner to start chatting/);
+    expect(connect.querySelector('a[href="/runners"]')).not.toBeNull();
+    const outcome = document.getElementById("chat-runner-outcome")!;
+    expect(
+      connect.compareDocumentPosition(outcome) &
+        Node.DOCUMENT_POSITION_FOLLOWING
+    ).toBeTruthy();
   });
 
   it("a runner coord resolved: the session is created on it", () => {

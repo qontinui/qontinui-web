@@ -135,18 +135,11 @@ export default function ChatPage() {
             <div className="flex flex-col items-center justify-center py-24 text-text-muted">
               <WifiOff className="size-16 mb-4 opacity-20" />
               <h2 className="text-lg font-medium text-text-secondary mb-2">
-                No Runner for a New Chat
+                Runner Not Connected
               </h2>
-              {dispatchTarget.message && (
-                <p
-                  id="chat-runner-outcome"
-                  className="text-xs text-text-muted mb-1"
-                >
-                  {dispatchTarget.message}
-                </p>
-              )}
+              <p className="text-xs text-text-muted mb-1">No active workflow</p>
               <p className="text-sm text-center max-w-md">
-                Choose a runner in the runner selector, or connect one at{" "}
+                Connect a runner to start chatting with Claude. Go to{" "}
                 <Link
                   href="/runners"
                   className="text-brand-primary hover:underline"
@@ -155,6 +148,16 @@ export default function ChatPage() {
                 </Link>{" "}
                 to set up a connection.
               </p>
+              {/* Coord's outcome, after the spec'd connect paragraph so that
+                  paragraph keeps its position. */}
+              {dispatchTarget.message && (
+                <p
+                  id="chat-runner-outcome"
+                  className="text-xs text-text-muted mt-2"
+                >
+                  {dispatchTarget.message}
+                </p>
+              )}
             </div>
           ) : (
             <>
