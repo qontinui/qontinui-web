@@ -3730,9 +3730,7 @@ async def get_work_artifact(
         )
 
     versions = await crud.list_versions(db, row.id)
-    edge_rows = await crud.list_edges(
-        db, row.id, include_retracted=include_retracted
-    )
+    edge_rows = await crud.list_edges(db, row.id, include_retracted=include_retracted)
     edges = _edge_reads(edge_rows)
 
     coord_block = CandidateCoordLink()
@@ -3796,9 +3794,7 @@ async def list_work_artifact_edges(
             detail=f"Work artifact not found: {artifact_id}",
         )
 
-    edge_rows = await crud.list_edges(
-        db, row.id, include_retracted=include_retracted
-    )
+    edge_rows = await crud.list_edges(db, row.id, include_retracted=include_retracted)
     items = _edge_reads(edge_rows)
     return WorkArtifactEdgesResponse(items=items, count=len(items))
 
