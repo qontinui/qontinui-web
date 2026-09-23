@@ -32,10 +32,13 @@ cd backend
 export PYTHON_KEYRING_BACKEND="${PYTHON_KEYRING_BACKEND:-keyring.backends.null.Keyring}"
 
 # Bound provisioning so a future hang fails loudly instead of wedging the
-# commit. `timeout` is absent on stock macOS; there the install is unbounded.
+# commit. Only GNU coreutils `timeout` is used: on Windows the first
+# `timeout` on PATH can be C:\Windows\System32\timeout.exe (a pause command
+# that rejects `timeout N cmd`), and stock macOS has none — both answer
+# `--version` with a failure, and there the install runs unbounded.
 PROVISION_TIMEOUT="${QONTINUI_MYPY_PROVISION_TIMEOUT_SECS:-900}"
 bounded() {
-  if command -v timeout >/dev/null 2>&1; then
+  if timeout --version >/dev/null 2>&1; then
     timeout "$PROVISION_TIMEOUT" "$@"
   else
     "$@"
