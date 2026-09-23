@@ -9,6 +9,7 @@ direct read+write access to the columns it owns (WS lifecycle, derived
 status, heartbeat).
 """
 
+from datetime import datetime
 from uuid import UUID
 
 from fastapi import HTTPException, status
@@ -28,6 +29,7 @@ __all__ = [
     "delete_device",
     "claim_ws_session",
     "claim_ws_session_if_unheld",
+    "take_ws_session",
     "pointer_names",
     "clear_ws_session_if_current",
 ]
@@ -373,6 +375,32 @@ async def claim_ws_session_if_unheld(
     )
     await db.commit()
     return True
+
+
+async def take_ws_session(
+    db: AsyncSession,
+    *,
+    device_id: UUID,
+    connection_pk: int,
+    connected_at: datetime,
+    port: int,
+) -> None:
+    """Point the relay at a PRIMARY's connection — pointer and port in one write.
+
+    A primary always takes the pointer. It writes ``port`` in the same
+    statement because the pointer owner's port IS the device's port, and a
+    secondary claim (which writes both) could otherwise commit between a
+    port write and a pointer write and leave them naming different sockets.
+    An explicit UPDATE, not ORM attribute assignment: the ORM would skip an
+    unchanged-looking ``port`` and the pair would no longer be written together.
+    """
+    await db.execute(
+        update(Device)
+        .where(Device.device_id == device_id)
+        .values(ws_session_id=connection_pk, ws_connected_at=connected_at, port=port)
+        .execution_options(synchronize_session=False)
+    )
+    await db.commit()
 
 
 async def pointer_names(

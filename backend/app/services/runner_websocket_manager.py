@@ -514,30 +514,61 @@ class RunnerWebSocketManager:
         up every other handshake for this device.
         """
 
-        if user_id is None:
-            metadata = await _bounded(self._state_repo.get_connection_metadata(rid))
-            if metadata:
-                try:
-                    user_id = UUID(metadata.get("user_id"))
-                except Exception:
-                    pass
+        # In-process teardown ALWAYS runs (``finally``): a Redis call that times
+        # out or fails must not leave this process holding the registry entry,
+        # the send lock and a listener forwarding relayed frames to a socket
+        # that is going away. The Redis half is best-effort — its keys carry a
+        # TTL and the scheduled sweep reconciles what is left behind.
+        try:
+            if user_id is None:
+                metadata = await _bounded(self._state_repo.get_connection_metadata(rid))
+                if metadata:
+                    try:
+                        user_id = UUID(metadata.get("user_id"))
+                    except Exception:
+                        pass
 
-        await _bounded(self._state_repo.delete_connection_state(rid))
+            await _bounded(self._state_repo.delete_connection_state(rid))
 
-        if user_id is not None:
-            await _bounded(self._remove_user_runner_mapping(user_id, rid))
-
-        self._registry.unregister_runner(rid)
-
-        # Cancel the shared inbound listener (commands/chat/terminal multiplex);
-        # its ``finally`` unsubscribes and closes the single pubsub connection.
-        await self._stop_inbound_listener(rid)
-        self._ws_send_locks.pop(rid, None)
+            if user_id is not None:
+                await _bounded(self._remove_user_runner_mapping(user_id, rid))
+        except Exception as exc:
+            logger.warning(
+                "runner_ws_unregister_redis_cleanup_failed",
+                runner_id=rid,
+                error=str(exc),
+                error_type=type(exc).__name__,
+            )
+        finally:
+            self._registry.unregister_runner(rid)
+            # Cancel the shared inbound listener (commands/chat/terminal
+            # multiplex); its ``finally`` unsubscribes and closes the pubsub.
+            await self._stop_inbound_listener(rid)
+            self._ws_send_locks.pop(rid, None)
 
     async def _notify_unregistered(self, rid: str) -> None:
-        """Tell mobiles and frontends the runner is gone. Runs OUTSIDE the lock."""
+        """Tell mobiles and frontends the runner is gone. Runs OUTSIDE the lock.
+
+        Because it runs outside the lock, a replacement socket can register
+        while these notices are going out; a late ``runner_disconnected``
+        would then make the frontend drop a runner that is connected and mark
+        its chat disconnected. So each notice is sent only if nothing is
+        registered for ``rid`` — checked immediately before the send with no
+        await in between (each notify call reaches its first send without
+        yielding first) — and the rest are skipped once something is.
+        """
         from qontinui_schemas.common import utc_now
 
+        def _replaced() -> bool:
+            if self._registry.get_runner_websocket(rid) is None:
+                return False
+            logger.info(
+                "runner_ws_disconnect_notice_skipped_reconnected", runner_id=rid
+            )
+            return True
+
+        if _replaced():
+            return
         await self._chat_relay.notify_mobiles(
             rid,
             {
@@ -546,6 +577,8 @@ class RunnerWebSocketManager:
                 "timestamp": utc_now().isoformat(),
             },
         )
+        if _replaced():
+            return
         await self._terminal_relay.notify_mobiles(
             rid,
             {
@@ -554,6 +587,8 @@ class RunnerWebSocketManager:
                 "timestamp": utc_now().isoformat(),
             },
         )
+        if _replaced():
+            return
         await self._relay.notify_frontends(
             rid,
             {"type": "runner_disconnected", "timestamp": utc_now().isoformat()},
