@@ -571,7 +571,11 @@ describe("SpawnModal Claude account roster", () => {
     renderModal();
 
     const notice = await screen.findByTestId("coord-spawn-account-notice");
-    expect(notice.textContent).toMatch(/choose a device first/i);
+    // With no device named the spawn is AUTOMATIC, so the notice says who
+    // picks the account (the machine coord picks) rather than demanding a
+    // device first.
+    expect(notice.textContent).toMatch(/no device is named/i);
+    expect(notice.textContent).toMatch(/name a device to pin an account/i);
     expect(screen.queryByTestId("coord-spawn-account-roster")).toBeNull();
   });
 });
@@ -886,7 +890,9 @@ describe("SpawnModal body guard", () => {
     const notice = await screen.findByTestId("coord-spawn-body-confirm");
     expect(notice).toHaveAttribute("data-risk", "unproven");
     expect(notice).toHaveTextContent(/UNPROVEN, not proof of absence/);
-    expect(notice).not.toHaveTextContent("This work unit has no plan document.");
+    expect(notice).not.toHaveTextContent(
+      "This work unit has no plan document."
+    );
     // The arm is named, not just the ignorance.
     expect(notice).toHaveTextContent(/ever been written/);
     // The chip is the amber unknown, not the settled one.
