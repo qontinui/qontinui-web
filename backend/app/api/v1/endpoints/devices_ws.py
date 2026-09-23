@@ -609,12 +609,22 @@ async def _register_socket_unguarded(
     _LIVE_SOCKETS[resolved_pk] = websocket
     try:
         if claim.is_primary:
-            device_row = await _upsert_primary_fields()
+            connected_at = connection_record.connected_at
+            await _upsert_primary_fields()
             # Mark the device as WS-connected by pointing at the open
             # connection. A primary always takes it — from a secondary too.
-            device_row.ws_session_id = connection_record.id
-            device_row.ws_connected_at = connection_record.connected_at
-            await db.commit()
+            # ``port`` is written AGAIN in this same statement: a secondary's
+            # heartbeat claim can commit between the upsert above and this
+            # write (the pointer was still unheld then), and it writes its own
+            # port with its pointer. Writing the pair together means whichever
+            # commits last leaves port and pointer describing the same socket.
+            await device_crud.take_ws_session(
+                db,
+                device_id=resolved_device_id,
+                connection_pk=resolved_pk,
+                connected_at=connected_at,
+                port=port,
+            )
             owns = True
         else:
             owns = await device_crud.claim_ws_session_if_unheld(

@@ -248,3 +248,63 @@ async def test_frontend_notifications_run_outside_the_registration_lock() -> Non
     mgr._relay = MagicMock(notify_frontends=AsyncMock(side_effect=_notify))
     assert await mgr.unregister_if_current(rid, sock, user) is True  # type: ignore[arg-type]
     assert seen == {"locked": False}
+
+
+# ---------------------------------------------------------------------------
+# Round-3 lows
+# ---------------------------------------------------------------------------
+
+
+async def test_no_late_disconnect_notice_after_a_reconnect() -> None:
+    """L1: a socket registering while notices go out suppresses the rest."""
+    mgr = _manager()
+    rid, user = uuid4(), uuid4()
+    old, new = object(), object()
+    await mgr.register(runner_id=rid, websocket=old, user_id=user)  # type: ignore[arg-type]
+
+    async def _first_notice_then_reconnect(runner_id: str, message: Any) -> None:
+        # The runner reconnects while the first notice is in flight.
+        mgr._registry.register_runner(runner_id, new)  # type: ignore[arg-type]
+
+    mgr._chat_relay = MagicMock(
+        notify_mobiles=AsyncMock(side_effect=_first_notice_then_reconnect)
+    )
+    mgr._terminal_relay = MagicMock(notify_mobiles=AsyncMock())
+    mgr._relay = MagicMock(notify_frontends=AsyncMock())
+
+    assert await mgr.unregister_if_current(rid, old, user) is True  # type: ignore[arg-type]
+
+    mgr._terminal_relay.notify_mobiles.assert_not_awaited()
+    mgr._relay.notify_frontends.assert_not_awaited()
+
+
+async def test_no_disconnect_notice_when_already_replaced_before_notifying() -> None:
+    mgr = _manager()
+    rid, user = uuid4(), uuid4()
+    old, new = object(), object()
+    await mgr.register(runner_id=rid, websocket=old, user_id=user)  # type: ignore[arg-type]
+    real_unlocked = mgr._unregister_unlocked
+
+    async def _then_reconnect(r: str, u: Any = None) -> None:
+        await real_unlocked(r, u)
+        mgr._registry.register_runner(r, new)  # type: ignore[arg-type]
+
+    mgr._unregister_unlocked = _then_reconnect  # type: ignore[method-assign]
+    assert await mgr.unregister_if_current(rid, old, user) is True  # type: ignore[arg-type]
+    mgr._chat_relay.notify_mobiles.assert_not_awaited()  # type: ignore[attr-defined]
+    mgr._relay.notify_frontends.assert_not_awaited()  # type: ignore[attr-defined]
+
+
+async def test_in_process_teardown_survives_a_redis_timeout() -> None:
+    """L3: the registry entry, listener and send lock go even if Redis hangs."""
+    mgr = _manager()
+    rid, user = uuid4(), uuid4()
+    sock = object()
+    await mgr.register(runner_id=rid, websocket=sock, user_id=user)  # type: ignore[arg-type]
+    mgr._state_repo.delete_connection_state = AsyncMock(side_effect=TimeoutError())
+
+    assert await mgr.unregister_if_current(rid, sock, user) is True  # type: ignore[arg-type]
+
+    assert mgr.get_websocket(rid) is None
+    mgr._stop_inbound_listener.assert_awaited()  # type: ignore[attr-defined]
+    assert str(rid) not in mgr._ws_send_locks

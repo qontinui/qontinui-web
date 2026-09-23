@@ -1143,3 +1143,43 @@ async def test_a_secondary_claim_waits_for_a_primarys_uncommitted_pointer(env) -
 
     assert claimed is False, "the claim displaced a primary that committed first"
     assert (await _device(env)).ws_session_id == primary_pk
+
+
+async def test_a_secondary_claim_between_primary_writes_cannot_split_port_and_pointer(
+    env,
+) -> None:
+    """L2: a secondary claim committing between the primary's device upsert and
+    its pointer write must not leave Device.port = the secondary's port."""
+    lone = await _connect(env, _info(port=9877, key="runner:mid", role="secondary"))
+    sec_pk = (await _rows(env))[0].id
+    # Owner gone from the pointer (e.g. swept), secondary still connected.
+    async with env.maker() as db:
+        await db.execute(
+            text("UPDATE coord.devices SET ws_session_id = NULL WHERE device_id = :d"),
+            {"d": str(env.device_id)},
+        )
+        await db.commit()
+    env.manager.sockets.pop(str(env.device_id), None)
+
+    real_register = devices_ws.device_crud.register_device
+
+    async def _upsert_then_secondary_claims(*a: Any, **k: Any) -> Any:
+        row = await real_register(*a, **k)
+        async with env.maker() as db:
+            assert await device_crud.claim_ws_session_if_unheld(
+                db, device_id=env.device_id, connection_pk=sec_pk
+            )
+        return row
+
+    with patch.object(
+        devices_ws.device_crud, "register_device", _upsert_then_secondary_claims
+    ):
+        await _connect(env, _info(port=9876, key="primary", role="primary"))
+
+    primary_pk = next(r.id for r in await _rows(env) if r.instance_role == "primary")
+    device = await _device(env)
+    assert device.ws_session_id == primary_pk
+    assert device.port == 9876, (
+        "port names the secondary while the pointer names the primary"
+    )
+    assert lone.closed is None
