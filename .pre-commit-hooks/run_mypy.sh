@@ -37,12 +37,20 @@ export PYTHON_KEYRING_BACKEND="${PYTHON_KEYRING_BACKEND:-keyring.backends.null.K
 # that rejects `timeout N cmd`), and stock macOS has none — both answer
 # `--version` with a failure, and there the install runs unbounded.
 PROVISION_TIMEOUT="${QONTINUI_MYPY_PROVISION_TIMEOUT_SECS:-900}"
+# `-k 30` escalates to SIGKILL 30s after the TERM, so a child that ignores
+# TERM cannot outlive the bound. Homebrew coreutils installs GNU timeout as
+# `gtimeout`, which is tried second. Tradeoff: GNU timeout runs the install in
+# its own process group, so a Ctrl-C at the terminal may not reach it; the
+# bound still ends it.
 bounded() {
-  if timeout --version >/dev/null 2>&1; then
-    timeout "$PROVISION_TIMEOUT" "$@"
-  else
-    "$@"
-  fi
+  local t
+  for t in timeout gtimeout; do
+    if "$t" --version >/dev/null 2>&1; then
+      "$t" -k 30 "$PROVISION_TIMEOUT" "$@"
+      return
+    fi
+  done
+  "$@"
 }
 
 if ! poetry run python -c "import mypy, qontinui_schemas.generated" >/dev/null 2>&1; then
@@ -55,7 +63,7 @@ if ! poetry run python -c "import mypy, qontinui_schemas.generated" >/dev/null 2
     echo "[mypy-hook] WARNING: python 3.12 not found; using poetry default (CI uses 3.12)" >&2
   rc=0
   bounded poetry install --no-interaction --no-ansi 1>&2 || rc=$?
-  if [ "$rc" -eq 124 ]; then
+  if [ "$rc" -eq 124 ] || [ "$rc" -eq 137 ]; then
     echo "[mypy-hook] ERROR: poetry install exceeded ${PROVISION_TIMEOUT}s and was killed." >&2
     echo "[mypy-hook] Re-run by hand with -vv to see where it stalls:" >&2
     echo "[mypy-hook]   (cd backend && poetry install -vv)" >&2
