@@ -13,28 +13,93 @@
  * of truth): coord's `stuck_pr_watcher` detector 6 upserts one live
  * `coord.alerts` row per (repo, red-episode) and self-resolves it when
  * main goes green, so the banner can never disagree with coord. Fetched
- * over the same `/api/v1/operations/alerts` path the alerts page uses,
- * on the same poll cadence.
+ * over `/api/v1/operations/alerts?kind=red_main`, a raw pass-through of
+ * coord's `/coord/alerts` read API.
  *
  * Deliberately NOT dismissable and NOT a toast — it clears only when the
  * alert row resolves.
  *
- * Phase 4b adds the "Spawn fix session" button: an operator-driven
- * remediation lane that opens a visible fix session on the operator's
- * device for the repo's current red episode. Its enabled/disabled state is
- * derived SOLELY from the same alert row (`detail.fix_session` +
- * `detail.auto_fix_red_main`), so the button can never disagree with coord
- * about whether a remediation is already in flight.
+ * ## It reports who is fixing it; it does not offer to fix it
+ *
+ * Plan `2026-09-18-notifications-are-agent-actions-and-alerts-are-agent-work`
+ * Phase 8 deleted the "Spawn fix session" button this banner used to carry:
+ * spawning a fix is operational work, and operational work is agents' work
+ * (`decision_record/operational-work-is-autonomous`). What the operator needs
+ * from a red main is to SEE it and to see whether an agent has it, so each
+ * row shows the alert's claim — coord's `claimed` / `claim` fields — as one
+ * of three states:
+ *
+ *   - **claimed** — `claimed: true`: an agent holds a LIVE lease, and the row
+ *     names which one;
+ *   - **unclaimed** — `claimed: false`: coord read the lease columns and found
+ *     no live lease (an expired lease reads as unclaimed, coord's own rule);
+ *   - **unknown** — anything else, for two different reasons the chip's
+ *     tooltip names: coord sent `claimed: null` (or `claims_scrape_up: false`
+ *     on the body) because it could not READ the lease columns or decode a
+ *     row's claim (`fleet_health.rs` `alert_row_claim`), or the coord build
+ *     predates alert claims and sends no `claimed` at all. Neither is
+ *     "unclaimed": a claim nobody could read says nothing about who is
+ *     working on it
+ *     (`verification-and-evidence` `unknown-must-not-render-as-a-default`).
+ *
+ * Coord's own remediation state (`detail.fix_session`) is still shown, read
+ * only, when one is active — an auto-rerun or a spawned fix session is a fact
+ * about the episode an operator should not have to go looking for.
  */
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { AlertTriangle, Loader2 } from "lucide-react";
-import type { CoordAlertRow } from "@/components/admin/coord/alertStatus";
+import { AlertTriangle } from "lucide-react";
 import { httpClient } from "@/services/service-factory";
-import { redMainSpawnFixUrl } from "@/components/operations/utils";
+
+/**
+ * An agent's lease on one alert, as coord serves it on `/coord/alerts` rows
+ * (plan `2026-09-18-notifications-are-agent-actions-and-alerts-are-agent-work`
+ * Phase 2). `claimed_by` is the claimant's principal label (`agent:…`,
+ * `session:…`, `device:…`).
+ */
+export interface CoordAlertClaim {
+  claimed_by?: string | null;
+  claimed_at?: string | null;
+  claim_expires_at?: string | null;
+}
+
+/**
+ * The shape of one `coord.alerts` row as the web proxy serves it. Lives here
+ * because this banner is the operator UI's one remaining reader of the raw
+ * alert rows — the alerts page that used to own it is deleted.
+ *
+ * `alert_key` is present because it is the row's DEDUP IDENTITY (the React key,
+ * the thing coord upserts on) — it is deliberately NOT a display string.
+ *
+ * `claimed` and `claim` are OPTIONAL and NULLABLE on purpose: a coord build
+ * that predates alert claims sends neither, and a current one sends
+ * `claimed: null, claim: null` when it could not read the lease. Both must
+ * read as "claim state unknown", never as "unclaimed".
+ */
+export interface CoordAlertRow {
+  id?: number | string;
+  alert_key: string;
+  severity?: string;
+  /** Coord's raw `coord.alerts.kind` — a machine vocabulary, never displayed. */
+  kind?: string;
+  device_id?: string | null;
+  summary?: string;
+  first_seen_at?: string;
+  last_seen_at?: string;
+  occurrences?: number;
+  resolved_at?: string | null;
+  detail?: Record<string, unknown>;
+  /**
+   * Whether a live (unexpired) lease is held. `null` = coord could not read or
+   * decode the lease (UNKNOWN); absent = an older coord (UNKNOWN too).
+   */
+  claimed?: boolean | null;
+  /** The live lease while `claimed` is `true`; `null` otherwise. */
+  claim?: CoordAlertClaim | null;
+}
 
 const API = "/api/v1/operations";
-/** Same cadence as the coord alerts page. */
+/** The banner's poll cadence. */
 const POLL_INTERVAL_MS = 10_000;
 
 const RED_MAIN_KEY_PREFIX = "red_main:";
@@ -62,8 +127,6 @@ const EMPTY_POLLS_BEFORE_CLEAR = 3;
  */
 const STALE_AFTER_MS = 2 * POLL_INTERVAL_MS;
 
-const SPAWN_LABEL = "Spawn fix session";
-const RETRY_LABEL = "Retry fix session";
 const RUNNING_LABEL = "fix session running";
 const SELF_HEAL_LABEL = "auto-rerun in flight";
 
@@ -75,9 +138,9 @@ const SELF_HEAL_LABEL = "auto-rerun in flight";
  *     — a spawned fix session in that state;
  *   - a self-heal string like `"auto-rerun-failed-jobs:<run_id>"` — coord's
  *     own infra-cancel re-run is in flight (any non-`"none"` string).
- * Anything missing or malformed normalizes to `{kind:"none"}` so a bad
- * payload can never hide the manual spawn control (coord still 409-guards a
- * duplicate).
+ * Anything missing or malformed normalizes to `{kind:"none"}`: the banner
+ * then shows no remediation note, which is the absence of a claim about
+ * remediation rather than a claim that none is running.
  */
 export interface FixSessionState {
   kind: "none" | "self_heal" | "running" | "stalled" | "failed";
@@ -88,6 +151,29 @@ export interface FixSessionState {
   /** Raw self-heal reference, e.g. `auto-rerun-failed-jobs:<run_id>`. */
   raw?: string;
 }
+
+/**
+ * Who holds an agent's claim on a red-main episode — see the module doc for
+ * why `unknown` is its own state.
+ */
+export type AlertClaimState =
+  | {
+      kind: "unknown";
+      /**
+       * `unreadable` — coord answered but could not read the lease
+       * (`claimed: null`, or `claims_scrape_up: false` on the body);
+       * `not-reported` — the coord build sends no claim fields at all.
+       */
+      cause: "unreadable" | "not-reported";
+    }
+  | { kind: "unclaimed" }
+  | {
+      kind: "claimed";
+      /** Claimant principal label; absent when coord said `claimed` without naming one. */
+      claimedBy?: string;
+      claimedAt?: string;
+      expiresAt?: string;
+    };
 
 /** One red-main episode, parsed from its `coord.alerts` row. */
 export interface RedMainAlert {
@@ -101,12 +187,8 @@ export interface RedMainAlert {
   since?: string;
   /** Remediation state (alert `detail.fix_session`). */
   fixSession: FixSessionState;
-  /**
-   * Resolved `auto_fix_red_main` opt-in for this repo (alert
-   * `detail.auto_fix_red_main`). When off (or absent), the operator is the
-   * only remediation path, so the manual spawn button is always available.
-   */
-  autoFixRedMain: boolean;
+  /** Whether an agent holds the alert's claim, and who. */
+  claim: AlertClaimState;
 }
 
 /**
@@ -128,41 +210,62 @@ export function parseFixSession(raw: unknown): FixSessionState {
       };
     }
   }
-  // Missing / malformed → no active remediation (button stays available).
+  // Missing / malformed → no active remediation to report.
   return { kind: "none" };
 }
 
+function nonEmptyString(v: unknown): string | undefined {
+  return typeof v === "string" && v.length > 0 ? v : undefined;
+}
+
 /**
- * Derive the spawn button's base state (before any in-flight/optimistic
- * local override) from an alert. Pure — exported for the vitest suite.
+ * Read an alert row's claim. Pure — exported for the vitest suite.
  *
- * ENABLED when `auto_fix_red_main` is off for the repo (the operator is the
- * only lane), OR no remediation is active (`fix_session` = "none"), OR a
- * prior session has `stalled`/`failed` (a retry is warranted). DISABLED with
- * an explanatory label while a session is `running` or coord's own auto-rerun
- * is in flight.
+ * `claimed` is coord's own verdict — it compares `claim_expires_at` with its
+ * clock — so it is the ONLY thing that decides claimed vs unclaimed:
+ * `true` → claimed, `false` → unclaimed. `null` is coord saying it could not
+ * read the lease, and `claimsScrapeUp === false` (the response body's flag)
+ * is the same statement for every row at once; both are UNKNOWN. A row with
+ * no `claimed` at all comes from a coord that predates claims: UNKNOWN too.
+ * Nothing here infers a verdict from `claim` alone — no coord build produces
+ * a lease without a verdict, and guessing at one would be the default this
+ * banner is not allowed to render.
  */
-export function fixButtonState(a: RedMainAlert): {
-  enabled: boolean;
-  label: string;
-} {
-  if (!a.autoFixRedMain) return { enabled: true, label: SPAWN_LABEL };
-  switch (a.fixSession.kind) {
-    case "none":
-      return { enabled: true, label: SPAWN_LABEL };
-    case "stalled":
-    case "failed":
-      return { enabled: true, label: RETRY_LABEL };
-    case "running":
-      return { enabled: false, label: RUNNING_LABEL };
-    case "self_heal":
-      return { enabled: false, label: SELF_HEAL_LABEL };
+export function parseAlertClaim(
+  row: Pick<CoordAlertRow, "claimed" | "claim">,
+  claimsScrapeUp?: boolean | null
+): AlertClaimState {
+  if (claimsScrapeUp === false || row.claimed === null) {
+    return { kind: "unknown", cause: "unreadable" };
   }
+  if (row.claimed === true) {
+    const claim =
+      row.claim && typeof row.claim === "object" ? row.claim : undefined;
+    return {
+      kind: "claimed",
+      claimedBy: nonEmptyString(claim?.claimed_by),
+      claimedAt: nonEmptyString(claim?.claimed_at),
+      expiresAt: nonEmptyString(claim?.claim_expires_at),
+    };
+  }
+  if (row.claimed === false) return { kind: "unclaimed" };
+  return { kind: "unknown", cause: "not-reported" };
 }
 
 /** Compact display form of a fix-session agent id. */
 export function truncateAgentId(id: string): string {
   return id.length <= 12 ? id : `${id.slice(0, 8)}…`;
+}
+
+/**
+ * Compact display form of a principal label: the `agent:` / `session:` /
+ * `device:` prefix is kept, since it says what KIND of claimant this is, and
+ * only the id after it is shortened. Pure — exported for the vitest suite.
+ */
+export function compactPrincipal(label: string): string {
+  const colon = label.indexOf(":");
+  if (colon < 0) return truncateAgentId(label);
+  return `${label.slice(0, colon + 1)}${truncateAgentId(label.slice(colon + 1))}`;
 }
 
 /**
@@ -172,7 +275,11 @@ export function truncateAgentId(id: string): string {
  * malformed detail payload can never hide an episode. Pure — exported
  * for the vitest suite.
  */
-export function parseRedMainAlerts(alerts: unknown): RedMainAlert[] {
+export function parseRedMainAlerts(
+  alerts: unknown,
+  /** The response body's `claims_scrape_up`; `false` makes every claim UNKNOWN. */
+  claimsScrapeUp?: boolean | null
+): RedMainAlert[] {
   if (!Array.isArray(alerts)) return [];
   const out: RedMainAlert[] = [];
   for (const a of alerts as CoordAlertRow[]) {
@@ -199,7 +306,7 @@ export function parseRedMainAlerts(alerts: unknown): RedMainAlert[] {
       blockedPrCount,
       since: a.first_seen_at,
       fixSession: parseFixSession(detail.fix_session),
-      autoFixRedMain: detail.auto_fix_red_main === true,
+      claim: parseAlertClaim(a, claimsScrapeUp),
     });
   }
   // Stable per-repo order so the banner stack never reshuffles between polls.
@@ -239,109 +346,91 @@ export function redMainHeadline(a: RedMainAlert, nowMs: number): string {
 }
 
 /**
- * Best-effort extraction of a human message from coord's error response.
- * Coord's 409 body is JSON like `{"error":"fix session already running"}`;
- * fall back to the raw text (or a status line) when it isn't parseable.
+ * The claim chip on one banner row: whether an agent holds the episode, and
+ * which one. Pure render of {@link AlertClaimState}.
  */
-function errorMessage(status: number, body: string): string {
-  const text = body.trim();
-  if (text.startsWith("{")) {
-    try {
-      const parsed = JSON.parse(text) as Record<string, unknown>;
-      const msg = parsed.error ?? parsed.detail ?? parsed.message;
-      if (typeof msg === "string" && msg.length > 0) return msg;
-    } catch {
-      // fall through to raw text
-    }
-  }
-  return text.length > 0 ? text : `HTTP ${status}`;
-}
-
-/**
- * The operator-driven "Spawn fix session" control for one red episode.
- * POSTs through the web→coord operations proxy (same mechanism as the
- * sibling merge-orchestration mutation controls). On success it optimistically
- * shows the running state + truncated agent id until the next alert poll
- * reflects the persisted `fix_session`; on a 409/error it surfaces coord's
- * message inline and re-enables.
- */
-function SpawnFixButton({ alert }: { alert: RedMainAlert }) {
-  const [submitting, setSubmitting] = useState(false);
-  const [spawnedAgentId, setSpawnedAgentId] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
-
-  const handleClick = useCallback(async () => {
-    setError(null);
-    setSubmitting(true);
-    try {
-      const res = await httpClient.fetch(redMainSpawnFixUrl(alert.repo), {
-        method: "POST",
-        body: JSON.stringify({}),
-      });
-      if (!res.ok) {
-        const body = await res.text().catch(() => "");
-        throw new Error(errorMessage(res.status, body));
-      }
-      const data = (await res.json()) as { agent_id?: string };
-      // Optimistic: the alert row won't carry the new `fix_session` until the
-      // next poll, so pin the running state locally in the meantime.
-      setSpawnedAgentId(typeof data.agent_id === "string" ? data.agent_id : "");
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
-    } finally {
-      setSubmitting(false);
-    }
-  }, [alert.repo]);
-
-  // Optimistic success — show the running badge + truncated id.
-  if (spawnedAgentId !== null) {
+function ClaimBadge({ claim }: { claim: AlertClaimState }) {
+  if (claim.kind === "claimed") {
+    const by = claim.claimedBy;
     return (
       <span
-        className="badge badge-warning"
-        data-testid="red-main-fix-running"
-        role="status"
+        className="badge badge-info"
+        data-testid="red-main-claim"
+        data-claim-state="claimed"
+        title={[
+          by ? `Claimed by ${by}` : "Claimed — coord did not name the claimant",
+          claim.claimedAt ? `since ${claim.claimedAt}` : null,
+          claim.expiresAt ? `lease expires ${claim.expiresAt}` : null,
+        ]
+          .filter(Boolean)
+          .join(", ")}
       >
-        {RUNNING_LABEL}
-        {spawnedAgentId ? ` · ${truncateAgentId(spawnedAgentId)}` : ""}
+        {by
+          ? `claimed by ${compactPrincipal(by)}`
+          : "claimed (claimant not named)"}
       </span>
     );
   }
-
-  const base = fixButtonState(alert);
-  const disabled = submitting || !base.enabled;
-  const label = submitting ? "Spawning…" : base.label;
-
-  return (
-    <span className="inline-flex items-center gap-2">
-      <button
-        type="button"
-        className="btn-primary btn-sm"
-        onClick={handleClick}
-        disabled={disabled}
-        aria-disabled={disabled}
-        data-testid="red-main-spawn-fix"
-        title={
-          base.enabled
-            ? undefined
-            : base.label === SELF_HEAL_LABEL
-              ? "Coord's automatic re-run is already remediating this episode."
-              : "A fix session is already running for this red episode."
-        }
+  if (claim.kind === "unclaimed") {
+    return (
+      <span
+        className="badge badge-warning"
+        data-testid="red-main-claim"
+        data-claim-state="unclaimed"
+        title="No agent holds a claim on this red main yet."
       >
-        {submitting && <Loader2 className="h-3 w-3 animate-spin" aria-hidden />}
-        {label}
-      </button>
-      {error && (
-        <span
-          className="badge badge-warning"
-          data-testid="red-main-spawn-fix-error"
-          role="alert"
-        >
-          {error}
-        </span>
-      )}
+        no agent has claimed it
+      </span>
+    );
+  }
+  return (
+    <span
+      className="badge badge-secondary"
+      data-testid="red-main-claim"
+      data-claim-state="unknown"
+      data-claim-unknown-cause={claim.cause}
+      title={
+        claim.cause === "unreadable"
+          ? "Coord could not read this alert's claim state (the lease could not be read or decoded), so whether an agent is working on it is unknown — not that nobody is."
+          : "This coord build does not report alert claims, so whether an agent is working on it is unknown — not that nobody is."
+      }
+    >
+      claim unknown
     </span>
   );
+}
+
+/** Coord's own remediation, when one is active. Read only. */
+function RemediationNote({ fixSession }: { fixSession: FixSessionState }) {
+  switch (fixSession.kind) {
+    case "none":
+      return null;
+    case "self_heal":
+      return (
+        <span
+          className="text-xs text-red-100"
+          data-testid="red-main-remediation"
+          title={fixSession.raw}
+        >
+          {SELF_HEAL_LABEL}
+        </span>
+      );
+    case "running":
+      return (
+        <span className="text-xs text-red-100" data-testid="red-main-remediation">
+          {RUNNING_LABEL}
+          {fixSession.agentId ? ` · ${truncateAgentId(fixSession.agentId)}` : ""}
+        </span>
+      );
+    case "stalled":
+    case "failed":
+      return (
+        <span className="text-xs text-red-100" data-testid="red-main-remediation">
+          fix session {fixSession.kind}
+          {fixSession.agentId ? ` · ${truncateAgentId(fixSession.agentId)}` : ""}
+        </span>
+      );
+  }
 }
 
 export function RedMainBanner() {
@@ -385,15 +474,16 @@ export function RedMainBanner() {
       const body = await httpClient.get<unknown>(
         `${API}/alerts?include_resolved=false&kind=${RED_MAIN_KIND}`
       );
-      // Tolerate both `{alerts: [...]}` and bare-list shapes (same as the
-      // alerts page).
-      const alerts = Array.isArray(body)
-        ? body
-        : ((body as { alerts?: CoordAlertRow[] })?.alerts ?? []);
-      const parsed = parseRedMainAlerts(alerts);
+      // Tolerate both `{alerts: [...]}` and bare-list shapes (two coord
+      // vintages).
+      const envelope = Array.isArray(body)
+        ? undefined
+        : (body as { alerts?: CoordAlertRow[]; claims_scrape_up?: boolean | null });
+      const alerts = Array.isArray(body) ? body : (envelope?.alerts ?? []);
       // The answer arrived, so what the banner shows is confirmed as of NOW —
       // whether it confirmed a red main or an empty result.
       const at = Date.now();
+      const parsed = parseRedMainAlerts(alerts, envelope?.claims_scrape_up);
       setLastSuccessAt(at);
       setNowMs(at);
       if (parsed.length > 0) {
@@ -410,8 +500,8 @@ export function RedMainBanner() {
     } catch {
       // Best-effort: keep the last known state on a transient fetch error
       // — a flaky poll must neither flash the banner away during a real
-      // outage nor surface its own error UI here (the alerts page does
-      // that). The next poll retries. A failed poll is NOT an empty one, so
+      // outage nor surface its own error UI here (the staleness note below
+      // is how a failing read shows). The next poll retries. A failed poll is NOT an empty one, so
       // the streak is left untouched — and `lastSuccessAt` is NOT advanced,
       // which is what makes the staleness note appear.
     } finally {
@@ -499,8 +589,9 @@ export function RedMainBanner() {
               {sinceLabel(new Date(lastSuccessAt).toISOString(), nowMs)} ago)
             </span>
           )}
+          <RemediationNote fixSession={a.fixSession} />
           <span className="ml-auto">
-            <SpawnFixButton alert={a} />
+            <ClaimBadge claim={a.claim} />
           </span>
         </div>
       ))}

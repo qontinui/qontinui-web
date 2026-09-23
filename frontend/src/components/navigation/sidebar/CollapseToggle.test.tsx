@@ -30,15 +30,18 @@ function renderToggle(props: Partial<CollapseToggleProps> = {}) {
 describe("CollapseToggle", () => {
   it("is a plain collapse toggle by default", () => {
     renderToggle();
-    const button = screen.getByRole("button");
-    expect(button).toHaveTextContent("Collapse");
+    const button = screen.getByRole("button", { name: "Collapse sidebar" });
+    // Icon-only in the footer row: the name is carried by aria-label alone.
+    expect(button).not.toHaveTextContent(/\S/);
     expect(button).not.toHaveAttribute("aria-expanded");
     expect(button).not.toHaveAttribute("aria-controls");
   });
 
   it("carries the caller's wording instead", () => {
     renderToggle({ label: "Close menu" });
-    expect(screen.getByRole("button")).toHaveTextContent("Close menu");
+    expect(
+      screen.getByRole("button", { name: "Close menu" })
+    ).toHaveAccessibleName("Close menu");
   });
 
   it("announces the drawer it controls while that drawer is open", () => {
@@ -46,7 +49,10 @@ describe("CollapseToggle", () => {
       label: "Close menu",
       controlsDrawer: { open: true, id: "shell-sidebar-drawer" },
     });
-    const button = screen.getByRole("button");
+    const button = screen.getByRole("button", { name: "Close menu" });
+    // The drawer's only visible close control keeps its wording on screen —
+    // a touch user never sees the hover tooltip.
+    expect(button).toHaveTextContent("Close menu");
     expect(button).toHaveAttribute("aria-expanded", "true");
     expect(button).toHaveAttribute("aria-controls", "shell-sidebar-drawer");
   });
@@ -57,8 +63,10 @@ describe("CollapseToggle", () => {
       label: "Open menu",
       controlsDrawer: { open: false, id: "shell-sidebar-drawer" },
     });
-    const button = screen.getByRole("button");
-    expect(button).toHaveAccessibleName("Open menu");
+    const button = screen.getByRole("button", { name: "Open menu" });
+    // The tablet rail: collapsed wins over drawer mode, so the button stays an
+    // icon — a text label would overflow the 64px column.
+    expect(button).not.toHaveTextContent(/\S/);
     expect(button).toHaveAttribute("aria-expanded", "false");
     // The drawer is unmounted when closed, so naming its id here would point
     // at nothing.
@@ -67,7 +75,9 @@ describe("CollapseToggle", () => {
 
   it("fires the caller's handler", async () => {
     const { onToggle } = renderToggle();
-    await userEvent.click(screen.getByRole("button"));
+    await userEvent.click(
+      screen.getByRole("button", { name: "Collapse sidebar" })
+    );
     expect(onToggle).toHaveBeenCalledTimes(1);
   });
 });

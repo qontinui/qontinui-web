@@ -15,16 +15,13 @@ import { useSnapshotCapture } from "./_hooks/useSnapshotCapture";
 import { useSnapshotAnnotations } from "./_hooks/useSnapshotAnnotations";
 import { useSnapshotSpecs } from "./_hooks/useSnapshotSpecs";
 import { useSnapshotDerivedData } from "./_hooks/useSnapshotDerivedData";
+import { useRunnerTarget } from "@/contexts/active-runner-context";
+import { targetRunnerName } from "@/lib/runner/target";
 
 export type { BrowserTab } from "./_hooks/useExtensionConnection";
 
-interface SnapshotTestGeneratorProps {
-  runnerUrl?: string;
-}
-
-export function SnapshotTestGenerator({
-  runnerUrl = "http://localhost:9876",
-}: SnapshotTestGeneratorProps) {
+export function SnapshotTestGenerator() {
+  const target = useRunnerTarget();
   const pageSpec = useDiscoveredSpec("snapshot-test-generator");
   const postCaptureSpec = useDiscoveredSpec("snapshot-post-capture");
   const specsToLoad = useMemo<Record<string, SpecConfig>>(() => {
@@ -61,10 +58,9 @@ export function SnapshotTestGenerator({
   });
   const [specs, setSpecs] = useLocalStorage<SpecGroup[]>("stg:specs", []);
 
-  const connection = useExtensionConnection(runnerUrl);
+  const connection = useExtensionConnection();
 
   const capture = useSnapshotCapture({
-    runnerUrl,
     selectedTabId: connection.selectedTabId,
     snapshotData,
     setElements,
@@ -74,7 +70,6 @@ export function SnapshotTestGenerator({
   });
 
   const { isSavingAnnotation, handleSaveAnnotation } = useSnapshotAnnotations({
-    runnerUrl,
     setAnnotations,
   });
 
@@ -134,7 +129,7 @@ export function SnapshotTestGenerator({
         hasPreviousSnapshot={!!capture.previousSnapshot}
         onCapture={capture.handleCapture}
         onCompare={capture.handleCompare}
-        runnerUrl={runnerUrl}
+        runnerLabel={targetRunnerName(target) ?? "Active runner"}
         browserTabs={connection.browserTabs}
         selectedTabId={connection.selectedTabId}
         onSelectTab={connection.handleSelectTab}

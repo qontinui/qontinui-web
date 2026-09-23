@@ -53,6 +53,11 @@ export default defineConfig({
       // tests (e.g. the style-gate snapshot normalizer). The Playwright SPECS
       // (*.spec.ts) stay excluded below — only `*.test.ts` here is collected.
       "tests/e2e/**/*.test.ts",
+      // Same reason for the Spec CI harness: its waiver matchers decide what
+      // the gate lets through for every other PR, so they carry unit tests.
+      // Only `*.test.ts` is collected; the harness scripts themselves are
+      // run by the Spec CI workflow, not by vitest.
+      "tests/spec-ci/**/*.test.ts",
     ],
     // Exclude the Playwright e2e SPECS (they import @playwright/test and run
     // under `playwright test`, not vitest) but NOT the `*.test.ts` unit tests

@@ -51,8 +51,12 @@ remote-only ``runner:remote_terminal_response:{target_device_id}`` channel
 grant, such as the unsolicited ring it sends when a flow RESUME had withheld
 output — by that ``grant_jti``. The source's own ``request_id`` is never put
 on the wire to the target, because every watcher of the target shares that
-channel and two sources choosing equal ids would otherwise cross-bind.
-Anything else on the channel is ignored. The Redis registry —
+channel and two sources choosing equal ids would otherwise cross-bind. One
+frame on that channel is matched by NEITHER: ``runner_disconnected``, which
+``RunnerWebSocketManager.unregister`` publishes device-wide when the target's
+own socket goes — it settles every attachment this socket holds on that
+target, because an attach the target can no longer answer has nothing else
+left to settle it. Anything else on the channel is ignored. The Redis registry —
 ``remote_attach:claim:{grant_jti}`` → ``source_device_id`` (the atomic
 single-use claim), ``remote_attach:grant:{grant_jti}`` → the full attachment
 record, and ``remote_attach:{target_device_id}:{terminal_id}`` →
@@ -302,6 +306,63 @@ TARGET_REFUSAL_FRAME_TYPES: frozenset[str] = frozenset(
 )
 
 # ---------------------------------------------------------------------------
+# ONE bounded re-present of an attach the target answered ``attach_grant_unknown``.
+# ---------------------------------------------------------------------------
+# The pass-through argument above stands, and this does NOT relax it: the code
+# still reaches the source unchanged, still un-namespaced, still fatal. What
+# changes is that the source is told ONCE LATER instead of once immediately —
+# and only for the single code where "unknown" is provably a RACE rather than a
+# verdict.
+#
+# The race, measured 2026-09-20 on ``merytshost``. A target learns of a grant
+# two ways: the push on ``qontinui.sessions.<tenant>.<device>.attach_request``,
+# and a catch-up ``GET /sessions/attach-requests`` on a 60 s timer
+# (qontinui-runner ``session/attach.rs``). Lose the push and the target's
+# ledger has no row for the jti until the next poll tick, so it answers
+# ``attach_grant_unknown`` — truthfully, about a grant coord has ALREADY
+# written and that lives 15 minutes. The source treats the code as fatal
+# (``FATAL_REMOTE_ERROR_CODES``), closes the pane, and every retry mints a
+# FRESH jti — so the poll tick that finally lands records a jti no later frame
+# ever presents again. The failure is permanent, not flaky, and it is the
+# fresh-jti retry that makes it so.
+#
+# Why this is the narrowest fix that answers it:
+#
+# * it re-presents the SAME ``grant_jti`` — the one the target's next poll will
+#   record. Minting a new one is the defect, not the remedy;
+# * ONE shot, never a loop. The second ``attach_grant_unknown`` for a grant
+#   takes the unchanged fatal path, so a genuinely dead grant still surfaces as
+#   a refusal — one delay later, well inside the source's own 20 s
+#   ``ATTACH_TIMEOUT``;
+# * only for a grant THIS RELAY verified (signature, ``sub_type``, source
+#   device, expiry) and still holds live and unbound on this socket. Never for
+#   ``attach_grant_expired`` — where the target and the relay agree the
+#   capability is spent — nor for a wrong-source refusal, nor for any other
+#   member of the closed set above, all of which are settled noes;
+# * it forges nothing: ``namespace_target_code`` still owns every code that
+#   reaches the source, and this branch mints no code of its own.
+#
+# What it does NOT buy. One re-present at ~3 s closes only the window where the
+# target's ledger catches up within that delay — the on-demand re-read landed in
+# qontinui-runner ``b74a09312``, which reads coord the moment an unknown jti is
+# presented. Against a target WITHOUT that build the rescuer is the 60 s poll,
+# and a single retry inside a 20 s budget covers at most a ~20/60 slice of the
+# tick even if it were spent entirely on waiting. It is a partial fix by
+# construction; the complete one is the target-side re-read.
+TARGET_CODE_ATTACH_GRANT_UNKNOWN = "attach_grant_unknown"
+
+# How long to wait before the single re-present.
+#
+# Bounded from above by the SOURCE's ``ATTACH_TIMEOUT`` of 20 s: the re-present
+# has to be forwarded, answered and routed back inside that budget or the
+# source has already given up and the frame buys nothing. 3 s leaves ~17 s for
+# the round trip, which is the whole point of picking a figure well under the
+# ceiling rather than one close to it. It is also long enough to be a genuine
+# second look on a target that re-reads coord on demand, where the answer turns
+# over in well under a second.
+ATTACH_REPRESENT_DELAY_SECONDS = 3.0
+
+# ---------------------------------------------------------------------------
 # The RELAY's own closed set of refusal codes.
 # ---------------------------------------------------------------------------
 # DERIVED, not transcribed. It used to be a hand-written literal list, and a
@@ -371,6 +432,14 @@ TARGET_MESSAGE_MAX = 512
 # What an unusable ``code`` becomes. Namespaced like everything else, so the
 # fallback cannot collide either.
 TARGET_CODE_FALLBACK = f"{TARGET_CODE_PREFIX}unknown"
+
+# Target frame types whose ROUTED receipt is logged at debug rather than info.
+# ``route_target_frame`` logs every frame it is handed (see its docstring);
+# ``terminal_output`` is the firehose — one frame per PTY write across every
+# terminal the target has — so it is the one type that must not be an info
+# line. Everything else on these channels is a lifecycle or RPC frame, rare
+# enough that an info line per frame is what makes the route auditable.
+_HIGH_VOLUME_TARGET_FRAMES = frozenset({"terminal_output"})
 
 
 def _prefix_is_disjoint_from_relay_codes() -> bool:
@@ -606,6 +675,21 @@ class _Attachment:
     # then; the return route and every post-attach frame key on this.
     terminal_id: str | None = None
     attached: bool = False
+    # The ``terminal_attach`` frame exactly as forwarded, minus nothing: the
+    # ONE bounded re-present re-sends THIS dict with a fresh wire
+    # ``request_id`` and ``timestamp`` and everything else untouched.
+    #
+    # Cached rather than rebuilt because the source frame is long gone by the
+    # time the target refuses, and three of its fields are load-bearing on
+    # replay: ``cols`` / ``rows`` (rebuilt as ``None`` they resize the pane) and
+    # ``have_offset`` (dropped, the target reads "this source has nothing",
+    # ships the whole ring tail, and the source writes a false DATA-LOSS marker
+    # into a pane that lost nothing). See ``_handle_attach``.
+    attach_frame: dict[str, Any] | None = None
+    # Armed at most once, and never reset: the second ``attach_grant_unknown``
+    # for this grant takes the unchanged fatal path. This is what makes the
+    # re-present one-shot rather than a retry loop.
+    represented: bool = False
 
     def expired(self, now: float | None = None) -> bool:
         return (now if now is not None else time.time()) >= self.exp
@@ -690,6 +774,14 @@ class _SourceSession:
     # rather than open (keep it forever, the leak being fixed).
     pending_buffer_deadline: dict[str, float] = field(default_factory=dict)
     listeners: dict[str, tuple[Any, asyncio.Task[None]]] = field(default_factory=dict)
+    # Targets whose ``terminal_subscribe`` this socket actually PUBLISHED, so
+    # the matching ``terminal_unsubscribe`` is sent for exactly those. The
+    # subscribe is locally gated and the unsubscribe is not (see
+    # ``_unsubscribe_runner``), so without this record an attach refused for
+    # a non-local target would decrement a count it never incremented —
+    # switching off a peer subscriber's output on the replica that holds the
+    # socket.
+    subscribed: set[str] = field(default_factory=set)
     send_lock: asyncio.Lock = field(default_factory=asyncio.Lock)
 
     def sweep_pending_buffer(self, now: float) -> list[str]:
@@ -1165,6 +1257,9 @@ class RemoteTerminalRelay:
         # omission.
         if msg.get("have_offset") is not None:
             frame["have_offset"] = msg.get("have_offset")
+        # A COPY, taken before the send: the re-present must re-offer what the
+        # source actually asked for, and the manager is handed the live dict.
+        att.attach_frame = dict(frame)
         sent = await session.manager.send_terminal(target_device_id, frame)
         if not sent:
             await self._drop_attachment(session, att)
@@ -1724,10 +1819,21 @@ class RemoteTerminalRelay:
         # subscriber, and keeps a counter, so one subscribe per listener is
         # matched by one unsubscribe in ``_stop_listener``.
         try:
-            await session.manager.relay.send_command_to_runner(
+            if await session.manager.relay.send_command_to_runner(
                 target_device_id,
                 {"type": "terminal_subscribe", "runner_id": target_device_id},
-            )
+            ):
+                if target_device_id in session.listeners:
+                    session.subscribed.add(target_device_id)
+                else:
+                    # The listener was torn down while the subscribe was in
+                    # flight (a ``runner_disconnected`` or a dead pubsub
+                    # reached ``_stop_listener`` / ``_listener_lost`` before
+                    # the record existed, so their unsubscribe was a no-op).
+                    # Nothing will tear this record down later — match the
+                    # increment now instead of orphaning it.
+                    session.subscribed.add(target_device_id)
+                    await self._unsubscribe_runner(session, target_device_id)
         except Exception as exc:  # noqa: BLE001 - the attach itself still stands
             logger.warning(
                 "remote_terminal_subscribe_failed",
@@ -1773,17 +1879,7 @@ class RemoteTerminalRelay:
         # connection desynchronise its reply stream.
         await asyncio.gather(task, return_exceptions=True)
         await self._close_pubsub(pubsub)
-        try:
-            await session.manager.relay.send_command_to_runner(
-                target_device_id,
-                {"type": "terminal_unsubscribe", "runner_id": target_device_id},
-            )
-        except Exception as exc:  # noqa: BLE001 - the runner may already be gone
-            logger.debug(
-                "remote_terminal_unsubscribe_failed",
-                target_device_id=target_device_id,
-                error=str(exc),
-            )
+        await self._unsubscribe_runner(session, target_device_id)
 
     async def _close_pubsub(self, pubsub: Any) -> None:
         try:
@@ -1861,10 +1957,53 @@ class RemoteTerminalRelay:
                 message="return route to the target was lost",
             )
         await self._close_pubsub(pubsub)
+        await self._unsubscribe_runner(session, target_device_id)
+
+    async def _unsubscribe_runner(
+        self, session: _SourceSession, target_device_id: str
+    ) -> None:
+        """Send the ``terminal_unsubscribe`` matching ``_ensure_listener``.
+
+        Sent only when ``_ensure_listener`` actually published this socket's
+        subscribe (``session.subscribed``): the runner's counter is shared by
+        every subscriber, so an unsubscribe with no matching subscribe would
+        take down a PEER's subscription rather than being a no-op. Saturation
+        at zero only protects the count when nobody else is subscribed.
+
+        When it is sent, it is published UNCONDITIONALLY — never gated on the
+        target's socket being registered in *this* process. The runner's
+        ``terminal_subscriber_count``
+        is a process-lifetime counter it never resets, and terminal-output
+        forwarding is latched on ``count > 0``, so a *dropped* unsubscribe is
+        not a benign miss: it leaves the target's device-wide terminal
+        firehose on for the rest of that runner's process life. The default
+        in-process gate dropped exactly the two cases that matter — the
+        target reconnecting to a *different* backend replica between attach
+        and detach, and a momentary local deregistration at detach time — so
+        the counter never came back down.
+
+        ``require_local_connection=False`` hands the frame to Redis pub/sub on
+        ``runner:commands:{rid}``, the channel the replica holding the socket
+        is subscribed to, so the unsubscribe reaches the runner wherever it is
+        terminated. Publishing to an absent runner is harmless: nothing is
+        subscribed to the channel, and the runner's decrement saturates at
+        zero.
+
+        The matching ``terminal_subscribe`` stays on the local gate on
+        purpose, mirroring the mobile watcher path: a dropped subscribe is
+        transient and the attach itself already fails closed when the target
+        is not local (``_forward`` -> ``send_terminal`` gates on the socket
+        being live here, with no opt-out), whereas a dropped unsubscribe is
+        permanent.
+        """
+        if target_device_id not in session.subscribed:
+            return
+        session.subscribed.discard(target_device_id)
         try:
             await session.manager.relay.send_command_to_runner(
                 target_device_id,
                 {"type": "terminal_unsubscribe", "runner_id": target_device_id},
+                require_local_connection=False,
             )
         except Exception as exc:  # noqa: BLE001 - the runner may already be gone
             logger.debug(
@@ -1949,7 +2088,41 @@ class RemoteTerminalRelay:
     async def route_target_frame(
         self, session: _SourceSession, target_device_id: str, frame: dict[str, Any]
     ) -> bool:
-        """Translate one TARGET frame for this source; False when it is not ours."""
+        """Translate one TARGET frame for this source; False when it is not ours.
+
+        The SUCCESS path had no log line of its own. Every other stage of a
+        remote attach announces itself, so the only way to tell a routed reply
+        from one that never arrived was to look for the ABSENCE of a downstream
+        effect — ``remote_terminal_listener_cancelled`` was the receipt that a
+        refusal had been routed, and reading an absence as a verdict is exactly
+        how the 20s-silent attach stayed invisible in the logs for its whole
+        life. This wrapper emits the positive receipt: the frame ARRIVED on
+        this session's channel, and whether it was CLAIMED (``routed``) or
+        belonged to another watcher.
+
+        ``frame_type`` is target-supplied, so it is truncated and admitted only
+        as a string — a log field is not a transfer channel (the same rule
+        ``namespace_target_code`` applies to ``code``).
+        """
+        raw_type = frame.get("type")
+        safe_type = raw_type[:TARGET_CODE_MAX] if isinstance(raw_type, str) else None
+        routed = await self._dispatch_target_frame(session, target_device_id, frame)
+        fields: dict[str, Any] = {
+            "source_device_id": session.device_id,
+            "target_device_id": target_device_id,
+            "frame_type": safe_type,
+            "routed": routed,
+        }
+        if safe_type in _HIGH_VOLUME_TARGET_FRAMES:
+            logger.debug("remote_terminal_target_frame_routed", **fields)
+        else:
+            logger.info("remote_terminal_target_frame_routed", **fields)
+        return routed
+
+    async def _dispatch_target_frame(
+        self, session: _SourceSession, target_device_id: str, frame: dict[str, Any]
+    ) -> bool:
+        """The type dispatch behind :meth:`route_target_frame`."""
         await self._reap_expired(session)
         frame_type = frame.get("type")
         # Declared once for the whole dispatch. The correlated arms below narrow
@@ -2163,6 +2336,16 @@ class RemoteTerminalRelay:
         if frame_type == "terminal_buffer_response":
             return await self._route_buffer_response(session, target_device_id, frame)
 
+        if frame_type == "runner_disconnected":
+            # A RELAY-authored notice, not a target refusal, which is why it
+            # sits OUTSIDE ``TARGET_REFUSAL_FRAME_TYPES`` and above it:
+            # ``RunnerWebSocketManager.unregister`` publishes it device-wide,
+            # so its payload is never target-supplied and there is nothing to
+            # namespace. It settles attachments rather than translating a
+            # frame. Order is documentation here, not behaviour — the two
+            # conditions are disjoint by construction.
+            return await self._route_runner_disconnected(session, target_device_id)
+
         if frame_type in TARGET_REFUSAL_FRAME_TYPES:
             # Membership, not equality: a target refusal typed
             # ``remote_terminal_error`` takes the SAME path as one typed
@@ -2174,6 +2357,62 @@ class RemoteTerminalRelay:
             return await self._route_target_error(session, target_device_id, frame)
 
         return False
+
+    async def _route_runner_disconnected(
+        self, session: _SourceSession, target_device_id: str
+    ) -> bool:
+        """Settle every attachment on a target whose relay socket just died.
+
+        ``RunnerWebSocketManager.unregister`` publishes ``runner_disconnected``
+        on the target's response channel — the channel this session's listener
+        is already subscribed to — and until this arm existed the frame fell
+        off the end of the dispatch unlogged. That silence is the whole defect:
+        an attach the target can no longer answer had NOTHING left to settle
+        it. ``_evict``'s ``att.request_id`` fallback (used only while
+        ``attached`` is False, i.e. while the attach was never answered) is the
+        piece that turns this into a correlated reply, so the source learns its
+        counterparty is gone instead of waiting out its own timeout.
+
+        The code is ``target_not_connected`` rather than a new spelling: it is
+        the same verdict the forward path answers for the same condition (a
+        dead device socket), and one condition reported under two codes is a
+        vocabulary the source cannot act on. ``listener_lost`` would be wrong
+        — the relay's return route is healthy; it is precisely how we learned
+        this.
+
+        Evicting the last attachment on the target makes ``_drop_attachment``
+        call ``_stop_listener``, which sends the ``terminal_unsubscribe``
+        matching ``_ensure_listener``'s ``terminal_subscribe``. That matters
+        beyond tidiness: an unsettled attach left the target's device-wide
+        output firehose switched ON for every terminal it owns, so each failed
+        attach permanently ratcheted the load that kills the next socket.
+
+        Returns False when this socket holds nothing on that target — the
+        frame is a device-wide notice every watcher sees, and one that settles
+        none of our attachments is not ours.
+        """
+        doomed = [
+            att
+            for att in session.grants.values()
+            if att.target_device_id == target_device_id
+        ]
+        if not doomed:
+            return False
+        logger.info(
+            "remote_terminal_target_disconnected",
+            source_device_id=session.device_id,
+            target_device_id=target_device_id,
+            attachments=len(doomed),
+            unanswered_attaches=sum(1 for att in doomed if not att.attached),
+        )
+        for att in doomed:
+            await self._evict(
+                session,
+                att,
+                code=CODE_TARGET_NOT_CONNECTED,
+                message="target device's relay socket disconnected",
+            )
+        return True
 
     async def _attachment_by_remote_mark(
         self, session: _SourceSession, target_device_id: str, frame: dict[str, Any]
@@ -2307,6 +2546,109 @@ class RemoteTerminalRelay:
         await self._send_to_source(session, payload)
         return True
 
+    def _should_represent_attach(self, att: _Attachment, frame: dict[str, Any]) -> bool:
+        """True when this refusal is the attach-request RACE, not a verdict.
+
+        Every clause is a reason a re-present would be wrong, so all of them
+        have to be false. See ``TARGET_CODE_ATTACH_GRANT_UNKNOWN`` above for
+        why the code test is an equality against ONE member of
+        ``TARGET_ERROR_CODES`` and not a set test: ``attach_grant_expired``,
+        ``attach_terminal_mismatch``, ``remote_attach_disabled`` and
+        ``session_not_local`` are settled noes and must still land as refusals
+        at once.
+
+        The code goes through ``namespace_target_code`` rather than being
+        compared raw, so the pass-through membership test is made in exactly
+        one place in this module and a target cannot reach this branch with
+        anything the source would not have been shown verbatim anyway.
+        """
+        if att.kind != KIND_ATTACH:
+            # A create grant's twin code is ``remote_create_grant_unknown`` and
+            # a create is not idempotent — re-presenting one risks a second PTY.
+            return False
+        if att.represented:
+            # ONE shot. The second refusal is the answer.
+            return False
+        if att.attached or att.attach_frame is None:
+            # Nothing pending to re-offer.
+            return False
+        if att.expired():
+            # The relay's own verifier now agrees with the target.
+            return False
+        return (
+            namespace_target_code(frame.get("code")) == TARGET_CODE_ATTACH_GRANT_UNKNOWN
+        )
+
+    def _schedule_attach_represent(
+        self, session: _SourceSession, att: _Attachment
+    ) -> None:
+        """Arm the single delayed re-present, holding a reference to the task."""
+        att.represented = True
+        task = asyncio.get_running_loop().create_task(
+            self._represent_attach(session, att)
+        )
+        self._background.add(task)
+        task.add_done_callback(self._background.discard)
+
+    async def _represent_attach(
+        self, session: _SourceSession, att: _Attachment
+    ) -> None:
+        """Re-send the cached ``terminal_attach`` once, under the SAME grant.
+
+        The delay is read from the module at call time so it is tunable (and
+        testable) without threading it through every caller.
+        """
+        await asyncio.sleep(ATTACH_REPRESENT_DELAY_SECONDS)
+        # Re-check, do not assume: the socket may have been released, the grant
+        # evicted, or the target may have answered the FIRST frame after all.
+        if session.grants.get(att.grant_jti) is not att:
+            return
+        if att.attached or att.attach_frame is None:
+            return
+        if att.expired():
+            await self._evict(
+                session, att, code=att.expired_code(), message="grant expired"
+            )
+            return
+        # A fresh WIRE id, never a fresh GRANT: the minted request id is the
+        # relay's own correlation handle and re-using it would let a duplicate
+        # answer to the first frame be credited to this one. ``grant_jti``,
+        # ``cols``, ``rows`` and ``have_offset`` are the source's and are
+        # re-offered untouched.
+        frame = dict(att.attach_frame)
+        minted = uuid4().hex
+        frame["request_id"] = minted
+        frame["timestamp"] = utc_now().isoformat()
+        session.pending_attach[minted] = (att.request_id, att.grant_jti)
+        try:
+            sent = await session.manager.send_terminal(att.target_device_id, frame)
+        except Exception as exc:  # noqa: BLE001 - a dead target is a refusal
+            logger.warning(
+                "remote_terminal_attach_represent_failed",
+                grant_jti=att.grant_jti,
+                target_device_id=att.target_device_id,
+                error=str(exc),
+            )
+            sent = False
+        if not sent:
+            session.pending_attach.pop(minted, None)
+            await self._evict(
+                session,
+                att,
+                code=CODE_TARGET_NOT_CONNECTED,
+                message="target device is not connected",
+            )
+            return
+        logger.info(
+            "remote_terminal_attach_represented",
+            source_device_id=session.device_id,
+            target_device_id=att.target_device_id,
+            grant_jti=att.grant_jti,
+            request_id=att.request_id,
+            forwarded_request_id=minted,
+            delay_seconds=ATTACH_REPRESENT_DELAY_SECONDS,
+        )
+
     async def _route_target_error(
         self, session: _SourceSession, target_device_id: str, frame: dict[str, Any]
     ) -> bool:
@@ -2314,17 +2656,22 @@ class RemoteTerminalRelay:
         att: _Attachment | None = None
         correlated: _Pending | None = None
         failed_attach = False
+        # Whether the correlation came off ``pending_attach`` specifically. The
+        # re-present below is an ATTACH remedy and must not fire for a refused
+        # create or a refused scrollback RPC, which ``failed_attach`` alone
+        # cannot tell apart from an attach.
+        pending_attach_rpc = False
         # All three pops go through ``_pop_correlated``, so an error arriving on
         # one target's channel under an id minted for another is not the answer
         # — the same rule ``terminal_created`` and ``terminal_attached`` apply,
         # on the same per-session dicts (review round 2, finding 4).
-        for pending, is_failed_attach in (
-            (session.pending_attach, True),
+        for pending, is_failed_attach, is_attach_rpc in (
+            (session.pending_attach, True, True),
             # A refused create leaves nothing registered either — the target
             # spawned no PTY, so the grant on this socket is garbage for the
             # same reason a refused attach's is.
-            (session.pending_create, True),
-            (session.pending_buffer, False),
+            (session.pending_create, True, False),
+            (session.pending_buffer, False, False),
         ):
             popped = self._pop_correlated(
                 session,
@@ -2336,6 +2683,7 @@ class RemoteTerminalRelay:
             if popped is not None:
                 correlated, att = popped
                 failed_attach = is_failed_attach
+                pending_attach_rpc = is_attach_rpc
                 break
         if att is None:
             # ``_pop_correlated`` has THREE outcomes and this is the third:
@@ -2352,6 +2700,10 @@ class RemoteTerminalRelay:
             # working pane (review round 4, item 2).
             correlated = None
             failed_attach = False
+            # Reset for the same reason: the pop that set it resolved nothing,
+            # and the fallback below re-resolves ``att`` from a TARGET-SUPPLIED
+            # ``grant_jti`` — which is not a pending attach RPC of ours.
+            pending_attach_rpc = False
             if _is_remote_marked(frame):
                 # Only a frame the target marked as a remote refusal may fall
                 # back to the terminal route; a mobile watcher's own
@@ -2361,6 +2713,22 @@ class RemoteTerminalRelay:
                 )
         if att is None:
             return False
+        if pending_attach_rpc and self._should_represent_attach(att, frame):
+            # The attach-request RACE, not a verdict: hold the pane, re-offer
+            # the SAME grant once, and let the SECOND refusal (if there is one)
+            # take the unchanged fatal path below. Nothing is sent to the
+            # source and nothing is torn down — the grant, its Redis claim and
+            # the listener all stay exactly as the first forward left them.
+            logger.info(
+                "remote_terminal_attach_grant_unknown_represent_armed",
+                source_device_id=session.device_id,
+                target_device_id=att.target_device_id,
+                grant_jti=att.grant_jti,
+                request_id=att.request_id,
+                delay_seconds=ATTACH_REPRESENT_DELAY_SECONDS,
+            )
+            self._schedule_attach_represent(session, att)
+            return True
         message = frame.get("message")
         if not isinstance(message, str) or not message.strip():
             message = "target refused the remote frame"

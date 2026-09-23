@@ -13,7 +13,7 @@ export interface CollapseToggleProps {
   /**
    * What the control does here, when that is not "collapse the sidebar".
    * Below `lg` the same control opens and closes the overlay drawer, and
-   * "Collapse" would describe an action that width has no equivalent of.
+   * "Collapse sidebar" would describe an action that width has no equivalent of.
    */
   label?: string;
   /**
@@ -24,6 +24,14 @@ export interface CollapseToggleProps {
   controlsDrawer?: { open: boolean; id: string };
 }
 
+/**
+ * All three branches carry the same two anchors, for two different readers:
+ * `data-sidebar-collapse-toggle` is what `UnifiedSidebar` resolves focus back
+ * to when the drawer closes, and `data-ui-bridge-id` is the shell's UI-Bridge
+ * handle, alongside `shell.menu-button` and `shell.sidebar-drawer`. Exactly one
+ * branch is ever in the DOM — the drawer MOVES the sidebar body rather than
+ * duplicating it (see `SidebarDrawer`'s doc block), so neither anchor doubles.
+ */
 export function CollapseToggle({
   isCollapsed,
   onToggle,
@@ -50,6 +58,7 @@ export function CollapseToggle({
             onClick={onToggle}
             aria-label={collapsedLabel}
             data-sidebar-collapse-toggle=""
+            data-ui-bridge-id="shell.sidebar-collapse-toggle"
             {...disclosureProps}
             className="flex size-10 items-center justify-center rounded-md text-text-muted transition-colors hover:bg-surface-hover hover:text-text-primary motion-reduce:transition-none"
           >
@@ -61,16 +70,44 @@ export function CollapseToggle({
     );
   }
 
+  // As the phone drawer's disclosure button it is the only visible way to
+  // close the menu, and a touch user never sees a hover tooltip — so it keeps
+  // its visible wording there.
+  if (controlsDrawer) {
+    return (
+      <button
+        type="button"
+        onClick={onToggle}
+        data-sidebar-collapse-toggle=""
+        data-ui-bridge-id="shell.sidebar-collapse-toggle"
+        {...disclosureProps}
+        className="flex h-8 shrink-0 items-center justify-center gap-2 rounded-md px-2 text-text-muted transition-colors hover:bg-surface-hover hover:text-text-primary motion-reduce:transition-none"
+      >
+        <PanelLeftClose className="size-3.5" aria-hidden />
+        <span className="text-xs">{label ?? "Close menu"}</span>
+      </button>
+    );
+  }
+
+  // Otherwise it shares the footer's bottom row with the runner status, so it
+  // is an icon button — its name lives in `aria-label` and the tooltip.
+  const expandedLabel = label ?? "Collapse sidebar";
   return (
-    <button
-      type="button"
-      onClick={onToggle}
-      data-sidebar-collapse-toggle=""
-      {...disclosureProps}
-      className="flex h-8 w-full items-center justify-center gap-2 rounded-md text-text-muted transition-colors hover:bg-surface-hover hover:text-text-primary motion-reduce:transition-none"
-    >
-      <PanelLeftClose className="size-3.5" aria-hidden />
-      <span className="text-xs">{label ?? "Collapse"}</span>
-    </button>
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <button
+          type="button"
+          onClick={onToggle}
+          aria-label={expandedLabel}
+          data-sidebar-collapse-toggle=""
+          data-ui-bridge-id="shell.sidebar-collapse-toggle"
+          {...disclosureProps}
+          className="flex size-8 shrink-0 items-center justify-center rounded-md text-text-muted transition-colors hover:bg-surface-hover hover:text-text-primary motion-reduce:transition-none"
+        >
+          <PanelLeftClose className="size-3.5" aria-hidden />
+        </button>
+      </TooltipTrigger>
+      <TooltipContent side="top">{expandedLabel}</TooltipContent>
+    </Tooltip>
   );
 }

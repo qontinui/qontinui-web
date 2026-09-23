@@ -6,7 +6,8 @@ import {
   SquareCheck,
   TreePine,
 } from "lucide-react";
-import { AccessibilityNode, RUNNER_API_BASE } from "./_types";
+import { runnerRequest, type RunnerTarget } from "@/lib/runner";
+import { AccessibilityNode } from "./_types";
 
 export function getRoleIcon(role: string) {
   switch (role.toLowerCase()) {
@@ -91,11 +92,12 @@ export function countNodes(node: AccessibilityNode): number {
 }
 
 export async function executeAccessibilityCommand(
+  target: RunnerTarget,
   cmdType: string,
   params: Record<string, unknown>
 ): Promise<{ success: boolean; error?: string }> {
   try {
-    const res = await fetch(`${RUNNER_API_BASE}/execute`, {
+    const res = await runnerRequest(target, "/execute", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ cmd_type: cmdType, params }),

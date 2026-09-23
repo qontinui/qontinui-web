@@ -11,14 +11,18 @@
  */
 
 import { useEffect, useState, useRef, useCallback } from "react";
+import { useRunnerTarget } from "@/contexts/active-runner-context";
 import { createLogger } from "@/lib/logger";
+import { runnerLoopbackUrl } from "@/lib/runner/target";
 
 const log = createLogger("useExecutionEvents");
 
-// Default runner URL - can be overridden via environment variable
-// Use 127.0.0.1 instead of localhost to force IPv4 (runner only listens on IPv4)
-const RUNNER_BASE_URL =
-  process.env.NEXT_PUBLIC_RUNNER_URL || "http://127.0.0.1:9876";
+/**
+ * Why no socket is opened for a runner without a loopback route. The event
+ * stream is a WebSocket, which the cloud relay cannot carry.
+ */
+export const EXECUTION_EVENTS_UNAVAILABLE_MESSAGE =
+  "Live execution events need the runner on this machine — the selected runner is reached through the cloud relay, which carries no event stream";
 
 /**
  * Image recognition result from the runner
@@ -56,14 +60,19 @@ export interface TreeEvent {
 }
 
 /**
- * Connection state for the WebSocket
+ * Connection state for the WebSocket.
+ *
+ * `unavailable` — no socket can exist for the active runner (it is not proven
+ * to be on this machine, so it is reached through the relay, which carries no
+ * WebSocket). Nothing is received: the live state is UNKNOWN, not empty.
  */
 export type ConnectionState =
   | "disconnected"
   | "connecting"
   | "connected"
   | "reconnecting"
-  | "error";
+  | "error"
+  | "unavailable";
 
 /**
  * Live execution state from the runner
@@ -86,8 +95,6 @@ export interface ExecutionEventsState {
 export interface UseExecutionEventsOptions {
   /** Enable/disable the WebSocket connection */
   enabled?: boolean;
-  /** Custom runner URL (overrides default) */
-  runnerUrl?: string;
   /** Callback when connection is established */
   onConnect?: () => void;
   /** Callback when connection is lost */
@@ -106,7 +113,6 @@ export interface UseExecutionEventsOptions {
 export function useExecutionEvents(options: UseExecutionEventsOptions = {}) {
   const {
     enabled = true,
-    runnerUrl = RUNNER_BASE_URL,
     onConnect,
     onDisconnect,
     onError,
@@ -122,6 +128,12 @@ export function useExecutionEvents(options: UseExecutionEventsOptions = {}) {
     lastError: null,
     lastEventTime: null,
   });
+
+  // The active runner's event-stream socket URL — only for a loopback route
+  // (a runner proven local); null means no stream can exist for it.
+  const target = useRunnerTarget();
+  const loopbackUrl = runnerLoopbackUrl(target, "/ws/events");
+  const fullWsUrl = loopbackUrl ? loopbackUrl.replace(/^http:/, "ws:") : null;
 
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectAttempts = useRef(0);
@@ -266,13 +278,18 @@ export function useExecutionEvents(options: UseExecutionEventsOptions = {}) {
       return;
     }
 
-    try {
-      // Convert HTTP URL to WebSocket URL
-      const wsUrl = runnerUrl
-        .replace(/^http:/, "ws:")
-        .replace(/^https:/, "wss:");
-      const fullWsUrl = `${wsUrl}/ws/events`;
+    if (fullWsUrl === null) {
+      // No loopback route: open nothing and say so — never present the
+      // silence of a socket that cannot exist as "no events".
+      setState((prev) => ({
+        ...prev,
+        connectionState: "unavailable",
+        lastError: EXECUTION_EVENTS_UNAVAILABLE_MESSAGE,
+      }));
+      return;
+    }
 
+    try {
       log.debug("Connecting to:", fullWsUrl);
       setState((prev) => ({ ...prev, connectionState: "connecting" }));
 
@@ -360,7 +377,7 @@ export function useExecutionEvents(options: UseExecutionEventsOptions = {}) {
     }
   }, [
     enabled,
-    runnerUrl,
+    fullWsUrl,
     handleMessage,
     onConnect,
     onDisconnect,
@@ -416,7 +433,7 @@ export function useExecutionEvents(options: UseExecutionEventsOptions = {}) {
       disconnect();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [enabled, runnerUrl]);
+  }, [enabled, fullWsUrl]);
 
   return {
     ...state,

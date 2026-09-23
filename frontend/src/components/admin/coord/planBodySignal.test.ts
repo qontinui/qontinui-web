@@ -22,11 +22,14 @@ import {
   describeHasBody,
   deriveSpawnBodyConfirm,
   filterPlansByBodySignal,
+  foldBodySignalBlocks,
+  hasBodyFilterTooltip,
   hasBodyFilterValue,
   seedSpawnPrompt,
   showsBodySignal,
   type BodyProvenance,
   type HasBodyFilter,
+  type PlanBodySignalBlock,
 } from "./planBodySignal";
 import type { CoordPlanRow } from "./planStatus";
 
@@ -366,5 +369,211 @@ describe("filterPlansByBodySignal", () => {
     const before = [...rows];
     filterPlansByBodySignal(rows, { provenance: ["scanned"], hasBody: [] });
     expect(rows).toEqual(before);
+  });
+});
+
+/**
+ * One answer on screen, several requests behind it.
+ *
+ * The corpus walk (`plans/planWalk.ts`) reads the list over several pages and
+ * the proxy computes a block PER PAGE — the capture dial and the artifact
+ * surface are read once per request, not once per walk — so the two features
+ * meet here. What the fold must never do is let a page that could read the
+ * dial speak for one that could not.
+ */
+describe("foldBodySignalBlocks", () => {
+  const ok: PlanBodySignalBlock = {
+    capture_level: "record",
+    capture_resolved_scope: "tenant",
+    capture_readable: true,
+    artifact_surface_readable: true,
+    org_plan_artifact_count: 1400,
+    miss_reason: null,
+  };
+
+  it("no block at all is null — not a block of falses", () => {
+    // A backend predating the signals says nothing, and an empty page has
+    // nothing to explain. Neither is "capture is off".
+    expect(foldBodySignalBlocks([])).toBeNull();
+    expect(foldBodySignalBlocks([undefined, null])).toBeNull();
+  });
+
+  it("one block folds to itself, with no miss to scope", () => {
+    expect(foldBodySignalBlocks([ok])).toEqual({ ...ok, miss_scope: null });
+  });
+
+  it("ANDs both readability flags", () => {
+    const folded = foldBodySignalBlocks([
+      ok,
+      { ...ok, capture_readable: false },
+      { ...ok, artifact_surface_readable: false },
+    ]);
+    expect(folded?.capture_readable).toBe(false);
+    expect(folded?.artifact_surface_readable).toBe(false);
+  });
+
+  it("reports the FIRST arm any page hit", () => {
+    const folded = foldBodySignalBlocks([
+      ok,
+      { ...ok, miss_reason: "capture_off" },
+      { ...ok, miss_reason: "empty_corpus_for_org" },
+    ]);
+    expect(folded?.miss_reason).toBe("capture_off");
+  });
+
+  it("a value every page agreed on survives; a disagreement is UNKNOWN", () => {
+    expect(foldBodySignalBlocks([ok, { ...ok }])?.capture_level).toBe("record");
+    // Two measurements, two answers — so the walk has no one number to
+    // report, and `null` is NOT MEASURED rather than a count of zero.
+    const folded = foldBodySignalBlocks([
+      ok,
+      { ...ok, capture_level: "off", org_plan_artifact_count: 1401 },
+    ]);
+    expect(folded?.capture_level).toBeNull();
+    expect(folded?.org_plan_artifact_count).toBeNull();
+  });
+
+  it("a stated zero is kept — it is a measurement", () => {
+    const folded = foldBodySignalBlocks([
+      { ...ok, org_plan_artifact_count: 0 },
+      { ...ok, org_plan_artifact_count: 0 },
+    ]);
+    expect(folded?.org_plan_artifact_count).toBe(0);
+  });
+
+  /**
+   * F1 of this change's review. A page's block cannot say how much of a READ
+   * a miss covers, and the copy needs exactly that: a 4-page walk whose first
+   * dial read landed while `plan_capture` was off, flipped to `record` before
+   * page 2, settles `has_body` for every joinable row on pages 2-4 — so "this
+   * read could not establish whether a document exists" is false about most of
+   * the list.
+   *
+   * It was never exactly true of the one-request page this console used to be
+   * either: `BodyKnowledge.has_body` returns `True` for a slug it matched
+   * BEFORE it consults `miss_reason`, so a single page read with capture off
+   * over a populated corpus settles every hit. Which is why the scope this
+   * fold reports is only half the fix — see `hasBodyFilterTooltip`, whose two
+   * arms both scope the claim to the rows a page could not match.
+   */
+  it("scopes a miss to every page or to some of them", () => {
+    expect(foldBodySignalBlocks([ok])?.miss_scope).toBeNull();
+    expect(
+      foldBodySignalBlocks([{ ...ok, miss_reason: "capture_off" }])?.miss_scope
+    ).toBe("all_pages");
+    expect(
+      foldBodySignalBlocks([
+        { ...ok, miss_reason: "capture_off" },
+        { ...ok, miss_reason: "capture_unreadable" },
+      ])?.miss_scope
+    ).toBe("all_pages");
+    expect(
+      foldBodySignalBlocks([{ ...ok, miss_reason: "capture_off" }, ok, ok])
+        ?.miss_scope
+    ).toBe("some_pages");
+    // A page that stated NO block was not asked (an empty page, or a backend
+    // predating the signals), so it neither hit the miss nor cleared it — the
+    // same rule every other field in the fold already follows.
+    expect(
+      foldBodySignalBlocks([{ ...ok, miss_reason: "capture_off" }, null])
+        ?.miss_scope
+    ).toBe("all_pages");
+  });
+});
+
+/**
+ * The tooltip over the `document` chip strip — F1 and F3 of this change's
+ * review. It states the claim at the strength the fold supports, and it never
+ * shows an operator a wire enum.
+ */
+describe("hasBodyFilterTooltip", () => {
+  const ok = {
+    capture_level: "record",
+    capture_resolved_scope: "tenant",
+    capture_readable: true,
+    artifact_surface_readable: true,
+    org_plan_artifact_count: 1400,
+    miss_reason: null,
+    miss_scope: null,
+  } as const;
+
+  it("says what the filter IS when no page missed", () => {
+    expect(hasBodyFilterTooltip(null)).toBe(
+      "Whether a plan artifact exists for this work unit."
+    );
+    expect(hasBodyFilterTooltip(ok)).toBe(
+      "Whether a plan artifact exists for this work unit."
+    );
+  });
+
+  it("claims the whole read only when every page missed", () => {
+    const all = hasBodyFilterTooltip({
+      ...ok,
+      miss_reason: "capture_off",
+      miss_scope: "all_pages",
+    });
+    expect(all).toContain(
+      "This read could not establish whether a document exists for the rows " +
+        "it could not match to one"
+    );
+    expect(all).not.toContain("Some pages");
+  });
+
+  it("qualifies the claim when only some pages missed", () => {
+    const some = hasBodyFilterTooltip({
+      ...ok,
+      miss_reason: "capture_off",
+      miss_scope: "some_pages",
+    });
+    expect(some).toContain(
+      "Some pages of this read could not establish whether a document exists " +
+        "for the rows they could not match to one"
+    );
+  });
+
+  /**
+   * F1 of round 5. The `some_pages` arm carried "(the rest of the rows were
+   * settled)", which is a POSITIVE claim no page-level block supports: a page
+   * whose `miss_reason` is null can still carry a row that answered UNKNOWN
+   * with the per-row reason `unjoinable_row` (a missing or empty slug), and
+   * `_miss_reason` cannot produce that value, so it never reaches the fold.
+   * Neither arm may characterise the rows a page DID settle.
+   */
+  it("never claims the pages that did not miss settled their rows", () => {
+    for (const miss_scope of ["all_pages", "some_pages"] as const) {
+      const shown = hasBodyFilterTooltip({
+        ...ok,
+        miss_reason: "capture_off",
+        miss_scope,
+      });
+      expect(shown).not.toContain("the rest of the rows were settled");
+      expect(shown).not.toContain("settled");
+    }
+  });
+
+  it("renders the reason as a sentence, never as the wire enum", () => {
+    const shown = hasBodyFilterTooltip({
+      ...ok,
+      miss_reason: "capture_never_configured",
+      miss_scope: "all_pages",
+    });
+    expect(shown).toContain("no plan_capture policy row has ever been written");
+    expect(shown).not.toContain("capture_never_configured");
+  });
+
+  it("drops the clause for a reason this build has no sentence for", () => {
+    // A backend arm added after this build. The scope sentence still stands;
+    // what must not happen is `undefined` or a bare enum reaching the operator.
+    const shown = hasBodyFilterTooltip({
+      ...ok,
+      miss_reason: "a_reason_shipped_later" as never,
+      miss_scope: "all_pages",
+    });
+    expect(shown).toBe(
+      "This read could not establish whether a document exists for the rows " +
+        "it could not match to one. Every miss is reported unknown rather " +
+        "than as a missing document."
+    );
+    expect(shown).not.toContain("undefined");
   });
 });

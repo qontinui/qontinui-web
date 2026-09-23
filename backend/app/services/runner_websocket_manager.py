@@ -29,7 +29,7 @@ more.
 
 import asyncio
 import json
-from collections.abc import Callable, Coroutine
+from collections.abc import Awaitable, Callable, Coroutine
 from typing import Any
 from uuid import UUID
 
@@ -55,6 +55,18 @@ USER_RUNNERS_TTL_SECONDS = 300
 # Wake-intent Redis key prefix and TTL. Used by the wake-from-web flow.
 WAKE_INTENT_KEY_PREFIX = "wake_intent"
 WAKE_INTENT_TTL_SECONDS = 60
+
+# Ceiling on each Redis call made while a per-runner registration lock is held.
+# The lock serialises register/unregister for ONE device; a Redis call that
+# hangs under it would stall every later handshake and teardown for that device
+# (the redis-py asyncio client has no per-call timeout of its own here), so
+# each is bounded and a timeout surfaces as an error on that operation.
+LOCKED_REDIS_TIMEOUT_SECONDS = 5.0
+
+
+async def _bounded(awaitable: Awaitable[Any]) -> Any:
+    """Await a lock-held Redis call with :data:`LOCKED_REDIS_TIMEOUT_SECONDS`."""
+    return await asyncio.wait_for(awaitable, timeout=LOCKED_REDIS_TIMEOUT_SECONDS)
 
 
 def _rid(runner_id: UUID | str) -> str:
@@ -85,12 +97,37 @@ class RunnerWebSocketManager:
         # runner-direction channels onto one pooled Redis connection (see
         # ``register``). runner_id -> (pubsub, task).
         self._inbound_listeners: dict[str, tuple[Any, asyncio.Task]] = {}
+        # Mobile terminal sockets whose ``terminal_subscribe`` was actually
+        # PUBLISHED to the runner, so ``disconnect_mobile_terminal`` sends the
+        # matching ``terminal_unsubscribe`` for exactly those. The subscribe is
+        # locally gated and the unsubscribe is not; without this record a
+        # viewer that connected while the runner was elsewhere would, on
+        # leaving, decrement a count it never incremented — switching off a
+        # peer viewer's output on the replica that holds the socket.
+        self._terminal_subscribed: set[WebSocket] = set()
+        # Per-runner lock serialising ``register`` against
+        # ``unregister``/``unregister_if_current``. Both span several awaits
+        # (Redis state, the pubsub listener), and the registry is keyed on
+        # ``runner_id`` ALONE — so without it an OLD socket's teardown that
+        # checked "still mine?" and then awaited could interleave with a
+        # NEWER socket's registration and tear the newer one down (its
+        # registry entry, its listener) mid-flight. Held for the whole of
+        # each operation, the check and the teardown become one step. Never
+        # pruned: bounded by the number of distinct devices this process saw.
+        self._registration_locks: dict[str, asyncio.Lock] = {}
 
         logger.info("runner_websocket_manager_initialized")
 
     # ========================================================================
     # Runner Registration
     # ========================================================================
+
+    def _registration_lock(self, rid: str) -> asyncio.Lock:
+        lock = self._registration_locks.get(rid)
+        if lock is None:
+            lock = asyncio.Lock()
+            self._registration_locks[rid] = lock
+        return lock
 
     async def register(
         self,
@@ -105,9 +142,50 @@ class RunnerWebSocketManager:
         Register a runner WebSocket connection.
 
         Stores connection state in Redis for persistence across server
-        restarts and starts the per-relay listener loops.
+        restarts and starts the per-relay listener loops. Serialised per
+        runner against teardown — see ``_registration_locks``.
         """
         rid = _rid(runner_id)
+        async with self._registration_lock(rid):
+            await self._register_unlocked(
+                rid,
+                websocket=websocket,
+                user_id=user_id,
+                runner_name=runner_name,
+                ip_address=ip_address,
+                connected_at=connected_at,
+            )
+
+    async def _register_unlocked(
+        self,
+        rid: str,
+        *,
+        websocket: WebSocket,
+        user_id: UUID,
+        runner_name: str | None,
+        ip_address: str | None,
+        connected_at: str | None,
+    ) -> None:
+        """Body of :meth:`register`; the caller holds the registration lock.
+
+        A registration REPLACES whatever socket held ``rid``: the previous
+        socket's inbound listener is stopped (and its pubsub closed) and its
+        send lock dropped BEFORE the new one starts. Without that the old
+        listener — keyed by ``rid`` in ``_inbound_listeners`` and simply
+        overwritten — keeps forwarding every relayed command / chat / terminal
+        frame to the OLD socket, so two runners execute them, and its pooled
+        pubsub connection leaks. That is live, not theoretical, since a
+        primary takes the relay from a still-connected secondary.
+        """
+        previous = self._registry.get_runner_websocket(rid)
+        if rid in self._inbound_listeners:
+            await self._stop_inbound_listener(rid)
+            self._ws_send_locks.pop(rid, None)
+            logger.info(
+                "runner_ws_registration_replaced",
+                runner_id=rid,
+                same_socket=previous is websocket,
+            )
 
         # Registration must be ALL-OR-NOTHING. Each step below acquires a
         # resource that holds a Redis connection for the lifetime of the
@@ -135,14 +213,16 @@ class RunnerWebSocketManager:
         self._ws_send_locks[rid] = asyncio.Lock()
 
         try:
-            await self._state_repo.save_connection_state(
-                runner_id=rid,
-                user_id=str(user_id),
-                connected_at=connected_at or "",
-                runner_name=runner_name,
-                ip_address=ip_address,
+            await _bounded(
+                self._state_repo.save_connection_state(
+                    runner_id=rid,
+                    user_id=str(user_id),
+                    connected_at=connected_at or "",
+                    runner_name=runner_name,
+                    ip_address=ip_address,
+                )
             )
-            await self._save_user_runner_mapping(user_id, rid)
+            await _bounded(self._save_user_runner_mapping(user_id, rid))
 
             send_lock = self._ws_send_locks[rid]
 
@@ -150,7 +230,7 @@ class RunnerWebSocketManager:
                 async with send_lock:
                     await websocket.send_json(data)
 
-            await self._start_inbound_listener(rid, send_fn=locked_send)
+            await _bounded(self._start_inbound_listener(rid, send_fn=locked_send))
         except Exception:
             await self._rollback_partial_registration(rid)
             raise
@@ -331,36 +411,164 @@ class RunnerWebSocketManager:
 
         logger.info("runner_ws_register_rolled_back", runner_id=rid)
 
+    async def register_if_unowned(
+        self,
+        runner_id: UUID | str,
+        websocket: WebSocket,
+        user_id: UUID,
+        still_entitled: Callable[[], Awaitable[bool]],
+        runner_name: str | None = None,
+        ip_address: str | None = None,
+        connected_at: str | None = None,
+    ) -> bool:
+        """Register ``websocket`` only if no OTHER socket holds ``runner_id``.
+
+        For a secondary runner instance that just claimed the device's relay
+        pointer in the database. Claim-then-register is two steps, and a
+        primary registering in between would otherwise be overwritten here —
+        pointer naming the primary, manager holding the secondary, and nothing
+        to repair it. Under the per-runner lock this refuses when a different
+        socket is registered, then re-confirms the claim with
+        ``still_entitled`` (the caller checks the DB pointer still names its
+        connection) before registering. Returns ``True`` if it registered.
+        """
+        rid = _rid(runner_id)
+        async with self._registration_lock(rid):
+            current = self._registry.get_runner_websocket(rid)
+            if current is not None and current is not websocket:
+                return False
+            if not await _bounded(still_entitled()):
+                return False
+            await self._register_unlocked(
+                rid,
+                websocket=websocket,
+                user_id=user_id,
+                runner_name=runner_name,
+                ip_address=ip_address,
+                connected_at=connected_at,
+            )
+            return True
+
+    def send_lock_for(
+        self, runner_id: UUID | str, websocket: WebSocket
+    ) -> asyncio.Lock | None:
+        """The per-runner send lock, iff ``websocket`` is the registered socket."""
+        rid = _rid(runner_id)
+        if self._registry.get_runner_websocket(rid) is not websocket:
+            return None
+        return self._ws_send_locks.get(rid)
+
+    async def unregister_if_current(
+        self,
+        runner_id: UUID | str,
+        websocket: WebSocket,
+        user_id: UUID | None = None,
+    ) -> bool:
+        """Unregister ``runner_id`` only if ``websocket`` is still its registered socket.
+
+        The compare and the whole teardown run under the per-runner
+        registration lock, so a newer socket's ``register`` either completes
+        before the compare (which then fails, and nothing is torn down) or
+        waits until this teardown has finished (and then registers cleanly).
+        This is what a connection's own teardown must call — an unconditional
+        ``unregister`` keyed on ``runner_id`` alone destroys whichever socket
+        happens to be registered, which in the A-connects / B-reconnects /
+        A-tears-down interleave is B's.
+
+        Returns ``True`` if it unregistered, ``False`` if another socket (or
+        none) is registered.
+        """
+        rid = _rid(runner_id)
+        async with self._registration_lock(rid):
+            if self._registry.get_runner_websocket(rid) is not websocket:
+                return False
+            await self._unregister_unlocked(rid, user_id)
+        await self._notify_unregistered(rid)
+        return True
+
     async def unregister(
         self,
         runner_id: UUID | str,
         user_id: UUID | None = None,
     ) -> None:
-        """Unregister a runner WebSocket connection."""
+        """Unregister a runner WebSocket connection, whichever socket it is.
+
+        For a connection's OWN teardown use :meth:`unregister_if_current`.
+        """
         rid = _rid(runner_id)
+        async with self._registration_lock(rid):
+            await self._unregister_unlocked(rid, user_id)
+        await self._notify_unregistered(rid)
 
-        if user_id is None:
-            metadata = await self._state_repo.get_connection_metadata(rid)
-            if metadata:
-                try:
-                    user_id = UUID(metadata.get("user_id"))
-                except Exception:
-                    pass
+    async def _unregister_unlocked(
+        self,
+        rid: str,
+        user_id: UUID | None = None,
+    ) -> None:
+        """State half of :meth:`unregister`; the caller holds the registration lock.
 
-        await self._state_repo.delete_connection_state(rid)
+        Only the Redis state, the registry entry, the listener and the send
+        lock are torn down here, each Redis call bounded. Client notifications
+        (:meth:`_notify_unregistered`) run AFTER the lock is released: they
+        write to arbitrary frontend sockets, and a slow browser must not hold
+        up every other handshake for this device.
+        """
 
-        if user_id is not None:
-            await self._remove_user_runner_mapping(user_id, rid)
+        # In-process teardown ALWAYS runs (``finally``): a Redis call that times
+        # out or fails must not leave this process holding the registry entry,
+        # the send lock and a listener forwarding relayed frames to a socket
+        # that is going away. The Redis half is best-effort — its keys carry a
+        # TTL and the scheduled sweep reconciles what is left behind.
+        try:
+            if user_id is None:
+                metadata = await _bounded(self._state_repo.get_connection_metadata(rid))
+                if metadata:
+                    try:
+                        user_id = UUID(metadata.get("user_id"))
+                    except Exception:
+                        pass
 
-        self._registry.unregister_runner(rid)
+            await _bounded(self._state_repo.delete_connection_state(rid))
 
-        # Cancel the shared inbound listener (commands/chat/terminal multiplex);
-        # its ``finally`` unsubscribes and closes the single pubsub connection.
-        await self._stop_inbound_listener(rid)
+            if user_id is not None:
+                await _bounded(self._remove_user_runner_mapping(user_id, rid))
+        except Exception as exc:
+            logger.warning(
+                "runner_ws_unregister_redis_cleanup_failed",
+                runner_id=rid,
+                error=str(exc),
+                error_type=type(exc).__name__,
+            )
+        finally:
+            self._registry.unregister_runner(rid)
+            # Cancel the shared inbound listener (commands/chat/terminal
+            # multiplex); its ``finally`` unsubscribes and closes the pubsub.
+            await self._stop_inbound_listener(rid)
+            self._ws_send_locks.pop(rid, None)
 
-        # Notify mobile + frontend clients of the disconnect.
+    async def _notify_unregistered(self, rid: str) -> None:
+        """Tell mobiles and frontends the runner is gone. Runs OUTSIDE the lock.
+
+        Because it runs outside the lock, a replacement socket can register
+        while these notices are going out; a late ``runner_disconnected``
+        would then make the frontend drop a runner that is connected and mark
+        its chat disconnected. So each notice is sent only if nothing is
+        registered for ``rid`` — checked immediately before the send with no
+        await in between (each notify call reaches its first send without
+        yielding first) — and the rest are skipped once something is.
+        """
         from qontinui_schemas.common import utc_now
 
+        def _replaced() -> bool:
+            if self._registry.get_runner_websocket(rid) is None:
+                return False
+            logger.info(
+                "runner_ws_disconnect_notice_skipped_reconnected", runner_id=rid
+            )
+            return True
+
+        if _replaced():
+            return
         await self._chat_relay.notify_mobiles(
             rid,
             {
@@ -369,6 +577,8 @@ class RunnerWebSocketManager:
                 "timestamp": utc_now().isoformat(),
             },
         )
+        if _replaced():
+            return
         await self._terminal_relay.notify_mobiles(
             rid,
             {
@@ -377,7 +587,8 @@ class RunnerWebSocketManager:
                 "timestamp": utc_now().isoformat(),
             },
         )
-        self._ws_send_locks.pop(rid, None)
+        if _replaced():
+            return
         await self._relay.notify_frontends(
             rid,
             {"type": "runner_disconnected", "timestamp": utc_now().isoformat()},
@@ -442,9 +653,25 @@ class RunnerWebSocketManager:
             # starts forwarding terminal_output/terminal_exit frames. The
             # runner keeps a subscriber counter, so one subscribe per connect
             # is correct even with multiple mobiles on the same runner.
-            await self._relay.send_command_to_runner(
+            #
+            # The subscribe stays on the LOCAL gate, deliberately — it is not
+            # symmetric with the unsubscribe in
+            # :meth:`disconnect_mobile_terminal`. A dropped subscribe is
+            # transient and self-correcting (the next connect re-sends it),
+            # whereas a dropped unsubscribe latches the firehose on for the
+            # runner's process life. More importantly, widening only this gate
+            # would not make a cross-replica terminal session work: the
+            # keystroke path (``send_terminal`` ->
+            # ``TerminalRelayService.send_terminal_to_runner``) applies the
+            # same in-process check with no opt-out, so the viewer would lose
+            # the accurate up-front "not connected" warning and instead get a
+            # per-message error on every keystroke. Making cross-replica
+            # terminals actually work is a coherent separate change (subscribe
+            # + send + response fan-in), not a gate flip here.
+            if await self._relay.send_command_to_runner(
                 rid, {"type": "terminal_subscribe", "runner_id": rid}
-            )
+            ):
+                self._terminal_subscribed.add(websocket)
         return runner_connected
 
     async def disconnect_mobile_terminal(
@@ -452,11 +679,40 @@ class RunnerWebSocketManager:
     ) -> None:
         rid = _rid(runner_id)
         await self._terminal_relay.stop_mobile_listener(rid, websocket)
-        # Best-effort: the runner may already be gone on disconnect, which is
-        # fine — its subscriber counter is decremented per unsubscribe.
+        # One unsubscribe per PUBLISHED subscribe. A viewer whose subscribe was
+        # skipped (runner not local at connect time) never incremented the
+        # runner's counter, and that counter is shared with every other
+        # viewer — so an unmatched unsubscribe would not be a no-op, it would
+        # take a peer's subscription down. Saturation at zero only protects
+        # the count when nobody else is subscribed.
+        if websocket not in self._terminal_subscribed:
+            return
+        self._terminal_subscribed.discard(websocket)
+        # The unsubscribe is published UNCONDITIONALLY — never gated on the
+        # runner socket being registered in *this* process.
+        #
+        # The runner's ``terminal_subscriber_count`` is a process-lifetime
+        # counter that it never resets, and forwarding is latched on
+        # ``count > 0``. So a *dropped* unsubscribe is not a benign no-op: it
+        # leaves the device-wide terminal-output firehose on for the rest of
+        # the runner's process life. The in-process gate dropped exactly the
+        # two cases that matter — a viewer leaving while the runner socket
+        # lives on a *different* backend replica, and a viewer leaving during
+        # a momentary local deregistration — so the counter never came back
+        # down.
+        #
+        # Publishing with ``require_local_connection=False`` hands the frame
+        # to Redis pub/sub on ``runner:commands:{rid}``, which is the channel
+        # the replica that actually holds the socket is subscribed to (see
+        # ``RunnerWebSocketManager.register``'s shared inbound listener), so
+        # the unsubscribe reaches the runner wherever it is terminated.
+        # Publishing to an absent runner is harmless: nothing is subscribed to
+        # the channel, and the runner's decrement saturates at zero.
         try:
             await self._relay.send_command_to_runner(
-                rid, {"type": "terminal_unsubscribe", "runner_id": rid}
+                rid,
+                {"type": "terminal_unsubscribe", "runner_id": rid},
+                require_local_connection=False,
             )
         except Exception as exc:
             logger.debug(
@@ -601,8 +857,8 @@ class RunnerWebSocketManager:
         """In-process connected runner IDs."""
         return self._registry.get_connected_runner_ids()
 
-    async def get_all_connected_ids(self) -> list[str]:
-        """All-process connected runner IDs (Redis-backed)."""
+    async def get_all_connected_ids(self) -> list[str] | None:
+        """All-process connected runner IDs (Redis-backed); ``None`` = scan failed."""
         return await self._state_repo.get_all_connected_ids()
 
     async def refresh_ttl(self, runner_id: UUID | str) -> bool:

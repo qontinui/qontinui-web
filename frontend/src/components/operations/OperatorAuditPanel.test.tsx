@@ -99,6 +99,20 @@ describe("the read", () => {
     expect(getMock.mock.calls[0]?.[0] as string).not.toContain("action=");
   });
 
+  it("asks coord for agent escalate clearances by via", async () => {
+    getMock.mockResolvedValue({ audit: [], count: 0 });
+    await openPanel();
+    expect(getMock.mock.calls[0]?.[0] as string).not.toContain("via=");
+    getMock.mockClear();
+    fireEvent.change(screen.getByTestId("operator-audit-filter"), {
+      target: { value: "escalate-agent" },
+    });
+    await waitFor(() => expect(getMock).toHaveBeenCalled());
+    const url = getMock.mock.calls[0]?.[0] as string;
+    expect(url).toContain("action=pr_merge.escalate_override");
+    expect(url).toContain("via=agent_evidence");
+  });
+
   it("sends no resource_key until the search is applied", async () => {
     getMock.mockResolvedValue({ audit: [DRAIN_ROW], count: 1 });
     await openPanel();

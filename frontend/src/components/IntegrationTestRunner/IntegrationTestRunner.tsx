@@ -22,6 +22,7 @@ export function IntegrationTestRunner() {
     testConfig,
     newAssertion,
     isRunnerConnected,
+    startRefusal,
     setSelectedRunId,
     setError,
     setTestConfig,
@@ -89,6 +90,7 @@ export function IntegrationTestRunner() {
             loading={loading}
             onConfigChange={setTestConfig}
             onStart={startTestRun}
+            startRefusal={startRefusal}
           />
           <AssertionForm
             newAssertion={newAssertion}

@@ -7,8 +7,11 @@
  * repointed onto the generic work-unit primitive
  * (`2026-06-18-coord-generic-work-unit-primitive`).
  *
- * The operator UX stays "Plans"; coord now stores plans as generic
- * slug-keyed work-units. The web proxy serves the same
+ * The operator UX calls this "Work Units" (plan
+ * `2026-09-20-the-operator-plans-page-reads-the-wrong-store` Phase 3 renamed
+ * it from "Plans", which now names the plan-corpus reconciliation page at
+ * `/admin/coord/plans`); coord still stores plans as generic slug-keyed
+ * work-units. The web proxy serves the same
  * `/api/v1/operations/plans/{slug}*` paths, now backed by coord
  * `/coord/work-units/{slug}*`.
  *
@@ -23,10 +26,11 @@
  * dropped. They DO carry `current_phase`, a derived `first_shipped_at` (the
  * first transition into `shipped` — there is no `shipped_at`; a field by that
  * name sat on `CoordPlanRow` for months with nothing serving it) and a
- * nullable slug-derived `authored_at` (plan
+ * nullable `authored_at` (plan
  * `2026-09-02-coord-work-units-carry-no-authoring-date`). The meta strip
- * shows `authored` beside `updated`, and says "not recorded" when coord has
- * no authoring date rather than substituting the ingest date.
+ * shows `authored` beside `updated` — the EFFECTIVE date `planAuthoredAt`
+ * derives (slug prefix, then coord's column) — and says "not recorded" when
+ * neither source has one rather than substituting the ingest date.
  *
  * ## Console style (Phase 3 Wave 3)
  *
@@ -332,7 +336,7 @@ export default function CoordPlanDetailPage() {
           data-testid="coord-plan-back-btn"
         >
           <ArrowLeft className="h-3.5 w-3.5 mr-1" />
-          Plans
+          Work Units
         </Button>
         <span className="text-muted-foreground">/</span>
         <span className="font-mono text-sm">{slug}</span>

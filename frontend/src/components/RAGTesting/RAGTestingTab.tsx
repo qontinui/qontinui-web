@@ -117,6 +117,7 @@ export function RAGTestingTab() {
             isAnalyzing={analysis.isAnalyzing}
             hasScreenshot={!!screenshot.currentScreenshot?.url}
             onRunAnalysis={analysis.runAnalysis}
+            runRefusal={analysis.runRefusal}
           />
 
           <DisplayOptionsPanel

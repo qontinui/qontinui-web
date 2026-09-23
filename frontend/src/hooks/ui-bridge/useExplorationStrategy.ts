@@ -24,8 +24,16 @@ import type {
   UIBridgeJobStatus,
   ExplorationSession,
 } from "./types";
-import { sleep, inferElementType, extractClassFromSelector } from "./utils";
+import { inferElementType, extractClassFromSelector } from "./utils";
 import { createLogger } from "@/lib/logger";
+import {
+  RUNNER_NEEDS_LOCAL,
+  RunnerApiError,
+  resolveRunnerRoute,
+  runnerPollDelay,
+  runnerRequest,
+  type RunnerTarget,
+} from "@/lib/runner";
 const logger = createLogger("UseExplorationStrategy");
 
 export interface UseExplorationStrategyDeps {
@@ -66,20 +74,41 @@ export interface UseExplorationStrategyDeps {
   ) => Promise<boolean>;
 }
 
+/** How often a running exploration's status is polled (per the route's cadence). */
+const EXPLORATION_POLL_INTERVAL_MS = 1000;
+
+/** How long to wait for a runner's locality before deciding its route. */
+const ROUTE_WAIT_MS = 5000;
+
+/** The typed runner failure code behind an error, when there is one. */
+function runnerErrorCode(error: unknown): string | undefined {
+  return error instanceof RunnerApiError ? error.code : undefined;
+}
+
+/**
+ * Every call below names its runner by TARGET and goes through the resolver
+ * (`runnerRequest`: loopback only when the runner is proven local, the relay
+ * otherwise). None of these routes is carried by the relay, so a runner on
+ * another machine fails with a typed RUNNER_NEEDS_LOCAL error, surfaced in
+ * `progress.error` / `progress.errorCode` — never a URL built from an address
+ * the runner reported.
+ */
 export interface UseExplorationStrategyReturn {
   /** Start Playwright-based exploration */
-  startExploration: (runnerUrl: string) => Promise<ExplorationResults | null>;
+  startExploration: (
+    target: RunnerTarget
+  ) => Promise<ExplorationResults | null>;
   /** Start UI Bridge exploration via runner API */
   startUIBridgeExploration: (
-    runnerUrl: string,
+    target: RunnerTarget,
     options?: {
       projectId?: string;
       authToken?: string;
       apiUrl?: string;
     }
   ) => Promise<ExplorationResults | null>;
-  /** Stop the current exploration */
-  stopExploration: (runnerUrl?: string) => Promise<void>;
+  /** Stop the current exploration (and tell `target`, when given, to stop) */
+  stopExploration: (target?: RunnerTarget | null) => Promise<void>;
   /** Reset exploration state */
   resetExploration: () => void;
 }
@@ -112,13 +141,9 @@ export function useExplorationStrategy(
    * Start exploration using the qontinui-runner's Playwright collection
    */
   const startExploration = useCallback(
-    async (runnerUrl: string) => {
+    async (target: RunnerTarget) => {
       if (!config.targetUrl) {
         throw new Error("Target URL is required");
-      }
-
-      if (!runnerUrl) {
-        throw new Error("Runner URL is required");
       }
 
       // Reset state before starting new exploration
@@ -163,8 +188,9 @@ export function useExplorationStrategy(
 
       try {
         // Start Playwright collection via runner API
-        const startResponse = await fetch(
-          `${runnerUrl}/playwright-collection/start`,
+        const startResponse = await runnerRequest(
+          target,
+          "/playwright-collection/start",
           {
             method: "POST",
             headers: {
@@ -210,7 +236,7 @@ export function useExplorationStrategy(
         const pollStatus = async (): Promise<ExplorationResults | null> => {
           if (abortRef.current) {
             // Cancel the job
-            await fetch(`${runnerUrl}/playwright-collection/stop`, {
+            await runnerRequest(target, "/playwright-collection/stop", {
               method: "POST",
             }).catch(() => {});
             setPlaywrightJob((prev) => ({
@@ -221,8 +247,9 @@ export function useExplorationStrategy(
             return null;
           }
 
-          const statusResponse = await fetch(
-            `${runnerUrl}/playwright-collection/status${jobId ? `?job_id=${jobId}` : ""}`
+          const statusResponse = await runnerRequest(
+            target,
+            `/playwright-collection/status${jobId ? `?job_id=${jobId}` : ""}`
           );
 
           if (!statusResponse.ok) {
@@ -254,8 +281,9 @@ export function useExplorationStrategy(
 
           if (status.status === "completed" || status.status === "failed") {
             // Get final results
-            const resultsResponse = await fetch(
-              `${runnerUrl}/playwright-collection/results${jobId ? `?job_id=${jobId}` : ""}`
+            const resultsResponse = await runnerRequest(
+              target,
+              `/playwright-collection/results${jobId ? `?job_id=${jobId}` : ""}`
             );
 
             if (!resultsResponse.ok) {
@@ -420,7 +448,7 @@ export function useExplorationStrategy(
           }
 
           // Continue polling
-          await sleep(1000);
+          await runnerPollDelay(target, EXPLORATION_POLL_INTERVAL_MS);
           return pollStatus();
         };
 
@@ -428,11 +456,13 @@ export function useExplorationStrategy(
       } catch (error) {
         const errorMessage =
           error instanceof Error ? error.message : "Exploration failed";
+        const errorCode = runnerErrorCode(error);
 
         setProgress((prev) => ({
           ...prev,
           status: "failed",
           error: errorMessage,
+          errorCode,
           endTime: Date.now(),
         }));
 
@@ -455,7 +485,7 @@ export function useExplorationStrategy(
    */
   const startUIBridgeExploration = useCallback(
     async (
-      runnerUrl: string,
+      target: RunnerTarget,
       options?: {
         projectId?: string;
         authToken?: string;
@@ -467,13 +497,30 @@ export function useExplorationStrategy(
         throw new Error("Target URL is required");
       }
 
-      if (!runnerUrl) {
-        throw new Error("Runner URL is required");
+      // For extension mode the connection is the runner itself (the extension
+      // connects through it), named by the runner's OWN loopback address —
+      // which only exists for a runner proven to be on this machine.
+      let connectionUrl = config.targetUrl;
+      if (config.targetType === "extension") {
+        const route = await resolveRunnerRoute(target, ROUTE_WAIT_MS);
+        if (route.kind !== "loopback") {
+          const error = new RunnerApiError(
+            0,
+            "Extension exploration needs the runner on this machine — the selected runner is not proven local, and the relay does not carry exploration",
+            undefined,
+            { code: RUNNER_NEEDS_LOCAL }
+          );
+          setProgress((prev) => ({
+            ...prev,
+            status: "failed",
+            error: error.message,
+            errorCode: error.code,
+            endTime: Date.now(),
+          }));
+          throw error;
+        }
+        connectionUrl = route.base;
       }
-
-      // For extension mode, use the runner URL as the connection URL
-      const connectionUrl =
-        config.targetType === "extension" ? runnerUrl : config.targetUrl;
 
       // Reset state before starting new exploration
       abortRef.current = false;
@@ -592,19 +639,20 @@ export function useExplorationStrategy(
             requestBody.browser_tab_id = config.selectedBrowserTabId;
           }
 
-          startResponse = await fetch(`${runnerUrl}/ui-bridge/explore`, {
+          startResponse = await runnerRequest(target, "/ui-bridge/explore", {
             method: "POST",
             headers: {
               "Content-Type": "application/json",
             },
             body: JSON.stringify(requestBody),
           });
-        } catch (_fetchError) {
-          // Network error - runner not available
+        } catch (fetchError) {
+          // A typed runner failure (needs the runner on this machine, relay
+          // failed, runner unreachable) already says what happened.
+          if (fetchError instanceof RunnerApiError) throw fetchError;
           throw new Error(
-            `Could not connect to the qontinui-runner at ${runnerUrl}. ` +
-              `Make sure the runner application is running. ` +
-              `You can start it with: cd qontinui-runner && npm run tauri dev`
+            `Could not connect to the qontinui-runner. ` +
+              `Make sure the runner application is running.`
           );
         }
 
@@ -616,7 +664,7 @@ export function useExplorationStrategy(
 
           if (startResponse.status === 404) {
             throw new Error(
-              `UI Bridge exploration endpoint not found at ${runnerUrl}. ` +
+              `UI Bridge exploration endpoint not found on the runner. ` +
                 `Make sure you're using a compatible version of qontinui-runner.`
             );
           }
@@ -714,7 +762,7 @@ export function useExplorationStrategy(
         const pollStatus = async (): Promise<ExplorationResults | null> => {
           if (abortRef.current) {
             // Stop the exploration
-            await fetch(`${runnerUrl}/ui-bridge/explore/stop`, {
+            await runnerRequest(target, "/ui-bridge/explore/stop", {
               method: "POST",
             }).catch(() => {});
             setUIBridgeJob((prev) => ({
@@ -725,8 +773,9 @@ export function useExplorationStrategy(
             return null;
           }
 
-          const statusResponse = await fetch(
-            `${runnerUrl}/ui-bridge/explore/status${jobId ? `?job_id=${jobId}` : ""}`
+          const statusResponse = await runnerRequest(
+            target,
+            `/ui-bridge/explore/status${jobId ? `?job_id=${jobId}` : ""}`
           );
 
           if (!statusResponse.ok) {
@@ -760,8 +809,9 @@ export function useExplorationStrategy(
 
           if (status.status === "completed" || status.status === "failed") {
             // Get final results
-            const resultsResponse = await fetch(
-              `${runnerUrl}/ui-bridge/explore/results${jobId ? `?job_id=${jobId}` : ""}`
+            const resultsResponse = await runnerRequest(
+              target,
+              `/ui-bridge/explore/results${jobId ? `?job_id=${jobId}` : ""}`
             );
 
             if (!resultsResponse.ok) {
@@ -902,7 +952,7 @@ export function useExplorationStrategy(
           }
 
           // Continue polling
-          await sleep(1000);
+          await runnerPollDelay(target, EXPLORATION_POLL_INTERVAL_MS);
           return pollStatus();
         };
 
@@ -912,6 +962,7 @@ export function useExplorationStrategy(
           error instanceof Error
             ? error.message
             : "UI Bridge exploration failed";
+        const errorCode = runnerErrorCode(error);
 
         // If it's a generic error, provide more context based on target type
         if (
@@ -933,6 +984,7 @@ export function useExplorationStrategy(
           ...prev,
           status: "failed",
           error: errorMessage,
+          errorCode,
           endTime: Date.now(),
         }));
 
@@ -976,17 +1028,17 @@ export function useExplorationStrategy(
    * Stop exploration
    */
   const stopExploration = useCallback(
-    async (runnerUrl?: string) => {
+    async (target?: RunnerTarget | null) => {
       abortRef.current = true;
 
       // Try to stop both Playwright and UI Bridge exploration
-      if (runnerUrl) {
+      if (target) {
         try {
           await Promise.all([
-            fetch(`${runnerUrl}/playwright-collection/stop`, {
+            runnerRequest(target, "/playwright-collection/stop", {
               method: "POST",
             }).catch(() => {}),
-            fetch(`${runnerUrl}/ui-bridge/explore/stop`, {
+            runnerRequest(target, "/ui-bridge/explore/stop", {
               method: "POST",
             }).catch(() => {}),
           ]);

@@ -203,6 +203,68 @@ describe("buildRemediation", () => {
     expect(rem.itemCount).toBe(1);
   });
 
+  it("keeps a report-only `harness` box out of the apply plan, bar the one settable key", () => {
+    // The `harness` section has no apply module anywhere (the runner ships
+    // apply_versions / apply_services / apply_repos and no apply_harness), and
+    // this builder never reads the section policy — `MachineDriftReport` does
+    // not even carry one. So the ONLY thing keeping a clause-(c) box from being
+    // handed `invariant_class=(a)` under an "Apply on <machine>" header is the
+    // server marking those keys `observation_only`. This is the end of that
+    // wire; the backend half is pinned in test_devenv_environments.py.
+    const rem = buildRemediation(
+      report([
+        section("harness", [
+          {
+            key: "invariant_class",
+            status: "changed",
+            expected: "(a)",
+            actual: "(c)",
+            severity: "warning",
+            observation_only: true,
+          },
+          {
+            key: "link_claude_dir",
+            status: "changed",
+            expected: "present",
+            actual: "absent",
+            severity: "warning",
+            observation_only: true,
+          },
+          {
+            key: "installer_git_hooks",
+            status: "removed",
+            expected: "present",
+            actual: null,
+            severity: "warning",
+            observation_only: true,
+          },
+          // The one harness key whose VALUE is the payload: it names where to
+          // point the runner's `paths.plans_dir`, so it IS carry-out-able.
+          {
+            key: "plans_dir_relative",
+            status: "changed",
+            expected: "qontinui-dev-notes/plans",
+            actual: "unset",
+            severity: "warning",
+          },
+        ]),
+      ])
+    );
+    expect(rem.sections).toEqual([
+      {
+        section: "harness",
+        items: [
+          { key: "plans_dir_relative", value: "qontinui-dev-notes/plans", secret: false },
+        ],
+      },
+    ]);
+    expect(rem.itemCount).toBe(1);
+    // And the manifest an operator copies carries no un-carry-out-able line.
+    const manifest = remediationToManifest(rem);
+    expect(manifest).not.toContain("invariant_class");
+    expect(manifest).toContain("plans_dir_relative=qontinui-dev-notes/plans");
+  });
+
   it("leaves an `unverified` delta out of the plan", () => {
     // It DOES count against in_sync (unlike `unknown`), but there is nothing to
     // reconcile toward: the values are the box's stated reason it could not

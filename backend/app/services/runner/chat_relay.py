@@ -57,9 +57,17 @@ class ChatRelayService:
         Send a chat message from mobile to runner via Redis pub/sub.
 
         Returns:
-            True if sent successfully, False if runner not connected
+            True if sent successfully, False if the runner is not connected —
+            which includes a runner whose registry entry is stale.
         """
-        if not self._registry.is_runner_connected(runner_id):
+        # The liveness gate, not ``is_runner_connected`` — the same false
+        # receipt ``TerminalRelayService`` closed: the REST chat routes answer
+        # HTTP 200 ``status: forwarded`` off this bool, and a registered-but-
+        # dead socket would otherwise turn a 503 into a message that silently
+        # goes nowhere.
+        if not self._registry.can_send_to_runner(
+            runner_id, path="chat", message_type=message.get("type")
+        ):
             return False
 
         channel = f"runner:chat:{runner_id}"

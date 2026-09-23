@@ -1,8 +1,14 @@
 import { useState, useCallback, useMemo } from "react";
-import { AccessibilityNode, RUNNER_API_BASE } from "../_types";
+import { runnerRequest, useRunnerTarget } from "@/lib/runner";
+import { useNewWorkRefusal } from "@/contexts/active-runner-context";
+import { AccessibilityNode } from "../_types";
 import { collectInteractiveNodes, countNodes } from "../_utils";
 
 export function useAccessibilityInspector() {
+  const target = useRunnerTarget();
+  // Opening a URL in a browser session is NEW work (the tree/capture of the
+  // already-open page stays a read).
+  const newWorkRefusal = useNewWorkRefusal();
   const [targetUrl, setTargetUrl] = useState("");
   const [isInspecting, setIsInspecting] = useState(false);
   const [inspectError, setInspectError] = useState<string | null>(null);
@@ -20,13 +26,17 @@ export function useAccessibilityInspector() {
 
   const handleInspect = async () => {
     if (!targetUrl.trim()) return;
+    if (newWorkRefusal !== null) {
+      setInspectError(newWorkRefusal);
+      return;
+    }
     setIsInspecting(true);
     setInspectError(null);
     setTreeData(null);
     setSelectedNode(null);
 
     try {
-      const res = await fetch(`${RUNNER_API_BASE}/accessibility/inspect`, {
+      const res = await runnerRequest(target, "/accessibility/inspect", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ url: targetUrl.trim() }),
@@ -53,7 +63,7 @@ export function useAccessibilityInspector() {
     setSelectedNode(null);
 
     try {
-      const res = await fetch(`${RUNNER_API_BASE}/execute`, {
+      const res = await runnerRequest(target, "/execute", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -93,6 +103,7 @@ export function useAccessibilityInspector() {
   }, []);
 
   return {
+    newWorkRefusal,
     targetUrl,
     setTargetUrl,
     isInspecting,

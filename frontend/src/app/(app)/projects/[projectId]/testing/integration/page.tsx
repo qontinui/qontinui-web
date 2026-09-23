@@ -9,7 +9,8 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { IntegrationTestResults } from "@/components/testing/IntegrationTestResults";
 import { VisualPlayback } from "@/components/testing/VisualPlayback";
-import { integrationTestingService } from "@/services/integration-testing";
+import { useIntegrationTestingService } from "@/services/integration-testing";
+import { useNewWorkRefusal } from "@/contexts/active-runner-context";
 import { formatTimestampLocal } from "@/lib/time-utils";
 import {
   Play,
@@ -32,6 +33,9 @@ import type {
 type ViewMode = "list" | "detail" | "visual";
 
 export default function IntegrationTestPage() {
+  const integrationTestingService = useIntegrationTestingService();
+  // Running an integration test is NEW work.
+  const newWorkRefusal = useNewWorkRefusal();
   const params = useParams();
   const projectId = params.projectId as string;
 
@@ -50,7 +54,7 @@ export default function IntegrationTestPage() {
       setApiHealthy(healthy);
     };
     checkHealth();
-  }, []);
+  }, [integrationTestingService]);
 
   const fetchRuns = useCallback(async () => {
     if (!projectId) return;
@@ -67,7 +71,7 @@ export default function IntegrationTestPage() {
     } finally {
       setLoading(false);
     }
-  }, [projectId]);
+  }, [projectId, integrationTestingService]);
 
   useEffect(() => {
     fetchRuns();
@@ -93,6 +97,10 @@ export default function IntegrationTestPage() {
 
   const runIntegrationTest = async () => {
     if (!projectId) return;
+    if (newWorkRefusal !== null) {
+      setError(newWorkRefusal);
+      return;
+    }
 
     const mockWorkflowConfig: WorkflowConfig = {
       workflow_id: "placeholder",
@@ -193,9 +201,19 @@ export default function IntegrationTestPage() {
             </Button>
           )}
 
+          {newWorkRefusal && (
+            <span
+              className="max-w-[20rem] truncate text-xs text-muted-foreground"
+              title={newWorkRefusal}
+              data-testid="integration-run-refusal"
+            >
+              {newWorkRefusal}
+            </span>
+          )}
           <Button
             onClick={runIntegrationTest}
-            disabled={runningTest || !apiHealthy}
+            disabled={runningTest || !apiHealthy || newWorkRefusal !== null}
+            title={newWorkRefusal ?? undefined}
             size="sm"
           >
             {runningTest ? (
@@ -239,10 +257,8 @@ export default function IntegrationTestPage() {
               <div className="flex items-center gap-2 text-yellow-400">
                 <AlertCircle className="w-5 h-5" />
                 <span>
-                  Runner is not reachable at{" "}
-                  {process.env.NEXT_PUBLIC_RUNNER_URL ||
-                    "http://localhost:9876"}
-                  . Start the runner to run integration tests.
+                  The selected runner is not reachable. Start the runner to run
+                  integration tests.
                 </span>
               </div>
             </CardContent>
@@ -267,6 +283,7 @@ export default function IntegrationTestPage() {
                 onRunTest={runIntegrationTest}
                 runningTest={runningTest}
                 apiHealthy={apiHealthy}
+                runRefusal={newWorkRefusal}
               />
             ) : (
               <IntegrationTestRunsList
@@ -300,9 +317,15 @@ interface EmptyStateProps {
   onRunTest: () => void;
   runningTest: boolean;
   apiHealthy: boolean | null;
+  runRefusal: string | null;
 }
 
-function EmptyState({ onRunTest, runningTest, apiHealthy }: EmptyStateProps) {
+function EmptyState({
+  onRunTest,
+  runningTest,
+  apiHealthy,
+  runRefusal,
+}: EmptyStateProps) {
   return (
     <div className="py-12 text-center">
       <Activity className="w-16 h-16 mx-auto mb-4 text-muted-foreground" />
@@ -314,7 +337,11 @@ function EmptyState({ onRunTest, runningTest, apiHealthy }: EmptyStateProps) {
         historical execution data. Tests run in mock mode without needing a live
         GUI.
       </p>
-      <Button onClick={onRunTest} disabled={runningTest || !apiHealthy}>
+      <Button
+        onClick={onRunTest}
+        disabled={runningTest || !apiHealthy || runRefusal !== null}
+        title={runRefusal ?? undefined}
+      >
         {runningTest ? (
           <>
             <Loader2 className="w-4 h-4 mr-2 animate-spin" />
@@ -327,6 +354,9 @@ function EmptyState({ onRunTest, runningTest, apiHealthy }: EmptyStateProps) {
           </>
         )}
       </Button>
+      {runRefusal && (
+        <p className="mt-2 text-xs text-muted-foreground">{runRefusal}</p>
+      )}
     </div>
   );
 }

@@ -13,6 +13,7 @@ from __future__ import annotations
 from datetime import datetime, timedelta
 from types import SimpleNamespace
 from typing import Any
+from unittest.mock import AsyncMock, MagicMock
 
 import httpx
 import pytest
@@ -45,6 +46,20 @@ def _coord_row(**overrides: Any) -> dict[str, Any]:
     }
     row.update(overrides)
     return row
+
+
+def _no_connections_db() -> Any:
+    """Async-DB stand-in whose ``coord.device_connections`` read finds nothing.
+
+    The list/get endpoints batch-load ``Runner.instances`` from the web-owned
+    connections table; these tests are about the coord-row mapping, so every
+    device gets an empty instance list.
+    """
+    result = MagicMock()
+    result.scalars.return_value.all.return_value = []
+    db = MagicMock()
+    db.execute = AsyncMock(return_value=result)
+    return db
 
 
 class _FakeRequest:
@@ -199,7 +214,7 @@ async def test_list_devices_for_user_unwraps_envelope(monkeypatch):
 
 
 def test_device_row_to_wire_maps_fields():
-    wire = devices_ep._device_row_to_wire(_coord_row())
+    wire = devices_ep._device_row_to_wire(_coord_row(), instances=[])
     assert wire.id == DEVICE_ID
     assert wire.userId == USER_ID
     assert wire.name == "spaceship"
@@ -220,7 +235,9 @@ TENANT_B = "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"
 
 
 def test_device_row_to_wire_tenant_bindings_null_stays_unknown():
-    wire = devices_ep._device_row_to_wire(_coord_row(tenant_bindings=None))
+    wire = devices_ep._device_row_to_wire(
+        _coord_row(tenant_bindings=None), instances=[]
+    )
     assert wire.tenant_bindings is None
     assert wire.model_dump(mode="json")["tenant_bindings"] is None
 
@@ -228,12 +245,12 @@ def test_device_row_to_wire_tenant_bindings_null_stays_unknown():
 def test_device_row_to_wire_tenant_bindings_absent_key_is_unknown():
     row = _coord_row()
     assert "tenant_bindings" not in row
-    wire = devices_ep._device_row_to_wire(row)
+    wire = devices_ep._device_row_to_wire(row, instances=[])
     assert wire.tenant_bindings is None
 
 
 def test_device_row_to_wire_tenant_bindings_empty_stays_zero():
-    wire = devices_ep._device_row_to_wire(_coord_row(tenant_bindings=[]))
+    wire = devices_ep._device_row_to_wire(_coord_row(tenant_bindings=[]), instances=[])
     assert wire.tenant_bindings == []
     assert wire.model_dump(mode="json")["tenant_bindings"] == []
 
@@ -249,7 +266,8 @@ def test_device_row_to_wire_tenant_bindings_populated_passes_through():
                 },
                 {"tenant_id": TENANT_B, "tenant_slug": None, "last_active_at": None},
             ]
-        )
+        ),
+        instances=[],
     )
     assert wire.model_dump(mode="json")["tenant_bindings"] == [
         {
@@ -264,7 +282,9 @@ def test_device_row_to_wire_tenant_bindings_populated_passes_through():
 def test_device_row_to_wire_tenant_bindings_malformed_is_unknown_not_zero():
     # A non-list value violates the contract; report UNKNOWN, never an
     # empty set.
-    wire = devices_ep._device_row_to_wire(_coord_row(tenant_bindings="nope"))
+    wire = devices_ep._device_row_to_wire(
+        _coord_row(tenant_bindings="nope"), instances=[]
+    )
     assert wire.tenant_bindings is None
 
 
@@ -276,7 +296,8 @@ def test_device_row_to_wire_tenant_bindings_drops_elements_without_tenant_id():
                 {"tenant_slug": "orphan"},
                 {"tenant_id": TENANT_A},
             ]
-        )
+        ),
+        instances=[],
     )
     assert [b.tenant_id for b in wire.tenant_bindings or []] == [TENANT_A]
 
@@ -304,6 +325,7 @@ async def test_list_devices_endpoint_preserves_tenant_bindings_tri_state(monkeyp
     )
     wire = await devices_ep.list_devices_endpoint(
         request=_FakeRequest(),
+        db=_no_connections_db(),
         current_user=SimpleNamespace(id=USER_ID),
         status_filter=None,
     )
@@ -317,7 +339,7 @@ async def test_list_devices_endpoint_preserves_tenant_bindings_tri_state(monkeyp
 
 def test_derive_status_from_row_ws_session_wins():
     wire = devices_ep._device_row_to_wire(
-        _coord_row(ws_session_id=99, derived_status="offline")
+        _coord_row(ws_session_id=99, derived_status="offline"), instances=[]
     )
     assert wire.derivedStatus.value == "healthy"
     assert wire.wsConnected is True
@@ -325,7 +347,7 @@ def test_derive_status_from_row_ws_session_wins():
 
 def test_derive_status_from_row_ui_error_errored():
     row = _coord_row(ui_error={"kind": "boom", "message": "x"})
-    wire = devices_ep._device_row_to_wire(row)
+    wire = devices_ep._device_row_to_wire(row, instances=[])
     assert wire.derivedStatus.value == "errored"
 
 
@@ -344,13 +366,17 @@ def _fresh_iso() -> str:
 
 def test_derive_status_from_row_stale_healthy_reports_offline():
     # default _coord_row heartbeat is a fixed past date — always stale.
-    wire = devices_ep._device_row_to_wire(_coord_row(derived_status="healthy"))
+    wire = devices_ep._device_row_to_wire(
+        _coord_row(derived_status="healthy"), instances=[]
+    )
     assert wire.derivedStatus.value == "offline"
 
 
 @pytest.mark.parametrize("claim", ["degraded", "starting"])
 def test_derive_status_from_row_stale_liveness_claims_report_offline(claim):
-    wire = devices_ep._device_row_to_wire(_coord_row(derived_status=claim))
+    wire = devices_ep._device_row_to_wire(
+        _coord_row(derived_status=claim), instances=[]
+    )
     assert wire.derivedStatus.value == "offline"
 
 
@@ -371,7 +397,7 @@ def test_derive_status_from_row_fresh_healthy_without_ws_is_relay_unroutable():
     This used to assert ``healthy`` — that assertion WAS the blind spot.
     """
     wire = devices_ep._device_row_to_wire(
-        _coord_row(derived_status="healthy", last_heartbeat=_fresh_iso())
+        _coord_row(derived_status="healthy", last_heartbeat=_fresh_iso()), instances=[]
     )
     assert wire.wsConnected is False
     assert wire.derivedStatus.value == "degraded"
@@ -382,7 +408,8 @@ def test_derive_status_from_row_fresh_healthy_with_ws_stays_healthy():
     wire = devices_ep._device_row_to_wire(
         _coord_row(
             derived_status="healthy", last_heartbeat=_fresh_iso(), ws_session_id=42
-        )
+        ),
+        instances=[],
     )
     assert wire.wsConnected is True
     assert wire.derivedStatus.value == "healthy"
@@ -393,7 +420,7 @@ def test_derive_status_from_row_only_healthy_is_demoted(claim):
     """``degraded`` already reads honestly and ``starting`` legitimately has no
     WS pointer yet — demoting either would erase information, not add it."""
     wire = devices_ep._device_row_to_wire(
-        _coord_row(derived_status=claim, last_heartbeat=_fresh_iso())
+        _coord_row(derived_status=claim, last_heartbeat=_fresh_iso()), instances=[]
     )
     assert wire.derivedStatus.value == claim
 
@@ -402,14 +429,14 @@ def test_derive_status_from_row_ws_presence_beats_stale_heartbeat():
     # A live WS session is definitive; the connection-cleanup sweep owns
     # clearing stale sessions — the staleness gate must not second-guess it.
     wire = devices_ep._device_row_to_wire(
-        _coord_row(derived_status="healthy", ws_session_id=7)
+        _coord_row(derived_status="healthy", ws_session_id=7), instances=[]
     )
     assert wire.derivedStatus.value == "healthy"
 
 
 def test_derive_status_from_row_missing_heartbeat_is_stale():
     wire = devices_ep._device_row_to_wire(
-        _coord_row(derived_status="healthy", last_heartbeat=None)
+        _coord_row(derived_status="healthy", last_heartbeat=None), instances=[]
     )
     assert wire.derivedStatus.value == "offline"
 
@@ -421,7 +448,7 @@ def test_derive_status_from_row_unparseable_heartbeat_fails_open():
     # ``degraded`` — still emphatically not ``offline``, which is what
     # "fails open" is protecting against.
     wire = devices_ep._device_row_to_wire(
-        _coord_row(derived_status="healthy", last_heartbeat="not-a-date")
+        _coord_row(derived_status="healthy", last_heartbeat="not-a-date"), instances=[]
     )
     assert wire.derivedStatus.value != "offline"
     assert wire.derivedStatus.value == "degraded"
@@ -429,7 +456,9 @@ def test_derive_status_from_row_unparseable_heartbeat_fails_open():
 
 def test_derive_status_from_row_stale_errored_stays_errored():
     # ``errored`` is sticky diagnostic state, not a liveness claim.
-    wire = devices_ep._device_row_to_wire(_coord_row(derived_status="errored"))
+    wire = devices_ep._device_row_to_wire(
+        _coord_row(derived_status="errored"), instances=[]
+    )
     assert wire.derivedStatus.value == "errored"
 
 
@@ -516,6 +545,7 @@ async def test_list_devices_endpoint_status_filter(monkeypatch):
 
     wire = await devices_ep.list_devices_endpoint(
         request=_FakeRequest(),
+        db=_no_connections_db(),
         current_user=SimpleNamespace(id=USER_ID),
         status_filter="healthy",
     )
@@ -534,6 +564,7 @@ async def test_get_device_endpoint_maps_owned_row(monkeypatch):
 
     wire = await devices_ep.get_device_endpoint(
         request=_FakeRequest(),
+        db=_no_connections_db(),
         current_user=SimpleNamespace(id=USER_ID),
         device_id=DEVICE_ID,
     )

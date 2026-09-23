@@ -4,6 +4,7 @@
  * Handles patternFind and patternFindAll for template matching.
  */
 
+import { runnerRequest } from "@/lib/runner/api-client";
 import { BaseClient } from "./base-client";
 import type { PatternMatchRequest, PatternMatchResponse } from "./types";
 
@@ -20,21 +21,16 @@ export class PatternClient {
   async patternFind(
     request: PatternMatchRequest
   ): Promise<PatternMatchResponse> {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 30000); // 30 second timeout
-
     try {
-      const response = await fetch(`${this.base.baseUrl}/pattern/find`, {
+      const response = await runnerRequest(this.base.target, "/pattern/find", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
           Accept: "application/json",
         },
         body: JSON.stringify(request),
-        signal: controller.signal,
+        timeoutMs: 30000,
       });
-
-      clearTimeout(timeoutId);
 
       if (!response.ok) {
         const message = await this.base.failureMessage(
@@ -64,7 +60,6 @@ export class PatternClient {
       }
       return data;
     } catch (error) {
-      clearTimeout(timeoutId);
       return {
         success: false,
         matches: [],
@@ -85,21 +80,21 @@ export class PatternClient {
   async patternFindAll(
     request: PatternMatchRequest
   ): Promise<PatternMatchResponse> {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 60000); // 60 second timeout for find_all
-
     try {
-      const response = await fetch(`${this.base.baseUrl}/pattern/find-all`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Accept: "application/json",
-        },
-        body: JSON.stringify(request),
-        signal: controller.signal,
-      });
-
-      clearTimeout(timeoutId);
+      const response = await runnerRequest(
+        this.base.target,
+        "/pattern/find-all",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Accept: "application/json",
+          },
+          body: JSON.stringify(request),
+          // find_all scans the whole screen
+          timeoutMs: 60000,
+        }
+      );
 
       if (!response.ok) {
         const message = await this.base.failureMessage(
@@ -129,7 +124,6 @@ export class PatternClient {
       }
       return data;
     } catch (error) {
-      clearTimeout(timeoutId);
       return {
         success: false,
         matches: [],

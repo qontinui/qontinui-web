@@ -2,7 +2,7 @@ import { useState } from "react";
 import {
   useRunnerHealth,
   useHooks,
-  runnerApi,
+  useRunnerApi,
   type Hook,
   type CreateHookRequest,
   type UpdateHookRequest,
@@ -10,6 +10,7 @@ import {
 } from "@/lib/runner";
 
 export function useHooksPage() {
+  const runnerApi = useRunnerApi();
   const { isOffline, isLoading: healthLoading } = useRunnerHealth();
   const {
     data: hooks,

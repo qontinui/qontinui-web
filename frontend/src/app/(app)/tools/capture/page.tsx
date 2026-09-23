@@ -1,8 +1,17 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
-import { useRunnerHealth, runnerApi } from "@/lib/runner-api";
+import { useMemo, useState } from "react";
+import {
+  createRunnerApi,
+  useRunnerHealth,
+  useRunnerTarget,
+  useRunnerPoll,
+  runnerPollInterval,
+} from "@/lib/runner-api";
+import { useDispatchRunnerTarget } from "@/contexts/active-runner-context";
+import type { RunnerTarget } from "@/lib/runner/target";
 import { RunnerPartialState } from "@/components/runner/RunnerPartialState";
+import { RunOnPicker } from "@/components/runner/RunOnPicker";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -22,6 +31,25 @@ import {
 import { toast } from "sonner";
 
 export default function CapturePage() {
+  // Starting a recording is NEW, MACHINE-BOUND work: it records one
+  // machine's screen, mouse and keyboard, so a pick coord refuses is never
+  // moved to another runner (plan D2). A refused call carries coord's
+  // outcome; the Run-on picker names the reason and offers alternatives.
+  const dispatch = useDispatchRunnerTarget({ workClass: "machine_bound" });
+  const workRefusal = dispatch.refusal?.message ?? null;
+  // A STARTED recording keeps a handle to the device it started on: status
+  // polling and Stop go there until it ends — never to the read target or
+  // the new-work target, both of which can move (a pick change, coord
+  // releasing the pick) while it records.
+  const [recordingTarget, setRecordingTarget] = useState<RunnerTarget | null>(
+    null
+  );
+  const recordingApi = useMemo(
+    () => (recordingTarget ? createRunnerApi(recordingTarget) : null),
+    [recordingTarget]
+  );
+  const readTarget = useRunnerTarget();
+  const target = recordingTarget ?? readTarget;
   const { isOffline, isLoading: healthLoading } = useRunnerHealth();
   const [isRecording, setIsRecording] = useState(false);
   const [fps, setFps] = useState(30);
@@ -33,30 +61,39 @@ export default function CapturePage() {
     events: number;
     sessionId: string;
   } | null>(null);
-  const timerRef = useRef<NodeJS.Timeout | null>(null);
+  // Whether the RECORDING device stopped answering status polls. While a
+  // recording runs, this — not the read target's health — is what the
+  // offline banner reports.
+  const [recordingUnreachable, setRecordingUnreachable] = useState(false);
 
-  useEffect(() => {
-    if (isRecording) {
-      timerRef.current = setInterval(async () => {
-        try {
-          const status = await runnerApi.getInteractionRecordingStatus();
-          setElapsedSeconds(Math.floor(status.duration));
-          setEventCount(status.events_count);
-          if (!status.is_recording) {
-            setIsRecording(false);
-          }
-        } catch {
-          // Fallback to local timer if status poll fails
-          setElapsedSeconds((s) => s + 1);
-        }
-      }, 1000);
-    } else if (timerRef.current) {
-      clearInterval(timerRef.current);
-    }
-    return () => {
-      if (timerRef.current) clearInterval(timerRef.current);
-    };
-  }, [isRecording]);
+  // Recording status poll. The cadence is re-evaluated every tick (never
+  // faster than the relay cadence for a relayed or unresolved target); a
+  // RUNNER_NEEDS_LOCAL refusal stops the poll and is shown.
+  useRunnerPoll(target, {
+    enabled: isRecording && recordingApi !== null,
+    requestedMs: 1000,
+    tick: async () => {
+      if (!recordingApi) return "stop";
+      const status = await recordingApi.getInteractionRecordingStatus();
+      setRecordingUnreachable(false);
+      setElapsedSeconds(Math.floor(status.duration));
+      setEventCount(status.events_count);
+      if (!status.is_recording) {
+        setIsRecording(false);
+        setRecordingTarget(null);
+        return "stop";
+      }
+      return undefined;
+    },
+    onNeedsLocal: (err) => toast.error(err.message),
+    // Fallback to a local timer if a status poll fails
+    onError: () => {
+      setRecordingUnreachable(true);
+      setElapsedSeconds(
+        (s) => s + Math.round(runnerPollInterval(target, 1000) / 1000)
+      );
+    },
+  });
 
   const formatTimer = (seconds: number): string => {
     const m = Math.floor(seconds / 60)
@@ -67,8 +104,13 @@ export default function CapturePage() {
   };
 
   const handleStart = async () => {
+    // The device this recording starts on, fixed at the moment of the call.
+    const startedOn = dispatch.target;
     try {
-      const result = await runnerApi.startInteractionRecording(fps);
+      const result =
+        await createRunnerApi(startedOn).startInteractionRecording(fps);
+      setRecordingTarget(startedOn);
+      setRecordingUnreachable(false);
       setIsRecording(true);
       setElapsedSeconds(0);
       setEventCount(0);
@@ -81,9 +123,11 @@ export default function CapturePage() {
   };
 
   const handleStop = async () => {
+    if (!recordingApi) return;
     try {
-      const result = await runnerApi.stopInteractionRecording();
+      const result = await recordingApi.stopInteractionRecording();
       setIsRecording(false);
+      setRecordingTarget(null);
       setLastRecording({
         duration: Math.floor(result.duration),
         events: result.events_count,
@@ -97,6 +141,7 @@ export default function CapturePage() {
         err instanceof Error ? err.message : "Failed to stop recording"
       );
       setIsRecording(false);
+      setRecordingTarget(null);
     }
   };
 
@@ -123,12 +168,22 @@ export default function CapturePage() {
             </div>
           )}
         </div>
+        {/* Hidden while recording: status and Stop are held on the device the
+            recording started on, so a pick made now would only confuse —
+            it could apply to the NEXT recording, never this one. */}
+        {!isRecording && (
+          <RunOnPicker workClass="machine_bound" className="items-end" />
+        )}
       </header>
 
       <main className="flex-1 overflow-y-auto p-6 max-w-3xl mx-auto space-y-6 w-full">
-        {isOffline && (
-          <RunnerPartialState message="Runner offline — this tool requires the runner for execution" />
-        )}
+        {isRecording
+          ? recordingUnreachable && (
+              <RunnerPartialState message="The runner recording this capture is not answering — the timer is estimated until it does" />
+            )
+          : isOffline && (
+              <RunnerPartialState message="Runner offline — this tool requires the runner for execution" />
+            )}
 
         <p className="text-muted-foreground">
           Record user interactions for automation replay and state discovery.
@@ -205,6 +260,8 @@ export default function CapturePage() {
                 {!isRecording ? (
                   <Button
                     onClick={handleStart}
+                    disabled={workRefusal !== null}
+                    title={workRefusal ?? undefined}
                     className="bg-red-600 hover:bg-red-700 text-white px-8 py-6 text-lg"
                   >
                     <Play className="size-5 mr-2" />
@@ -221,6 +278,14 @@ export default function CapturePage() {
                   </Button>
                 )}
               </div>
+              {!isRecording && workRefusal && (
+                <p
+                  className="text-xs text-text-muted"
+                  data-testid="capture-start-refusal"
+                >
+                  {workRefusal}
+                </p>
+              )}
             </div>
           </CardContent>
         </Card>

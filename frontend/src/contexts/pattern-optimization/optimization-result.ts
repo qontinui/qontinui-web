@@ -1,9 +1,12 @@
+import { runnerRequest } from "@/lib/runner/api-client";
+import type { RunnerTarget } from "@/lib/runner/target";
 import type {
   OptimizationSession,
   OptimizationResult,
 } from "@/types/pattern-optimization";
 
 export async function generateOptimizationResult(
+  target: RunnerTarget,
   session: OptimizationSession,
   selectedPatternIds?: Set<string>
 ): Promise<OptimizationResult> {
@@ -24,22 +27,19 @@ export async function generateOptimizationResult(
     region: pattern.region,
   }));
 
-  const response = await fetch(
-    "http://127.0.0.1:9876/api/v1/create-state-image",
-    {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        name: `StateImage_${session.id}`,
-        patterns: patterns,
-        strategy_type: session.selectedStrategy.type,
-        similarity_threshold:
-          session.selectedStrategy.parameters?.threshold || 0.8,
-      }),
-    }
-  );
+  const response = await runnerRequest(target, "/api/v1/create-state-image", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      name: `StateImage_${session.id}`,
+      patterns: patterns,
+      strategy_type: session.selectedStrategy.type,
+      similarity_threshold:
+        session.selectedStrategy.parameters?.threshold || 0.8,
+    }),
+  });
 
   if (!response.ok) {
     throw new Error(`Failed to create StateImage: ${response.statusText}`);

@@ -43,15 +43,14 @@ function operationsWsBase(): string {
 /**
  * The named subscriptions the web backend's coord-events bridge forwards
  * to coord's generic `/ws`. Coord takes a CLOSED set (`?subscribe=<name>`,
- * each mapped server-side to a fixed pattern — `strategy` →
- * `events.strategy.*`, `merge` → `events.merge.*`, `claims` →
- * `events.claims`, `branches` → `events.branches`); a caller-supplied glob
- * is refused. Mirrors `COORD_EVENTS_SUBSCRIPTIONS` in
+ * each mapped server-side to a fixed pattern — `merge` → `events.merge.*`,
+ * `claims` → `events.claims`, `branches` → `events.branches`); a
+ * caller-supplied glob is refused. Mirrors `COORD_EVENTS_SUBSCRIPTIONS` in
  * `backend/app/services/coord_device_status.py`, which is the gate: a name
  * absent there closes 1008 `unknown_subscription` before any auth. The
  * runner-only `device` / `device_ci` names are deliberately not here.
  */
-export type CoordEventSubscription = "strategy" | "merge" | "claims" | "branches";
+export type CoordEventSubscription = "merge" | "claims" | "branches";
 
 /**
  * WebSocket URL for the coord-events bridge,
@@ -121,20 +120,6 @@ export function ciStatusWsUrl(token: string): string {
  * webhook cadence, so 5s is fresh enough without hot-looping coord.
  */
 export const CI_STATUS_POLL_FALLBACK_MS = 5_000;
-
-/**
- * POST endpoint that spawns a red-main fix session for a repo (red-main
- * auto-remediation Phase 4b). The web backend forwards to coord's
- * `POST /pr-merge/red-main/:repo/spawn-fix`, which opens a visible fix
- * session on the operator's device for the repo's current red episode.
- * Coord 409s when a fix session is already running for that episode or the
- * repo has no live red-main alert. `repo` is `owner/name` and is inlined
- * inside the path (the backend route captures it as `{repo:path}`, the same
- * shape as `/pr-merge/repos/:repo/profile`).
- */
-export function redMainSpawnFixUrl(repo: string): string {
-  return `${OPERATIONS_API}/pr-merge/red-main/${repo}/spawn-fix`;
-}
 
 // ---------------------------------------------------------------------------
 // Tenant self-service merge recovery (plan

@@ -276,6 +276,26 @@ describe("CoordNotificationsPage", () => {
     expect(Object.keys(body)).toEqual(["all"]);
   });
 
+  it("filters to agent escalate clearances with ?via=agent_evidence", async () => {
+    // Plan 2026-09-13-escalate-path-block-is-agent-clearable-on-evidence 4.3:
+    // the operator reads what agents cleared (notify, not ask). The filter is
+    // coord's (`detail.via`), so the page only has to ASK for it — and must
+    // not send it until the operator does.
+    httpGet.mockResolvedValue({ notifications: [], total: 0, unread_count: 0 });
+    const user = userEvent.setup();
+    render(<CoordNotificationsPage />);
+
+    await waitFor(() => expect(httpGet).toHaveBeenCalled());
+    expect(String(httpGet.mock.calls[0][0])).not.toContain("via=");
+
+    httpGet.mockClear();
+    await user.click(
+      screen.getByTestId("coord-notifications-agent-clearances-only")
+    );
+    await waitFor(() => expect(httpGet).toHaveBeenCalled());
+    expect(String(httpGet.mock.calls[0][0])).toContain("via=agent_evidence");
+  });
+
   it("scopes mark-all to the LOADED rows once a filter is active", async () => {
     // The trap: an operator filters, sees 4 rows, clicks a button labelled
     // "Mark all read" and irreversibly marks the several hundred unread events
@@ -628,9 +648,9 @@ describe("CoordNotificationsPage", () => {
     // The strip goes amber-stale — that IS its job — while the list holds the
     // answer coord actually gave.
     await waitFor(() =>
-      expect(screen.getByTestId("coord-notifications-health")).toHaveTextContent(
-        /stopped updating/
-      )
+      expect(
+        screen.getByTestId("coord-notifications-health")
+      ).toHaveTextContent(/stopped updating/)
     );
     expect(
       screen.queryByTestId("coord-notifications-unknown")
@@ -745,10 +765,7 @@ describe("CoordNotificationsPage", () => {
     await screen.findByTestId("coord-notifications-pending");
 
     const button = screen.getByTestId("coord-notifications-mark-all-read");
-    expect(button).not.toHaveAttribute(
-      "title",
-      expect.stringContaining("137")
-    );
+    expect(button).not.toHaveAttribute("title", expect.stringContaining("137"));
     // The warning survives the figure, exactly as it does on the stale arm.
     expect(button).toHaveAttribute(
       "title",
@@ -889,9 +906,9 @@ describe("CoordNotificationsPage", () => {
 
     await user.click(screen.getByTestId("coord-notifications-refresh"));
     await waitFor(() =>
-      expect(screen.getByTestId("coord-notifications-health")).toHaveTextContent(
-        "These counts stopped updating"
-      )
+      expect(
+        screen.getByTestId("coord-notifications-health")
+      ).toHaveTextContent("These counts stopped updating")
     );
     // Same `unreadCount === 0` in state; different answer, because the read
     // behind it is no longer current.
@@ -985,9 +1002,9 @@ describe("CoordNotificationsPage", () => {
 
     await user.click(screen.getByTestId("coord-notifications-refresh"));
     await waitFor(() =>
-      expect(screen.getByTestId("coord-notifications-health")).toHaveTextContent(
-        "These counts stopped updating"
-      )
+      expect(
+        screen.getByTestId("coord-notifications-health")
+      ).toHaveTextContent("These counts stopped updating")
     );
     expect(
       screen.getByTestId("coord-notifications-mark-all-read")
@@ -1060,9 +1077,9 @@ describe("CoordNotificationsPage", () => {
 
     // The page landed and appended; the HEAD counts are the poller's business
     // and are untouched.
-    expect(
-      screen.getByTestId("coord-notifications-health")
-    ).toHaveTextContent("7 unread events");
+    expect(screen.getByTestId("coord-notifications-health")).toHaveTextContent(
+      "7 unread events"
+    );
     expect(
       screen.getByTestId("coord-notifications-mark-all-read")
     ).toHaveAttribute("title", expect.stringContaining("ALL 7 unread"));
@@ -1227,7 +1244,9 @@ describe("CoordNotificationsPage", () => {
     // Its number may be applied — it is the newest one anybody delivered — but
     // the verdict stands, because a newer READ finished without confirming it.
     expect(strip).toHaveTextContent("These counts stopped updating");
-    expect(strip).not.toHaveTextContent("you have seen everything coord recorded");
+    expect(strip).not.toHaveTextContent(
+      "you have seen everything coord recorded"
+    );
   });
 
   describe("the ?ref= banner", () => {
@@ -1398,5 +1417,191 @@ describe("CoordNotificationsPage", () => {
         ).toHaveTextContent(/feed above failed to load/)
       );
     });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Plan `2026-09-18-notifications-are-agent-actions-and-alerts-are-agent-work`
+// Phase 8 — the feed is the operator's record of what agents did.
+// ---------------------------------------------------------------------------
+
+describe("CoordNotificationsPage — agent actions", () => {
+  const UUID_C = "5a6b7c8d-9e0f-4a1b-8c2d-3e4f5a6b7c8d";
+
+  beforeEach(() => {
+    httpGet.mockReset();
+    httpPost.mockReset();
+    window.history.replaceState({}, "", "/");
+  });
+
+  it("lists unread rows before read ones, each group in coord's order", async () => {
+    httpGet.mockResolvedValue({
+      notifications: [
+        notification({
+          notification_id: UUID_A,
+          summary: "newest, already read",
+          read_at: "2026-09-18T11:00:00Z",
+        }),
+        notification({ notification_id: UUID_B, summary: "middle, unread" }),
+        notification({ notification_id: UUID_C, summary: "oldest, unread" }),
+      ],
+      next_cursor: null,
+      total: 3,
+      unread_count: 2,
+    });
+    render(<CoordNotificationsPage />);
+
+    await waitFor(() =>
+      expect(screen.getAllByTestId("coord-notification-summary")).toHaveLength(
+        3
+      )
+    );
+    expect(
+      screen
+        .getAllByTestId("coord-notification-summary")
+        .map((el) => el.textContent)
+    ).toEqual(["middle, unread", "oldest, unread", "newest, already read"]);
+  });
+
+  it("keeps unread before read across a Load more, walking page 1's cursor", async () => {
+    httpGet
+      .mockResolvedValueOnce({
+        notifications: [
+          notification({
+            notification_id: UUID_A,
+            summary: "A — page 1, read",
+            read_at: "2026-09-18T11:00:00Z",
+          }),
+          notification({
+            notification_id: UUID_B,
+            summary: "B — page 1, unread",
+          }),
+        ],
+        next_cursor: "page-1-cursor",
+        total: 3,
+        unread_count: 2,
+      })
+      .mockResolvedValueOnce({
+        notifications: [
+          notification({
+            notification_id: UUID_C,
+            summary: "C — page 2, unread",
+          }),
+        ],
+        next_cursor: null,
+        total: 3,
+        unread_count: 2,
+      });
+    const user = userEvent.setup();
+    render(<CoordNotificationsPage />);
+
+    await user.click(
+      await screen.findByTestId("coord-notifications-load-more")
+    );
+
+    await waitFor(() =>
+      expect(screen.getAllByTestId("coord-notification-summary")).toHaveLength(
+        3
+      )
+    );
+    expect(
+      screen
+        .getAllByTestId("coord-notification-summary")
+        .map((el) => el.textContent)
+    ).toEqual(["B — page 1, unread", "C — page 2, unread", "A — page 1, read"]);
+    expect(httpGet).toHaveBeenCalledTimes(2);
+    expect(String(httpGet.mock.calls[1][0])).toContain("cursor=page-1-cursor");
+  });
+
+  it("says how a sensitive agent action can be undone", async () => {
+    httpGet.mockResolvedValue({
+      notifications: [
+        notification({
+          kind: "agent_took_sensitive_action",
+          summary: "An agent force-pushed main on qontinui-web",
+          detail: {
+            action: "force_push",
+            reversible: "restore",
+            undo: "git_write_ledger:4821",
+          },
+        }),
+      ],
+      next_cursor: null,
+      total: 1,
+      unread_count: 1,
+    });
+    const user = userEvent.setup();
+    render(<CoordNotificationsPage />);
+
+    // Reversibility is on the scan line; the kind has a hand-written label.
+    const reversible = await screen.findByTestId(
+      "coord-notification-reversible"
+    );
+    expect(reversible).toHaveTextContent("restore");
+    expect(screen.getByText("Sensitive agent action")).toBeInTheDocument();
+    // The undo handle is expanded-only.
+    expect(screen.queryByTestId("coord-notification-undo")).toBeNull();
+
+    await user.click(screen.getByTestId("coord-notification-summary"));
+    const undo = await screen.findByTestId("coord-notification-undo");
+    expect(undo).toHaveTextContent("git_write_ledger:4821");
+    // Not repeated in the raw detail list beside it.
+    const detail = screen.getByTestId("coord-notification-detail");
+    expect(detail.textContent?.match(/git_write_ledger:4821/g)).toHaveLength(1);
+    expect(detail).toHaveTextContent("force_push");
+  });
+
+  it("renders 'not reversible' for reversible: no", async () => {
+    httpGet.mockResolvedValue({
+      notifications: [
+        notification({
+          kind: "agent_took_sensitive_action",
+          summary: "An agent published qontinui-schemas 0.9.0",
+          detail: { action: "publish", reversible: "no" },
+        }),
+      ],
+      next_cursor: null,
+      total: 1,
+      unread_count: 1,
+    });
+    render(<CoordNotificationsPage />);
+
+    expect(
+      await screen.findByTestId("coord-notification-reversible")
+    ).toHaveTextContent("not reversible");
+  });
+
+  it("claims nothing about reversibility when the row states none", async () => {
+    httpGet.mockResolvedValue({
+      notifications: [
+        notification({
+          kind: "agent_took_sensitive_action",
+          summary: "An agent enrolled a repository",
+          detail: { action: "repo_enrolled" },
+        }),
+      ],
+      next_cursor: null,
+      total: 1,
+      unread_count: 1,
+    });
+    render(<CoordNotificationsPage />);
+
+    await screen.findByTestId("coord-notification-row");
+    expect(screen.queryByTestId("coord-notification-reversible")).toBeNull();
+  });
+
+  it("does not render reversibility on other kinds, even if detail carries it", async () => {
+    httpGet.mockResolvedValue({
+      notifications: [
+        notification({ detail: { reversible: "no", undo: "x" } }),
+      ],
+      next_cursor: null,
+      total: 1,
+      unread_count: 1,
+    });
+    render(<CoordNotificationsPage />);
+
+    await screen.findByTestId("coord-notification-row");
+    expect(screen.queryByTestId("coord-notification-reversible")).toBeNull();
   });
 });

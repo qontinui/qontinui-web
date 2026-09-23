@@ -693,7 +693,7 @@ If you get stuck or have questions:
 
 ## One More Thing...
 
-You can **replay this tutorial** anytime from the Help menu. Feel free to practice until you're completely comfortable.
+Feel free to practice until you're completely comfortable — and open **Documentation** from the user menu whenever you want the reference.
 
 **Welcome to the world of intelligent automation!** 🚀
 

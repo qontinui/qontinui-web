@@ -1,9 +1,10 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import {
   useRunnerHealth,
-  runnerApi,
+  useRunnerApi,
+  runnerFailureMessage,
   type DebugSettings,
   type DeviceInfo,
 } from "@/lib/runner-api";
@@ -24,6 +25,7 @@ import {
 } from "lucide-react";
 
 export default function DebugSettingsPage() {
+  const runnerApi = useRunnerApi();
   const { isOffline, isLoading: healthLoading } = useRunnerHealth();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -36,15 +38,7 @@ export default function DebugSettingsPage() {
   const [deviceInfo, setDeviceInfo] = useState<DeviceInfo | null>(null);
   const [copiedField, setCopiedField] = useState<string | null>(null);
 
-  useEffect(() => {
-    if (isOffline) {
-      setLoading(false);
-      return;
-    }
-    loadAll();
-  }, [isOffline]);
-
-  const loadAll = async () => {
+  const loadAll = useCallback(async () => {
     setLoading(true);
     try {
       const [debugData, deviceData] = await Promise.all([
@@ -54,12 +48,20 @@ export default function DebugSettingsPage() {
       setEnableImageDebug(debugData.enable_image_debug ?? false);
       setTopMatchesCount(debugData.top_matches_count ?? 5);
       setDeviceInfo(deviceData);
-    } catch {
-      toast.error("Failed to load debug settings");
+    } catch (err) {
+      toast.error(runnerFailureMessage(err, "Failed to load debug settings"));
     } finally {
       setLoading(false);
     }
-  };
+  }, [runnerApi]);
+
+  useEffect(() => {
+    if (isOffline) {
+      setLoading(false);
+      return;
+    }
+    loadAll();
+  }, [isOffline, loadAll]);
 
   const handleSave = async () => {
     setSaving(true);

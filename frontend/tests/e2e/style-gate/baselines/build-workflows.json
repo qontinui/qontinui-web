@@ -42,12 +42,6 @@
       "w": 263,
       "h": 32
     },
-    "button-collapse-3": {
-      "x": 8,
-      "y": 760,
-      "w": 239,
-      "h": 32
-    },
     "button-generate-run-1": {
       "x": 701,
       "y": 752,
@@ -69,12 +63,6 @@
     "button-processes-4": {
       "x": 8,
       "y": 365,
-      "w": 239,
-      "h": 32
-    },
-    "button-help-tutorials-1": {
-      "x": 8,
-      "y": 676,
       "w": 239,
       "h": 32
     },
@@ -113,12 +101,6 @@
       "y": 65,
       "w": 24,
       "h": 24
-    },
-    "mention-notifications-trigger": {
-      "x": 8,
-      "y": 640,
-      "w": 32,
-      "h": 32
     },
     "button-visual-1": {
       "x": 92,

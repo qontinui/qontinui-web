@@ -2,6 +2,7 @@ import { useCallback, useState, useEffect, useMemo } from "react";
 import { useWorkflowBuilder as useSharedWorkflowBuilder } from "@qontinui/workflow-ui";
 import type { UnifiedWorkflow } from "@/types/unified-workflow";
 import { registerUserSkills } from "@qontinui/workflow-utils";
+import { useRunnerTarget } from "@/contexts/active-runner-context";
 import { createWebDataAdapter } from "@/lib/web-data-adapter";
 import type { WorkflowBuilderState } from "../workflow-builder-types";
 import {
@@ -17,6 +18,7 @@ export function useWebWorkflowState(
   initialWorkflow?: UnifiedWorkflow
 ) {
   const { state: sharedState, dispatch } = shared;
+  const target = useRunnerTarget();
 
   const [isLoading, setIsLoadingState] = useState(false);
   const [isSaving, setIsSavingState] = useState(false);
@@ -45,13 +47,13 @@ export function useWebWorkflowState(
 
   const refreshSkills = useCallback(async () => {
     try {
-      const adapter = createWebDataAdapter();
+      const adapter = createWebDataAdapter(target);
       const skills = (await adapter.fetchSkills?.()) ?? [];
       registerUserSkills(skills);
     } catch {
       // Skills loading is non-critical
     }
-  }, []);
+  }, [target]);
 
   useEffect(() => {
     refreshSkills();

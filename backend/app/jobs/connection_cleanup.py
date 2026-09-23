@@ -5,16 +5,28 @@ identify ``DeviceConnection`` rows marked active (``disconnected_at IS
 NULL``) whose ``Device`` parent has no live WebSocket (per the in-process +
 Redis registry). It closes the connection row, clears the parent
 ``ws_session_id`` pointer, and notifies the manager.
+
+SECONDARY runner-instance rows (``instance_role = 'secondary'``, plan
+``2026-09-20-runner-selector-drives-a-transport-not-a-target`` Phase 6) are
+judged differently. A secondary never registers with the manager — the
+manager is keyed on ``device_id`` and belongs to the primary — so "is the
+device in the manager's registry" says nothing about it: it would close a live
+secondary whenever its primary is away, and keep a dead one open whenever its
+primary is present. A secondary row is stale when its own heartbeat stamp
+(``COALESCE(last_seen_at, connected_at)``) is older than
+``SECONDARY_STALE_AFTER``, and closing one touches neither the pointer (a
+secondary never holds it) nor the manager (it would unregister the primary).
 """
 
 from uuid import UUID
 
 import structlog
 from qontinui_schemas.common import utc_now
-from sqlalchemy import select
+from sqlalchemy import Integer, func, select, update
 
 from app.config.redis_config import get_redis
 from app.crud import device_crud
+from app.crud.device_connection import INSTANCE_ROLE_SECONDARY, SECONDARY_STALE_AFTER
 from app.db.session import AsyncSessionLocal
 from app.models.device_connection import DeviceConnection
 from app.services.runner_websocket_manager import get_runner_websocket_manager
@@ -38,7 +50,15 @@ async def cleanup_stale_connections() -> dict[str, int]:
         redis_client = await get_redis()
         runner_manager = await get_runner_websocket_manager(redis_client)
 
-        connected_ids = set(await runner_manager.get_all_connected_ids())
+        scanned = await runner_manager.get_all_connected_ids()
+        # ``None`` is a FAILED scan, not an empty fleet. The primary arm below
+        # closes every row whose device is absent from the set, so running it
+        # on a failed scan would close every live primary's row and force a
+        # fleet-wide reconnect. Skip that arm; the secondary arm needs no scan.
+        scan_failed = scanned is None
+        connected_ids = set(scanned or [])
+        if scan_failed:
+            logger.warning("cleanup_primary_arm_skipped_presence_scan_failed")
 
         async with AsyncSessionLocal() as db:
             query = select(DeviceConnection).where(
@@ -49,10 +69,54 @@ async def cleanup_stale_connections() -> dict[str, int]:
 
             stats["total_active"] = len(active_sessions)
 
-            stale_sessions = [
-                s for s in active_sessions if str(s.device_id) not in connected_ids
+            secondary_cutoff = utc_now() - SECONDARY_STALE_AFTER
+            stale_secondaries = [
+                s
+                for s in active_sessions
+                if s.instance_role == INSTANCE_ROLE_SECONDARY
+                and (s.last_seen_at or s.connected_at) < secondary_cutoff
             ]
-            stats["stale_found"] = len(stale_sessions)
+            stale_sessions = [
+                s
+                for s in active_sessions
+                if not scan_failed
+                and s.instance_role != INSTANCE_ROLE_SECONDARY
+                and str(s.device_id) not in connected_ids
+            ]
+            stats["stale_found"] = len(stale_sessions) + len(stale_secondaries)
+
+            if stale_secondaries:
+                # The staleness test is repeated INSIDE the UPDATE: a
+                # heartbeat that stamped last_seen_at after the read above
+                # must win, or a live secondary loses its row to a decision
+                # made from data that is no longer true.
+                result = await db.execute(
+                    update(DeviceConnection)
+                    .where(
+                        DeviceConnection.id.in_([s.id for s in stale_secondaries]),
+                        DeviceConnection.disconnected_at.is_(None),
+                        func.coalesce(
+                            DeviceConnection.last_seen_at,
+                            DeviceConnection.connected_at,
+                        )
+                        < secondary_cutoff,
+                    )
+                    .values(
+                        disconnected_at=func.now(),
+                        duration_seconds=func.extract(
+                            "epoch", func.now() - DeviceConnection.connected_at
+                        ).cast(Integer),
+                    )
+                    .returning(DeviceConnection.id)
+                    .execution_options(synchronize_session=False)
+                )
+                closed_ids = [row[0] for row in result.all()]
+                await db.commit()
+                stats["cleaned"] += len(closed_ids)
+                logger.info(
+                    "cleanup_stale_secondary_instances_closed",
+                    connection_pks=closed_ids,
+                )
 
             if stale_sessions:
                 logger.info(

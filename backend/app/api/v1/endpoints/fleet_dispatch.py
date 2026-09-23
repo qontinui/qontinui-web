@@ -6,7 +6,7 @@ upstream HEAD (per ``project.app_deploy_state``, written by the runner's
 auto-fresh engine).
 """
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -19,13 +19,15 @@ from app.schemas.dispatch import (
     DispatchStrategyEnum,
     FreshHostResponse,
 )
-from app.services.workflow_dispatcher import dispatch_to_fresh_host
+from app.services.coord_device_resolve import CoordCaller
+from app.services.workflow_dispatcher import AutoPickRefusal, dispatch_to_fresh_host
 
 router = APIRouter()
 
 
 @router.post("/fresh-host", response_model=FreshHostResponse)
 async def resolve_fresh_host(
+    request: Request,
     app_id: str,
     strategy: DispatchStrategyEnum = DispatchStrategyEnum.BEST_EFFORT,
     db: AsyncSession = Depends(get_async_db),
@@ -34,11 +36,21 @@ async def resolve_fresh_host(
     """Resolve a test host for ``app_id``.
 
     ``fresh_only`` → 503 when no fresh host qualifies. ``best_effort`` →
-    falls back to any healthy owned runner; 503 only when none exists.
+    falls back to coord's pick among the caller's runners; 503 only when none
+    exists. Eligibility (online, capable, not drained) is coord's resolver's
+    answer; an UNKNOWN resolver is a 503 with its own code, never a pick.
     """
     device = await dispatch_to_fresh_host(
-        db, current_user.id, app_id, strategy=strategy.value
+        db,
+        current_user.id,
+        app_id,
+        CoordCaller.from_request(request),
+        strategy=strategy.value,
     )
+    if isinstance(device, AutoPickRefusal):
+        detail = device.to_dispatch_error().detail
+        detail["strategy"] = strategy.value
+        raise HTTPException(status_code=503, detail=detail)
     if device is None:
         raise HTTPException(
             status_code=503,

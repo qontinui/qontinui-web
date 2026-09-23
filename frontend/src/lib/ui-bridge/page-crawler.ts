@@ -2,10 +2,12 @@
  * page-crawler.ts
  *
  * Async crawl orchestration for automated page discovery.
- * Pure async functions — no React state. Uses runnerApi directly.
+ * Pure async functions — no React state. Every function takes the RunnerApi
+ * to call (bound to a target by the caller: `useRunnerApi()` in React code).
  */
 
-import { runnerApi } from "@/lib/runner/runner-api-object";
+import { isRunnerNeedsLocalError } from "@/lib/runner/api-client";
+import type { RunnerApi } from "@/lib/runner/runner-api-object";
 import type { DiscoveredSpec } from "@/lib/spec-prompt-builder";
 import {
   mergeDiscoveredPages,
@@ -52,6 +54,7 @@ export interface CrawlOptions {
  * Returns parsed DiscoveredSpec[] or empty array.
  */
 async function discoverCurrentPageSpecs(
+  runnerApi: RunnerApi,
   targetTabId?: string
 ): Promise<DiscoveredSpec[]> {
   const raw = await runnerApi.uiBridgeDiscover({
@@ -65,7 +68,7 @@ async function discoverCurrentPageSpecs(
 /**
  * Get the current page URL from a snapshot.
  */
-async function getCurrentPageUrl(): Promise<string | null> {
+async function getCurrentPageUrl(runnerApi: RunnerApi): Promise<string | null> {
   try {
     const snapshot = await runnerApi.uiBridgeSnapshot();
     const url = (snapshot as Record<string, unknown>)?.url;
@@ -81,6 +84,7 @@ async function getCurrentPageUrl(): Promise<string | null> {
  * @param appOrigin - Origin of the connected app for filtering links
  */
 export async function discoverCurrentPageLinks(
+  runnerApi: RunnerApi,
   appOrigin?: string,
   targetTabId?: string
 ): Promise<DiscoveredLink[]> {
@@ -98,6 +102,7 @@ export async function discoverCurrentPageLinks(
  * Returns PageEntry[] — each page either has specs or is marked as no-spec.
  */
 export async function crawlPages(
+  runnerApi: RunnerApi,
   urls: string[],
   options: CrawlOptions = {}
 ): Promise<PageEntry[]> {
@@ -128,7 +133,7 @@ export async function crawlPages(
       if (signal?.aborted) break;
 
       // Discover specs
-      const specs = await discoverCurrentPageSpecs(targetTabId);
+      const specs = await discoverCurrentPageSpecs(runnerApi, targetTabId);
 
       if (specs.length > 0) {
         const merged = mergeDiscoveredPages([], specs);
@@ -136,12 +141,15 @@ export async function crawlPages(
         pagesWithSpecs++;
       } else {
         // Try to get the actual pathname from the snapshot
-        const currentUrl = await getCurrentPageUrl();
+        const currentUrl = await getCurrentPageUrl(runnerApi);
         const pathname = currentUrl ? new URL(currentUrl).pathname : url;
         pages.push(noSpecPageEntry(pathname));
         pagesWithoutSpecs++;
       }
-    } catch {
+    } catch (err) {
+      // The runner will not carry these routes over the relay: every page
+      // would fail the same way, so say so instead of marking them no-spec.
+      if (isRunnerNeedsLocalError(err)) throw err;
       // Navigation or discovery failed — mark as no-spec
       pages.push(noSpecPageEntry(url));
       pagesWithoutSpecs++;
@@ -165,12 +173,14 @@ export async function crawlPages(
  * Returns PageEntry[] for all discovered pages.
  */
 export async function discoverAndCrawlAllPages(
+  runnerApi: RunnerApi,
   options: CrawlOptions & { appOrigin?: string } = {}
 ): Promise<PageEntry[]> {
   const { appOrigin, ...crawlOptions } = options;
 
   // Step 1: Discover navigable links from the current page
   const links = await discoverCurrentPageLinks(
+    runnerApi,
     appOrigin,
     crawlOptions.targetTabId
   );
@@ -182,5 +192,5 @@ export async function discoverAndCrawlAllPages(
   const urls = links.map((l) => l.url);
 
   // Step 2: Crawl each discovered URL
-  return crawlPages(urls, crawlOptions);
+  return crawlPages(runnerApi, urls, crawlOptions);
 }

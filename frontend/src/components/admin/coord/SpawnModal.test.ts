@@ -532,3 +532,71 @@ describe("formatUtilization", () => {
   });
 });
 
+describe("buildSpawnRequestBody — automatic placement vs a pin (coord#2403)", () => {
+  const minimal = {
+    repos: ["qontinui-web"],
+    initialPrompt: "go",
+  };
+
+  it("OMITS target_device_id when no device is named — coord places it", () => {
+    // `""` is not a Uuid: sending it 422s instead of meaning "automatic".
+    for (const deviceId of ["", "   "]) {
+      const body = buildSpawnRequestBody({ ...minimal, deviceId });
+      expect(body).not.toHaveProperty("target_device_id");
+      expect(body).toEqual({
+        repos: [{ repo: "qontinui-web" }],
+        initial_prompt: "go",
+      });
+    }
+  });
+
+  it("sends a named device as target_device_id — the pin", () => {
+    const body = buildSpawnRequestBody({
+      ...minimal,
+      deviceId: ` ${base.deviceId} `,
+    });
+    expect(body.target_device_id).toBe(base.deviceId);
+  });
+
+  it("sends required_capabilities only when there are some", () => {
+    expect(
+      buildSpawnRequestBody({
+        ...minimal,
+        deviceId: "",
+        requiredCapabilities: [],
+      })
+    ).not.toHaveProperty("required_capabilities");
+    expect(
+      buildSpawnRequestBody({
+        ...minimal,
+        deviceId: "",
+        requiredCapabilities: ["os:linux", "docker"],
+      }).required_capabilities
+    ).toEqual(["os:linux", "docker"]);
+  });
+
+  it("never sends override_drain without a named device", () => {
+    // Coord 400s `override_drain` with no target
+    // (`override_drain_requires_target`).
+    const body = buildSpawnRequestBody({
+      ...minimal,
+      deviceId: "",
+      overrideDrain: true,
+    });
+    expect(body).not.toHaveProperty("override_drain");
+    expect(body).not.toHaveProperty("target_device_id");
+  });
+
+  it("sends override_drain with a named device only when asked", () => {
+    expect(
+      buildSpawnRequestBody({
+        ...minimal,
+        deviceId: base.deviceId,
+        overrideDrain: true,
+      }).override_drain
+    ).toBe(true);
+    expect(
+      buildSpawnRequestBody({ ...minimal, deviceId: base.deviceId })
+    ).not.toHaveProperty("override_drain");
+  });
+});

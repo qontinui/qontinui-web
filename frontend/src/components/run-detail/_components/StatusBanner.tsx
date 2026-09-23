@@ -18,7 +18,7 @@ import {
   Users,
   FileText,
 } from "lucide-react";
-import { runnerApi, type TaskRun } from "@/lib/runner-api";
+import { useRunnerApi, type TaskRun } from "@/lib/runner-api";
 import { toast } from "sonner";
 import {
   formatDuration,
@@ -36,6 +36,7 @@ interface StatusBannerProps {
 }
 
 export function StatusBanner({ run, onRefresh }: StatusBannerProps) {
+  const runnerApi = useRunnerApi();
   const [additionalSessions, setAdditionalSessions] = useState(3);
   const [isContinuing, setIsContinuing] = useState(false);
 

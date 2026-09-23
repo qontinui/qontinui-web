@@ -6,7 +6,7 @@ import {
   type GroupingMethod,
 } from "@/services/template-capture-service";
 import { httpClient } from "@/services/service-factory";
-import { runnerClient } from "@/lib/runner-client";
+import { useRunnerClient } from "@/lib/runner-client";
 import { ProjectService } from "@/services/project-service";
 import {
   convertToQontinuiConfig,
@@ -26,6 +26,7 @@ export function useStateMachineGenerator({
   videoPath,
   onGenerate,
 }: UseStateMachineGeneratorParams) {
+  const runnerClient = useRunnerClient();
   const [service] = useState(() => new TemplateCaptureService(httpClient));
   const [projectService] = useState(() => new ProjectService(httpClient));
 
@@ -192,6 +193,7 @@ export function useStateMachineGenerator({
     stateMachineName,
     includeTransitions,
     onGenerate,
+    runnerClient,
   ]);
 
   // Download result as JSON

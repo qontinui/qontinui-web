@@ -75,6 +75,24 @@
           "source": "ai-generated",
           "reviewed": false,
           "enabled": true
+        },
+        {
+          "id": "execute-workflow-authoring-elem-4",
+          "description": "The shared 'Run on:' picker for MACHINE-BOUND work sits in the page header (plan 2026-09-20-runner-selector-drives-a-transport-not-a-target, Phase 4): where a run executes is chosen on the execution surface, not in the sidebar (now a status line only). ci-bot has no runner, so it reads 'Automatic'.",
+          "category": "element-presence",
+          "severity": "warning",
+          "assertionType": "exists",
+          "target": {
+            "type": "search",
+            "criteria": {
+              "id": "run-on-trigger-machine_bound",
+              "role": "button"
+            },
+            "label": "Run on picker trigger"
+          },
+          "source": "ai-generated",
+          "reviewed": false,
+          "enabled": true
         }
       ],
       "provenance": { "source": "ai-generated" }

@@ -50,8 +50,8 @@ import type { ReactNode } from "react";
  * `raw != null && raw !== false` covers three of them. The other three arrive
  * by ordinary means: `cond && <div/>` yields `false`, but `str && <div/>`
  * yields `""` when the string is empty, and `list.length > 0 && …` inside a
- * `||` chain can yield either. `<AlertRow>`'s `raw` is exactly that shape over
- * a `device_id` typed `string | null`.
+ * `||` chain can yield either. The (since retired) `<AlertRow>`'s `raw` was exactly
+ * that shape over a `device_id` typed `string | null`.
  *
  * An empty wrapper is not visually free: it is a non-first child of a
  * `space-y-3` container, so it draws a 12px gap at the foot of every panel it

@@ -14,6 +14,7 @@ export function InspectForm({
   setTargetUrl,
   isInspecting,
   inspectError,
+  inspectRefusal = null,
   onInspect,
   onCaptureTree,
 }: {
@@ -21,6 +22,8 @@ export function InspectForm({
   setTargetUrl: (url: string) => void;
   isInspecting: boolean;
   inspectError: string | null;
+  /** Coord's reason no new work may start right now (null = allowed). */
+  inspectRefusal?: string | null;
   onInspect: () => void;
   onCaptureTree: () => void;
 }) {
@@ -47,7 +50,10 @@ export function InspectForm({
           />
           <Button
             onClick={onInspect}
-            disabled={isInspecting || !targetUrl.trim()}
+            disabled={
+              isInspecting || !targetUrl.trim() || inspectRefusal !== null
+            }
+            title={inspectRefusal ?? undefined}
             className="bg-brand-primary hover:bg-brand-primary/90 text-black font-semibold px-6"
           >
             {isInspecting ? (
@@ -63,6 +69,11 @@ export function InspectForm({
             )}
           </Button>
         </div>
+        {inspectRefusal && (
+          <p className="text-xs text-text-muted" data-testid="inspect-refusal">
+            {inspectRefusal}
+          </p>
+        )}
         <div className="flex items-center gap-3">
           <div className="h-px flex-1 bg-border-subtle/30" />
           <span className="text-xs text-text-muted">or</span>

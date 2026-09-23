@@ -69,7 +69,7 @@ from app.api.deps import (
     get_current_active_user_async,
     get_current_user_from_ws,
 )
-from app.api.v1.endpoints.devices import _device_to_wire as _runner_to_wire
+from app.api.v1.endpoints.devices import devices_to_wire
 from app.core.config import settings
 from app.crud import runner_crud
 from app.middleware.rate_limit import get_authorization_identifier, user_limiter
@@ -479,7 +479,9 @@ async def get_fleet_status(
     runners = [d for d in all_devices if not d.is_ci_runner]
     ci_devices = [d for d in all_devices if d.is_ci_runner]
 
-    wire_runners = [_runner_to_wire(r).model_dump(mode="json") for r in runners]
+    wire_runners = [
+        w.model_dump(mode="json") for w in await devices_to_wire(db, runners)
+    ]
 
     registry = get_fleet_registry()
     fleet_status = await registry.get_fleet_status()
@@ -529,6 +531,10 @@ async def get_fleet_status(
                 "uiError": None,
                 "recentCrash": None,
                 "createdAt": beacon.last_heartbeat.isoformat(),
+                # A heartbeat-only beacon has no device WebSocket, so no
+                # instance is connected through this backend — an honest
+                # empty list, and the key the Runner wire type requires.
+                "instances": [],
             }
         )
 
@@ -2830,33 +2836,6 @@ async def get_pr_merge_slo(
     )
 
 
-@router.post("/pr-merge/red-main/{repo:path}/spawn-fix")
-async def post_pr_merge_red_main_spawn_fix(
-    repo: str,
-    tenant_id: UUID = Depends(require_coord_tenant_admin),
-) -> Any:
-    """Operator-driven red-main remediation (red-main auto-remediation
-    Phase 4b). Spawn a visible fix session on the operator's device for
-    ``repo``'s current red episode, proxying coord's
-    ``POST /pr-merge/red-main/:repo/spawn-fix``.
-
-    ``repo`` is ``owner/name`` and is captured inline via ``{repo:path}``
-    (the same shape as ``/pr-merge/repos/:repo/profile``). No request body
-    is required — coord resolves the live red episode + tenant from the
-    forwarded operator bearer.
-
-    Coord returns ``200 {"agent_id": "<uuid>"}`` on success, or ``409`` when
-    a fix session is already running for the current red episode or the repo
-    has no live red-main alert. ``_proxy_coord_post`` re-raises coord's
-    status + JSON body so the banner can surface the 409 message inline.
-    """
-    return await _proxy_coord_post(
-        f"/pr-merge/red-main/{repo}/spawn-fix",
-        {},
-        tenant_id=tenant_id,
-    )
-
-
 # ---- Tenant self-service merge recovery ----------------------------------
 #
 # Plan `2026-07-30-coord-tenant-self-service-merge-recovery.md` Phase 4.
@@ -3250,14 +3229,18 @@ async def post_agents_allocate(
 # ---- Coord claims-dashboard proxy ---------------------------------------
 #
 # Plan `2026-05-18-agent-spawn-coordination.md` Phase 5 — the
-# `/admin/agent-claims` dashboard backend. Five read-only proxy
+# `/admin/agent-claims` dashboard backend. Four read-only proxy
 # endpoints that forward to coord:
 #
 # - `/operations/claims/list`             → coord `/coord/claims/list`
 # - `/operations/claims/recent-conflicts` → coord `/coord/claims/recent-conflicts`
 # - `/operations/claims/recent-expirations` → coord `/coord/claims/recent-expirations`
 # - `/operations/claims/steals`           → coord `/coord/claims/steals`
-# - `/operations/claims/alerts`           → coord `/coord/alerts` (filtered)
+#
+# A fifth, `/operations/claims/alerts` (the `claim-` slice of `/coord/alerts`),
+# was deleted with the dashboard's stale-claim alerts section by plan
+# `2026-09-18-notifications-are-agent-actions-and-alerts-are-agent-work`
+# Phase 8: raw alert rows are agents' work, not an operator surface.
 #
 # Same proxy posture as the merge endpoints above — read-only, no
 # mutating coord routes exposed through this surface. Steal +
@@ -3596,63 +3579,6 @@ async def get_claims_steals(
     )
 
 
-#: Page size asked of coord for the claim-alert slice. Coord's documented hard
-#: maximum, and it clamps rather than erroring, so this cannot 4xx if the cap
-#: ever moves down. See the comment in :func:`get_claims_alerts` for why this
-#: is a constant and not a query parameter.
-_CLAIMS_ALERTS_LIMIT = 1000
-
-
-@router.get("/claims/alerts")
-async def get_claims_alerts(
-    tenant_id: UUID = Depends(get_tenant_id),
-) -> Any:
-    """Return active claim-related alerts from coord.
-
-    Asks coord for the ``claim-`` slice directly (``?source=claim-`` —
-    ``source`` is matched as an ``alert_key`` prefix, the convention used
-    by
-    [`claims_alert_watcher`](https://github.com/qontinui/qontinui-coord/blob/main/src/claims_alert_watcher.rs)).
-    Other alert kinds (fleet-health, alembic-status, etc.) stay scoped
-    to the Operations page's general alerts surface.
-
-    ⚠️ This used to pull the WHOLE rollup and filter ``alert_key`` in
-    Python, which measured **0 rows** on 2026-08-14: coord caps the
-    unfiltered rollup at 500 rows ordered by severity/recency, and claim
-    alerts never survived the cap, so the Python filter was always
-    filtering an already-claimless window. A targeted ``source`` query is
-    filtered in SQL and cannot be evicted by another watcher's tick.
-
-    Forwards the operator bearer (fleet-auth P2/D6).
-    """
-    # `limit` is EXPLICIT, and it is not a style choice. This endpoint sends
-    # no page size, so it inherits coord's default — and the coord half of
-    # plan `2026-08-05-coord-alerts-surface-and-fleet-style-ui` dropped that
-    # default from 500 to 100 when it added paging. Silently, from here: the
-    # narrowing lives in another repo and there is no signal on this side.
-    #
-    # The single consumer (`AgentClaimsDashboard`'s stale-claim section) does
-    # not page and does not read `total_count`, so above the ceiling it would
-    # render a truncated list as the whole truth — the exact defect that plan
-    # exists to kill, re-created one endpoint over. 1000 is coord's own hard
-    # maximum (it clamps rather than erroring), which is 2x the ceiling this
-    # endpoint had before the coord change and 10x the one it has now.
-    #
-    # Deliberately a constant in the params dict rather than a `limit` query
-    # parameter: a new FastAPI parameter changes the OpenAPI schema, and this
-    # endpoint has exactly one caller, which wants all active claim alerts.
-    # Give it a real `limit` when a second caller needs a different answer.
-    payload = await _proxy_coord_get(
-        "/coord/alerts",
-        params={"source": "claim-", "limit": _CLAIMS_ALERTS_LIMIT},
-        tenant_id=tenant_id,
-    )
-    # coord returns either a list or `{"alerts": [...]}` depending on the
-    # version; pass either through untouched. No Python-side filtering —
-    # coord's `source` prefix match is the filter now.
-    return payload
-
-
 # ---- Coord dev-action ledger proxy ----------------------------------------
 #
 # Plan ``2026-06-07-twin-dev-event-cause-effect-ledger.md``. Surfaces the
@@ -3728,6 +3654,7 @@ async def get_dev_action_detail(
 # Routes (read-only unless noted):
 #
 # - GET    /operations/plans                            — list coord.work_units
+# - GET    /operations/plans/overview                    — corpus status tally
 # - GET    /operations/plans/{slug}                      — single work-unit
 # - GET    /operations/plans/{slug}/history              — status history
 # - POST   /operations/plans/{slug}/transition           — set work-unit status
@@ -3889,6 +3816,29 @@ async def list_coord_plans(
     ),
     limit: int | None = Query(default=None, ge=1, le=500),
     offset: int | None = Query(default=None, ge=0),
+    order: Literal["authored_desc", "updated_desc"] | None = Query(
+        default=None,
+        description=(
+            "Server-side order. ``authored_desc`` walks the corpus by "
+            "authoring date (keyset cursor below); ``updated_desc`` (coord's "
+            "default when absent) is the mutation-time order. Ignored by a "
+            "coord that predates it."
+        ),
+    ),
+    after_authored_at: str | None = Query(
+        default=None,
+        min_length=1,
+        description=(
+            "Keyset cursor half: the ``after_authored_at`` of the previous "
+            "page's ``next_cursor``. Omitted while walking the NULL-authored "
+            "tail (the cursor's value is null there)."
+        ),
+    ),
+    after_slug: str | None = Query(
+        default=None,
+        min_length=1,
+        description="Keyset cursor half: the previous page's ``next_cursor.after_slug``.",
+    ),
     tenant_id: UUID = Depends(get_tenant_id),
     db: AsyncSession = Depends(get_async_db),
     # OPTIONAL, and that is deliberate: this route is gated by
@@ -3941,6 +3891,29 @@ async def list_coord_plans(
     read an unexpected page as "coord has not caught up". Rejecting the empty
     string here is the honest failure; coord normalizes it as well, so neither
     side depends on the other for this.
+
+    ``order`` / ``after_authored_at`` / ``after_slug`` are the corpus walk
+    (plan ``2026-09-12-admin-coord-plans-shows-a-rotating-3-minute-slice-so-plans-get-lost``
+    Phase 1). ``order=authored_desc`` makes coord answer in
+    ``authored_at DESC NULLS LAST, slug`` order with a ``next_cursor`` the
+    console follows until it is null, so no work unit can fall past a 500-row
+    cap. Like ``exclude_slug_prefix`` they ship ahead of coord safely: an older
+    coord ignores all three and returns its ``updated_at``-ordered page with no
+    ``order`` echo and no ``next_cursor``, which is how the console tells the
+    two apart. ``order`` is a ``Literal`` so a junk value is a 422 here rather
+    than a silently-ignored parameter upstream; the cursor halves take
+    ``min_length=1`` so an empty box never reaches coord as a cursor.
+
+    The body signals and the walk compose per PAGE, and deliberately so: every
+    page of a walk is a full request, so each one carries its own rows
+    annotated and its own ``body_signal`` block. That block describes the reads
+    THIS request made — the capture dial and the artifact surface are read once
+    per page, not once per walk — so two pages of one walk can legitimately
+    disagree when a dial read fails mid-walk. Folding them is the console's
+    job (``planBodySignal.ts`` ``foldBodySignalBlocks``), because only the
+    caller knows which pages belong to one answer; a proxy that cached the
+    dial across requests to make them agree would be inventing an agreement it
+    did not measure.
     """
     params: dict[str, Any] = {}
     if status is not None:
@@ -3953,6 +3926,12 @@ async def list_coord_plans(
         params["limit"] = limit
     if offset is not None:
         params["offset"] = offset
+    if order is not None:
+        params["order"] = order
+    if after_authored_at is not None:
+        params["after_authored_at"] = after_authored_at
+    if after_slug is not None:
+        params["after_slug"] = after_slug
     payload = await _proxy_coord_get(
         "/coord/work-units", params=params or None, tenant_id=tenant_id
     )
@@ -3971,6 +3950,29 @@ async def list_coord_plans(
             rows, db=db, user=actor, tenant_id=tenant_id
         )
     return payload
+
+
+# Declared BEFORE ``/plans/{slug}`` on purpose: FastAPI matches in declaration
+# order, so after it the static ``overview`` segment would be captured as a
+# slug and proxied to ``/coord/work-units/overview`` by the wrong handler.
+@router.get("/plans/overview")
+async def get_coord_plans_overview(
+    tenant_id: UUID = Depends(get_tenant_id),
+) -> Any:
+    """Return coord's CORPUS-wide work-unit status tally (tenant-scoped).
+
+    Proxies coord ``GET /coord/work-units/overview``: ``{"row_count": N,
+    "distinct_status_count": N, "facets": {"by_status_class": {...},
+    "by_status": {...}, "by_status_truncated": bool, "by_status_omitted": N},
+    "corpus_complete": bool}``. It takes no filters by coord's design (a
+    filtered overview would move its denominator), so ``row_count`` counts
+    EVERY unit — including the ``shepherd-*`` rows. The work-units list
+    (``/admin/coord/work-units``) includes those rows by default and excludes
+    them only when the operator asks (``exclude_slug_prefix``); under that
+    exclusion the console states the difference rather than comparing unlike
+    totals.
+    """
+    return await _proxy_coord_get("/coord/work-units/overview", tenant_id=tenant_id)
 
 
 @router.get("/plans/{slug}")
@@ -4115,7 +4117,7 @@ async def get_pull_decisions(
     )
 
 
-# ---- Alerts (full rollup; sibling of /claims/alerts) ---------------------
+# ---- Alerts (full rollup; read API for agents and the red-main banner) ---
 
 
 def _nonblank(values: list[str] | None) -> list[str] | None:
@@ -4144,12 +4146,14 @@ async def get_coord_alerts(
 ) -> Any:
     """Return the full ``coord.alerts`` rollup with optional filters.
 
-    Sibling of ``/operations/claims/alerts`` (which narrows to
-    ``alert_key`` prefix ``claim-``). This endpoint exposes ALL alert
-    kinds for the dashboard's Alerts page. The kind vocabulary is
-    **served by the API** — coord returns the distinct kind list in the
-    response, so neither this proxy nor the UI hardcodes it (an
-    enumeration here went stale the moment a new watcher shipped).
+    Exposes ALL alert kinds. Its operator PAGE is gone (plan
+    ``2026-09-18-notifications-are-agent-actions-and-alerts-are-agent-work``
+    D7), but the read API stays for its consumers: the console's
+    ``RedMainBanner`` (``?kind=red_main``, reading each row's ``claimed`` /
+    ``claim`` fields) and agent tooling. The kind vocabulary is **served by
+    the API** — coord returns the distinct kind list in the response, so
+    neither this proxy nor a caller hardcodes it (an enumeration here went
+    stale the moment a new watcher shipped).
 
     ``severity`` and ``kind`` are REPEATABLE
     (``?kind=stale_wip&kind=red_main``) so the UI can multi-select; they
@@ -4231,6 +4235,12 @@ async def get_coord_notifications(
         default=None,
         description="Restrict to notifications the calling principal has not read.",
     ),
+    via: str | None = Query(
+        default=None,
+        description="Filter on the coord-stamped ``detail.via`` — ``agent_evidence`` "
+        "is every agent escalate clearance. Coord owns the vocabulary and "
+        "answers 400 ``unknown_via`` for anything else.",
+    ),
     tenant_id: UUID = Depends(get_tenant_id),
 ) -> Any:
     """Return the ``coord.notifications`` feed for the calling principal.
@@ -4260,6 +4270,8 @@ async def get_coord_notifications(
         params["kind"] = kind
     if unread_only is not None:
         params["unread_only"] = unread_only
+    if via is not None:
+        params["via"] = via
     return await _proxy_coord_get(
         "/coord/notifications", params=params or None, tenant_id=tenant_id
     )
@@ -4388,14 +4400,34 @@ async def get_fleet_health(
     ``kv_bucket`` and ``as_of``. This route declares no
     ``response_model``, so nothing here filters a field coord adds.
 
-    Those nine are what coord emits **today**. Two more are read by this
-    repo's client and appear nowhere in coord's source: ``FleetHealthPayload``
-    declares ``alerts_scrape_up`` and ``pageout``, and the Dev Ops page
-    branches on ``alerts_scrape_up === false``. They are FORWARD
-    declarations — deliberately absence-tolerant, since the client must
-    treat an absent flag as *measured* — so they are not part of this
-    contract and this route synthesises neither. The branch reading them
-    is unreachable until coord grows them.
+    Coord also serves ``alerts_scrape_up`` (beside the ``alerts``
+    severity rollup, for API consumers), ``credential_dark_scrape_up``,
+    ``pageout`` (the page-out sink's posture) and — since plan
+    ``2026-09-18-notifications-are-agent-actions-and-alerts-are-agent-work``
+    Phase 7 — the ``conditions`` block. The web app reads
+    ``credential_dark_scrape_up`` and ``conditions``; it no longer reads
+    ``alerts`` / ``alerts_scrape_up`` or ``pageout`` (the severity badges and
+    the pageout-sink note they fed were replaced by the Dev Ops Conditions
+    panel in Phase 8).
+
+    ``conditions`` answers "is anything degraded that no agent is
+    handling?", computed under the same visibility predicate as
+    ``/coord/alerts``: ``open`` / ``claimed`` / ``unclaimed`` (agent work by
+    lease state), ``unclaimed_oldest_age_secs``, ``unclaimed_by_domain``,
+    ``awaiting_operator`` + ``awaiting_operator_question_ids`` (open
+    operator questions; the id list is capped, the count exact),
+    ``awaiting_operator_alerts`` (open operator-responder alerts — NOT
+    comparable with ``awaiting_operator`` by subtraction, because an
+    answered alert that has not yet cleared is never re-asked),
+    ``awaiting_operator_unasked`` (open operator alerts with no question at
+    all) and ``awaiting_operator_answered_uncleared`` (answered, still open)
+    — the two exact counts the panel reads, absent on an older coord,
+    ``settings_in_effect`` (capped list of ``{alert_id, kind, since,
+    summary}``) + ``settings_in_effect_count``, and ``scrape_up``. On a
+    failed read coord sends ``scrape_up: false`` with every count ``null``
+    and an ``unavailable_reason`` — never zeros. The block is ABSENT on a
+    coord predating Phase 7, which callers render as UNKNOWN, not as
+    "nothing unhandled". This route synthesises none of it.
 
     The contract is written down because the sibling resource-samples
     route learned the lesson first: this
@@ -4868,6 +4900,13 @@ async def get_coord_audit_recent(
         ge=1,
         description="Max rows. Coord clamps to `[1, 1000]` and defaults to 200.",
     ),
+    via: str | None = Query(
+        default=None,
+        description="Filter on `metadata.via` — the writer of an escalate-path "
+        "clearance: `agent_evidence` (an agent, on evidence) or `service` (the "
+        "operator escape hatch). Coord owns the vocabulary and answers 400 "
+        "`unknown_via` for anything else.",
+    ),
     tenant_id: UUID = Depends(require_coord_tenant_admin),
 ) -> Any:
     """Return recent ``coord.operator_audit`` rows for the caller's tenant.
@@ -4906,6 +4945,8 @@ async def get_coord_audit_recent(
         params["before"] = before
     if limit is not None:
         params["limit"] = limit
+    if via:
+        params["via"] = via
     return await _proxy_coord_get(
         "/admin/coord/audit/recent",
         params=params or None,
@@ -5389,6 +5430,59 @@ async def get_fleet_volumes(
     return await _proxy_coord_get("/coord/fleet/volumes", tenant_id=tenant_id)
 
 
+# ---- Worktree allocation slots (Dev Ops dashboard) ------------------------
+#
+# Plan: `2026-09-21-worktree-slots-devops-dashboard-view.md` Phase 2. Backs
+# the "Worktree slots" section on `/admin/coord/devops`.
+#
+# **Why this is a new route rather than a fan-out of the existing per-device
+# allocation-budget door.** `GET /coord/agent-worktrees/allocation-budget/:id`
+# reads a 24h-windowed census scan that measured 11-15s (sometimes timing
+# out) per call — see plan
+# `2026-09-20-allocation-budget-door-reads-the-whole-census-to-compute-three-scalars-so-it-times-out`.
+# Against this module's 5s ``_COORD_TIMEOUT`` that door would 504 on
+# essentially every call, independent of how many devices are fanned out
+# over. `/coord/fleet/worktree-slots` is a cheap, batched, indexed route that
+# reuses only the fast half of that door's data (the ledger/census LATERAL
+# join within the narrow ``building_ttl_secs()`` window, not the slow 24h
+# scan) — see the plan's Design decision.
+#
+# **Honesty.** `census_recent_rows == 0` means coord has no recent census hit
+# for that device within the narrow window, so `active_worktrees` for that
+# device could not be corroborated as live and MUST be rendered UNKNOWN by
+# the caller — never as an idle/empty machine and never as a healthy `0/8`.
+# This is a different, narrower-windowed field from the per-device door's
+# `census_rows_observed` (24h) and must not be confused with it.
+
+
+@router.get("/fleet/worktree-slots")
+async def get_fleet_worktree_slots(
+    tenant_id: UUID = Depends(get_tenant_id),
+) -> Any:
+    """Proxy coord's ``GET /coord/fleet/worktree-slots`` (tenant-scoped).
+
+    Fleet-wide worktree-allocation-slot occupancy: how many of each device's
+    ``COORD_MAX_WORKTREES`` slots are occupied, and by what. Response shape
+    is coord-authored and passed through untouched::
+
+        {"tenant_id": "<uuid>", "device_count": <int>, "truncated": false,
+         "device_cap": 100, "census_window_secs": 900,
+         "devices": [{"device_id": "<uuid>", "hostname": "<string>|null",
+             "active_worktrees": <int>, "max_worktrees": 8,
+             "census_recent_rows": <int>,
+             "occupants": {"shown": 0, "total": 0, "truncated": false,
+                            "rows": []}}]}
+
+    ``census_recent_rows == 0`` means coord has no recent census hit for
+    that device within the narrow (``census_window_secs``, default 900s)
+    window, so ``active_worktrees`` for that device could not be
+    corroborated as live and the caller MUST render that row UNKNOWN — never
+    an idle/empty machine and never a healthy ``0/8`` — see the frontend
+    hook and `FleetResourceStrip`'s existing honesty rules.
+    """
+    return await _proxy_coord_get("/coord/fleet/worktree-slots", tenant_id=tenant_id)
+
+
 # ---- Wave-3 prep (decision queue + agent-logs + memory) ------------------
 #
 # These endpoints are added now so the Wave-3 frontend (decision queue
@@ -5650,7 +5744,22 @@ async def post_agents_spawn(
     the agent JWT directly — the receiving runner picks up the new
     agent through the ``events.agent.spawned`` event coord publishes.
     """
-    return await _proxy_coord_post("/agents/spawn", body, tenant_id=tenant_id)
+    # The body is forwarded VERBATIM, so this proxy has no opinion on coord's
+    # ``SpawnRequest``. Once qontinui-coord#2403 is deployed,
+    # ``target_device_id`` is optional (absent -> coord places the session)
+    # and ``required_capabilities`` / ``override_drain`` ride along
+    # unchanged; the success body, including ``placed_by``, passes through
+    # untouched.
+    #
+    # ``structured_errors=True`` because the spawn modal BRANCHES on coord's
+    # refusal codes (``pin_ineligible`` + ``reason``, ``no_eligible_device``
+    # + ``outcome``, ``device_drained``, ``drain_unreadable`` once #2403 is
+    # deployed): coord's JSON object reaches the browser as data rather than
+    # as a string inside ``message``. Plan
+    # ``2026-09-20-runner-selector-drives-a-transport-not-a-target`` Phase 5.
+    return await _proxy_coord_post(
+        "/agents/spawn", body, tenant_id=tenant_id, structured_errors=True
+    )
 
 
 @router.get("/agents/{agent_id}")
@@ -11241,19 +11350,6 @@ async def get_coord_members(
     return await _proxy_coord_get("/admin/coord/operators", tenant_id=tenant_id)
 
 
-@router.post("/coord/members")
-async def post_coord_member(
-    body: dict[str, Any],
-    tenant_id: UUID = Depends(require_coord_tenant_admin),
-) -> Any:
-    """Create an operator in the caller's home tenant (pre-login invites OK).
-
-    Proxies coord ``POST /admin/coord/operators``. Body:
-    ``{email, display_name?, sso_subject, sso_provider, roles?: [str]}`` →
-    ``{operator_id}``."""
-    return await _proxy_coord_post("/admin/coord/operators", body, tenant_id=tenant_id)
-
-
 @router.post("/coord/members/{operator_id}/roles")
 async def post_coord_member_role(
     operator_id: str,
@@ -11293,11 +11389,19 @@ async def delete_coord_member_role(
 
 # ---- Add a tenant member BY EMAIL ---------------------------------------
 #
-# The route above (``POST /coord/members``) is the raw coord proxy: it takes
-# an ``sso_subject`` + ``sso_provider``, which a tenant admin adding one
-# colleague has no way to know. Hand-typing a Cognito ``sub`` is not a
-# workflow; it is a lookup the server can do. This route is that lookup plus
-# the grant, so the dashboard asks for an email and a role and nothing else.
+# A tenant admin adding one colleague has no way to know that colleague's
+# Cognito ``sub`` + ``sso_provider`` — hand-typing one is not a workflow, it
+# is a lookup the server can do. This route is that lookup plus the grant,
+# so the dashboard asks for an email and a role and nothing else.
+#
+# The old raw proxy (``POST /coord/members``, taking a caller-chosen
+# ``sso_subject``/``sso_provider`` and forwarding it untyped to coord's
+# ``POST /admin/coord/operators``) is deleted, not deprecated: after this
+# route shipped, nothing called it (grep over ``frontend/src`` finds only
+# the GET and the role grant/revoke), and a live route where a client picks
+# which Cognito identity a tenant grant lands on — bypassing this route's
+# ``extra="forbid"`` — is the exact defect this route exists to close.
+# coord finding 130b6938.
 
 
 class _TenantMemberAddBody(BaseModel):

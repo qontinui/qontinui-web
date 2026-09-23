@@ -6,7 +6,8 @@
  * Replaces `PlanCard` on `/admin/coord/work-units`. Plan
  * `2026-08-16-coord-console-ui-unification-pipeline-style.md` Phase 3 Wave 1;
  * conventions from `frontend/docs/console-ui-style-guide.md` and from
- * `AlertRow.tsx`, this wave's reference implementation.
+ * `AlertRow.tsx`, this wave's reference implementation — since retired with
+ * the alerts page, so this file is now the reference row.
  *
  * Two things changed and both are the point:
  *
@@ -355,8 +356,9 @@ export function PlanRow({
             data-testid="coord-plan-card-dates"
           >
             {/* Three dates, three different facts, each under the word for
-                what it IS: `authored` is when the plan was written (coord
-                `authored_at`, slug-derived), `ingested` is when coord first
+                what it IS: `authored` is when the plan was written (the slug's
+                date prefix, else coord `authored_at` — `planAuthoredAt`),
+                `ingested` is when coord first
                 saw the row (`created_at` — mislabelled "created" here until
                 plan 2026-09-02-coord-work-units-carry-no-authoring-date),
                 `updated` is the scanner's last touch, honest HERE because it

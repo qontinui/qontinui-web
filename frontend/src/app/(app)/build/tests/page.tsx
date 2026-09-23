@@ -62,6 +62,8 @@ export default function TestsPage() {
     handleDelete,
     handleAnalysisComplete,
     handleApplyTestCode,
+    workRefusal,
+    executeRefusal,
   } = useTestsPage();
 
   // List item renderer
@@ -119,6 +121,8 @@ export default function TestsPage() {
       aiResult={aiResult}
       aiError={aiError}
       aiMetadataGenerating={aiMetadataGenerating}
+      workRefusal={workRefusal}
+      executeRefusal={executeRefusal}
       currentAiTemplates={currentAiTemplates}
       screenshotModalUrl={screenshotModalUrl}
       setScreenshotModalUrl={setScreenshotModalUrl}

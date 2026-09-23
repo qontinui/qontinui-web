@@ -6,6 +6,8 @@ interface NewTestRunFormProps {
   loading: boolean;
   onConfigChange: (config: TestConfig) => void;
   onStart: () => void;
+  /** Why a new run may not start (coord's outcome); disables Start. */
+  startRefusal?: string | null;
 }
 
 export function NewTestRunForm({
@@ -13,6 +15,7 @@ export function NewTestRunForm({
   loading,
   onConfigChange,
   onStart,
+  startRefusal = null,
 }: NewTestRunFormProps) {
   return (
     <div className="border rounded-lg p-4 dark:border-gray-700">
@@ -59,11 +62,16 @@ export function NewTestRunForm({
         </div>
         <button
           onClick={onStart}
-          disabled={loading}
+          disabled={loading || startRefusal !== null}
           className="w-full bg-blue-600 text-white py-2 rounded hover:bg-blue-700 disabled:opacity-50"
         >
           {loading ? "Starting..." : "Start Test Run"}
         </button>
+        {startRefusal && (
+          <p className="text-xs text-gray-500" data-testid="itr-start-refusal">
+            {startRefusal}
+          </p>
+        )}
       </div>
     </div>
   );

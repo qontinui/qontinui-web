@@ -18,7 +18,6 @@ import { CloudProviders } from "@/components/CloudProviders";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { BetaBannerSlot } from "@/components/cloud-slots/BetaBannerSlot";
 import { useAuth } from "@/contexts/auth-context";
-import { MentionRealtimeSubscriber } from "@/app/(app)/strategy/_components/MentionRealtimeSubscriber";
 import { HelperRedirectGate } from "@/components/helper-portal/HelperRedirectGate";
 import { MobileTopBar } from "@/components/navigation/MobileTopBar";
 import { cn } from "@/lib/utils";
@@ -154,7 +153,6 @@ function AppAuthGate({ children }: { children: React.ReactNode }) {
 
 function AppLayoutContent({ children }: { children: React.ReactNode }) {
   const { preferredCollapsed } = useSidebar();
-  const { user } = useAuth();
 
   return (
     // `h-dvh`, not `h-screen`: on a phone `100vh` is the viewport WITHOUT the
@@ -210,10 +208,6 @@ function AppLayoutContent({ children }: { children: React.ReactNode }) {
       <Suspense fallback={null}>
         <RecordingIndicator />
       </Suspense>
-      {/* Strategy Phase 2.5 — headless subscriber for the
-          per-user mention WS channel. Mounted once at the app-
-          shell level so the badge updates anywhere in the app. */}
-      <MentionRealtimeSubscriber userId={user?.id ?? null} />
     </div>
   );
 }

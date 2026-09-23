@@ -20,7 +20,7 @@ import {
   parseDiscoveredSpecs,
   unwrapSpecResponse,
 } from "@/lib/ui-bridge/spec-parser";
-import { runnerApi } from "@/lib/runner/runner-api-object";
+import { useRunnerApi } from "@/lib/runner/runner-api-object";
 
 // =============================================================================
 // Types
@@ -55,6 +55,7 @@ export interface UseAutomatedDiscoveryOptions {
 export function useAutomatedDiscovery(
   options?: UseAutomatedDiscoveryOptions
 ): UseAutomatedDiscoveryReturn {
+  const runnerApi = useRunnerApi();
   const [isRunning, setIsRunning] = useState(false);
   const [progress, setProgress] = useState<CrawlProgress | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -74,7 +75,7 @@ export function useAutomatedDiscovery(
     abortRef.current = controller;
 
     try {
-      const pages = await discoverAndCrawlAllPages({
+      const pages = await discoverAndCrawlAllPages(runnerApi, {
         appOrigin: options?.appOrigin,
         targetTabId: options?.targetTabId,
         signal: controller.signal,
@@ -95,7 +96,7 @@ export function useAutomatedDiscovery(
       setIsRunning(false);
       abortRef.current = null;
     }
-  }, [options?.appOrigin, options?.targetTabId]);
+  }, [runnerApi, options?.appOrigin, options?.targetTabId]);
 
   const discoverCurrentPageSpecs =
     useCallback(async (): Promise<PageEntry | null> => {
@@ -133,7 +134,7 @@ export function useAutomatedDiscovery(
       } finally {
         setIsRunning(false);
       }
-    }, []);
+    }, [runnerApi]);
 
   return {
     discoverAllPages,

@@ -16,10 +16,16 @@
  * Each assertion checks **both directions** — the honest copy present AND the
  * false claim gone — for the reason #1110's tests give: a build that rendered
  * both would still be reassuring, and reassurance is the failure mode.
+ *
+ * The last block extends the same rule to the THIRD terminal state, `withdrawn`
+ * (plan
+ * `2026-09-20-a-pending-operator-question-outlives-the-condition-that-motivated-it`):
+ * a live composer over a row that must not be answered is the same hazard as a
+ * live composer over a body that could not be read.
  */
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 
 const get = vi.fn();
 const post = vi.fn();
@@ -403,5 +409,294 @@ describe("the guards a stale read must not get past", () => {
         screen.getByText("Bump or pin the dependency?")
       ).toBeInTheDocument();
     });
+  });
+});
+
+describe("a WITHDRAWN question offers no composer — nobody is waiting on it", () => {
+  // The defect this pins: `withdrawn_at` is set while `responded_at` stays
+  // NULL, so the page's old two-valued `answered` predicate read a withdrawn
+  // row as PENDING. The badge said "withdrawn" — it comes off the
+  // three-valued `deriveQuestionStatus` — while the section below it rendered
+  // the "Respond" heading, a live textarea, an enabled "Send response" and
+  // enabled option cards. Submitting POSTs to a door coord will refuse.
+  const WITHDRAWN = {
+    ...QUESTION,
+    options: ["override the hold", "wait for CI"],
+    withdrawn_at: "2026-09-20T09:10:00Z",
+    withdrawn_by: "auto:predicate",
+    withdrawal_reason: "qontinui-web#1393 landed at 2026-09-20T08:54:33Z",
+  };
+
+  it("renders NO response composer", async () => {
+    get.mockResolvedValue(WITHDRAWN);
+
+    render(<CoordQuestionDetailPage />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId("coord-question-meta")).toBeInTheDocument();
+    });
+    expect(
+      screen.queryByTestId("coord-question-response-textarea")
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByTestId("coord-question-submit")
+    ).not.toBeInTheDocument();
+    // And not the invitation either: the heading is the record, not the ask.
+    expect(screen.queryByText("Respond")).not.toBeInTheDocument();
+    expect(screen.getByText("Withdrawal record")).toBeInTheDocument();
+  });
+
+  it("leaves NO option button enabled — the other way into the composer", async () => {
+    get.mockResolvedValue(WITHDRAWN);
+
+    render(<CoordQuestionDetailPage />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId("coord-question-options")).toBeInTheDocument();
+    });
+    const cards = screen.getAllByTestId("coord-question-option-card");
+    expect(cards).toHaveLength(2);
+    for (const card of cards) {
+      expect(card).toBeDisabled();
+    }
+  });
+
+  it("shows the withdrawal record where an answered row shows its response", async () => {
+    get.mockResolvedValue(WITHDRAWN);
+
+    render(<CoordQuestionDetailPage />);
+
+    await waitFor(() => {
+      expect(
+        screen.getByTestId("coord-question-withdrawal-detail")
+      ).toBeInTheDocument();
+    });
+    const block = screen.getByTestId("coord-question-withdrawal-detail");
+    expect(block).toHaveTextContent(/Withdrawn/);
+    expect(block).toHaveTextContent("auto:predicate");
+    expect(block).toHaveTextContent("#1393 landed");
+  });
+
+  it("says coord recorded no reason rather than rendering an empty block", async () => {
+    // Coord requires a reason on the withdrawal door, so an absent one is a
+    // claim about THIS read — never a withdrawal that had no cause.
+    get.mockResolvedValue({
+      ...QUESTION,
+      withdrawn_at: "2026-09-20T09:10:00Z",
+    });
+
+    render(<CoordQuestionDetailPage />);
+
+    await waitFor(() => {
+      expect(
+        screen.getByTestId("coord-question-withdrawal-detail")
+      ).toBeInTheDocument();
+    });
+    expect(
+      screen.getByTestId("coord-question-withdrawal-detail")
+    ).toHaveTextContent("coord recorded no reason for this withdrawal");
+  });
+
+  it("prefers the withdrawal record when a row somehow carries both stamps", async () => {
+    // Defensive, and it must agree with `deriveQuestionStatus`, which tests
+    // `withdrawn_at` first: the console can explain a withdrawal record and
+    // cannot reconcile a response against one.
+    get.mockResolvedValue({
+      ...WITHDRAWN,
+      responded_at: "2026-09-20T09:00:00Z",
+      response: "go ahead",
+      responded_by_operator: "josh@qontinui.io",
+    });
+
+    render(<CoordQuestionDetailPage />);
+
+    await waitFor(() => {
+      expect(
+        screen.getByTestId("coord-question-withdrawal-detail")
+      ).toBeInTheDocument();
+    });
+    expect(screen.getByText("Withdrawal record")).toBeInTheDocument();
+    expect(screen.queryByText("go ahead")).not.toBeInTheDocument();
+    expect(
+      screen.queryByTestId("coord-question-response-textarea")
+    ).not.toBeInTheDocument();
+  });
+
+  it("[over-correction] still offers the composer on a PENDING question with options", async () => {
+    // The mirror guard: `withdrawn` must not have made every option card dead.
+    get.mockResolvedValue({
+      ...QUESTION,
+      options: ["override the hold", "wait for CI"],
+    });
+
+    render(<CoordQuestionDetailPage />);
+
+    await waitFor(() => {
+      expect(
+        screen.getByTestId("coord-question-response-textarea")
+      ).toBeInTheDocument();
+    });
+    for (const card of screen.getAllByTestId("coord-question-option-card")) {
+      expect(card).toBeEnabled();
+    }
+    expect(screen.getByText("Respond")).toBeInTheDocument();
+    expect(
+      screen.queryByTestId("coord-question-withdrawal-detail")
+    ).not.toBeInTheDocument();
+  });
+
+  it("[over-correction] still renders an ANSWERED question read-only", async () => {
+    get.mockResolvedValue({
+      ...QUESTION,
+      options: ["override the hold"],
+      responded_at: "2026-09-20T09:00:00Z",
+      response: "pin it",
+      responded_by_operator: "josh@qontinui.io",
+    });
+
+    render(<CoordQuestionDetailPage />);
+
+    await waitFor(() => {
+      expect(screen.getByText("Recorded response")).toBeInTheDocument();
+    });
+    expect(screen.getByText("pin it")).toBeInTheDocument();
+    expect(
+      screen.queryByTestId("coord-question-response-textarea")
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getAllByTestId("coord-question-option-card")[0]
+    ).toBeDisabled();
+    expect(
+      screen.queryByTestId("coord-question-withdrawal-detail")
+    ).not.toBeInTheDocument();
+  });
+});
+
+describe("an [id] change clears the draft written for the previous question", () => {
+  it("does not carry question A's draft into question B's composer", async () => {
+    // The third door onto the wrong-question hazard the generation guard and
+    // the identity check already close from the READ side. Both of those are
+    // about which row is displayed; the draft is WRITE state, so neither could
+    // see it. App Router keeps this component mounted across an `[id]` change,
+    // so `response` and `selectedOption` simply persisted — A's sentence
+    // pre-filled B's textarea, and `onSubmit` posts to `id`, which is B.
+    const A = {
+      ...QUESTION,
+      question_id: "q-1",
+      question: "Bump or pin the dependency?",
+      options: ["bump", "pin"],
+    };
+    const B = {
+      ...QUESTION,
+      question_id: "q-2",
+      question: "Revert the migration or roll forward?",
+      // "bump" is DELIBERATELY shared with A. Were B's options disjoint from
+      // A's, a stale `selectedOption` would match no B card and the
+      // border-primary loop below would pass with or without
+      // `setSelectedOption(null)` — i.e. it would assert nothing. The overlap
+      // is what makes that half of the reset actually pinned.
+      options: ["bump", "roll forward"],
+    };
+    get.mockImplementation(async (url: string) =>
+      url.endsWith("/q-2") ? B : A
+    );
+
+    routeId = "q-1";
+    const { rerender } = render(<CoordQuestionDetailPage />);
+    await waitFor(() => {
+      expect(
+        screen.getByText("Bump or pin the dependency?")
+      ).toBeInTheDocument();
+    });
+
+    // Stage the draft with the option card ALONE, which sets BOTH halves at
+    // once (`onClick` does `setSelectedOption(value); setResponse(value)`).
+    //
+    // Deliberately do NOT also edit the textarea here, however operator-like
+    // that would read: the composer's own `onChange` calls
+    // `setSelectedOption(null)`, so typing would null the selection BEFORE the
+    // route change and the border-primary loop below could never bite — it
+    // would pass whether or not the `[id]` effect resets anything. Staging by
+    // click keeps both halves live across the navigation, which is what makes
+    // this test pin both. The textarea-edit path is NOT exercised here, so it
+    // gets its own test below rather than being left uncovered.
+    fireEvent.click(screen.getAllByTestId("coord-question-option-card")[0]);
+    expect(screen.getByTestId("coord-question-response-textarea")).toHaveValue(
+      "bump"
+    );
+    expect(
+      screen.getAllByTestId("coord-question-option-card")[0].className
+    ).toContain("border-primary");
+
+    routeId = "q-2";
+    rerender(<CoordQuestionDetailPage />);
+    await waitFor(() => {
+      expect(
+        screen.getByText("Revert the migration or roll forward?")
+      ).toBeInTheDocument();
+    });
+
+    // The draft is gone — not merely hidden behind B's own text.
+    expect(screen.getByTestId("coord-question-response-textarea")).toHaveValue(
+      ""
+    );
+    // ...and so is the staged option selection, which is the other half of the
+    // draft: `selectedOption` survives independently of `response`. B shares
+    // the "bump" option with A precisely so a surviving selection WOULD paint
+    // one of these cards — see the note on B's `options` above. Both halves of
+    // this assertion are mutation-proved: removing either setter from the
+    // `[id]` effect fails this test.
+    for (const card of screen.getAllByTestId("coord-question-option-card")) {
+      expect(card.className).not.toContain("border-primary");
+    }
+    // The send button is disabled again, because an empty draft is what
+    // disables it — the end-to-end statement that nothing is submittable yet.
+    expect(screen.getByTestId("coord-question-submit")).toBeDisabled();
+  });
+});
+
+describe("the composer's own onChange", () => {
+  // This is the ONLY test that types into the textarea, and it exists because
+  // the route-change test above deliberately does not. `onChange` does two
+  // things -- `setResponse(e.target.value)` AND `setSelectedOption(null)` --
+  // and before this test neither was pinned: deleting the whole handler body
+  // left the suite green. The second half matters out of proportion to its
+  // size: misreading exactly that line is what produced a wrong diagnosis
+  // during review, when the route-change test's option assertion was found
+  // vacuous and the cause was attributed to the option VALUES rather than to
+  // this setter nulling the selection first.
+  it("sets the response and clears a staged option selection", async () => {
+    get.mockResolvedValue({
+      ...QUESTION,
+      question_id: "q-1",
+      options: ["bump", "pin"],
+    });
+
+    render(<CoordQuestionDetailPage />);
+    await waitFor(() => {
+      expect(
+        screen.getByTestId("coord-question-response-textarea")
+      ).toBeInTheDocument();
+    });
+
+    // Stage a selection first, so there is something for onChange to clear.
+    fireEvent.click(screen.getAllByTestId("coord-question-option-card")[0]);
+    expect(
+      screen.getAllByTestId("coord-question-option-card")[0].className
+    ).toContain("border-primary");
+
+    fireEvent.change(screen.getByTestId("coord-question-response-textarea"), {
+      target: { value: "bump, and pin the transitive one" },
+    });
+
+    // Half one: the typed text is the response.
+    expect(screen.getByTestId("coord-question-response-textarea")).toHaveValue(
+      "bump, and pin the transitive one"
+    );
+    // Half two: the staged selection is dropped, because the text no longer
+    // says what the card said. Nothing asserted this before.
+    for (const card of screen.getAllByTestId("coord-question-option-card")) {
+      expect(card.className).not.toContain("border-primary");
+    }
   });
 });

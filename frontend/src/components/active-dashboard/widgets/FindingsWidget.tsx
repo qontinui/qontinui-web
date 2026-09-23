@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import {
-  runnerApi,
+  useRunnerApi,
   type Finding,
   type TaskRunKnowledge,
 } from "@/lib/runner-api";
@@ -42,6 +42,7 @@ function FindingInputAction({
   finding: Finding;
   onSubmitted: () => void;
 }) {
+  const runnerApi = useRunnerApi();
   const [text, setText] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
@@ -98,6 +99,7 @@ function FindingResolveAction({
   finding: Finding;
   onResolved: () => void;
 }) {
+  const runnerApi = useRunnerApi();
   const [resolving, setResolving] = useState(false);
 
   const handleResolve = async () => {

@@ -198,8 +198,42 @@ describe("/admin/coord/work-units difficulty", () => {
     );
     expect(
       screen.getByTestId("coord-work-units-difficulty-empty")
-    ).toHaveTextContent("None of the 3 fetched work units is rated medium.");
+    ).toHaveTextContent("None of the 3 work units read is rated medium.");
     expect(screen.queryByTestId("coord-work-units-empty")).toBeNull();
+  });
+
+  /**
+   * The count in that sentence is taken AFTER the document and scanner chips
+   * (`sorted`), so with a chip up it is not the rows read — and "fetched"
+   * called it that. It names the filters that produced it instead, the same
+   * read/shown rule the fetch-window panel follows.
+   */
+  it("with a document chip up too, says the count is what the chips left, not what was read", async () => {
+    difficultyIndex = loaded();
+    get.mockResolvedValue({
+      work_units: [
+        { slug: "2026-09-10-hard-one", status: "vetted", has_body: true },
+        { slug: "2026-09-11-easy-one", status: "vetted", has_body: true },
+        { slug: "2026-09-12-no-body", status: "draft", has_body: false },
+      ],
+    });
+    const user = userEvent.setup();
+    render(<CoordWorkUnitsListPage />);
+    await screen.findAllByTestId("coord-plan-card");
+
+    await user.click(
+      screen.getByTestId("coord-work-units-has-body-filter-yes")
+    );
+    await user.click(screen.getByTestId("coord-work-units-difficulty-select"));
+    await user.click(
+      await screen.findByRole("option", { name: "Medium difficulty" })
+    );
+    const empty = screen.getByTestId("coord-work-units-difficulty-empty");
+    expect(empty).toHaveTextContent(
+      "None of the 2 work units left by the document and scanner filters is rated medium."
+    );
+    expect(empty).not.toHaveTextContent("read");
+    expect(empty).not.toHaveTextContent("fetched");
   });
 
   it("names the difficulty filter over a STALE list too, not the stale copy", async () => {

@@ -4,7 +4,8 @@ import { Activity, AlertTriangle, CheckCircle2, RotateCcw } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { useProviderHealth } from "@/lib/runner/hooks/settings-hooks";
-import { runnerFetch } from "@/lib/runner/api-client";
+import { runnerFailureMessage, runnerFetch } from "@/lib/runner/api-client";
+import { useRunnerTarget } from "@/contexts/active-runner-context";
 import { toast } from "sonner";
 import type { ProviderCircuitState } from "@/lib/runner/types/settings";
 
@@ -38,6 +39,7 @@ function StateIcon({ state }: { state: ProviderCircuitState["state"] }) {
 }
 
 export function ProviderHealthStatus() {
+  const target = useRunnerTarget();
   const { data: states, isLoading, error, refetch } = useProviderHealth();
 
   if (isLoading || error) {
@@ -50,15 +52,15 @@ export function ProviderHealthStatus() {
 
   const handleReset = async (providerKey: string) => {
     try {
-      await runnerFetch(`/provider-health/${providerKey}/reset`, {
+      await runnerFetch(target, `/provider-health/${providerKey}/reset`, {
         method: "POST",
       });
       toast.success(
         `Reset ${PROVIDER_LABELS[providerKey] ?? providerKey} circuit breaker`
       );
       refetch();
-    } catch {
-      toast.error("Failed to reset circuit breaker");
+    } catch (err) {
+      toast.error(runnerFailureMessage(err, "Failed to reset circuit breaker"));
     }
   };
 

@@ -33,7 +33,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { runnerApi } from "@/lib/runner/runner-api-object";
+import { useDispatchRunnerApi } from "@/lib/runner/runner-api-object";
 import type { PlaywrightScript } from "@/lib/runner/types/library";
 import type { ScriptForm } from "../script-utils";
 import { DEFAULT_SCRIPT_CONTENT } from "../script-utils";
@@ -66,6 +66,9 @@ export function ScriptEditor({
   onDuplicate,
   onOpenSnippetManager,
 }: ScriptEditorProps) {
+  // Calls that START work go to the new-work target (explicit choice or
+  // coord's resolved pick); a refused call carries coord's outcome.
+  const { api: workApi } = useDispatchRunnerApi();
   const editor = useScriptEditor({
     item,
     form,
@@ -186,8 +189,13 @@ export function ScriptEditor({
             size="sm"
             className="h-7 text-xs text-muted-foreground hover:text-muted-foreground gap-1.5"
             onClick={editor.handleValidateCoverage}
-            disabled={editor.isValidatingCoverage}
-            title="Validate that code covers all requirements from description"
+            disabled={
+              editor.isValidatingCoverage || editor.workRefusal !== null
+            }
+            title={
+              editor.workRefusal ??
+              "Validate that code covers all requirements from description"
+            }
           >
             {editor.isValidatingCoverage ? (
               <Loader2 className="size-3.5 animate-spin" />
@@ -242,8 +250,12 @@ export function ScriptEditor({
                       size="sm"
                       className="h-5 px-1.5 text-[10px] text-muted-foreground hover:text-muted-foreground gap-1"
                       onClick={editor.handleRegenerateDescription}
-                      disabled={editor.isRegenerating}
-                      title="Regenerate description from code"
+                      disabled={
+                        editor.isRegenerating || editor.workRefusal !== null
+                      }
+                      title={
+                        editor.workRefusal ?? "Regenerate description from code"
+                      }
                     >
                       {editor.isRegenerating ? (
                         <Loader2 className="size-3 animate-spin" />
@@ -584,7 +596,7 @@ export function ScriptEditor({
           <ExecutionPanel
             onRun={async () => {
               try {
-                const result = await runnerApi.runPlaywrightTest(item.id);
+                const result = await workApi.runPlaywrightTest(item.id);
                 return {
                   success: true,
                   output: `Started task run: ${result.task_run_id}`,
@@ -598,6 +610,7 @@ export function ScriptEditor({
             }}
             runLabel="Run Test"
             disabled={isNew}
+            refusal={editor.workRefusal}
           />
         )}
 
@@ -613,6 +626,7 @@ export function ScriptEditor({
             setAutoRefineUserHint={editor.setAutoRefineUserHint}
             runAutoRefine={editor.runAutoRefine}
             stopAutoRefine={editor.stopAutoRefine}
+            refusal={editor.workRefusal}
           />
         )}
 

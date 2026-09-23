@@ -1,13 +1,17 @@
 "use client";
 
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo } from "react";
 import { usePageSpecs } from "@/hooks/usePageSpecs";
 import { useDiscoveredSpec } from "@/lib/ui-bridge/use-discovered-specs";
 import type { SpecConfig } from "@qontinui/ui-bridge/specs";
 import {
+  RUNNER_NEEDS_LOCAL,
   useRunnerHealth,
   useErrorMonitorEntries,
-  runnerApi,
+  useRunnerApi,
+  useDispatchRunnerApi,
+  useRunnerPoll,
+  useRunnerTarget,
 } from "@/lib/runner-api";
 import { RunnerPartialState } from "@/components/runner/RunnerPartialState";
 import { ErrorEntryCard } from "@/components/error-monitor/ErrorEntryCard";
@@ -61,6 +65,11 @@ const STATUS_FILTERS: { value: StatusFilter; label: string }[] = [
 // ============================================================================
 
 export default function ErrorMonitorPage() {
+  const runnerApi = useRunnerApi();
+  // Calls that START work go to the new-work target (explicit choice or
+  // coord's resolved pick); a refused call carries coord's outcome.
+  const { api: workApi, refusal: workRefusal } = useDispatchRunnerApi();
+  const target = useRunnerTarget();
   const discoveredSpec = useDiscoveredSpec("error-monitor");
   usePageSpecs(
     discoveredSpec
@@ -72,8 +81,10 @@ export default function ErrorMonitorPage() {
     data: entries,
     isLoading: entriesLoading,
     error: entriesError,
+    errorCode: entriesErrorCode,
     refetch,
   } = useErrorMonitorEntries();
+  const entriesNeedLocal = entriesErrorCode === RUNNER_NEEDS_LOCAL;
 
   const [searchQuery, setSearchQuery] = useState("");
   const [severityFilter, setSeverityFilter] = useState<SeverityFilter>("all");
@@ -85,14 +96,19 @@ export default function ErrorMonitorPage() {
   const [fixError, setFixError] = useState<string | null>(null);
   const [_lastRefresh, setLastRefresh] = useState(new Date());
 
-  // Auto-refresh timer
-  useEffect(() => {
-    const interval = setInterval(() => {
-      refetch();
+  // Auto-refresh. The cadence is re-evaluated every tick (never faster than
+  // the relay cadence for a relayed or unresolved target), and it stops once
+  // the runner refused the route over the relay (shown below).
+  useRunnerPoll(target, {
+    enabled: true,
+    requestedMs: 30000,
+    tick: async () => {
+      if (entriesNeedLocal) return "stop";
+      await refetch();
       setLastRefresh(new Date());
-    }, 30000);
-    return () => clearInterval(interval);
-  }, [refetch]);
+      return undefined;
+    },
+  });
 
   const handleAcknowledge = async (id: number) => {
     setAcknowledgingId(id);
@@ -122,7 +138,7 @@ export default function ErrorMonitorPage() {
     setFixLoading(true);
     setFixError(null);
     try {
-      await runnerApi.generateFixWorkflow();
+      await workApi.generateFixWorkflow();
       refetch();
     } catch (err) {
       setFixError(
@@ -218,10 +234,20 @@ export default function ErrorMonitorPage() {
         </div>
         <div className="flex items-center gap-2">
           {/* Fix Errors Button */}
+          {counts.unresolved > 0 && workRefusal && (
+            <span
+              className="max-w-[16rem] truncate text-xs text-text-muted"
+              title={workRefusal}
+              data-testid="fix-errors-refusal"
+            >
+              {workRefusal}
+            </span>
+          )}
           {counts.unresolved > 0 && (
             <Button
               onClick={handleFixErrors}
-              disabled={fixLoading}
+              disabled={fixLoading || workRefusal !== null}
+              title={workRefusal ?? undefined}
               className={`font-semibold ${
                 counts.critical > 0
                   ? "bg-red-600 hover:bg-red-700 text-white"
@@ -460,7 +486,11 @@ export default function ErrorMonitorPage() {
             ) : entriesError ? (
               <div className="flex items-center gap-2 text-red-400 py-8 justify-center">
                 <AlertCircle className="w-5 h-5" />
-                <p className="text-sm">Failed to load error entries</p>
+                <p className="text-sm">
+                  {entriesNeedLocal
+                    ? entriesError
+                    : "Failed to load error entries"}
+                </p>
               </div>
             ) : filteredEntries.length === 0 ? (
               <div className="text-center py-12">

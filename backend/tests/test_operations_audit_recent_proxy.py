@@ -128,6 +128,25 @@ class TestAuditRecentProxy:
         assert params["action"] == "fleet.*"
         assert params["limit"] == 100
 
+    def test_forwards_via_verbatim(self, client: TestClient):
+        """Plan 2026-09-13-escalate-path-block-is-agent-clearable-on-evidence
+        4.3: agent clearances are filterable by ``via``. Coord owns the
+        vocabulary (and its 400), so the value is forwarded untouched."""
+        with _patch_httpx() as MockClient:
+            instance = AsyncMock()
+            instance.get.return_value = _mock_response(
+                json_data={"audit": [], "count": 0}
+            )
+            _configure_mock_client(MockClient, instance)
+
+            client.get(
+                f"{AUDIT_PATH}?action=pr_merge.escalate_override&via=agent_evidence"
+            )
+
+        params = instance.get.call_args.kwargs["params"]
+        assert params["action"] == "pr_merge.escalate_override"
+        assert params["via"] == "agent_evidence"
+
     def test_forwards_resource_kind_and_resource_key_verbatim(self, client: TestClient):
         """These two were stranded by the proxy — declared nowhere, so a
         caller could not narrow to a resource_kind (e.g. isolate the

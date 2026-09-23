@@ -11,19 +11,22 @@
  * `2026-09-20-the-operator-plans-page-reads-the-wrong-store`)
  *
  * This page reads `coord.work_units` — the OPERATIONAL store — through
- * `/api/v1/operations/plans*`, ordered `updated_at DESC` and clamped at
- * {@link FETCH_LIMIT}. That is a **recency window over coord's work units**,
- * not the plan corpus: a unit's position depends on when it was last touched,
- * so work that has stalled is exactly what falls out of view. Calling it
- * "Plans" told an operator it was a corpus they could search, and one who
- * could not find a three-week-old plan on it read "not here" as "absent".
+ * `/api/v1/operations/plans*`. Read as one `updated_at DESC` page clamped at
+ * 500, that is a **recency window over coord's work units**, not the plan
+ * corpus: a unit's position depends on when it was last touched, so work that
+ * has stalled is exactly what falls out of view. Calling it "Plans" told an
+ * operator it was a corpus they could search, and one who could not find a
+ * three-week-old plan on it read "not here" as "absent".
  *
  * The plan CORPUS now lives at `/admin/coord/plans`, which reads
  * `GET /api/v1/plan-library/reconciliation` (slug-ordered, paged, with a
  * stated total). This page keeps the question it always actually answered —
- * *what has coord touched lately, and what is blocked?* — under the name of
- * the store it reads. `updated_at DESC` stays, deliberately: for the merge
- * escalation triage this page is FOR, recency is the right axis.
+ * *what is in coord's work-unit store, what has it touched lately, and what is
+ * blocked?* — under the name of the store it reads. The recency view stays,
+ * deliberately, as the "Recently updated" sorts (one `order=updated_desc`
+ * page): for the merge-escalation triage this page is FOR, recency is the
+ * right axis. The authored sorts WALK the store instead (next section), so an
+ * operator sorting by authoring date sorts the whole store, not one window.
  *
  * **The `shepherd-*` exclusion is a control here, not a constant, and it
  * DEFAULTS TO INCLUDED.** `shepherd-*` units are coord's own unlandable-PR
@@ -32,7 +35,9 @@
  * are not plans. On a work-unit page they are the subject, and hard-excluding
  * them would leave ~1,264 rows with no consumer on either page. So the
  * exclusion is a Select, defaulting to including them, and the operator can
- * narrow to authored work when that is the question.
+ * narrow to authored work when that is the question. It is a SERVER-side
+ * parameter, so it goes in the walk's `baseParams` and rides on EVERY page of
+ * a walk (`planWalk.ts` `pageUrl`), never on the first page alone.
  *
  * ## Console style (Phase 3 Wave 1)
  *
@@ -47,9 +52,29 @@
  *   page. No second request: the counts come from the same list the rows do.
  * - **R2/R5** — one work unit is one `<PlanRow>` line; detail expands in place
  *   (`<RecordList>` keeps one open at a time).
- * - **R7** — the fetch-window caveats (truncation, missing authoring dates)
- *   collapse into a `<CollapsiblePanel>` whose summary badge stays visible, so
- *   the warning cannot hide behind the click.
+ * - **R7** — the fetch-window statement (complete / INCOMPLETE / truncated,
+ *   missing authoring dates) collapses into a `<CollapsiblePanel>` whose
+ *   summary badge stays visible, so the warning cannot hide behind the click.
+ *
+ * ## The whole corpus, not a window (plan `2026-09-12-admin-coord-plans-shows-a-rotating-3-minute-slice-so-plans-get-lost`)
+ *
+ * Every sort but "Recently updated" / "Least recently updated" WALKS coord's
+ * list in `order=authored_desc` along its keyset cursor (`planWalk.ts`), so a
+ * plan cannot fall past a 500-row cap chosen by mutation time. A coord that
+ * predates the walk answers with one `updated_at`-ordered page and no `order`
+ * echo; the page then shows that page and names the `updated_at` span it
+ * covers. The two `updated_*` sorts stay a single `order=updated_desc` page —
+ * the explicit "recently touched" view.
+ *
+ * Walking costs several reads where a slice cost one, so the POLL CADENCE is
+ * per server order (`POLL_INTERVAL_MS`) — 120 s for a walked view, 10 s for the
+ * single-page one — and a read stamp under the controls states when the list on
+ * screen was read, in EVERY arm where a list is shown (it sits outside the
+ * collapsible fetch-window panel, which renders only when there is a caveat).
+ * What a complete walk can and cannot promise is `planWalk.ts`'s
+ * `complete` docs; the panel says the same thing in the operator's words, and
+ * the health strip declares itself computed over a partial list whenever it is
+ * (`derivePlansHealth`'s `incomplete`).
  *
  * ## Which date (plan `2026-09-02-coord-work-units-carry-no-authoring-date`)
  *
@@ -68,24 +93,41 @@
  * every render but one. R6's dash rule permits that; it would still be a
  * strictly worse control than the Select, and `coord-work-units-status-select` is a
  * frozen authored testid (D4a). The counts operators actually want are in the
- * health strip, derived from the window that WAS fetched.
+ * health strip, derived from the rows that WERE read.
  *
  * The shepherd Select follows that precedent for the same reason: it is also a
  * SERVER-side filter (`?exclude_slug_prefix=`), so a chip strip would carry
- * dashes rather than counts.
+ * dashes rather than counts. Being server-side, it changes the population that
+ * was READ rather than narrowing the rendered rows, so it is stated in the
+ * fetch-window copy as part of what was read — not in `shownUnderFilter`,
+ * which names only the client-side narrowings.
  *
  * ## Difficulty (plan `2026-09-18-plan-library-difficulty-field`)
  *
  * Each row carries the plan library's difficulty rating — the model tier the
  * plan routes to — read from `/api/v1/plan-library/difficulty` by
  * `usePlanDifficulty` and joined by slug (`planDifficulty.ts`). Unlike the
- * status Select, the difficulty Select is a CLIENT-side filter over the
- * fetched window, and it is disabled until the ratings have loaded: filtering
+ * status Select, the difficulty Select is a CLIENT-side filter over the rows
+ * that were READ, and it is disabled until the ratings have loaded: filtering
  * on ratings the page does not have would render an empty list that reads as
  * "no plan is that hard".
+ *
+ * **It needs nothing from the corpus walk, and that is a property of the
+ * ratings read rather than a convenience.** `usePlanDifficulty` issues ONE
+ * un-parameterised `GET /api/v1/plan-library/difficulty` — a whole-corpus map
+ * (`crud.list_plan_difficulties` takes no LIMIT), on its own 5-minute cadence —
+ * so there is no query parameter to put on each `pageUrl` and no per-request
+ * envelope block to fold across pages the way `foldBodySignalBlocks` folds the
+ * body signals. The join is `difficultyCell(index, slug)` per rendered row, so
+ * a walk of four pages and a single page are the same case to it.
+ *
+ * What the walk DOES change is the honesty arithmetic: the filter narrows the
+ * rendered list, so it is counted in `shownUnderFilter` beside the two body
+ * strips (see there), while the fetch-window panel's own counts and the health
+ * strip stay on the UNFILTERED `plans`.
  */
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import {
   Select,
   SelectContent,
@@ -97,6 +139,7 @@ import {
   ArrowDownUp,
   FileQuestion,
   Filter,
+  ListChecks,
   ShieldAlert,
   SignalHigh,
   TriangleAlert,
@@ -107,22 +150,18 @@ import {
   HealthStrip,
   RecordList,
   RefreshButton,
-  absoluteTime,
   readIsUnknown,
 } from "@/components/console";
 import { PlanRow } from "@/components/admin/coord/PlanRow";
-import {
-  planAuthoredAt,
-  type CoordPlanRow,
-} from "@/components/admin/coord/planStatus";
+import { planAuthoredAt } from "@/components/admin/coord/planStatus";
 import {
   HAS_BODY_FILTERS,
   PROVENANCE_FILTERS,
   filterPlansByBodySignal,
+  hasBodyFilterTooltip,
   hasBodyFilterValue,
   type BodyProvenance,
   type HasBodyFilter,
-  type PlanBodySignalBlock,
 } from "@/components/admin/coord/planBodySignal";
 import {
   DIFFICULTY_FILTERS,
@@ -132,7 +171,24 @@ import {
 } from "@/components/admin/coord/planDifficulty";
 import { httpClient } from "@/services/service-factory";
 import { sortPlans, SORTS, type SortKey } from "./planSort";
+import {
+  WALK_MAX_PAGES,
+  WALK_PAGE_LIMIT,
+  formatInstant,
+  overviewTotalFor,
+  serverOrderFor,
+  timeSpan,
+  walkWorkUnits,
+  type OverviewTotal,
+  type ServerOrder,
+  type WalkOutcome,
+  type WorkUnitOverview,
+} from "./planWalk";
 import { usePlanDifficulty } from "./usePlanDifficulty";
+import {
+  useGuardedPoll,
+  type ReadGuard,
+} from "@/components/admin/coord/useGuardedPoll";
 import {
   derivePlansHealth,
   SHEPHERD_FILTERS,
@@ -141,22 +197,118 @@ import {
 } from "./plansHealth";
 
 const API = "/api/v1/operations";
-const POLL_INTERVAL_MS = 10_000;
-
-/**
- * Ask for coord's maximum page.
- *
- * Sorting happens client-side, so the window we sort over is the window we
- * fetched. coord's list is `ORDER BY updated_at DESC LIMIT $3` with a default
- * of 100 and a hard clamp of 500 (`work_unit_registry.rs` `list_work_units`),
- * and the proxy forwards no sort parameter — so requesting the clamp is the
- * widest honest window available. When the result fills it, the corpus is
- * larger than what is sorted and the page says so; see `truncated` below.
- */
-const FETCH_LIMIT = 500;
 
 /** What one row IS here — see `PlansHealthNoun` in `plansHealth.tsx`. */
 const WORK_UNIT_NOUN = { one: "work unit", many: "work units" };
+
+/** "1 work unit" / "N work units" — the overview sentences take any count. */
+function workUnits(n: number): string {
+  return `${n} work unit${n === 1 ? "" : "s"}`;
+}
+
+/** Which of coord's overview counts a status filter is compared against. */
+function overviewScope(status: string): string {
+  return status === "any" ? "in total" : `with status=${status}`;
+}
+
+/**
+ * The gap between coord's overview total and the rows read, stated as a
+ * direction and a size — never a signed number ("a difference of -3"), and
+ * never with a cause attached: the two are separate reads, and a gap of any
+ * size is reported rather than explained away.
+ */
+function describeGap(overviewTotal: number, read: number): string {
+  const gap = overviewTotal - read;
+  if (gap === 0) return "none";
+  return gap > 0
+    ? `${gap} more than this read`
+    : `${-gap} fewer than this read`;
+}
+
+/**
+ * Why there is no overview total to compare against — the two causes kept
+ * apart (`overviewTotalFor`): an overview that never answered, and one that
+ * answered without breaking out this question.
+ */
+function overviewMissSentence(
+  miss: Exclude<OverviewTotal, { kind: "total" }>,
+  status: string
+): string {
+  if (miss.kind === "unread") return "coord's overview could not be read";
+  return status === "any"
+    ? "coord's overview was read but carries no total"
+    : `coord's overview was read but does not break out status=${status}`;
+}
+
+/**
+ * The poll cadence, per SERVER ORDER — because the order is what decides
+ * whether one tick costs one read or a whole walk.
+ *
+ * Before the corpus walk this page made ONE `limit=500` read per tick. The
+ * walk makes ceil(N/500) SEQUENTIAL list reads instead, each a 500-row coord
+ * read with a LATERAL sub-select per row, plus `/plans/overview` once.
+ *
+ * **And every page now pays a SECOND coord read of its own.** The body signals
+ * (plan `2026-09-02-bodyless-work-units-are-listed-and-spawnable-as-plans`)
+ * are computed per request by the proxy: `_apply_body_signals` →
+ * `_read_plan_capture_dial` → a `GET /coord/fleet-policy` proxy read, plus a
+ * `resolve_body_knowledge` call against qontinui-web's own schema
+ * (`operations.py`) that issues THREE queries of its own, not one —
+ * `resolve_personal_organization`, `crud.count_artifacts` and
+ * `crud.work_unit_slugs_with_artifacts` (`plan_body_signal.py`). So a P-page
+ * walk costs 2P + 1 coord round trips (P list + P dial + 1 overview) and 3P
+ * local DB queries.
+ *
+ * **The rule this cadence is held to:** the DEFAULT view's steady-state coord
+ * read rate may not exceed what the single 500-row slice this plan REPLACED
+ * cost on the same backend — one list read plus its dial read per 10 s tick,
+ * ~12 coord reads a minute. The walk buys completeness; it may not pay for it
+ * by multiplying the read rate.
+ *
+ * The corpus, as measured: the `shepherd-*` merge escalations were 1,264 rows
+ * on 2026-09-20, 39% of `coord.work_units` (`plansHealth.tsx`) — so ~3.2k rows
+ * in all, of which ~2.0k are not shepherd rows (~1.8k when first measured on
+ * 2026-09-19). Under each setting of the shepherd control:
+ *
+ * - **include (the DEFAULT, and the setting that sets the bound)** — 7 pages:
+ *   7 list + 7 dial + 1 overview = 15 coord reads and ~21 local DB queries per
+ *   walk. At 60 s that was 15 coord reads a minute, ABOVE the ~12 baseline;
+ *   an earlier revision of this comment priced the walk at 4 pages, which was
+ *   only ever true of the non-shepherd set this route no longer defaults to.
+ *   At 120 s it is 7.5 coord reads (~10.5 DB queries) a minute.
+ * - **exclude** — 4 pages: 4 + 4 + 1 = 9 coord reads and ~12 DB queries per
+ *   walk; 4.5 coord reads a minute at 120 s.
+ *
+ * 120 s holds the rule with room for the corpus to grow: the default view stays
+ * at or under ~12 coord reads a minute up to 11 pages (2·11 + 1 = 23 reads per
+ * two minutes), i.e. ~5.5k rows. Past that the arithmetic has to be redone.
+ *
+ * On a 10 s tick the default walk would be ~90 coord reads a minute per tab,
+ * and `useGuardedPoll`'s in-flight lock is not a bound on it: it stops ticks
+ * STACKING, so on a link where one walk takes longer than the interval the
+ * steady state is back-to-back walks — continuous polling, which is what this
+ * table exists to prevent.
+ *
+ * - `updated_desc` — one page by design, so one list read plus its dial read.
+ *   Unchanged at 10 s: ~12 coord reads a minute — the baseline itself.
+ * - `authored_desc` — a walk, at 120 s, per the arithmetic above.
+ *
+ * Freshness is not lost, only un-automated: `<RefreshButton>` is unthrottled,
+ * so a current answer is one press away, and its `title` names the cadence
+ * actually in force rather than a constant baked into the copy.
+ *
+ * Two deliberate imprecisions. A coord that PREDATES the walk answers one page
+ * under `authored_desc` and still polls at 120 s — which arm answered is only
+ * knowable after a read, and erring slow costs freshness, not correctness.
+ * And the interval is derived from `order` (a property of the QUESTION) rather
+ * than from the last outcome, which would put `data` in `read`'s dependency
+ * set — and `read`'s identity is what `useGuardedPoll` re-asks the question
+ * on. A cost knob must not be able to re-ask the question.
+ */
+const POLL_INTERVAL_MS: Record<ServerOrder, number> = {
+  updated_desc: 10_000,
+  authored_desc: 120_000,
+};
 
 // Work-unit lifecycle statuses (coord stores status as an opaque string;
 // these are the canonical lifecycle words the filter offers as a convenience
@@ -173,39 +325,39 @@ const STATUS_FILTERS = [
   { value: "obsolete", label: "Obsolete" },
 ];
 
-interface PlansListResponse {
-  // coord `/coord/work-units` returns rows under `work_units`. `plans` is
-  // kept for backwards-tolerance during the cutover (harmless if absent).
-  work_units?: CoordPlanRow[];
-  plans?: CoordPlanRow[];
-  limit?: number;
-  offset?: number;
-  count?: number;
-  /**
-   * The size of the WHOLE population, when coord serves one.
-   *
-   * It is optional because nothing between this page and coord's
-   * `list_work_units` promises it: the web proxy forwards coord's envelope
-   * verbatim (`operations.py` `list_coord_plans`), and that envelope is
-   * `{work_units, limit, offset}`. So an absent `total` is UNKNOWN and the
-   * truncation notice says so — it never substitutes `count`, which is the
-   * size of the PAGE and would turn "500 of ?" into the false "500 of 500".
-   */
-  total?: number;
-  /**
-   * Why a `has_body: false` on this page is (or is not) evidence — computed
-   * once per request by the proxy. Absent when the page had no rows to
-   * annotate, and on a backend that predates the signals.
-   */
-  body_signal?: PlanBodySignalBlock;
-}
-
 /** Add or remove one value — the `FilterChips` caller owns the set. */
 function toggle<V extends string>(prev: V[], value: V): V[] {
   return prev.includes(value)
     ? prev.filter((v) => v !== value)
     : [...prev, value];
 }
+
+/** One answered question: the walk's outcome, plus coord's corpus tally. */
+interface PlansWindow {
+  outcome: WalkOutcome;
+  /**
+   * coord's `/overview` tally, read only when the walk ran (a coord new enough
+   * to walk is new enough to serve it). `null` = unread or failed — UNKNOWN,
+   * so the page says the count is not cross-checked rather than comparing
+   * against nothing.
+   */
+  overview: WorkUnitOverview | null;
+  /**
+   * When this answer was read, so a slower poll cadence (`POLL_INTERVAL_MS`)
+   * cannot make the page silently present an old list as the current one.
+   * Rendered unconditionally beside the list — not inside the conditional
+   * fetch-window panel — and it is the read's clock, not coord's.
+   */
+  readAt: string;
+}
+
+const PARTIAL_REASON_COPY = {
+  error: "a page read failed",
+  page_cap: `it reached its ${WALK_MAX_PAGES}-page safety cap`,
+  // Not "a cursor that did not advance": the walk stops on any cursor it has
+  // already followed, including a longer cycle (`planWalk.ts` `cursorKey`).
+  stalled: "coord repeated a cursor it had already handed out",
+} as const;
 
 export default function CoordWorkUnitsListPage() {
   const [status, setStatus] = useState("any");
@@ -214,9 +366,12 @@ export default function CoordWorkUnitsListPage() {
   const [shepherd, setShepherd] = useState<ShepherdFilter>("include");
   const [sort, setSort] = useState<SortKey>("authored_desc");
   // Both body filters are CLIENT-side, unlike `status`: the proxy derives
-  // these fields, it does not take them as query parameters, so they filter
-  // the window that was fetched. That also means their counts are real —
-  // computed from the same rows the list renders — rather than R6's `–`.
+  // these fields, it does not take them as query parameters, so there is
+  // nothing to send per page and nothing a walk could drop. They filter the
+  // rows that were READ — which, on a walked order, is the whole corpus under
+  // the status filter rather than one 500-row slice. That also means their
+  // counts are real — computed from the same rows the list renders — rather
+  // than R6's `–`.
   const [provenance, setProvenance] = useState<BodyProvenance[]>([]);
   const [hasBody, setHasBody] = useState<HasBodyFilter[]>([]);
   // The difficulty filter is client-side for the same reason, but its ratings
@@ -228,7 +383,11 @@ export default function CoordWorkUnitsListPage() {
   const { index: difficultyIndex, refresh: refreshDifficulty } =
     usePlanDifficulty();
   const difficultyLoaded = difficultyIndex.state === "loaded";
-  const [data, setData] = useState<PlansListResponse | null>(null);
+  const [data, setData] = useState<PlansWindow | null>(null);
+  // The server order is part of the QUESTION (it decides what is fetched);
+  // the client sort within an order is not, so switching between two walked
+  // sorts re-sorts the rows already on the page instead of re-reading.
+  const order = serverOrderFor(sort);
   const [error, setError] = useState<string | null>(null);
   // There is deliberately no `loading` flag. It used to gate the list's
   // `loaded` prop, and the two questions it conflated are what let a
@@ -237,186 +396,98 @@ export default function CoordWorkUnitsListPage() {
   // page is allowed to say "no plans match". `data !== null || error !== null`
   // answers the second directly, so the flag had no reader left.
 
+  /** This view's tick — one read or a walk; see `POLL_INTERVAL_MS`. */
+  const pollMs = POLL_INTERVAL_MS[order];
+
   /**
-   * Generation guard — a read may only speak while it is still the newest one.
-   *
-   * Without it the reset below narrows the bug instead of closing it: the read
-   * issued under the PREVIOUS `status` is still live, still holds its own
-   * closure, and lands on `setData`/`setError` unconditionally. Both arms are
-   * reachable by changing the filter while the first load is in flight, which
-   * is the ordinary case, not a corner:
-   *
-   *   - the superseded SUCCESS repaints the discarded window under the new
-   *     filter, for a whole poll interval;
-   *   - worse, it lands on top of a new read that FAILED — `setError(null)`
-   *     clears the banner, `loaded` flips true, and the old window is stated
-   *     as a confident answer to a question that errored. That is the
-   *     fabricated-answer class this change exists to close, re-created in a
-   *     race window.
-   *
-   * Same shape as `/notifications`' `queryGen`, `/questions`' three `*Seq`
-   * refs and `usePlanLibrary`'s counter. `http-client.ts` now honours a
-   * caller's `signal`, but cancelling a superseded read would not replace
-   * these counters: they decide which settled read may land, not which reads
-   * run.
-   *
-   * **TWO counters, because the two things being gated are not one question.**
-   * A single per-request counter silences a read in every arm at once, and
-   * that is how a page ends up stuck: `httpClient`'s request timeout is 60s
-   * and its 5xx retry spends ~7s in backoff over four round trips, both far
-   * longer than this page's 10s tick, so under a slow or retrying backend
-   * every read is superseded before it settles and the failure is never
-   * surfaced at all — the page waits on coord forever with nothing to show for
-   * it. That is exactly the defect `readFailed` exists to prevent —
-   * `plansHealth.tsx`: *"a first load that errors leaves `loaded` false and
-   * renders 'Waiting for coord…' over a request that is never arriving"* —
-   * re-created by the fix for a different one.
-   *
-   * So:
-   *
-   *   - `questionGen` (bumped in the effect, once per FILTER change) gates the
-   *     ERROR. "This read failed" is true of the filter currently on screen
-   *     whether or not a newer request has overtaken it, so an overtaken
-   *     failure still gets to speak; a failure belonging to a filter the
-   *     operator has left does not.
-   *   - `reqGen` (bumped per call) additionally gates `setData`, so the newest
-   *     response is the one rendered and two overlapping reads cannot land out
-   *     of order.
-   *
-   * The residue is the asymmetry `/questions` states and accepts: a stale
-   * FAILURE landing after a fresh success shows a banner the newest read
-   * disagrees with. That fails safe — it over-reports trouble — where the
-   * opposite silences it. `pollInFlight` keeps same-question ticks from
-   * overlapping in the first place, and a refresh CLICK takes the same lock
-   * when it is free (`refresh` below), so no tick can stack on a manual read
-   * either. What remains is one narrower window: a click made while a poll
-   * or the first read is already out still issues its own read, which is the
-   * overlap `filterWindowReset.test.tsx` pins as guarded by the two counters.
+   * The guarded read, per `useGuardedPoll` — this page is the pattern it was
+   * lifted from (a walk overtaken mid-way stops issuing pages via the same
+   * `guard.isNewest`, exactly like the single-page read it replaced), so
+   * migrating onto the shared hook changes no behaviour, only where the two
+   * generation counters live.
    */
-  const questionGen = useRef(0);
-  const reqGen = useRef(0);
-  /** One poll at a time — see the retry arithmetic above. */
-  const pollInFlight = useRef(false);
-
-  const fetchData = useCallback(async () => {
-    const question = questionGen.current;
-    const req = ++reqGen.current;
-    try {
-      const qs = new URLSearchParams();
-      if (status && status !== "any") qs.set("status", status);
-      qs.set("limit", String(FETCH_LIMIT));
-      if (shepherd === "exclude") {
-        qs.set("exclude_slug_prefix", SHEPHERD_SLUG_PREFIX);
+  const read = useCallback(
+    async (guard: ReadGuard) => {
+      try {
+        const qs = new URLSearchParams();
+        if (status && status !== "any") qs.set("status", status);
+        // In `baseParams`, so it rides on every page of a walk — see the
+        // module docstring. `include` sends nothing at all.
+        if (shepherd === "exclude") {
+          qs.set("exclude_slug_prefix", SHEPHERD_SLUG_PREFIX);
+        }
+        const outcome = await walkWorkUnits(
+          (url) => httpClient.get(url),
+          `${API}/plans`,
+          qs,
+          order,
+          guard.isNewest
+        );
+        if (outcome === null || !guard.isNewest()) return;
+        let overview: WorkUnitOverview | null = null;
+        if (outcome.kind !== "single_page") {
+          overview = await httpClient
+            .get<WorkUnitOverview>(`${API}/plans/overview`)
+            .catch(() => null);
+          if (!guard.isNewest()) return;
+        }
+        setData({ outcome, overview, readAt: new Date().toISOString() });
+        setError(null);
+      } catch (e) {
+        if (!guard.isCurrentQuestion()) return;
+        setError(e instanceof Error ? e.message : String(e));
       }
-      const suffix = qs.toString() ? `?${qs.toString()}` : "";
-      const body = await httpClient.get<PlansListResponse>(
-        `${API}/plans${suffix}`
-      );
-      if (question !== questionGen.current || req !== reqGen.current) return;
-      setData(body);
-      setError(null);
-    } catch (e) {
-      if (question !== questionGen.current) return;
-      setError(e instanceof Error ? e.message : String(e));
-    }
-  }, [status, shepherd]);
+    },
+    [status, shepherd, order]
+  );
 
-  useEffect(() => {
-    // `status` is `fetchData`'s only dependency, so this effect re-runs
-    // exactly when the QUESTION changes — and the rows still in `data` answer
-    // the previous one. Dropping them is not cosmetic: `loaded` is `data !==
-    // null`, so keeping them leaves every read-state derivation on this page
-    // reporting the OLD query while the new one is in flight — the list shows
-    // the previous filter's records instead of skeletons, the strip describes
-    // the previous window, and a new fetch that FAILS lands on the STALE arm
-    // ("the last counts that landed") when nothing has ever landed for this
-    // query. That is R6's own `loaded`-means-"answered-THIS-question" clause,
-    // one level up from a count.
-    //
-    // It is cleared HERE and not in `fetchData`, which the poll also calls: a
-    // poll must never blank a loaded page.
-    //
-    // The question generation is bumped here for the same reason — this is the
-    // one place the QUESTION changes.
-    questionGen.current += 1;
-    const question = questionGen.current;
-    /**
-     * Release the poll lock only if it is still the one this read took.
-     *
-     * A read superseded by a filter change settles LATE — after the cleanup
-     * has released the lock and the new question has taken it — so an
-     * unconditional release would free a lock the NEW question's read is still
-     * holding, and the next tick would issue a second concurrent read. Not
-     * harmful (`reqGen` still picks the winner), but it would quietly falsify
-     * the "one poll at a time" claim after every filter change, and a guard is
-     * only worth having while its comment is true.
-     */
-    const releaseLock = () => {
-      if (question === questionGen.current) pollInFlight.current = false;
-    };
+  // `status`, `shepherd` and the server `order` are `read`'s only
+  // dependencies, so `useGuardedPoll` re-asks exactly when the QUESTION
+  // changes. Dropping the previous window here is not cosmetic: `loaded` is
+  // `data !== null`, so keeping it leaves every read-state derivation on this
+  // page reporting the OLD query while the new one is in flight — the list
+  // shows the previous filter's records instead of skeletons, the strip
+  // describes the previous window, and a new fetch that FAILS lands on the
+  // STALE arm ("the last counts that landed") when nothing has ever landed
+  // for this query. That is R6's own `loaded`-means-"answered-THIS-question"
+  // clause, one level up from a count.
+  const onQuestionChange = useCallback(() => {
     setData(null);
     setError(null);
-    // The FIRST read holds the lock too. Without that a tick 10s in issues a
-    // second read of the same question while the first is still out, and the
-    // first is then dropped for being superseded — which is only ever safe
-    // when nothing downstream mistakes "no answer yet" for "no answer".
-    pollInFlight.current = true;
-    void fetchData().finally(releaseLock);
-    const id = setInterval(() => {
-      // A tick that outruns the previous read would otherwise stack: the
-      // request timeout is 60s against a 10s interval, so a hung backend
-      // accumulates six concurrent reads a minute for nothing.
-      if (pollInFlight.current) return;
-      pollInFlight.current = true;
-      void fetchData().finally(releaseLock);
-    }, POLL_INTERVAL_MS);
-    return () => {
-      clearInterval(id);
-      // The lock was taken for a question that is over. Leaving it set would
-      // have the new question's first few ticks skip while a read nobody is
-      // waiting for finishes — bounded by the 60s timeout, but pointless.
-      pollInFlight.current = false;
-    };
-  }, [fetchData]);
+  }, []);
+
+  const { refresh: guardedRefresh } = useGuardedPoll({
+    read,
+    intervalMs: pollMs,
+    onQuestionChange,
+  });
 
   /**
    * The refresh button's read — the operator's, never the poll's.
    *
-   * It returns the read's promise so `<RefreshButton>` acknowledges the press
-   * for exactly as long as that read is out; the poll calls `fetchData`
-   * directly and has no path to that state, so the control never pulses on a
-   * tick (plan `2026-09-09-coord-plans-page-controls-do-not-acknowledge-or-name-themselves`
+   * The ratings refresh with the operator's press too — never with the poll
+   * (see `usePlanDifficulty`) — and deliberately NOT via `useGuardedPoll`'s
+   * `also`: that would fold it into the same lock and make `<RefreshButton>`
+   * stay busy for whichever of the two reads is slower, when the button is
+   * labelled for the work-unit read alone (plan
+   * `2026-09-09-coord-plans-page-controls-do-not-acknowledge-or-name-themselves`
    * F1).
-   *
-   * It TAKES `pollInFlight` when the lock is free, so the ticks that come due
-   * while a manual read is out skip instead of stacking a second read of the
-   * same question on top of it. When a poll already holds the lock the click
-   * still issues its own read rather than waiting for or joining that one:
-   * the operator asked for a read now, and the resulting overlap is exactly
-   * what `questionGen`/`reqGen` above are for. The release is question-scoped
-   * for the same reason as the effect's `releaseLock`: a filter change while
-   * this read is out hands the lock to the new question's read, which this
-   * one must not free.
    */
   const refresh = useCallback(() => {
-    // The ratings refresh with the operator's press too — never with the poll
-    // (see `usePlanDifficulty`). Not awaited: the button acknowledges the
-    // work-unit read, which is the one it is labelled for.
     void refreshDifficulty();
-    const tookLock = !pollInFlight.current;
-    if (tookLock) pollInFlight.current = true;
-    const question = questionGen.current;
-    return fetchData().finally(() => {
-      if (tookLock && question === questionGen.current) {
-        pollInFlight.current = false;
-      }
-    });
-  }, [fetchData, refreshDifficulty]);
+    return guardedRefresh();
+  }, [guardedRefresh, refreshDifficulty]);
 
-  const plans = useMemo(() => data?.work_units ?? data?.plans ?? [], [data]);
-  // The chip counts describe the WINDOW, so they are derived from `plans` —
-  // before the body filters are applied, or every count but the selected one
-  // would collapse to 0 the moment a chip was clicked.
+  const outcome = data?.outcome ?? null;
+  const plans = useMemo(() => outcome?.rows ?? [], [outcome]);
+  // The chip counts describe the ROWS THAT WERE READ, so they are derived from
+  // `plans` — before the body filters are applied, or every count but the
+  // selected one would collapse to 0 the moment a chip was clicked. What "the
+  // rows that were read" means is the walk's business, not the filters':
+  // on a `complete` walk it is the whole corpus under the status filter, and
+  // on a `partial` one or a `single_page` it is less than that — which is why
+  // the counts are never captioned as corpus-wide here. The fetch-window panel
+  // and the health strip are the surfaces that qualify them.
   const provenanceCounts = useMemo(() => {
     const counts = new Map<BodyProvenance, number>();
     for (const p of plans) {
@@ -447,7 +518,7 @@ export default function CoordWorkUnitsListPage() {
   );
   const sorted = useMemo(() => sortPlans(filtered, sort), [filtered, sort]);
   const bodyFiltered = provenance.length > 0 || hasBody.length > 0;
-  // The difficulty filter runs LAST, over the body-filtered window, and only
+  // The difficulty filter runs LAST, over the body-filtered rows, and only
   // once the ratings have loaded — see the module docstring.
   const shown = useMemo(
     () =>
@@ -462,45 +533,99 @@ export default function CoordWorkUnitsListPage() {
     [sorted, difficultyFilter, difficultyIndex, difficultyLoaded]
   );
   const difficultyFiltered = difficultyLoaded && difficultyFilter !== "any";
-  // coord returned a full page, so there are almost certainly more work units
-  // than we sorted. Say so: with the list capped at `updated_at DESC`, an
-  // "oldest authored" answer drawn from this window can be wrong.
-  const truncated = plans.length >= FETCH_LIMIT;
   /**
-   * The DENOMINATOR, or UNKNOWN — never a substitute.
+   * What is RENDERED, said only where it is actually being stated.
    *
-   * Phase 3 of plan `2026-09-20-the-operator-plans-page-reads-the-wrong-store`:
-   * *"a disclosure without a denominator is a disclaimer, not a measurement"*.
-   * "The 500 most-recently-updated" is true and still does not tell a reader
-   * they are looking at 43 hours of a 3,268-row store.
+   * Every count the fetch-window panel states of its own is PRE-FILTER —
+   * `plans.length` in the complete and partial arms, `WALK_PAGE_LIMIT` in the
+   * single-page one — taken before the client-side chip strips narrow them
+   * (`filterPlansByBodySignal`), because the panel's subject is how much of
+   * the corpus was READ, and a chip the operator clicked changes nothing about
+   * that. Each of those sentences therefore says "read", never "shown": with a
+   * chip selected the two differ, and FOUR sentences here have claimed the
+   * pre-filter number was the number on screen — the fourth being the
+   * single-page arm, which said "Showing" for one round longer than the
+   * others. Where the rendered count is worth having it is the FILTERED one
+   * and it is labelled as such; it is appended to all three arms, and is empty
+   * unless a strip has a selection, since otherwise it is the same number
+   * twice.
    *
-   * `count` is deliberately NOT consulted as a fallback: it is the size of the
-   * page, so reading it here would render "500 of 500" — a complete corpus —
-   * over a window that is nothing of the sort. Absent is UNKNOWN.
+   * The label names BOTH strips because {@link bodyFiltered} is either of
+   * them: selecting only a scanner chip narrows the list exactly as a document
+   * chip does, and calling that "the document filter" would attribute the
+   * narrowing to a strip with nothing selected. The body-filtered empty state
+   * below is worded the same way, deliberately — one phrasing, two places.
+   *
+   * **The DIFFICULTY select counts as a filter here for exactly the same
+   * reason.** It is a third client-side narrowing over the same rows
+   * (`shown`), so a rendered count taken before it — or a sentence omitted
+   * because no chip was up — restates the pre-filter number as the number on
+   * screen, which is the defect the whole paragraph above exists to close. The
+   * count is therefore `shown.length` (what `<RecordList>` renders) and the
+   * sentence appears whenever EITHER narrowing is in force, naming the ones
+   * that are.
    */
-  const windowTotal = typeof data?.total === "number" ? data.total : null;
+  const renderedNarrowed = bodyFiltered || difficultyFiltered;
+  const narrowingLabel = bodyFiltered
+    ? difficultyFiltered
+      ? "the document, scanner and difficulty filters"
+      : "the document and scanner filters"
+    : "the difficulty filter";
+  const shownUnderFilter = renderedNarrowed
+    ? ` ${shown.length} of them ${shown.length === 1 ? "is" : "are"} shown under ${narrowingLabel}.`
+    : "";
+  // A single page came back full (the "Recently updated" view, or a coord
+  // that predates the walk), so there are almost certainly more work units
+  // than are shown. Say so, and say which `updated_at` span they are.
+  const truncated = outcome?.kind === "single_page" && outcome.truncated;
+  const walkComplete = outcome?.kind === "complete";
+  const walkPartial = outcome?.kind === "partial";
   /**
-   * The BOUNDARY value — how old the oldest row in this window is.
+   * The rows on the page are KNOWN not to be the whole corpus — a walk that
+   * stopped early, or a single page that came back full.
    *
-   * coord orders `updated_at DESC`, so the window's edge is the minimum
-   * `updated_at` across the rows FETCHED. It is computed off `plans` rather
-   * than off the rendered order on purpose: the display sort is client-side
-   * and re-orders the same window, so reading the last rendered row would make
-   * the stated boundary move with a control that cannot move it.
-   *
-   * `null` when no row carries a parseable timestamp — UNKNOWN, not "now".
+   * This reaches the health strip, not just the fetch-window badge: counts
+   * derived from part of a list are not a whole-corpus verdict, and "No plan is
+   * blocked" off a partial read is the same over-claim in a louder place.
    */
-  const oldestUpdatedAt = useMemo(() => {
-    let oldest: { iso: string; ms: number } | null = null;
-    for (const p of plans) {
-      const iso = p.updated_at;
-      if (!iso) continue;
-      const ms = Date.parse(iso);
-      if (Number.isNaN(ms)) continue;
-      if (!oldest || ms < oldest.ms) oldest = { iso, ms };
-    }
-    return oldest?.iso ?? null;
-  }, [plans]);
+  const listIncomplete = walkPartial || truncated;
+  // The window's BOUNDARY (Phase 3 of plan
+  // `2026-09-20-the-operator-plans-page-reads-the-wrong-store`): how far back
+  // a truncated single page reaches, so "not here" can be told from "out of
+  // window". Computed off `plans` — the rows READ — so a client-side sort or
+  // filter cannot move a boundary it does not control. `null` = no row carries
+  // a parseable `updated_at`: UNKNOWN, not "now".
+  const updatedSpan = truncated ? timeSpan(plans, (p) => p.updated_at) : null;
+  // The walk runs on coord's `authored_at` COLUMN, so that is the range a
+  // partial walk covered — not the slug-derived date the chips show.
+  const authoredSpan = walkPartial
+    ? timeSpan(plans, (p) => p.authored_at)
+    : null;
+  const reachedUndatedTail = walkPartial && plans.some((p) => !p.authored_at);
+  const shepherdExcluded = shepherd === "exclude";
+  const coordTotal = overviewTotalFor(
+    data?.overview ?? null,
+    status,
+    shepherdExcluded
+  );
+  /**
+   * The server-side population the READ covered, beyond `status` — stated in
+   * every arm of the fetch-window panel, because the shepherd control changes
+   * what was read, not what is rendered (so it is not a `shownUnderFilter`
+   * narrowing).
+   */
+  const shepherdScope = shepherdExcluded
+    ? `excluding coord's ${SHEPHERD_SLUG_PREFIX}* merge escalations`
+    : `including coord's ${SHEPHERD_SLUG_PREFIX}* merge escalations`;
+  /**
+   * The single page's DENOMINATOR, or UNKNOWN — never a substitute (Phase 3 of
+   * plan `2026-09-20-the-operator-plans-page-reads-the-wrong-store`: *"a
+   * disclosure without a denominator is a disclaimer, not a measurement"*).
+   * `count` is deliberately NOT consulted: it is the size of the page, and
+   * would render "500 of 500" over a window that is nothing of the sort.
+   */
+  const windowTotal = outcome?.kind === "single_page" ? outcome.total : null;
+  const statusLabel = status === "any" ? "any" : status;
   // No authoring date from EITHER source — the slug carries no date prefix
   // AND coord holds no `authored_at` (`planAuthoredAt`, the deriver the chip,
   // the row time and the sort all read). Counting the bare column here would
@@ -522,11 +647,17 @@ export default function CoordWorkUnitsListPage() {
   const plansStale = readFailed && loaded;
   const health = useMemo(
     // The noun is "work units", not "plans": with the shepherd filter
-    // defaulting to INCLUDED this window is coord's work units, and a badge
-    // reading `plans 500` over it would be the mislabel this route was moved
-    // to fix, restated in a badge.
-    () => derivePlansHealth(plans, loaded, readFailed, WORK_UNIT_NOUN),
-    [plans, loaded, readFailed]
+    // defaulting to INCLUDED these rows are coord's work units, and a badge
+    // reading `plans 500` over them would be the mislabel this route was
+    // moved to fix, restated in a badge. `plans` here is UNFILTERED — the
+    // rows read, before any client-side chip or select narrows them.
+    () =>
+      derivePlansHealth(plans, loaded, readFailed, {
+        noun: WORK_UNIT_NOUN,
+        incomplete: listIncomplete,
+        incompleteDetailsAt: "the fetch-window panel",
+      }),
+    [plans, loaded, readFailed, listIncomplete]
   );
 
   return (
@@ -568,8 +699,8 @@ export default function CoordWorkUnitsListPage() {
               "coord's own `shepherd-*` merge-escalation work units. They are " +
               "INCLUDED by default here — this page is the surface that " +
               "triages them, and no other page shows them at all. Excluding " +
-              "them re-asks coord (`exclude_slug_prefix`); it does not filter " +
-              "the fetched window."
+              "them re-asks coord (`exclude_slug_prefix`) on every page of " +
+              "the read; it does not filter the rows already read."
             }
           >
             <SelectValue placeholder="escalations" />
@@ -629,10 +760,14 @@ export default function CoordWorkUnitsListPage() {
             change must not leave the NEW question's control busy for up to the
             60s request timeout, over a read whose answer will be discarded. */}
         <RefreshButton
-          key={`${status}:${shepherd}`}
+          key={`${status}:${shepherd}:${order}`}
           onRefresh={refresh}
           label="Refresh work units"
-          title={`Re-reads the work-unit list now; it also refreshes itself every ${POLL_INTERVAL_MS / 1000} s`}
+          // Names the cadence ACTUALLY in force for this view, which is not a
+          // constant: a walked order polls slowly on purpose
+          // (`POLL_INTERVAL_MS`), and a press is the way to get a fresh answer
+          // sooner than the tick.
+          title={`Re-reads the work-unit list now; it also refreshes itself every ${pollMs / 1000} s`}
           data-testid="coord-work-units-refresh"
         />
       </div>
@@ -657,13 +792,18 @@ export default function CoordWorkUnitsListPage() {
             selected={hasBody}
             onToggle={(v) => setHasBody((prev) => toggle(prev, v))}
             onClear={() => setHasBody([])}
-            title={
-              data?.body_signal?.miss_reason
-                ? "This page could not establish whether a document exists — " +
-                  `${data.body_signal.miss_reason}. Every miss is reported ` +
-                  "unknown rather than as a missing document."
-                : "Whether a plan artifact exists for this work unit."
-            }
+            // The block is the FOLD of every page this answer was read over
+            // (`planWalk.ts` `WalkCommon`, `foldBodySignalBlocks`), not the
+            // first page's: a walk reads the dial once per page, so a miss on
+            // any one of them is a miss this answer has to own — and the words
+            // have to say WHICH. `hasBodyFilterTooltip` is worded off the
+            // fold's `miss_scope`, so a miss on page 1 of 4 no longer speaks
+            // for pages 2-4 — and BOTH of its arms scope the claim to the rows
+            // a page could not match to a document, because a matched slug
+            // settles `true` even on a page that missed. It also renders the
+            // reason as the sentence every other surface uses rather than as
+            // the wire enum an operator cannot read.
+            title={hasBodyFilterTooltip(outcome?.bodySignal)}
           />
           <FilterChips
             label="scanner"
@@ -686,20 +826,47 @@ export default function CoordWorkUnitsListPage() {
 
       {/* R7 — the window caveats are infrastructural, so they collapse; the
           summary badge keeps the signal visible while they are closed. */}
-      {(truncated || missingAuthored > 0) && (
+      {(truncated || walkComplete || walkPartial || missingAuthored > 0) && (
         <CollapsiblePanel
           titleAs="h2"
           className="p-2.5"
           defaultOpen={false}
           storageKey="coord-work-units-window-caveats"
-          icon={<TriangleAlert className="h-3.5 w-3.5 text-amber-400" />}
-          title="Fetch-window caveats"
+          icon={
+            truncated || walkPartial || missingAuthored > 0 ? (
+              <TriangleAlert className="h-3.5 w-3.5 text-amber-400" />
+            ) : (
+              <ListChecks className="h-3.5 w-3.5 text-muted-foreground" />
+            )
+          }
+          title="Fetch window"
           summary={
-            <span className="text-xs text-amber-300/90 normal-case tracking-normal">
+            <span
+              className={
+                truncated || walkPartial || missingAuthored > 0
+                  ? "text-xs text-amber-300/90 normal-case tracking-normal"
+                  : "text-xs text-muted-foreground normal-case tracking-normal"
+              }
+            >
               {[
-                truncated
-                  ? `showing ${plans.length} of ${windowTotal ?? "?"}`
-                  : null,
+                // `read*`, not `shown` — the panel is `defaultOpen={false}`, so
+                // this summary is the part EVERY operator sees while the one
+                // bound a keyset walk cannot close (a row re-dated mid-walk;
+                // `planWalk.ts`' `complete` docs) sits behind the disclosure.
+                // An unqualified "all N shown" is therefore the whole-corpus
+                // claim being made in the only place that is always on screen.
+                // "read" states what the walk did rather than what the corpus
+                // is, and the `*` points at the caveat the open panel spells
+                // out under the same marker.
+                //
+                // The partial arm says "read" for a SECOND reason on top of
+                // that one: these counts are pre-filter (`plans`, not
+                // `sorted`), so with a document chip selected "N shown" was
+                // false about the page in front of the operator as well as
+                // about the corpus.
+                walkComplete ? `all ${plans.length} read*` : null,
+                walkPartial ? `INCOMPLETE — ${plans.length} read` : null,
+                truncated ? `capped at ${WALK_PAGE_LIMIT}` : null,
                 missingAuthored > 0 ? `${missingAuthored} undated` : null,
               ]
                 .filter(Boolean)
@@ -709,14 +876,106 @@ export default function CoordWorkUnitsListPage() {
           contentClassName="space-y-1"
           data-testid="coord-work-units-window-caveats"
         >
-          {truncated && (
+          {outcome?.kind === "complete" && (
+            <p
+              className="text-xs text-muted-foreground"
+              data-testid="coord-work-units-walk-complete"
+            >
+              All {plans.length} work unit{plans.length === 1 ? "" : "s"}{" "}
+              matching status={statusLabel} ({shepherdScope}){" "}
+              {plans.length === 1 ? "was" : "were"} READ — the whole list, in
+              authoring order ({outcome.pages} page
+              {outcome.pages === 1 ? "" : "s"}).{shownUnderFilter}{" "}
+              {/* Whether the overview and the walk are over the SAME set is the
+                  shepherd control's to say: the overview takes no filters, so
+                  it counts shepherd rows always, and the walk counts them only
+                  under the default "include". */}
+              {coordTotal.kind === "total"
+                ? coordTotal.includesExcluded
+                  ? `coord's overview counts ${workUnits(coordTotal.total)} ${overviewScope(
+                      status
+                    )}, INCLUDING its ${SHEPHERD_SLUG_PREFIX}* records, which this read excluded — so the two totals are measured over different sets, and the difference between them (${describeGap(
+                      coordTotal.total,
+                      plans.length
+                    )}) is not by itself a count of missing work units.`
+                  : coordTotal.total === plans.length
+                    ? `coord's overview counts the same ${workUnits(coordTotal.total)} ${overviewScope(
+                        status
+                      )}, over the same set.`
+                    : `coord's overview counts ${workUnits(coordTotal.total)} ${overviewScope(
+                        status
+                      )} over the same set — ${describeGap(
+                        coordTotal.total,
+                        plans.length
+                      )}. The two are separate reads taken moments apart, and this page cannot tell which of them the difference lies in; reload to re-check.`
+                : `${overviewMissSentence(coordTotal, status)}, so this count is not cross-checked.`}{" "}
+              {/* The one thing a keyset walk cannot promise, said plainly
+                  rather than left for the reader to work out: the walk orders
+                  by `authored_at`, and coord heals a NULL one on the row's next
+                  upsert while the plan scanner re-upserts about once a minute,
+                  so a row can move behind the cursor mid-walk. See
+                  `planWalk.ts`'s `complete` docs. The leading `*` resolves the
+                  marker on the collapsed summary's `all N read*`. */}
+              * A work unit whose authoring date changed while the list was
+              being read can be missed; reload to re-check.
+            </p>
+          )}
+          {outcome?.kind === "partial" && (
+            <p
+              className="text-xs text-amber-300/90"
+              data-testid="coord-work-units-walk-partial"
+            >
+              INCOMPLETE — this list is NOT the whole corpus. {plans.length}{" "}
+              work unit{plans.length === 1 ? " was" : "s were"} read (
+              {shepherdScope})
+              {authoredSpan
+                ? `, with authored_at ${formatInstant(authoredSpan.newest)} back to ${formatInstant(authoredSpan.oldest)}`
+                : ""}
+              {reachedUndatedTail
+                ? ", plus some with no authored_at in coord"
+                : ""}
+              ; the walk stopped after {outcome.pages} page
+              {outcome.pages === 1 ? "" : "s"} because{" "}
+              {PARTIAL_REASON_COPY[outcome.reason]}
+              {outcome.error ? ` (${outcome.error})` : ""}.{" "}
+              {/* "authored_at in coord", not "authoring date": the walk's
+                  keyset runs on coord's `authored_at` COLUMN, so that is what
+                  bounds where it reached — but everywhere else on this page an
+                  "undated" row means no slug date AND no column
+                  (`missingAuthored`), and the row chips show slug-derived
+                  dates. Naming the column keeps this sentence from calling
+                  rows "undated" whose chips show a date. */}
+              {reachedUndatedTail
+                ? "Every work unit with an authored_at in coord was reached; ones with none, further along the list, are missing from this page."
+                : "Work units with an earlier authored_at, and every one with no authored_at in coord, are missing from this page."}
+              {coordTotal.kind === "total"
+                ? ` coord's overview counts ${workUnits(coordTotal.total)} ${overviewScope(
+                    status
+                  )}${
+                    coordTotal.includesExcluded
+                      ? ` (including its ${SHEPHERD_SLUG_PREFIX}* records, which this read excluded).`
+                      : "."
+                  }`
+                : ` ${overviewMissSentence(coordTotal, status)}, so there is no coord total to set this against.`}
+              {shownUnderFilter}
+            </p>
+          )}
+          {outcome?.kind === "single_page" && truncated && (
             <p
               className="text-xs text-amber-300/90"
               data-testid="coord-work-units-truncated-notice"
             >
-              Showing {plans.length} of{" "}
+              {/* "Showing" was the fourth rendered-count claim over a
+                  pre-filter number, and the one the "read, never shown" pass
+                  missed: with a chip selected this arm said it was SHOWING 500
+                  rows while 3 were on screen. It reads the cap rather than
+                  `plans.length` because the claim is about the read, and
+                  `shownUnderFilter` carries the rendered count here as it does
+                  in the other two arms. */}
+              The {WALK_PAGE_LIMIT} most-recently-updated work units were READ,
+              of{" "}
               {windowTotal !== null ? (
-                windowTotal
+                <>{windowTotal} matching this question</>
               ) : (
                 <>
                   an <strong>unknown</strong> total — coord&apos;s work-unit
@@ -724,24 +983,27 @@ export default function CoordWorkUnitsListPage() {
                   is cannot be stated
                 </>
               )}{" "}
-              work units, ordered most-recently-updated first and capped at{" "}
-              {FETCH_LIMIT} by coord.{" "}
-              {oldestUpdatedAt !== null ? (
+              ({shepherdScope}).{" "}
+              {updatedSpan !== null ? (
                 <>
-                  The oldest row in this window was updated{" "}
+                  The rows read were updated{" "}
                   <span data-testid="coord-work-units-window-boundary">
-                    {absoluteTime(oldestUpdatedAt)}
-                  </span>
-                  ; anything untouched since then is out of the window, not
-                  absent.
+                    {formatInstant(updatedSpan.oldest)}
+                  </span>{" "}
+                  to {formatInstant(updatedSpan.newest)}; anything untouched
+                  since the first of those is out of the window, not absent.
                 </>
               ) : (
                 <span data-testid="coord-work-units-window-boundary">
                   No row in this window carries a readable updated_at, so how
                   far back it reaches is unknown.
                 </span>
-              )}{" "}
-              Sorting applies to these rows only, so a &ldquo;
+              )}
+              {shownUnderFilter}{" "}
+              {outcome.legacyCoord
+                ? "This coord predates the authored-order walk, so it caps the list at one page by update time."
+                : "“Recently updated” is a single page by design; choose an authored sort to read the whole list."}{" "}
+              Sorting applies to these only, so a &ldquo;
               {SORTS.find((s) => s.value === sort)?.label}&rdquo; result may not
               be the corpus-wide answer. The plan corpus, slug-ordered with a
               stated total, is at /admin/coord/plans.
@@ -758,6 +1020,33 @@ export default function CoordWorkUnitsListPage() {
             </p>
           )}
         </CollapsiblePanel>
+      )}
+
+      {/* WHEN this list was read, and how often it re-reads itself. A walked
+          order ticks every two minutes rather than every 10 s
+          (`POLL_INTERVAL_MS`), which is only honest if the page says how old
+          the answer on screen may be.
+
+          **Outside the fetch-window panel, and gated on `data` alone.** It
+          used to live INSIDE that panel, which renders only when there is a
+          caveat to state (`truncated || walkComplete || walkPartial ||
+          missingAuthored > 0`) — so a reachable arm dropped the stamp
+          entirely: an authored sort (walked cadence) against a coord that
+          PREDATES the walk, over a corpus under `WALK_PAGE_LIMIT` rows, is
+          `single_page` with `truncated` false and no undated rows, and nothing
+          on the page then said when the list was read or how seldom it
+          re-reads. A 59-second-old list presented as current is the
+          defect the cadence change was supposed to avoid, so the stamp is
+          unconditional on a loaded list and the panel is free to be
+          conditional. */}
+      {data && (
+        <p
+          className="text-xs text-muted-foreground"
+          data-testid="coord-work-units-read-at"
+        >
+          Read {formatInstant(data.readAt)}; this view re-reads itself every{" "}
+          {pollMs / 1000} s. Press Refresh for a current answer.
+        </p>
       )}
 
       {error && (
@@ -799,30 +1088,56 @@ export default function CoordWorkUnitsListPage() {
         skeletonRows={6}
         empty={
           // ORDER MATTERS. A client-side filter that emptied the list is a
-          // statement about the WINDOW — rows were fetched — so it is checked
-          // BEFORE the unknown/stale copy, which is about the work-unit read
-          // and would blame the wrong control. Difficulty first, then the
-          // document filters, because difficulty runs over their output.
+          // statement about the ROWS THAT WERE READ — rows did arrive — so it
+          // is checked BEFORE the unknown/stale copy, which is about the
+          // work-unit read and would blame the wrong control. Difficulty
+          // first, then the document filters, because difficulty runs over
+          // their output.
           difficultyFiltered && sorted.length > 0 ? (
             <p
               className="text-sm text-muted-foreground italic"
               data-testid="coord-work-units-difficulty-empty"
             >
-              {difficultyFilter === "unrated"
-                ? `None of the ${sorted.length} fetched work units is unrated.`
-                : `None of the ${sorted.length} fetched work units is rated ${difficultyFilter}.`}
+              {/* `sorted` is counted AFTER the document and scanner chips, so
+                  it is the rows READ only when neither strip has a selection —
+                  the same read/shown rule as `shownUnderFilter`. "fetched"
+                  called a filtered count the read. */}
+              {`None of the ${sorted.length} work unit${
+                sorted.length === 1 ? "" : "s"
+              } ${
+                bodyFiltered
+                  ? "left by the document and scanner filters"
+                  : "read"
+              } is ${
+                difficultyFilter === "unrated"
+                  ? "unrated"
+                  : `rated ${difficultyFilter}`
+              }.`}
             </p>
           ) : bodyFiltered && plans.length > 0 ? (
             // The body filters are client-side, so "nothing matched" here is a
-            // statement about the WINDOW, not about coord. Saying
-            // "No plans matching status=any" over a window that holds
-            // {plans.length} rows would blame the wrong control.
+            // statement about the ROWS THAT WERE READ, not about coord. Saying
+            // "No plans matching status=any" over a read that holds
+            // {plans.length} rows would blame the wrong control. How much of
+            // the corpus those rows ARE is the WALK's claim, not this
+            // control's, so the sentence defers to `walkComplete` instead of
+            // asserting one or the other on its behalf: "window" was exactly
+            // right when this page only ever read one, and would be a fresh
+            // understatement the moment a complete walk made it the corpus.
+            // It names both strips for the same reason `shownUnderFilter`
+            // does — `bodyFiltered` is either of them, so "the document
+            // filter" alone would credit the narrowing to a strip that may
+            // have nothing selected.
             <p
               className="text-sm text-muted-foreground italic"
               data-testid="coord-work-units-body-filtered-empty"
             >
-              None of the {plans.length} work units in this window match the
-              document filter.
+              {plans.length === 1
+                ? "The one work unit"
+                : `None of the ${plans.length} work units`}{" "}
+              {walkComplete ? "read — the whole list —" : "in this window"}{" "}
+              {plans.length === 1 ? "does not match" : "match"} the document and
+              scanner filters.
             </p>
           ) : plansUnknown ? (
             <p

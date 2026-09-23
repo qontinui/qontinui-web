@@ -23,7 +23,7 @@ import {
 } from "@/components/builders/editors";
 import { TagInput } from "@/components/builders/TagInput";
 import { AiGeneratorPanel } from "@/components/builders/AiGeneratorPanel";
-import { runnerApi } from "@/lib/runner/runner-api-object";
+import { useDispatchRunnerApi } from "@/lib/runner/runner-api-object";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -263,6 +263,9 @@ interface ContextEditorProps {
 }
 
 function ContextEditor({ item, form, setForm, isDirty, isNew, isSaving, onSave, onDelete, onDuplicate }: ContextEditorProps) {
+  // Calls that START work go to the new-work target (explicit choice or
+  // coord's resolved pick); a refused call carries coord's outcome.
+  const { api: workApi, refusal: workRefusal } = useDispatchRunnerApi();
   const isBuiltIn = item.scope === "builtin" || form.scope === "builtin";
   const [aiGenerating, setAiGenerating] = useState(false);
   const [aiError, setAiError] = useState<string | null>(null);
@@ -275,7 +278,7 @@ function ContextEditor({ item, form, setForm, isDirty, isNew, isSaving, onSave, 
     setAiGenerating(true);
     setAiError(null);
     try {
-      const result = await runnerApi.aiGenerateContext(prompt);
+      const result = await workApi.aiGenerateContext(prompt);
       const d = result.data as Record<string, unknown>;
       if (d.content) {
         setForm((prev) => ({
@@ -471,6 +474,7 @@ function ContextEditor({ item, form, setForm, isDirty, isNew, isSaving, onSave, 
 
         {/* AI Generator */}
         <AiGeneratorPanel
+          refusal={workRefusal}
           title="Generate with AI"
           accentColor="violet"
           templates={[

@@ -1484,8 +1484,8 @@ async function main(): Promise<number> {
     ignoreHTTPSErrors: true,
   });
 
-  // Hermetic lane: stub the coord/strategy/cognito-admin-backed endpoints
-  // with prod-empty-parity bodies so pages render their authored empty
+  // Hermetic lane: stub the coord/cognito-admin-backed endpoints with
+  // prod-empty-parity bodies so pages render their authored empty
   // states instead of 5xx-driven error states (see hermetic-stubs.ts).
   if (process.env.QONTINUI_TEST_ID_TOKEN) {
     await applyHermeticStubs(context);
@@ -1797,10 +1797,10 @@ async function main(): Promise<number> {
       .slice(serverSliceBase)
       .filter((e) => !expectedServer.some((rx) => rx.test(e.url)))
       // Global `ci-env` waiver classes apply to the spec lane too: hermetic
-      // CI makes the coord/strategy upstream classes reachable from spec'd
-      // pages (background pollers), not just crawl routes. See
+      // CI makes the coord upstream classes reachable from spec'd pages
+      // (background pollers), not just crawl routes. See
       // crawl-baseline.ts GLOBAL_SERVER_WAIVERS.
-      .filter((e) => !isGloballyWaivedServerUrl(e.url));
+      .filter((e) => !isGloballyWaivedServerUrl(e.url, e.status));
     const { kept: serverKept, dropped: serverDropped } = await confirmGatewayPersistence(page, sliced);
     r.serverErrors = serverKept;
     for (const d of serverDropped) {

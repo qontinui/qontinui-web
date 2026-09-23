@@ -1,4 +1,6 @@
 import { useState, useCallback } from "react";
+import { useRunnerTarget } from "@/contexts/active-runner-context";
+import { runnerRequest } from "@/lib/runner/api-client";
 import { patternOptimizationStorage } from "@/lib/pattern-optimization-storage";
 import type {
   ExtractedPattern,
@@ -33,6 +35,7 @@ export function useOptimizationAnalysis(
   session: OptimizationSession | null,
   setSession: React.Dispatch<React.SetStateAction<OptimizationSession | null>>
 ) {
+  const target = useRunnerTarget();
   const [isAnalyzing, setIsAnalyzing] = useState(false);
 
   const startAnalysis = useCallback(async () => {
@@ -89,26 +92,23 @@ export function useOptimizationAnalysis(
         regionsCount: regions.length,
       });
 
-      const response = await fetch(
-        "http://127.0.0.1:9876/api/v1/optimize-pattern",
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            screenshots: positiveScreenshots,
-            negative_screenshots: negativeScreenshots,
-            regions: regions,
-            strategies: [
-              "multi-pattern",
-              "consensus",
-              "feature-based",
-              "differential",
-            ],
-          }),
-        }
-      );
+      const response = await runnerRequest(target, "/api/v1/optimize-pattern", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          screenshots: positiveScreenshots,
+          negative_screenshots: negativeScreenshots,
+          regions: regions,
+          strategies: [
+            "multi-pattern",
+            "consensus",
+            "feature-based",
+            "differential",
+          ],
+        }),
+      });
 
       log.debug("API response status:", response.status);
 
@@ -166,7 +166,7 @@ export function useOptimizationAnalysis(
     } finally {
       setIsAnalyzing(false);
     }
-  }, [session, setSession]);
+  }, [session, setSession, target]);
 
   const evaluateStrategy = useCallback(
     async (strategy: OptimizationStrategy): Promise<StrategyEvaluation> => {

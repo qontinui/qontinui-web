@@ -1,5 +1,9 @@
 import { useState, useCallback, useEffect } from "react";
-import { runnerFetch, RUNNER_API_BASE } from "@/lib/runner/api-client";
+import { runnerFetch, runnerRequest } from "@/lib/runner/api-client";
+import {
+  useNewWorkRefusal,
+  useRunnerTarget,
+} from "@/contexts/active-runner-context";
 import type {
   CollectedAnalysis,
   CollectedAnalysisSet,
@@ -14,6 +18,9 @@ import type {
 } from "../page-analyzer-types";
 import { generateId, generatePromptContext } from "../page-analyzer-utils";
 
+/** The UI Bridge route prefix on the runner (a path, resolved per request). */
+const RUNNER_UI_BRIDGE_PATH = "/ui-bridge";
+
 interface UsePageAnalyzerOptions {
   onAnalysisComplete: (analysis: AnalysisData) => void;
   onError?: (error: string) => void;
@@ -25,6 +32,9 @@ export function usePageAnalyzer({
   onError,
   initialAnalyses,
 }: UsePageAnalyzerOptions) {
+  const target = useRunnerTarget();
+  // The vision analysis is an AI job — NEW work.
+  const newWorkRefusal = useNewWorkRefusal();
   // ---- Collected analyses ----
   const [analyses, setAnalyses] = useState<CollectedAnalysis[]>(
     initialAnalyses ?? []
@@ -61,11 +71,13 @@ export function usePageAnalyzer({
   const [taskRunOutput, setTaskRunOutput] = useState<string | null>(null);
 
   // ---- Update URL when target changes ----
+  // The runner's UI Bridge is addressed by PATH on the active runner (the
+  // per-request transport picks loopback or the relay), never by a URL.
   useEffect(() => {
     if (uiBridgeTarget === "web") {
       setUiBridgeUrl("http://localhost:3001/api/ui-bridge");
     } else {
-      setUiBridgeUrl("http://localhost:9876/ui-bridge");
+      setUiBridgeUrl(RUNNER_UI_BRIDGE_PATH);
     }
   }, [uiBridgeTarget]);
 
@@ -84,7 +96,10 @@ export function usePageAnalyzer({
   const loadSavedRequests = useCallback(async () => {
     setLoadingRequests(true);
     try {
-      const data = await runnerFetch<SavedApiRequest[]>("/saved-api-requests");
+      const data = await runnerFetch<SavedApiRequest[]>(
+        target,
+        "/saved-api-requests"
+      );
       const requests = Array.isArray(data) ? data : [];
       setSavedRequests(requests);
       const first = requests[0];
@@ -97,7 +112,7 @@ export function usePageAnalyzer({
     } finally {
       setLoadingRequests(false);
     }
-  }, [selectedRequestId]);
+  }, [selectedRequestId, target]);
 
   // ---- Load task runs ----
   const loadTaskRuns = useCallback(async () => {
@@ -105,8 +120,10 @@ export function usePageAnalyzer({
     try {
       let runs: TaskRunSummary[] = [];
       try {
-        const running =
-          await runnerFetch<RunningTaskRunsResponse>("/task-runs/running");
+        const running = await runnerFetch<RunningTaskRunsResponse>(
+          target,
+          "/task-runs/running"
+        );
         runs = running.task_runs;
         // An empty ledger is not an idle runner — keep the endpoint's own
         // statement of what it covers so the empty state can show it.
@@ -116,7 +133,10 @@ export function usePageAnalyzer({
       }
       if (runs.length === 0) {
         try {
-          const allRuns = await runnerFetch<TaskRunSummary[]>("/task-runs");
+          const allRuns = await runnerFetch<TaskRunSummary[]>(
+            target,
+            "/task-runs"
+          );
           runs = Array.isArray(allRuns) ? allRuns.slice(0, 20) : [];
         } catch {
           runs = [];
@@ -132,7 +152,7 @@ export function usePageAnalyzer({
     } finally {
       setLoadingTaskRuns(false);
     }
-  }, [selectedTaskRunId]);
+  }, [selectedTaskRunId, target]);
 
   // ---- Auto-load data when tab changes ----
   useEffect(() => {
@@ -157,10 +177,22 @@ export function usePageAnalyzer({
     setError(null);
 
     try {
-      const snapshotUrl = `${uiBridgeUrl}/control/snapshot`;
-      const response = await fetch(snapshotUrl, {
-        signal: AbortSignal.timeout(10000),
-      });
+      let response: Response;
+      if (uiBridgeTarget === "runner") {
+        const path = uiBridgeUrl.trim().replace(/\/+$/, "");
+        if (!path.startsWith("/")) {
+          throw new Error(
+            `The runner's UI Bridge is addressed by a path on the active runner (e.g. ${RUNNER_UI_BRIDGE_PATH}), not a URL`
+          );
+        }
+        response = await runnerRequest(target, `${path}/control/snapshot`, {
+          timeoutMs: 10000,
+        });
+      } else {
+        response = await fetch(`${uiBridgeUrl}/control/snapshot`, {
+          signal: AbortSignal.timeout(10000),
+        });
+      }
 
       if (!response.ok) {
         throw new Error(
@@ -185,20 +217,25 @@ export function usePageAnalyzer({
     } finally {
       setIsAnalyzing(false);
     }
-  }, [uiBridgeUrl, uiBridgeTarget, onError]);
+  }, [uiBridgeUrl, uiBridgeTarget, onError, target]);
 
   const runVisionAnalysis = useCallback(async () => {
+    if (newWorkRefusal !== null) {
+      setError(newWorkRefusal);
+      return;
+    }
     setIsAnalyzing(true);
     setError(null);
 
     try {
-      const captureResponse = await fetch(
-        `${RUNNER_API_BASE}/screenshots/capture`,
+      const captureResponse = await runnerRequest(
+        target,
+        "/screenshots/capture",
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ monitor_index: selectedMonitor }),
-          signal: AbortSignal.timeout(15000),
+          timeoutMs: 15000,
         }
       );
 
@@ -209,14 +246,14 @@ export function usePageAnalyzer({
       const captureData = await captureResponse.json();
       const screenshotData = captureData.data ?? captureData;
 
-      const analyzeResponse = await fetch(`${RUNNER_API_BASE}/analyze/vision`, {
+      const analyzeResponse = await runnerRequest(target, "/analyze/vision", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           screenshot_base64: screenshotData.screenshot_base64,
           monitor_index: selectedMonitor,
         }),
-        signal: AbortSignal.timeout(30000),
+        timeoutMs: 30000,
       });
 
       if (!analyzeResponse.ok) {
@@ -254,7 +291,7 @@ export function usePageAnalyzer({
     } finally {
       setIsAnalyzing(false);
     }
-  }, [selectedMonitor, onError]);
+  }, [selectedMonitor, onError, target, newWorkRefusal]);
 
   const runApiRequestAnalysis = useCallback(async () => {
     const selectedRequest = savedRequests.find(
@@ -326,6 +363,7 @@ export function usePageAnalyzer({
 
     try {
       const outputData = await runnerFetch<{ output: string }>(
+        target,
         `/task-runs/${selectedTaskRunId}/output?tail_chars=15000`,
         { timeoutMs: 10000 }
       );
@@ -362,7 +400,7 @@ export function usePageAnalyzer({
     } finally {
       setIsAnalyzing(false);
     }
-  }, [selectedTaskRunId, onError]);
+  }, [selectedTaskRunId, onError, target]);
 
   // ---- Analysis Management ----
 
@@ -409,6 +447,8 @@ export function usePageAnalyzer({
     selectedMonitor,
     setSelectedMonitor,
     runVisionAnalysis,
+    /** Coord's reason no vision analysis may start right now (null = allowed). */
+    visionRefusal: newWorkRefusal,
 
     // API Request
     savedRequests,
