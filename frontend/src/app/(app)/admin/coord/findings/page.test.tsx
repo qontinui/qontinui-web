@@ -409,7 +409,7 @@ describe("CoordFindingsPage", () => {
 
       await waitFor(() =>
         expect(screen.getByTestId("coord-findings-linked")).toHaveTextContent(
-          /not in the loaded page/i
+          /not in the list below/i
         )
       );
       expect(screen.getByTestId("coord-findings-linked")).not.toHaveTextContent(
@@ -478,6 +478,52 @@ describe("CoordFindingsPage", () => {
       ).toBeInTheDocument();
       expect(screen.getByTestId("coord-findings-linked")).toHaveTextContent(
         /expanded below/i
+      );
+      // A filter IS set and the page is short: now "outside" is licensed.
+      await waitFor(() =>
+        expect(screen.getByTestId("coord-findings-linked")).toHaveTextContent(
+          /outside the current filters/i
+        )
+      );
+    });
+
+    it("with NO filter set, never claims the row is outside the filters", async () => {
+      withLinkedId();
+      httpGet.mockImplementation((url: string) =>
+        Promise.resolve(
+          String(url).includes("finding_id=") ? page([finding()]) : page([])
+        )
+      );
+      render(<CoordFindingsPage />);
+
+      await waitFor(() =>
+        expect(screen.getByTestId("coord-findings-linked")).toHaveTextContent(
+          /not in the list below/i
+        )
+      );
+      expect(screen.getByTestId("coord-findings-linked")).not.toHaveTextContent(
+        /outside the current filters/i
+      );
+    });
+
+    it("names expiry for an expired linked row the list leaves out", async () => {
+      withLinkedId();
+      httpGet.mockImplementation((url: string) =>
+        Promise.resolve(
+          String(url).includes("finding_id=")
+            ? page([finding({ expires_at: LAPSED })])
+            : page([])
+        )
+      );
+      render(<CoordFindingsPage />);
+
+      await waitFor(() =>
+        expect(screen.getByTestId("coord-findings-linked")).toHaveTextContent(
+          /lists leave out expired findings/i
+        )
+      );
+      expect(screen.getByTestId("coord-findings-linked")).not.toHaveTextContent(
+        /outside the current filters/i
       );
     });
 

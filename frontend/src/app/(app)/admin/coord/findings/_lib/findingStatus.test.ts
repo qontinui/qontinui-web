@@ -368,8 +368,19 @@ describe("findingLinkNotice", () => {
       loading: false,
       beyondLoadedPage: true,
     });
-    expect(beyond).toMatch(/not in the loaded page/i);
+    expect(beyond).toMatch(/not in the list below/i);
     expect(beyond).not.toMatch(/outside the current filters/i);
+  });
+
+  it("names expiry, not the filters, for an expired row the list leaves out", () => {
+    const expired = findingLinkNotice({
+      found: true,
+      expired: true,
+      loading: false,
+      expiredNotListed: true,
+    });
+    expect(expired).toMatch(/lists leave out expired findings/i);
+    expect(expired).not.toMatch(/outside the current filters/i);
   });
 });
 
