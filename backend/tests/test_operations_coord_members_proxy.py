@@ -179,18 +179,6 @@ class TestMembersGet:
 
 
 class TestMembersPost:
-    def test_create_member_forwards_body(self, auth_client: TestClient):
-        body = {"email": "new@x.io", "sso_subject": "sub1", "sso_provider": "cognito"}
-        mock_resp = _mock_response(json_data={"operator_id": "op-1"})
-        with _patch_httpx() as MockClient:
-            instance = AsyncMock()
-            instance.post.return_value = mock_resp
-            _configure_mock_client(MockClient, instance)
-            resp = auth_client.post(f"{API_PREFIX}/coord/members", json=body)
-        assert resp.status_code == 200
-        assert instance.post.call_args.args[0].endswith("/admin/coord/operators")
-        assert instance.post.call_args.kwargs.get("json") == body
-
     def test_grant_role_forwards_body_and_target(self, auth_client: TestClient):
         body = {"role": "admin", "target_tenant_id": "tid-2"}
         mock_resp = _mock_response(json_data={"ok": True})
@@ -297,10 +285,11 @@ class TestAddTenantMemberByEmail:
     """``POST /coord/tenant-members`` — plan
     ``2026-09-15-simplify-tenant-member-add-by-email`` Phase 1.
 
-    The route above it (``POST /coord/members``) makes a tenant admin
+    The old raw proxy (``POST /coord/members``) made a tenant admin
     hand-type a Cognito ``sub`` and an SSO provider string to add one
-    colleague. This one takes an email and a role, resolves the identity
-    server-side, and composes coord's two existing operator writes.
+    colleague, and was deleted once nothing called it any more (coord
+    finding 130b6938). This route takes an email and a role, resolves the
+    identity server-side, and composes coord's two existing operator writes.
 
     Cognito is mocked at ``cognito_admin.resolve_identity_for_email`` (the
     resolver's own behaviour is pinned in
