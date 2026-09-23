@@ -228,6 +228,15 @@ class WorkArtifact(Base):
             "difficulty_source IN ('declared', 'computed')",
             name="ck_work_artifacts_difficulty_source",
         ),
+        # The tenant axis. Deliberately NOT in the identity indexes above —
+        # see the ``tenant_id`` column comment. The vocabulary is
+        # ``ck_session_artifacts_tenant_source``'s, value for value.
+        Index("ix_work_artifacts_tenant_id", "tenant_id"),
+        CheckConstraint(
+            "tenant_source IN ('declared', 'derived_repo', "
+            "'derived_sole_binding', 'ambiguous', 'unknown')",
+            name="ck_work_artifacts_tenant_source",
+        ),
         {"schema": "agent"},
     )
 
@@ -244,6 +253,41 @@ class WorkArtifact(Base):
     organization_id: Mapped[UUID | None] = mapped_column(
         PGUUID(as_uuid=True),
         nullable=True,
+    )
+
+    # Which COORD TENANT this artifact belongs to — a different question from
+    # ``organization_id`` above, which is the web-side ownership axis every
+    # ``agent.*`` read scopes on. One operator's device can be bound to N
+    # coord tenants and still resolve to ONE personal organization, so the org
+    # cannot stand in for the tenant: the tenants' plans fuse, and a shared
+    # stem under one ``source_repo`` overwrites across them. Plan
+    # ``2026-09-22-the-plan-corpus-has-no-tenant-axis-so-a-multi-bound-device-cannot-scope-its-plans``.
+    #
+    # FK-less like every other coord-side pointer here: coord owns tenants,
+    # and this column may name a tenant this deployment cannot resolve.
+    #
+    # NOT part of identity in this phase — ``uq_work_artifacts_identity`` and
+    # ``ix_work_artifacts_scan_identity`` keep their current terms. Re-keying
+    # is P4 of that plan, gated on the cross-tenant measurement P3 adds, and
+    # it must move ``crud.get_by_identity`` / ``crud.list_by_scan_identity``
+    # in the same commit or the resolution hands back another tenant's row and
+    # the write dies on the new unique index.
+    tenant_id: Mapped[UUID | None] = mapped_column(
+        PGUUID(as_uuid=True),
+        nullable=True,
+    )
+
+    # NOT NULL with an 'unknown' default: every row must state HOW its tenant
+    # was established, and "no attribution attempted yet" is a value in the
+    # vocabulary rather than a NULL a reader could mistake for ``declared``.
+    # Vocabulary and CHECK mirror ``ck_session_artifacts_tenant_source``
+    # exactly — the sibling store solved this first and a second spelling here
+    # would be drift, not design.
+    tenant_source: Mapped[str] = mapped_column(
+        Text,
+        nullable=False,
+        server_default=text("'unknown'"),
+        default="unknown",
     )
 
     created_by_user_id: Mapped[UUID | None] = mapped_column(
