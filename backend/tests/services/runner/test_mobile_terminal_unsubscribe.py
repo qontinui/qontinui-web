@@ -34,6 +34,7 @@ from unittest.mock import AsyncMock, MagicMock
 from uuid import uuid4
 
 import pytest
+from starlette.websockets import WebSocketState
 
 from app.services.runner_websocket_manager import RunnerWebSocketManager
 
@@ -65,6 +66,22 @@ def _make_manager() -> tuple[RunnerWebSocketManager, MagicMock]:
     return RunnerWebSocketManager(redis), redis
 
 
+def _live_runner_ws() -> MagicMock:
+    """A registered runner socket whose handler is still alive.
+
+    The send-path gate (``WebSocketConnectionRegistry.can_send_to_runner``)
+    reads ``client_state`` / ``application_state``, and a bare ``MagicMock``
+    auto-creates both as non-``CONNECTED`` values — i.e. it reads as a
+    registration that outlived its socket. A "local" socket in these tests
+    is a LIVE one, so say so.
+    """
+    ws = MagicMock()
+    ws.send_json = AsyncMock()
+    ws.client_state = WebSocketState.CONNECTED
+    ws.application_state = WebSocketState.CONNECTED
+    return ws
+
+
 def _mobile_ws() -> MagicMock:
     ws = MagicMock()
     ws.send_json = AsyncMock()
@@ -72,9 +89,7 @@ def _mobile_ws() -> MagicMock:
 
 
 def _register_runner(manager: RunnerWebSocketManager, runner_id: str) -> None:
-    runner_ws = MagicMock()
-    runner_ws.send_json = AsyncMock()
-    manager.registry.register_runner(runner_id, runner_ws)
+    manager.registry.register_runner(runner_id, _live_runner_ws())
     assert manager.registry.is_runner_connected(runner_id) is True
 
 

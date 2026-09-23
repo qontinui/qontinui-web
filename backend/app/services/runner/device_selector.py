@@ -44,9 +44,13 @@ async def pick_active_device_for_user(
 
     1. Fetch up to ``_MAX_CANDIDATES`` of the user's user-paired
        devices, ordered by ``last_heartbeat`` DESC.
-    2. Walk the list and return the first one currently registered as
-       connected to this web process (per ``registry``).
-    3. Returns ``None`` if no connected device is found.
+    2. Walk the list and return the first one whose socket to this web
+       process is LIVE (``registry.is_runner_socket_live``) — not merely
+       registered. A registration can outlive its socket (see that method),
+       and every caller hands the pick straight to ``dispatch_and_wait``,
+       whose own gate would refuse the stale one; walking past it here
+       reaches a device that can actually answer when the user has one.
+    3. Returns ``None`` if no such device is found.
     """
     stmt = (
         select(Device)
@@ -59,7 +63,7 @@ async def pick_active_device_for_user(
     )
     rows = await db.execute(stmt)
     for device in rows.scalars():
-        if registry.is_runner_connected(str(device.device_id)):
+        if registry.is_runner_socket_live(str(device.device_id)):
             return device
     return None
 
