@@ -233,8 +233,9 @@ function refusalError(
 export interface RunnerRequestInit extends RequestInit {
   /**
    * The caller's budget — the ONE deadline concept for a runner request.
-   * Over loopback: the deadline until the response HEADERS arrive (the body
-   * read is the caller's). Over the relay: `relayWaitMs(budget)` (floored at
+   * Over loopback: the deadline for the whole exchange, headers AND the
+   * caller's body read (a body still being read when it expires rejects with
+   * an AbortError). Over the relay: `relayWaitMs(budget)` (floored at
    * RELAY_FLOOR_WAIT_MS, clamped to the backend's [1 s, 120 s]) is sent as
    * `X-Qontinui-Timeout-Ms` and the client gives up RELAY_DEADLINE_MARGIN_MS
    * after it, so the backend's structured 504 arrives first. Omitted: no
@@ -319,11 +320,16 @@ export async function runnerRequest(
           controller.abort();
         }, timeoutMs);
   try {
-    // The caller's abort stays linked after the headers arrive: aborting it
-    // is how a caller cancels a stalled BODY read (runnerFetch's deadline
-    // covers the body). `once` detaches it on abort.
+    // The budget covers the WHOLE loopback exchange, body included: the
+    // timer is deliberately NOT cleared when the headers arrive, so a runner
+    // that sends headers and then stalls the body cannot hang a caller's
+    // `res.json()` / `res.text()` — the read rejects with an AbortError once
+    // the budget is spent. A body read to completion inside the budget makes
+    // the later abort a no-op. Likewise the caller's abort stays linked after
+    // the headers (`once` detaches it on abort).
     return await fetch(url, { ...rest, signal: controller.signal });
   } catch (error) {
+    if (timeoutId !== undefined) clearTimeout(timeoutId);
     callerSignal?.removeEventListener("abort", forwardAbort);
     if (timedOut) {
       throw new RunnerApiError(
@@ -343,8 +349,6 @@ export async function runnerRequest(
       );
     }
     throw error;
-  } finally {
-    if (timeoutId !== undefined) clearTimeout(timeoutId);
   }
 }
 
@@ -633,6 +637,9 @@ export function startRunnerPoll(options: {
   onError?: (error: unknown) => void;
   immediate?: boolean;
 }): () => void {
+  // A non-positive interval means "do not poll" (the convention every poll
+  // option here uses) — never a zero-delay loop against the runner.
+  if (!(options.requestedMs > 0)) return () => {};
   let stopped = false;
   let timer: ReturnType<typeof setTimeout> | null = null;
   const schedule = () => {
