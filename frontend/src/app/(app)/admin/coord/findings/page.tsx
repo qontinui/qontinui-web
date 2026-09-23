@@ -382,12 +382,24 @@ export default function CoordFindingsPage() {
     !readFailed &&
     unavailable === null &&
     !rows.some((r) => r.finding_id === linkedRow.finding_id);
-  // The list is ONE page with no paging. A full page proves nothing about the
-  // rows past it, so a linked row missing from a full page may well match the
-  // filters — only a SHORT page (the whole matching set) licenses "outside".
+  // Why the linked row is missing from the list decides what the banner may
+  // claim. coord's LIST leaves out expired rows (the by-id read does not), so
+  // an expired linked row is missing whatever the filters say. "Outside the
+  // current filters" is licensed only when a filter IS set and the page is
+  // SHORT — a full page (one page of PAGE_SIZE, no paging) proves nothing
+  // about the rows past it. Everything else is "not in the list", no cause.
+  const filtersActive =
+    topic.trim() !== "" ||
+    kind.trim() !== "" ||
+    resourceKey.trim() !== "" ||
+    triaged !== null;
   const listPageFull = rows.length >= PAGE_SIZE;
-  const linkedOutsideFilters = linkedNotInList && !listPageFull;
-  const linkedBeyondLoadedPage = linkedNotInList && listPageFull;
+  const linkedExpiredNotListed =
+    linkedNotInList && linkedRow !== null && isExpired(linkedRow);
+  const linkedOutsideFilters =
+    linkedNotInList && !linkedExpiredNotListed && filtersActive && !listPageFull;
+  const linkedBeyondLoadedPage =
+    linkedNotInList && !linkedExpiredNotListed && !linkedOutsideFilters;
   const listUnknown = readIsUnknown(loaded, readFailed);
 
   return (
@@ -492,6 +504,7 @@ export default function CoordFindingsPage() {
             expired: linkedRow ? isExpired(linkedRow) : false,
             outsideFilters: linkedOutsideFilters,
             beyondLoadedPage: linkedBeyondLoadedPage,
+            expiredNotListed: linkedExpiredNotListed,
             // `loading` sits above `error` and above the fallback and
             // short-circuits, which is exactly why the FIRST render cannot say
             // "no such finding": nothing has been read yet.

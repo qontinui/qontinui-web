@@ -368,6 +368,11 @@ export function findingLinkNotice(state: {
    * Never claim "outside the filters" off a truncated page.
    */
   beyondLoadedPage?: boolean;
+  /**
+   * The linked row is on screen, expired, and missing from the list — which
+   * leaves out expired rows whatever the filters say.
+   */
+  expiredNotListed?: boolean;
 }): string {
   // First, and before `found`: a mangled id was never looked up, so no other
   // arm's claim (found, loading, failed, absent) is about it.
@@ -383,6 +388,13 @@ export function findingLinkNotice(state: {
         "It is past its retention window and is served by id anyway, so what " +
         "you are reading is the whole record, not a summary of a deleted one."
       : "Showing the finding this write's author recorded — expanded below.";
+    if (state.expiredNotListed) {
+      return (
+        base +
+        " Lists leave out expired findings, so it is shown first and not " +
+        "counted in the list total."
+      );
+    }
     if (state.outsideFilters) {
       return (
         base +
@@ -393,8 +405,8 @@ export function findingLinkNotice(state: {
     if (state.beyondLoadedPage) {
       return (
         base +
-        " It is not in the loaded page of the list, so it is shown first; " +
-        "whether it matches the current filters is not known from this page."
+        " It is not in the list below, so it is shown first and not counted " +
+        "in the list total."
       );
     }
     return base;
