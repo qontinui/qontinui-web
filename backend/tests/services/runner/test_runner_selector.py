@@ -8,6 +8,7 @@ verified through the args passed to ``execute``.
 
 from __future__ import annotations
 
+from collections.abc import Collection
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 from uuid import UUID, uuid4
@@ -20,10 +21,19 @@ from app.services.runner.device_selector import (
 )
 
 
-def _make_registry(connected_ids: set[str]) -> MagicMock:
-    """Build a mock registry whose ``is_runner_connected`` checks a set."""
+def _make_registry(
+    connected_ids: set[str], *, stale_ids: Collection[str] = ()
+) -> MagicMock:
+    """Build a mock registry over a set of LIVE ids and a set of STALE ones.
+
+    A stale id is registered (``is_runner_connected`` True) but its socket
+    is gone (``is_runner_socket_live`` False) — the shape a device-WS
+    teardown on the superseded path leaves behind. The selector must read
+    the second predicate, which is what the ``stale_ids`` arm pins.
+    """
     registry = MagicMock()
-    registry.is_runner_connected = lambda rid: rid in connected_ids
+    registry.is_runner_connected = lambda rid: rid in connected_ids or rid in stale_ids
+    registry.is_runner_socket_live = lambda rid: rid in connected_ids
     return registry
 
 
@@ -116,6 +126,28 @@ async def test_pick_active_runner_prefers_connected_over_freshest_offline() -> N
     picked = await pick_active_runner_for_user(user_id, db, registry)
 
     assert picked is older_connected
+
+
+@pytest.mark.asyncio
+async def test_pick_active_runner_walks_past_a_stale_registration() -> None:
+    """Freshest is REGISTERED but its socket is dead; older is live -> older wins.
+
+    Registration is not liveness: a registry entry outlives its socket when
+    the device-WS teardown takes the superseded path. Picking the stale one
+    would hand ``dispatch_and_wait`` a target its own gate refuses, so the
+    user gets a 503 while a device that could answer sits one row down.
+    """
+    user_id = uuid4()
+    fresher_stale = _make_runner(runner_id=uuid4(), user_id=user_id, name="fresher")
+    older_live = _make_runner(runner_id=uuid4(), user_id=user_id, name="older")
+    db = _make_db_with_runners([fresher_stale, older_live])
+    registry = _make_registry({str(older_live.id)}, stale_ids={str(fresher_stale.id)})
+    # The premise: the stale one still LOOKS connected to the registration check.
+    assert registry.is_runner_connected(str(fresher_stale.id)) is True
+
+    picked = await pick_active_runner_for_user(user_id, db, registry)
+
+    assert picked is older_live
 
 
 @pytest.mark.asyncio
