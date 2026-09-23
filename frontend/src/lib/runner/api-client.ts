@@ -34,6 +34,7 @@ import {
   type RunnerRelayDiagnostics,
 } from "./relay";
 import {
+  PICK_HINT,
   resolveRunnerRoute,
   routeOfTarget,
   targetKey,
@@ -221,7 +222,7 @@ function refusalError(
       return new RunnerApiError(
         0,
         custom ??
-          "Which runner to use is unknown — the device resolver did not answer. Choose a runner in the runner selector, or retry",
+          `Which runner to use is unknown — the device resolver did not answer. Retry, or ${PICK_HINT}`,
         undefined,
         { code: RUNNER_RESOLVER_UNAVAILABLE }
       );

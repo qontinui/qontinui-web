@@ -18,6 +18,7 @@ import {
   type UnifiedWorkflow,
 } from "@/types/unified-workflow";
 import { RunnerOfflineState } from "@/components/runner/RunnerOfflineState";
+import { RunOnPicker } from "@/components/runner/RunOnPicker";
 import { Play, Plus, GripVertical } from "lucide-react";
 import { toast } from "sonner";
 import { WorkflowLibraryPanel } from "@/components/execute/WorkflowLibraryPanel";
@@ -50,10 +51,12 @@ function QueueTabContent({
   workflows: UnifiedWorkflow[] | null;
   workflowsLoading: boolean;
 }) {
-  // Running the queue is NEW work: only the explicit choice or coord's
-  // resolved pick. Saving the composed workflow is a LIBRARY write, which
+  // Running the queue is NEW, MACHINE-BOUND work: workflows drive the GUI of
+  // the machine they run on, so a pick coord refuses is never moved to
+  // another runner (plan D2) — the Run-on picker says why and offers the
+  // alternatives. Saving the composed workflow is a LIBRARY write, which
   // belongs to the runner whose library is on screen — the read target.
-  const dispatch = useDispatchRunnerTarget();
+  const dispatch = useDispatchRunnerTarget({ workClass: "machine_bound" });
   const runApi = useMemo(
     () => createRunnerApi(dispatch.target),
     [dispatch.target]
@@ -352,6 +355,7 @@ export default function ExecutePage() {
           <Play className="size-5 text-primary" />
           <h1 className="text-lg font-semibold text-foreground">Execute</h1>
         </div>
+        <RunOnPicker workClass="machine_bound" className="items-end" />
       </header>
 
       <main className="flex-1 overflow-y-auto p-6 mx-auto flex flex-col lg:flex-row gap-6 max-w-[1400px] w-full">

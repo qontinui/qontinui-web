@@ -44,12 +44,21 @@ export interface UseResolvedRunnerOptions {
    * a device resolved for an explicit pin is never kept as an automatic pick.
    */
   scope?: string;
+  /**
+   * Echoed back as `answeredTag` with the answer to the request it was sent
+   * with. Unlike `scope`, a change does NOT start over: the previous answer
+   * stays visible while the new question is in flight, and the caller tells
+   * the two apart by the tag (e.g. which pin an answer was about).
+   */
+  tag?: string;
 }
 
 export interface UseResolvedRunnerResult {
   state: ResolvedRunnerState;
   /** The last device coord resolved for these inputs — kept across outages. */
   lastResolvedDeviceId: string | null;
+  /** The `tag` of the request `state` answers; null while nothing answered. */
+  answeredTag: string | null;
   /** Re-ask now. */
   refresh: () => void;
 }
@@ -63,10 +72,12 @@ export function useResolvedRunner({
   enabled = true,
   refreshKey = "",
   scope = "",
+  tag = "",
 }: UseResolvedRunnerOptions): UseResolvedRunnerResult {
   const capabilitiesKey = [...capabilities].sort().join(",");
   const [state, setState] = useState<ResolvedRunnerState>(LOADING);
   const [lastResolvedDeviceId, setLastResolved] = useState<string | null>(null);
+  const [answeredTag, setAnsweredTag] = useState<string | null>(null);
   const [tick, setTick] = useState(0);
   const refresh = useCallback(() => setTick((t) => t + 1), []);
 
@@ -78,6 +89,7 @@ export function useResolvedRunner({
     setQuestion(questionKey);
     setState(LOADING);
     setLastResolved(null);
+    setAnsweredTag(null);
   }
 
   useEffect(() => {
@@ -91,6 +103,7 @@ export function useResolvedRunner({
       (next) => {
         if (controller.signal.aborted) return;
         setState(next);
+        setAnsweredTag(tag);
         if (next.status === "resolved") {
           setLastResolved(next.deviceId);
         } else if (
@@ -119,10 +132,11 @@ export function useResolvedRunner({
     workClass,
     capabilitiesKey,
     preferred,
+    tag,
     refreshKey,
     tick,
     refresh,
   ]);
 
-  return { state, lastResolvedDeviceId, refresh };
+  return { state, lastResolvedDeviceId, answeredTag, refresh };
 }

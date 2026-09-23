@@ -48,7 +48,14 @@ vi.mock("@/contexts/active-runner-context", () => ({
     target: { kind: "runner", runner: { id: "runner-1" }, locality: "local" },
     runnerId: "runner-1",
     refusal: null,
+    notice: null,
   }),
+}));
+// The shared Run-on control has its own tests; here only its work class.
+vi.mock("@/components/runner/RunOnPicker", () => ({
+  RunOnPicker: ({ workClass }: { workClass: string }) => (
+    <div data-testid="run-on-picker" data-work-class={workClass} />
+  ),
 }));
 vi.mock("@/lib/co-pilot/usePromptExecution", () => ({
   usePromptExecution: () => ({
@@ -120,6 +127,14 @@ describe("/prompt-home self-targeting guard", () => {
     expect(routes).not.toContain("/prompt-home");
     expect(copilotPages.some((p) => pageIdToUrl(p.id) === "/prompt-home")).toBe(
       false
+    );
+  });
+
+  it("carries the Run-on picker for PLACEABLE work (the runner only plans; steps run in this tab)", () => {
+    render(<PromptHomePage />);
+    expect(screen.getByTestId("run-on-picker")).toHaveAttribute(
+      "data-work-class",
+      "placeable"
     );
   });
 });

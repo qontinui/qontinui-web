@@ -278,9 +278,10 @@ function errorFromPlanFailure(err: PlanError): ExecutionError {
 }
 
 export function usePromptExecution(): UsePromptExecutionReturn {
-  // Running a prompt is NEW work: it goes only to the user's explicit choice
-  // or the device coord resolved — never a read fallback (a last known,
-  // proven-local or sole runner coord may just have called ineligible).
+  // Running a prompt is NEW work: it goes only to the device coord resolved
+  // (the user's pick is its preferred device) — never a read fallback (a
+  // last known, proven-local or sole runner coord may just have called
+  // ineligible). Placeable: the runner plans; the steps run in this tab.
   const dispatch = useDispatchRunnerTarget();
   const dispatchRunnerId = dispatch.runnerId;
   const runnerTarget = dispatch.target;

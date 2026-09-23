@@ -270,3 +270,12 @@ export function runnerLoopbackUrl(
   const route = routeOfTarget(target);
   return route.kind === "loopback" ? `${route.base}${path}` : null;
 }
+
+/**
+ * Where a user can pick a runner. Named by surface because most surfaces that
+ * show a refusal carry no picker themselves; the Run-on control is rendered
+ * on these surfaces with any number of runners (one included), so a
+ * single-runner user is not sent to a control that only appears with many.
+ */
+export const PICK_HINT =
+  "pick a runner with “Run on” (on Co-Pilot, Execute or Capture)";

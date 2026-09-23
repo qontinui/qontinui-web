@@ -297,7 +297,7 @@ describe("resolveRunnerTarget", () => {
       resolveRunnerTarget({
         listState: "loading",
         runners: [],
-        selectedId: REMOTE_ID,
+        pinId: REMOTE_ID,
         localityById: new Map(),
         resolution: resolvedTo(REMOTE_ID),
       })
@@ -312,7 +312,7 @@ describe("resolveRunnerTarget", () => {
       resolveRunnerTarget({
         listState: "failed",
         runners: [],
-        selectedId: REMOTE_ID,
+        pinId: REMOTE_ID,
         localityById: new Map(),
         resolution: LOADING,
       }).target
@@ -324,7 +324,7 @@ describe("resolveRunnerTarget", () => {
       resolveRunnerTarget({
         listState: "loaded",
         runners: [],
-        selectedId: null,
+        pinId: null,
         localityById: new Map(),
         resolution: LOADING,
       }).target
@@ -336,7 +336,7 @@ describe("resolveRunnerTarget", () => {
     const resolution = resolveRunnerTarget({
       listState: "loaded",
       runners: [local, remote, third],
-      selectedId: null,
+      pinId: null,
       localityById: new Map<string, "local" | "not_local">([
         [LOCAL_ID, "local"],
         [REMOTE_ID, "not_local"],
@@ -356,7 +356,7 @@ describe("resolveRunnerTarget", () => {
     const resolution = resolveRunnerTarget({
       listState: "loaded",
       runners: [remote],
-      selectedId: null,
+      pinId: null,
       localityById: new Map(),
       resolution: resolvedTo(unlisted),
     });
@@ -372,7 +372,7 @@ describe("resolveRunnerTarget", () => {
     const resolution = resolveRunnerTarget({
       listState: "loaded",
       runners: [remote],
-      selectedId: null,
+      pinId: null,
       localityById: new Map([[REMOTE_ID, "unknown"]]),
       resolution: LOADING,
     });
@@ -388,7 +388,7 @@ describe("resolveRunnerTarget", () => {
       resolveRunnerTarget({
         listState: "loaded",
         runners: [local, remote],
-        selectedId: null,
+        pinId: null,
         localityById: new Map([[LOCAL_ID, "local"]]),
         resolution: LOADING,
       }).target.kind
@@ -400,7 +400,7 @@ describe("resolveRunnerTarget", () => {
       const resolution = resolveRunnerTarget({
         listState: "loaded",
         runners: [local, remote],
-        selectedId: null,
+        pinId: null,
         localityById: new Map([[LOCAL_ID, "local"]]),
         resolution: unknown,
         lastResolvedId: REMOTE_ID,
@@ -413,7 +413,7 @@ describe("resolveRunnerTarget", () => {
     const resolution = resolveRunnerTarget({
       listState: "loaded",
       runners: [remote, local],
-      selectedId: null,
+      pinId: null,
       localityById: new Map<string, "local" | "not_local">([
         [REMOTE_ID, "not_local"],
         [LOCAL_ID, "local"],
@@ -433,7 +433,7 @@ describe("resolveRunnerTarget", () => {
       resolveRunnerTarget({
         listState: "loaded",
         runners: [remote, local],
-        selectedId: null,
+        pinId: null,
         localityById: new Map([[REMOTE_ID, "not_local"]]),
         resolution: DOWN,
       }).target.kind
@@ -444,7 +444,7 @@ describe("resolveRunnerTarget", () => {
     const resolution = resolveRunnerTarget({
       listState: "loaded",
       runners: [remote, local],
-      selectedId: null,
+      pinId: null,
       localityById: new Map<string, "not_local" | "unknown">([
         [REMOTE_ID, "unknown"],
         [LOCAL_ID, "not_local"],
@@ -462,7 +462,7 @@ describe("resolveRunnerTarget", () => {
     const resolution = resolveRunnerTarget({
       listState: "loaded",
       runners: [remote],
-      selectedId: null,
+      pinId: null,
       localityById: new Map([[REMOTE_ID, "unknown"]]),
       resolution: DOWN,
     });
@@ -496,7 +496,7 @@ describe("resolveRunnerTarget", () => {
         resolveRunnerTarget({
           listState: "loaded",
           runners: [local, remote],
-          selectedId: null,
+          pinId: null,
           localityById: new Map([[LOCAL_ID, "local"]]),
           resolution: none,
           lastResolvedId: REMOTE_ID,
@@ -506,7 +506,7 @@ describe("resolveRunnerTarget", () => {
         resolveRunnerTarget({
           listState: "loaded",
           runners: [remote, local],
-          selectedId: null,
+          pinId: null,
           localityById: new Map<string, "local" | "not_local">([
             [REMOTE_ID, "not_local"],
             [LOCAL_ID, "local"],
@@ -518,7 +518,7 @@ describe("resolveRunnerTarget", () => {
         resolveRunnerTarget({
           listState: "loaded",
           runners: [remote],
-          selectedId: null,
+          pinId: null,
           localityById: new Map([[REMOTE_ID, "not_local"]]),
           resolution: none,
         }).activeRunner?.id
@@ -531,7 +531,7 @@ describe("resolveRunnerTarget", () => {
       const resolution = resolveRunnerTarget({
         listState: "loaded",
         runners: [remote, local],
-        selectedId: null,
+        pinId: null,
         localityById: new Map<string, "not_local">([
           [REMOTE_ID, "not_local"],
           [LOCAL_ID, "not_local"],
@@ -546,16 +546,35 @@ describe("resolveRunnerTarget", () => {
     }
   });
 
-  it("an explicit remote selection is honoured over the relay, whatever coord resolved", () => {
+  it("a remote pick is a preference: coord's device is the target, whatever was picked", () => {
     const resolution = resolveRunnerTarget({
       listState: "loaded",
       runners: [remote, local],
-      selectedId: REMOTE_ID,
+      pinId: REMOTE_ID,
       localityById: new Map([
         [REMOTE_ID, "not_local"],
         [LOCAL_ID, "local"],
       ]),
       resolution: resolvedTo(LOCAL_ID),
+    });
+    expect(resolution.activeRunner?.id).toBe(LOCAL_ID);
+  });
+
+  it("a remote pick is read over the relay while coord names no device", () => {
+    const resolution = resolveRunnerTarget({
+      listState: "loaded",
+      runners: [remote, local],
+      pinId: REMOTE_ID,
+      localityById: new Map([
+        [REMOTE_ID, "not_local"],
+        [LOCAL_ID, "local"],
+      ]),
+      resolution: {
+        status: "unavailable",
+        reason: "coord_unreachable",
+        httpStatus: null,
+        code: null,
+      },
     });
     expect(resolution.activeRunner?.id).toBe(REMOTE_ID);
     expect(routeOfTarget(resolution.target)).toMatchObject({

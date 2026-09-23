@@ -121,7 +121,7 @@ export function AskTheTwin() {
         </h2>
         <p className="flex items-center gap-2 text-sm text-muted-foreground">
           <WifiOff className="size-4" /> No runner can take a new question right
-          now — choose one in the runner selector, or connect one.
+          now.
         </p>
         {dispatchTarget.message && (
           <p

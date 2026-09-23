@@ -1,9 +1,10 @@
 /**
- * Running the execute queue is NEW work (plan
- * 2026-09-20-runner-selector-drives-a-transport-not-a-target, Phase 3): it
- * goes only to the user's explicit choice or coord's `resolved` pick. When
- * coord named no runner the Run action is disabled and coord's outcome shown;
- * otherwise the composed run is sent to the dispatch target.
+ * Running the execute queue is NEW, MACHINE-BOUND work (plan
+ * 2026-09-20-runner-selector-drives-a-transport-not-a-target, Phases 3-4): it
+ * goes only where coord's machine-bound answer allows (a refused pick is
+ * never moved). When coord named no runner the Run action is disabled and
+ * coord's outcome shown; otherwise the composed run is sent to the dispatch
+ * target. The page carries the shared Run-on picker for that work class.
  */
 
 import { fireEvent, render, screen } from "@testing-library/react";
@@ -27,10 +28,21 @@ const state = vi.hoisted(() => ({
   dispatch: null as unknown as DispatchRunnerTarget,
   runTargets: [] as RunnerTarget[],
   runCalls: 0,
+  options: [] as unknown[],
+  pickers: [] as unknown[],
 }));
 
 vi.mock("@/contexts/active-runner-context", () => ({
-  useDispatchRunnerTarget: () => state.dispatch,
+  useDispatchRunnerTarget: (options: unknown) => {
+    state.options.push(options);
+    return state.dispatch;
+  },
+}));
+vi.mock("@/components/runner/RunOnPicker", () => ({
+  RunOnPicker: (props: { workClass: string }) => {
+    state.pickers.push(props.workClass);
+    return <div data-testid="run-on">{props.workClass}</div>;
+  },
 }));
 vi.mock("@/lib/runner-api", () => ({
   useRunnerTarget: () => ({ kind: "pending" }),
@@ -97,6 +109,8 @@ import ExecutePage from "./page";
 beforeEach(() => {
   state.runTargets = [];
   state.runCalls = 0;
+  state.options = [];
+  state.pickers = [];
 });
 
 describe("Execute page Run goes only where NEW work may go", () => {
@@ -107,6 +121,7 @@ describe("Execute page Run goes only where NEW work may go", () => {
       target: { kind: "unavailable", reason: "no_eligible_runner", message },
       runnerId: null,
       refusal: { reason: "all_drained", message },
+      notice: null,
     };
     render(<ExecutePage />);
     fireEvent.click(screen.getByTestId("add"));
@@ -121,6 +136,7 @@ describe("Execute page Run goes only where NEW work may go", () => {
       target: { kind: "runner", runner: { id: DESK }, locality: "unknown" },
       runnerId: DESK,
       refusal: null,
+      notice: null,
     };
     render(<ExecutePage />);
     fireEvent.click(screen.getByTestId("add"));
@@ -131,5 +147,18 @@ describe("Execute page Run goes only where NEW work may go", () => {
       kind: "runner",
       runner: { id: DESK },
     });
+  });
+
+  it("asks for the MACHINE-BOUND target and shows the Run-on picker for it", () => {
+    state.dispatch = {
+      target: { kind: "runner", runner: { id: DESK }, locality: "unknown" },
+      runnerId: DESK,
+      refusal: null,
+      notice: null,
+    };
+    render(<ExecutePage />);
+    expect(state.options).toContainEqual({ workClass: "machine_bound" });
+    expect(state.options).not.toContainEqual(undefined);
+    expect(screen.getByTestId("run-on").textContent).toBe("machine_bound");
   });
 });

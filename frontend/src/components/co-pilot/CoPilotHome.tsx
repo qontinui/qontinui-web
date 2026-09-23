@@ -62,6 +62,7 @@ import { Badge } from "@/components/ui/badge";
 import { useCoPilotPreference } from "@/hooks/useCoPilotPreference";
 import { useCoPilotSessionConsent } from "@/hooks/useCoPilotSessionConsent";
 import { CoPilotReadyStatus } from "@/components/co-pilot/CoPilotReadyStatus";
+import { RunOnPicker } from "@/components/runner/RunOnPicker";
 import {
   isCoPilotConsentSatisfied,
   useIsLoopbackDev,
@@ -459,7 +460,8 @@ export function CoPilotHome() {
   const preference = useCoPilotPreference();
   const consent = useCoPilotSessionConsent();
   const loopbackDev = useIsLoopbackDev();
-  // A prompt is NEW work: only the explicit choice or coord's resolved pick.
+  // A prompt is NEW work: coord's resolved pick (the user's pick is its
+  // preferred device). Placeable — see the Run-on picker below.
   const { refusal: newWorkRefusal } = useDispatchRunnerTarget();
   const { state, run, reset } = usePromptExecution();
 
@@ -660,6 +662,10 @@ export function CoPilotHome() {
         {/* Prompt box */}
         <Card>
           <CardContent className="space-y-4 pt-0">
+            {/* Planning is placeable: the runner only PLANS; every step then
+                runs in this browser tab over the UI-Bridge relay, whichever
+                runner planned it. */}
+            <RunOnPicker workClass="placeable" className="pt-4" />
             <Textarea
               value={prompt}
               onChange={(e) => setPrompt(e.target.value)}
