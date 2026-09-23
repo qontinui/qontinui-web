@@ -1,7 +1,7 @@
 """agent.work_artifact_edges — retract / correct a recorded edge
 
 Revision ID: plan_library_08_edge_correction
-Revises: plan_library_07_plan_difficulty
+Revises: coord_wu_authored_at_02
 Create Date: 2026-09-22
 
 Phase 5 of
@@ -74,7 +74,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "plan_library_08_edge_correction"
-down_revision = "plan_library_07_plan_difficulty"
+down_revision = "coord_wu_authored_at_02"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
