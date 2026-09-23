@@ -186,6 +186,79 @@ class TestPostAgentsSpawn:
             )
         assert resp.status_code == 400
 
+    def test_automatic_spawn_forwards_body_without_a_target(self, client: TestClient):
+        """coord#2403: no ``target_device_id`` means coord places the session.
+
+        The proxy must neither require nor invent one, must forward
+        ``required_capabilities`` as sent, and must return ``placed_by``."""
+        coord_payload = {
+            "agent_id": "agent-1",
+            "target_device_id": "00000000-0000-0000-0000-deadbeefcafe",
+            "placed_by": "coord",
+        }
+        body = {
+            "repos": [{"repo": "qontinui-web"}],
+            "required_capabilities": ["os:linux"],
+            "initial_prompt": "go",
+        }
+        with _patch_httpx() as MockClient:
+            instance = AsyncMock()
+            instance.post.return_value = _mock_response(json_data=coord_payload)
+            _configure_mock_client(MockClient, instance)
+            resp = client.post(f"{API_PREFIX}/agents/spawn", json=body)
+
+        assert resp.status_code == 200
+        assert resp.json() == coord_payload
+        forwarded = instance.post.call_args.kwargs.get("json")
+        assert forwarded == body
+        assert "target_device_id" not in forwarded
+
+    @pytest.mark.parametrize(
+        "coord_body",
+        [
+            {
+                "error": "pin_ineligible",
+                "device_id": "00000000-0000-0000-0000-deadbeefcafe",
+                "reason": "missing_capabilities",
+                "detail": "lacks docker",
+                "missing_capabilities": ["docker"],
+                "hint": "re-send without target_device_id",
+            },
+            {
+                "error": "no_eligible_device",
+                "outcome": "all_capable_at_capacity",
+                "capable_devices": 2,
+                "detail": "every device is at its cap",
+            },
+            {"error": "drain_unreadable", "hint": "Check GET /coord/fleet/drain."},
+            {
+                "error": "device_drained",
+                "device_id": "00000000-0000-0000-0000-deadbeefcafe",
+                "reason": "rebuild",
+                "hint": 're-send with "override_drain": true',
+            },
+        ],
+    )
+    def test_coord_409_refusal_reaches_the_browser_as_an_object(
+        self, client: TestClient, coord_body: dict
+    ):
+        """The modal branches on these codes, so they must arrive as data —
+        not stringified into a message the browser has to re-parse."""
+        with _patch_httpx() as MockClient:
+            instance = AsyncMock()
+            instance.post.return_value = _mock_response(
+                status_code=409, json_data=coord_body
+            )
+            _configure_mock_client(MockClient, instance)
+            resp = client.post(
+                f"{API_PREFIX}/agents/spawn",
+                json={"repos": [{"repo": "qontinui-web"}], "initial_prompt": "go"},
+            )
+        assert resp.status_code == 409
+        # Bare FastAPI (no app handlers) wraps it as ``{"detail": {...}}``;
+        # the object is coord's, verbatim.
+        assert resp.json() == {"detail": coord_body}
+
     def test_coord_unreachable_returns_502(self, client: TestClient):
         with _patch_httpx() as MockClient:
             instance = AsyncMock()
@@ -242,3 +315,41 @@ class TestGetAgent:
             _configure_mock_client(MockClient, instance)
             resp = client.get(f"{API_PREFIX}/agents/nonexistent")
         assert resp.status_code == 404
+
+
+def test_refusal_envelope_splices_coord_keys_to_the_top_level():
+    """With the app's real HTTP-exception handler, coord's refusal keys land
+    at the TOP level of the envelope — the shape ``spawnPlacement.ts``
+    ``extractCoordRefusal`` reads first."""
+    from starlette.exceptions import HTTPException as StarletteHTTPException
+
+    from app.middleware.error_handler import http_exception_handler
+
+    app = _build_test_app(resolves_tenant=True)
+    app.add_exception_handler(StarletteHTTPException, http_exception_handler)  # type: ignore[arg-type]
+    coord_body = {
+        "error": "pin_ineligible",
+        "reason": "offline",
+        "detail": "no fresh heartbeat",
+        "missing_capabilities": [],
+    }
+    with _patch_httpx() as MockClient:
+        instance = AsyncMock()
+        instance.post.return_value = _mock_response(
+            status_code=409, json_data=coord_body
+        )
+        _configure_mock_client(MockClient, instance)
+        resp = TestClient(app).post(
+            f"{API_PREFIX}/agents/spawn",
+            json={
+                "target_device_id": "00000000-0000-0000-0000-deadbeefcafe",
+                "repos": [{"repo": "qontinui-web"}],
+                "initial_prompt": "go",
+            },
+        )
+    assert resp.status_code == 409
+    got = resp.json()
+    assert got["error"] == "pin_ineligible"
+    assert got["reason"] == "offline"
+    assert got["detail"] == "no fresh heartbeat"
+    assert got["missing_capabilities"] == []
