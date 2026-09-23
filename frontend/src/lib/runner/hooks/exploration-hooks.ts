@@ -1,7 +1,10 @@
 "use client";
 
 import { useRunnerQuery, useRunnerMutation } from "../api-client";
-import { useRunnerTarget } from "@/contexts/active-runner-context";
+import {
+  useDispatchRunnerTarget,
+  useRunnerTarget,
+} from "@/contexts/active-runner-context";
 import type {
   ExplorationReport,
   ExplorationStrategy,
@@ -56,8 +59,14 @@ export function useExplorationResults(jobId: string | null, enabled: boolean) {
   );
 }
 
+/**
+ * Start an exploration — NEW work (it drives a browser/app), so it goes only
+ * to the explicit choice or coord's resolved pick; `refusal` is coord's
+ * outcome when it may not start.
+ */
 export function useStartExploration() {
-  return useRunnerMutation<
+  const { target, refusal } = useDispatchRunnerTarget();
+  const mutation = useRunnerMutation<
     {
       target_type?: "web";
       connection_url: string;
@@ -72,7 +81,8 @@ export function useStartExploration() {
       run_state_discovery?: boolean;
     },
     { job_id: string }
-  >(useRunnerTarget(), "/ui-bridge/explore");
+  >(target, "/ui-bridge/explore");
+  return { ...mutation, refusal };
 }
 
 export function useStopExploration() {

@@ -4,6 +4,7 @@ import { useState } from "react";
 import {
   useRunnerHealth,
   useRunnerApi,
+  useDispatchRunnerApi,
   useRunnerTarget,
   useRunnerPoll,
   runnerPollInterval,
@@ -29,6 +30,9 @@ import { toast } from "sonner";
 
 export default function CapturePage() {
   const runnerApi = useRunnerApi();
+  // Calls that START work go to the new-work target (explicit choice or
+  // coord's resolved pick); a refused call carries coord's outcome.
+  const { api: workApi, refusal: workRefusal } = useDispatchRunnerApi();
   const target = useRunnerTarget();
   const { isOffline, isLoading: healthLoading } = useRunnerHealth();
   const [isRecording, setIsRecording] = useState(false);
@@ -76,7 +80,7 @@ export default function CapturePage() {
 
   const handleStart = async () => {
     try {
-      const result = await runnerApi.startInteractionRecording(fps);
+      const result = await workApi.startInteractionRecording(fps);
       setIsRecording(true);
       setElapsedSeconds(0);
       setEventCount(0);
@@ -213,6 +217,8 @@ export default function CapturePage() {
                 {!isRecording ? (
                   <Button
                     onClick={handleStart}
+                    disabled={workRefusal !== null}
+                    title={workRefusal ?? undefined}
                     className="bg-red-600 hover:bg-red-700 text-white px-8 py-6 text-lg"
                   >
                     <Play className="size-5 mr-2" />
@@ -229,6 +235,14 @@ export default function CapturePage() {
                   </Button>
                 )}
               </div>
+              {!isRecording && workRefusal && (
+                <p
+                  className="text-xs text-text-muted"
+                  data-testid="capture-start-refusal"
+                >
+                  {workRefusal}
+                </p>
+              )}
             </div>
           </CardContent>
         </Card>

@@ -48,12 +48,18 @@ export interface RunnerRef {
  *
  * - `list_unavailable`   — the runner list failed to load: there is no runner
  *                          to address, and the default port is NOT assumed.
- * - `selection_required` — several runners are listed, none is proven to be on
- *                          this machine, and the user has chosen none. Picking
- *                          one for them would run work on a machine they did
- *                          not pick (plan D2), so nothing is addressed.
+ * - `resolver_unavailable` — the user has chosen no runner and coord's device
+ *                          resolver is UNKNOWN (unreachable, not deployed, a
+ *                          refused credential), with no last resolved runner
+ *                          and none proven on this machine to keep using.
+ *                          List order is never used instead (plan Phase 3).
+ * - `no_eligible_runner` — coord answered that none of the user's runners is
+ *                          eligible (none online, none capable, all drained).
  */
-export type RunnerUnavailableReason = "list_unavailable" | "selection_required";
+export type RunnerUnavailableReason =
+  | "list_unavailable"
+  | "resolver_unavailable"
+  | "no_eligible_runner";
 
 export type RunnerTarget =
   /**
@@ -83,6 +89,11 @@ export type RunnerTarget =
   | {
       kind: "unavailable";
       reason: RunnerUnavailableReason;
+      /**
+       * Why, in the words of whoever refused — e.g. coord's outcome when new
+       * work may not be placed. Replaces the reason's generic message.
+       */
+      message?: string;
     };
 
 export type RunnerRoute =
@@ -222,6 +233,17 @@ export function targetKey(target: RunnerTarget): string {
     case "refused":
       return `refused:${state.reason}`;
   }
+}
+
+/**
+ * The device id the target addresses, or null when it addresses no runner.
+ * A runner coord resolved that the web list has not caught up with is still a
+ * real runner here (reached over the relay by this id) — so surfaces that
+ * need "which runner" read it from the target, not from the list's
+ * `activeRunner`.
+ */
+export function targetRunnerId(target: RunnerTarget): string | null {
+  return target.kind === "runner" ? target.runner.id : null;
 }
 
 /** The runner's display name, when the target names one. */

@@ -18,6 +18,7 @@ import {
   type RunnerListState,
 } from "@/contexts/active-runner-context";
 import type { RunnerLocality } from "@/lib/runner/locality";
+import type { ResolvedRunnerState } from "@/lib/runner/resolve";
 import { cn } from "@/lib/utils";
 
 interface RunnerSelectorProps {
@@ -88,6 +89,49 @@ function getStatus(
   return getRunnerStatus(activeRunner, localityById);
 }
 
+/** Label for an auto-selected target coord's resolver has not produced. */
+function unresolvedLabel(resolution: ResolvedRunnerState): string {
+  switch (resolution.status) {
+    case "loading":
+      return "Resolving runner";
+    case "no_capable":
+    case "all_drained":
+    case "pin_ineligible":
+      return "No runner available";
+    default:
+      return "Runner unknown";
+  }
+}
+
+/**
+ * What the auto-selected target is standing on when coord did not name a
+ * device: the resolver is UNKNOWN, or it answered that no runner is eligible
+ * for NEW work. Reads then keep a runner (the last resolved one, one proven on
+ * this machine, or the only one) — never the first listed — and say so.
+ */
+function resolverNotice(
+  selection: "explicit" | "auto",
+  resolution: ResolvedRunnerState,
+  activeRunner: Runner | null
+): string | null {
+  if (selection !== "auto") return null;
+  switch (resolution.status) {
+    case "unavailable":
+    case "drain_unreadable":
+      return activeRunner
+        ? "Resolver unavailable — keeping the last known runner"
+        : "Resolver unavailable — choose a runner";
+    case "no_capable":
+    case "all_drained":
+    case "pin_ineligible":
+      return activeRunner
+        ? "Not eligible for new work — showing its data"
+        : "No runner is eligible for new work";
+    default:
+      return null;
+  }
+}
+
 export function RunnerSelector({ isCollapsed }: RunnerSelectorProps) {
   const {
     activeRunner,
@@ -96,6 +140,8 @@ export function RunnerSelector({ isCollapsed }: RunnerSelectorProps) {
     isMultiRunner,
     listState,
     localityById,
+    selection,
+    resolution,
   } = useActiveRunner();
 
   const status = getStatus(activeRunner, listState, localityById);
@@ -107,8 +153,12 @@ export function RunnerSelector({ isCollapsed }: RunnerSelectorProps) {
         ? "Loading runners"
         : runners.length === 0
           ? "No runner"
-          : "Runner";
+          : unresolvedLabel(resolution);
   const portLabel = activeRunner?.port ? `:${activeRunner.port}` : "";
+  const unknownNotice =
+    listState === "loaded" && runners.length > 0
+      ? resolverNotice(selection, resolution, activeRunner)
+      : null;
 
   // Collapsed: just show a status dot with tooltip
   if (isCollapsed) {
@@ -135,6 +185,9 @@ export function RunnerSelector({ isCollapsed }: RunnerSelectorProps) {
               {STATUS_LABEL[status]}
             </span>
           )}
+          {unknownNotice && (
+            <span className="block text-text-subtle">{unknownNotice}</span>
+          )}
         </TooltipContent>
       </Tooltip>
     );
@@ -143,12 +196,17 @@ export function RunnerSelector({ isCollapsed }: RunnerSelectorProps) {
   // Expanded: single runner — status + name (no dropdown)
   if (!isMultiRunner) {
     return (
-      <div className="flex h-8 w-full items-center gap-2 rounded-md px-2 text-text-muted">
+      <div className="flex min-h-8 w-full items-center gap-2 rounded-md px-2 text-text-muted">
         <StatusDot status={status} />
         <span className="truncate text-xs">
           {label}
           {portLabel && (
             <span className="ml-1 text-text-subtle">{portLabel}</span>
+          )}
+          {unknownNotice && (
+            <span className="block truncate text-text-subtle">
+              {unknownNotice}
+            </span>
           )}
         </span>
       </div>
@@ -159,12 +217,17 @@ export function RunnerSelector({ isCollapsed }: RunnerSelectorProps) {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <button className="flex h-8 w-full items-center gap-2 rounded-md px-2 text-text-muted transition-colors hover:bg-surface-hover hover:text-text-primary">
+        <button className="flex min-h-8 w-full items-center gap-2 rounded-md px-2 text-text-muted transition-colors hover:bg-surface-hover hover:text-text-primary">
           <StatusDot status={status} />
           <span className="flex-1 truncate text-left text-xs">
             {label}
             {portLabel && (
               <span className="ml-1 text-text-subtle">{portLabel}</span>
+            )}
+            {unknownNotice && (
+              <span className="block truncate text-text-subtle">
+                {unknownNotice}
+              </span>
             )}
           </span>
           <ChevronDown className="size-3 shrink-0 opacity-50" />

@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { MessageSquare, Send, Loader2, WifiOff, Bot, User } from "lucide-react";
 import { useUIElement } from "@qontinui/ui-bridge/react";
 import { Button } from "@/components/ui/button";
-import { useRealtimeConnections } from "@/hooks/useRealtimeConnections";
+import { useDispatchTarget } from "@/contexts/active-runner-context";
 import { useChatWebSocket } from "@/hooks/useChatWebSocket";
 
 /**
@@ -26,29 +26,38 @@ const TWIN_PREAMBLE =
   "of what you report so the reader knows how much to trust it. Question: ";
 
 export function AskTheTwin() {
-  const { runners } = useRealtimeConnections();
-  const activeRunner = runners[0] ?? null;
+  // Asking starts a NEW AI session, so it goes only where new work may go:
+  // the user's explicit choice or coord's resolved pick — never a read
+  // fallback. Otherwise coord's outcome is shown.
+  const dispatchTarget = useDispatchTarget();
+  const runnerId = dispatchTarget.runnerId;
 
   const [input, setInput] = useState("");
   const [queued, setQueued] = useState<string | null>(null);
   const hasSessionRef = useRef(false);
   const sentCountRef = useRef(0);
 
-  const { isConnected, sessionState, messages, streamingContent, createSession, sendMessage } =
-    useChatWebSocket({
-      runnerId: activeRunner?.id ?? null,
-      onSessionCreated: useCallback(() => {
-        hasSessionRef.current = true;
-      }, []),
-    });
+  const {
+    isConnected,
+    sessionState,
+    messages,
+    streamingContent,
+    createSession,
+    sendMessage,
+  } = useChatWebSocket({
+    runnerId,
+    onSessionCreated: useCallback(() => {
+      hasSessionRef.current = true;
+    }, []),
+  });
 
   // When a runner drops, forget the session so a reconnect starts cleanly.
   useEffect(() => {
-    if (!activeRunner) {
+    if (runnerId === null) {
       hasSessionRef.current = false;
       sentCountRef.current = 0;
     }
-  }, [activeRunner]);
+  }, [runnerId]);
 
   // State machine to deliver a queued question: create a session when connected,
   // then flush the question once the session is ready. Re-runs as connection /
@@ -61,7 +70,11 @@ export function AskTheTwin() {
     // runner's chat session auto-responds to its first turn, and the terminal
     // `ready` that the old flow waited on to send the real question was never
     // reliably observed (the question stayed queued → busy stuck forever).
-    if (!hasSessionRef.current && isConnected && sessionState === "disconnected") {
+    if (
+      !hasSessionRef.current &&
+      isConnected &&
+      sessionState === "disconnected"
+    ) {
       createSession("Digital Twin question", TWIN_PREAMBLE + queued, queued);
       sentCountRef.current += 1;
       setQueued(null);
@@ -79,8 +92,7 @@ export function AskTheTwin() {
   // `processing`/`initializing` (session generating), or a live stream in flight.
   // Not keyed on `queued` alone — the one-shot clears it immediately after
   // createSession, so the stream/processing signals carry the rest.
-  const busy =
-    !!queued || sessionState === "processing" || !!streamingContent;
+  const busy = !!queued || sessionState === "processing" || !!streamingContent;
 
   const handleSubmit = useCallback(() => {
     const q = input.trim();
@@ -101,21 +113,31 @@ export function AskTheTwin() {
     type: "button",
   });
 
-  if (!activeRunner) {
+  if (runnerId === null) {
     return (
       <section className="rounded-lg border border-border bg-card p-4">
         <h2 className="mb-1 flex items-center gap-2 text-sm font-semibold">
           <MessageSquare className="size-4" /> Ask the Twin
         </h2>
         <p className="flex items-center gap-2 text-sm text-muted-foreground">
-          <WifiOff className="size-4" /> Connect a runner to ask your AI a
-          question about the digital twin.
+          <WifiOff className="size-4" /> No runner can take a new question right
+          now — choose one in the runner selector, or connect one.
         </p>
+        {dispatchTarget.message && (
+          <p
+            data-testid="ask-the-twin-outcome"
+            className="mt-1 text-xs text-muted-foreground"
+          >
+            {dispatchTarget.message}
+          </p>
+        )}
       </section>
     );
   }
 
-  const conversation = messages.filter((m) => m.role === "user" || m.role === "ai");
+  const conversation = messages.filter(
+    (m) => m.role === "user" || m.role === "ai"
+  );
 
   return (
     <section className="rounded-lg border border-border bg-card p-4">
@@ -171,7 +193,12 @@ export function AskTheTwin() {
           placeholder="Ask a question about the digital twin…"
           className="min-h-[2.5rem] flex-1 resize-y rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
         />
-        <Button ref={submitRef} onClick={handleSubmit} disabled={busy || !input.trim()} className="gap-1.5">
+        <Button
+          ref={submitRef}
+          onClick={handleSubmit}
+          disabled={busy || !input.trim()}
+          className="gap-1.5"
+        >
           {busy ? (
             <Loader2 className="size-4 animate-spin" />
           ) : (

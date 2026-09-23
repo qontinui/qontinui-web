@@ -93,6 +93,13 @@ export interface UIBridgeConfigSectionProps {
    * is selected.
    */
   getRunnerTarget: (runnerId: string | null) => RunnerTarget | null;
+  /**
+   * The target a NEW exploration / recording starts on — `getRunnerTarget`,
+   * or null while `startRefusal` holds.
+   */
+  getStartTarget: (runnerId: string | null) => RunnerTarget | null;
+  /** Why a new exploration / recording may not start (coord's outcome). */
+  startRefusal: string | null;
   onRefreshBrowserTabs: () => void;
   onSelectBrowserTab: (tabId: number | null) => Promise<void>;
 }
@@ -140,6 +147,8 @@ export function UIBridgeConfigSection({
   selectedRunnerId,
   onRunnerChange,
   getRunnerTarget,
+  getStartTarget,
+  startRefusal,
   onRefreshBrowserTabs,
   onSelectBrowserTab,
 }: UIBridgeConfigSectionProps) {
@@ -241,8 +250,13 @@ export function UIBridgeConfigSection({
               browserTabsError={exploration.browserTabsError}
               onRefreshBrowserTabs={onRefreshBrowserTabs}
               onSelectBrowserTab={onSelectBrowserTab}
+              startRefusal={startRefusal}
               onStart={async () => {
-                const target = getRunnerTarget(selectedRunnerId);
+                if (startRefusal !== null) {
+                  toast.error(startRefusal);
+                  return;
+                }
+                const target = getStartTarget(selectedRunnerId);
                 if (!target) {
                   toast.error("Please select a connected runner");
                   return;
@@ -334,8 +348,13 @@ export function UIBridgeConfigSection({
               session={recording.session}
               isStarting={recording.isStarting}
               isStopping={recording.isStopping}
+              startRefusal={startRefusal}
               onStartRecording={async (tabId, options) => {
-                const target = getRunnerTarget(selectedRunnerId);
+                if (startRefusal !== null) {
+                  toast.error(startRefusal);
+                  return;
+                }
+                const target = getStartTarget(selectedRunnerId);
                 if (!target) {
                   toast.error("Please select a connected runner");
                   return;

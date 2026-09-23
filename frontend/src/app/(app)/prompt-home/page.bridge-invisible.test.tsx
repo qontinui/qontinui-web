@@ -43,11 +43,11 @@ vi.mock("@/hooks/useCoPilotSessionConsent", () => ({
   }),
 }));
 vi.mock("@/contexts/active-runner-context", () => ({
-  useActiveRunner: () => ({
-    activeRunner: { id: "runner-1" },
-    runners: [],
-    selectRunner: vi.fn(),
-    isMultiRunner: false,
+  // The co-pilot runs prompts on the NEW-WORK target: a resolved runner.
+  useDispatchRunnerTarget: () => ({
+    target: { kind: "runner", runner: { id: "runner-1" }, locality: "local" },
+    runnerId: "runner-1",
+    refusal: null,
   }),
 }));
 vi.mock("@/lib/co-pilot/usePromptExecution", () => ({
@@ -118,8 +118,8 @@ describe("/prompt-home self-targeting guard", () => {
     // No targetable page resolves to the co-pilot's own route.
     const routes = Object.values(pageMap);
     expect(routes).not.toContain("/prompt-home");
-    expect(
-      copilotPages.some((p) => pageIdToUrl(p.id) === "/prompt-home")
-    ).toBe(false);
+    expect(copilotPages.some((p) => pageIdToUrl(p.id) === "/prompt-home")).toBe(
+      false
+    );
   });
 });

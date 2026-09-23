@@ -22,10 +22,7 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import {
-  useActiveRunner,
-  useRunnerTarget,
-} from "@/contexts/active-runner-context";
+import { useDispatchRunnerTarget } from "@/contexts/active-runner-context";
 import {
   requestPlan,
   PlanError,
@@ -94,7 +91,7 @@ export interface ExecutionError {
   /**
    * Epoch ms when a `fromRun` `no-runner-connected` error was set. The
    * reconnect latch effect keeps such an error visible for
-   * {@link FRESH_RUN_ERROR_GRACE_MS} after this stamp even once `activeRunner`
+   * {@link FRESH_RUN_ERROR_GRACE_MS} after this stamp even once the dispatch runner
    * re-resolves, so a flap that re-resolves the device immediately does not
    * swallow the just-raised error.
    */
@@ -176,7 +173,7 @@ const NAVIGATE_LANDING_POLL_MS = 300;
 /**
  * How long a FRESH `no-runner-connected` error (one raised by an actual run's
  * plan failure — a runner-WS flap at submit) stays visible after being set,
- * even once `activeRunner` re-resolves. The device context typically re-shows
+ * even once the dispatch runner re-resolves. The device context typically re-shows
  * the flapped runner within a tick (the realtime-connections WS/poll never lost
  * it), which would otherwise let the reconnect latch effect auto-clear the
  * error the instant it was raised — a silent no-op the user never sees. This
@@ -221,7 +218,7 @@ function normalizePath(value: string): string {
  */
 async function confirmNavigationLanded(
   targetUrl: string,
-  isAborted: () => boolean,
+  isAborted: () => boolean
 ): Promise<boolean> {
   if (typeof window === "undefined" || !window.location) return true;
   const target = normalizePath(targetUrl);
@@ -256,7 +253,7 @@ function errorFromPlanFailure(err: PlanError): ExecutionError {
       // that is truly "connect a runner". It is a FRESH run failure (the user
       // clicked Run and the runner's WS flapped mid-submit), so stamp it
       // `fromRun` with a `setAt`: the reconnect latch must NOT swallow it the
-      // instant `activeRunner` re-resolves (which it does almost immediately —
+      // instant the dispatch runner re-resolves (which it does almost immediately —
       // the device context never lost the runner). The user must see the
       // "runner reconnecting — retry" affordance, not a silent reset.
       return {
@@ -281,8 +278,13 @@ function errorFromPlanFailure(err: PlanError): ExecutionError {
 }
 
 export function usePromptExecution(): UsePromptExecutionReturn {
-  const { activeRunner } = useActiveRunner();
-  const runnerTarget = useRunnerTarget();
+  // Running a prompt is NEW work: it goes only to the user's explicit choice
+  // or the device coord resolved — never a read fallback (a last known,
+  // proven-local or sole runner coord may just have called ineligible).
+  const dispatch = useDispatchRunnerTarget();
+  const dispatchRunnerId = dispatch.runnerId;
+  const runnerTarget = dispatch.target;
+  const refusalMessage = dispatch.refusal?.message ?? null;
   const [state, setState] = useState<PromptExecutionState>(INITIAL_STATE);
 
   // Guards: prevent overlapping runs and allow `reset` to abort an in-flight one.
@@ -311,7 +313,7 @@ export function usePromptExecution(): UsePromptExecutionReturn {
   // ~1 device-JWT TTL of pairing; the runner-side root cause (the refresher /
   // status-signal / banner all gating on the legacy `runner_token` proxy) is
   // fixed in qontinui-runner (plan §"Phase 1 Rust root-cause fix", shipped),
-  // so the device re-registers and `activeRunner` re-resolves on its own via
+  // so the device re-registers and the dispatch runner re-resolves on its own via
   // the realtime-connections WS/poll. This effect closes the WEB-side gap:
   // when a runner becomes available again, clear the stale
   // `no-runner-connected` latch so the indicator reflects reconnection
@@ -322,7 +324,7 @@ export function usePromptExecution(): UsePromptExecutionReturn {
   //
   // CRITICAL nuance (the silent-no-op bug): the auto-clear used to also swallow
   // a FRESH no-runner error raised by the just-completed run (a 503 because the
-  // runner's WS flapped at submit). `activeRunner` re-resolves almost instantly
+  // runner's WS flapped at submit). the dispatch runner re-resolves almost instantly
   // after such a flap (the device context never lost the runner), so the effect
   // fired on the very next render and reset the state to idle — the user clicked
   // Run, the plan 503'd, and the button just reset with NO error card: a silent
@@ -335,7 +337,7 @@ export function usePromptExecution(): UsePromptExecutionReturn {
   //     -stale latch auto-clears as before (a re-render is scheduled below).
   useEffect(() => {
     if (
-      !activeRunner ||
+      dispatchRunnerId === null ||
       runningRef.current ||
       state.phase !== "error" ||
       state.error?.kind !== "no-runner-connected"
@@ -358,7 +360,7 @@ export function usePromptExecution(): UsePromptExecutionReturn {
             prev.error?.kind === "no-runner-connected" &&
             prev.error.fromRun
               ? { ...prev, error: { ...prev.error, setAt: 0 } }
-              : prev,
+              : prev
           );
         }, remaining);
         return () => clearTimeout(timer);
@@ -367,7 +369,7 @@ export function usePromptExecution(): UsePromptExecutionReturn {
 
     setState(INITIAL_STATE);
     return undefined;
-  }, [activeRunner, state.phase, state.error]);
+  }, [dispatchRunnerId, state.phase, state.error]);
 
   const run = useCallback(
     async (prompt: string, options?: { explain?: boolean }) => {
@@ -376,9 +378,10 @@ export function usePromptExecution(): UsePromptExecutionReturn {
       abortRef.current = false;
 
       const explain = options?.explain ?? false;
-      const deviceId = activeRunner?.id ?? null;
+      const deviceId = dispatchRunnerId;
 
-      // 1. No runner → stop before contacting the backend.
+      // 1. No runner new work may go to → stop before contacting the backend,
+      //    with coord's reason when it gave one.
       if (!deviceId) {
         setState({
           ...INITIAL_STATE,
@@ -386,6 +389,7 @@ export function usePromptExecution(): UsePromptExecutionReturn {
           error: {
             kind: "no-runner-connected",
             message:
+              refusalMessage ??
               "No paired runner is connected. Connect a runner to run prompts.",
           },
         });
@@ -537,7 +541,7 @@ export function usePromptExecution(): UsePromptExecutionReturn {
             // "didn't take effect" failure.
             const landed = await confirmNavigationLanded(
               targetUrl,
-              () => abortRef.current || !mountedRef.current,
+              () => abortRef.current || !mountedRef.current
             );
             if (abortRef.current || !mountedRef.current) {
               runningRef.current = false;
@@ -611,7 +615,7 @@ export function usePromptExecution(): UsePromptExecutionReturn {
       });
       runningRef.current = false;
     },
-    [activeRunner, runnerTarget],
+    [dispatchRunnerId, runnerTarget, refusalMessage]
   );
 
   return { state, run, reset };

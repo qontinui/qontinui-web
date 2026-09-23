@@ -357,6 +357,10 @@ function ExtractionPageContentInner() {
     uitarsExtraction.startUITarsExtraction,
   ]);
 
+  // Web extraction is new work: refused starts are disabled up front.
+  const webStartRefusal =
+    config.method === "web" ? webExtraction.startRefusal : null;
+
   if (!isLoaded) {
     return (
       <div className="flex items-center justify-center h-full">
@@ -543,10 +547,20 @@ function ExtractionPageContentInner() {
               </TabsList>
 
               {/* Start button - not shown for UI Bridge */}
+              {webStartRefusal && (
+                <span
+                  className="max-w-[20rem] truncate text-xs text-text-muted"
+                  title={webStartRefusal}
+                  data-testid="web-extraction-start-refusal"
+                >
+                  {webStartRefusal}
+                </span>
+              )}
               {config.method !== "ui-bridge" && (
                 <Button
                   onClick={handleStartExtraction}
-                  disabled={state.isExtracting}
+                  disabled={state.isExtracting || webStartRefusal !== null}
+                  title={webStartRefusal ?? undefined}
                   id="extraction-start-btn"
                   className="font-mono h-11 px-6 transition-all"
                   style={{
@@ -673,6 +687,8 @@ function ExtractionPageContentInner() {
                           selectedRunnerId={state.selectedRunnerId}
                           onRunnerChange={uiBridge.onRunnerChange}
                           getRunnerTarget={uiBridge.getRunnerTarget}
+                          getStartTarget={uiBridge.getStartTarget}
+                          startRefusal={uiBridge.startRefusal}
                           onRefreshBrowserTabs={
                             uiBridge.handleRefreshBrowserTabs
                           }

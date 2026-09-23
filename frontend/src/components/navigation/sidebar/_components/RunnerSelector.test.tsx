@@ -13,6 +13,7 @@ import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import type { RunnerLocality } from "@/lib/runner/locality";
+import type { ResolvedRunnerState } from "@/lib/runner/resolve";
 import { RunnerSelector } from "./RunnerSelector";
 
 const DESK = { id: "r1", name: "Desk runner", port: 9876 };
@@ -31,7 +32,11 @@ function setContext(
   active: typeof DESK | null,
   runners: (typeof DESK)[],
   localities: [string, RunnerLocality][],
-  listState: "loading" | "failed" | "loaded" = "loaded"
+  listState: "loading" | "failed" | "loaded" = "loaded",
+  resolver: {
+    selection?: "explicit" | "auto";
+    resolution?: ResolvedRunnerState;
+  } = {}
 ) {
   ctx.value = {
     activeRunner: active,
@@ -40,8 +45,22 @@ function setContext(
     isMultiRunner: runners.length > 1,
     listState,
     localityById: new Map(localities),
+    selection: resolver.selection ?? "explicit",
+    resolution: resolver.resolution ?? {
+      status: "resolved",
+      deviceId: active?.id ?? "r1",
+      via: "pin",
+      pinReleased: null,
+    },
   };
 }
+
+const RESOLVER_DOWN: ResolvedRunnerState = {
+  status: "unavailable",
+  reason: "not_deployed",
+  httpStatus: 404,
+  code: null,
+};
 
 function renderSelector(isCollapsed = false) {
   return render(
@@ -137,5 +156,51 @@ describe("RunnerSelector status dots", () => {
       "On another machine — not reachable from this browser"
     );
     expect(dotOf("Spare runner")).toBe("Not confirmed on this machine yet");
+  });
+});
+
+describe("RunnerSelector with coord's resolver UNKNOWN", () => {
+  it("says the auto target is the last known runner, not a fresh pick", () => {
+    setContext(DESK, [DESK, LAPTOP], [[DESK.id, "local"]], "loaded", {
+      selection: "auto",
+      resolution: RESOLVER_DOWN,
+    });
+    renderSelector();
+    expect(
+      screen.getByText("Resolver unavailable — keeping the last known runner")
+    ).toBeInTheDocument();
+  });
+
+  it("with no runner to keep, shows UNKNOWN instead of naming one", () => {
+    setContext(null, [DESK, LAPTOP], [], "loaded", {
+      selection: "auto",
+      resolution: RESOLVER_DOWN,
+    });
+    renderSelector();
+    expect(screen.getByText("Runner unknown")).toBeInTheDocument();
+    expect(
+      screen.getByText("Resolver unavailable — choose a runner")
+    ).toBeInTheDocument();
+    expect(screen.queryByText(DESK.name)).not.toBeInTheDocument();
+  });
+
+  it("coord's 'nothing eligible' keeps the runner for reads and says so", () => {
+    setContext(DESK, [DESK, LAPTOP], [[DESK.id, "local"]], "loaded", {
+      selection: "auto",
+      resolution: { status: "all_drained", pinReleased: null },
+    });
+    renderSelector();
+    expect(
+      screen.getByText("Not eligible for new work — showing its data")
+    ).toBeInTheDocument();
+  });
+
+  it("an explicit selection shows no resolver notice", () => {
+    setContext(DESK, [DESK, LAPTOP], [[DESK.id, "local"]], "loaded", {
+      selection: "explicit",
+      resolution: RESOLVER_DOWN,
+    });
+    renderSelector();
+    expect(screen.queryByText(/Resolver unavailable/)).not.toBeInTheDocument();
   });
 });

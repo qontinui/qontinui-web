@@ -28,7 +28,10 @@ import type {
 } from "./types";
 import { createLogger } from "@/lib/logger";
 import { runnerPollDelay, runnerRequest } from "@/lib/runner/api-client";
-import { useRunnerTarget } from "@/contexts/active-runner-context";
+import {
+  useNewWorkRefusal,
+  useRunnerTarget,
+} from "@/contexts/active-runner-context";
 
 const log = createLogger("NavigationTestGenerator");
 
@@ -39,6 +42,9 @@ const EXPLORE_POLL_INTERVAL_MS = 2000;
 
 export function NavigationTestGenerator() {
   const target = useRunnerTarget();
+  // Starting an exploration is NEW work (its status/results polls read the
+  // job it started).
+  const newWorkRefusal = useNewWorkRefusal();
   // Persisted state (survives navigation)
   const [activeTab, setActiveTab] = useLocalStorage<Tab>(
     "ntg:activeTab",
@@ -80,6 +86,10 @@ export function NavigationTestGenerator() {
   // Start new exploration
   const handleStartExploration = useCallback(async () => {
     if (!targetUrl) return;
+    if (newWorkRefusal !== null) {
+      setProgress({ status: newWorkRefusal, elementsFound: 0, statesFound: 0 });
+      return;
+    }
     setIsExploring(true);
     setProgress({
       status: "Starting exploration...",
@@ -380,12 +390,21 @@ export function NavigationTestGenerator() {
               </div>
               <button
                 onClick={handleStartExploration}
-                disabled={isExploring || !targetUrl}
+                disabled={isExploring || !targetUrl || newWorkRefusal !== null}
+                title={newWorkRefusal ?? undefined}
                 className="flex items-center gap-2 px-4 py-2 text-sm font-medium bg-emerald-600 text-white rounded-md hover:bg-emerald-700 disabled:opacity-50 transition-colors"
               >
                 <Compass className="w-4 h-4" />
                 {isExploring ? "Exploring..." : "Start Exploration"}
               </button>
+              {newWorkRefusal && (
+                <p
+                  className="text-xs text-neutral-400"
+                  data-testid="navigation-exploration-refusal"
+                >
+                  {newWorkRefusal}
+                </p>
+              )}
             </div>
 
             {/* Progress */}

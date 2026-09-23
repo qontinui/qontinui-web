@@ -275,9 +275,8 @@ export function RealtimeConnectionsProvider({
             // wire fields into the camelCase Runner shape.
             void fetchRunners();
           } else if (message.type === "runner.woke") {
-            // Handled by WakeRunnerModal's own WS listener. The realtime
-            // context still refetches so the runners list reflects the
-            // newly-online runner without waiting for the next poll tick.
+            // A runner finished waking: refetch so the runners list reflects
+            // the newly-online runner without waiting for the next poll tick.
             void fetchRunners();
           } else if (message.type === "error") {
             console.error("[RealtimeConnections] Server error:", message.error);

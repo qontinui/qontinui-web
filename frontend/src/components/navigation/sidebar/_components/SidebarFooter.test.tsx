@@ -41,6 +41,13 @@ vi.mock("@/contexts/active-runner-context", () => ({
     isMultiRunner: runner.isMultiRunner,
     listState: "loaded",
     localityById: new Map([["r1", "local"]]),
+    selection: "auto",
+    resolution: {
+      status: "resolved",
+      deviceId: "r1",
+      via: "pool",
+      pinReleased: null,
+    },
   }),
 }));
 
@@ -111,9 +118,9 @@ describe("SidebarFooter", () => {
     // UI-Bridge id even though both sit on the same button.
     for (const collapsed of [false, true]) {
       const { container, unmount } = renderFooter(collapsed);
-      expect(
-        container.querySelector("[data-sidebar-collapse-toggle]")
-      ).toBe(container.querySelector(TOGGLE));
+      expect(container.querySelector("[data-sidebar-collapse-toggle]")).toBe(
+        container.querySelector(TOGGLE)
+      );
       unmount();
     }
   });

@@ -18,6 +18,7 @@
 import { act, renderHook, waitFor } from "@testing-library/react";
 import type { Runner } from "@qontinui/shared-types";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { ResolvedRunnerState } from "./resolve";
 
 const relayFetch = vi.fn();
 vi.mock("@/services/service-factory", () => ({
@@ -277,6 +278,19 @@ describe("isRunnerLocal three states", () => {
 describe("resolveRunnerTarget", () => {
   const remote = runner(REMOTE_ID, 9877);
   const local = runner(LOCAL_ID, PORT);
+  const LOADING: ResolvedRunnerState = { status: "loading" };
+  const DOWN: ResolvedRunnerState = {
+    status: "unavailable",
+    reason: "not_deployed",
+    httpStatus: 404,
+    code: null,
+  };
+  const resolvedTo = (deviceId: string): ResolvedRunnerState => ({
+    status: "resolved",
+    deviceId,
+    via: "pool",
+    pinReleased: null,
+  });
 
   it("stays measuring while the runner list is loading, whatever is stored", () => {
     expect(
@@ -285,11 +299,11 @@ describe("resolveRunnerTarget", () => {
         runners: [],
         selectedId: REMOTE_ID,
         localityById: new Map(),
+        resolution: resolvedTo(REMOTE_ID),
       })
     ).toEqual({
       activeRunner: null,
       target: { kind: "pending" },
-      autoLocalId: null,
     });
   });
 
@@ -300,65 +314,9 @@ describe("resolveRunnerTarget", () => {
         runners: [],
         selectedId: REMOTE_ID,
         localityById: new Map(),
+        resolution: LOADING,
       }).target
     ).toEqual({ kind: "unavailable", reason: "list_unavailable" });
-  });
-
-  it("the sticky auto-selection stays active across an unknown re-measure", () => {
-    const resolution = resolveRunnerTarget({
-      listState: "loaded",
-      runners: [remote, local],
-      selectedId: null,
-      stickyAutoId: LOCAL_ID,
-      localityById: new Map<string, "not_local" | "unknown">([
-        [REMOTE_ID, "not_local"],
-        [LOCAL_ID, "unknown"],
-      ]),
-    });
-    expect(resolution.activeRunner?.id).toBe(LOCAL_ID);
-    // Unknown is not local: the sticky runner is reached by id over the relay.
-    expect(routeOfTarget(resolution.target)).toMatchObject({
-      kind: "relay",
-      runnerId: LOCAL_ID,
-    });
-  });
-
-  it("the sticky auto-selection yields to ANOTHER runner proven local while it is itself unknown", () => {
-    const sibling = runner("55555555-5555-4555-8555-555555555555", 9877);
-    const resolution = resolveRunnerTarget({
-      listState: "loaded",
-      runners: [remote, local, sibling],
-      selectedId: null,
-      stickyAutoId: LOCAL_ID,
-      localityById: new Map<string, "not_local" | "unknown" | "local">([
-        [REMOTE_ID, "not_local"],
-        [LOCAL_ID, "unknown"],
-        [sibling.id, "local"],
-      ]),
-    });
-    expect(resolution.activeRunner?.id).toBe(sibling.id);
-    expect(routeOfTarget(resolution.target)).toEqual({
-      kind: "loopback",
-      base: "http://127.0.0.1:9877",
-      runnerId: sibling.id,
-    });
-  });
-
-  it("the sticky auto-selection moves on a definite not_local", () => {
-    const other = runner("44444444-4444-4444-8444-444444444444", 9879);
-    const resolution = resolveRunnerTarget({
-      listState: "loaded",
-      runners: [remote, local, other],
-      selectedId: null,
-      stickyAutoId: LOCAL_ID,
-      localityById: new Map<string, "not_local" | "local">([
-        [REMOTE_ID, "not_local"],
-        [LOCAL_ID, "not_local"],
-        [other.id, "local"],
-      ]),
-    });
-    expect(resolution.activeRunner?.id).toBe(other.id);
-    expect(resolution.autoLocalId).toBe(other.id);
   });
 
   it("a loaded, empty list keeps the default local base", () => {
@@ -368,26 +326,99 @@ describe("resolveRunnerTarget", () => {
         runners: [],
         selectedId: null,
         localityById: new Map(),
+        resolution: LOADING,
       }).target
     ).toEqual({ kind: "default_local" });
   });
 
-  it("auto-select stays measuring while a runner is unmeasured, even if runners[0] is already not_local", () => {
+  it("auto: coord's resolved device is the target — over the local runner AND runners[0]", () => {
+    const third = runner("66666666-6666-4666-8666-666666666666", 9878);
     const resolution = resolveRunnerTarget({
       listState: "loaded",
-      runners: [remote, local],
+      runners: [local, remote, third],
       selectedId: null,
-      localityById: new Map([[REMOTE_ID, "not_local"]]),
+      localityById: new Map<string, "local" | "not_local">([
+        [LOCAL_ID, "local"],
+        [REMOTE_ID, "not_local"],
+        [third.id, "not_local"],
+      ]),
+      resolution: resolvedTo(third.id),
     });
-    expect(resolution.target.kind).toBe("pending");
+    expect(resolution.activeRunner?.id).toBe(third.id);
+    expect(routeOfTarget(resolution.target)).toMatchObject({
+      kind: "relay",
+      runnerId: third.id,
+    });
   });
 
-  it("auto-select picks the proven-local runner over runners[0]", () => {
+  it("auto: a resolved device the list has not caught up with is relayed to by id", () => {
+    const unlisted = "77777777-7777-4777-8777-777777777777";
+    const resolution = resolveRunnerTarget({
+      listState: "loaded",
+      runners: [remote],
+      selectedId: null,
+      localityById: new Map(),
+      resolution: resolvedTo(unlisted),
+    });
+    expect(resolution.activeRunner).toBeNull();
+    expect(routeOfTarget(resolution.target)).toEqual({
+      kind: "relay",
+      runnerId: unlisted,
+      runnerName: undefined,
+    });
+  });
+
+  it("auto: a SOLE listed runner is the target before coord has answered", () => {
+    const resolution = resolveRunnerTarget({
+      listState: "loaded",
+      runners: [remote],
+      selectedId: null,
+      localityById: new Map([[REMOTE_ID, "unknown"]]),
+      resolution: LOADING,
+    });
+    expect(resolution.activeRunner?.id).toBe(REMOTE_ID);
+    expect(routeOfTarget(resolution.target)).toMatchObject({
+      kind: "relay",
+      runnerId: REMOTE_ID,
+    });
+  });
+
+  it("auto: with several runners, waits (pending) for the resolver's first answer", () => {
+    expect(
+      resolveRunnerTarget({
+        listState: "loaded",
+        runners: [local, remote],
+        selectedId: null,
+        localityById: new Map([[LOCAL_ID, "local"]]),
+        resolution: LOADING,
+      }).target.kind
+    ).toBe("pending");
+  });
+
+  it("auto, resolver UNKNOWN: keeps the last resolved device", () => {
+    for (const unknown of [DOWN, { status: "drain_unreadable" } as const]) {
+      const resolution = resolveRunnerTarget({
+        listState: "loaded",
+        runners: [local, remote],
+        selectedId: null,
+        localityById: new Map([[LOCAL_ID, "local"]]),
+        resolution: unknown,
+        lastResolvedId: REMOTE_ID,
+      });
+      expect(resolution.activeRunner?.id).toBe(REMOTE_ID);
+    }
+  });
+
+  it("auto, resolver UNKNOWN, nothing resolved yet: a runner proven local — not runners[0]", () => {
     const resolution = resolveRunnerTarget({
       listState: "loaded",
       runners: [remote, local],
       selectedId: null,
-      localityById: new Map([[LOCAL_ID, "local"]]),
+      localityById: new Map<string, "local" | "not_local">([
+        [REMOTE_ID, "not_local"],
+        [LOCAL_ID, "local"],
+      ]),
+      resolution: DOWN,
     });
     expect(resolution.activeRunner?.id).toBe(LOCAL_ID);
     expect(routeOfTarget(resolution.target)).toEqual({
@@ -397,28 +428,43 @@ describe("resolveRunnerTarget", () => {
     });
   });
 
-  it("auto-select among SEVERAL runners, none local, requires a choice — it never relays to runners[0]", () => {
+  it("auto, resolver UNKNOWN: stays pending while a runner is unmeasured", () => {
+    expect(
+      resolveRunnerTarget({
+        listState: "loaded",
+        runners: [remote, local],
+        selectedId: null,
+        localityById: new Map([[REMOTE_ID, "not_local"]]),
+        resolution: DOWN,
+      }).target.kind
+    ).toBe("pending");
+  });
+
+  it("auto, resolver UNKNOWN, several runners, nothing to keep: resolver_unavailable — NEVER runners[0]", () => {
     const resolution = resolveRunnerTarget({
       listState: "loaded",
       runners: [remote, local],
       selectedId: null,
       localityById: new Map<string, "not_local" | "unknown">([
-        [REMOTE_ID, "not_local"],
-        [LOCAL_ID, "unknown"],
+        [REMOTE_ID, "unknown"],
+        [LOCAL_ID, "not_local"],
       ]),
+      resolution: DOWN,
     });
+    expect(resolution.activeRunner).toBeNull();
     expect(resolution.target).toEqual({
       kind: "unavailable",
-      reason: "selection_required",
+      reason: "resolver_unavailable",
     });
   });
 
-  it("a SOLE runner, not local, is the target and is reached over the relay (the production-origin case)", () => {
+  it("auto, resolver UNKNOWN: a SOLE runner, not local, is still the target (not an order-based pick)", () => {
     const resolution = resolveRunnerTarget({
       listState: "loaded",
       runners: [remote],
       selectedId: null,
       localityById: new Map([[REMOTE_ID, "unknown"]]),
+      resolution: DOWN,
     });
     expect(resolution.activeRunner?.id).toBe(REMOTE_ID);
     expect(routeOfTarget(resolution.target)).toMatchObject({
@@ -427,7 +473,80 @@ describe("resolveRunnerTarget", () => {
     });
   });
 
-  it("an explicit remote selection is honoured over the relay, not swapped for the local runner", () => {
+  const NOTHING_ELIGIBLE = [
+    {
+      status: "no_capable",
+      missing: [],
+      onlineDevices: 0,
+      pinReleased: null,
+    },
+    { status: "all_drained", pinReleased: null },
+    {
+      status: "pin_ineligible",
+      deviceId: REMOTE_ID,
+      reason: "drained",
+      detail: "drained",
+      missingCapabilities: [],
+    },
+  ] as ResolvedRunnerState[];
+
+  it("auto, 'nothing eligible for new work': READS keep last resolved, then proven local, then the sole runner", () => {
+    for (const none of NOTHING_ELIGIBLE) {
+      expect(
+        resolveRunnerTarget({
+          listState: "loaded",
+          runners: [local, remote],
+          selectedId: null,
+          localityById: new Map([[LOCAL_ID, "local"]]),
+          resolution: none,
+          lastResolvedId: REMOTE_ID,
+        }).activeRunner?.id
+      ).toBe(REMOTE_ID);
+      expect(
+        resolveRunnerTarget({
+          listState: "loaded",
+          runners: [remote, local],
+          selectedId: null,
+          localityById: new Map<string, "local" | "not_local">([
+            [REMOTE_ID, "not_local"],
+            [LOCAL_ID, "local"],
+          ]),
+          resolution: none,
+        }).activeRunner?.id
+      ).toBe(LOCAL_ID);
+      expect(
+        resolveRunnerTarget({
+          listState: "loaded",
+          runners: [remote],
+          selectedId: null,
+          localityById: new Map([[REMOTE_ID, "not_local"]]),
+          resolution: none,
+        }).activeRunner?.id
+      ).toBe(REMOTE_ID);
+    }
+  });
+
+  it("auto, 'nothing eligible' with nothing to keep: no_eligible_runner, never runners[0]", () => {
+    for (const none of NOTHING_ELIGIBLE) {
+      const resolution = resolveRunnerTarget({
+        listState: "loaded",
+        runners: [remote, local],
+        selectedId: null,
+        localityById: new Map<string, "not_local">([
+          [REMOTE_ID, "not_local"],
+          [LOCAL_ID, "not_local"],
+        ]),
+        resolution: none,
+      });
+      expect(resolution.activeRunner).toBeNull();
+      expect(resolution.target).toEqual({
+        kind: "unavailable",
+        reason: "no_eligible_runner",
+      });
+    }
+  });
+
+  it("an explicit remote selection is honoured over the relay, whatever coord resolved", () => {
     const resolution = resolveRunnerTarget({
       listState: "loaded",
       runners: [remote, local],
@@ -436,6 +555,7 @@ describe("resolveRunnerTarget", () => {
         [REMOTE_ID, "not_local"],
         [LOCAL_ID, "local"],
       ]),
+      resolution: resolvedTo(LOCAL_ID),
     });
     expect(resolution.activeRunner?.id).toBe(REMOTE_ID);
     expect(routeOfTarget(resolution.target)).toMatchObject({

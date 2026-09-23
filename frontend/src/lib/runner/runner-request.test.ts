@@ -26,7 +26,7 @@ import {
   RUNNER_LIST_UNAVAILABLE,
   RUNNER_NEEDS_LOCAL,
   RUNNER_RELAY_FAILED,
-  RUNNER_SELECTION_REQUIRED,
+  RUNNER_RESOLVER_UNAVAILABLE,
   RunnerApiError,
   effectivePollInterval,
   isRunnerNeedsLocalError,
@@ -196,12 +196,12 @@ describe("runnerRequest chooses the transport per request", () => {
       "/health"
     ).catch((e: unknown) => e);
     const choice = await runnerRequest(
-      { kind: "unavailable", reason: "selection_required" },
+      { kind: "unavailable", reason: "resolver_unavailable" },
       "/health"
     ).catch((e: unknown) => e);
 
     expect((list as RunnerApiError).code).toBe(RUNNER_LIST_UNAVAILABLE);
-    expect((choice as RunnerApiError).code).toBe(RUNNER_SELECTION_REQUIRED);
+    expect((choice as RunnerApiError).code).toBe(RUNNER_RESOLVER_UNAVAILABLE);
     expect(loopbackFetch).not.toHaveBeenCalled();
     expect(relayFetch).not.toHaveBeenCalled();
   });
@@ -429,7 +429,7 @@ describe("the one poll helper", () => {
     );
     expect(
       runnerPollInterval(
-        { kind: "unavailable", reason: "selection_required" },
+        { kind: "unavailable", reason: "resolver_unavailable" },
         2000
       )
     ).toBe(RELAY_POLL_INTERVAL_MS);

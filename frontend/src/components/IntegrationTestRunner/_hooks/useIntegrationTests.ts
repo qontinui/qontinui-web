@@ -1,8 +1,13 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
-import { useRunnerClient, type MockMode } from "@/lib/runner-client";
+import { useState, useEffect, useCallback, useMemo } from "react";
+import {
+  createRunnerClient,
+  useRunnerClient,
+  type MockMode,
+} from "@/lib/runner-client";
 import { useRunnerPoll, useRunnerTarget } from "@/lib/runner";
+import { useDispatchRunnerTarget } from "@/contexts/active-runner-context";
 import type {
   TestConfig,
   NewAssertion,
@@ -26,6 +31,15 @@ export function useIntegrationTests(): IntegrationTestState &
   IntegrationTestActions {
   const runnerClient = useRunnerClient();
   const target = useRunnerTarget();
+  // STARTING a test run is NEW work: only the explicit choice or coord's
+  // resolved pick. Everything after that (assertions, mock mode, ending the
+  // run, listing results) acts on an existing run on the read target.
+  const dispatch = useDispatchRunnerTarget();
+  const startClient = useMemo(
+    () => createRunnerClient(dispatch.target),
+    [dispatch.target]
+  );
+  const startRefusal = dispatch.refusal?.message ?? null;
   const [testRuns, setTestRuns] = useState<IntegrationTestState["testRuns"]>(
     []
   );
@@ -112,12 +126,16 @@ export function useIntegrationTests(): IntegrationTestState &
       setError("Test name is required");
       return;
     }
+    if (startRefusal !== null) {
+      setError(startRefusal);
+      return;
+    }
 
     setLoading(true);
     setError(null);
 
     try {
-      const result = await runnerClient.startIntegrationTest({
+      const result = await startClient.startIntegrationTest({
         name: testConfig.name,
         config_path: testConfig.config_path,
       });
@@ -224,6 +242,7 @@ export function useIntegrationTests(): IntegrationTestState &
     testConfig,
     newAssertion,
     isRunnerConnected,
+    startRefusal,
     setSelectedRunId,
     setError,
     setTestConfig,

@@ -1,6 +1,7 @@
 "use client";
 
 import { useRunnerPoll, useRunnerTarget } from "@/lib/runner";
+import { useNewWorkRefusal } from "@/contexts/active-runner-context";
 import { useState, useEffect, useCallback } from "react";
 import { createLogger } from "@/lib/logger";
 
@@ -55,6 +56,8 @@ export function RAGSetupDialog({
 }: RAGSetupDialogProps) {
   const ragSetupService = useRAGSetupService();
   const target = useRunnerTarget();
+  // Starting RAG setup runs embedding / AI jobs — NEW work.
+  const newWorkRefusal = useNewWorkRefusal();
   const [state, setState] = useState<DialogState>("checking");
   const [availability, setAvailability] = useState<RAGAvailability | null>(
     null
@@ -115,6 +118,11 @@ export function RAGSetupDialog({
   };
 
   const startSetup = async () => {
+    if (newWorkRefusal !== null) {
+      setError(newWorkRefusal);
+      setState("error");
+      return;
+    }
     log.debug("Starting setup for project:", projectId);
     setState("processing");
     setError(null);
@@ -275,6 +283,15 @@ export function RAGSetupDialog({
                   <li>Save everything to your local runner</li>
                 </ul>
               </div>
+
+              {newWorkRefusal && (
+                <p
+                  className="text-xs text-muted-foreground"
+                  data-testid="rag-setup-refusal"
+                >
+                  {newWorkRefusal}
+                </p>
+              )}
             </div>
 
             <DialogFooter className="flex-col sm:flex-row gap-2">
@@ -295,7 +312,8 @@ export function RAGSetupDialog({
               </Button>
               <Button
                 onClick={startSetup}
-                disabled={!availability?.available}
+                disabled={!availability?.available || newWorkRefusal !== null}
+                title={newWorkRefusal ?? undefined}
                 className="w-full sm:w-auto"
               >
                 <Zap className="mr-2 h-4 w-4" />

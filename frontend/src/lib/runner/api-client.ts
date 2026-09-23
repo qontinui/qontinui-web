@@ -94,10 +94,13 @@ export const RUNNER_LIST_UNAVAILABLE = "RUNNER_LIST_UNAVAILABLE";
 /** Nothing resolved a runner in time (list loading / locality measuring / no provider). */
 export const RUNNER_LOCALITY_UNKNOWN = "RUNNER_LOCALITY_UNKNOWN";
 /**
- * Several runners are listed, none is proven local and none is chosen: the
- * user must pick one — work is never sent to a machine they did not pick.
+ * No runner is chosen and coord's device resolver is UNKNOWN, with no last
+ * resolved runner (or one proven on this machine) to keep using. Work is never
+ * sent to a runner picked by list order instead.
  */
-export const RUNNER_SELECTION_REQUIRED = "RUNNER_SELECTION_REQUIRED";
+export const RUNNER_RESOLVER_UNAVAILABLE = "RUNNER_RESOLVER_UNAVAILABLE";
+/** Coord answered that none of the user's runners is eligible right now. */
+export const RUNNER_NONE_ELIGIBLE = "RUNNER_NONE_ELIGIBLE";
 /**
  * This page's origin cannot reach loopback, and the target has no runner id to
  * relay to (the empty-list default). Says nothing about which machine a runner
@@ -156,7 +159,8 @@ export class RunnerApiError extends Error {
 const OFFLINE_CODES = new Set([
   RUNNER_LIST_UNAVAILABLE,
   RUNNER_LOCALITY_UNKNOWN,
-  RUNNER_SELECTION_REQUIRED,
+  RUNNER_RESOLVER_UNAVAILABLE,
+  RUNNER_NONE_ELIGIBLE,
   RUNNER_ORIGIN_UNREACHABLE,
 ]);
 
@@ -201,20 +205,33 @@ function refusalError(
       { code: RUNNER_LOCALITY_UNKNOWN }
     );
   }
+  // A refusal that names its own cause (coord's outcome for new work) says
+  // so in those words; the code still follows the reason.
+  const custom = target.kind === "unavailable" ? target.message : undefined;
   switch (state.reason) {
     case "list_unavailable":
       return new RunnerApiError(
         0,
-        "The runner list could not be loaded, so no runner can be called",
+        custom ??
+          "The runner list could not be loaded, so no runner can be called",
         undefined,
         { code: RUNNER_LIST_UNAVAILABLE }
       );
-    case "selection_required":
+    case "resolver_unavailable":
       return new RunnerApiError(
         0,
-        "Several runners are paired and none is on this machine — choose one in the runner selector",
+        custom ??
+          "Which runner to use is unknown — the device resolver did not answer. Choose a runner in the runner selector, or retry",
         undefined,
-        { code: RUNNER_SELECTION_REQUIRED }
+        { code: RUNNER_RESOLVER_UNAVAILABLE }
+      );
+    case "no_eligible_runner":
+      return new RunnerApiError(
+        0,
+        custom ??
+          "None of your runners is available right now (none online, or all drained)",
+        undefined,
+        { code: RUNNER_NONE_ELIGIBLE }
       );
     case "origin_unreachable":
       return new RunnerApiError(

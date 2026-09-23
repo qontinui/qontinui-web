@@ -58,6 +58,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
 from app.models.scheduled_workflow_run import ScheduledWorkflowRun
+from app.services.coord_device_resolve import NO_CALLER
 from app.services.workflow_dispatcher import (
     DispatchError,
     dispatch_workflow_to_runner,
@@ -275,6 +276,13 @@ async def fire_scheduled_run(
                 user_id=row.user_id,
                 workflow_id=row.workflow_id,
                 target=target,
+                # A scheduled fire has no caller bearer, so coord's device
+                # resolver cannot be asked AS the user: ``target="auto"``
+                # takes the web-side
+                # ``_pick_auto_runner_without_caller_credential`` (user-scoped,
+                # health-ordered, NOT capability-checked) until a
+                # service-credential path replaces it.
+                caller=NO_CALLER,
                 parent_task_run_id=None,
             )
         except DispatchError as err:

@@ -11,7 +11,7 @@ import {
 } from "lucide-react";
 import { useUIElement } from "@qontinui/ui-bridge/react";
 import { Button } from "@/components/ui/button";
-import { useRealtimeConnections } from "@/hooks/useRealtimeConnections";
+import { targetRunnerId, useRunnerTarget } from "@/lib/runner";
 import {
   useRunnerSnapshot,
   useRunnerSpecGraph,
@@ -41,8 +41,9 @@ function countStates(config?: {
  *    app (needs the app connected to the runner).
  */
 export function UiBridgePanel() {
-  const { runners } = useRealtimeConnections();
-  const deviceId = runners[0]?.id ?? null;
+  // The runner this tree targets (explicit choice, else coord's pick), read
+  // from the target so a device the web list has not caught up with counts.
+  const deviceId = targetRunnerId(useRunnerTarget());
   const [appId, setAppId] = useState(DEFAULT_APP_ID);
   const [snapshotRequested, setSnapshotRequested] = useState(false);
 

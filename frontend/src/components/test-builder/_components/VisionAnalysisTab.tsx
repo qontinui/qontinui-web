@@ -8,6 +8,8 @@ interface VisionAnalysisTabProps {
   selectedMonitor: number;
   setSelectedMonitor: (monitor: number) => void;
   isAnalyzing: boolean;
+  /** Coord's reason no new work may start right now (null = allowed). */
+  refusal?: string | null;
   onRun: () => void;
 }
 
@@ -15,6 +17,7 @@ export function VisionAnalysisTab({
   selectedMonitor,
   setSelectedMonitor,
   isAnalyzing,
+  refusal = null,
   onRun,
 }: VisionAnalysisTabProps) {
   return (
@@ -44,7 +47,8 @@ export function VisionAnalysisTab({
 
       <Button
         onClick={onRun}
-        disabled={isAnalyzing}
+        disabled={isAnalyzing || refusal !== null}
+        title={refusal ?? undefined}
         className="w-full gap-2"
         variant="brand-success"
         size="sm"
@@ -56,6 +60,14 @@ export function VisionAnalysisTab({
         )}
         {isAnalyzing ? "Capturing & Analyzing..." : "Capture & Analyze"}
       </Button>
+      {refusal && (
+        <p
+          className="text-xs text-text-muted"
+          data-testid="vision-analysis-refusal"
+        >
+          {refusal}
+        </p>
+      )}
     </div>
   );
 }

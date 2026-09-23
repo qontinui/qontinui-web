@@ -27,9 +27,62 @@ vi.mock("@/services/api-config", () => ({
   ApiConfig: { API_BASE_URL: "https://api.test" },
 }));
 
+// Coord's resolver, as the web backend answers it. Each test scripts it; the
+// default is the pre-deploy answer (qontinui-coord#2402 not deployed).
+const resolver = vi.hoisted(() => ({
+  answer: (() => ({
+    status: "unavailable",
+    reason: "not_deployed",
+    httpStatus: 404,
+    code: null,
+  })) as (input: {
+    capabilities: readonly string[];
+    workClass: string;
+    preferred?: string | null;
+  }) => unknown,
+  calls: [] as Array<{
+    capabilities: readonly string[];
+    workClass: string;
+    preferred?: string | null;
+  }>,
+}));
+vi.mock("@/lib/runner/resolve", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/runner/resolve")>()),
+  requestDeviceResolve: async (input: {
+    capabilities: readonly string[];
+    workClass: string;
+    preferred?: string | null;
+  }) => {
+    resolver.calls.push(input);
+    return resolver.answer(input);
+  },
+}));
+
+function resolveTo(deviceId: string) {
+  resolver.answer = (input) => ({
+    status: "resolved",
+    deviceId,
+    via: input.preferred === deviceId ? "pin" : "pool",
+    pinReleased: null,
+  });
+}
+
+function resolverUnavailable() {
+  resolver.answer = () => ({
+    status: "unavailable",
+    reason: "coord_unreachable",
+    httpStatus: null,
+    code: null,
+  });
+}
+
 import {
   ActiveRunnerProvider,
+  dispatchTargetFrom,
+  resolveRunnerTarget,
   useActiveRunner,
+  useDispatchRunnerTarget,
+  useDispatchTarget,
   useRunnerTarget,
 } from "@/contexts/active-runner-context";
 import {
@@ -180,6 +233,8 @@ beforeEach(() => {
   localStorage.clear();
   __resetRunnerLocalityCache();
   latestTarget = NO_RUNNER_TARGET;
+  resolver.calls = [];
+  resolverUnavailable();
   relayFetch.mockReset();
   relayFetch.mockImplementation(async () =>
     jsonResponse({ ok: true, answeredBy: "relay" })
@@ -222,10 +277,7 @@ describe("ActiveRunnerProvider page load with a stored remote selection", () => 
     setList([], true);
 
     const { rerender } = renderProvider();
-    const direct = runnerFetch<{ answeredBy: string }>(
-      latestTarget,
-      "/health"
-    );
+    const direct = runnerFetch<{ answeredBy: string }>(latestTarget, "/health");
     await act(async () => {
       await new Promise((r) => setTimeout(r, 50));
     });
@@ -259,6 +311,7 @@ describe("ActiveRunnerProvider page load with a stored remote selection", () => 
 
   it("drops a previous runner's data the moment the active runner changes", async () => {
     stubMachine({ 9876: LOCAL_ID });
+    resolveTo(LOCAL_ID);
     setList([runner(LOCAL_ID, 9876), runner(REMOTE_ID, 9877)]);
 
     const { rerender } = renderProvider();
@@ -342,97 +395,262 @@ describe("ActiveRunnerProvider failed list load", () => {
   });
 });
 
-describe("ActiveRunnerProvider auto-select", () => {
-  it("keeps the auto-selected local runner active when a re-measure is inconclusive", async () => {
-    // REMOTE is runners[0]; its port is owned by another device on this box.
-    const fetchSpy = stubMachine({ 9876: LOCAL_ID, 9877: GONE_ID });
-    setList([runner(REMOTE_ID, 9877), runner(LOCAL_ID, 9876)]);
+describe("ActiveRunnerProvider auto-select is coord's resolver", () => {
+  it("targets the device coord resolves — not runners[0], and not the local runner", async () => {
+    // runners[0] is LOCAL (proven on this box); coord picks REMOTE.
+    const fetchSpy = stubMachine({ 9876: LOCAL_ID });
+    resolveTo(REMOTE_ID);
+    setList([runner(LOCAL_ID, 9876), runner(REMOTE_ID, 9877)]);
+
+    renderProvider();
+    await waitFor(() =>
+      expect(screen.getByTestId("active").textContent).toBe(REMOTE_ID)
+    );
+    await waitFor(() =>
+      expect(screen.getByTestId("data").textContent).toBe("relay")
+    );
+    expect(relayCalls().every((c) => c.deviceId === REMOTE_ID)).toBe(true);
+    expect(nonProbeCalls(fetchSpy)).toEqual([]);
+    // Asked as placeable work with no requirement, and no user named.
+    expect(resolver.calls[0]).toEqual({
+      capabilities: [],
+      workClass: "placeable",
+      preferred: null,
+    });
+  });
+
+  it("re-asks with the last resolved device as the pin, so the pick is sticky", async () => {
+    stubMachine({});
+    resolveTo(REMOTE_ID);
+    setList([runner(LOCAL_ID, 9876), runner(REMOTE_ID, 9877)]);
+
+    renderProvider();
+    await waitFor(() =>
+      expect(resolver.calls.some((c) => c.preferred === REMOTE_ID)).toBe(true)
+    );
+  });
+
+  it("an explicit selection is the pin and stays the target", async () => {
+    stubMachine({});
+    localStorage.setItem(STORAGE_KEY, LOCAL_ID);
+    resolveTo(REMOTE_ID);
+    setList([runner(LOCAL_ID, 9876), runner(REMOTE_ID, 9877)]);
+
+    renderProvider();
+    await waitFor(() => expect(resolver.calls.length).toBeGreaterThan(0));
+    expect(resolver.calls[0]!.preferred).toBe(LOCAL_ID);
+    expect(screen.getByTestId("active").textContent).toBe(LOCAL_ID);
+  });
+
+  it("a resolver outage keeps the LAST resolved target, never runners[0]", async () => {
+    stubMachine({});
+    resolveTo(REMOTE_ID);
+    setList([runner(LOCAL_ID, 9876), runner(REMOTE_ID, 9877)]);
+
     const { rerender } = renderProvider();
     await waitFor(() =>
-      expect(screen.getByTestId("active").textContent).toBe(LOCAL_ID)
+      expect(screen.getByTestId("active").textContent).toBe(REMOTE_ID)
     );
 
-    // The local runner's reported port moves to one nothing answers on:
-    // its locality is re-measured as unknown (not a different identity).
-    setList([runner(REMOTE_ID, 9877), runner(LOCAL_ID, 9879)]);
+    // Coord goes dark; a list change makes the provider re-ask.
+    resolverUnavailable();
+    const asked = resolver.calls.length;
+    setList([
+      runner(LOCAL_ID, 9876),
+      runner(REMOTE_ID, 9877),
+      runner(GONE_ID, 9878),
+    ]);
     rerender(
       <ActiveRunnerProvider>
         <Page />
       </ActiveRunnerProvider>
     );
-    // Not proven local any more: it is reached by its own device id over
-    // the relay — never over a loopback port.
-    await waitFor(() =>
-      expect(relayCalls().map((c) => c.deviceId)).toContain(LOCAL_ID)
-    );
-    // It does not jump to runners[0], which is another machine.
-    expect(screen.getByTestId("active").textContent).toBe(LOCAL_ID);
-    expect(relayCalls().map((c) => c.deviceId)).not.toContain(REMOTE_ID);
-    expect(nonProbeCalls(fetchSpy)).not.toContain(
-      "http://127.0.0.1:9877/health"
-    );
+    await waitFor(() => expect(resolver.calls.length).toBeGreaterThan(asked));
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 20));
+    });
+
+    expect(screen.getByTestId("active").textContent).toBe(REMOTE_ID);
+    expect(latestTarget).toMatchObject({
+      kind: "runner",
+      runner: { id: REMOTE_ID },
+    });
   });
 
-  it("does not refuse in-flight calls because runners[0] measured remote first", async () => {
-    // runners[0] is remote (its port 9877 is owned by some other device on
-    // this box, answering at once); the local runner's probe on 9876 is slow.
-    let releaseLocalProbe!: () => void;
-    const localProbe = new Promise<void>((r) => (releaseLocalProbe = r));
-    const fetchSpy = stubMachine(
-      { 9876: LOCAL_ID, 9877: GONE_ID },
-      { 9876: localProbe }
-    );
-    setList([runner(REMOTE_ID, 9877), runner(LOCAL_ID, 9876)]);
-
-    renderProvider();
-    const direct = runnerFetch<{ answeredBy: string }>(latestTarget, "/health");
-    let settled = false;
-    void direct.then(
-      () => (settled = true),
-      () => (settled = true)
-    );
-    await act(async () => {
-      await new Promise((r) => setTimeout(r, 50));
-    });
-    // runners[0] has been measured not_local by now; the call must still wait.
-    expect(settled).toBe(false);
-    expect(nonProbeCalls(fetchSpy)).toEqual([]);
-
-    await act(async () => {
-      releaseLocalProbe();
-    });
-    await expect(direct).resolves.toEqual({
-      ok: true,
-      answeredBy: LOCAL_ID,
-    });
-    expect(nonProbeCalls(fetchSpy)[0]).toBe("http://127.0.0.1:9876/health");
-    await waitFor(() =>
-      expect(screen.getByTestId("active").textContent).toBe(LOCAL_ID)
-    );
-  });
-});
-
-describe("ActiveRunnerProvider with several runners, none local", () => {
-  it("requires a choice: nothing is sent to runners[0], over loopback or the relay", async () => {
+  it("a resolver outage with nothing resolved yet NEVER falls back to runners[0]", async () => {
+    // Neither runner is on this box (no port answers with its id).
     const fetchSpy = stubMachine({ 9876: GONE_ID });
+    resolverUnavailable();
     setList([runner(REMOTE_ID, 9876), runner(LOCAL_ID, 9877)]);
 
     renderProvider();
     await waitFor(() =>
-      expect(screen.getByTestId("error").textContent).toMatch(/choose one/)
+      expect(latestTarget).toEqual({
+        kind: "unavailable",
+        reason: "resolver_unavailable",
+      })
     );
-    expect(latestTarget).toEqual({
-      kind: "unavailable",
-      reason: "selection_required",
-    });
+    await waitFor(() =>
+      expect(screen.getByTestId("error").textContent).toMatch(
+        /device resolver did not answer/
+      )
+    );
+    expect(screen.getByTestId("active").textContent).toBe("none");
     expect(nonProbeCalls(fetchSpy)).toEqual([]);
     expect(relayFetch).not.toHaveBeenCalled();
+  });
+
+  it("a resolver outage with nothing resolved yet uses a runner PROVEN local (identity, not list order)", async () => {
+    // runners[0] is REMOTE; LOCAL (listed second) answers :9876 with its id.
+    const fetchSpy = stubMachine({ 9876: LOCAL_ID, 9877: GONE_ID });
+    resolverUnavailable();
+    setList([runner(REMOTE_ID, 9877), runner(LOCAL_ID, 9876)]);
+
+    renderProvider();
+    await waitFor(() =>
+      expect(screen.getByTestId("active").textContent).toBe(LOCAL_ID)
+    );
+    await waitFor(() =>
+      expect(nonProbeCalls(fetchSpy)).toContain("http://127.0.0.1:9876/health")
+    );
+    expect(relayCalls().map((c) => c.deviceId)).not.toContain(REMOTE_ID);
+  });
+
+  it("a DRAINED own machine that is proven local still serves library/results reads", async () => {
+    // Coord: nothing is eligible for NEW work (this box is drained).
+    const fetchSpy = stubMachine({ 9876: LOCAL_ID, 9877: GONE_ID });
+    resolver.answer = () => ({ status: "all_drained", pinReleased: null });
+    setList([runner(REMOTE_ID, 9877), runner(LOCAL_ID, 9876)]);
+
+    renderProvider();
+    await waitFor(() =>
+      expect(screen.getByTestId("active").textContent).toBe(LOCAL_ID)
+    );
+    await waitFor(() =>
+      expect(screen.getByTestId("data").textContent).toBe(LOCAL_ID)
+    );
+    expect(nonProbeCalls(fetchSpy)).toContain("http://127.0.0.1:9876/health");
+    expect(relayCalls().map((c) => c.deviceId)).not.toContain(REMOTE_ID);
+  });
+
+  it("the drained machine that still serves READS is not a target for NEW work", async () => {
+    stubMachine({ 9876: LOCAL_ID, 9877: GONE_ID });
+    resolver.answer = () => ({ status: "all_drained", pinReleased: null });
+    setList([runner(REMOTE_ID, 9877), runner(LOCAL_ID, 9876)]);
+
+    let dispatch: ReturnType<typeof useDispatchTarget> | null = null;
+    const Probe = () => {
+      dispatch = useDispatchTarget();
+      return null;
+    };
+    render(
+      <ActiveRunnerProvider>
+        <Page />
+        <Probe />
+      </ActiveRunnerProvider>
+    );
+    await waitFor(() =>
+      expect(screen.getByTestId("active").textContent).toBe(LOCAL_ID)
+    );
+    expect(dispatch).toMatchObject({ runnerId: null, reason: "all_drained" });
+  });
+
+  it("'nothing eligible' with no runner to keep addresses none — never runners[0]", async () => {
+    const fetchSpy = stubMachine({ 9876: GONE_ID });
+    resolver.answer = () => ({
+      status: "no_capable",
+      missing: [],
+      onlineDevices: 0,
+      pinReleased: null,
+    });
+    setList([runner(REMOTE_ID, 9876), runner(LOCAL_ID, 9877)]);
+
+    renderProvider();
+    await waitFor(() =>
+      expect(latestTarget).toEqual({
+        kind: "unavailable",
+        reason: "no_eligible_runner",
+      })
+    );
+    expect(screen.getByTestId("active").textContent).toBe("none");
+    expect(nonProbeCalls(fetchSpy)).toEqual([]);
+    expect(relayFetch).not.toHaveBeenCalled();
+  });
+
+  it("a SOLE runner is the target while coord has not answered, and when it is UNKNOWN", async () => {
+    // Coord never answers the first request...
+    let release!: () => void;
+    const held = new Promise<void>((r) => (release = r));
+    resolver.answer = async () => {
+      await held;
+      return {
+        status: "unavailable",
+        reason: "coord_unreachable",
+        httpStatus: null,
+        code: null,
+      };
+    };
+    stubMachine({});
+    setList([runner(REMOTE_ID, 9877)]);
+
+    renderProvider();
+    await waitFor(() =>
+      expect(screen.getByTestId("active").textContent).toBe(REMOTE_ID)
+    );
+    await act(async () => {
+      release();
+    });
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 20));
+    });
+    expect(screen.getByTestId("active").textContent).toBe(REMOTE_ID);
+    await waitFor(() =>
+      expect(relayCalls().map((c) => c.deviceId)).toContain(REMOTE_ID)
+    );
+  });
+
+  it("clearing an explicit selection returns to coord's FREE choice — the selection is never the auto pin", async () => {
+    stubMachine({});
+    localStorage.setItem(STORAGE_KEY, LOCAL_ID);
+    resolveTo(LOCAL_ID);
+    setList([runner(LOCAL_ID, 9876), runner(REMOTE_ID, 9877)]);
+
+    const Clear = () => {
+      const { selectRunner } = useActiveRunner();
+      return (
+        <button onClick={() => selectRunner(null)} data-testid="clear">
+          clear
+        </button>
+      );
+    };
+    render(
+      <ActiveRunnerProvider>
+        <Page />
+        <Clear />
+      </ActiveRunnerProvider>
+    );
+    await waitFor(() =>
+      expect(resolver.calls.some((c) => c.preferred === LOCAL_ID)).toBe(true)
+    );
+
+    resolveTo(REMOTE_ID);
+    const before = resolver.calls.length;
+    await act(async () => {
+      screen.getByTestId("clear").click();
+    });
+    await waitFor(() => expect(resolver.calls.length).toBeGreaterThan(before));
+    // The first automatic question after clearing carries NO pin.
+    expect(resolver.calls[before]!.preferred).toBeNull();
+    await waitFor(() =>
+      expect(screen.getByTestId("active").textContent).toBe(REMOTE_ID)
+    );
   });
 });
 
 describe("ActiveRunnerProvider disconnect", () => {
-  it("clears the selection instead of storing runners[0], and auto-select picks the local runner", async () => {
+  it("clears the selection instead of storing runners[0], and coord's pick takes over", async () => {
     const fetchSpy = stubMachine({ 9876: LOCAL_ID, 9878: GONE_ID });
+    resolveTo(LOCAL_ID);
     localStorage.setItem(STORAGE_KEY, GONE_ID);
     // runners[0] is remote; the selected runner is listed and then leaves.
     setList([
@@ -463,5 +681,243 @@ describe("ActiveRunnerProvider disconnect", () => {
     expect(nonProbeCalls(fetchSpy)).not.toContain(
       "http://127.0.0.1:9877/health"
     );
+  });
+});
+
+describe("dispatchTargetFrom — where NEW work goes", () => {
+  const listed = [runner(REMOTE_ID, 9877), runner(LOCAL_ID, 9876)];
+  const base = {
+    listState: "loaded" as const,
+    runners: listed,
+    selectedId: null as string | null,
+  };
+
+  it("an explicit selection is the dispatch target", () => {
+    expect(
+      dispatchTargetFrom({
+        ...base,
+        selectedId: LOCAL_ID,
+        resolution: { status: "all_drained", pinReleased: null },
+      })
+    ).toEqual({ runnerId: LOCAL_ID, reason: "explicit", message: null });
+  });
+
+  it("coord's resolved device is the dispatch target", () => {
+    expect(
+      dispatchTargetFrom({
+        ...base,
+        resolution: {
+          status: "resolved",
+          deviceId: REMOTE_ID,
+          via: "pool",
+          pinReleased: null,
+        },
+      })
+    ).toEqual({ runnerId: REMOTE_ID, reason: "resolved", message: null });
+  });
+
+  it.each([
+    [{ status: "loading" }, "resolving"],
+    [
+      {
+        status: "unavailable",
+        reason: "not_deployed",
+        httpStatus: 404,
+        code: null,
+      },
+      "resolver_unavailable",
+    ],
+    [{ status: "drain_unreadable" }, "drain_unreadable"],
+    [
+      {
+        status: "no_capable",
+        missing: [],
+        onlineDevices: 0,
+        pinReleased: null,
+      },
+      "no_capable",
+    ],
+    [{ status: "all_drained", pinReleased: null }, "all_drained"],
+  ] as const)(
+    "%o names NO runner (reason %s), even with one listed",
+    (res, reason) => {
+      for (const runners of [listed, [runner(LOCAL_ID, 9876)]]) {
+        const out = dispatchTargetFrom({ ...base, runners, resolution: res });
+        expect(out.runnerId).toBeNull();
+        expect(out.reason).toBe(reason);
+        expect(out.message).toBeTruthy();
+      }
+    }
+  );
+
+  it("list loading / failed / empty name no runner", () => {
+    const resolution = { status: "loading" } as const;
+    expect(
+      dispatchTargetFrom({ ...base, listState: "loading", resolution }).reason
+    ).toBe("list_loading");
+    expect(
+      dispatchTargetFrom({ ...base, listState: "failed", resolution }).reason
+    ).toBe("list_unavailable");
+    expect(
+      dispatchTargetFrom({ ...base, runners: [], resolution }).reason
+    ).toBe("no_runner");
+  });
+});
+
+describe("the new-work target and the read target agree whenever new work is allowed", () => {
+  // Surfaces that start work through a read-target client gate on
+  // useNewWorkRefusal(); that is sound only because an allowed dispatch
+  // always addresses the device the read target addresses — so the job's
+  // follow-up polls, stop and results reads hit the runner it started on.
+  const listed = [runner(REMOTE_ID, 9877), runner(LOCAL_ID, 9876)];
+  const UNLISTED = "99999999-9999-4999-8999-999999999999";
+  const cases: Array<{
+    name: string;
+    selectedId: string | null;
+    resolution: Parameters<typeof dispatchTargetFrom>[0]["resolution"];
+  }> = [
+    {
+      name: "explicit",
+      selectedId: REMOTE_ID,
+      resolution: { status: "all_drained", pinReleased: null },
+    },
+    {
+      name: "resolved (listed)",
+      selectedId: null,
+      resolution: {
+        status: "resolved",
+        deviceId: LOCAL_ID,
+        via: "pool",
+        pinReleased: null,
+      },
+    },
+    {
+      name: "resolved (not listed)",
+      selectedId: null,
+      resolution: {
+        status: "resolved",
+        deviceId: UNLISTED,
+        via: "pool",
+        pinReleased: null,
+      },
+    },
+  ];
+  it.each(cases)("$name", ({ selectedId, resolution }) => {
+    const dispatch = dispatchTargetFrom({
+      listState: "loaded",
+      runners: listed,
+      selectedId,
+      resolution,
+    });
+    const read = resolveRunnerTarget({
+      listState: "loaded",
+      runners: listed,
+      selectedId,
+      localityById: new Map([[LOCAL_ID, "local"]]),
+      resolution,
+      lastResolvedId: REMOTE_ID,
+    });
+    expect(dispatch.runnerId).not.toBeNull();
+    expect(read.target).toMatchObject({
+      kind: "runner",
+      runner: { id: dispatch.runnerId },
+    });
+  });
+});
+
+describe("refusal === null ⇒ new work and reads address the same device (sweep)", () => {
+  type Res = Parameters<typeof dispatchTargetFrom>[0]["resolution"];
+  const UNLISTED = "99999999-9999-4999-8999-999999999999";
+  const resolutions: Res[] = [
+    { status: "loading" },
+    { status: "resolved", deviceId: LOCAL_ID, via: "pool", pinReleased: null },
+    { status: "resolved", deviceId: REMOTE_ID, via: "pin", pinReleased: null },
+    { status: "resolved", deviceId: UNLISTED, via: "pool", pinReleased: null },
+    {
+      status: "pin_ineligible",
+      deviceId: REMOTE_ID,
+      reason: "drained",
+      detail: "drained",
+      missingCapabilities: [],
+    },
+    { status: "no_capable", missing: [], onlineDevices: 0, pinReleased: null },
+    { status: "all_drained", pinReleased: null },
+    { status: "drain_unreadable" },
+    {
+      status: "unavailable",
+      reason: "coord_unreachable",
+      httpStatus: null,
+      code: null,
+    },
+  ];
+  const lists = [
+    [runner(REMOTE_ID, 9877), runner(LOCAL_ID, 9876)],
+    [runner(REMOTE_ID, 9877)],
+  ];
+  const localities: Array<Map<string, "local" | "not_local" | "unknown">> = [
+    new Map(), // nothing measured yet
+    new Map([[LOCAL_ID, "local"]]),
+    new Map([
+      [LOCAL_ID, "not_local"],
+      [REMOTE_ID, "unknown"],
+    ]),
+  ];
+  const selections = [null, REMOTE_ID, LOCAL_ID, GONE_ID];
+  const lastResolved = [null, REMOTE_ID, LOCAL_ID];
+
+  it("holds for every status × selection × locality × last-resolved", () => {
+    let allowed = 0;
+    for (const resolution of resolutions)
+      for (const runners of lists)
+        for (const localityById of localities)
+          for (const selectedId of selections)
+            for (const lastResolvedId of lastResolved) {
+              const dispatch = dispatchTargetFrom({
+                listState: "loaded",
+                runners,
+                selectedId,
+                resolution,
+              });
+              if (dispatch.runnerId === null) {
+                expect(dispatch.message).toBeTruthy();
+                continue;
+              }
+              allowed += 1;
+              const read = resolveRunnerTarget({
+                listState: "loaded",
+                runners,
+                selectedId,
+                localityById,
+                resolution,
+                lastResolvedId,
+              });
+              expect(read.target).toMatchObject({
+                kind: "runner",
+                runner: { id: dispatch.runnerId },
+              });
+            }
+    // The sweep actually exercised allowed cases.
+    expect(allowed).toBeGreaterThan(0);
+  });
+
+  it("no_runner (loaded, empty list): the new-work target IS the read target, unrefused", async () => {
+    stubMachine({});
+    setList([]);
+    let dispatch: ReturnType<typeof useDispatchRunnerTarget> | null = null;
+    let read: RunnerTarget | null = null;
+    const Probe = () => {
+      dispatch = useDispatchRunnerTarget();
+      read = useRunnerTarget();
+      return null;
+    };
+    render(
+      <ActiveRunnerProvider>
+        <Probe />
+      </ActiveRunnerProvider>
+    );
+    await waitFor(() => expect(read).toEqual({ kind: "default_local" }));
+    expect(dispatch!.refusal).toBeNull();
+    expect(dispatch!.runnerId).toBeNull();
+    expect(dispatch!.target).toEqual(read);
   });
 });

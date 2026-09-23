@@ -3,6 +3,7 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import {
   useRunnerApi,
+  useDispatchRunnerApi,
   type TaskRun,
   type RunningTaskRunsResponse,
 } from "@/lib/runner-api";
@@ -34,6 +35,9 @@ import { IdleState, CompletedState } from "./EmptyStates";
 
 export function ActiveRunsContent() {
   const runnerApi = useRunnerApi();
+  // Calls that START work go to the new-work target (explicit choice or
+  // coord's resolved pick); a refused call carries coord's outcome.
+  const { api: workApi, refusal: workRefusal } = useDispatchRunnerApi();
   const {
     data: runningTaskRuns,
     isLoading: runsLoading,
@@ -122,7 +126,13 @@ export function ActiveRunsContent() {
             );
             return;
           }
-          await runnerApi.runWorkflow(workflowId);
+          // Coord refuses new work right now: leave the generated workflow
+          // un-run and say why (once — the signal is already consumed).
+          if (workRefusal !== null) {
+            toast.error(`Generated workflow was not run: ${workRefusal}`);
+            return;
+          }
+          await workApi.runWorkflow(workflowId);
           toast.success("Workflow generated and started!");
           refetchRuns();
         } else if (taskRun.status === "running") {
@@ -147,7 +157,7 @@ export function ActiveRunsContent() {
         );
       }
     })();
-  }, [activeRuns, refetchRuns, runnerApi]);
+  }, [activeRuns, refetchRuns, runnerApi, workApi, workRefusal]);
 
   const isOffline = runsOffline;
   const runs = activeRuns || [];

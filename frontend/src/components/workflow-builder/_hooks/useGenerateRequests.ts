@@ -1,6 +1,6 @@
 import { useCallback } from "react";
 import { toast } from "sonner";
-import { useRunnerApi } from "@/lib/runner-api";
+import { useRunnerApi, useDispatchRunnerApi } from "@/lib/runner-api";
 import type { GenerateWorkflowRequest } from "@/lib/runner/types/workflow";
 import type { SpecSourceState } from "../SpecSourceSection";
 import { buildSpecPrompt } from "@/lib/spec-prompt-builder";
@@ -48,6 +48,9 @@ interface UseGenerateRequestsParams {
 
 export function useGenerateRequests(params: UseGenerateRequestsParams) {
   const runnerApi = useRunnerApi();
+  // Calls that START work go to the new-work target (explicit choice or
+  // coord's resolved pick); a refused call carries coord's outcome.
+  const { api: workApi, refusal } = useDispatchRunnerApi();
   const {
     description,
     selectedContextIds,
@@ -214,12 +217,12 @@ export function useGenerateRequests(params: UseGenerateRequestsParams) {
       if (isBatchMode) {
         const requests = buildBatchRequests();
         const results = await Promise.all(
-          requests.map((r) => runnerApi.generateWorkflowAsync(r))
+          requests.map((r) => workApi.generateWorkflowAsync(r))
         );
         firstTaskRunId = results[0]?.task_run_id ?? "";
         toast.success(`${results.length} workflows generated`);
       } else {
-        const response = await runnerApi.generateWorkflowAsync(
+        const response = await workApi.generateWorkflowAsync(
           buildGenerateRequest()
         );
         firstTaskRunId = response.task_run_id;
@@ -258,7 +261,7 @@ export function useGenerateRequests(params: UseGenerateRequestsParams) {
       if (isBatchMode) {
         const requests = buildBatchRequests();
         const results = await Promise.all(
-          requests.map((r) => runnerApi.generateWorkflowAsync(r))
+          requests.map((r) => workApi.generateWorkflowAsync(r))
         );
         firstTaskRunId = results[0]?.task_run_id ?? "";
         // Signal auto-run for the first workflow
@@ -275,7 +278,7 @@ export function useGenerateRequests(params: UseGenerateRequestsParams) {
           id: toastId,
         });
       } else {
-        const response = await runnerApi.generateWorkflowAsync(
+        const response = await workApi.generateWorkflowAsync(
           buildGenerateRequest()
         );
         firstTaskRunId = response.task_run_id;
@@ -316,6 +319,8 @@ export function useGenerateRequests(params: UseGenerateRequestsParams) {
 
   return {
     canGenerate,
+    /** Coord's reason no generation may start right now (null = allowed). */
+    refusal,
     handleGenerate,
     handleGenerateAndRun,
   };

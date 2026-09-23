@@ -252,15 +252,15 @@ describe("useRunnerQuery measuring state", () => {
     vi.stubGlobal("fetch", fetchSpy);
     let target: RunnerTarget = {
       kind: "unavailable",
-      reason: "selection_required",
+      reason: "resolver_unavailable",
     };
 
     const { result, rerender } = renderHook(() =>
       useRunnerQuery(target, "/health")
     );
     await waitFor(() => expect(result.current.isOffline).toBe(true));
-    expect(result.current.error).toMatch(/choose one/);
-    expect(result.current.errorCode).toBe("RUNNER_SELECTION_REQUIRED");
+    expect(result.current.error).toMatch(/device resolver did not answer/);
+    expect(result.current.errorCode).toBe("RUNNER_RESOLVER_UNAVAILABLE");
 
     target = { kind: "pending" };
     rerender();

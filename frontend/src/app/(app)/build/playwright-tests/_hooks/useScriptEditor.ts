@@ -6,7 +6,7 @@ import {
   isRunnerNeedsLocalError,
   runnerPollDelay,
   runnerRequest,
-  useRunnerApi,
+  useDispatchRunnerApi,
   useRunnerTarget,
 } from "@/lib/runner";
 import type { PlaywrightScript, PromptSnippet } from "@/lib/runner/types/library";
@@ -32,7 +32,9 @@ export function useScriptEditor({
   onSave,
   onDelete,
 }: UseScriptEditorOptions) {
-  const runnerApi = useRunnerApi();
+  // Calls that START work go to the new-work target (explicit choice or
+  // coord's resolved pick); a refused call carries coord's outcome.
+  const { api: workApi, refusal: workRefusal } = useDispatchRunnerApi();
   const runnerTarget = useRunnerTarget();
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [aiGenerating, setAiGenerating] = useState(false);
@@ -233,7 +235,7 @@ export function useScriptEditor({
     setCoverageWarnings([]);
 
     try {
-      const result = await runnerApi.aiGenerateTest(
+      const result = await workApi.aiGenerateTest(
         `Analyze this Playwright test script and verify it implements ALL functionality from the description.
 
 ## Test Description (What the script SHOULD do)
@@ -303,7 +305,7 @@ Be thorough - check each action, assertion, and behavior mentioned in the descri
     } finally {
       setIsValidatingCoverage(false);
     }
-  }, [form.description, form.script_content, runnerApi]);
+  }, [form.description, form.script_content, workApi]);
 
   const handleRegenerateDescription = useCallback(async () => {
     if (!form.script_content.trim()) return;
@@ -311,7 +313,7 @@ Be thorough - check each action, assertion, and behavior mentioned in the descri
     setIsRegenerating(true);
 
     try {
-      const result = await runnerApi.aiGenerateTest(
+      const result = await workApi.aiGenerateTest(
         `Analyze the following Playwright test script and generate a concise, human-readable description of what it does. Focus on the user-facing behavior being tested, not the implementation details.
 
 \`\`\`typescript
@@ -341,7 +343,7 @@ Respond with ONLY the description text, no code blocks, no prefixes, no formatti
     } finally {
       setIsRegenerating(false);
     }
-  }, [form.script_content, updateField, runnerApi]);
+  }, [form.script_content, updateField, workApi]);
 
   const runAutoRefine = useCallback(async () => {
     if (isNew || !item.id) return;
@@ -363,7 +365,7 @@ Respond with ONLY the description text, no code blocks, no prefixes, no formatti
         await new Promise((r) => setTimeout(r, 500));
 
         setAutoRefineLog((prev) => [...prev, "Running test..."]);
-        const runResult = await runnerApi.runPlaywrightTest(item.id);
+        const runResult = await workApi.runPlaywrightTest(item.id);
         setAutoRefineLog((prev) => [...prev, `Task run: ${runResult.task_run_id}`]);
 
         // Poll for ~2 minutes. runnerPollDelay re-evaluates the cadence
@@ -442,7 +444,7 @@ ${form.ai_instructions.trim() ? `## AI Instructions\n${form.ai_instructions}\n` 
 ## Task
 Fix the failing tests. Return ONLY the complete updated TypeScript test script inside a single code block. Do not include explanations outside the code block.`;
 
-        const aiResult = await runnerApi.aiGenerateTest(refinementPrompt, "playwright_cdp");
+        const aiResult = await workApi.aiGenerateTest(refinementPrompt, "playwright_cdp");
 
         if (aiResult.success && aiResult.data) {
           const aiOutput = String(
@@ -473,7 +475,7 @@ Fix the failing tests. Return ONLY the complete updated TypeScript test script i
     }
 
     setIsAutoRefining(false);
-  }, [isNew, item.id, autoRefineMaxIterations, onSave, form.script_content, form.target_url, form.ai_instructions, autoRefineUserHint, updateField, runnerApi, runnerTarget]);
+  }, [isNew, item.id, autoRefineMaxIterations, onSave, form.script_content, form.target_url, form.ai_instructions, autoRefineUserHint, updateField, workApi, runnerTarget]);
 
   const stopAutoRefine = useCallback(() => {
     autoRefineAbortRef.current = true;
@@ -494,6 +496,8 @@ Fix the failing tests. Return ONLY the complete updated TypeScript test script i
   }, []);
 
   return {
+    /** Coord's reason no new work may start right now (null = allowed). */
+    workRefusal,
     deleteDialogOpen,
     setDeleteDialogOpen,
     aiGenerating,

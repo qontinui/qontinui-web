@@ -101,12 +101,14 @@ describe("requestPlan transport", () => {
   it("a target with no route carries the resolver's typed message (not 'no paired runner'), and nothing is sent", async () => {
     const err = await requestPlan({
       prompt: "go home",
-      target: { kind: "unavailable", reason: "selection_required" },
+      target: { kind: "unavailable", reason: "resolver_unavailable" },
       explain: false,
     }).catch((e: unknown) => e);
     expect(err).toBeInstanceOf(PlanError);
     expect((err as PlanError).reason).toBe("no-device-id");
-    expect((err as PlanError).message).toMatch(/choose one/);
+    expect((err as PlanError).message).toMatch(
+      /device resolver did not answer/
+    );
     expect((err as PlanError).message).not.toMatch(/No paired runner/);
     expect(relayFetch).not.toHaveBeenCalled();
     expect(loopbackFetch).not.toHaveBeenCalled();

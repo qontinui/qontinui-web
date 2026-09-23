@@ -66,7 +66,7 @@ import {
   isCoPilotConsentSatisfied,
   useIsLoopbackDev,
 } from "@/lib/ui-bridge/co-pilot-gates";
-import { useActiveRunner } from "@/contexts/active-runner-context";
+import { useDispatchRunnerTarget } from "@/contexts/active-runner-context";
 import {
   usePromptExecution,
   type ExecutionErrorKind,
@@ -435,8 +435,8 @@ function ConsentCta({ onGrant }: { onGrant: () => void }) {
           <div className="min-w-0 flex-1">
             <CardTitle>Grant consent for this session</CardTitle>
             <CardDescription className="mt-1">
-              The co-pilot needs a per-session OK before it can drive this
-              tab. This applies to the current browser session only.
+              The co-pilot needs a per-session OK before it can drive this tab.
+              This applies to the current browser session only.
             </CardDescription>
           </div>
         </div>
@@ -459,7 +459,8 @@ export function CoPilotHome() {
   const preference = useCoPilotPreference();
   const consent = useCoPilotSessionConsent();
   const loopbackDev = useIsLoopbackDev();
-  const { activeRunner } = useActiveRunner();
+  // A prompt is NEW work: only the explicit choice or coord's resolved pick.
+  const { refusal: newWorkRefusal } = useDispatchRunnerTarget();
   const { state, run, reset } = usePromptExecution();
 
   // DEBUG-ONLY: ?bridgeDebug=1 re-exposes co-pilot controls to the UI Bridge for automated end-to-end testing. Off by default (preserves the §8.2 self-targeting guard). Self-scoped + still requires session consent; remove or env-guard once co-pilot E2E is otherwise automatable.
@@ -624,7 +625,7 @@ export function CoPilotHome() {
         {header}
 
         {/* No runner affordance (non-error pre-flight hint) */}
-        {!activeRunner && (
+        {newWorkRefusal && (
           <Card
             className="border-warning/40"
             data-testid="co-pilot-no-runner-hint"
@@ -634,10 +635,13 @@ export function CoPilotHome() {
                 <Server className="mt-0.5 size-5 text-warning" aria-hidden />
                 <div className="min-w-0 flex-1">
                   <CardTitle className="text-base">
-                    No runner connected
+                    No runner for new work
                   </CardTitle>
-                  <CardDescription className="mt-1">
-                    Connect a runner so the co-pilot has a place to act.
+                  <CardDescription
+                    className="mt-1"
+                    data-testid="co-pilot-no-runner-reason"
+                  >
+                    {newWorkRefusal.message}
                   </CardDescription>
                 </div>
               </div>
@@ -707,7 +711,11 @@ export function CoPilotHome() {
                 )}
                 <Button
                   onClick={handleSubmit}
-                  disabled={busy || prompt.trim().length === 0}
+                  disabled={
+                    busy ||
+                    prompt.trim().length === 0 ||
+                    newWorkRefusal !== null
+                  }
                   data-testid="co-pilot-submit"
                 >
                   {busy ? (

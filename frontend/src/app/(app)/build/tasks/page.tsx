@@ -18,7 +18,7 @@ import {
 } from "@/components/builders/editors";
 import { TagInput } from "@/components/builders/TagInput";
 import { AiGeneratorPanel } from "@/components/builders/AiGeneratorPanel";
-import { useRunnerApi } from "@/lib/runner/runner-api-object";
+import { useDispatchRunnerApi } from "@/lib/runner/runner-api-object";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -286,7 +286,9 @@ function TaskEditor({
   onDelete,
   onDuplicate,
 }: TaskEditorProps) {
-  const runnerApi = useRunnerApi();
+  // Calls that START work go to the new-work target (explicit choice or
+  // coord's resolved pick); a refused call carries coord's outcome.
+  const { api: workApi, refusal: workRefusal } = useDispatchRunnerApi();
   const [aiGenerating, setAiGenerating] = useState(false);
   const [aiError, setAiError] = useState<string | null>(null);
   const [aiResult, setAiResult] = useState<Record<string, unknown> | null>(
@@ -305,7 +307,7 @@ function TaskEditor({
     setAiError(null);
     setAiResult(null);
     try {
-      const res = await runnerApi.aiGeneratePrompt(prompt, "generate");
+      const res = await workApi.aiGeneratePrompt(prompt, "generate");
       setAiResult(res as Record<string, unknown>);
     } catch (e) {
       setAiError(e instanceof Error ? e.message : "Generation failed");
@@ -409,6 +411,7 @@ function TaskEditor({
 
         {/* AI Generator */}
         <AiGeneratorPanel
+          refusal={workRefusal}
           title="AI Generate Task"
           accentColor="orange"
           placeholder="Describe the task to generate..."

@@ -9,6 +9,7 @@ import {
   useRunnerHealth,
   useErrorMonitorEntries,
   useRunnerApi,
+  useDispatchRunnerApi,
   useRunnerPoll,
   useRunnerTarget,
 } from "@/lib/runner-api";
@@ -65,6 +66,9 @@ const STATUS_FILTERS: { value: StatusFilter; label: string }[] = [
 
 export default function ErrorMonitorPage() {
   const runnerApi = useRunnerApi();
+  // Calls that START work go to the new-work target (explicit choice or
+  // coord's resolved pick); a refused call carries coord's outcome.
+  const { api: workApi, refusal: workRefusal } = useDispatchRunnerApi();
   const target = useRunnerTarget();
   const discoveredSpec = useDiscoveredSpec("error-monitor");
   usePageSpecs(
@@ -134,7 +138,7 @@ export default function ErrorMonitorPage() {
     setFixLoading(true);
     setFixError(null);
     try {
-      await runnerApi.generateFixWorkflow();
+      await workApi.generateFixWorkflow();
       refetch();
     } catch (err) {
       setFixError(
@@ -230,10 +234,20 @@ export default function ErrorMonitorPage() {
         </div>
         <div className="flex items-center gap-2">
           {/* Fix Errors Button */}
+          {counts.unresolved > 0 && workRefusal && (
+            <span
+              className="max-w-[16rem] truncate text-xs text-text-muted"
+              title={workRefusal}
+              data-testid="fix-errors-refusal"
+            >
+              {workRefusal}
+            </span>
+          )}
           {counts.unresolved > 0 && (
             <Button
               onClick={handleFixErrors}
-              disabled={fixLoading}
+              disabled={fixLoading || workRefusal !== null}
+              title={workRefusal ?? undefined}
               className={`font-semibold ${
                 counts.critical > 0
                   ? "bg-red-600 hover:bg-red-700 text-white"

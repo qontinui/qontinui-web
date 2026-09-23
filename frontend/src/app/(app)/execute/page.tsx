@@ -4,7 +4,12 @@ import { useState, useMemo, useCallback } from "react";
 import { usePageSpecs } from "@/hooks/usePageSpecs";
 import { useDiscoveredSpec } from "@/lib/ui-bridge/use-discovered-specs";
 import type { SpecConfig } from "@qontinui/ui-bridge/specs";
-import { runnerRequest, useRunnerApi, useRunnerTarget } from "@/lib/runner-api";
+import {
+  createRunnerApi,
+  runnerRequest,
+  useRunnerTarget,
+} from "@/lib/runner-api";
+import { useDispatchRunnerTarget } from "@/contexts/active-runner-context";
 import { useUnifiedWorkflows } from "@/lib/api/unified-workflows";
 import {
   getPhaseCount,
@@ -45,7 +50,15 @@ function QueueTabContent({
   workflows: UnifiedWorkflow[] | null;
   workflowsLoading: boolean;
 }) {
-  const runnerApi = useRunnerApi();
+  // Running the queue is NEW work: only the explicit choice or coord's
+  // resolved pick. Saving the composed workflow is a LIBRARY write, which
+  // belongs to the runner whose library is on screen — the read target.
+  const dispatch = useDispatchRunnerTarget();
+  const runApi = useMemo(
+    () => createRunnerApi(dispatch.target),
+    [dispatch.target]
+  );
+  const runRefusal = dispatch.refusal?.message ?? null;
   const runnerTarget = useRunnerTarget();
   // Local queue state
   const [queueItems, setQueueItems] = useState<QueueItem[]>([]);
@@ -176,11 +189,11 @@ function QueueTabContent({
   }, [dragActiveId, workflowMap, queueItems]);
 
   const handleRun = useCallback(async () => {
-    if (queueItems.length === 0) return;
+    if (queueItems.length === 0 || runRefusal !== null) return;
     setIsRunning(true);
     try {
       const workflowIds = queueItems.map((item) => item.workflowId);
-      const result = await runnerApi.runComposedWorkflow(
+      const result = await runApi.runComposedWorkflow(
         workflowIds,
         stopOnFailure
       );
@@ -192,7 +205,7 @@ function QueueTabContent({
     } finally {
       setIsRunning(false);
     }
-  }, [queueItems, stopOnFailure, runnerApi]);
+  }, [queueItems, stopOnFailure, runApi, runRefusal]);
 
   const handleClear = useCallback(() => {
     setQueueItems([]);
@@ -287,6 +300,7 @@ function QueueTabContent({
           onItemsChange={setQueueItems}
           onStopOnFailureChange={setStopOnFailure}
           onRun={handleRun}
+          runRefusal={runRefusal}
           onClear={handleClear}
           onSaveAsWorkflow={() => setShowSaveDialog(true)}
           showSaveDialog={showSaveDialog}
