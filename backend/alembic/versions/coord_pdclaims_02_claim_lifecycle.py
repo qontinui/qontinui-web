@@ -1,7 +1,7 @@
 """coord.prompt_document_claim_states — add the claim ``lifecycle``
 
 Revision ID: coord_pdclaims_02_claim_lifecycle
-Revises: tenant_policies_02_transcript_sync_enabled
+Revises: coord_wu_authored_at_02
 Create Date: 2026-09-22
 
 Phase 1 of plan
@@ -291,7 +291,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "coord_pdclaims_02_claim_lifecycle"
-down_revision: str | Sequence[str] | None = "tenant_policies_02_transcript_sync_enabled"
+down_revision: str | Sequence[str] | None = "coord_wu_authored_at_02"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
