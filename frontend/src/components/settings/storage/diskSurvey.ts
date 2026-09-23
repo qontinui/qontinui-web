@@ -3,9 +3,10 @@
  * the Disk section of `/settings/storage`.
  *
  * Plan: `2026-08-07-product-disk-monitoring-and-cleanup.md` Phase 2 step 4
- * (web half). The survey is served by the RUNNER, on its loopback HTTP API
- * (`http://localhost:9876`), because the existing worktree cleanup panel chose
- * HTTP over Tauri IPC and the browser can only reach HTTP.
+ * (web half). The survey is served by the RUNNER, on its HTTP API (reached
+ * through the per-request runner transport: loopback for a runner proven on
+ * this machine, the backend relay otherwise), because the existing worktree
+ * cleanup panel chose HTTP over Tauri IPC and the browser can only reach HTTP.
  *
  * ## Why this module exists
  *
@@ -32,7 +33,7 @@
  *
  * ## Wire shape this module is pinned to
  *
- * `GET :9876/disk/reclaimable` (query: `?refresh=1`, `?waitSecs=N` capped at
+ * runner `GET /disk/reclaimable` (query: `?refresh=1`, `?waitSecs=N` capped at
  * 10), whose Rust wire types are `DiskSurvey` / `DiskReclaimItem` /
  * `ClassSummary` in the runner's `agent_worktree/disk_survey.rs`; the route is
  * registered in `mcp/disk_reclaim.rs`. **This is the confirmed contract, not a

@@ -7,7 +7,8 @@ import { useProject } from "@/hooks/automation/useProject";
 import { useWorkflows } from "@/hooks/automation/useWorkflows";
 import { useAutomationStore } from "@/stores/automation";
 import { useProjectLoader } from "@/hooks/use-project-loader";
-import { integrationTestingService } from "@/services/integration-testing";
+import { useIntegrationTestingService } from "@/services/integration-testing";
+import { useNewWorkRefusal } from "@/contexts/active-runner-context";
 import type { ViewMode } from "../_types";
 import type {
   IntegrationTestResponse,
@@ -16,6 +17,9 @@ import type {
 } from "@/types/integration-testing";
 
 export function useIntegrationTestRuns() {
+  const integrationTestingService = useIntegrationTestingService();
+  // Running an integration test is NEW work.
+  const newWorkRefusal = useNewWorkRefusal();
   const { user } = useAuth();
   const { projectId } = useProject();
   const { workflows } = useWorkflows();
@@ -45,7 +49,7 @@ export function useIntegrationTestRuns() {
       setApiHealthy(healthy);
     };
     checkHealth();
-  }, []);
+  }, [integrationTestingService]);
 
   const fetchRuns = useCallback(async () => {
     if (!projectId) return;
@@ -62,7 +66,7 @@ export function useIntegrationTestRuns() {
     } finally {
       setLoading(false);
     }
-  }, [projectId]);
+  }, [projectId, integrationTestingService]);
 
   useEffect(() => {
     if (user && projectId) {
@@ -163,6 +167,11 @@ export function useIntegrationTestRuns() {
       return;
     }
 
+    if (newWorkRefusal !== null) {
+      setError(newWorkRefusal);
+      return;
+    }
+
     const workflowConfig = buildWorkflowConfig();
     if (!workflowConfig) {
       setError("No workflow selected. Please select a workflow first.");
@@ -225,6 +234,8 @@ export function useIntegrationTestRuns() {
     fetchRuns,
     loadRunDetails,
     runIntegrationTest,
+    /** Coord's reason no test run may start right now (null = allowed). */
+    runRefusal: newWorkRefusal,
     toggleViewMode,
     goBackToList,
     dismissError,

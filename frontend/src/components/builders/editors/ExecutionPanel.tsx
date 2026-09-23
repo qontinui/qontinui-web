@@ -32,6 +32,11 @@ interface ExecutionPanelProps {
   onRun: () => Promise<ExecutionResult | void>;
   isRunnerOffline?: boolean;
   disabled?: boolean;
+  /**
+   * Coord's reason no new work may be placed on a runner right now. When
+   * non-null, the run button is disabled and the message is shown.
+   */
+  refusal?: string | null;
   runLabel?: string;
   className?: string;
 }
@@ -40,6 +45,7 @@ export function ExecutionPanel({
   onRun,
   isRunnerOffline = false,
   disabled = false,
+  refusal = null,
   runLabel = "Run",
   className,
 }: ExecutionPanelProps) {
@@ -99,7 +105,8 @@ export function ExecutionPanel({
           size="sm"
           className="h-7 gap-1.5"
           onClick={handleRun}
-          disabled={disabled || running}
+          disabled={disabled || running || refusal !== null}
+          title={refusal ?? undefined}
         >
           {running ? (
             <Loader2 className="size-3.5 animate-spin" />
@@ -157,6 +164,15 @@ export function ExecutionPanel({
           </>
         )}
       </div>
+
+      {refusal && (
+        <p
+          className="px-4 pb-2.5 text-xs text-text-muted"
+          data-testid="execution-run-refusal"
+        >
+          {refusal}
+        </p>
+      )}
 
       {result && expanded && (output || errorOutput) && (
         <div className="border-t border-border-subtle/30 px-4 py-3 space-y-2">

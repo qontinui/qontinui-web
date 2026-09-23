@@ -7,10 +7,13 @@
 
 "use client";
 
-import { useState, useEffect } from "react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Image as ImageIcon, AlertCircle } from "lucide-react";
-import { runnerClient } from "@/lib/runner-client";
+import {
+  objectUrlError,
+  screenshotErrorText,
+  useExtractionScreenshot,
+} from "./_hooks/useExtractionScreenshot";
 import type { ExtractionAnnotation } from "@/services/extraction-service";
 
 interface PageThumbnailListProps {
@@ -31,46 +34,10 @@ function PageThumbnail({
   isSelected: boolean;
   onClick: () => void;
 }) {
-  const [imageUrl, setImageUrl] = useState<string | null>(null);
-  const [error, setError] = useState(false);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    let mounted = true;
-
-    async function loadThumbnail() {
-      try {
-        setLoading(true);
-        setError(false);
-        const result = await runnerClient.getExtractionScreenshot(
-          extractionId,
-          annotation.screenshot_id
-        );
-        if (!mounted) return;
-
-        if (result.success && result.blob) {
-          const url = URL.createObjectURL(result.blob);
-          setImageUrl(url);
-        } else {
-          setError(true);
-        }
-      } catch {
-        if (mounted) setError(true);
-      } finally {
-        if (mounted) setLoading(false);
-      }
-    }
-
-    loadThumbnail();
-
-    return () => {
-      mounted = false;
-      if (imageUrl) {
-        URL.revokeObjectURL(imageUrl);
-      }
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [extractionId, annotation.screenshot_id]);
+  const shot = useExtractionScreenshot(extractionId, annotation.screenshot_id);
+  const loadError = objectUrlError(shot);
+  // Empty unless the runner refused the path over the relay (needs-local).
+  const needsLocalText = screenshotErrorText(loadError, "");
 
   // Get hostname from URL
   const getHostname = () => {
@@ -98,18 +65,26 @@ function PageThumbnail({
     >
       {/* Thumbnail */}
       <div className="aspect-[16/10] rounded-md overflow-hidden bg-muted mb-2">
-        {loading ? (
+        {shot.isLoading ? (
           <div className="w-full h-full flex items-center justify-center">
             <ImageIcon className="h-8 w-8 text-muted-foreground animate-pulse" />
           </div>
-        ) : error || !imageUrl ? (
-          <div className="w-full h-full flex items-center justify-center">
+        ) : !shot.url ? (
+          <div
+            className="w-full h-full flex flex-col items-center justify-center gap-1 p-1"
+            title={loadError?.message}
+          >
             <AlertCircle className="h-8 w-8 text-muted-foreground" />
+            {needsLocalText && (
+              <p className="text-[10px] text-muted-foreground text-center leading-tight">
+                {needsLocalText}
+              </p>
+            )}
           </div>
         ) : (
           // eslint-disable-next-line @next/next/no-img-element
           <img
-            src={imageUrl}
+            src={shot.url}
             alt={annotation.source_url}
             className="w-full h-full object-cover object-top"
           />

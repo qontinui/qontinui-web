@@ -1,7 +1,7 @@
 import React, { useCallback, useRef, useState } from "react";
 import { toast } from "sonner";
 import {
-  runnerClient,
+  useRunnerClient,
   type PatternMatch,
   type PatternMatchResponse,
 } from "@/lib/runner-client";
@@ -19,6 +19,7 @@ export function usePatternSearch(
   screenshotDataUrl: string | null,
   templateDataUrl: string | null
 ) {
+  const runnerClient = useRunnerClient();
   const [similarity, setSimilarity] = useState(0.8);
   const [findAll, setFindAll] = useState(false);
   const [maxMatches, setMaxMatches] = useState(100);
@@ -74,7 +75,14 @@ export function usePatternSearch(
     } finally {
       setIsSearching(false);
     }
-  }, [screenshotDataUrl, templateDataUrl, similarity, findAll, maxMatches]);
+  }, [
+    screenshotDataUrl,
+    templateDataUrl,
+    similarity,
+    findAll,
+    maxMatches,
+    runnerClient,
+  ]);
 
   const renderMatches = useCallback(
     (matches: PatternMatch[]) => {

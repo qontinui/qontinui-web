@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect, useMemo, useRef } from "react";
-import { runnerApi } from "@/lib/runner-api";
+import { useRunnerApi } from "@/lib/runner-api";
 import type { DiscoveredSpec, SpecGroup } from "@/lib/spec-prompt-builder";
 import { buildSpecPrompt } from "@/lib/spec-prompt-builder";
 import {
@@ -19,6 +19,7 @@ import { filterSelectedGroups, getSpecPageUrl } from "../spec-source-utils";
 export function useSpecSourceState(
   onSpecsChanged: (state: SpecSourceState) => void
 ) {
+  const runnerApi = useRunnerApi();
   const onSpecsChangedRef = useRef(onSpecsChanged);
   onSpecsChangedRef.current = onSpecsChanged;
 
@@ -228,7 +229,7 @@ export function useSpecSourceState(
     } finally {
       setIsDiscovering(false);
     }
-  }, [browser.isConnected, browser.connectedAppName, mergeSpecs]);
+  }, [browser.isConnected, browser.connectedAppName, mergeSpecs, runnerApi]);
 
   const handleDiscoverAllPages = useCallback(async () => {
     if (!browser.isConnected) return;
@@ -343,6 +344,7 @@ export function useSpecSourceState(
     discoveredSpecs,
     selectedGroupIds,
     notifyParent,
+    runnerApi,
   ]);
 
   const handleManualConnect = useCallback(async () => {

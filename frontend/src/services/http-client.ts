@@ -45,6 +45,23 @@ const ACTIVE_TENANT_URL_PREFIXES = [
   // so a multi-tenant operator edits agent prefs in the tenant they've
   // switched to (membership-validated coord-side), matching /operations/*.
   "/api/v1/agent-registry",
+  // Project Overview — the ONE thing that scopes it. Every `overview.*` row
+  // is keyed on the active coord tenant, which the backend resolves from this
+  // header alone (`get_overview_tenant_id` /
+  // `require_coord_tenant_admin_target`). Without the header those
+  // dependencies fall through to the operator's HOME tenant, so a
+  // multi-tenant operator who switched project would READ their home
+  // project's estimate under another project's name and WRITE their edits
+  // into it. Plan `2026-09-19-project-overview-for-business-leaders`,
+  // design decision 2.
+  "/api/v1/overview/",
+  // Runner targeting (plan 2026-09-20-runner-selector-drives-a-transport-not-
+  // a-target, Phase 3). Each forwards to coord's device resolver AS the
+  // caller, and coord scopes the candidate devices to the ACTIVE tenant — so
+  // without the header a multi-tenant operator is resolved against their home
+  // tenant's devices.
+  "/api/v1/devices/resolve",
+  "/api/v1/dispatch/fresh-host",
 ];
 
 function readActiveTenantId(): string | null {
@@ -168,7 +185,9 @@ export function isRetryableStatus(args: {
   if (noRetryStatuses?.includes(status)) return false;
   if (status === 429) return true;
   if (status >= 500) {
-    return idempotent || IDEMPOTENT_METHODS.has((method || "GET").toUpperCase());
+    return (
+      idempotent || IDEMPOTENT_METHODS.has((method || "GET").toUpperCase())
+    );
   }
   return false;
 }

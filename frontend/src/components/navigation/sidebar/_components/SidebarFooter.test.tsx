@@ -38,7 +38,17 @@ vi.mock("@/contexts/active-runner-context", () => ({
         ]
       : [{ id: "r1", name: "Desk runner", port: 9876 }],
     selectRunner: vi.fn(),
+    pin: null,
     isMultiRunner: runner.isMultiRunner,
+    listState: "loaded",
+    localityById: new Map([["r1", "local"]]),
+    selection: "auto",
+    resolution: {
+      status: "resolved",
+      deviceId: "r1",
+      via: "pool",
+      pinReleased: null,
+    },
   }),
 }));
 
@@ -109,9 +119,9 @@ describe("SidebarFooter", () => {
     // UI-Bridge id even though both sit on the same button.
     for (const collapsed of [false, true]) {
       const { container, unmount } = renderFooter(collapsed);
-      expect(
-        container.querySelector("[data-sidebar-collapse-toggle]")
-      ).toBe(container.querySelector(TOGGLE));
+      expect(container.querySelector("[data-sidebar-collapse-toggle]")).toBe(
+        container.querySelector(TOGGLE)
+      );
       unmount();
     }
   });
@@ -147,23 +157,19 @@ describe("SidebarFooter", () => {
     });
   });
 
-  it("seats the multi-runner dropdown trigger beside the toggle", () => {
+  it("with several runners the row stays a status line — no runner control beside the toggle", () => {
     runner.isMultiRunner = true;
     try {
       const { container } = renderFooter(false);
 
       const row = container.querySelector(STATUS_ROW);
       const toggle = container.querySelector(TOGGLE);
-      const dropdown = screen
-        .getAllByRole("button")
-        .find((b) => b.textContent?.includes("Desk runner"));
-
-      // Both controls live in the one row: the runner trigger takes the slack
-      // (`min-w-0 flex-1`) and the toggle keeps its width (`shrink-0`).
-      expect(dropdown).toBeDefined();
-      expect(row).toContainElement(dropdown as HTMLElement);
-      expect(row).toContainElement(toggle as HTMLElement);
-      expect(dropdown).not.toBe(toggle);
+      expect(row).toHaveTextContent("Runner: Desk runner");
+      // The toggle is the row's only button: the runner picker moved to the
+      // execution surfaces ("Run on:").
+      expect(row?.querySelectorAll("button")).toHaveLength(1);
+      expect(row?.querySelector("button")).toBe(toggle);
+      expect(screen.queryByRole("menu")).not.toBeInTheDocument();
     } finally {
       runner.isMultiRunner = false;
     }

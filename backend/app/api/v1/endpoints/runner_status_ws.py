@@ -26,7 +26,7 @@ from redis import asyncio as aioredis
 from starlette.websockets import WebSocketState
 
 from app.api.deps import get_current_user_from_ws
-from app.api.v1.endpoints.devices import _device_to_wire as _runner_to_wire
+from app.api.v1.endpoints.devices import devices_to_wire
 from app.config.redis_config import get_redis
 from app.core.config import settings
 from app.crud import runner_crud
@@ -88,7 +88,9 @@ async def websocket_runner_status(
     try:
         async with AsyncSessionLocal() as db:
             runners = await runner_crud.list_runners(db, user.id)
-            wire_runners = [_runner_to_wire(r).model_dump(mode="json") for r in runners]
+            wire_runners = [
+                w.model_dump(mode="json") for w in await devices_to_wire(db, runners)
+            ]
 
             await websocket.send_json(
                 {

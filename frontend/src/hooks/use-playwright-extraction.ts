@@ -1,12 +1,17 @@
 "use client";
 
-import { useState, useCallback, useEffect, useRef } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
-  runnerClient,
+  useRunnerClient,
   type StartPlaywrightCollectionRequest,
   type PlaywrightClickable,
 } from "@/lib/runner-client";
+import {
+  isRunnerNeedsLocalError,
+  runnerPollInterval,
+  useRunnerTarget,
+} from "@/lib/runner";
 
 /**
  * Job status from runner
@@ -54,13 +59,14 @@ export interface PlaywrightExtractionResults {
  * Hook to start and monitor a Playwright extraction job via the runner.
  */
 export function usePlaywrightExtraction() {
+  const runnerClient = useRunnerClient();
+  const target = useRunnerTarget();
   const queryClient = useQueryClient();
   const [currentJobId, setCurrentJobId] = useState<string | null>(null);
   const [isPolling, setIsPolling] = useState(false);
   const [results, setResults] = useState<PlaywrightExtractionResults | null>(
     null
   );
-  const pollingRef = useRef<NodeJS.Timeout | null>(null);
 
   // Query for current job status
   const {
@@ -90,7 +96,16 @@ export function usePlaywrightExtraction() {
       };
     },
     enabled: !!currentJobId,
-    refetchInterval: isPolling ? 2000 : false,
+    // Re-evaluated on every refetch: never faster than the relay cadence for
+    // a relayed or unresolved target, and stopped for good once the runner
+    // refused the path over the relay (RUNNER_NEEDS_LOCAL — `jobError`
+    // carries its message).
+    refetchInterval: (query) =>
+      isPolling && !isRunnerNeedsLocalError(query.state.error)
+        ? runnerPollInterval(target, 2000)
+        : false,
+    retry: (failureCount, error) =>
+      !isRunnerNeedsLocalError(error) && failureCount < 3,
   });
 
   // Fetch results when job completes
@@ -104,7 +119,12 @@ export function usePlaywrightExtraction() {
           }
         });
     }
-  }, [currentJob?.status, currentJob?.has_results, currentJob?.job_id]);
+  }, [
+    currentJob?.status,
+    currentJob?.has_results,
+    currentJob?.job_id,
+    runnerClient,
+  ]);
 
   // Stop polling when job completes or fails
   useEffect(() => {
@@ -116,16 +136,6 @@ export function usePlaywrightExtraction() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentJob?.status]);
-
-  // Cleanup on unmount
-  useEffect(() => {
-    return () => {
-      if (pollingRef.current) {
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-        clearInterval(pollingRef.current);
-      }
-    };
-  }, []);
 
   // Mutation to start extraction
   const startExtractionMutation = useMutation({

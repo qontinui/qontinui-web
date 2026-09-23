@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { FolderSearch } from "lucide-react";
 import { AiGeneratorPanel } from "@/components/builders/AiGeneratorPanel";
-import { runnerApi } from "@/lib/runner/runner-api-object";
+import { useRunnerApi, useDispatchRunnerApi } from "@/lib/runner/runner-api-object";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -15,6 +15,10 @@ interface AiWorkspaceScannerProps {
 }
 
 export function AiWorkspaceScanner({ onAcceptChecks }: AiWorkspaceScannerProps) {
+  const runnerApi = useRunnerApi();
+  // Calls that START work go to the new-work target (explicit choice or
+  // coord's resolved pick); a refused call carries coord's outcome.
+  const { api: workApi, refusal: workRefusal } = useDispatchRunnerApi();
   const [scanning, setScanning] = useState(false);
   const [generating, setGenerating] = useState(false);
   const [, setScanResult] = useState<Record<string, unknown> | null>(null);
@@ -40,7 +44,7 @@ export function AiWorkspaceScanner({ onAcceptChecks }: AiWorkspaceScannerProps) 
 
       // Now generate checks from scan
       setGenerating(true);
-      const genResult = await runnerApi.generateChecks(result);
+      const genResult = await workApi.generateChecks(result);
       if (genResult.success && genResult.suggested_checks) {
         const checks: SuggestedCheck[] = genResult.suggested_checks.map((sc) => ({
           name: sc.name || sc.check?.name || "Unnamed Check",
@@ -84,6 +88,7 @@ export function AiWorkspaceScanner({ onAcceptChecks }: AiWorkspaceScannerProps) 
 
   return (
     <AiGeneratorPanel
+      refusal={workRefusal}
       title="AI Workspace Scanner"
       icon={FolderSearch}
       accentColor="violet"

@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { runnerFetch } from "@/lib/runner/api-client";
-import { runnerApi } from "@/lib/runner/runner-api-object";
+import { useRunnerApi } from "@/lib/runner/runner-api-object";
+import { useDispatchRunnerTarget } from "@/contexts/active-runner-context";
 import type { SavedApiRequest } from "@/lib/runner/types/library";
 import type {
   TestType,
@@ -14,6 +15,13 @@ import type {
 export function useTestOrchestrator({
   onTestGenerated,
 }: Pick<TestOrchestratorProps, "onTestGenerated">) {
+  // Planning, executing and generating are NEW work (AI calls, and HTTP
+  // requests fired at the app under test): only the explicit choice or
+  // coord's resolved pick. Loading saved requests and saving the finished
+  // test are library reads/writes on the read target (runnerApi).
+  const { target, refusal } = useDispatchRunnerTarget();
+  const workRefusal = refusal?.message ?? null;
+  const runnerApi = useRunnerApi();
   // Phase management
   const [phase, setPhase] = useState<OrchestratorPhase>("selection");
 
@@ -65,7 +73,7 @@ export function useTestOrchestrator({
     } finally {
       setLoadingRequests(false);
     }
-  }, []);
+  }, [runnerApi]);
 
   useEffect(() => {
     loadSavedRequests();
@@ -130,6 +138,7 @@ export function useTestOrchestrator({
 
     try {
       const response = await runnerFetch<OrchestrationPlan>(
+        target,
         "/test-orchestration/plan",
         {
           method: "POST",
@@ -151,7 +160,7 @@ export function useTestOrchestrator({
     } finally {
       setPlanning(false);
     }
-  }, [selectedRequestIds, testDescription, additionalContext]);
+  }, [selectedRequestIds, testDescription, additionalContext, target]);
 
   // ---------------------------------------------------------------------------
   // Phase: Execution - Run the Plan
@@ -167,6 +176,7 @@ export function useTestOrchestrator({
 
     try {
       const response = await runnerFetch<OrchestrationExecutionResult>(
+        target,
         "/test-orchestration/execute",
         {
           method: "POST",
@@ -201,7 +211,7 @@ export function useTestOrchestrator({
     } finally {
       setExecuting(false);
     }
-  }, [plan]);
+  }, [plan, target]);
 
   // ---------------------------------------------------------------------------
   // Phase: Generation - Generate Test Code
@@ -216,6 +226,7 @@ export function useTestOrchestrator({
 
     try {
       const response = await runnerFetch<GeneratedTest>(
+        target,
         "/test-orchestration/generate",
         {
           method: "POST",
@@ -236,7 +247,7 @@ export function useTestOrchestrator({
     } finally {
       setGenerating(false);
     }
-  }, [plan, executionResult, testType]);
+  }, [plan, executionResult, testType, target]);
 
   // ---------------------------------------------------------------------------
   // Actions
@@ -264,15 +275,18 @@ export function useTestOrchestrator({
   };
 
   // Navigate to next phase (for completed phases)
+  const startsWork =
+    phase === "selection" || phase === "planning" || phase === "execution";
   const canAdvance =
-    (phase === "selection" &&
+    !(startsWork && workRefusal !== null) &&
+    ((phase === "selection" &&
       selectedRequestIds.size > 0 &&
       testDescription.trim() !== "") ||
-    (phase === "planning" && plan !== null && !planning) ||
-    (phase === "execution" &&
-      executionResult?.success === true &&
-      !executing) ||
-    (phase === "generation" && generatedTest !== null && !generating);
+      (phase === "planning" && plan !== null && !planning) ||
+      (phase === "execution" &&
+        executionResult?.success === true &&
+        !executing) ||
+      (phase === "generation" && generatedTest !== null && !generating));
 
   const canGoBack =
     phase === "planning" || phase === "execution" || phase === "generation";
@@ -338,6 +352,8 @@ export function useTestOrchestrator({
 
     // Shared state
     error,
+    /** Why the next step may not start new work (coord's outcome), or null. */
+    workRefusal: startsWork ? workRefusal : null,
     setError,
 
     // Navigation

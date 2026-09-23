@@ -8,7 +8,9 @@
 "use client";
 
 import { useState, useCallback, useEffect, useRef } from "react";
-import { runnerClient } from "@/lib/runner-client";
+import { useRunnerClient } from "@/lib/runner-client";
+import { useNewWorkRefusal } from "@/contexts/active-runner-context";
+import { useRunnerPoll, useRunnerTarget } from "@/lib/runner";
 import { useRunnerAvailability } from "@/hooks/useRunnerMonitors";
 
 export interface ClickCaptureState {
@@ -24,12 +26,19 @@ export interface ClickCaptureState {
 export interface UseClickCaptureResult {
   state: ClickCaptureState;
   isRunnerConnected: boolean;
+  /** Coord's reason no capture may start right now (null = allowed). */
+  startRefusal: string | null;
   start: (applicationName?: string) => Promise<boolean>;
   stop: () => Promise<{ candidatesCount: number } | null>;
   refresh: () => Promise<void>;
 }
 
 export function useClickCapture(): UseClickCaptureResult {
+  const runnerClient = useRunnerClient();
+  // Starting a capture session is NEW work (stop / status act on the
+  // existing session).
+  const newWorkRefusal = useNewWorkRefusal();
+  const target = useRunnerTarget();
   const [state, setState] = useState<ClickCaptureState>({
     isActive: false,
     sessionId: null,
@@ -41,7 +50,6 @@ export function useClickCapture(): UseClickCaptureResult {
   });
 
   const durationIntervalRef = useRef<NodeJS.Timeout | null>(null);
-  const statusPollingRef = useRef<NodeJS.Timeout | null>(null);
   const { data: isAvailable } = useRunnerAvailability({
     refetchInterval: 5000,
   });
@@ -69,35 +77,26 @@ export function useClickCapture(): UseClickCaptureResult {
     };
   }, [state.isActive, state.startTime]);
 
-  // Poll for click count updates during recording
-  useEffect(() => {
-    if (state.isActive) {
-      statusPollingRef.current = setInterval(async () => {
-        try {
-          const response = await runnerClient.getClickCaptureStatus();
-          if (response.success && response.click_count !== undefined) {
-            setState((prev) => ({
-              ...prev,
-              clickCount: response.click_count || 0,
-            }));
-          }
-        } catch (_error) {
-          // Silently ignore polling errors
-        }
-      }, 2000); // Poll every 2 seconds
-    } else {
-      if (statusPollingRef.current) {
-        clearInterval(statusPollingRef.current);
-        statusPollingRef.current = null;
+  // Poll for click count updates during recording. The cadence is
+  // re-evaluated every tick (never faster than the relay cadence for a
+  // relayed or unresolved target); a RUNNER_NEEDS_LOCAL refusal stops the
+  // poll and is shown as the error.
+  useRunnerPoll(target, {
+    enabled: state.isActive,
+    requestedMs: 2000,
+    tick: async () => {
+      const response = await runnerClient.getClickCaptureStatus();
+      if (response.success && response.click_count !== undefined) {
+        setState((prev) => ({
+          ...prev,
+          clickCount: response.click_count || 0,
+        }));
       }
-    }
-
-    return () => {
-      if (statusPollingRef.current) {
-        clearInterval(statusPollingRef.current);
-      }
-    };
-  }, [state.isActive]);
+    },
+    onNeedsLocal: (err) =>
+      setState((prev) => ({ ...prev, error: err.message })),
+    // Silently ignore other polling errors
+  });
 
   // Fetch initial status on mount
   const refresh = useCallback(async () => {
@@ -129,7 +128,7 @@ export function useClickCapture(): UseClickCaptureResult {
     } catch (error) {
       console.error("[useClickCapture] Error fetching status:", error);
     }
-  }, []);
+  }, [runnerClient]);
 
   useEffect(() => {
     if (isAvailable) {
@@ -140,6 +139,10 @@ export function useClickCapture(): UseClickCaptureResult {
   // Start capture session
   const start = useCallback(
     async (applicationName?: string): Promise<boolean> => {
+      if (newWorkRefusal !== null) {
+        setState((prev) => ({ ...prev, error: newWorkRefusal }));
+        return false;
+      }
       setState((prev) => ({ ...prev, error: null }));
 
       const sessionId = `capture-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -175,7 +178,7 @@ export function useClickCapture(): UseClickCaptureResult {
         return false;
       }
     },
-    []
+    [runnerClient, newWorkRefusal]
   );
 
   // Stop capture session
@@ -211,11 +214,12 @@ export function useClickCapture(): UseClickCaptureResult {
       }));
       return null;
     }
-  }, []);
+  }, [runnerClient]);
 
   return {
     state,
     isRunnerConnected: isAvailable ?? false,
+    startRefusal: newWorkRefusal,
     start,
     stop,
     refresh,

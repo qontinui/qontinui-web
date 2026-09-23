@@ -38,6 +38,11 @@ interface SequenceBuilderPanelProps {
   onItemsChange: (items: QueueItem[]) => void;
   onStopOnFailureChange: (value: boolean) => void;
   onRun: () => void;
+  /**
+   * Why Run may not start new work right now (coord's outcome); non-null
+   * disables Run and is shown beside it.
+   */
+  runRefusal?: string | null;
   onClear: () => void;
   onSaveAsWorkflow?: () => void;
   showSaveDialog?: boolean;
@@ -52,6 +57,7 @@ export function SequenceBuilderPanel({
   onItemsChange,
   onStopOnFailureChange,
   onRun,
+  runRefusal = null,
   onClear,
   onSaveAsWorkflow,
   showSaveDialog,
@@ -194,8 +200,11 @@ export function SequenceBuilderPanel({
               <Button
                 variant="brand-primary"
                 size="sm"
-                disabled={isRunning || items.length === 0}
+                disabled={
+                  isRunning || items.length === 0 || runRefusal !== null
+                }
                 onClick={onRun}
+                title={runRefusal ?? undefined}
               >
                 {isRunning ? (
                   <Loader2 className="size-3.5 mr-1 animate-spin" />
@@ -205,6 +214,14 @@ export function SequenceBuilderPanel({
                 Run
               </Button>
             </div>
+            {runRefusal && (
+              <p
+                className="mt-2 text-xs text-text-muted"
+                data-testid="execute-run-refusal"
+              >
+                {runRefusal}
+              </p>
+            )}
           </div>
         </CardContent>
       </Card>

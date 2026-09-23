@@ -9,6 +9,8 @@ import {
   parseCssColor,
   parsePx,
   deriveInteractable,
+  inertReason,
+  parseOpacity,
   enrichElement,
   enrichElements,
   normalizeBboxes,
@@ -120,6 +122,208 @@ describe("deriveInteractable", () => {
     expect(
       deriveInteractable({ category: "content", actions: ["click"] })
     ).toBe(true);
+  });
+});
+
+describe("parseOpacity", () => {
+  it("parses numeric and string opacities", () => {
+    expect(parseOpacity(0)).toBe(0);
+    expect(parseOpacity(1)).toBe(1);
+    expect(parseOpacity("0")).toBe(0);
+    expect(parseOpacity("0.5")).toBe(0.5);
+    expect(parseOpacity(" 0 ")).toBe(0);
+  });
+
+  it("returns null (UNKNOWN) for unparseable values — NEVER 0", () => {
+    // `Number("")` is 0; reading that as 0 would mark the element inert.
+    expect(parseOpacity("")).toBeNull();
+    expect(parseOpacity("   ")).toBeNull();
+    expect(parseOpacity("inherit")).toBeNull();
+    expect(parseOpacity("initial")).toBeNull();
+    expect(parseOpacity(undefined)).toBeNull();
+    expect(parseOpacity(null)).toBeNull();
+    expect(parseOpacity({})).toBeNull();
+    expect(parseOpacity(NaN)).toBeNull();
+  });
+
+  it("does not read a boolean as a number", () => {
+    // Python guards `isinstance(v, bool)` explicitly; TS booleans are simply
+    // not `typeof === "number"`, so `false` can never be read as 0.
+    expect(parseOpacity(false)).toBeNull();
+    expect(parseOpacity(true)).toBeNull();
+  });
+});
+
+describe("inertReason", () => {
+  it("names each PRESENT inert signal", () => {
+    expect(inertReason({ state: { disabled: true } })).toBe("disabled");
+    expect(inertReason({ state: { ariaDisabled: true } })).toBe(
+      "aria-disabled"
+    );
+    expect(inertReason({ state: { enabled: false } })).toBe(
+      "state.enabled=false"
+    );
+    expect(
+      inertReason({ state: { computedStyles: { pointerEvents: "none" } } })
+    ).toBe("pointer-events:none");
+    expect(
+      inertReason({ state: { computedStyles: { pointerEvents: "NONE " } } })
+    ).toBe("pointer-events:none");
+    expect(inertReason({ state: { opacityHidden: true } })).toBe("opacity:0");
+    expect(inertReason({ state: { computedStyles: { opacity: "0" } } })).toBe(
+      "opacity:0"
+    );
+    expect(inertReason({ state: { computedStyles: { opacity: 0 } } })).toBe(
+      "opacity:0"
+    );
+  });
+
+  it("returns null when the PRESENT signals all read live", () => {
+    expect(
+      inertReason({
+        state: {
+          disabled: false,
+          ariaDisabled: false,
+          enabled: true,
+          opacityHidden: false,
+          computedStyles: { pointerEvents: "auto", opacity: "1" },
+        },
+      })
+    ).toBeNull();
+  });
+
+  it("ABSENT reads as UNKNOWN, never as inert", () => {
+    expect(inertReason({})).toBeNull(); // no state at all
+    expect(inertReason({ state: {} })).toBeNull(); // no computedStyles
+    expect(inertReason({ state: { computedStyles: {} } })).toBeNull();
+    // `pointerEvents: ""` is the SDK's own "could not read".
+    expect(
+      inertReason({ state: { computedStyles: { pointerEvents: "" } } })
+    ).toBeNull();
+    // An unparseable opacity is UNKNOWN, not 0.
+    expect(
+      inertReason({ state: { computedStyles: { opacity: "inherit" } } })
+    ).toBeNull();
+    // Absent `enabled` is UNKNOWN — `state.enabled === false`, not
+    // `!state.enabled`.
+    expect(inertReason({ state: { role: "button" } })).toBeNull();
+    // A non-object `state` / `computedStyles` says nothing either.
+    expect(inertReason({ state: "nope" })).toBeNull();
+    expect(inertReason({ state: { computedStyles: "nope" } })).toBeNull();
+  });
+});
+
+describe("deriveInteractable — the inert gate", () => {
+  // The gate runs BEFORE tag/role/category: an element a user cannot hit is
+  // not interactable however the SDK classifies it. Measured on a live
+  // 112-element Terminal capture: interactable 96 -> 78, overlap 23 -> 14.
+  it("suppresses a disabled element", () => {
+    expect(
+      deriveInteractable({ tagName: "button", state: { disabled: true } })
+    ).toBe(false);
+  });
+
+  it("suppresses an aria-disabled element", () => {
+    expect(
+      deriveInteractable({ role: "button", state: { ariaDisabled: true } })
+    ).toBe(false);
+  });
+
+  it("suppresses state.enabled === false", () => {
+    expect(
+      deriveInteractable({ tagName: "a", state: { enabled: false } })
+    ).toBe(false);
+  });
+
+  it("suppresses pointer-events: none", () => {
+    expect(
+      deriveInteractable({
+        tagName: "button",
+        state: { computedStyles: { pointerEvents: "none" } },
+      })
+    ).toBe(false);
+  });
+
+  it("suppresses opacity 0 (computed, and the SDK's opacityHidden spelling)", () => {
+    expect(
+      deriveInteractable({
+        tagName: "button",
+        state: { computedStyles: { opacity: "0" } },
+      })
+    ).toBe(false);
+    expect(
+      deriveInteractable({ tagName: "button", state: { opacityHidden: true } })
+    ).toBe(false);
+  });
+
+  it("beats category 'interactive' and a registered handler", () => {
+    // The SDK marks a `pointer-events: none` button `interactive` all the
+    // same — `category` says what the element IS, not whether it can be hit.
+    expect(
+      deriveInteractable({
+        category: "interactive",
+        state: { computedStyles: { pointerEvents: "none" } },
+      })
+    ).toBe(false);
+    expect(
+      deriveInteractable({
+        actions: ["click"],
+        state: { disabled: true },
+      })
+    ).toBe(false);
+  });
+
+  it("leaves a live control interactable", () => {
+    expect(
+      deriveInteractable({
+        tagName: "button",
+        state: {
+          disabled: false,
+          enabled: true,
+          computedStyles: { pointerEvents: "auto", opacity: "1" },
+        },
+      })
+    ).toBe(true);
+  });
+
+  // UNKNOWN negatives — a poorer producer must NOT be silently suppressed,
+  // or the overlap pass empties and a broken page analyses clean.
+  it("stays interactable when there is no state at all", () => {
+    expect(deriveInteractable({ tagName: "button" })).toBe(true);
+    expect(deriveInteractable({ category: "interactive" })).toBe(true);
+  });
+
+  it("stays interactable when there are no computedStyles", () => {
+    expect(
+      deriveInteractable({ tagName: "button", state: { role: "button" } })
+    ).toBe(true);
+    expect(
+      deriveInteractable({ role: "link", state: { computedStyles: {} } })
+    ).toBe(true);
+  });
+
+  it("stays interactable on an unparseable opacity", () => {
+    expect(
+      deriveInteractable({
+        tagName: "button",
+        state: { computedStyles: { opacity: "inherit" } },
+      })
+    ).toBe(true);
+  });
+
+  it("stays interactable on an empty pointerEvents (could not read)", () => {
+    expect(
+      deriveInteractable({
+        tagName: "button",
+        state: { computedStyles: { pointerEvents: "" } },
+      })
+    ).toBe(true);
+  });
+
+  it("an inert element still stays non-interactable for the ordinary reasons", () => {
+    expect(
+      deriveInteractable({ tagName: "div", state: { disabled: true } })
+    ).toBe(false);
   });
 });
 

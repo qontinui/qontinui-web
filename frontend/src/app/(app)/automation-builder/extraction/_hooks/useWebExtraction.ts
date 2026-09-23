@@ -2,7 +2,8 @@ import { useCallback, useEffect, useMemo, useRef } from "react";
 import { toast } from "sonner";
 import { authService, extractionService } from "@/services/service-factory";
 import { useExtractions, useCreateExtraction } from "@/hooks/use-extractions";
-import { runnerClient } from "@/lib/runner-client";
+import { useRunnerClient } from "@/lib/runner-client";
+import { useNewWorkRefusal } from "@/contexts/active-runner-context";
 import {
   useExtractionAnnotationStore,
   type AnnotatedElement,
@@ -37,6 +38,10 @@ export function useWebExtraction({
   webConfig,
   isLoaded: _isLoaded,
 }: UseWebExtractionArgs) {
+  const runnerClient = useRunnerClient();
+  // Starting a web extraction is NEW work; reading/cleaning existing
+  // extractions is not.
+  const newWorkRefusal = useNewWorkRefusal();
   const createExtraction = useCreateExtraction();
   const annotationStore = useExtractionAnnotationStore();
 
@@ -521,6 +526,10 @@ export function useWebExtraction({
 
   // Start web extraction
   const startWebExtraction = useCallback(async () => {
+    if (newWorkRefusal !== null) {
+      toast.error(newWorkRefusal);
+      return;
+    }
     if (!projectId) {
       toast.error("No project selected");
       return;
@@ -610,7 +619,7 @@ export function useWebExtraction({
     toast.info("Starting web extraction...");
     stateRef.current.setIsExtracting(true);
     stateRef.current.setMainTab("results");
-  }, [projectId, webConfig, createExtraction]);
+  }, [projectId, webConfig, createExtraction, runnerClient, newWorkRefusal]);
 
   return {
     extractionHistory,
@@ -623,6 +632,8 @@ export function useWebExtraction({
     loadWebElementsToAnnotationStore,
     pollWebExtractionStatus,
     startWebExtraction,
+    /** Coord's reason no web extraction may start right now (null = allowed). */
+    startRefusal: newWorkRefusal,
     createExtraction,
     annotationStore,
   };

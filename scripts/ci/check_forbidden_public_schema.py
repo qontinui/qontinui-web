@@ -13,8 +13,9 @@ Phase 7 deliverable of the migration consolidation
 Fails if any tracked source file (re-)introduces a ``public.<table>`` schema
 reference. Post-Phase-7 the ``public`` schema contains only
 ``alembic_version`` (alembic's own bookkeeping); domain tables live in
-project / coord / agent / auth / cloud / strategy / web — the canonical set
-in ``.pre-commit-hooks/check_alembic_schema_args.py``'s ``ALLOWED_SCHEMAS``.
+project / coord / agent / auth / cloud / strategy / web / overview — the
+canonical set in ``.pre-commit-hooks/check_alembic_schema_args.py``'s
+``ALLOWED_SCHEMAS``.
 Keep this comment in sync with it.
 
 The scan is a ``git grep`` over tracked files (subprocess argv, no shell), so
@@ -125,7 +126,7 @@ def main() -> int:
         err(
             "public.* schema reference detected in source. Post-Phase-7, the "
             "public schema contains only alembic_version; domain tables live in "
-            "project / coord / agent / auth / cloud / strategy / web."
+            "project / coord / agent / auth / cloud / strategy / web / overview."
         )
         for line in forbidden:
             print(line, file=sys.stderr)

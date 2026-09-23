@@ -1,25 +1,28 @@
 /**
  * Base HTTP transport layer for the runner client.
  *
- * Provides the shared configuration constants and generic sendCommand method.
+ * Holds the target runner, the shared failure-message builder and the generic
+ * sendCommand method.
  * Sub-clients receive a BaseClient instance via constructor injection.
  */
 
+import { runnerRequest } from "@/lib/runner/api-client";
 import {
   describeRunnerOriginRefusal,
   parseRunnerOriginRefusalText,
 } from "@/lib/runner/origin-refusal";
-
-// Default runner URL - can be overridden via environment variable
-// Use 127.0.0.1 instead of localhost to force IPv4 (runner only listens on IPv4)
-export const RUNNER_BASE_URL =
-  process.env.NEXT_PUBLIC_RUNNER_URL || "http://127.0.0.1:9876";
+import type { RunnerTarget } from "@/lib/runner/target";
 
 export class BaseClient {
-  readonly baseUrl: string;
+  /**
+   * The runner every sub-client call is for. The transport (loopback for a
+   * runner proven local, the backend relay otherwise) is resolved per request
+   * by `runnerRequest` — there is no base URL.
+   */
+  readonly target: RunnerTarget;
 
-  constructor(baseUrl: string = RUNNER_BASE_URL) {
-    this.baseUrl = baseUrl;
+  constructor(target: RunnerTarget) {
+    this.target = target;
   }
 
   /**
@@ -60,21 +63,16 @@ export class BaseClient {
     params: Record<string, unknown> = {},
     timeoutMs = 120000
   ): Promise<{ success: boolean; result?: T; error?: string }> {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
-
     try {
-      const response = await fetch(`${this.baseUrl}/command`, {
+      const response = await runnerRequest(this.target, "/command", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
           Accept: "application/json",
         },
         body: JSON.stringify({ type, params }),
-        signal: controller.signal,
+        timeoutMs,
       });
-
-      clearTimeout(timeoutId);
 
       if (!response.ok) {
         return {
@@ -90,7 +88,6 @@ export class BaseClient {
         error: data.error,
       };
     } catch (error) {
-      clearTimeout(timeoutId);
       return {
         success: false,
         error: error instanceof Error ? error.message : "Command failed",

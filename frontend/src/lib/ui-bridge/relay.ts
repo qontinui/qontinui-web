@@ -29,17 +29,25 @@ import {
 // resolves. Exported so tree-shaking can never drop the import.
 import IORedis from "ioredis";
 export const __ioredisTraceAnchor: unknown = IORedis;
-import { loadDiscoveredSpecs } from "./discovered-specs";
+import type { DiscoveredSpec } from "@/lib/spec-prompt-builder";
 
-/** Runner screenshot endpoint — used as fallback when the browser relay is unresponsive */
+/**
+ * Runner screenshot endpoint — used as fallback when the browser relay is
+ * unresponsive. The SDK fetches it from THIS SERVER process, which has no
+ * runner target and cannot use the browser's per-request resolver (the relay
+ * needs the user's bearer), so it can only mean "the runner on the machine
+ * serving this app" — i.e. local dev. On a deployed server nothing answers
+ * there and the SDK reports the fallback as failed.
+ */
 const RUNNER_SCREENSHOT_URL = "http://localhost:9876/ui-bridge/sdk/screenshot";
 
-// Pre-load specs from the runner's Spec API (Section 13 runtime loading).
-// `createRelayHandlers` captures `specs` once at construction, so we await
-// the initial load here. If the runner is unreachable at boot we fall back
-// to an empty array — the cache will fill in as soon as the first browser
-// request triggers a re-fetch (or when SSE delivers a `spec.changed`).
-const initialSpecs = await loadDiscoveredSpecs().catch(() => []);
+// Specs for `createRelayHandlers`. This module runs on the SERVER, which has
+// no runner target: runners are addressed per request from the browser (the
+// active runner, through the per-request transport resolver), and a server
+// cannot reach the user's runner. So the handlers start with no specs —
+// which is what the server-side load always produced (the old loopback gate
+// returned an empty list whenever there was no browser window).
+const initialSpecs: DiscoveredSpec[] = [];
 
 /**
  * Relay-bus transport mode, surfaced via `GET /api/ui-bridge/health`.

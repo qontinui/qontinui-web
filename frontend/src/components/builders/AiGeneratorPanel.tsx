@@ -28,6 +28,11 @@ export interface AiGeneratorPanelProps {
   placeholder?: string;
   generating: boolean;
   error?: string | null;
+  /**
+   * Coord's reason no new work may be placed on a runner right now. When
+   * non-null, Generate/Regenerate are disabled and the message is shown.
+   */
+  refusal?: string | null;
   onGenerate: (prompt: string) => void;
   // Result rendering
   result?: React.ReactNode;
@@ -112,6 +117,7 @@ export function AiGeneratorPanel({
   placeholder = "Describe what you want to generate...",
   generating,
   error,
+  refusal = null,
   onGenerate,
   result,
   onAccept,
@@ -126,15 +132,26 @@ export function AiGeneratorPanel({
   const colors = accentColorMap[accentColor];
   const hasResult = result != null;
 
+  const refused = refusal !== null;
+  // A custom onRegenerate only resets to the prompt (no new work); the
+  // default re-runs generation and so is refused like Generate.
+  const regenerateRefused = refused && !onRegenerate;
+
+  const refusalNote = refused ? (
+    <p className="text-xs text-text-muted" data-testid="ai-generate-refusal">
+      {refusal}
+    </p>
+  ) : null;
+
   const handleGenerate = () => {
-    if (!prompt.trim() || generating) return;
+    if (!prompt.trim() || generating || refused) return;
     onGenerate(prompt.trim());
   };
 
   const handleRegenerate = () => {
     if (onRegenerate) {
       onRegenerate();
-    } else if (prompt.trim()) {
+    } else if (prompt.trim() && !refused) {
       onGenerate(prompt.trim());
     }
   };
@@ -181,7 +198,8 @@ export function AiGeneratorPanel({
                   variant="outline"
                   size="sm"
                   onClick={handleRegenerate}
-                  disabled={generating}
+                  disabled={generating || regenerateRefused}
+                  title={regenerateRefused ? (refusal ?? undefined) : undefined}
                   className="gap-1.5"
                 >
                   {generating ? (
@@ -206,6 +224,7 @@ export function AiGeneratorPanel({
                   </Button>
                 )}
               </div>
+              {refusalNote}
             </div>
           ) : (
             /* ---- Stage 1: Input ---- */
@@ -260,8 +279,9 @@ export function AiGeneratorPanel({
                 )}
                 <Button
                   size="sm"
-                  disabled={generating || !prompt.trim()}
+                  disabled={generating || !prompt.trim() || refused}
                   onClick={handleGenerate}
+                  title={refusal ?? undefined}
                   className={cn(
                     "gap-1.5 text-white ml-auto",
                     colors.bg,
@@ -276,6 +296,7 @@ export function AiGeneratorPanel({
                   Generate
                 </Button>
               </div>
+              {refusalNote}
             </div>
           )}
         </div>

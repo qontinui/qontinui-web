@@ -37,6 +37,11 @@ export interface ExplorationConfigPanelProps {
   onSelectBrowserTab?: (tabId: number | null) => void;
   /** Hide the runner section (when parent already handles runner selection) */
   hideRunnerSection?: boolean;
+  /**
+   * Why a NEW exploration may not start right now (coord's outcome), or
+   * null. Non-null disables Start and is shown as the reason.
+   */
+  startRefusal?: string | null;
 }
 
 export interface TargetTypeRequirement {

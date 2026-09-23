@@ -1,6 +1,10 @@
 "use client";
 
 import { useRunnerQuery, useRunnerMutation } from "../api-client";
+import {
+  useDispatchRunnerTarget,
+  useRunnerTarget,
+} from "@/contexts/active-runner-context";
 import type {
   ExplorationReport,
   ExplorationStrategy,
@@ -8,11 +12,17 @@ import type {
 
 export function useExplorationHistory(limit?: number) {
   const qs = limit ? `?limit=${limit}` : "";
-  return useRunnerQuery<ExplorationReport[]>(`/state-explorer/history${qs}`);
+  return useRunnerQuery<ExplorationReport[]>(
+    useRunnerTarget(),
+    `/state-explorer/history${qs}`
+  );
 }
 
 export function useExplorationStrategies() {
-  return useRunnerQuery<ExplorationStrategy[]>("/state-explorer/strategies");
+  return useRunnerQuery<ExplorationStrategy[]>(
+    useRunnerTarget(),
+    "/state-explorer/strategies"
+  );
 }
 
 export function useExplorationStatus(jobId: string | null) {
@@ -24,10 +34,14 @@ export function useExplorationStatus(jobId: string | null) {
     current_url?: string;
     error?: string;
     progress_pct?: number;
-  }>(jobId ? `/ui-bridge/explore/status?job_id=${jobId}` : null, {
-    pollInterval: 1000,
-    enabled: jobId != null,
-  });
+  }>(
+    useRunnerTarget(),
+    jobId ? `/ui-bridge/explore/status?job_id=${jobId}` : null,
+    {
+      pollInterval: 1000,
+      enabled: jobId != null,
+    }
+  );
 }
 
 export function useExplorationResults(jobId: string | null, enabled: boolean) {
@@ -36,13 +50,23 @@ export function useExplorationResults(jobId: string | null, enabled: boolean) {
     elements_discovered?: number;
     pages_visited?: number;
     duration_seconds?: number;
-  }>(jobId ? `/ui-bridge/explore/results?job_id=${jobId}` : null, {
-    enabled,
-  });
+  }>(
+    useRunnerTarget(),
+    jobId ? `/ui-bridge/explore/results?job_id=${jobId}` : null,
+    {
+      enabled,
+    }
+  );
 }
 
+/**
+ * Start an exploration — NEW work (it drives a browser/app), so it goes only
+ * to the explicit choice or coord's resolved pick; `refusal` is coord's
+ * outcome when it may not start.
+ */
 export function useStartExploration() {
-  return useRunnerMutation<
+  const { target, refusal } = useDispatchRunnerTarget();
+  const mutation = useRunnerMutation<
     {
       target_type?: "web";
       connection_url: string;
@@ -57,17 +81,20 @@ export function useStartExploration() {
       run_state_discovery?: boolean;
     },
     { job_id: string }
-  >("/ui-bridge/explore");
+  >(target, "/ui-bridge/explore");
+  return { ...mutation, refusal };
 }
 
 export function useStopExploration() {
   return useRunnerMutation<Record<string, never>, void>(
+    useRunnerTarget(),
     "/ui-bridge/explore/stop"
   );
 }
 
 export function useDiscoverStatesFromRenders() {
   return useRunnerMutation<{ render_logs: unknown[] }, unknown>(
+    useRunnerTarget(),
     "/ui-bridge/discover-states"
   );
 }

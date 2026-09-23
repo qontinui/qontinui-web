@@ -27,11 +27,13 @@
  *   2. GLOBAL URL-pattern waivers (`GLOBAL_SERVER_WAIVERS`) — same-origin-5xx
  *      URL patterns that are CI-environment-unavoidable on ANY route because
  *      the backing service is structurally unreachable from a GitHub Actions
- *      runner (no coord process; private-subnet RDS). These mirror the two
- *      already-known classes the spec waivers documented (`/coord-api/*`,
- *      `/api/vga/*`). A page-route waiver is preferred when the finding is
- *      route-specific; a global waiver is only for a backend class that no
- *      single route "owns".
+ *      runner (no coord process; private-subnet RDS). They began as the two
+ *      classes the spec waivers documented (`/coord-api/*`, `/api/vga/*`) and
+ *      now also cover the coord-backed backend proxies — see the list itself
+ *      for the current set rather than a count here. An entry may be scoped
+ *      to specific `statuses`. A page-route waiver is preferred when the
+ *      finding is route-specific; a global waiver is only for a backend class
+ *      that no single route "owns".
  *
  * Design rules (enforced by review, not code):
  *   - NEVER a blanket "ignore all crawl findings". Every waiver is a specific
@@ -88,6 +90,20 @@ export interface PerRouteWaiver {
 export interface GlobalServerWaiver {
   /** Same-origin-5xx URL pattern unavoidable on ANY route (substring/regex). */
   pattern: string;
+  /**
+   * The ONLY statuses this waiver tolerates on a matching URL. Absent means
+   * every 5xx is waived — the behaviour every entry had before this field
+   * existed, so no existing entry changes.
+   *
+   * Present, it is what stops a waiver for an environment gap from also
+   * swallowing a real bug on the same URLs. A URL-substring waiver cannot
+   * tell "coord is unreachable in CI" from "this handler crashed": both are
+   * a same-origin 5xx on the same path. The status can. So an entry that
+   * exists because an upstream is absent should list exactly the statuses
+   * that absence produces, and nothing else — anything outside the list
+   * still gates, which keeps the gate guarding the code it covers.
+   */
+  statuses?: readonly number[];
   class: WaiverClass;
   note: string;
 }
@@ -95,9 +111,10 @@ export interface GlobalServerWaiver {
 // ---------------------------------------------------------------------------
 // Global same-origin-5xx waivers — backend classes structurally unreachable
 // from a GitHub Actions runner, so they can 5xx on whatever route happens to
-// fetch them. These mirror the two already-known classes the spec waivers
-// documented (operations' /coord-api/*, vga's /api/vga/*). Kept global because
-// multiple un-spec'd routes can mount a widget that hits the same backend.
+// fetch them. They began as the two classes the spec waivers documented
+// (operations' /coord-api/*, vga's /api/vga/*); the list below is the current
+// set. Kept global because multiple un-spec'd routes can mount a widget that
+// hits the same backend.
 // ---------------------------------------------------------------------------
 
 export const GLOBAL_SERVER_WAIVERS: readonly GlobalServerWaiver[] = [
@@ -149,14 +166,31 @@ export const GLOBAL_SERVER_WAIVERS: readonly GlobalServerWaiver[] = [
       "(the resolver). Same class as /api/v1/operations/.",
   },
   {
-    pattern: "/api/v1/strategy/",
+    // Anchored on the PATH, not a bare substring: a bare "/api/v1/overview/"
+    // would also match a same-origin URL carrying it in a query value, e.g.
+    // `…/api/v1/x?next=/api/v1/overview/…`, since fetch does not encode `/`.
+    pattern: "^https?://[^/]+/api/v1/overview/",
+    // Status-scoped, deliberately: see `statuses` on GlobalServerWaiver.
+    statuses: [502, 504],
     class: "ci-env",
     note:
-      "CI-ENV-UNAVOIDABLE (hermetic lane). The strategy bridge (coord) is " +
-      "disabled in CI — the backend 503s by design. The strategy SPEC " +
-      "renders via prod-parity stubs (docs list + content); this waiver " +
-      "absorbs the page's un-stubbed background calls (presence/heartbeat " +
-      "POSTs, doc thread reads).",
+      "CI-ENV-UNAVOIDABLE (hermetic lane), STATUS-SCOPED. /api/v1/overview/* " +
+      "(the Project Overview's estimate, settings and rollup reads) resolve " +
+      "the ACTIVE tenant through coord (get_coord_identity -> GET " +
+      "/admin/coord/me) in a DEPENDENCY, before any handler body runs. No " +
+      "coord runs in the hermetic Spec CI stack, so that dependency fails — " +
+      "and coord_identity._fetch_identity maps exactly that failure to 502 (a " +
+      "connect error) or 504 (a timeout). Those two statuses, and only those, " +
+      "are waived. " +
+      "What the scoping does and does NOT protect, stated precisely: in this " +
+      "lane the handler BODIES are never reached — the coord dependency 502s " +
+      "first — so a bug inside a handler cannot surface here at all, waived " +
+      "or not. What still gates is a 500 from anything that runs BEFORE or " +
+      "INSTEAD OF the coord call: authentication, the DB-session dependency, " +
+      "an httpx transport error _fetch_identity does not catch (it becomes a " +
+      "500), or a proxy fault. A blanket substring entry would have waived " +
+      "those too. It also means the day coord or a hermetic stub exists for " +
+      "these routes, their handler 500s gate with no change here.",
   },
 ];
 
@@ -247,19 +281,46 @@ export interface CrawlWaiverResult {
   navFailWaived: boolean;
 }
 
-const globalServerMatchers = compilePatterns(
-  GLOBAL_SERVER_WAIVERS.map((w) => w.pattern)
-);
+interface CompiledGlobalWaiver {
+  matcher: RegExp;
+  /** `undefined` = every status (the pre-`statuses` behaviour). */
+  statuses: ReadonlySet<number> | undefined;
+}
+
+const globalServerWaivers: readonly CompiledGlobalWaiver[] =
+  GLOBAL_SERVER_WAIVERS.map((w) => ({
+    matcher: compilePatterns([w.pattern])[0] as RegExp,
+    statuses: w.statuses ? new Set(w.statuses) : undefined,
+  }));
 
 /**
- * Whether a same-origin 5xx URL falls in a GLOBAL waiver class. Exported for
- * the SPEC lane: hermetic CI makes the `ci-env` upstream classes reachable
- * from spec'd pages too (the prod lane only ever hit them in the crawl), so
- * run-spec-ci.ts applies the same global classes where it applies the
- * per-spec `expectedServerErrors` waivers. Per-route waivers stay crawl-only.
+ * Whether a same-origin 5xx falls in a GLOBAL waiver class — matched on its
+ * URL, and, for a waiver that lists `statuses`, on its status as well.
+ *
+ * `status` is REQUIRED rather than optional, so a caller has to state what it
+ * saw. Be precise about how much that buys: `tests/` is excluded from the
+ * project tsconfig, so neither `npm run type-check` nor `tsx` enforces the
+ * signature in CI, and nothing type-checks the call in `run-spec-ci.ts`. It
+ * documents the contract; it does not guarantee it. The failure mode if a
+ * caller dropped the argument is at least the safe one: `status` would be
+ * `undefined`, pattern-only entries would still waive as before, and a
+ * status-scoped entry would stop waiving — the gate fails CLOSED, never open.
+ *
+ * Exported for the SPEC lane: hermetic CI makes the `ci-env` upstream classes
+ * reachable from spec'd pages too (the prod lane only ever hit them in the
+ * crawl), so run-spec-ci.ts applies the same global classes where it applies
+ * the per-spec `expectedServerErrors` waivers. Per-route waivers stay
+ * crawl-only.
  */
-export function isGloballyWaivedServerUrl(url: string): boolean {
-  return globalServerMatchers.some((rx) => rx.test(url));
+export function isGloballyWaivedServerUrl(
+  url: string,
+  status: number
+): boolean {
+  return globalServerWaivers.some(
+    (w) =>
+      w.matcher.test(url) &&
+      (w.statuses === undefined || w.statuses.has(status))
+  );
 }
 
 /**
@@ -281,7 +342,7 @@ export function applyCrawlWaivers(
   );
   const unwaivedServer = serverErrors.filter(
     (e) =>
-      !globalServerMatchers.some((rx) => rx.test(e.url)) &&
+      !isGloballyWaivedServerUrl(e.url, e.status) &&
       !routeServer.some((rx) => rx.test(e.url))
   );
 

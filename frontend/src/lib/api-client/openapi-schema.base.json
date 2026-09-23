@@ -2368,6 +2368,118 @@
         "title": "AggregatedTaskRuns",
         "type": "object"
       },
+      "AllCapableDrainedOutcome": {
+        "properties": {
+          "outcome": {
+            "const": "all_capable_drained",
+            "default": "all_capable_drained",
+            "title": "Outcome",
+            "type": "string"
+          },
+          "pin_released_detail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pin Released Detail"
+          },
+          "pin_released_reason": {
+            "anyOf": [
+              {
+                "enum": [
+                  "not_a_paired_device",
+                  "offline",
+                  "missing_capabilities",
+                  "drained"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pin Released Reason"
+          }
+        },
+        "title": "AllCapableDrainedOutcome",
+        "type": "object"
+      },
+      "AllocationRead": {
+        "properties": {
+          "fte": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Fte",
+            "type": "string"
+          },
+          "phase_code": {
+            "title": "Phase Code",
+            "type": "string"
+          },
+          "phase_id": {
+            "format": "uuid",
+            "title": "Phase Id",
+            "type": "string"
+          },
+          "role_code": {
+            "title": "Role Code",
+            "type": "string"
+          },
+          "role_id": {
+            "format": "uuid",
+            "title": "Role Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "phase_id",
+          "phase_code",
+          "role_id",
+          "role_code",
+          "fte"
+        ],
+        "title": "AllocationRead",
+        "type": "object"
+      },
+      "AllocationWrite": {
+        "properties": {
+          "fte": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              }
+            ],
+            "title": "Fte"
+          },
+          "phase_code": {
+            "maxLength": 50,
+            "minLength": 1,
+            "title": "Phase Code",
+            "type": "string"
+          },
+          "role_code": {
+            "maxLength": 50,
+            "minLength": 1,
+            "title": "Role Code",
+            "type": "string"
+          }
+        },
+        "required": [
+          "phase_code",
+          "role_code",
+          "fte"
+        ],
+        "title": "AllocationWrite",
+        "type": "object"
+      },
       "AnalysisSettingsSchema": {
         "description": "Color analysis settings schema.",
         "properties": {
@@ -5640,6 +5752,64 @@
           "errors"
         ],
         "title": "BulkOperationResult",
+        "type": "object"
+      },
+      "CalendarBreakRead": {
+        "properties": {
+          "end_date": {
+            "format": "date",
+            "title": "End Date",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "start_date": {
+            "format": "date",
+            "title": "Start Date",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "label",
+          "start_date",
+          "end_date"
+        ],
+        "title": "CalendarBreakRead",
+        "type": "object"
+      },
+      "CalendarBreakWrite": {
+        "properties": {
+          "end_date": {
+            "format": "date",
+            "title": "End Date",
+            "type": "string"
+          },
+          "label": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Label",
+            "type": "string"
+          },
+          "start_date": {
+            "format": "date",
+            "title": "Start Date",
+            "type": "string"
+          }
+        },
+        "required": [
+          "label",
+          "start_date",
+          "end_date"
+        ],
+        "title": "CalendarBreakWrite",
         "type": "object"
       },
       "CancelProposalBody": {
@@ -10824,6 +10994,203 @@
         "title": "CorpusHealth",
         "type": "object"
       },
+      "CostLineRead": {
+        "properties": {
+          "basis": {
+            "title": "Basis",
+            "type": "string"
+          },
+          "currency": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Currency"
+          },
+          "high_micros": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "High Micros"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "build_non_labour",
+              "run_annual"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "low_micros": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Low Micros"
+          },
+          "phase_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Phase Code"
+          },
+          "phase_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Phase Id"
+          },
+          "run_model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Run Model"
+          },
+          "sort_order": {
+            "title": "Sort Order",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "label",
+          "basis",
+          "low_micros",
+          "high_micros",
+          "currency",
+          "phase_id",
+          "phase_code",
+          "run_model",
+          "sort_order"
+        ],
+        "title": "CostLineRead",
+        "type": "object"
+      },
+      "CostLineWrite": {
+        "properties": {
+          "basis": {
+            "default": "",
+            "title": "Basis",
+            "type": "string"
+          },
+          "currency": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Currency"
+          },
+          "high_micros": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "High Micros"
+          },
+          "kind": {
+            "enum": [
+              "build_non_labour",
+              "run_annual"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "label": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Label",
+            "type": "string"
+          },
+          "low_micros": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Low Micros"
+          },
+          "phase_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Phase Code"
+          },
+          "run_model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Run Model"
+          }
+        },
+        "required": [
+          "kind",
+          "label"
+        ],
+        "title": "CostLineWrite",
+        "type": "object"
+      },
       "CostTrendDataPoint": {
         "description": "Single data point in cost trend.",
         "properties": {
@@ -14416,6 +14783,83 @@
         "title": "DeviceMachineCredentialMintResponse",
         "type": "object"
       },
+      "DeviceResolveRequest": {
+        "additionalProperties": false,
+        "description": "The body the browser (and the dispatcher) sends; forwarded verbatim.",
+        "properties": {
+          "preferred_device": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The user's pin; still has to pass eligibility.",
+            "title": "Preferred Device"
+          },
+          "required_capabilities": {
+            "description": "Capability tokens every candidate must advertise. Required (may be empty) so no caller is capability-blind by omission.",
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 64,
+            "title": "Required Capabilities",
+            "type": "array"
+          },
+          "work_class": {
+            "enum": [
+              "machine_bound",
+              "placeable"
+            ],
+            "title": "Work Class",
+            "type": "string"
+          }
+        },
+        "required": [
+          "required_capabilities",
+          "work_class"
+        ],
+        "title": "DeviceResolveRequest",
+        "type": "object"
+      },
+      "DeviceResolveResponse": {
+        "description": "``POST /api/v1/devices/resolve`` \u2014 always 200, switch on ``outcome``.",
+        "discriminator": {
+          "mapping": {
+            "all_capable_drained": "#/components/schemas/AllCapableDrainedOutcome",
+            "drain_unreadable": "#/components/schemas/DrainUnreadableOutcome",
+            "no_capable_device": "#/components/schemas/NoCapableDeviceOutcome",
+            "pin_ineligible": "#/components/schemas/PinIneligibleOutcome",
+            "resolved": "#/components/schemas/ResolvedOutcome",
+            "unavailable": "#/components/schemas/UnavailableOutcome"
+          },
+          "propertyName": "outcome"
+        },
+        "oneOf": [
+          {
+            "$ref": "#/components/schemas/ResolvedOutcome"
+          },
+          {
+            "$ref": "#/components/schemas/PinIneligibleOutcome"
+          },
+          {
+            "$ref": "#/components/schemas/NoCapableDeviceOutcome"
+          },
+          {
+            "$ref": "#/components/schemas/AllCapableDrainedOutcome"
+          },
+          {
+            "$ref": "#/components/schemas/DrainUnreadableOutcome"
+          },
+          {
+            "$ref": "#/components/schemas/UnavailableOutcome"
+          }
+        ],
+        "title": "DeviceResolveResponse"
+      },
       "DeviceResponse": {
         "additionalProperties": false,
         "description": "Response shape for ``GET /api/v1/devices`` and ``GET /api/v1/devices/{id}``.\n\nThe canonical ``Runner`` wire entity from ``qontinui_schemas`` (which\nforbids extra keys, so it cannot be extended in place) plus the web's own\nper-device tenant-binding presentation, sourced from coord's\n``GET /coord/devices/by-user``.\n\n``tenant_bindings`` is **tri-state** and every consumer must keep it so:\n\n* ``null`` \u2014 UNKNOWN. Coord did not hydrate bindings (its\n  ``coord.tenant_devices`` table is absent, or it predates the field).\n  Never render this as \"no tenants\".\n* ``[]`` \u2014 coord measured ZERO bindings for this device.\n* a non-empty list \u2014 the tenants the device is paired to.",
@@ -14461,6 +14905,22 @@
             "description": "Runner identifier (UUID as a string).",
             "title": "Id",
             "type": "string"
+          },
+          "instances": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/RunnerInstance"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": [],
+            "description": "Currently connected runner instances on this machine, one entry per\ninstance (see [`RunnerInstance`]). Empty when none is connected \u2014 and\nwhen the serving backend predates per-instance rows and omits the\nfield, so absence deserializes to an empty list rather than failing.",
+            "title": "Instances"
           },
           "ipAddress": {
             "anyOf": [
@@ -16508,6 +16968,18 @@
         "title": "DrainRequestBody",
         "type": "object"
       },
+      "DrainUnreadableOutcome": {
+        "properties": {
+          "outcome": {
+            "const": "drain_unreadable",
+            "default": "drain_unreadable",
+            "title": "Outcome",
+            "type": "string"
+          }
+        },
+        "title": "DrainUnreadableOutcome",
+        "type": "object"
+      },
       "EditCommandHistoryResponse": {
         "description": "Schema for command history list",
         "properties": {
@@ -18335,6 +18807,485 @@
           "by_category"
         ],
         "title": "ErrorMonitorSummary",
+        "type": "object"
+      },
+      "EstimateContentWrite": {
+        "description": "The estimate's whole content graph, replaced in one transaction.\n\nReplace-the-whole-graph rather than per-row CRUD, because that is the\nshape every source actually has: a CSV paste is a whole table, a mermaid\n``gantt`` block is a whole schedule, and the editor shows the result for\nconfirmation before anything is saved. It also means an import can never\nhalf-land.",
+        "properties": {
+          "allocations": {
+            "items": {
+              "$ref": "#/components/schemas/AllocationWrite"
+            },
+            "title": "Allocations",
+            "type": "array"
+          },
+          "calendar_breaks": {
+            "items": {
+              "$ref": "#/components/schemas/CalendarBreakWrite"
+            },
+            "title": "Calendar Breaks",
+            "type": "array"
+          },
+          "cost_lines": {
+            "items": {
+              "$ref": "#/components/schemas/CostLineWrite"
+            },
+            "title": "Cost Lines",
+            "type": "array"
+          },
+          "expected_version": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expected Version"
+          },
+          "phases": {
+            "items": {
+              "$ref": "#/components/schemas/PhaseWrite"
+            },
+            "title": "Phases",
+            "type": "array"
+          },
+          "price_tiers": {
+            "items": {
+              "$ref": "#/components/schemas/PriceTierWrite"
+            },
+            "title": "Price Tiers",
+            "type": "array"
+          },
+          "roles": {
+            "items": {
+              "$ref": "#/components/schemas/RoleWrite"
+            },
+            "title": "Roles",
+            "type": "array"
+          }
+        },
+        "title": "EstimateContentWrite",
+        "type": "object"
+      },
+      "EstimateCreate": {
+        "properties": {
+          "accuracy_note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Accuracy Note"
+          },
+          "contingency_pct": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Contingency Pct"
+          },
+          "is_baseline": {
+            "default": false,
+            "title": "Is Baseline",
+            "type": "boolean"
+          },
+          "name": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "notes": {
+            "default": "",
+            "title": "Notes",
+            "type": "string"
+          },
+          "purpose": {
+            "enum": [
+              "budget",
+              "comparison",
+              "forecast"
+            ],
+            "title": "Purpose",
+            "type": "string"
+          },
+          "source_page_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Page Id"
+          },
+          "status": {
+            "default": "draft",
+            "enum": [
+              "draft",
+              "for_decision",
+              "approved",
+              "superseded"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "purpose"
+        ],
+        "title": "EstimateCreate",
+        "type": "object"
+      },
+      "EstimateDetail": {
+        "description": "The head row plus its whole content graph \u2014 what the editor loads.",
+        "properties": {
+          "allocations": {
+            "items": {
+              "$ref": "#/components/schemas/AllocationRead"
+            },
+            "title": "Allocations",
+            "type": "array"
+          },
+          "calendar_breaks": {
+            "items": {
+              "$ref": "#/components/schemas/CalendarBreakRead"
+            },
+            "title": "Calendar Breaks",
+            "type": "array"
+          },
+          "cost_lines": {
+            "items": {
+              "$ref": "#/components/schemas/CostLineRead"
+            },
+            "title": "Cost Lines",
+            "type": "array"
+          },
+          "estimate": {
+            "$ref": "#/components/schemas/EstimateSummary"
+          },
+          "phases": {
+            "items": {
+              "$ref": "#/components/schemas/PhaseRead"
+            },
+            "title": "Phases",
+            "type": "array"
+          },
+          "price_tiers": {
+            "items": {
+              "$ref": "#/components/schemas/PriceTierRead"
+            },
+            "title": "Price Tiers",
+            "type": "array"
+          },
+          "roles": {
+            "items": {
+              "$ref": "#/components/schemas/RoleRead"
+            },
+            "title": "Roles",
+            "type": "array"
+          }
+        },
+        "required": [
+          "estimate",
+          "roles",
+          "phases",
+          "allocations",
+          "price_tiers",
+          "cost_lines",
+          "calendar_breaks"
+        ],
+        "title": "EstimateDetail",
+        "type": "object"
+      },
+      "EstimateListResponse": {
+        "properties": {
+          "estimates": {
+            "items": {
+              "$ref": "#/components/schemas/EstimateSummary"
+            },
+            "title": "Estimates",
+            "type": "array"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "estimates",
+          "total"
+        ],
+        "title": "EstimateListResponse",
+        "type": "object"
+      },
+      "EstimateSummary": {
+        "properties": {
+          "accuracy_note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Accuracy Note"
+          },
+          "contingency_pct": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Contingency Pct"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "created_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created By"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "is_baseline": {
+            "title": "Is Baseline",
+            "type": "boolean"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "notes": {
+            "title": "Notes",
+            "type": "string"
+          },
+          "purpose": {
+            "enum": [
+              "budget",
+              "comparison",
+              "forecast"
+            ],
+            "title": "Purpose",
+            "type": "string"
+          },
+          "source_page_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Page Id"
+          },
+          "status": {
+            "enum": [
+              "draft",
+              "for_decision",
+              "approved",
+              "superseded"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          },
+          "updated_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated By"
+          },
+          "version": {
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "purpose",
+          "status",
+          "is_baseline",
+          "source_page_id",
+          "accuracy_note",
+          "contingency_pct",
+          "notes",
+          "version",
+          "created_at",
+          "updated_at",
+          "created_by",
+          "updated_by"
+        ],
+        "title": "EstimateSummary",
+        "type": "object"
+      },
+      "EstimateUpdate": {
+        "description": "Every field optional \u2014 an absent field is left alone.\n\n``None`` is a real value for the nullable fields (it clears them), so the\nhandler distinguishes \"absent\" from \"null\" with\n``model_fields_set``/``exclude_unset``.",
+        "properties": {
+          "accuracy_note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Accuracy Note"
+          },
+          "contingency_pct": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Contingency Pct"
+          },
+          "expected_version": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expected Version"
+          },
+          "is_baseline": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Is Baseline"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "notes": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Notes"
+          },
+          "purpose": {
+            "anyOf": [
+              {
+                "enum": [
+                  "budget",
+                  "comparison",
+                  "forecast"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Purpose"
+          },
+          "source_page_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Page Id"
+          },
+          "status": {
+            "anyOf": [
+              {
+                "enum": [
+                  "draft",
+                  "for_decision",
+                  "approved",
+                  "superseded"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Status"
+          }
+        },
+        "title": "EstimateUpdate",
         "type": "object"
       },
       "EvaluationDatasetCreate": {
@@ -29014,6 +29965,60 @@
         "title": "MouseSettingsSchema",
         "type": "object"
       },
+      "NoCapableDeviceOutcome": {
+        "properties": {
+          "missing": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Missing",
+            "type": "array"
+          },
+          "online_devices": {
+            "title": "Online Devices",
+            "type": "integer"
+          },
+          "outcome": {
+            "const": "no_capable_device",
+            "default": "no_capable_device",
+            "title": "Outcome",
+            "type": "string"
+          },
+          "pin_released_detail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pin Released Detail"
+          },
+          "pin_released_reason": {
+            "anyOf": [
+              {
+                "enum": [
+                  "not_a_paired_device",
+                  "offline",
+                  "missing_capabilities",
+                  "drained"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pin Released Reason"
+          }
+        },
+        "required": [
+          "online_devices"
+        ],
+        "title": "NoCapableDeviceOutcome",
+        "type": "object"
+      },
       "NodeMetadata": {
         "additionalProperties": true,
         "description": "Metadata for a tree node.\n\nContains action configuration, runtime data, state context, and timing.\nAll fields are optional as different node types populate different fields.",
@@ -30128,6 +31133,169 @@
           "success"
         ],
         "title": "Outcome",
+        "type": "object"
+      },
+      "OverviewSettingsRead": {
+        "description": "The project's settings.\n\nA project that has never saved settings is served the documented defaults\nwith ``is_default: true`` \u2014 never a 404 and never an empty object, so a\nreader can tell \"nobody has set this\" from \"this is set to the default\".",
+        "properties": {
+          "base_currency": {
+            "title": "Base Currency",
+            "type": "string"
+          },
+          "first_value_date": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "First Value Date"
+          },
+          "fx_rates": {
+            "additionalProperties": true,
+            "title": "Fx Rates",
+            "type": "object"
+          },
+          "hours_per_day": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Hours Per Day",
+            "type": "string"
+          },
+          "is_default": {
+            "default": false,
+            "title": "Is Default",
+            "type": "boolean"
+          },
+          "labour_billing": {
+            "enum": [
+              "unbilled",
+              "day_rates",
+              "fixed_fee"
+            ],
+            "title": "Labour Billing",
+            "type": "string"
+          },
+          "updated_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated At"
+          },
+          "updated_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated By"
+          },
+          "version": {
+            "title": "Version",
+            "type": "integer"
+          },
+          "working_day_factor": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Working Day Factor",
+            "type": "string"
+          }
+        },
+        "required": [
+          "base_currency",
+          "fx_rates",
+          "labour_billing",
+          "hours_per_day",
+          "working_day_factor",
+          "first_value_date",
+          "version"
+        ],
+        "title": "OverviewSettingsRead",
+        "type": "object"
+      },
+      "OverviewSettingsWrite": {
+        "properties": {
+          "base_currency": {
+            "default": "USD",
+            "title": "Base Currency",
+            "type": "string"
+          },
+          "expected_version": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expected Version"
+          },
+          "first_value_date": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "First Value Date"
+          },
+          "fx_rates": {
+            "additionalProperties": true,
+            "title": "Fx Rates",
+            "type": "object"
+          },
+          "hours_per_day": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              }
+            ],
+            "default": "8",
+            "title": "Hours Per Day"
+          },
+          "labour_billing": {
+            "default": "unbilled",
+            "enum": [
+              "unbilled",
+              "day_rates",
+              "fixed_fee"
+            ],
+            "title": "Labour Billing",
+            "type": "string"
+          },
+          "working_day_factor": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              }
+            ],
+            "default": "1.0",
+            "title": "Working Day Factor"
+          }
+        },
+        "title": "OverviewSettingsWrite",
         "type": "object"
       },
       "PDFReportRequest": {
@@ -31453,6 +32621,142 @@
         "title": "PendingCountResponse",
         "type": "object"
       },
+      "PhaseRead": {
+        "properties": {
+          "actual_end": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Actual End"
+          },
+          "actual_start": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Actual Start"
+          },
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "gate_criteria": {
+            "title": "Gate Criteria",
+            "type": "string"
+          },
+          "gate_decided_at": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Gate Decided At"
+          },
+          "gate_notes": {
+            "title": "Gate Notes",
+            "type": "string"
+          },
+          "gate_status": {
+            "enum": [
+              "pending",
+              "passed",
+              "failed",
+              "waived"
+            ],
+            "title": "Gate Status",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "planned_end": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Planned End"
+          },
+          "planned_start": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Planned Start"
+          },
+          "sort_order": {
+            "title": "Sort Order",
+            "type": "integer"
+          },
+          "stated_working_weeks": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Stated Working Weeks"
+          },
+          "tasks": {
+            "items": {
+              "$ref": "#/components/schemas/PhaseTaskRead"
+            },
+            "title": "Tasks",
+            "type": "array"
+          }
+        },
+        "required": [
+          "id",
+          "code",
+          "name",
+          "sort_order",
+          "planned_start",
+          "planned_end",
+          "stated_working_weeks",
+          "gate_criteria",
+          "actual_start",
+          "actual_end",
+          "gate_status",
+          "gate_decided_at",
+          "gate_notes",
+          "tasks"
+        ],
+        "title": "PhaseRead",
+        "type": "object"
+      },
       "PhaseResultIngestRequest": {
         "description": "Request body for ``POST /api/v1/events/phase-completed``.\n\n``runner_id`` is optional: when set, the ingest handler attributes the\nrow to that specific runner (after verifying the authenticated token's\nuser owns it); when absent, the handler falls back to the legacy\n\"most-recently-heartbeated\" selection for back-compat.",
         "properties": {
@@ -31708,6 +33012,344 @@
           "created_at"
         ],
         "title": "PhaseResultResponse",
+        "type": "object"
+      },
+      "PhaseTaskRead": {
+        "properties": {
+          "efforts": {
+            "items": {
+              "$ref": "#/components/schemas/TaskEffortRead"
+            },
+            "title": "Efforts",
+            "type": "array"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "is_critical": {
+            "title": "Is Critical",
+            "type": "boolean"
+          },
+          "number": {
+            "title": "Number",
+            "type": "string"
+          },
+          "planned_end": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Planned End"
+          },
+          "planned_start": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Planned Start"
+          },
+          "requirement_refs": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Requirement Refs"
+          },
+          "sort_order": {
+            "title": "Sort Order",
+            "type": "integer"
+          },
+          "status": {
+            "enum": [
+              "planned",
+              "in_progress",
+              "done"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "number",
+          "title",
+          "requirement_refs",
+          "planned_start",
+          "planned_end",
+          "is_critical",
+          "status",
+          "sort_order",
+          "efforts"
+        ],
+        "title": "PhaseTaskRead",
+        "type": "object"
+      },
+      "PhaseTaskWrite": {
+        "properties": {
+          "efforts": {
+            "items": {
+              "$ref": "#/components/schemas/TaskEffortWrite"
+            },
+            "title": "Efforts",
+            "type": "array"
+          },
+          "is_critical": {
+            "default": false,
+            "title": "Is Critical",
+            "type": "boolean"
+          },
+          "number": {
+            "maxLength": 50,
+            "minLength": 1,
+            "title": "Number",
+            "type": "string"
+          },
+          "planned_end": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Planned End"
+          },
+          "planned_start": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Planned Start"
+          },
+          "requirement_refs": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Requirement Refs"
+          },
+          "status": {
+            "default": "planned",
+            "enum": [
+              "planned",
+              "in_progress",
+              "done"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "title": {
+            "maxLength": 400,
+            "minLength": 1,
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "number",
+          "title"
+        ],
+        "title": "PhaseTaskWrite",
+        "type": "object"
+      },
+      "PhaseWrite": {
+        "properties": {
+          "actual_end": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Actual End"
+          },
+          "actual_start": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Actual Start"
+          },
+          "code": {
+            "maxLength": 50,
+            "minLength": 1,
+            "title": "Code",
+            "type": "string"
+          },
+          "gate_criteria": {
+            "default": "",
+            "title": "Gate Criteria",
+            "type": "string"
+          },
+          "gate_decided_at": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Gate Decided At"
+          },
+          "gate_notes": {
+            "default": "",
+            "title": "Gate Notes",
+            "type": "string"
+          },
+          "gate_status": {
+            "default": "pending",
+            "enum": [
+              "pending",
+              "passed",
+              "failed",
+              "waived"
+            ],
+            "title": "Gate Status",
+            "type": "string"
+          },
+          "name": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "planned_end": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Planned End"
+          },
+          "planned_start": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Planned Start"
+          },
+          "stated_working_weeks": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Stated Working Weeks"
+          },
+          "tasks": {
+            "items": {
+              "$ref": "#/components/schemas/PhaseTaskWrite"
+            },
+            "title": "Tasks",
+            "type": "array"
+          }
+        },
+        "required": [
+          "code",
+          "name"
+        ],
+        "title": "PhaseWrite",
+        "type": "object"
+      },
+      "PinIneligibleOutcome": {
+        "properties": {
+          "detail": {
+            "title": "Detail",
+            "type": "string"
+          },
+          "device_id": {
+            "format": "uuid",
+            "title": "Device Id",
+            "type": "string"
+          },
+          "missing_capabilities": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Missing Capabilities",
+            "type": "array"
+          },
+          "outcome": {
+            "const": "pin_ineligible",
+            "default": "pin_ineligible",
+            "title": "Outcome",
+            "type": "string"
+          },
+          "reason": {
+            "enum": [
+              "not_a_paired_device",
+              "offline",
+              "missing_capabilities",
+              "drained"
+            ],
+            "title": "Reason",
+            "type": "string"
+          }
+        },
+        "required": [
+          "device_id",
+          "reason",
+          "detail"
+        ],
+        "title": "PinIneligibleOutcome",
         "type": "object"
       },
       "PlanCandidate": {
@@ -32643,6 +34285,75 @@
           "expiration_seconds"
         ],
         "title": "PresignedUrlResponse",
+        "type": "object"
+      },
+      "PriceTierRead": {
+        "properties": {
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "is_primary": {
+            "title": "Is Primary",
+            "type": "boolean"
+          },
+          "multiplier": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Multiplier",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "sort_order": {
+            "title": "Sort Order",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "multiplier",
+          "is_primary",
+          "sort_order"
+        ],
+        "title": "PriceTierRead",
+        "type": "object"
+      },
+      "PriceTierWrite": {
+        "properties": {
+          "is_primary": {
+            "default": false,
+            "title": "Is Primary",
+            "type": "boolean"
+          },
+          "multiplier": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0.0,
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              }
+            ],
+            "title": "Multiplier"
+          },
+          "name": {
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "multiplier"
+        ],
+        "title": "PriceTierWrite",
         "type": "object"
       },
       "ProcessRecordingRequest": {
@@ -37201,6 +38912,63 @@
         "title": "ResolveRequest",
         "type": "object"
       },
+      "ResolvedOutcome": {
+        "properties": {
+          "device_id": {
+            "format": "uuid",
+            "title": "Device Id",
+            "type": "string"
+          },
+          "outcome": {
+            "const": "resolved",
+            "default": "resolved",
+            "title": "Outcome",
+            "type": "string"
+          },
+          "pin_released_detail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pin Released Detail"
+          },
+          "pin_released_reason": {
+            "anyOf": [
+              {
+                "enum": [
+                  "not_a_paired_device",
+                  "offline",
+                  "missing_capabilities",
+                  "drained"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pin Released Reason"
+          },
+          "via": {
+            "enum": [
+              "pin",
+              "pool"
+            ],
+            "title": "Via",
+            "type": "string"
+          }
+        },
+        "required": [
+          "device_id",
+          "via"
+        ],
+        "title": "ResolvedOutcome",
+        "type": "object"
+      },
       "ResponsibleUserOut": {
         "description": "One responsible user + the resolution source.",
         "properties": {
@@ -37276,6 +39044,124 @@
           "decision"
         ],
         "title": "ReviewCreate",
+        "type": "object"
+      },
+      "RoleRead": {
+        "properties": {
+          "client_side": {
+            "title": "Client Side",
+            "type": "boolean"
+          },
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "currency": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Currency"
+          },
+          "day_rate_micros": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Day Rate Micros"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "responsibility": {
+            "title": "Responsibility",
+            "type": "string"
+          },
+          "sort_order": {
+            "title": "Sort Order",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "code",
+          "name",
+          "responsibility",
+          "day_rate_micros",
+          "currency",
+          "client_side",
+          "sort_order"
+        ],
+        "title": "RoleRead",
+        "type": "object"
+      },
+      "RoleWrite": {
+        "properties": {
+          "client_side": {
+            "default": false,
+            "title": "Client Side",
+            "type": "boolean"
+          },
+          "code": {
+            "maxLength": 50,
+            "minLength": 1,
+            "title": "Code",
+            "type": "string"
+          },
+          "currency": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Currency"
+          },
+          "day_rate_micros": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Day Rate Micros"
+          },
+          "name": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "responsibility": {
+            "default": "",
+            "title": "Responsibility",
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "name"
+        ],
+        "title": "RoleWrite",
         "type": "object"
       },
       "RunStatus": {
@@ -37488,6 +39374,56 @@
         ],
         "title": "RunnerHeartbeat",
         "type": "object"
+      },
+      "RunnerInstance": {
+        "additionalProperties": false,
+        "description": "One live runner instance under a [`Runner`] (machine) row.\n\nA machine can host several runner instances at once \u2014 the primary on\n`:9876` and supervisor-spawned secondaries on `:9877-9899` \u2014 all presenting\nthe one machine `device_id`, so they share a single [`Runner`] row. One\nentry per currently connected instance lets a consumer address `:9876` and\n`:9877` on the same box separately rather than seeing only whichever\ninstance wrote the row's `port` last (plan\n`2026-09-20-runner-selector-drives-a-transport-not-a-target`, reading A0.2\nand Phase 6).",
+        "properties": {
+          "connectedAt": {
+            "description": "ISO 8601 timestamp when this instance's current WebSocket connection\nwas established.",
+            "title": "Connectedat",
+            "type": "string"
+          },
+          "instanceKey": {
+            "description": "Per-instance key, reported by the runner as `instanceKey`. Built from\nnamespaced sources so no source can spell another's key: `\"primary\"`\nfor the primary; `\"runner:<id>\"` for a supervisor-spawned secondary\n(supervisor-assigned ids are unique, and a named runner's id is reused\nacross its restarts); `\"name:<name>\"` for a secondary carrying only an\ninstance name; `\"port:<port>\"` for a nameless one (stable only while it\nkeeps that port). NOT guaranteed unique: two processes that each believe\nthemselves the primary both report `\"primary\"`, so a consumer must treat\ntwo live instances with the same key as a conflict, never as one\noverwriting the other.",
+            "title": "Instancekey",
+            "type": "string"
+          },
+          "instanceRole": {
+            "$ref": "#/components/schemas/RunnerInstanceRole",
+            "description": "Whether this instance is the machine's primary or a secondary."
+          },
+          "port": {
+            "anyOf": [
+              {
+                "maximum": 65535.0,
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Port this instance's HTTP API is listening on, if reported.",
+            "title": "Port"
+          }
+        },
+        "required": [
+          "connectedAt",
+          "instanceKey",
+          "instanceRole"
+        ],
+        "title": "RunnerInstance",
+        "type": "object"
+      },
+      "RunnerInstanceRole": {
+        "description": "Which role a runner instance plays on its machine.\n\nEvery runner instance on one box presents the SAME machine `device_id`, so\nthe role is what separates the canonical instance from the supervisor-spawned\nones sharing its row. Reported by the runner in `runner_info` as the\ntop-level `instanceRole`.",
+        "enum": [
+          "primary",
+          "secondary"
+        ],
+        "title": "RunnerInstanceRole",
+        "type": "string"
       },
       "RunnerMetadata": {
         "description": "Metadata about the runner environment.",
@@ -45287,6 +47223,60 @@
         "title": "SyncLockResponse",
         "type": "object"
       },
+      "TaskEffortRead": {
+        "properties": {
+          "planned_person_days": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Planned Person Days",
+            "type": "string"
+          },
+          "role_code": {
+            "title": "Role Code",
+            "type": "string"
+          },
+          "role_id": {
+            "format": "uuid",
+            "title": "Role Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "role_id",
+          "role_code",
+          "planned_person_days"
+        ],
+        "title": "TaskEffortRead",
+        "type": "object"
+      },
+      "TaskEffortWrite": {
+        "properties": {
+          "planned_person_days": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              }
+            ],
+            "title": "Planned Person Days"
+          },
+          "role_code": {
+            "maxLength": 50,
+            "minLength": 1,
+            "title": "Role Code",
+            "type": "string"
+          }
+        },
+        "required": [
+          "role_code",
+          "planned_person_days"
+        ],
+        "title": "TaskEffortWrite",
+        "type": "object"
+      },
       "TaskRunAutomationCreate": {
         "description": "Request to create an automation record.",
         "properties": {
@@ -51470,6 +53460,59 @@
           }
         },
         "title": "UIBridgeTransitionUpdate",
+        "type": "object"
+      },
+      "UnavailableOutcome": {
+        "description": "The resolver was not answered \u2014 UNKNOWN, never a pick.\n\n- ``no_credential``      \u2014 no caller bearer to forward (e.g. a scheduled\n                           job with no request behind it).\n- ``coord_unreachable``  \u2014 connect error or timeout.\n- ``not_deployed``       \u2014 coord answered 404/405: the door is not on the\n                           running coord build yet.\n- ``refused``            \u2014 coord refused the principal (401/403) or the\n                           body (400); ``code`` carries coord's error code.\n- ``upstream_error``     \u2014 coord answered 5xx.\n- ``malformed_response`` \u2014 a 200 that is not the contract.\n- ``misconfigured``      \u2014 the coord base URL is unset or not a URL.",
+        "properties": {
+          "code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Coord's error code, if any.",
+            "title": "Code"
+          },
+          "outcome": {
+            "const": "unavailable",
+            "default": "unavailable",
+            "title": "Outcome",
+            "type": "string"
+          },
+          "reason": {
+            "enum": [
+              "no_credential",
+              "coord_unreachable",
+              "not_deployed",
+              "refused",
+              "upstream_error",
+              "malformed_response",
+              "misconfigured"
+            ],
+            "title": "Reason",
+            "type": "string"
+          },
+          "status": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Coord's HTTP status, if any.",
+            "title": "Status"
+          }
+        },
+        "required": [
+          "reason"
+        ],
+        "title": "UnavailableOutcome",
         "type": "object"
       },
       "UndrainRequestBody": {
@@ -70373,6 +72416,53 @@
         ]
       }
     },
+    "/api/v1/devices/resolve": {
+      "post": {
+        "description": "Forward to coord's resolver AS the caller; never a web-side pick.\n\nAuthentication here only refuses anonymous callers early; the user whose\ndevices are candidates is decided by coord from the forwarded bearer.",
+        "operationId": "api_v1_devices_resolve_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DeviceResolveRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeviceResolveResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Resolve which of the caller's devices should run a piece of work",
+        "tags": [
+          "devices"
+        ]
+      }
+    },
     "/api/v1/devices/{device_id}": {
       "delete": {
         "description": "Deregister (delete) a device owned by ``current_user``.",
@@ -71546,7 +73636,7 @@
     },
     "/api/v1/dispatch/fresh-host": {
       "post": {
-        "description": "Resolve a test host for ``app_id``.\n\n``fresh_only`` \u2192 503 when no fresh host qualifies. ``best_effort`` \u2192\nfalls back to any healthy owned runner; 503 only when none exists.",
+        "description": "Resolve a test host for ``app_id``.\n\n``fresh_only`` \u2192 503 when no fresh host qualifies. ``best_effort`` \u2192\nfalls back to coord's pick among the caller's runners; 503 only when none\nexists. Eligibility (online, capable, not drained) is coord's resolver's\nanswer; an UNKNOWN resolver is a 503 with its own code, never a pick.",
         "operationId": "api_v1_dispatch_fresh_host_post",
         "parameters": [
           {
@@ -82261,6 +84351,24 @@
               "description": "Max rows. Coord clamps to `[1, 1000]` and defaults to 200.",
               "title": "Limit"
             }
+          },
+          {
+            "description": "Filter on `metadata.via` \u2014 the writer of an escalate-path clearance: `agent_evidence` (an agent, on evidence) or `service` (the operator escape hatch). Coord owns the vocabulary and answers 400 `unknown_via` for anything else.",
+            "in": "query",
+            "name": "via",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter on `metadata.via` \u2014 the writer of an escalate-path clearance: `agent_evidence` (an agent, on evidence) or `service` (the operator escape hatch). Coord owns the vocabulary and answers 400 `unknown_via` for anything else.",
+              "title": "Via"
+            }
           }
         ],
         "responses": {
@@ -89144,6 +91252,24 @@
               "description": "Restrict to notifications the calling principal has not read.",
               "title": "Unread Only"
             }
+          },
+          {
+            "description": "Filter on the coord-stamped ``detail.via`` \u2014 ``agent_evidence`` is every agent escalate clearance. Coord owns the vocabulary and answers 400 ``unknown_via`` for anything else.",
+            "in": "query",
+            "name": "via",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter on the coord-stamped ``detail.via`` \u2014 ``agent_evidence`` is every agent escalate clearance. Coord owns the vocabulary and answers 400 ``unknown_via`` for anything else.",
+              "title": "Via"
+            }
           }
         ],
         "responses": {
@@ -93331,6 +95457,406 @@
         "summary": "Get Organization Statistics",
         "tags": [
           "organizations"
+        ]
+      }
+    },
+    "/api/v1/overview/estimates": {
+      "get": {
+        "description": "This project's estimates, baseline first then newest.",
+        "operationId": "api_v1_overview_estimates_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EstimateListResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "List Estimates",
+        "tags": [
+          "overview"
+        ]
+      },
+      "post": {
+        "description": "Create an estimate. Tenant admin only.\n\nMarking it the baseline un-marks whichever estimate held that flag \u2014 a\nre-baseline is the normal reason to create one, and the partial unique\nindex would otherwise reject it.",
+        "operationId": "api_v1_overview_estimates_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EstimateCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EstimateSummary"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Create Estimate",
+        "tags": [
+          "overview"
+        ]
+      }
+    },
+    "/api/v1/overview/estimates/{estimate_id}": {
+      "delete": {
+        "description": "Delete an estimate and everything under it. Tenant admin only.",
+        "operationId": "api_v1_overview_estimates_estimate_id_delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "estimate_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Estimate Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Delete Estimate",
+        "tags": [
+          "overview"
+        ]
+      },
+      "get": {
+        "description": "The head row plus the whole content graph \u2014 what the editor loads.",
+        "operationId": "api_v1_overview_estimates_estimate_id_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "estimate_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Estimate Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EstimateDetail"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Read Estimate",
+        "tags": [
+          "overview"
+        ]
+      },
+      "patch": {
+        "description": "Edit the head row. Tenant admin only.\n\nAbsent fields are left alone; an explicit ``null`` clears a nullable one.",
+        "operationId": "api_v1_overview_estimates_estimate_id_patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "estimate_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Estimate Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EstimateUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EstimateSummary"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Patch Estimate",
+        "tags": [
+          "overview"
+        ]
+      }
+    },
+    "/api/v1/overview/estimates/{estimate_id}/content": {
+      "put": {
+        "description": "Replace the estimate's whole content graph. Tenant admin only.\n\nOne transaction, one payload: the CSV paste, the mermaid-``gantt`` import\nand the inline editor all produce a complete description of the estimate,\nand a half-applied import is worse than a rejected one. Send\n``expected_version`` (from the last read) to be refused with 409 rather\nthan silently overwrite somebody else's save.",
+        "operationId": "api_v1_overview_estimates_estimate_id_content_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "estimate_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Estimate Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EstimateContentWrite"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EstimateDetail"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Replace Estimate Content",
+        "tags": [
+          "overview"
+        ]
+      }
+    },
+    "/api/v1/overview/estimates/{estimate_id}/rollup": {
+      "get": {
+        "description": "Every derived planned figure, computed on read.\n\nThe shape is documented on\n:func:`app.services.overview_rollup.compute_rollup`. Money is an integer\ncount of micros; every other decimal is a STRING, so nothing in the money\nor effort path ever passes through a float. Figures whose inputs are\nmissing are ``null`` and appear in ``unavailable`` with a machine\n``reason`` and a sentence \u2014 never 0.",
+        "operationId": "api_v1_overview_estimates_estimate_id_rollup_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "estimate_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Estimate Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Read Rollup Api V1 Overview Estimates  Estimate Id  Rollup Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Read Rollup",
+        "tags": [
+          "overview"
+        ]
+      }
+    },
+    "/api/v1/overview/settings": {
+      "get": {
+        "description": "The project's settings, or the documented defaults when none are saved.\n\nNever 404 and never ``{}``: a project with no saved settings still HAS\nsettings, and ``is_default`` is what tells the reader nobody has chosen\nthem yet.",
+        "operationId": "api_v1_overview_settings_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OverviewSettingsRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Read Settings",
+        "tags": [
+          "overview"
+        ]
+      },
+      "put": {
+        "description": "Save the project's settings. Tenant admin only.",
+        "operationId": "api_v1_overview_settings_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OverviewSettingsWrite"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OverviewSettingsRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Write Settings",
+        "tags": [
+          "overview"
         ]
       }
     },

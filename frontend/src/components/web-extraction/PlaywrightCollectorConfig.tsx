@@ -17,6 +17,8 @@ interface PlaywrightCollectorConfigProps {
   onStartExtraction: (config: PlaywrightCollectorConfigState) => void;
   isLoading?: boolean;
   disabled?: boolean;
+  /** Coord's reason no new work may start right now (null = allowed). */
+  refusal?: string | null;
 }
 
 function isValidUrl(url: string): boolean {
@@ -32,6 +34,7 @@ export function PlaywrightCollectorConfig({
   onStartExtraction,
   isLoading = false,
   disabled = false,
+  refusal = null,
 }: PlaywrightCollectorConfigProps) {
   const { config, updateConfig, isLoaded } = usePlaywrightExtractionConfig();
 
@@ -61,8 +64,13 @@ export function PlaywrightCollectorConfig({
         size="lg"
         onClick={handleStartExtraction}
         disabled={
-          disabled || isLoading || !config.url.trim() || !isValidUrl(config.url)
+          disabled ||
+          isLoading ||
+          !config.url.trim() ||
+          !isValidUrl(config.url) ||
+          refusal !== null
         }
+        title={refusal ?? undefined}
       >
         {isLoading ? (
           <>
@@ -76,6 +84,14 @@ export function PlaywrightCollectorConfig({
           </>
         )}
       </Button>
+      {refusal && (
+        <p
+          className="text-xs text-muted-foreground text-center"
+          data-testid="playwright-collection-refusal"
+        >
+          {refusal}
+        </p>
+      )}
 
       {config.maxRiskLevel !== "dry_run" && (
         <p className="text-xs text-yellow-500 text-center">

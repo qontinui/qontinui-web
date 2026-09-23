@@ -21,6 +21,7 @@ export function AccessibilityPanel() {
     handleCaptureTree,
     handleSelectNode,
     clearSelectedNode,
+    newWorkRefusal,
   } = useAccessibilityInspector();
 
   return (
@@ -30,6 +31,7 @@ export function AccessibilityPanel() {
         setTargetUrl={setTargetUrl}
         isInspecting={isInspecting}
         inspectError={inspectError}
+        inspectRefusal={newWorkRefusal}
         onInspect={handleInspect}
         onCaptureTree={handleCaptureTree}
       />

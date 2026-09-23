@@ -77,12 +77,15 @@ export function ExplorationConfigPanel({
   onRefreshBrowserTabs,
   onSelectBrowserTab,
   hideRunnerSection = false,
+  startRefusal = null,
 }: ExplorationConfigPanelProps) {
   const [isRequirementsOpen, setIsRequirementsOpen] = useState(false);
 
   const progressPercent = computeProgressPercent(progress, config);
-  const canStart = canStartExploration(config, selectedRunnerId);
-  const disabledReason = getStartDisabledReason(config, selectedRunnerId);
+  const canStart =
+    startRefusal === null && canStartExploration(config, selectedRunnerId);
+  const disabledReason =
+    startRefusal ?? getStartDisabledReason(config, selectedRunnerId);
 
   const currentTargetType = config.targetType || "web";
   const currentRequirements =

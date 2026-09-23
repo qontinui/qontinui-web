@@ -1,11 +1,19 @@
 "use client";
 
-import { useEffect, useCallback, Suspense } from "react";
+import { useEffect, useCallback, useMemo, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import { useProjectLoader } from "@/hooks/use-project-loader";
 import { useUnifiedExtractionConfig } from "@/hooks/use-unified-extraction-config";
 import type { ExtractionMethod } from "@/types/extraction-unified";
-import { runnerClient } from "@/lib/runner-client";
+import { useRunnerClient } from "@/lib/runner-client";
+import {
+  isRunnerNeedsLocalError,
+  runnerFailureMessage,
+  runnerRequest,
+  useRunnerPoll,
+  type RunnerApiError,
+  type RunnerTarget,
+} from "@/lib/runner";
 import { ExtractionMethodSelector } from "@/components/extraction/ExtractionMethodSelector";
 import { UITarsConfigPanel } from "@/components/extraction/UITarsConfigPanel";
 import { VisionConfigPanel } from "@/components/extraction/VisionConfigPanel";
@@ -84,7 +92,15 @@ import { UIBridgeResultsSection } from "./UIBridgeResultsSection";
 import { createLogger } from "@/lib/logger";
 const logger = createLogger("ExtractionPageContent");
 
+/** How often a running UI-TARS extraction's status is polled (runner cadence). */
+const UITARS_POLL_INTERVAL_MS = 2000;
+/** How often a running web extraction's status is polled (backend, not the runner). */
+const WEB_EXTRACTION_POLL_INTERVAL_MS = 3000;
+/** Stand-in poll target while no runner is selected: nothing to resolve. */
+const NO_SELECTED_RUNNER: RunnerTarget = { kind: "pending" };
+
 function ExtractionPageContentInner() {
+  const runnerClient = useRunnerClient();
   const { projectId } = useProjectLoader();
   const searchParams = useSearchParams();
   const extractionConfig = useUnifiedExtractionConfig();
@@ -116,14 +132,14 @@ function ExtractionPageContentInner() {
     uitarsConfig: config.uitarsConfig,
     configMethod: config.method,
     selectedMonitors: config.selectedMonitors,
-    getRunnerUrl: uiBridge.getRunnerUrl,
+    getRunnerTarget: uiBridge.getRunnerTarget,
   });
 
   // Vision extraction
   const visionExtraction = useVisionExtraction({
     state,
     visionConfig: config.visionConfig,
-    getRunnerUrl: uiBridge.getRunnerUrl,
+    getRunnerTarget: uiBridge.getRunnerTarget,
   });
 
   // Domain knowledge
@@ -177,25 +193,15 @@ function ExtractionPageContentInner() {
     // eslint-disable-next-line react-hooks/exhaustive-deps -- methodSetRef is stable
   }, [isLoaded, methodFromUrl, setMethod]);
 
-  // Start polling when extraction starts
+  // Web extraction status comes from the BACKEND (extractionService), not a
+  // runner, so the runner poll cadence does not apply to it.
   useEffect(() => {
-    if (state.isExtracting && config.method === "web") {
-      webExtraction.pollWebExtractionStatus();
-      state.pollingRef.current = setInterval(
-        webExtraction.pollWebExtractionStatus,
-        3000
-      );
-    } else if (
-      state.isExtracting &&
-      (config.method === "uitars-web" || config.method === "uitars-desktop")
-    ) {
-      uitarsExtraction.pollExtractionStatus();
-      state.pollingRef.current = setInterval(
-        uitarsExtraction.pollExtractionStatus,
-        2000
-      );
-    }
-
+    if (!(state.isExtracting && config.method === "web")) return;
+    webExtraction.pollWebExtractionStatus();
+    state.pollingRef.current = setInterval(
+      webExtraction.pollWebExtractionStatus,
+      WEB_EXTRACTION_POLL_INTERVAL_MS
+    );
     return () => {
       if (state.pollingRef.current) {
         clearInterval(state.pollingRef.current);
@@ -206,9 +212,40 @@ function ExtractionPageContentInner() {
   }, [
     state.isExtracting,
     config.method,
-    uitarsExtraction.pollExtractionStatus,
     webExtraction.pollWebExtractionStatus,
   ]);
+
+  // UI-TARS status comes from the selected RUNNER: polled at the runner
+  // cadence for its route (re-evaluated every tick), stopped when the run is
+  // over, and stopped for good — with the typed message shown — when the
+  // runner is reached through the relay, which does not carry extraction.
+  const { getRunnerTarget } = uiBridge;
+  const uitarsPollTarget = useMemo(
+    () => getRunnerTarget(state.selectedRunnerId) ?? NO_SELECTED_RUNNER,
+    [getRunnerTarget, state.selectedRunnerId]
+  );
+  const handleUITarsNeedsLocal = useCallback(
+    (error: RunnerApiError) => {
+      state.setIsExtracting(false);
+      state.setUitarsProgress((prev) => ({
+        ...prev,
+        status: "failed",
+        errorMessage: error.message,
+      }));
+      toast.error(error.message);
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- setters are stable
+    []
+  );
+  useRunnerPoll(uitarsPollTarget, {
+    enabled:
+      state.isExtracting &&
+      (config.method === "uitars-web" || config.method === "uitars-desktop"),
+    requestedMs: UITARS_POLL_INTERVAL_MS,
+    immediate: true,
+    tick: uitarsExtraction.pollExtractionStatus,
+    onNeedsLocal: handleUITarsNeedsLocal,
+  });
 
   // Stop extraction handler
   const handleStopExtraction = useCallback(async () => {
@@ -220,11 +257,13 @@ function ExtractionPageContentInner() {
           status: "idle",
         }));
       } else {
-        const runnerUrl = uiBridge.getRunnerUrl(state.selectedRunnerId);
-        if (runnerUrl) {
-          const response = await fetch(`${runnerUrl}/uitars-extraction/stop`, {
-            method: "POST",
-          });
+        const target = uiBridge.getRunnerTarget(state.selectedRunnerId);
+        if (target) {
+          const response = await runnerRequest(
+            target,
+            "/uitars-extraction/stop",
+            { method: "POST" }
+          );
           if (!response.ok) {
             logger.error("Failed to stop UI-TARS extraction");
           }
@@ -233,6 +272,9 @@ function ExtractionPageContentInner() {
       toast.info("Extraction stopped");
     } catch (error) {
       logger.error("Failed to stop extraction:", error);
+      if (isRunnerNeedsLocalError(error)) {
+        toast.error(runnerFailureMessage(error, "Failed to stop extraction"));
+      }
     }
     state.setIsExtracting(false);
     if (state.pollingRef.current) {
@@ -240,7 +282,7 @@ function ExtractionPageContentInner() {
       state.pollingRef.current = null;
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- setters and refs are stable
-  }, [config.method, uiBridge.getRunnerUrl, state.selectedRunnerId]);
+  }, [config.method, uiBridge.getRunnerTarget, state.selectedRunnerId]);
 
   // Start extraction handler
   const handleStartExtraction = useCallback(async () => {
@@ -276,27 +318,32 @@ function ExtractionPageContentInner() {
       }
     } catch (error) {
       logger.error("Failed to start extraction:", error);
+      // A relay refusal is shown as its own typed message ("needs the runner
+      // on this machine"), never folded into a generic failure.
       toast.error(
-        `Failed to start extraction: ${error instanceof Error ? error.message : "Unknown error"}`
+        runnerFailureMessage(
+          error,
+          `Failed to start extraction: ${error instanceof Error ? error.message : "Unknown error"}`
+        )
       );
       state.setIsExtracting(false);
       if (config.method === "web") {
         state.setWebExtractionProgress((prev) => ({
           ...prev,
           status: "failed",
-          errorMessage: String(error),
+          errorMessage: error instanceof Error ? error.message : String(error),
         }));
       } else if (config.method === "vision") {
         state.setVisionExtractionProgress((prev) => ({
           ...prev,
           status: "failed",
-          errorMessage: String(error),
+          errorMessage: error instanceof Error ? error.message : String(error),
         }));
       } else {
         state.setUitarsProgress((prev) => ({
           ...prev,
           status: "failed",
-          errorMessage: String(error),
+          errorMessage: error instanceof Error ? error.message : String(error),
         }));
       }
     }
@@ -309,6 +356,10 @@ function ExtractionPageContentInner() {
     visionExtraction.startVisionExtraction,
     uitarsExtraction.startUITarsExtraction,
   ]);
+
+  // Web extraction is new work: refused starts are disabled up front.
+  const webStartRefusal =
+    config.method === "web" ? webExtraction.startRefusal : null;
 
   if (!isLoaded) {
     return (
@@ -496,10 +547,20 @@ function ExtractionPageContentInner() {
               </TabsList>
 
               {/* Start button - not shown for UI Bridge */}
+              {webStartRefusal && (
+                <span
+                  className="max-w-[20rem] truncate text-xs text-text-muted"
+                  title={webStartRefusal}
+                  data-testid="web-extraction-start-refusal"
+                >
+                  {webStartRefusal}
+                </span>
+              )}
               {config.method !== "ui-bridge" && (
                 <Button
                   onClick={handleStartExtraction}
-                  disabled={state.isExtracting}
+                  disabled={state.isExtracting || webStartRefusal !== null}
+                  title={webStartRefusal ?? undefined}
                   id="extraction-start-btn"
                   className="font-mono h-11 px-6 transition-all"
                   style={{
@@ -625,7 +686,9 @@ function ExtractionPageContentInner() {
                           runnersLoading={uiBridge.runnersLoading}
                           selectedRunnerId={state.selectedRunnerId}
                           onRunnerChange={uiBridge.onRunnerChange}
-                          getRunnerUrl={uiBridge.getRunnerUrl}
+                          getRunnerTarget={uiBridge.getRunnerTarget}
+                          getStartTarget={uiBridge.getStartTarget}
+                          startRefusal={uiBridge.startRefusal}
                           onRefreshBrowserTabs={
                             uiBridge.handleRefreshBrowserTabs
                           }

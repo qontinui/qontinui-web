@@ -70,6 +70,7 @@ function AutomationBuilderContent() {
               builder.openConversion(builder.selectedItem)
             }
             onRun={builder.handleRun}
+            runRefusal={builder.runRefusal}
             onShare={builder.handleShare}
             onExport={builder.handleExport}
             onImport={builder.handleImport}

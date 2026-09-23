@@ -31,12 +31,6 @@ vi.mock("@qontinui/ui-bridge/server", () => ({
 // export is enough for the module to load.
 vi.mock("ioredis", () => ({ default: class {} }));
 
-// The relay constructs handlers from discovered specs at load; stub the loader
-// so no network fetch happens.
-vi.mock("./discovered-specs", () => ({
-  loadDiscoveredSpecs: async () => [],
-}));
-
 async function importRelayFresh() {
   vi.resetModules();
   return import("./relay");

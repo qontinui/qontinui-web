@@ -1,4 +1,5 @@
-import { HttpClient } from "./http-client";
+import { runnerRequest } from "@/lib/runner/api-client";
+import type { RunnerTarget } from "@/lib/runner/target";
 import type { RAGElement, RAGElementFormData } from "@/types/rag-builder";
 import type { RAGFindRequest, RAGFindResponse } from "@/types/rag-testing";
 
@@ -6,7 +7,8 @@ import type { RAGFindRequest, RAGFindResponse } from "@/types/rag-testing";
  * RAG Builder Service
  *
  * API client for managing RAG elements, states, and transitions.
- * Communicates with the runner backend (port 9876).
+ * Communicates with the target runner's API (transport resolved per request:
+ * loopback for a runner proven local, the backend relay otherwise).
  */
 
 // ============================================================================
@@ -65,14 +67,19 @@ export interface RAGExportData {
 // ============================================================================
 
 export class RAGBuilderService {
-  private httpClient: HttpClient;
-  private apiUrl: string;
+  /** The runner every call is for. */
+  private target: RunnerTarget;
 
-  constructor(httpClient: HttpClient) {
-    this.httpClient = httpClient;
-    // Use runner (port 9876) instead of main backend
-    // Use 127.0.0.1 instead of localhost to force IPv4 (runner only listens on IPv4)
-    this.apiUrl = process.env.NEXT_PUBLIC_RUNNER_URL || "http://127.0.0.1:9876";
+  constructor(target: RunnerTarget) {
+    this.target = target;
+  }
+
+  /** A runner request with the JSON Content-Type the HttpClient used to add. */
+  private request(path: string, init: RequestInit = {}): Promise<Response> {
+    return runnerRequest(this.target, path, {
+      ...init,
+      headers: { "Content-Type": "application/json", ...init.headers },
+    });
   }
 
   // ==========================================================================
@@ -83,8 +90,8 @@ export class RAGBuilderService {
    * Get all RAG elements for a project
    */
   async getElements(projectId: string): Promise<RAGElement[]> {
-    const url = `${this.apiUrl}/api/rag/projects/${projectId}/elements`;
-    const response = await this.httpClient.fetch(url);
+    const path = `/api/rag/projects/${projectId}/elements`;
+    const response = await this.request(path);
 
     if (!response.ok) {
       throw new Error(`Failed to get elements: ${response.statusText}`);
@@ -97,8 +104,8 @@ export class RAGBuilderService {
    * Get a single RAG element by ID
    */
   async getElement(elementId: string): Promise<RAGElement> {
-    const url = `${this.apiUrl}/api/rag/elements/${elementId}`;
-    const response = await this.httpClient.fetch(url);
+    const path = `/api/rag/elements/${elementId}`;
+    const response = await this.request(path);
 
     if (!response.ok) {
       throw new Error(`Failed to get element: ${response.statusText}`);
@@ -114,8 +121,8 @@ export class RAGBuilderService {
     projectId: string,
     data: RAGElementFormData
   ): Promise<RAGElement> {
-    const url = `${this.apiUrl}/api/rag/projects/${projectId}/elements`;
-    const response = await this.httpClient.fetch(url, {
+    const path = `/api/rag/projects/${projectId}/elements`;
+    const response = await this.request(path, {
       method: "POST",
       body: JSON.stringify(data),
     });
@@ -135,8 +142,8 @@ export class RAGBuilderService {
     elementId: string,
     data: RAGElementFormData
   ): Promise<RAGElement> {
-    const url = `${this.apiUrl}/api/rag/elements/${elementId}`;
-    const response = await this.httpClient.fetch(url, {
+    const path = `/api/rag/elements/${elementId}`;
+    const response = await this.request(path, {
       method: "PUT",
       body: JSON.stringify(data),
     });
@@ -152,8 +159,8 @@ export class RAGBuilderService {
    * Delete a RAG element
    */
   async deleteElement(elementId: string): Promise<void> {
-    const url = `${this.apiUrl}/api/rag/elements/${elementId}`;
-    const response = await this.httpClient.fetch(url, {
+    const path = `/api/rag/elements/${elementId}`;
+    const response = await this.request(path, {
       method: "DELETE",
     });
 
@@ -170,8 +177,8 @@ export class RAGBuilderService {
    * Get all RAG states for a project
    */
   async getStates(projectId: string): Promise<RAGState[]> {
-    const url = `${this.apiUrl}/api/rag/projects/${projectId}/states`;
-    const response = await this.httpClient.fetch(url);
+    const path = `/api/rag/projects/${projectId}/states`;
+    const response = await this.request(path);
 
     if (!response.ok) {
       throw new Error(`Failed to get states: ${response.statusText}`);
@@ -184,8 +191,8 @@ export class RAGBuilderService {
    * Get a single RAG state by ID
    */
   async getState(stateId: string): Promise<RAGState> {
-    const url = `${this.apiUrl}/api/rag/states/${stateId}`;
-    const response = await this.httpClient.fetch(url);
+    const path = `/api/rag/states/${stateId}`;
+    const response = await this.request(path);
 
     if (!response.ok) {
       throw new Error(`Failed to get state: ${response.statusText}`);
@@ -201,8 +208,8 @@ export class RAGBuilderService {
     projectId: string,
     data: Partial<RAGState>
   ): Promise<RAGState> {
-    const url = `${this.apiUrl}/api/rag/projects/${projectId}/states`;
-    const response = await this.httpClient.fetch(url, {
+    const path = `/api/rag/projects/${projectId}/states`;
+    const response = await this.request(path, {
       method: "POST",
       body: JSON.stringify(data),
     });
@@ -222,8 +229,8 @@ export class RAGBuilderService {
     stateId: string,
     data: Partial<RAGState>
   ): Promise<RAGState> {
-    const url = `${this.apiUrl}/api/rag/states/${stateId}`;
-    const response = await this.httpClient.fetch(url, {
+    const path = `/api/rag/states/${stateId}`;
+    const response = await this.request(path, {
       method: "PUT",
       body: JSON.stringify(data),
     });
@@ -239,8 +246,8 @@ export class RAGBuilderService {
    * Delete a RAG state
    */
   async deleteState(stateId: string): Promise<void> {
-    const url = `${this.apiUrl}/api/rag/states/${stateId}`;
-    const response = await this.httpClient.fetch(url, {
+    const path = `/api/rag/states/${stateId}`;
+    const response = await this.request(path, {
       method: "DELETE",
     });
 
@@ -257,8 +264,8 @@ export class RAGBuilderService {
    * Get all RAG transitions for a project
    */
   async getTransitions(projectId: string): Promise<RAGTransition[]> {
-    const url = `${this.apiUrl}/api/rag/projects/${projectId}/transitions`;
-    const response = await this.httpClient.fetch(url);
+    const path = `/api/rag/projects/${projectId}/transitions`;
+    const response = await this.request(path);
 
     if (!response.ok) {
       throw new Error(`Failed to get transitions: ${response.statusText}`);
@@ -271,8 +278,8 @@ export class RAGBuilderService {
    * Get a single RAG transition by ID
    */
   async getTransition(transitionId: string): Promise<RAGTransition> {
-    const url = `${this.apiUrl}/api/rag/transitions/${transitionId}`;
-    const response = await this.httpClient.fetch(url);
+    const path = `/api/rag/transitions/${transitionId}`;
+    const response = await this.request(path);
 
     if (!response.ok) {
       throw new Error(`Failed to get transition: ${response.statusText}`);
@@ -288,8 +295,8 @@ export class RAGBuilderService {
     projectId: string,
     data: Partial<RAGTransition>
   ): Promise<RAGTransition> {
-    const url = `${this.apiUrl}/api/rag/projects/${projectId}/transitions`;
-    const response = await this.httpClient.fetch(url, {
+    const path = `/api/rag/projects/${projectId}/transitions`;
+    const response = await this.request(path, {
       method: "POST",
       body: JSON.stringify(data),
     });
@@ -311,8 +318,8 @@ export class RAGBuilderService {
     transitionId: string,
     data: Partial<RAGTransition>
   ): Promise<RAGTransition> {
-    const url = `${this.apiUrl}/api/rag/transitions/${transitionId}`;
-    const response = await this.httpClient.fetch(url, {
+    const path = `/api/rag/transitions/${transitionId}`;
+    const response = await this.request(path, {
       method: "PUT",
       body: JSON.stringify(data),
     });
@@ -328,8 +335,8 @@ export class RAGBuilderService {
    * Delete a RAG transition
    */
   async deleteTransition(transitionId: string): Promise<void> {
-    const url = `${this.apiUrl}/api/rag/transitions/${transitionId}`;
-    const response = await this.httpClient.fetch(url, {
+    const path = `/api/rag/transitions/${transitionId}`;
+    const response = await this.request(path, {
       method: "DELETE",
     });
 
@@ -346,12 +353,10 @@ export class RAGBuilderService {
    * Search RAG elements using text and semantic similarity
    */
   async search(projectId: string, query: SearchQuery): Promise<SearchResult[]> {
-    const url = `${this.apiUrl}/api/rag/projects/${projectId}/search`;
-    const response = await this.httpClient.fetch(url, {
+    const path = `/api/rag/projects/${projectId}/search`;
+    const response = await this.request(path, {
       method: "POST",
       body: JSON.stringify(query),
-      // Safe to re-issue: runner `/search` is a text/semantic query, read-only.
-      idempotent: true,
     });
 
     if (!response.ok) {
@@ -369,8 +374,8 @@ export class RAGBuilderService {
    * Generate description for an element using AI
    */
   async generateDescription(elementId: string): Promise<string> {
-    const url = `${this.apiUrl}/api/rag/elements/${elementId}/generate-description`;
-    const response = await this.httpClient.fetch(url, {
+    const path = `/api/rag/elements/${elementId}/generate-description`;
+    const response = await this.request(path, {
       method: "POST",
     });
 
@@ -388,8 +393,8 @@ export class RAGBuilderService {
   async generateDescriptions(
     projectId: string
   ): Promise<{ updated: number; total: number }> {
-    const url = `${this.apiUrl}/api/rag/projects/${projectId}/generate-descriptions`;
-    const response = await this.httpClient.fetch(url, {
+    const path = `/api/rag/projects/${projectId}/generate-descriptions`;
+    const response = await this.request(path, {
       method: "POST",
     });
 
@@ -410,8 +415,8 @@ export class RAGBuilderService {
    * Export RAG data for a project
    */
   async exportProject(projectId: string): Promise<RAGExportData> {
-    const url = `${this.apiUrl}/api/rag/projects/${projectId}/export`;
-    const response = await this.httpClient.fetch(url);
+    const path = `/api/rag/projects/${projectId}/export`;
+    const response = await this.request(path);
 
     if (!response.ok) {
       throw new Error(`Failed to export project: ${response.statusText}`);
@@ -427,8 +432,8 @@ export class RAGBuilderService {
     projectId: string,
     data: RAGExportData
   ): Promise<{ imported: number; skipped: number; errors: string[] }> {
-    const url = `${this.apiUrl}/api/rag/projects/${projectId}/import`;
-    const response = await this.httpClient.fetch(url, {
+    const path = `/api/rag/projects/${projectId}/import`;
+    const response = await this.request(path, {
       method: "POST",
       body: JSON.stringify(data),
     });
@@ -454,12 +459,10 @@ export class RAGBuilderService {
     projectId: string,
     request: RAGFindRequest
   ): Promise<RAGFindResponse> {
-    const url = `${this.apiUrl}/api/rag/projects/${projectId}/find`;
-    const response = await this.httpClient.fetch(url, {
+    const path = `/api/rag/projects/${projectId}/find`;
+    const response = await this.request(path, {
       method: "POST",
       body: JSON.stringify(request),
-      // Safe to re-issue: runner `/find` is SAM3+CLIP matching, nothing persisted.
-      idempotent: true,
     });
 
     if (!response.ok) {

@@ -3,13 +3,16 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import * as workflowApi from "@/lib/api/unified-workflows";
-import { runnerApi } from "@/lib/runner-api";
+import { useDispatchRunnerApi } from "@/lib/runner-api";
 import type { UnifiedWorkflow } from "@/types/unified-workflow";
 import { toast } from "sonner";
 
 export function useWorkflowPageActions(
   setSelectedWorkflow: (w: UnifiedWorkflow) => void,
 ) {
+  // Calls that START work go to the new-work target (explicit choice or
+  // coord's resolved pick); a refused call carries coord's outcome.
+  const { api: workApi, refusal: runRefusal } = useDispatchRunnerApi();
   const router = useRouter();
   const [isCreatingManually, setIsCreatingManually] = useState(false);
 
@@ -34,7 +37,7 @@ export function useWorkflowPageActions(
 
   const handleRunWorkflow = async (workflowId: string) => {
     try {
-      await runnerApi.runWorkflow(workflowId);
+      await workApi.runWorkflow(workflowId);
       toast.success("Workflow started!");
       router.push("/runs/active");
     } catch (err) {
@@ -49,6 +52,8 @@ export function useWorkflowPageActions(
   };
 
   return {
+    /** Coord's reason no workflow run may start right now (null = allowed). */
+    runRefusal,
     isCreatingManually,
     handleCreateManually,
     handleRunWorkflow,

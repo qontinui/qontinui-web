@@ -35,6 +35,8 @@ from qontinui_schemas.generated.per_type.runner import (
 )
 from qontinui_schemas.generated.per_type.runner import (
     RunnerCrash,
+    RunnerInstance,
+    RunnerInstanceRole,
     RunnerStatus,
     RunnerUiError,
 )
@@ -52,6 +54,7 @@ from app.crud import device_crud
 from app.crud import device_machine_credential_crud as dmk_crud
 from app.models.devenv import DeviceMachineCredential
 from app.models.device import Device
+from app.models.device_connection import DeviceConnection
 from app.models.user import User as UserModel
 from app.schemas.device import (
     DeviceConnectionResponse,
@@ -287,12 +290,109 @@ def _recent_crash_from(value: dict[str, Any] | None) -> RunnerCrash | None:
         )
 
 
-def _device_to_wire(device: Device) -> RunnerWire:
+# ---------------------------------------------------------------------------
+# Runner instances (plan
+# ``2026-09-20-runner-selector-drives-a-transport-not-a-target`` Phase 6)
+#
+# Every runner instance on a machine shares the machine's ``device_id`` and so
+# its ONE ``coord.devices`` row; ``Runner.instances`` lists the live ones, one
+# per ``coord.device_connections`` row, so a consumer can address ``:9876`` and
+# ``:9877`` on one box separately.
+# ---------------------------------------------------------------------------
+
+
+def _connection_to_instance(conn: DeviceConnection) -> RunnerInstance:
+    """One live connection row → one wire ``RunnerInstance``.
+
+    A row with no ``instance_key`` came from a runner that predates the field
+    (or was written before the column existed); it is keyed
+    ``connection:<pk>`` — a namespace no runner can spell, so it can never
+    collide with a real key — rather than being given one it did not report.
+    A NULL role exists only on pre-migration rows, which were all registered
+    as the device's (primary) socket.
+    """
+    role = (
+        RunnerInstanceRole.secondary
+        if conn.instance_role == device_connection_crud.INSTANCE_ROLE_SECONDARY
+        else RunnerInstanceRole.primary
+    )
+    return RunnerInstance(
+        instanceKey=conn.instance_key or f"connection:{conn.id}",
+        instanceRole=role,
+        port=conn.port,
+        connectedAt=conn.connected_at.isoformat(),
+    )
+
+
+def _instance_sort_key(inst: RunnerInstance) -> tuple[int, int, int, str, str]:
+    """Primary first, then by port (unknown port last), then connect time."""
+    return (
+        0 if inst.instanceRole == RunnerInstanceRole.primary else 1,
+        0 if inst.port is not None else 1,
+        inst.port if inst.port is not None else 0,
+        inst.connectedAt,
+        inst.instanceKey,
+    )
+
+
+def _live_instances(
+    rows: list[DeviceConnection], ws_session_id: int | None
+) -> list[RunnerInstance]:
+    """Which of a device's open connection rows are live instances.
+
+    * A SECONDARY row arrives already freshness-filtered
+      (:func:`device_connection_crud.list_live_instance_rows`).
+    * A PRIMARY / legacy row is live only if it IS the device's
+      ``ws_session_id`` pointer. Only a primary socket ever holds the pointer,
+      so the pointer names the one live primary; any other open primary row is
+      the orphan of an unclean close (a backend restart, a ``finally`` that
+      never ran) and listing it would advertise a dead instance.
+    """
+    instances = [
+        _connection_to_instance(r)
+        for r in rows
+        if r.instance_role == device_connection_crud.INSTANCE_ROLE_SECONDARY
+        or (ws_session_id is not None and r.id == ws_session_id)
+    ]
+    return sorted(instances, key=_instance_sort_key)
+
+
+async def load_live_instances(
+    db: AsyncSession, pointers: dict[UUID, int | None]
+) -> dict[UUID, list[RunnerInstance]]:
+    """``Runner.instances`` for many devices from ONE connections query.
+
+    ``pointers`` maps each device to its ``ws_session_id`` (the list and
+    snapshot paths already hold it on the device row), so this costs one
+    query per response regardless of how many devices it lists.
+    """
+    rows = await device_connection_crud.list_live_instance_rows(db, list(pointers))
+    return {
+        device_id: _live_instances(rows.get(device_id, []), pointer)
+        for device_id, pointer in pointers.items()
+    }
+
+
+async def devices_to_wire(db: AsyncSession, devices: list[Device]) -> list[RunnerWire]:
+    """Batch :func:`_device_to_wire` — every ORM-sourced Runner list goes here."""
+    instances = await load_live_instances(
+        db, {d.device_id: d.ws_session_id for d in devices}
+    )
+    return [
+        _device_to_wire(d, instances=instances.get(d.device_id, [])) for d in devices
+    ]
+
+
+def _device_to_wire(device: Device, *, instances: list[RunnerInstance]) -> RunnerWire:
     """Convert a SQLAlchemy ``Device`` row to the canonical wire shape.
 
     Phase 7 of the plan renames the wire type ``Runner`` → ``Device``;
     until that ships, the response continues to use the legacy
     ``Runner`` Pydantic schema for frontend compat.
+
+    ``instances`` is keyword-REQUIRED so no caller can forget it and ship an
+    empty list that reads as "no instance connected"; list callers use
+    :func:`devices_to_wire`, which batch-loads them.
     """
     return RunnerWire(
         id=str(device.device_id),
@@ -312,6 +412,7 @@ def _device_to_wire(device: Device) -> RunnerWire:
         uiError=_ui_error_from(device.ui_error),
         recentCrash=_recent_crash_from(device.recent_crash),
         createdAt=device.created_at.isoformat(),
+        instances=instances,
     )
 
 
@@ -412,7 +513,20 @@ def _tenant_bindings_from(value: Any) -> list[DeviceTenantBinding] | None:
     return bindings
 
 
-def _device_row_to_wire(row: dict[str, Any]) -> DeviceResponse:
+def _ws_session_id_from_row(row: dict[str, Any]) -> int | None:
+    """The coord row's relay pointer as an int, or ``None`` when absent/garbled."""
+    value = row.get("ws_session_id")
+    if value is None:
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _device_row_to_wire(
+    row: dict[str, Any], *, instances: list[RunnerInstance]
+) -> DeviceResponse:
     """Convert a coord ``coord.devices`` JSON row to the canonical wire shape.
 
     Dict-consuming twin of :func:`_device_to_wire`. The row carries every
@@ -439,7 +553,34 @@ def _device_row_to_wire(row: dict[str, Any]) -> DeviceResponse:
         recentCrash=_recent_crash_from(row.get("recent_crash")),
         createdAt=str(row.get("created_at") or ""),
         tenant_bindings=_tenant_bindings_from(row.get("tenant_bindings")),
+        instances=instances,
     )
+
+
+async def device_rows_to_wire(
+    db: AsyncSession, rows: list[dict[str, Any]]
+) -> list[DeviceResponse]:
+    """Batch :func:`_device_row_to_wire` for coord-sourced rows (one query)."""
+    pointers: dict[UUID, int | None] = {}
+    for row in rows:
+        try:
+            pointers[UUID(str(row.get("device_id")))] = _ws_session_id_from_row(row)
+        except ValueError:
+            continue
+    instances = await load_live_instances(db, pointers)
+    wire: list[DeviceResponse] = []
+    for row in rows:
+        try:
+            device_id: UUID | None = UUID(str(row.get("device_id")))
+        except ValueError:
+            device_id = None
+        wire.append(
+            _device_row_to_wire(
+                row,
+                instances=instances.get(device_id, []) if device_id else [],
+            )
+        )
+    return wire
 
 
 # ---------------------------------------------------------------------------
@@ -451,6 +592,7 @@ def _device_row_to_wire(row: dict[str, Any]) -> DeviceResponse:
 async def list_devices_endpoint(
     *,
     request: Request,
+    db: AsyncSession = Depends(get_async_db),
     current_user: UserModel = Depends(get_current_active_user_async),
     status_filter: str | None = Query(
         default=None,
@@ -469,7 +611,9 @@ async def list_devices_endpoint(
     the former direct ``coord.devices`` ORM read; coord owns its table.
     """
     rows = await coord_device.list_devices_for_user(request, str(current_user.id))
-    wire = [_device_row_to_wire(r) for r in rows]
+    # ``instances`` come from ``coord.device_connections``, which only this
+    # backend writes; one batched query for the whole list, never one per row.
+    wire = await device_rows_to_wire(db, rows)
 
     if status_filter:
         allowed = {s.strip() for s in status_filter.split(",") if s.strip()}
@@ -847,6 +991,7 @@ async def pair_cli(
 async def get_device_endpoint(
     *,
     request: Request,
+    db: AsyncSession = Depends(get_async_db),
     current_user: UserModel = Depends(get_current_active_user_async),
     device_id: UUID,
 ) -> Any:
@@ -858,7 +1003,8 @@ async def get_device_endpoint(
     web-side ``_ensure_owned``.
     """
     row = await coord_device.get_owned_device(request, device_id, str(current_user.id))
-    return _device_row_to_wire(row)
+    (wire,) = await device_rows_to_wire(db, [row])
+    return wire
 
 
 @router.delete("/{device_id}", status_code=status.HTTP_204_NO_CONTENT)
