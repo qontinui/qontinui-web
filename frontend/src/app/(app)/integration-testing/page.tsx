@@ -35,6 +35,7 @@ export default function IntegrationTestingPage() {
     fetchRuns,
     loadRunDetails,
     runIntegrationTest,
+    runRefusal,
     toggleViewMode,
     goBackToList,
     dismissError,
@@ -73,6 +74,7 @@ export default function IntegrationTestingPage() {
                   onInitialStatesChange={setInitialStatesOverride}
                   isRunning={runningTest}
                   onRunTest={runIntegrationTest}
+                  runRefusal={runRefusal}
                   apiHealthy={apiHealthy}
                   isLoading={
                     (loading || projectLoading) && workflows.length === 0

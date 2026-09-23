@@ -13,8 +13,6 @@ export interface AccessibilityExplorerProps {
   initialCdpHost?: string;
   /** Initial CDP port */
   initialCdpPort?: number;
-  /** Runner API URL */
-  apiUrl?: string;
   /** Show connection settings */
   showSettings?: boolean;
   /** Additional class names */

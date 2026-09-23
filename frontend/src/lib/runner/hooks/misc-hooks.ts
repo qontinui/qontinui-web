@@ -6,6 +6,7 @@ import {
   HEALTH_POLL_INTERVAL,
   DEFAULT_POLL_INTERVAL,
 } from "../api-client";
+import { useRunnerTarget } from "@/contexts/active-runner-context";
 import type { RunnerHealth } from "../types/task-run";
 import type { TestResult, ExecutionSpan } from "../types/testing";
 import type { GlobalLogSourceSettings, LogSource } from "../types/log-sources";
@@ -14,7 +15,7 @@ import type { ErrorMonitorEntry } from "../types/error-monitor";
 import type { McpServerConfig } from "../types/settings";
 
 export function useRunnerHealth() {
-  return useRunnerQuery<RunnerHealth>("/health", {
+  return useRunnerQuery<RunnerHealth>(useRunnerTarget(), "/health", {
     pollInterval: HEALTH_POLL_INTERVAL,
   });
 }
@@ -28,7 +29,7 @@ export function useExtensionStatus() {
     last_pong_ago_sec?: number;
     connection_age_sec?: number;
     reconnect_count?: number;
-  }>("/extension/status", {
+  }>(useRunnerTarget(), "/extension/status", {
     pollInterval: 5000,
   });
 }
@@ -37,39 +38,46 @@ export function useExtensionCommand() {
   return useRunnerMutation<
     { action: string; params?: Record<string, unknown> },
     unknown
-  >("/extension/command");
+  >(useRunnerTarget(), "/extension/command");
 }
 
 export function useLogSources() {
-  return useRunnerQuery<LogSource[]>("/log-sources");
+  return useRunnerQuery<LogSource[]>(useRunnerTarget(), "/log-sources");
 }
 
 export function useGlobalLogSourceSettings() {
-  return useRunnerQuery<GlobalLogSourceSettings>("/log-sources/settings");
+  return useRunnerQuery<GlobalLogSourceSettings>(
+    useRunnerTarget(),
+    "/log-sources/settings"
+  );
 }
 
 export function useHooks() {
-  return useRunnerQuery<Hook[]>("/hooks");
+  return useRunnerQuery<Hook[]>(useRunnerTarget(), "/hooks");
 }
 
 export function useErrorMonitorEntries() {
-  return useRunnerQuery<ErrorMonitorEntry[]>("/error-monitor/errors", {
-    pollInterval: DEFAULT_POLL_INTERVAL,
-  });
+  return useRunnerQuery<ErrorMonitorEntry[]>(
+    useRunnerTarget(),
+    "/error-monitor/errors",
+    {
+      pollInterval: DEFAULT_POLL_INTERVAL,
+    }
+  );
 }
 
 export function useMcpServers() {
-  return useRunnerQuery<McpServerConfig[]>("/mcp-servers");
+  return useRunnerQuery<McpServerConfig[]>(useRunnerTarget(), "/mcp-servers");
 }
 
 export function useTestResults() {
-  return useRunnerQuery<TestResult[]>("/test-results");
+  return useRunnerQuery<TestResult[]>(useRunnerTarget(), "/test-results");
 }
 
 export function useTestHistory() {
-  return useRunnerQuery<TestResult[]>("/tests/history");
+  return useRunnerQuery<TestResult[]>(useRunnerTarget(), "/tests/history");
 }
 
 export function useExecutionSpans() {
-  return useRunnerQuery<ExecutionSpan[]>("/execution-spans");
+  return useRunnerQuery<ExecutionSpan[]>(useRunnerTarget(), "/execution-spans");
 }

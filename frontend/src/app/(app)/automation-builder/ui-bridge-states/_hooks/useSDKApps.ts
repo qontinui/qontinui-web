@@ -2,6 +2,15 @@
 
 import { useState, useCallback, useRef, useEffect } from "react";
 import { toast } from "sonner";
+import {
+  isRunnerNeedsLocalError,
+  runnerRequest,
+  startRunnerPoll,
+  type RunnerTarget,
+} from "@/lib/runner";
+
+/** How often SDK snapshots are captured while recording (runner cadence). */
+const SNAPSHOT_POLL_INTERVAL_MS = 2000;
 
 /**
  * Discovered SDK app from the runner's port scanner.
@@ -79,8 +88,14 @@ export interface SDKSnapshot {
  * - Port scanning to find SDK-enabled apps
  * - Direct HTTP connection to SDK apps
  * - Snapshot capture for recording
+ *
+ * The runner is named by `target` (null = none selected) and every call goes
+ * through the resolver: loopback only when the runner is proven local, the
+ * relay otherwise. The relay does not carry these routes, so for a runner on
+ * another machine the hook reports `needsLocalError` — the typed "needs the
+ * runner on this machine" message — instead of failing silently.
  */
-export function useSDKApps(runnerUrl: string | null) {
+export function useSDKApps(target: RunnerTarget | null) {
   const [apps, setApps] = useState<SDKApp[]>([]);
   const [connections, setConnections] = useState<SDKConnection[]>([]);
   const [isScanning, setIsScanning] = useState(false);
@@ -90,15 +105,28 @@ export function useSDKApps(runnerUrl: string | null) {
   // Recording state
   const [snapshots, setSnapshots] = useState<SDKSnapshotData[]>([]);
   const [isRecording, setIsRecording] = useState(false);
-  const pollingRef = useRef<NodeJS.Timeout | null>(null);
+  // Stops the running snapshot poll (startRunnerPoll's stop function).
+  const pollingRef = useRef<(() => void) | null>(null);
+  // The typed RUNNER_NEEDS_LOCAL message, when the relay refused a call.
+  const [needsLocalError, setNeedsLocalError] = useState<string | null>(null);
 
-  // Clean up polling interval on unmount to prevent memory leaks
+  // A different runner: its refusal no longer applies.
+  useEffect(() => {
+    setNeedsLocalError(null);
+  }, [target]);
+
+  // Clean up polling on unmount to prevent memory leaks
   useEffect(() => {
     return () => {
-      if (pollingRef.current) {
-        clearInterval(pollingRef.current);
-      }
+      pollingRef.current?.();
     };
+  }, []);
+
+  /** Record a relay refusal; true when `err` was one. */
+  const noteNeedsLocal = useCallback((err: unknown): boolean => {
+    if (!isRunnerNeedsLocalError(err)) return false;
+    setNeedsLocalError((err as Error).message);
+    return true;
   }, []);
 
   /**
@@ -106,11 +134,11 @@ export function useSDKApps(runnerUrl: string | null) {
    * Tries the combined scan first, falls back to web-only scan if empty.
    */
   const scanForApps = useCallback(async () => {
-    if (!runnerUrl) return;
+    if (!target) return;
     setIsScanning(true);
     try {
       // Try combined scan first
-      const res = await fetch(`${runnerUrl}/ui-bridge/apps/scan`, {
+      const res = await runnerRequest(target, "/ui-bridge/apps/scan", {
         method: "POST",
       });
       if (!res.ok) throw new Error("Scan failed");
@@ -123,7 +151,7 @@ export function useSDKApps(runnerUrl: string | null) {
 
       // Fallback: if combined scan returned empty, try web-only scan
       if (allApps.length === 0) {
-        const webRes = await fetch(`${runnerUrl}/ui-bridge/apps/scan/web`);
+        const webRes = await runnerRequest(target, "/ui-bridge/apps/scan/web");
         if (webRes.ok) {
           const webData = await webRes.json();
           allApps = webData.data ?? webData;
@@ -135,40 +163,42 @@ export function useSDKApps(runnerUrl: string | null) {
         toast.info("No SDK-enabled apps found");
       }
     } catch (err) {
+      if (noteNeedsLocal(err)) return;
       const msg = err instanceof Error ? err.message : "Scan failed";
       toast.error(msg);
     } finally {
       setIsScanning(false);
     }
-  }, [runnerUrl]);
+  }, [target, noteNeedsLocal]);
 
   /**
    * Refresh the list of active SDK connections.
    */
   const refreshConnections = useCallback(async () => {
-    if (!runnerUrl) return;
+    if (!target) return;
     try {
-      const res = await fetch(`${runnerUrl}/ui-bridge/sdk/connections`);
+      const res = await runnerRequest(target, "/ui-bridge/sdk/connections");
       if (!res.ok) return;
       const data = await res.json();
       const conns: SDKConnection[] = data.data ?? data;
       setConnections(conns);
       const active = conns.find((c) => c.isActive) ?? null;
       setActiveApp(active);
-    } catch {
-      // silently fail
+    } catch (err) {
+      // A relay refusal is shown; any other failure leaves the list as is.
+      noteNeedsLocal(err);
     }
-  }, [runnerUrl]);
+  }, [target, noteNeedsLocal]);
 
   /**
    * Connect to a specific SDK app.
    */
   const connectToApp = useCallback(
     async (appUrl: string) => {
-      if (!runnerUrl) return;
+      if (!target) return;
       setIsConnecting(true);
       try {
-        const res = await fetch(`${runnerUrl}/ui-bridge/sdk/connect`, {
+        const res = await runnerRequest(target, "/ui-bridge/sdk/connect", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ url: appUrl }),
@@ -181,13 +211,14 @@ export function useSDKApps(runnerUrl: string | null) {
         await refreshConnections();
         toast.success("Connected to SDK app");
       } catch (err) {
+        if (noteNeedsLocal(err)) return;
         const msg = err instanceof Error ? err.message : "Connection failed";
         toast.error(msg);
       } finally {
         setIsConnecting(false);
       }
     },
-    [runnerUrl, refreshConnections]
+    [target, refreshConnections, noteNeedsLocal]
   );
 
   /**
@@ -195,9 +226,9 @@ export function useSDKApps(runnerUrl: string | null) {
    */
   const switchActive = useCallback(
     async (appUrl: string) => {
-      if (!runnerUrl) return;
+      if (!target) return;
       try {
-        const res = await fetch(`${runnerUrl}/ui-bridge/sdk/switch`, {
+        const res = await runnerRequest(target, "/ui-bridge/sdk/switch", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ url: appUrl }),
@@ -205,52 +236,77 @@ export function useSDKApps(runnerUrl: string | null) {
         if (res.ok) {
           await refreshConnections();
         }
-      } catch {
+      } catch (err) {
+        if (noteNeedsLocal(err)) return;
         toast.error("Failed to switch active app");
       }
     },
-    [runnerUrl, refreshConnections]
+    [target, refreshConnections, noteNeedsLocal]
   );
 
   /**
-   * Capture a single SDK snapshot from the active app.
+   * Capture a single SDK snapshot from the active app. Throws a typed
+   * RUNNER_NEEDS_LOCAL error (the relay refused the path); any other failure
+   * yields null.
    */
-  const captureSnapshot =
+  const fetchSnapshot =
     useCallback(async (): Promise<SDKSnapshotData | null> => {
-      if (!runnerUrl) return null;
+      if (!target) return null;
       try {
-        const res = await fetch(`${runnerUrl}/ui-bridge/sdk/snapshot`);
+        const res = await runnerRequest(target, "/ui-bridge/sdk/snapshot");
         if (!res.ok) return null;
         const data: SDKSnapshot = await res.json();
         if (data.success === false || !data.data) return null;
         return data.data;
-      } catch {
+      } catch (err) {
+        if (isRunnerNeedsLocalError(err)) throw err;
         return null;
       }
-    }, [runnerUrl]);
+    }, [target]);
 
   /**
-   * Start recording — periodically capture SDK snapshots.
+   * Capture a single SDK snapshot from the active app (null on any failure;
+   * a relay refusal is recorded in `needsLocalError`).
+   */
+  const captureSnapshot =
+    useCallback(async (): Promise<SDKSnapshotData | null> => {
+      try {
+        return await fetchSnapshot();
+      } catch (err) {
+        noteNeedsLocal(err);
+        return null;
+      }
+    }, [fetchSnapshot, noteNeedsLocal]);
+
+  /**
+   * Start recording — periodically capture SDK snapshots, at the runner
+   * poll cadence for the target's route (re-evaluated every tick). Stops for
+   * good, with `needsLocalError` set, when the relay refuses the path.
    */
   const startRecording = useCallback(
-    (intervalMs: number = 2000) => {
-      if (isRecording) return;
+    (intervalMs: number = SNAPSHOT_POLL_INTERVAL_MS) => {
+      if (isRecording || !target) return;
       setSnapshots([]);
       setIsRecording(true);
 
-      const poll = async () => {
-        const snap = await captureSnapshot();
-        if (snap) {
-          setSnapshots((prev) => [...prev, snap]);
-        }
-      };
-
-      // Capture immediately
-      poll();
-
-      pollingRef.current = setInterval(poll, intervalMs);
+      pollingRef.current = startRunnerPoll({
+        getTarget: () => target,
+        requestedMs: intervalMs,
+        immediate: true,
+        tick: async () => {
+          const snap = await fetchSnapshot();
+          if (snap) {
+            setSnapshots((prev) => [...prev, snap]);
+          }
+        },
+        onNeedsLocal: (err) => {
+          pollingRef.current = null;
+          setIsRecording(false);
+          setNeedsLocalError(err.message);
+        },
+      });
     },
-    [isRecording, captureSnapshot]
+    [isRecording, target, fetchSnapshot]
   );
 
   /**
@@ -267,10 +323,8 @@ export function useSDKApps(runnerUrl: string | null) {
    * Stop recording.
    */
   const stopRecording = useCallback(() => {
-    if (pollingRef.current) {
-      clearInterval(pollingRef.current);
-      pollingRef.current = null;
-    }
+    pollingRef.current?.();
+    pollingRef.current = null;
     setIsRecording(false);
   }, []);
 
@@ -333,6 +387,9 @@ export function useSDKApps(runnerUrl: string | null) {
     connectToApp,
     switchActive,
     refreshConnections,
+
+    // The typed "needs the runner on this machine" message (RUNNER_NEEDS_LOCAL)
+    needsLocalError,
 
     // Snapshot capture
     captureSnapshot,

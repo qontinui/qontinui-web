@@ -7,7 +7,7 @@
 
 import { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import { toast } from "sonner";
-import { runnerClient } from "@/lib/runner-client";
+import { useExtractionScreenshotCache } from "./useExtractionScreenshot";
 import type {
   ExtractionAnnotation,
   StateMachineState,
@@ -39,13 +39,14 @@ export function useStateExplorerState({
   const [hoveredImageId, setHoveredImageId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
 
-  // Screenshot cache
-  const [screenshotCache, setScreenshotCache] = useState<Map<string, string>>(
-    new Map()
-  );
-  const [loadingScreenshots, setLoadingScreenshots] = useState<Set<string>>(
-    new Set()
-  );
+  // Screenshots from the active runner; the cache revokes every object URL
+  // it created on unmount and when the runner or extraction changes.
+  const {
+    urls: screenshotCache,
+    loading: loadingScreenshots,
+    errors: screenshotErrors,
+    load: loadScreenshot,
+  } = useExtractionScreenshotCache(extractionId);
 
   // Zoom and pan state
   const [zoom, setZoom] = useState(1);
@@ -112,44 +113,6 @@ export function useStateExplorerState({
 
   // --- Callbacks ---
 
-  // Load screenshot
-  const loadScreenshot = useCallback(
-    async (screenshotId: string): Promise<string | null> => {
-      if (screenshotCache.has(screenshotId)) {
-        return screenshotCache.get(screenshotId) || null;
-      }
-
-      if (loadingScreenshots.has(screenshotId) || !extractionId) {
-        return null;
-      }
-
-      setLoadingScreenshots((prev) => new Set(prev).add(screenshotId));
-
-      try {
-        const result = await runnerClient.getExtractionScreenshot(
-          extractionId,
-          screenshotId
-        );
-        if (result.success && result.blob) {
-          const url = URL.createObjectURL(result.blob);
-          setScreenshotCache((prev) => new Map(prev).set(screenshotId, url));
-          return url;
-        }
-      } catch (error) {
-        console.error("Failed to load screenshot:", error);
-      } finally {
-        setLoadingScreenshots((prev) => {
-          const next = new Set(prev);
-          next.delete(screenshotId);
-          return next;
-        });
-      }
-
-      return null;
-    },
-    [screenshotCache, loadingScreenshots, extractionId]
-  );
-
   // Preload screenshots for selected state
   useEffect(() => {
     if (!extractionId) return;
@@ -168,14 +131,6 @@ export function useStateExplorerState({
     });
     observer.observe(containerRef.current);
     return () => observer.disconnect();
-  }, []);
-
-  // Cleanup blob URLs on unmount
-  useEffect(() => {
-    return () => {
-      screenshotCache.forEach((url) => URL.revokeObjectURL(url));
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Zoom handlers
@@ -265,6 +220,7 @@ export function useStateExplorerState({
     // Screenshot cache
     screenshotCache,
     loadingScreenshots,
+    screenshotErrors,
     loadScreenshot,
 
     // Zoom/pan

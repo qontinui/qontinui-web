@@ -1,6 +1,11 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { toast } from "sonner";
 import { useRunnerMonitors } from "@/hooks/useRunnerMonitors";
+import {
+  runnerRequest,
+  useRunnerTarget,
+  type RunnerTarget,
+} from "@/lib/runner";
 import type {
   MonitorInfo,
   CapturedScreenshot,
@@ -40,12 +45,12 @@ function saveMonitorPrefs(monitors: number[], delay: number): void {
  * Returns `{ file, width, height }` on success.
  */
 export async function captureScreenshotFromRunner(
+  target: RunnerTarget,
   monitorIndex: number
 ): Promise<{ file: File; width: number; height: number }> {
-  const apiUrl = process.env.NEXT_PUBLIC_RUNNER_URL || "http://127.0.0.1:9876";
-
-  const response = await fetch(
-    `${apiUrl}/api/capture/screenshot/current?monitor=${monitorIndex}&quality=95`
+  const response = await runnerRequest(
+    target,
+    `/api/capture/screenshot/current?monitor=${monitorIndex}&quality=95`
   );
 
   if (!response.ok) {
@@ -97,6 +102,7 @@ export function useScreenshotCapture({
     left: number;
   } | null>(null);
 
+  const target = useRunnerTarget();
   const { monitors: runnerMonitors, isRunnerConnected } = useRunnerMonitors();
 
   const availableMonitors: MonitorInfo[] = runnerMonitors.map((m) => ({
@@ -207,8 +213,10 @@ export function useScreenshotCapture({
       const capturedScreenshots: CapturedScreenshot[] = [];
 
       for (const monitorIndex of selectedMonitors) {
-        const { file, width, height } =
-          await captureScreenshotFromRunner(monitorIndex);
+        const { file, width, height } = await captureScreenshotFromRunner(
+          target,
+          monitorIndex
+        );
         const url = URL.createObjectURL(file);
 
         const monitorInfo = availableMonitors.find(
@@ -243,12 +251,13 @@ export function useScreenshotCapture({
       toast.error("Failed to capture screenshot", {
         description:
           (error as Error).message ||
-          "Make sure runner is running on port 9876",
+          "Make sure the runner is running and selected",
       });
     } finally {
       setIsCapturing(false);
     }
   }, [
+    target,
     selectedMonitors,
     captureDelay,
     availableMonitors,
@@ -268,8 +277,10 @@ export function useScreenshotCapture({
         const targetIndex =
           monitorIndex ?? runnerMonitors.find((m) => m.is_primary)?.index ?? 0;
 
-        const { file, width, height } =
-          await captureScreenshotFromRunner(targetIndex);
+        const { file, width, height } = await captureScreenshotFromRunner(
+          target,
+          targetIndex
+        );
 
         onUploadScreenshot(file);
 
@@ -282,13 +293,13 @@ export function useScreenshotCapture({
           description:
             error instanceof Error
               ? error.message
-              : "Make sure the runner is running on port 9876",
+              : "Make sure the runner is running and selected",
         });
       } finally {
         setIsCapturing(false);
       }
     },
-    [runnerMonitors, onUploadScreenshot]
+    [target, runnerMonitors, onUploadScreenshot]
   );
 
   return {

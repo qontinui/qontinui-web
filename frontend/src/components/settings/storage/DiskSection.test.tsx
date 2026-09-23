@@ -19,6 +19,7 @@ import {
 const runnerFetch = vi.fn();
 const httpFetch = vi.fn();
 const useDeviceInfo = vi.fn();
+const TARGET = { kind: "default_local" } as const;
 
 class MockRunnerApiError extends Error {
   constructor(
@@ -34,6 +35,7 @@ vi.mock("@/lib/runner-api", () => ({
   runnerFetch: (...args: unknown[]) => runnerFetch(...args),
   RunnerApiError: MockRunnerApiError,
   useDeviceInfo: () => useDeviceInfo(),
+  useRunnerTarget: () => TARGET,
 }));
 
 vi.mock("@/services/service-factory", () => ({
@@ -1040,6 +1042,7 @@ describe("DiskSection — reclaim survey", () => {
   it("does not kick a refresh walk on mount — only the button does", async () => {
     render(<DiskSection />);
     await waitFor(() => expect(runnerFetch).toHaveBeenCalled());
-    expect(runnerFetch.mock.calls[0][0]).toBe("/disk/reclaimable");
+    expect(runnerFetch.mock.calls[0][0]).toBe(TARGET);
+    expect(runnerFetch.mock.calls[0][1]).toBe("/disk/reclaimable");
   });
 });

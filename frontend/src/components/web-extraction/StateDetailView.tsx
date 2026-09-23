@@ -6,7 +6,7 @@
 
 "use client";
 
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import {
@@ -17,7 +17,7 @@ import {
   Minimize2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { runnerClient } from "@/lib/runner-client";
+import { useCroppedExtractionScreenshot } from "./_hooks/useCroppedExtractionScreenshot";
 
 interface BoundingBox {
   x: number;
@@ -49,160 +49,18 @@ export function StateDetailView({
   viewportWidth,
   viewportHeight,
 }: StateDetailViewProps) {
-  const [croppedImageUrl, setCroppedImageUrl] = useState<string | null>(null);
-  const [fullImageUrl, setFullImageUrl] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
+  const { fullImageUrl, croppedImageUrl, error, loading } =
+    useCroppedExtractionScreenshot(extractionId, screenshotId, state.bbox, {
+      outOfBounds:
+        "State is outside the screenshot area (Y={y}px, screenshot height={height}px)",
+      noVisibleArea: "State region has no visible area",
+    });
   const [showFullImage, setShowFullImage] = useState(false);
-
-  const blobUrlRef = useRef<string | null>(null);
-
-  const cleanupBlobUrl = useCallback(() => {
-    if (blobUrlRef.current) {
-      URL.revokeObjectURL(blobUrlRef.current);
-      blobUrlRef.current = null;
-    }
-  }, []);
 
   // Reset when state changes
   useEffect(() => {
     setShowFullImage(false);
   }, [state.id]);
-
-  // Load and crop screenshot
-  useEffect(() => {
-    let mounted = true;
-
-    async function loadAndCropScreenshot() {
-      try {
-        setLoading(true);
-        setError(null);
-
-        const result = await runnerClient.getExtractionScreenshot(
-          extractionId,
-          screenshotId
-        );
-
-        if (!mounted) return;
-
-        if (!result.success || !result.blob) {
-          setError(result.error || "Failed to load screenshot");
-          setLoading(false);
-          return;
-        }
-
-        cleanupBlobUrl();
-
-        const fullUrl = URL.createObjectURL(result.blob);
-        blobUrlRef.current = fullUrl;
-        setFullImageUrl(fullUrl);
-
-        const img = new Image();
-
-        img.onload = () => {
-          if (!mounted) return;
-
-          const isOutOfBounds =
-            state.bbox.y >= img.height ||
-            state.bbox.x >= img.width ||
-            state.bbox.y + state.bbox.height <= 0 ||
-            state.bbox.x + state.bbox.width <= 0;
-
-          if (isOutOfBounds) {
-            setError(
-              `State is outside the screenshot area (Y=${state.bbox.y}px, screenshot height=${img.height}px)`
-            );
-            setLoading(false);
-            return;
-          }
-
-          const visibleBbox = {
-            x: Math.max(0, state.bbox.x),
-            y: Math.max(0, state.bbox.y),
-            width: Math.min(
-              state.bbox.width,
-              img.width - Math.max(0, state.bbox.x)
-            ),
-            height: Math.min(
-              state.bbox.height,
-              img.height - Math.max(0, state.bbox.y)
-            ),
-          };
-
-          visibleBbox.width = Math.min(
-            visibleBbox.width,
-            img.width - visibleBbox.x
-          );
-          visibleBbox.height = Math.min(
-            visibleBbox.height,
-            img.height - visibleBbox.y
-          );
-
-          if (visibleBbox.width <= 0 || visibleBbox.height <= 0) {
-            setError("State region has no visible area");
-            setLoading(false);
-            return;
-          }
-
-          const canvas = document.createElement("canvas");
-          canvas.width = visibleBbox.width;
-          canvas.height = visibleBbox.height;
-          const ctx = canvas.getContext("2d");
-
-          if (ctx) {
-            ctx.drawImage(
-              img,
-              visibleBbox.x,
-              visibleBbox.y,
-              visibleBbox.width,
-              visibleBbox.height,
-              0,
-              0,
-              visibleBbox.width,
-              visibleBbox.height
-            );
-
-            setCroppedImageUrl(canvas.toDataURL("image/png"));
-          }
-
-          setLoading(false);
-        };
-
-        img.onerror = () => {
-          if (!mounted) return;
-          setError("Failed to process screenshot");
-          setLoading(false);
-        };
-
-        img.src = fullUrl;
-      } catch (e) {
-        if (!mounted) return;
-        setError(e instanceof Error ? e.message : "Failed to load screenshot");
-        setLoading(false);
-      }
-    }
-
-    loadAndCropScreenshot();
-
-    return () => {
-      mounted = false;
-    };
-  }, [
-    extractionId,
-    screenshotId,
-    state.bbox.x,
-    state.bbox.y,
-    state.bbox.width,
-    state.bbox.height,
-    state.id,
-    cleanupBlobUrl,
-  ]);
-
-  useEffect(() => {
-    return () => {
-      cleanupBlobUrl();
-    };
-  }, [cleanupBlobUrl]);
 
   return (
     <div className="h-full flex flex-col p-4">

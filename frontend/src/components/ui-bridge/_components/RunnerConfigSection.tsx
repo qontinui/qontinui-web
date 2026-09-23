@@ -45,7 +45,7 @@ export function RunnerConfigSection({
             <div className="flex items-center gap-2 p-2 bg-surface-canvas/50 rounded border border-brand-primary/20">
               <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse" />
               <span className="text-sm text-text-primary">
-                Local Runner (localhost:9876)
+                The runner on this machine
               </span>
             </div>
             <p className="text-xs text-text-muted">

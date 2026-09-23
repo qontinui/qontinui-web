@@ -127,6 +127,12 @@ export interface ExplorationProgress {
   startTime?: number;
   endTime?: number;
   error?: string;
+  /**
+   * The typed runner failure behind `error`, when there is one — e.g.
+   * RUNNER_NEEDS_LOCAL: the selected runner is reached through the relay,
+   * which does not carry exploration, so it needs the runner on this machine.
+   */
+  errorCode?: string;
 }
 
 /**

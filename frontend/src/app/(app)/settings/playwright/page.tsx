@@ -3,7 +3,8 @@
 import { useState, useEffect, useCallback } from "react";
 import {
   useRunnerHealth,
-  runnerApi,
+  useRunnerApi,
+  runnerFailureMessage,
   type PlaywrightSettings,
 } from "@/lib/runner-api";
 import { RunnerOfflineState } from "@/components/runner/RunnerOfflineState";
@@ -15,6 +16,7 @@ import { toast } from "sonner";
 import { Loader2, Save, FlaskConical, Eye, EyeOff, Info } from "lucide-react";
 
 export default function PlaywrightSettingsPage() {
+  const runnerApi = useRunnerApi();
   const { isOffline, isLoading: healthLoading } = useRunnerHealth();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -34,12 +36,14 @@ export default function PlaywrightSettingsPage() {
       setTestPassword(data.test_password ?? "");
       setBaseUrl(data.base_url ?? "");
       setSkipWebServer(data.skip_web_server ?? true);
-    } catch {
-      toast.error("Failed to load Playwright settings");
+    } catch (err) {
+      toast.error(
+        runnerFailureMessage(err, "Failed to load Playwright settings")
+      );
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [runnerApi]);
 
   useEffect(() => {
     if (isOffline) {

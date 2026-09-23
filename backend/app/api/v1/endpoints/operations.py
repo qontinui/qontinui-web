@@ -69,7 +69,7 @@ from app.api.deps import (
     get_current_active_user_async,
     get_current_user_from_ws,
 )
-from app.api.v1.endpoints.devices import _device_to_wire as _runner_to_wire
+from app.api.v1.endpoints.devices import devices_to_wire
 from app.core.config import settings
 from app.crud import runner_crud
 from app.middleware.rate_limit import get_authorization_identifier, user_limiter
@@ -479,7 +479,9 @@ async def get_fleet_status(
     runners = [d for d in all_devices if not d.is_ci_runner]
     ci_devices = [d for d in all_devices if d.is_ci_runner]
 
-    wire_runners = [_runner_to_wire(r).model_dump(mode="json") for r in runners]
+    wire_runners = [
+        w.model_dump(mode="json") for w in await devices_to_wire(db, runners)
+    ]
 
     registry = get_fleet_registry()
     fleet_status = await registry.get_fleet_status()
@@ -529,6 +531,10 @@ async def get_fleet_status(
                 "uiError": None,
                 "recentCrash": None,
                 "createdAt": beacon.last_heartbeat.isoformat(),
+                # A heartbeat-only beacon has no device WebSocket, so no
+                # instance is connected through this backend — an honest
+                # empty list, and the key the Runner wire type requires.
+                "instances": [],
             }
         )
 
@@ -4229,6 +4235,12 @@ async def get_coord_notifications(
         default=None,
         description="Restrict to notifications the calling principal has not read.",
     ),
+    via: str | None = Query(
+        default=None,
+        description="Filter on the coord-stamped ``detail.via`` — ``agent_evidence`` "
+        "is every agent escalate clearance. Coord owns the vocabulary and "
+        "answers 400 ``unknown_via`` for anything else.",
+    ),
     tenant_id: UUID = Depends(get_tenant_id),
 ) -> Any:
     """Return the ``coord.notifications`` feed for the calling principal.
@@ -4258,6 +4270,8 @@ async def get_coord_notifications(
         params["kind"] = kind
     if unread_only is not None:
         params["unread_only"] = unread_only
+    if via is not None:
+        params["via"] = via
     return await _proxy_coord_get(
         "/coord/notifications", params=params or None, tenant_id=tenant_id
     )
@@ -4886,6 +4900,13 @@ async def get_coord_audit_recent(
         ge=1,
         description="Max rows. Coord clamps to `[1, 1000]` and defaults to 200.",
     ),
+    via: str | None = Query(
+        default=None,
+        description="Filter on `metadata.via` — the writer of an escalate-path "
+        "clearance: `agent_evidence` (an agent, on evidence) or `service` (the "
+        "operator escape hatch). Coord owns the vocabulary and answers 400 "
+        "`unknown_via` for anything else.",
+    ),
     tenant_id: UUID = Depends(require_coord_tenant_admin),
 ) -> Any:
     """Return recent ``coord.operator_audit`` rows for the caller's tenant.
@@ -4924,6 +4945,8 @@ async def get_coord_audit_recent(
         params["before"] = before
     if limit is not None:
         params["limit"] = limit
+    if via:
+        params["via"] = via
     return await _proxy_coord_get(
         "/admin/coord/audit/recent",
         params=params or None,
@@ -5721,7 +5744,22 @@ async def post_agents_spawn(
     the agent JWT directly — the receiving runner picks up the new
     agent through the ``events.agent.spawned`` event coord publishes.
     """
-    return await _proxy_coord_post("/agents/spawn", body, tenant_id=tenant_id)
+    # The body is forwarded VERBATIM, so this proxy has no opinion on coord's
+    # ``SpawnRequest``. Once qontinui-coord#2403 is deployed,
+    # ``target_device_id`` is optional (absent -> coord places the session)
+    # and ``required_capabilities`` / ``override_drain`` ride along
+    # unchanged; the success body, including ``placed_by``, passes through
+    # untouched.
+    #
+    # ``structured_errors=True`` because the spawn modal BRANCHES on coord's
+    # refusal codes (``pin_ineligible`` + ``reason``, ``no_eligible_device``
+    # + ``outcome``, ``device_drained``, ``drain_unreadable`` once #2403 is
+    # deployed): coord's JSON object reaches the browser as data rather than
+    # as a string inside ``message``. Plan
+    # ``2026-09-20-runner-selector-drives-a-transport-not-a-target`` Phase 5.
+    return await _proxy_coord_post(
+        "/agents/spawn", body, tenant_id=tenant_id, structured_errors=True
+    )
 
 
 @router.get("/agents/{agent_id}")
@@ -11312,19 +11350,6 @@ async def get_coord_members(
     return await _proxy_coord_get("/admin/coord/operators", tenant_id=tenant_id)
 
 
-@router.post("/coord/members")
-async def post_coord_member(
-    body: dict[str, Any],
-    tenant_id: UUID = Depends(require_coord_tenant_admin),
-) -> Any:
-    """Create an operator in the caller's home tenant (pre-login invites OK).
-
-    Proxies coord ``POST /admin/coord/operators``. Body:
-    ``{email, display_name?, sso_subject, sso_provider, roles?: [str]}`` →
-    ``{operator_id}``."""
-    return await _proxy_coord_post("/admin/coord/operators", body, tenant_id=tenant_id)
-
-
 @router.post("/coord/members/{operator_id}/roles")
 async def post_coord_member_role(
     operator_id: str,
@@ -11364,11 +11389,19 @@ async def delete_coord_member_role(
 
 # ---- Add a tenant member BY EMAIL ---------------------------------------
 #
-# The route above (``POST /coord/members``) is the raw coord proxy: it takes
-# an ``sso_subject`` + ``sso_provider``, which a tenant admin adding one
-# colleague has no way to know. Hand-typing a Cognito ``sub`` is not a
-# workflow; it is a lookup the server can do. This route is that lookup plus
-# the grant, so the dashboard asks for an email and a role and nothing else.
+# A tenant admin adding one colleague has no way to know that colleague's
+# Cognito ``sub`` + ``sso_provider`` — hand-typing one is not a workflow, it
+# is a lookup the server can do. This route is that lookup plus the grant,
+# so the dashboard asks for an email and a role and nothing else.
+#
+# The old raw proxy (``POST /coord/members``, taking a caller-chosen
+# ``sso_subject``/``sso_provider`` and forwarding it untyped to coord's
+# ``POST /admin/coord/operators``) is deleted, not deprecated: after this
+# route shipped, nothing called it (grep over ``frontend/src`` finds only
+# the GET and the role grant/revoke), and a live route where a client picks
+# which Cognito identity a tenant grant lands on — bypassing this route's
+# ``extra="forbid"`` — is the exact defect this route exists to close.
+# coord finding 130b6938.
 
 
 class _TenantMemberAddBody(BaseModel):

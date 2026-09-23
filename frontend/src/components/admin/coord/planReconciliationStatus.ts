@@ -651,7 +651,7 @@ export function deriveDisclosure(
   return {
     populationRead,
     documentAxisAdmissible: documentAxisAdmissible(res),
-    facetsAdmissible: populationRead,
+    facetsAdmissible: facetsAdmissible(res),
     lines,
   };
 }
@@ -662,6 +662,20 @@ export function deriveDisclosure(
  * `console/readFailure.ts` `readIsUnknown`).
  */
 export function documentAxisAdmissible(res: ReconciliationResponse): boolean {
+  return res.work_unit_population_state === "included";
+}
+
+/**
+ * The same population gate as {@link documentAxisAdmissible}, spelled
+ * separately because it answers a different question: may `facets.by_class`
+ * / `by_verdict` be treated as a measurement, rather than the document-axis
+ * counts. On the degraded population arm the two currently coincide — both
+ * are vacuous once the population collapses to the artifact store — but a
+ * caller gating a facets-derived claim should say so in those terms, the same
+ * discipline `documentAxisAdmissible`'s own docstring states: two callers
+ * needing this predicate and respelling it is how they drift apart.
+ */
+export function facetsAdmissible(res: ReconciliationResponse): boolean {
   return res.work_unit_population_state === "included";
 }
 
@@ -814,7 +828,8 @@ export function deriveReconciliationHealth(
         (res.work_unit_population_reason ??
           "the response does not say whether the population was read") +
         ". The verdict counts and the document-completeness flag are not " +
-        "measurements on this read.",
+        "measurements on this read." +
+        (readFailed ? " The last refresh also failed." : ""),
       badges: [
         {
           key: "plans",
@@ -833,7 +848,14 @@ export function deriveReconciliationHealth(
   // absent `by_verdict` is not a measured zero, so the green headline — the
   // largest text on the page — may not assert the negative it could not
   // measure [policy: `verification-and-evidence` `silent-empty-is-unknown`].
-  const disagreeMeasured = typeof disagree === "number";
+  // Gated on BOTH: `facetsAdmissible` (the population this histogram is over
+  // was actually read) and the field itself being served (the route can omit
+  // `by_verdict` even on an admissible population). The early `!admissible`
+  // return above already implies the first half here, but this is the
+  // predicate a facets-derived claim should be read against, not a
+  // respelling of it — see `facetsAdmissible`'s own docstring.
+  const disagreeMeasured =
+    facetsAdmissible(res) && typeof disagree === "number";
   const level: ReconciliationHealth["level"] =
     disagreeMeasured && disagree > 0
       ? "red"

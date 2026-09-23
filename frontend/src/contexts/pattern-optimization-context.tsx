@@ -5,6 +5,7 @@ import type {
   PatternOptimizationFullContextType,
   PatternOptimizationFullProviderProps,
 } from "./pattern-optimization/types-full";
+import { useRunnerTarget } from "@/contexts/active-runner-context";
 import { useOptimizationSession } from "./pattern-optimization/use-optimization-session";
 import { useOptimizationAnalysis } from "./pattern-optimization/use-optimization-analysis";
 import {
@@ -47,6 +48,7 @@ export function PatternOptimizationProvider({
   const { isAnalyzing, startAnalysis, evaluateStrategy, selectStrategy } =
     useOptimizationAnalysis(session, setSession);
 
+  const target = useRunnerTarget();
   const generateResult = useCallback(
     async (
       selectedPatternIds?: Set<string>
@@ -55,13 +57,17 @@ export function PatternOptimizationProvider({
         return null;
       }
       try {
-        return await generateOptimizationResult(session, selectedPatternIds);
+        return await generateOptimizationResult(
+          target,
+          session,
+          selectedPatternIds
+        );
       } catch (error) {
         console.error("Failed to generate result:", error);
         throw error;
       }
     },
-    [session]
+    [session, target]
   );
 
   const exportResult = useCallback((result: OptimizationResult) => {

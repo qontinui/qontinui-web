@@ -7,6 +7,8 @@ import type { SubmittingAction } from "../ai-generate-types";
 
 interface GeneratePanelFooterProps {
   canGenerate: boolean;
+  /** Coord's reason no generation may start right now (null = allowed). */
+  refusal?: string | null;
   submittingAction: SubmittingAction;
   isBatchMode: boolean;
   batchPageCount: number;
@@ -16,6 +18,7 @@ interface GeneratePanelFooterProps {
 
 export function GeneratePanelFooter({
   canGenerate,
+  refusal = null,
   submittingAction,
   isBatchMode,
   batchPageCount,
@@ -27,7 +30,10 @@ export function GeneratePanelFooter({
       <div className="max-w-3xl mx-auto flex items-center gap-3">
         <Button
           onClick={onGenerate}
-          disabled={!canGenerate || submittingAction !== null}
+          disabled={
+            !canGenerate || submittingAction !== null || refusal !== null
+          }
+          title={refusal ?? undefined}
           className="px-6"
         >
           {submittingAction === "generate" ? (
@@ -44,7 +50,10 @@ export function GeneratePanelFooter({
         <Button
           variant="outline"
           onClick={onGenerateAndRun}
-          disabled={!canGenerate || submittingAction !== null}
+          disabled={
+            !canGenerate || submittingAction !== null || refusal !== null
+          }
+          title={refusal ?? undefined}
           className="px-6"
         >
           {submittingAction === "generate-and-run" ? (
@@ -58,6 +67,14 @@ export function GeneratePanelFooter({
               ? `Generate & Run (${batchPageCount} pages)`
               : "Generate & Run"}
         </Button>
+        {refusal && (
+          <p
+            className="text-xs text-text-muted"
+            data-testid="workflow-generate-refusal"
+          >
+            {refusal}
+          </p>
+        )}
       </div>
     </div>
   );

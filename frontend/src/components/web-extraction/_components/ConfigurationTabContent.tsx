@@ -37,6 +37,8 @@ interface ConfigurationTabContentProps {
   isStartingPlaywright: boolean;
   isPollingPlaywright: boolean;
   onStartPlaywrightExtraction: (config: PlaywrightCollectorConfigState) => void;
+  /** Coord's reason no new work may start right now (null = allowed). */
+  newWorkRefusal: string | null;
   extractions: ExtractionSummary[] | undefined;
   activeExtractionId: string | null;
   isDeletingAll: boolean;
@@ -54,6 +56,7 @@ export function ConfigurationTabContent({
   isStartingPlaywright,
   isPollingPlaywright,
   onStartPlaywrightExtraction,
+  newWorkRefusal,
   extractions,
   activeExtractionId,
   isDeletingAll,
@@ -137,6 +140,7 @@ export function ConfigurationTabContent({
             <ScrollArea className="h-full pr-4 text-green-400">
               <PlaywrightCollectorConfig
                 onStartExtraction={onStartPlaywrightExtraction}
+                refusal={newWorkRefusal}
                 isLoading={isStartingPlaywright || isPollingPlaywright}
               />
             </ScrollArea>
@@ -183,8 +187,8 @@ export function ConfigurationTabContent({
                   </div>
                   <div className="mt-4 p-3 bg-yellow-500/10 border border-yellow-500/20 rounded-md">
                     <p className="text-xs text-yellow-400">
-                      <strong>Note:</strong> This feature requires the runner to
-                      be running on port 9876.
+                      <strong>Note:</strong> This feature requires a running
+                      runner.
                     </p>
                   </div>
                 </div>

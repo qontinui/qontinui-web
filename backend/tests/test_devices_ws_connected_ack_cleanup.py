@@ -107,6 +107,8 @@ def _patch_endpoint_externals(manager: MagicMock) -> list[Any]:
     # surfacing here.
     device_crud.clear_ws_session_if_current = AsyncMock(return_value=True)
     device_crud.claim_ws_session = AsyncMock(return_value=False)
+    # The primary's pointer write (pointer + port in one statement).
+    device_crud.take_ws_session = AsyncMock()
 
     device_connection_crud = MagicMock()
     device_connection_crud.create_connection_record = AsyncMock(
@@ -151,6 +153,17 @@ def _make_manager() -> MagicMock:
 
     manager.register = AsyncMock(side_effect=_register)
     manager.get_websocket = MagicMock(side_effect=lambda _rid: registered.get("ws"))
+
+    async def _unregister_if_current(rid: Any, ws: Any, uid: Any = None) -> bool:
+        # The real manager compares under its registration lock; the stub
+        # compares at call time, which is what the teardown now relies on.
+        if registered.get("ws") is not ws:
+            return False
+        registered.pop("ws", None)
+        await manager.unregister(rid, uid)
+        return True
+
+    manager.unregister_if_current = AsyncMock(side_effect=_unregister_if_current)
     return manager
 
 

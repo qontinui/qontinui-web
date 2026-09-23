@@ -127,7 +127,7 @@
  * strip stay on the UNFILTERED `plans`.
  */
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import {
   Select,
   SelectContent,
@@ -185,6 +185,10 @@ import {
   type WorkUnitOverview,
 } from "./planWalk";
 import { usePlanDifficulty } from "./usePlanDifficulty";
+import {
+  useGuardedPoll,
+  type ReadGuard,
+} from "@/components/admin/coord/useGuardedPoll";
 import {
   derivePlansHealth,
   SHEPHERD_FILTERS,
@@ -280,10 +284,10 @@ function overviewMissSentence(
  * two minutes), i.e. ~5.5k rows. Past that the arithmetic has to be redone.
  *
  * On a 10 s tick the default walk would be ~90 coord reads a minute per tab,
- * and `pollInFlight` is not a bound on it: it stops ticks STACKING, so on a
- * link where one walk takes longer than the interval the steady state is
- * back-to-back walks — continuous polling, which is what this table exists to
- * prevent.
+ * and `useGuardedPoll`'s in-flight lock is not a bound on it: it stops ticks
+ * STACKING, so on a link where one walk takes longer than the interval the
+ * steady state is back-to-back walks — continuous polling, which is what this
+ * table exists to prevent.
  *
  * - `updated_desc` — one page by design, so one list read plus its dial read.
  *   Unchanged at 10 s: ~12 coord reads a minute — the baseline itself.
@@ -297,9 +301,9 @@ function overviewMissSentence(
  * under `authored_desc` and still polls at 120 s — which arm answered is only
  * knowable after a read, and erring slow costs freshness, not correctness.
  * And the interval is derived from `order` (a property of the QUESTION) rather
- * than from the last outcome, which would put `data` in the polling effect's
- * dependency set — an effect that blanks the list and bumps `questionGen`. A
- * cost knob must not be able to re-ask the question.
+ * than from the last outcome, which would put `data` in `read`'s dependency
+ * set — and `read`'s identity is what `useGuardedPoll` re-asks the question
+ * on. A cost knob must not be able to re-ask the question.
  */
 const POLL_INTERVAL_MS: Record<ServerOrder, number> = {
   updated_desc: 10_000,
@@ -392,204 +396,87 @@ export default function CoordWorkUnitsListPage() {
   // page is allowed to say "no plans match". `data !== null || error !== null`
   // answers the second directly, so the flag had no reader left.
 
-  /**
-   * Generation guard — a read may only speak while it is still the newest one.
-   *
-   * Without it the reset below narrows the bug instead of closing it: the read
-   * issued under the PREVIOUS `status` is still live, still holds its own
-   * closure, and lands on `setData`/`setError` unconditionally. Both arms are
-   * reachable by changing the filter while the first load is in flight, which
-   * is the ordinary case, not a corner:
-   *
-   *   - the superseded SUCCESS repaints the discarded window under the new
-   *     filter, for a whole poll interval;
-   *   - worse, it lands on top of a new read that FAILED — `setError(null)`
-   *     clears the banner, `loaded` flips true, and the old window is stated
-   *     as a confident answer to a question that errored. That is the
-   *     fabricated-answer class this change exists to close, re-created in a
-   *     race window.
-   *
-   * Same shape as `/notifications`' `queryGen`, `/questions`' three `*Seq`
-   * refs and `usePlanLibrary`'s counter. `http-client.ts` now honours a
-   * caller's `signal`, but cancelling a superseded read would not replace
-   * these counters: they decide which settled read may land, not which reads
-   * run.
-   *
-   * **TWO counters, because the two things being gated are not one question.**
-   * A single per-request counter silences a read in every arm at once, and
-   * that is how a page ends up stuck: `httpClient`'s request timeout is 60s
-   * and its 5xx retry spends ~7s in backoff over four round trips, both far
-   * longer than this page's 10s tick, so under a slow or retrying backend
-   * every read is superseded before it settles and the failure is never
-   * surfaced at all — the page waits on coord forever with nothing to show for
-   * it. That is exactly the defect `readFailed` exists to prevent —
-   * `plansHealth.tsx`: *"a first load that errors leaves `loaded` false and
-   * renders 'Waiting for coord…' over a request that is never arriving"* —
-   * re-created by the fix for a different one.
-   *
-   * So:
-   *
-   *   - `questionGen` (bumped in the effect, once per FILTER change) gates the
-   *     ERROR. "This read failed" is true of the filter currently on screen
-   *     whether or not a newer request has overtaken it, so an overtaken
-   *     failure still gets to speak; a failure belonging to a filter the
-   *     operator has left does not.
-   *   - `reqGen` (bumped per call) additionally gates `setData`, so the newest
-   *     response is the one rendered and two overlapping reads cannot land out
-   *     of order.
-   *
-   * The residue is the asymmetry `/questions` states and accepts: a stale
-   * FAILURE landing after a fresh success shows a banner the newest read
-   * disagrees with. That fails safe — it over-reports trouble — where the
-   * opposite silences it. `pollInFlight` keeps same-question ticks from
-   * overlapping in the first place, and a refresh CLICK takes the same lock
-   * when it is free (`refresh` below), so no tick can stack on a manual read
-   * either. What remains is one narrower window: a click made while a poll
-   * or the first read is already out still issues its own read, which is the
-   * overlap `filterWindowReset.test.tsx` pins as guarded by the two counters.
-   */
-  const questionGen = useRef(0);
-  const reqGen = useRef(0);
-  /** One poll at a time — see the retry arithmetic above. */
-  const pollInFlight = useRef(false);
   /** This view's tick — one read or a walk; see `POLL_INTERVAL_MS`. */
   const pollMs = POLL_INTERVAL_MS[order];
 
-  const fetchData = useCallback(async () => {
-    const question = questionGen.current;
-    const req = ++reqGen.current;
-    // One guard for every read of the walk: a walk overtaken mid-way stops
-    // issuing pages and lands nothing, exactly as a single read used to.
-    const current = () =>
-      question === questionGen.current && req === reqGen.current;
-    try {
-      const qs = new URLSearchParams();
-      if (status && status !== "any") qs.set("status", status);
-      // In `baseParams`, so it rides on every page of a walk — see the module
-      // docstring. `include` sends nothing at all.
-      if (shepherd === "exclude") {
-        qs.set("exclude_slug_prefix", SHEPHERD_SLUG_PREFIX);
+  /**
+   * The guarded read, per `useGuardedPoll` — this page is the pattern it was
+   * lifted from (a walk overtaken mid-way stops issuing pages via the same
+   * `guard.isNewest`, exactly like the single-page read it replaced), so
+   * migrating onto the shared hook changes no behaviour, only where the two
+   * generation counters live.
+   */
+  const read = useCallback(
+    async (guard: ReadGuard) => {
+      try {
+        const qs = new URLSearchParams();
+        if (status && status !== "any") qs.set("status", status);
+        // In `baseParams`, so it rides on every page of a walk — see the
+        // module docstring. `include` sends nothing at all.
+        if (shepherd === "exclude") {
+          qs.set("exclude_slug_prefix", SHEPHERD_SLUG_PREFIX);
+        }
+        const outcome = await walkWorkUnits(
+          (url) => httpClient.get(url),
+          `${API}/plans`,
+          qs,
+          order,
+          guard.isNewest
+        );
+        if (outcome === null || !guard.isNewest()) return;
+        let overview: WorkUnitOverview | null = null;
+        if (outcome.kind !== "single_page") {
+          overview = await httpClient
+            .get<WorkUnitOverview>(`${API}/plans/overview`)
+            .catch(() => null);
+          if (!guard.isNewest()) return;
+        }
+        setData({ outcome, overview, readAt: new Date().toISOString() });
+        setError(null);
+      } catch (e) {
+        if (!guard.isCurrentQuestion()) return;
+        setError(e instanceof Error ? e.message : String(e));
       }
-      const outcome = await walkWorkUnits(
-        (url) => httpClient.get(url),
-        `${API}/plans`,
-        qs,
-        order,
-        current
-      );
-      if (outcome === null || !current()) return;
-      let overview: WorkUnitOverview | null = null;
-      if (outcome.kind !== "single_page") {
-        overview = await httpClient
-          .get<WorkUnitOverview>(`${API}/plans/overview`)
-          .catch(() => null);
-        if (!current()) return;
-      }
-      setData({ outcome, overview, readAt: new Date().toISOString() });
-      setError(null);
-    } catch (e) {
-      if (question !== questionGen.current) return;
-      setError(e instanceof Error ? e.message : String(e));
-    }
-  }, [status, shepherd, order]);
+    },
+    [status, shepherd, order]
+  );
 
-  useEffect(() => {
-    // `status`, `shepherd` and the server `order` are `fetchData`'s only
-    // dependencies, so this effect re-runs exactly when the QUESTION changes —
-    // and the rows still in `data` answer
-    // the previous one. Dropping them is not cosmetic: `loaded` is `data !==
-    // null`, so keeping them leaves every read-state derivation on this page
-    // reporting the OLD query while the new one is in flight — the list shows
-    // the previous filter's records instead of skeletons, the strip describes
-    // the previous window, and a new fetch that FAILS lands on the STALE arm
-    // ("the last counts that landed") when nothing has ever landed for this
-    // query. That is R6's own `loaded`-means-"answered-THIS-question" clause,
-    // one level up from a count.
-    //
-    // It is cleared HERE and not in `fetchData`, which the poll also calls: a
-    // poll must never blank a loaded page.
-    //
-    // The question generation is bumped here for the same reason — this is the
-    // one place the QUESTION changes.
-    questionGen.current += 1;
-    const question = questionGen.current;
-    /**
-     * Release the poll lock only if it is still the one this read took.
-     *
-     * A read superseded by a filter change settles LATE — after the cleanup
-     * has released the lock and the new question has taken it — so an
-     * unconditional release would free a lock the NEW question's read is still
-     * holding, and the next tick would issue a second concurrent read. Not
-     * harmful (`reqGen` still picks the winner), but it would quietly falsify
-     * the "one poll at a time" claim after every filter change, and a guard is
-     * only worth having while its comment is true.
-     */
-    const releaseLock = () => {
-      if (question === questionGen.current) pollInFlight.current = false;
-    };
+  // `status`, `shepherd` and the server `order` are `read`'s only
+  // dependencies, so `useGuardedPoll` re-asks exactly when the QUESTION
+  // changes. Dropping the previous window here is not cosmetic: `loaded` is
+  // `data !== null`, so keeping it leaves every read-state derivation on this
+  // page reporting the OLD query while the new one is in flight — the list
+  // shows the previous filter's records instead of skeletons, the strip
+  // describes the previous window, and a new fetch that FAILS lands on the
+  // STALE arm ("the last counts that landed") when nothing has ever landed
+  // for this query. That is R6's own `loaded`-means-"answered-THIS-question"
+  // clause, one level up from a count.
+  const onQuestionChange = useCallback(() => {
     setData(null);
     setError(null);
-    // The FIRST read holds the lock too. Without that a tick 10s in issues a
-    // second read of the same question while the first is still out, and the
-    // first is then dropped for being superseded — which is only ever safe
-    // when nothing downstream mistakes "no answer yet" for "no answer".
-    pollInFlight.current = true;
-    void fetchData().finally(releaseLock);
-    const id = setInterval(() => {
-      // A tick that outruns the previous read would otherwise stack: the
-      // request timeout is 60s per REQUEST — and a walk is several — so a hung
-      // backend would accumulate concurrent walks for nothing. This lock stops
-      // them overlapping; `POLL_INTERVAL_MS` is what stops them being
-      // continuous.
-      if (pollInFlight.current) return;
-      pollInFlight.current = true;
-      void fetchData().finally(releaseLock);
-    }, pollMs);
-    return () => {
-      clearInterval(id);
-      // The lock was taken for a question that is over. Leaving it set would
-      // have the new question's first few ticks skip while a read nobody is
-      // waiting for finishes — bounded by the 60s timeout, but pointless.
-      pollInFlight.current = false;
-    };
-    // `pollMs` is a function of `order`, which `fetchData` already depends on,
-    // so it never changes this effect's identity on its own — declared because
-    // the rule is "every value read", not "every value that can change alone".
-  }, [fetchData, pollMs]);
+  }, []);
+
+  const { refresh: guardedRefresh } = useGuardedPoll({
+    read,
+    intervalMs: pollMs,
+    onQuestionChange,
+  });
 
   /**
    * The refresh button's read — the operator's, never the poll's.
    *
-   * It returns the read's promise so `<RefreshButton>` acknowledges the press
-   * for exactly as long as that read is out; the poll calls `fetchData`
-   * directly and has no path to that state, so the control never pulses on a
-   * tick (plan `2026-09-09-coord-plans-page-controls-do-not-acknowledge-or-name-themselves`
+   * The ratings refresh with the operator's press too — never with the poll
+   * (see `usePlanDifficulty`) — and deliberately NOT via `useGuardedPoll`'s
+   * `also`: that would fold it into the same lock and make `<RefreshButton>`
+   * stay busy for whichever of the two reads is slower, when the button is
+   * labelled for the work-unit read alone (plan
+   * `2026-09-09-coord-plans-page-controls-do-not-acknowledge-or-name-themselves`
    * F1).
-   *
-   * It TAKES `pollInFlight` when the lock is free, so the ticks that come due
-   * while a manual read is out skip instead of stacking a second read of the
-   * same question on top of it. When a poll already holds the lock the click
-   * still issues its own read rather than waiting for or joining that one:
-   * the operator asked for a read now, and the resulting overlap is exactly
-   * what `questionGen`/`reqGen` above are for. The release is question-scoped
-   * for the same reason as the effect's `releaseLock`: a filter change while
-   * this read is out hands the lock to the new question's read, which this
-   * one must not free.
    */
   const refresh = useCallback(() => {
-    // The ratings refresh with the operator's press too — never with the poll
-    // (see `usePlanDifficulty`). Not awaited: the button acknowledges the
-    // work-unit read, which is the one it is labelled for.
     void refreshDifficulty();
-    const tookLock = !pollInFlight.current;
-    if (tookLock) pollInFlight.current = true;
-    const question = questionGen.current;
-    return fetchData().finally(() => {
-      if (tookLock && question === questionGen.current) {
-        pollInFlight.current = false;
-      }
-    });
-  }, [fetchData, refreshDifficulty]);
+    return guardedRefresh();
+  }, [guardedRefresh, refreshDifficulty]);
 
   const outcome = data?.outcome ?? null;
   const plans = useMemo(() => outcome?.rows ?? [], [outcome]);

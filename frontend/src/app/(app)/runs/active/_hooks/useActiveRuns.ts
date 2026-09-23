@@ -2,7 +2,9 @@
 
 import { useState, useRef, useEffect } from "react";
 import {
-  runnerApi,
+  useRunnerApi,
+  useDispatchRunnerApi,
+  useRunnerTarget,
   type TaskRun,
   type RunningTaskRunsResponse,
 } from "@/lib/runner";
@@ -15,6 +17,11 @@ import {
 } from "@/components/workflow-builder/AiGeneratePanel";
 
 export function useActiveRuns() {
+  const runnerApi = useRunnerApi();
+  // Calls that START work go to the new-work target (explicit choice or
+  // coord's resolved pick); a refused call carries coord's outcome.
+  const { api: workApi, refusal: workRefusal } = useDispatchRunnerApi();
+  const target = useRunnerTarget();
   const {
     data: runningTaskRuns,
     isLoading,
@@ -87,6 +94,7 @@ export function useActiveRuns() {
         const taskRun = await runnerApi.getTaskRun(signal.taskRunId);
         if (taskRun.status === "completed") {
           const resultData = await runnerFetch<Record<string, unknown>>(
+            target,
             `/task-runs/${signal.taskRunId}/result-data`
           );
           const workflowId = resultData.generated_workflow_id as
@@ -98,7 +106,13 @@ export function useActiveRuns() {
             );
             return;
           }
-          await runnerApi.runWorkflow(workflowId);
+          // Coord refuses new work right now: leave the generated workflow
+          // un-run and say why (once — the signal is already consumed).
+          if (workRefusal !== null) {
+            toast.error(`Generated workflow was not run: ${workRefusal}`);
+            return;
+          }
+          await workApi.runWorkflow(workflowId);
           toast.success("Workflow generated and started!");
           refetchRuns();
         } else if (taskRun.status === "running") {
@@ -122,7 +136,7 @@ export function useActiveRuns() {
         );
       }
     })();
-  }, [activeRuns, refetchRuns]);
+  }, [activeRuns, refetchRuns, runnerApi, workApi, workRefusal, target]);
 
   const runs = activeRuns || [];
   const selectedRun =

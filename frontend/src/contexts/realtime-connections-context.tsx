@@ -28,7 +28,17 @@ interface RealtimeConnectionsContextValue {
    */
   runners: Runner[];
   isConnected: boolean;
+  /** True until the first load attempt (success OR failure) finishes. */
   isLoading: boolean;
+  /**
+   * True once `runners` has been populated by a SUCCESSFUL load (REST fetch
+   * or the WebSocket `initial_state`). `isLoading` also turns false when the
+   * first fetch fails, leaving `runners` empty — so an empty list means "no
+   * runners" only when `loaded` is true.
+   */
+  loaded: boolean;
+  /** The most recent REST load failure, cleared by the next success. */
+  loadError: Error | null;
   refetch: () => Promise<Runner[]>;
 }
 
@@ -84,6 +94,8 @@ export function RealtimeConnectionsProvider({
   const [runners, setRunners] = useState<Runner[]>([]);
   const [isConnected, setIsConnected] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
+  const [loaded, setLoaded] = useState(false);
+  const [loadError, setLoadError] = useState<Error | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
   const pollingIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
@@ -95,10 +107,13 @@ export function RealtimeConnectionsProvider({
     try {
       const data = await runnerService.getRunners(ONLINE_STATUS_FILTER);
       setRunners(data);
+      setLoaded(true);
+      setLoadError(null);
       setIsLoading(false);
       return data;
     } catch (error) {
       console.error("[RealtimeConnections] Failed to fetch runners:", error);
+      setLoadError(error instanceof Error ? error : new Error(String(error)));
       setIsLoading(false);
       return [];
     }
@@ -240,6 +255,7 @@ export function RealtimeConnectionsProvider({
             // `qontinui_schemas.runner.Runner` Pydantic model, so the
             // cast is safe at runtime.
             setRunners(message.runners as Runner[]);
+            setLoaded(true);
             setIsLoading(false);
           } else if (message.type === "runner_connected") {
             // Wire payload is a partial `connection_data` shape (id +
@@ -259,9 +275,8 @@ export function RealtimeConnectionsProvider({
             // wire fields into the camelCase Runner shape.
             void fetchRunners();
           } else if (message.type === "runner.woke") {
-            // Handled by WakeRunnerModal's own WS listener. The realtime
-            // context still refetches so the runners list reflects the
-            // newly-online runner without waiting for the next poll tick.
+            // A runner finished waking: refetch so the runners list reflects
+            // the newly-online runner without waiting for the next poll tick.
             void fetchRunners();
           } else if (message.type === "error") {
             console.error("[RealtimeConnections] Server error:", message.error);
@@ -334,6 +349,8 @@ export function RealtimeConnectionsProvider({
     runners,
     isConnected,
     isLoading,
+    loaded,
+    loadError,
     refetch: fetchRunners,
   };
 

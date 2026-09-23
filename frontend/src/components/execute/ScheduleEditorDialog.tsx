@@ -134,7 +134,12 @@ export function ScheduleEditorDialog({
           <DialogActions
             isEditing={!!editingTask}
             isSaving={form.isSaving}
-            canSave={!!form.name.trim() && !!form.workflowName}
+            canSave={
+              !!form.name.trim() &&
+              !!form.workflowName &&
+              form.saveRefusal === null
+            }
+            refusal={form.saveRefusal}
             onCancel={onClose}
             onSave={form.handleSave}
           />

@@ -23,8 +23,8 @@
  *     fabricated-answer class this whole plan exists to close, re-created in a
  *     race window.
  *
- * So there are TWO generations, exactly as `/admin/coord/work-units` documents
- * at length:
+ * So there are TWO generations, the same pair `/admin/coord/work-units`
+ * documented at length before it migrated onto this hook:
  *
  *   - `questionGen` — bumped once per QUESTION (a window or filter change,
  *     i.e. whenever `read`'s identity changes). It gates the ERROR: "this read

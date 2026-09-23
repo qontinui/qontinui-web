@@ -21,6 +21,8 @@ interface AutoRefineSectionProps {
   setAutoRefineUserHint: (value: string) => void;
   runAutoRefine: () => void;
   stopAutoRefine: () => void;
+  /** Coord's reason no new work may start right now (null = allowed). */
+  refusal?: string | null;
 }
 
 export function AutoRefineSection({
@@ -33,6 +35,7 @@ export function AutoRefineSection({
   setAutoRefineUserHint,
   runAutoRefine,
   stopAutoRefine,
+  refusal = null,
 }: AutoRefineSectionProps) {
   return (
     <EditorSection title="AI Auto-Refine" icon={RefreshCw} defaultOpen={false}>
@@ -87,7 +90,8 @@ export function AutoRefineSection({
               size="sm"
               onClick={runAutoRefine}
               className="bg-blue-600 hover:bg-blue-700 text-white"
-              disabled={isAutoRefining}
+              disabled={isAutoRefining || refusal !== null}
+              title={refusal ?? undefined}
             >
               <RefreshCw className="size-3.5 mr-1" />
               Start Auto-Refine
@@ -97,6 +101,14 @@ export function AutoRefineSection({
             <span className="text-xs text-muted-foreground flex items-center gap-1.5">
               <Loader2 className="size-3 animate-spin" />
               Iteration {autoRefineIteration} / {autoRefineMaxIterations}
+            </span>
+          )}
+          {!isAutoRefining && refusal && (
+            <span
+              className="text-xs text-text-muted"
+              data-testid="auto-refine-refusal"
+            >
+              {refusal}
             </span>
           )}
         </div>

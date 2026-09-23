@@ -1,25 +1,27 @@
 import { useState, useCallback } from "react";
 import type { AnnotationData } from "../snapshot/AnnotationEditor";
+import { runnerRequest } from "@/lib/runner/api-client";
+import { useRunnerTarget } from "@/contexts/active-runner-context";
 
 interface UseSnapshotAnnotationsArgs {
-  runnerUrl: string;
   setAnnotations: (
     updater: (prev: Map<string, AnnotationData>) => Map<string, AnnotationData>
   ) => void;
 }
 
 export function useSnapshotAnnotations({
-  runnerUrl,
   setAnnotations,
 }: UseSnapshotAnnotationsArgs) {
+  const target = useRunnerTarget();
   const [isSavingAnnotation, setIsSavingAnnotation] = useState(false);
 
   const handleSaveAnnotation = useCallback(
     async (annotation: AnnotationData) => {
       setIsSavingAnnotation(true);
       try {
-        await fetch(
-          `${runnerUrl}/ui-bridge/annotations/${annotation.elementId}`,
+        await runnerRequest(
+          target,
+          `/ui-bridge/annotations/${annotation.elementId}`,
           {
             method: "PUT",
             headers: { "Content-Type": "application/json" },
@@ -38,7 +40,7 @@ export function useSnapshotAnnotations({
       }
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [runnerUrl]
+    [target]
   );
 
   return {

@@ -37,7 +37,7 @@ export function AiGeneratePanel({
   const advancedOptions = useAdvancedOptions();
   const templates = useTemplates();
 
-  const { canGenerate, handleGenerate, handleGenerateAndRun } =
+  const { canGenerate, refusal, handleGenerate, handleGenerateAndRun } =
     useGenerateRequests({
       // Form state
       description: formState.description,
@@ -166,6 +166,7 @@ export function AiGeneratePanel({
       {/* Actions - fixed footer */}
       <GeneratePanelFooter
         canGenerate={canGenerate}
+        refusal={refusal}
         submittingAction={formState.submittingAction}
         isBatchMode={formState.isBatchMode}
         batchPageCount={formState.batchPageCount}

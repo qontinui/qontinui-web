@@ -8,7 +8,7 @@ import { TagInput } from "@/components/builders/TagInput";
 import {
   type Macro,
   type MacroStep,
-  runnerApi,
+  useRunnerApi, useDispatchRunnerApi,
   useMacrosDetailed,
 } from "@/lib/runner-api";
 import { toast } from "sonner";
@@ -120,6 +120,10 @@ function getStepLabel(step: MacroStep): string {
 }
 
 function MacrosBuilderPageContent() {
+  const runnerApi = useRunnerApi();
+  // Calls that START work go to the new-work target (explicit choice or
+  // coord's resolved pick); a refused call carries coord's outcome.
+  const { api: workApi, refusal: workRefusal } = useDispatchRunnerApi();
   const searchParams = useSearchParams();
   const initialSelectedId = searchParams.get("id");
   const {
@@ -188,7 +192,7 @@ function MacrosBuilderPageContent() {
         `Failed to save macro: ${err instanceof Error ? err.message : "Unknown error"}`
       );
     }
-  }, [editForm, isNew, selectedMacro, refetch]);
+  }, [editForm, isNew, selectedMacro, refetch, runnerApi]);
 
   const handleDelete = useCallback(
     async (ids: string[]) => {
@@ -208,7 +212,7 @@ function MacrosBuilderPageContent() {
         );
       }
     },
-    [refetch]
+    [refetch, runnerApi]
   );
 
   const handleDuplicate = useCallback(async () => {
@@ -233,19 +237,19 @@ function MacrosBuilderPageContent() {
         `Failed to duplicate: ${err instanceof Error ? err.message : "Unknown error"}`
       );
     }
-  }, [selectedMacro, isNew, refetch]);
+  }, [selectedMacro, isNew, refetch, runnerApi]);
 
   const handleRun = useCallback(async () => {
     if (!selectedMacro || isNew) return;
     try {
-      await runnerApi.runMacro(selectedMacro.id);
+      await workApi.runMacro(selectedMacro.id);
       toast.success("Macro executed");
     } catch (err) {
       toast.error(
         `Failed to run: ${err instanceof Error ? err.message : "Unknown error"}`
       );
     }
-  }, [selectedMacro, isNew]);
+  }, [selectedMacro, isNew, workApi]);
 
   // Step management helpers
   const updateStep = useCallback(
@@ -307,7 +311,7 @@ function MacrosBuilderPageContent() {
     setAiError(null);
     setAiResult(null);
     try {
-      const result = await runnerApi.aiGenerateMacro(prompt, editForm.category || undefined);
+      const result = await workApi.aiGenerateMacro(prompt, editForm.category || undefined);
       if (result.success && result.data) {
         setAiResult(result.data);
       } else {
@@ -417,12 +421,23 @@ function MacrosBuilderPageContent() {
                   <Trash2 className="size-4" />
                 </Button>
               )}
+              {!isNew && workRefusal && (
+                <span
+                  className="max-w-[16rem] truncate text-xs text-text-muted"
+                  title={workRefusal}
+                  data-testid="macro-run-refusal"
+                >
+                  {workRefusal}
+                </span>
+              )}
               {!isNew && (
                 <Button
                   variant="outline"
                   size="sm"
                   className="gap-1.5"
                   onClick={handleRun}
+                  disabled={workRefusal !== null}
+                  title={workRefusal ?? undefined}
                 >
                   <Play className="size-3.5" /> Run
                 </Button>
@@ -439,6 +454,7 @@ function MacrosBuilderPageContent() {
 
           <div className="space-y-4">
             <AiGeneratorPanel
+              refusal={workRefusal}
               title="Generate Macro with AI"
               accentColor="amber"
               templates={macroTemplates}

@@ -11,7 +11,7 @@ import {
 import { EditorHeader, EditorSection, ExecutionPanel, MonacoField, type ExecutionResult } from "@/components/builders/editors";
 import { TagInput } from "@/components/builders/TagInput";
 import { AiGeneratorPanel } from "@/components/builders/AiGeneratorPanel";
-import { runnerApi } from "@/lib/runner/runner-api-object";
+import { useDispatchRunnerApi } from "@/lib/runner/runner-api-object";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
@@ -44,6 +44,9 @@ interface CheckEditorProps {
 }
 
 export function CheckEditor({ item, form, setForm, isDirty, isNew, isSaving, onSave, onDelete, onAcceptAiChecks }: CheckEditorProps) {
+  // Calls that START work go to the new-work target (explicit choice or
+  // coord's resolved pick); a refused call carries coord's outcome.
+  const { api: workApi, refusal: workRefusal } = useDispatchRunnerApi();
   const [aiGenerating, setAiGenerating] = useState(false);
   const [aiError, setAiError] = useState<string | null>(null);
 
@@ -271,7 +274,7 @@ export function CheckEditor({ item, form, setForm, isDirty, isNew, isSaving, onS
           <ExecutionPanel
             onRun={async () => {
               try {
-                const response = await runnerApi.runCheck(item.id);
+                const response = await workApi.runCheck(item.id);
                 const status = (response as Record<string, unknown>).status as string | undefined;
                 const issuesFound = (response as Record<string, unknown>).issues_found as number | undefined;
                 const issuesFixed = (response as Record<string, unknown>).issues_fixed as number | undefined;
@@ -319,6 +322,7 @@ export function CheckEditor({ item, form, setForm, isDirty, isNew, isSaving, onS
             }}
             runLabel="Run Check"
             disabled={isNew}
+            refusal={workRefusal}
           />
         )}
 

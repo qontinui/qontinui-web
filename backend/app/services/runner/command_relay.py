@@ -94,20 +94,22 @@ class CommandRelayService:
         Args:
             runner_id: Target runner UUID (string form).
             command: Command payload (JSON-serialisable).
-            require_local_connection: When ``True`` (default), the runner must
-                be registered as connected to *this* process or the command is
-                dropped (returns ``False``). When ``False``, the in-process gate
-                is skipped and the command is published unconditionally, relying
-                on Redis pub/sub to reach the replica that holds the socket. Set
-                ``False`` for cross-process dispatch where the caller has
-                already confirmed connectivity via Redis.
+            require_local_connection: When ``True`` (default), the runner's
+                socket must be live in *this* process — registered AND able
+                to carry a send, see
+                ``WebSocketConnectionRegistry.can_send_to_runner`` — or the
+                command is dropped (returns ``False``). When ``False``, the
+                in-process gate is skipped and the command is published
+                unconditionally, relying on Redis pub/sub to reach the replica
+                that holds the socket. Set ``False`` for cross-process dispatch
+                where the caller has already confirmed connectivity via Redis.
 
         Returns:
             True if published, False if runner not connected (local gate) or
             the publish failed.
         """
-        if require_local_connection and not self._registry.is_runner_connected(
-            runner_id
+        if require_local_connection and not self._registry.can_send_to_runner(
+            runner_id, path="command", message_type=command.get("type")
         ):
             return False
 
@@ -172,10 +174,14 @@ class CommandRelayService:
                 does not need to pre-populate ``request_id``; it is merged in.
             request_id: Correlation id (UUID4 string is recommended).
             timeout_s: Max seconds to wait for a matching response.
-            require_local_connection: When ``True`` (default), the runner must
-                be registered as connected to *this* process — an in-memory
-                check via the connection registry — or
-                :class:`RunnerNotConnectedError` is raised before publishing.
+            require_local_connection: When ``True`` (default), the runner's
+                socket must be live in *this* process — registered AND able to
+                carry a send (``WebSocketConnectionRegistry.can_send_to_runner``)
+                — or :class:`RunnerNotConnectedError` is raised before
+                publishing. Liveness rather than registration on purpose: a
+                registry entry that outlived its socket would otherwise pass
+                the gate and convert a millisecond 503 into a full
+                ``timeout_s`` wait ending in a 504.
                 When ``False``, the in-process gate is skipped and the command
                 is published unconditionally, relying on Redis pub/sub routing
                 across replicas plus the dispatch timeout. Set ``False`` when
@@ -193,8 +199,8 @@ class CommandRelayService:
             RunnerCommandTimeoutError: No matching response arrived within
                 ``timeout_s``.
         """
-        if require_local_connection and not self._registry.is_runner_connected(
-            runner_id
+        if require_local_connection and not self._registry.can_send_to_runner(
+            runner_id, path="dispatch", message_type=command.get("command")
         ):
             raise RunnerNotConnectedError(runner_id)
 

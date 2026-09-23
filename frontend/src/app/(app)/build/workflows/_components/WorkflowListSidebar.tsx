@@ -47,12 +47,15 @@ export function WorkflowListSidebar({
   onSelectWorkflow,
   onDeselectWorkflow,
   onRunWorkflow,
+  runRefusal = null,
   onCreatingChange,
 }: {
   selectedWorkflowId: string | null;
   onSelectWorkflow: (workflow: UnifiedWorkflow) => void;
   onDeselectWorkflow: () => void;
   onRunWorkflow: (workflowId: string) => void;
+  /** Coord's reason no workflow run may start right now (null = allowed). */
+  runRefusal?: string | null;
   onCreatingChange?: (creating: boolean) => void;
 }) {
   // The list comes from the WEB canonical store (`/api/v1/unified-workflows`)
@@ -361,7 +364,7 @@ export function WorkflowListSidebar({
                     variant="ghost"
                     size="icon"
                     className="h-5 w-5 text-text-muted hover:text-green-400 disabled:opacity-40 disabled:cursor-not-allowed"
-                    disabled={runnerIsOffline}
+                    disabled={runnerIsOffline || runRefusal !== null}
                     onClick={(e) => {
                       e.stopPropagation();
                       onRunWorkflow(workflow.id);
@@ -369,7 +372,7 @@ export function WorkflowListSidebar({
                     title={
                       runnerIsOffline
                         ? "Connect a runner to run this workflow"
-                        : "Run workflow"
+                        : (runRefusal ?? "Run workflow")
                     }
                   >
                     <Play className="size-3" />

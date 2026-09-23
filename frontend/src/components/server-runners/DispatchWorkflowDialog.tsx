@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { useDispatchTarget } from "@/contexts/active-runner-context";
 import { useRouter } from "next/navigation";
 import {
   Dialog,
@@ -76,14 +77,23 @@ export function DispatchWorkflowDialog({
     return runners.filter((r) => r.derivedStatus === "healthy");
   }, [runners]);
 
-  // Auto-pick the first healthy runner when the dialog opens / runners load.
+  // Pre-select ONLY where new work may go: the user's explicit choice, or the
+  // device coord resolved (capability-checked, drain-filtered) — when it is
+  // healthy. Never the read target's fallbacks (a last known, proven-local or
+  // sole runner may be drained), and never the first listed runner.
+  // Otherwise nothing is pre-selected and coord's outcome is shown.
+  const dispatchTarget = useDispatchTarget();
+  const suggestedId = dispatchTarget.runnerId;
   useEffect(() => {
     if (!open) return;
     if (target) return;
-    if (healthyRunners.length > 0) {
-      setTarget(healthyRunners[0]!.id);
+    if (
+      suggestedId !== null &&
+      healthyRunners.some((r) => r.id === suggestedId)
+    ) {
+      setTarget(suggestedId);
     }
-  }, [open, healthyRunners, target]);
+  }, [open, healthyRunners, target, suggestedId]);
 
   const handleSubmit = async () => {
     if (!target) {
@@ -159,6 +169,14 @@ export function DispatchWorkflowDialog({
               ))}
             </SelectContent>
           </Select>
+          {!target && dispatchTarget.message && (
+            <p
+              className="text-xs text-text-muted"
+              data-testid="dispatch-target-outcome"
+            >
+              {dispatchTarget.message}
+            </p>
+          )}
           {!runnersLoading && healthyRunners.length === 0 && (
             <p className="text-xs text-amber-400">
               No healthy runners found. Register or wake one and try again.

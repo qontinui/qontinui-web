@@ -11,13 +11,14 @@ import type {
 } from "@/types/rag-testing";
 import type { RAGElement } from "@/types/rag-builder";
 import {
-  RUNNER_URL,
   urlToBase64,
   processRunnerSegments,
   associateMatchesWithSegments,
 } from "../rag-testing-utils";
 import type { ScreenshotInfo } from "@/components/common/ScreenshotPicker";
 import { createLogger } from "@/lib/logger";
+import { runnerRequest, targetKey, useRunnerTarget } from "@/lib/runner";
+import { useNewWorkRefusal } from "@/contexts/active-runner-context";
 
 const log = createLogger("useRAGAnalysis");
 
@@ -40,6 +41,9 @@ export function useRAGAnalysis({
   matchingStrategy,
   useOCR,
 }: UseRAGAnalysisParams) {
+  const target = useRunnerTarget();
+  // Segmentation / embedding matching is an ML job — NEW work.
+  const newWorkRefusal = useNewWorkRefusal();
   // Analysis results
   const [segments, setSegments] = useState<SegmentWithMatches[]>([]);
   const [allMatches, setAllMatches] = useState<RAGFindMatch[]>([]);
@@ -62,10 +66,13 @@ export function useRAGAnalysis({
 
   // Load RAG elements when project changes
   const { data: ragElements = [], isLoading: loadingElements } = useQuery({
-    queryKey: ["rag-elements", projectId],
+    // Keyed by the runner (and route): one runner's elements are never
+    // served as another's.
+    queryKey: ["rag-elements", projectId, targetKey(target)],
     queryFn: async () => {
-      const response = await fetch(
-        `${RUNNER_URL}/api/rag/projects/${projectId}/elements`
+      const response = await runnerRequest(
+        target,
+        `/api/rag/projects/${projectId}/elements`
       );
       if (!response.ok) {
         // 404 is expected when no RAG config exists - not an error, just no elements
@@ -130,6 +137,10 @@ export function useRAGAnalysis({
       toast.error("Please select a screenshot first");
       return;
     }
+    if (newWorkRefusal !== null) {
+      toast.error(newWorkRefusal);
+      return;
+    }
 
     // In segmentation-only mode, we don't need a project ID
     if (!isSegmentationOnly && !projectId) {
@@ -156,7 +167,7 @@ export function useRAGAnalysis({
       }> = [];
 
       try {
-        const segmentResponse = await fetch(`${RUNNER_URL}/rag/segment`, {
+        const segmentResponse = await runnerRequest(target, "/rag/segment", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -217,8 +228,9 @@ export function useRAGAnalysis({
             max_results: 50,
           };
 
-          const fetchResponse = await fetch(
-            `${RUNNER_URL}/api/rag/projects/${projectId}/find`,
+          const fetchResponse = await runnerRequest(
+            target,
+            `/api/rag/projects/${projectId}/find`,
             {
               method: "POST",
               headers: { "Content-Type": "application/json" },
@@ -265,6 +277,7 @@ export function useRAGAnalysis({
       setIsAnalyzing(false);
     }
   }, [
+    target,
     currentScreenshot?.url,
     isSegmentationOnly,
     projectId,
@@ -273,6 +286,7 @@ export function useRAGAnalysis({
     similarityThreshold,
     matchingStrategy,
     useOCR,
+    newWorkRefusal,
   ]);
 
   return {
@@ -299,5 +313,7 @@ export function useRAGAnalysis({
     // Actions
     resetResults,
     runAnalysis,
+    /** Coord's reason no analysis may start right now (null = allowed). */
+    runRefusal: newWorkRefusal,
   };
 }

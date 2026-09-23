@@ -3,21 +3,20 @@
  * exist inside the CI job.
  *
  * Since the hermetic Spec CI stack (spec-ci.yml 2026-06-04), the backend runs
- * locally with NO qontinui-coord, NO strategy bridge, and NO real Cognito
- * admin API. The backend (correctly) surfaces those absent upstreams as
- * gateway errors: coord-proxied endpoints 502, the disabled strategy bridge
- * 503s, Cognito-admin-backed identity reads 502. Layout-level components poll
- * several of these on EVERY page, so without intervention every route accrues
- * same-origin 5xx (the serverClean gate) and some pages render error states
- * instead of their authored structure.
+ * locally with NO qontinui-coord and NO real Cognito admin API. The backend
+ * (correctly) surfaces those absent upstreams as gateway errors:
+ * coord-proxied endpoints 502, Cognito-admin-backed identity reads 502.
+ * Layout-level components poll several of these on EVERY page, so without
+ * intervention every route accrues same-origin 5xx (the serverClean gate)
+ * and some pages render error states instead of their authored structure.
  *
  * The IR specs were authored against the ci-bot account on prod, where these
  * same endpoints returned 2xx (verified from the last green prod-lane report:
  * none of these URLs appear among its notable responses, and all 62 specs
  * full-matched). These stubs reproduce PROD PARITY for that account — empty
  * payloads for per-account data (ci-bot owned nothing), populated payloads
- * where prod content is tenant-global (the strategy corpus, the active
- * tenant row) — so each page renders its authored state deterministically.
+ * where prod content is tenant-global (the active tenant row) — so each page
+ * renders its authored state deterministically.
  *
  * Scope discipline:
  *   - GET only; any other method falls through to the real backend.
@@ -42,7 +41,7 @@ export interface HermeticStub {
   pattern: RegExp;
   /**
    * JSON body to fulfill with (status 200), or a function of the matched URL
-   * for stubs whose body depends on the path (e.g. strategy doc content).
+   * for stubs whose body depends on the path.
    */
   body: unknown | ((url: string) => unknown);
   /** Wire-shape source, for review + drift triage. */
@@ -51,40 +50,6 @@ export interface HermeticStub {
 
 /** Stable synthetic tenant id — referenced by both tenants-stub fields. */
 const SPEC_CI_TENANT_ID = "a0000000-0000-4000-8000-0000005bec01";
-
-/**
- * Strategy corpus doc summaries — the strategy page's document nav renders
- * one link per doc (`link-<name>`), and the spec asserts the SPECIFIC corpus
- * doc links it was authored against (strategy spec document-nav elems). The
- * corpus is tenant-global content served via the coord strategy bridge, so
- * prod-parity here is POPULATED, not empty — these are the six docs the spec
- * names.
- */
-const STRATEGY_DOCS = [
-  { name: "project-strategy", title: "Project Strategy" },
-  {
-    name: "load-bearing-architectural-decisions",
-    title: "Load-Bearing Architectural Decisions",
-  },
-  { name: "business-goals", title: "Business Goals" },
-  { name: "customer-context", title: "Customer Context" },
-  { name: "human-preferences", title: "Human Preferences" },
-  { name: "strategic-priorities", title: "Strategic Priorities" },
-].map((d) => ({
-  ...d,
-  provenance: {
-    commit_sha: "0000000000000000000000000000000000000000",
-    committed_at: "2026-01-01T00:00:00Z",
-    author: "spec-ci",
-  },
-}));
-
-/** Title-case a doc slug for the synthetic doc-content stub. */
-function docTitle(name: string): string {
-  const known = STRATEGY_DOCS.find((d) => d.name === name);
-  if (known) return known.title;
-  return name.replace(/-/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
-}
 
 export const HERMETIC_STUBS: readonly HermeticStub[] = [
   {
@@ -256,34 +221,6 @@ export const HERMETIC_STUBS: readonly HermeticStub[] = [
     pattern: /\/api\/v1\/operations\/pr-merge\/suggestions(\?|$)/,
     body: [],
     note: "useMergePipelineData fetchSuggestions tolerates bare array — coord proxy",
-  },
-  {
-    pattern: /\/api\/v1\/strategy\/mentions\/unread(\?|$)/,
-    body: { items: [] },
-    note: "coord list_unread_mentions wire {items} (lib/api/strategy.ts:215) — strategy bridge disabled in CI",
-  },
-  {
-    pattern: /\/api\/v1\/strategy\/docs(\?|$)/,
-    body: { docs: STRATEGY_DOCS },
-    note: "{docs: StrategyDocSummary[]} (lib/api/strategy.ts:107) — strategy bridge disabled in CI; populated to prod-parity (corpus is tenant-global)",
-  },
-  {
-    pattern: /\/api\/v1\/strategy\/docs\/[^/?]+(\?|$)/,
-    // The strategy page auto-loads the first doc into the viewer; the spec
-    // asserts the doc H1 plus the `## Files` / `## Update Protocol` section
-    // headings every corpus doc carries.
-    body: (url: string) => {
-      const name = decodeURIComponent(
-        url.split("/strategy/docs/")[1]?.split("?")[0] ?? "doc",
-      );
-      return {
-        name,
-        title: docTitle(name),
-        provenance: STRATEGY_DOCS[0].provenance,
-        content: `# ${docTitle(name)}\n\nSpec CI synthetic corpus doc.\n\n## Files\n\n- (none — hermetic stub)\n\n## Update Protocol\n\nStub content for the authored viewer baseline.\n`,
-      };
-    },
-    note: "StrategyDoc {…, content} (lib/api/strategy.ts:33) — doc content for the auto-loaded viewer",
   },
   {
     pattern: /\/api\/v1\/auth\/identities(\?|$)/,

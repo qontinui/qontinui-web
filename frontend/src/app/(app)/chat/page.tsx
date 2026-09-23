@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { MessageSquare, Plus, Wifi, WifiOff, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { useRealtimeConnections } from "@/hooks/useRealtimeConnections";
+import { useDispatchTarget } from "@/contexts/active-runner-context";
 import { useChatWebSocket } from "@/hooks/useChatWebSocket";
 import { usePageSpecs } from "@/hooks/usePageSpecs";
 import { useDiscoveredSpec } from "@/lib/ui-bridge/use-discovered-specs";
@@ -17,12 +17,15 @@ export default function ChatPage() {
     discoveredSpec ? { chat: discoveredSpec.config as SpecConfig } : {}
   );
   const router = useRouter();
-  const { runners } = useRealtimeConnections();
   const [isCreating, setIsCreating] = useState(false);
   const createTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
-  const activeRunner = runners[0] || null;
-  const isRunnerConnected = !!activeRunner;
+  // Creating a chat is NEW work (a new AI session), so it goes only where new
+  // work may go: the user's explicit choice or coord's resolved pick. Never a
+  // read fallback — otherwise coord's outcome is shown.
+  const dispatchTarget = useDispatchTarget();
+  const runnerId = dispatchTarget.runnerId;
+  const isRunnerConnected = runnerId !== null;
 
   // Clear timeout on unmount
   useEffect(() => {
@@ -34,7 +37,7 @@ export default function ChatPage() {
   }, []);
 
   const { createSession, isConnected: isChatWsConnected } = useChatWebSocket({
-    runnerId: activeRunner?.id ?? null,
+    runnerId,
     onSessionCreated: useCallback(
       (id: string) => {
         if (createTimeoutRef.current) {
@@ -102,7 +105,7 @@ export default function ChatPage() {
               ) : (
                 <>
                   <WifiOff className="size-3.5 text-red-400" />
-                  <span className="text-red-400">Runner offline</span>
+                  <span className="text-red-400">No runner for new work</span>
                 </>
               )}
             </span>
@@ -145,6 +148,16 @@ export default function ChatPage() {
                 </Link>{" "}
                 to set up a connection.
               </p>
+              {/* Coord's outcome, after the spec'd connect paragraph so that
+                  paragraph keeps its position. */}
+              {dispatchTarget.message && (
+                <p
+                  id="chat-runner-outcome"
+                  className="text-xs text-text-muted mt-2"
+                >
+                  {dispatchTarget.message}
+                </p>
+              )}
             </div>
           ) : (
             <>
