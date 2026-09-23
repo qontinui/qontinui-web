@@ -362,6 +362,12 @@ export function findingLinkNotice(state: {
   invalid?: boolean;
   /** The linked row is on screen but outside the current filters. */
   outsideFilters?: boolean;
+  /**
+   * The linked row is on screen but not in the loaded page, and that page came
+   * back FULL — so the row may match the filters and simply sit beyond it.
+   * Never claim "outside the filters" off a truncated page.
+   */
+  beyondLoadedPage?: boolean;
 }): string {
   // First, and before `found`: a mangled id was never looked up, so no other
   // arm's claim (found, loading, failed, absent) is about it.
@@ -377,11 +383,21 @@ export function findingLinkNotice(state: {
         "It is past its retention window and is served by id anyway, so what " +
         "you are reading is the whole record, not a summary of a deleted one."
       : "Showing the finding this write's author recorded — expanded below.";
-    return state.outsideFilters
-      ? base +
-          " It is outside the current filters, so it is shown first and not " +
-          "counted in the list total."
-      : base;
+    if (state.outsideFilters) {
+      return (
+        base +
+        " It is outside the current filters, so it is shown first and not " +
+        "counted in the list total."
+      );
+    }
+    if (state.beyondLoadedPage) {
+      return (
+        base +
+        " It is not in the loaded page of the list, so it is shown first; " +
+        "whether it matches the current filters is not known from this page."
+      );
+    }
+    return base;
   }
   // Outranks every arm below: with no findings surface there is no store for
   // the finding to be absent FROM, so "no such finding" would report a
