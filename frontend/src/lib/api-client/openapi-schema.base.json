@@ -85159,53 +85159,6 @@
         "tags": [
           "operations"
         ]
-      },
-      "post": {
-        "description": "Create an operator in the caller's home tenant (pre-login invites OK).\n\nProxies coord ``POST /admin/coord/operators``. Body:\n``{email, display_name?, sso_subject, sso_provider, roles?: [str]}`` \u2192\n``{operator_id}``.",
-        "operationId": "api_v1_operations_coord_members_post",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "additionalProperties": true,
-                "title": "Body",
-                "type": "object"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "title": "Response Post Coord Member Api V1 Operations Coord Members Post"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
-        "summary": "Post Coord Member",
-        "tags": [
-          "operations"
-        ]
       }
     },
     "/api/v1/operations/coord/members/{operator_id}/roles": {
