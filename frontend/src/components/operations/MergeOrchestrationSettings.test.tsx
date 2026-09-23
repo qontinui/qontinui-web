@@ -1487,7 +1487,6 @@ describe("<MergeOrchestrationSettings> SLO per-repo merge-enabled control", () =
       auto_merge_success_rate: null,
       escalation_rate: null,
       post_merge_verification_lag_p95_seconds: null,
-      author_feedback_latency_p95_seconds: null,
       operator_override_rate: null,
       total_decisions: 0,
     };
@@ -1662,7 +1661,6 @@ describe("<MergeOrchestrationSettings> pinned-ON repo under a tenant pause", () 
       auto_merge_success_rate: null,
       escalation_rate: null,
       post_merge_verification_lag_p95_seconds: null,
-      author_feedback_latency_p95_seconds: null,
       operator_override_rate: null,
       total_decisions: 0,
     };

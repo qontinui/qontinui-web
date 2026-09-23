@@ -260,7 +260,6 @@ interface SloWindowMetrics {
   auto_merge_success_rate: number | null;
   escalation_rate: number | null;
   post_merge_verification_lag_p95_seconds: number | null;
-  author_feedback_latency_p95_seconds: number | null;
   operator_override_rate: number | null;
   total_decisions: number;
 }
@@ -1635,12 +1634,6 @@ function SloRepoCard({
             <p className="text-muted-foreground">Verify lag p95</p>
             <p className="text-foreground">
               {fmtSecs(w.post_merge_verification_lag_p95_seconds)}
-            </p>
-          </div>
-          <div>
-            <p className="text-muted-foreground">Author feedback p95</p>
-            <p className="text-foreground">
-              {fmtSecs(w.author_feedback_latency_p95_seconds)}
             </p>
           </div>
         </div>
