@@ -511,3 +511,44 @@ describe("the one poll helper", () => {
     expect(done).toBe(true);
   });
 });
+
+describe("follow-up guards", () => {
+  it("startRunnerPoll with a non-positive interval never ticks and returns a no-op stop", async () => {
+    vi.useFakeTimers();
+    for (const requestedMs of [0, -1, Number.NaN]) {
+      const tick = vi.fn();
+      const stop = startRunnerPoll({
+        getTarget: () => target("local"),
+        requestedMs,
+        tick,
+        immediate: true,
+      });
+      await vi.advanceTimersByTimeAsync(RELAY_POLL_INTERVAL_MS * 2);
+      expect(tick).not.toHaveBeenCalled();
+      expect(() => stop()).not.toThrow();
+    }
+  });
+
+  it("a loopback budget also bounds the caller's BODY read (headers, then a stalled body)", async () => {
+    loopbackFetch.mockImplementation(
+      (_url: RequestInfo | URL, init?: RequestInit) => {
+        const body = new ReadableStream<Uint8Array>({
+          start(controller) {
+            init?.signal?.addEventListener("abort", () =>
+              controller.error(new DOMException("aborted", "AbortError"))
+            );
+          },
+        });
+        return Promise.resolve(new Response(body, { status: 200 }));
+      }
+    );
+
+    const started = Date.now();
+    const res = await runnerRequest(target("local"), "/status", {
+      timeoutMs: 50,
+    });
+    const err = await res.text().catch((e: unknown) => e);
+    expect((err as DOMException).name).toBe("AbortError");
+    expect(Date.now() - started).toBeLessThan(2000);
+  }, 3000);
+});

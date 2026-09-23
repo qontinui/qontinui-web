@@ -130,6 +130,84 @@ async def test_local_proxy_hop_does_not_forward_browser_origin(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_local_proxy_hop_does_not_forward_ambient_credentials(monkeypatch):
+    """Co-located arm: no header that authenticates a caller to THIS backend
+    reaches the runner — the same list the relay arm drops."""
+
+    async def _fake_active_port(*, bearer, user_id):
+        return 9876
+
+    monkeypatch.setattr(
+        device_bridge_ws.coord_device,
+        "get_active_routing_port",
+        _fake_active_port,
+        raising=True,
+    )
+
+    sent: list[tuple[str, str]] = []
+
+    class _EchoResponse:
+        status_code = 200
+        content = b"{}"
+        headers = httpx.Headers({"content-type": "application/json"})
+
+    class _CapturingClient:
+        def __init__(self, *a, **kw) -> None:
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *a):
+            return False
+
+        async def request(self, method, url, **kw):
+            sent.extend(
+                (k.lower(), v)
+                for k, v in httpx.Headers(kw.get("headers")).multi_items()
+            )
+            return _EchoResponse()
+
+    monkeypatch.setattr(
+        device_bridge_ws.httpx, "AsyncClient", _CapturingClient, raising=True
+    )
+
+    credentials = {
+        "Authorization": "Bearer user-token",
+        "Proxy-Authorization": "Basic cHJveHk=",
+        "Cookie": "session=abc; refresh=def",
+        "X-CSRF-Token": "csrf-123",
+        "X-Machine-Key": "mk_secret",
+        "X-Device-Machine-Key": "dmk_secret",
+        "X-Coord-Admin-Secret": "admin-secret",
+    }
+    await device_bridge_ws.runner_proxy(
+        _FakeRequest(
+            headers={**credentials, "Content-Type": "application/json"},
+            body=b"{}",
+        ),
+        "unified-workflows",
+        user=SimpleNamespace(id=USER_ID),
+    )
+
+    names = {k for k, _ in sent}
+    assert names, "the capturing client saw no request at all"
+    for name, value in credentials.items():
+        assert name.lower() not in names, name
+        assert value not in {v for _, v in sent}, name
+    assert ("content-type", "application/json") in sent
+    # One list for both arms.
+    assert (
+        device_bridge_ws._AMBIENT_CREDENTIAL_REQUEST_HEADERS
+        <= device_bridge_ws._LOCAL_PROXY_EXCLUDED_REQUEST_HEADERS
+    )
+    assert (
+        device_bridge_ws._AMBIENT_CREDENTIAL_REQUEST_HEADERS
+        <= device_bridge_ws._RELAY_EXCLUDED_REQUEST_HEADERS
+    )
+
+
+@pytest.mark.asyncio
 async def test_relay_frame_does_not_forward_browser_origin(monkeypatch):
     """Relay arm: the http_request envelope's headers carry no Origin."""
 

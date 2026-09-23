@@ -161,15 +161,11 @@ def _is_browser_provenance_header(name: str) -> bool:
     )
 
 
-# Request headers never forwarded to the runner over the relay.
-#
-# Hop-by-hop: ``host``, ``connection``, ``transfer-encoding``,
-# ``content-length``.
-#
 # Ambient credentials — every header by which a caller authenticates TO THIS
-# BACKEND. The runner trusts its outbound WS connection, not the end user's
-# credentials, so none of them may cross the relay: a runner (or anything on
-# its box reading its logs) must never receive a replayable web credential.
+# BACKEND. Neither runner-proxy arm (the relay nor the co-located legacy hop)
+# forwards any of them: the runner trusts its own channel, not the end user's
+# credentials, and a runner (or anything on its box reading its logs) must
+# never receive a replayable web credential.
 #   - ``authorization`` / ``proxy-authorization`` — the user's bearer.
 #   - ``cookie`` — the browser's session / refresh cookies (the frontend's
 #     httpClient sends ``credentials: "include"``).
@@ -177,15 +173,8 @@ def _is_browser_provenance_header(name: str) -> bool:
 #   - ``x-machine-key`` / ``x-device-machine-key`` — machine / device keys
 #     accepted by the devenv-agent and device endpoints.
 #   - ``x-coord-admin-secret`` — the coord admin shared secret.
-#
-# Browser provenance headers are dropped as well, by
-# :func:`_is_browser_provenance_header` (above) at the filter site.
-_RELAY_EXCLUDED_REQUEST_HEADERS = frozenset(
+_AMBIENT_CREDENTIAL_REQUEST_HEADERS = frozenset(
     {
-        "host",
-        "connection",
-        "transfer-encoding",
-        "content-length",
         "authorization",
         "proxy-authorization",
         "cookie",
@@ -194,6 +183,17 @@ _RELAY_EXCLUDED_REQUEST_HEADERS = frozenset(
         "x-device-machine-key",
         "x-coord-admin-secret",
     }
+)
+
+# Request headers never forwarded to the runner over the relay: hop-by-hop
+# (``host``, ``connection``, ``transfer-encoding``, ``content-length``) plus
+# every ambient credential above.
+#
+# Browser provenance headers are dropped as well, by
+# :func:`_is_browser_provenance_header` (above) at the filter site.
+_RELAY_EXCLUDED_REQUEST_HEADERS = (
+    frozenset({"host", "connection", "transfer-encoding", "content-length"})
+    | _AMBIENT_CREDENTIAL_REQUEST_HEADERS
 )
 
 # Hop-by-hop response headers stripped before returning the runner's reply.
@@ -218,14 +218,19 @@ _LOCAL_PROXY_TIMEOUT_S = 30.0
 #
 # Browser provenance headers (:func:`_is_browser_provenance_header`, above) are
 # dropped here too, at the filter site, for the same reason as on the relay arm.
-_LOCAL_PROXY_EXCLUDED_REQUEST_HEADERS = frozenset(
-    {
-        "host",
-        "connection",
-        "transfer-encoding",
-        "content-length",
-        "accept-encoding",
-    }
+_LOCAL_PROXY_EXCLUDED_REQUEST_HEADERS = (
+    frozenset(
+        {
+            "host",
+            "connection",
+            "transfer-encoding",
+            "content-length",
+            "accept-encoding",
+        }
+    )
+    # The same ambient credentials the relay drops: the co-located runner is
+    # no more entitled to the user's bearer or session cookie than a remote one.
+    | _AMBIENT_CREDENTIAL_REQUEST_HEADERS
 )
 
 # Request headers this path SETS rather than forwards. ``identity`` overrides
