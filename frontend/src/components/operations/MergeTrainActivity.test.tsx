@@ -444,6 +444,9 @@ describe("MergeTrainActivity candidate-CI churn", () => {
     green_candidates_discarded: 15,
     base_mismatch_discards: 13,
     candidate_ci_minutes_per_land: 47.4,
+    proposal_age_at_land_p90_secs: 29_880,
+    proposal_age_at_land_sample_size: 6,
+    proposal_age_at_land_basis: "first proposal on the branch to land",
     green_candidates_discarded_basis: "green candidates discarded in 24h",
     base_mismatch_discards_basis: "base moved under the candidate",
     coverage_note: "24h window",
@@ -452,6 +455,9 @@ describe("MergeTrainActivity candidate-CI churn", () => {
     green_candidates_discarded: null,
     base_mismatch_discards: null,
     candidate_ci_minutes_per_land: null,
+    proposal_age_at_land_p90_secs: null,
+    proposal_age_at_land_sample_size: 0,
+    proposal_age_at_land_basis: "nothing landed",
     coverage_note: "no candidate CI observed in window",
   };
 
@@ -468,6 +474,13 @@ describe("MergeTrainActivity candidate-CI churn", () => {
     const rate = within(cluster).getByTestId("churn-ci-minutes-per-land");
     expect(rate).toHaveTextContent(/^CI min \/ land 47\.4$/);
     expect(rate).toHaveAttribute("title", "24h window");
+    // A duration renders as one — 29 880 s is 8h — never as a raw second count.
+    const age = within(cluster).getByTestId("churn-proposal-age-at-land-p90");
+    expect(age).toHaveTextContent(/^proposal→land p90 8h$/);
+    expect(age).toHaveAttribute(
+      "title",
+      "6 lands — first proposal on the branch to land"
+    );
     // No raw field names reach the surface (R8).
     expect(cluster).not.toHaveTextContent("green_candidates_discarded");
 
@@ -501,6 +514,12 @@ describe("MergeTrainActivity candidate-CI churn", () => {
         "no candidate CI observed in window"
       );
     }
+    // The age is about LANDS, not candidate CI: a null p90 carries coord's
+    // own basis, never the CI coverage note.
+    const age = within(core).getByTestId("churn-proposal-age-at-land-p90");
+    expect(age).toHaveTextContent(/^proposal→land p90 —$/);
+    expect(age).toHaveAttribute("data-unknown", "true");
+    expect(age).toHaveAttribute("title", "0 lands — nothing landed");
     expect(
       within(screen.getByTestId(`train-churn-${WEB}`)).getByTestId(
         "churn-green-discarded"
@@ -522,6 +541,7 @@ describe("MergeTrainActivity candidate-CI churn", () => {
       "churn-green-discarded",
       "churn-base-move-discards",
       "churn-ci-minutes-per-land",
+      "churn-proposal-age-at-land-p90",
     ]) {
       const cell = within(cluster).getByTestId(id);
       expect(cell).toHaveTextContent(/—$/);
