@@ -7,7 +7,7 @@ import { useProject } from "@/hooks/automation/useProject";
 import { useWorkflows } from "@/hooks/automation/useWorkflows";
 import { useAutomationStore } from "@/stores/automation";
 import { useProjectLoader } from "@/hooks/use-project-loader";
-import { integrationTestingService } from "@/services/integration-testing";
+import { useIntegrationTestingService } from "@/services/integration-testing";
 import type { ViewMode } from "../_types";
 import type {
   IntegrationTestResponse,
@@ -16,6 +16,7 @@ import type {
 } from "@/types/integration-testing";
 
 export function useIntegrationTestRuns() {
+  const integrationTestingService = useIntegrationTestingService();
   const { user } = useAuth();
   const { projectId } = useProject();
   const { workflows } = useWorkflows();
@@ -45,7 +46,7 @@ export function useIntegrationTestRuns() {
       setApiHealthy(healthy);
     };
     checkHealth();
-  }, []);
+  }, [integrationTestingService]);
 
   const fetchRuns = useCallback(async () => {
     if (!projectId) return;
@@ -62,7 +63,7 @@ export function useIntegrationTestRuns() {
     } finally {
       setLoading(false);
     }
-  }, [projectId]);
+  }, [projectId, integrationTestingService]);
 
   useEffect(() => {
     if (user && projectId) {

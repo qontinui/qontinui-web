@@ -1,29 +1,49 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useEffect, useState } from "react";
 import { Image as ImageIcon } from "lucide-react";
+import {
+  RUNNER_NEEDS_LOCAL,
+  runnerFetch,
+  targetKey,
+  useRunnerObjectUrl,
+  useRunnerTarget,
+} from "@/lib/runner";
 
 interface ScreenshotResultSectionProps {
   testId: string;
   onOpenScreenshot: (url: string) => void;
 }
 
+/**
+ * Where the last execution's screenshot lives: inline in the result (a data
+ * URL), or a file the runner serves (a runner path, fetched through the
+ * resolver — never an `<img src>` pointing at a loopback URL).
+ */
+type ScreenshotSource =
+  | { kind: "inline"; url: string }
+  | { kind: "runner"; path: string };
+
 export function ScreenshotResultSection({
   testId,
   onOpenScreenshot,
 }: ScreenshotResultSectionProps) {
-  const [screenshotUrl, setScreenshotUrl] = useState<string | null>(null);
-  const [checked, setChecked] = useState(false);
+  const runnerTarget = useRunnerTarget();
+  const runnerKey = targetKey(runnerTarget);
+  const [source, setSource] = useState<ScreenshotSource | null>(null);
 
-  // Attempt to fetch screenshot from the last execution result
-  // This runs once when the component mounts or testId changes
-  const fetchScreenshot = useCallback(async () => {
-    if (checked) return;
-    setChecked(true);
-    try {
-      const { runnerFetch } = await import("@/lib/runner/api-client");
-      const result = await runnerFetch<Record<string, unknown>>(`/tests/${testId}/last-result`);
-      if (result) {
+  // Fetch the screenshot reference from the last execution result when the
+  // test (or the runner it is read from) changes.
+  useEffect(() => {
+    let cancelled = false;
+    setSource(null);
+    void (async () => {
+      try {
+        const result = await runnerFetch<Record<string, unknown>>(
+          runnerTarget,
+          `/tests/${testId}/last-result`
+        );
+        if (cancelled || !result) return;
         // Check for screenshot data in various fields
         const screenshot = result.screenshot as string | undefined;
         const screenshotPath = result.screenshot_path as string | undefined;
@@ -31,24 +51,39 @@ export function ScreenshotResultSection({
 
         if (screenshotBase64) {
           const prefix = screenshotBase64.startsWith("data:") ? "" : "data:image/png;base64,";
-          setScreenshotUrl(`${prefix}${screenshotBase64}`);
+          setSource({ kind: "inline", url: `${prefix}${screenshotBase64}` });
         } else if (screenshot && screenshot.startsWith("data:")) {
-          setScreenshotUrl(screenshot);
+          setSource({ kind: "inline", url: screenshot });
         } else if (screenshotPath) {
-          // If it's a file path, we can't display it directly in the browser
-          // but we'll try as a URL in case the runner serves it
-          setScreenshotUrl(`http://localhost:9876/screenshots/${encodeURIComponent(screenshotPath)}`);
+          // A file path: ask the runner to serve it.
+          setSource({
+            kind: "runner",
+            path: `/screenshots/${encodeURIComponent(screenshotPath)}`,
+          });
         }
+      } catch {
+        // No last result (or runner unreachable) - no screenshot to show.
       }
-    } catch {
-      // Silently fail - no screenshot available is fine
-    }
-  }, [testId, checked]);
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // Keyed by the runner's route key; the target object identity may churn.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [testId, runnerKey]);
 
-  // Run on mount
-  useState(() => { fetchScreenshot(); });
+  const served = useRunnerObjectUrl(
+    runnerTarget,
+    source?.kind === "runner" ? source.path : null
+  );
 
-  if (!screenshotUrl) return null;
+  if (!source) return null;
+
+  const screenshotUrl = source.kind === "inline" ? source.url : served.url;
+  const needsLocal =
+    source.kind === "runner" && served.errorCode === RUNNER_NEEDS_LOCAL;
+
+  if (!screenshotUrl && !needsLocal) return null;
 
   return (
     <div className="border border-border rounded-lg bg-muted/50 p-3">
@@ -56,18 +91,22 @@ export function ScreenshotResultSection({
         <ImageIcon className="size-4 text-muted-foreground" />
         <span className="text-xs font-medium text-muted-foreground">Last Execution Screenshot</span>
       </div>
-      <button
-        type="button"
-        onClick={() => onOpenScreenshot(screenshotUrl)}
-        className="block overflow-hidden rounded border border-border hover:border-text-muted transition-colors cursor-pointer"
-      >
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img
-          src={screenshotUrl}
-          alt="Test execution screenshot thumbnail"
-          className="w-48 h-auto object-contain"
-        />
-      </button>
+      {screenshotUrl ? (
+        <button
+          type="button"
+          onClick={() => onOpenScreenshot(screenshotUrl)}
+          className="block overflow-hidden rounded border border-border hover:border-text-muted transition-colors cursor-pointer"
+        >
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={screenshotUrl}
+            alt="Test execution screenshot thumbnail"
+            className="w-48 h-auto object-contain"
+          />
+        </button>
+      ) : (
+        <p className="text-xs text-muted-foreground">{served.error}</p>
+      )}
     </div>
   );
 }

@@ -2,7 +2,8 @@
 
 import { useState, useEffect, useCallback } from "react";
 import {
-  runnerApi,
+  useRunnerApi,
+  runnerFailureMessage,
   useRunnerHealth,
   type SelfHealingSettings,
 } from "@/lib/runner-api";
@@ -40,6 +41,7 @@ type LlmMode = SelfHealingSettings["llm_mode"];
 type ApiProvider = SelfHealingSettings["api_provider"];
 
 export default function SelfHealingSettingsPage() {
+  const runnerApi = useRunnerApi();
   const { isLoading: healthLoading, isOffline } = useRunnerHealth();
 
   const [loading, setLoading] = useState(true);
@@ -84,12 +86,14 @@ export default function SelfHealingSettingsPage() {
           setApiKeyConfigured(false);
         }
       }
-    } catch {
-      toast.error("Failed to load self-healing settings");
+    } catch (err) {
+      toast.error(
+        runnerFailureMessage(err, "Failed to load self-healing settings")
+      );
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [runnerApi]);
 
   useEffect(() => {
     if (!isOffline) {
@@ -98,14 +102,17 @@ export default function SelfHealingSettingsPage() {
   }, [isOffline, loadSettings]);
 
   // Re-check API key when provider changes
-  const checkApiKey = useCallback(async (provider: ApiProvider) => {
-    try {
-      const result = await runnerApi.hasSelfHealingApiKey(provider);
-      setApiKeyConfigured(result.has_key);
-    } catch {
-      setApiKeyConfigured(false);
-    }
-  }, []);
+  const checkApiKey = useCallback(
+    async (provider: ApiProvider) => {
+      try {
+        const result = await runnerApi.hasSelfHealingApiKey(provider);
+        setApiKeyConfigured(result.has_key);
+      } catch {
+        setApiKeyConfigured(false);
+      }
+    },
+    [runnerApi]
+  );
 
   const handleProviderChange = (newProvider: ApiProvider) => {
     setApiProvider(newProvider);
@@ -127,8 +134,10 @@ export default function SelfHealingSettingsPage() {
       };
       await runnerApi.saveSelfHealingSettings(settings);
       toast.success("Self-healing settings saved");
-    } catch {
-      toast.error("Failed to save self-healing settings");
+    } catch (err) {
+      toast.error(
+        runnerFailureMessage(err, "Failed to save self-healing settings")
+      );
     } finally {
       setSaving(false);
     }
@@ -144,8 +153,8 @@ export default function SelfHealingSettingsPage() {
       setApiKeyConfigured(true);
       setApiKeyInput("");
       toast.success("API key saved securely");
-    } catch {
-      toast.error("Failed to save API key");
+    } catch (err) {
+      toast.error(runnerFailureMessage(err, "Failed to save API key"));
     }
   };
 
@@ -154,8 +163,8 @@ export default function SelfHealingSettingsPage() {
       await runnerApi.deleteSelfHealingApiKey(apiProvider);
       setApiKeyConfigured(false);
       toast.success("API key deleted");
-    } catch {
-      toast.error("Failed to delete API key");
+    } catch (err) {
+      toast.error(runnerFailureMessage(err, "Failed to delete API key"));
     }
   };
 
@@ -426,10 +435,7 @@ export default function SelfHealingSettingsPage() {
                         <CheckCircle className="size-4" />
                         API key configured securely
                       </div>
-                      <DestructiveButton
-                        size="sm"
-                        onClick={handleDeleteApiKey}
-                      >
+                      <DestructiveButton size="sm" onClick={handleDeleteApiKey}>
                         <Trash2 className="size-3.5 text-destructive" />
                       </DestructiveButton>
                     </div>

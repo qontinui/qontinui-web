@@ -8,7 +8,7 @@ import { TagInput } from "@/components/builders/TagInput";
 import {
   type Macro,
   type MacroStep,
-  runnerApi,
+  useRunnerApi,
   useMacrosDetailed,
 } from "@/lib/runner-api";
 import { toast } from "sonner";
@@ -120,6 +120,7 @@ function getStepLabel(step: MacroStep): string {
 }
 
 function MacrosBuilderPageContent() {
+  const runnerApi = useRunnerApi();
   const searchParams = useSearchParams();
   const initialSelectedId = searchParams.get("id");
   const {
@@ -188,7 +189,7 @@ function MacrosBuilderPageContent() {
         `Failed to save macro: ${err instanceof Error ? err.message : "Unknown error"}`
       );
     }
-  }, [editForm, isNew, selectedMacro, refetch]);
+  }, [editForm, isNew, selectedMacro, refetch, runnerApi]);
 
   const handleDelete = useCallback(
     async (ids: string[]) => {
@@ -208,7 +209,7 @@ function MacrosBuilderPageContent() {
         );
       }
     },
-    [refetch]
+    [refetch, runnerApi]
   );
 
   const handleDuplicate = useCallback(async () => {
@@ -233,7 +234,7 @@ function MacrosBuilderPageContent() {
         `Failed to duplicate: ${err instanceof Error ? err.message : "Unknown error"}`
       );
     }
-  }, [selectedMacro, isNew, refetch]);
+  }, [selectedMacro, isNew, refetch, runnerApi]);
 
   const handleRun = useCallback(async () => {
     if (!selectedMacro || isNew) return;
@@ -245,7 +246,7 @@ function MacrosBuilderPageContent() {
         `Failed to run: ${err instanceof Error ? err.message : "Unknown error"}`
       );
     }
-  }, [selectedMacro, isNew]);
+  }, [selectedMacro, isNew, runnerApi]);
 
   // Step management helpers
   const updateStep = useCallback(

@@ -12,8 +12,17 @@ import React, {
 import {
   useRunnerEventStream,
   type EventCallback,
+  type RunnerEventStreamState,
 } from "@/hooks/useRunnerEventStream";
-import { runnerFetch, RunnerApiError } from "@/lib/runner-api";
+import {
+  isRunnerNeedsLocalError,
+  runnerFetch,
+  RunnerApiError,
+  startRunnerPoll,
+  type RunnerPollTickResult,
+} from "@/lib/runner/api-client";
+import { useRunnerTarget } from "@/contexts/active-runner-context";
+import { targetKey } from "@/lib/runner/target";
 
 // =============================================================================
 // Context
@@ -25,6 +34,12 @@ interface RunnerEventContextValue {
     callback: EventCallback,
     subscriberId?: string
   ) => () => void;
+  /**
+   * `unavailable` when no socket can exist for the active runner (it is
+   * reached over the relay, or not resolved): subscribers receive nothing,
+   * which is UNKNOWN — never "no events".
+   */
+  state: RunnerEventStreamState;
 }
 
 const RunnerEventCtx = createContext<RunnerEventContextValue | null>(null);
@@ -42,13 +57,23 @@ export function RunnerEventProvider({
   enabled = true,
   children,
 }: RunnerEventProviderProps) {
-  const { subscribe } = useRunnerEventStream(enabled);
+  const target = useRunnerTarget();
+  const { subscribe, state } = useRunnerEventStream(target, enabled);
 
-  const value = useMemo(() => ({ subscribe }), [subscribe]);
+  const value = useMemo(() => ({ subscribe, state }), [subscribe, state]);
 
   return (
     <RunnerEventCtx.Provider value={value}>{children}</RunnerEventCtx.Provider>
   );
+}
+
+/**
+ * Whether runner events can arrive at all. `unavailable` outside a provider
+ * too. A consumer that renders "live" status from events must show UNKNOWN
+ * (or its polled value) when this is not `live`.
+ */
+export function useRunnerEventStreamState(): RunnerEventStreamState {
+  return useContext(RunnerEventCtx)?.state ?? "unavailable";
 }
 
 // =============================================================================
@@ -87,7 +112,15 @@ interface UseEventTriggeredFetchOptions<T> {
   transform?: (raw: unknown) => T;
   /** Debounce delay in ms before refetching on event (default 200) */
   debounceMs?: number;
-  /** Fallback polling interval in ms when WS events don't arrive (default 30000, 0 to disable) */
+  /**
+   * Fallback polling interval in ms when WS events don't arrive (default
+   * 30000, 0 to disable). When the event stream is unavailable (a relayed
+   * runner) this poll is the ONLY source of updates, so it runs even when 0
+   * was asked for (at the default interval). Its cadence goes through
+   * runnerPollInterval on every tick — never faster than the relay cadence
+   * for a relayed or unresolved target — and it stops once the runner
+   * refused the path over the relay (RUNNER_NEEDS_LOCAL, shown as `error`).
+   */
   fallbackPollMs?: number;
 }
 
@@ -105,7 +138,17 @@ export function useEventTriggeredFetch<T>(
   options?: UseEventTriggeredFetchOptions<T>
 ): UseEventTriggeredFetchResult<T> {
   const ctx = useContext(RunnerEventCtx);
-  const [data, setData] = useState<T | null>(null);
+  const target = useRunnerTarget();
+  const streamLive = ctx?.state === "live";
+  // Data is tagged with the target+route it was fetched from and shown only
+  // while that is still the active one — another runner's answer is never
+  // rendered as this one's.
+  const activeKey = targetKey(target);
+  const [dataEntry, setDataEntry] = useState<{ key: string; value: T } | null>(
+    null
+  );
+  const data =
+    dataEntry !== null && dataEntry.key === activeKey ? dataEntry.value : null;
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [isOffline, setIsOffline] = useState(false);
@@ -113,15 +156,20 @@ export function useEventTriggeredFetch<T>(
   const enabled = options?.enabled !== false;
   const transform = options?.transform;
   const debounceMs = options?.debounceMs ?? 200;
-  const fallbackPollMs = options?.fallbackPollMs ?? FALLBACK_POLL_MS;
+  const requestedFallbackPollMs = options?.fallbackPollMs ?? FALLBACK_POLL_MS;
+  // The REQUESTED fallback cadence; startRunnerPoll applies the relay floor.
+  const fallbackPollMs =
+    streamLive || requestedFallbackPollMs > 0
+      ? requestedFallbackPollMs
+      : FALLBACK_POLL_MS;
 
   const transformRef = useRef(transform);
   transformRef.current = transform;
 
   const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const fallbackIntervalRef = useRef<ReturnType<typeof setInterval> | null>(
-    null
-  );
+  // Restarts the running fallback poll (so an event-triggered fetch resets
+  // its timer); null while no fallback poll runs.
+  const restartFallbackPollRef = useRef<(() => void) | null>(null);
   const mountedRef = useRef(true);
   // Stable ID per hook instance — prevents HMR subscriber accumulation
   const subIdRef = useRef(
@@ -135,15 +183,18 @@ export function useEventTriggeredFetch<T>(
     };
   }, []);
 
-  const fetchData = useCallback(async () => {
+  // Returns "stop" when the runner refused the path over the relay: asking
+  // again cannot change that, so a poll driving this stops.
+  const fetchData = useCallback(async (): Promise<RunnerPollTickResult> => {
     if (!path || !enabled) return;
+    const fetchedKey = targetKey(target);
     try {
-      const raw = await runnerFetch<unknown>(path);
+      const raw = await runnerFetch<unknown>(target, path);
       if (!mountedRef.current) return;
       const result = transformRef.current
         ? transformRef.current(raw)
         : (raw as T);
-      setData(result);
+      setDataEntry({ key: fetchedKey, value: result });
       setError(null);
       setIsOffline(false);
     } catch (err) {
@@ -154,6 +205,7 @@ export function useEventTriggeredFetch<T>(
       } else if (err instanceof RunnerApiError) {
         setError(err.message);
         setIsOffline(false);
+        if (isRunnerNeedsLocalError(err)) return "stop";
       } else {
         setIsOffline(true);
         setError("Runner not connected");
@@ -163,7 +215,7 @@ export function useEventTriggeredFetch<T>(
         setIsLoading(false);
       }
     }
-  }, [path, enabled]);
+  }, [target, path, enabled]);
 
   // Initial fetch on mount
   useEffect(() => {
@@ -179,26 +231,43 @@ export function useEventTriggeredFetch<T>(
   useEffect(() => {
     if (!enabled || !path || !fallbackPollMs) return;
 
-    const startPolling = () => {
-      if (fallbackIntervalRef.current)
-        clearInterval(fallbackIntervalRef.current);
-      fallbackIntervalRef.current = setInterval(fetchData, fallbackPollMs);
-    };
+    let stop: (() => void) | null = null;
+    let refused = false;
 
     const stopPolling = () => {
-      if (fallbackIntervalRef.current) {
-        clearInterval(fallbackIntervalRef.current);
-        fallbackIntervalRef.current = null;
-      }
+      stop?.();
+      stop = null;
+    };
+
+    const startPolling = () => {
+      stopPolling();
+      if (refused) return;
+      stop = startRunnerPoll({
+        getTarget: () => target,
+        requestedMs: fallbackPollMs,
+        tick: async () => {
+          const result = await fetchData();
+          if (result === "stop") refused = true;
+          return result;
+        },
+      });
     };
 
     startPolling();
+    restartFallbackPollRef.current = () => {
+      if (stop) startPolling();
+    };
 
     const handleVisibility = () => {
       if (document.hidden) {
         stopPolling();
-      } else {
-        fetchData(); // Refresh immediately on tab return
+      } else if (!refused) {
+        void fetchData().then((result) => {
+          if (result === "stop") {
+            refused = true;
+            stopPolling();
+          }
+        }); // Refresh immediately on tab return
         startPolling();
       }
     };
@@ -206,9 +275,10 @@ export function useEventTriggeredFetch<T>(
 
     return () => {
       stopPolling();
+      restartFallbackPollRef.current = null;
       document.removeEventListener("visibilitychange", handleVisibility);
     };
-  }, [fetchData, enabled, path, fallbackPollMs]);
+  }, [fetchData, enabled, path, fallbackPollMs, target]);
 
   // Subscribe to channel(s) for event-triggered refetch (faster than polling)
   const channels = useMemo(
@@ -234,13 +304,7 @@ export function useEventTriggeredFetch<T>(
           debounceTimerRef.current = setTimeout(() => {
             fetchData();
             // Reset fallback poll timer so we don't double-fetch
-            if (fallbackIntervalRef.current && fallbackPollMs) {
-              clearInterval(fallbackIntervalRef.current);
-              fallbackIntervalRef.current = setInterval(
-                fetchData,
-                fallbackPollMs
-              );
-            }
+            restartFallbackPollRef.current?.();
           }, debounceMs);
         },
         `${subIdRef.current}-${ch}`
@@ -254,7 +318,11 @@ export function useEventTriggeredFetch<T>(
         clearTimeout(debounceTimerRef.current);
       }
     };
-  }, [ctx, channels, enabled, path, fetchData, debounceMs, fallbackPollMs]);
+  }, [ctx, channels, enabled, path, fetchData, debounceMs]);
 
-  return { data, isLoading, error, isOffline, refetch: fetchData };
+  const refetch = useCallback(async () => {
+    await fetchData();
+  }, [fetchData]);
+
+  return { data, isLoading, error, isOffline, refetch };
 }

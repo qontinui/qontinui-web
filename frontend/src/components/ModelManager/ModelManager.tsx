@@ -13,7 +13,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import {
-  runnerClient,
+  useRunnerClient,
   type ModelInfo,
   type ModelDiskUsageResponse,
 } from "@/lib/runner-client";
@@ -71,6 +71,7 @@ function formatBytes(bytes: number): string {
 }
 
 export function ModelManager() {
+  const runnerClient = useRunnerClient();
   const [models, setModels] = useState<ModelInfo[]>([]);
   const [diskUsage, setDiskUsage] = useState<ModelDiskUsageResponse | null>(
     null
@@ -102,7 +103,7 @@ export function ModelManager() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [runnerClient]);
 
   useEffect(() => {
     loadModels();

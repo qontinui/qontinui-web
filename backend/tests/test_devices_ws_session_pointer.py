@@ -200,7 +200,7 @@ async def test_heartbeat_heals_a_nulled_pointer_under_a_live_connection(
         row = (
             await db.execute(select(Device).where(Device.device_id == ws_env.device_id))
         ).scalar_one()
-    wire = devices_ep._device_to_wire(row)
+    wire = devices_ep._device_to_wire(row, instances=[])
     assert wire.wsConnected is True
     assert wire.derivedStatus.value == "healthy"
 
@@ -223,7 +223,7 @@ async def test_wire_reports_the_contradiction_before_the_heal(
 
     # A device that just registered has a fresh heartbeat and derived_status
     # "healthy" — the exact contradiction, now that the pointer is NULL.
-    wire = devices_ep._device_to_wire(row)
+    wire = devices_ep._device_to_wire(row, instances=[])
     assert wire.wsConnected is False
     assert wire.derivedStatus.value == "degraded", (
         "a fresh heartbeat with no ws_session_id is relay-unroutable; "
@@ -324,7 +324,20 @@ def _cleanup_manager(holds: object = None) -> MagicMock:
     manager = MagicMock()
     manager.unregister = AsyncMock()
     manager.publish_runner_disconnected = AsyncMock()
-    manager.get_websocket = MagicMock(return_value=holds)
+    held: dict[str, object] = {"ws": holds}
+    manager.get_websocket = MagicMock(side_effect=lambda _rid: held["ws"])
+
+    async def _unregister_if_current(
+        rid: object, ws: object, uid: object = None
+    ) -> bool:
+        # Mirrors the real manager: compare-and-teardown as one step.
+        if held["ws"] is not ws:
+            return False
+        held["ws"] = None
+        await manager.unregister(rid, uid)
+        return True
+
+    manager.unregister_if_current = AsyncMock(side_effect=_unregister_if_current)
     return manager
 
 

@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useCallback, useEffect } from "react";
-import { RUNNER_API_BASE } from "@/lib/runner-api";
+import { runnerRequest, useRunnerTarget } from "@/lib/runner-api";
 import {
   Layers,
   Loader2,
@@ -85,6 +85,7 @@ export function AddStateStepsModal({
   onClose,
   onAddSteps,
 }: AddStateStepsModalProps) {
+  const target = useRunnerTarget();
   const [states, setStates] = useState<ConfigState[]>([]);
   const [transitions, setTransitions] = useState<ConfigTransition[]>([]);
   const [loading, setLoading] = useState(false);
@@ -102,32 +103,36 @@ export function AddStateStepsModal({
     targetPhase: "verification",
   });
 
-  const parseConfig = useCallback(async (path: string) => {
-    setLoading(true);
-    setError(null);
-    try {
-      const res = await fetch(`${RUNNER_API_BASE}/configs/parse`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ path }),
-      });
-      if (!res.ok) throw new Error(`Failed to parse config: ${res.statusText}`);
-      const result = await res.json();
-      const data = result.data ?? result;
-      setStates(data.states ?? []);
-      setTransitions(data.transitions ?? []);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to parse config");
-    } finally {
-      setLoading(false);
-    }
-  }, []);
+  const parseConfig = useCallback(
+    async (path: string) => {
+      setLoading(true);
+      setError(null);
+      try {
+        const res = await runnerRequest(target, "/configs/parse", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ path }),
+        });
+        if (!res.ok)
+          throw new Error(`Failed to parse config: ${res.statusText}`);
+        const result = await res.json();
+        const data = result.data ?? result;
+        setStates(data.states ?? []);
+        setTransitions(data.transitions ?? []);
+      } catch (e) {
+        setError(e instanceof Error ? e.message : "Failed to parse config");
+      } finally {
+        setLoading(false);
+      }
+    },
+    [target]
+  );
 
   const loadRunnerConfig = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      const statusRes = await fetch(`${RUNNER_API_BASE}/status`);
+      const statusRes = await runnerRequest(target, "/status");
       if (statusRes.ok) {
         const status = await statusRes.json();
         const path = status.data?.config_path ?? status.config_path;
@@ -140,14 +145,16 @@ export function AddStateStepsModal({
       setError(
         "No configuration loaded in runner. Enter a config file path and click Load."
       );
-    } catch {
+    } catch (e) {
       setError(
-        "Failed to connect to runner. Make sure it's running on port 9876."
+        e instanceof Error
+          ? `Failed to reach the runner: ${e.message}`
+          : "Failed to reach the runner."
       );
     } finally {
       setLoading(false);
     }
-  }, [parseConfig]);
+  }, [parseConfig, target]);
 
   useEffect(() => {
     if (!isOpen) return;

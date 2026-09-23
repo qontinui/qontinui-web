@@ -4,12 +4,26 @@
  * Calls UI Bridge endpoints directly (without going through the runner).
  * This allows the inspector and other tools to work even when the runner
  * is offline, as long as the target app's UI Bridge is accessible.
+ *
+ * The runner's own UI Bridge is the exception: it is addressed by runner
+ * TARGET, through the per-request transport resolver (loopback for a runner
+ * proven local, the backend relay otherwise), never by a base URL.
  */
 
-export interface UIBridgeConfig {
-  /** Base URL of the UI Bridge endpoint (e.g., http://localhost:3001/api/ui-bridge) */
-  baseUrl: string;
-}
+import { runnerRequest } from "@/lib/runner/api-client";
+import type { RunnerTarget } from "@/lib/runner/target";
+
+export type UIBridgeConfig =
+  | {
+      /** Base URL of the UI Bridge endpoint (e.g., http://localhost:3001/api/ui-bridge) */
+      baseUrl: string;
+    }
+  | {
+      /** A runner's UI Bridge, reached through the transport resolver. */
+      runnerTarget: RunnerTarget;
+      /** Path prefix of the UI Bridge on the runner (e.g. `/ui-bridge`). */
+      pathPrefix: string;
+    };
 
 export interface UIBridgeElement {
   id: string;
@@ -44,30 +58,38 @@ async function fetchBridge<T>(
   path: string,
   options?: RequestInit
 ): Promise<T> {
-  const url = `${config.baseUrl}${path}`;
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), DEFAULT_TIMEOUT);
+  const init: RequestInit = {
+    ...options,
+    headers: {
+      "Content-Type": "application/json",
+      ...options?.headers,
+    },
+  };
+  // The runner's bridge takes the budget as `timeoutMs` — the one deadline
+  // concept, which over the relay is also sent to the backend as its wait. A
+  // direct fetch has no relay, so an abort signal is its deadline.
+  const response =
+    "runnerTarget" in config
+      ? await runnerRequest(
+          config.runnerTarget,
+          `${config.pathPrefix}${path}`,
+          {
+            ...init,
+            timeoutMs: DEFAULT_TIMEOUT,
+          }
+        )
+      : await fetch(`${config.baseUrl}${path}`, {
+          ...init,
+          signal: AbortSignal.timeout(DEFAULT_TIMEOUT),
+        });
 
-  try {
-    const response = await fetch(url, {
-      ...options,
-      signal: controller.signal,
-      headers: {
-        "Content-Type": "application/json",
-        ...options?.headers,
-      },
-    });
-
-    if (!response.ok) {
-      throw new Error(
-        `UI Bridge error: ${response.status} ${response.statusText}`
-      );
-    }
-
-    return await response.json();
-  } finally {
-    clearTimeout(timeout);
+  if (!response.ok) {
+    throw new Error(
+      `UI Bridge error: ${response.status} ${response.statusText}`
+    );
   }
+
+  return await response.json();
 }
 
 /**
@@ -121,6 +143,10 @@ export const webFrontendBridge = createUIBridgeClient({
   baseUrl: "http://localhost:3001/api/ui-bridge",
 });
 
-export const runnerFrontendBridge = createUIBridgeClient({
-  baseUrl: "http://localhost:9876/ui-bridge",
-});
+/** The UI Bridge of a runner's own frontend, for the given runner target. */
+export function createRunnerFrontendBridge(target: RunnerTarget) {
+  return createUIBridgeClient({
+    runnerTarget: target,
+    pathPrefix: "/ui-bridge",
+  });
+}

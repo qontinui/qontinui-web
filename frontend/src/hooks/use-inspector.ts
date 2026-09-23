@@ -7,7 +7,9 @@
  */
 
 import { useState, useCallback, useRef, useEffect } from "react";
-import { runnerApi } from "@/lib/runner/runner-api-object";
+import { runnerRequest } from "@/lib/runner/api-client";
+import { useRunnerApi } from "@/lib/runner/runner-api-object";
+import { useRunnerTarget } from "@/contexts/active-runner-context";
 import {
   transformSdkElements as transformSdkElementsPure,
   extractLinks as extractLinksPure,
@@ -147,6 +149,8 @@ const MAX_COMMAND_HISTORY = 50;
 // =============================================================================
 
 export function useInspector(): UseInspectorReturn {
+  const runnerApi = useRunnerApi();
+  const target = useRunnerTarget();
   const [activeTab, setActiveTab] = useState<InspectorTab>("elements");
 
   // Delegate connection management to useAppBrowser
@@ -212,7 +216,7 @@ export function useInspector(): UseInspectorReturn {
     } finally {
       setIsDiscovering(false);
     }
-  }, [extractLinks, transformSdkElements, browser]);
+  }, [extractLinks, transformSdkElements, browser, runnerApi]);
 
   const navigateToPage = useCallback(
     async (url: string, tabId?: string) => {
@@ -229,7 +233,7 @@ export function useInspector(): UseInspectorReturn {
         setIsNavigating(false);
       }
     },
-    [discoverElements, browser.selectedTargetId]
+    [discoverElements, browser.selectedTargetId, runnerApi]
   );
 
   const selectElement = useCallback((el: ExternalElement | null) => {
@@ -252,16 +256,19 @@ export function useInspector(): UseInspectorReturn {
         };
       }
     },
-    []
+    [runnerApi]
   );
 
-  const highlightElement = useCallback(async (id: string) => {
-    try {
-      await runnerApi.uiBridgeHighlight(id);
-    } catch {
-      // Best effort
-    }
-  }, []);
+  const highlightElement = useCallback(
+    async (id: string) => {
+      try {
+        await runnerApi.uiBridgeHighlight(id);
+      } catch {
+        // Best effort
+      }
+    },
+    [runnerApi]
+  );
 
   // -------------------------------------------------------------------------
   // Spec discovery
@@ -287,7 +294,7 @@ export function useInspector(): UseInspectorReturn {
     } catch {
       return [];
     }
-  }, []);
+  }, [runnerApi]);
 
   // -------------------------------------------------------------------------
   // Raw API command (for API tab)
@@ -300,8 +307,9 @@ export function useInspector(): UseInspectorReturn {
     ): Promise<CommandResult<T>> => {
       const startTime = Date.now();
       try {
-        const response = await fetch(
-          `http://localhost:9876/ui-bridge/sdk/${action}`,
+        const response = await runnerRequest(
+          target,
+          `/ui-bridge/sdk/${action}`,
           {
             method: "POST",
             headers: { "Content-Type": "application/json" },
@@ -349,7 +357,7 @@ export function useInspector(): UseInspectorReturn {
         return result;
       }
     },
-    []
+    [target]
   );
 
   const clearCommandHistory = useCallback(() => {

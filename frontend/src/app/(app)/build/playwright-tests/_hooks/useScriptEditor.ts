@@ -2,7 +2,13 @@
 
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useRunnerPromptSnippetsList } from "@/components/builders/hooks/useRunnerEntity";
-import { runnerApi } from "@/lib/runner/runner-api-object";
+import {
+  isRunnerNeedsLocalError,
+  runnerPollDelay,
+  runnerRequest,
+  useRunnerApi,
+  useRunnerTarget,
+} from "@/lib/runner";
 import type { PlaywrightScript, PromptSnippet } from "@/lib/runner/types/library";
 import type { ScriptForm, ViewMode } from "../script-utils";
 import { toForm, toPayload, loadDraft, saveDraft, clearDraft } from "../script-utils";
@@ -26,6 +32,8 @@ export function useScriptEditor({
   onSave,
   onDelete,
 }: UseScriptEditorOptions) {
+  const runnerApi = useRunnerApi();
+  const runnerTarget = useRunnerTarget();
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [aiGenerating, setAiGenerating] = useState(false);
   const [aiError, setAiError] = useState<string | null>(null);
@@ -295,7 +303,7 @@ Be thorough - check each action, assertion, and behavior mentioned in the descri
     } finally {
       setIsValidatingCoverage(false);
     }
-  }, [form.description, form.script_content]);
+  }, [form.description, form.script_content, runnerApi]);
 
   const handleRegenerateDescription = useCallback(async () => {
     if (!form.script_content.trim()) return;
@@ -333,7 +341,7 @@ Respond with ONLY the description text, no code blocks, no prefixes, no formatti
     } finally {
       setIsRegenerating(false);
     }
-  }, [form.script_content, updateField]);
+  }, [form.script_content, updateField, runnerApi]);
 
   const runAutoRefine = useCallback(async () => {
     if (isNew || !item.id) return;
@@ -358,12 +366,19 @@ Respond with ONLY the description text, no code blocks, no prefixes, no formatti
         const runResult = await runnerApi.runPlaywrightTest(item.id);
         setAutoRefineLog((prev) => [...prev, `Task run: ${runResult.task_run_id}`]);
 
-        let attempts = 0;
+        // Poll for ~2 minutes. runnerPollDelay re-evaluates the cadence
+        // every iteration: never faster than the relay cadence for a relayed
+        // or unresolved target.
+        const pollDeadline = Date.now() + 120_000;
         let taskResult: Record<string, unknown> | null = null;
-        while (attempts < 60 && !autoRefineAbortRef.current) {
-          await new Promise((r) => setTimeout(r, 2000));
+        let pollRefusal: string | null = null;
+        while (Date.now() < pollDeadline && !autoRefineAbortRef.current) {
+          await runnerPollDelay(runnerTarget, 2000);
           try {
-            const statusRes = await fetch(`http://localhost:9876/task-runs/${runResult.task_run_id}`);
+            const statusRes = await runnerRequest(
+              runnerTarget,
+              `/task-runs/${runResult.task_run_id}`
+            );
             if (statusRes.ok) {
               const statusData = await statusRes.json();
               const status = statusData.status ?? statusData.data?.status;
@@ -372,8 +387,19 @@ Respond with ONLY the description text, no code blocks, no prefixes, no formatti
                 break;
               }
             }
-          } catch { /* continue polling */ }
-          attempts++;
+          } catch (pollError) {
+            // A relay refusal cannot change by asking again; anything else
+            // is transient, so keep polling.
+            if (isRunnerNeedsLocalError(pollError)) {
+              pollRefusal = (pollError as Error).message;
+              break;
+            }
+          }
+        }
+
+        if (pollRefusal) {
+          setAutoRefineLog((prev) => [...prev, pollRefusal]);
+          break;
         }
 
         if (autoRefineAbortRef.current) break;
@@ -447,7 +473,7 @@ Fix the failing tests. Return ONLY the complete updated TypeScript test script i
     }
 
     setIsAutoRefining(false);
-  }, [isNew, item.id, autoRefineMaxIterations, onSave, form.script_content, form.target_url, form.ai_instructions, autoRefineUserHint, updateField]);
+  }, [isNew, item.id, autoRefineMaxIterations, onSave, form.script_content, form.target_url, form.ai_instructions, autoRefineUserHint, updateField, runnerApi, runnerTarget]);
 
   const stopAutoRefine = useCallback(() => {
     autoRefineAbortRef.current = true;

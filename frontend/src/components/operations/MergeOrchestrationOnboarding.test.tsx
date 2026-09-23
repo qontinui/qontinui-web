@@ -33,6 +33,24 @@ vi.mock("@/services/service-factory", () => ({
   httpClient: { fetch: (...args: unknown[]) => fetchMock(...args) },
 }));
 
+// The pair callback names the runner on THIS machine, derived from the
+// active runner's loopback route — so the default here is a runner proven
+// local; individual tests swap in a relayed one.
+const LOCAL_TARGET = {
+  kind: "runner" as const,
+  runner: { id: "dev-local", port: 9901, name: "Local" },
+  locality: "local" as const,
+};
+const runnerTargetMock = vi.hoisted(() => ({ current: null as unknown }));
+vi.mock("@/contexts/active-runner-context", async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import("@/contexts/active-runner-context")>();
+  return {
+    ...actual,
+    useRunnerTarget: () => runnerTargetMock.current,
+  };
+});
+
 import {
   AuditStep,
   ClaudeCodeStep,
@@ -60,9 +78,43 @@ const ELSEWHERE = [
   },
 ];
 
+describe("<PairDeviceStep> pair callback", () => {
+  beforeEach(() => {
+    fetchMock.mockReset();
+    runnerTargetMock.current = LOCAL_TARGET;
+  });
+
+  it("names the local runner's loopback address as the callback", async () => {
+    fetchMock.mockResolvedValue(jsonResponse(PAIR_START_OK));
+    render(<PairDeviceStep onPaired={() => {}} />);
+    fireEvent.click(screen.getByTestId("start-pairing-button"));
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+    const init = fetchMock.mock.calls[0][1] as RequestInit;
+    const body = JSON.parse(init.body as string);
+    expect(body.callback_url).toBe("http://127.0.0.1:9901/pair-callback");
+  });
+
+  it("refuses, sending nothing, when the runner is not on this machine", async () => {
+    runnerTargetMock.current = {
+      kind: "runner",
+      runner: { id: "remote-box", port: 9876, name: "Remote" },
+      locality: "not_local",
+    };
+    render(<PairDeviceStep onPaired={() => {}} />);
+    fireEvent.click(screen.getByTestId("start-pairing-button"));
+
+    await waitFor(() =>
+      expect(screen.getByText(/needs the runner on this machine/)).toBeTruthy()
+    );
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+});
+
 describe("<PairDeviceStep> paired-elsewhere informational note", () => {
   beforeEach(() => {
     fetchMock.mockReset();
+    runnerTargetMock.current = LOCAL_TARGET;
   });
 
   it("starts pairing on first click when no device is paired elsewhere", async () => {

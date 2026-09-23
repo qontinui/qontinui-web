@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import {
-  runnerApi,
+  useRunnerApi,
+  runnerFailureMessage,
   useRunnerHealth,
   type AgenticSettings,
 } from "@/lib/runner-api";
@@ -15,6 +16,7 @@ import {
 } from "../types";
 
 export function useAgenticSettings() {
+  const runnerApi = useRunnerApi();
   const { isLoading: healthLoading, isOffline } = useRunnerHealth();
 
   const [loading, setLoading] = useState(true);
@@ -32,12 +34,12 @@ export function useAgenticSettings() {
       setCompression(settings.compression);
       setRetry(settings.retry);
       setRouting(settings.routing);
-    } catch {
-      toast.error("Failed to load agentic settings");
+    } catch (err) {
+      toast.error(runnerFailureMessage(err, "Failed to load agentic settings"));
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [runnerApi]);
 
   useEffect(() => {
     if (!isOffline) {
@@ -51,8 +53,8 @@ export function useAgenticSettings() {
       const settings: AgenticSettings = { compression, retry, routing };
       await runnerApi.saveAgenticSettings(settings);
       toast.success("Agentic settings saved");
-    } catch {
-      toast.error("Failed to save agentic settings");
+    } catch (err) {
+      toast.error(runnerFailureMessage(err, "Failed to save agentic settings"));
     } finally {
       setSaving(false);
     }

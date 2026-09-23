@@ -1,6 +1,6 @@
 import { useCallback, useRef, useState } from "react";
 import { toast } from "sonner";
-import { runnerClient } from "@/lib/runner-client";
+import { useRunnerClient } from "@/lib/runner-client";
 
 export interface ImageDimensions {
   width: number;
@@ -8,6 +8,7 @@ export interface ImageDimensions {
 }
 
 export function useImageUpload() {
+  const runnerClient = useRunnerClient();
   const [screenshotDataUrl, setScreenshotDataUrl] = useState<string | null>(
     null
   );
@@ -84,7 +85,7 @@ export function useImageUpload() {
     } finally {
       setIsCapturing(false);
     }
-  }, []);
+  }, [runnerClient]);
 
   const clearAll = useCallback(() => {
     setScreenshotDataUrl(null);

@@ -11,7 +11,7 @@ import {
 import { EditorHeader, EditorSection, ExecutionPanel, MonacoField, type ExecutionResult } from "@/components/builders/editors";
 import { TagInput } from "@/components/builders/TagInput";
 import { AiGeneratorPanel } from "@/components/builders/AiGeneratorPanel";
-import { runnerApi } from "@/lib/runner/runner-api-object";
+import { useRunnerApi } from "@/lib/runner/runner-api-object";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
@@ -44,6 +44,7 @@ interface CheckEditorProps {
 }
 
 export function CheckEditor({ item, form, setForm, isDirty, isNew, isSaving, onSave, onDelete, onAcceptAiChecks }: CheckEditorProps) {
+  const runnerApi = useRunnerApi();
   const [aiGenerating, setAiGenerating] = useState(false);
   const [aiError, setAiError] = useState<string | null>(null);
 

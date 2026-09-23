@@ -13,7 +13,7 @@ import {
 import { EditorHeader, EditorSection, ExecutionPanel, type ExecutionResult } from "@/components/builders/editors";
 import { TagInput } from "@/components/builders/TagInput";
 import { AssignChecksDialog } from "@/components/builders/AssignChecksDialog";
-import { runnerApi } from "@/lib/runner/runner-api-object";
+import { useRunnerApi } from "@/lib/runner/runner-api-object";
 import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
@@ -33,6 +33,7 @@ interface CheckGroupEditorProps {
 }
 
 export function CheckGroupEditor({ item, form, setForm, isDirty, isNew, isSaving, onSave, onDelete, checksMap }: CheckGroupEditorProps) {
+  const runnerApi = useRunnerApi();
   const [assignDialogOpen, setAssignDialogOpen] = useState(false);
 
   const updateField = <K extends keyof CheckGroupForm>(field: K, value: CheckGroupForm[K]) => {

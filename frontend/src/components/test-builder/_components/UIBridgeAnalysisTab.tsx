@@ -62,7 +62,11 @@ export function UIBridgeAnalysisTab({
         <Input
           value={uiBridgeUrl}
           onChange={(e) => setUiBridgeUrl(e.target.value)}
-          placeholder="http://localhost:3001/api/ui-bridge"
+          placeholder={
+            uiBridgeTarget === "runner"
+              ? "/ui-bridge (path on the active runner)"
+              : "http://localhost:3001/api/ui-bridge"
+          }
           className="text-xs h-8 font-mono bg-surface-canvas/50"
         />
       </div>
