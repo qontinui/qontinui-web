@@ -1,9 +1,10 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import {
   useRunnerHealth,
-  runnerApi,
+  useRunnerApi,
+  runnerFailureMessage,
   type GeneralSettings,
 } from "@/lib/runner-api";
 import { RunnerOfflineState } from "@/components/runner/RunnerOfflineState";
@@ -73,6 +74,7 @@ function AdvancedAutomationSection() {
 }
 
 export default function GeneralSettingsPage() {
+  const runnerApi = useRunnerApi();
   const { isOffline, isLoading: healthLoading } = useRunnerHealth();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -81,26 +83,26 @@ export default function GeneralSettingsPage() {
   const [autoLoadLastConfig, setAutoLoadLastConfig] = useState(false);
   const [includeSummaryStep, setIncludeSummaryStep] = useState(true);
 
+  const loadSettings = useCallback(async () => {
+    setLoading(true);
+    try {
+      const data = await runnerApi.getGeneralSettings();
+      setAutoLoadLastConfig(data.auto_load_last_config ?? false);
+      setIncludeSummaryStep(data.include_summary_step_by_default ?? true);
+    } catch (err) {
+      toast.error(runnerFailureMessage(err, "Failed to load general settings"));
+    } finally {
+      setLoading(false);
+    }
+  }, [runnerApi]);
+
   useEffect(() => {
     if (isOffline) {
       setLoading(false);
       return;
     }
     loadSettings();
-  }, [isOffline]);
-
-  const loadSettings = async () => {
-    setLoading(true);
-    try {
-      const data = await runnerApi.getGeneralSettings();
-      setAutoLoadLastConfig(data.auto_load_last_config ?? false);
-      setIncludeSummaryStep(data.include_summary_step_by_default ?? true);
-    } catch {
-      toast.error("Failed to load general settings");
-    } finally {
-      setLoading(false);
-    }
-  };
+  }, [isOffline, loadSettings]);
 
   const handleSave = async () => {
     setSaving(true);

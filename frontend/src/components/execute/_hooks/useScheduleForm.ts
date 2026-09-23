@@ -7,6 +7,7 @@ import {
   updateScheduledTask,
 } from "@/lib/runner/hooks/scheduler-hooks";
 import type { ScheduledTask } from "@/lib/runner/types/scheduler";
+import { useRunnerTarget } from "@/contexts/active-runner-context";
 import { toast } from "sonner";
 import {
   type ScheduleFormState,
@@ -22,6 +23,7 @@ export function useScheduleForm(
   editingTask: ScheduledTask | undefined,
   onSaved: () => void
 ): ScheduleFormState {
+  const target = useRunnerTarget();
   const isEditing = !!editingTask;
 
   const [name, setName] = useState("");
@@ -140,7 +142,7 @@ export function useScheduleForm(
       );
 
       if (isEditing && editingTask) {
-        await updateScheduledTask(editingTask.id, {
+        await updateScheduledTask(target, editingTask.id, {
           name: name.trim(),
           description: description.trim() || null,
           schedule,

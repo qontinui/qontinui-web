@@ -69,7 +69,7 @@ from app.api.deps import (
     get_current_active_user_async,
     get_current_user_from_ws,
 )
-from app.api.v1.endpoints.devices import _device_to_wire as _runner_to_wire
+from app.api.v1.endpoints.devices import devices_to_wire
 from app.core.config import settings
 from app.crud import runner_crud
 from app.middleware.rate_limit import get_authorization_identifier, user_limiter
@@ -479,7 +479,9 @@ async def get_fleet_status(
     runners = [d for d in all_devices if not d.is_ci_runner]
     ci_devices = [d for d in all_devices if d.is_ci_runner]
 
-    wire_runners = [_runner_to_wire(r).model_dump(mode="json") for r in runners]
+    wire_runners = [
+        w.model_dump(mode="json") for w in await devices_to_wire(db, runners)
+    ]
 
     registry = get_fleet_registry()
     fleet_status = await registry.get_fleet_status()
@@ -529,6 +531,10 @@ async def get_fleet_status(
                 "uiError": None,
                 "recentCrash": None,
                 "createdAt": beacon.last_heartbeat.isoformat(),
+                # A heartbeat-only beacon has no device WebSocket, so no
+                # instance is connected through this backend — an honest
+                # empty list, and the key the Runner wire type requires.
+                "instances": [],
             }
         )
 

@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState, useRef } from "react";
 import { runnerFetch } from "@/lib/runner/api-client";
+import { useRunnerTarget } from "@/contexts/active-runner-context";
 import { useRunnerEvent } from "@/contexts/RunnerEventContext";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -36,6 +37,7 @@ interface DeferredQuestionsFloatingPanelProps {
 export function DeferredQuestionsFloatingPanel({
   runId,
 }: DeferredQuestionsFloatingPanelProps) {
+  const target = useRunnerTarget();
   const [questions, setQuestions] = useState<DeferredQuestion[]>([]);
   const [expanded, setExpanded] = useState(false);
   const [dismissed, setDismissed] = useState(false);
@@ -49,6 +51,7 @@ export function DeferredQuestionsFloatingPanel({
     fetchRef.current = true;
     try {
       const data = await runnerFetch<DeferredQuestion[]>(
+        target,
         `/task-runs/${runId}/deferred-questions`
       );
       setQuestions(data);
@@ -57,7 +60,7 @@ export function DeferredQuestionsFloatingPanel({
     } finally {
       fetchRef.current = false;
     }
-  }, [runId]);
+  }, [runId, target]);
 
   // Initial fetch
   useEffect(() => {
@@ -117,6 +120,7 @@ export function DeferredQuestionsFloatingPanel({
     setReviewingId(questionId);
     try {
       await runnerFetch(
+        target,
         `/task-runs/${runId}/deferred-questions/${questionId}/review`,
         {
           method: "POST",
@@ -128,8 +132,10 @@ export function DeferredQuestionsFloatingPanel({
         status === "approved" ? "Approved" : "Rejected — rework triggered"
       );
       fetchQuestions();
-    } catch {
-      toast.error("Review failed");
+    } catch (err) {
+      toast.error(
+        err instanceof Error ? `Review failed: ${err.message}` : "Review failed"
+      );
     } finally {
       setReviewingId(null);
     }

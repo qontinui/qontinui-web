@@ -13,42 +13,101 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { useActiveRunner } from "@/contexts/active-runner-context";
+import {
+  useActiveRunner,
+  type RunnerListState,
+} from "@/contexts/active-runner-context";
+import type { RunnerLocality } from "@/lib/runner/locality";
 import { cn } from "@/lib/utils";
 
 interface RunnerSelectorProps {
   isCollapsed: boolean;
 }
 
-function StatusDot({ status }: { status: "connected" | "no-port" | "none" }) {
+/**
+ * What a dot shows. Derived from MEASURED locality (does the runner's port on
+ * this machine answer with the runner's own id?), never from `port != null`:
+ * a listed port says nothing about whether this browser can reach it.
+ */
+type RunnerDotStatus =
+  | RunnerLocality
+  | "none"
+  | "list_loading"
+  | "list_unavailable";
+
+const STATUS_LABEL: Record<RunnerDotStatus, string> = {
+  local: "On this machine",
+  not_local: "On another machine — not reachable from this browser",
+  unknown: "Not confirmed on this machine yet",
+  none: "No runner",
+  list_loading: "Loading runners",
+  list_unavailable: "Runner list unavailable — it could not be loaded",
+};
+
+function statusDotClass(status: RunnerDotStatus): string {
+  return cn(
+    status === "local" && "bg-emerald-500",
+    (status === "not_local" || status === "list_unavailable") && "bg-amber-400",
+    (status === "unknown" || status === "list_loading") && "bg-neutral-400",
+    status === "none" && "bg-neutral-300"
+  );
+}
+
+function StatusDot({ status }: { status: RunnerDotStatus }) {
   return (
     <span
+      role="img"
+      aria-label={STATUS_LABEL[status]}
+      title={STATUS_LABEL[status]}
       className={cn(
-        "inline-block size-2 rounded-full",
-        status === "connected" && "bg-emerald-500",
-        status === "no-port" && "bg-amber-400",
-        status === "none" && "bg-neutral-400"
+        "inline-block size-2 shrink-0 rounded-full",
+        statusDotClass(status)
       )}
     />
   );
 }
 
-function getStatus(runners: Runner[]): "connected" | "no-port" | "none" {
-  if (runners.length === 0) return "none";
-  if (runners.some((r) => r.port != null)) return "connected";
-  return "no-port";
+/** Dot status of one runner. Not measured yet reads as unknown, never local. */
+function getRunnerStatus(
+  runner: Runner,
+  localityById: ReadonlyMap<string, RunnerLocality>
+): RunnerDotStatus {
+  return localityById.get(runner.id) ?? "unknown";
+}
+
+/** The trigger's dot describes the ACTIVE runner — the one runner calls go to. */
+function getStatus(
+  activeRunner: Runner | null,
+  listState: RunnerListState,
+  localityById: ReadonlyMap<string, RunnerLocality>
+): RunnerDotStatus {
+  // An empty list means "no runner" only once it has actually loaded.
+  if (listState === "failed") return "list_unavailable";
+  if (listState === "loading") return "list_loading";
+  if (activeRunner === null) return "none";
+  return getRunnerStatus(activeRunner, localityById);
 }
 
 export function RunnerSelector({ isCollapsed }: RunnerSelectorProps) {
-  const { activeRunner, runners, selectRunner, isMultiRunner } =
-    useActiveRunner();
+  const {
+    activeRunner,
+    runners,
+    selectRunner,
+    isMultiRunner,
+    listState,
+    localityById,
+  } = useActiveRunner();
 
-  const status = getStatus(runners);
+  const status = getStatus(activeRunner, listState, localityById);
   const label = activeRunner
     ? (activeRunner.name ?? "Runner")
-    : runners.length === 0
-      ? "No runner"
-      : "Runner";
+    : listState === "failed"
+      ? "Runner list unavailable"
+      : listState === "loading"
+        ? "Loading runners"
+        : runners.length === 0
+          ? "No runner"
+          : "Runner";
   const portLabel = activeRunner?.port ? `:${activeRunner.port}` : "";
 
   // Collapsed: just show a status dot with tooltip
@@ -62,9 +121,7 @@ export function RunnerSelector({ isCollapsed }: RunnerSelectorProps) {
               <span
                 className={cn(
                   "absolute -right-0.5 -top-0.5 size-2 rounded-full border border-surface-canvas",
-                  status === "connected" && "bg-emerald-500",
-                  status === "no-port" && "bg-amber-400",
-                  status === "none" && "bg-neutral-400"
+                  statusDotClass(status)
                 )}
               />
             </div>
@@ -73,6 +130,11 @@ export function RunnerSelector({ isCollapsed }: RunnerSelectorProps) {
         <TooltipContent side="right">
           {label}
           {portLabel}
+          {activeRunner && (
+            <span className="block text-text-subtle">
+              {STATUS_LABEL[status]}
+            </span>
+          )}
         </TooltipContent>
       </Tooltip>
     );
@@ -109,24 +171,34 @@ export function RunnerSelector({ isCollapsed }: RunnerSelectorProps) {
         </button>
       </DropdownMenuTrigger>
       <DropdownMenuContent side="top" align="start" className="w-56">
-        {runners.map((runner) => (
-          <DropdownMenuItem
-            key={runner.id}
-            onClick={() => selectRunner(runner.id)}
-            className="flex items-center gap-2"
-          >
-            <StatusDot status={runner.port != null ? "connected" : "no-port"} />
-            <span className="flex-1 truncate text-xs">
-              {runner.name}
-              {runner.port != null && (
-                <span className="ml-1 text-text-subtle">:{runner.port}</span>
+        {runners.map((runner) => {
+          const runnerStatus = getRunnerStatus(runner, localityById);
+          return (
+            <DropdownMenuItem
+              key={runner.id}
+              onClick={() => selectRunner(runner.id)}
+              className="flex items-center gap-2"
+            >
+              <StatusDot status={runnerStatus} />
+              <span className="flex-1 truncate text-xs">
+                {runner.name}
+                {runner.port != null && (
+                  <span className="ml-1 text-text-subtle">:{runner.port}</span>
+                )}
+                {runnerStatus !== "local" && (
+                  <span className="block truncate text-text-subtle">
+                    {runnerStatus === "not_local"
+                      ? "on another machine"
+                      : "not confirmed on this machine"}
+                  </span>
+                )}
+              </span>
+              {activeRunner?.id === runner.id && (
+                <Check className="size-3 shrink-0 text-text-accent" />
               )}
-            </span>
-            {activeRunner?.id === runner.id && (
-              <Check className="size-3 shrink-0 text-text-accent" />
-            )}
-          </DropdownMenuItem>
-        ))}
+            </DropdownMenuItem>
+          );
+        })}
       </DropdownMenuContent>
     </DropdownMenu>
   );

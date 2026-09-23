@@ -4,20 +4,20 @@
  * use-discovered-specs.ts
  *
  * React hooks over the runtime spec cache. The non-React loader and
- * cache state live in `./discovered-specs.ts` (universal — server-safe),
- * so server-side callers (Route Handlers, RSC, MCP) can import the
- * loaders directly from there without tripping Next.js's RSC boundary.
+ * cache state live in `./discovered-specs.ts`; the hooks bind them to the
+ * active runner (`useRunnerTarget()`), and the cache is keyed by it.
  *
- * The loader functions are re-exported from this file for backward
- * compatibility with existing client-side imports — but server-side
- * code MUST import them from `./discovered-specs` directly, since this
- * file is `"use client"`.
+ * The loader functions (which take an explicit target) are re-exported
+ * from this file for client-side ergonomics.
  */
 
 import { useEffect, useState } from "react";
+import { useRunnerTarget } from "@/contexts/active-runner-context";
+import { targetKey } from "@/lib/runner/target";
 import type { DiscoveredSpec } from "@/lib/spec-prompt-builder";
 import {
   loadDiscoveredSpecs,
+  type SpecStreamState,
   __subscribeToSpecCache,
   __getSpecCacheSnapshot,
   __refreshSpecCache,
@@ -30,44 +30,58 @@ import {
 // /build/workflows AiGeneratePanel). One module-level constant fixes it.
 const EMPTY_SPECS: readonly DiscoveredSpec[] = Object.freeze([]);
 
-// Re-exported for client-side ergonomics. Server-side callers must
-// import from `./discovered-specs` instead — this module is `"use client"`.
-export {
-  loadDiscoveredSpecs,
-  loadDiscoveredSpec,
-} from "./discovered-specs";
+// Re-exported for client-side ergonomics.
+export { loadDiscoveredSpecs, loadDiscoveredSpec } from "./discovered-specs";
 
 interface UseDiscoveredSpecsResult {
   specs: DiscoveredSpec[];
   loading: boolean;
   error: Error | null;
+  /**
+   * Whether spec changes are pushed for the active runner. `unavailable`
+   * (a relayed runner): the list is refreshed only on `refresh()`.
+   */
+  stream: SpecStreamState;
   refresh: () => Promise<void>;
 }
 
-export function useDiscoveredSpecs(): UseDiscoveredSpecsResult {
+/**
+ * Subscribe to the spec cache and load the ACTIVE runner's specs (on mount
+ * and whenever the active runner or its route changes).
+ */
+function useSpecCacheSubscription(): ReturnType<typeof useRunnerTarget> {
+  const target = useRunnerTarget();
+  const key = targetKey(target);
   const [, setVersion] = useState(0);
 
   useEffect(() => {
     const bump = () => setVersion((v) => v + 1);
     const unsubscribe = __subscribeToSpecCache(bump);
 
-    // Trigger the load on first mount. Errors are captured into the
-    // module-scoped error state and surfaced via the subscriber bump —
-    // no need to handle here.
-    if (__shouldTriggerInitialLoad()) {
-      void loadDiscoveredSpecs().catch(() => {
+    // Trigger the load for this target. Errors are captured into the
+    // cache's error state and surfaced via the subscriber bump — no need
+    // to handle here.
+    if (__shouldTriggerInitialLoad(target)) {
+      void loadDiscoveredSpecs(target).catch(() => {
         // Already handled by the loader; the bump will surface the error.
       });
     }
 
     return unsubscribe;
-  }, []);
+    // Keyed by the target's route key; the object identity may churn.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [key]);
 
-  const snapshot = __getSpecCacheSnapshot();
+  return target;
+}
+
+export function useDiscoveredSpecs(): UseDiscoveredSpecsResult {
+  const target = useSpecCacheSubscription();
+  const snapshot = __getSpecCacheSnapshot(target);
 
   const refresh = async (): Promise<void> => {
     try {
-      await __refreshSpecCache();
+      await __refreshSpecCache(target);
     } catch {
       // Error is already captured; the subscriber bump surfaces it.
     }
@@ -77,6 +91,7 @@ export function useDiscoveredSpecs(): UseDiscoveredSpecsResult {
     specs: snapshot.specs ?? (EMPTY_SPECS as DiscoveredSpec[]),
     loading: snapshot.loading,
     error: snapshot.error,
+    stream: snapshot.stream,
     refresh,
   };
 }
@@ -88,22 +103,8 @@ export function useDiscoveredSpecs(): UseDiscoveredSpecsResult {
  * or if the id is not present in the cache.
  */
 export function useDiscoveredSpec(id: string): DiscoveredSpec | null {
-  const [, setVersion] = useState(0);
-
-  useEffect(() => {
-    const bump = () => setVersion((v) => v + 1);
-    const unsubscribe = __subscribeToSpecCache(bump);
-
-    if (__shouldTriggerInitialLoad()) {
-      void loadDiscoveredSpecs().catch(() => {
-        // Already handled by the loader; the bump will surface the error.
-      });
-    }
-
-    return unsubscribe;
-  }, []);
-
-  const { specs } = __getSpecCacheSnapshot();
+  const target = useSpecCacheSubscription();
+  const { specs } = __getSpecCacheSnapshot(target);
   if (specs === null) return null;
   return specs.find((s) => s.specId === id) ?? null;
 }

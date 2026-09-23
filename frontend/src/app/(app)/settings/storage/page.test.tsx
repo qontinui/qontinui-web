@@ -14,13 +14,17 @@ import { render, screen, waitFor } from "@testing-library/react";
 const useRunnerHealth = vi.fn();
 const getStorageInfo = vi.fn();
 
+// Stable identity, as the real useRunnerApi() is while the target is unchanged.
+const runnerApi = {
+  getStorageInfo: () => getStorageInfo(),
+  cleanupStorage: vi.fn(),
+  clearAllStorage: vi.fn(),
+};
+
 vi.mock("@/lib/runner-api", () => ({
   useRunnerHealth: () => useRunnerHealth(),
-  runnerApi: {
-    getStorageInfo: () => getStorageInfo(),
-    cleanupStorage: vi.fn(),
-    clearAllStorage: vi.fn(),
-  },
+  useRunnerApi: () => runnerApi,
+  runnerFailureMessage: (_err: unknown, fallback: string) => fallback,
 }));
 
 vi.mock("@/components/runner/RunnerOfflineState", () => ({

@@ -323,10 +323,10 @@ describe("operations WS URL builders", () => {
   const wsBase = (url: string) => url.replace(/\?.*$/, "");
 
   it("coordEventsWsUrl targets the backend bridge with subscribe + token", () => {
-    const url = coordEventsWsUrl("strategy", "a b+c");
+    const url = coordEventsWsUrl("merge", "a b+c");
     expect(url).toMatch(/^wss?:\/\//);
     expect(url).toContain("/api/v1/operations/coord-events/ws?");
-    expect(url).toContain("subscribe=strategy");
+    expect(url).toContain("subscribe=merge");
     // The token is URL-encoded; the subscription name never is (it is a
     // closed-set literal).
     expect(url).toContain(`token=${encodeURIComponent("a b+c")}`);

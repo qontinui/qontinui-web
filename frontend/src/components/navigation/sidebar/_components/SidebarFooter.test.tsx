@@ -39,6 +39,8 @@ vi.mock("@/contexts/active-runner-context", () => ({
       : [{ id: "r1", name: "Desk runner", port: 9876 }],
     selectRunner: vi.fn(),
     isMultiRunner: runner.isMultiRunner,
+    listState: "loaded",
+    localityById: new Map([["r1", "local"]]),
   }),
 }));
 

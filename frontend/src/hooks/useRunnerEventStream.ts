@@ -1,23 +1,38 @@
 "use client";
 
 import { useRef, useCallback, useEffect } from "react";
-import {
-  getRunnerApiBase,
-  onRunnerApiBaseChange,
-} from "@/lib/runner/api-client";
+import { routeOfTarget, type RunnerTarget } from "@/lib/runner/target";
 
-// Derive the runner WebSocket URL from the current API base.
-// Uses 127.0.0.1 to force IPv4 (runner only listens on IPv4).
-function getRunnerWsUrl(): string {
-  const base = getRunnerApiBase(); // e.g. "http://localhost:9876"
-  // Extract port from the base URL
+/**
+ * The event-stream WebSocket URL for a target, or null when there is none.
+ *
+ * `/ws/events` is a WebSocket and cannot ride the relay (the relay is
+ * request/response HTTP and the runner's `RELAY_ALLOWED` carries no `/ws/*`
+ * route), so a socket exists ONLY for a target whose route is loopback — a
+ * runner proven to be on this machine, or the empty-list default. Built from
+ * the resolved target's own base, never from a global. Spelled 127.0.0.1: the
+ * runner binds IPv4 only.
+ */
+export function runnerEventStreamUrl(target: RunnerTarget): string | null {
+  const route = routeOfTarget(target);
+  if (route.kind !== "loopback") return null;
   try {
-    const url = new URL(base);
-    return `ws://127.0.0.1:${url.port}/ws/events`;
+    return `ws://127.0.0.1:${new URL(route.base).port}/ws/events`;
   } catch {
-    return "ws://127.0.0.1:9876/ws/events";
+    return null;
   }
 }
+
+/**
+ * Whether the event stream can deliver anything.
+ *
+ * - `live`        — a loopback socket is (being) opened.
+ * - `unavailable` — no socket can exist for this target (a relayed runner, or
+ *                   no runner resolved): subscribers will receive NOTHING, and
+ *                   must treat the stream as UNKNOWN and fall back to polling,
+ *                   never read silence as "no events".
+ */
+export type RunnerEventStreamState = "live" | "unavailable";
 
 export type EventCallback = (data: unknown) => void;
 
@@ -32,14 +47,30 @@ const MAX_SUBSCRIBERS_PER_CHANNEL = 50;
 /**
  * Low-level WebSocket hook for the runner's event stream.
  *
- * Connects to ws://127.0.0.1:9876/ws/events and dispatches messages
- * to channel-based subscribers. Reconnects with exponential backoff.
+ * Connects to ws://127.0.0.1:<port>/ws/events of the TARGET's loopback route
+ * and dispatches messages to channel-based subscribers. Reconnects with
+ * exponential backoff, and re-connects when the target's URL changes. For a
+ * target with no loopback route no socket is opened and `state` is
+ * `unavailable`.
  *
  * Includes subscriber leak protection: callbacks are tagged with an ID
  * so that re-subscriptions from the same hook instance (e.g. during HMR)
  * replace the previous callback instead of accumulating.
  */
-export function useRunnerEventStream(enabled: boolean = true) {
+export function useRunnerEventStream(
+  target: RunnerTarget,
+  enabled: boolean = true
+): {
+  subscribe: (
+    channel: string,
+    callback: EventCallback,
+    subscriberId?: string
+  ) => () => void;
+  state: RunnerEventStreamState;
+} {
+  const wsUrl = runnerEventStreamUrl(target);
+  const wsUrlRef = useRef(wsUrl);
+  wsUrlRef.current = wsUrl;
   const wsRef = useRef<WebSocket | null>(null);
   const subscribersRef = useRef<Map<string, Map<string, TaggedCallback>>>(
     new Map()
@@ -106,8 +137,11 @@ export function useRunnerEventStream(enabled: boolean = true) {
     // reconnects start fresh instead of permanently giving up after exhaustion.
     reconnectAttemptsRef.current = 0;
 
+    const url = wsUrlRef.current;
+    if (url === null) return;
+
     try {
-      const ws = new WebSocket(getRunnerWsUrl());
+      const ws = new WebSocket(url);
       wsRef.current = ws;
 
       ws.onopen = () => {
@@ -216,9 +250,11 @@ export function useRunnerEventStream(enabled: boolean = true) {
     []
   );
 
-  // Connect/disconnect based on enabled + visibility
+  // Connect/disconnect based on enabled + visibility + the target's URL: a
+  // changed URL (another runner, or a loopback route appearing/disappearing)
+  // tears the old socket down and opens the new one.
   useEffect(() => {
-    if (!enabled) {
+    if (!enabled || wsUrl === null) {
       disconnect();
       return;
     }
@@ -238,19 +274,7 @@ export function useRunnerEventStream(enabled: boolean = true) {
       document.removeEventListener("visibilitychange", handleVisibility);
       disconnect();
     };
-  }, [enabled, connect, disconnect]);
+  }, [enabled, wsUrl, connect, disconnect]);
 
-  // Reconnect when the active runner's API base URL changes
-  useEffect(() => {
-    const unsubscribe = onRunnerApiBaseChange(() => {
-      if (enabledRef.current) {
-        disconnect();
-        // Brief delay so the new base URL is fully settled before connecting
-        setTimeout(() => connect(), 50);
-      }
-    });
-    return unsubscribe;
-  }, [connect, disconnect]);
-
-  return { subscribe };
+  return { subscribe, state: wsUrl === null ? "unavailable" : "live" };
 }

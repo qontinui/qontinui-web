@@ -9,7 +9,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { IntegrationTestResults } from "@/components/testing/IntegrationTestResults";
 import { VisualPlayback } from "@/components/testing/VisualPlayback";
-import { integrationTestingService } from "@/services/integration-testing";
+import { useIntegrationTestingService } from "@/services/integration-testing";
 import { formatTimestampLocal } from "@/lib/time-utils";
 import {
   Play,
@@ -32,6 +32,7 @@ import type {
 type ViewMode = "list" | "detail" | "visual";
 
 export default function IntegrationTestPage() {
+  const integrationTestingService = useIntegrationTestingService();
   const params = useParams();
   const projectId = params.projectId as string;
 
@@ -50,7 +51,7 @@ export default function IntegrationTestPage() {
       setApiHealthy(healthy);
     };
     checkHealth();
-  }, []);
+  }, [integrationTestingService]);
 
   const fetchRuns = useCallback(async () => {
     if (!projectId) return;
@@ -67,7 +68,7 @@ export default function IntegrationTestPage() {
     } finally {
       setLoading(false);
     }
-  }, [projectId]);
+  }, [projectId, integrationTestingService]);
 
   useEffect(() => {
     fetchRuns();
@@ -239,10 +240,8 @@ export default function IntegrationTestPage() {
               <div className="flex items-center gap-2 text-yellow-400">
                 <AlertCircle className="w-5 h-5" />
                 <span>
-                  Runner is not reachable at{" "}
-                  {process.env.NEXT_PUBLIC_RUNNER_URL ||
-                    "http://localhost:9876"}
-                  . Start the runner to run integration tests.
+                  The selected runner is not reachable. Start the runner to run
+                  integration tests.
                 </span>
               </div>
             </CardContent>

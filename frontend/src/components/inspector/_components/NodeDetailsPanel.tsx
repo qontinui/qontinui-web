@@ -4,6 +4,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Copy, Check, Focus, MousePointer, Type, X } from "lucide-react";
+import { useRunnerTarget } from "@/lib/runner";
 import { AccessibilityNode } from "../_types";
 import {
   getRoleIcon,
@@ -18,6 +19,7 @@ export function NodeDetailsPanel({
   node: AccessibilityNode;
   onClose: () => void;
 }) {
+  const target = useRunnerTarget();
   const [copySuccess, setCopySuccess] = useState(false);
   const [actionResult, setActionResult] = useState<{
     success: boolean;
@@ -37,7 +39,7 @@ export function NodeDetailsPanel({
   const handleClick = async () => {
     if (!node.ref) return;
     setActionResult(null);
-    const result = await executeAccessibilityCommand("click_ref", {
+    const result = await executeAccessibilityCommand(target, "click_ref", {
       ref: node.ref,
     });
     setActionResult(result);
@@ -47,7 +49,7 @@ export function NodeDetailsPanel({
   const handleFocus = async () => {
     if (!node.ref) return;
     setActionResult(null);
-    const result = await executeAccessibilityCommand("focus_ref", {
+    const result = await executeAccessibilityCommand(target, "focus_ref", {
       ref: node.ref,
     });
     setActionResult(result);
@@ -57,7 +59,7 @@ export function NodeDetailsPanel({
   const handleFill = async () => {
     if (!node.ref || !fillValue) return;
     setActionResult(null);
-    const result = await executeAccessibilityCommand("fill_ref", {
+    const result = await executeAccessibilityCommand(target, "fill_ref", {
       ref: node.ref,
       value: fillValue,
       clear_first: false,

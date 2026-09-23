@@ -4,7 +4,7 @@ import { useState, useMemo, useCallback } from "react";
 import { usePageSpecs } from "@/hooks/usePageSpecs";
 import { useDiscoveredSpec } from "@/lib/ui-bridge/use-discovered-specs";
 import type { SpecConfig } from "@qontinui/ui-bridge/specs";
-import { runnerApi } from "@/lib/runner-api";
+import { runnerRequest, useRunnerApi, useRunnerTarget } from "@/lib/runner-api";
 import { useUnifiedWorkflows } from "@/lib/api/unified-workflows";
 import {
   getPhaseCount,
@@ -45,6 +45,8 @@ function QueueTabContent({
   workflows: UnifiedWorkflow[] | null;
   workflowsLoading: boolean;
 }) {
+  const runnerApi = useRunnerApi();
+  const runnerTarget = useRunnerTarget();
   // Local queue state
   const [queueItems, setQueueItems] = useState<QueueItem[]>([]);
   const [stopOnFailure, setStopOnFailure] = useState(true);
@@ -190,7 +192,7 @@ function QueueTabContent({
     } finally {
       setIsRunning(false);
     }
-  }, [queueItems, stopOnFailure]);
+  }, [queueItems, stopOnFailure, runnerApi]);
 
   const handleClear = useCallback(() => {
     setQueueItems([]);
@@ -227,8 +229,9 @@ function QueueTabContent({
         });
 
         // Create the composed workflow via runner API
-        const response = await fetch(
-          "http://localhost:9876/unified-workflows",
+        const response = await runnerRequest(
+          runnerTarget,
+          "/unified-workflows",
           {
             method: "POST",
             headers: { "Content-Type": "application/json" },
@@ -259,7 +262,7 @@ function QueueTabContent({
         );
       }
     },
-    [queueItems, workflowMap, stopOnFailure]
+    [queueItems, workflowMap, stopOnFailure, runnerTarget]
   );
 
   return (

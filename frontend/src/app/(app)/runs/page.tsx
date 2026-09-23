@@ -7,7 +7,7 @@ import type { SpecConfig } from "@qontinui/ui-bridge/specs";
 import { useRouter } from "next/navigation";
 import { useTaskRunList } from "@/hooks/useTaskRunData";
 import { RunnerPartialState } from "@/components/runner/RunnerPartialState";
-import { runnerApi } from "@/lib/runner";
+import { useRunnerApi, runnerFailureMessage } from "@/lib/runner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { DestructiveButton } from "@/components/ui/destructive-button";
@@ -91,6 +91,7 @@ function formatDateTime(dateString: string): string {
 }
 
 export default function RunHistoryPage() {
+  const runnerApi = useRunnerApi();
   const discoveredSpec = useDiscoveredSpec("runs");
   usePageSpecs(
     discoveredSpec ? { runs: discoveredSpec.config as SpecConfig } : {}
@@ -139,8 +140,8 @@ export default function RunHistoryPage() {
       toast.success(`Deleted ${selectedRuns.size} runs`);
       setSelectedRuns(new Set());
       refetch();
-    } catch {
-      toast.error("Failed to delete some runs");
+    } catch (err) {
+      toast.error(runnerFailureMessage(err, "Failed to delete some runs"));
     } finally {
       setIsDeleting(false);
     }

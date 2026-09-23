@@ -11,11 +11,12 @@ import {
 import { authService, extractionService } from "@/services/service-factory";
 import { usePlaywrightExtraction } from "@/hooks/use-playwright-extraction";
 import {
-  getVisionExtractionService,
+  useVisionExtractionService,
   type VisionExtractionResponse,
 } from "@/services/vision-extraction-service";
 import { toast } from "sonner";
-import { runnerClient } from "@/lib/runner-client";
+import { useRunnerClient } from "@/lib/runner-client";
+import { isRunnerNeedsLocalError } from "@/lib/runner/api-client";
 import { useExtractionConfig } from "@/hooks/use-extraction-config";
 import { useRunnerMonitors } from "@/hooks/useRunnerMonitors";
 import type {
@@ -48,6 +49,8 @@ export type { MainTab, ConfigSubTab, ResultsSubTab };
 const logger = createLogger("WebExtraction");
 
 export function useWebExtractionState() {
+  const visionExtractionService = useVisionExtractionService();
+  const runnerClient = useRunnerClient();
   const { projectId } = useProjectLoader();
   const { data: extractions } = useExtractions(projectId || "", !!projectId);
   const createExtraction = useCreateExtraction();
@@ -427,7 +430,7 @@ export function useWebExtractionState() {
     setIsRunningVision(true);
     setSelectedScreenshotForVision(screenshotBase64);
     try {
-      const service = getVisionExtractionService();
+      const service = visionExtractionService;
       const results = await service.extract({
         screenshot: screenshotBase64,
         techniques: ["edge", "sam3", "ocr"],
@@ -439,7 +442,9 @@ export function useWebExtractionState() {
     } catch (error) {
       logger.error("Vision extraction failed:", error);
       toast.error(
-        "Vision extraction failed. Re-run the extraction with Desktop Runner for automatic vision processing."
+        isRunnerNeedsLocalError(error)
+          ? (error as Error).message
+          : "Vision extraction failed. Re-run the extraction with Desktop Runner for automatic vision processing."
       );
     } finally {
       setIsRunningVision(false);

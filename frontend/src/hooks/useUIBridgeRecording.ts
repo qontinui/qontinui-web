@@ -13,6 +13,12 @@
 
 import { useState, useCallback, useRef, useEffect } from "react";
 import { createLogger } from "@/lib/logger";
+import {
+  RunnerApiError,
+  runnerRequest,
+  startRunnerPoll,
+  type RunnerTarget,
+} from "@/lib/runner";
 
 const log = createLogger("useUIBridgeRecording");
 
@@ -72,6 +78,12 @@ export interface RecordingSession {
   startTime: number | null;
   snapshots: RecordingSnapshot[];
   error: string | null;
+  /**
+   * The typed runner failure behind `error`, when there is one — e.g.
+   * RUNNER_NEEDS_LOCAL: the runner is reached through the relay, which does
+   * not carry the extension bridge, so recording needs it on this machine.
+   */
+  errorCode?: string | null;
 }
 
 /**
@@ -210,7 +222,33 @@ const INITIAL_SESSION: RecordingSession = {
   startTime: null,
   snapshots: [],
   error: null,
+  errorCode: null,
 };
+
+/**
+ * POST one command to the runner's extension bridge through the resolver
+ * (`runnerRequest`: loopback only when the runner is proven local, the relay
+ * otherwise — which refuses this path with RUNNER_NEEDS_LOCAL).
+ */
+function extensionCommand(
+  target: RunnerTarget,
+  action: string,
+  params: Record<string, unknown>,
+  timeoutSecs: number
+): Promise<Response> {
+  return runnerRequest(target, "/extension/command", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ action, params, timeout_secs: timeoutSecs }),
+  });
+}
+
+function errorCodeOf(error: unknown): string | null {
+  return error instanceof RunnerApiError ? (error.code ?? null) : null;
+}
+
+/** How often snapshots are polled while an extension recording runs. */
+const SNAPSHOT_POLL_INTERVAL_MS = 2000;
 
 /**
  * Hook for UI Bridge recording
@@ -219,33 +257,31 @@ export function useUIBridgeRecording() {
   const [session, setSession] = useState<RecordingSession>(INITIAL_SESSION);
   const [isStarting, setIsStarting] = useState(false);
   const [isStopping, setIsStopping] = useState(false);
-  const pollingRef = useRef<NodeJS.Timeout | null>(null);
+  // Stops the running snapshot poll (startRunnerPoll's stop function).
+  const pollingRef = useRef<(() => void) | null>(null);
 
   /**
    * Start recording on a specific tab
    */
   const startRecording = useCallback(
     async (
-      runnerUrl: string,
+      target: RunnerTarget,
       tabId: number | null,
       options: RecordingOptions = {}
     ) => {
       setIsStarting(true);
-      setSession((prev) => ({ ...prev, error: null }));
+      setSession((prev) => ({ ...prev, error: null, errorCode: null }));
 
       try {
-        const response = await fetch(`${runnerUrl}/extension/command`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            action: "startRecording",
-            params: {
-              tabId,
-              captureMutations: options.captureMutations ?? true,
-            },
-            timeout_secs: 15,
-          }),
-        });
+        const response = await extensionCommand(
+          target,
+          "startRecording",
+          {
+            tabId,
+            captureMutations: options.captureMutations ?? true,
+          },
+          15
+        );
 
         if (!response.ok) {
           const error = await response.json().catch(() => ({}));
@@ -268,14 +304,16 @@ export function useUIBridgeRecording() {
           startTime: Date.now(),
           snapshots: data.initialSnapshot ? [data.initialSnapshot] : [],
           error: null,
+          errorCode: null,
         });
 
         return { success: true, tabId: data.tabId };
       } catch (error) {
         const message =
           error instanceof Error ? error.message : "Failed to start recording";
-        setSession((prev) => ({ ...prev, error: message }));
-        return { success: false, error: message };
+        const errorCode = errorCodeOf(error);
+        setSession((prev) => ({ ...prev, error: message, errorCode }));
+        return { success: false, error: message, errorCode };
       } finally {
         setIsStarting(false);
       }
@@ -286,19 +324,11 @@ export function useUIBridgeRecording() {
   /**
    * Stop recording and get all captured snapshots
    */
-  const stopRecording = useCallback(async (runnerUrl: string) => {
+  const stopRecording = useCallback(async (target: RunnerTarget) => {
     setIsStopping(true);
 
     try {
-      const response = await fetch(`${runnerUrl}/extension/command`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          action: "stopRecording",
-          params: {},
-          timeout_secs: 15,
-        }),
-      });
+      const response = await extensionCommand(target, "stopRecording", {}, 15);
 
       if (!response.ok) {
         const error = await response.json().catch(() => ({}));
@@ -329,8 +359,14 @@ export function useUIBridgeRecording() {
     } catch (error) {
       const message =
         error instanceof Error ? error.message : "Failed to stop recording";
-      setSession((prev) => ({ ...prev, error: message, isRecording: false }));
-      return { success: false, error: message };
+      const errorCode = errorCodeOf(error);
+      setSession((prev) => ({
+        ...prev,
+        error: message,
+        errorCode,
+        isRecording: false,
+      }));
+      return { success: false, error: message, errorCode };
     } finally {
       setIsStopping(false);
     }
@@ -339,17 +375,14 @@ export function useUIBridgeRecording() {
   /**
    * Get current recording status
    */
-  const getRecordingStatus = useCallback(async (runnerUrl: string) => {
+  const getRecordingStatus = useCallback(async (target: RunnerTarget) => {
     try {
-      const response = await fetch(`${runnerUrl}/extension/command`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          action: "getRecordingStatus",
-          params: {},
-          timeout_secs: 10,
-        }),
-      });
+      const response = await extensionCommand(
+        target,
+        "getRecordingStatus",
+        {},
+        10
+      );
 
       if (!response.ok) {
         return null;
@@ -369,17 +402,9 @@ export function useUIBridgeRecording() {
   /**
    * Manually trigger a capture
    */
-  const captureNow = useCallback(async (runnerUrl: string) => {
+  const captureNow = useCallback(async (target: RunnerTarget) => {
     try {
-      const response = await fetch(`${runnerUrl}/extension/command`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          action: "captureNow",
-          params: {},
-          timeout_secs: 10,
-        }),
-      });
+      const response = await extensionCommand(target, "captureNow", {}, 10);
 
       if (!response.ok) {
         throw new Error("Failed to capture");
@@ -390,69 +415,77 @@ export function useUIBridgeRecording() {
     } catch (error) {
       const message =
         error instanceof Error ? error.message : "Failed to capture";
-      return { success: false, error: message };
+      return { success: false, error: message, errorCode: errorCodeOf(error) };
     }
   }, []);
 
   /**
-   * Poll for snapshot updates during recording
+   * Fetch the current snapshots once (one poll tick). Throws a typed
+   * RUNNER_NEEDS_LOCAL error when the relay refuses the extension bridge, so
+   * the poller stops for good; any other failure is ignored for this tick.
    */
-  const pollSnapshots = useCallback(
-    async (runnerUrl: string) => {
-      if (!session.isRecording) return;
-
-      try {
-        const response = await fetch(`${runnerUrl}/extension/command`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            action: "getRecordingSnapshots",
-            params: {},
-            timeout_secs: 10,
-          }),
-        });
-
-        if (response.ok) {
-          const result = await response.json();
-          if (result.success && result.data?.snapshots) {
-            setSession((prev) => ({
-              ...prev,
-              snapshots: result.data.snapshots,
-            }));
-          }
-        }
-      } catch {
-        // Ignore polling errors
+  const pollSnapshots = useCallback(async (target: RunnerTarget) => {
+    let response: Response;
+    try {
+      response = await extensionCommand(
+        target,
+        "getRecordingSnapshots",
+        {},
+        10
+      );
+    } catch (error) {
+      if (errorCodeOf(error) !== null) throw error;
+      return;
+    }
+    if (!response.ok) return;
+    try {
+      const result = await response.json();
+      if (result.success && result.data?.snapshots) {
+        setSession((prev) => ({
+          ...prev,
+          snapshots: result.data.snapshots,
+        }));
       }
-    },
-    [session.isRecording]
-  );
-
-  /**
-   * Start polling for updates while recording
-   */
-  const startPolling = useCallback(
-    (runnerUrl: string, intervalMs: number = 2000) => {
-      if (pollingRef.current) {
-        clearInterval(pollingRef.current);
-      }
-
-      pollingRef.current = setInterval(() => {
-        pollSnapshots(runnerUrl);
-      }, intervalMs);
-    },
-    [pollSnapshots]
-  );
+    } catch {
+      // Ignore an unreadable tick
+    }
+  }, []);
 
   /**
    * Stop polling
    */
   const stopPolling = useCallback(() => {
     if (pollingRef.current) {
-      clearInterval(pollingRef.current);
+      pollingRef.current();
       pollingRef.current = null;
     }
   }, []);
+
+  /**
+   * Start polling for updates while recording. The cadence is the runner
+   * poll cadence for `target` (re-evaluated every tick), and polling stops
+   * for good — with the typed error in `session.error` — once the runner
+   * refuses the path over the relay (RUNNER_NEEDS_LOCAL).
+   */
+  const startPolling = useCallback(
+    (target: RunnerTarget, intervalMs: number = SNAPSHOT_POLL_INTERVAL_MS) => {
+      stopPolling();
+      pollingRef.current = startRunnerPoll({
+        getTarget: () => target,
+        requestedMs: intervalMs,
+        tick: () => pollSnapshots(target),
+        onNeedsLocal: (error) => {
+          pollingRef.current = null;
+          setSession((prev) => ({
+            ...prev,
+            error: error.message,
+            errorCode: error.code ?? null,
+          }));
+        },
+      });
+    },
+    [pollSnapshots, stopPolling]
+  );
 
   /**
    * Reset session (clear all data)
@@ -548,6 +581,7 @@ export function useUIBridgeRecording() {
           startTime: Date.now(),
           snapshots: [],
           error: null,
+          errorCode: null,
         });
 
         log.debug("SDK recording started");
@@ -684,13 +718,12 @@ export function useUIBridgeRecording() {
           const error = await dispatchResponse.json().catch(() => ({}));
           throw new Error(
             (error as { detail?: string | { message?: string } }).detail &&
-              typeof (
-                error as { detail?: string | { message?: string } }
-              ).detail === "object"
+              typeof (error as { detail?: string | { message?: string } })
+                .detail === "object"
               ? (error.detail as { message?: string }).message ||
-                "Pipeline dispatch failed"
+                  "Pipeline dispatch failed"
               : ((error as { detail?: string }).detail as string) ||
-                "Pipeline dispatch failed"
+                  "Pipeline dispatch failed"
           );
         }
 
@@ -724,7 +757,11 @@ export function useUIBridgeRecording() {
             run_id: string;
             status: string;
             result?: PipelineRunResultPayload | null;
-            error?: { error: string; message: string; traceback?: string } | null;
+            error?: {
+              error: string;
+              message: string;
+              traceback?: string;
+            } | null;
           };
           if (
             status.status === "completed" ||
@@ -734,9 +771,7 @@ export function useUIBridgeRecording() {
             terminal = status;
             break;
           }
-          await new Promise((resolve) =>
-            setTimeout(resolve, POLL_INTERVAL_MS)
-          );
+          await new Promise((resolve) => setTimeout(resolve, POLL_INTERVAL_MS));
         }
 
         if (terminal === null) {
