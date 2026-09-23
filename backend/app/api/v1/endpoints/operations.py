@@ -20,7 +20,6 @@ import re
 import time
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
-from functools import lru_cache
 from typing import Any, Literal, NoReturn
 from urllib.parse import quote
 from uuid import UUID
@@ -11645,8 +11644,17 @@ async def post_coord_tenant_member(
     # BEFORE the grant, while the question is still answerable: coord's own
     # write is what makes "did they already have access?" unanswerable
     # afterwards. Read it here and carry the answer past the grant.
-    had_access = await _member_had_prior_access(
-        tenant_id=tenant_id, sso_subject=identity.sub
+    #
+    # Skipped on a PENDING account: only the `added` arm reads the answer, and
+    # a pending account never reaches `added`. Reading it there anyway made a
+    # failed read log `tenant_member_prior_access_unreadable` at ERROR for a
+    # request that went fine.
+    had_access = (
+        None
+        if pending
+        else await _member_had_prior_access(
+            tenant_id=tenant_id, sso_subject=identity.sub
+        )
     )
     await _grant_tenant_member_role(
         operator_id=operator_id, role=body.role, tenant_id=tenant_id
@@ -11705,7 +11713,10 @@ async def post_coord_tenant_member(
         else:
             # UNKNOWN. Nothing was sent, and the honest thing to tell the
             # admin is the same as a failed send: pass the news on yourself.
-            logger.error(
+            # WARNING, not ERROR: the unreadable read already logged its own
+            # ERROR (`tenant_member_prior_access_unreadable`); this line is the
+            # consequence of that one event, not a second fault.
+            logger.warning(
                 "tenant_member_added_notice_skipped_unknown_prior_access",
                 tenant_id=str(tenant_id),
                 operator_id=operator_id,
@@ -11986,7 +11997,9 @@ async def _member_tenant_display_name(request: Request, tenant_id: UUID) -> str 
     return None
 
 
-@lru_cache(maxsize=1)
+_member_added_composer_cache: MemberAddedNoticeComposer | None = None
+
+
 def _member_added_notice_composer() -> MemberAddedNoticeComposer:
     """The one composer for this process — and the one seam tests patch.
 
@@ -11994,6 +12007,13 @@ def _member_added_notice_composer() -> MemberAddedNoticeComposer:
     building one per request is both wasteful and a per-request chance to pay
     credential-resolution latency on a path that is already waiting on a
     network send.
+
+    Only a HEALTHY composer is cached. ``EmailTransportService.__init__``
+    swallows a failed SES client build and leaves ``ses_client = None``, so an
+    unconditional cache (the ``lru_cache`` this replaced) pinned one transient
+    failure for the life of the process: every later notice fell to SMTP or
+    ``not_sent`` until a restart. A composer whose SES client did not build is
+    returned for this request and rebuilt on the next one.
 
     It is a FACTORY rather than a construction at the call site for a reason
     that only shows up in tests: Python evaluates arguments before it calls
@@ -12009,7 +12029,14 @@ def _member_added_notice_composer() -> MemberAddedNoticeComposer:
     plain FastAPI dependency and builds a fresh composer, transport and
     boto3 client on every request.
     """
-    return MemberAddedNoticeComposer(EmailTemplateService(), EmailTransportService())
+    global _member_added_composer_cache
+    if _member_added_composer_cache is not None:
+        return _member_added_composer_cache
+    transport = EmailTransportService()
+    composer = MemberAddedNoticeComposer(EmailTemplateService(), transport)
+    if not settings.USE_SES_API or transport.ses_client is not None:
+        _member_added_composer_cache = composer
+    return composer
 
 
 async def _send_member_added_notice(
