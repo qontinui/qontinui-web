@@ -16,6 +16,7 @@ Scenarios covered:
 from __future__ import annotations
 
 import json
+from collections.abc import Sequence
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
@@ -39,7 +40,7 @@ class _FakePubSub:
     ``None`` as well (so the dispatcher's own deadline drives termination).
     """
 
-    def __init__(self, messages: list[dict[str, Any] | None]) -> None:
+    def __init__(self, messages: Sequence[dict[str, Any] | None]) -> None:
         self._messages = list(messages)
         self.subscribed: list[str] = []
         self.unsubscribed: list[str] = []
@@ -69,7 +70,7 @@ class _FakePubSub:
 def _make_relay(
     *,
     is_connected: bool,
-    messages: list[dict[str, Any] | None] | None = None,
+    messages: Sequence[dict[str, Any] | None] | None = None,
 ) -> tuple[CommandRelayService, _FakePubSub, AsyncMock]:
     """Build a CommandRelayService with mocked Redis + registry."""
     pubsub = _FakePubSub(messages or [])
@@ -79,7 +80,11 @@ def _make_relay(
     redis.publish = AsyncMock(return_value=1)
 
     registry = MagicMock()
+    # The dispatcher's gate is the LIVENESS one (``can_send_to_runner``), not
+    # registration; both are stubbed so a test that reads either sees one
+    # answer. ``test_send_gate_liveness.py`` covers the two disagreeing.
     registry.is_runner_connected = MagicMock(return_value=is_connected)
+    registry.can_send_to_runner = MagicMock(return_value=is_connected)
 
     relay = CommandRelayService(redis_client=redis, registry=registry)
     return relay, pubsub, redis.publish
@@ -115,6 +120,7 @@ async def test_dispatch_and_wait_happy_path() -> None:
     assert pubsub.subscribed == [f"runner:responses:{runner_id}"]
     # The published command should carry the request_id we passed in.
     publish.assert_awaited_once()
+    assert publish.await_args is not None
     channel_arg, payload_arg = publish.await_args.args
     assert channel_arg == f"runner:commands:{runner_id}"
     sent = json.loads(payload_arg)
