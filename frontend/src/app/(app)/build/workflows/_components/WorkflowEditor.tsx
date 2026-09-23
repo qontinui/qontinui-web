@@ -42,10 +42,13 @@ import { useRouter } from "next/navigation";
 
 export function WorkflowEditor({
   onRun,
+  runRefusal = null,
   pendingInsertStep,
   onInsertConsumed,
 }: {
   onRun: () => void;
+  /** Coord's reason no workflow run may start right now (null = allowed). */
+  runRefusal?: string | null;
   pendingInsertStep?: Partial<UnifiedStep> | null;
   onInsertConsumed?: () => void;
 }) {
@@ -167,6 +170,10 @@ export function WorkflowEditor({
             toast.error("Connect a runner to run this workflow");
             return;
           }
+          if (runRefusal !== null) {
+            toast.error(runRefusal);
+            return;
+          }
           if (hasUnsavedChanges) {
             const saved = await saveWorkflow();
             if (!saved) return;
@@ -246,11 +253,11 @@ export function WorkflowEditor({
             variant="brand-primary"
             size="sm"
             className="h-8"
-            disabled={runnerIsOffline}
+            disabled={runnerIsOffline || runRefusal !== null}
             title={
               runnerIsOffline
                 ? "Connect a runner to run this workflow"
-                : "Run workflow"
+                : (runRefusal ?? "Run workflow")
             }
             onClick={async () => {
               if (hasUnsavedChanges) {
@@ -390,6 +397,14 @@ export function WorkflowEditor({
           </Button>
         </div>
       </div>
+      {runRefusal && !runnerIsOffline && (
+        <p
+          className="text-xs text-text-muted"
+          data-testid="workflow-run-refusal"
+        >
+          {runRefusal}
+        </p>
+      )}
 
       {showSettings && (
         <>

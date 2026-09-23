@@ -20,6 +20,8 @@ interface VisionExtractionPromptProps {
   onRunExtraction: (screenshotBase64: string) => void;
   extractionId?: string;
   technique: string;
+  /** Coord's reason no new work may start right now (null = allowed). */
+  refusal?: string | null;
 }
 
 export function VisionExtractionPrompt({
@@ -27,6 +29,7 @@ export function VisionExtractionPrompt({
   onRunExtraction,
   extractionId,
   technique,
+  refusal = null,
 }: VisionExtractionPromptProps) {
   const runnerClient = useRunnerClient();
   const [selectedScreenshot, setSelectedScreenshot] = useState<string | null>(
@@ -103,7 +106,8 @@ export function VisionExtractionPrompt({
             </Button>
             <Button
               onClick={() => onRunExtraction(selectedScreenshot)}
-              disabled={isRunning}
+              disabled={isRunning || refusal !== null}
+              title={refusal ?? undefined}
             >
               {isRunning ? (
                 <>
@@ -118,6 +122,14 @@ export function VisionExtractionPrompt({
               )}
             </Button>
           </div>
+          {refusal && (
+            <p
+              className="text-xs text-muted-foreground"
+              data-testid="vision-extraction-refusal"
+            >
+              {refusal}
+            </p>
+          )}
         </div>
       ) : (
         <div className="flex flex-col items-center gap-4">

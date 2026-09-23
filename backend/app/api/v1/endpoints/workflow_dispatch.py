@@ -22,7 +22,7 @@ from typing import Any
 from uuid import UUID
 
 import structlog
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_async_db, get_current_active_user_async
@@ -31,6 +31,7 @@ from app.schemas.workflow_dispatch import (
     WorkflowDispatchRequest,
     WorkflowDispatchResponse,
 )
+from app.services.coord_device_resolve import CoordCaller
 from app.services.workflow_dispatcher import (
     DispatchError,
     dispatch_workflow_to_runner,
@@ -51,6 +52,7 @@ async def dispatch_workflow(
     *,
     workflow_id: UUID,
     payload: WorkflowDispatchRequest,
+    request: Request,
     db: AsyncSession = Depends(get_async_db),
     current_user: User = Depends(get_current_active_user_async),
 ) -> Any:
@@ -65,6 +67,7 @@ async def dispatch_workflow(
             user_id=current_user.id,
             workflow_id=workflow_id,
             target=payload.target,
+            caller=CoordCaller.from_request(request),
             parent_task_run_id=payload.parent_task_run_id,
         )
     except DispatchError as err:

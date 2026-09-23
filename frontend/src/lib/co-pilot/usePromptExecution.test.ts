@@ -22,21 +22,34 @@ import { PlanError, type PlanErrorReason } from "./planClient";
 // latch suite can toggle the runner present/absent to drive the reconnect
 // effect. ----
 let mockActiveRunner: { id: string } | null = { id: "runner-1" };
+// With no runner, the new-work target's refusal (coord's outcome). Tests of
+// the dispatch gate set it; null = the generic "no runner" case.
+let mockRefusal: { reason: string; message: string } | null = null;
 vi.mock("@/contexts/active-runner-context", () => ({
-  useActiveRunner: () => ({
-    activeRunner: mockActiveRunner,
-    runners: [],
-    selectRunner: vi.fn(),
-    isMultiRunner: false,
-  }),
-  useRunnerTarget: () =>
+  // Running a prompt is NEW work: the hook reads the dispatch target.
+  useDispatchRunnerTarget: () =>
     mockActiveRunner
       ? {
-          kind: "runner",
-          runner: { id: mockActiveRunner.id },
-          locality: "not_local",
+          target: {
+            kind: "runner",
+            runner: { id: mockActiveRunner.id },
+            locality: "not_local",
+          },
+          runnerId: mockActiveRunner.id,
+          refusal: null,
         }
-      : { kind: "pending" },
+      : {
+          target: {
+            kind: "unavailable",
+            reason: "resolver_unavailable",
+            message: mockRefusal?.message,
+          },
+          runnerId: null,
+          refusal: mockRefusal ?? {
+            reason: "no_runner",
+            message: "No runner is paired. Connect a runner first.",
+          },
+        },
 }));
 
 // ---- Mock the plan + relay clients. `requestPlan` is the unit under test's
@@ -65,6 +78,7 @@ import { usePromptExecution } from "./usePromptExecution";
 
 beforeEach(() => {
   mockActiveRunner = { id: "runner-1" };
+  mockRefusal = null;
   requestPlanMock.mockReset();
   dispatchStepMock.mockReset();
   resolveTabTargetMock.mockReset();
@@ -88,8 +102,8 @@ describe("usePromptExecution — plan failure never hangs on 'planning'", () => 
       new PlanError(
         "runner-unreachable",
         "Planning timed out — the runner took too long. Try again or a simpler prompt.",
-        504,
-      ),
+        504
+      )
     );
 
     const { result } = renderHook(() => usePromptExecution());
@@ -117,11 +131,7 @@ describe("usePromptExecution — plan failure never hangs on 'planning'", () => 
     // silent reset. (The dedicated fresh-vs-idle suite below pins that contract
     // in detail; here we just confirm: not stuck on planning, error surfaced.)
     requestPlanMock.mockRejectedValue(
-      new PlanError(
-        "runner-not-connected",
-        "The runner is not connected.",
-        503,
-      ),
+      new PlanError("runner-not-connected", "The runner is not connected.", 503)
     );
 
     const { result } = renderHook(() => usePromptExecution());
@@ -145,7 +155,7 @@ describe("usePromptExecution — plan failure never hangs on 'planning'", () => 
     "maps reason '%s' to error kind '%s' (always leaves planning)",
     async (reason, expectedKind) => {
       requestPlanMock.mockRejectedValue(
-        new PlanError(reason, `failed: ${reason}`, 502),
+        new PlanError(reason, `failed: ${reason}`, 502)
       );
 
       const { result } = renderHook(() => usePromptExecution());
@@ -160,7 +170,7 @@ describe("usePromptExecution — plan failure never hangs on 'planning'", () => 
       expect(result.current.state.phase).not.toBe("planning");
       expect(result.current.state.error).not.toBeNull();
       expect(result.current.state.error?.kind).toBe(expectedKind);
-    },
+    }
   );
 
   it("transitions to error on a non-PlanError (raw network throw), not stuck planning", async () => {
@@ -187,33 +197,29 @@ describe("usePromptExecution — relay tab not connected is NOT a consent error"
     steps: [{ type: "navigate", target: "page-gui-automation" }],
   };
 
-  it(
-    "raises 'relay-not-connected' (not 'not-consented') when no tab ever connects, and does not dispatch",
-    async () => {
-      // Regression for the live bug: consent IS granted (gated upstream), but
-      // the tab never registered with the relay. The error must NOT claim
-      // "consent needed" — that sent the user re-granting consent uselessly.
-      requestPlanMock.mockResolvedValue(planWithStep);
-      resolveTabTargetMock.mockResolvedValue({
-        targetTabId: null,
-        hasConnectedTab: false,
-      });
+  it("raises 'relay-not-connected' (not 'not-consented') when no tab ever connects, and does not dispatch", async () => {
+    // Regression for the live bug: consent IS granted (gated upstream), but
+    // the tab never registered with the relay. The error must NOT claim
+    // "consent needed" — that sent the user re-granting consent uselessly.
+    requestPlanMock.mockResolvedValue(planWithStep);
+    resolveTabTargetMock.mockResolvedValue({
+      targetTabId: null,
+      hasConnectedTab: false,
+    });
 
-      const { result } = renderHook(() => usePromptExecution());
-      await act(async () => {
-        await result.current.run("go to the workflows page");
-      });
+    const { result } = renderHook(() => usePromptExecution());
+    await act(async () => {
+      await result.current.run("go to the workflows page");
+    });
 
-      await waitFor(() => {
-        expect(result.current.state.phase).toBe("error");
-      });
-      expect(result.current.state.error?.kind).toBe("relay-not-connected");
-      expect(result.current.state.error?.kind).not.toBe("not-consented");
-      expect(result.current.state.error?.message).toMatch(/consent is granted/i);
-      expect(dispatchStepMock).not.toHaveBeenCalled();
-    },
-    15000,
-  );
+    await waitFor(() => {
+      expect(result.current.state.phase).toBe("error");
+    });
+    expect(result.current.state.error?.kind).toBe("relay-not-connected");
+    expect(result.current.state.error?.kind).not.toBe("not-consented");
+    expect(result.current.state.error?.message).toMatch(/consent is granted/i);
+    expect(dispatchStepMock).not.toHaveBeenCalled();
+  }, 15000);
 
   it("proceeds once the tab registers after a brief lag (does not error)", async () => {
     // The registration race: first resolve reports no tab, a later one finds
@@ -241,7 +247,7 @@ describe("usePromptExecution — relay tab not connected is NOT a consent error"
     expect(result.current.state.error?.kind).not.toBe("relay-not-connected");
     expect(dispatchStepMock).toHaveBeenCalledWith(
       planWithStep.steps[0],
-      "tab-late",
+      "tab-late"
     );
   });
 });
@@ -293,7 +299,7 @@ describe("usePromptExecution — navigate landing poll (honest success)", () => 
       expect(result.current.state.phase).not.toBe("done");
       expect(result.current.state.error?.kind).toBe("step-failed");
       expect(result.current.state.error?.message).toMatch(
-        /navigation didn't take effect/i,
+        /navigation didn't take effect/i
       );
       expect(result.current.state.error?.message).toContain("/build/workflows");
       expect(result.current.state.stepStatuses[0]).toBe("failed");
@@ -372,7 +378,7 @@ describe("usePromptExecution — no-runner latch: fresh run error vs idle latch"
     // visible (the user gets the "runner reconnecting — retry" affordance).
     mockActiveRunner = { id: "runner-1" }; // runner present throughout the flap.
     requestPlanMock.mockRejectedValue(
-      new PlanError("runner-not-connected", "The runner is not connected.", 503),
+      new PlanError("runner-not-connected", "The runner is not connected.", 503)
     );
 
     const { result } = renderHook(() => usePromptExecution());
@@ -436,7 +442,7 @@ describe("usePromptExecution — no-runner latch: fresh run error vs idle latch"
     // demonstrably back). Fake timers let the ~8s window elapse instantly.
     mockActiveRunner = { id: "runner-1" };
     requestPlanMock.mockRejectedValue(
-      new PlanError("runner-not-connected", "The runner is not connected.", 503),
+      new PlanError("runner-not-connected", "The runner is not connected.", 503)
     );
 
     // Render (mount) under real timers so the initial effects commit, THEN
@@ -463,5 +469,45 @@ describe("usePromptExecution — no-runner latch: fresh run error vs idle latch"
     } finally {
       vi.useRealTimers();
     }
+  });
+});
+
+describe("run() goes only where NEW work may go", () => {
+  it.each([
+    [
+      "all_drained",
+      "All your runners are drained — taken out of service for new work.",
+    ],
+    [
+      "resolver_unavailable",
+      "Which runner should take new work is unknown — the device resolver did not answer.",
+    ],
+  ])(
+    "refused (%s): no plan is requested and coord's outcome is the error",
+    async (reason, message) => {
+      mockActiveRunner = null;
+      mockRefusal = { reason, message };
+      const { result } = renderHook(() => usePromptExecution());
+      await act(async () => {
+        await result.current.run("open settings");
+      });
+      expect(requestPlanMock).not.toHaveBeenCalled();
+      expect(result.current.state.phase).toBe("error");
+      expect(result.current.state.error?.message).toBe(message);
+    }
+  );
+
+  it("allowed (explicit/resolved): the plan goes to the dispatch target", async () => {
+    mockActiveRunner = { id: "resolved-1" };
+    requestPlanMock.mockRejectedValue(new PlanError("prompt-rejected", "x"));
+    const { result } = renderHook(() => usePromptExecution());
+    await act(async () => {
+      await result.current.run("open settings");
+    });
+    expect(requestPlanMock).toHaveBeenCalledTimes(1);
+    expect(requestPlanMock.mock.calls[0]![0].target).toMatchObject({
+      kind: "runner",
+      runner: { id: "resolved-1" },
+    });
   });
 });

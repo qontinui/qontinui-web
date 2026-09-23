@@ -76,6 +76,15 @@ class TestListProxy:
         }
         assert kwargs["tenant_id"] == TENANT
 
+    def test_forwards_via_verbatim(self):
+        # Plan 2026-09-13-escalate-path-block-is-agent-clearable-on-evidence
+        # 4.3: agent clearances are filterable by via. Coord owns the
+        # vocabulary, so the value is forwarded untouched.
+        app = _build_app()
+        with patch(PROXY_GET, new=AsyncMock(return_value={})) as mock_get:
+            TestClient(app).get("/api/v1/operations/notifications?via=agent_evidence")
+        assert mock_get.call_args[1]["params"] == {"via": "agent_evidence"}
+
     def test_limit_is_not_clamped_here(self):
         # Bounds live in coord — one clamp, one place. A second clamp here
         # would be invisible to the operator and impossible to reason about.

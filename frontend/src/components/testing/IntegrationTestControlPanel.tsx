@@ -58,6 +58,9 @@ interface IntegrationTestControlPanelProps {
 
   /** Whether data is loading */
   isLoading?: boolean;
+
+  /** Coord's reason no test run may start right now (null = allowed) */
+  runRefusal?: string | null;
 }
 
 // ============================================================================
@@ -231,6 +234,7 @@ export function IntegrationTestControlPanel({
   onRunTest,
   apiHealthy,
   isLoading = false,
+  runRefusal = null,
 }: IntegrationTestControlPanelProps) {
   const [showWorkflowDropdown, setShowWorkflowDropdown] = useState(false);
   const [initialStatesExpanded, setInitialStatesExpanded] = useState(false);
@@ -257,7 +261,8 @@ export function IntegrationTestControlPanel({
     !isRunning &&
     selectedWorkflowId !== null &&
     apiHealthy === true &&
-    !isLoading;
+    !isLoading &&
+    runRefusal === null;
 
   return (
     <Card className="bg-[#1A1A1B]/80 border-border-subtle/50 backdrop-blur-sm">
@@ -382,11 +387,13 @@ export function IntegrationTestControlPanel({
           title={
             !selectedWorkflowId
               ? "Select a workflow to run"
-              : apiHealthy === false
-                ? "API is offline"
-                : apiHealthy === null
-                  ? "Checking API connection..."
-                  : undefined
+              : runRefusal !== null
+                ? runRefusal
+                : apiHealthy === false
+                  ? "API is offline"
+                  : apiHealthy === null
+                    ? "Checking API connection..."
+                    : undefined
           }
         >
           {isRunning ? (
@@ -403,6 +410,14 @@ export function IntegrationTestControlPanel({
         </Button>
 
         {/* Status Info */}
+        {runRefusal && (
+          <p
+            className="text-xs text-text-muted text-center"
+            data-testid="integration-run-refusal"
+          >
+            {runRefusal}
+          </p>
+        )}
         <div className="text-xs text-text-muted text-center">
           {apiHealthy === null
             ? "Checking API connection..."

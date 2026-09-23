@@ -8,6 +8,7 @@ import {
 } from "@/services/rag-setup-service";
 import { useRunnerClient } from "@/lib/runner-client";
 import { useRunnerPoll, useRunnerTarget } from "@/lib/runner";
+import { useNewWorkRefusal } from "@/contexts/active-runner-context";
 import { validateProject } from "@/lib/project-validator";
 import type { MonitorValidationError } from "@/lib/monitor-validation";
 import type { MonitorUpdate } from "@/components/export/MissingMonitorsDialog";
@@ -25,6 +26,7 @@ import type {
 export function useProjectExport(open: boolean): UseProjectExportReturn {
   const ragSetupService = useRAGSetupService();
   const target = useRunnerTarget();
+  const newWorkRefusal = useNewWorkRefusal();
   const runnerClient = useRunnerClient();
   const {
     projectId,
@@ -137,6 +139,12 @@ export function useProjectExport(open: boolean): UseProjectExportReturn {
           .replace(/-+/g, "-")
           .substring(0, 50);
 
+      if (newWorkRefusal !== null) {
+        // Starting RAG processing is NEW work; the export itself is not.
+        setRagStatus("skipped");
+        toast.info("RAG processing skipped", { description: newWorkRefusal });
+        return;
+      }
       setRagStatus("checking");
 
       try {
@@ -221,7 +229,13 @@ export function useProjectExport(open: boolean): UseProjectExportReturn {
         });
       }
     },
-    [projectId, startRagProgressPolling, runnerClient, ragSetupService]
+    [
+      projectId,
+      startRagProgressPolling,
+      runnerClient,
+      ragSetupService,
+      newWorkRefusal,
+    ]
   );
 
   const handleApplyMonitorUpdates = useCallback(

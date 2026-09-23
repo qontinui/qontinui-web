@@ -13,7 +13,7 @@ import {
 import { EditorHeader, EditorSection, ExecutionPanel, type ExecutionResult } from "@/components/builders/editors";
 import { TagInput } from "@/components/builders/TagInput";
 import { AssignChecksDialog } from "@/components/builders/AssignChecksDialog";
-import { useRunnerApi } from "@/lib/runner/runner-api-object";
+import { useDispatchRunnerApi } from "@/lib/runner/runner-api-object";
 import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
@@ -33,7 +33,9 @@ interface CheckGroupEditorProps {
 }
 
 export function CheckGroupEditor({ item, form, setForm, isDirty, isNew, isSaving, onSave, onDelete, checksMap }: CheckGroupEditorProps) {
-  const runnerApi = useRunnerApi();
+  // Calls that START work go to the new-work target (explicit choice or
+  // coord's resolved pick); a refused call carries coord's outcome.
+  const { api: workApi, refusal: workRefusal } = useDispatchRunnerApi();
   const [assignDialogOpen, setAssignDialogOpen] = useState(false);
 
   const updateField = <K extends keyof CheckGroupForm>(field: K, value: CheckGroupForm[K]) => {
@@ -201,7 +203,7 @@ export function CheckGroupEditor({ item, form, setForm, isDirty, isNew, isSaving
           <ExecutionPanel
             onRun={async () => {
               try {
-                const response = await runnerApi.runCheckGroup(item.id);
+                const response = await workApi.runCheckGroup(item.id);
                 return {
                   success: response.status === "success",
                   output: response.output || `${response.passed_checks}/${response.total_checks} checks passed`,
@@ -216,6 +218,7 @@ export function CheckGroupEditor({ item, form, setForm, isDirty, isNew, isSaving
               }
             }}
             runLabel="Run Check Group"
+            refusal={workRefusal}
             disabled={isNew || form.check_ids.length === 0}
           />
         )}

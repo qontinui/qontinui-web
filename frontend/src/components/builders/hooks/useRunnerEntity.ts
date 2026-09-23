@@ -9,7 +9,10 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { runnerFetch } from "@/lib/runner/api-client";
 import { useRunnerApi } from "@/lib/runner/runner-api-object";
 import { targetKey } from "@/lib/runner/target";
-import { useRunnerTarget } from "@/contexts/active-runner-context";
+import {
+  useRunnerTarget,
+  useDispatchRunnerTarget,
+} from "@/contexts/active-runner-context";
 import type {
   PlaywrightScript,
   PromptSnippet,
@@ -328,9 +331,14 @@ export function useDuplicateTest() {
   });
 }
 
+/**
+ * Execute a test — NEW work, so it goes to the new-work target (explicit
+ * choice or coord's resolved pick); when refused the call fails with coord's
+ * outcome, and `refusal` lets the surface disable the action.
+ */
 export function useExecuteTest() {
-  const target = useRunnerTarget();
-  return useMutation({
+  const { target, refusal } = useDispatchRunnerTarget();
+  const mutation = useMutation({
     mutationFn: async (id: string) => {
       return runnerFetch<Record<string, unknown>>(
         target,
@@ -342,4 +350,5 @@ export function useExecuteTest() {
       );
     },
   });
+  return Object.assign(mutation, { refusal: refusal?.message ?? null });
 }

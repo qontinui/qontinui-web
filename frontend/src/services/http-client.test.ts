@@ -765,6 +765,10 @@ describe("HttpClient X-Qontinui-Active-Tenant forwarding", () => {
     // another project's name.
     "https://api.test/api/v1/overview/estimates",
     "https://api.test/api/v1/overview/settings",
+    // Runner targeting: each forwards to coord's device resolver, which
+    // scopes candidates to the active tenant.
+    "https://api.test/api/v1/devices/resolve",
+    "https://api.test/api/v1/dispatch/fresh-host?app_id=web&strategy=best_effort",
   ];
 
   for (const url of SCOPED_URLS) {
@@ -795,6 +799,19 @@ describe("HttpClient X-Qontinui-Active-Tenant forwarding", () => {
       makeTokenManager() as unknown as TokenManager
     );
     await client.fetch("https://api.test/api/v1/projects");
+    expect(captured.current["X-Qontinui-Active-Tenant"]).toBeUndefined();
+  });
+
+  it.each([
+    "https://api.test/api/v1/workflows/0b6c1f1e-1111-4111-8111-111111111111",
+    "https://api.test/api/v1/devices/abc",
+  ])("does NOT attach the header on workflow/device CRUD: %s", async (url) => {
+    localStorage.setItem(ACTIVE_TENANT_STORAGE_KEY, TENANT);
+    const captured = captureFetchHeaders();
+    const client = new HttpClient(
+      makeTokenManager() as unknown as TokenManager
+    );
+    await client.fetch(url);
     expect(captured.current["X-Qontinui-Active-Tenant"]).toBeUndefined();
   });
 

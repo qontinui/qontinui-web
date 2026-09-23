@@ -16,6 +16,7 @@ import {
 } from "@/services/vision-extraction-service";
 import { toast } from "sonner";
 import { useRunnerClient } from "@/lib/runner-client";
+import { useNewWorkRefusal } from "@/contexts/active-runner-context";
 import { isRunnerNeedsLocalError } from "@/lib/runner/api-client";
 import { useExtractionConfig } from "@/hooks/use-extraction-config";
 import { useRunnerMonitors } from "@/hooks/useRunnerMonitors";
@@ -51,6 +52,10 @@ const logger = createLogger("WebExtraction");
 export function useWebExtractionState() {
   const visionExtractionService = useVisionExtractionService();
   const runnerClient = useRunnerClient();
+  // Starting an extraction (session, Playwright collection, vision job) is
+  // NEW work: refused with coord's outcome unless the user chose a runner or
+  // coord resolved one.
+  const newWorkRefusal = useNewWorkRefusal();
   const { projectId } = useProjectLoader();
   const { data: extractions } = useExtractions(projectId || "", !!projectId);
   const createExtraction = useCreateExtraction();
@@ -223,6 +228,10 @@ export function useWebExtractionState() {
       toast.error("No project selected");
       return;
     }
+    if (newWorkRefusal !== null) {
+      toast.error(newWorkRefusal);
+      return;
+    }
 
     try {
       // First check if runner is available
@@ -391,6 +400,10 @@ export function useWebExtractionState() {
   const handleStartPlaywrightExtraction = async (
     config: PlaywrightCollectorConfigState
   ) => {
+    if (newWorkRefusal !== null) {
+      toast.error(newWorkRefusal);
+      return;
+    }
     try {
       // Derive dry_run from maxRiskLevel
       const isDryRun = config.maxRiskLevel === "dry_run";
@@ -427,6 +440,10 @@ export function useWebExtractionState() {
 
   // Run vision extraction on a screenshot (manual fallback)
   const handleRunVisionExtraction = async (screenshotBase64: string) => {
+    if (newWorkRefusal !== null) {
+      toast.error(newWorkRefusal);
+      return;
+    }
     setIsRunningVision(true);
     setSelectedScreenshotForVision(screenshotBase64);
     try {
@@ -480,6 +497,7 @@ export function useWebExtractionState() {
     containerRef,
     tabsRef,
     contentRef,
+    newWorkRefusal,
     handleStartExtraction,
     handleInitiateGlobalExtraction,
     handleSelectPreviousExtraction,

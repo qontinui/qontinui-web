@@ -62,6 +62,7 @@ export function TestOrchestrator({
     generating,
     error,
     setError,
+    workRefusal,
     canAdvance,
     canGoBack,
     advancePhase,
@@ -172,6 +173,14 @@ export function TestOrchestrator({
           </Button>
         )}
         <div className="flex-1" />
+        {workRefusal && (
+          <p
+            className="text-xs text-text-muted"
+            data-testid="test-orchestrator-work-refusal"
+          >
+            {workRefusal}
+          </p>
+        )}
         <Button
           size="sm"
           onClick={advancePhase}

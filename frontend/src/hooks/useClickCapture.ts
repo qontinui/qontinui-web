@@ -9,6 +9,7 @@
 
 import { useState, useCallback, useEffect, useRef } from "react";
 import { useRunnerClient } from "@/lib/runner-client";
+import { useNewWorkRefusal } from "@/contexts/active-runner-context";
 import { useRunnerPoll, useRunnerTarget } from "@/lib/runner";
 import { useRunnerAvailability } from "@/hooks/useRunnerMonitors";
 
@@ -25,6 +26,8 @@ export interface ClickCaptureState {
 export interface UseClickCaptureResult {
   state: ClickCaptureState;
   isRunnerConnected: boolean;
+  /** Coord's reason no capture may start right now (null = allowed). */
+  startRefusal: string | null;
   start: (applicationName?: string) => Promise<boolean>;
   stop: () => Promise<{ candidatesCount: number } | null>;
   refresh: () => Promise<void>;
@@ -32,6 +35,9 @@ export interface UseClickCaptureResult {
 
 export function useClickCapture(): UseClickCaptureResult {
   const runnerClient = useRunnerClient();
+  // Starting a capture session is NEW work (stop / status act on the
+  // existing session).
+  const newWorkRefusal = useNewWorkRefusal();
   const target = useRunnerTarget();
   const [state, setState] = useState<ClickCaptureState>({
     isActive: false,
@@ -133,6 +139,10 @@ export function useClickCapture(): UseClickCaptureResult {
   // Start capture session
   const start = useCallback(
     async (applicationName?: string): Promise<boolean> => {
+      if (newWorkRefusal !== null) {
+        setState((prev) => ({ ...prev, error: newWorkRefusal }));
+        return false;
+      }
       setState((prev) => ({ ...prev, error: null }));
 
       const sessionId = `capture-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -168,7 +178,7 @@ export function useClickCapture(): UseClickCaptureResult {
         return false;
       }
     },
-    [runnerClient]
+    [runnerClient, newWorkRefusal]
   );
 
   // Stop capture session
@@ -209,6 +219,7 @@ export function useClickCapture(): UseClickCaptureResult {
   return {
     state,
     isRunnerConnected: isAvailable ?? false,
+    startRefusal: newWorkRefusal,
     start,
     stop,
     refresh,

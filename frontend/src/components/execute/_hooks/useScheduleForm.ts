@@ -48,7 +48,10 @@ export function useScheduleForm(
 
   const { data: workflows, isLoading: workflowsLoading } =
     useUnifiedWorkflows();
-  const { mutate: createTask } = useCreateScheduledTask();
+  const { mutate: createTask, refusal: createRefusal } =
+    useCreateScheduledTask();
+  // Only CREATING places new work; updating an existing task is not refused.
+  const saveRefusal = isEditing ? null : (createRefusal?.message ?? null);
 
   useEffect(() => {
     if (!open) return;
@@ -125,6 +128,10 @@ export function useScheduleForm(
       toast.error("Please select a workflow");
       return;
     }
+    if (saveRefusal !== null) {
+      toast.error(saveRefusal);
+      return;
+    }
 
     setIsSaving(true);
     try {
@@ -175,6 +182,7 @@ export function useScheduleForm(
   }
 
   return {
+    saveRefusal,
     name,
     setName,
     description,

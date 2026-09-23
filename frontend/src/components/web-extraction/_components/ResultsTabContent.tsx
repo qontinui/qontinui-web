@@ -54,6 +54,8 @@ interface ResultsTabContentProps {
   isRunningVision: boolean;
   selectedScreenshotForVision: string | null;
   onRunVisionExtraction: (screenshotBase64: string) => void;
+  /** Coord's reason no new work may start right now (null = allowed). */
+  newWorkRefusal: string | null;
   playwrightJob: PlaywrightExtractionJob | null;
   playwrightResults: PlaywrightExtractionResults | null;
 }
@@ -75,6 +77,7 @@ export function ResultsTabContent({
   isRunningVision,
   selectedScreenshotForVision,
   onRunVisionExtraction,
+  newWorkRefusal,
   playwrightJob,
   playwrightResults,
 }: ResultsTabContentProps) {
@@ -276,6 +279,7 @@ export function ResultsTabContent({
               <VisionExtractionPrompt
                 isRunning={isRunningVision}
                 onRunExtraction={onRunVisionExtraction}
+                refusal={newWorkRefusal}
                 extractionId={extractionId}
                 technique="SAM3 Segmentation"
               />
@@ -295,6 +299,7 @@ export function ResultsTabContent({
               <VisionExtractionPrompt
                 isRunning={isRunningVision}
                 onRunExtraction={onRunVisionExtraction}
+                refusal={newWorkRefusal}
                 extractionId={extractionId}
                 technique="Edge Detection"
               />
@@ -314,6 +319,7 @@ export function ResultsTabContent({
               <VisionExtractionPrompt
                 isRunning={isRunningVision}
                 onRunExtraction={onRunVisionExtraction}
+                refusal={newWorkRefusal}
                 extractionId={extractionId}
                 technique="OCR"
               />

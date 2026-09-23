@@ -10,6 +10,7 @@ import { Badge } from "@/components/ui/badge";
 import { IntegrationTestResults } from "@/components/testing/IntegrationTestResults";
 import { VisualPlayback } from "@/components/testing/VisualPlayback";
 import { useIntegrationTestingService } from "@/services/integration-testing";
+import { useNewWorkRefusal } from "@/contexts/active-runner-context";
 import { formatTimestampLocal } from "@/lib/time-utils";
 import {
   Play,
@@ -33,6 +34,8 @@ type ViewMode = "list" | "detail" | "visual";
 
 export default function IntegrationTestPage() {
   const integrationTestingService = useIntegrationTestingService();
+  // Running an integration test is NEW work.
+  const newWorkRefusal = useNewWorkRefusal();
   const params = useParams();
   const projectId = params.projectId as string;
 
@@ -94,6 +97,10 @@ export default function IntegrationTestPage() {
 
   const runIntegrationTest = async () => {
     if (!projectId) return;
+    if (newWorkRefusal !== null) {
+      setError(newWorkRefusal);
+      return;
+    }
 
     const mockWorkflowConfig: WorkflowConfig = {
       workflow_id: "placeholder",
@@ -194,9 +201,19 @@ export default function IntegrationTestPage() {
             </Button>
           )}
 
+          {newWorkRefusal && (
+            <span
+              className="max-w-[20rem] truncate text-xs text-muted-foreground"
+              title={newWorkRefusal}
+              data-testid="integration-run-refusal"
+            >
+              {newWorkRefusal}
+            </span>
+          )}
           <Button
             onClick={runIntegrationTest}
-            disabled={runningTest || !apiHealthy}
+            disabled={runningTest || !apiHealthy || newWorkRefusal !== null}
+            title={newWorkRefusal ?? undefined}
             size="sm"
           >
             {runningTest ? (
@@ -266,6 +283,7 @@ export default function IntegrationTestPage() {
                 onRunTest={runIntegrationTest}
                 runningTest={runningTest}
                 apiHealthy={apiHealthy}
+                runRefusal={newWorkRefusal}
               />
             ) : (
               <IntegrationTestRunsList
@@ -299,9 +317,15 @@ interface EmptyStateProps {
   onRunTest: () => void;
   runningTest: boolean;
   apiHealthy: boolean | null;
+  runRefusal: string | null;
 }
 
-function EmptyState({ onRunTest, runningTest, apiHealthy }: EmptyStateProps) {
+function EmptyState({
+  onRunTest,
+  runningTest,
+  apiHealthy,
+  runRefusal,
+}: EmptyStateProps) {
   return (
     <div className="py-12 text-center">
       <Activity className="w-16 h-16 mx-auto mb-4 text-muted-foreground" />
@@ -313,7 +337,11 @@ function EmptyState({ onRunTest, runningTest, apiHealthy }: EmptyStateProps) {
         historical execution data. Tests run in mock mode without needing a live
         GUI.
       </p>
-      <Button onClick={onRunTest} disabled={runningTest || !apiHealthy}>
+      <Button
+        onClick={onRunTest}
+        disabled={runningTest || !apiHealthy || runRefusal !== null}
+        title={runRefusal ?? undefined}
+      >
         {runningTest ? (
           <>
             <Loader2 className="w-4 h-4 mr-2 animate-spin" />
@@ -326,6 +354,9 @@ function EmptyState({ onRunTest, runningTest, apiHealthy }: EmptyStateProps) {
           </>
         )}
       </Button>
+      {runRefusal && (
+        <p className="mt-2 text-xs text-muted-foreground">{runRefusal}</p>
+      )}
     </div>
   );
 }

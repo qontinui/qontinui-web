@@ -3,6 +3,7 @@ export * from "./hooks";
 export {
   createRunnerApi,
   useRunnerApi,
+  useDispatchRunnerApi,
   type RunnerApi,
 } from "./runner-api-object";
 export {
@@ -25,7 +26,8 @@ export {
   RUNNER_RELAY_FAILED,
   RUNNER_LIST_UNAVAILABLE,
   RUNNER_LOCALITY_UNKNOWN,
-  RUNNER_SELECTION_REQUIRED,
+  RUNNER_RESOLVER_UNAVAILABLE,
+  RUNNER_NONE_ELIGIBLE,
   RUNNER_ORIGIN_UNREACHABLE,
 } from "./api-client";
 export type {
@@ -39,6 +41,7 @@ export {
   routeOfTarget,
   resolveRunnerRoute,
   targetKey,
+  targetRunnerId,
   type RunnerTarget,
   type RunnerRoute,
   type RunnerRef,

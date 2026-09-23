@@ -3,7 +3,12 @@
 import { useMemo } from "react";
 import { runnerFetch } from "./api-client";
 import type { RunnerTarget } from "./target";
-import { useRunnerTarget } from "@/contexts/active-runner-context";
+import {
+  useRunnerTarget,
+  useDispatchRunnerTarget,
+  type DispatchNotice,
+  type NewWorkOptions,
+} from "@/contexts/active-runner-context";
 import type {
   RunnerHealth,
   TaskRun,
@@ -1275,4 +1280,22 @@ export type RunnerApi = ReturnType<typeof createRunnerApi>;
 export function useRunnerApi(): RunnerApi {
   const target = useRunnerTarget();
   return useMemo(() => createRunnerApi(target), [target]);
+}
+
+/**
+ * The runner API bound to the NEW-WORK target (see `useDispatchRunnerTarget`):
+ * use it for calls that START work — run a workflow / check / macro / shell
+ * command / test, start an exploration or recording, AI generation. When new
+ * work may not be placed, `refusal` carries coord's outcome (disable the
+ * action and show it) and every call is refused with that message. Pass
+ * `{ workClass: "machine_bound" }` for work that acts on one machine's screen.
+ */
+export function useDispatchRunnerApi(options: NewWorkOptions = {}): {
+  api: RunnerApi;
+  refusal: string | null;
+  notice: DispatchNotice | null;
+} {
+  const { target, refusal, notice } = useDispatchRunnerTarget(options);
+  const api = useMemo(() => createRunnerApi(target), [target]);
+  return { api, refusal: refusal?.message ?? null, notice };
 }

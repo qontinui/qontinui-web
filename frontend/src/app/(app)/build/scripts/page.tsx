@@ -6,7 +6,7 @@ import { BuilderLayout } from "@/components/builders/BuilderLayout";
 import { TagInput } from "@/components/builders/TagInput";
 import {
   type SavedPrompt,
-  useRunnerApi,
+  useRunnerApi, useDispatchRunnerApi,
   usePromptsDetailed,
 } from "@/lib/runner-api";
 import { toast } from "sonner";
@@ -71,6 +71,9 @@ function promptToForm(p: SavedPrompt): EditForm {
 
 function ScriptsBuilderPageContent() {
   const runnerApi = useRunnerApi();
+  // Calls that START work go to the new-work target (explicit choice or
+  // coord's resolved pick); a refused call carries coord's outcome.
+  const { api: workApi, refusal: workRefusal } = useDispatchRunnerApi();
   const searchParams = useSearchParams();
   const { data: prompts, isLoading, error, isOffline, refetch } =
     usePromptsDetailed();
@@ -202,7 +205,7 @@ function ScriptsBuilderPageContent() {
       const actualPrompt = aiMode === "improve" && editForm.content
         ? `Improve this prompt:\n\n${editForm.content}\n\nInstructions: ${prompt}`
         : prompt;
-      const result = await runnerApi.aiGeneratePrompt(actualPrompt, aiMode);
+      const result = await workApi.aiGeneratePrompt(actualPrompt, aiMode);
       if (result.success && result.data) {
         setAiResult(result.data);
       } else {
@@ -274,6 +277,7 @@ function ScriptsBuilderPageContent() {
         <div className="p-6 space-y-5">
           {/* AI Generator */}
           <AiGeneratorPanel
+            refusal={workRefusal}
             title="Generate Prompt with AI"
             accentColor="amber"
             templates={aiMode === "generate" ? promptTemplates : undefined}

@@ -36,6 +36,8 @@ export interface ScheduleFormState {
   skipIfCompleted: boolean;
   setSkipIfCompleted: (v: boolean) => void;
   isSaving: boolean;
+  /** Why the schedule may not be CREATED right now (coord's outcome), or null. */
+  saveRefusal: string | null;
   filteredWorkflows: Array<{
     id: string;
     name: string;

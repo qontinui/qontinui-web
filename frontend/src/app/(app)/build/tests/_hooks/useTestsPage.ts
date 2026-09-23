@@ -12,7 +12,7 @@ import {
 } from "@/components/builders/hooks/useRunnerEntity";
 import { useBuilderPage } from "@/components/builders/hooks/useBuilderPage";
 import type { ExecutionResult } from "@/components/builders/editors";
-import { useRunnerApi } from "@/lib/runner/runner-api-object";
+import { useDispatchRunnerApi } from "@/lib/runner/runner-api-object";
 import { toast } from "sonner";
 import type { AnalyzedElement } from "@/components/test-builder/SpecWorkflowBuilder";
 import type { AnalysisData } from "@/components/test-builder/PageAnalyzer";
@@ -26,7 +26,9 @@ import {
 import { isCodeEmptyOrTemplate } from "../test-utils";
 
 export function useTestsPage() {
-  const runnerApi = useRunnerApi();
+  // Calls that START work go to the new-work target (explicit choice or
+  // coord's resolved pick); a refused call carries coord's outcome.
+  const { api: workApi, refusal: workRefusal } = useDispatchRunnerApi();
   // =========================================================================
   // UI State
   // =========================================================================
@@ -192,7 +194,7 @@ export function useTestsPage() {
     setAiError(null);
     setAiResult(null);
     try {
-      const res = await runnerApi.aiGenerateTest(prompt, form.test_type);
+      const res = await workApi.aiGenerateTest(prompt, form.test_type);
       if (res.success && res.data) {
         setAiResult(res.data);
       } else {
@@ -245,7 +247,7 @@ export function useTestsPage() {
     setAiMetadataGenerating(true);
     try {
       const prompt = `Analyze this test code and generate metadata for it. Return a JSON object with "name" (short descriptive test name), "description" (1-2 sentence description of what the test does), and "tags" (array of relevant tags). The test type is "${form.test_type}".\n\nCode:\n${form.code.slice(0, 2000)}`;
-      const res = await runnerApi.aiGenerateTest(prompt, form.test_type);
+      const res = await workApi.aiGenerateTest(prompt, form.test_type);
       if (res.success && res.data) {
         const updates: Partial<TestForm> = {};
         if (typeof res.data.name === "string" && res.data.name) {
@@ -403,6 +405,9 @@ export function useTestsPage() {
     aiResult,
     aiError,
     aiMetadataGenerating,
+    // Coord's reasons new work may not start right now (null = allowed)
+    workRefusal,
+    executeRefusal: executeTest.refusal,
     screenshotModalUrl,
     setScreenshotModalUrl,
     editorTab,

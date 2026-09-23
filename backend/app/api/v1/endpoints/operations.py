@@ -4235,6 +4235,12 @@ async def get_coord_notifications(
         default=None,
         description="Restrict to notifications the calling principal has not read.",
     ),
+    via: str | None = Query(
+        default=None,
+        description="Filter on the coord-stamped ``detail.via`` — ``agent_evidence`` "
+        "is every agent escalate clearance. Coord owns the vocabulary and "
+        "answers 400 ``unknown_via`` for anything else.",
+    ),
     tenant_id: UUID = Depends(get_tenant_id),
 ) -> Any:
     """Return the ``coord.notifications`` feed for the calling principal.
@@ -4264,6 +4270,8 @@ async def get_coord_notifications(
         params["kind"] = kind
     if unread_only is not None:
         params["unread_only"] = unread_only
+    if via is not None:
+        params["via"] = via
     return await _proxy_coord_get(
         "/coord/notifications", params=params or None, tenant_id=tenant_id
     )
@@ -4892,6 +4900,13 @@ async def get_coord_audit_recent(
         ge=1,
         description="Max rows. Coord clamps to `[1, 1000]` and defaults to 200.",
     ),
+    via: str | None = Query(
+        default=None,
+        description="Filter on `metadata.via` — the writer of an escalate-path "
+        "clearance: `agent_evidence` (an agent, on evidence) or `service` (the "
+        "operator escape hatch). Coord owns the vocabulary and answers 400 "
+        "`unknown_via` for anything else.",
+    ),
     tenant_id: UUID = Depends(require_coord_tenant_admin),
 ) -> Any:
     """Return recent ``coord.operator_audit`` rows for the caller's tenant.
@@ -4930,6 +4945,8 @@ async def get_coord_audit_recent(
         params["before"] = before
     if limit is not None:
         params["limit"] = limit
+    if via:
+        params["via"] = via
     return await _proxy_coord_get(
         "/admin/coord/audit/recent",
         params=params or None,

@@ -7,7 +7,7 @@ import { AiGeneratorPanel } from "@/components/builders/AiGeneratorPanel";
 import { TagInput } from "@/components/builders/TagInput";
 import {
   type SavedApiRequest,
-  useRunnerApi,
+  useRunnerApi, useDispatchRunnerApi,
   useSavedApiRequestsDetailed,
 } from "@/lib/runner-api";
 import { toast } from "sonner";
@@ -88,6 +88,9 @@ const defaultForm: Omit<SavedApiRequest, "id"> = {
 
 function ApiRequestsBuilderPageContent() {
   const runnerApi = useRunnerApi();
+  // Calls that START work go to the new-work target (explicit choice or
+  // coord's resolved pick); a refused call carries coord's outcome.
+  const { api: workApi, refusal: workRefusal } = useDispatchRunnerApi();
   const searchParams = useSearchParams();
   const initialId = searchParams.get("id");
 
@@ -253,7 +256,7 @@ function ApiRequestsBuilderPageContent() {
     setAiError(null);
     setAiResult(null);
     try {
-      const result = await runnerApi.aiGenerateApiRequest(prompt);
+      const result = await workApi.aiGenerateApiRequest(prompt);
       if (result.success && result.data) {
         setAiResult(result.data);
       } else {
@@ -431,6 +434,7 @@ function ApiRequestsBuilderPageContent() {
           <div className="space-y-4">
             {/* AI Generator */}
             <AiGeneratorPanel
+              refusal={workRefusal}
               title="Generate with AI"
               accentColor="indigo"
               templates={apiTemplates}

@@ -2,7 +2,10 @@
 
 import { useRunnerQuery, useRunnerMutation, runnerFetch } from "../api-client";
 import type { RunnerTarget } from "../target";
-import { useRunnerTarget } from "@/contexts/active-runner-context";
+import {
+  useDispatchRunnerTarget,
+  useRunnerTarget,
+} from "@/contexts/active-runner-context";
 import type {
   ScheduledTask,
   SchedulerSettings,
@@ -62,12 +65,21 @@ export function useTaskHistory(taskId: string | null) {
 // Mutation Hooks
 // =============================================================================
 
-/** Create a new scheduled task */
+/**
+ * Create a new scheduled task — NEW work placed on a runner (it will fire
+ * there), so it goes only to the explicit choice or coord's resolved pick.
+ * `refusal` is coord's outcome when it may not be placed. Editing / deleting
+ * an EXISTING task stays on the read target, where that task lives.
+ */
 export function useCreateScheduledTask() {
-  return useRunnerMutation<CreateScheduledTaskRequest, ScheduledTask>(
-    useRunnerTarget(),
-    "/scheduler/tasks"
-  );
+  const { target, refusal } = useDispatchRunnerTarget();
+  return {
+    ...useRunnerMutation<CreateScheduledTaskRequest, ScheduledTask>(
+      target,
+      "/scheduler/tasks"
+    ),
+    refusal,
+  };
 }
 
 // =============================================================================

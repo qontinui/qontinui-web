@@ -48,6 +48,7 @@ export default function WebExtractionTab() {
     handleDeleteAllExtractions,
     handleStartPlaywrightExtraction,
     handleRunVisionExtraction,
+    newWorkRefusal,
   } = state;
 
   if (!projectId) {
@@ -135,9 +136,19 @@ export default function WebExtractionTab() {
                 </TabsTrigger>
               </TabsList>
 
+              {newWorkRefusal && (
+                <span
+                  className="max-w-[20rem] truncate text-xs text-text-muted"
+                  title={newWorkRefusal}
+                  data-testid="web-extraction-start-refusal"
+                >
+                  {newWorkRefusal}
+                </span>
+              )}
               <Button
                 onClick={handleInitiateGlobalExtraction}
-                disabled={createExtraction.isPending}
+                disabled={createExtraction.isPending || newWorkRefusal !== null}
+                title={newWorkRefusal ?? undefined}
                 className="bg-brand-primary/10 text-brand-primary hover:bg-brand-primary/20 border border-brand-primary/40 font-mono h-11 px-6 shadow-[0_0_15px_rgba(0,217,255,0.1)] hover:shadow-[0_0_20px_rgba(0,217,255,0.2)] transition-all"
               >
                 {createExtraction.isPending ? (
@@ -168,6 +179,7 @@ export default function WebExtractionTab() {
                 isStartingPlaywright={isStartingPlaywright}
                 isPollingPlaywright={isPollingPlaywright}
                 onStartPlaywrightExtraction={handleStartPlaywrightExtraction}
+                newWorkRefusal={newWorkRefusal}
                 extractions={extractions}
                 activeExtractionId={activeExtractionId}
                 isDeletingAll={isDeletingAll}
@@ -199,6 +211,7 @@ export default function WebExtractionTab() {
                 isRunningVision={isRunningVision}
                 selectedScreenshotForVision={selectedScreenshotForVision}
                 onRunVisionExtraction={handleRunVisionExtraction}
+                newWorkRefusal={newWorkRefusal}
                 playwrightJob={playwrightJob}
                 playwrightResults={playwrightResults}
               />

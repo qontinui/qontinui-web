@@ -388,7 +388,8 @@ export function ExplorationEditor({
           <div className="space-y-2">
             <Button
               onClick={exploration.handleExecute}
-              disabled={exploration.executing}
+              disabled={exploration.executing || exploration.refusal !== null}
+              title={exploration.refusal ?? undefined}
               className="bg-emerald-600 hover:bg-emerald-700 text-white"
               size="sm"
             >
@@ -404,6 +405,14 @@ export function ExplorationEditor({
                 </>
               )}
             </Button>
+            {exploration.refusal && (
+              <p
+                className="text-xs text-text-muted"
+                data-testid="exploration-start-refusal"
+              >
+                {exploration.refusal}
+              </p>
+            )}
             {exploration.execResult && (
               <p className="text-xs text-emerald-400">{exploration.execResult}</p>
             )}
@@ -415,6 +424,7 @@ export function ExplorationEditor({
 
         {/* AI Advisor */}
         <AiGeneratorPanel
+          refusal={aiAdvisor.refusal}
           title="AI Exploration Advisor"
           accentColor="emerald"
           placeholder="Describe what you want to explore..."

@@ -1,10 +1,14 @@
 import { useState, useCallback, useMemo } from "react";
 import { runnerRequest, useRunnerTarget } from "@/lib/runner";
+import { useNewWorkRefusal } from "@/contexts/active-runner-context";
 import { AccessibilityNode } from "../_types";
 import { collectInteractiveNodes, countNodes } from "../_utils";
 
 export function useAccessibilityInspector() {
   const target = useRunnerTarget();
+  // Opening a URL in a browser session is NEW work (the tree/capture of the
+  // already-open page stays a read).
+  const newWorkRefusal = useNewWorkRefusal();
   const [targetUrl, setTargetUrl] = useState("");
   const [isInspecting, setIsInspecting] = useState(false);
   const [inspectError, setInspectError] = useState<string | null>(null);
@@ -22,6 +26,10 @@ export function useAccessibilityInspector() {
 
   const handleInspect = async () => {
     if (!targetUrl.trim()) return;
+    if (newWorkRefusal !== null) {
+      setInspectError(newWorkRefusal);
+      return;
+    }
     setIsInspecting(true);
     setInspectError(null);
     setTreeData(null);
@@ -95,6 +103,7 @@ export function useAccessibilityInspector() {
   }, []);
 
   return {
+    newWorkRefusal,
     targetUrl,
     setTargetUrl,
     isInspecting,

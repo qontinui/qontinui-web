@@ -18,6 +18,7 @@ import {
 import type { ScreenshotInfo } from "@/components/common/ScreenshotPicker";
 import { createLogger } from "@/lib/logger";
 import { runnerRequest, targetKey, useRunnerTarget } from "@/lib/runner";
+import { useNewWorkRefusal } from "@/contexts/active-runner-context";
 
 const log = createLogger("useRAGAnalysis");
 
@@ -41,6 +42,8 @@ export function useRAGAnalysis({
   useOCR,
 }: UseRAGAnalysisParams) {
   const target = useRunnerTarget();
+  // Segmentation / embedding matching is an ML job — NEW work.
+  const newWorkRefusal = useNewWorkRefusal();
   // Analysis results
   const [segments, setSegments] = useState<SegmentWithMatches[]>([]);
   const [allMatches, setAllMatches] = useState<RAGFindMatch[]>([]);
@@ -132,6 +135,10 @@ export function useRAGAnalysis({
   const runAnalysis = useCallback(async () => {
     if (!currentScreenshot?.url) {
       toast.error("Please select a screenshot first");
+      return;
+    }
+    if (newWorkRefusal !== null) {
+      toast.error(newWorkRefusal);
       return;
     }
 
@@ -279,6 +286,7 @@ export function useRAGAnalysis({
     similarityThreshold,
     matchingStrategy,
     useOCR,
+    newWorkRefusal,
   ]);
 
   return {
@@ -305,5 +313,7 @@ export function useRAGAnalysis({
     // Actions
     resetResults,
     runAnalysis,
+    /** Coord's reason no analysis may start right now (null = allowed). */
+    runRefusal: newWorkRefusal,
   };
 }

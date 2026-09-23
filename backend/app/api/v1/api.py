@@ -51,6 +51,7 @@ from app.api.v1.endpoints import (
     devenv,
     devenv_agent,
     device_bridge_ws,
+    device_resolve,
     devices,
     devices_ws,
     digital_twin,
@@ -212,6 +213,9 @@ api_router.include_router(videos.router, prefix="/videos", tags=["videos"])
 # ``/api/v1/runners/*`` (rename, no deprecation alias) in favour of
 # ``/api/v1/devices/*``.
 api_router.include_router(devices.router, prefix="/devices", tags=["devices"])
+# Coord's capability-checked device resolver, forwarded AS the caller (plan
+# 2026-09-20-runner-selector-drives-a-transport-not-a-target, Phase 3).
+api_router.include_router(device_resolve.router, prefix="/devices", tags=["devices"])
 # Single-use pair codes (Phase 2a.1) — mounted under /devices/pair-codes.
 # Sits next to devices.router because the redeem endpoint is the runner's
 # entry point and lives in the same conceptual namespace.

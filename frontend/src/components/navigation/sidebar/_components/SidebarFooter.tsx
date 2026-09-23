@@ -1,7 +1,7 @@
 import { cn } from "@/lib/utils";
 import { UserMenu, type UserMenuProps } from "../UserMenu";
 import { CollapseToggle } from "../CollapseToggle";
-import { RunnerSelector } from "./RunnerSelector";
+import { RunnerStatusLine } from "./RunnerStatusLine";
 
 interface SidebarFooterProps extends Omit<UserMenuProps, "isCollapsed"> {
   isCollapsed: boolean;
@@ -48,7 +48,7 @@ export function SidebarFooter({
         )}
       >
         <div className={cn(!isCollapsed && "min-w-0 flex-1")}>
-          <RunnerSelector isCollapsed={isCollapsed} />
+          <RunnerStatusLine isCollapsed={isCollapsed} />
         </div>
         <CollapseToggle
           isCollapsed={isCollapsed}

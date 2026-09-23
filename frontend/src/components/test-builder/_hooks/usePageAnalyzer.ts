@@ -1,6 +1,9 @@
 import { useState, useCallback, useEffect } from "react";
 import { runnerFetch, runnerRequest } from "@/lib/runner/api-client";
-import { useRunnerTarget } from "@/contexts/active-runner-context";
+import {
+  useNewWorkRefusal,
+  useRunnerTarget,
+} from "@/contexts/active-runner-context";
 import type {
   CollectedAnalysis,
   CollectedAnalysisSet,
@@ -30,6 +33,8 @@ export function usePageAnalyzer({
   initialAnalyses,
 }: UsePageAnalyzerOptions) {
   const target = useRunnerTarget();
+  // The vision analysis is an AI job — NEW work.
+  const newWorkRefusal = useNewWorkRefusal();
   // ---- Collected analyses ----
   const [analyses, setAnalyses] = useState<CollectedAnalysis[]>(
     initialAnalyses ?? []
@@ -215,6 +220,10 @@ export function usePageAnalyzer({
   }, [uiBridgeUrl, uiBridgeTarget, onError, target]);
 
   const runVisionAnalysis = useCallback(async () => {
+    if (newWorkRefusal !== null) {
+      setError(newWorkRefusal);
+      return;
+    }
     setIsAnalyzing(true);
     setError(null);
 
@@ -282,7 +291,7 @@ export function usePageAnalyzer({
     } finally {
       setIsAnalyzing(false);
     }
-  }, [selectedMonitor, onError, target]);
+  }, [selectedMonitor, onError, target, newWorkRefusal]);
 
   const runApiRequestAnalysis = useCallback(async () => {
     const selectedRequest = savedRequests.find(
@@ -438,6 +447,8 @@ export function usePageAnalyzer({
     selectedMonitor,
     setSelectedMonitor,
     runVisionAnalysis,
+    /** Coord's reason no vision analysis may start right now (null = allowed). */
+    visionRefusal: newWorkRefusal,
 
     // API Request
     savedRequests,

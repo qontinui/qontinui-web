@@ -3,14 +3,18 @@
 import { useState, useCallback, useEffect } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { useRealtimeConnections } from "@/hooks/useRealtimeConnections";
 import { useChatWebSocket } from "@/hooks/useChatWebSocket";
 import { ChatHeader } from "@/components/chat/ChatHeader";
 import { ChatMessageArea } from "@/components/chat/ChatMessageArea";
 import { ChatInput } from "@/components/chat/ChatInput";
 import { WorkflowPreviewPanel } from "@/components/chat/WorkflowPreviewPanel";
 import type { UnifiedWorkflow } from "@/types/unified-workflow";
-import { RunnerApiError, runnerRequest, useRunnerTarget } from "@/lib/runner";
+import {
+  RunnerApiError,
+  runnerRequest,
+  targetRunnerId,
+  useRunnerTarget,
+} from "@/lib/runner";
 
 export default function ChatSessionPage() {
   const params = useParams();
@@ -18,9 +22,10 @@ export default function ChatSessionPage() {
   const taskRunId = params.id as string;
   const runnerTarget = useRunnerTarget();
 
-  const { runners } = useRealtimeConnections();
-  const activeRunner = runners[0] || null;
-  const isRunnerConnected = !!activeRunner;
+  // Read from the target: a device coord named that the web list has not
+  // caught up with is still the runner this page talks to.
+  const runnerId = targetRunnerId(runnerTarget);
+  const isRunnerConnected = runnerId !== null;
 
   const [sessionName, setSessionName] = useState("New Chat");
   const [showWorkflowPanel, setShowWorkflowPanel] = useState(false);
@@ -67,18 +72,18 @@ export default function ChatSessionPage() {
     loadSession,
     isGeneratingWorkflow,
   } = useChatWebSocket({
-    runnerId: activeRunner?.id ?? null,
+    runnerId,
     onSessionCreated: handleSessionCreated,
     onWorkflowGenerated: handleWorkflowGenerated,
   });
 
   // Load session on mount (for existing sessions)
   useEffect(() => {
-    if (taskRunId && activeRunner) {
+    if (taskRunId && runnerId !== null) {
       loadSession(taskRunId);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [taskRunId, activeRunner?.id]);
+  }, [taskRunId, runnerId]);
 
   const handleSendMessage = useCallback(
     (content: string) => {
@@ -149,15 +154,11 @@ export default function ChatSessionPage() {
   const handleSaveWorkflow = useCallback(async () => {
     if (!generatedWorkflow) return;
     try {
-      const response = await runnerRequest(
-        runnerTarget,
-        "/unified-workflows",
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(generatedWorkflow),
-        }
-      );
+      const response = await runnerRequest(runnerTarget, "/unified-workflows", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(generatedWorkflow),
+      });
       if (response.ok) {
         toast.success("Workflow saved to library");
       } else {

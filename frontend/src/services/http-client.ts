@@ -55,6 +55,13 @@ const ACTIVE_TENANT_URL_PREFIXES = [
   // into it. Plan `2026-09-19-project-overview-for-business-leaders`,
   // design decision 2.
   "/api/v1/overview/",
+  // Runner targeting (plan 2026-09-20-runner-selector-drives-a-transport-not-
+  // a-target, Phase 3). Each forwards to coord's device resolver AS the
+  // caller, and coord scopes the candidate devices to the ACTIVE tenant — so
+  // without the header a multi-tenant operator is resolved against their home
+  // tenant's devices.
+  "/api/v1/devices/resolve",
+  "/api/v1/dispatch/fresh-host",
 ];
 
 function readActiveTenantId(): string | null {

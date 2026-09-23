@@ -13,7 +13,11 @@ import {
   useRunnerTarget,
   type RunnerTarget,
 } from "@/lib/runner";
-import { useActiveRunner } from "@/contexts/active-runner-context";
+import {
+  useActiveRunner,
+  useDispatchRunnerTarget,
+  useNewWorkRefusal,
+} from "@/contexts/active-runner-context";
 import { runnerTargetById } from "@/hooks/ui-bridge/runnerTargetById";
 const logger = createLogger("UseUIBridgeSection");
 const API = `${ApiConfig.API_BASE_URL}/api/v1`;
@@ -37,21 +41,32 @@ export function useUIBridgeSection({
   const stateRef = useRef(state);
   stateRef.current = state;
 
-  // Auto-select first runner when runners load
+  // This page STARTS work (exploration / extraction) on its selected runner,
+  // so the default selection is where new work may go — the user's explicit
+  // choice or coord's resolved pick — never a read fallback and never the
+  // first listed runner. Nothing eligible: stay unselected (the user picks
+  // one in this page's own selector, which is an explicit choice).
+  //
+  // An AUTO-FILLED selection follows the dispatch target: when coord moves
+  // its pick, or refuses new work, the auto-filled id is replaced (or
+  // cleared). Only a runner the user picked here is sticky.
+  const dispatch = useDispatchRunnerTarget();
+  const activeRunnerId = dispatch.runnerId;
+  const autoFilledRef = useRef<string | null>(null);
   useEffect(() => {
-    if (
-      state.selectedRunnerId === null &&
-      runners.length > 0 &&
-      !runnersLoading
-    ) {
-      state.setSelectedRunnerId(runners[0]?.id ?? null);
-    }
+    if (runnersLoading) return;
+    const current = state.selectedRunnerId;
+    const isAuto = current === null || current === autoFilledRef.current;
+    if (!isAuto || current === activeRunnerId) return;
+    autoFilledRef.current = activeRunnerId;
+    state.setSelectedRunnerId(activeRunnerId);
     // eslint-disable-next-line react-hooks/exhaustive-deps -- setSelectedRunnerId is stable
-  }, [runners, runnersLoading, state.selectedRunnerId]);
+  }, [activeRunnerId, runnersLoading, state.selectedRunnerId]);
 
-  // Runner change handler
+  // Runner change handler — a user pick is sticky (no longer auto-filled).
   const onRunnerChange = useCallback(
     (runnerId: string | null) => {
+      autoFilledRef.current = null;
       state.setSelectedRunnerId(runnerId);
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps -- setter is stable
@@ -74,9 +89,36 @@ export function useUIBridgeSection({
           ? runnerTarget
           : null;
       }
+      // The dispatch runner may be a device coord resolved that the list has
+      // not caught up with; it is addressed as the dispatch target itself.
+      if (runnerId !== null && runnerId === dispatch.runnerId) {
+        return dispatch.target;
+      }
       return runnerTargetById(runners, localityById, runnerId);
     },
-    [runners, localityById, exploration.config.targetType, runnerTarget]
+    [
+      runners,
+      localityById,
+      exploration.config.targetType,
+      runnerTarget,
+      dispatch.runnerId,
+      dispatch.target,
+    ]
+  );
+
+  // Extension mode starts work on the READ target (the browser extension on
+  // this machine, through the active runner when it is proven local), so a
+  // new exploration / recording there is gated on the new-work rule. In the
+  // other modes the target is this page's own selection: the user's pick
+  // (explicit) or the auto-filled dispatch runner, which is cleared when new
+  // work is refused.
+  const newWorkRefusal = useNewWorkRefusal();
+  const startRefusal =
+    exploration.config.targetType === "extension" ? newWorkRefusal : null;
+  const getStartTarget = useCallback(
+    (runnerId: string | null): RunnerTarget | null =>
+      startRefusal !== null ? null : getRunnerTarget(runnerId),
+    [startRefusal, getRunnerTarget]
   );
 
   // Refresh browser tabs
@@ -218,6 +260,8 @@ export function useUIBridgeSection({
     runnersLoading,
     onRunnerChange,
     getRunnerTarget,
+    getStartTarget,
+    startRefusal,
     handleRefreshBrowserTabs,
     handleSelectBrowserTab,
     loadRenderLogSessions,
