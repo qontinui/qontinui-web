@@ -11355,19 +11355,6 @@ async def get_coord_members(
     return await _proxy_coord_get("/admin/coord/operators", tenant_id=tenant_id)
 
 
-@router.post("/coord/members")
-async def post_coord_member(
-    body: dict[str, Any],
-    tenant_id: UUID = Depends(require_coord_tenant_admin),
-) -> Any:
-    """Create an operator in the caller's home tenant (pre-login invites OK).
-
-    Proxies coord ``POST /admin/coord/operators``. Body:
-    ``{email, display_name?, sso_subject, sso_provider, roles?: [str]}`` →
-    ``{operator_id}``."""
-    return await _proxy_coord_post("/admin/coord/operators", body, tenant_id=tenant_id)
-
-
 @router.post("/coord/members/{operator_id}/roles")
 async def post_coord_member_role(
     operator_id: str,
@@ -11407,11 +11394,19 @@ async def delete_coord_member_role(
 
 # ---- Add a tenant member BY EMAIL ---------------------------------------
 #
-# The route above (``POST /coord/members``) is the raw coord proxy: it takes
-# an ``sso_subject`` + ``sso_provider``, which a tenant admin adding one
-# colleague has no way to know. Hand-typing a Cognito ``sub`` is not a
-# workflow; it is a lookup the server can do. This route is that lookup plus
-# the grant, so the dashboard asks for an email and a role and nothing else.
+# A tenant admin adding one colleague has no way to know that colleague's
+# Cognito ``sub`` + ``sso_provider`` — hand-typing one is not a workflow, it
+# is a lookup the server can do. This route is that lookup plus the grant,
+# so the dashboard asks for an email and a role and nothing else.
+#
+# The old raw proxy (``POST /coord/members``, taking a caller-chosen
+# ``sso_subject``/``sso_provider`` and forwarding it untyped to coord's
+# ``POST /admin/coord/operators``) is deleted, not deprecated: after this
+# route shipped, nothing called it (grep over ``frontend/src`` finds only
+# the GET and the role grant/revoke), and a live route where a client picks
+# which Cognito identity a tenant grant lands on — bypassing this route's
+# ``extra="forbid"`` — is the exact defect this route exists to close.
+# coord finding 130b6938.
 
 
 class _TenantMemberAddBody(BaseModel):
