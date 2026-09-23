@@ -312,6 +312,10 @@ export default function CoordFindingsPage() {
       setLinkedAnswered(true);
     } catch {
       if (linkedGenRef.current !== gen) return;
+      // A throw is a different cause from an earlier degrade of this read; the
+      // notice ranks `unavailable` above `error`, so a stale degrade left set
+      // here would name the wrong cause (the same fix the list read carries).
+      setLinkedUnavailable(false);
       setLinkedFailed(true);
       setLinkedAnswered(true);
     } finally {
@@ -371,13 +375,19 @@ export default function CoordFindingsPage() {
   // The linked row is prepended even when the filters exclude it, so the
   // banner owes a sentence for why it is on screen but not in the count. Only
   // claimed once the list has actually been read for the current query.
-  const linkedOutsideFilters =
+  const linkedNotInList =
     linkedRow !== null &&
     loaded &&
     !loading &&
     !readFailed &&
     unavailable === null &&
     !rows.some((r) => r.finding_id === linkedRow.finding_id);
+  // The list is ONE page with no paging. A full page proves nothing about the
+  // rows past it, so a linked row missing from a full page may well match the
+  // filters — only a SHORT page (the whole matching set) licenses "outside".
+  const listPageFull = rows.length >= PAGE_SIZE;
+  const linkedOutsideFilters = linkedNotInList && !listPageFull;
+  const linkedBeyondLoadedPage = linkedNotInList && listPageFull;
   const listUnknown = readIsUnknown(loaded, readFailed);
 
   return (
@@ -481,6 +491,7 @@ export default function CoordFindingsPage() {
             found: linkedRow !== null,
             expired: linkedRow ? isExpired(linkedRow) : false,
             outsideFilters: linkedOutsideFilters,
+            beyondLoadedPage: linkedBeyondLoadedPage,
             // `loading` sits above `error` and above the fallback and
             // short-circuits, which is exactly why the FIRST render cannot say
             // "no such finding": nothing has been read yet.

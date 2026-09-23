@@ -270,9 +270,9 @@ class TestCoordFindingsDegrade:
     def test_404_reads_as_not_deployed_rather_than_no_findings(
         self, auth_client: TestClient
     ):
-        """Coord's `/coord/findings` twin lands in a separate PR.
+        """A 404 means the deployed coord predates `/coord/findings`.
 
-        A 404 in that window must not render as "there are no findings" —
+        A 404 must not render as "there are no findings" —
         that is `silent-empty-is-unknown` made in an HTTP status.
         """
         with _patch_httpx() as MockClient:
@@ -291,6 +291,45 @@ class TestCoordFindingsDegrade:
         assert body["count"] == 0
         assert body["unavailable_kind"] == "not_deployed"
         assert "not the same as there being none" in body["unavailable"]
+
+    def test_coord_available_false_is_given_the_degrade_pair(
+        self, auth_client: TestClient
+    ):
+        """coord's own `200 {"available": false}` (store not provisioned).
+
+        The page branches on `unavailable` alone, so without the pair this
+        answer rendered as "0 findings" about a store coord said it cannot read.
+        """
+        with _patch_httpx() as MockClient:
+            mock_instance = MagicMock()
+            mock_instance.get = AsyncMock(
+                return_value=_mock_response(
+                    200, {"available": False, "count": 0, "findings": []}
+                )
+            )
+            _configure_mock_client(MockClient, mock_instance)
+
+            resp = auth_client.get(FINDINGS_URL)
+
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["available"] is False
+        assert body["unavailable_kind"] == "unprovisioned"
+        assert "not the same as there being none" in body["unavailable"]
+
+    def test_an_available_answer_carries_no_degrade(self, auth_client: TestClient):
+        with _patch_httpx() as MockClient:
+            mock_instance = MagicMock()
+            mock_instance.get = AsyncMock(
+                return_value=_mock_response(
+                    200, {"available": True, "count": 0, "findings": []}
+                )
+            )
+            _configure_mock_client(MockClient, mock_instance)
+
+            resp = auth_client.get(FINDINGS_URL)
+
+        assert "unavailable" not in resp.json()
 
     def test_503_reads_as_unreachable(self, auth_client: TestClient):
         with _patch_httpx() as MockClient:
