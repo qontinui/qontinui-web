@@ -60,6 +60,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { cn } from "@/lib/utils";
 import { Filter } from "lucide-react";
 import {
   HealthStrip,
@@ -75,6 +76,7 @@ import { httpClient } from "@/services/service-factory";
 import {
   type CoordFindingRow,
   type FindingsResponse,
+  type FindingsUnavailableKind,
   FINDING_STATUS_PALETTE,
   deriveFindingStatus,
   deriveFindingsHealth,
@@ -82,6 +84,7 @@ import {
   findingLinkNotice,
   isExpired,
   isFindingId,
+  isFindingsUnavailableSevere,
   linkedRowFrom,
   triageFilterCaveat,
   triageOf,
@@ -153,6 +156,8 @@ export default function CoordFindingsPage() {
   const [loaded, setLoaded] = useState(false);
   const [readFailed, setReadFailed] = useState(false);
   const [unavailable, setUnavailable] = useState<string | null>(null);
+  const [unavailableKind, setUnavailableKind] =
+    useState<FindingsUnavailableKind | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [expanded, setExpanded] = useState<string | null>(null);
 
@@ -211,6 +216,7 @@ export default function CoordFindingsPage() {
       // asserting the store is empty.
       if (body.unavailable) {
         setUnavailable(body.unavailable);
+        setUnavailableKind(body.unavailable_kind ?? null);
         setRows([]);
         setCount(null);
         // The rows an earlier success produced are gone, so nothing on screen
@@ -222,6 +228,7 @@ export default function CoordFindingsPage() {
         return;
       }
       setUnavailable(null);
+      setUnavailableKind(null);
       setRows(rowsOf(body));
       setCount(typeof body.count === "number" ? body.count : null);
       setTruncatedKeys(body.resource_keys_truncated === true);
@@ -236,6 +243,7 @@ export default function CoordFindingsPage() {
       // Safe only because a degrade also resets `loaded`: without that, this
       // clear would turn "unknown" into "no findings match".
       setUnavailable(null);
+      setUnavailableKind(null);
       setError(`Failed to load: ${e instanceof Error ? e.message : String(e)}`);
       setReadFailed(true);
     } finally {
@@ -259,6 +267,7 @@ export default function CoordFindingsPage() {
     setReadFailed(false);
     setError(null);
     setUnavailable(null);
+    setUnavailableKind(null);
     setTruncatedKeys(false);
     // Keep the LINKED row open across a filter change — the banner still says
     // it is expanded below, and it is still on screen (prepended).
@@ -372,6 +381,10 @@ export default function CoordFindingsPage() {
   });
 
   const caveat = triageFilterCaveat(triaged);
+  // `not_deployed` is the one benign reading (this frontend shipped before
+  // some coord instance's Phase 1 route); every other cause, including an
+  // older backend that omits the kind, is shown as the louder case.
+  const unavailableSevere = isFindingsUnavailableSevere(unavailableKind);
   // The linked row is prepended even when the filters exclude it, so the
   // banner owes a sentence for why it is on screen but not in the count. Only
   // claimed once the list has actually been read for the current query.
@@ -486,8 +499,14 @@ export default function CoordFindingsPage() {
 
       {unavailable && (
         <p
-          className="text-sm italic text-muted-foreground"
+          className={cn(
+            "text-sm",
+            unavailableSevere
+              ? "text-amber-800 dark:text-amber-200"
+              : "italic text-muted-foreground"
+          )}
           data-testid="coord-findings-unavailable"
+          data-severe={unavailableSevere}
         >
           {unavailable}
         </p>

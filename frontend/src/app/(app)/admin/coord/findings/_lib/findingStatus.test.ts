@@ -31,6 +31,7 @@ import {
   findingLinkNotice,
   isExpired,
   isFindingId,
+  isFindingsUnavailableSevere,
   linkedRowFrom,
   retentionOf,
   triageFilterCaveat,
@@ -391,6 +392,22 @@ describe("isFindingId", () => {
     expect(isFindingId("fec41291")).toBe(false);
     expect(isFindingId("not-a-uuid")).toBe(false);
     expect(isFindingId("")).toBe(false);
+  });
+});
+
+describe("isFindingsUnavailableSevere", () => {
+  it("treats not_deployed alone as calm", () => {
+    expect(isFindingsUnavailableSevere("not_deployed")).toBe(false);
+  });
+
+  it("treats unreachable and unprovisioned as severe", () => {
+    expect(isFindingsUnavailableSevere("unreachable")).toBe(true);
+    expect(isFindingsUnavailableSevere("unprovisioned")).toBe(true);
+  });
+
+  it("defaults a missing/unlabelled kind to severe, unlike the proposals queue", () => {
+    expect(isFindingsUnavailableSevere(null)).toBe(true);
+    expect(isFindingsUnavailableSevere(undefined)).toBe(true);
   });
 });
 

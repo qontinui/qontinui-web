@@ -604,9 +604,10 @@ describe("CoordFindingsPage", () => {
       });
       render(<CoordFindingsPage />);
 
-      expect(
-        await screen.findByTestId("coord-findings-unavailable")
-      ).toHaveTextContent(/has not deployed/i);
+      const banner = await screen.findByTestId("coord-findings-unavailable");
+      expect(banner).toHaveTextContent(/has not deployed/i);
+      // `not_deployed` is the one benign reading — no amber/severe chrome.
+      expect(banner.getAttribute("data-severe")).toBe("false");
       expect(screen.getByTestId("coord-findings-health")).toHaveTextContent(
         /could not be read/i
       );
@@ -615,6 +616,48 @@ describe("CoordFindingsPage", () => {
       expect(screen.getByTestId("coord-findings-unknown")).toHaveTextContent(
         /unknown/i
       );
+    });
+
+    it("shows an unreachable coord as the severe (amber) case, not the calm one", async () => {
+      httpGet.mockResolvedValue({
+        available: false,
+        count: 0,
+        findings: [],
+        unavailable: "coord did not answer the findings store (HTTP 503).",
+        unavailable_kind: "unreachable",
+      });
+      render(<CoordFindingsPage />);
+
+      const banner = await screen.findByTestId("coord-findings-unavailable");
+      expect(banner.getAttribute("data-severe")).toBe("true");
+    });
+
+    it("shows an unprovisioned store as severe — R3's floor for UNKNOWN, never calm", async () => {
+      httpGet.mockResolvedValue({
+        available: false,
+        count: 0,
+        findings: [],
+        unavailable:
+          "coord reports its findings store is not provisioned (`available: false`).",
+        unavailable_kind: "unprovisioned",
+      });
+      render(<CoordFindingsPage />);
+
+      const banner = await screen.findByTestId("coord-findings-unavailable");
+      expect(banner.getAttribute("data-severe")).toBe("true");
+    });
+
+    it("defaults to severe when an older backend omits unavailable_kind", async () => {
+      httpGet.mockResolvedValue({
+        available: false,
+        count: 0,
+        findings: [],
+        unavailable: "coord did not answer the findings store (HTTP 500).",
+      });
+      render(<CoordFindingsPage />);
+
+      const banner = await screen.findByTestId("coord-findings-unavailable");
+      expect(banner.getAttribute("data-severe")).toBe("true");
     });
 
     it("says UNKNOWN, not 'no findings match', after a failed first read", async () => {
