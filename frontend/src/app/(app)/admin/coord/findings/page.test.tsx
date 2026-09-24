@@ -476,6 +476,134 @@ describe("CoordFindingsPage", () => {
       );
     });
 
+    it("styles a BY-ID degrade as severe when it is the only degrade on screen", async () => {
+      withLinkedId();
+      httpGet.mockImplementation((url: string) =>
+        Promise.resolve(
+          String(url).includes("finding_id=")
+            ? {
+                available: false,
+                count: 0,
+                findings: [],
+                unavailable:
+                  "coord did not answer the findings store (HTTP 503).",
+                unavailable_kind: "unreachable",
+              }
+            : page([finding({ finding_id: ID_B })])
+        )
+      );
+      render(<CoordFindingsPage />);
+
+      await waitFor(() =>
+        expect(screen.getByTestId("coord-findings-linked")).toHaveTextContent(
+          /not answering/i
+        )
+      );
+      expect(screen.queryByTestId("coord-findings-unavailable")).toBeNull();
+      expect(
+        screen.getByTestId("coord-findings-linked").getAttribute("data-severe")
+      ).toBe("true");
+    });
+
+    it("keeps a not_deployed BY-ID degrade muted — the one benign kind", async () => {
+      withLinkedId();
+      httpGet.mockImplementation((url: string) =>
+        Promise.resolve(
+          String(url).includes("finding_id=")
+            ? {
+                available: false,
+                count: 0,
+                findings: [],
+                unavailable: "coord's findings reader is not answering.",
+                unavailable_kind: "not_deployed",
+              }
+            : page([finding({ finding_id: ID_B })])
+        )
+      );
+      render(<CoordFindingsPage />);
+
+      await waitFor(() =>
+        expect(screen.getByTestId("coord-findings-linked")).toHaveTextContent(
+          /not answering/i
+        )
+      );
+      expect(
+        screen.getByTestId("coord-findings-linked").getAttribute("data-severe")
+      ).toBe("false");
+    });
+
+    it("follows the LIST degrade's severity while the by-id read is still out", async () => {
+      withLinkedId();
+      httpGet.mockImplementation((url: string) =>
+        String(url).includes("finding_id=")
+          ? new Promise(() => {})
+          : Promise.resolve({
+              available: false,
+              count: 0,
+              findings: [],
+              unavailable: "coord's findings reader is not answering.",
+              unavailable_kind: "not_deployed",
+            })
+      );
+      render(<CoordFindingsPage />);
+
+      await screen.findByTestId("coord-findings-unavailable");
+      await waitFor(() =>
+        expect(screen.getByTestId("coord-findings-linked")).toHaveTextContent(
+          /cannot be looked up/i
+        )
+      );
+      expect(
+        screen.getByTestId("coord-findings-linked").getAttribute("data-severe")
+      ).toBe("false");
+    });
+
+    it("never styles a malformed id as a degrade, even under a severe list degrade", async () => {
+      withLinkedId("not-a-uuid");
+      httpGet.mockResolvedValue({
+        available: false,
+        count: 0,
+        findings: [],
+        unavailable: "coord did not answer the findings store (HTTP 503).",
+        unavailable_kind: "unreachable",
+      });
+      render(<CoordFindingsPage />);
+
+      await screen.findByTestId("coord-findings-unavailable");
+      const banner = screen.getByTestId("coord-findings-linked");
+      expect(banner).toHaveTextContent(/not a finding id/i);
+      expect(banner.getAttribute("data-severe")).toBe("false");
+    });
+
+    it("does not style an authoritative by-id answer as a degrade, whatever the list did", async () => {
+      withLinkedId();
+      httpGet.mockImplementation((url: string) =>
+        Promise.resolve(
+          String(url).includes("finding_id=")
+            ? page([])
+            : {
+                available: false,
+                count: 0,
+                findings: [],
+                unavailable:
+                  "coord did not answer the findings store (HTTP 503).",
+                unavailable_kind: "unreachable",
+              }
+        )
+      );
+      render(<CoordFindingsPage />);
+
+      await screen.findByTestId("coord-findings-unavailable");
+      await waitFor(() =>
+        expect(
+          screen.getByTestId("coord-findings-linked")
+        ).not.toHaveTextContent(/cannot be looked up|looking for/i)
+      );
+      expect(
+        screen.getByTestId("coord-findings-linked").getAttribute("data-severe")
+      ).toBe("false");
+    });
+
     it("does not call a linked row beyond a FULL page 'outside the filters'", async () => {
       // One page, no paging: 50 newer rows prove nothing about the rows past
       // them, so the linked row may match the filters and simply sit beyond.
