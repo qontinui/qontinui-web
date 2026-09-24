@@ -529,13 +529,13 @@ def _async_maker(url: str) -> tuple[Any, async_sessionmaker[AsyncSession]]:
 def test_existing_provenance_resolves_against_real_postgres(
     migrated: tuple[Engine, str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """``_existing_provenance``'s SQL, executed — hit, miss, and both-None.
+    """``_existing_provenance``'s SQL, executed — hit, miss, and none-claimed.
 
     Until this existed the function's query was run by NOTHING:
     ``test_memory_auth.py`` substitutes a fake session whose ``execute``
     ignores the statement and does set membership on the params, and
     ``test_memory_api_db.py`` overrides ``get_memory_tenant`` wholesale.
-    Combined with the (correct) ``except Exception: return None, None``,
+    Combined with the (correct) ``except Exception: return None, ...``,
     a query that was simply wrong — a renamed column, a search-path
     surprise, an asyncpg type error on the ``CAST(:user_id AS uuid)`` that
     receives a ``str`` — would degrade to unattributed provenance with a
@@ -545,6 +545,16 @@ def test_existing_provenance_resolves_against_real_postgres(
 
     This is the test that settles asyncpg's runtime encoding of the
     ``str(user_id)`` the function binds.
+
+    **The device id is a PASSTHROUGH and that is the contract**, not a
+    gap this test tolerates: web's read boundary is closed against
+    coord's ``coord.*`` schema
+    (``tests/test_coord_schema_boundary_guard.py``), so this function
+    resolves only ``auth.users`` — web's own schema. A dangling device id
+    is caught on the insert side instead, for every arm, by
+    ``_write_degrading_dangling_provenance`` — which
+    ``test_the_savepoint_fallback_lands_the_row_unattributed`` covers
+    end-to-end over real Postgres.
     """
     import app.db.session as db_session
     from app.api.v1.endpoints.memory import _existing_provenance
@@ -555,19 +565,23 @@ def test_existing_provenance_resolves_against_real_postgres(
     _seed_user(sync_engine, user_id)
     _seed_device(sync_engine, device_id, tenant_id)
 
+    # Pinned rather than inlined, so the passthrough can be asserted by
+    # identity instead of by "something non-None came back".
+    absent_user, absent_device = uuid4(), uuid4()
+
     engine, maker = _async_maker(url)
     monkeypatch.setattr(db_session, "AsyncSessionLocal", maker)
 
     async def _go() -> list[tuple[UUID | None, UUID | None]]:
         try:
             return [
-                # Both resolve.
+                # The user resolves; the device rides through untouched.
                 await _existing_provenance(user_id, device_id),
-                # Neither does — the degradation, not an exception.
-                await _existing_provenance(uuid4(), uuid4()),
-                # One of each.
-                await _existing_provenance(user_id, uuid4()),
-                await _existing_provenance(uuid4(), device_id),
+                # The user does not — the degradation, not an exception.
+                await _existing_provenance(absent_user, absent_device),
+                # One of each, both directions.
+                await _existing_provenance(user_id, absent_device),
+                await _existing_provenance(absent_user, device_id),
                 # Nothing claimed: the short-circuit, no query at all.
                 await _existing_provenance(None, None),
             ]
@@ -577,12 +591,15 @@ def test_existing_provenance_resolves_against_real_postgres(
     both, neither, user_only, device_only, nothing = asyncio.run(_go())
 
     assert both == (user_id, device_id), (
-        "a claimed pair that EXISTS must survive the lookup. A failure here "
-        "with a correct seed means the SQL itself is wrong — which is the "
-        "condition this test was written because nothing could detect."
+        "a claimed pair whose USER exists must survive the lookup. A failure "
+        "here with a correct seed means the SQL itself is wrong — which is "
+        "the condition this test was written because nothing could detect."
     )
-    assert neither == (None, None)
-    assert user_only == (user_id, None)
+    assert neither == (None, absent_device), (
+        "an unresolvable user degrades to NULL; the device id is NOT resolved "
+        "here and must ride through verbatim for the insert side to degrade."
+    )
+    assert user_only == (user_id, absent_device)
     assert device_only == (None, device_id)
     assert nothing == (None, None)
 

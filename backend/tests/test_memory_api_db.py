@@ -5885,10 +5885,13 @@ class TestProvenanceReachesTheRowThroughTheEndpoint:
     ) -> None:
         """The other half of the FK fail-soft, at the endpoint.
 
-        `_existing_provenance` degrades a claimed id that names no
-        `auth.users` / `coord.devices` row to `None` (proven in
-        `test_memory_auth.py`); this is what the handler then does with
-        that principal. It must be an ordinary 200 with NULL provenance —
+        `_existing_provenance` degrades a claimed `user_id` that names no
+        `auth.users` row to `None` (proven in `test_memory_auth.py`);
+        this is what the handler then does with that principal. (A
+        dangling `device_id` is not degraded there — it is degraded at
+        INSERT by `_write_degrading_dangling_provenance` — but either way
+        the handler sees a principal with NULL facets, which is what this
+        test pins.) It must be an ordinary 200 with NULL provenance —
         "a memory that fails to save is worse than one that is coarsely
         scoped" (§4.1 item 3). The two tests together are the chain a
         coord-service token naming a nonexistent user walks: degrade at the

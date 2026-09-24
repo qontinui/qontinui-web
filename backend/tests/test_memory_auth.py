@@ -48,54 +48,55 @@ def _user(user_id: UUID) -> MagicMock:
     return user
 
 
-class _FakeReferenceTables:
-    """Stands in for ``auth.users`` / ``coord.devices`` inside a fake session.
+class _FakeUsersTable:
+    """Stands in for ``auth.users`` inside a fake session.
 
-    ``_existing_provenance`` resolves the coord-service arm's two ASSERTED
-    ids against the tables their FKs point at, so this module — which is
-    deliberately DB-free — needs a substrate for them. The fake answers the
-    one query that function issues, honouring membership, so the real
+    ``_existing_provenance`` resolves the coord-service arm's asserted
+    ``user_id`` against the table its FK points at, so this module — which
+    is deliberately DB-free — needs a substrate for it. The fake answers
+    the one query that function issues, honouring membership, so the real
     function (its SQL parameters, its NULL handling, its degradation
     branches and its logging) is what runs.
+
+    ``auth.users`` ALONE, deliberately. The device id is not resolved:
+    ``coord.devices`` is coord's schema and web's read boundary is closed
+    against it (``test_coord_schema_boundary_guard.py``), so the device
+    claim rides through and a dangling one is degraded on the insert side
+    by ``_write_degrading_dangling_provenance`` instead.
     """
 
-    def __init__(self, users: set[UUID], devices: set[UUID]) -> None:
+    def __init__(self, users: set[UUID]) -> None:
         self._users = users
-        self._devices = devices
 
     async def execute(self, _stmt: object, params: dict[str, Any]) -> MagicMock:
-        def _hit(raw: str | None, known: set[UUID]) -> UUID | None:
-            if raw is None:
-                return None
-            value = UUID(raw)
-            return value if value in known else None
-
-        row = SimpleNamespace(
-            user_id=_hit(params["user_id"], self._users),
-            device_id=_hit(params["device_id"], self._devices),
+        raw = params["user_id"]
+        value = UUID(raw) if raw is not None else None
+        row = (
+            SimpleNamespace(user_id=value)
+            if value is not None and value in self._users
+            else None
         )
         result = MagicMock()
-        result.one.return_value = row
+        result.one_or_none.return_value = row
         return result
 
-    async def __aenter__(self) -> _FakeReferenceTables:
+    async def __aenter__(self) -> _FakeUsersTable:
         return self
 
     async def __aexit__(self, *_exc: object) -> bool:
         return False
 
 
-def _reference_tables(
+def _users_exist(
     monkeypatch: pytest.MonkeyPatch,
     *,
     users: Iterable[UUID] = (),
-    devices: Iterable[UUID] = (),
 ) -> None:
-    """Make exactly ``users``/``devices`` exist for the provenance lookup."""
-    known_users, known_devices = set(users), set(devices)
+    """Make exactly ``users`` exist for the provenance lookup."""
+    known_users = set(users)
     monkeypatch.setattr(
         "app.db.session.AsyncSessionLocal",
-        lambda: _FakeReferenceTables(known_users, known_devices),
+        lambda: _FakeUsersTable(known_users),
     )
 
 
@@ -135,7 +136,7 @@ async def test_coord_service_token_resolves_tenant(
     )
     # The service arm resolves its asserted ids against their FK targets;
     # this one names a device that exists, so it survives.
-    _reference_tables(monkeypatch, devices=[device_id])
+    _users_exist(monkeypatch)
     principal = await memory_ep.get_memory_tenant(
         request=MagicMock(), user=None, credentials=_creds()
     )
@@ -563,7 +564,7 @@ async def test_coord_service_token_without_user_claim_is_fail_soft(
             "device_id": str(device_id),
         },
     )
-    _reference_tables(monkeypatch, devices=[device_id])
+    _users_exist(monkeypatch)
 
     principal = await memory_ep.get_memory_tenant(
         request=MagicMock(), user=None, credentials=_creds()
@@ -595,7 +596,7 @@ async def test_coord_service_token_with_user_claim_carries_it(
             "user_id": str(user_id),
         },
     )
-    _reference_tables(monkeypatch, users=[user_id], devices=[device_id])
+    _users_exist(monkeypatch, users=[user_id])
 
     principal = await memory_ep.get_memory_tenant(
         request=MagicMock(), user=None, credentials=_creds()
@@ -633,7 +634,7 @@ async def test_coord_service_user_that_does_not_exist_degrades_to_none(
             "user_id": str(uuid4()),
         },
     )
-    _reference_tables(monkeypatch, users=[], devices=[device_id])
+    _users_exist(monkeypatch, users=[])
 
     principal = await memory_ep.get_memory_tenant(
         request=MagicMock(), user=None, credentials=_creds()
@@ -645,58 +646,90 @@ async def test_coord_service_user_that_does_not_exist_degrades_to_none(
 
 
 @pytest.mark.asyncio
-async def test_coord_service_device_that_does_not_exist_degrades_to_none(
+async def test_coord_service_device_is_not_resolved_here(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Same for `device_id` — `coord.devices` is the FK target there.
+    """`device_id` rides through this arm UNRESOLVED — read why before editing.
 
-    Lower risk than the user column (device retirement is a soft
-    `reaped_at`, not a DELETE) but the same failure shape, and one lookup
-    covers both columns.
+    Not an oversight and not a gap: `coord.devices` is coord's schema, and
+    web's read boundary is closed against `coord.*`
+    (`test_coord_schema_boundary_guard.py`, whose `READ_BOUNDARY_CLOSED`
+    invariant is the empty set). Web reads coord state over coord's HTTP
+    API, and putting that round trip on the fleet's hottest write path to
+    pre-empt a check a raced deletion defeats anyway is a cost this arm
+    declines — exactly as the device arm already did.
+
+    So this arm now matches the device arm: the claimed `device_id` is
+    carried verbatim onto the principal even when no such device exists.
+    What makes that safe is the insert side —
+    `_write_degrading_dangling_provenance` wraps every insert in a
+    savepoint and retries unattributed on a provenance FK violation, for
+    every arm — covered end-to-end over real Postgres by
+    `test_memfacets_01_provenance_facets_migration.py`'s
+    `test_the_savepoint_fallback_lands_the_row_unattributed`.
+
+    The USER column is still resolved here, and the asymmetry is the
+    point: `auth.users` is web's OWN schema, and coord's user ids are the
+    ones that could be systematically wrong (a different keyspace), which
+    is the failure this lookup exists to make visible.
     """
     user_id = uuid4()
+    # Bound rather than inlined: the assertion below is about this exact
+    # id surviving, not merely about "something non-None" coming back.
+    claimed_device_id = uuid4()
     _mock_verify(
         monkeypatch,
         {
             "token_kind": "coord_service",
             "sub": "coord-memory-proxy",
             "tenant_id": str(uuid4()),
-            "device_id": str(uuid4()),
+            "device_id": str(claimed_device_id),
             "user_id": str(user_id),
         },
     )
-    _reference_tables(monkeypatch, users=[user_id], devices=[])
+    _users_exist(monkeypatch, users=[user_id])
 
     principal = await memory_ep.get_memory_tenant(
         request=MagicMock(), user=None, credentials=_creds()
     )
 
-    assert principal.device_id is None
+    assert principal.device_id == claimed_device_id, (
+        "the coord-service arm must carry its claimed device_id verbatim — "
+        "resolving it would breach web's closed read boundary against "
+        "`coord.*`. A dangling id is degraded at INSERT, not here."
+    )
     assert principal.user_id == user_id
 
 
 @pytest.mark.asyncio
-async def test_unresolvable_reference_tables_degrade_rather_than_raise(
+async def test_unresolvable_reference_table_degrades_rather_than_raise(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """The lookup ITSELF failing must not fail the request either.
 
     The check exists to stop a provenance facet from killing a write. A
-    version of it that raises when the reference tables are unreachable
+    version of it that raises when the reference table is unreachable
     would just move the outage rather than remove it, so every failure
-    degrades to unattributed.
+    degrades the USER facet to unattributed.
+
+    The device facet is untouched by this: it is never resolved on this
+    arm (web's read boundary is closed against ``coord.*``), so an
+    unreachable ``auth.users`` cannot make it any less trustworthy than
+    it already is. It rides through and the insert side degrades it if it
+    dangles.
     """
 
     def _explode() -> None:
-        raise RuntimeError("reference tables unreachable")
+        raise RuntimeError("reference table unreachable")
 
+    claimed_device_id = uuid4()
     _mock_verify(
         monkeypatch,
         {
             "token_kind": "coord_service",
             "sub": "coord-memory-proxy",
             "tenant_id": str(uuid4()),
-            "device_id": str(uuid4()),
+            "device_id": str(claimed_device_id),
             "user_id": str(uuid4()),
         },
     )
@@ -708,7 +741,7 @@ async def test_unresolvable_reference_tables_degrade_rather_than_raise(
 
     assert principal.actor == "coord_service"
     assert principal.user_id is None
-    assert principal.device_id is None
+    assert principal.device_id == claimed_device_id
 
 
 @pytest.mark.asyncio
@@ -761,7 +794,7 @@ async def test_device_arm_does_not_pay_for_the_existence_lookup(
     )
     # Nothing exists in the reference tables. If the device arm consulted
     # them, both facets would come back None.
-    _reference_tables(monkeypatch, users=[], devices=[])
+    _users_exist(monkeypatch, users=[])
 
     principal = await memory_ep.get_memory_tenant(
         request=MagicMock(), user=None, credentials=_creds()

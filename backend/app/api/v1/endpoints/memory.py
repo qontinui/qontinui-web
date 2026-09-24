@@ -283,7 +283,7 @@ def _claim_uuid(claims: dict[str, Any], key: str) -> UUID | None:
 async def _existing_provenance(
     user_id: UUID | None, device_id: UUID | None
 ) -> tuple[UUID | None, UUID | None]:
-    """Reduce claim-ASSERTED provenance ids to the ones that really exist.
+    """Reduce a claim-ASSERTED ``user_id`` to the one that really exists.
 
     Both facet columns are foreign keys —
     ``coord.memory_records.user_id REFERENCES auth.users(id)`` and
@@ -294,42 +294,44 @@ async def _existing_provenance(
     "never reject a write for missing provenance — a memory that fails to
     save is worse than one that is coarsely scoped" (§4.1 item 3).
 
-    Which arms this runs on, stated precisely, because the asymmetry is
-    deliberate and the obvious summary of it is wrong. On the device and
-    operator arms the USER is not an assertion: it is the ``auth.users``
-    row the request itself just read (``_verify_device_jwt`` resolves and
-    validates it, and 401s a token whose user is missing or inactive), so
-    it necessarily exists and re-reading it would buy nothing. The device
-    arm's ``device_id``, by contrast, is **exactly as unverified as the
-    coord-service arm's** — ``_verify_device_jwt`` never touches
-    ``coord.devices`` — and it lands in the identical FK column. It is
-    knowingly left unresolved here: closing it by lookup would add a
-    session and a round trip to the fleet's hottest write path and STILL
-    be a prediction (the row can go between the check and the INSERT), so
-    the insert-side guarantee is made exactly instead, by
-    :func:`_write_degrading_dangling_provenance`, which covers every arm.
-    What this function adds over that fallback is DIAGNOSIS: the
-    coord-service arm is the one whose ids could be systematically wrong
-    (a different keyspace, not a raced deletion), and a warning per
-    request is how that becomes visible instead of silent.
+    **Only the USER id is resolved here, and the asymmetry is a boundary
+    rule, not an oversight.** ``auth.users`` is web's OWN schema, so
+    reading it costs one session web already owns. The device id lives in
+    ``coord.devices`` — coord's schema — and web's read boundary is
+    closed against it: web reads coord state over coord's HTTP API, never
+    over the ``coord.*`` Postgres schema
+    (``backend/tests/test_coord_schema_boundary_guard.py``, whose
+    ``READ_BOUNDARY_CLOSED`` invariant is the empty set). Resolving the
+    device here would either breach that boundary or put a coord HTTP
+    round trip on the fleet's hottest write path.
 
-    On the COORD-SERVICE arm both ids are bare claims in a token coord
-    minted, checked only for UUID SHAPE by ``_claim_uuid``. Nothing today proves coord's ``user_id`` is even in
-    the same keyspace as ``auth.users`` — coord carries its own operator
-    ids, which is exactly the trap the operator arm below has a comment
-    about — so the first proxied write after coord starts minting the
-    claim could 500 every ``coord_memory_record`` call in the fleet.
+    Nothing is lost by not resolving it. A pre-check was never more than
+    a prediction — the row can go between the check and the INSERT — so
+    the guarantee is made exactly on the insert side instead, by
+    :func:`_write_degrading_dangling_provenance`, which covers **every**
+    arm and every column. The device arm's ``device_id`` was already
+    knowingly left unresolved for that same reason
+    (``_verify_device_jwt`` never touches ``coord.devices``); the
+    coord-service arm now simply matches it.
 
-    This resolves them instead, and degrades a dangling id to ``None``.
+    Diagnosis is preserved and is in fact wider than it was. The reason
+    this function resolved anything at all is that coord's ids could be
+    systematically wrong — a different keyspace rather than a raced
+    deletion — and that has to be visible instead of silent. The USER
+    keyspace, which is the one genuinely at risk (coord carries its own
+    operator ids, and nothing proves they are in ``auth.users``'
+    keyspace), is still checked per request here. A dangling DEVICE id
+    now surfaces on the insert side, where
+    :func:`_write_degrading_dangling_provenance` logs the offending
+    constraint and the claimed ids — for every arm, not just this one.
+
     It runs on its OWN session (the ``_verify_device_jwt`` pattern) so a
     failure here can never poison the request's transaction, and ANY
-    failure — including the reference tables being unreachable — degrades
-    rather than raises, because a coarser row beats a lost one. Every
-    degradation is logged at warning level: a coord-side keyspace mistake
-    has to be visible, not silent.
+    failure — including the reference table being unreachable — degrades
+    rather than raises, because a coarser row beats a lost one.
     """
-    if user_id is None and device_id is None:
-        return None, None
+    if user_id is None:
+        return None, device_id
 
     from sqlalchemy import text as sa_text
 
@@ -340,19 +342,12 @@ async def _existing_provenance(
             row = (
                 await session.execute(
                     sa_text(
-                        "SELECT"
-                        "  (SELECT u.id FROM auth.users u"
-                        "    WHERE u.id = CAST(:user_id AS uuid)) AS user_id,"
-                        "  (SELECT d.device_id FROM coord.devices d"
-                        "    WHERE d.device_id = CAST(:device_id AS uuid))"
-                        "    AS device_id"
+                        "SELECT u.id AS user_id FROM auth.users u"
+                        "  WHERE u.id = CAST(:user_id AS uuid)"
                     ),
-                    {
-                        "user_id": str(user_id) if user_id is not None else None,
-                        "device_id": str(device_id) if device_id is not None else None,
-                    },
+                    {"user_id": str(user_id)},
                 )
-            ).one()
+            ).one_or_none()
     except Exception as exc:
         logger.warning(
             "memory_provenance_unresolvable",
@@ -360,14 +355,13 @@ async def _existing_provenance(
             failure=type(exc).__name__,
             note=(
                 "could not resolve claimed provenance against its reference "
-                "tables; writing the record unattributed rather than failing it"
+                "table; writing the record unattributed rather than failing it"
             ),
         )
-        return None, None
+        return None, device_id
 
-    resolved_user = cast("UUID | None", row.user_id)
-    resolved_device = cast("UUID | None", row.device_id)
-    if user_id is not None and resolved_user is None:
+    resolved_user = cast("UUID | None", row.user_id) if row is not None else None
+    if resolved_user is None:
         logger.warning(
             "memory_provenance_user_not_found",
             claimed_user_id=str(user_id),
@@ -377,16 +371,7 @@ async def _existing_provenance(
                 "minting an id from a different keyspace."
             ),
         )
-    if device_id is not None and resolved_device is None:
-        logger.warning(
-            "memory_provenance_device_not_found",
-            claimed_device_id=str(device_id),
-            note=(
-                "coord-service token named a device_id with no coord.devices "
-                "row — degraded to NULL."
-            ),
-        )
-    return resolved_user, resolved_device
+    return resolved_user, device_id
 
 
 #: The two FK constraints ``memfacets_01`` creates on
@@ -415,8 +400,22 @@ def _is_provenance_fk_violation(exc: IntegrityError) -> bool:
     — including a foreign-key violation on a different column — falls
     through and still raises.
     """
+    return _violated_provenance_fk(exc) is not None
+
+
+def _violated_provenance_fk(exc: IntegrityError) -> str | None:
+    """Which provenance FK constraint this error names, or ``None``.
+
+    The name-returning half of :func:`_is_provenance_fk_violation`, split
+    out so the degrade path can say WHICH column dangled. That is the
+    device arm's diagnosis: :func:`_existing_provenance` deliberately does
+    not resolve ``device_id`` (web's read boundary is closed against
+    coord's schema), so the insert side is where a dangling device id
+    becomes visible — and it is visible for every arm, not just the
+    coord-service one.
+    """
     rendered = str(exc.orig) if exc.orig is not None else str(exc)
-    return any(name in rendered for name in _PROVENANCE_FK_CONSTRAINTS)
+    return next((name for name in _PROVENANCE_FK_CONSTRAINTS if name in rendered), None)
 
 
 async def _write_degrading_dangling_provenance[T](
@@ -479,16 +478,18 @@ async def _write_degrading_dangling_provenance[T](
         logger.warning(
             "memory_provenance_fk_violation_degraded",
             error=str(exc.orig) if exc.orig is not None else str(exc),
+            constraint=_violated_provenance_fk(exc),
             claimed_user_id=str(principal.user_id) if principal.user_id else None,
             claimed_device_id=(
                 str(principal.device_id) if principal.device_id else None
             ),
             actor=principal.actor,
             note=(
-                "a provenance id named no auth.users / coord.devices row at "
-                "INSERT time (the row was removed between resolution and the "
-                "write, or this arm asserts ids it does not resolve); "
-                "re-writing the record unattributed rather than failing it"
+                "a provenance id named no referenced row at INSERT time (the "
+                "row was removed between resolution and the write, or this "
+                "arm asserts ids it does not resolve); re-writing the record "
+                "unattributed rather than failing it. `constraint` names "
+                "which of the two columns dangled."
             ),
         )
 
