@@ -89,9 +89,7 @@ def _build_app(db, caller, superuser=None):
     # ``get_current_active_user_async`` (``api/deps.py``), so overriding both
     # would just write the same key twice.
     app.dependency_overrides[get_current_active_user_async] = lambda: caller
-    app.dependency_overrides[get_current_superuser_async] = lambda: (
-        superuser or caller
-    )
+    app.dependency_overrides[get_current_superuser_async] = lambda: superuser or caller
     app.dependency_overrides[get_async_db] = lambda: db
     app.include_router(users_router, prefix="/api/v1/users")
     return app

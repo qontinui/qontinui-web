@@ -24,7 +24,7 @@ Three pieces ship here:
 
 The mint path requires `COORD_ADMIN_SECRET` to be set; without it the
 device-status surface returns 503 (same posture as
-:mod:`app.services.strategy`). The minted token's `tenant_id` claim
+:mod:`app.services.coord_service_account`). The minted token's `tenant_id` claim
 is the sole authorization input coord uses to scope subscription
 topics on `/ws/device-status` (`device_status:<tenant_uuid>`) — the
 admin secret + tenant resolution upstream guarantee an operator can
