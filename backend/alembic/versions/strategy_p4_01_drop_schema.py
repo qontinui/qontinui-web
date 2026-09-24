@@ -50,11 +50,17 @@ The document CONTENT is not in these tables — it lives as Markdown in
 ``qontinui-dev-notes/project-strategy/``, which this plan does not touch.
 
 ``CASCADE`` would also silently drop objects OUTSIDE the schema that depend on
-it — a foreign key or a view in another schema. The repo creates none, but a
-hand-made one in production would not show up in the repo, and the pre-apply
-dump (``--schema=strategy``) would not capture it either. So ``upgrade()``
-refuses rather than cascading across a schema boundary: it lists any such
-dependent and raises, leaving the schema intact.
+it. The repo creates none, but a hand-made one in production would not show up
+in the repo, and the pre-apply dump (``--schema=strategy``) would not capture it
+either. So ``upgrade()`` checks for the three kinds a hand-made dependent is
+realistically going to be: a foreign key referencing a strategy table, a view
+(rewrite rule) selecting from one, and a table inheriting from or partitioning
+one. If any exists in another schema, it lists them and raises, leaving the
+schema intact. It does NOT check rarer dependents (row-level-security policies,
+``BEGIN ATOMIC`` function bodies, columns typed with a strategy row type); a
+generic ``pg_depend`` sweep was considered and rejected because
+``pg_identify_object`` reports no schema for column defaults and triggers, so it
+would flag the strategy tables' own ``server_default`` values and refuse every run.
 
 ``strategy`` stays in ``.pre-commit-hooks/check_alembic_schema_args.py``
 ``ALLOWED_SCHEMAS``: the historical revisions and this revision's
@@ -75,8 +81,9 @@ depends_on: str | Sequence[str] | None = None
 
 
 # Objects in OTHER schemas that depend on a ``strategy`` relation: foreign keys
-# referencing it, and views/rules selecting from it. ``to_regnamespace`` is NULL
-# when the schema is already gone, so both arms then return nothing.
+# referencing it, views/rules selecting from it, and tables inheriting from or
+# partitioning it. ``to_regnamespace`` is NULL when the schema is already gone,
+# so every arm then returns nothing.
 _FOREIGN_DEPENDENTS_SQL = """
 WITH strategy_rels AS (
     SELECT oid FROM pg_class WHERE relnamespace = to_regnamespace('strategy')
@@ -92,8 +99,15 @@ FROM pg_depend dep
 JOIN pg_rewrite rw ON rw.oid = dep.objid
 JOIN pg_class dependent ON dependent.oid = rw.ev_class
 WHERE dep.classid = 'pg_rewrite'::regclass
+  AND dep.refclassid = 'pg_class'::regclass
   AND dep.refobjid IN (SELECT oid FROM strategy_rels)
   AND dependent.relnamespace <> to_regnamespace('strategy')
+UNION
+SELECT 'inheriting/partition table ' || inh.inhrelid::regclass::text
+FROM pg_inherits inh
+JOIN pg_class child ON child.oid = inh.inhrelid
+WHERE inh.inhparent IN (SELECT oid FROM strategy_rels)
+  AND child.relnamespace <> to_regnamespace('strategy')
 """
 
 
