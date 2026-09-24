@@ -1452,3 +1452,51 @@ def test_the_scripts_docstring_names_every_lane() -> None:
     it leaves the script describing a shape the repo no longer has.
     """
     assert_docstring_names_every_lane(_gate_docstring(), _SCRIPT_REF, _DECLARED_LANES)
+
+
+# ---------------------------------------------------------------------------
+# An EDITED landed revision is judged by its delta (qontinui-web#1457)
+# ---------------------------------------------------------------------------
+
+_LANDED = (
+    '"""landed revision"""\n'
+    "from alembic import op\n\n"
+    "def upgrade():\n"
+    '    op.drop_column("sessions", "plan_slug", schema="coord")\n\n'
+    "def downgrade():\n"
+    "    pass\n"
+)
+
+
+def test_an_edit_that_adds_no_drop_to_a_landed_revision_is_not_rejudged(
+    tmp_path: Path,
+) -> None:
+    """web#1457's shape: a landed drop revision gains only a SET LOCAL line."""
+    edited = _LANDED.replace(
+        "def upgrade():\n",
+        "def upgrade():\n    op.execute(\"SET LOCAL lock_timeout = '5s'\")\n",
+    )
+    path = tmp_path / "rev.py"
+    head = guard.scan_source(edited, path)
+    base = guard.scan_source(_LANDED, path)
+    assert [(d.table, d.column) for d in head.drops] == [("sessions", "plan_slug")]
+    delta = guard.delta_scan(head, base)
+    assert delta.drops == []
+    assert delta.unresolved == []
+    assert delta.violations == []
+
+
+def test_a_new_drop_added_to_a_landed_revision_is_still_judged(tmp_path: Path) -> None:
+    """Mutation guard: the delta arm must not launder a drop the edit ADDS."""
+    edited = _LANDED.replace(
+        '    op.drop_column("sessions", "plan_slug", schema="coord")\n',
+        '    op.drop_column("sessions", "plan_slug", schema="coord")\n'
+        '    op.drop_column("sessions", "work_unit_slug", schema="coord")\n',
+    )
+    path = tmp_path / "rev.py"
+    delta = guard.delta_scan(
+        guard.scan_source(edited, path), guard.scan_source(_LANDED, path)
+    )
+    assert [(d.table, d.column) for d in delta.drops] == [
+        ("sessions", "work_unit_slug")
+    ]

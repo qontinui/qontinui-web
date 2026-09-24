@@ -825,6 +825,82 @@ def scan_file(path: Path) -> FileScan:
     return scan_source(path.read_text(encoding="utf-8"), path)
 
 
+def base_source(base_ref: str, path: Path) -> str | None:
+    """The revision file's source at the MERGE BASE of ``base_ref`` and HEAD,
+    or ``None`` when the path did not exist there (an ADDED revision).
+
+    Raises on a git failure other than "path absent at that commit", so an
+    unreadable base is UNKNOWN (exit 2), never a silent "added".
+    """
+    mb = subprocess.run(
+        ["git", "merge-base", base_ref, "HEAD"],
+        capture_output=True,
+        text=True,
+        check=False,
+        cwd=REPO_ROOT,
+    )
+    if mb.returncode != 0:
+        raise RuntimeError(
+            f"git merge-base {base_ref} HEAD failed (exit {mb.returncode}): "
+            f"{mb.stderr.strip() or '(no stderr)'}"
+        )
+    rel = repo_relative(path)
+    exists = subprocess.run(
+        ["git", "cat-file", "-e", f"{mb.stdout.strip()}:{rel}"],
+        capture_output=True,
+        check=False,
+        cwd=REPO_ROOT,
+    )
+    if exists.returncode != 0:
+        return None
+    shown = subprocess.run(
+        ["git", "show", f"{mb.stdout.strip()}:{rel}"],
+        capture_output=True,
+        text=True,
+        check=False,
+        cwd=REPO_ROOT,
+    )
+    if shown.returncode != 0:
+        raise RuntimeError(
+            f"git show <merge-base>:{rel} failed (exit {shown.returncode}): "
+            f"{shown.stderr.strip() or '(no stderr)'}"
+        )
+    return shown.stdout
+
+
+def delta_scan(head: FileScan, base: FileScan) -> FileScan:
+    """Judge an EDITED revision by what the edit ADDS, not by what it already did.
+
+    A revision that exists at the merge base has already landed (alembic never
+    re-runs it), and every DROP it performed was judged when it was added. So
+    re-judging those drops fails any PR that merely touches a landed revision —
+    qontinui-web#1457 edits 13 landed revisions to restore ``SET LOCAL
+    lock_timeout`` and was held red on four drops that landed weeks earlier.
+    Here a drop is judged only if its ``(table, column)`` is new relative to the
+    base version, and an unresolved site only if its ``(how, detail)`` is new;
+    the static violations stand only when the edit changed what is unresolved
+    or declared. A NEW drop in a landed revision is still judged (and still an
+    author error: it would never run on a database already past that revision).
+    """
+    base_drops = {(d.table, d.column) for d in base.drops}
+    base_unresolved = [(u.how, u.detail) for u in base.unresolved]
+    new_unresolved = []
+    for u in head.unresolved:
+        key = (u.how, u.detail)
+        if key in base_unresolved:
+            base_unresolved.remove(key)
+        else:
+            new_unresolved.append(u)
+    changed = bool(new_unresolved) or head.declared != base.declared
+    return FileScan(
+        path=head.path,
+        drops=[d for d in head.drops if (d.table, d.column) not in base_drops],
+        unresolved=new_unresolved,
+        violations=list(head.violations) if changed else [],
+        declared=head.declared,
+    )
+
+
 # ---------------------------------------------------------------------------
 # Input selection
 # ---------------------------------------------------------------------------
@@ -1221,8 +1297,15 @@ def main(argv: list[str] | None = None, *, fetch: Fetcher | None = None) -> int:
     scans: list[FileScan] = []
     for path in files:
         try:
-            scans.append(scan_file(path))
-        except OSError as exc:
+            scan = scan_file(path)
+            if args.files is None:
+                # A revision already on the base has landed: judge only the
+                # drops this PR's edit ADDS to it (see delta_scan).
+                prior = base_source(args.base_ref, path)
+                if prior is not None:
+                    scan = delta_scan(scan, scan_source(prior, path))
+            scans.append(scan)
+        except (OSError, RuntimeError) as exc:
             err(f"cannot read {path}: {exc}")
             return EXIT_VACUOUS
         except SyntaxError as exc:
