@@ -4,7 +4,7 @@ import {
   CITATION_SCOPE_BACKFILL_WRITE_DOMAIN,
   type CitationScopeBackfillWriteLevel,
 } from "../types";
-import { useTenantFleetPolicyDial } from "./useTenantFleetPolicyDial";
+import { useTenantFleetPolicyDial } from "../../_shared/useTenantFleetPolicyDial";
 
 /**
  * The `citation_scope_backfill_write` fleet-policy dial

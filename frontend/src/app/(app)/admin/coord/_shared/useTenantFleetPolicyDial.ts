@@ -3,8 +3,11 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { httpClient } from "@/services/service-factory";
-import { FLEET_POLICY_API } from "../../_shared/fleetPolicy";
-import type { FleetPolicyView, FleetPolicyWriteResult } from "../types";
+import {
+  FLEET_POLICY_API,
+  type FleetPolicyView,
+  type FleetPolicyWriteResult,
+} from "./fleetPolicy";
 
 function message(err: unknown, fallback: string): string {
   return err instanceof Error ? err.message : fallback;
@@ -16,10 +19,13 @@ function capitalise(s: string): string {
 
 /**
  * One tenant-band fleet-policy dial — read the RESOLVED value, write a new
- * level, then read it back. Shared by every dial on this page
- * (`plan_capture`, `citation_scope_backfill_write`); each domain's hook is a
- * one-line binding of `domain` + `label`, so the honesty properties below are
- * stated and tested once rather than drifting between copies.
+ * level, then read it back. Shared by every tenant-band dial in the console
+ * (`plan_capture` and `citation_scope_backfill_write` on the plan library;
+ * `policy_write` and `policy_upstream` on prompt documents). Each domain's
+ * hook binds `domain` + `label` and layers its own level vocabulary on top
+ * (a no-row default, a fail-closed parse), so the honesty properties below are
+ * stated and tested once rather than drifting between copies — the four used
+ * to be hand-copied, and the refresh-vs-write race fix reached only two.
  *
  * Three properties this hook exists to hold:
  *
@@ -37,13 +43,14 @@ function capitalise(s: string): string {
  *    lying about the fleet. A failed READ likewise keeps the last known-good
  *    value: blanking it would render as "off", a claim we cannot make.
  *
- * 3. **Scope band is tenant-wide, and that is a decision, not a default.** Both
- *    dials here are decided with no repo in hand: the capture clause is baked
- *    into a runner's briefing once per session at spawn (a session is not
- *    repo-scoped), and the citation backfill agent door operates on the
- *    caller's whole tenant. A `repo` band would have no resolvable `scope_key`
- *    at the moment either decision is made, so the hook offers no per-repo
- *    write. It still SHOWS the resolved band, because the band that won tells
+ * 3. **Scope band is tenant-wide, and that is a decision, not a default.** Every
+ *    dial bound here is decided with no repo in hand: the capture clause is
+ *    baked into a runner's briefing once per session at spawn (a session is
+ *    not repo-scoped), the citation backfill agent door operates on the
+ *    caller's whole tenant, and `policy_write` / `policy_upstream` govern the
+ *    tenant's prompt documents, which belong to no repo. A `repo` band would
+ *    have no resolvable `scope_key` at the moment any of those decisions is
+ *    made, so the hook offers no per-repo write. It still SHOWS the resolved band, because the band that won tells
  *    the operator whether this tenant's row is the one in force.
  *
  * Coord resolves **most-specific-wins**: `repo` beats `tenant` beats `system`
@@ -71,9 +78,11 @@ export function useTenantFleetPolicyDial<L extends string>(
   const [lastWrite, setLastWrite] = useState<FleetPolicyWriteResult | null>(
     null
   );
-  // Bumped when a write starts. A read that began before the latest write
-  // may land after that write's read-back; applying it would paint an older
-  // value over the confirmed one and clear the read-back warning.
+  // Bumped when a write LANDS. A read that began before the latest landed
+  // write may resolve after that write's read-back; applying it would paint an
+  // older value over the confirmed one and clear the read-back warning. A
+  // rejected write changes nothing, so it does not bump — otherwise a Refresh
+  // in flight beside it would be silently discarded.
   const writeGeneration = useRef(0);
 
   const load = useCallback(async () => {
@@ -94,7 +103,7 @@ export function useTenantFleetPolicyDial<L extends string>(
       if (generation !== writeGeneration.current) return;
       // Keep the last known-good value on screen; the banner says it is stale.
       // Blanking it would read as "off", which is a claim we cannot make.
-      setError(message(err, `Failed to read the ${label} policy`));
+      setError(message(err, `Failed to read the ${label} dial`));
     } finally {
       setLoading(false);
     }
@@ -114,7 +123,6 @@ export function useTenantFleetPolicyDial<L extends string>(
    */
   const setLevel = useCallback(
     async (level: L, changeNote?: string): Promise<boolean> => {
-      writeGeneration.current += 1;
       try {
         setSaving(true);
         const result = await httpClient.put<FleetPolicyWriteResult>(
@@ -129,6 +137,7 @@ export function useTenantFleetPolicyDial<L extends string>(
               changeNote ?? `Set ${label} to "${level}" from the console`,
           }
         );
+        writeGeneration.current += 1;
         setLastWrite(result);
 
         if (result.effective) {
@@ -136,7 +145,7 @@ export function useTenantFleetPolicyDial<L extends string>(
           setError(null);
           if (result.effective.effective_level === level) {
             toast.success(
-              `${capitalise(label)} is now "${level}" for this tenant.`
+              `${capitalise(label)}: now "${level}" for this tenant.`
             );
           } else {
             // A write that landed and a value that resolves are different
@@ -157,7 +166,7 @@ export function useTenantFleetPolicyDial<L extends string>(
         }
         return true;
       } catch (err) {
-        toast.error(message(err, `Failed to write the ${label} policy`));
+        toast.error(message(err, `Failed to write the ${label} dial`));
         return false;
       } finally {
         setSaving(false);

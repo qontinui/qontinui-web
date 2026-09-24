@@ -1,13 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
-import { toast } from "sonner";
-import { httpClient } from "@/services/service-factory";
-import {
-  FLEET_POLICY_API,
-  type FleetPolicyView,
-  type FleetPolicyWriteResult,
-} from "../../_shared/fleetPolicy";
+import { useTenantFleetPolicyDial } from "../../_shared/useTenantFleetPolicyDial";
 import {
   isPolicyUpstreamLevel,
   POLICY_UPSTREAM_DEFAULT_LEVEL,
@@ -16,18 +9,15 @@ import {
   type PolicyUpstreamLevel,
 } from "../types";
 
-function message(err: unknown, fallback: string): string {
-  return err instanceof Error ? err.message : fallback;
-}
-
 /**
  * The `policy_upstream` fleet-policy dial — what happens to this tenant when
  * the fleet publishes a new version of a document it holds.
  *
  * Plan `2026-09-04-cross-tenant-policy-publishing` D6.
  *
- * Modelled on `usePolicyWritePolicy` in this same directory, and it keeps that
- * hook's two load-bearing properties for the reasons stated there:
+ * Built on `_shared/useTenantFleetPolicyDial`, which holds the two
+ * load-bearing properties below (its 1 and 2) for every dial, for the reasons
+ * stated there:
  *
  * 1. **What is displayed is what devices resolve, never what was written.**
  *    Every state transition comes from a READ; the write's own echo is kept
@@ -54,101 +44,14 @@ function message(err: unknown, fallback: string): string {
  * that.
  */
 export function usePolicyUpstreamPolicy() {
-  const [policy, setPolicy] = useState<FleetPolicyView | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [lastWrite, setLastWrite] = useState<FleetPolicyWriteResult | null>(
-    null
+  // Read, write and read-back — with the refresh-vs-write race guard — are
+  // the shared tenant-band dial's; this hook adds only the domain's level
+  // vocabulary below.
+  const dial = useTenantFleetPolicyDial<PolicyUpstreamLevel>(
+    POLICY_UPSTREAM_DOMAIN,
+    "upstream policy updates"
   );
-
-  const load = useCallback(async () => {
-    try {
-      setLoading(true);
-      const view = await httpClient.get<FleetPolicyView>(
-        `${FLEET_POLICY_API}?domain=${encodeURIComponent(
-          POLICY_UPSTREAM_DOMAIN
-        )}`
-      );
-      setPolicy(view);
-      setError(null);
-      // A confirmed read retires the previous write's read-back failure — its
-      // banner says "the value above may be stale", and leaving it up beside a
-      // value we just confirmed would be the opposite of honest.
-      setLastWrite(null);
-    } catch (err) {
-      // Keep the last known-good value on screen; the banner says it is stale.
-      // Blanking it would read as "off", which is a claim we cannot make.
-      setError(message(err, "Failed to read the upstream-updates dial"));
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    load();
-  }, [load]);
-
-  /**
-   * Write `level` at the tenant band.
-   *
-   * `master_enabled` stays `true` and `off` is expressed as a LEVEL, for the
-   * reason the sibling dials give: coord resolves `effective_level = off`
-   * whenever the master is false, so also flipping the master would give "off"
-   * two spellings with no way for the operator to tell which is in force.
-   */
-  const setLevel = useCallback(
-    async (
-      level: PolicyUpstreamLevel,
-      changeNote?: string
-    ): Promise<boolean> => {
-      try {
-        setSaving(true);
-        const result = await httpClient.put<FleetPolicyWriteResult>(
-          FLEET_POLICY_API,
-          {
-            domain: POLICY_UPSTREAM_DOMAIN,
-            scope_band: "tenant",
-            scope_key: null,
-            level,
-            master_enabled: true,
-            change_note:
-              changeNote ??
-              `Set upstream policy updates to "${level}" from the console`,
-          }
-        );
-        setLastWrite(result);
-
-        if (result.effective) {
-          setPolicy(result.effective);
-          setError(null);
-          if (result.effective.effective_level === level) {
-            toast.success(`Upstream policy updates are now "${level}".`);
-          } else {
-            // A write that landed and a value that resolves are different
-            // facts. Say which one the fleet is actually on.
-            toast.warning(
-              `Wrote "${level}", but devices resolve ` +
-                `"${result.effective.effective_level}" ` +
-                `(from the ${result.effective.resolved_scope} scope).`
-            );
-          }
-        } else {
-          toast.warning(
-            "The write went through, but the read-back failed — what this " +
-              "tenant resolves is unknown until this refreshes."
-          );
-        }
-        return true;
-      } catch (err) {
-        toast.error(message(err, "Failed to write the upstream-updates dial"));
-        return false;
-      } finally {
-        setSaving(false);
-      }
-    },
-    []
-  );
+  const { policy } = dial;
 
   // `"none"` means no row matched, which for this domain is `auto` — NOT off.
   // Mirrors coord's `resolve_policy_upstream_level`; if the two ever disagree
@@ -174,10 +77,7 @@ export function usePolicyUpstreamPolicy() {
         : POLICY_UPSTREAM_FAIL_CLOSED_LEVEL;
 
   return {
-    policy,
-    loading,
-    saving,
-    error,
+    ...dial,
     /**
      * The level actually in force: the no-row case resolved to coord's typed
      * default, an unparseable row resolved fail-closed. Always one of the three
@@ -193,10 +93,5 @@ export function usePolicyUpstreamPolicy() {
      * so the UI can name the row that needs fixing.
      */
     unrecognizedLevel,
-    /** Set only when the last write's read-back failed. UNKNOWN, not "off". */
-    readbackError: lastWrite?.readback_error ?? null,
-    lastWrite,
-    reload: load,
-    setLevel,
   };
 }
