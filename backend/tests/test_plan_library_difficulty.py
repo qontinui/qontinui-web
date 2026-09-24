@@ -439,7 +439,7 @@ class TestModelRoutingMapsOnEveryConsumingRoute:
     """``model_tiers``, ``model_selectors`` and ``model_selector_vocabulary``
     are served on all three routes a consumer routes from — the list route
     (``/latest-draft``), ``/candidates`` (``/vet-imp-sweep``) and
-    ``/difficulty`` (the console) — and byte-identically, so the three homes
+    ``/difficulty`` (the console) — and with identical serialized maps, so the three homes
     cannot drift. Plan ``2026-09-22-route-plan-sweeps-by-difficulty`` Phase 1.
     """
 
