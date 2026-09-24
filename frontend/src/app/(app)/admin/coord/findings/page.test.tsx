@@ -391,6 +391,91 @@ describe("CoordFindingsPage", () => {
       );
     });
 
+    it("names an unprovisioned store on the BY-ID degrade, not 'not answering'", async () => {
+      withLinkedId();
+      httpGet.mockImplementation((url: string) =>
+        String(url).includes("finding_id=")
+          ? Promise.resolve({
+              available: false,
+              count: 0,
+              findings: [],
+              unavailable:
+                "coord reports its findings store is not provisioned (`available: false`).",
+              unavailable_kind: "unprovisioned",
+            })
+          : new Promise(() => {})
+      );
+      render(<CoordFindingsPage />);
+
+      await waitFor(() =>
+        expect(screen.getByTestId("coord-findings-linked")).toHaveTextContent(
+          /not provisioned/i
+        )
+      );
+      expect(screen.getByTestId("coord-findings-linked")).not.toHaveTextContent(
+        /not answering/i
+      );
+    });
+
+    it("names the LIST degrade's kind while the by-id read is still out", async () => {
+      withLinkedId();
+      httpGet.mockImplementation((url: string) =>
+        String(url).includes("finding_id=")
+          ? new Promise(() => {})
+          : Promise.resolve({
+              available: false,
+              count: 0,
+              findings: [],
+              unavailable:
+                "coord reports its findings store is not provisioned (`available: false`).",
+              unavailable_kind: "unprovisioned",
+            })
+      );
+      render(<CoordFindingsPage />);
+
+      await screen.findByTestId("coord-findings-unavailable");
+      await waitFor(() =>
+        expect(screen.getByTestId("coord-findings-linked")).toHaveTextContent(
+          /not provisioned/i
+        )
+      );
+    });
+
+    it("lets the BY-ID degrade's kind outrank the list's once it answers", async () => {
+      withLinkedId();
+      httpGet.mockImplementation((url: string) =>
+        Promise.resolve(
+          String(url).includes("finding_id=")
+            ? {
+                available: false,
+                count: 0,
+                findings: [],
+                unavailable: "coord's findings reader is not answering.",
+                unavailable_kind: "not_deployed",
+              }
+            : {
+                available: false,
+                count: 0,
+                findings: [],
+                unavailable:
+                  "coord reports its findings store is not provisioned (`available: false`).",
+                unavailable_kind: "unprovisioned",
+              }
+        )
+      );
+      render(<CoordFindingsPage />);
+
+      await screen.findByTestId("coord-findings-unavailable");
+      await waitFor(() =>
+        expect(screen.getByTestId("coord-findings-linked")).toHaveTextContent(
+          /not answering/i
+        )
+      );
+      expect(screen.getByTestId("coord-findings-linked")).not.toHaveTextContent(
+        /not provisioned/i
+      );
+    });
+
     it("does not call a linked row beyond a FULL page 'outside the filters'", async () => {
       // One page, no paging: 50 newer rows prove nothing about the rows past
       // them, so the linked row may match the filters and simply sit beyond.

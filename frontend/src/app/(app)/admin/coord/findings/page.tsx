@@ -171,6 +171,8 @@ export default function CoordFindingsPage() {
   const [linkedFailed, setLinkedFailed] = useState(false);
   /** The BY-ID read itself degraded — separate from the list read's degrade. */
   const [linkedUnavailable, setLinkedUnavailable] = useState(false);
+  const [linkedUnavailableKind, setLinkedUnavailableKind] =
+    useState<FindingsUnavailableKind | null>(null);
   const [linkedAnswered, setLinkedAnswered] = useState(false);
   const linkedApplied = useRef(false);
 
@@ -309,9 +311,11 @@ export default function CoordFindingsPage() {
         // may not have settled yet — without it the banner would fall through
         // to "no such finding" about a store that did not answer.
         setLinkedUnavailable(true);
+        setLinkedUnavailableKind(body.unavailable_kind ?? null);
         setLinkedRow(null);
       } else {
         setLinkedUnavailable(false);
+        setLinkedUnavailableKind(null);
         // An empty page is coord ANSWERING — another tenant's id, a superseded
         // head, or no such finding. It is never a 404, so it must never read
         // as a failure. And only the row that IS the id counts: a door that
@@ -325,6 +329,7 @@ export default function CoordFindingsPage() {
       // notice ranks `unavailable` above `error`, so a stale degrade left set
       // here would name the wrong cause (the same fix the list read carries).
       setLinkedUnavailable(false);
+      setLinkedUnavailableKind(null);
       setLinkedFailed(true);
       setLinkedAnswered(true);
     } finally {
@@ -410,7 +415,10 @@ export default function CoordFindingsPage() {
   const linkedExpiredNotListed =
     linkedNotInList && linkedRow !== null && isExpired(linkedRow);
   const linkedOutsideFilters =
-    linkedNotInList && !linkedExpiredNotListed && filtersActive && !listPageFull;
+    linkedNotInList &&
+    !linkedExpiredNotListed &&
+    filtersActive &&
+    !listPageFull;
   const linkedBeyondLoadedPage =
     linkedNotInList && !linkedExpiredNotListed && !linkedOutsideFilters;
   const listUnknown = readIsUnknown(loaded, readFailed);
@@ -534,6 +542,10 @@ export default function CoordFindingsPage() {
             // is "not found", whatever the list read did.
             unavailable:
               linkedUnavailable || (!linkedAnswered && unavailable !== null),
+            // The kind follows whichever degrade is speaking.
+            unavailableKind: linkedUnavailable
+              ? linkedUnavailableKind
+              : unavailableKind,
           })}
         </p>
       )}
