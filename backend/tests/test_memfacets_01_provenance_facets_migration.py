@@ -71,7 +71,7 @@ from tests._alembic_harness import (
 
 _MEM_REVISION = "memfacets_01"
 _FIND_REVISION = "findfacets_02"
-_PARENT_REVISION = "agent_questions_alert_episode_01"
+_PARENT_REVISION = "coord_wu_authored_at_02"
 
 #: ``confdeltype`` codes in ``pg_constraint``: 'a' NO ACTION, 'n' SET NULL,
 #: 'c' CASCADE. 'a' is the default a bare ``REFERENCES`` produces, and it is
