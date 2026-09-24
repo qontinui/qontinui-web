@@ -202,6 +202,32 @@ class TestDeclaredStamp:
         body = "# Plan\n\n### Context\n\nDifficulty: high\n\n## Why\n"
         assert compute_difficulty(body).source == "computed"
 
+    @pytest.mark.parametrize(
+        "body",
+        [
+            "# P\n##x\n**Difficulty:** high\n## Why\n",
+            "# P\n> ## x\n**Difficulty:** high\n## Why\n",
+            "# P\n```text\n## inside\n```\n**Difficulty:** high\n## Why\n",
+        ],
+        ids=["hashes-without-space", "quoted-heading", "heading-inside-fence"],
+    )
+    def test_a_line_that_only_looks_like_a_heading_does_not_end_the_header(
+        self, body: str
+    ) -> None:
+        assert compute_difficulty(body).source == "declared"
+
+    def test_a_sub_h1_title_of_a_plan_with_no_h1_is_skipped(self) -> None:
+        body = "\n## Plan title\n\n**Difficulty:** high\n\n## Why\n\nOne line.\n"
+        rating = compute_difficulty(body)
+        assert rating.source == "declared"
+        assert rating.level == "high"
+
+    def test_crlf_bodies_find_the_heading_and_the_stamp(self) -> None:
+        found = "# P\r\n**Difficulty:** high\r\n## Why\r\n"
+        assert compute_difficulty(found).source == "declared"
+        below = "# P\r\n## Why\r\n**Difficulty:** high\r\n"
+        assert compute_difficulty(below).source == "computed"
+
     def test_seven_hashes_is_not_a_heading(self) -> None:
         body = "# Plan\n####### not a heading\nDifficulty: high\n"
         assert compute_difficulty(body).source == "declared"
