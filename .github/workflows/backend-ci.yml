@@ -104,6 +104,9 @@ env:
 
 jobs:
   lint:
+    # Job cap (plan 2026-09-07-nothing-escalates-a-pr-wedged-on-one-block-reason Phase 2): 40 green runs measured 2026-09-23,
+    # p50 1.35 / p90 1.47 / max 1.52 min; cap = max(5, 2x max). Replaces the 360-min default.
+    timeout-minutes: 5
     name: Lint & Format Check
     # ubuntu-latest, NOT [self-hosted, qontinui].
     #
@@ -1127,6 +1130,9 @@ jobs:
           echo "::notice title=No infrastructure verdict::Job status '$JOB_STATUS', no apt-dependent step red the job, none mid-flight. This marker has nothing to add about the code under test. $ref"
 
   security-scan:
+    # Job cap (plan 2026-09-07-nothing-escalates-a-pr-wedged-on-one-block-reason Phase 2): 40 green runs measured 2026-09-23,
+    # p50 2.42 / p90 4.03 / max 7.20 min; cap = max(5, 2x max). Replaces the 360-min default.
+    timeout-minutes: 15
     name: Security Scanning
     runs-on: ubuntu-latest
     permissions:
@@ -1242,6 +1248,9 @@ jobs:
           esac
 
   build-test:
+    # Job cap (plan 2026-09-07-nothing-escalates-a-pr-wedged-on-one-block-reason Phase 2): 40 green runs measured 2026-09-23,
+    # p50 2.14 / p90 3.05 / max 5.90 min; cap = max(5, 2x max). Replaces the 360-min default.
+    timeout-minutes: 15
     name: Test Docker Build
     runs-on: ubuntu-latest
     defaults:

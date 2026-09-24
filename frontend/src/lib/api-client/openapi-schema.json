@@ -87163,6 +87163,151 @@
         ]
       }
     },
+    "/api/v1/operations/coord/findings": {
+      "get": {
+        "description": "Return ``coord.findings`` rows for the calling operator's tenant.\n\nResponse envelope mirrors coord's:\n``{\"available\", \"count\", \"findings\": [...], \"finding_id_applied\",\n\"kind_applied\", \"limit\", \"resource_keys_applied\" (a COUNT),\n\"resource_keys_truncated\", \"triaged_applied\" (\"any\" | \"false\" | \"true\")}``,\nplus ``kind_excluded`` / ``scope_restricted`` on a ``triaged=false`` read.\nThe ``*_applied`` echoes are what let the page say which filter coord\nactually honoured rather than which one it was asked for \u2014 a filter coord\ndropped is otherwise invisible.\n\n**There is no ``expired`` boolean.** Expiry is derived client-side from\n``expires_at``, and it has to be: a ``kind=dossier`` row is a durable\ndossier head carrying a 100-year TTL, so a server-side \"expiring\" flag\nwould be true of every row that never expires in practice.\n\nDegrade rather than 502. coord's ``/coord/findings`` route is on coord's\n``main`` (since 2026-09-20), so a 404 here means the DEPLOYED coord predates\nit or a routing fault, and must read as \"not answering\", never as an empty\nfindings store. Same ``unavailable`` / ``unavailable_kind`` pair the\nlanded-write feed uses.\n\ncoord ALSO answers ``200 {\"available\": false}`` when ``coord.findings`` is\nnot provisioned, and says that must read as UNKNOWN. The page branches on\n``unavailable`` alone, so that answer is given the same degrade pair here\n(``unavailable_kind: \"unprovisioned\"``) \u2014 otherwise a store coord just said\nit cannot read would render as \"0 findings\".",
+        "operationId": "api_v1_operations_coord_findings_get",
+        "parameters": [
+          {
+            "description": "Read ONE finding by id. Coord serves the row even when it is past ``expires_at`` \u2014 expiry is a fact about the row, not a reason to hide it \u2014 and answers another tenant's id, or no such id, with an EMPTY PAGE rather than a 404.",
+            "in": "query",
+            "name": "finding_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Read ONE finding by id. Coord serves the row even when it is past ``expires_at`` \u2014 expiry is a fact about the row, not a reason to hide it \u2014 and answers another tenant's id, or no such id, with an EMPTY PAGE rather than a 404.",
+              "title": "Finding Id"
+            }
+          },
+          {
+            "description": "Repeatable. Restrict to findings tagged with these resource keys.",
+            "in": "query",
+            "name": "resource_keys",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Repeatable. Restrict to findings tagged with these resource keys.",
+              "title": "Resource Keys"
+            }
+          },
+          {
+            "description": "Filter by finding topic.",
+            "in": "query",
+            "name": "topic",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter by finding topic.",
+              "title": "Topic"
+            }
+          },
+          {
+            "description": "Filter by finding kind.",
+            "in": "query",
+            "name": "kind",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter by finding kind.",
+              "title": "Kind"
+            }
+          },
+          {
+            "description": "Page size. Forwarded verbatim \u2014 coord owns the default and the clamp.",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Page size. Forwarded verbatim \u2014 coord owns the default and the clamp.",
+              "title": "Limit"
+            }
+          },
+          {
+            "description": "Restrict to findings that have (``true``) or have not (``false``) been triaged. ``false`` deliberately excludes durable dossier heads and fleet-infrastructure rows, so a count under it is NARROWER than the unfiltered total by design.",
+            "in": "query",
+            "name": "triaged",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Restrict to findings that have (``true``) or have not (``false``) been triaged. ``false`` deliberately excludes durable dossier heads and fleet-infrastructure rows, so a count under it is NARROWER than the unfiltered total by design.",
+              "title": "Triaged"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Get Coord Findings Api V1 Operations Coord Findings Get"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Coord Findings",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
     "/api/v1/operations/coord/group-tenant-roles": {
       "delete": {
         "description": "Delete an SSO-group \u2192 tenant \u2192 role mapping.\n\nProxies coord ``DELETE /admin/coord/group-tenant-roles`` with a JSON\nbody ``{group_id, tenant_slug, role}`` \u2192 ``{ok, deleted}``. The body is\nforwarded on the DELETE via ``_proxy_coord_delete(body=...)``.",
@@ -87306,53 +87451,6 @@
           }
         ],
         "summary": "Get Coord Members",
-        "tags": [
-          "operations"
-        ]
-      },
-      "post": {
-        "description": "Create an operator in the caller's home tenant (pre-login invites OK).\n\nProxies coord ``POST /admin/coord/operators``. Body:\n``{email, display_name?, sso_subject, sso_provider, roles?: [str]}`` \u2192\n``{operator_id}``.",
-        "operationId": "api_v1_operations_coord_members_post",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "additionalProperties": true,
-                "title": "Body",
-                "type": "object"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "title": "Response Post Coord Member Api V1 Operations Coord Members Post"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
-        "summary": "Post Coord Member",
         "tags": [
           "operations"
         ]
@@ -90264,7 +90362,7 @@
     },
     "/api/v1/operations/coord/tenant-members": {
       "post": {
-        "description": "Add a person to the caller's tenant by EMAIL \u2014 no IdP fields.\n\nResolves the email against the Cognito pool, then composes coord's two\nexisting operator writes:\n\n1. ``POST /admin/coord/operators`` with the resolved ``sub`` \u2014 an upsert\n   on ``(sso_provider, sso_subject)`` that never touches ``tenant_id`` on\n   conflict, so it is safe for somebody who already exists in another\n   tenant. It is sent with NO ``roles``: the upsert guarantees the row\n   exists, it does not grant.\n2. ``POST /admin/coord/operators/{id}/roles`` with the requested role and\n   an explicit ``target_tenant_id``, which coord re-checks the caller is\n   admin in (``403 not_admin_in_target_tenant``).\n\nAnswers:\n\n* ``{\"status\": \"added\", \"operator_id\", \"role\"}`` \u2014 they had an account\n  and now hold ``role`` in this tenant.\n* ``{\"status\": \"invited\", \"operator_id\", \"role\"}`` \u2014 SUPERUSER ONLY. They\n  had no account (or an unaccepted invitation): the account is created\n  with nothing sent, the grant is made, and only then is the invitation\n  emailed. Re-adding a pending invitee re-sends it, which is how an admin\n  recovers a lost or expired one.\n* ``{\"status\": \"invitation_pending\", \"operator_id\", \"role\"}`` \u2014 a tenant\n  admin added somebody holding an invitation they have not accepted. The\n  grant is made; nothing is sent, since sending is a superuser act.\n* ``{\"status\": \"invite_required\"}`` \u2014 a tenant admin named an email with\n  no account. NOTHING is written or sent.\n* ``409`` \u2014 more than one account matches the email, so picking one\n  would be guessing which human gets access.\n\n**Why creating an account is superuser-only.** Qontinui is invite-only:\nself sign-up is disabled on the pool and its PreSignUp trigger enforces an\nallowlist \u2014 for every trigger EXCEPT ``AdminCreateUser``. Every signed-in\nuser is admin of their own personal tenant, so letting any tenant admin\nreach ``AdminCreateUser`` would let anybody already inside hand out\naccounts to arbitrary addresses, and send email from the product's sender\nidentity to them. Operator decision, 2026-09-17: tenant admins add people\nwho already have an account; creating one is a platform admin's act.\n\nA grant that landed without its email is a ``502`` whose ``message`` says\nexactly that, and a retry converges: the account then resolves as a\npending invitation, the grant is idempotent, and the email is re-sent.\n\nRate-limited per caller \u2014 see ``_TENANT_MEMBER_ADD_RATE_LIMIT``.",
+        "description": "Add a person to the caller's tenant by EMAIL \u2014 no IdP fields.\n\nResolves the email against the Cognito pool, then composes coord's two\nexisting operator writes:\n\n1. ``POST /admin/coord/operators`` with the resolved ``sub`` \u2014 an upsert\n   on ``(sso_provider, sso_subject)`` that never touches ``tenant_id`` on\n   conflict, so it is safe for somebody who already exists in another\n   tenant. It is sent with NO ``roles``: the upsert guarantees the row\n   exists, it does not grant.\n2. ``POST /admin/coord/operators/{id}/roles`` with the requested role and\n   an explicit ``target_tenant_id``, which coord re-checks the caller is\n   admin in (``403 not_admin_in_target_tenant``).\n\nAnswers:\n\n* ``{\"status\": \"added\", \"operator_id\", \"role\", \"notice\"}`` \u2014 they had an\n  account and now hold ``role`` in this tenant. ``notice`` reports the\n  \"you have been given access\" email, which is attempted on THIS arm\n  only, and takes one of three values:\n\n  - ``sent`` \u2014 the email reached a transport.\n  - ``not_sent`` \u2014 nothing was sent and the admin should pass the news\n    on themselves. Covers both a failed send and an unreadable\n    prior-access check.\n  - ``not_needed`` \u2014 they ALREADY had access to this tenant, so this\n    grant told them nothing new and no email was sent.\n\n  See :func:`_member_had_prior_access` for why the third value exists\n  (it is what stops this route being an email-sending primitive) and\n  :func:`_send_member_added_notice` for why a failed send does not fail\n  the grant.\n* ``{\"status\": \"invited\", \"operator_id\", \"role\"}`` \u2014 SUPERUSER ONLY. They\n  had no account (or an unaccepted invitation): the account is created\n  with nothing sent, the grant is made, and only then is the invitation\n  emailed. Re-adding a pending invitee re-sends it, which is how an admin\n  recovers a lost or expired one.\n* ``{\"status\": \"invitation_pending\", \"operator_id\", \"role\"}`` \u2014 a tenant\n  admin added somebody holding an invitation they have not accepted. The\n  grant is made; nothing is sent, since sending is a superuser act. No\n  ``notice`` either: a person who cannot sign in yet is owed the\n  invitation, not a note about a team they cannot reach, and sending one\n  would route around the superuser rule above.\n* ``{\"status\": \"invite_required\"}`` \u2014 a tenant admin named an email with\n  no account. NOTHING is written or sent.\n* ``409`` \u2014 more than one account matches the email, so picking one\n  would be guessing which human gets access.\n\n**Why creating an account is superuser-only.** Qontinui is invite-only:\nself sign-up is disabled on the pool and its PreSignUp trigger enforces an\nallowlist \u2014 for every trigger EXCEPT ``AdminCreateUser``. Every signed-in\nuser is admin of their own personal tenant, so letting any tenant admin\nreach ``AdminCreateUser`` would let anybody already inside hand out\naccounts to arbitrary addresses, and send email from the product's sender\nidentity to them. Operator decision, 2026-09-17: tenant admins add people\nwho already have an account; creating one is a platform admin's act.\n\nA grant that landed without its email is a ``502`` whose ``message`` says\nexactly that, and a retry converges: the account then resolves as a\npending invitation, the grant is idempotent, and the email is re-sent.\n\nRate-limited per caller \u2014 see ``_TENANT_MEMBER_ADD_RATE_LIMIT``.",
         "operationId": "api_v1_operations_coord_tenant_members_post",
         "requestBody": {
           "content": {

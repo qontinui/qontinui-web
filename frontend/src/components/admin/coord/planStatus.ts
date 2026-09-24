@@ -76,9 +76,10 @@ export interface CoordPlanRow {
   status?: string;
   current_phase?: string | null;
   /**
-   * coord `work_units.authored_at` — when the plan was WRITTEN, derived from
-   * the `YYYY-MM-DD` prefix of its slug (the runner's `authored_at_from_stem`
-   * and the alembic backfill share that one derivation; plan
+   * coord `work_units.authored_at` — when the plan was WRITTEN: what the
+   * writing caller supplied, which for a plan file is the `YYYY-MM-DD` prefix
+   * of its slug (the runner's `authored_at_from_stem` and the alembic backfill
+   * share that one derivation; plan
    * `2026-09-02-coord-work-units-carry-no-authoring-date`). NULL / absent
    * means coord holds none — an undated slug, a coord that predates the
    * column, or a unit created through the MCP upsert door by a caller that
@@ -153,8 +154,9 @@ export const PLAN_TIME_ABSENT = {
  * the value stays in the detail panel, labelled, where it is honest.
  *
  * `created_at` is the INGESTION time, so it is named as such rather than under
- * "Created". An absent `authored_at` is UNKNOWN and falls through to the
- * ingest date under ITS name — never silently promoted to "authored".
+ * "Created". An absent authoring date — no dated slug and no `authored_at`
+ * ({@link planAuthoredAt}) — is UNKNOWN and falls through to the ingest date
+ * under ITS name, never silently promoted to "authored".
  */
 export function planRowTime(
   plan: Pick<

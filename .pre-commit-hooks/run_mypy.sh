@@ -20,6 +20,39 @@
 set -euo pipefail
 cd backend
 
+# Never let poetry block on the OS keyring. Poetry probes the keyring
+# ("Checking keyring availability") before `poetry install`, and on a
+# headless Linux box whose D-Bus session bus exists but has no unlocked
+# Secret Service collection that probe blocks FOREVER waiting on an unlock
+# prompt nobody can answer — measured on merytshost 2026-09-23: `poetry
+# install` sat at the probe for 300s (killed by timeout), and completed in
+# 7s with the null backend. This project resolves only from public PyPI (no
+# [[tool.poetry.source]]), so no credential ever comes from the keyring.
+# An explicit caller setting is respected.
+export PYTHON_KEYRING_BACKEND="${PYTHON_KEYRING_BACKEND:-keyring.backends.null.Keyring}"
+
+# Bound provisioning so a future hang fails loudly instead of wedging the
+# commit. Only GNU coreutils `timeout` is used: on Windows the first
+# `timeout` on PATH can be C:\Windows\System32\timeout.exe (a pause command
+# that rejects `timeout N cmd`), and stock macOS has none — both answer
+# `--version` with a failure, and there the install runs unbounded.
+PROVISION_TIMEOUT="${QONTINUI_MYPY_PROVISION_TIMEOUT_SECS:-900}"
+# `-k 30` escalates to SIGKILL 30s after the TERM, so a child that ignores
+# TERM cannot outlive the bound. Homebrew coreutils installs GNU timeout as
+# `gtimeout`, which is tried second. Tradeoff: GNU timeout runs the install in
+# its own process group, so a Ctrl-C at the terminal may not reach it; the
+# bound still ends it.
+bounded() {
+  local t
+  for t in timeout gtimeout; do
+    if "$t" --version >/dev/null 2>&1; then
+      "$t" -k 30 "$PROVISION_TIMEOUT" "$@"
+      return
+    fi
+  done
+  "$@"
+}
+
 if ! poetry run python -c "import mypy, qontinui_schemas.generated" >/dev/null 2>&1; then
   echo "[mypy-hook] poetry env for this checkout is missing/unprovisioned —" >&2
   echo "[mypy-hook] provisioning once (fresh worktrees hit this)..." >&2
@@ -28,7 +61,16 @@ if ! poetry run python -c "import mypy, qontinui_schemas.generated" >/dev/null 2
   # Best-effort — if 3.12 isn't installed, fall through and let poetry pick.
   poetry env use 3.12 1>&2 || \
     echo "[mypy-hook] WARNING: python 3.12 not found; using poetry default (CI uses 3.12)" >&2
-  poetry install --no-interaction --no-ansi 1>&2
+  rc=0
+  bounded poetry install --no-interaction --no-ansi 1>&2 || rc=$?
+  if [ "$rc" -eq 124 ] || [ "$rc" -eq 137 ]; then
+    echo "[mypy-hook] ERROR: poetry install exceeded ${PROVISION_TIMEOUT}s and was killed." >&2
+    echo "[mypy-hook] Re-run by hand with -vv to see where it stalls:" >&2
+    echo "[mypy-hook]   (cd backend && poetry install -vv)" >&2
+    exit 1
+  elif [ "$rc" -ne 0 ]; then
+    exit "$rc"
+  fi
 fi
 
 exec poetry run mypy .
