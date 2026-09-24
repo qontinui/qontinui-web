@@ -45,7 +45,7 @@ DifficultySource = Literal["declared", "computed"]
 RUBRIC_VERSION = 1
 
 #: The model tier each level routes to — display copy, served so every
-#: consumer (the console, /candidates readers) says the same thing.
+#: consumer (the console, /candidates and list-route readers) says the same thing.
 MODEL_TIERS: dict[str, str] = {
     "high": "Fable 5.1",
     "medium": "Opus 5",
