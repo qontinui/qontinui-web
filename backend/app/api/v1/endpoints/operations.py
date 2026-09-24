@@ -6645,7 +6645,7 @@ async def websocket_coord_events(
        `WS /api/v1/operations/coord-events/ws?subscribe=<name>&token=<jwt>`
        (`active_tenant` optional, as on the device-status bridge).
     2. `subscribe` is checked against `COORD_EVENTS_SUBSCRIPTIONS`
-       (`strategy` | `merge` | `claims` | `branches`); anything else closes
+       (`merge` | `claims` | `branches`); anything else closes
        1008 `unknown_subscription` before the token is even read.
     3. Auth + effective-tenant resolution, exactly as
        :func:`websocket_device_status`.
@@ -6653,11 +6653,11 @@ async def websocket_coord_events(
        device-status bridge — `mint_device_status_token`).
     5. Open `wss://<coord>/ws?token=<minted>&subscribe=<name>`; coord
        verifies the token and resolves the name to its fixed pattern
-       server-side (`strategy` → `events.strategy.*`, `merge` →
-       `events.merge.*`, …).
+       server-side (`merge` → `events.merge.*`, `claims` →
+       `events.claims`, …).
     6. Every `{"channel": "...", "payload": "<json string>"}` frame whose
        `channel` is in the subscription's FAMILY (`channel_in_family`:
-       `strategy` → `events.strategy.*`, `merge` → `events.merge.*`,
+       `merge` → `events.merge.*`,
        `claims` → exactly `events.claims`, `branches` → exactly
        `events.branches`) is forwarded verbatim; the browser parses it
        (`payload` is a JSON STRING, per coord's `ws.rs`). Anything else is
@@ -6672,9 +6672,7 @@ async def websocket_coord_events(
        backend<->coord leg already survives an idle upstream via
        `websockets`' 20s ping, but nothing kept the browser<->backend leg
        alive, so an idle-timing proxy on THAT leg reconnects the browser on
-       its own clock instead of disappearing. `useStrategyWebSocket` drops it
-       for free (`envelope.channel` is not a string on this frame, and the
-       handler already returns on that check); `useMergePipelineData`
+       its own clock instead of disappearing. `useMergePipelineData`
        recognizes it explicitly (`isKeepaliveFrame`) because it otherwise
        treats every message as "something changed, refetch".
 
