@@ -1480,7 +1480,7 @@ def test_an_edit_that_adds_no_drop_to_a_landed_revision_is_not_rejudged(
     head = guard.scan_source(edited, path)
     base = guard.scan_source(_LANDED, path)
     assert [(d.table, d.column) for d in head.drops] == [("sessions", "plan_slug")]
-    delta = guard.delta_scan(head, base)
+    delta = guard.delta_scan(head, base, edited, _LANDED)
     assert delta.drops == []
     assert delta.unresolved == []
     assert delta.violations == []
@@ -1495,8 +1495,55 @@ def test_a_new_drop_added_to_a_landed_revision_is_still_judged(tmp_path: Path) -
     )
     path = tmp_path / "rev.py"
     delta = guard.delta_scan(
-        guard.scan_source(edited, path), guard.scan_source(_LANDED, path)
+        guard.scan_source(edited, path),
+        guard.scan_source(_LANDED, path),
+        edited,
+        _LANDED,
     )
     assert [(d.table, d.column) for d in delta.drops] == [
         ("sessions", "work_unit_slug")
     ]
+
+
+_LANDED_DECLARED = (
+    '"""landed revision with a declared unresolved drop"""\n'
+    "from alembic import op\n\n"
+    'revision = "abc"\n'
+    'down_revision = "xyz"\n\n'
+    'COORD_SCHEMA_DROPS: list[tuple[str, str]] = [("sessions", "plan_slug")]\n\n'
+    "def upgrade():\n"
+    '    t, c = "sessions", "plan_slug"\n'
+    '    op.execute(f"ALTER TABLE coord.{t} DROP COLUMN {c}")\n\n'
+    "def downgrade():\n"
+    "    pass\n"
+)
+
+
+def test_a_new_unresolved_site_under_an_unchanged_declaration_is_judged_whole(
+    tmp_path: Path,
+) -> None:
+    """Review blocker: a second f-string drop the declaration silently covers."""
+    edited = _LANDED_DECLARED.replace(
+        '    op.execute(f"ALTER TABLE coord.{t} DROP COLUMN {c}")\n',
+        '    op.execute(f"ALTER TABLE coord.{t} DROP COLUMN {c}")\n'
+        '    t2, c2 = "sessions", "work_unit_slug"\n'
+        '    op.execute(f"ALTER TABLE coord.{t2} DROP COLUMN {c2}")\n',
+    )
+    path = tmp_path / "rev.py"
+    head = guard.scan_source(edited, path)
+    delta = guard.delta_scan(
+        head, guard.scan_source(_LANDED_DECLARED, path), edited, _LANDED_DECLARED
+    )
+    assert delta is head
+    assert delta.drops
+
+
+def test_a_rewritten_revision_identity_is_judged_whole(tmp_path: Path) -> None:
+    """A landed file given a new revision id is a new migration that will run."""
+    edited = _LANDED_DECLARED.replace('revision = "abc"', 'revision = "def"', 1)
+    path = tmp_path / "rev.py"
+    head = guard.scan_source(edited, path)
+    delta = guard.delta_scan(
+        head, guard.scan_source(_LANDED_DECLARED, path), edited, _LANDED_DECLARED
+    )
+    assert delta is head
