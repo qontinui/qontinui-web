@@ -74,8 +74,11 @@ export interface CoordFindingRow {
  * The envelope `/api/v1/operations/coord/findings` returns.
  *
  * `count` and the `*_applied` echoes are coord's; `unavailable` /
- * `unavailable_kind` are the proxy's degrade pair, present only when coord's
- * findings surface did not answer at all.
+ * `unavailable_kind` are the proxy's degrade pair — present when coord's
+ * findings route did not answer at all, AND when it answered
+ * `200 {"available": false}` ({@link FindingsUnavailableKind}'s
+ * `unprovisioned`), which is coord genuinely responding with "unknown", not
+ * "did not answer".
  */
 export interface FindingsResponse {
   available?: boolean | null;
@@ -95,7 +98,46 @@ export interface FindingsResponse {
   /** coord's wire spelling of the triage filter: `"any"`, `"false"` or `"true"`. */
   triaged_applied?: string | null;
   unavailable?: string | null;
-  unavailable_kind?: string | null;
+  unavailable_kind?: FindingsUnavailableKind | null;
+}
+
+/**
+ * Why the findings proxy could not read coord — `operations.py`'s
+ * `get_coord_findings` three-way split.
+ *
+ * * `not_deployed` — coord answered 404 for `/coord/findings`: the DEPLOYED
+ *   coord predates the route (or it is misrouted). Expected only in the
+ *   window before every coord instance carries it.
+ * * `unprovisioned` — coord answered `200 {"available": false}`: the store
+ *   itself is not provisioned for this tenant. The backend's own docstring
+ *   says this "must read as UNKNOWN" — not the calm case.
+ * * `unreachable` — anything else (a non-404 failure status). coord is
+ *   genuinely not answering.
+ */
+export type FindingsUnavailableKind =
+  | "not_deployed"
+  | "unprovisioned"
+  | "unreachable";
+
+/**
+ * Whether an unreadable findings read should be shown as alarming (amber) or
+ * merely informational (muted).
+ *
+ * Findings deliberately reuses "the same `unavailable`/`unavailable_kind`
+ * pair the landed-write feed uses" (`operations.py`), not the proposals
+ * queue's — and the write feed defaults to SEVERE, because its underlying
+ * route already ships in today's coord. Same here: Phase 1 (the by-id read)
+ * is live, so `not_deployed` is the one narrow, benign exception — every
+ * other reading, including a missing/unlabelled kind from an older backend,
+ * means coord genuinely is not answering (or, for `unprovisioned`, that the
+ * answer is UNKNOWN rather than "empty" — R3's floor for not knowing is
+ * amber, never calm, matching {@link FINDING_ATTENTION_BY_RETENTION}'s
+ * `unknown` row).
+ */
+export function isFindingsUnavailableSevere(
+  kind: FindingsUnavailableKind | null | undefined
+): boolean {
+  return kind !== "not_deployed";
 }
 
 /**
