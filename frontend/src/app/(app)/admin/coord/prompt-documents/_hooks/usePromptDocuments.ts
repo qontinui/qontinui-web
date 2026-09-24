@@ -57,9 +57,7 @@ export function usePromptDocuments() {
       );
       const items = (data.documents ?? [])
         .slice()
-        .sort((a, b) =>
-          (a.description ?? a.name).localeCompare(b.description ?? b.name)
-        );
+        .sort((a, b) => (a.description ?? a.name).localeCompare(b.description ?? b.name));
       setDocuments(items);
       setDegraded(data.degraded ?? null);
       setError(null);
