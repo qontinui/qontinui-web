@@ -12012,15 +12012,22 @@ async def _member_had_prior_access(*, tenant_id: UUID, sso_subject: str) -> bool
     IdP-issued and unique on ``(sso_provider, sso_subject)``, whereas
     ``coord.operators.email`` is neither unique nor immutable.
 
-    **How it degrades, and in which direction.** Coord's route is today
+    **How it degrades, and in which direction.** Coord's route was once
     scoped ``WHERE o.tenant_id = $1`` — the operator's HOME tenant — so a
-    colleague homed in a DIFFERENT tenant is not listed even when they hold a
-    role here. coord PR 2224 widens it to everyone holding a role in the
-    tenant. Until that deploys this check UNDER-reports membership, so the
-    worst case is a duplicate notice to somebody who already had access. It
-    can never wrongly SUPPRESS one, because a listed row with a role is
-    positive evidence either way. After 2224 the check is exact, with no new
-    field and no new call shape here.
+    colleague homed in a DIFFERENT tenant was not listed even while holding a
+    role here, and this check under-reported for exactly that population. That
+    widening has LANDED and is deployed: coord ``main`` carries it as
+    ``653cb37``, and the members route was verified against production on
+    2026-09-24 returning a cross-home role-holder. This text used to name
+    coord PR 2224 as the pending fix; that PR was CLOSED rather than merged
+    and the work reached main through the route-around in coord PR 2409, so
+    do not go looking for 2224 in the merge history.
+
+    The one-sided property is kept deliberately, because it holds for ANY
+    reason a row is missing rather than only for the one that is now fixed: a
+    row absent from the answer can cost a duplicate notice to somebody who
+    already had access, and can never wrongly SUPPRESS one, because only a
+    listed row carrying a role is read as positive evidence.
 
     **What this is worth, stated honestly.** "They do not currently hold a
     role in this tenant." That collapses the repeated-add case, which is the

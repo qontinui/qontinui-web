@@ -23,13 +23,18 @@ again — and it is read-then-act with no atomicity, so concurrent submits can
 all read ``False`` and all send. Neither property was better under the SQL
 version.
 
-**The one-sided degradation.** Coord's ``GET /admin/coord/operators`` is
-today scoped ``WHERE o.tenant_id = $1`` (the operator's HOME tenant), so a
-colleague homed elsewhere is not listed even while holding a role here; coord
-PR 2224 widens it to everyone holding a role in the tenant. Until that
-deploys the check UNDER-reports membership, so the worst case is a duplicate
-notice. It can never wrongly suppress one. ``test_an_unlisted_operator_reads_as_new``
-pins that this is the behaviour, deliberately, rather than a latent bug.
+**The one-sided degradation.** Coord's ``GET /admin/coord/operators`` was
+once scoped ``WHERE o.tenant_id = $1`` (the operator's HOME tenant), so a
+colleague homed elsewhere was not listed even while holding a role here. That
+widening has landed on coord ``main`` as ``653cb37`` and is deployed, so the
+original cause is gone — it arrived through the route-around in coord PR 2409,
+not through coord PR 2224, which was closed rather than merged.
+
+The PROPERTY stays pinned, because it holds for any reason a row can be
+absent and not only for the one that was fixed: an unlisted operator reads as
+new, so the worst case is a duplicate notice and never a suppressed one.
+``test_an_unlisted_operator_reads_as_new`` is what keeps that deliberate
+rather than a latent bug.
 """
 
 from __future__ import annotations
@@ -115,10 +120,15 @@ class TestTheReadItself:
 
     @pytest.mark.asyncio
     async def test_an_unlisted_operator_reads_as_new(self):
-        """The documented one-sided degradation, pinned as intended
-        behaviour. Before coord PR 2224 a cross-home colleague is absent from
-        this list even while holding a role here, so the check under-reports
-        and the cost is a duplicate notice — never a suppressed one."""
+        """The one-sided degradation, pinned as intended behaviour.
+
+        An operator absent from the answer reads as NEW, so the cost is a
+        duplicate notice and never a suppressed one. The original cause —
+        coord's members route being scoped to the HOME tenant, which hid a
+        cross-home colleague — was fixed on coord ``main`` in ``653cb37``.
+        This stays pinned anyway: it is a property of how an absent row is
+        read, so it must hold for every reason a row can be missing, not just
+        that one."""
         answer, _ = await _ask({"operators": []})
         assert answer is False
 
