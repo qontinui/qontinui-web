@@ -74,6 +74,14 @@ env:
 
 jobs:
   migrate:
+    # Job cap (plan 2026-09-07-nothing-escalates-a-pr-wedged-on-one-block-reason Phase 2).
+    # A deliberate number, not the green-run formula: 40 green runs are p50 2.70 /
+    # p90 3.44 / max 4.88 min, but they are mostly no-op runs at head. A run that
+    # applies real DDL spends up to the full ~10-min `aws ecs wait tasks-stopped`
+    # on top of build (~3) + task start (~1) + reporting. A timeout CANCELS the job,
+    # and `failure()` is false for a cancelled job, so a cap below that path would
+    # skip the migration-failure page. 25 covers the worst path with headroom.
+    timeout-minutes: 25
     name: Build, push, run migrator
     runs-on: ubuntu-latest
     environment: production
