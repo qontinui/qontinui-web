@@ -483,7 +483,10 @@ def test_a_dangling_provenance_id_raises_a_violation_naming_its_constraint(
     asserts the name is actually IN that error, not merely in the
     catalogue.
     """
-    from app.api.v1.endpoints.memory import _PROVENANCE_FK_CONSTRAINTS
+    from app.api.v1.endpoints.memory import (
+        _PROVENANCE_FK_CONSTRAINTS,
+        _violated_provenance_fk,
+    )
 
     engine, _url = migrated
     tenant_id = uuid4()
@@ -508,6 +511,12 @@ def test_a_dangling_provenance_id_raises_a_violation_naming_its_constraint(
     assert expected in _PROVENANCE_FK_CONSTRAINTS, (
         f"{expected!r} is not in the endpoint's _PROVENANCE_FK_CONSTRAINTS, "
         f"so the fallback would re-raise it as a 500"
+    )
+    assert _violated_provenance_fk(exc.value) == expected, (
+        "the degrade path drops the column this function names, and the "
+        "`constraint` / `degraded_column` log fields report it — so a "
+        "mis-identification here silently NULLs the WRONG facet. Pinned "
+        "against the real driver error rather than a constructed one."
     )
 
 
@@ -611,9 +620,16 @@ def test_the_savepoint_fallback_lands_the_row_unattributed(
 
     The end-to-end shape of the plan's §4.1 item 3 over real Postgres: a
     principal whose ``device_id`` names no ``coord.devices`` row (the state
-    a device JWT outliving its device produces, and the state the device
-    arm cannot pre-empt because it resolves nothing) must still land the
-    memory — with NULL provenance rather than a 500.
+    a device JWT outliving its device produces, and the state neither arm
+    pre-empts, because neither resolves the device) must still land the
+    memory — degraded rather than 500ing.
+
+    **Degraded NARROWLY**, which is the half this test exists to pin: the
+    device id is the one that dangled, so the device column goes NULL and
+    the live ``user_id`` SURVIVES. Postgres names the violated constraint
+    in the error, so the handler knows which column was bad without any
+    extra round trip, and discarding the good id alongside the bad one
+    would throw away attribution for nothing.
     """
     from app.api.v1.endpoints.memory import (
         MemoryPrincipal,
@@ -671,12 +687,87 @@ def test_the_savepoint_fallback_lands_the_row_unattributed(
     memory_id = asyncio.run(_go())
 
     stored_user, stored_device, applies_at = _memory_provenance(sync_engine, memory_id)
-    assert stored_device is None
-    assert stored_user is None, (
-        "the retry writes BOTH facets NULL: the savepoint rolled back the "
-        "whole statement, and the handler cannot tell which of the two ids "
-        "was the dangling one without another round trip it declined to take"
+    assert stored_device is None, (
+        "the device id is the one that dangled, so it is the one that must land NULL"
     )
+    assert stored_user == user_id, (
+        "the retry drops ONLY the facet the violated constraint named. This "
+        "user exists, nothing about it was in doubt, and the handler learned "
+        "which column was bad from the error itself — so NULLing it too "
+        "would discard good attribution for nothing."
+    )
+    assert applies_at == "tenant"
+
+
+def test_both_facets_dangling_falls_all_the_way_through_to_unattributed(
+    migrated: tuple[Engine, str],
+) -> None:
+    """When BOTH ids dangle, the narrowed retry is not enough — and it lands.
+
+    The narrow degradation drops only the column the violated constraint
+    named, so with two bad ids the second attempt violates the OTHER
+    constraint (Postgres reports one per error). That is the case the
+    third and last attempt exists for, and this pins it end to end over
+    real Postgres rather than by reading the code: claimed -> narrowed ->
+    bare, landing a fully unattributed row instead of a 500.
+
+    Without this the three-attempt path would ship with only its happy
+    two-attempt half covered, and a regression that re-raised on the
+    second violation would look exactly like a 500 in production.
+    """
+    from app.api.v1.endpoints.memory import (
+        MemoryPrincipal,
+        _write_degrading_dangling_provenance,
+    )
+    from app.services import memory_store as store
+
+    sync_engine, url = migrated
+    tenant_id = uuid4()
+    _seed_tenant(sync_engine, tenant_id)
+    # Neither id is seeded: both name rows that do not exist.
+    principal = MemoryPrincipal(
+        tenant_id=tenant_id,
+        user_id=uuid4(),
+        device_id=uuid4(),
+        actor="coord_service",
+    )
+
+    engine, maker = _async_maker(url)
+    content_hash = f"both-dangle-{uuid4().hex}"
+
+    async def _go() -> UUID:
+        try:
+            async with maker() as session:
+                memory_id, _deduped = await _write_degrading_dangling_provenance(
+                    session,
+                    principal,
+                    lambda u, d: store.insert_record(
+                        session,
+                        tenant_id=tenant_id,
+                        scope="tenant",
+                        scope_ref=None,
+                        kind="fact",
+                        title="both dangle",
+                        content="written by a principal whose ids both dangle",
+                        content_hash=content_hash,
+                        embedding=None,
+                        embedding_model=None,
+                        importance=0.5,
+                        source={},
+                        user_id=u,
+                        device_id=d,
+                    ),
+                )
+                await session.commit()
+                return memory_id
+        finally:
+            await engine.dispose()
+
+    memory_id = asyncio.run(_go())
+
+    stored_user, stored_device, applies_at = _memory_provenance(sync_engine, memory_id)
+    assert stored_user is None
+    assert stored_device is None
     assert applies_at == "tenant"
 
 

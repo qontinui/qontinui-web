@@ -69,6 +69,19 @@ class _FakeUsersTable:
         self._users = users
 
     async def execute(self, _stmt: object, params: dict[str, Any]) -> MagicMock:
+        # The one place the boundary is asserted about RUNTIME behaviour
+        # rather than about source text: `test_coord_schema_boundary_guard`
+        # scans string literals, which a computed query would slip past.
+        # This fake receives the real statement, so it can simply refuse
+        # to serve a read of coord's schema.
+        assert "coord." not in str(_stmt), (
+            "the provenance lookup must not read coord's schema — web reads "
+            "coord state over coord's HTTP API. Got: " + str(_stmt)
+        )
+        assert "device" not in str(_stmt).lower(), (
+            "the provenance lookup resolves auth.users ONLY; the device id "
+            "rides through and is degraded at INSERT. Got: " + str(_stmt)
+        )
         raw = params["user_id"]
         value = UUID(raw) if raw is not None else None
         row = (
@@ -134,13 +147,17 @@ async def test_coord_service_token_resolves_tenant(
             "device_id": str(device_id),
         },
     )
-    # The service arm resolves its asserted ids against their FK targets;
-    # this one names a device that exists, so it survives.
+    # No `user_id` claim, so `_existing_provenance` short-circuits and
+    # opens no session at all; this stub is here only so that a regression
+    # which DID query would hit the fake rather than a real engine.
     _users_exist(monkeypatch)
     principal = await memory_ep.get_memory_tenant(
         request=MagicMock(), user=None, credentials=_creds()
     )
     assert principal.tenant_id == tenant_id
+    # Load-bearing: this is the assertion that catches the `user_id is
+    # None` early return being mis-written as `return None, None`, which
+    # would silently drop the device id on every unattributed call.
     assert principal.device_id == device_id
     assert principal.actor == "coord_service"
 
@@ -641,7 +658,8 @@ async def test_coord_service_user_that_does_not_exist_degrades_to_none(
     )
 
     assert principal.user_id is None
-    # The facet that DID resolve is unaffected — degrade one, not both.
+    # The device facet is not resolved here at all, so it rides through
+    # untouched. Degrading the user must not disturb it.
     assert principal.device_id == device_id
 
 
@@ -792,8 +810,11 @@ async def test_device_arm_does_not_pay_for_the_existence_lookup(
         "_verify_device_jwt",
         AsyncMock(return_value=(device_claims, _user(user_id))),
     )
-    # Nothing exists in the reference tables. If the device arm consulted
-    # them, both facets would come back None.
+    # Nothing exists in the users table. The `user_id` assertion below is
+    # the discriminating one: if this arm consulted the table it would come
+    # back None. (The device assertion cannot discriminate — nothing
+    # resolves a device any more — but the fake now REFUSES a statement
+    # mentioning a device, so a re-added lookup fails loudly there.)
     _users_exist(monkeypatch, users=[])
 
     principal = await memory_ep.get_memory_tenant(

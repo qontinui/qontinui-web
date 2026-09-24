@@ -301,29 +301,38 @@ async def _existing_provenance(
     closed against it: web reads coord state over coord's HTTP API, never
     over the ``coord.*`` Postgres schema
     (``backend/tests/test_coord_schema_boundary_guard.py``, whose
-    ``READ_BOUNDARY_CLOSED`` invariant is the empty set). Resolving the
-    device here would either breach that boundary or put a coord HTTP
-    round trip on the fleet's hottest write path.
+    ``READ_BOUNDARY_CLOSED`` invariant is the empty set).
 
-    Nothing is lost by not resolving it. A pre-check was never more than
-    a prediction — the row can go between the check and the INSERT — so
-    the guarantee is made exactly on the insert side instead, by
-    :func:`_write_degrading_dangling_provenance`, which covers **every**
-    arm and every column. The device arm's ``device_id`` was already
-    knowingly left unresolved for that same reason
+    The cost argument is what actually decides it, and it stands on its
+    own. A pre-check is never more than a prediction — the row can go
+    between the check and the INSERT — so buying one here with a coord
+    HTTP round trip, on the fleet's hottest write path, would pay a real
+    price for a window it cannot close. (The boundary is a second,
+    independent reason, but a weaker one taken alone: the guard is
+    file-granular, so it measures which file a token sits in rather than
+    whether a read happens.) The guarantee is made exactly on the insert
+    side instead, by :func:`_write_degrading_dangling_provenance`, which
+    covers **every** arm and both columns. The device arm's ``device_id``
+    was already knowingly left unresolved for that same reason
     (``_verify_device_jwt`` never touches ``coord.devices``); the
     coord-service arm now simply matches it.
 
-    Diagnosis is preserved and is in fact wider than it was. The reason
-    this function resolved anything at all is that coord's ids could be
-    systematically wrong — a different keyspace rather than a raced
-    deletion — and that has to be visible instead of silent. The USER
-    keyspace, which is the one genuinely at risk (coord carries its own
-    operator ids, and nothing proves they are in ``auth.users``'
-    keyspace), is still checked per request here. A dangling DEVICE id
-    now surfaces on the insert side, where
-    :func:`_write_degrading_dangling_provenance` logs the offending
-    constraint and the claimed ids — for every arm, not just this one.
+    What changes for DIAGNOSIS, stated precisely, because the obvious
+    summary overstates it. The reason this function resolved anything at
+    all is that coord's ids could be systematically wrong — a different
+    keyspace rather than a raced deletion — and that has to be visible
+    instead of silent. The USER keyspace is the one genuinely at risk
+    (coord carries its own operator ids, and nothing proves they are in
+    ``auth.users``' keyspace) and is still checked per request here. For
+    the DEVICE column the signal moves rather than widens: it was a
+    pre-insert warning on the coord-service arm only, and it is now the
+    insert-side degrade log — which already fired on every arm, and now
+    also names the offending constraint and the column it dropped. That
+    is LATER and rarer than the warning it replaces; what makes it an
+    acceptable trade is that coord owns ``coord.devices`` as well as the
+    device ids it mints, so the keyspace-mismatch risk this function
+    exists to catch is real for users and largely theoretical for
+    devices.
 
     It runs on its OWN session (the ``_verify_device_jwt`` pattern) so a
     failure here can never poison the request's transaction, and ANY
@@ -382,10 +391,15 @@ async def _existing_provenance(
 #: foreign key on this table (``superseded_by``, say) is a real bug and
 #: must keep surfacing as a 500 — degrading it to "write it unattributed"
 #: would silently swallow it.
-_PROVENANCE_FK_CONSTRAINTS = (
-    "memory_records_user_id_fkey",
-    "memory_records_device_id_fkey",
-)
+_USER_FK_CONSTRAINT = "memory_records_user_id_fkey"
+_DEVICE_FK_CONSTRAINT = "memory_records_device_id_fkey"
+
+#: Order matters only for reporting: :func:`_violated_provenance_fk`
+#: returns the FIRST name found in the rendered error, so if both ever
+#: appeared in one message the user column would win. Postgres reports
+#: one violated constraint per error, so that case is unreachable today —
+#: noted because ``constraint`` is a log field people will trust.
+_PROVENANCE_FK_CONSTRAINTS = (_USER_FK_CONSTRAINT, _DEVICE_FK_CONSTRAINT)
 
 
 def _is_provenance_fk_violation(exc: IntegrityError) -> bool:
@@ -423,7 +437,7 @@ async def _write_degrading_dangling_provenance[T](
     principal: MemoryPrincipal,
     write: Callable[[UUID | None, UUID | None], Awaitable[T]],
 ) -> T:
-    """Run ``write(user_id, device_id)``; on a dangling FK, retry unattributed.
+    """Run ``write(user_id, device_id)``; on a dangling FK, drop only that facet.
 
     This is the INSERT-side half of the same guarantee ``memfacets_01``'s
     ``ON DELETE SET NULL`` gives on the DELETE side: **a write is never
@@ -437,27 +451,41 @@ async def _write_degrading_dangling_provenance[T](
     Why a fallback rather than one more existence lookup. Every
     provenance id on every arm is ultimately a claim about a row some
     other service owns, so no pre-check can be more than a prediction:
-    :func:`_existing_provenance` resolves the coord-service arm's ids and
-    is still a TOCTOU window, and extending it to the DEVICE arm would add
-    a session + round trip to the fleet's hottest write path to close the
-    same window it cannot actually close. This closes it exactly, for
-    **every** arm at once, and costs nothing when the ids resolve — which
+    :func:`_existing_provenance` resolves the coord-service arm's
+    ``user_id`` and is still a TOCTOU window, and extending it to the
+    DEVICE column would either breach web's closed read boundary against
+    ``coord.*`` or put a coord HTTP round trip on the fleet's hottest
+    write path. This closes the window exactly, for **every** arm and
+    both columns at once, and costs nothing when the ids resolve — which
     is the steady state.
 
-    The cost when they do resolve is one ``SAVEPOINT`` / ``RELEASE`` pair
+    **The degradation is NARROW: only the facet that actually dangled is
+    dropped.** Postgres names the violated constraint in the error, and
+    :func:`_violated_provenance_fk` reads it straight out of the rendered
+    message — so identifying the bad column costs no extra round trip,
+    and there is no reason to discard a good id alongside a bad one. A
+    coord-service token carrying a live ``user_id`` and a device that was
+    reaped keeps its user attribution; only the device goes to NULL.
+
+    If BOTH ids dangle, the narrowed retry violates the other constraint
+    in turn — Postgres reports one per error — and the third and last
+    attempt writes the record fully unattributed. So the sequence is at
+    most: claimed, narrowed, bare; and it stops at the first one that
+    lands.
+
+    What is degraded is the REQUEST's provenance, not one row's.
+    Provenance is request-level — one verified principal per call — so
+    each retry re-runs the whole ``write``: on the batch path that is
+    every record in the request, not only the record whose id dangled
+    (the savepoint rolled the statement back). Coarser attribution for
+    the whole call is the intended fail-soft state; a rejected write is
+    not.
+
+    The cost when the ids resolve is one ``SAVEPOINT`` / ``RELEASE`` pair
     on the connection the request already holds. That is deliberate and
     it is the whole price: without the savepoint the first failed
     statement poisons the request's transaction and there is nothing left
     to retry into.
-
-    What is degraded is the REQUEST's provenance, not one row's. Provenance
-    is request-level — one verified principal per call — so the retry
-    re-runs the whole ``write`` unattributed: on the batch path that is
-    every record in the request, not only the record whose id dangled (the
-    savepoint rolled the statement back, and the handler cannot tell WHICH
-    of the two ids was dangling without another round trip it declined to
-    take). Coarser attribution for the whole call is the intended
-    fail-soft state; a rejected write is not.
 
     Anything that is not a provenance FK violation is re-raised untouched,
     so this narrows the blast radius of exactly one failure mode and hides
@@ -473,27 +501,62 @@ async def _write_degrading_dangling_provenance[T](
         async with db.begin_nested():
             return await write(principal.user_id, principal.device_id)
     except IntegrityError as exc:
-        if not _is_provenance_fk_violation(exc):
+        constraint = _violated_provenance_fk(exc)
+        if constraint is None:
             raise
-        logger.warning(
-            "memory_provenance_fk_violation_degraded",
-            error=str(exc.orig) if exc.orig is not None else str(exc),
-            constraint=_violated_provenance_fk(exc),
-            claimed_user_id=str(principal.user_id) if principal.user_id else None,
-            claimed_device_id=(
-                str(principal.device_id) if principal.device_id else None
-            ),
-            actor=principal.actor,
-            note=(
-                "a provenance id named no referenced row at INSERT time (the "
-                "row was removed between resolution and the write, or this "
-                "arm asserts ids it does not resolve); re-writing the record "
-                "unattributed rather than failing it. `constraint` names "
-                "which of the two columns dangled."
-            ),
-        )
+        _log_provenance_degraded(exc, constraint, principal)
+
+    # Drop ONLY the column the constraint named. `constraint` is one of
+    # the two by construction, so exactly one of these is cleared and the
+    # other survives.
+    user_id = None if constraint == _USER_FK_CONSTRAINT else principal.user_id
+    device_id = None if constraint == _DEVICE_FK_CONSTRAINT else principal.device_id
+
+    if user_id is None and device_id is None:
+        # The dangling column was the only one claimed; the narrowed
+        # write and the bare write are the same statement, so do not pay
+        # for a savepoint to run it twice.
+        return await write(None, None)
+
+    try:
+        async with db.begin_nested():
+            return await write(user_id, device_id)
+    except IntegrityError as exc:
+        second = _violated_provenance_fk(exc)
+        if second is None:
+            raise
+        _log_provenance_degraded(exc, second, principal, both=True)
 
     return await write(None, None)
+
+
+def _log_provenance_degraded(
+    exc: IntegrityError,
+    constraint: str,
+    principal: MemoryPrincipal,
+    *,
+    both: bool = False,
+) -> None:
+    """One warning per degraded facet, naming the constraint that fired."""
+    logger.warning(
+        "memory_provenance_fk_violation_degraded",
+        error=str(exc.orig) if exc.orig is not None else str(exc),
+        constraint=constraint,
+        degraded_column=(
+            "user_id" if constraint == _USER_FK_CONSTRAINT else "device_id"
+        ),
+        both_facets_dangled=both,
+        claimed_user_id=str(principal.user_id) if principal.user_id else None,
+        claimed_device_id=(str(principal.device_id) if principal.device_id else None),
+        actor=principal.actor,
+        note=(
+            "a provenance id named no referenced row at INSERT time (the row "
+            "was removed between resolution and the write, or this arm "
+            "asserts ids it does not resolve); re-writing the record with "
+            "that facet NULL rather than failing it. `degraded_column` is "
+            "the one dropped; the other is kept unless it dangles too."
+        ),
+    )
 
 
 async def _principal_from_service_claims(claims: dict[str, Any]) -> MemoryPrincipal:
