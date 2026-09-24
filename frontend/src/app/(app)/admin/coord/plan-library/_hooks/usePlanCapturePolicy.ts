@@ -1,7 +1,7 @@
 "use client";
 
 import { PLAN_CAPTURE_DOMAIN, type PlanCaptureLevel } from "../types";
-import { useTenantFleetPolicyDial } from "./useTenantFleetPolicyDial";
+import { useTenantFleetPolicyDial } from "../../_shared/useTenantFleetPolicyDial";
 
 /**
  * The `plan_capture` fleet-policy toggle (`off` | `record`).
