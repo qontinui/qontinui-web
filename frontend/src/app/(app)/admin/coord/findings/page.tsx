@@ -390,6 +390,19 @@ export default function CoordFindingsPage() {
   // some coord instance's Phase 1 route); every other cause, including an
   // older backend that omits the kind, is shown as the louder case.
   const unavailableSevere = isFindingsUnavailableSevere(unavailableKind);
+  // The list's degrade only speaks for the by-id read until that read has
+  // answered for itself — an authoritative empty by-id page is "not found",
+  // whatever the list read did. Its kind (and so its severity) follows
+  // whichever degrade is speaking. A malformed id is never a degrade: no
+  // by-id read is issued, so the list's degrade must not colour its sentence.
+  const linkedDegraded =
+    !linkedInvalid &&
+    (linkedUnavailable || (!linkedAnswered && unavailable !== null));
+  const linkedDegradeKind = linkedUnavailable
+    ? linkedUnavailableKind
+    : unavailableKind;
+  const linkedDegradeSevere =
+    linkedDegraded && isFindingsUnavailableSevere(linkedDegradeKind);
   // The linked row is prepended even when the filters exclude it, so the
   // banner owes a sentence for why it is on screen but not in the count. Only
   // claimed once the list has actually been read for the current query.
@@ -522,8 +535,17 @@ export default function CoordFindingsPage() {
 
       {linkedId && (
         <p
-          className="text-sm text-muted-foreground"
+          className={cn(
+            "text-sm",
+            // A by-id degrade can be the ONLY degrade on screen (the list read
+            // answered), so it carries the same severity styling as the list
+            // banner rather than reading calm.
+            linkedDegradeSevere
+              ? "text-amber-800 dark:text-amber-200"
+              : "text-muted-foreground"
+          )}
           data-testid="coord-findings-linked"
+          data-severe={linkedDegradeSevere}
         >
           {findingLinkNotice({
             invalid: linkedInvalid,
@@ -537,15 +559,8 @@ export default function CoordFindingsPage() {
             // "no such finding": nothing has been read yet.
             loading: linkedLoading || !linkedAnswered,
             error: linkedFailed,
-            // The list's degrade only speaks for the by-id read until that
-            // read has answered for itself — an authoritative empty by-id page
-            // is "not found", whatever the list read did.
-            unavailable:
-              linkedUnavailable || (!linkedAnswered && unavailable !== null),
-            // The kind follows whichever degrade is speaking.
-            unavailableKind: linkedUnavailable
-              ? linkedUnavailableKind
-              : unavailableKind,
+            unavailable: linkedDegraded,
+            unavailableKind: linkedDegradeKind,
           })}
         </p>
       )}
@@ -559,8 +574,8 @@ export default function CoordFindingsPage() {
         onExpandedKeyChange={setExpanded}
         empty={
           unavailable !== null ? (
-            // The banner above already says coord's reader is not answering;
-            // "no findings match" under it would contradict it.
+            // The banner above already says the findings store could not be
+            // read; "no findings match" under it would contradict it.
             <p
               className="text-sm italic text-muted-foreground"
               data-testid="coord-findings-unknown"
