@@ -246,10 +246,20 @@ def _header_region(prose: str) -> list[str]:
     stamp once the blockquote grows past it. Only a plan with NO sub-H1
     heading falls back to the first :data:`_HEADER_MAX_LINES` lines; a found
     region is never truncated. A plain line walk: linear in the body.
+
+    A plan with no H1 whose FIRST non-blank line is a sub-H1 heading is titled
+    by that heading, so it is skipped rather than ending an empty header.
+
+    Lines are split on ``\n`` only — the line boundaries ``^`` in
+    :data:`_DECLARED_RE` sees — with a trailing ``\r`` dropped so CRLF bodies
+    read the same.
     """
-    lines = prose.splitlines()
-    for i, line in enumerate(lines):
-        if _is_sub_h1_heading(line):
+    lines = [ln.removesuffix("\r") for ln in prose.split("\n")]
+    start = next((i for i, ln in enumerate(lines) if ln.strip()), len(lines))
+    if start < len(lines) and _is_sub_h1_heading(lines[start]):
+        start += 1
+    for i in range(start, len(lines)):
+        if _is_sub_h1_heading(lines[i]):
             return lines[:i]
     return lines[:_HEADER_MAX_LINES]
 
