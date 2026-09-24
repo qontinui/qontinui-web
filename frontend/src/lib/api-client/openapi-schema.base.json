@@ -33511,6 +33511,24 @@
             "title": "Limit",
             "type": "integer"
           },
+          "model_selector_vocabulary": {
+            "title": "Model Selector Vocabulary",
+            "type": "string"
+          },
+          "model_selectors": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "Model Selectors",
+            "type": "object"
+          },
+          "model_tiers": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "Model Tiers",
+            "type": "object"
+          },
           "offset": {
             "title": "Offset",
             "type": "integer"
@@ -33565,7 +33583,10 @@
           "offset",
           "limit",
           "corpus_health",
-          "corpus_health_unavailable_reason"
+          "corpus_health_unavailable_reason",
+          "model_tiers",
+          "model_selectors",
+          "model_selector_vocabulary"
         ],
         "title": "PlanCandidateResponse",
         "type": "object"
@@ -33972,7 +33993,7 @@
         "type": "object"
       },
       "PlanDifficultyResponse": {
-        "description": "Every rated plan in the caller's scope \u2014 not paged: the console joins\nit onto a coord window of up to 500 work units, and a row is ~300 bytes.\n\n``count`` is ``len(items)``. ``rerated`` is how many rows THIS read rated\nbefore answering (non-zero once after a deploy or a rubric bump). A plan\nrow that is still unrated is left OUT of ``items`` \u2014 absent here means\n\"no rating\", which the console renders as unrated, never as \"low\".\n``model_tiers`` maps each level to the model tier it routes to, served so\nevery consumer names the same models.",
+        "description": "Every rated plan in the caller's scope \u2014 not paged: the console joins\nit onto a coord window of up to 500 work units, and a row is ~300 bytes.\n\n``count`` is ``len(items)``. ``rerated`` is how many rows THIS read rated\nbefore answering (non-zero once after a deploy or a rubric bump). A plan\nrow that is still unrated is left OUT of ``items`` \u2014 absent here means\n\"no rating\", which the console renders as unrated, never as \"low\".\n``model_tiers`` maps each level to the model tier it routes to, served so\nevery consumer names the same models. It is DISPLAY COPY \u2014 never parse it.\n``model_selectors`` is the machine-readable twin: each level's harness\nselector, in the vocabulary ``model_selector_vocabulary`` names (the Claude\nCode Agent tool's ``model`` values). A consumer whose harness does not\nmatch that vocabulary treats the selector map as absent. All three are\nserved, byte-identical, on ``GET /plan-library`` and\n``/plan-library/candidates`` too.",
         "properties": {
           "count": {
             "title": "Count",
@@ -33984,6 +34005,17 @@
             },
             "title": "Items",
             "type": "array"
+          },
+          "model_selector_vocabulary": {
+            "title": "Model Selector Vocabulary",
+            "type": "string"
+          },
+          "model_selectors": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "Model Selectors",
+            "type": "object"
           },
           "model_tiers": {
             "additionalProperties": {
@@ -34028,7 +34060,9 @@
           "count",
           "rerated",
           "rubric_version",
-          "model_tiers"
+          "model_tiers",
+          "model_selectors",
+          "model_selector_vocabulary"
         ],
         "title": "PlanDifficultyResponse",
         "type": "object"
@@ -56104,6 +56138,24 @@
             "title": "Limit",
             "type": "integer"
           },
+          "model_selector_vocabulary": {
+            "title": "Model Selector Vocabulary",
+            "type": "string"
+          },
+          "model_selectors": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "Model Selectors",
+            "type": "object"
+          },
+          "model_tiers": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "Model Tiers",
+            "type": "object"
+          },
           "offset": {
             "title": "Offset",
             "type": "integer"
@@ -56119,7 +56171,10 @@
           "total",
           "offset",
           "limit",
-          "corpus_health"
+          "corpus_health",
+          "model_tiers",
+          "model_selectors",
+          "model_selector_vocabulary"
         ],
         "title": "WorkArtifactListResponse",
         "type": "object"

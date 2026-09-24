@@ -52,6 +52,31 @@ MODEL_TIERS: dict[str, str] = {
     "low": "Sonnet 5.0 / DeepSeek Flash 4.1 / Gemini 3.8 Flash",
 }
 
+#: The harness selector each level routes to — MACHINE-READABLE, unlike
+#: :data:`MODEL_TIERS`, which is display copy and must never be parsed (its
+#: ``low`` value names three alternatives). The values are the Claude Code
+#: Agent tool's ``model`` parameter (``sonnet`` / ``opus`` / ``haiku`` /
+#: ``fable``); :data:`MODEL_SELECTOR_VOCABULARY` names that vocabulary, and a
+#: consumer whose harness does not match it treats the map as ABSENT rather
+#: than guessing. ``haiku`` is deliberately unmapped: the ``low`` tier was
+#: calibrated on Sonnet 5.0 and names no Haiku model.
+#:
+#: Kept adjacent to :data:`MODEL_TIERS` so an edit to one prompts a check of
+#: the other; both are served together on ``GET /plan-library``,
+#: ``/plan-library/candidates`` and ``/plan-library/difficulty`` (plan
+#: ``2026-09-22-route-plan-sweeps-by-difficulty``). Every
+#: :data:`DifficultyLevel` must have an entry — a level added without one is a
+#: test failure, not a ``KeyError`` in a sweep.
+MODEL_SELECTORS: dict[str, str] = {
+    "high": "fable",
+    "medium": "opus",
+    "low": "sonnet",
+}
+
+#: Names the selector vocabulary :data:`MODEL_SELECTORS` is written in. A
+#: second harness is an added key under a new vocabulary, not a rename.
+MODEL_SELECTOR_VOCABULARY = "claude_code_agent_tool_v1"
+
 # ─────────────────────────── declared stamp ───────────────────────────
 
 #: ``Difficulty: high`` at line start, tolerating a blockquote marker, bold
