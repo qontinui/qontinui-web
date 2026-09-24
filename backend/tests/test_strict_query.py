@@ -336,13 +336,16 @@ class TestPlanLibraryRefusesUnknownKeys:
         artifact_id = uuid4()
 
         detail_route = routes[f"{API_PREFIX}/{{artifact_id}}"]
-        assert accepted_query_keys(detail_route.dependant) == ["include_coord"]
+        assert accepted_query_keys(detail_route.dependant) == [
+            "include_coord",
+            "include_retracted",
+        ]
         resp = await plan_client.get(
             f"{API_PREFIX}/{artifact_id}", params={"artifact_id": str(artifact_id)}
         )
         assert resp.status_code == 422, resp.text
         assert _detail(resp)["unknown"] == ["artifact_id"]
-        assert _detail(resp)["accepted"] == ["include_coord"]
+        assert _detail(resp)["accepted"] == ["include_coord", "include_retracted"]
         assert _detail(resp)["route"] == f"{API_PREFIX}/{{artifact_id}}"
 
         export_route = routes[f"{API_PREFIX}/{{artifact_id}}/export"]
