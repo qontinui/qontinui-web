@@ -21,6 +21,7 @@ import { paletteDisagreements } from "@/components/console/attention";
 
 import {
   type CoordFindingRow,
+  type FindingsUnavailableKind,
   DURABLE_HORIZON_MS,
   FINDING_ATTENTION_BY_RETENTION,
   FINDING_STATUS_PALETTE,
@@ -316,6 +317,34 @@ describe("findingLinkNotice", () => {
     });
     expect(line).toMatch(/availability state/i);
     expect(line).not.toMatch(/another tenant/i);
+  });
+
+  it("does not call an unprovisioned store 'not answering'", () => {
+    // `unprovisioned` is coord ANSWERING that its store is not provisioned;
+    // every other kind, and a missing one, keeps the not-answering sentence.
+    const unprovisioned = findingLinkNotice({
+      found: false,
+      loading: false,
+      unavailable: true,
+      unavailableKind: "unprovisioned",
+    });
+    expect(unprovisioned).toMatch(/not provisioned/i);
+    expect(unprovisioned).not.toMatch(/not answering/i);
+    expect(unprovisioned).toMatch(/availability state/i);
+    for (const unavailableKind of [
+      "not_deployed",
+      "unreachable",
+      null,
+    ] as (FindingsUnavailableKind | null)[]) {
+      expect(
+        findingLinkNotice({
+          found: false,
+          loading: false,
+          unavailable: true,
+          unavailableKind,
+        })
+      ).toMatch(/not answering/i);
+    }
   });
 
   it("names a malformed link first, above every other arm", () => {

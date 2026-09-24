@@ -398,8 +398,15 @@ export function findingLinkNotice(state: {
   loading: boolean;
   /** The by-id read failed — we could not look. */
   error?: boolean;
-  /** coord's findings surface did not answer at all (not deployed / down). */
+  /** The read degraded: coord's findings surface could not be read. */
   unavailable?: boolean;
+  /**
+   * Why, when `unavailable`. Only `unprovisioned` changes the wording: there
+   * coord DID answer — its store is not provisioned — so "not answering"
+   * would misname the cause. Every other kind, and a missing one, is the
+   * not-answering sentence.
+   */
+  unavailableKind?: FindingsUnavailableKind | null;
   /** The `?id=` value is not a finding id at all — no read was issued. */
   invalid?: boolean;
   /** The linked row is on screen but outside the current filters. */
@@ -457,9 +464,13 @@ export function findingLinkNotice(state: {
   // the finding to be absent FROM, so "no such finding" would report a
   // deployment state as a fact about this id.
   if (state.unavailable) {
+    const cause =
+      state.unavailableKind === "unprovisioned"
+        ? "coord reports its findings store is not provisioned"
+        : "coord's findings reader is not answering";
     return (
-      "The linked finding cannot be looked up — coord's findings reader is " +
-      "not answering. This is an availability state, not a missing finding."
+      `The linked finding cannot be looked up — ${cause}. ` +
+      "This is an availability state, not a missing finding."
     );
   }
   if (state.loading) return "Looking for the linked finding…";
