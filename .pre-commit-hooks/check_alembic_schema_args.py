@@ -93,6 +93,9 @@ ALLOWED_SCHEMAS = {
     "agent",
     "auth",
     "cloud",
+    # Retired with the Strategy collaboration feature and dropped by
+    # ``strategy_p4_01_drop_schema``; still allowed because the historical
+    # strategy revisions and that revision's ``downgrade()`` name it.
     "strategy",
     "web",
     # ``overview`` holds the business-leader Project Overview's own
