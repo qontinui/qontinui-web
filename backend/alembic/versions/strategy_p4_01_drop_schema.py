@@ -29,9 +29,9 @@ The old revisions stay (plan D4)
 ================================
 
 ``strategy_p1_01_schema``, ``strategy_p1_02_seed``,
-``strategy_p2_01_collab_tables`` and the two merge revisions that name them
-(``wave_7_01_merge_heads``, ``rp02_merge_heads``) are history on the chain and
-are load-bearing joints. They still create the schema on a fresh database; this
+``strategy_p2_01_collab_tables`` and the two merge revisions that link to them
+(``5874f5af0e4b``, ``rp02_merge_heads``) are history on the chain and are
+load-bearing joints. They still create the schema on a fresh database; this
 revision then drops it.
 
 Data does NOT come back
@@ -39,14 +39,22 @@ Data does NOT come back
 
 ``DROP SCHEMA ... CASCADE`` destroys every row: comment threads, posts,
 mentions and the seeded space/documents. ``downgrade()`` recreates the EMPTY
-structure the three original revisions built (tables, keys, indexes) so the
-chain stays reversible, and nothing more — it does not re-seed. The recovery
+structure the two schema revisions built (``strategy_p1_01_schema`` and
+``strategy_p2_01_collab_tables``: tables, keys, indexes) so the chain stays
+reversible, and nothing more — it does not re-run ``strategy_p1_02_seed``. The recovery
 path for the data is the ``pg_dump --schema=strategy`` plan D5 requires to be
 taken from production immediately BEFORE this revision is applied; the PR that
 carries this revision is held as a draft until that dump exists.
 
 The document CONTENT is not in these tables — it lives as Markdown in
 ``qontinui-dev-notes/project-strategy/``, which this plan does not touch.
+
+``CASCADE`` would also silently drop objects OUTSIDE the schema that depend on
+it — a foreign key or a view in another schema. The repo creates none, but a
+hand-made one in production would not show up in the repo, and the pre-apply
+dump (``--schema=strategy``) would not capture it either. So ``upgrade()``
+refuses rather than cascading across a schema boundary: it lists any such
+dependent and raises, leaving the schema intact.
 
 ``strategy`` stays in ``.pre-commit-hooks/check_alembic_schema_args.py``
 ``ALLOWED_SCHEMAS``: the historical revisions and this revision's
@@ -66,7 +74,38 @@ branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
 
+# Objects in OTHER schemas that depend on a ``strategy`` relation: foreign keys
+# referencing it, and views/rules selecting from it. ``to_regnamespace`` is NULL
+# when the schema is already gone, so both arms then return nothing.
+_FOREIGN_DEPENDENTS_SQL = """
+WITH strategy_rels AS (
+    SELECT oid FROM pg_class WHERE relnamespace = to_regnamespace('strategy')
+)
+SELECT 'foreign key ' || con.conname || ' on ' || con.conrelid::regclass::text
+FROM pg_constraint con
+WHERE con.contype = 'f'
+  AND con.confrelid IN (SELECT oid FROM strategy_rels)
+  AND con.connamespace <> to_regnamespace('strategy')
+UNION
+SELECT 'view/rule on ' || rw.ev_class::regclass::text
+FROM pg_depend dep
+JOIN pg_rewrite rw ON rw.oid = dep.objid
+JOIN pg_class dependent ON dependent.oid = rw.ev_class
+WHERE dep.classid = 'pg_rewrite'::regclass
+  AND dep.refobjid IN (SELECT oid FROM strategy_rels)
+  AND dependent.relnamespace <> to_regnamespace('strategy')
+"""
+
+
 def upgrade() -> None:
+    bind = op.get_bind()
+    dependents = [row[0] for row in bind.execute(sa.text(_FOREIGN_DEPENDENTS_SQL))]
+    if dependents:
+        raise RuntimeError(
+            "refusing to DROP SCHEMA strategy CASCADE: objects outside the "
+            "strategy schema depend on it and would be dropped with it: "
+            + "; ".join(sorted(dependents))
+        )
     op.execute("DROP SCHEMA IF EXISTS strategy CASCADE")
 
 
