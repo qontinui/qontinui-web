@@ -55890,6 +55890,60 @@
         "title": "WorkArtifactEdgeClaim",
         "type": "object"
       },
+      "WorkArtifactEdgeCorrect": {
+        "additionalProperties": false,
+        "description": "Replace a recorded edge's ``relation`` / ``to_id`` / ``note`` in place.\n\n``PUT /plan-library/edges/{id}``. The edge's identity (``id``, ``from_id``,\n``created_at``, ``created_by``) never moves \u2014 only the claim itself is\nreplaced, and ``source``/``corrected_by``/``corrected_at`` record that it\nwas. Validation mirrors ``WorkArtifactEdgeCreate`` (open target only for\n``spawned_followup``, note required and non-blank there, no self-edge).\n\n``reason`` is required for the same audit-trail reason\n:class:`WorkArtifactEdgeRetract` requires one.",
+        "properties": {
+          "note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          },
+          "reason": {
+            "maxLength": 2000,
+            "minLength": 1,
+            "title": "Reason",
+            "type": "string"
+          },
+          "relation": {
+            "enum": [
+              "produced_report",
+              "feeds",
+              "authored_plan",
+              "supersedes",
+              "depends_on",
+              "spawned_followup",
+              "refutes"
+            ],
+            "title": "Relation",
+            "type": "string"
+          },
+          "to_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "To Id"
+          }
+        },
+        "required": [
+          "relation",
+          "reason"
+        ],
+        "title": "WorkArtifactEdgeCorrect",
+        "type": "object"
+      },
       "WorkArtifactEdgeCreate": {
         "additionalProperties": false,
         "description": "Create one provenance edge out of (or into) the path artifact.\n\nFor the six two-ended relations (``produced_report``, ``feeds``,\n``authored_plan``, ``supersedes``, ``depends_on``, ``refutes``), supply\nEXACTLY ONE of ``to_id`` (outgoing) or ``from_id`` (incoming).\n\nFor ``spawned_followup`` both may be omitted: that is the one-ended form,\n``{\"relation\": \"spawned_followup\", \"note\": \"<text>\", \"to_id\": null}``, and\n``note`` is then REQUIRED. Supplying ``to_id`` alongside it is still legal\nand records a follow-up that already has an owner.",
@@ -55952,6 +56006,39 @@
       "WorkArtifactEdgeRead": {
         "description": "One provenance edge, with the far end's identity denormalized in.",
         "properties": {
+          "corrected_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Corrected At"
+          },
+          "corrected_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Corrected By"
+          },
+          "corrected_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Corrected Reason"
+          },
           "created_at": {
             "title": "Created At",
             "type": "string"
@@ -56033,6 +56120,50 @@
             "title": "Relation",
             "type": "string"
           },
+          "retracted_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Retracted At"
+          },
+          "retracted_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Retracted By"
+          },
+          "retracted_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Retracted Reason"
+          },
+          "source": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source"
+          },
           "to_id": {
             "anyOf": [
               {
@@ -56057,6 +56188,45 @@
           "direction"
         ],
         "title": "WorkArtifactEdgeRead",
+        "type": "object"
+      },
+      "WorkArtifactEdgeRetract": {
+        "additionalProperties": false,
+        "description": "Soft-delete a wrongly-recorded edge. ``DELETE /plan-library/edges/{id}``.\n\nThe row is never removed \u2014 ``retracted_at`` / ``retracted_by`` /\n``retracted_reason`` are stamped and the edge stops asserting its\nrelation (it drops out of ``GET /{id}`` and ``GET /{id}/edges`` unless\n``include_retracted=true`` is passed). ``reason`` is required and\nnon-blank: an unexplained retraction is exactly the kind of silent\ncorrection this door exists to prevent.",
+        "properties": {
+          "reason": {
+            "maxLength": 2000,
+            "minLength": 1,
+            "title": "Reason",
+            "type": "string"
+          }
+        },
+        "required": [
+          "reason"
+        ],
+        "title": "WorkArtifactEdgeRetract",
+        "type": "object"
+      },
+      "WorkArtifactEdgesResponse": {
+        "description": "``GET /plan-library/{id}/edges`` \u2014 the artifact's edges, both directions.\n\nA dedicated, lighter-weight sibling of ``GET /{id}`` for a caller who\nwants only the provenance graph, not the body and version log too.",
+        "properties": {
+          "count": {
+            "title": "Count",
+            "type": "integer"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/WorkArtifactEdgeRead"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "items",
+          "count"
+        ],
+        "title": "WorkArtifactEdgesResponse",
         "type": "object"
       },
       "WorkArtifactKindPatch": {
@@ -96294,6 +96464,66 @@
       }
     },
     "/api/v1/plan-library/edges/{edge_id}": {
+      "delete": {
+        "description": "Soft-delete a wrongly-recorded provenance edge.\n\nPhase 5 of\n``2026-09-20-a-recorded-delivery-scope-is-permanent-so-a-mis-declared-phase-is-uncorrectable``.\nThe row is never removed \u2014 ``retracted_at`` / ``retracted_by`` /\n``retracted_reason`` are stamped and the edge drops out of ``GET /{id}``\nand ``GET /{id}/edges`` (unless ``include_retracted=true``), but it\nsurvives for anyone who asks to see it: \"this claim was wrong\" is itself\nprovenance, not something to erase.\n\n**Idempotent** \u2014 retracting an already-retracted edge is a no-op that\nreturns the row unchanged; the FIRST retraction's reason and author are\nthe ones that survive, not the most recent request's.\n\n**404** \u2014 no such edge in the caller's organization scope. Edges carry\nno org of their own; the scope is inherited from the originating\nartifact, exactly as ``PATCH /edges/{id}`` (the follow-up claim door)\nalready does.",
+        "operationId": "api_v1_plan_library_edges_edge_id_delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "edge_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Edge Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WorkArtifactEdgeRetract"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkArtifactEdgeRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          },
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Retract (soft-delete) a wrongly-recorded edge",
+        "tags": [
+          "plan-library"
+        ]
+      },
       "patch": {
         "description": "Turn an open ``spawned_followup`` into a two-ended provenance edge.\n\nPhase 7 of ``2026-08-16-plan-corpus-authority-and-run-provenance``. When\nsomebody finally writes the plan (or report, or prompt) that owns work an\nearlier plan surfaced, this is how the two get connected. The ORIGINAL edge\nrow is updated rather than replaced: the follow-up drops out of\n``GET /plan-library/followups`` but stays on the originating artifact's\nedge list, so the trail from \"this plan surfaced it\" to \"that plan owns it\"\nsurvives.\n\nFailure modes, each distinguished on purpose:\n\n* **404** \u2014 no such edge in the caller's organization scope. Edges carry no\n  org of their own; the scope is inherited from the originating artifact,\n  so an edge id is not a global handle.\n* **422 (relation)** \u2014 the edge is not a ``spawned_followup``. The other\n  relations are two-ended already and there is nothing to claim.\n* **422 (target)** \u2014 ``to_id`` names no artifact the caller can see.\n  Checked here so the message is actionable; the FK would otherwise\n  surface it as a 500.\n* **409** \u2014 already claimed. Claiming is NOT idempotent across different\n  targets: silently re-pointing the edge would erase the first claim with\n  no trace and leave two callers each believing they own the work. The\n  response names the current owner.",
         "operationId": "api_v1_plan_library_edges_edge_id_patch",
@@ -96350,6 +96580,66 @@
           }
         ],
         "summary": "Claim an open follow-up by naming the artifact that owns it",
+        "tags": [
+          "plan-library"
+        ]
+      },
+      "put": {
+        "description": "Overwrite a recorded edge's claim, in place.\n\nPhase 5 of\n``2026-09-20-a-recorded-delivery-scope-is-permanent-so-a-mis-declared-phase-is-uncorrectable``.\nThe edge's identity \u2014 ``id``, ``from_id``, ``created_at``, ``created_by``\n\u2014 never moves; only ``relation`` / ``to_id`` / ``note`` do, and\n``source`` is stamped ``\"corrected\"`` alongside ``corrected_by`` /\n``corrected_at`` / ``corrected_reason`` so a reader can tell a correction\nfrom an original recording at a glance. This is the intended fix for a\nwrong ``supersedes`` (or any other) claim that ``POST /{id}/edges`` would\notherwise have APPENDED a second edge for, with no way to retire the\nfirst.\n\nValidation mirrors ``POST /{id}/edges``: ``to_id`` is required for every\nrelation except ``spawned_followup`` (422 naming the relation),\n``spawned_followup`` requires a non-blank ``note`` (422), and the edge\nmay not be corrected to point at the artifact that owns it (422,\nself-edge).\n\nFailure modes:\n\n* **404** \u2014 no such edge in the caller's organization scope, or ``to_id``\n  names no artifact the caller can see.\n* **409 (retracted)** \u2014 the edge is retracted. Correcting a dead row\n  would resurrect it with no trace; record a new edge instead.\n* **409 (conflict)** \u2014 the corrected triple already belongs to a\n  DIFFERENT live edge. Retract or reuse that one instead.",
+        "operationId": "api_v1_plan_library_edges_edge_id_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "edge_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Edge Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WorkArtifactEdgeCorrect"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkArtifactEdgeRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          },
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Replace a recorded edge's relation/to_id/note in place \u2014 a correction",
         "tags": [
           "plan-library"
         ]
@@ -96805,6 +97095,18 @@
               "title": "Include Coord",
               "type": "boolean"
             }
+          },
+          {
+            "description": "Include retracted (soft-deleted) edges. Excluded by default \u2014 a retracted edge is kept only for its audit trail and must not keep asserting its relation on an ordinary read.",
+            "in": "query",
+            "name": "include_retracted",
+            "required": false,
+            "schema": {
+              "default": false,
+              "description": "Include retracted (soft-deleted) edges. Excluded by default \u2014 a retracted edge is kept only for its audit trail and must not keep asserting its relation on an ordinary read.",
+              "title": "Include Retracted",
+              "type": "boolean"
+            }
           }
         ],
         "responses": {
@@ -96844,6 +97146,68 @@
       }
     },
     "/api/v1/plan-library/{artifact_id}/edges": {
+      "get": {
+        "description": "The edge graph alone \u2014 no body, no version log, no coord hop.\n\nA lighter-weight sibling of ``GET /{id}`` for a caller that only wants\nprovenance: the runner forwarder and an agent walking \"what produced\nthis / what does this supersede\" do not need the body or coord block\nthat route also resolves.\n\n**This route used to 405.** ``POST /{id}/edges`` was registered on this\nexact path and a GET against it matched the path but not the method,\nwhich Starlette answers with a genuine ``405`` \u2014 but the global\n``DEFAULT_ERROR_CODES`` fallback (``app.core.error_codes``) mapped that\nstatus to ``INTERNAL_SERVER_ERROR`` in the response BODY (the HTTP status\nitself stayed a correct 405), which reads to a tolerant client as an\nunexpected server failure rather than \"wrong method, here is the right\none\". Both halves of that are fixed: this route now exists (so the\ncorrect verb is GET, not a guess), and ``DEFAULT_ERROR_CODES`` now maps\n405 to its own error code rather than silently falling back to 500's.",
+        "operationId": "api_v1_plan_library_artifact_id_edges_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "artifact_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Artifact Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Include retracted (soft-deleted) edges. Excluded by default \u2014 a retracted edge is kept only for its audit trail and must not keep asserting its relation on an ordinary read.",
+            "in": "query",
+            "name": "include_retracted",
+            "required": false,
+            "schema": {
+              "default": false,
+              "description": "Include retracted (soft-deleted) edges. Excluded by default \u2014 a retracted edge is kept only for its audit trail and must not keep asserting its relation on an ordinary read.",
+              "title": "Include Retracted",
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkArtifactEdgesResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          },
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Just this artifact's provenance edges, both directions",
+        "tags": [
+          "plan-library"
+        ]
+      },
       "post": {
         "description": "Create one provenance edge.\n\nSupply exactly one of ``to_id`` (this artifact \u2192 that one, an OUTGOING\nedge) or ``from_id`` (that artifact \u2192 this one, an INCOMING edge).\nRe-posting an identical triple is idempotent and returns 200.\n\n**``spawned_followup`` is the exception, and the only one.** It records\nwork this artifact SURFACED and deliberately did not do, which by\ndefinition has no artifact to point at yet, so it may be posted with BOTH\nendpoints omitted::\n\n    {\"relation\": \"spawned_followup\", \"note\": \"<text>\", \"to_id\": null}\n\n``note`` is then required and must not be blank \u2014 with no far end it is the\nentire content of the row, and an empty one puts an unactionable entry in\nthe open-follow-ups queue forever. Supplying ``to_id`` is still allowed and\nrecords a follow-up that already has an owner; ``from_id`` is not, because\nthe relation is inherently outgoing (this artifact surfaced that work).\nRe-posting the same note is idempotent on ``(from_id, relation, note)``,\nwhile a DIFFERENT note is a second follow-up \u2014 a plan may surface several.\n\nEvery other relation still REJECTS a null target here, with a 422 rather\nthan a database error. That is deliberate belt and braces:\n``ck_work_artifact_edges_open_target`` would refuse the row anyway, but\n``/candidates`` computes unmet dependencies by joining ``depends_on``\nthrough ``to_id``, so a null target slipping in would make a blocked plan\nread as ready \u2014 the failure is quiet enough to be worth two guards.\n\nA self-edge is refused. ``/candidates`` walks ``depends_on`` to compute\nunmet dependencies, so an artifact pointing at itself becomes its own\npermanently-unmet blocker and can never be reported as ready \u2014 and the\nprompt-chain walk would have to defend against the same cycle. There is\nno provenance relation an artifact can meaningfully hold with itself.",
         "operationId": "api_v1_plan_library_artifact_id_edges_post",
