@@ -108,7 +108,8 @@ const EMPTY: Loaded<never> = {
  * is "nothing to show".
  */
 export function useSessionCompliance() {
-  const [config, setConfig] = useState<Loaded<SessionComplianceConfig>>(EMPTY);
+  const [config, setConfig] =
+    useState<Loaded<SessionComplianceConfig>>(EMPTY);
   const [versions, setVersions] =
     useState<Loaded<SessionComplianceConfigVersion[]>>(EMPTY);
   const [sessions, setSessions] =
@@ -284,10 +285,13 @@ export function useSessionCompliance() {
   }, [loadSessions]);
 
   /** Reset paging whenever the verdict filter changes. */
-  const changeVerdictFilter = useCallback((next: ComplianceVerdict | "all") => {
-    setVerdictFilter(next);
-    setCursor(null);
-  }, []);
+  const changeVerdictFilter = useCallback(
+    (next: ComplianceVerdict | "all") => {
+      setVerdictFilter(next);
+      setCursor(null);
+    },
+    []
+  );
 
   const reloadAll = useCallback(() => {
     loadConfig();
