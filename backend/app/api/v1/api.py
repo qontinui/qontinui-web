@@ -115,6 +115,7 @@ from app.api.v1.endpoints import (
     screenshots,
     security_endpoints,
     semantic_search,
+    served_routes,
     session_repository,
     settings,
     skills,
@@ -351,6 +352,13 @@ api_router.include_router(task_runs.router, prefix="/task-runs", tags=["task-run
 # Render logging for development debugging (disabled in production)
 api_router.include_router(
     render_logs.router, prefix="/render-logs", tags=["render-logs"]
+)
+# The served-routes inventory coord's route-serving observer reads instead of
+# probing each route with its documented verb. Public, and hidden from the
+# schema (it counts itself in its own hidden_count). Plan
+# 2026-09-25-route-serving-observer-probes-mutating-routes-with-their-documented-verb.
+api_router.include_router(
+    served_routes.router, prefix="/meta", tags=["meta"], include_in_schema=False
 )
 # UI Bridge state discovery and management
 api_router.include_router(ui_bridge_states.router, tags=["ui-bridge-states"])

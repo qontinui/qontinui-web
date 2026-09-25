@@ -147,17 +147,36 @@ def log_request(
     duration_ms: float,
     user_id: str | None = None,
     ip_address: str | None = None,
+    user_agent: str | None = None,
+    synthetic: str | None = None,
+    peer_ip: str | None = None,
 ):
-    """Log HTTP request with performance metrics"""
-    logger.info(
-        "http_request",
-        method=method,
-        path=path,
-        status_code=status_code,
-        duration_ms=round(duration_ms, 2),
-        user_id=user_id,
-        ip_address=ip_address,
-    )
+    """Log HTTP request with performance metrics.
+
+    ``ip_address`` is the LEFTMOST ``X-Forwarded-For`` entry, which the client
+    controls. ``peer_ip`` is the RIGHTMOST one, which the ALB appends and the
+    client cannot forge. ``synthetic`` is the classified
+    ``X-Qontinui-Synthetic`` header (see
+    ``app.middleware.logging_middleware.classify_synthetic``); it is omitted
+    from the event, not logged as null, when the request carried no such
+    header, so ``filter ispresent(synthetic)`` selects exactly the tagged rows.
+    A baseline reader excludes a row as coord's observer only when
+    ``synthetic = "route-serving-observer"`` AND ``peer_ip`` is coord's NAT
+    address: the header alone is spoofable.
+    """
+    fields: dict[str, object] = {
+        "method": method,
+        "path": path,
+        "status_code": status_code,
+        "duration_ms": round(duration_ms, 2),
+        "user_id": user_id,
+        "ip_address": ip_address,
+        "user_agent": user_agent,
+        "peer_ip": peer_ip,
+    }
+    if synthetic is not None:
+        fields["synthetic"] = synthetic
+    logger.info("http_request", **fields)
 
 
 def log_security_event(

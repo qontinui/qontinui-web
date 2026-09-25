@@ -247,6 +247,7 @@ jobs:
             -f backend/Dockerfile \
             --build-arg SCHEMAS_SHA=${{ steps.schemas.outputs.sha }} \
             --build-arg CLOUD_CONTROL_SHA=${{ steps.cloudcontrol.outputs.sha }} \
+            --build-arg BUILD_SHA="${GITHUB_SHA}" \
             -t "${{ steps.ecr.outputs.registry }}/${ECR_REPOSITORY}:${GITHUB_SHA}" \
             -t "${{ steps.ecr.outputs.registry }}/${ECR_REPOSITORY}:staging" \
             --load \
