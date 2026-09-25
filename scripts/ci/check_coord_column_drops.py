@@ -93,7 +93,9 @@ landed long before it). The delta applies only when the edit leaves the
 sites and the static violations unchanged; any other difference judges the
 file whole. An ADDED file, and every file under ``--files``, is judged whole.
 The scan summary names each delta-judged file and how many landed drops it
-did not re-judge.
+did not re-judge, and both pass verdicts (no drop added; every drop unread)
+repeat the total — so a delta pass never reads as "the changed files drop
+nothing".
 
 What it consults
 ----------------
@@ -1176,6 +1178,22 @@ def _report_scan(scans: list[FileScan], label: str) -> None:
     sys.stdout.flush()
 
 
+def _landed_drop_count(scans: list[FileScan]) -> int:
+    """Drops in edited landed revisions that ``delta_scan`` did not re-judge."""
+    return sum(len(s.landed_drops or []) for s in scans)
+
+
+def _note_landed_drops(landed: int) -> None:
+    """On a pass, say so when a delta skipped landed drops — a delta pass must
+    not read as "the changed files drop nothing"."""
+    if landed:
+        note(
+            f"  {landed} drop(s) in edited landed revision(s) were judged when "
+            "those revisions landed and were NOT re-checked against coord now "
+            "(see the per-file lines above)."
+        )
+
+
 def check_drops(
     scans: list[FileScan], manifest: Manifest
 ) -> tuple[list[str], list[str]]:
@@ -1408,13 +1426,18 @@ def main(argv: list[str] | None = None, *, fetch: Fetcher | None = None) -> int:
         note(
             "No coord.* DROP/RENAME in the upgrade path; nothing to check against coord."
         )
+        landed = _landed_drop_count(scans)
+        subject = (
+            "this PR's edits ADD no drop" if landed else "this revision drops nothing"
+        )
         note(
-            "  NB: this pass says this revision drops nothing in coord.*'s UPGRADE "
+            f"  NB: this pass says {subject} in coord.*'s UPGRADE "
             "path. It is NOT evidence that a drop was checked against coord's read "
             "contract — it means none was found in the upgrade path; a DROP written "
             "inside downgrade() (or a helper only downgrade() reaches) is not "
             "scanned, no manifest was fetched, and none was needed."
         )
+        _note_landed_drops(landed)
         return 0
 
     # 4. Only now is coord consulted.
@@ -1477,6 +1500,7 @@ def main(argv: list[str] | None = None, *, fetch: Fetcher | None = None) -> int:
         f"OK: none of the {len(drops)} dropped surface(s) is read by coord's deployed "
         f"build ({manifest.deployed_sha}) or main ({manifest.main_sha})."
     )
+    _note_landed_drops(_landed_drop_count(scans))
     return 0
 
 

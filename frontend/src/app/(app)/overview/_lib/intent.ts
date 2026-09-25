@@ -3,20 +3,42 @@
  * documents (`product_intent`, `initiative`, `success_metric`,
  * `audience_profile`), turned into what the Summary page can honestly say.
  *
+ * The documents arrive through the overview's `intent-documents` resource
+ * (plan `2026-09-20-overview-authoring-layer`), which has already done two
+ * things this file used to: classified each document (`state`) and split off
+ * its YAML frontmatter, so `body` is prose.
+ *
  * The one rule that matters: coord seeds every tenant with SKELETON intent
  * documents. A skeleton is a template nobody has filled in, not the project's
  * intent, so the Summary must say "not written yet" rather than show it as if
  * it were real content.
  */
 
-import type {
-  PromptDocument,
-  PromptDocumentKind,
-  PromptDocumentSummary,
-} from "@/app/(app)/admin/coord/prompt-documents/types";
+import type { PromptDocumentKind } from "@/app/(app)/admin/coord/prompt-documents/types";
 
-/** A list or get row, with coord's served skeleton verdict where it has one. */
-export type WithSeedVerdict<T> = T & { unedited_seed?: boolean | null };
+/**
+ * One intent document as the `intent-documents` resource serves it
+ * (`IntentDocumentRead`, `backend/app/overview/intent_documents.py`).
+ */
+export interface IntentDocument {
+  /** `<kind>:<name>`. */
+  id: string;
+  kind: string;
+  name: string;
+  description: string | null;
+  /** Prose — the frontmatter is served apart and never edited here. */
+  body: string;
+  frontmatter: string | null;
+  /** The document's position in its section, 1-based; null = default. */
+  overview_order: number | null;
+  state: IntentState | "unreadable";
+  error: string | null;
+  status: string | null;
+  withdrawn: boolean;
+  version: number;
+  updated_at: string | null;
+  updated_by: string | null;
+}
 
 /** The intent kinds the Summary shows, in page order. */
 export const SUMMARY_INTENT_KINDS = [
@@ -39,9 +61,9 @@ export type SummaryIntentKind = (typeof SUMMARY_INTENT_KINDS)[number];
  * **This list is a fallback, not the authority.** Coord documents these names
  * as the addresses of example rows an operator is expected to rename or
  * replace, so an order keyed on them silently stops applying after a rename.
- * The authority is the document's own `attrs.overview_order`, set through the
- * existing prompt-document write door; this list only keeps the seeded corpus
- * sensible until one is set.
+ * The authority is the document's own `attrs.overview_order`, set by the
+ * Summary's own "Move up / Move down" (or any caller of the resource); this
+ * list only keeps the seeded corpus sensible until one is set.
  */
 export const INTENT_DOC_ORDER: Record<SummaryIntentKind, readonly string[]> = {
   product_intent: ["vision", "non-goals", "open-questions"],
@@ -57,27 +79,12 @@ export const INTENT_DOC_ORDER: Record<SummaryIntentKind, readonly string[]> = {
  *   this coord build serves no verdict — the body alone decides, which this
  *   page does not attempt. Shown, with a note that it may still be template
  *   text.
+ *
+ * Decided server-side (`_state` in `intent_documents.py`), from coord's
+ * `unedited_seed` verdict or, on a coord that serves none, its version and
+ * origin.
  */
 export type IntentState = "authored" | "skeleton" | "unknown";
-
-/**
- * Coord's served verdict when present (`unedited_seed`), otherwise the
- * version/origin fallback coord documents for builds that predate it:
- * a hand-authored document is authored, a seeded one never edited past v1 is
- * a skeleton, and a seeded one edited since is UNKNOWN — never guessed.
- */
-export function classifyIntent(
-  doc: Pick<PromptDocument, "default_source" | "current_version"> & {
-    unedited_seed?: boolean | null;
-  }
-): IntentState {
-  if (typeof doc.unedited_seed === "boolean") {
-    return doc.unedited_seed ? "skeleton" : "authored";
-  }
-  if (doc.default_source === null) return "authored";
-  if (doc.current_version <= 1) return "skeleton";
-  return "unknown";
-}
 
 /**
  * Drop a leading YAML frontmatter block (`---` … `---`). It is metadata for
@@ -91,8 +98,16 @@ export function stripFrontmatter(body: string): string {
 }
 
 export interface IntentEntry {
+  /** The resource id, `<kind>:<name>`. */
+  id: string;
   kind: SummaryIntentKind;
   name: string;
+  /** The version a save must name. */
+  version: number;
+  /** The prose as stored, opening heading included — what an editor edits.
+   *  Empty for a skeleton, whose template text is never offered as a start. */
+  source: string;
+  updatedBy: string | null;
   /** What to call this document on the page: its own opening heading. */
   title: string;
   /** `attrs.overview_order` when the operator has set one. */
@@ -202,38 +217,6 @@ export function bodyWithoutLeadHeading(body: string): string {
 }
 
 /**
- * `attrs.overview_order`, when the operator has set one.
- *
- * Only the GET-one shape carries `attrs` — coord's list rows never do — so a
- * skeleton or unreadable entry, built from a list row, always reads `null`.
- * Coord replaces `attrs` wholesale on write, so anything setting this key
- * must merge the stored object first.
- */
-function readOrder(doc: Partial<Pick<PromptDocument, "attrs">>): number | null {
-  const attrs = doc.attrs;
-  if (!attrs || typeof attrs !== "object") return null;
-  const value = (attrs as Record<string, unknown>).overview_order;
-  return typeof value === "number" && Number.isFinite(value) ? value : null;
-}
-
-function base(
-  doc: WithSeedVerdict<PromptDocumentSummary> &
-    Partial<Pick<PromptDocument, "attrs">>
-): Omit<IntentEntry, "state" | "body" | "title" | "hasBody"> {
-  return {
-    kind: doc.kind as SummaryIntentKind,
-    name: doc.name,
-    updatedAt: doc.updated_at ?? null,
-    order: readOrder(doc),
-  };
-}
-
-/**
- * Sort one kind's documents into reading order: the kind's stated order
- * first, then anything else by title. Deterministic either way — coord's own
- * ordering is alphabetical by slug, which is not an editorial judgement.
- */
-/**
  * Reading order for one kind's documents.
  *
  * `attrs.overview_order` is a POSITION, 1-based: "2" means second in the
@@ -289,48 +272,26 @@ export function sortIntentEntries(entries: IntentEntry[]): IntentEntry[] {
   return [...byKind.values()].flatMap(sortOneKind);
 }
 
-/** A document whose body was fetched. */
-export function toIntentEntry(
-  doc: WithSeedVerdict<PromptDocument>
-): IntentEntry {
-  const state = classifyIntent(doc);
-  const body = doc.body ?? "";
+/** One served document, as the Summary shows it. */
+export function toIntentEntry(doc: IntentDocument): IntentEntry {
+  const state = doc.state;
+  // A skeleton fetched one at a time still carries its template text; the
+  // page never shows it, and never offers it as a starting point either.
+  const prose = state === "skeleton" || state === "unreadable" ? "" : doc.body;
   return {
-    ...base(doc),
+    id: doc.id,
+    kind: doc.kind as SummaryIntentKind,
+    name: doc.name,
+    version: doc.version,
+    source: prose,
+    updatedBy: doc.updated_by,
+    updatedAt: doc.updated_at,
+    order: doc.overview_order,
     state,
-    title: titleOfDocument(doc.name, body),
-    hasBody:
-      state === "skeleton" ? false : stripFrontmatter(body).trim().length > 0,
-    body: state === "skeleton" ? "" : bodyWithoutLeadHeading(body),
-  };
-}
-
-/** A document the list row already shows is an unedited skeleton, so its
- *  template body is never fetched. */
-export function skeletonEntry(
-  doc: WithSeedVerdict<PromptDocumentSummary>
-): IntentEntry {
-  return {
-    ...base(doc),
-    state: "skeleton",
-    body: "",
-    hasBody: false,
-    title: titleOfDocument(doc.name, ""),
-  };
-}
-
-/** A document the list named but whose body could not be read. */
-export function unreadableEntry(
-  doc: WithSeedVerdict<PromptDocumentSummary>,
-  error: string
-): IntentEntry {
-  return {
-    ...base(doc),
-    state: "unreadable",
-    body: "",
-    hasBody: false,
-    error,
-    title: titleOfDocument(doc.name, ""),
+    title: titleOfDocument(doc.name, prose),
+    hasBody: stripFrontmatter(prose).trim().length > 0,
+    body: bodyWithoutLeadHeading(prose),
+    ...(state === "unreadable" ? { error: doc.error ?? "" } : {}),
   };
 }
 
@@ -342,4 +303,29 @@ export function hasContent(entry: IntentEntry): boolean {
   // Measured BEFORE the opening heading was stripped: a document that is only
   // a title still says something, and is not "not written yet".
   return entry.hasBody;
+}
+
+/**
+ * The position writes that move one document within its section.
+ *
+ * Every document shown gets an explicit position, 1..n, in the new order —
+ * not just the one that moved. A single write would be read against the
+ * DEFAULT order of the others (see `sortOneKind`), and a neighbour that
+ * already holds the same position would tie with it, so "move down" could
+ * leave the page unchanged. Only the documents whose position actually
+ * changes are returned, so a move writes as little as it can.
+ */
+export function positionsAfterMove(
+  section: readonly IntentEntry[],
+  from: number,
+  to: number
+): { entry: IntentEntry; order: number }[] {
+  if (from === to || to < 0 || to >= section.length) return [];
+  const next = [...section];
+  const [moved] = next.splice(from, 1);
+  if (!moved) return [];
+  next.splice(to, 0, moved);
+  return next
+    .map((entry, i) => ({ entry, order: i + 1 }))
+    .filter(({ entry, order }) => entry.order !== order);
 }

@@ -110,6 +110,7 @@ import {
 } from "@/components/ui/table";
 import {
   AlertTriangle,
+  ArrowRightLeft,
   Building2,
   ChevronDown,
   ChevronRight,
@@ -224,6 +225,47 @@ interface GroupTenantRoleRow {
   auto_create_tenant: boolean;
   created_at: string | null;
   tenant_id: string | null;
+  /**
+   * Additive fields from coord (qontinui-coord#2473). A mapping stored under a
+   * slug its tenant was RENAMED AWAY from is listed for the renamed tenant:
+   * `current_slug` is the slug that tenant carries today, and `historical_slug`
+   * is true exactly when the stored `tenant_slug` differs from it. Such a row
+   * still grants at every login; `tenant_slug` stays the DELETE key. Older
+   * coord builds omit both, so absent means "not known to be historical".
+   */
+  current_slug?: string;
+  historical_slug?: boolean;
+}
+
+/**
+ * The rename target for a mapping coord flags as stored under a historical
+ * slug, or `null` when the row is not known to be historical. Only an explicit
+ * `historical_slug === true` with a usable `current_slug` qualifies.
+ */
+function historicalRenameTarget(row: GroupTenantRoleRow): string | null {
+  if (row.historical_slug !== true) return null;
+  return row.current_slug && row.current_slug.length > 0
+    ? row.current_slug
+    : null;
+}
+
+/**
+ * Tooltip for a historical-slug mapping. `where` names the surface: the
+ * mappings table row IS the thing to delete (and carries the one-click "Move
+ * to" action that does both steps), but a Cognito group chip has no
+ * per-mapping delete (the destructive action beside it is the POOL-WIDE group
+ * delete), so the chip points at the mappings table instead.
+ */
+function historicalSlugTooltip(
+  currentSlug: string,
+  where: "table-row" | "group-chip"
+): string {
+  const prefix =
+    "This mapping names a slug this tenant was renamed away from. It still " +
+    `grants at every login. Re-create it under ${currentSlug}, then delete `;
+  return where === "table-row"
+    ? `${prefix}this row. “Move to ${currentSlug}” does both.`
+    : `${prefix}the old mapping in the group → tenant mappings table.`;
 }
 
 interface GroupTenantRolesResponse {
@@ -1630,6 +1672,91 @@ function GroupTenantRolesSection({
     [load]
   );
 
+  /**
+   * Re-point a mapping stored under a historical slug at the tenant's current
+   * slug — the two steps the hint's tooltip names, in the order that never
+   * drops the grant: POST under `currentSlug` first (coord's POST is an upsert
+   * on `(group_id, tenant_slug, role)`, so an already-present current-slug row
+   * is fine), and only once that landed DELETE the stored row by its STORED
+   * `tenant_slug`. A failed create leaves the old row untouched; a failed
+   * delete leaves BOTH rows granting the same role, which is harmless but must
+   * be said, because the historical row is still there to clean up.
+   */
+  const moveMapping = useCallback(
+    async (row: GroupTenantRoleRow, currentSlug: string) => {
+      const key = `${row.group_id}:${row.tenant_slug}:${row.role}`;
+      setBusy(key);
+      // The upsert also OVERWRITES `auto_create_tenant` on a row that already
+      // exists under the current slug, so keep that row's own value rather
+      // than silently changing a row the operator never touched.
+      const existing = rows.find(
+        (r) =>
+          r.group_id === row.group_id &&
+          r.tenant_slug === currentSlug &&
+          r.role === row.role
+      );
+      try {
+        const res = await httpClient.fetch(
+          `${OPERATIONS_API}/coord/group-tenant-roles`,
+          {
+            method: "POST",
+            body: JSON.stringify({
+              group_id: row.group_id,
+              tenant_slug: currentSlug,
+              role: row.role,
+              auto_create_tenant:
+                existing?.auto_create_tenant ?? row.auto_create_tenant,
+            }),
+          }
+        );
+        if (!res.ok) {
+          throw new Error(
+            `${await backendErrorMessage(res)} The mapping under ${row.tenant_slug} is unchanged.`
+          );
+        }
+        const del = await httpClient.fetch(
+          `${OPERATIONS_API}/coord/group-tenant-roles`,
+          {
+            method: "DELETE",
+            body: JSON.stringify({
+              group_id: row.group_id,
+              tenant_slug: row.tenant_slug,
+              role: row.role,
+            }),
+          }
+        );
+        if (!del.ok) {
+          const reason = await backendErrorMessage(del);
+          toast.error(
+            `Mapping re-created under ${currentSlug}, but the old row under ${row.tenant_slug} was NOT deleted and still grants at every login — delete it from this table. Delete failed because: ${reason}`
+          );
+          return;
+        }
+        toast.success(`Mapping moved to ${currentSlug}`);
+      } catch (err) {
+        log.warn("move mapping failed", err);
+        toast.error(
+          `Move failed: ${err instanceof Error ? err.message : String(err)}`
+        );
+      } finally {
+        // Reload on every outcome: even a failed move may have changed the
+        // table (the create landed, the delete did not). The row stays busy
+        // until the reload settles, so a second click cannot re-run the move
+        // against the table it just changed.
+        await load();
+        setBusy(null);
+      }
+    },
+    [load, rows]
+  );
+
+  // Only a settled, successful read counts — a failed or loading read has no
+  // rows to judge, and the count badge already says "unknown" / "–" for it.
+  const historicalCount =
+    loading || error
+      ? 0
+      : rows.filter((r) => historicalRenameTarget(r) !== null).length;
+
   return (
     // R7 — infrastructural SSO wiring, below the members table and behind a
     // click. The mapping COUNT stays on the header while closed: an empty
@@ -1642,6 +1769,7 @@ function GroupTenantRolesSection({
       defaultOpen={false}
       storageKey="coord-members-group-roles"
       summary={(
+        <>
         <Badge
           variant="outline"
           className={`font-mono text-[11px]${
@@ -1660,6 +1788,20 @@ function GroupTenantRolesSection({
               false `0` worth closing. */}
           {loading ? "–" : error ? "unknown" : rows.length}
         </Badge>
+        {/* A historical-slug row still grants at every login, and its hint and
+            "Move to" button live in the table this panel hides by default —
+            so the header says how many there are, as it does for the count. */}
+        {historicalCount > 0 ? (
+          <Badge
+            variant="outline"
+            className="font-mono text-[11px] text-amber-600 dark:text-amber-400"
+            title="Mappings stored under a slug their tenant was renamed away from. Open this panel and use “Move to” on each."
+            data-testid="coord-group-roles-historical-summary"
+          >
+            {historicalCount} on a renamed slug
+          </Badge>
+        ) : null}
+        </>
       )}
       contentClassName="space-y-4"
     >
@@ -1697,10 +1839,23 @@ function GroupTenantRolesSection({
             <TableBody>
               {rows.map((row) => {
                 const key = `${row.group_id}:${row.tenant_slug}:${row.role}`;
+                const renamedTo = historicalRenameTarget(row);
                 return (
                   <TableRow key={key}>
                     <TableCell className="font-medium">{row.group_id}</TableCell>
-                    <TableCell>{row.tenant_slug}</TableCell>
+                    <TableCell>
+                      {row.tenant_slug}
+                      {renamedTo !== null ? (
+                        <Badge
+                          variant="outline"
+                          className="ml-2 text-[0.7rem] font-normal text-amber-600 dark:text-amber-400"
+                          title={historicalSlugTooltip(renamedTo, "table-row")}
+                          data-testid={`group-tenant-role-historical-${row.group_id}-${row.tenant_slug}-${row.role}`}
+                        >
+                          renamed → {renamedTo}
+                        </Badge>
+                      ) : null}
+                    </TableCell>
                     <TableCell>
                       <Badge variant="secondary">{tierLabel(row.role)}</Badge>
                     </TableCell>
@@ -1711,7 +1866,20 @@ function GroupTenantRolesSection({
                         <Badge variant="outline">no</Badge>
                       )}
                     </TableCell>
-                    <TableCell className="text-right">
+                    <TableCell className="text-right space-x-2">
+                      {renamedTo !== null ? (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          disabled={busy === key}
+                          onClick={() => void moveMapping(row, renamedTo)}
+                          title={`Re-create this mapping under ${renamedTo}, then delete the row stored under ${row.tenant_slug}.`}
+                          data-testid={`move-mapping-${key}`}
+                        >
+                          <ArrowRightLeft className="h-4 w-4" />
+                          Move to {renamedTo}
+                        </Button>
+                      ) : null}
                       <DestructiveButton
                         size="sm"
                         disabled={busy === key}
@@ -2537,17 +2705,30 @@ function CognitoGroupItem({
                 no mappings in your tenant
               </Badge>
             ) : (
-              mappings.map((m) => (
-                <Badge
-                  key={`${m.tenant_slug}:${m.role}`}
-                  variant="outline"
-                  className="text-[0.7rem] font-normal"
-                  data-testid={`cognito-group-mapping-${group.group_name}-${m.tenant_slug}-${m.role}`}
-                >
-                  <Building2 className="h-3 w-3" />
-                  {m.tenant_slug} · {tierLabel(m.role)}
-                </Badge>
-              ))
+              mappings.map((m) => {
+                const renamedTo = historicalRenameTarget(m);
+                return (
+                  <Badge
+                    key={`${m.tenant_slug}:${m.role}`}
+                    variant="outline"
+                    className={`text-[0.7rem] font-normal${
+                      renamedTo !== null
+                        ? " text-amber-600 dark:text-amber-400"
+                        : ""
+                    }`}
+                    title={
+                      renamedTo !== null
+                        ? historicalSlugTooltip(renamedTo, "group-chip")
+                        : undefined
+                    }
+                    data-testid={`cognito-group-mapping-${group.group_name}-${m.tenant_slug}-${m.role}`}
+                  >
+                    <Building2 className="h-3 w-3" />
+                    {m.tenant_slug} · {tierLabel(m.role)}
+                    {renamedTo !== null ? ` · renamed → ${renamedTo}` : null}
+                  </Badge>
+                );
+              })
             )}
             {isHomeGroup ? (
               <Badge

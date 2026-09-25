@@ -12281,7 +12281,10 @@ async def get_coord_group_tenant_roles(
 
     Proxies coord ``GET /admin/coord/group-tenant-roles`` →
     ``{group_tenant_roles: [{group_id, tenant_slug, role, auto_create_tenant,
-    created_at, tenant_id}]}``."""
+    created_at, tenant_id, current_slug, historical_slug}]}``.
+    ``historical_slug`` is true when the stored ``tenant_slug`` is one the
+    tenant was renamed away from, and ``current_slug`` is its slug today
+    (qontinui-coord#2473; older coord builds omit both)."""
     return await _proxy_coord_get(
         "/admin/coord/group-tenant-roles", tenant_id=tenant_id
     )
