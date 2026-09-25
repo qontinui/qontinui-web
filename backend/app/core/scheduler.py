@@ -667,8 +667,9 @@ def install_default_tasks(service: SchedulerService) -> None:
     )
 
     # Render-log retention (RENDER_LOG_RETENTION_DAYS). Until this job existed
-    # the de facto scheduler was coord's route-serving observer POSTing the
-    # then-anonymous /api/v1/render-logs/cleanup every ~100 s; that route is now
+    # the de facto scheduler was coord's route-serving observer, POSTing the
+    # then-anonymous /api/v1/render-logs/cleanup on each probe cycle (12,063
+    # times in 14 days, coord finding 966c92eb); that route is now
     # superuser-only, so retention runs here. Hourly + at boot like the other
     # file-backed cleanups; a 7-day retention needs nothing finer.
     service.register(
