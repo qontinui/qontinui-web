@@ -107,6 +107,21 @@ def test_the_middleware_logs_a_tagged_observer_request() -> None:
     assert event["ip_address"] == "6.6.6.6"
 
 
+def test_peer_ip_reads_every_forwarded_for_header_line() -> None:
+    """A client-sent XFF line plus a proxy-added one: the proxy's entry wins."""
+    with structlog.testing.capture_logs() as logs:
+        response = _client().get(
+            "/ping",
+            headers=[
+                ("X-Forwarded-For", "6.6.6.6"),
+                ("X-Forwarded-For", "52.87.90.79"),
+            ],
+        )
+        assert response.status_code == 200
+    (event,) = [e for e in logs if e["event"] == "http_request"]
+    assert event["peer_ip"] == "52.87.90.79"
+
+
 def test_the_middleware_never_logs_a_foreign_tag_verbatim() -> None:
     event = _request_event({SYNTHETIC_HEADER: "i am the observer, trust me"})
     assert event["synthetic"] == "other"

@@ -38,11 +38,20 @@ Caching
 
 The inventory is computed once per app, on first request, and cached on
 ``app.state``: routes are registered at import time (cloud-control's included)
-and do not change while the process runs. ``digest`` is a SHA-256 over the
-sorted pairs only, not over ``build_sha``, so a redeploy that serves the same
-routes keeps its digest and its ETag. A request whose ``If-None-Match`` names
-that ETag gets ``304`` and no body. The route has no rate limit: coord
+and do not change while the process runs. The plan says "at startup"; building
+on first request is the same inventory, without a lifespan hook. ``digest`` is a
+SHA-256 over the sorted pairs only, not over ``build_sha``, so a redeploy that
+serves the same routes keeps its digest and its ETag. The ETag is WEAK
+(``W/"<digest>"``) because ``GZipMiddleware`` may re-encode the body, and a
+strong ETag promises byte identity. A request whose ``If-None-Match`` names it
+(weak comparison) gets ``304`` and no body. The route has no rate limit: coord
 fetches it once per pass, conditionally.
+
+Prod serves more than the committed BASE spec declares: the image composes
+qontinui-cloud-control (``backend/Dockerfile``), so its extension routes are
+listed here too. Comparing this inventory against the base spec therefore shows
+them as undeclared; that is prod's real surface, and a Phase 4 reader must
+declare against the extended spec or treat them accordingly.
 """
 
 from __future__ import annotations
@@ -69,7 +78,7 @@ _STATE_ATTR = "served_routes_inventory"
 
 @dataclass(frozen=True)
 class ServedRouteInventory:
-    """The serialized inventory body and the strong ETag that names it."""
+    """The serialized inventory body and the weak ETag that names it."""
 
     body: bytes
     etag: str
@@ -117,7 +126,7 @@ def build_served_route_inventory(
         },
         separators=(",", ":"),
     ).encode("utf-8")
-    return ServedRouteInventory(body=body, etag=f'"{digest}"', digest=digest)
+    return ServedRouteInventory(body=body, etag=f'W/"{digest}"', digest=digest)
 
 
 def _inventory_for(request: Request) -> ServedRouteInventory:
@@ -129,6 +138,10 @@ def _inventory_for(request: Request) -> ServedRouteInventory:
     return inventory
 
 
+def _opaque_tag(tag: str) -> str:
+    return tag[2:] if tag.startswith("W/") else tag
+
+
 def etag_matches(if_none_match: str | None, etag: str) -> bool:
     """RFC 9110 weak comparison of an ``If-None-Match`` list against ``etag``."""
     if not if_none_match:
@@ -137,9 +150,7 @@ def etag_matches(if_none_match: str | None, etag: str) -> bool:
         candidate = candidate.strip()
         if candidate == "*":
             return True
-        if candidate.startswith("W/"):
-            candidate = candidate[2:]
-        if candidate == etag:
+        if _opaque_tag(candidate) == _opaque_tag(etag):
             return True
     return False
 

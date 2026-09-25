@@ -146,6 +146,10 @@ def peer_ip_from(forwarded_for: str | None, client_host: str | None) -> str | No
     appends the connecting peer to whatever the client sent, so every entry to
     its left is client-supplied. With no (non-empty) ``X-Forwarded-For`` the
     request arrived directly, and the socket peer is the answer.
+
+    This is unforgeable only while the ALB is the sole way in. A task reachable
+    directly (a security-group opening) would let a caller supply the whole
+    header, including its last entry.
     """
     if forwarded_for:
         entries = [e.strip() for e in forwarded_for.split(",")]
@@ -182,8 +186,10 @@ class LoggingMiddleware(BaseHTTPMiddleware):
         method = request.method
         path = request.url.path
         ip_address = self._get_client_ip(request)
+        # Every X-Forwarded-For header LINE, joined: a client-sent line plus a
+        # proxy-added one must not leave peer_ip reading the client's.
         peer_ip = peer_ip_from(
-            request.headers.get("X-Forwarded-For"),
+            ",".join(request.headers.getlist("X-Forwarded-For")) or None,
             request.client.host if request.client else None,
         )
         user_agent = truncate_user_agent(request.headers.get("User-Agent"))

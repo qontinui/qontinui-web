@@ -108,8 +108,8 @@ RUN mkdir -p /app/uploads
 # The qontinui-web commit this image was built from. deploy-web.yml passes
 # GITHUB_SHA. GET /api/v1/meta/served-routes reports it as `build_sha`, which
 # coord's route-serving observer uses to tell a rollout (two fetches from two
-# builds) from a removed route. It is declared LAST so a new commit busts only
-# this layer. A plain local `docker build` reports `unknown`.
+# builds) from a removed route. It is declared after every RUN so it
+# invalidates no earlier layer. A plain local `docker build` reports `unknown`.
 ARG BUILD_SHA=unknown
 ENV QONTINUI_BUILD_SHA=$BUILD_SHA
 

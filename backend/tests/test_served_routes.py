@@ -19,6 +19,7 @@ Phase 3, test T11. What must hold, each with the mutation that turns it red:
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
 import pytest
 from fastapi import APIRouter, FastAPI, WebSocket
@@ -133,6 +134,32 @@ def test_the_real_app_inventory_equals_its_openapi_operations() -> None:
     assert "/api/v1/meta/served-routes" not in app.openapi()["paths"]
 
 
+def test_every_base_spec_operation_is_in_the_real_app_inventory() -> None:
+    """Every operation of the committed BASE spec is served: no false RouteMissing.
+
+    The base spec (``openapi-schema.base.json``) is the declared set coord reads
+    for api.qontinui.io. The converse does not hold wherever cloud-control is
+    installed (CI, and the prod image): its extension routes are served but
+    not in the base spec, which is why this is a subset check.
+    """
+    from app.main import app
+
+    spec_path = (
+        Path(__file__).resolve().parents[2]
+        / "frontend/src/lib/api-client/openapi-schema.base.json"
+    )
+    spec = json.loads(spec_path.read_text(encoding="utf-8"))
+    declared = {
+        (method.upper(), path)
+        for path, item in spec["paths"].items()
+        for method in item
+        if method in _OPENAPI_METHODS
+    }
+    served = {(r["method"], r["path"]) for r in _inventory(app)["routes"]}
+    missing = sorted(declared - served)
+    assert not missing, f"declared in the base spec but not served: {missing[:10]}"
+
+
 def test_the_digest_covers_routes_not_the_build() -> None:
     app = _fixture_app()
     a = build_served_route_inventory(app.routes, "sha-one")
@@ -165,6 +192,7 @@ def test_the_digest_covers_routes_not_the_build() -> None:
 )
 def test_etag_matching(header: str | None, expected: bool) -> None:
     assert etag_matches(header, '"abc"') is expected
+    assert etag_matches(header, 'W/"abc"') is expected, "weak comparison"
 
 
 def test_the_route_serves_the_inventory_and_honours_if_none_match(
@@ -180,7 +208,9 @@ def test_the_route_serves_the_inventory_and_honours_if_none_match(
     body = first.json()
     assert body["build_sha"] == "deadbeef"
     assert body["schema_version"] == 1
-    assert etag == f'"{body["digest"].removeprefix("sha256:")}"'
+    assert etag == f'W/"{body["digest"].removeprefix("sha256:")}"', (
+        "weak: GZipMiddleware may re-encode the body"
+    )
 
     second = client.get("/api/v1/meta/served-routes", headers={"If-None-Match": etag})
     assert second.status_code == 304

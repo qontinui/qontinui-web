@@ -153,8 +153,8 @@ def log_request(
 ):
     """Log HTTP request with performance metrics.
 
-    ``ip_address`` is the LEFTMOST ``X-Forwarded-For`` entry, which the client
-    controls. ``peer_ip`` is the RIGHTMOST one, which the ALB appends and the
+    ``ip_address`` is the LEFTMOST ``X-Forwarded-For`` entry (else
+    ``X-Real-IP``, else the socket peer), which the client controls. ``peer_ip`` is the RIGHTMOST one, which the ALB appends and the
     client cannot forge. ``synthetic`` is the classified
     ``X-Qontinui-Synthetic`` header (see
     ``app.middleware.logging_middleware.classify_synthetic``); it is omitted
