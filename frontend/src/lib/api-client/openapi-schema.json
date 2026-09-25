@@ -87180,7 +87180,7 @@
         ]
       },
       "get": {
-        "description": "List SSO-group \u2192 tenant \u2192 role mappings.\n\nProxies coord ``GET /admin/coord/group-tenant-roles`` \u2192\n``{group_tenant_roles: [{group_id, tenant_slug, role, auto_create_tenant,\ncreated_at, tenant_id}]}``.",
+        "description": "List SSO-group \u2192 tenant \u2192 role mappings.\n\nProxies coord ``GET /admin/coord/group-tenant-roles`` \u2192\n``{group_tenant_roles: [{group_id, tenant_slug, role, auto_create_tenant,\ncreated_at, tenant_id, current_slug, historical_slug}]}``.\n``historical_slug`` is true when the stored ``tenant_slug`` is one the\ntenant was renamed away from, and ``current_slug`` is its slug today\n(qontinui-coord#2473; older coord builds omit both).",
         "operationId": "api_v1_operations_coord_group_tenant_roles_get",
         "responses": {
           "200": {

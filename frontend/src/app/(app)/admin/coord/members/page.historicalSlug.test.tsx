@@ -14,7 +14,10 @@
  *   fields, carry no hint — and each gate is pinned on its own: `historical_slug`
  *   must be exactly `true`, and a usable `current_slug` must be present;
  * - deleting the historical row still sends the STORED `tenant_slug` — the
- *   DELETE key is what coord stored, not what the tenant is called today.
+ *   DELETE key is what coord stored, not what the tenant is called today;
+ * - "Move to <current_slug>" POSTs under the current slug FIRST and deletes
+ *   the stored row only after that landed, so a failed create never drops
+ *   the grant, and a failed delete is reported as leaving the old row behind.
  */
 
 import { describe, expect, it, vi, beforeEach } from "vitest";
@@ -47,6 +50,7 @@ vi.mock("@/components/ui/destructive-button", () => ({
   ),
 }));
 
+import { toast } from "sonner";
 import MembersPage from "./page";
 
 function jsonResponse(status: number, body: unknown): Response {
@@ -125,18 +129,36 @@ const NOT_FLAGGED_DIFFERING = {
 };
 
 const deleteBodies: Array<Record<string, unknown>> = [];
+const postBodies: Array<Record<string, unknown>> = [];
+/** Order of mutating calls, to pin create-before-delete. */
+const mutations: string[] = [];
+let postStatus = 200;
+let deleteStatus = 200;
+/** Rows appended to the listing for one test. */
+let extraRows: Array<Record<string, unknown>> = [];
 
 beforeEach(() => {
   localStorage.clear();
   vi.clearAllMocks();
   deleteBodies.length = 0;
+  postBodies.length = 0;
+  mutations.length = 0;
+  postStatus = 200;
+  deleteStatus = 200;
+  extraRows = [];
   fetchMock.mockImplementation(async (url: string, init?: RequestInit) => {
     const method = init?.method ?? "GET";
     const path = url.replace(/^https?:\/\/[^/]+/, "");
     if (path.endsWith("/coord/group-tenant-roles")) {
       if (method === "DELETE") {
         deleteBodies.push(JSON.parse(String(init?.body)));
-        return jsonResponse(200, {});
+        mutations.push("DELETE");
+        return jsonResponse(deleteStatus, deleteStatus === 200 ? {} : { detail: "delete boom" });
+      }
+      if (method === "POST") {
+        postBodies.push(JSON.parse(String(init?.body)));
+        mutations.push("POST");
+        return jsonResponse(postStatus, postStatus === 200 ? {} : { detail: "create boom" });
       }
       return jsonResponse(200, {
         group_tenant_roles: [
@@ -146,6 +168,7 @@ beforeEach(() => {
           HISTORICAL_NO_CURRENT,
           HISTORICAL_EMPTY_CURRENT,
           NOT_FLAGGED_DIFFERING,
+          ...extraRows,
         ],
       });
     }
@@ -290,5 +313,98 @@ describe("historical-slug group mappings", () => {
     );
     expect(current).not.toHaveTextContent(/renamed →/);
     expect(current).not.toHaveAttribute("title");
+  });
+
+  it("offers Move only on a historical row", async () => {
+    const { table } = await openMappingsTable();
+    const move = await within(table).findByTestId(
+      "move-mapping-acme-devs:acme:operator"
+    );
+    expect(move).toHaveTextContent("Move to acme-renamed");
+    for (const key of [
+      "acme-devs:acme-renamed:admin",
+      "ops:opsco:operator",
+      "g-missing:old-missing:operator",
+      "g-empty:old-empty:operator",
+      "g-false:stored-slug:operator",
+    ]) {
+      expect(within(table).queryByTestId(`move-mapping-${key}`)).toBeNull();
+    }
+  });
+
+  it("Move creates under current_slug, then deletes the stored row", async () => {
+    const { user_ } = await openMappingsTable();
+    await user_.click(
+      await screen.findByTestId("move-mapping-acme-devs:acme:operator")
+    );
+    await waitFor(() => expect(deleteBodies).toHaveLength(1));
+    expect(mutations).toEqual(["POST", "DELETE"]);
+    expect(postBodies[0]).toEqual({
+      group_id: "acme-devs",
+      tenant_slug: "acme-renamed",
+      role: "operator",
+      auto_create_tenant: true,
+    });
+    expect(deleteBodies[0]).toEqual({
+      group_id: "acme-devs",
+      tenant_slug: "acme",
+      role: "operator",
+    });
+    await waitFor(() =>
+      expect(toast.success).toHaveBeenCalledWith("Mapping moved to acme-renamed")
+    );
+  });
+
+  it("Move does not delete when the create fails", async () => {
+    postStatus = 500;
+    const { user_ } = await openMappingsTable();
+    await user_.click(
+      await screen.findByTestId("move-mapping-acme-devs:acme:operator")
+    );
+    await waitFor(() => expect(toast.error).toHaveBeenCalled());
+    expect(mutations).toEqual(["POST"]);
+    expect(deleteBodies).toHaveLength(0);
+    expect(String(vi.mocked(toast.error).mock.calls[0][0])).toMatch(
+      /Move failed: .*The mapping under acme is unchanged\./
+    );
+  });
+
+  it("Move reports the old row left behind when the delete fails", async () => {
+    deleteStatus = 500;
+    const { user_ } = await openMappingsTable();
+    await user_.click(
+      await screen.findByTestId("move-mapping-acme-devs:acme:operator")
+    );
+    await waitFor(() => expect(toast.error).toHaveBeenCalled());
+    expect(mutations).toEqual(["POST", "DELETE"]);
+    expect(toast.success).not.toHaveBeenCalled();
+    expect(String(vi.mocked(toast.error).mock.calls[0][0])).toMatch(
+      /re-created under acme-renamed, but the old row under acme was NOT deleted/
+    );
+  });
+
+  it("Move keeps auto_create_tenant of a row already under current_slug", async () => {
+    // Same group + role already mapped under the current slug, auto-create
+    // off; the historical row has it on. The upsert must not flip it.
+    extraRows = [
+      {
+        ...BASE,
+        auto_create_tenant: false,
+        group_id: "acme-devs",
+        tenant_slug: "acme-renamed",
+        role: "operator",
+        current_slug: "acme-renamed",
+        historical_slug: false,
+      },
+    ];
+    const { user_ } = await openMappingsTable();
+    await user_.click(
+      await screen.findByTestId("move-mapping-acme-devs:acme:operator")
+    );
+    await waitFor(() => expect(postBodies).toHaveLength(1));
+    expect(postBodies[0]).toMatchObject({
+      tenant_slug: "acme-renamed",
+      auto_create_tenant: false,
+    });
   });
 });

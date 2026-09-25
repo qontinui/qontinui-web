@@ -110,6 +110,7 @@ import {
 } from "@/components/ui/table";
 import {
   AlertTriangle,
+  ArrowRightLeft,
   Building2,
   ChevronDown,
   ChevronRight,
@@ -250,7 +251,8 @@ function historicalRenameTarget(row: GroupTenantRoleRow): string | null {
 
 /**
  * Tooltip for a historical-slug mapping. `where` names the surface: the
- * mappings table row IS the thing to delete, but a Cognito group chip has no
+ * mappings table row IS the thing to delete (and carries the one-click "Move
+ * to" action that does both steps), but a Cognito group chip has no
  * per-mapping delete (the destructive action beside it is the POOL-WIDE group
  * delete), so the chip points at the mappings table instead.
  */
@@ -262,7 +264,7 @@ function historicalSlugTooltip(
     "This mapping names a slug this tenant was renamed away from. It still " +
     `grants at every login. Re-create it under ${currentSlug}, then delete `;
   return where === "table-row"
-    ? `${prefix}this row.`
+    ? `${prefix}this row. “Move to ${currentSlug}” does both.`
     : `${prefix}the old mapping in the group → tenant mappings table.`;
 }
 
@@ -1670,6 +1672,84 @@ function GroupTenantRolesSection({
     [load]
   );
 
+  /**
+   * Re-point a mapping stored under a historical slug at the tenant's current
+   * slug — the two steps the hint's tooltip names, in the order that never
+   * drops the grant: POST under `currentSlug` first (coord's POST is an upsert
+   * on `(group_id, tenant_slug, role)`, so an already-present current-slug row
+   * is fine), and only once that landed DELETE the stored row by its STORED
+   * `tenant_slug`. A failed create leaves the old row untouched; a failed
+   * delete leaves BOTH rows granting the same role, which is harmless but must
+   * be said, because the historical row is still there to clean up.
+   */
+  const moveMapping = useCallback(
+    async (row: GroupTenantRoleRow, currentSlug: string) => {
+      const key = `${row.group_id}:${row.tenant_slug}:${row.role}`;
+      setBusy(key);
+      // The upsert also OVERWRITES `auto_create_tenant` on a row that already
+      // exists under the current slug, so keep that row's own value rather
+      // than silently changing a row the operator never touched.
+      const existing = rows.find(
+        (r) =>
+          r.group_id === row.group_id &&
+          r.tenant_slug === currentSlug &&
+          r.role === row.role
+      );
+      try {
+        const res = await httpClient.fetch(
+          `${OPERATIONS_API}/coord/group-tenant-roles`,
+          {
+            method: "POST",
+            body: JSON.stringify({
+              group_id: row.group_id,
+              tenant_slug: currentSlug,
+              role: row.role,
+              auto_create_tenant:
+                existing?.auto_create_tenant ?? row.auto_create_tenant,
+            }),
+          }
+        );
+        if (!res.ok) {
+          throw new Error(
+            `${await backendErrorMessage(res)} The mapping under ${row.tenant_slug} is unchanged.`
+          );
+        }
+        const del = await httpClient.fetch(
+          `${OPERATIONS_API}/coord/group-tenant-roles`,
+          {
+            method: "DELETE",
+            body: JSON.stringify({
+              group_id: row.group_id,
+              tenant_slug: row.tenant_slug,
+              role: row.role,
+            }),
+          }
+        );
+        if (!del.ok) {
+          const reason = await backendErrorMessage(del);
+          toast.error(
+            `Mapping re-created under ${currentSlug}, but the old row under ${row.tenant_slug} was NOT deleted and still grants at every login — delete it from this table. Delete failed because: ${reason}`
+          );
+          return;
+        }
+        toast.success(`Mapping moved to ${currentSlug}`);
+      } catch (err) {
+        log.warn("move mapping failed", err);
+        toast.error(
+          `Move failed: ${err instanceof Error ? err.message : String(err)}`
+        );
+      } finally {
+        // Reload on every outcome: even a failed move may have changed the
+        // table (the create landed, the delete did not). The row stays busy
+        // until the reload settles, so a second click cannot re-run the move
+        // against the table it just changed.
+        await load();
+        setBusy(null);
+      }
+    },
+    [load, rows]
+  );
+
   return (
     // R7 — infrastructural SSO wiring, below the members table and behind a
     // click. The mapping COUNT stays on the header while closed: an empty
@@ -1764,7 +1844,20 @@ function GroupTenantRolesSection({
                         <Badge variant="outline">no</Badge>
                       )}
                     </TableCell>
-                    <TableCell className="text-right">
+                    <TableCell className="text-right space-x-2">
+                      {renamedTo !== null ? (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          disabled={busy === key}
+                          onClick={() => void moveMapping(row, renamedTo)}
+                          title={`Re-create this mapping under ${renamedTo}, then delete the row stored under ${row.tenant_slug}.`}
+                          data-testid={`move-mapping-${key}`}
+                        >
+                          <ArrowRightLeft className="h-4 w-4" />
+                          Move to {renamedTo}
+                        </Button>
+                      ) : null}
                       <DestructiveButton
                         size="sm"
                         disabled={busy === key}
