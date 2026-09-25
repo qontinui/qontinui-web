@@ -18,6 +18,7 @@ import {
   type PlanCandidateResponse,
   deriveCandidateDisclosure,
   deriveCandidateHealth,
+  describeCandidateDifficulty,
   describeCandidateWindow,
   describeCoordLink,
   describeCorpusHealth,
@@ -332,5 +333,34 @@ describe("the window reports the declared ordering and nothing else", () => {
     const w = describeCandidateWindow(response({ total: undefined, limit: 1 }));
     expect(w.total).toBeNull();
     expect(w.hasMore).toBe(true);
+  });
+});
+
+describe("difficulty names its tier from the served map, and unrated is not low", () => {
+  const tiers = { high: "Fable 5.1", medium: "Opus 5", low: "Fast tier" };
+
+  it("appends the tier the envelope maps the level to", () => {
+    expect(describeCandidateDifficulty("medium", tiers)).toBe(
+      "medium — route to Opus 5"
+    );
+  });
+
+  it("renders the level alone when the backend served no map", () => {
+    expect(describeCandidateDifficulty("high", undefined)).toBe("high");
+    expect(describeCandidateDifficulty("high", {})).toBe("high");
+  });
+
+  it("renders a null rating as unrated, never as a tier", () => {
+    expect(describeCandidateDifficulty(null, tiers)).toBe("unrated");
+  });
+
+  it("renders an unserved field as unknown, not unrated", () => {
+    expect(describeCandidateDifficulty(undefined, tiers)).toBe(
+      "unknown (not served)"
+    );
+  });
+
+  it("never reads an inherited key as a tier", () => {
+    expect(describeCandidateDifficulty("constructor", {})).toBe("constructor");
   });
 });

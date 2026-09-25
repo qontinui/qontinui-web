@@ -10,6 +10,9 @@ permissions:
 
 jobs:
   sql-through-alembic:
+    # Job cap (plan 2026-09-07-nothing-escalates-a-pr-wedged-on-one-block-reason Phase 2), LOW-N: no green run on record.
+    # Conservative: max(10, 3x the worst observed). Replaces GitHub's 360-min default.
+    timeout-minutes: 10
     name: Verify .sql files have companion alembic revisions
     runs-on: ubuntu-latest
 
