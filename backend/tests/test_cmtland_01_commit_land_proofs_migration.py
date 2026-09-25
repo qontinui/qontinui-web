@@ -214,14 +214,16 @@ def _insert(engine: Engine, **overrides: object) -> None:
         "method": "ancestor",
         "landed_sha": "a" * 40,
         "trunk": "main",
+        "trunk_tip": None,
     }
     params.update(overrides)
     with engine.begin() as conn:
         conn.execute(
             text(
                 f"INSERT INTO {_SCHEMA}.{_TABLE} "
-                "(repo, commit_sha, verdict, method, landed_sha, trunk) "
-                "VALUES (:repo, :commit_sha, :verdict, :method, :landed_sha, :trunk)"
+                "(repo, commit_sha, verdict, method, landed_sha, trunk, trunk_tip) "
+                "VALUES (:repo, :commit_sha, :verdict, :method, :landed_sha, :trunk, "
+                ":trunk_tip)"
             ),
             params,
         )
@@ -298,6 +300,9 @@ def test_table_shape_primary_key_and_checks() -> None:
             _insert(engine, commit_sha="A" * 40)
         with pytest.raises(sqlalchemy.exc.IntegrityError):
             _insert(engine, commit_sha="2" * 40, landed_sha="abc1234")
+        with pytest.raises(sqlalchemy.exc.IntegrityError):
+            _insert(engine, commit_sha="3" * 40, trunk_tip="abc1234")
+        _insert(engine, commit_sha="4" * 40, trunk_tip="5" * 40)
 
 
 @_needs_pg
