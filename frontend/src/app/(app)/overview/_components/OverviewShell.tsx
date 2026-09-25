@@ -16,6 +16,7 @@ import { Clock3 } from "lucide-react";
 import { usePathname } from "next/navigation";
 import { useAuth } from "@/contexts/auth-context";
 import { useTenant } from "@/contexts/tenant-context";
+import { OverviewPermissionsProvider } from "@/components/overview/editing/permissions";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import {
   OVERVIEW_SECTIONS,
@@ -154,7 +155,14 @@ export function OverviewShell({ children }: { children: React.ReactNode }) {
       </header>
 
       <ScrollArea className="flex-1 min-h-0">
-        <div className="px-6 py-8 sm:px-10">{children}</div>
+        {/* What the viewer may edit, for THIS project — every overview page
+            gates its edit controls on it (never on `isCoordAdmin`). */}
+        <OverviewPermissionsProvider
+          tenantId={activeTenantId}
+          hold={tenantsLoading || tenantsError !== null}
+        >
+          <div className="px-6 py-8 sm:px-10">{children}</div>
+        </OverviewPermissionsProvider>
       </ScrollArea>
     </div>
   );

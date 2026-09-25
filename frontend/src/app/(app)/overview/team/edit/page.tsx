@@ -24,7 +24,7 @@ import { formatMicros } from "@/components/overview/money";
 import { NotAvailable } from "@/components/overview/UnavailableNotes";
 import { estimateVocabulary } from "@/components/overview/vocabulary";
 import { Skeleton } from "@/components/ui/skeleton";
-import { useAuth } from "@/contexts/auth-context";
+import { useOverviewCatalog } from "@/components/overview/editing/permissions";
 import { useTenant } from "@/contexts/tenant-context";
 import {
   parseAllocationsCsv,
@@ -628,7 +628,13 @@ function EstimateEditor({
 }
 
 export default function EstimateEditorPage() {
-  const { isCoordAdmin } = useAuth();
+  // The served permission for THIS project, never `isCoordAdmin` (a union
+  // across every project the viewer belongs to). Until it has answered the
+  // page waits rather than guessing either way.
+  const catalog = useOverviewCatalog();
+  const canEdit =
+    catalog.state === "ready" &&
+    catalog.catalog.resources.some((r) => r.name === "estimates" && r.can_edit);
   const {
     activeTenantId,
     loading: tenantsLoading,
@@ -679,16 +685,44 @@ export default function EstimateEditorPage() {
     );
   }
 
-  if (!isCoordAdmin) {
+  if (catalog.state === "error") {
+    return (
+      <div
+        className="max-w-[42rem]"
+        data-ui-bridge-id="overview.estimate-editor.page"
+      >
+        <LoadFailure
+          what="whether you can edit this project"
+          message={catalog.message}
+          uiBridgeId="overview.estimate-editor.permission.error"
+        />
+      </div>
+    );
+  }
+
+  if (catalog.state === "loading") {
+    return (
+      <div
+        className="max-w-[52rem] space-y-4"
+        data-ui-bridge-id="overview.estimate-editor.page"
+        aria-busy
+      >
+        <Skeleton className="h-7 w-64" />
+        <Skeleton className="h-40 w-full" />
+      </div>
+    );
+  }
+
+  if (!canEdit) {
     return (
       <section
         className="max-w-[38rem]"
         data-ui-bridge-id="overview.estimate-editor.forbidden"
       >
-        <Heading>Only an administrator can edit the estimate</Heading>
+        <Heading>You can read this estimate but not change it</Heading>
         <p className="mt-2 text-[15px] leading-relaxed text-muted-foreground">
-          You can read everything the estimate produces on the Team page; only
-          an administrator of this project can change it.
+          You can read everything the estimate produces on the Team page. Who
+          may change it is set by this project&rsquo;s administrators.
         </p>
         <Link
           href={TEAM_ROUTE}

@@ -357,6 +357,33 @@ export const PLAN_CAPTURE_DOMAIN = "plan_capture";
 export const PLAN_CAPTURE_LEVELS = ["off", "record"] as const;
 export type PlanCaptureLevel = (typeof PLAN_CAPTURE_LEVELS)[number];
 
+/**
+ * The domain gating the AGENT door for the delivery-scope citation backfill
+ * write (`POST /coord/citations/backfill-delivery-scope`). Levels: `off` (the
+ * agent door refuses, 403) | `dry_run` (the agent door only plans — zero
+ * writes) | `live` (the agent door writes). The operator SSO door is not
+ * governed by it. Plan
+ * `2026-09-23-delivery-scope-backfill-write-is-operator-only-so-a-mechanical-reconcile-needs-a-human`.
+ */
+export const CITATION_SCOPE_BACKFILL_WRITE_DOMAIN =
+  "citation_scope_backfill_write";
+
+export const CITATION_SCOPE_BACKFILL_WRITE_LEVELS = [
+  "off",
+  "dry_run",
+  "live",
+] as const;
+export type CitationScopeBackfillWriteLevel =
+  (typeof CITATION_SCOPE_BACKFILL_WRITE_LEVELS)[number];
+
+/**
+ * What coord resolves for a tenant with NO row (`resolved_scope: "none"`). A
+ * no-row answer naming a different level means the answering coord build
+ * predates the dial — the panel says so rather than repeating this constant.
+ */
+export const CITATION_SCOPE_BACKFILL_WRITE_DEFAULT_LEVEL: CitationScopeBackfillWriteLevel =
+  "dry_run";
+
 // `FleetPolicyView` / `FleetPolicyWriteResult` moved to the shared module when
 // the `policy_write` dial became a second consumer — one wire contract, one
 // definition. Re-exported here so this file's public surface is unchanged.

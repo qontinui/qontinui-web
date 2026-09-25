@@ -2449,6 +2449,7 @@
           "fte": {
             "anyOf": [
               {
+                "exclusiveMaximum": 100000.0,
                 "minimum": 0.0,
                 "type": "number"
               },
@@ -2457,7 +2458,11 @@
                 "type": "string"
               }
             ],
-            "title": "Fte"
+            "title": "Fte",
+            "x-numeric": {
+              "precision": 8,
+              "scale": 3
+            }
           },
           "phase_code": {
             "maxLength": 50,
@@ -7066,6 +7071,129 @@
           "created_at"
         ],
         "title": "CategoryRead",
+        "type": "object"
+      },
+      "ChangeLogEntry": {
+        "properties": {
+          "action": {
+            "title": "Action",
+            "type": "string"
+          },
+          "actor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Actor"
+          },
+          "after": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "After"
+          },
+          "before": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Before"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "record_id": {
+            "title": "Record Id",
+            "type": "string"
+          },
+          "resource": {
+            "title": "Resource",
+            "type": "string"
+          },
+          "source": {
+            "title": "Source",
+            "type": "string"
+          },
+          "version_after": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Version After"
+          },
+          "version_before": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Version Before"
+          }
+        },
+        "required": [
+          "id",
+          "resource",
+          "record_id",
+          "action",
+          "source",
+          "actor",
+          "created_at",
+          "version_before",
+          "version_after",
+          "before",
+          "after"
+        ],
+        "title": "ChangeLogEntry",
+        "type": "object"
+      },
+      "ChangeLogPage": {
+        "properties": {
+          "entries": {
+            "items": {
+              "$ref": "#/components/schemas/ChangeLogEntry"
+            },
+            "title": "Entries",
+            "type": "array"
+          },
+          "truncated": {
+            "title": "Truncated",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "entries",
+          "truncated"
+        ],
+        "title": "ChangeLogPage",
         "type": "object"
       },
       "ChatMessageBody": {
@@ -18885,11 +19013,21 @@
           "contingency_pct": {
             "anyOf": [
               {
-                "type": "number"
-              },
-              {
-                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
-                "type": "string"
+                "anyOf": [
+                  {
+                    "exclusiveMaximum": 1000.0,
+                    "minimum": 0.0,
+                    "type": "number"
+                  },
+                  {
+                    "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                    "type": "string"
+                  }
+                ],
+                "x-numeric": {
+                  "precision": 6,
+                  "scale": 3
+                }
               },
               {
                 "type": "null"
@@ -19181,11 +19319,21 @@
           "contingency_pct": {
             "anyOf": [
               {
-                "type": "number"
-              },
-              {
-                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
-                "type": "string"
+                "anyOf": [
+                  {
+                    "exclusiveMaximum": 1000.0,
+                    "minimum": 0.0,
+                    "type": "number"
+                  },
+                  {
+                    "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                    "type": "string"
+                  }
+                ],
+                "x-numeric": {
+                  "precision": 6,
+                  "scale": 3
+                }
               },
               {
                 "type": "null"
@@ -24097,36 +24245,6 @@
         "title": "HTTPValidationError",
         "type": "object"
       },
-      "HeartbeatBody": {
-        "description": "Accepts EITHER doc_id (already-resolved UUID) OR doc_name (the\nsubstrate-relative path). The frontend sends doc_name; coord\nresolves and echoes the canonical doc_id in the response body.",
-        "properties": {
-          "doc_id": {
-            "anyOf": [
-              {
-                "format": "uuid",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Doc Id"
-          },
-          "doc_name": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Doc Name"
-          }
-        },
-        "title": "HeartbeatBody",
-        "type": "object"
-      },
       "HelperAnswerRequest": {
         "description": "Body forwarded to coord ``POST /coord/helper-tasks/:id/answer``.\n\n``verdict`` values are coord's snake_case ``HelperVerdict`` enum\n(``approve`` / ``reject`` / ``not_sure`` for a spot-check; ``choice_a`` /\n``choice_b`` / ``choice_same`` for a compare). Coord validates the enum \u2014\nthe web layer only enforces shape.",
         "properties": {
@@ -25101,6 +25219,293 @@
           "historical_result_ids"
         ],
         "title": "IntegrationTestPlaybackRequest",
+        "type": "object"
+      },
+      "IntentDocumentCreate": {
+        "properties": {
+          "body": {
+            "maxLength": 200000,
+            "minLength": 1,
+            "title": "Body",
+            "type": "string"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "maxLength": 2000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "kind": {
+            "enum": [
+              "product_intent",
+              "initiative",
+              "success_metric",
+              "domain_spec",
+              "audience_profile",
+              "decision_record"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "name": {
+            "maxLength": 80,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "overview_order": {
+            "anyOf": [
+              {
+                "maximum": 999.0,
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Overview Order"
+          }
+        },
+        "required": [
+          "kind",
+          "name",
+          "body"
+        ],
+        "title": "IntentDocumentCreate",
+        "type": "object"
+      },
+      "IntentDocumentRead": {
+        "properties": {
+          "body": {
+            "title": "Body",
+            "type": "string"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "frontmatter": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Frontmatter"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "product_intent",
+              "initiative",
+              "success_metric",
+              "domain_spec",
+              "audience_profile",
+              "decision_record"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "overview_order": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Overview Order"
+          },
+          "state": {
+            "enum": [
+              "authored",
+              "skeleton",
+              "unknown",
+              "unreadable"
+            ],
+            "title": "State",
+            "type": "string"
+          },
+          "status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Status"
+          },
+          "updated_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated At"
+          },
+          "updated_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated By"
+          },
+          "version": {
+            "title": "Version",
+            "type": "integer"
+          },
+          "withdrawn": {
+            "default": false,
+            "title": "Withdrawn",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "name",
+          "description",
+          "body",
+          "frontmatter",
+          "overview_order",
+          "state",
+          "version",
+          "updated_at",
+          "updated_by"
+        ],
+        "title": "IntentDocumentRead",
+        "type": "object"
+      },
+      "IntentDocumentUpdate": {
+        "description": "Absent fields are left alone. ``overview_order: null`` returns the\ndocument to the page's default order; ``body`` cannot be cleared.",
+        "properties": {
+          "body": {
+            "anyOf": [
+              {
+                "maxLength": 200000,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Body"
+          },
+          "overview_order": {
+            "anyOf": [
+              {
+                "maximum": 999.0,
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Overview Order"
+          }
+        },
+        "title": "IntentDocumentUpdate",
+        "type": "object"
+      },
+      "IntentDocumentsItem": {
+        "properties": {
+          "can_edit": {
+            "title": "Can Edit",
+            "type": "boolean"
+          },
+          "item": {
+            "$ref": "#/components/schemas/IntentDocumentRead"
+          }
+        },
+        "required": [
+          "item",
+          "can_edit"
+        ],
+        "title": "IntentDocumentsItem",
+        "type": "object"
+      },
+      "IntentDocumentsList": {
+        "properties": {
+          "can_edit": {
+            "title": "Can Edit",
+            "type": "boolean"
+          },
+          "degraded": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Degraded"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/IntentDocumentRead"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "can_edit"
+        ],
+        "title": "IntentDocumentsList",
         "type": "object"
       },
       "InvitationAccept": {
@@ -31142,6 +31547,18 @@
             "title": "Base Currency",
             "type": "string"
           },
+          "editing_roles": {
+            "items": {
+              "enum": [
+                "admin",
+                "agent_supervisor",
+                "operator"
+              ],
+              "type": "string"
+            },
+            "title": "Editing Roles",
+            "type": "array"
+          },
           "first_value_date": {
             "anyOf": [
               {
@@ -31230,6 +31647,25 @@
             "title": "Base Currency",
             "type": "string"
           },
+          "editing_roles": {
+            "anyOf": [
+              {
+                "items": {
+                  "enum": [
+                    "admin",
+                    "agent_supervisor",
+                    "operator"
+                  ],
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Editing Roles"
+          },
           "expected_version": {
             "anyOf": [
               {
@@ -31261,6 +31697,9 @@
           "hours_per_day": {
             "anyOf": [
               {
+                "exclusiveMaximum": 1000.0,
+                "exclusiveMinimum": 0.0,
+                "maximum": 24.0,
                 "type": "number"
               },
               {
@@ -31269,7 +31708,11 @@
               }
             ],
             "default": "8",
-            "title": "Hours Per Day"
+            "title": "Hours Per Day",
+            "x-numeric": {
+              "precision": 5,
+              "scale": 2
+            }
           },
           "labour_billing": {
             "default": "unbilled",
@@ -31284,6 +31727,9 @@
           "working_day_factor": {
             "anyOf": [
               {
+                "exclusiveMaximum": 100.0,
+                "exclusiveMinimum": 0.0,
+                "maximum": 1.0,
                 "type": "number"
               },
               {
@@ -31292,7 +31738,11 @@
               }
             ],
             "default": "1.0",
-            "title": "Working Day Factor"
+            "title": "Working Day Factor",
+            "x-numeric": {
+              "precision": 6,
+              "scale": 4
+            }
           }
         },
         "title": "OverviewSettingsWrite",
@@ -33281,12 +33731,21 @@
           "stated_working_weeks": {
             "anyOf": [
               {
-                "minimum": 0.0,
-                "type": "number"
-              },
-              {
-                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
-                "type": "string"
+                "anyOf": [
+                  {
+                    "exclusiveMaximum": 1000000.0,
+                    "minimum": 0.0,
+                    "type": "number"
+                  },
+                  {
+                    "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                    "type": "string"
+                  }
+                ],
+                "x-numeric": {
+                  "precision": 8,
+                  "scale": 2
+                }
               },
               {
                 "type": "null"
@@ -33606,6 +34065,24 @@
             "title": "Limit",
             "type": "integer"
           },
+          "model_selector_vocabulary": {
+            "title": "Model Selector Vocabulary",
+            "type": "string"
+          },
+          "model_selectors": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "Model Selectors",
+            "type": "object"
+          },
+          "model_tiers": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "Model Tiers",
+            "type": "object"
+          },
           "offset": {
             "title": "Offset",
             "type": "integer"
@@ -33660,7 +34137,10 @@
           "offset",
           "limit",
           "corpus_health",
-          "corpus_health_unavailable_reason"
+          "corpus_health_unavailable_reason",
+          "model_tiers",
+          "model_selectors",
+          "model_selector_vocabulary"
         ],
         "title": "PlanCandidateResponse",
         "type": "object"
@@ -34067,7 +34547,7 @@
         "type": "object"
       },
       "PlanDifficultyResponse": {
-        "description": "Every rated plan in the caller's scope \u2014 not paged: the console joins\nit onto a coord window of up to 500 work units, and a row is ~300 bytes.\n\n``count`` is ``len(items)``. ``rerated`` is how many rows THIS read rated\nbefore answering (non-zero once after a deploy or a rubric bump). A plan\nrow that is still unrated is left OUT of ``items`` \u2014 absent here means\n\"no rating\", which the console renders as unrated, never as \"low\".\n``model_tiers`` maps each level to the model tier it routes to, served so\nevery consumer names the same models.",
+        "description": "Every rated plan in the caller's scope \u2014 not paged: the console joins\nit onto a coord window of up to 500 work units, and a row is ~300 bytes.\n\n``count`` is ``len(items)``. ``rerated`` is how many rows THIS read rated\nbefore answering (non-zero once after a deploy or a rubric bump). A plan\nrow that is still unrated is left OUT of ``items`` \u2014 absent here means\n\"no rating\", which the console renders as unrated, never as \"low\".\n``model_tiers`` maps each level to the model tier it routes to, served so\nevery consumer names the same models. It is DISPLAY COPY \u2014 never parse it.\n``model_selectors`` is the machine-readable twin: each level's harness\nselector, in the vocabulary ``model_selector_vocabulary`` names (the Claude\nCode Agent tool's ``model`` values). A consumer whose harness does not\nmatch that vocabulary treats the selector map as absent. All three are\nserved, byte-identical, on ``GET /plan-library`` and\n``/plan-library/candidates`` too.",
         "properties": {
           "count": {
             "title": "Count",
@@ -34079,6 +34559,17 @@
             },
             "title": "Items",
             "type": "array"
+          },
+          "model_selector_vocabulary": {
+            "title": "Model Selector Vocabulary",
+            "type": "string"
+          },
+          "model_selectors": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "Model Selectors",
+            "type": "object"
           },
           "model_tiers": {
             "additionalProperties": {
@@ -34123,7 +34614,9 @@
           "count",
           "rerated",
           "rubric_version",
-          "model_tiers"
+          "model_tiers",
+          "model_selectors",
+          "model_selector_vocabulary"
         ],
         "title": "PlanDifficultyResponse",
         "type": "object"
@@ -34217,45 +34710,6 @@
         "title": "PopularPackageResponse",
         "type": "object"
       },
-      "PostCreate": {
-        "properties": {
-          "body_markdown": {
-            "minLength": 1,
-            "title": "Body Markdown",
-            "type": "string"
-          },
-          "parent_post_id": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Parent Post Id"
-          }
-        },
-        "required": [
-          "body_markdown"
-        ],
-        "title": "PostCreate",
-        "type": "object"
-      },
-      "PostEdit": {
-        "properties": {
-          "body_markdown": {
-            "minLength": 1,
-            "title": "Body Markdown",
-            "type": "string"
-          }
-        },
-        "required": [
-          "body_markdown"
-        ],
-        "title": "PostEdit",
-        "type": "object"
-      },
       "PresignedUrlResponse": {
         "description": "Response for presigned URL generation",
         "properties": {
@@ -34332,6 +34786,7 @@
           "multiplier": {
             "anyOf": [
               {
+                "exclusiveMaximum": 10000.0,
                 "exclusiveMinimum": 0.0,
                 "type": "number"
               },
@@ -34340,7 +34795,11 @@
                 "type": "string"
               }
             ],
-            "title": "Multiplier"
+            "title": "Multiplier",
+            "x-numeric": {
+              "precision": 8,
+              "scale": 4
+            }
           },
           "name": {
             "maxLength": 100,
@@ -38967,6 +39426,78 @@
           "via"
         ],
         "title": "ResolvedOutcome",
+        "type": "object"
+      },
+      "ResourceCatalog": {
+        "properties": {
+          "resources": {
+            "items": {
+              "$ref": "#/components/schemas/ResourceDescriptor"
+            },
+            "title": "Resources",
+            "type": "array"
+          },
+          "tenant_id": {
+            "format": "uuid",
+            "title": "Tenant Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "tenant_id",
+          "resources"
+        ],
+        "title": "ResourceCatalog",
+        "type": "object"
+      },
+      "ResourceDescriptor": {
+        "properties": {
+          "can_edit": {
+            "title": "Can Edit",
+            "type": "boolean"
+          },
+          "description": {
+            "title": "Description",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "operations": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Operations",
+            "type": "array"
+          },
+          "path": {
+            "title": "Path",
+            "type": "string"
+          },
+          "schemas": {
+            "additionalProperties": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Schemas",
+            "type": "object"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "path",
+          "title",
+          "description",
+          "operations",
+          "can_edit",
+          "schemas"
+        ],
+        "title": "ResourceDescriptor",
         "type": "object"
       },
       "ResponsibleUserOut": {
@@ -47253,6 +47784,7 @@
           "planned_person_days": {
             "anyOf": [
               {
+                "exclusiveMaximum": 100000000.0,
                 "minimum": 0.0,
                 "type": "number"
               },
@@ -47261,7 +47793,11 @@
                 "type": "string"
               }
             ],
-            "title": "Planned Person Days"
+            "title": "Planned Person Days",
+            "x-numeric": {
+              "precision": 10,
+              "scale": 2
+            }
           },
           "role_code": {
             "maxLength": 50,
@@ -50762,38 +51298,6 @@
           "embedding_dim"
         ],
         "title": "TextEmbeddingResponse",
-        "type": "object"
-      },
-      "ThreadCreate": {
-        "properties": {
-          "anchor": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Anchor"
-          },
-          "body_markdown": {
-            "minLength": 1,
-            "title": "Body Markdown",
-            "type": "string"
-          },
-          "title": {
-            "maxLength": 500,
-            "minLength": 1,
-            "title": "Title",
-            "type": "string"
-          }
-        },
-        "required": [
-          "title",
-          "body_markdown"
-        ],
-        "title": "ThreadCreate",
         "type": "object"
       },
       "TimelineEvent": {
@@ -56217,6 +56721,24 @@
             "title": "Limit",
             "type": "integer"
           },
+          "model_selector_vocabulary": {
+            "title": "Model Selector Vocabulary",
+            "type": "string"
+          },
+          "model_selectors": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "Model Selectors",
+            "type": "object"
+          },
+          "model_tiers": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "Model Tiers",
+            "type": "object"
+          },
           "offset": {
             "title": "Offset",
             "type": "integer"
@@ -56232,7 +56754,10 @@
           "total",
           "offset",
           "limit",
-          "corpus_health"
+          "corpus_health",
+          "model_tiers",
+          "model_selectors",
+          "model_selector_vocabulary"
         ],
         "title": "WorkArtifactListResponse",
         "type": "object"
@@ -84999,6 +85524,151 @@
         ]
       }
     },
+    "/api/v1/operations/coord/findings": {
+      "get": {
+        "description": "Return ``coord.findings`` rows for the calling operator's tenant.\n\nResponse envelope mirrors coord's:\n``{\"available\", \"count\", \"findings\": [...], \"finding_id_applied\",\n\"kind_applied\", \"limit\", \"resource_keys_applied\" (a COUNT),\n\"resource_keys_truncated\", \"triaged_applied\" (\"any\" | \"false\" | \"true\")}``,\nplus ``kind_excluded`` / ``scope_restricted`` on a ``triaged=false`` read.\nThe ``*_applied`` echoes are what let the page say which filter coord\nactually honoured rather than which one it was asked for \u2014 a filter coord\ndropped is otherwise invisible.\n\n**There is no ``expired`` boolean.** Expiry is derived client-side from\n``expires_at``, and it has to be: a ``kind=dossier`` row is a durable\ndossier head carrying a 100-year TTL, so a server-side \"expiring\" flag\nwould be true of every row that never expires in practice.\n\nDegrade rather than 502. coord's ``/coord/findings`` route is on coord's\n``main`` (since 2026-09-20), so a 404 here means the DEPLOYED coord predates\nit or a routing fault, and must read as \"not answering\", never as an empty\nfindings store. Same ``unavailable`` / ``unavailable_kind`` pair the\nlanded-write feed uses.\n\ncoord ALSO answers ``200 {\"available\": false}`` when ``coord.findings`` is\nnot provisioned, and says that must read as UNKNOWN. The page branches on\n``unavailable`` alone, so that answer is given the same degrade pair here\n(``unavailable_kind: \"unprovisioned\"``) \u2014 otherwise a store coord just said\nit cannot read would render as \"0 findings\".",
+        "operationId": "api_v1_operations_coord_findings_get",
+        "parameters": [
+          {
+            "description": "Read ONE finding by id. Coord serves the row even when it is past ``expires_at`` \u2014 expiry is a fact about the row, not a reason to hide it \u2014 and answers another tenant's id, or no such id, with an EMPTY PAGE rather than a 404.",
+            "in": "query",
+            "name": "finding_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Read ONE finding by id. Coord serves the row even when it is past ``expires_at`` \u2014 expiry is a fact about the row, not a reason to hide it \u2014 and answers another tenant's id, or no such id, with an EMPTY PAGE rather than a 404.",
+              "title": "Finding Id"
+            }
+          },
+          {
+            "description": "Repeatable. Restrict to findings tagged with these resource keys.",
+            "in": "query",
+            "name": "resource_keys",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Repeatable. Restrict to findings tagged with these resource keys.",
+              "title": "Resource Keys"
+            }
+          },
+          {
+            "description": "Filter by finding topic.",
+            "in": "query",
+            "name": "topic",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter by finding topic.",
+              "title": "Topic"
+            }
+          },
+          {
+            "description": "Filter by finding kind.",
+            "in": "query",
+            "name": "kind",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter by finding kind.",
+              "title": "Kind"
+            }
+          },
+          {
+            "description": "Page size. Forwarded verbatim \u2014 coord owns the default and the clamp.",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Page size. Forwarded verbatim \u2014 coord owns the default and the clamp.",
+              "title": "Limit"
+            }
+          },
+          {
+            "description": "Restrict to findings that have (``true``) or have not (``false``) been triaged. ``false`` deliberately excludes durable dossier heads and fleet-infrastructure rows, so a count under it is NARROWER than the unfiltered total by design.",
+            "in": "query",
+            "name": "triaged",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Restrict to findings that have (``true``) or have not (``false``) been triaged. ``false`` deliberately excludes durable dossier heads and fleet-infrastructure rows, so a count under it is NARROWER than the unfiltered total by design.",
+              "title": "Triaged"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Get Coord Findings Api V1 Operations Coord Findings Get"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Coord Findings",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
     "/api/v1/operations/coord/group-tenant-roles": {
       "delete": {
         "description": "Delete an SSO-group \u2192 tenant \u2192 role mapping.\n\nProxies coord ``DELETE /admin/coord/group-tenant-roles`` with a JSON\nbody ``{group_id, tenant_slug, role}`` \u2192 ``{ok, deleted}``. The body is\nforwarded on the DELETE via ``_proxy_coord_delete(body=...)``.",
@@ -85048,7 +85718,7 @@
         ]
       },
       "get": {
-        "description": "List SSO-group \u2192 tenant \u2192 role mappings.\n\nProxies coord ``GET /admin/coord/group-tenant-roles`` \u2192\n``{group_tenant_roles: [{group_id, tenant_slug, role, auto_create_tenant,\ncreated_at, tenant_id}]}``.",
+        "description": "List SSO-group \u2192 tenant \u2192 role mappings.\n\nProxies coord ``GET /admin/coord/group-tenant-roles`` \u2192\n``{group_tenant_roles: [{group_id, tenant_slug, role, auto_create_tenant,\ncreated_at, tenant_id, current_slug, historical_slug}]}``.\n``historical_slug`` is true when the stored ``tenant_slug`` is one the\ntenant was renamed away from, and ``current_slug`` is its slug today\n(qontinui-coord#2473; older coord builds omit both).",
         "operationId": "api_v1_operations_coord_group_tenant_roles_get",
         "responses": {
           "200": {
@@ -88053,7 +88723,7 @@
     },
     "/api/v1/operations/coord/tenant-members": {
       "post": {
-        "description": "Add a person to the caller's tenant by EMAIL \u2014 no IdP fields.\n\nResolves the email against the Cognito pool, then composes coord's two\nexisting operator writes:\n\n1. ``POST /admin/coord/operators`` with the resolved ``sub`` \u2014 an upsert\n   on ``(sso_provider, sso_subject)`` that never touches ``tenant_id`` on\n   conflict, so it is safe for somebody who already exists in another\n   tenant. It is sent with NO ``roles``: the upsert guarantees the row\n   exists, it does not grant.\n2. ``POST /admin/coord/operators/{id}/roles`` with the requested role and\n   an explicit ``target_tenant_id``, which coord re-checks the caller is\n   admin in (``403 not_admin_in_target_tenant``).\n\nAnswers:\n\n* ``{\"status\": \"added\", \"operator_id\", \"role\"}`` \u2014 they had an account\n  and now hold ``role`` in this tenant.\n* ``{\"status\": \"invited\", \"operator_id\", \"role\"}`` \u2014 SUPERUSER ONLY. They\n  had no account (or an unaccepted invitation): the account is created\n  with nothing sent, the grant is made, and only then is the invitation\n  emailed. Re-adding a pending invitee re-sends it, which is how an admin\n  recovers a lost or expired one.\n* ``{\"status\": \"invitation_pending\", \"operator_id\", \"role\"}`` \u2014 a tenant\n  admin added somebody holding an invitation they have not accepted. The\n  grant is made; nothing is sent, since sending is a superuser act.\n* ``{\"status\": \"invite_required\"}`` \u2014 a tenant admin named an email with\n  no account. NOTHING is written or sent.\n* ``409`` \u2014 more than one account matches the email, so picking one\n  would be guessing which human gets access.\n\n**Why creating an account is superuser-only.** Qontinui is invite-only:\nself sign-up is disabled on the pool and its PreSignUp trigger enforces an\nallowlist \u2014 for every trigger EXCEPT ``AdminCreateUser``. Every signed-in\nuser is admin of their own personal tenant, so letting any tenant admin\nreach ``AdminCreateUser`` would let anybody already inside hand out\naccounts to arbitrary addresses, and send email from the product's sender\nidentity to them. Operator decision, 2026-09-17: tenant admins add people\nwho already have an account; creating one is a platform admin's act.\n\nA grant that landed without its email is a ``502`` whose ``message`` says\nexactly that, and a retry converges: the account then resolves as a\npending invitation, the grant is idempotent, and the email is re-sent.\n\nRate-limited per caller \u2014 see ``_TENANT_MEMBER_ADD_RATE_LIMIT``.",
+        "description": "Add a person to the caller's tenant by EMAIL \u2014 no IdP fields.\n\nResolves the email against the Cognito pool, then composes coord's two\nexisting operator writes:\n\n1. ``POST /admin/coord/operators`` with the resolved ``sub`` \u2014 an upsert\n   on ``(sso_provider, sso_subject)`` that never touches ``tenant_id`` on\n   conflict, so it is safe for somebody who already exists in another\n   tenant. It is sent with NO ``roles``: the upsert guarantees the row\n   exists, it does not grant.\n2. ``POST /admin/coord/operators/{id}/roles`` with the requested role and\n   an explicit ``target_tenant_id``, which coord re-checks the caller is\n   admin in (``403 not_admin_in_target_tenant``).\n\nAnswers:\n\n* ``{\"status\": \"added\", \"operator_id\", \"role\", \"notice\"}`` \u2014 they had an\n  account and now hold ``role`` in this tenant. ``notice`` reports the\n  \"you have been given access\" email, which is attempted on THIS arm\n  only, and takes one of three values:\n\n  - ``sent`` \u2014 the email reached a transport.\n  - ``not_sent`` \u2014 nothing was sent and the admin should pass the news\n    on themselves. Covers both a failed send and an unreadable\n    prior-access check.\n  - ``not_needed`` \u2014 they ALREADY had access to this tenant, so this\n    grant told them nothing new and no email was sent.\n\n  See :func:`_member_had_prior_access` for why the third value exists\n  (it is what stops this route being an email-sending primitive) and\n  :func:`_send_member_added_notice` for why a failed send does not fail\n  the grant.\n* ``{\"status\": \"invited\", \"operator_id\", \"role\"}`` \u2014 SUPERUSER ONLY. They\n  had no account (or an unaccepted invitation): the account is created\n  with nothing sent, the grant is made, and only then is the invitation\n  emailed. Re-adding a pending invitee re-sends it, which is how an admin\n  recovers a lost or expired one.\n* ``{\"status\": \"invitation_pending\", \"operator_id\", \"role\"}`` \u2014 a tenant\n  admin added somebody holding an invitation they have not accepted. The\n  grant is made; nothing is sent, since sending is a superuser act. No\n  ``notice`` either: a person who cannot sign in yet is owed the\n  invitation, not a note about a team they cannot reach, and sending one\n  would route around the superuser rule above.\n* ``{\"status\": \"invite_required\"}`` \u2014 a tenant admin named an email with\n  no account. NOTHING is written or sent.\n* ``409`` \u2014 more than one account matches the email, so picking one\n  would be guessing which human gets access.\n\n**Why creating an account is superuser-only.** Qontinui is invite-only:\nself sign-up is disabled on the pool and its PreSignUp trigger enforces an\nallowlist \u2014 for every trigger EXCEPT ``AdminCreateUser``. Every signed-in\nuser is admin of their own personal tenant, so letting any tenant admin\nreach ``AdminCreateUser`` would let anybody already inside hand out\naccounts to arbitrary addresses, and send email from the product's sender\nidentity to them. Operator decision, 2026-09-17: tenant admins add people\nwho already have an account; creating one is a platform admin's act.\n\nA grant that landed without its email is a ``502`` whose ``message`` says\nexactly that, and a retry converges: the account then resolves as a\npending invitation, the grant is idempotent, and the email is re-sent.\n\nRate-limited per caller \u2014 see ``_TENANT_MEMBER_ADD_RATE_LIMIT``.",
         "operationId": "api_v1_operations_coord_tenant_members_post",
         "requestBody": {
           "content": {
@@ -95413,6 +96083,84 @@
         ]
       }
     },
+    "/api/v1/overview/change-log": {
+      "get": {
+        "description": "Newest first. Readable by any member, like the records it describes.",
+        "operationId": "api_v1_overview_change_log_get",
+        "parameters": [
+          {
+            "description": "A registry name, e.g. intent_documents",
+            "in": "query",
+            "name": "resource",
+            "required": true,
+            "schema": {
+              "description": "A registry name, e.g. intent_documents",
+              "title": "Resource",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "record_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Record Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChangeLogPage"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Read Change Log",
+        "tags": [
+          "overview"
+        ]
+      }
+    },
     "/api/v1/overview/estimates": {
       "get": {
         "description": "This project's estimates, baseline first then newest.",
@@ -95440,7 +96188,7 @@
         ]
       },
       "post": {
-        "description": "Create an estimate. Tenant admin only.\n\nMarking it the baseline un-marks whichever estimate held that flag \u2014 a\nre-baseline is the normal reason to create one, and the partial unique\nindex would otherwise reject it.",
+        "description": "Create an estimate. The project's ``editing_roles`` only.\n\nMarking it the baseline un-marks whichever estimate held that flag \u2014 a\nre-baseline is the normal reason to create one, and the partial unique\nindex would otherwise reject it.",
         "operationId": "api_v1_overview_estimates_post",
         "requestBody": {
           "content": {
@@ -95487,7 +96235,7 @@
     },
     "/api/v1/overview/estimates/{estimate_id}": {
       "delete": {
-        "description": "Delete an estimate and everything under it. Tenant admin only.",
+        "description": "Delete an estimate and everything under it. The project's\n``editing_roles`` only.\n\nThe change-log row keeps the whole graph as it was, so a deleted estimate\nis still answerable (\"what did it say, and who removed it\").",
         "operationId": "api_v1_overview_estimates_estimate_id_delete",
         "parameters": [
           {
@@ -95574,7 +96322,7 @@
         ]
       },
       "patch": {
-        "description": "Edit the head row. Tenant admin only.\n\nAbsent fields are left alone; an explicit ``null`` clears a nullable one.",
+        "description": "Edit the head row. The project's ``editing_roles`` only.\n\nAbsent fields are left alone; an explicit ``null`` clears a nullable one.",
         "operationId": "api_v1_overview_estimates_estimate_id_patch",
         "parameters": [
           {
@@ -95633,7 +96381,7 @@
     },
     "/api/v1/overview/estimates/{estimate_id}/content": {
       "put": {
-        "description": "Replace the estimate's whole content graph. Tenant admin only.\n\nOne transaction, one payload: the CSV paste, the mermaid-``gantt`` import\nand the inline editor all produce a complete description of the estimate,\nand a half-applied import is worse than a rejected one. Send\n``expected_version`` (from the last read) to be refused with 409 rather\nthan silently overwrite somebody else's save.",
+        "description": "Replace the estimate's whole content graph. The project's\n``editing_roles`` only.\n\nOne transaction, one payload: the CSV paste, the mermaid-``gantt`` import\nand the inline editor all produce a complete description of the estimate,\nand a half-applied import is worse than a rejected one. Send\n``expected_version`` (from the last read) to be refused with 409 rather\nthan silently overwrite somebody else's save.",
         "operationId": "api_v1_overview_estimates_estimate_id_content_put",
         "parameters": [
           {
@@ -95741,6 +96489,243 @@
         ]
       }
     },
+    "/api/v1/overview/intent-documents": {
+      "get": {
+        "operationId": "api_v1_overview_intent_documents_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IntentDocumentsList"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "List Intent Documents",
+        "tags": [
+          "overview",
+          "overview:intent-documents"
+        ]
+      },
+      "post": {
+        "operationId": "api_v1_overview_intent_documents_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/IntentDocumentCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IntentDocumentsItem"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Create Intent Documents",
+        "tags": [
+          "overview",
+          "overview:intent-documents"
+        ]
+      }
+    },
+    "/api/v1/overview/intent-documents/{record_id}": {
+      "get": {
+        "operationId": "api_v1_overview_intent_documents_record_id_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "record_id",
+            "required": true,
+            "schema": {
+              "title": "Record Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IntentDocumentsItem"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Get Intent Documents",
+        "tags": [
+          "overview",
+          "overview:intent-documents"
+        ]
+      },
+      "patch": {
+        "operationId": "api_v1_overview_intent_documents_record_id_patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "record_id",
+            "required": true,
+            "schema": {
+              "title": "Record Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "If-Match",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "If-Match"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/IntentDocumentUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IntentDocumentsItem"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Update Intent Documents",
+        "tags": [
+          "overview",
+          "overview:intent-documents"
+        ]
+      }
+    },
+    "/api/v1/overview/resources": {
+      "get": {
+        "description": "Every overview resource, with what the caller may do in this project.",
+        "operationId": "api_v1_overview_resources_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceCatalog"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Read Catalog",
+        "tags": [
+          "overview"
+        ]
+      }
+    },
     "/api/v1/overview/settings": {
       "get": {
         "description": "The project's settings, or the documented defaults when none are saved.\n\nNever 404 and never ``{}``: a project with no saved settings still HAS\nsettings, and ``is_default`` is what tells the reader nobody has chosen\nthem yet.",
@@ -95768,7 +96753,7 @@
         ]
       },
       "put": {
-        "description": "Save the project's settings. Tenant admin only.",
+        "description": "Save the project's settings. Tenant admin only \u2014 they include\n``editing_roles``, which decides who else may edit.",
         "operationId": "api_v1_overview_settings_put",
         "requestBody": {
           "content": {
@@ -108255,6 +109240,11 @@
             "description": "Validation Error"
           }
         },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
         "summary": "Clear render logs",
         "tags": [
           "render-logs"
@@ -108368,6 +109358,11 @@
             "description": "Validation Error"
           }
         },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
         "summary": "List render logs",
         "tags": [
           "render-logs"
@@ -108435,6 +109430,11 @@
             "description": "Successful Response"
           }
         },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
         "summary": "Cleanup old render logs",
         "tags": [
           "render-logs"
@@ -108487,6 +109487,11 @@
             "description": "Validation Error"
           }
         },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
         "summary": "List render log sessions",
         "tags": [
           "render-logs"
@@ -108509,6 +109514,11 @@
             "description": "Successful Response"
           }
         },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
         "summary": "Get render logging statistics",
         "tags": [
           "render-logs"
@@ -108552,6 +109562,11 @@
             "description": "Validation Error"
           }
         },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
         "summary": "Get render log",
         "tags": [
           "render-logs"
@@ -108634,6 +109649,11 @@
             "description": "Validation Error"
           }
         },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
         "summary": "Upload render image",
         "tags": [
           "render-logs"
@@ -111531,578 +112551,6 @@
         "summary": "Discover Ui Bridge States",
         "tags": [
           "state-discovery"
-        ]
-      }
-    },
-    "/api/v1/strategy/docs": {
-      "get": {
-        "operationId": "api_v1_strategy_docs_get",
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            },
-            "description": "Successful Response"
-          }
-        },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
-        "summary": "List Docs",
-        "tags": [
-          "strategy"
-        ]
-      }
-    },
-    "/api/v1/strategy/docs/{name}": {
-      "get": {
-        "operationId": "api_v1_strategy_docs_name_get",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "name",
-            "required": true,
-            "schema": {
-              "title": "Name",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
-        "summary": "Get Doc",
-        "tags": [
-          "strategy"
-        ]
-      }
-    },
-    "/api/v1/strategy/docs/{name}/threads": {
-      "get": {
-        "operationId": "api_v1_strategy_docs_name_threads_get",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "name",
-            "required": true,
-            "schema": {
-              "title": "Name",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
-        "summary": "List Threads",
-        "tags": [
-          "strategy"
-        ]
-      },
-      "post": {
-        "operationId": "api_v1_strategy_docs_name_threads_post",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "name",
-            "required": true,
-            "schema": {
-              "title": "Name",
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/ThreadCreate"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
-        "summary": "Create Thread",
-        "tags": [
-          "strategy"
-        ]
-      }
-    },
-    "/api/v1/strategy/mentions/unread": {
-      "get": {
-        "operationId": "api_v1_strategy_mentions_unread_get",
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            },
-            "description": "Successful Response"
-          }
-        },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
-        "summary": "List Unread Mentions",
-        "tags": [
-          "strategy"
-        ]
-      }
-    },
-    "/api/v1/strategy/mentions/{mention_id}/mark-read": {
-      "post": {
-        "operationId": "api_v1_strategy_mentions_mention_id_mark_read_post",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "mention_id",
-            "required": true,
-            "schema": {
-              "title": "Mention Id",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "title": "Response Mark Mention Read Api V1 Strategy Mentions  Mention Id  Mark Read Post"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
-        "summary": "Mark Mention Read",
-        "tags": [
-          "strategy"
-        ]
-      }
-    },
-    "/api/v1/strategy/posts/{post_id}": {
-      "delete": {
-        "operationId": "api_v1_strategy_posts_post_id_delete",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "post_id",
-            "required": true,
-            "schema": {
-              "title": "Post Id",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
-        "summary": "Delete Post",
-        "tags": [
-          "strategy"
-        ]
-      },
-      "patch": {
-        "operationId": "api_v1_strategy_posts_post_id_patch",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "post_id",
-            "required": true,
-            "schema": {
-              "title": "Post Id",
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/PostEdit"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
-        "summary": "Edit Post",
-        "tags": [
-          "strategy"
-        ]
-      }
-    },
-    "/api/v1/strategy/posts/{post_id}/mentions/mark-read": {
-      "post": {
-        "operationId": "api_v1_strategy_posts_post_id_mentions_mark_read_post",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "post_id",
-            "required": true,
-            "schema": {
-              "title": "Post Id",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "title": "Response Mark Post Mentions Read Api V1 Strategy Posts  Post Id  Mentions Mark Read Post"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
-        "summary": "Mark Post Mentions Read",
-        "tags": [
-          "strategy"
-        ]
-      }
-    },
-    "/api/v1/strategy/presence/heartbeat": {
-      "post": {
-        "operationId": "api_v1_strategy_presence_heartbeat_post",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/HeartbeatBody"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
-        "summary": "Heartbeat",
-        "tags": [
-          "strategy"
-        ]
-      }
-    },
-    "/api/v1/strategy/threads/{thread_id}": {
-      "get": {
-        "operationId": "api_v1_strategy_threads_thread_id_get",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "thread_id",
-            "required": true,
-            "schema": {
-              "title": "Thread Id",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
-        "summary": "Get Thread",
-        "tags": [
-          "strategy"
-        ]
-      }
-    },
-    "/api/v1/strategy/threads/{thread_id}/posts": {
-      "post": {
-        "operationId": "api_v1_strategy_threads_thread_id_posts_post",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "thread_id",
-            "required": true,
-            "schema": {
-              "title": "Thread Id",
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/PostCreate"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
-        "summary": "Create Post",
-        "tags": [
-          "strategy"
-        ]
-      }
-    },
-    "/api/v1/strategy/threads/{thread_id}/resolve": {
-      "post": {
-        "operationId": "api_v1_strategy_threads_thread_id_resolve_post",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "thread_id",
-            "required": true,
-            "schema": {
-              "title": "Thread Id",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
-        "summary": "Resolve Thread",
-        "tags": [
-          "strategy"
         ]
       }
     },
@@ -118278,63 +118726,6 @@
         ]
       }
     },
-    "/api/v1/users/lookup": {
-      "get": {
-        "description": "Batch user lookup for the @mention rendering cache.\n\nAccepts ``?ids=<uuid>,<uuid>,...`` and returns the same shape as\n/search. Bounded at 50 ids per call to keep query plans cheap; the\nfrontend dedupes upstream. Invalid UUIDs are skipped silently.",
-        "operationId": "api_v1_users_lookup_get",
-        "parameters": [
-          {
-            "description": "Comma-separated UUIDs (max 50)",
-            "in": "query",
-            "name": "ids",
-            "required": true,
-            "schema": {
-              "description": "Comma-separated UUIDs (max 50)",
-              "title": "Ids",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "items": {
-                    "additionalProperties": {
-                      "type": "string"
-                    },
-                    "type": "object"
-                  },
-                  "title": "Response Lookup Users Api V1 Users Lookup Get",
-                  "type": "array"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
-        "summary": "Lookup Users",
-        "tags": [
-          "users"
-        ]
-      }
-    },
     "/api/v1/users/me": {
       "get": {
         "operationId": "api_v1_users_me_get",
@@ -119052,75 +119443,6 @@
           }
         ],
         "summary": "Get User Storage",
-        "tags": [
-          "users"
-        ]
-      }
-    },
-    "/api/v1/users/search": {
-      "get": {
-        "description": "Prefix-match directory search backing the @mention autocomplete.\n\nAuthenticated end-users only; cap at 10 hits regardless of query.\nReturns ``[{id, display, email}]`` where ``display`` falls back to\nemail when username is unset. Phase 2 is single-tenant dogfood, so\nno organization-scoped filter (Phase 7's multi-tenant work tightens\nthis).",
-        "operationId": "api_v1_users_search_get",
-        "parameters": [
-          {
-            "in": "query",
-            "name": "q",
-            "required": true,
-            "schema": {
-              "maxLength": 64,
-              "minLength": 1,
-              "title": "Q",
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "limit",
-            "required": false,
-            "schema": {
-              "default": 10,
-              "maximum": 10,
-              "minimum": 1,
-              "title": "Limit",
-              "type": "integer"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "items": {
-                    "additionalProperties": {
-                      "type": "string"
-                    },
-                    "type": "object"
-                  },
-                  "title": "Response Search Users Api V1 Users Search Get",
-                  "type": "array"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
-        "summary": "Search Users",
         "tags": [
           "users"
         ]

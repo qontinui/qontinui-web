@@ -84,11 +84,9 @@ DELIBERATELY_UNPUBLISHED: dict[str, str] = {
     # `session-repository/api.ts` and `BodyPanel.download`), so nothing reads
     # the server's. Publish it if a caller ever needs the server's spelling.
     "content-disposition": "no JS reader; each caller names its own download",
-    # Conditional-request plumbing on the two upsert routes. Their callers are
-    # the runner and the archiver over plain HTTP, which are not subject to
-    # CORS at all. A browser doing If-None-Match here would need this
-    # published.
-    "etag": "upsert routes; callers are non-browser (runner/archiver)",
+    # `etag` is no longer here: the overview authoring contract serves a
+    # record's version as its ETag to browser callers, so it is published
+    # (`app.overview.router.CONTRACT_RESPONSE_HEADERS`).
     "x-session-unchanged": "runner-facing; the JSON body carries `changed`",
     "x-artifact-unchanged": "runner-facing; the JSON body carries `changed`",
     # RFC 8594 / RFC 8288 deprecation signalling. `APIVersionMiddleware` is

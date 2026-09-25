@@ -25,6 +25,11 @@
  * "nothing on this page is flagged" only when the field was actually served.
  */
 
+// The `?id=` deep link into the findings reader has ONE builder, owned by the
+// reader itself (plan `2026-09-15-the-console-names-a-finding-it-cannot-open`).
+// Coord serves a by-id read even past the finding's `expires_at`, so the link
+// keeps working after the row has aged out of every list.
+import { findingHref } from "../../findings/_lib/findingStatus";
 import type { PromptDocumentWrite } from "../types";
 
 /** An explicit classification arrived and said this write widened authority. */
@@ -110,9 +115,9 @@ export function looseningClassificationPresent(
  * source, so that agreement is a convention each side documents, not something
  * either can enforce on the other.
  */
-export function sortWritesForFeed<T extends Pick<PromptDocumentWrite, "loosening">>(
-  writes: ReadonlyArray<T>
-): T[] {
+export function sortWritesForFeed<
+  T extends Pick<PromptDocumentWrite, "loosening">,
+>(writes: ReadonlyArray<T>): T[] {
   const flagged: T[] = [];
   const rest: T[] = [];
   for (const write of writes) (isLoosening(write) ? flagged : rest).push(write);
@@ -160,25 +165,41 @@ function notificationsFeedHref(ref: string): string {
  *   says why: a tenant's first boot would otherwise announce values nobody
  *   changed — and the reconciler excludes v1 for the same reason. The
  *   reasoning exists, as the finding the author filed with the write, but no
- *   notification carries it. Linking such a row into the notifications feed
- *   sends the operator to an event that cannot exist, where the `?ref=`
+ *   notification carries it. Linking such a row into the NOTIFICATIONS feed
+ *   would send the operator to an event that cannot exist, where the `?ref=`
  *   banner then reports it "may be older than these — load more": an UNKNOWN
- *   rendered over a certainty. The feed's own completeness caveat states the
- *   rule in operator language ("a newly created document sends no notice"),
- *   so a v1 row must not contradict it with a link.
+ *   rendered over a certainty.
+ *
+ * **Both arms now carry an `href`, and that is the change this type exists to
+ * record.** It shipped with the `finding_only` arm holding an id and nothing
+ * else, because the console had no findings reader: the row printed a uuid the
+ * operator could read and not open, and the expanded detail printed it again,
+ * `select-all`, as the only handle on offer. `/admin/coord/findings` is that
+ * reader (plan `2026-09-15-the-console-names-a-finding-it-cannot-open`), so
+ * the inert reference is gone rather than deprecated and the arm is a real
+ * link. What stays different is the DESTINATION and what the title promises —
+ * the notice arm opens the announcement, the finding arm opens the finding
+ * itself — which is why this is still a discriminated union and not a bare
+ * `{href, findingId}`.
  *
  * `null` for an absent ref, as `notificationHref`: no ref, no control.
  */
 export type ReasoningRef =
   | { kind: "notice"; href: string; findingId: string }
-  | { kind: "finding_only"; findingId: string };
+  | { kind: "finding_only"; href: string; findingId: string };
 
 export function reasoningRef(
   write: Pick<PromptDocumentWrite, "version_number" | "notification_ref">
 ): ReasoningRef | null {
   const findingId = (write.notification_ref ?? "").trim();
   if (!findingId) return null;
-  if (write.version_number <= 1) return { kind: "finding_only", findingId };
+  if (write.version_number <= 1) {
+    return {
+      kind: "finding_only",
+      href: findingHref(findingId),
+      findingId,
+    };
+  }
   return { kind: "notice", href: notificationsFeedHref(findingId), findingId };
 }
 

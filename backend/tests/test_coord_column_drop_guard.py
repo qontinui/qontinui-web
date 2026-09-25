@@ -42,6 +42,7 @@ import json
 import subprocess
 import sys
 import urllib.error
+from email.message import Message
 from pathlib import Path
 
 import pytest
@@ -1340,7 +1341,7 @@ def test_fetch_manifest_records_the_http_status(monkeypatch) -> None:
     """The status must survive the fetch, or `main()` cannot tell 401 from 503."""
 
     def boom(url, timeout):  # noqa: ANN001, ARG001
-        raise urllib.error.HTTPError(url, 404, "nope", None, None)
+        raise urllib.error.HTTPError(url, 404, "nope", Message(), None)
 
     monkeypatch.setattr(guard.urllib.request, "urlopen", boom)
     with pytest.raises(guard.ManifestUnavailableError) as excinfo:
@@ -1452,3 +1453,223 @@ def test_the_scripts_docstring_names_every_lane() -> None:
     it leaves the script describing a shape the repo no longer has.
     """
     assert_docstring_names_every_lane(_gate_docstring(), _SCRIPT_REF, _DECLARED_LANES)
+
+
+# ---------------------------------------------------------------------------
+# An EDITED landed revision is judged by its delta (qontinui-web#1457)
+# ---------------------------------------------------------------------------
+
+_LANDED = (
+    '"""landed revision"""\n'
+    "from alembic import op\n\n"
+    "def upgrade():\n"
+    '    op.drop_column("sessions", "plan_slug", schema="coord")\n\n'
+    "def downgrade():\n"
+    "    pass\n"
+)
+
+
+def test_an_edit_that_adds_no_drop_to_a_landed_revision_is_not_rejudged(
+    tmp_path: Path,
+) -> None:
+    """web#1457's shape: a landed drop revision gains only a SET LOCAL line."""
+    edited = _LANDED.replace(
+        "def upgrade():\n",
+        "def upgrade():\n    op.execute(\"SET LOCAL lock_timeout = '5s'\")\n",
+    )
+    path = tmp_path / "rev.py"
+    head = guard.scan_source(edited, path)
+    base = guard.scan_source(_LANDED, path)
+    assert [(d.table, d.column) for d in head.drops] == [("sessions", "plan_slug")]
+    delta = guard.delta_scan(head, base, edited, _LANDED)
+    assert delta.drops == []
+    assert delta.unresolved == []
+    assert delta.violations == []
+
+
+def test_a_new_drop_added_to_a_landed_revision_is_still_judged(tmp_path: Path) -> None:
+    """Mutation guard: the delta arm must not launder a drop the edit ADDS."""
+    edited = _LANDED.replace(
+        '    op.drop_column("sessions", "plan_slug", schema="coord")\n',
+        '    op.drop_column("sessions", "plan_slug", schema="coord")\n'
+        '    op.drop_column("sessions", "work_unit_slug", schema="coord")\n',
+    )
+    path = tmp_path / "rev.py"
+    delta = guard.delta_scan(
+        guard.scan_source(edited, path),
+        guard.scan_source(_LANDED, path),
+        edited,
+        _LANDED,
+    )
+    assert [(d.table, d.column) for d in delta.drops] == [
+        ("sessions", "work_unit_slug")
+    ]
+
+
+_LANDED_DECLARED = (
+    '"""landed revision with a declared unresolved drop"""\n'
+    "from alembic import op\n\n"
+    'revision = "abc"\n'
+    'down_revision = "xyz"\n\n'
+    'COORD_SCHEMA_DROPS: list[tuple[str, str]] = [("sessions", "plan_slug")]\n\n'
+    "def upgrade():\n"
+    '    t, c = "sessions", "plan_slug"\n'
+    '    op.execute(f"ALTER TABLE coord.{t} DROP COLUMN {c}")\n\n'
+    "def downgrade():\n"
+    "    pass\n"
+)
+
+
+def test_a_new_unresolved_site_under_an_unchanged_declaration_is_judged_whole(
+    tmp_path: Path,
+) -> None:
+    """Review blocker: a second f-string drop the declaration silently covers."""
+    edited = _LANDED_DECLARED.replace(
+        '    op.execute(f"ALTER TABLE coord.{t} DROP COLUMN {c}")\n',
+        '    op.execute(f"ALTER TABLE coord.{t} DROP COLUMN {c}")\n'
+        '    t2, c2 = "sessions", "work_unit_slug"\n'
+        '    op.execute(f"ALTER TABLE coord.{t2} DROP COLUMN {c2}")\n',
+    )
+    path = tmp_path / "rev.py"
+    head = guard.scan_source(edited, path)
+    delta = guard.delta_scan(
+        head, guard.scan_source(_LANDED_DECLARED, path), edited, _LANDED_DECLARED
+    )
+    assert delta is head
+    assert delta.drops
+
+
+def test_a_rewritten_revision_identity_is_judged_whole(tmp_path: Path) -> None:
+    """A landed file given a new revision id is a new migration that will run."""
+    edited = _LANDED_DECLARED.replace('revision = "abc"', 'revision = "def"', 1)
+    path = tmp_path / "rev.py"
+    head = guard.scan_source(edited, path)
+    delta = guard.delta_scan(
+        head, guard.scan_source(_LANDED_DECLARED, path), edited, _LANDED_DECLARED
+    )
+    assert delta is head
+
+
+def test_a_violation_the_edit_introduces_is_not_laundered(tmp_path: Path) -> None:
+    """The edit removes the only other mention of the declared names, so the
+    declaration cross-check now fails; the delta must not clear that."""
+    edited = _LANDED_DECLARED.replace(
+        '    t, c = "sessions", "plan_slug"\n', "    t, c = TABLE, COLUMN\n"
+    )
+    path = tmp_path / "rev.py"
+    head = guard.scan_source(edited, path)
+    base = guard.scan_source(_LANDED_DECLARED, path)
+    assert head.violations and not base.violations
+    assert guard.delta_scan(head, base, edited, _LANDED_DECLARED) is head
+
+
+_LANDED_UNDECLARED = (
+    '"""landed before the gate: an unresolved site and no declaration"""\n'
+    "from alembic import op\n\n"
+    "def upgrade():\n"
+    '    t, c = "sessions", "plan_slug"\n'
+    '    op.execute(f"ALTER TABLE coord.{t} DROP COLUMN {c}")\n\n'
+    "def downgrade():\n"
+    "    pass\n"
+)
+
+
+def test_a_line_shift_alone_keeps_a_landed_violation_out_of_the_verdict(
+    tmp_path: Path,
+) -> None:
+    """Static violations compare up to line numbers: inserting a line above a
+    landed revision's pre-existing violation is not a new violation."""
+    edited = _LANDED_UNDECLARED.replace(
+        "def upgrade():\n",
+        "def upgrade():\n    op.execute(\"SET LOCAL lock_timeout = '5s'\")\n",
+    )
+    path = tmp_path / "rev.py"
+    head = guard.scan_source(edited, path)
+    base = guard.scan_source(_LANDED_UNDECLARED, path)
+    assert head.violations and head.violations != base.violations
+    delta = guard.delta_scan(head, base, edited, _LANDED_UNDECLARED)
+    assert delta is not head
+    assert delta.violations == []
+
+
+def test_the_base_ref_lane_applies_the_delta_only_to_landed_files(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """main()'s wiring: a file present at the merge base is delta-judged and
+    reported as such; an ADDED file (``base_source`` -> ``None``) is judged whole."""
+    edited = _LANDED.replace(
+        "def upgrade():\n",
+        "def upgrade():\n    op.execute(\"SET LOCAL lock_timeout = '5s'\")\n",
+    )
+    landed = _write(tmp_path, "landed.py", edited)
+    monkeypatch.setattr(guard, "changed_revision_files", lambda _ref: [landed])
+    monkeypatch.setattr(guard, "merge_base", lambda _ref: "base-sha")
+    monkeypatch.setattr(
+        guard, "base_source", lambda _sha, path: _LANDED if path == landed else None
+    )
+    assert guard.main(["--base-ref", "origin/main"], fetch=_forbid_fetch) == 0
+    out = capsys.readouterr().out
+    assert "edited landed revision, judged by its delta; 1 drop(s)" in out
+    # The verdict must not read as "drops nothing" when a landed drop was skipped.
+    assert "this PR's edits ADD no drop" in out
+    assert "1 drop(s) in edited landed revision(s) were judged when" in out
+
+    added = _write(tmp_path, "added.py", _LANDED_UNDECLARED)
+    monkeypatch.setattr(guard, "changed_revision_files", lambda _ref: [added])
+    code = guard.main(["--base-ref", "origin/main"], fetch=_forbid_fetch)
+    captured = capsys.readouterr()
+    assert code == guard.EXIT_VIOLATION
+    assert "cannot resolve statically" in captured.err
+    assert "edited landed revision" not in captured.out
+    assert "drop(s) in edited landed revision(s)" not in captured.out
+
+
+def test_the_files_lane_never_consults_a_merge_base(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """``--files`` has no base: it judges whole and must not resolve one."""
+
+    def _no_merge_base(_ref: str) -> str:
+        raise AssertionError("--files resolved a merge base")
+
+    def _no_base_source(_sha: str, _path: Path) -> str:
+        raise AssertionError("--files read a base-version source")
+
+    monkeypatch.setattr(guard, "merge_base", _no_merge_base)
+    monkeypatch.setattr(guard, "base_source", _no_base_source)
+    fixture = _write(tmp_path, "rev.py", _LANDED_UNDECLARED)
+    code = guard.main(["--files", str(fixture)], fetch=_forbid_fetch)
+    assert code == guard.EXIT_VIOLATION
+
+
+def test_an_ok_verdict_also_names_the_landed_drops_it_skipped(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """A PR that adds a checked drop AND edits a landed revision passes on the
+    manifest path; the OK line must not hide the landed drop the delta skipped."""
+    edited = _LANDED.replace(
+        "def upgrade():\n",
+        "def upgrade():\n    op.execute(\"SET LOCAL lock_timeout = '5s'\")\n",
+    )
+    landed = _write(tmp_path, "landed.py", edited)
+    added = _write(
+        tmp_path,
+        "added.py",
+        _LANDED.replace('"sessions", "plan_slug"', '"sessions", "unread_col"'),
+    )
+    monkeypatch.setattr(guard, "changed_revision_files", lambda _ref: [landed, added])
+    monkeypatch.setattr(guard, "merge_base", lambda _ref: "base-sha")
+    monkeypatch.setattr(
+        guard, "base_source", lambda _sha, path: _LANDED if path == landed else None
+    )
+    code = guard.main(
+        ["--base-ref", "origin/main"], fetch=_fetch_of(READS_AGENT_WRITABLE)
+    )
+    out = capsys.readouterr().out
+    assert code == 0
+    assert "OK: none of the 1 dropped surface(s)" in out
+    assert "1 drop(s) in edited landed revision(s) were judged when" in out
