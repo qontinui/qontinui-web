@@ -224,6 +224,36 @@ interface GroupTenantRoleRow {
   auto_create_tenant: boolean;
   created_at: string | null;
   tenant_id: string | null;
+  /**
+   * Additive fields from coord (qontinui-coord#2473). A mapping stored under a
+   * slug its tenant was RENAMED AWAY from is listed for the renamed tenant:
+   * `current_slug` is the slug that tenant carries today, and `historical_slug`
+   * is true exactly when the stored `tenant_slug` differs from it. Such a row
+   * still grants at every login; `tenant_slug` stays the DELETE key. Older
+   * coord builds omit both, so absent means "not known to be historical".
+   */
+  current_slug?: string;
+  historical_slug?: boolean;
+}
+
+/**
+ * The rename target for a mapping coord flags as stored under a historical
+ * slug, or `null` when the row is not known to be historical. Only an explicit
+ * `historical_slug === true` with a usable `current_slug` qualifies.
+ */
+function historicalRenameTarget(row: GroupTenantRoleRow): string | null {
+  if (row.historical_slug !== true) return null;
+  return row.current_slug && row.current_slug.length > 0
+    ? row.current_slug
+    : null;
+}
+
+function historicalSlugTooltip(currentSlug: string): string {
+  return (
+    "This mapping names a slug this tenant was renamed away from. It still " +
+    `grants at every login. Re-create it under ${currentSlug}, then delete ` +
+    "this row."
+  );
 }
 
 interface GroupTenantRolesResponse {
@@ -1697,10 +1727,23 @@ function GroupTenantRolesSection({
             <TableBody>
               {rows.map((row) => {
                 const key = `${row.group_id}:${row.tenant_slug}:${row.role}`;
+                const renamedTo = historicalRenameTarget(row);
                 return (
                   <TableRow key={key}>
                     <TableCell className="font-medium">{row.group_id}</TableCell>
-                    <TableCell>{row.tenant_slug}</TableCell>
+                    <TableCell>
+                      {row.tenant_slug}
+                      {renamedTo !== null ? (
+                        <Badge
+                          variant="outline"
+                          className="ml-2 text-[0.7rem] font-normal text-amber-600 dark:text-amber-400"
+                          title={historicalSlugTooltip(renamedTo)}
+                          data-testid={`group-tenant-role-historical-${row.group_id}-${row.tenant_slug}-${row.role}`}
+                        >
+                          renamed → {renamedTo}
+                        </Badge>
+                      ) : null}
+                    </TableCell>
                     <TableCell>
                       <Badge variant="secondary">{tierLabel(row.role)}</Badge>
                     </TableCell>
@@ -2537,17 +2580,30 @@ function CognitoGroupItem({
                 no mappings in your tenant
               </Badge>
             ) : (
-              mappings.map((m) => (
-                <Badge
-                  key={`${m.tenant_slug}:${m.role}`}
-                  variant="outline"
-                  className="text-[0.7rem] font-normal"
-                  data-testid={`cognito-group-mapping-${group.group_name}-${m.tenant_slug}-${m.role}`}
-                >
-                  <Building2 className="h-3 w-3" />
-                  {m.tenant_slug} · {tierLabel(m.role)}
-                </Badge>
-              ))
+              mappings.map((m) => {
+                const renamedTo = historicalRenameTarget(m);
+                return (
+                  <Badge
+                    key={`${m.tenant_slug}:${m.role}`}
+                    variant="outline"
+                    className={`text-[0.7rem] font-normal${
+                      renamedTo !== null
+                        ? " text-amber-600 dark:text-amber-400"
+                        : ""
+                    }`}
+                    title={
+                      renamedTo !== null
+                        ? historicalSlugTooltip(renamedTo)
+                        : undefined
+                    }
+                    data-testid={`cognito-group-mapping-${group.group_name}-${m.tenant_slug}-${m.role}`}
+                  >
+                    <Building2 className="h-3 w-3" />
+                    {m.tenant_slug} · {tierLabel(m.role)}
+                    {renamedTo !== null ? ` (renamed → ${renamedTo})` : null}
+                  </Badge>
+                );
+              })
             )}
             {isHomeGroup ? (
               <Badge
