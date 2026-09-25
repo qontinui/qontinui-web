@@ -91,9 +91,16 @@ revision), until this revision has been applied in production and read back.
 qontinui-runner keeps an atlas exclude list (``atlas/exclude.txt``) and a
 generated schema dump (``src-tauri/schema.pg.sql.generated``). The two tables and
 ``coord.worktree_census_history_id_seq`` must enter the exclude list, or the next
-``atlas schema apply`` would try to DROP them. Both self-heal through their
-nightly refresh jobs; running them by hand after this deploy only shortens that
-window. No runner behaviour changes.
+``atlas schema apply`` would try to DROP them. Neither heals itself: the nightly
+jobs (``atlas-exclude-fresh.yml``, ``schema-pg-sql-freshness-nightly.yml``) only
+open or update a refresh PR, and that PR has to LAND before ``exclude.txt``
+covers ``coord.worktree_census_latest``, ``coord.worktree_census_history`` and
+``coord.worktree_census_history_id_seq``. A refresh PR can stay open for days
+(runner#1641 had been open since at least 2026-09-21 when this was written), so
+until one lands an ``atlas schema apply`` would still try to DROP the new
+tables. Running ``atlas/scripts/regen_exclude.ps1`` and
+``regenerate_schema_pg_sql.sh`` by hand after this deploy, and landing the
+result, closes that window sooner. No runner behaviour changes.
 
 ## Head choice
 
@@ -111,9 +118,10 @@ same transaction take no lock anyone else waits on, and no ``CONCURRENTLY`` or
 autocommit block is needed. Every statement is ``IF NOT EXISTS`` (or a
 re-runnable ``COMMENT ON``), so a partial apply re-runs cleanly. No existing
 table is touched. Both directions bound lock waits with
-``SET LOCAL lock_timeout = '3s'`` and restore it to ``DEFAULT`` as their last
-statement, because env.py runs a whole batch in one transaction and an
-unrestored ``SET LOCAL`` would bound every later revision in the batch too.
+``SET LOCAL lock_timeout = '3s'`` and reset it to ``DEFAULT`` as their last
+statement, because env.py runs a whole batch in one transaction and a
+``SET LOCAL`` that is not reset would bound every later revision in the batch
+too.
 
 ``downgrade()`` drops both tables (their indexes, sequence and comments go with
 them). It is safe only while no deployed coord reads or writes them, which is
@@ -133,8 +141,8 @@ depends_on: str | Sequence[str] | None = None
 
 # Every SQL string below is a STATIC literal. The coord merge-train migration
 # classifier extracts string literals from each execute call and rejects a call
-# with none as dynamic. Keep these comments free of apostrophes and of the
-# op-dot-call spelling: the classifier lexer does not skip Python comments.
+# with none as dynamic. These comments also avoid apostrophes and the
+# op-dot-call spelling, following the sibling coord revisions.
 
 
 def upgrade() -> None:

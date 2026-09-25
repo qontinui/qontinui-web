@@ -16,9 +16,9 @@ Without a database (always runs):
    ``downgrade()``, and the column-drop guard reads the upgrade path as dropping
    nothing.
 3. Both directions are pure ``op.execute`` with static SQL, and each one bounds
-   its lock wait first and restores ``lock_timeout`` to DEFAULT as its LAST
-   statement (env.py runs a whole batch in one transaction, so an unrestored
-   ``SET LOCAL`` would bound every later revision in the batch).
+   its lock wait first and resets ``lock_timeout`` to DEFAULT as its LAST
+   statement (env.py runs a whole batch in one transaction, so a ``SET LOCAL``
+   that is not reset would bound every later revision in the batch).
 
 With a database (skipped when none is reachable; a skip proves nothing). Point
 the tests at a live instance with ``QONTINUI_TEST_PG=host:port``:
@@ -26,8 +26,11 @@ the tests at a live instance with ``QONTINUI_TEST_PG=host:port``:
 4. ``worktree_census_latest`` carries EXACTLY the legacy census columns (minus
    ``id`` / ``observed_at``) with the same types, nullability and defaults, plus
    the three clocks; the history table carries the same census columns plus
-   ``id`` / ``started_at`` / ``ended_at``. A census column added to the oplog
-   later without its twin here reds this test.
+   ``id`` / ``started_at`` / ``ended_at``. The same comparison is repeated at
+   ``head``, so a census column added to the oplog by a LATER revision without
+   its twin on both new tables reds it. That check skips once the legacy
+   ``coord.worktree_census`` no longer exists at head (after plan Phase F drops
+   it), because there is then nothing left to drift from.
 5. ``worktree_census_latest`` has exactly ONE index, its primary key on
    ``(device_id, repo, path)``, and ``fillfactor=70``: every per-walk update must
    stay a HOT update (D2).
@@ -250,7 +253,7 @@ def test_the_drop_guard_reads_the_upgrade_path_as_dropping_nothing() -> None:
 
 
 # ---------------------------------------------------------------------------
-# 3. static SQL through op.execute only, and lock_timeout bounded + restored
+# 3. static SQL through op.execute only, and lock_timeout bounded + reset
 # ---------------------------------------------------------------------------
 
 
@@ -276,14 +279,14 @@ def test_both_directions_are_static_op_execute_with_no_bind() -> None:
 
 
 @pytest.mark.parametrize("fn_name", ["upgrade", "downgrade"])
-def test_lock_timeout_is_bounded_first_and_restored_last(fn_name: str) -> None:
+def test_lock_timeout_is_bounded_first_and_reset_last(fn_name: str) -> None:
     executed = _executed_sql(_function(_tree(), fn_name))
     assert executed, f"{fn_name}() executes nothing"
     assert executed[0] == "SET LOCAL lock_timeout = '3s'", (
         f"{fn_name}() must bound its lock wait before any DDL, got {executed[0]!r}"
     )
     assert executed[-1] == "SET LOCAL lock_timeout = DEFAULT", (
-        f"{fn_name}() must restore lock_timeout as its LAST statement, "
+        f"{fn_name}() must reset lock_timeout to DEFAULT as its LAST statement, "
         f"got {executed[-1]!r}"
     )
     sets = [s for s in executed if s.startswith("SET LOCAL lock_timeout")]
@@ -401,6 +404,30 @@ def _insert_history(
 def test_column_sets_mirror_the_legacy_census() -> None:
     with ephemeral_database(admin_database_url(), "wtcs01_cols") as (engine, db_url):
         run_alembic(backend_root(), db_url, "upgrade", _REVISION_ID)
+        legacy = _columns(engine, _LEGACY)
+        _assert_census_columns_match_legacy(
+            _columns(engine, _LATEST), legacy, _LATEST_CLOCKS, _LATEST
+        )
+        _assert_census_columns_match_legacy(
+            _columns(engine, _HISTORY), legacy, _HISTORY_EXTRA, _HISTORY
+        )
+
+
+@_needs_pg
+def test_column_sets_still_mirror_the_legacy_census_at_head() -> None:
+    """A later revision that adds an oplog column must add its twin here too.
+
+    Upgrading only to this revision cannot see a column added after it, so this
+    runs the whole chain to ``head``. Once the legacy table is gone at head
+    (plan Phase F) there is no oplog left to drift from, and the check skips.
+    """
+    with ephemeral_database(admin_database_url(), "wtcs01_head") as (engine, db_url):
+        run_alembic(backend_root(), db_url, "upgrade", "head")
+        if not table_exists(engine, _SCHEMA, _LEGACY):
+            pytest.skip(
+                "coord.worktree_census is absent at head (dropped by plan Phase F); "
+                "no legacy column set is left to compare against"
+            )
         legacy = _columns(engine, _LEGACY)
         _assert_census_columns_match_legacy(
             _columns(engine, _LATEST), legacy, _LATEST_CLOCKS, _LATEST
