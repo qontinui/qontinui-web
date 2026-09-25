@@ -14,7 +14,7 @@ from uuid import UUID
 
 from fastapi import HTTPException, status
 from qontinui_schemas.common import utc_now
-from sqlalchemy import or_, select, text, update
+from sqlalchemy import or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.device import Device
@@ -26,7 +26,6 @@ __all__ = [
     "heartbeat_device",
     "list_devices",
     "get_device",
-    "get_device_owner_and_tenant",
     "delete_device",
     "claim_ws_session",
     "claim_ws_session_if_unheld",
@@ -479,34 +478,6 @@ async def get_device(
     query = select(Device).where(Device.device_id == device_id)
     result = await db.execute(query)
     return result.scalar_one_or_none()
-
-
-async def get_device_owner_and_tenant(
-    db: AsyncSession,
-    device_id: UUID,
-) -> tuple[UUID | None, UUID | None] | None:
-    """Return ``(user_id, tenant_id)`` of a ``coord.devices`` row, or ``None``.
-
-    ``tenant_id`` is the device's HOME tenant — the same column coord's
-    ``GET /coord/devices/:id/owned`` returns in its ``to_jsonb`` row, which is
-    where the user-bearer dmk mint reads it. That coord route sits behind
-    ``require_sso`` and refuses a device JWT, so a device-authenticated caller
-    reads the column over the shared Postgres instead. ``tenant_id`` is not
-    mapped on :class:`~app.models.device.Device` (coord owns the column), so
-    this is a narrow text query rather than an ORM attribute.
-    """
-    row = (
-        await db.execute(
-            text(
-                "SELECT user_id, tenant_id FROM coord.devices "
-                "WHERE device_id = :device_id"
-            ),
-            {"device_id": device_id},
-        )
-    ).first()
-    if row is None:
-        return None
-    return row[0], row[1]
 
 
 async def delete_device(
