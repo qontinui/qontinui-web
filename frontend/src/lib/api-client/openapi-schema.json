@@ -75358,6 +75358,55 @@
         ]
       }
     },
+    "/api/v1/devices/{device_id}/machine-credential/self-mint": {
+      "post": {
+        "description": "Mint (or rotate) a device's OWN machine key, authenticated by its live\ndevice JWT \u2014 no user session.\n\nPlan ``2026-09-24-runner-coord-credential-stranded-after-outage`` Phase 3.\nThe ``dmk_`` is the only credential that re-derives a device JWT after the\nJWT has expired (``/exchange``), but until now it was issued only by\npairing and by the user-bearer :func:`mint_device_machine_credential`. A\nrunner paired before the auto-mint, or one that lost its key, therefore\nhad no way to acquire one unattended, and an outage longer than its\nJWT's remaining life stranded it until an operator re-paired. The runner\ncalls this while it still holds a valid device JWT and its stored key is\nabsent or near expiry.\n\n**Authentication** (:func:`~app.api.deps.get_paired_device`): only an\nUNEXPIRED coord-signed device JWT with ``sub_type=device`` and\n``mint_provenance=paired``. No bearer / expired / invalid \u2192 401; an agent\ncredential (including the anonymous bootstrap mint), a capability grant,\nor a ``bootstrap``/``unknown`` provenance \u2192 403.\n\n**Authorization**, all server-side, nothing read from a body:\n\n* the token's ``device_id`` claim MUST equal the path \u2192 else 403\n  ``device_mismatch``. A device mints only its own key.\n* the ``coord.devices`` row must exist and its ``user_id`` equal the\n  token's ``user_id`` \u2192 else 403 ``device_not_owned``. The key's owner is\n  that user, exactly as the user-bearer route records it.\n* an existing key that an operator REVOKED is not re-minted \u2192 403\n  ``device_machine_key_revoked``. ``dmk_crud.mint`` clears ``revoked_at``\n  on rotation, so without this a device could undo its own revocation;\n  re-enrolment after a revocation stays with the owner's user-bearer mint.\n\n**Tenant**: the device's home tenant, ``coord.devices.tenant_id`` \u2014 the\nsame column the user-bearer route reads through coord's ``/owned`` (which\nrefuses a device JWT, hence the direct read; see\n:func:`device_crud.get_device_owner_and_tenant`). The token's own\n``tenant_id`` claim is deliberately NOT used: on a multi-tenant device it\nnames whichever tenant slot the token was minted for, not the home tenant.\n\n**Rotation**: every successful call rotates. An existing unexpired key is\nreplaced (new secret, fresh ``DEVICE_MACHINE_KEY_TTL_DAYS`` expiry), even\nwith plenty of life left \u2014 the runner calls only when its key is absent or\nexpiring, and a caller that lost its plaintext has no other way to get one.\nRotation invalidates the previous plaintext immediately.\n\n**Why this adds no reach.** The caller already holds an unexpired device\nJWT for this device, and such a JWT can self-refresh at coord indefinitely\nwhile it stays unexpired \u2014 it is already a perpetual credential for\nexactly this device. The ``dmk_`` it receives is bound to the same device,\nexchanges only for a device JWT for that device (``/exchange`` 403s any\nother), is owner-attributed, expires, and is revocable (a revoked key\ncannot be re-minted here). What it adds is survival across an outage\nlonger than the JWT's remaining life \u2014 the defect this route closes \u2014 and\nnothing a stolen live JWT could not already do by refreshing itself.\n\nResponse: the same :class:`DeviceMachineCredentialMintResponse` as\n``/mint`` (plaintext ``dmk_`` returned ONCE), status 201.",
+        "operationId": "api_v1_devices_device_id_machine_credential_self_mint_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "device_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Device Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeviceMachineCredentialMintResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Self Mint Device Machine Credential",
+        "tags": [
+          "devices"
+        ]
+      }
+    },
     "/api/v1/devices/{runner_id}/chat/create": {
       "post": {
         "description": "Create a new chat session on a connected runner.",
