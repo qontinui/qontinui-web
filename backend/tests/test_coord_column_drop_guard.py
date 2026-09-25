@@ -1612,6 +1612,9 @@ def test_the_base_ref_lane_applies_the_delta_only_to_landed_files(
     assert guard.main(["--base-ref", "origin/main"], fetch=_forbid_fetch) == 0
     out = capsys.readouterr().out
     assert "edited landed revision, judged by its delta; 1 drop(s)" in out
+    # The verdict must not read as "drops nothing" when a landed drop was skipped.
+    assert "this PR's edits ADD no drop" in out
+    assert "1 drop(s) in edited landed revision(s) were judged when" in out
 
     added = _write(tmp_path, "added.py", _LANDED_UNDECLARED)
     monkeypatch.setattr(guard, "changed_revision_files", lambda _ref: [added])
@@ -1620,6 +1623,7 @@ def test_the_base_ref_lane_applies_the_delta_only_to_landed_files(
     assert code == guard.EXIT_VIOLATION
     assert "cannot resolve statically" in captured.err
     assert "edited landed revision" not in captured.out
+    assert "drop(s) in edited landed revision(s)" not in captured.out
 
 
 def test_the_files_lane_never_consults_a_merge_base(
@@ -1638,3 +1642,34 @@ def test_the_files_lane_never_consults_a_merge_base(
     fixture = _write(tmp_path, "rev.py", _LANDED_UNDECLARED)
     code = guard.main(["--files", str(fixture)], fetch=_forbid_fetch)
     assert code == guard.EXIT_VIOLATION
+
+
+def test_an_ok_verdict_also_names_the_landed_drops_it_skipped(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """A PR that adds a checked drop AND edits a landed revision passes on the
+    manifest path; the OK line must not hide the landed drop the delta skipped."""
+    edited = _LANDED.replace(
+        "def upgrade():\n",
+        "def upgrade():\n    op.execute(\"SET LOCAL lock_timeout = '5s'\")\n",
+    )
+    landed = _write(tmp_path, "landed.py", edited)
+    added = _write(
+        tmp_path,
+        "added.py",
+        _LANDED.replace('"sessions", "plan_slug"', '"sessions", "unread_col"'),
+    )
+    monkeypatch.setattr(guard, "changed_revision_files", lambda _ref: [landed, added])
+    monkeypatch.setattr(guard, "merge_base", lambda _ref: "base-sha")
+    monkeypatch.setattr(
+        guard, "base_source", lambda _sha, path: _LANDED if path == landed else None
+    )
+    code = guard.main(
+        ["--base-ref", "origin/main"], fetch=_fetch_of(READS_AGENT_WRITABLE)
+    )
+    out = capsys.readouterr().out
+    assert code == 0
+    assert "OK: none of the 1 dropped surface(s)" in out
+    assert "1 drop(s) in edited landed revision(s) were judged when" in out
