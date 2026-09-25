@@ -29,9 +29,12 @@ What is asserted
    re-applies cleanly, and every head pin is gone — UNKNOWN again, which holds.
 
 And, without needing a database at all: the ``_PARENT_REVISION_ID`` pin, the
-one-line ``down_revision`` spelling, that the upgrade adds no ``DEFAULT``, no
-``UPDATE`` and no ``NOT NULL``, and that it creates **no index** and contains no
-``DROP`` — the property that makes this revision classify AutoSafe.
+one-line ``down_revision`` spelling, that the upgrade path adds no ``DEFAULT``,
+no ``UPDATE`` and no ``NOT NULL``, and that it creates **no index**, contains no
+``DROP`` and keeps its ``IF NOT EXISTS`` guard. Those last are NECESSARY
+conditions for the AutoSafe classification this revision expects, not sufficient
+ones — the classifier checks more than a keyword scan can (see
+``test_the_upgrade_creates_no_index``).
 
 There is no index, deliberately
 ===============================
@@ -43,8 +46,11 @@ head_sha)``. It was removed, and the tests for it with it. The existing
 measurable — while a correct concurrent build would have required an autocommit
 block and a ``DROP INDEX CONCURRENTLY`` repair path, and that ``DROP`` on the
 upgrade path is rejected by coord's migration classifier. The revision's own
-docstring carries the full reasoning; `test_the_upgrade_creates_no_index`
-below is what stops it being helpfully undone.
+docstring carries the full reasoning; ``test_the_upgrade_creates_no_index``
+below is what makes an accidental re-add loud — it scans for the bare ``INDEX``
+token over the classifier's own surface, so ``op.create_index`` and a helper
+above ``upgrade()`` are both caught, but a determined editor deleting that test
+is not something a test can stop.
 
 Substrate comes from ``_alembic_harness``: an ephemeral database inside the
 test Postgres, skipped when none is reachable.
@@ -52,6 +58,7 @@ test Postgres, skipped when none is reachable.
 
 from __future__ import annotations
 
+import ast
 import re
 
 import pytest
@@ -102,11 +109,58 @@ def _revision_source() -> str:
     )
 
 
-def _upgrade_source() -> str:
-    """The body of ``upgrade()``, sliced out of the revision source."""
-    return (
-        _revision_source().split("def upgrade()", 1)[1].split("def downgrade()", 1)[0]
-    )
+def _classifier_surface() -> str:
+    """The revision source coord's migration classifier actually judges, as code.
+
+    Two deliberate choices, both of which a narrower slice gets wrong:
+
+    * **Module-level helpers are INCLUDED.** The classifier's surface is the
+      whole module minus the body of ``downgrade()`` — including every
+      module-level helper, because a lexer cannot prove which of them
+      ``downgrade()`` alone reaches. Slicing only ``upgrade()`` would leave a
+      blind spot exactly where this revision's deleted ``_index_is_invalid``
+      helper lived: a reintroduced helper holding a ``DROP INDEX CONCURRENTLY``
+      would make coord Reject the revision while every assertion here stayed
+      green. ``scripts/ci/check_coord_column_drops.py`` scans the same surface.
+    * **Docstrings and comments are stripped**, so the keyword scans below read
+      CODE and not prose. Without that, the revision's own sentence "Idempotent,
+      additive, no index." would fail the ``INDEX`` assertion, and any docstring
+      that happened to say "drops nothing" would fail the ``DROP`` one — a false
+      failure with a baffling message.
+
+    Docstrings are located with ``ast``, NOT by a triple-quote regex. That is not
+    fussiness: this revision's SQL lives in triple-quoted ``op.execute(\"\"\"…\"\"\")``
+    literals, so a regex that removed every triple-quoted string would delete the
+    very statements this surface exists to scan — and the positive
+    ``ADD COLUMN IF NOT EXISTS`` assertion would then fail on correct code. A
+    docstring is the first statement of a module, class or function and nothing
+    else; ``ast`` says which those are, and only their lines are blanked.
+
+    The ``def downgrade(`` anchor is column-0 and regex-anchored so a mention in
+    prose cannot move the cut.
+    """
+    src = _revision_source()
+    lines = src.splitlines(keepends=True)
+    for node in ast.walk(ast.parse(src)):
+        if not isinstance(
+            node, ast.Module | ast.FunctionDef | ast.AsyncFunctionDef | ast.ClassDef
+        ):
+            continue
+        body = node.body
+        if not body:
+            continue
+        first = body[0]
+        if (
+            isinstance(first, ast.Expr)
+            and isinstance(first.value, ast.Constant)
+            and isinstance(first.value.value, str)
+            and first.end_lineno is not None
+        ):
+            for i in range(first.lineno - 1, first.end_lineno):
+                lines[i] = "\n"
+    blanked = "".join(lines)
+    surface = re.split(r"^def downgrade\(", blanked, maxsplit=1, flags=re.MULTILINE)[0]
+    return re.sub(r"#[^\n]*", "", surface)
 
 
 def test_the_pinned_parent_matches_the_revisions_down_revision() -> None:
@@ -156,32 +210,31 @@ def test_the_upgrade_adds_no_default_and_no_backfill() -> None:
     and a manufactured value would let coord's secrets hold clear on a stale
     file list.
     """
-    upgrade = _upgrade_source()
+    surface = _classifier_surface()
 
-    # `DEFAULT` has one legitimate occurrence in the upgrade: the lock-guard
-    # restore, which spells the SQL keyword for an unrelated reason. Exempt
-    # exactly that statement and the prose around it, so the assertion still
-    # reads the DDL. The exemption is guarded rather than assumed — if the
-    # restore is ever renamed or removed this test says so instead of
-    # silently widening.
-    assert upgrade.count(_LOCK_GUARD_RESTORE) == 1, (
-        f"expected exactly one {_LOCK_GUARD_RESTORE!r} in upgrade(); the "
-        "DEFAULT exemption below is scoped to it, so a change here must be "
+    # `DEFAULT` has one legitimate occurrence on the upgrade path: the
+    # lock-guard restore, which spells the SQL keyword for an unrelated reason.
+    # Exempt exactly that statement, so the assertion still reads the DDL. The
+    # exemption is guarded rather than assumed — if the restore is ever renamed
+    # or removed this test says so instead of silently widening.
+    assert surface.count(_LOCK_GUARD_RESTORE) == 1, (
+        f"expected exactly one {_LOCK_GUARD_RESTORE!r} on the upgrade path; "
+        "the DEFAULT exemption below is scoped to it, so a change here must be "
         "made deliberately"
     )
-    ddl = re.sub(r"#[^\n]*", "", upgrade).replace(_LOCK_GUARD_RESTORE, "")
-    assert "DEFAULT" not in ddl.upper(), (
+    ddl = surface.replace(_LOCK_GUARD_RESTORE, "").upper()
+    assert "DEFAULT" not in ddl, (
         "head_sha must have no default — an existing row's head is UNKNOWN"
     )
-    assert "UPDATE" not in upgrade.upper(), (
+    assert "UPDATE" not in ddl, (
         "the upgrade must not backfill head_sha from any source; a guessed "
         "head is exactly the false confidence this column removes"
     )
-    assert "NOT NULL" not in upgrade.upper(), "head_sha must be nullable"
+    assert "NOT NULL" not in ddl, "head_sha must be nullable"
 
 
 def test_the_upgrade_creates_no_index() -> None:
-    """No index, and no ``DROP`` — the property that makes this AutoSafe.
+    """No index, no ``DROP``, and the idempotency guard intact.
 
     The obvious reflex on reading Phase 3's ``WHERE repo = $1 AND pr_number = $2
     AND head_sha = $3`` is to add a matching index, and this revision
@@ -189,28 +242,49 @@ def test_the_upgrade_creates_no_index() -> None:
     that read to at most 100 rows (coord's hydration page cap), so a third key
     column buys nothing measurable — while a correct concurrent build drags in
     an autocommit block and a ``DROP INDEX CONCURRENTLY`` repair, and coord's
-    migration classifier rejects any ``upgrade()`` statement beginning ``DROP``.
-    The resulting ``migrations`` block is ``clearable_by: classifier``, so no
-    agent evidence clears it and an operator must.
+    migration classifier rejects any statement on the upgrade path beginning
+    ``DROP``. The resulting ``migrations`` block is ``clearable_by: classifier``,
+    so no agent evidence clears it and an operator must.
 
-    This test is the guard on that trade. If a measurement ever justifies the
-    index, add it in a revision of its own rather than making this one
-    unlandable; then delete this test with that change, deliberately.
+    These are NECESSARY conditions for an AutoSafe classification, not
+    sufficient ones — the classifier also requires both ``lock_timeout`` values
+    to be in its admitted set, every ``op.execute`` argument to be a static
+    literal, and no unclassifiable receiver. What is asserted here is the part a
+    future edit is most likely to break by being helpful.
+
+    If a measurement ever justifies the index, add it in a revision of its own
+    rather than making this one unlandable; then delete this test with that
+    change, deliberately.
     """
-    upgrade = _upgrade_source()
-    sql_only = re.sub(r"#[^\n]*", "", upgrade).upper()
-    assert "CREATE INDEX" not in sql_only, (
-        "this revision creates no index on purpose — see the revision "
-        "docstring's 'NO INDEX' section before adding one back"
+    sql_only = _classifier_surface().upper()
+    # Bare `INDEX`, not `CREATE INDEX`: the idiomatic re-add is
+    # `op.create_index(..., schema="coord")`, which contains no raw SQL at all,
+    # and a plain (non-CONCURRENTLY) one would also slip past the autocommit
+    # check below while taking the write-blocking SHARE lock this revision
+    # exists to avoid. `sa.Index(...)` is caught by the same token.
+    assert "INDEX" not in sql_only, (
+        "this revision creates no index on purpose, in raw SQL or via "
+        "op.create_index / sa.Index — see the revision docstring's 'NO INDEX' "
+        "section before adding one back"
     )
     assert "DROP" not in sql_only, (
-        "a DROP anywhere in upgrade() makes coord's migration classifier "
-        "reject the revision, and the resulting block is clearable_by: "
-        "classifier — an operator, not an agent, would have to clear it"
+        "a DROP anywhere on the upgrade path makes coord's migration "
+        "classifier reject the revision, and the resulting block is "
+        "clearable_by: classifier — an operator, not an agent, would have to "
+        "clear it"
     )
     assert "AUTOCOMMIT_BLOCK" not in sql_only, (
         "no autocommit block is needed without a CONCURRENTLY build, and it "
         "would commit the ADD COLUMN before alembic_version is stamped"
+    )
+    # The one POSITIVE assertion here, and it is load-bearing twice over:
+    # `IF NOT EXISTS` is what makes the ADD COLUMN idempotent across the
+    # up -> downgrade -1 -> up walk, and it is also the `has_idempotency_guard`
+    # marker without which the classifier refuses the ADD COLUMN outright.
+    assert "ADD COLUMN IF NOT EXISTS" in sql_only, (
+        "the ADD COLUMN must keep its IF NOT EXISTS guard — it is both the "
+        "idempotency this revision claims and what coord's classifier requires "
+        "to admit an ADD COLUMN at all"
     )
 
 
@@ -344,7 +418,9 @@ def test_coord_pr_files_head_sha_01_adds_a_nullable_head_sha() -> None:
             "exclude the NULL-head row by predicate, not by absence"
         )
 
-        # 4. The revision touches no index at all, in either direction.
+        # 4. The one index this revision must not disturb is still there. This
+        #    proves SURVIVAL only — it cannot detect an index the revision ADDS.
+        #    That direction is `test_the_upgrade_creates_no_index`'s job.
         assert index_exists(engine, _PRE_EXISTING_INDEX), (
             f"{_PRE_EXISTING_INDEX} must survive this revision — coord's "
             "deployed build still reads coord.pr_files by (repo, pr_number) "
