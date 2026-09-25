@@ -47,6 +47,7 @@ from app.api.deps import (
     get_async_db,
     get_authenticated_device,
     get_current_active_user_async,
+    get_paired_device,
 )
 from app.config.redis_config import get_redis
 from app.crud import device_connection as device_connection_crud
@@ -1092,12 +1093,14 @@ async def dispatch_to_device(
 
 
 # ---------------------------------------------------------------------------
-# Device machine key (`dmk_`) — mint (user bearer) + exchange (dmk_ auth)
+# Device machine key (`dmk_`) — mint (user bearer), self-mint (live device
+# JWT) + exchange (dmk_ auth)
 #
 # The >30-day-offline cold-start recovery path (4b): a long-lived,
 # device-bound machine key the runner exchanges for a device JWT with NO user
 # session. Mint is user-authenticated (owner mints/rotates their device's
-# key); exchange is authenticated by the key itself and rides web's trusted
+# key); self-mint lets a device holding a live paired JWT enrol its own key
+# before an outage can strand it; exchange is authenticated by the key itself and rides web's trusted
 # service token to coord's service-mint.
 # ---------------------------------------------------------------------------
 
@@ -1143,19 +1146,154 @@ async def mint_device_machine_credential(
     tenant_raw = row.get("tenant_id")
     tenant_id = UUID(str(tenant_raw)) if tenant_raw else None
 
-    plaintext, cred = await dmk_crud.mint(
+    return await _mint_machine_credential(
         db,
         device_id=device_id,
         owner_user_id=current_user.id,
+        tenant_id=tenant_id,
+        via="user_bearer",
+    )
+
+
+@router.post(
+    "/{device_id}/machine-credential/self-mint",
+    response_model=DeviceMachineCredentialMintResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+async def self_mint_device_machine_credential(
+    *,
+    device_id: UUID,
+    db: AsyncSession = Depends(get_async_db),
+    device_ctx: DeviceTokenContext = Depends(get_paired_device),
+) -> Any:
+    """Mint (or rotate) a device's OWN machine key, authenticated by its live
+    device JWT — no user session.
+
+    Plan ``2026-09-24-runner-coord-credential-stranded-after-outage`` Phase 3.
+    The ``dmk_`` is the only credential that re-derives a device JWT after the
+    JWT has expired (``/exchange``), but until now it was issued only by
+    pairing and by the user-bearer :func:`mint_device_machine_credential`. A
+    runner paired before the auto-mint, or one that lost its key, therefore
+    had no way to acquire one unattended, and an outage longer than its
+    JWT's remaining life stranded it until an operator re-paired. The runner
+    calls this while it still holds a valid device JWT and its stored key is
+    absent or near expiry.
+
+    **Authentication** (:func:`~app.api.deps.get_paired_device`): only an
+    UNEXPIRED coord-signed device JWT with ``sub_type=device`` and
+    ``mint_provenance=paired``. No bearer / expired / invalid → 401; an agent
+    credential (including the anonymous bootstrap mint), a capability grant,
+    or a ``bootstrap``/``unknown`` provenance → 403.
+
+    **Authorization**, all server-side, nothing read from a body:
+
+    * the token's ``device_id`` claim MUST equal the path → else 403
+      ``device_mismatch``. A device mints only its own key.
+    * the ``coord.devices`` row must exist and its ``user_id`` equal the
+      token's ``user_id`` → else 403 ``device_not_owned``. The key's owner is
+      that user, exactly as the user-bearer route records it.
+    * an existing key that an operator REVOKED is not re-minted → 403
+      ``device_machine_key_revoked``. ``dmk_crud.mint`` clears ``revoked_at``
+      on rotation, so without this a device could undo its own revocation;
+      re-enrolment after a revocation stays with the owner's user-bearer mint.
+
+    **Tenant**: the device's home tenant, ``coord.devices.tenant_id`` — the
+    same column the user-bearer route reads through coord's ``/owned`` (which
+    refuses a device JWT, hence the direct read; see
+    :func:`device_crud.get_device_owner_and_tenant`). The token's own
+    ``tenant_id`` claim is deliberately NOT used: on a multi-tenant device it
+    names whichever tenant slot the token was minted for, not the home tenant.
+
+    **Rotation**: every successful call rotates. An existing unexpired key is
+    replaced (new secret, fresh ``DEVICE_MACHINE_KEY_TTL_DAYS`` expiry), even
+    with plenty of life left — the runner calls only when its key is absent or
+    expiring, and a caller that lost its plaintext has no other way to get one.
+    Rotation invalidates the previous plaintext immediately.
+
+    **Why this adds no reach.** The caller already holds an unexpired device
+    JWT for this device, and such a JWT can self-refresh at coord indefinitely
+    while it stays unexpired — it is already a perpetual credential for
+    exactly this device. The ``dmk_`` it receives is bound to the same device,
+    exchanges only for a device JWT for that device (``/exchange`` 403s any
+    other), is owner-attributed, expires, and is revocable (a revoked key
+    cannot be re-minted here). What it adds is survival across an outage
+    longer than the JWT's remaining life — the defect this route closes — and
+    nothing a stolen live JWT could not already do by refreshing itself.
+
+    Response: the same :class:`DeviceMachineCredentialMintResponse` as
+    ``/mint`` (plaintext ``dmk_`` returned ONCE), status 201.
+    """
+    if device_ctx.device_id != device_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={
+                "code": "device_mismatch",
+                "message": "Device token does not match this device.",
+            },
+        )
+
+    owner_and_tenant = await device_crud.get_device_owner_and_tenant(db, device_id)
+    if owner_and_tenant is None or owner_and_tenant[0] != device_ctx.user_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={
+                "code": "device_not_owned",
+                "message": "This device is not paired to the token's user.",
+            },
+        )
+    _owner_user_id, tenant_id = owner_and_tenant
+
+    existing = await dmk_crud.get_by_device(db, device_id)
+    if existing is not None and existing.revoked_at is not None:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={
+                "code": "device_machine_key_revoked",
+                "message": (
+                    "This device's machine key was revoked; re-mint it with "
+                    "the owner's session."
+                ),
+            },
+        )
+
+    return await _mint_machine_credential(
+        db,
+        device_id=device_id,
+        owner_user_id=device_ctx.user_id,
+        tenant_id=tenant_id,
+        via="device_jwt",
+    )
+
+
+async def _mint_machine_credential(
+    db: AsyncSession,
+    *,
+    device_id: UUID,
+    owner_user_id: UUID,
+    tenant_id: UUID | None,
+    via: str,
+) -> DeviceMachineCredentialMintResponse:
+    """Mint (or rotate) ``device_id``'s ``dmk_`` and build the one-shot
+    response — the logic shared by ``/mint`` and ``/self-mint``.
+
+    Authorization is the caller's job; this only mints with the normal
+    ``DEVICE_MACHINE_KEY_TTL_DAYS`` TTL, commits, and logs. ``via`` names the
+    authenticating arm in the log line.
+    """
+    plaintext, cred = await dmk_crud.mint(
+        db,
+        device_id=device_id,
+        owner_user_id=owner_user_id,
         tenant_id=tenant_id,
     )
     await db.commit()
 
     logger.info(
         "device_machine_credential_minted",
-        user_id=str(current_user.id),
+        user_id=str(owner_user_id),
         device_id=str(device_id),
         dmk_prefix=cred.dmk_prefix,
+        via=via,
     )
     return DeviceMachineCredentialMintResponse(
         device_id=device_id,
