@@ -51334,6 +51334,87 @@
         "title": "TenantRenameIn",
         "type": "object"
       },
+      "TenantTranscriptSyncPatch": {
+        "additionalProperties": false,
+        "description": "Closed body for the transcript-sync write \u2014 see wire fact 2 above.",
+        "properties": {
+          "transcript_sync_enabled": {
+            "title": "Transcript Sync Enabled",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "transcript_sync_enabled"
+        ],
+        "title": "TenantTranscriptSyncPatch",
+        "type": "object"
+      },
+      "TenantTranscriptSyncView": {
+        "description": "The tenant's transcript-sync consent, as coord resolves it.",
+        "properties": {
+          "can_edit": {
+            "title": "Can Edit",
+            "type": "boolean"
+          },
+          "column_missing": {
+            "default": false,
+            "title": "Column Missing",
+            "type": "boolean"
+          },
+          "transcript_sync_enabled": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Transcript Sync Enabled"
+          }
+        },
+        "required": [
+          "transcript_sync_enabled",
+          "can_edit"
+        ],
+        "title": "TenantTranscriptSyncView",
+        "type": "object"
+      },
+      "TenantTranscriptSyncWriteResult": {
+        "description": "What was written, and \u2014 separately \u2014 what coord now reads back.\n\n``effective`` is ``None`` with ``readback_error`` set when coord accepted\nthe write but did not return the policy it re-read (its own post-upsert\nSELECT failed). That is UNKNOWN, not \"applied\".",
+        "properties": {
+          "effective": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TenantTranscriptSyncView"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "readback_error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Readback Error"
+          },
+          "written": {
+            "title": "Written",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "written"
+        ],
+        "title": "TenantTranscriptSyncWriteResult",
+        "type": "object"
+      },
       "TestRunComplete": {
         "description": "Request schema for completing a test run.",
         "properties": {
@@ -97258,6 +97339,73 @@
           }
         },
         "summary": "Get Symbol Claims",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
+    "/api/v1/operations/tenant-policy/transcript-sync": {
+      "get": {
+        "description": "Read whether coord accepts session output for the caller's tenant.\n\n``can_edit`` follows the operator's roles in the EFFECTIVE tenant (see\n``GET /fleet-policy`` for why ``identity.is_admin`` would be wrong). Unlike\nthat route it carries NO superuser bypass: coord's ``patch_tenant_policy``\nauthorizes on ``rbac::is_tenant_admin`` alone, so a qontinui superuser who\nis not an admin of this tenant is refused ``admin_required`` \u2014 an enabled\nbutton would promise a write coord will not take.",
+        "operationId": "api_v1_operations_tenant_policy_transcript_sync_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TenantTranscriptSyncView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Tenant Transcript Sync",
+        "tags": [
+          "operations"
+        ]
+      },
+      "patch": {
+        "description": "Turn transcript sync on or off for the caller's effective tenant.\n\nTenant-admin gated web-side; coord re-checks and answers 403\n``admin_required`` otherwise, and 503 ``column_not_present`` while the\ncolumn's migration has not reached its database \u2014 both pass through\nverbatim. Coord re-reads the policy after its upsert and returns it, so no\nsecond round trip is needed for the read-back.",
+        "operationId": "api_v1_operations_tenant_policy_transcript_sync_patch",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TenantTranscriptSyncPatch"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TenantTranscriptSyncWriteResult"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Patch Tenant Transcript Sync",
         "tags": [
           "operations"
         ]
