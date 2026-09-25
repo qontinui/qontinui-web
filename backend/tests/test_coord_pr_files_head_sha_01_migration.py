@@ -200,9 +200,22 @@ def _index_row(engine: Engine) -> tuple[bool, str]:
 
 
 def _file_count(engine: Engine) -> int:
+    """Rows for THIS test's own PR.
+
+    Scoped by ``(repo, pr_number)`` rather than counting the table: the
+    substrate is an ephemeral database, but an exact count over an unscoped
+    read is the shape `scripts/ci/check_global_state_assertions.py` ratchets
+    against, and the discriminator is one this test controls anyway.
+    """
     with engine.connect() as conn:
         return int(
-            conn.execute(text("SELECT count(*) FROM coord.pr_files")).scalar_one()
+            conn.execute(
+                text(
+                    "SELECT count(*) FROM coord.pr_files "
+                    "WHERE repo = :repo AND pr_number = :pr"
+                ),
+                {"repo": _REPO, "pr": _PR},
+            ).scalar_one()
         )
 
 
