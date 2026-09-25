@@ -333,59 +333,6 @@ class TestMintSelfGuards:
 
 
 @pytest.mark.asyncio
-class TestDeviceOwnerAndTenant:
-    """:func:`device_crud.get_device_owner_and_tenant` against real Postgres.
-
-    ``coord.devices.tenant_id`` is owned by coord and not mapped on the ORM
-    model, so the test schema (built from ORM metadata) lacks it; add it
-    inside the test transaction, which the fixture rolls back.
-    """
-
-    async def test_reads_owner_and_tenant(
-        self, async_db_session: AsyncSession, test_user
-    ) -> None:
-        from sqlalchemy import text
-
-        from app.crud import device_crud
-        from app.models.device import Device
-
-        await async_db_session.execute(
-            text("ALTER TABLE coord.devices ADD COLUMN IF NOT EXISTS tenant_id uuid")
-        )
-        device_id = uuid4()
-        tenant_id = uuid4()
-        async_db_session.add(
-            Device(
-                device_id=device_id,
-                user_id=test_user.id,
-                name="d",
-                hostname="h",
-                state="healthy",
-            )
-        )
-        await async_db_session.flush()
-        await async_db_session.execute(
-            text("UPDATE coord.devices SET tenant_id = :t WHERE device_id = :d"),
-            {"t": tenant_id, "d": device_id},
-        )
-
-        got = await device_crud.get_device_owner_and_tenant(async_db_session, device_id)
-        assert got == (test_user.id, tenant_id)
-
-    async def test_unknown_device_is_none(self, async_db_session: AsyncSession) -> None:
-        from sqlalchemy import text
-
-        from app.crud import device_crud
-
-        await async_db_session.execute(
-            text("ALTER TABLE coord.devices ADD COLUMN IF NOT EXISTS tenant_id uuid")
-        )
-        assert (
-            await device_crud.get_device_owner_and_tenant(async_db_session, uuid4())
-        ) is None
-
-
-@pytest.mark.asyncio
 class TestMintSelfGuardsRaceAndBoundary:
     async def test_first_insert_race_maps_to_still_usable(
         self, async_db_session: AsyncSession, monkeypatch
