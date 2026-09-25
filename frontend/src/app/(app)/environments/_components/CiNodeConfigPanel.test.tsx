@@ -29,6 +29,7 @@ import {
   CiNodeConfigPanel,
   configsEqual,
   dispatchRefusalCopy,
+  parseConcurrencyInput,
   reachabilityCopy,
   validateRepoEntry,
 } from "./CiNodeConfigPanel";
@@ -67,7 +68,7 @@ function state(overrides: Partial<CiNodeConfigState> = {}): CiNodeConfigState {
     coord_device_id: "d-1",
     requested: {
       enabled: false,
-      max_concurrent_builds: 1,
+      max_concurrent_builds: null,
       repo_allowlist: [],
       min_free_disk_gb: 20,
     },
@@ -240,6 +241,30 @@ describe("configsEqual", () => {
     expect(configsEqual(base, { ...base, enabled: true })).toBe(false);
     expect(configsEqual(base, { ...base, repo_allowlist: [] })).toBe(false);
     expect(configsEqual(base, { ...base, min_free_disk_gb: 21 })).toBe(false);
+  });
+
+  it("treats 'use the host's suggestion' (null) as its own value", () => {
+    const suggested = { ...base, max_concurrent_builds: null };
+    expect(configsEqual(suggested, { ...suggested })).toBe(true);
+    // null is not 1, and 1 is not null — either direction is a real change.
+    expect(configsEqual(suggested, base)).toBe(false);
+    expect(configsEqual(base, suggested)).toBe(false);
+  });
+});
+
+describe("parseConcurrencyInput", () => {
+  it("commits a typed number, clamped into the server's 1-64 band", () => {
+    expect(parseConcurrencyInput("3", null)).toBe(3);
+    expect(parseConcurrencyInput("0", null)).toBe(1);
+    expect(parseConcurrencyInput("500", 2)).toBe(64);
+  });
+
+  it("never turns an empty or junk box into a number or into null", () => {
+    // Clearing the box is not an instruction: the previous value stands,
+    // whether that was an explicit number or the host's suggestion.
+    expect(parseConcurrencyInput("", null)).toBeNull();
+    expect(parseConcurrencyInput("", 4)).toBe(4);
+    expect(parseConcurrencyInput("abc", 4)).toBe(4);
   });
 });
 
@@ -470,6 +495,104 @@ describe("CiNodeConfigPanel", () => {
 
     await waitFor(() => expect(toastMock.warning).toHaveBeenCalled());
     expect(toastMock.success).not.toHaveBeenCalled();
+  });
+
+  /** The body of the Nth fetch (the PUT), parsed. */
+  function putBody(call = 1): Record<string, unknown> {
+    const [, init] = fetchMock.mock.calls[call] as [string, RequestInit];
+    expect(init.method).toBe("PUT");
+    return JSON.parse(String(init.body));
+  }
+
+  it("shows an unconfigured capacity as the host's suggestion and saves null", async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse(state()));
+    render(<CiNodeConfigPanel machine={MACHINE} />);
+    await screen.findByTestId("ci-node-panel");
+
+    // Empty box, suggestion mode, and help text that says who computes it.
+    expect(screen.getByTestId("ci-node-max-builds")).toHaveValue(null);
+    const mode = screen.getByTestId("ci-node-max-builds-mode");
+    expect(mode).toHaveAttribute("data-mode", "suggested");
+    expect(mode.textContent).toMatch(/cores and memory/i);
+    expect(
+      screen.getByTestId("ci-node-max-builds-use-suggested")
+    ).toBeDisabled();
+
+    // Change something else and save: capacity travels as null, not as 1.
+    fireEvent.click(screen.getByTestId("ci-node-enabled"));
+    fetchMock.mockResolvedValueOnce(jsonResponse(state({ dispatched: true })));
+    fireEvent.click(screen.getByTestId("ci-node-apply"));
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+    expect(putBody()).toMatchObject({
+      enabled: true,
+      max_concurrent_builds: null,
+    });
+  });
+
+  it("saves a typed number even when Save is clicked without a blur", async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse(state()));
+    render(<CiNodeConfigPanel machine={MACHINE} />);
+    await screen.findByTestId("ci-node-panel");
+
+    // A synthetic click (UI Bridge) never moves focus, so no blur fires.
+    fireEvent.change(screen.getByTestId("ci-node-max-builds"), {
+      target: { value: "6" },
+    });
+    expect(screen.getByTestId("ci-node-max-builds-mode")).toHaveAttribute(
+      "data-mode",
+      "explicit"
+    );
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse(
+        state({
+          requested: { ...state().requested, max_concurrent_builds: 6 },
+          configured: true,
+          dispatched: true,
+        })
+      )
+    );
+    fireEvent.click(screen.getByTestId("ci-node-apply"));
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+    expect(putBody().max_concurrent_builds).toBe(6);
+  });
+
+  it("returns an explicit number to the host's suggestion only via the control", async () => {
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse(
+        state({
+          requested: { ...state().requested, max_concurrent_builds: 3 },
+          configured: true,
+        })
+      )
+    );
+    render(<CiNodeConfigPanel machine={MACHINE} />);
+    await screen.findByTestId("ci-node-panel");
+
+    const input = screen.getByTestId("ci-node-max-builds");
+    expect(input).toHaveValue(3);
+    expect(screen.getByTestId("ci-node-max-builds-mode")).toHaveAttribute(
+      "data-mode",
+      "explicit"
+    );
+
+    // Clearing the box is NOT "use suggested": after blur the explicit value
+    // stands and there is nothing to save.
+    fireEvent.change(input, { target: { value: "" } });
+    fireEvent.blur(input);
+    expect(input).toHaveValue(3);
+    expect(screen.getByTestId("ci-node-apply")).toBeDisabled();
+
+    // The explicit control is.
+    fireEvent.click(screen.getByTestId("ci-node-max-builds-use-suggested"));
+    expect(input).toHaveValue(null);
+    expect(screen.getByTestId("ci-node-max-builds-mode")).toHaveAttribute(
+      "data-mode",
+      "suggested"
+    );
+    fetchMock.mockResolvedValueOnce(jsonResponse(state({ dispatched: true })));
+    fireEvent.click(screen.getByTestId("ci-node-apply"));
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+    expect(putBody().max_concurrent_builds).toBeNull();
   });
 
   it("does not present a failed load as 'CI is off here'", async () => {
