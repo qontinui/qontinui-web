@@ -44,23 +44,39 @@ const template: IntentDocument = {
   updated_by: null,
 };
 
+const written: IntentDocument = {
+  ...template,
+  id: "audience_profile:human-operator",
+  name: "human-operator",
+  body: "# The human operator\n\nDirects the fleet.",
+  state: "authored",
+  version: 2,
+};
+
 function Harness({
   outcome,
+  initial = [template],
+  canEdit = true,
 }: {
   outcome: (doc: IntentDocument) => SaveResult<IntentDocument>;
+  initial?: IntentDocument[];
+  canEdit?: boolean;
 }) {
-  const [docs, setDocs] = useState([template]);
+  const [docs, setDocs] = useState(initial);
+  const swap = (id: string, next: IntentDocument) =>
+    setDocs((all) => all.map((d) => (d.id === id ? next : d)));
   const actions: IntentSectionActions = {
-    canEdit: true,
+    canEdit,
     projectId: "p1",
     viewerId: "u1",
-    saveBody: async (_id, text) => {
+    saveBody: async (id, text) => {
+      const before = docs.find((d) => d.id === id)!;
       // What useSummaryData's optimistic apply does.
-      setDocs([{ ...template, body: text, state: "authored" }]);
+      swap(id, { ...before, body: text, state: "authored" });
       await new Promise((r) => setTimeout(r, 0));
-      const result = outcome({ ...template, body: text, state: "authored" });
-      if (!result.ok && "error" in result) setDocs([template]); // rollback
-      if (!result.ok && "conflict" in result) setDocs([result.conflict]);
+      const result = outcome({ ...before, body: text, state: "authored" });
+      if (!result.ok && "error" in result) swap(id, before); // rollback
+      if (!result.ok && "conflict" in result) swap(id, result.conflict);
       return result;
     },
     move: vi.fn(),
@@ -127,6 +143,167 @@ describe("writing into a template", () => {
       ).toBeTruthy()
     );
     expect(screen.queryByRole("textbox", { name: /^Text of/ })).toBeNull();
+  });
+});
+
+describe("a section that is already written", () => {
+  const both = [written, template];
+
+  it("still offers its unwritten template to an editor", () => {
+    render(
+      <Harness outcome={() => ({ ok: true, item: written })} initial={both} />
+    );
+    expect(screen.getByText("Directs the fleet.")).toBeTruthy();
+    expect(screen.getByText("Not written yet")).toBeTruthy();
+    expect(
+      screen.getByRole("button", { name: "Write: Example audience" })
+    ).toBeTruthy();
+  });
+
+  it("shows a reader only what is written", () => {
+    render(
+      <Harness
+        outcome={() => ({ ok: true, item: written })}
+        initial={both}
+        canEdit={false}
+      />
+    );
+    expect(screen.getByText("Directs the fleet.")).toBeTruthy();
+    expect(screen.queryByText("Not written yet")).toBeNull();
+    expect(screen.queryByRole("button")).toBeNull();
+  });
+
+  it("keeps that template's editor, and its error, through a failed save", async () => {
+    render(
+      <Harness
+        outcome={() => ({ ok: false, error: "The service isn't responding." })}
+        initial={both}
+      />
+    );
+    fireEvent.click(
+      screen.getByRole("button", { name: "Write: Example audience" })
+    );
+    fireEvent.change(screen.getByRole("textbox", { name: /^Text of/ }), {
+      target: { value: "# Leaders\n\nApprove the budget." },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() =>
+      expect(screen.getByRole("alert").textContent).toMatch(/isn't responding/)
+    );
+    expect(
+      (screen.getByRole("textbox", { name: /^Text of/ }) as HTMLTextAreaElement)
+        .value
+    ).toMatch(/Approve the budget/);
+  });
+
+  it("moves a template into the written list once it is saved", async () => {
+    render(
+      <Harness outcome={(doc) => ({ ok: true, item: doc })} initial={both} />
+    );
+    fireEvent.click(
+      screen.getByRole("button", { name: "Write: Example audience" })
+    );
+    fireEvent.change(screen.getByRole("textbox", { name: /^Text of/ }), {
+      target: { value: "# Leaders\n\nApprove the budget." },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() =>
+      expect(screen.getByText("Approve the budget.")).toBeTruthy()
+    );
+    expect(screen.queryByText("Not written yet")).toBeNull();
+  });
+});
+
+describe("several template editors open at once", () => {
+  const second: IntentDocument = {
+    ...template,
+    id: "audience_profile:partners",
+    name: "partners",
+  };
+
+  it("keeps every open editor, and the failing one's error, through a save", async () => {
+    render(
+      <Harness
+        outcome={() => ({ ok: false, error: "The service isn't responding." })}
+        initial={[template, second]}
+      />
+    );
+    fireEvent.click(
+      screen.getByRole("button", { name: "Write: Example audience" })
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Write: Partners" }));
+    const boxes = () => screen.getAllByRole("textbox", { name: /^Text of/ });
+    expect(boxes()).toHaveLength(2);
+    fireEvent.change(boxes()[0], { target: { value: "# One\n\nFirst." } });
+    fireEvent.change(boxes()[1], { target: { value: "# Two\n\nSecond." } });
+    // Save the FIRST-opened one: the empty section must not flip branches and
+    // take both editors with it.
+    fireEvent.click(screen.getAllByRole("button", { name: "Save" })[0]);
+    await waitFor(() =>
+      expect(screen.getByRole("alert").textContent).toMatch(/isn't responding/)
+    );
+    expect(boxes()).toHaveLength(2);
+    expect((boxes()[1] as HTMLTextAreaElement).value).toMatch(/Second/);
+  });
+});
+
+describe("one template saved while another editor is open", () => {
+  const second: IntentDocument = {
+    ...template,
+    id: "audience_profile:partners",
+    name: "partners",
+  };
+
+  it("keeps the other editor, and its failing save's error, as the section becomes written", async () => {
+    render(
+      <Harness
+        // The first template saves; the second one's save fails.
+        outcome={(doc) =>
+          doc.id === template.id
+            ? { ok: true, item: doc }
+            : { ok: false, error: "The service isn't responding." }
+        }
+        initial={[template, second]}
+      />
+    );
+    fireEvent.click(
+      screen.getByRole("button", { name: "Write: Example audience" })
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Write: Partners" }));
+    const boxes = () => screen.getAllByRole("textbox", { name: /^Text of/ });
+    fireEvent.change(boxes()[0], { target: { value: "# One\n\nFirst." } });
+    fireEvent.change(boxes()[1], { target: { value: "# Two\n\nSecond." } });
+    const saves = screen.getAllByRole("button", { name: "Save" });
+    fireEvent.click(saves[1]); // in flight, will fail
+    fireEvent.click(saves[0]); // succeeds: the section becomes written
+    await waitFor(() => expect(screen.getByText("First.")).toBeTruthy());
+    await waitFor(() =>
+      expect(screen.getByRole("alert").textContent).toMatch(/isn't responding/)
+    );
+    expect(boxes()).toHaveLength(1);
+    expect((boxes()[0] as HTMLTextAreaElement).value).toMatch(/Second/);
+  });
+});
+
+describe("focus after writing a template", () => {
+  it("lands on the new document's heading, not the page body", async () => {
+    render(
+      <Harness
+        outcome={(doc) => ({ ok: true, item: doc })}
+        initial={[written, template]}
+      />
+    );
+    fireEvent.click(
+      screen.getByRole("button", { name: "Write: Example audience" })
+    );
+    fireEvent.change(screen.getByRole("textbox", { name: /^Text of/ }), {
+      target: { value: "# Leaders\n\nApprove the budget." },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() =>
+      expect(document.activeElement?.textContent).toBe("Leaders")
+    );
+    expect(document.activeElement?.tagName).toBe("H3");
   });
 });
 

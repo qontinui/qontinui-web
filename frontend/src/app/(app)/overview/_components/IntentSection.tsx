@@ -11,7 +11,7 @@
  * Every control is absent for a reader who may not edit — never disabled.
  */
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { MarkdownView } from "@/components/overview/MarkdownView";
@@ -291,22 +291,56 @@ export function IntentSection({
   actions: IntentSectionActions;
 }) {
   const { heading, missing, noun } = INTENT_HEADINGS[kind];
-  const written = entries.filter(hasContent);
-  // While a template is being written into, the section keeps showing THAT
-  // editor until it closes. Otherwise the save's own optimistic result (or a
-  // conflict carrying the other writer's text) makes the section "written",
-  // swaps the branch below, and unmounts the editor mid-save — taking its
-  // error message and conflict dialog with it.
-  const [writingId, setWritingId] = useState<string | null>(null);
-  const template =
-    (writingId !== null ? entries.find((e) => e.id === writingId) : null) ??
-    entries.find((e) => e.state === "skeleton") ??
-    null;
+  // Every template with an OPEN editor stays an unwritten row until that
+  // editor closes. Otherwise a save's own optimistic result (or a conflict
+  // carrying the other writer's text) moves it into the written list — or
+  // flips an empty section to its written branch — which unmounts editors
+  // mid-save, taking their error messages and conflict dialogs with them.
+  // A SET, because several template editors can be open at once.
+  const [openIds, setOpenIds] = useState<ReadonlySet<string>>(new Set());
+  const setOpen = (id: string, open: boolean) =>
+    setOpenIds((prev) => {
+      const next = new Set(prev);
+      if (open) next.add(id);
+      else next.delete(id);
+      return next;
+    });
+  const written = entries.filter((e) => hasContent(e) && !openIds.has(e.id));
+  // Every template nobody has filled in yet is offered to an editor — not just
+  // while the section is empty. Coord seeds several templates for some kinds
+  // (three for product_intent), and hiding the rest once one was written left
+  // them with no way in from the page.
+  const unwritten = actions.canEdit
+    ? entries.filter(
+        (e) => openIds.has(e.id) || (e.state === "skeleton" && !hasContent(e))
+      )
+    : [];
+  // A template just saved moves to the written list, a different parent, so
+  // its row remounts and the editor's own focus-return lands on nothing. Send
+  // focus to the document's new heading instead, once it has rendered.
+  const [justClosedId, setJustClosedId] = useState<string | null>(null);
+  useEffect(() => {
+    if (justClosedId === null) return;
+    const entry = entries.find((e) => e.id === justClosedId);
+    setJustClosedId(null);
+    if (!entry || !hasContent(entry)) return; // cancelled: it stayed put
+    // Only reclaim focus that was LOST with the remounted row — never pull it
+    // out of another editor the writer has moved on to.
+    const active = document.activeElement;
+    if (active && active !== document.body) return;
+    document
+      .getElementById(`${kind.replace(/_/g, "-")}-${entry.name}--title`)
+      ?.focus();
+  }, [justClosedId, entries, kind]);
   const sectionId = kind.replace(/_/g, "-");
   const [adding, setAdding] = useState(false);
   const [moving, setMoving] = useState(false);
   const [moveError, setMoveError] = useState<string | null>(null);
   const { canEdit } = actions;
+
+  // Name every template row once there is more than one document to choose
+  // between, so each button says which document it opens.
+  const named = unwritten.length > 1 || written.length > 0;
 
   const move = async (from: number, to: number) => {
     setMoving(true);
@@ -321,6 +355,42 @@ export function IntentSection({
     </p>
   );
 
+  /** `primary`: the empty section's own "Write it", which keeps its
+   *  long-standing UI Bridge id. Every other row names its document. */
+  const templateRow = (template: IntentEntry, primary: boolean) => (
+    // The template coord seeded is the document to write into — but its
+    // template text is not offered as a start: it is guidance for agents, not
+    // the project's words.
+    <EditableSection
+      key={template.id}
+      projectId={actions.projectId}
+      resource={RESOURCE}
+      recordId={template.id}
+      viewerId={actions.viewerId}
+      record={entryText(template)}
+      startText=""
+      onOpen={() => setOpen(template.id, true)}
+      onDone={() => {
+        setOpen(template.id, false);
+        setJustClosedId(template.id);
+      }}
+      canEdit
+      label={primary && !named ? noun : template.title}
+      editLabel={primary && !named ? "Write it" : "Write"}
+      validate={requireText}
+      onSave={async (text, version) =>
+        asEditableResult(await actions.saveBody(template.id, text, version))
+      }
+      uiBridgeId={
+        primary
+          ? `overview.summary.${sectionId}.write`
+          : `overview.summary.${sectionId}.write-${template.name}`
+      }
+    >
+      {named && <p className="text-sm text-foreground">{template.title}</p>}
+    </EditableSection>
+  );
+
   return (
     <section
       aria-labelledby={`${sectionId}-heading`}
@@ -333,54 +403,7 @@ export function IntentSection({
         {heading}
       </h2>
 
-      {written.length === 0 || (writingId !== null && template !== null) ? (
-        <div
-          className="mt-3 border-l-2 border-border pl-4"
-          data-ui-bridge-id={`overview.summary.${sectionId}.missing`}
-        >
-          {canEdit && template ? (
-            // The template coord seeded is the document to write into — but
-            // its template text is not offered as a start: it is guidance for
-            // agents, not the project's words.
-            <EditableSection
-              projectId={actions.projectId}
-              resource={RESOURCE}
-              recordId={template.id}
-              viewerId={actions.viewerId}
-              record={entryText(template)}
-              startText=""
-              onOpen={() => setWritingId(template.id)}
-              onDone={() => setWritingId(null)}
-              canEdit
-              label={noun}
-              editLabel="Write it"
-              validate={requireText}
-              onSave={async (text, version) =>
-                asEditableResult(
-                  await actions.saveBody(template.id, text, version)
-                )
-              }
-              uiBridgeId={`overview.summary.${sectionId}.write`}
-            >
-              {missingText}
-            </EditableSection>
-          ) : (
-            <>
-              {missingText}
-              {canEdit && !adding && (
-                <button
-                  type="button"
-                  onClick={() => setAdding(true)}
-                  className={`mt-1 ${linkButton}`}
-                  data-ui-bridge-id={`overview.summary.${sectionId}.write`}
-                >
-                  Write it
-                </button>
-              )}
-            </>
-          )}
-        </div>
-      ) : (
+      {written.length > 0 && (
         <div className="mt-3 space-y-8">
           {written.map((entry, index) => {
             const docId = `${sectionId}-${entry.name}`;
@@ -391,7 +414,9 @@ export function IntentSection({
               // single-document one, and left the heading levels skipping from
               // the section's h2 to the body's h4.
               <h3
-                className="mb-2 font-[family-name:var(--font-overview-serif)] text-xl leading-snug text-foreground"
+                id={`${docId}--title`}
+                tabIndex={-1}
+                className="mb-2 font-[family-name:var(--font-overview-serif)] text-xl leading-snug text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                 data-ui-bridge-id={`overview.summary.${docId}.title`}
               >
                 {entry.title}
@@ -481,6 +506,51 @@ export function IntentSection({
             >
               {moveError}
             </p>
+          )}
+        </div>
+      )}
+
+      {/* ONE container for every unwritten template, at a fixed position in
+          the tree whether or not the section has written documents yet.
+          Rendering the rows under a different parent per case remounted every
+          open editor the moment one save made the section "written". */}
+      {(written.length === 0 || unwritten.length > 0) && (
+        <div
+          {...(written.length > 0
+            ? {
+                role: "group",
+                "aria-labelledby": `${sectionId}--unwritten-label`,
+              }
+            : {})}
+          className="mt-3 space-y-3 border-l-2 border-border pl-4"
+          data-ui-bridge-id={
+            written.length > 0
+              ? `overview.summary.${sectionId}.unwritten`
+              : `overview.summary.${sectionId}.missing`
+          }
+        >
+          {written.length > 0 ? (
+            <h3
+              id={`${sectionId}--unwritten-label`}
+              className="text-sm font-normal text-muted-foreground"
+            >
+              Not written yet
+            </h3>
+          ) : (
+            missingText
+          )}
+          {unwritten.map((t, i) =>
+            templateRow(t, i === 0 && written.length === 0)
+          )}
+          {unwritten.length === 0 && canEdit && !adding && (
+            <button
+              type="button"
+              onClick={() => setAdding(true)}
+              className={`mt-1 ${linkButton}`}
+              data-ui-bridge-id={`overview.summary.${sectionId}.write`}
+            >
+              Write it
+            </button>
           )}
         </div>
       )}
