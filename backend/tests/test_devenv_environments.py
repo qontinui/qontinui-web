@@ -446,8 +446,12 @@ class TestDiffEnvelopes:
             "plans_dir_relative": "qontinui-dev-notes/plans",
             "invariant_class": "(a)",
         }
-        canonical = _envelope({"harness": {**compliant, "harness_scope_kind": "declared"}})
-        actual = _envelope({"harness": {**compliant, "harness_scope_kind": "home_default"}})
+        canonical = _envelope(
+            {"harness": {**compliant, "harness_scope_kind": "declared"}}
+        )
+        actual = _envelope(
+            {"harness": {**compliant, "harness_scope_kind": "home_default"}}
+        )
         report = devenv_drift.diff_envelopes(canonical, actual)
 
         delta = _delta(_section(report, "harness"), "harness_scope_kind")
