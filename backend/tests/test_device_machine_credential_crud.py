@@ -202,3 +202,184 @@ class TestDeviceMachineCredentialCrud:
         await dmk_crud.bump_last_used(async_db_session, cred, slide_ttl_days=None)
         assert cred.last_used_at is not None
         assert cred.expires_at == old_expiry
+
+
+# ===========================================================================
+# Layer 2b — the self-mint guards, evaluated under mint()'s row lock
+#
+# Plan ``2026-09-24-runner-coord-credential-stranded-after-outage`` Phase 3:
+# ``POST /devices/{id}/machine-credential/self-mint`` passes
+# ``refuse_if_revoked=True`` + ``refuse_if_usable_beyond=7 days``.
+# ===========================================================================
+
+_WINDOW = timedelta(days=7)
+
+
+async def _set_row(session: AsyncSession, device_id, **values) -> None:
+    """Change the stored row with a Core UPDATE that bypasses the ORM
+    identity map — the in-memory object goes STALE, which is exactly what a
+    concurrent writer looks like to this session."""
+    from sqlalchemy import update
+
+    await session.execute(
+        update(DeviceMachineCredential)
+        .where(DeviceMachineCredential.device_id == device_id)
+        .values(**values)
+        .execution_options(synchronize_session=False)
+    )
+
+
+async def _self_mint(session: AsyncSession, device_id):
+    return await dmk_crud.mint(
+        session,
+        device_id=device_id,
+        owner_user_id=None,
+        refuse_if_revoked=True,
+        refuse_if_usable_beyond=_WINDOW,
+    )
+
+
+@pytest.mark.asyncio
+class TestMintSelfGuards:
+    async def test_no_key_mints(self, async_db_session: AsyncSession) -> None:
+        plaintext, cred = await _self_mint(async_db_session, uuid4())
+        assert plaintext.startswith("dmk_")
+        assert cred.expires_at is not None
+
+    async def test_usable_key_is_refused_and_untouched(
+        self, async_db_session: AsyncSession
+    ) -> None:
+        device_id = uuid4()
+        _, first = await dmk_crud.mint(
+            async_db_session, device_id=device_id, owner_user_id=None
+        )
+        first_hash = first.dmk_hash
+        with pytest.raises(dmk_crud.DeviceMachineKeyStillUsableError):
+            await _self_mint(async_db_session, device_id)
+        assert (await dmk_crud.get_by_hash(async_db_session, first_hash)) is not None
+
+    async def test_key_without_expiry_is_refused(
+        self, async_db_session: AsyncSession
+    ) -> None:
+        device_id = uuid4()
+        await dmk_crud.mint(async_db_session, device_id=device_id, owner_user_id=None)
+        await _set_row(async_db_session, device_id, expires_at=None)
+        with pytest.raises(dmk_crud.DeviceMachineKeyStillUsableError):
+            await _self_mint(async_db_session, device_id)
+
+    async def test_key_within_window_is_rotated(
+        self, async_db_session: AsyncSession
+    ) -> None:
+        device_id = uuid4()
+        _, first = await dmk_crud.mint(
+            async_db_session, device_id=device_id, owner_user_id=None
+        )
+        first_hash = first.dmk_hash
+        await _set_row(
+            async_db_session,
+            device_id,
+            expires_at=datetime.now(UTC) + timedelta(days=3),
+        )
+        _, second = await _self_mint(async_db_session, device_id)
+        assert second.dmk_hash != first_hash
+        assert second.expires_at is not None
+        assert second.expires_at > datetime.now(UTC) + timedelta(days=50)
+
+    async def test_expired_key_is_rotated(self, async_db_session: AsyncSession) -> None:
+        device_id = uuid4()
+        _, first = await dmk_crud.mint(
+            async_db_session, device_id=device_id, owner_user_id=None
+        )
+        first_hash = first.dmk_hash
+        await _set_row(
+            async_db_session,
+            device_id,
+            expires_at=datetime.now(UTC) - timedelta(days=1),
+        )
+        _, second = await _self_mint(async_db_session, device_id)
+        assert second.dmk_hash != first_hash
+
+    async def test_revoked_key_is_refused_even_when_identity_map_is_stale(
+        self, async_db_session: AsyncSession
+    ) -> None:
+        """The revoke lands via a Core UPDATE, so the session's cached object
+        still says ``revoked_at is None``. The guard must read the locked,
+        freshly loaded row (``populate_existing``), not the cache."""
+        device_id = uuid4()
+        _, cred = await dmk_crud.mint(
+            async_db_session, device_id=device_id, owner_user_id=None
+        )
+        await _set_row(async_db_session, device_id, revoked_at=datetime.now(UTC))
+        with pytest.raises(dmk_crud.DeviceMachineKeyRevokedError):
+            await _self_mint(async_db_session, device_id)
+        assert cred.revoked_at is not None  # refreshed, and NOT cleared
+
+    async def test_owner_mint_still_rotates_over_revoked_and_usable(
+        self, async_db_session: AsyncSession
+    ) -> None:
+        """Guards default off: the user-bearer /mint path is unchanged."""
+        device_id = uuid4()
+        await dmk_crud.mint(async_db_session, device_id=device_id, owner_user_id=None)
+        # usable key -> rotated
+        _, cred = await dmk_crud.mint(
+            async_db_session, device_id=device_id, owner_user_id=None
+        )
+        await dmk_crud.revoke(async_db_session, device_id)
+        # revoked key -> un-revoked by the owner's re-mint
+        _, cred = await dmk_crud.mint(
+            async_db_session, device_id=device_id, owner_user_id=None
+        )
+        assert cred.revoked_at is None
+
+
+@pytest.mark.asyncio
+class TestDeviceOwnerAndTenant:
+    """:func:`device_crud.get_device_owner_and_tenant` against real Postgres.
+
+    ``coord.devices.tenant_id`` is owned by coord and not mapped on the ORM
+    model, so the test schema (built from ORM metadata) lacks it; add it
+    inside the test transaction, which the fixture rolls back.
+    """
+
+    async def test_reads_owner_and_tenant(
+        self, async_db_session: AsyncSession, test_user
+    ) -> None:
+        from sqlalchemy import text
+
+        from app.crud import device_crud
+        from app.models.device import Device
+
+        await async_db_session.execute(
+            text("ALTER TABLE coord.devices ADD COLUMN IF NOT EXISTS tenant_id uuid")
+        )
+        device_id = uuid4()
+        tenant_id = uuid4()
+        async_db_session.add(
+            Device(
+                device_id=device_id,
+                user_id=test_user.id,
+                name="d",
+                hostname="h",
+                state="healthy",
+            )
+        )
+        await async_db_session.flush()
+        await async_db_session.execute(
+            text("UPDATE coord.devices SET tenant_id = :t WHERE device_id = :d"),
+            {"t": tenant_id, "d": device_id},
+        )
+
+        got = await device_crud.get_device_owner_and_tenant(async_db_session, device_id)
+        assert got == (test_user.id, tenant_id)
+
+    async def test_unknown_device_is_none(self, async_db_session: AsyncSession) -> None:
+        from sqlalchemy import text
+
+        from app.crud import device_crud
+
+        await async_db_session.execute(
+            text("ALTER TABLE coord.devices ADD COLUMN IF NOT EXISTS tenant_id uuid")
+        )
+        assert (
+            await device_crud.get_device_owner_and_tenant(async_db_session, uuid4())
+        ) is None

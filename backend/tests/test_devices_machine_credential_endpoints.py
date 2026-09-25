@@ -196,6 +196,9 @@ class TestMintEndpoint:
         kwargs = mock_mint.call_args.kwargs
         assert kwargs["owner_user_id"] == _USER_ID
         assert kwargs["tenant_id"] == tenant_id
+        # The owner's mint keeps the unconditional rotate.
+        assert kwargs["refuse_if_revoked"] is False
+        assert kwargs["refuse_if_usable_beyond"] is None
 
     def test_non_owner_gets_403(self) -> None:
         client = TestClient(self._app())
@@ -463,15 +466,14 @@ class TestSelfMintEndpoint:
             AsyncMock(return_value=("dmk_self-minted-secret", cred)),
         )
 
-    def _existing(self, cred=None):
-        return patch.object(dmk_crud, "get_by_device", AsyncMock(return_value=cred))
+    def _mint_refusing(self, exc):
+        return patch.object(dmk_crud, "mint", AsyncMock(side_effect=exc))
 
     def test_matching_live_device_jwt_mints(self) -> None:
         client = TestClient(self._app())
         with (
             self._verify(_device_claims()),
             self._device_row(),
-            self._existing(),
             self._mint() as mock_mint,
         ):
             resp = client.post(self._URL, headers=self._AUTH)
@@ -489,24 +491,20 @@ class TestSelfMintEndpoint:
         assert kwargs["tenant_id"] == _TENANT_ID
         # Normal TTL: the helper does not override the crud default.
         assert "ttl_days" not in kwargs
+        # Key-state guards are delegated to the locked read in dmk_crud.mint.
+        assert kwargs["refuse_if_revoked"] is True
+        assert kwargs["refuse_if_usable_beyond"] == timedelta(days=7)
 
-    def test_existing_unexpired_key_is_rotated(self) -> None:
+    def test_still_usable_key_is_409_not_rotated(self) -> None:
         client = TestClient(self._app())
-        live = DeviceMachineCredential(
-            device_id=_DEVICE_ID,
-            dmk_hash="x",
-            dmk_prefix="dmk_x",
-            expires_at=datetime.now(UTC) + timedelta(days=50),
-        )
         with (
             self._verify(_device_claims()),
             self._device_row(),
-            self._existing(live),
-            self._mint() as mock_mint,
+            self._mint_refusing(dmk_crud.DeviceMachineKeyStillUsableError(_DEVICE_ID)),
         ):
             resp = client.post(self._URL, headers=self._AUTH)
-        assert resp.status_code == 201, resp.text
-        mock_mint.assert_awaited_once()
+        assert resp.status_code == 409, resp.text
+        assert resp.json()["detail"]["code"] == "machine_key_still_usable"
 
     def test_expired_device_jwt_is_401(self) -> None:
         from app.services.coord_jwks import CoordTokenExpiredError, coord_jwks_client
@@ -537,7 +535,6 @@ class TestSelfMintEndpoint:
         with (
             self._verify(_device_claims(device_id=str(other), sub=f"device:{other}")),
             self._device_row(),
-            self._existing(),
             self._mint() as mock_mint,
         ):
             resp = client.post(self._URL, headers=self._AUTH)
@@ -551,7 +548,6 @@ class TestSelfMintEndpoint:
         with (
             self._verify(_device_claims(mint_provenance=provenance)),
             self._device_row(),
-            self._existing(),
             self._mint() as mock_mint,
         ):
             resp = client.post(self._URL, headers=self._AUTH)
@@ -567,7 +563,6 @@ class TestSelfMintEndpoint:
         with (
             self._verify(_device_claims(sub_type=sub_type)),
             self._device_row(),
-            self._existing(),
             self._mint() as mock_mint,
         ):
             resp = client.post(self._URL, headers=self._AUTH)
@@ -580,7 +575,6 @@ class TestSelfMintEndpoint:
         with (
             self._verify(_device_claims()),
             self._device_row(user_id=uuid4()),
-            self._existing(),
             self._mint() as mock_mint,
         ):
             resp = client.post(self._URL, headers=self._AUTH)
@@ -599,29 +593,20 @@ class TestSelfMintEndpoint:
                 "get_device_owner_and_tenant",
                 AsyncMock(return_value=None),
             ),
-            self._existing(),
             self._mint() as mock_mint,
         ):
             resp = client.post(self._URL, headers=self._AUTH)
         assert resp.status_code == 403, resp.text
+        assert resp.json()["detail"]["code"] == "device_not_owned"
         mock_mint.assert_not_called()
 
     def test_revoked_key_is_not_reminted(self) -> None:
         client = TestClient(self._app())
-        revoked = DeviceMachineCredential(
-            device_id=_DEVICE_ID,
-            dmk_hash="x",
-            dmk_prefix="dmk_x",
-            expires_at=datetime.now(UTC) + timedelta(days=10),
-            revoked_at=datetime.now(UTC),
-        )
         with (
             self._verify(_device_claims()),
             self._device_row(),
-            self._existing(revoked),
-            self._mint() as mock_mint,
+            self._mint_refusing(dmk_crud.DeviceMachineKeyRevokedError(_DEVICE_ID)),
         ):
             resp = client.post(self._URL, headers=self._AUTH)
         assert resp.status_code == 403, resp.text
         assert resp.json()["detail"]["code"] == "device_machine_key_revoked"
-        mock_mint.assert_not_called()
