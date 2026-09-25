@@ -41,42 +41,61 @@ import { useCallback, useEffect, useRef } from "react";
  */
 export type SingleFlightPollFn = (isCurrent: () => boolean) => Promise<void>;
 
-export interface UseSingleFlightPollResult {
+export interface UseSingleFlightResult {
   /**
-   * Poll now. Starts a request when none is outstanding; otherwise schedules
+   * Run now. Starts a request when none is outstanding; otherwise schedules
    * one trailing request after the outstanding one (coalesced). Resolves when
    * the request that will reflect this call has finished.
    */
   refresh: () => Promise<void>;
+  /**
+   * Run now ONLY if nothing is outstanding. What an interval tick calls: an
+   * outstanding request means this tick's question is already being asked,
+   * so the tick is skipped, not queued.
+   */
+  tick: () => void;
 }
 
-export function useSingleFlightPoll(
-  poll: SingleFlightPollFn,
-  intervalMs: number
-): UseSingleFlightPollResult {
-  const pollRef = useRef(poll);
+export type UseSingleFlightPollResult = Pick<UseSingleFlightResult, "refresh">;
+
+/**
+ * The single-flight latch on its own, for hooks that drive their own timers
+ * (the WebSocket-with-polling-fallback streams, whose interval starts and
+ * stops with the socket and with tab visibility). Route EVERY call of `fn`
+ * through the returned `tick` (timers) or `refresh` (everything else), or the
+ * latch guards nothing.
+ *
+ * `fn`'s `isCurrent()` turns false when `fn` changes or the component
+ * unmounts; nothing is started after unmount.
+ */
+export function useSingleFlight(fn: SingleFlightPollFn): UseSingleFlightResult {
+  const fnRef = useRef(fn);
   const inFlightRef = useRef<Promise<void> | null>(null);
   const trailingRef = useRef<Promise<void> | null>(null);
   // Bumped on every setup AND teardown, so a flight started under one setup
   // can tell that it no longer speaks for the component.
   const generationRef = useRef(0);
-  // False between unmount and never: a trailing run queued by the last
-  // flight must not go out after the component is gone.
+  // False after unmount: a trailing run queued by the last flight must not go
+  // out after the component is gone.
   const activeRef = useRef(false);
 
   const start = useCallback((): Promise<void> => {
     if (!activeRef.current) return Promise.resolve();
     const generation = generationRef.current;
     const isCurrent = () => generationRef.current === generation;
-    const flight = (async () => {
-      try {
-        await pollRef.current(isCurrent);
-      } catch (err) {
-        console.error("[useSingleFlightPoll] poll rejected", err);
-      } finally {
-        inFlightRef.current = null;
-      }
-    })();
+    // The latch is set BEFORE `fn` runs: `fn` is invoked from a microtask, so
+    // even one that throws synchronously cannot settle this flight before it
+    // is recorded (which would leave a settled promise in the latch and skip
+    // every later tick forever).
+    const flight: Promise<void> = Promise.resolve()
+      .then(() => fnRef.current(isCurrent))
+      .catch((err: unknown) => {
+        console.error("[useSingleFlight] poll rejected", err);
+      })
+      .finally(() => {
+        // Clear only our own latch: never one a later flight has taken.
+        if (inFlightRef.current === flight) inFlightRef.current = null;
+      });
     inFlightRef.current = flight;
     return flight;
   }, []);
@@ -87,10 +106,10 @@ export function useSingleFlightPoll(
     if (trailingRef.current === null) {
       trailingRef.current = current.then(() => {
         trailingRef.current = null;
-        // `flight`'s `finally` has already cleared the latch by the time this
-        // runs (it settles before `current` resolves), and no timer can fire
-        // between the two, so this normally starts a fresh request. The
-        // fallback keeps the one-in-flight guarantee if that ever changes.
+        // `current`'s `finally` has cleared the latch by the time this runs,
+        // and no timer can fire between the two, so this normally starts a
+        // fresh request. The fallback keeps the one-in-flight guarantee if
+        // that ever changes.
         return inFlightRef.current ?? start();
       });
     }
@@ -98,26 +117,38 @@ export function useSingleFlightPoll(
   }, [start]);
 
   const tick = useCallback(() => {
-    // Skipped, not queued: an outstanding request means this tick's question
-    // is already being asked.
     if (inFlightRef.current !== null) return;
     void start();
   }, [start]);
 
   useEffect(() => {
-    pollRef.current = poll;
+    fnRef.current = fn;
     generationRef.current += 1;
     activeRef.current = true;
-    // Through `refresh`, not `start`: if a flight from the previous setup is
-    // still outstanding, this setup's first read queues behind it instead of
-    // running beside it.
-    void refresh();
-    const id = setInterval(tick, intervalMs);
     return () => {
       generationRef.current += 1;
       activeRef.current = false;
-      clearInterval(id);
     };
+  }, [fn]);
+
+  return { refresh, tick };
+}
+
+/** {@link useSingleFlight} plus the interval that drives it. */
+export function useSingleFlightPoll(
+  poll: SingleFlightPollFn,
+  intervalMs: number
+): UseSingleFlightPollResult {
+  const { refresh, tick } = useSingleFlight(poll);
+
+  useEffect(() => {
+    // Through `refresh`, not `tick`: if a flight from the previous `poll` is
+    // still outstanding, this setup's first read queues behind it instead of
+    // running beside it. `poll` is a dependency so new parameters are read
+    // at once.
+    void refresh();
+    const id = setInterval(tick, intervalMs);
+    return () => clearInterval(id);
   }, [poll, intervalMs, refresh, tick]);
 
   return { refresh };

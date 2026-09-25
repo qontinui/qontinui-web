@@ -40,11 +40,17 @@
 //      stretches the poll gap rather than piling on.
 //   3. Hidden tabs don't poll — a backgrounded dashboard left open for
 //      hours is pure load with nobody reading it.
+//   4. No client retries — every read in the hot batch passes
+//      `COORD_DASHBOARD_POLL_OPTIONS` (plan
+//      `2026-09-25-fleet-worktree-slots-hang-mechanism-and-safe-reland` D5),
+//      so a 504 costs one request and the next batch is the retry. Rule 1 is
+//      this hook's own single-flight, which predates `useSingleFlight`.
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createLogger } from "@/lib/logger";
 import { httpClient } from "@/services/service-factory";
 import { OPERATIONS_API, coordEventsWsUrl } from "./utils";
+import { COORD_DASHBOARD_POLL_OPTIONS } from "./coordPollError";
 import { isMergedPr } from "./prPipeline";
 import type {
   BlastRadiusBlock,
@@ -271,7 +277,10 @@ export function useMergePipelineData(
 
   const fetchQueue = useCallback(async () => {
     try {
-      const res = await httpClient.fetch(`${OPERATIONS_API}/merge/queue`);
+      const res = await httpClient.fetch(
+        `${OPERATIONS_API}/merge/queue`,
+        COORD_DASHBOARD_POLL_OPTIONS
+      );
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const body = (await res.json()) as QueueResponse | ProposalDetail[];
       const list = Array.isArray(body) ? body : (body.proposals ?? []);
@@ -303,7 +312,8 @@ export function useMergePipelineData(
   const fetchPrs = useCallback(async () => {
     try {
       const res = await httpClient.fetch(
-        `${OPERATIONS_API}/pr-merge/prs?merged_count_hours=${MERGED_LOOKBACK_HOURS}`
+        `${OPERATIONS_API}/pr-merge/prs?merged_count_hours=${MERGED_LOOKBACK_HOURS}`,
+        COORD_DASHBOARD_POLL_OPTIONS
       );
       if (!res.ok) {
         if (res.status === 404) {
@@ -408,7 +418,8 @@ export function useMergePipelineData(
   const fetchEconomics = useCallback(async () => {
     try {
       const res = await httpClient.fetch(
-        `${OPERATIONS_API}/pr-merge/merge-economics`
+        `${OPERATIONS_API}/pr-merge/merge-economics`,
+        COORD_DASHBOARD_POLL_OPTIONS
       );
       if (!res.ok) {
         if (res.status === 404) {
@@ -448,7 +459,8 @@ export function useMergePipelineData(
   const fetchSuggestions = useCallback(async () => {
     try {
       const res = await httpClient.fetch(
-        `${OPERATIONS_API}/pr-merge/suggestions`
+        `${OPERATIONS_API}/pr-merge/suggestions`,
+        COORD_DASHBOARD_POLL_OPTIONS
       );
       if (!res.ok) {
         if (res.status === 404) {
@@ -471,7 +483,8 @@ export function useMergePipelineData(
   const fetchGateBlocks = useCallback(async () => {
     try {
       const res = await httpClient.fetch(
-        `${OPERATIONS_API}/pr-merge/blast-radius-blocks`
+        `${OPERATIONS_API}/pr-merge/blast-radius-blocks`,
+        COORD_DASHBOARD_POLL_OPTIONS
       );
       if (!res.ok) {
         if (res.status === 404) {

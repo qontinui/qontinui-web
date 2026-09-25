@@ -309,3 +309,37 @@ class TestFleetDashboardErrorBodiesPassThrough:
             _configure_mock_client(MockClient, mock_instance)
             resp = auth_client.get(route)
         assert resp.status_code == 504
+
+
+def _non_json_response(status_code: int, text: str) -> MagicMock:
+    resp = MagicMock(spec=httpx.Response)
+    resp.status_code = status_code
+    resp.json.side_effect = ValueError("not json")
+    resp.text = text
+    return resp
+
+
+@pytest.mark.parametrize("route,coord_path", FLEET_DASHBOARD_ROUTES)
+class TestFleetDashboardNonJsonBodies:
+    """A coord 2xx whose body is not JSON is a broken answer: 502, never a
+    ``200 {"error": ...}`` that a dashboard poll would parse as a payload."""
+
+    def _get(self, auth_client: TestClient, route: str, resp: MagicMock):
+        with _patch_httpx() as MockClient:
+            mock_instance = MagicMock()
+            mock_instance.get = AsyncMock(return_value=resp)
+            _configure_mock_client(MockClient, mock_instance)
+            return auth_client.get(route)
+
+    def test_2xx_non_json_is_a_502(
+        self, auth_client: TestClient, route: str, coord_path: str
+    ):
+        resp = self._get(auth_client, route, _non_json_response(200, "<html>"))
+        assert resp.status_code == 502
+
+    def test_error_non_json_keeps_coords_status(
+        self, auth_client: TestClient, route: str, coord_path: str
+    ):
+        resp = self._get(auth_client, route, _non_json_response(503, "upstream page"))
+        assert resp.status_code == 503
+        assert resp.json() == {"error": "upstream page"}

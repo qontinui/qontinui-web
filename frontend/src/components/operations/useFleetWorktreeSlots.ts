@@ -138,9 +138,10 @@ export function useFleetWorktreeSlots(): UseFleetWorktreeSlotsResult {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  // Single-flight, no retries (D5): on 2026-09-22 a failing tick of this poll
-  // cost exactly 5 requests — `httpClient`'s 5xx retry chain — while coord
-  // was already past its budget.
+  // Single-flight, no retries (D5): on 2026-09-22 this route took 5 requests
+  // per minute while failing (1 per minute when healthy), consistent with
+  // `httpClient`'s up-to-5-request 5xx retry chain on each poll. The poll's
+  // actual cadence that day is UNKNOWN.
   const poll = useCallback(async (isCurrent: () => boolean) => {
     try {
       const body = await httpClient.get<WorktreeSlotsResponse>(

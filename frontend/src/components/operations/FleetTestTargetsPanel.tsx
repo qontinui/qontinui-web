@@ -21,6 +21,8 @@ import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
 import { Rocket, Server, Trash2, Save, RefreshCw } from "lucide-react";
 import { httpClient } from "@/services/service-factory";
+import { COORD_DASHBOARD_POLL_OPTIONS } from "./coordPollError";
+import { useSingleFlightPoll } from "./useSingleFlightPoll";
 import { CollapsiblePanel } from "@/components/console";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -436,29 +438,36 @@ export function FleetTestTargetsPanel() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const fetchData = useCallback(async () => {
+  // Single-flight (plan
+  // `2026-09-25-fleet-worktree-slots-hang-mechanism-and-safe-reland` D5): a
+  // tick while the previous batch is outstanding is skipped. Only `/devices`
+  // reads coord (`coord_device.list_devices_for_user`), so only it drops
+  // `httpClient`'s retries; `/fleet/apps` and `/fleet/test-targets` are
+  // web-local reads and keep the default.
+  const poll = useCallback(async (isCurrent: () => boolean) => {
     try {
       const [appList, targetList, deviceList] = await Promise.all([
         httpClient.get<AppConfig[]>(`${API}/fleet/apps`),
         httpClient.get<TestTargetRow[]>(`${API}/fleet/test-targets`),
-        httpClient.get<DeviceWire[]>(`${API}/devices`),
+        httpClient.get<DeviceWire[]>(
+          `${API}/devices`,
+          COORD_DASHBOARD_POLL_OPTIONS
+        ),
       ]);
+      if (!isCurrent()) return;
       setApps(appList);
       setTargets(targetList);
       setDevices(deviceList);
       setError(null);
     } catch (e) {
+      if (!isCurrent()) return;
       setError(errMsg(e));
     } finally {
-      setLoading(false);
+      if (isCurrent()) setLoading(false);
     }
   }, []);
 
-  useEffect(() => {
-    fetchData();
-    const id = setInterval(fetchData, POLL_INTERVAL_MS);
-    return () => clearInterval(id);
-  }, [fetchData]);
+  const { refresh: fetchData } = useSingleFlightPoll(poll, POLL_INTERVAL_MS);
 
   const targetsByApp = (appId: string) =>
     targets.filter((t) => t.app_id === appId);

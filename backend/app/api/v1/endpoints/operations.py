@@ -2911,8 +2911,23 @@ async def _proxy_coord_passthrough(
     try:
         payload: Any = resp.json()
     except ValueError:
-        # coord answered with something that isn't JSON (a proxy error page, an
-        # empty 204). Report that honestly in coord's own `error` key rather
+        if 200 <= resp.status_code < 300:
+            # A SUCCESS status over a body that is not JSON is not an answer
+            # any caller can use, and relaying it as `200 {"error": ...}` made
+            # it look like one: a dashboard poll would parse that as a payload
+            # (plan 2026-09-25-fleet-worktree-slots-hang-mechanism-and-safe-
+            # reland, Phase 4 review). It is a broken upstream answer, so it
+            # is the web's 502 to report. None of this helper's coord routes
+            # answers 204 by contract.
+            raise HTTPException(
+                status_code=502,
+                detail=(
+                    f"coord answered HTTP {resp.status_code} with a body that "
+                    "is not JSON"
+                ),
+            )
+        # A coord ERROR whose body isn't JSON (a proxy error page). Report that
+        # honestly in coord's own `error` key, under coord's own status, rather
         # than inventing a shape the caller would mis-read as a coord code.
         payload = {"error": resp.text or f"coord returned HTTP {resp.status_code}"}
     return JSONResponse(status_code=resp.status_code, content=payload)
