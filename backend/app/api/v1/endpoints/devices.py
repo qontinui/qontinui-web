@@ -1155,6 +1155,12 @@ async def mint_device_machine_credential(
     )
 
 
+#: ``/self-mint`` renews a key only when it is absent, expired, or expires
+#: within this window; a key usable for longer is refused with a 409 rather
+#: than rotated (see :func:`self_mint_device_machine_credential`).
+SELF_MINT_RENEWAL_WINDOW = timedelta(days=7)
+
+
 @router.post(
     "/{device_id}/machine-credential/self-mint",
     response_model=DeviceMachineCredentialMintResponse,
@@ -1196,6 +1202,14 @@ async def self_mint_device_machine_credential(
       ``device_machine_key_revoked``. ``dmk_crud.mint`` clears ``revoked_at``
       on rotation, so without this a device could undo its own revocation;
       re-enrolment after a revocation stays with the owner's user-bearer mint.
+    * an existing unrevoked key still usable for more than
+      :data:`SELF_MINT_RENEWAL_WINDOW` (7 days) is NOT rotated → 409
+      ``machine_key_still_usable``.
+
+    Both key-state checks run inside ``dmk_crud.mint``, after its
+    ``SELECT ... FOR UPDATE`` of the row, so a concurrent revoke cannot be
+    undone and two concurrent self-mints cannot both rotate (the second sees
+    the first's fresh key and gets the 409).
 
     **Tenant**: the device's home tenant, ``coord.devices.tenant_id`` — the
     same column the user-bearer route reads through coord's ``/owned`` (which
@@ -1204,21 +1218,24 @@ async def self_mint_device_machine_credential(
     ``tenant_id`` claim is deliberately NOT used: on a multi-tenant device it
     names whichever tenant slot the token was minted for, not the home tenant.
 
-    **Rotation**: every successful call rotates. An existing unexpired key is
-    replaced (new secret, fresh ``DEVICE_MACHINE_KEY_TTL_DAYS`` expiry), even
-    with plenty of life left — the runner calls only when its key is absent or
-    expiring, and a caller that lost its plaintext has no other way to get one.
-    Rotation invalidates the previous plaintext immediately.
+    **When it mints**: only when the device has no key, or its key is expired
+    or within 7 days of expiry. The new key gets the normal
+    ``DEVICE_MACHINE_KEY_TTL_DAYS`` expiry and replaces the old one, whose
+    plaintext stops working. Replacing a lost-but-still-valid key is the
+    owner's job, through the user-bearer ``/mint``.
 
-    **Why this adds no reach.** The caller already holds an unexpired device
-    JWT for this device, and such a JWT can self-refresh at coord indefinitely
-    while it stays unexpired — it is already a perpetual credential for
-    exactly this device. The ``dmk_`` it receives is bound to the same device,
-    exchanges only for a device JWT for that device (``/exchange`` 403s any
-    other), is owner-attributed, expires, and is revocable (a revoked key
-    cannot be re-minted here). What it adds is survival across an outage
-    longer than the JWT's remaining life — the defect this route closes — and
-    nothing a stolen live JWT could not already do by refreshing itself.
+    **The bound on what this adds.** The caller already holds an unexpired
+    device JWT for this device, which can self-refresh at coord indefinitely
+    while it stays unexpired. The ``dmk_`` it receives is bound to the same
+    device, exchanges only for a device JWT for that device (``/exchange``
+    403s any other), is owner-attributed, expires, and cannot be re-minted
+    here once revoked. So a leaked live device JWT (or a JWT that a leaked
+    ``dmk_`` derived via ``/exchange``) gains exactly this: it can obtain a
+    ``dmk_`` for this device ONLY while the device has no key usable for more
+    than 7 days. It cannot rotate, and so cannot silently invalidate, the
+    real runner's usable recovery key. Inside the final 7 days, or with no
+    key at all, it can win the renewal race; the real runner then finds its
+    own key refused at ``/exchange``.
 
     Response: the same :class:`DeviceMachineCredentialMintResponse` as
     ``/mint`` (plaintext ``dmk_`` returned ONCE), status 201.
@@ -1243,8 +1260,17 @@ async def self_mint_device_machine_credential(
         )
     _owner_user_id, tenant_id = owner_and_tenant
 
-    existing = await dmk_crud.get_by_device(db, device_id)
-    if existing is not None and existing.revoked_at is not None:
+    try:
+        return await _mint_machine_credential(
+            db,
+            device_id=device_id,
+            owner_user_id=device_ctx.user_id,
+            tenant_id=tenant_id,
+            via="device_jwt",
+            refuse_if_revoked=True,
+            refuse_if_usable_beyond=SELF_MINT_RENEWAL_WINDOW,
+        )
+    except dmk_crud.DeviceMachineKeyRevokedError as exc:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail={
@@ -1254,15 +1280,19 @@ async def self_mint_device_machine_credential(
                     "the owner's session."
                 ),
             },
-        )
-
-    return await _mint_machine_credential(
-        db,
-        device_id=device_id,
-        owner_user_id=device_ctx.user_id,
-        tenant_id=tenant_id,
-        via="device_jwt",
-    )
+        ) from exc
+    except dmk_crud.DeviceMachineKeyStillUsableError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={
+                "code": "machine_key_still_usable",
+                "message": (
+                    "This device already holds a machine key usable for more "
+                    "than 7 days; self-mint renews only an absent, expired or "
+                    "expiring key. Replace a lost key with the owner's /mint."
+                ),
+            },
+        ) from exc
 
 
 async def _mint_machine_credential(
@@ -1272,19 +1302,25 @@ async def _mint_machine_credential(
     owner_user_id: UUID,
     tenant_id: UUID | None,
     via: str,
+    refuse_if_revoked: bool = False,
+    refuse_if_usable_beyond: timedelta | None = None,
 ) -> DeviceMachineCredentialMintResponse:
     """Mint (or rotate) ``device_id``'s ``dmk_`` and build the one-shot
     response — the logic shared by ``/mint`` and ``/self-mint``.
 
     Authorization is the caller's job; this only mints with the normal
     ``DEVICE_MACHINE_KEY_TTL_DAYS`` TTL, commits, and logs. ``via`` names the
-    authenticating arm in the log line.
+    authenticating arm in the log line. The ``refuse_*`` guards pass through
+    to ``dmk_crud.mint``, which evaluates them under its row lock and raises
+    its typed errors (the caller maps them to HTTP).
     """
     plaintext, cred = await dmk_crud.mint(
         db,
         device_id=device_id,
         owner_user_id=owner_user_id,
         tenant_id=tenant_id,
+        refuse_if_revoked=refuse_if_revoked,
+        refuse_if_usable_beyond=refuse_if_usable_beyond,
     )
     await db.commit()
 
