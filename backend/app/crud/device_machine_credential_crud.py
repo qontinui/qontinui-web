@@ -149,6 +149,20 @@ async def get_by_hash(
     return (await db.execute(stmt)).scalar_one_or_none()
 
 
+async def get_by_device(
+    db: AsyncSession, device_id: UUID
+) -> DeviceMachineCredential | None:
+    """Resolve the device's credential row (one per device), in any state.
+
+    Revoked and expired rows are returned too, so a caller can refuse to
+    re-mint over an operator revocation.
+    """
+    stmt = select(DeviceMachineCredential).where(
+        DeviceMachineCredential.device_id == device_id
+    )
+    return (await db.execute(stmt)).scalar_one_or_none()
+
+
 async def get_by_key(
     db: AsyncSession, plaintext_key: str
 ) -> DeviceMachineCredential | None:
