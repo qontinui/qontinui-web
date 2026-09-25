@@ -14,12 +14,16 @@ Plan ``2026-09-18-plan-library-difficulty-field``. What these pin:
 from __future__ import annotations
 
 import time
+from typing import get_args
 
 import pytest
 
 from app.services.plan_difficulty import (
+    MODEL_SELECTOR_VOCABULARY,
+    MODEL_SELECTORS,
     MODEL_TIERS,
     RUBRIC_VERSION,
+    DifficultyLevel,
     _fold,
     compute_difficulty,
 )
@@ -100,6 +104,32 @@ class TestTotality:
         assert set(MODEL_TIERS) == {"low", "medium", "high"}
         assert MODEL_TIERS["high"] == "Fable 5.1"
         assert MODEL_TIERS["medium"] == "Opus 5"
+
+
+class TestModelSelectors:
+    """The machine-readable routing map (plan
+    ``2026-09-22-route-plan-sweeps-by-difficulty``). A level added without a
+    selector must fail HERE, not as a ``KeyError`` in a sweep at 03:00."""
+
+    #: The Claude Code Agent tool's ``model`` values — the vocabulary
+    #: :data:`MODEL_SELECTOR_VOCABULARY` names.
+    _AGENT_TOOL_MODELS = frozenset({"sonnet", "opus", "haiku", "fable"})
+
+    def test_every_difficulty_level_has_a_tier_and_a_selector(self) -> None:
+        levels = set(get_args(DifficultyLevel))
+        assert levels == {"low", "medium", "high"}
+        assert set(MODEL_TIERS) == levels
+        assert set(MODEL_SELECTORS) == levels
+
+    def test_every_selector_is_an_agent_tool_model(self) -> None:
+        assert set(MODEL_SELECTORS.values()) <= self._AGENT_TOOL_MODELS
+
+    def test_the_selectors_follow_the_calibrated_tiers(self) -> None:
+        # ``low`` was calibrated on Sonnet; ``haiku`` is deliberately unmapped.
+        assert MODEL_SELECTORS == {"high": "fable", "medium": "opus", "low": "sonnet"}
+
+    def test_the_vocabulary_is_named(self) -> None:
+        assert MODEL_SELECTOR_VOCABULARY == "claude_code_agent_tool_v1"
 
 
 class TestDeclaredStamp:
