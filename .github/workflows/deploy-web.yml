@@ -966,6 +966,51 @@ jobs:
             echo "::warning::GitHub-identity backfill exited ${EXIT_CODE} (non-fatal; deploy already healthy). Inspect /ecs/qontinui-staging/web web/web/${TASK_ID}"
           fi
 
+      # ── Served build identity: the COMMIT, not just the task-def ──────────
+      # "Assert serving revision identity" proves the task-def this run
+      # registered is serving. It cannot prove that the image behind it carries
+      # this run's commit, or that the image carries a commit at all: a dropped
+      # `--build-arg BUILD_SHA` would bake `unknown` and nothing would notice.
+      # GET /meta/served-routes reports `build_sha` (QONTINUI_BUILD_SHA, baked
+      # by the build step above), and coord's route-serving observer reads that
+      # field to tell a rollout from a removed route, so a wrong value there is
+      # a wrong input to coord (plan
+      # 2026-09-25-route-serving-observer-probes-mutating-routes-with-their-documented-verb,
+      # whose Phase 4 is gated on this route being DEPLOYED).
+      #
+      # Placed after the backfill so a failure here skips nothing, and it does
+      # NOT roll back: a mis-stamped image that passed the behavioral smoke is
+      # serving correctly, so the red job is the signal. A mismatch is retried
+      # to absorb ALB draining; a transient 5xx/000 is retried too. Rollback
+      # mode redeploys a prior image without building, so it is skipped there.
+      - name: Assert served build sha
+        if: ${{ success() && inputs.rollback != 'true' }}
+        run: |
+          set -uo pipefail
+          URL="${API_BASE}/meta/served-routes"
+          got=""
+          for i in 1 2 3 4 5 6; do
+            code=$(curl -s -o /tmp/served_routes -w '%{http_code}' "$URL") || code=000
+            if [ "$code" = "200" ]; then
+              got=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).get("build_sha",""))' /tmp/served_routes 2>/dev/null || echo "")
+            else
+              got=""
+            fi
+            echo "  attempt $i: GET $URL -> $code build_sha=${got:-<none>} (want ${GITHUB_SHA})"
+            if [ "$got" = "$GITHUB_SHA" ]; then
+              echo "Serving image carries ${GITHUB_SHA}."
+              exit 0
+            fi
+            # A settled non-200 that is not transient will not self-heal.
+            if [ "$code" != "200" ] && [ "$code" != "000" ] && [ "${code:0:1}" != "5" ]; then
+              break
+            fi
+            sleep 10
+          done
+          echo "::error::GET $URL did not report build_sha=${GITHUB_SHA} (last status ${code}, build_sha=${got:-<none>}). The task-def identity gate passed, so the image itself is mis-stamped: check the BUILD_SHA build-arg and backend/Dockerfile."
+          head -c 300 /tmp/served_routes 2>/dev/null || true; echo
+          exit 1
+
       # ── Deploy effect signature: VERIFY (best-effort, report-only) ────────
       # Fires one verification after the rollout settled (or failed + rolled
       # back — `always()` so honest Failures land too; failures are what the
