@@ -3,7 +3,8 @@
  *
  * Extracted from `TreeCard.tsx` by plan
  * `2026-08-16-coord-console-ui-unification-pipeline-style.md` Phase 3 Wave 1,
- * following the shape `alertStatus.ts` established: **status derivation lives
+ * following the shape `planStatus.ts` carries (first established by the
+ * since-retired `alertStatus.ts`): **status derivation lives
  * in a pure, unit-tested module** (R8), so the words an operator reads are
  * testable without a DOM and no page derives a status inline in JSX.
  *
@@ -243,11 +244,15 @@ export function staleBand(tree: PrimaryTreeRow): StaleBand {
  * timeout, no retry and no other process that resolves it. Rating it `waiting`
  * was a promise the surface cannot keep.
  *
- * It also has to agree with `alertStatus.ts`, which rates the SAME condition
- * (`stale-wip`) `author` and shipped reviewed in qontinui-web#986. Two console
- * surfaces answering "who must act on idle WIP?" differently is exactly the
- * drift R3 exists to prevent, and where the failure mode is LOST WORK the tie
- * breaks toward the louder signal.
+ * The invariant: **idle uncommitted work is `author` wherever the console
+ * rates it.** This is the one surface that does today — the alerts page's
+ * `alertStatus.ts`, which rated the same condition (`stale-wip`) `author` in
+ * qontinui-web#986, was deleted with that page (plan
+ * `2026-09-18-notifications-are-agent-actions-and-alerts-are-agent-work`
+ * Phase 8). A future surface rating idle WIP must agree: two console surfaces
+ * answering "who must act on idle WIP?" differently is exactly the drift R3
+ * exists to prevent, and where the failure mode is LOST WORK the tie breaks
+ * toward the louder signal.
  *
  * The 24h/72h gradation survives in the badge TEXT (`stale 24h+` /
  * `stale 72h+`) and in `TreesHealth.headline`, which is where a gradation

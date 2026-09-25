@@ -27,6 +27,8 @@ interface MatchingOptionsPanelProps {
   isAnalyzing: boolean;
   hasScreenshot: boolean;
   onRunAnalysis: () => void;
+  /** Coord's reason no new work may start right now (null = allowed). */
+  runRefusal?: string | null;
 }
 
 export function MatchingOptionsPanel({
@@ -40,6 +42,7 @@ export function MatchingOptionsPanel({
   isAnalyzing,
   hasScreenshot,
   onRunAnalysis,
+  runRefusal = null,
 }: MatchingOptionsPanelProps) {
   return (
     <Card className="bg-surface-raised/50 border-border-default">
@@ -97,7 +100,8 @@ export function MatchingOptionsPanel({
 
         <Button
           onClick={onRunAnalysis}
-          disabled={!hasScreenshot || isAnalyzing}
+          disabled={!hasScreenshot || isAnalyzing || runRefusal !== null}
+          title={runRefusal ?? undefined}
           className="w-full bg-brand-primary hover:bg-brand-primary/80 text-black"
         >
           {isAnalyzing ? (
@@ -116,6 +120,14 @@ export function MatchingOptionsPanel({
             </>
           )}
         </Button>
+        {runRefusal && (
+          <p
+            className="text-xs text-text-muted"
+            data-testid="rag-analysis-refusal"
+          >
+            {runRefusal}
+          </p>
+        )}
       </CardContent>
     </Card>
   );

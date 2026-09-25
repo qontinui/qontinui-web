@@ -10,22 +10,24 @@
  * component body) — pages gate their own mutations on `isCoordAdmin`. That
  * distinction is load-bearing for the connect-flow security reasoning in
  * `onboarding-status/page.tsx`, so do not restate it as "admin-gated".
- * Five primary pages:
+ * Primary pages:
  *  - /admin/coord/pipeline
  *  - /admin/coord/trees
- *  - /admin/coord/plans (+ /admin/coord/plans/[slug])
- *  - /admin/coord/alerts
+ *  - /admin/coord/plans (the plan CORPUS, reconciled three ways)
+ *  - /admin/coord/devops (Dev Ops overview, incl. the Conditions panel)
  *  - /admin/coord/history
  *
- * Cross-links to /admin/agent-claims (PR #156) and /sessions live in
- * CoordNav. The sessions cross-link pointed at /admin/agent-sessions
- * (PR #158) until `2026-08-26-sessions-console-consolidation` Phase 3
- * consolidated the six session surfaces onto /sessions.
+ * The per-unit detail route is `/admin/coord/work-units/[slug]`: plan
+ * `2026-09-20-the-operator-plans-page-reads-the-wrong-store` Phase 3 moved
+ * coord's work-unit list — and its detail page with it — off `/plans`, which
+ * now reads the plan library.
+ *
+ * Navigation between console pages is the app sidebar's Coord, Sessions and
+ * Fleet sections (built from `components/admin/coord/coordNavModel.ts`).
  */
 
 import { Activity } from "lucide-react";
 import CoordNav from "@/components/admin/coord/CoordNav";
-import { CoordTenantSwitcher } from "@/components/admin/coord/CoordTenantSwitcher";
 import RedMainBanner from "@/components/admin/coord/RedMainBanner";
 
 export default function CoordLayout({
@@ -43,9 +45,10 @@ export default function CoordLayout({
       data-testid="coord-layout"
       className="h-[calc(100vh-44px)] flex flex-col bg-background overflow-hidden"
     >
-      {/* One chrome row: title + grouped nav + tenant switcher (the old
-          two-row header/nav stack folded together — nav redesign). The h1
-          keeps its exact text: e2e + page specs assert it by role/name. */}
+      {/* One chrome row: title + the status row (crumb and live badges). The
+          console's page links live in the app sidebar, and the project
+          (tenant) selector moved there too. The h1 keeps its exact text:
+          e2e + page specs assert it by role/name. */}
       <header className="flex items-center gap-2 flex-wrap px-3 sm:px-6 py-2 border-b border-border bg-card shrink-0">
         <Activity className="h-4 w-4 text-muted-foreground shrink-0" />
         <h1 className="text-sm font-semibold whitespace-nowrap">
@@ -53,9 +56,6 @@ export default function CoordLayout({
         </h1>
         <div className="mx-1 sm:mx-2 h-5 w-px bg-border hidden sm:block" aria-hidden />
         <CoordNav />
-        <div className="ml-auto shrink-0">
-          <CoordTenantSwitcher />
-        </div>
       </header>
 
       {/* Red-main outage banner (plan 2026-07-06-coord-red-main-…, Phase 1

@@ -19,16 +19,23 @@ const ALL: ProposalKind[] = [
   "loosening",
   "unclassifiable",
   "stale",
+  "retired",
+  "decided",
   "unrecognised",
 ];
 
-function proposal(
-  over: Partial<PromptDocumentProposal> = {}
-): Pick<PromptDocumentProposal, "direction" | "base_version"> {
-  return { direction: "loosening", base_version: 3, ...over } as Pick<
-    PromptDocumentProposal,
-    "direction" | "base_version"
-  >;
+type DerivableProposal = Pick<
+  PromptDocumentProposal,
+  "direction" | "base_version"
+> &
+  Partial<Pick<PromptDocumentProposal, "status">>;
+
+function proposal(over: Partial<PromptDocumentProposal> = {}): DerivableProposal {
+  return {
+    direction: "loosening",
+    base_version: 3,
+    ...over,
+  } as DerivableProposal;
 }
 
 describe("proposal palette", () => {
@@ -107,5 +114,138 @@ describe("the two judgements the palette audit cannot make", () => {
     expect(deriveProposalStatus(proposal({ base_version: 4 }), 4).kind).toBe(
       "loosening"
     );
+  });
+});
+
+/**
+ * coord's TERMINAL `stale` status (plan
+ * `2026-09-13-policy-proposals-agent-decidable-dial-driven-self-retiring`,
+ * Phase 1) versus the DERIVED `stale` kind this module has always had.
+ *
+ * The two are easy to conflate — same word, and the derived one fires on
+ * exactly the condition that produces the terminal one — but they ask opposite
+ * things of the reader, so the difference is pinned here rather than left to
+ * the module doc.
+ */
+describe("a proposal coord already retired", () => {
+  it("reads as `retired`, and asks nothing of anyone", () => {
+    const s = deriveProposalStatus(
+      proposal({ base_version: 3, status: "stale" }),
+      9
+    );
+    expect(s.kind).toBe("retired");
+    // NOT `author`. coord closed it; there is no decision left to make, and a
+    // red row would be demanding an action that no longer exists.
+    expect(s.attention).toBe("none");
+    expect(PROPOSAL_ATTENTION_BY_KIND.retired).toBe("none");
+    expect(/\bbg-(red|amber)-/.test(PROPOSAL_KIND_CLASS.retired)).toBe(false);
+    expect(s.reason).toMatch(/retired/i);
+    expect(s.reason).toContain("v9");
+  });
+
+  it("does NOT need a readable live version to be known dead", () => {
+    // The whole reason the terminal arm sits above the version comparison:
+    // `liveVersion === null` is UNKNOWN for staleness we would have to DERIVE,
+    // but coord's own verdict is not a derivation. A retired row that fell
+    // through to `loosening` here would render as approvable.
+    const s = deriveProposalStatus(
+      proposal({ base_version: 3, status: "stale" }),
+      null
+    );
+    expect(s.kind).toBe("retired");
+    expect(s.reason).toMatch(/can no longer be approved/i);
+  });
+
+  it("outranks the direction, `unrecognised` included", () => {
+    expect(
+      deriveProposalStatus(
+        proposal({
+          direction: "sideways" as PromptDocumentProposal["direction"],
+          status: "stale",
+        }),
+        9
+      ).kind
+    ).toBe("retired");
+  });
+
+  it("leaves the derived race-window kind intact for a PENDING row", () => {
+    // The derived kind is not made redundant by the terminal one: coord retires
+    // inside the document write, while this page holds a list fetched before
+    // it. In that window the row is still `pending` on screen and the only
+    // evidence is the version comparison — which must still go red.
+    const s = deriveProposalStatus(
+      proposal({ base_version: 3, status: "pending" }),
+      7
+    );
+    expect(s.kind).toBe("stale");
+    expect(s.attention).toBe("author");
+  });
+});
+
+/**
+ * The regression this suite did not catch, and could not have.
+ *
+ * Every derived-staleness case above pairs `status: "pending"` (or an absent
+ * status) with a moved document. An APPROVED row is the opposite pairing, and
+ * it is not a corner case — **approving a proposal APPLIES the edit as a new
+ * document version**, so `liveVersion > base_version` holds for every approved
+ * row by construction. Falling through to the derived comparison therefore did
+ * not mis-file an occasional row: it filed the ENTIRE "Recently proposed &
+ * approved" section as `attention: "author"`, in `AUTHOR_RED` with the `✕`
+ * glyph, demanding the reader act on a decision already taken.
+ */
+describe("a proposal coord already decided", () => {
+  it("reads as `decided` and asks nothing, even though the document HAS moved", () => {
+    // The exact shape approving produces: base v3, document now at v7 because
+    // the approval is what moved it.
+    const s = deriveProposalStatus(
+      proposal({ base_version: 3, status: "approved" }),
+      7
+    );
+    expect(s.kind).toBe("decided");
+    expect(s.label).toBe("approved");
+    expect(s.attention).toBe("none");
+    expect(s.reason).toMatch(/closed this/i);
+  });
+
+  it("files a REJECTED row the same way", () => {
+    const s = deriveProposalStatus(
+      proposal({ base_version: 3, status: "rejected" }),
+      7
+    );
+    expect(s.kind).toBe("decided");
+    expect(s.label).toBe("rejected");
+    expect(s.attention).toBe("none");
+  });
+
+  it("paints `decided` calm — never the act-now red the derived kind uses", () => {
+    expect(PROPOSAL_ATTENTION_BY_KIND.decided).toBe("none");
+    expect(/\bbg-(red|amber)-/.test(PROPOSAL_KIND_CLASS.decided)).toBe(false);
+    // ...and it carries no `✕`, which the palette derives from `author`.
+    expect(PROPOSAL_AUTHOR_GLYPH_KINDS.has("decided")).toBe(false);
+  });
+
+  it("outranks the direction, `unrecognised` included", () => {
+    expect(
+      deriveProposalStatus(
+        proposal({
+          direction: "sideways" as PromptDocumentProposal["direction"],
+          status: "approved",
+        }),
+        7
+      ).kind
+    ).toBe("decided");
+  });
+
+  it("still lets a PENDING row with the same numbers go red", () => {
+    // The guard against over-correcting: if `decided` were reached by anything
+    // but the two closed statuses, the race-window warning would vanish with
+    // it and this file would still be green.
+    const s = deriveProposalStatus(
+      proposal({ base_version: 3, status: "pending" }),
+      7
+    );
+    expect(s.kind).toBe("stale");
+    expect(s.attention).toBe("author");
   });
 });

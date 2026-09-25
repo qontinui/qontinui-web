@@ -14,8 +14,10 @@ import type {
 import {
   ATTENTION_BY_KIND,
   buildPipelineRows,
+  fusePipelinePrs,
   candidateChurnBadgeLabel,
   candidateChurnBadgeTitle,
+  compareBySubmitted,
   deriveCandidateChurn,
   derivePipelineHealth,
   economicsFor,
@@ -26,6 +28,8 @@ import {
   matchesFilter,
   matchesQuery,
   pickActiveProposal,
+  rowActivityMs,
+  rowSubmittedMs,
   type PipelineRow,
   type UnifiedStatus,
   type UnifiedStatusKind,
@@ -1731,16 +1735,19 @@ describe("merged rows", () => {
       []
     )[0];
     expect(row.status.kind).toBe("merged");
-    expect(matchesFilter(row, "all")).toBe(false);
+    expect(matchesFilter(row, "all")).toBe(true);
     // No sha to cite, so the reason names the branch only — never a fake sha.
     expect(row.status.reason).toBe("landed on main");
   });
 
-  it("keeps merged rows out of the live list and in their own tab", () => {
+  it("lists merged rows on All PRs as well as on their own tab", () => {
     const rows = buildPipelineRows([MERGED_A, pr({ pr_number: 12 })], []);
     expect(
-      rows.filter((r) => matchesFilter(r, "all")).map((r) => r.prNumber)
-    ).toEqual([12]);
+      rows
+        .filter((r) => matchesFilter(r, "all"))
+        .map((r) => r.prNumber)
+        .sort()
+    ).toEqual([10, 12]);
     expect(
       rows.filter((r) => matchesFilter(r, "merged")).map((r) => r.prNumber)
     ).toEqual([10]);
@@ -1786,6 +1793,34 @@ describe("merged rows", () => {
     expect(buildPipelineRows([phantom], [])[0].status.kind).toBe("merged");
   });
 
+  it("isMergedPr: coord's landed-open token IS merged, with no sha", () => {
+    // The open listing never projects `merge_commit_sha`, so a phantom-open
+    // row there carries only coord's `landed-open` merge_status. Its GitHub
+    // signals froze the moment before the land — DIRTY here — and without the
+    // token /fleet read finished work as a red conflict.
+    const phantom = pr({
+      pr_state: "open",
+      merge_commit_sha: null,
+      merge_state_status: "DIRTY",
+      mergeable: false,
+      merge_status: "landed-open",
+    });
+    expect(isMergedPr(phantom)).toBe(true);
+    const status = buildPipelineRows([phantom], [])[0].status;
+    expect(status.kind).toBe("merged");
+    expect(status.attention).toBe("none");
+    expect(status.reason).toContain("GitHub has not closed the PR yet");
+  });
+
+  it("isMergedPr: any other merge_status on an open row is NOT merged", () => {
+    expect(
+      isMergedPr(pr({ pr_state: "open", merge_status: "ready-but-unlanded" }))
+    ).toBe(false);
+    expect(
+      isMergedPr(pr({ pr_state: "open", merge_status: "conflicts" }))
+    ).toBe(false);
+  });
+
   it("isMergedPr: both terminal pr_states still count with no sha", () => {
     expect(isMergedPr(pr({ pr_state: "merged" }))).toBe(true);
     expect(isMergedPr(pr({ pr_state: "closed" }))).toBe(true);
@@ -1815,7 +1850,7 @@ describe("merged rows", () => {
     expect(rows).toHaveLength(1);
     expect(rows[0].status.kind).toBe("merged");
     expect(matchesFilter(rows[0], "merged")).toBe(true);
-    expect(matchesFilter(rows[0], "all")).toBe(false);
+    expect(matchesFilter(rows[0], "all")).toBe(true);
     // ...and NOT still in flight. The proposal lags the land, so keying the
     // in-flight arm on the proposal alone would file one row under two tabs.
     expect(matchesFilter(rows[0], "in-flight")).toBe(false);
@@ -2241,5 +2276,318 @@ describe("economicsFor — coord keys by owner/name, rows may use the short name
   it("is undefined, not a zeroed row, for a repo coord did not report", () => {
     expect(economicsFor("qontinui/qontinui-runner", econ)).toBeUndefined();
     expect(economicsFor("qontinui/qontinui-runner", undefined)).toBeUndefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// fusePipelinePrs — ONE row per PR, across AND within the two reads.
+//
+// The duplicate it exists for is operator-reported (2026-09-20): a coord
+// ff-landed PR rendered TWICE in the Merged tab, once as "landed on main by
+// coord — GitHub has not closed the PR yet" and once as "landed on main as
+// <sha>". The previous collapse compared the open ARRAY against the merged
+// ARRAY, and coord serves both copies inside the merged one.
+// ---------------------------------------------------------------------------
+
+describe("fusePipelinePrs", () => {
+  const BRANCH = "agent/eb2155ed4152-01a0a0a33785/stale-mirror-sha";
+  const REPO = "qontinui/qontinui-runner";
+
+  /** The phantom-open half: coord knows it landed, GitHub has not closed it. */
+  const phantomOpen = () =>
+    pr({
+      repo: REPO,
+      branch: BRANCH,
+      pr_number: 1538,
+      pr_state: "open",
+      merge_status: "landed-open",
+    });
+
+  /** The landed half of the SAME response: carries the sha and the time. */
+  const landedTwin = () =>
+    pr({
+      repo: REPO,
+      branch: BRANCH,
+      pr_number: 1538,
+      pr_state: "open",
+      merge_commit_sha: "d73f3c4aaaa",
+      merged_at: "2026-09-20T08:00:00Z",
+    });
+
+  it("collapses both copies coord served in ONE merged response", () => {
+    const fused = fusePipelinePrs([], [phantomOpen(), landedTwin()]);
+    expect(fused).toHaveLength(1);
+    expect(fused[0].merge_commit_sha).toBe("d73f3c4aaaa");
+  });
+
+  it("prefers the sha-bearing row WHICHEVER order coord listed them", () => {
+    // Order-independence is the property that makes this safe: both rows come
+    // from one response, so there is no ordering between them to appeal to.
+    for (const merged of [
+      [phantomOpen(), landedTwin()],
+      [landedTwin(), phantomOpen()],
+    ]) {
+      const fused = fusePipelinePrs([], merged);
+      expect(fused).toHaveLength(1);
+      expect(fused[0].merge_commit_sha).toBe("d73f3c4aaaa");
+      expect(fused[0].merged_at).toBe("2026-09-20T08:00:00Z");
+    }
+  });
+
+  it("keeps a landed-open row when it is the ONLY copy", () => {
+    // Before coord's straggler sweep catches up, this may be all there is.
+    // Preferring the sha must not become REQUIRING one, or a real landing
+    // vanishes from the tab that records landings.
+    const fused = fusePipelinePrs([], [phantomOpen()]);
+    expect(fused).toHaveLength(1);
+    expect(fused[0].merge_status).toBe("landed-open");
+  });
+
+  it("still drops the open-poll copy of a landed PR (the original case)", () => {
+    const fused = fusePipelinePrs(
+      [pr({ repo: REPO, branch: BRANCH, pr_number: 1538, pr_state: "open" })],
+      [landedTwin()]
+    );
+    expect(fused).toHaveLength(1);
+    expect(fused[0].merge_commit_sha).toBe("d73f3c4aaaa");
+  });
+
+  it("keys on repo AND branch, so two repos' same-named branches both survive", () => {
+    const fused = fusePipelinePrs(
+      [],
+      [
+        pr({ repo: "qontinui/qontinui-web", branch: "feat/x", pr_number: 1 }),
+        pr({ repo: "qontinui/qontinui-coord", branch: "feat/x", pr_number: 2 }),
+      ]
+    );
+    expect(fused).toHaveLength(2);
+  });
+
+  it("leaves live work alone and preserves order: open first, then landed", () => {
+    const openA = pr({ branch: "feat/a", pr_number: 10 });
+    const openB = pr({ branch: "feat/b", pr_number: 11 });
+    const fused = fusePipelinePrs([openA, openB], [landedTwin()]);
+    expect(fused.map((p) => p.pr_number)).toEqual([10, 11, 1538]);
+  });
+
+  it("is a no-op on two empty reads", () => {
+    expect(fusePipelinePrs([], [])).toEqual([]);
+  });
+});
+
+describe("compareBySubmitted (All PRs ordering)", () => {
+  // One row per status band, deliberately in an order that disagrees with the
+  // triage sort: the conflict (rank 0) was opened NEWEST, the merged row
+  // (rank 10) OLDEST. Refresh stamps are set to the OPPOSITE order so an
+  // implementation ordering by activity fails.
+  const build = () =>
+    buildPipelineRows(
+      [
+        pr({
+          pr_number: 1,
+          branch: "b-conflict",
+          opened_at: ago(5000),
+          last_refreshed_at: ago(1),
+        }),
+        pr({
+          pr_number: 2,
+          branch: "b-queued",
+          opened_at: ago(300),
+          last_refreshed_at: ago(2),
+        }),
+        pr({
+          pr_number: 3,
+          branch: "b-ready",
+          opened_at: ago(10),
+          last_refreshed_at: ago(900),
+        }),
+        pr({
+          pr_number: 4,
+          branch: "b-merged",
+          pr_state: "merged",
+          opened_at: ago(60),
+          merged_at: ago(1),
+          merge_commit_sha: "eeeeeee5555",
+        }),
+      ],
+      [
+        proposal({
+          proposal_id: "pc",
+          status: "conflict",
+          repos: [repoDetail({ branch: "b-conflict" })],
+        }),
+        proposal({
+          proposal_id: "pq",
+          status: "queued",
+          repos: [repoDetail({ branch: "b-queued" })],
+        }),
+      ]
+    );
+
+  it("orders across status bands by time SUBMITTED, merged rows included", () => {
+    // Precondition: the triage sort really does band these — otherwise the
+    // assertion below would pass without proving the re-sort did anything.
+    expect(build().map((r) => r.prNumber)).toEqual([1, 2, 3, 4]);
+
+    const sorted = build()
+      .filter((r) => matchesFilter(r, "all"))
+      .sort(compareBySubmitted);
+    // Newest opened first. The merged PR (#4) sorts by when it was OPENED
+    // (60m ago), not when it landed (1m ago, which would put it first), and
+    // the conflict (#1), first in triage order, is the oldest.
+    expect(sorted.map((r) => r.prNumber)).toEqual([3, 4, 2, 1]);
+  });
+
+  it("does not move a row when only its refresh stamp changes", () => {
+    const before = build().sort(compareBySubmitted);
+    // Coord re-hydrated every open PR: all refresh stamps are now "just now".
+    const rehydrated = buildPipelineRows(
+      [
+        pr({
+          pr_number: 1,
+          branch: "b-conflict",
+          opened_at: ago(5000),
+          last_refreshed_at: ago(0),
+        }),
+        pr({
+          pr_number: 2,
+          branch: "b-queued",
+          opened_at: ago(300),
+          last_refreshed_at: ago(0),
+        }),
+        pr({
+          pr_number: 3,
+          branch: "b-ready",
+          opened_at: ago(10),
+          last_refreshed_at: ago(0),
+        }),
+        pr({
+          pr_number: 4,
+          branch: "b-merged",
+          pr_state: "merged",
+          opened_at: ago(60),
+          merged_at: ago(1),
+          merge_commit_sha: "eeeeeee5555",
+        }),
+      ],
+      []
+    ).sort(compareBySubmitted);
+    expect(rehydrated.map((r) => r.prNumber)).toEqual(
+      before.map((r) => r.prNumber)
+    );
+  });
+
+  it("carries GitHub's open time onto the row", () => {
+    const [row] = buildPipelineRows([pr({ opened_at: ago(42) })], []);
+    expect(row.submittedAt).toBe(ago(42));
+    expect(rowSubmittedMs(row)).toBe(new Date(ago(42)).getTime());
+  });
+
+  it("puts rows with no known submitted time AFTER every known one", () => {
+    const rows = buildPipelineRows(
+      [
+        // Unknown, and freshly refreshed: must NOT outrank a known open time.
+        pr({ pr_number: 1, branch: "b-unknown", last_refreshed_at: ago(0) }),
+        pr({ pr_number: 2, branch: "b-old", opened_at: ago(90000) }),
+      ],
+      []
+    );
+    expect(rows.find((r) => r.prNumber === 1)?.submittedAt).toBeNull();
+    expect(rows.sort(compareBySubmitted).map((r) => r.prNumber)).toEqual([
+      2, 1,
+    ]);
+  });
+
+  it("breaks a tie between equal KNOWN submitted times on key", () => {
+    const rows = buildPipelineRows(
+      [
+        pr({ pr_number: 2, branch: "b-z", opened_at: ago(30) }),
+        pr({ pr_number: 1, branch: "b-a", opened_at: ago(30) }),
+      ],
+      []
+    );
+    const keys = rows.sort(compareBySubmitted).map((r) => r.key);
+    expect(keys).toEqual([...keys].sort());
+    // Same answer whichever order they arrive in, so a poll cannot swap them.
+    expect(
+      [...rows]
+        .reverse()
+        .sort(compareBySubmitted)
+        .map((r) => r.key)
+    ).toEqual(keys);
+  });
+
+  it("orders the unknown cohort by activity, then key", () => {
+    const rows = buildPipelineRows(
+      [
+        pr({ pr_number: 1, branch: "b-a", last_refreshed_at: ago(20) }),
+        pr({ pr_number: 2, branch: "b-b", last_refreshed_at: ago(5) }),
+        pr({ pr_number: 3, branch: "b-c", last_refreshed_at: ago(5) }),
+      ],
+      []
+    );
+    const sorted = rows.sort(compareBySubmitted);
+    expect(sorted[2].prNumber).toBe(1);
+    expect(sorted.slice(0, 2).map((r) => r.key)).toEqual(
+      sorted
+        .slice(0, 2)
+        .map((r) => r.key)
+        .sort()
+    );
+  });
+
+  it("treats an unparseable submitted time as unknown, not NaN", () => {
+    const [row] = buildPipelineRows([pr({ opened_at: "not-a-date" })], []);
+    expect(rowSubmittedMs(row)).toBeNull();
+    const good = buildPipelineRows(
+      [pr({ pr_number: 2, branch: "b-good", opened_at: ago(10) })],
+      []
+    )[0];
+    // A NaN would make the comparator return NaN and corrupt the whole sort.
+    expect([row, good].sort(compareBySubmitted)[0]).toBe(good);
+  });
+
+  it("uses the earliest attempt for a PR-less proposal", () => {
+    const rows = buildPipelineRows(
+      [],
+      [
+        proposal({
+          proposal_id: "p-new",
+          created_at: ago(5),
+          repos: [repoDetail({ branch: "b-only" })],
+        }),
+        proposal({
+          proposal_id: "p-old",
+          status: "conflict",
+          created_at: ago(400),
+          repos: [repoDetail({ branch: "b-only" })],
+        }),
+      ]
+    );
+    expect(rows).toHaveLength(1);
+    expect(rows[0].pr).toBeNull();
+    expect(rows[0].submittedAt).toBe(ago(400));
+  });
+
+  it("keeps the activity clock: land time for merged, else updatedAt", () => {
+    const [merged] = buildPipelineRows(
+      [
+        pr({
+          pr_state: "merged",
+          merged_at: ago(500),
+          last_refreshed_at: ago(1),
+          merge_commit_sha: "fffffff6666",
+        }),
+      ],
+      []
+    );
+    expect(rowActivityMs(merged)).toBe(new Date(ago(500)).getTime());
+    const [noStamp] = buildPipelineRows(
+      [pr({ pr_state: "merged", last_refreshed_at: ago(3) })],
+      []
+    );
+    expect(noStamp.mergedAt).toBeNull();
+    expect(rowActivityMs(noStamp)).toBe(new Date(ago(3)).getTime());
+    expect(rowActivityMs({ ...noStamp, updatedAt: "not-a-date" })).toBe(0);
   });
 });

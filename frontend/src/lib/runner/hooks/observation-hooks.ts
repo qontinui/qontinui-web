@@ -1,6 +1,8 @@
 "use client";
 
 import { useRunnerQuery, runnerFetch } from "../api-client";
+import type { RunnerTarget } from "../target";
+import { useRunnerTarget } from "@/contexts/active-runner-context";
 
 // =============================================================================
 // Types
@@ -87,7 +89,7 @@ export function useObservationTemporalSearch(params: {
   const qs = searchParams.toString();
   const path = `/observations/temporal-search${qs ? `?${qs}` : ""}`;
 
-  return useRunnerQuery<ObservationSearchResult[]>(path, {
+  return useRunnerQuery<ObservationSearchResult[]>(useRunnerTarget(), path, {
     enabled: params.enabled !== false,
   });
 }
@@ -98,6 +100,7 @@ export function useObservationSearch(q: string, projectId?: string) {
   if (projectId) searchParams.set("project_id", projectId);
 
   return useRunnerQuery<ObservationSearchResult[]>(
+    useRunnerTarget(),
     q ? `/observations/search?${searchParams}` : null,
     { enabled: q.length > 0 }
   );
@@ -106,6 +109,7 @@ export function useObservationSearch(q: string, projectId?: string) {
 /** Get a single observation by ID. */
 export function useObservation(id: number | null) {
   return useRunnerQuery<Observation>(
+    useRunnerTarget(),
     id != null ? `/observations/${id}` : null,
     { enabled: id != null }
   );
@@ -114,6 +118,7 @@ export function useObservation(id: number | null) {
 /** Get revision history for an observation. */
 export function useObservationHistory(id: number | null) {
   return useRunnerQuery<ObservationHistoryEntry[]>(
+    useRunnerTarget(),
     id != null ? `/observations/${id}/history` : null,
     { enabled: id != null }
   );
@@ -121,9 +126,13 @@ export function useObservationHistory(id: number | null) {
 
 /** Get weekly observation trends. */
 export function useObservationTrends(weeks = 8) {
-  return useRunnerQuery<WeeklyTrend[]>(`/observations/trends?weeks=${weeks}`, {
-    pollInterval: 60000,
-  });
+  return useRunnerQuery<WeeklyTrend[]>(
+    useRunnerTarget(),
+    `/observations/trends?weeks=${weeks}`,
+    {
+      pollInterval: 60000,
+    }
+  );
 }
 
 /** Get most revised topics in a date range. */
@@ -133,15 +142,20 @@ export function useMostRevisedTopics(
   maxResults = 20
 ) {
   return useRunnerQuery<TopicRevisionCount[]>(
+    useRunnerTarget(),
     `/observations/most-revised?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}&max_results=${maxResults}`
   );
 }
 
 /** Get observation type statistics. */
 export function useObservationStats() {
-  return useRunnerQuery<ObservationTypeStat[]>("/observations/stats", {
-    pollInterval: 30000,
-  });
+  return useRunnerQuery<ObservationTypeStat[]>(
+    useRunnerTarget(),
+    "/observations/stats",
+    {
+      pollInterval: 30000,
+    }
+  );
 }
 
 /** Point-in-time snapshot of observations as they were at `asOf`. */
@@ -149,7 +163,7 @@ export function useObservationSnapshot(asOf: string | null, maxResults = 100) {
   const path = asOf
     ? `/observations/snapshot?as_of=${encodeURIComponent(asOf)}&max_results=${maxResults}`
     : null;
-  return useRunnerQuery<Observation[]>(path, {
+  return useRunnerQuery<Observation[]>(useRunnerTarget(), path, {
     enabled: asOf != null,
   });
 }
@@ -160,10 +174,11 @@ export function useObservationSnapshot(asOf: string | null, maxResults = 100) {
 
 /** Mark an observation as superseded by another. */
 export async function supersedeObservation(
+  target: RunnerTarget,
   id: number,
   newObservationId: number
 ): Promise<{ superseded: boolean }> {
-  return runnerFetch(`/observations/${id}/supersede`, {
+  return runnerFetch(target, `/observations/${id}/supersede`, {
     method: "POST",
     body: JSON.stringify({ new_observation_id: newObservationId }),
   });

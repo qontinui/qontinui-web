@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback, useEffect, useRef } from "react";
+import { useState, useCallback, useEffect, useMemo, useRef } from "react";
 import { useSearchParams } from "next/navigation";
 import { useAutomation } from "@/contexts/automation-context";
 import { toast } from "sonner";
@@ -14,7 +14,8 @@ import type { PermissionLevel } from "@/types/collaboration";
 import type { ProjectValidationResult } from "@/lib/project-validator";
 import { validateProject } from "@/lib/project-validator";
 import { createLogger } from "@/lib/logger";
-import { runnerClient } from "@/lib/runner-client";
+import { createRunnerClient } from "@/lib/runner-client";
+import { useDispatchRunnerTarget } from "@/contexts/active-runner-context";
 import {
   BuilderMode,
   LibraryItem,
@@ -28,6 +29,14 @@ import { useProjectSharing } from "./useProjectSharing";
 const logger = createLogger("AutomationBuilder");
 
 export function useBuilderState() {
+  // Running a workflow is NEW work: only the explicit choice or coord's
+  // resolved pick. This builder makes no other runner calls.
+  const dispatch = useDispatchRunnerTarget();
+  const runnerClient = useMemo(
+    () => createRunnerClient(dispatch.target),
+    [dispatch.target]
+  );
+  const runRefusal = dispatch.refusal?.message ?? null;
   // Core selection state
   const [mode, setMode] = useState<BuilderMode>("sequential");
   const [selectedItem, setSelectedItem] = useState<LibraryItem | null>(null);
@@ -331,13 +340,23 @@ export function useBuilderState() {
 
   const handleRun = useCallback(async () => {
     if (!selectedItem) return;
+    if (runRefusal !== null) {
+      toast.error("No runner can take this run", { description: runRefusal });
+      return;
+    }
 
-    const isAvailable = await runnerClient.isAvailable();
-    if (!isAvailable) {
-      toast.error("Desktop Runner not connected", {
-        description:
-          "Start the qontinui-runner desktop app and ensure it's connected.",
-      });
+    const runner = await runnerClient.getAvailability();
+    if (!runner.available) {
+      if (runner.refusalMessage) {
+        toast.error("Desktop Runner refused this page", {
+          description: runner.refusalMessage,
+        });
+      } else {
+        toast.error("Desktop Runner not connected", {
+          description:
+            "Start the qontinui-runner desktop app and ensure it's connected.",
+        });
+      }
       return;
     }
 
@@ -368,7 +387,7 @@ export function useBuilderState() {
           error instanceof Error ? error.message : "Unknown error occurred",
       });
     }
-  }, [selectedItem]);
+  }, [selectedItem, runnerClient, runRefusal]);
 
   const handleNavigateToWorkflow = useCallback(
     (workflowId: string) => {
@@ -453,6 +472,8 @@ export function useBuilderState() {
     handleExportProject,
     handleVerifyProject,
     handleRun,
+    /** Coord's reason no run may start right now (null = allowed). */
+    runRefusal,
     handleNavigateToWorkflow,
     handleImportWorkflow,
   };

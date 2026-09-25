@@ -64,6 +64,11 @@ interface RecordingPanelProps {
   ) => void;
   /** Stop recording handler */
   onStopRecording: () => void;
+  /**
+   * Why a NEW recording may not start (coord's outcome), or null. Non-null
+   * disables Start Recording and is shown beside it.
+   */
+  startRefusal?: string | null;
   /** Capture now handler */
   onCaptureNow: () => void;
   /** Reset session handler */
@@ -134,6 +139,7 @@ export function RecordingPanel({
   isStarting,
   isStopping,
   onStartRecording,
+  startRefusal = null,
   onStopRecording,
   onCaptureNow,
   onResetSession,
@@ -328,12 +334,26 @@ export function RecordingPanel({
             </Alert>
           )}
 
+          {startRefusal && !session.isRecording && (
+            <p
+              className="text-xs text-muted-foreground"
+              data-testid="recording-start-refusal"
+            >
+              {startRefusal}
+            </p>
+          )}
+
           {/* Control Buttons */}
           <div className="flex gap-2">
             {!session.isRecording ? (
               <Button
                 onClick={handleStartRecording}
-                disabled={isStarting || browserTabs.length === 0}
+                disabled={
+                  isStarting ||
+                  browserTabs.length === 0 ||
+                  startRefusal !== null
+                }
+                title={startRefusal ?? undefined}
                 className="flex-1 bg-red-600 hover:bg-red-700"
               >
                 {isStarting ? (

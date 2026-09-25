@@ -37,6 +37,34 @@ describe("parseTenantCreateError", () => {
     });
   });
 
+  it("unwraps coord's code out of the PRODUCTION error envelope too", () => {
+    // What the deployed app actually returns: `app/main.py` registers
+    // `http_exception_handler`, which moves a string `detail` into `message`
+    // beside a generic status token. Reading only `{detail}` took `CONFLICT`
+    // for coord's code and rendered a verbatim JSON blob instead of the
+    // collision sentence.
+    const body = JSON.stringify({
+      error: "CONFLICT",
+      message: '{"error":"slug_taken","slug":"my-pizzeria"}',
+      timestamp: 1758100000.1,
+      path: "https://api.qontinui.io/api/v1/operations/tenants",
+    });
+    const parsed = parseTenantCreateError(body);
+    expect(parsed).toEqual({
+      code: "slug_taken",
+      detail: "slug_taken",
+      slug: "my-pizzeria",
+    });
+    const { code, detail, ...fields } = parsed;
+    expect(
+      projectCreateErrorMessage(
+        new TenantCreateError(409, code, detail, fields)
+      )
+    ).toBe(
+      "The short id “my-pizzeria” is already taken. Pick a different name."
+    );
+  });
+
   it("keeps the cap operands coord sends beside the token", () => {
     // `{"error":"tenant_cap_reached","cap":5,"created":5}`. Dropping these is
     // what made the cap message unactionable: "you've reached the limit"

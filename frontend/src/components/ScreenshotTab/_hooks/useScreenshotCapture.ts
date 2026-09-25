@@ -3,6 +3,7 @@ import { type UploadingImage } from "@/components/ImageUploadProgress";
 import { Screenshot } from "../../../types/Screenshot";
 import { MonitorInfo } from "../types";
 import { apiClient } from "@/lib/api-client";
+import { runnerRequest, useRunnerTarget } from "@/lib/runner";
 import { toast } from "sonner";
 
 interface UseScreenshotCaptureOptions {
@@ -29,6 +30,7 @@ export function useScreenshotCapture({
   setUploadingFiles,
   handleAutoSave,
 }: UseScreenshotCaptureOptions) {
+  const target = useRunnerTarget();
   const [isCapturing, setIsCapturing] = useState(false);
   const [showMonitorMenu, setShowMonitorMenu] = useState(false);
   const [availableMonitors, setAvailableMonitors] = useState<MonitorInfo[]>([]);
@@ -56,9 +58,10 @@ export function useScreenshotCapture({
   const handleOpenMonitorMenu = async () => {
     setShowMonitorMenu(true);
     try {
-      const apiUrl =
-        process.env.NEXT_PUBLIC_RUNNER_URL || "http://127.0.0.1:9876";
-      const response = await fetch(`${apiUrl}/api/capture/screenshot/monitors`);
+      const response = await runnerRequest(
+        target,
+        "/api/capture/screenshot/monitors"
+      );
       if (response.ok) {
         const data = await response.json();
         setAvailableMonitors(data.monitors || []);
@@ -83,12 +86,11 @@ export function useScreenshotCapture({
 
     setIsCapturing(true);
     try {
-      const apiUrl =
-        process.env.NEXT_PUBLIC_RUNNER_URL || "http://127.0.0.1:9876";
       const monitorParam =
         monitorIndex !== null ? `&monitor=${monitorIndex}` : "";
-      const response = await fetch(
-        `${apiUrl}/api/capture/screenshot/current?quality=95${monitorParam}`
+      const response = await runnerRequest(
+        target,
+        `/api/capture/screenshot/current?quality=95${monitorParam}`
       );
 
       if (!response.ok) {
@@ -170,7 +172,7 @@ export function useScreenshotCapture({
         description:
           error instanceof Error
             ? error.message
-            : "Make sure the runner is running on port 9876",
+            : "Make sure the runner is running and selected",
       });
     } finally {
       setIsCapturing(false);

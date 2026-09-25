@@ -77,7 +77,7 @@ through the real ``api_router``.
 from datetime import UTC, datetime
 
 import structlog
-from fastapi import APIRouter, Depends, Response, status
+from fastapi import APIRouter, Depends, Query, Response, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import (
@@ -89,13 +89,18 @@ from app.api.deps import (
 from app.api.strict_query import StrictQueryRoute
 from app.api.v1.endpoints.plan_library import _resolve_org_id
 from app.crud import plan_scan_root as crud
+from app.crud import work_artifact as artifact_crud
 from app.models.user import User
 from app.schemas.plan_library_scan_roots import (
     ScanRootListResponse,
     ScanRootReport,
     ScanRootReportResponse,
 )
-from app.services.plan_scan_root_health import render_row, scan_roots_health
+from app.services.plan_scan_root_health import (
+    coverage_source_repos,
+    render_row,
+    scan_roots_health,
+)
 
 logger = structlog.get_logger(__name__)
 
@@ -171,6 +176,14 @@ async def report_scan_root(
     summary="Every device's latest plan-scan-source reading, judged for age",
 )
 async def list_scan_roots(
+    coverage: bool = Query(
+        True,
+        description=(
+            "Compute the coverage set difference (default). false skips the "
+            "stem census load and the corpus anti-join for a caller that only "
+            "needs the per-device readings and roll-up."
+        ),
+    ),
     db: AsyncSession = Depends(get_async_db),
     current_user: User = Depends(get_audit_actor_user),
 ) -> ScanRootListResponse:
@@ -203,7 +216,52 @@ async def list_scan_roots(
     verdict that flips at the freshness boundary), and the block degrades a
     failed read to ``read_failed`` where this route, whose whole answer the
     readings are, lets it surface as an error.
+
+    ``coverage`` is computed HERE AND NOWHERE ELSE (design decision D2 of
+    ``2026-09-15-captured-vs-authored-coverage-is-a-set-difference``): it is a
+    set difference between the stems a device enumerated at its default ref and
+    the corpus rows under that ``source_repo``, and ``corpus_health.scan_roots``
+    — the same response object — rides every ``GET /plan-library`` page
+    including the runner's loopback search, which must not pay for an anti-join
+    over every authored stem. There it is empty with ``coverage_detail`` saying
+    which of the three reasons produced the empty list.
+
+    **No ratio is served.** The entry carries two denominators (what exists at
+    the ref, and what the scanned working tree could possibly have shown the
+    body sync), the corpus rows under OTHER keys as
+    ``out_of_scope_artifact_count``, and the attribution field
+    ``authored_not_captured_but_invisible`` — a lagging checkout's plans are
+    not a capture defect. A percentage over one of those denominators read
+    101.8% in production for a real corpus; nothing served here can express
+    that number. A key with no usable census reads ``unknown`` with a detail,
+    never a zero and never an omitted key.
+
+    ``coverage`` (the query parameter, default ``true``) lets a caller that
+    only wants the per-device readings and roll-up — ``ScanSourcesPanel`` on
+    the console, which renders no coverage field at all — say so and skip the
+    stem census load and the corpus anti-join. Passing ``false`` reads
+    ``coverage: []`` with ``coverage_detail`` starting ``not_requested:``,
+    never an unexplained empty list. Follow-up to Phase 4 of the same plan,
+    which shipped the two panels as two separate reads of this one route
+    without a way for either to opt out of the other's cost.
     """
     org_id = await _resolve_org_id(db, current_user)
-    observations = await crud.list_observations(db, org_id=org_id)
-    return scan_roots_health(observations, now=datetime.now(UTC))
+    if coverage:
+        # The censuses are DEFERRED on ``list_observations`` — this is the one
+        # branch that needs the stems, so it takes the loading read; see D2
+        # above.
+        observations = await crud.list_observations_with_censuses(db, org_id=org_id)
+        captured = await artifact_crud.captured_plan_corpus(
+            db,
+            org_id=org_id,
+            source_repos=coverage_source_repos(observations),
+        )
+    else:
+        observations = await crud.list_observations(db, org_id=org_id)
+        captured = None
+    return scan_roots_health(
+        observations,
+        now=datetime.now(UTC),
+        captured=captured,
+        coverage_requested=coverage,
+    )

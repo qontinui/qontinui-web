@@ -555,14 +555,25 @@ export function hasPendingChecks(
  * read, and gating on the sha ALONE would miss any coord deploy that does not
  * serialize it (older deploys did not) — there the ff-landed rows would fall
  * through to the GitHub derivation and pollute the LIVE list as "Ready".
+ *
+ * coord's `landed-open` merge_status is the third signal, and the only one a
+ * phantom-open row on the OPEN listing carries: coord keeps
+ * `merge_commit_sha` null on open rows, while `classify_merge_status` emits
+ * `landed-open` when coord ff-landed the PR at its CURRENT head (`land_stamp
+ * == current_head`). Without it the row fell through to `statusFromGitHub`,
+ * whose GitHub signals froze at the moment before the land — and read as
+ * `conflict`, red, about work already on the base branch. Keyed on the
+ * current head by coord, so a PR pushed to after its land is NOT covered and
+ * falls back to its live signals, as it should.
  */
 export function isMergedPr(
-  pr: Pick<PrRow, "pr_state" | "merge_commit_sha">
+  pr: Pick<PrRow, "pr_state" | "merge_commit_sha" | "merge_status">
 ): boolean {
   return (
     pr.pr_state === "merged" ||
     pr.pr_state === "closed" ||
-    pr.merge_commit_sha != null
+    pr.merge_commit_sha != null ||
+    pr.merge_status === "landed-open"
   );
 }
 
@@ -798,7 +809,9 @@ function statusFromGitHub(
       label: "Merged",
       reason: pr.merge_commit_sha
         ? `landed on ${pr.base_branch} as ${pr.merge_commit_sha.slice(0, 7)}`
-        : `landed on ${pr.base_branch}`,
+        : pr.merge_status === "landed-open"
+          ? `landed on ${pr.base_branch} by coord — GitHub has not closed the PR yet`
+          : `landed on ${pr.base_branch}`,
       attention: "none",
     };
   }
@@ -996,6 +1009,13 @@ export interface PipelineRow {
    * time).
    */
   mergedAt: string | null;
+  /**
+   * When this row was SUBMITTED — the key the All PRs tab orders by. For a PR,
+   * GitHub's open time (`PrRow.opened_at`); for a proposal-only row (no PR to
+   * carry one) the earliest attempt's `created_at`, i.e. when it was submitted
+   * to the merge train. Null when coord reports none: unknown, not "just now".
+   */
+  submittedAt: string | null;
   pr: PrRow | null;
   activeProposal: ProposalDetail | null;
   /** All proposals ever seen for this key, newest first (attempt history). */
@@ -1150,6 +1170,85 @@ function escalateIfStale(
   return pr === null ? escalated : withDwellEvidence(escalated, dwellMs);
 }
 
+/**
+ * Of two rows coord served for the SAME PR, is `candidate` the more truthful?
+ *
+ * The only discriminator that matters is `merge_commit_sha`. A phantom-open
+ * row knows the PR landed (coord classified it `landed-open`) but not WHERE or
+ * WHEN; its landed twin carries the sha and `merged_at`. Rendering the former
+ * on the Merged tab shows strictly less than coord reported, on the one
+ * surface whose entire purpose is the landing record.
+ *
+ * Deliberately NOT a general "newer wins": both rows come from one response,
+ * so there is no ordering between them to appeal to, and `merged_at` is absent
+ * from exactly the row we want to lose. Ties keep the incumbent, which makes
+ * the collapse stable and order-independent.
+ */
+function landedRowWins(candidate: PrRow, held: PrRow): boolean {
+  return held.merge_commit_sha == null && candidate.merge_commit_sha != null;
+}
+
+/**
+ * Fuse the pipeline's two PR reads into ONE row per PR.
+ *
+ * ## The duplicate this exists for
+ *
+ * coord ff-lands by pushing rebased commits straight to the base branch, so
+ * GitHub never auto-closes the PR: it sits "phantom-open" until coord's
+ * straggler sweep. `GET /pr-merge/prs?include_merged=` then returns the SAME
+ * PR twice **inside one response** — once in the open/draft list it always
+ * serves, and once among the recently-landed rows it appends. `isMergedPr`
+ * accepts both (one for `merge_status === "landed-open"`, one for its sha), so
+ * both reach the caller's merged array.
+ *
+ * Two PrRows sharing a `singleKey` become two `PipelineRow`s sharing a React
+ * key, and the PR renders twice — operator-reported 2026-09-20 against
+ * `qontinui-runner#1538` and `qontinui-coord#2258`, each appearing once as
+ * "landed on main by coord — GitHub has not closed the PR yet" and once as
+ * "landed on main as <sha>".
+ *
+ * ## Why the previous fix did not cover it
+ *
+ * The caller already subtracted `merged` from `open`, with a comment about
+ * this exact ff-land mechanic. That collapse is real and still applies — but
+ * it only ever compared the two ARRAYS. When coord puts both copies in the
+ * SAME array, the comparison never looks at them, and the guard reads as
+ * complete while the duplicate walks straight through it. Collapsing within
+ * `merged` first is what closes that, and doing it here rather than in the
+ * component is R8: the derivation is exhaustively testable without a render.
+ *
+ * Returns live-open rows first, then one row per landed PR, preserving each
+ * input's relative order — the same shape the caller built by hand before.
+ */
+export function fusePipelinePrs(open: PrRow[], merged: PrRow[]): PrRow[] {
+  const landedByKey = new Map<string, PrRow>();
+  for (const pr of merged) {
+    const key = singleKey(pr.repo, pr.branch);
+    const held = landedByKey.get(key);
+    if (!held || landedRowWins(pr, held)) landedByKey.set(key, pr);
+  }
+  // A PR whose land coord already knows about is not live work, whichever of
+  // its two shapes survived above.
+  const liveOpen = open.filter(
+    (pr) => !landedByKey.has(singleKey(pr.repo, pr.branch))
+  );
+  return [...liveOpen, ...landedByKey.values()];
+}
+
+/** Earliest `created_at` across proposal attempts, or null when there are none. */
+function earliestCreatedAt(attempts: ProposalDetail[]): string | null {
+  let best: string | null = null;
+  let bestMs = Infinity;
+  for (const a of attempts) {
+    const ms = new Date(a.created_at).getTime();
+    if (!Number.isNaN(ms) && ms < bestMs) {
+      best = a.created_at;
+      bestMs = ms;
+    }
+  }
+  return best;
+}
+
 export function buildPipelineRows(
   prs: PrRow[],
   proposals: ProposalDetail[],
@@ -1208,6 +1307,7 @@ export function buildPipelineRows(
       status,
       updatedAt: active ? active.updated_at : pr.last_refreshed_at,
       mergedAt: pickMergedAt(status, pr, attempts),
+      submittedAt: pr.opened_at ?? null,
       pr,
       activeProposal: active,
       attempts,
@@ -1251,6 +1351,7 @@ export function buildPipelineRows(
       status,
       updatedAt: active.updated_at,
       mergedAt: pickMergedAt(status, null, attempts),
+      submittedAt: earliestCreatedAt(attempts),
       pr: null,
       activeProposal: active,
       attempts,
@@ -1343,6 +1444,58 @@ function compareRows(a: PipelineRow, b: PipelineRow): number {
   );
 }
 
+/**
+ * The row's ACTIVITY clock as epoch ms: LAND time for a merged row (falling
+ * back to `updatedAt` when coord projects no `merged_at`, matching
+ * `compareRows`), otherwise `updatedAt` — the active proposal's last state
+ * change or, for a PR with no proposal, coord's `last_refreshed_at` mirror
+ * stamp, which moves whenever coord re-hydrates the row. Rows with no timestamp
+ * read as 0. This is what the working tabs show; it is NOT a submission time.
+ */
+export function rowActivityMs(row: PipelineRow): number {
+  const at =
+    row.status.kind === "merged"
+      ? (row.mergedAt ?? row.updatedAt)
+      : row.updatedAt;
+  const ms = at ? new Date(at).getTime() : 0;
+  return Number.isNaN(ms) ? 0 : ms;
+}
+
+/** The row's SUBMITTED time as epoch ms, or null when unknown/unparseable. */
+export function rowSubmittedMs(row: PipelineRow): number | null {
+  if (!row.submittedAt) return null;
+  const ms = new Date(row.submittedAt).getTime();
+  return Number.isNaN(ms) ? null : ms;
+}
+
+/**
+ * Newest-SUBMITTED first across EVERY row, ignoring status. `buildPipelineRows`
+ * returns triage order (`compareRows`: status band first, time only within a
+ * band), which suits the working tabs but not "All PRs" — there a merged PR
+ * must interleave with the open ones by when it was submitted.
+ *
+ * A row with no known submitted time sorts AFTER every row that has one:
+ * absence is no evidence, and ranking it first would put a PR whose age we do
+ * not know above ones we do. Those rows order among themselves by their
+ * activity clock, then by `key`, so equal rows keep a stable order across polls
+ * instead of swapping under the operator's cursor.
+ */
+export function compareBySubmitted(a: PipelineRow, b: PipelineRow): number {
+  const sa = rowSubmittedMs(a);
+  const sb = rowSubmittedMs(b);
+  if (sa !== null && sb !== null) {
+    if (sa !== sb) return sb - sa;
+  } else if (sa !== null) {
+    return -1;
+  } else if (sb !== null) {
+    return 1;
+  } else {
+    const byActivity = rowActivityMs(b) - rowActivityMs(a);
+    if (byActivity !== 0) return byActivity;
+  }
+  return a.key < b.key ? -1 : a.key > b.key ? 1 : 0;
+}
+
 // ----------------------------------------------------------------------------
 // Filtering
 // ----------------------------------------------------------------------------
@@ -1369,10 +1522,11 @@ export type RowPipelineFilter = Exclude<PipelineFilter, "train">;
 
 export function matchesFilter(row: PipelineRow, f: PipelineFilter): boolean {
   switch (f) {
-    // "All PRs" is the live pipeline — merged rows are history and live in
-    // their own tab, so they do not pad the working list.
+    // "All PRs" is every row, landed ones included (they also stay listed on
+    // their own Merged tab). The caller orders this tab by submitted time, not
+    // by the triage bands — see `compareBySubmitted`.
     case "all":
-      return row.status.kind !== "merged";
+      return true;
     case "attention":
       return row.status.attention !== "none";
     case "in-flight": {

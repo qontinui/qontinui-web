@@ -20,7 +20,7 @@
  *   so without it there is no name at all.
  * - **`title`** names what the press does AND ITS EFFECT — "returns to the
  *   first page", "also refreshes itself every 10 s". That is the half a bare
- *   "Refresh" never says, and it is what `/admin/coord/alerts` already did by
+ *   "Refresh" never says, and it is what the (since retired) alerts page already did by
  *   hand. It is the accessible description, announced after the name, so it
  *   does not repeat the label.
  *

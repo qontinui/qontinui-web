@@ -135,18 +135,6 @@ export const onboardingTourTutorial: Tutorial = {
       ],
     },
     {
-      id: "help-section",
-      title: "Need Help?",
-      content:
-        "Click here anytime to restart this tour or access other tutorials and documentation.",
-      targetElement: {
-        selector: '[data-tutorial-id="sidebar-help"]',
-        highlightType: "spotlight",
-        position: "right",
-        allowInteraction: false,
-      },
-    },
-    {
       id: "complete",
       title: "You're Ready!",
       content:
@@ -159,7 +147,7 @@ export const onboardingTourTutorial: Tutorial = {
         "5. Connect a runner and start automating!\n\n" +
         "Happy automating!",
       tips: [
-        "Check the Help menu for more detailed tutorials",
+        "Open Documentation from the user menu for detailed guides",
         "Join our community for tips and inspiration",
       ],
     },

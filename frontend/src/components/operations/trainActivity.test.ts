@@ -353,6 +353,113 @@ describe("buildRepoTrainRows — why it is paused", () => {
     expect(rows[0]!.reasons[0]!.detail).toContain("slot contention");
   });
 
+  it("gives a coord-landed phantom-open its own row state, never the unknown-token alarm", () => {
+    const rows = buildRepoTrainRows(
+      [],
+      [
+        pr({ pr_number: 11, merge_status: "landed-open" }),
+        pr({ pr_number: 12, merge_status: "landed-open" }),
+        pr({
+          pr_number: 13,
+          merge_status: "ci-failed",
+          ci_conclusion: "failure",
+        }),
+      ],
+      null,
+      NOW
+    );
+    const row = rows[0]!;
+    const landed = row.reasons.find((r) => r.code === "landed-open");
+    expect(landed).toBeDefined();
+    expect(landed!.label).toBe("Landed, awaiting close");
+    expect(landed!.severity).toBe("info");
+    expect(landed!.prCount).toBe(2);
+    expect(landed!.prNumbers).toEqual([11, 12]);
+    expect(landed!.detail).toContain("pr_merge_phantom_open_stuck");
+
+    // THE POINT. Without the `STATUS_TO_REASON` row the token falls into the
+    // unknown-token catch-all, which is graded `blocking` — so a landed PR
+    // renders RED. (It does not headline HERE: `unrecognized-status` ranks
+    // below `ci-failed`, and this fixture has a red PR. The single-population
+    // case below is where it takes the headline as well.)
+    expect(row.reasons.map((r) => r.code)).not.toContain("unrecognized-status");
+
+    // …and it must not become the repo's headline either: the red CI PR is
+    // still what explains this repo.
+    expect(row.reasons[0]!.code).toBe("ci-failed");
+    expect(row.severity).toBe("blocking");
+  });
+
+  it("does not raise a repo's severity on landed-open alone", () => {
+    const rows = buildRepoTrainRows(
+      [],
+      [pr({ pr_number: 11, merge_status: "landed-open" })],
+      null,
+      NOW
+    );
+    const row = rows[0]!;
+    expect(row.reasons[0]!.code).toBe("landed-open");
+    expect(row.severity).toBe("info");
+  });
+
+  it("never calls a landed-open PR 'ready but unlanded', even when coord's health read still lists it", () => {
+    // The unclosed path. coord's `ready_unmerged` is built from `looks_ready`,
+    // which reads the FROZEN merge-state / CI signals and carries no
+    // land-stamp term — so a phantom-open whose signals froze CLEAN and green
+    // is still in that list. Left unfiltered, `orchestrator-stalled` fires at
+    // `blocking`, rank 3, "The train should have taken it" — the loudest wrong
+    // answer, outranking and out-shouting the new `info` chip at rank 17.
+    const health: TrainHealth = {
+      ready_unmerged: {
+        count: 1,
+        max_age_seconds: 7200,
+        prs: [{ repo: "qontinui/web", pr_number: 11, age_seconds: 7200 }],
+      },
+    };
+    const rows = buildRepoTrainRows(
+      [],
+      [pr({ pr_number: 11, merge_status: "landed-open" })],
+      health,
+      NOW
+    );
+    const row = rows[0]!;
+    expect(row.reasons.map((r) => r.code)).not.toContain(
+      "orchestrator-stalled"
+    );
+    expect(row.reasons[0]!.code).toBe("landed-open");
+    expect(row.severity).toBe("info");
+    expect(row.readyUnmerged).toHaveLength(0);
+  });
+
+  it("still raises the stall for a ready-unmerged PR that is NOT landed-open", () => {
+    // The other direction, so the filter above cannot be a blanket mute: the
+    // alarm must survive for every PR the land-stamp does not exonerate.
+    const health: TrainHealth = {
+      ready_unmerged: {
+        count: 2,
+        max_age_seconds: 7200,
+        prs: [
+          { repo: "qontinui/web", pr_number: 11, age_seconds: 7200 },
+          { repo: "qontinui/web", pr_number: 12, age_seconds: 3600 },
+        ],
+      },
+    };
+    const rows = buildRepoTrainRows(
+      [],
+      [
+        pr({ pr_number: 11, merge_status: "landed-open" }),
+        pr({ pr_number: 12 }),
+      ],
+      health,
+      NOW
+    );
+    const row = rows[0]!;
+    const stall = row.reasons.find((r) => r.code === "orchestrator-stalled");
+    expect(stall).toBeDefined();
+    expect(stall!.prNumbers).toEqual([12]);
+    expect(row.severity).toBe("blocking");
+  });
+
   it("promotes a day-old conflict to a strand", () => {
     const rows = buildRepoTrainRows(
       [],
@@ -1825,6 +1932,9 @@ describe("candidate-CI churn — per-repo rows", () => {
     green_candidates_discarded: 15,
     base_mismatch_discards: 13,
     candidate_ci_minutes_per_land: 47.4,
+    proposal_age_at_land_p90_secs: 29_880,
+    proposal_age_at_land_sample_size: 6,
+    proposal_age_at_land_basis: "first proposal on the branch to land",
     green_candidates_discarded_basis: "green candidates discarded in 24h",
     base_mismatch_discards_basis: "base moved under the candidate",
     coverage_note: "24h window",
@@ -1833,10 +1943,11 @@ describe("candidate-CI churn — per-repo rows", () => {
     green_candidates_discarded: null,
     base_mismatch_discards: null,
     candidate_ci_minutes_per_land: null,
+    proposal_age_at_land_p90_secs: null,
     coverage_note: "no candidate CI observed in window",
   };
 
-  it("measured: carries the three values and coord's basis per value", () => {
+  it("measured: carries the four values and coord's basis per value", () => {
     const [row] = buildRepoTrainRows([], [pr({ repo: WEB })], null, NOW, {
       [WEB]: measured,
     });
@@ -1853,6 +1964,65 @@ describe("candidate-CI churn — per-repo rows", () => {
       value: 47.4,
       note: "24h window",
     });
+    // The age's hover is coord's basis, prefixed with the lands behind it.
+    expect(row.churn.proposalAgeAtLandP90).toEqual({
+      value: 29_880,
+      note: "6 lands — first proposal on the branch to land",
+    });
+  });
+
+  it("proposal→land p90: null (nothing landed) stays null with coord's basis, never 0", () => {
+    const churn = deriveRepoChurn({
+      proposal_age_at_land_p90_secs: null,
+      proposal_age_at_land_sample_size: 0,
+      proposal_age_at_land_basis: "per proposal that LANDED",
+      coverage_note: "24h window",
+    });
+    expect(churn.proposalAgeAtLandP90.value).toBeNull();
+    expect(churn.proposalAgeAtLandP90.note).toBe(
+      "0 lands — per proposal that LANDED"
+    );
+    // A coord predating the field says so — not the CI coverage note.
+    const old = deriveRepoChurn({ coverage_note: "24h window" });
+    expect(old.proposalAgeAtLandP90).toEqual({
+      value: null,
+      note: "coord did not serve proposal→land age for this repo (its build predates the field)",
+    });
+    // A sample count without a basis still reaches the hover.
+    expect(
+      deriveRepoChurn({
+        proposal_age_at_land_p90_secs: 60,
+        proposal_age_at_land_sample_size: 3,
+      }).proposalAgeAtLandP90.note
+    ).toBe("3 lands");
+    // A measured 0 is 0; a negative (clock skew) is unknown.
+    expect(
+      deriveRepoChurn({ proposal_age_at_land_p90_secs: 0 }).proposalAgeAtLandP90
+        .value
+    ).toBe(0);
+    const skew = deriveRepoChurn({
+      proposal_age_at_land_p90_secs: -5,
+      proposal_age_at_land_sample_size: 3,
+      proposal_age_at_land_basis: "b",
+    }).proposalAgeAtLandP90;
+    expect(skew.value).toBeNull();
+    // The dash explains itself — it is not a reading over three lands.
+    expect(skew.note).toBe(
+      "coord served a negative age (-5 s) — clock skew, shown as unknown"
+    );
+    // An explicit null with no metadata: coord's contract is "nothing landed".
+    expect(
+      deriveRepoChurn({ proposal_age_at_land_p90_secs: null })
+        .proposalAgeAtLandP90.note
+    ).toBe("nothing landed in the window");
+    // One land reads singular.
+    expect(
+      deriveRepoChurn({
+        proposal_age_at_land_p90_secs: 60,
+        proposal_age_at_land_sample_size: 1,
+        proposal_age_at_land_basis: "b",
+      }).proposalAgeAtLandP90.note
+    ).toBe("1 land — b");
   });
 
   it("resolves a short-name row against coord's owner/name key", () => {
@@ -1881,6 +2051,7 @@ describe("candidate-CI churn — per-repo rows", () => {
     expect(core.churn.greenDiscarded.value).not.toBe(0);
     expect(core.churn.baseMoveDiscards.value).toBeNull();
     expect(core.churn.ciMinutesPerLand.value).toBeNull();
+    expect(core.churn.proposalAgeAtLandP90.value).toBeNull();
     expect(web.churn.greenDiscarded.value).toBe(15);
   });
 
@@ -1897,6 +2068,7 @@ describe("candidate-CI churn — per-repo rows", () => {
         row.churn.greenDiscarded,
         row.churn.baseMoveDiscards,
         row.churn.ciMinutesPerLand,
+        row.churn.proposalAgeAtLandP90,
       ]) {
         expect(reading.value).toBeNull();
         expect(reading.note).toBe(

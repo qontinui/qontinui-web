@@ -42,6 +42,10 @@
  *   ALREADY fetched. It reuses `/plans`' `derivePlansHealth` rather than
  *   forking a second reading of the same work-unit list — the two routes read
  *   the same endpoint and must not disagree about whether a plan is blocked.
+ *   This page reads ONE bounded page rather than walking the corpus the way
+ *   `/work-units` does, so it asks for an explicit `SPAWN_PAGE_LIMIT` and tells the
+ *   strip the list is incomplete when that page comes back full — an all-clear
+ *   off a page coord truncated is the same over-claim `/work-units` just removed.
  * - **R2/R5** — one work unit is one `<SpawnPlanRow>` line; detail expands in
  *   place, and `<RecordList>` keeps one open at a time.
  *
@@ -68,17 +72,49 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Filter, Plus, RefreshCw } from "lucide-react";
-import { HealthStrip, RecordList, readIsUnknown } from "@/components/console";
+import { Filter, Plus } from "lucide-react";
+import {
+  HealthStrip,
+  RecordList,
+  RefreshButton,
+  readIsUnknown,
+} from "@/components/console";
 import { CoordAdminOnly } from "@/components/admin/coord/CoordAdminOnly";
 import { SpawnModal } from "@/components/admin/coord/SpawnModal";
 import { SpawnPlanRow } from "@/components/admin/coord/SpawnPlanRow";
 import type { CoordPlanRow } from "@/components/admin/coord/planStatus";
 import { httpClient } from "@/services/service-factory";
-import { derivePlansHealth, SHEPHERD_SLUG_PREFIX } from "../plans/plansHealth";
+import {
+  derivePlansHealth,
+  SHEPHERD_SLUG_PREFIX,
+} from "../work-units/plansHealth";
+import { WALK_PAGE_LIMIT } from "../work-units/planWalk";
 
 const API = "/api/v1/operations";
 const POLL_INTERVAL_MS = 15_000;
+
+/**
+ * The page size this route ASKS FOR — so that a full page is a legible "there
+ * is more than this" signal.
+ *
+ * It used to send no `limit`, which is not "one whole window": the proxy
+ * forwards nothing it was not given (`operations.py` `list_coord_plans`) and
+ * coord's list defaults to `q.limit.unwrap_or(100)` (`work_unit_registry.rs`)
+ * with no truncation flag anywhere in the body. So this page read the first 100
+ * rows of a corpus measured at ~1.8k non-shepherd units and had no way to know
+ * it, and `derivePlansHealth` — sharing a strip with `/work-units` — painted the
+ * green "No plan is blocked" all-clear over them. That is the same over-claim
+ * `/work-units`' walk and the strip's `incomplete` argument exist to close, on the
+ * sibling page that was assumed exempt.
+ *
+ * `WALK_PAGE_LIMIT` (500, coord's own clamp) rather than a second constant:
+ * asking for coord's maximum makes `plans.length >= LIMIT` mean "coord had at
+ * least this many and stopped", which is the only truncation signal this list
+ * route offers. This page deliberately does NOT walk — it is a spawn picker,
+ * not the corpus browser (`/admin/coord/work-units` is, one CoordNav item away) — so
+ * the honest posture here is one bounded read that says when it was bounded.
+ */
+const SPAWN_PAGE_LIMIT = WALK_PAGE_LIMIT;
 
 const STATUS_FILTERS = [
   { value: "any", label: "All statuses" },
@@ -129,6 +165,8 @@ export default function CoordSpawnPage() {
       // Shepherd rows are coord's own merge-escalation bookkeeping, not a
       // plan anyone can spawn a session against — see `SHEPHERD_SLUG_PREFIX`.
       qs.set("exclude_slug_prefix", SHEPHERD_SLUG_PREFIX);
+      // Explicit, so that a full page means something — see `SPAWN_PAGE_LIMIT`.
+      qs.set("limit", String(SPAWN_PAGE_LIMIT));
       const suffix = qs.toString() ? `?${qs.toString()}` : "";
       const body = await httpClient.get<PlansListResponse>(
         `${API}/plans${suffix}`
@@ -174,6 +212,27 @@ export default function CoordSpawnPage() {
     };
   }, [fetchData]);
 
+  /**
+   * The refresh button's read — the operator's, never the poll's. Returns the
+   * read's promise so `<RefreshButton>` acknowledges the press for exactly as
+   * long as that read is out, and takes `pollInFlight` when the lock is free
+   * so a tick due while a manual read is out skips instead of stacking a
+   * second read of the same question on top of it. See `/plans`' copy on its
+   * own `refresh` for the full reasoning — this is the same fix for the same
+   * defect (plan `2026-09-09-coord-plans-page-controls-do-not-acknowledge-or-name-themselves`
+   * F1), applied here where it was left unchanged.
+   */
+  const refresh = useCallback(() => {
+    const tookLock = !pollInFlight.current;
+    if (tookLock) pollInFlight.current = true;
+    const question = questionGen.current;
+    return fetchData().finally(() => {
+      if (tookLock && question === questionGen.current) {
+        pollInFlight.current = false;
+      }
+    });
+  }, [fetchData]);
+
   const plans = useMemo(() => data?.work_units ?? data?.plans ?? [], [data]);
   const loaded = data !== null;
   // R6 — "not fetched" includes "fetched and FAILED", and every surface derived
@@ -182,9 +241,19 @@ export default function CoordSpawnPage() {
   const plansUnknown = readIsUnknown(loaded, readFailed);
   /** The third state — see `/plans`' note. */
   const plansStale = readFailed && loaded;
+  /**
+   * The page came back full, so coord had at least this many and stopped:
+   * these rows are KNOWN not to be the whole matching list. The strip may not
+   * render them as a whole-corpus verdict — see `SPAWN_PAGE_LIMIT` and
+   * `derivePlansHealth`'s `incomplete`.
+   */
+  const listIncomplete = plans.length >= SPAWN_PAGE_LIMIT;
   const health = useMemo(
-    () => derivePlansHealth(plans, loaded, readFailed),
-    [plans, loaded, readFailed]
+    () =>
+      derivePlansHealth(plans, loaded, readFailed, {
+        incomplete: listIncomplete,
+      }),
+    [plans, loaded, readFailed, listIncomplete]
   );
 
   return (
@@ -214,14 +283,16 @@ export default function CoordSpawnPage() {
             ))}
           </SelectContent>
         </Select>
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={fetchData}
+        {/* Keyed on the question, same reason as `/plans`': a press whose read
+            was superseded by a filter change must not leave the NEW
+            question's control busy for up to the 60s request timeout. */}
+        <RefreshButton
+          key={status}
+          onRefresh={refresh}
+          label="Refresh plans"
+          title={`Re-reads the plan list now; it also refreshes itself every ${POLL_INTERVAL_MS / 1000} s`}
           data-testid="coord-spawn-refresh"
-        >
-          <RefreshCw className="h-3 w-3" />
-        </Button>
+        />
         <CoordAdminOnly>
           <Button
             size="sm"
@@ -301,6 +372,14 @@ export default function CoordSpawnPage() {
           open={spawnTarget !== null}
           onClose={() => setSpawnTarget(null)}
           planSlug={spawnTarget.slug}
+          // The whole row, for the body guard (plan
+          // `2026-09-02-bodyless-work-units-…` Phase 3). `/plans` already
+          // serves the three signal fields on every row, so this costs no
+          // extra read — the modal simply stops being the one surface on
+          // this path that cannot tell a plan from a slug. A row served by a
+          // backend predating the fields carries none of them, and the modal
+          // then behaves exactly as it did before.
+          workUnit={spawnTarget}
           initialPhase={spawnTarget.current_phase ?? ""}
         />
       )}

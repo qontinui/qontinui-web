@@ -12,7 +12,7 @@ import {
   FileText,
   User,
 } from "lucide-react";
-import { runnerApi, type TaskRun } from "@/lib/runner-api";
+import { useDispatchRunnerApi, type TaskRun } from "@/lib/runner-api";
 import type { TaskRunView } from "@/lib/task-run-mappers";
 import { toast } from "sonner";
 import {
@@ -81,6 +81,9 @@ interface AiSummarySectionProps {
 }
 
 export function AiSummarySection({ run, onRefresh }: AiSummarySectionProps) {
+  // Calls that START work go to the new-work target (explicit choice or
+  // coord's resolved pick); a refused call carries coord's outcome.
+  const { api: workApi, refusal: workRefusal } = useDispatchRunnerApi();
   const [summaryExpanded, setSummaryExpanded] = useState(false);
   const [isGeneratingSummary, setIsGeneratingSummary] = useState(false);
 
@@ -125,7 +128,7 @@ export function AiSummarySection({ run, onRefresh }: AiSummarySectionProps) {
   const handleGenerateSummary = async () => {
     setIsGeneratingSummary(true);
     try {
-      await runnerApi.generateTaskRunSummary(run.id);
+      await workApi.generateTaskRunSummary(run.id);
       toast.success("Summary generated");
       onRefresh?.();
     } catch {
@@ -232,12 +235,22 @@ export function AiSummarySection({ run, onRefresh }: AiSummarySectionProps) {
             variant="outline"
             size="sm"
             onClick={handleGenerateSummary}
+            disabled={workRefusal !== null}
+            title={workRefusal ?? undefined}
             className="border-brand-primary/30 text-brand-primary hover:bg-brand-primary/10"
           >
             <Sparkles className="size-4 mr-1.5" />
             Generate Summary
           </Button>
         </div>
+        {workRefusal && (
+          <p
+            className="mt-2 text-xs text-text-muted"
+            data-testid="generate-summary-refusal"
+          >
+            {workRefusal}
+          </p>
+        )}
       </div>
     );
   }

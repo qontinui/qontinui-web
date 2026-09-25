@@ -42,6 +42,15 @@ _SECTION_POLICY: dict[str, SectionPolicyT] = {
     # ``report_only``, so the promise buys nothing until the module exists.
     # Flip this to "applyable" in the same change that adds the module.
     "repos": "report_only",
+    # The fleet harness (`qontinui-claude-config`: the workspace-root links,
+    # the installers' renders, the root-relative ``paths.plans_dir`` and the
+    # plan-corpus invariant class). Report-only BY DESIGN, not by omission:
+    # remediating an invariant violation means replacing a real ``plans``
+    # directory, which is destructive and stays a deliberate session (plan
+    # ``2026-09-13-a-new-machine-cannot-discover-apply-or-verify-the-fleet-
+    # harness-config`` D3). Spelled out even though it is the default because
+    # an unregistered section is indistinguishable from a forgotten one.
+    "harness": "report_only",
 }
 
 
@@ -127,6 +136,37 @@ _DERIVED_KEYS: dict[str, frozenset[str]] = {
             # a scope. It converges by an operator setting the workspace root on
             # one of the two boxes.
             "repos_scope_kind",
+        }
+    ),
+    "harness": frozenset(
+        {
+            # The harness section's provenance key, and registered here for
+            # exactly the reason the ``repos`` entry above spells out:
+            # ``_DERIVED_KEYS`` is keyed by SECTION and ``is_derived_key``
+            # answers False for a key it does not recognise, so neither entry
+            # above covers a same-named key here.
+            #
+            # Every other ``harness`` key is a probe under the workspace root
+            # or a rendering relative to it, which is why the runner publishes
+            # WHICH rung resolved that root. The values are
+            # ``WorkspaceRootKind``'s wire strings -- ``declared`` /
+            # ``discovered`` / ``home_default`` / ``unresolved`` -- and NOT
+            # ``ProbeScopeKind``'s, which is a different enum with a different
+            # value set and is what ``versions.probe_scope_kind`` carries.
+            # Two boxes that resolved the root by different rungs did not
+            # measure the same concept, and a reader has to be able to tell
+            # that before acting on a difference.
+            #
+            # Derived for the same operational reason ``repos_scope_kind`` is:
+            # it is REPORTED but can never be an apply action — no remediation
+            # installs a scope — and ``harness`` is report-only by design in
+            # any case (plan ``2026-09-13-a-new-machine-cannot-discover-apply-
+            # or-verify-the-fleet-harness-config`` D3). Leaving it underived
+            # would count a pure provenance difference as drift and put two
+            # otherwise compliant boxes permanently out of sync on this
+            # section — the reading that plan's Phase 3 gate forbids, since
+            # derived keys are excluded from ``in_sync``.
+            "harness_scope_kind",
         }
     ),
 }
@@ -240,19 +280,87 @@ def is_derived_key(section: str, key: str) -> bool:
 # ``_DERIVED_KEY_PREFIXES``: derived keys are dropped from ``in_sync``, which
 # would let two unmeasured boxes report clean — the precise failure the
 # inventory capture exists to remove.
+
+# ---------------------------------------------------------------------------
+# Observation-only: the two tables
+# ---------------------------------------------------------------------------
+#
+# Exact-key twin of ``_OBSERVATION_ONLY_KEY_PREFIXES``, mirroring the
+# ``_DERIVED_KEYS`` / ``_DERIVED_KEY_PREFIXES`` pair above and existing for the
+# same reason: a key with no family around it has no prefix to be caught by, and
+# spelling one anyway (``("invariant_class",)``) would quietly also claim every
+# future ``invariant_class_*``.
+#
+# ``harness`` is the section that forced it. Every one of its keys EXCEPT
+# ``plans_dir_relative`` is a STATE LABEL whose value carries no settable
+# payload — the runner's ``collect_harness_under`` builds them all from
+# ``presence()``, ``link_state()`` or ``invariant_class()``:
+#
+#   link_claude_dir / link_claude_md / link_dev_start  present | absent | foreign
+#   config_repo, root_settings_hooks                   present | absent
+#   installer_agent_skills / _claude_accounts / _git_hooks   present | absent
+#   invariant_class                                    (a) | (b) | (c) | unknown
+#
+# "Set ``link_claude_dir`` to ``present``" is not an instruction anyone can
+# carry out, and neither is "set ``invariant_class`` to ``(a)``". These are
+# exactly ``python_installed_digest``'s shape: the box converges by running
+# ``bootstrap-machine.sh`` — or, for the invariant, by a deliberate destructive
+# session, since plan ``2026-09-13-a-new-machine-cannot-discover-apply-or-
+# verify-the-fleet-harness-config`` D3 forbids auto-remediating it — and the
+# label then FOLLOWS.
+#
+# Left unclassified they sail straight into web's remediation plan.
+# ``buildRemediation`` allow-lists ``changed``/``removed`` and skips only
+# ``derived`` and ``observation_only`` — it never reads the SECTION policy, and
+# ``MachineDriftReport`` does not even carry one — so ``report_only`` buys
+# nothing here. ``harness`` has no apply module anywhere (the runner ships
+# ``apply_versions``/``apply_services``/``apply_repos`` and no
+# ``apply_harness``), so without this table a clause-(c) box is handed a
+# copy-pasteable ``invariant_class=(a)`` under a header that reads "Apply on
+# <machine> to match the canonical machine". That is the key-level trap the
+# ``repos`` section comment above describes, and ``harness`` is the first
+# section where it applies to nearly every key rather than to one family.
+#
+# ``plans_dir_relative`` is deliberately NOT here: its value IS the payload
+# (``qontinui-dev-notes/plans`` — where to point the runner's
+# ``paths.plans_dir``), so it stays a real, carry-out-able apply line.
+# ``harness_scope_kind`` is not here either; capture provenance is ``derived``,
+# a different flag with a different effect on ``in_sync``.
+#
+# Marking these ``derived`` instead would be wrong for the reason ``KeyDelta``
+# gives: derived keys are dropped from ``in_sync``, so a box holding the
+# invariant by clause (c) — a second writable plan corpus — would read CLEAN.
+# That is the precise signal ``_SECTION_BASE_SEVERITY["harness"] = "warning"``
+# was added to surface, and this table must not take it back out.
+_OBSERVATION_ONLY_KEYS: dict[str, frozenset[str]] = {
+    "harness": frozenset({"config_repo", "root_settings_hooks", "invariant_class"}),
+}
+
+# ``link_`` and ``installer_`` are OPEN families: the Phase 1 bootstrap composes
+# the installers and the README's link set has grown before. A prefix means the
+# next one is classified the day it ships rather than the day someone remembers
+# this table — the property the ``python_installed_`` prefix already buys, and
+# the asymmetry that let ``python_installed_interpreter`` land correctly.
 _OBSERVATION_ONLY_KEY_PREFIXES: dict[str, tuple[str, ...]] = {
     "versions": ("python_installed_",),
+    "harness": ("link_", "installer_"),
 }
 
 
 def is_observation_only_key(section: str, key: str) -> bool:
     """Return whether ``key`` in ``section`` is measured but never settable.
 
+    Exact keys first, then the prefix families — the same two-table lookup
+    :func:`is_derived_key` performs, for the same reason (a singleton key has no
+    family to be caught by).
+
     Conservative default (like :func:`is_derived_key`): an unrecognized key is
     NOT observation-only, so nothing is silently removed from a remediation
     plan. The failure mode of this default is a bogus apply line, which is
     visible; the opposite default's failure mode is a missing one, which is not.
     """
+    if key in _OBSERVATION_ONLY_KEYS.get(section, frozenset()):
+        return True
     return key.startswith(_OBSERVATION_ONLY_KEY_PREFIXES.get(section, ()))
 
 

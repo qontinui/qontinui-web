@@ -173,6 +173,13 @@ repos:
         # `COORD_SCHEMA_DROPS` at module level or the hook fails before any
         # network call. Shift-left: the CI check is the guard, this is the
         # early answer.
+        #
+        # `--files` has no merge base, so this hook judges every revision
+        # WHOLE — including an edit to a LANDED revision, which the CI lane
+        # (`--base-ref`) judges only by its delta (the module docstring's
+        # "Edited landed revisions"). A hook red on a landed revision you only
+        # touched (web#1457's `SET LOCAL` shape) can therefore be CI-green;
+        # the required CI check is the authority for that case.
 
       - id: gitignore-tracked-files
         name: no tracked file is gitignored
@@ -244,6 +251,36 @@ repos:
         # types). `backend/app/api/embeddings.py` is allowlisted defensively
         # pending Phase 8 (embeddings runner-bridge). See the script's module
         # docstring for the rule itself.
+
+      - id: global-state-assertions
+        name: no new global-state assertion in the backend suite
+        entry: python scripts/ci/check_global_state_assertions.py
+        language: system
+        pass_filenames: false
+        # SAME SCRIPT as .github/workflows/global-state-assertions.yml and
+        # .qontinui/ci.toml's `global-state-assertions` step — the shift-left
+        # lane, so the ratchet catches a new global-state assertion at commit
+        # rather than after a 17-minute CI wait. `pass_filenames: false`
+        # because the gate scans the whole suite and compares it to the
+        # allowlist as a WHOLE: a per-file invocation cannot see that a row
+        # exists for a file this commit did not touch ("remove the row"), and
+        # cannot compute the "lower the row" direction either.
+        #
+        # `files:` only scopes WHEN the hook runs, never what it scans — the
+        # gate always walks the whole backend test tree. This pattern is the
+        # set of paths whose edit most often changes the verdict: a test file
+        # and the allowlist itself (lowering a row is a commit that must be
+        # re-checked).
+        #
+        # It is deliberately NOT a claim that nothing else can change the
+        # verdict — two things can and match nothing here. Editing
+        # `scripts/ci/check_global_state_assertions.py` or
+        # `scripts/ci/_gate_lib.py` changes the rule; and DELETING a test file
+        # that carries a row trips the "remove the row" arm while pre-commit
+        # passes no deleted paths at all. Both are caught by the CI and
+        # ci_node lanes, which run unconditionally. This is the shift-left
+        # lane, not the authority.
+        files: ^backend/tests/(.*\.py|\.global-state-assertions-allowlist)$
 
 ci:
   autofix_prs: true

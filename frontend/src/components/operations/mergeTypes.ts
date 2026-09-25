@@ -167,6 +167,17 @@ export interface PrRow {
    * evidence" — never as fresh, and never as stale.
    */
   last_activity_secs?: number | null;
+  /**
+   * RFC3339 time the PR was OPENED on GitHub — the "time submitted" a PR list
+   * is ordered by. GitHub's own `created_at`, not the time coord first saw the
+   * PR, and unlike `last_refreshed_at` it never moves.
+   *
+   * Optional: absent on coord deploys predating the projection, and absent on
+   * any PR with no `ingest` event carrying it (webhooks predating the payload
+   * key, or never received). Consumers MUST treat absence as "unknown" — never
+   * as "just opened", which would rank a decades-old PR first.
+   */
+  opened_at?: string | null;
   // ---- Recently-merged enrichment ------------------------------------------
   // Present only on the rows coord appends for `?include_merged=<hours>`
   // (`query_recently_merged_prs`). Every field is optional: a coord deploy
@@ -233,6 +244,15 @@ export type MergeStatusToken =
   /** Green + CLEAN + open, but no fresh proposal — the orchestrator is
    *  stalled. The single highest-signal token for "why the pause". */
   | "ready-but-unlanded"
+  /** coord LANDED this PR at its CURRENT head and GitHub still shows it open —
+   *  the phantom-open ff-land window, keyed on coord's `land_stamp ==
+   *  current_head`. NOT a pause: the work is on the base branch already.
+   *  coord emits it from `classify_merge_status`'s second arm, above every
+   *  live-signal arm, because those signals froze at the moment before the
+   *  land. Plan
+   *  `2026-09-14-coord-phantom-open-close-uses-owner-blind-installation-token`
+   *  Phase 5. */
+  | "landed-open"
   | "unknown";
 
 // ============================================================================
@@ -623,6 +643,21 @@ export interface MergeEconomics {
    * unknown (no lands, or no CI observed).
    */
   candidate_ci_minutes_per_land?: number | null;
+  /**
+   * p90 first-proposal→land age in SECONDS — how long a PR's content waited
+   * from the FIRST time it was proposed to the train (across churn-guard
+   * re-proposals on the same branch) until it landed. The plan
+   * 2026-07-17-merge-train-long-ci-redesign §6 regression metric. Null ⇒
+   * nothing landed in the window — UNKNOWN, never 0. A duration: never summed
+   * across repos.
+   */
+  proposal_age_at_land_p90_secs?: number | null;
+  /** p50 of the same population as `proposal_age_at_land_p90_secs`. */
+  proposal_age_at_land_p50_secs?: number | null;
+  /** Lands backing the `proposal_age_at_land_*` percentiles. */
+  proposal_age_at_land_sample_size?: number | null;
+  /** coord's own statement of how `proposal_age_at_land_*` is derived. */
+  proposal_age_at_land_basis?: string | null;
   /** coord's own statement of what `green_candidates_discarded` counted. */
   green_candidates_discarded_basis?: string | null;
   /** coord's own statement of what `base_mismatch_discards` counted. */

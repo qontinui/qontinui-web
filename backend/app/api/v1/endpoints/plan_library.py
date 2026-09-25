@@ -179,6 +179,8 @@ from app.schemas.plan_library import (
     OpenFollowupResponse,
     PlanCandidate,
     PlanCandidateResponse,
+    PlanDifficultyItem,
+    PlanDifficultyResponse,
     ReconciliationAxisA,
     ReconciliationAxisB,
     ReconciliationAxisC,
@@ -200,6 +202,12 @@ from app.schemas.plan_library import (
 )
 from app.services import plan_status
 from app.services.permissions import resolve_personal_organization
+from app.services.plan_difficulty import (
+    MODEL_SELECTOR_VOCABULARY,
+    MODEL_SELECTORS,
+    MODEL_TIERS,
+    RUBRIC_VERSION,
+)
 from app.services.plan_scan_root_health import (
     scan_roots_health,
     scan_roots_read_failed,
@@ -2264,6 +2272,10 @@ async def list_work_artifacts(
         offset=offset,
         limit=limit,
         corpus_health=await _load_corpus_health(db, org_id=org_id),
+        # Byte-identical on all three routes — one source, copied per response.
+        model_tiers=dict(MODEL_TIERS),
+        model_selectors=dict(MODEL_SELECTORS),
+        model_selector_vocabulary=MODEL_SELECTOR_VOCABULARY,
     )
 
 
@@ -2326,6 +2338,17 @@ async def _load_corpus_health(db: AsyncSession, *, org_id: UUID | None) -> Corpu
     degrades to ``scan_roots_read_failed`` — ``state: "unknown"``, never an
     empty list that reads as "no drift". ``GET /plan-library/scan-roots``
     itself does not degrade: the readings are its whole answer.
+
+    The block's ``coverage`` is deliberately EMPTY here, with
+    ``coverage_detail`` saying so — design decision D2 of
+    ``2026-09-15-captured-vs-authored-coverage-is-a-set-difference``. This
+    function rides every ``GET /plan-library`` page and ``/candidates``
+    including the runner's loopback search, and the coverage set difference is
+    an anti-join over every authored stem; it belongs to the one route whose
+    whole answer the readings are. That is also why the read below is the
+    DEFERRED ``list_observations``: the stem columns are never rendered here,
+    and touching one after this savepoint has exited would raise
+    ``MissingGreenlet`` and take down the page rather than degrade.
     """
     census = await crud.capture_health(db, org_id=org_id)
     try:
@@ -3302,6 +3325,12 @@ async def list_plan_candidates(
         "included" if units is not None else "unavailable"
     )
 
+    # Rate any plan whose rating predates the running rubric, so the
+    # ``difficulty`` a sweep routes on is current. Best-effort: a failure
+    # leaves the stored ratings (possibly NULL = unrated) and never takes the
+    # candidates down.
+    await _rerate_best_effort(db, org_id=org_id, route="candidates")
+
     rows, total = await crud.list_plan_candidates(
         db, org_id=org_id, offset=offset, limit=limit, work_units=units
     )
@@ -3416,6 +3445,10 @@ async def list_plan_candidates(
                 ],
                 coord=coord_block,
                 document_state="present",
+                difficulty=row.difficulty,
+                difficulty_conceptual=row.difficulty_conceptual,
+                difficulty_implementation=row.difficulty_implementation,
+                difficulty_source=row.difficulty_source,
             )
         )
 
@@ -3458,6 +3491,96 @@ async def list_plan_candidates(
         open_followup_total=followup_total,
         corpus_health=corpus_health,
         corpus_health_unavailable_reason=corpus_health_unavailable_reason,
+        # Byte-identical on all three routes — one source, copied per response.
+        model_tiers=dict(MODEL_TIERS),
+        model_selectors=dict(MODEL_SELECTORS),
+        model_selector_vocabulary=MODEL_SELECTOR_VOCABULARY,
+    )
+
+
+async def _rerate_best_effort(
+    db: AsyncSession, *, org_id: UUID | None, route: str
+) -> tuple[crud.RerateOutcome | None, str | None]:
+    """Run :func:`crud.rerate_stale_plan_difficulty`; never raise.
+
+    Returns ``(outcome, None)``, or ``(None, reason)`` when the pass failed.
+    The rating is derived data a read may fill in, not the read's subject, so
+    a failure is logged and reported beside the answer rather than failing it.
+    """
+    try:
+        return await crud.rerate_stale_plan_difficulty(db, org_id=org_id), None
+    except SQLAlchemyError as exc:
+        await db.rollback()
+        logger.warning(
+            "plan_library.difficulty_rerate_failed",
+            route=route,
+            error=str(exc),
+            detail="serving the ratings stored before this read",
+        )
+        return None, f"{type(exc).__name__}: {_cap_reason(str(exc))}"
+
+
+# NOTE: declared BEFORE ``/{artifact_id}`` so the literal path wins the match.
+@router.get(
+    "/difficulty",
+    response_model=PlanDifficultyResponse,
+    summary="Every plan's difficulty rating (the model tier it routes to)",
+)
+async def list_plan_difficulty(
+    db: AsyncSession = Depends(get_async_db),
+    current_user: User = Depends(get_audit_actor_user),
+) -> PlanDifficultyResponse:
+    """The difficulty map ``/admin/coord/plans`` joins onto coord's work units.
+
+    Plan ``2026-09-18-plan-library-difficulty-field``. The rating is computed
+    from each plan's body by ``app.services.plan_difficulty`` — two axes,
+    conceptual and implementation, folded into a routing level (``high`` →
+    Fable 5.1, ``medium`` → Opus 5, ``low`` → a fast tier), with a plan's own
+    ``Difficulty:`` stamp overriding the computed level.
+
+    Before answering, plans rated under an older rubric (or none) are re-rated,
+    up to a per-request cap, newest first — see
+    :func:`crud.rerate_stale_plan_difficulty` — so these reads are also the
+    corpus backfill. ``rerate_pending`` says how many plans the next reads
+    still have to rate. Unrated plans are
+    OMITTED, never served as ``low``.
+    """
+    org_id = await _resolve_org_id(db, current_user)
+    outcome, failed_reason = await _rerate_best_effort(
+        db, org_id=org_id, route="difficulty"
+    )
+    rows = await crud.list_plan_difficulties(db, org_id=org_id)
+    items = [
+        PlanDifficultyItem(
+            id=row.id,
+            slug=row.slug,
+            work_unit_slug=row.work_unit_slug,
+            source_repo=row.source_repo,
+            difficulty=row.difficulty,
+            difficulty_conceptual=row.difficulty_conceptual,
+            difficulty_implementation=row.difficulty_implementation,
+            difficulty_source=row.difficulty_source,
+            difficulty_rubric_version=row.difficulty_rubric_version,
+            difficulty_signals=row.difficulty_signals or {},
+        )
+        for row in rows
+        if row.difficulty is not None
+        and row.difficulty_conceptual is not None
+        and row.difficulty_implementation is not None
+        and row.difficulty_source is not None
+        and row.difficulty_rubric_version is not None
+    ]
+    return PlanDifficultyResponse(
+        items=items,
+        count=len(items),
+        rerated=outcome.written if outcome else 0,
+        rerate_pending=outcome.pending if outcome else None,
+        rerate_failed_reason=failed_reason,
+        rubric_version=RUBRIC_VERSION,
+        # Byte-identical on all three routes — one source, copied per response.
+        model_tiers=dict(MODEL_TIERS),
+        model_selectors=dict(MODEL_SELECTORS),
+        model_selector_vocabulary=MODEL_SELECTOR_VOCABULARY,
     )
 
 

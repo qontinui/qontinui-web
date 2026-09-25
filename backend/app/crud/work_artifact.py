@@ -58,8 +58,10 @@ surfaces the fork instead.
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import re
+import typing
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -70,14 +72,18 @@ from sqlalchemy import (
     Select,
     Text,
     cast,
+    false,
     func,
     or_,
     select,
     text,
+    true,
+    update,
 )
 from sqlalchemy.dialects.postgresql import ARRAY
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import load_only
 
 from app.models.work_artifact import (
     NIL_ORGANIZATION_ID,
@@ -89,6 +95,19 @@ from app.models.work_artifact import (
     WorkArtifactEdge,
     WorkArtifactVersion,
 )
+from app.services.plan_difficulty import RUBRIC_VERSION, compute_difficulty
+
+#: The only kind the difficulty rubric rates. It was calibrated on plans; a
+#: prompt or a report is not a unit of implementation work.
+DIFFICULTY_RATED_KIND = "plan"
+
+#: Bodies loaded per round trip when re-rating stale rows — bounds the memory
+#: one re-rating pass holds (a plan body runs to ~100 KB at the tail).
+_DIFFICULTY_RERATE_BATCH = 100
+
+#: Plans one request re-rates at most — ~2 s of CPU in a worker thread. The
+#: backlog a deploy leaves is worked through by the reads that follow.
+_DIFFICULTY_RERATE_LIMIT = 300
 
 #: Relations traversed BACKWARDS to reconstruct the prompt chain that produced
 #: a plan: ``investigation_prompt --produced_report--> report --feeds-->
@@ -232,6 +251,123 @@ def _org_scope(org_id: UUID | None):
     ) == func.coalesce(org_id, NIL_ORGANIZATION_ID)
 
 
+#: Characters that glue words into one identifier — ``-``, ``_``, ``/``,
+#: ``\`` — plus whitespace, folded to a single space for the full-text arm.
+_Q_WORD_GLUE = re.compile(r"[-_/\\\s]+")
+
+#: A trailing ``.md``, so a pasted filename reads as its stem.
+_Q_MD_SUFFIX = re.compile(r"\.md$", re.IGNORECASE)
+
+#: The escape character of the slug arm's ``ILIKE``.
+_LIKE_ESCAPE = "\\"
+
+
+def _full_text_query(q: str) -> str:
+    """``q`` as the words ``plainto_tsquery`` should AND together.
+
+    The ``english`` parser reads ``devops-unfiltered-push-trigger`` as ONE
+    compound token and emits the whole-compound lexeme AND-ed with its parts,
+    so the query matches only a document carrying that exact hyphenated
+    string — prose saying "unfiltered push trigger" misses. Folding the glue
+    characters to spaces first means only the part-words are ever asked for.
+    ``""`` when nothing but glue is left.
+    """
+    return _Q_WORD_GLUE.sub(" ", _Q_MD_SUFFIX.sub("", q.strip())).strip()
+
+
+#: The shortest needle the slug arm will take. Below this, a substring match
+#: stops being an identifier lookup and becomes a corpus-wide sweep: every
+#: plan slug is date-prefixed, so ``-``, ``2`` and ``a`` each appear in
+#: nearly every row.
+_SLUG_NEEDLE_MIN_LEN = 3
+
+#: A needle must carry at least one letter or digit. Pure punctuation is glue,
+#: never an identifier. (``[^\W_]`` is "alphanumeric", underscore excluded.)
+_HAS_ALNUM = re.compile(r"[^\W_]", re.UNICODE)
+
+
+def _slug_needle(q: str) -> str:
+    """``q`` as the slug substring a pasted identifier denotes, or ``""``.
+
+    Trimmed, minus a trailing ``.md`` and any leading directory, so
+    ``plans/2026-08-31-some-plan.md`` reads as ``2026-08-31-some-plan``.
+
+    Returns ``""`` — i.e. NO slug arm — for anything not identifier-shaped:
+    nothing left after trimming, no alphanumeric character at all, or fewer
+    than :data:`_SLUG_NEEDLE_MIN_LEN` characters. That guard is the whole
+    reason this is a function and not an expression. A slug substring match
+    is unanchored at both ends and every plan slug opens with
+    ``YYYY-MM-DD-``, so a one-character needle is not a weak query — ``q="-"``
+    is ``slug ILIKE '%-%'``, which matches EVERY row, and the same predicate
+    backs ``/export``, so it would export the corpus. Short and
+    punctuation-only inputs therefore fall back to the full-text arm alone,
+    which drops them (``plainto_tsquery`` yields nothing for glue or a
+    stopword) and so correctly matches nothing.
+    """
+    stem = _Q_MD_SUFFIX.sub("", q.strip())
+    needle = re.split(r"[/\\]", stem)[-1].strip()
+    if len(needle) < _SLUG_NEEDLE_MIN_LEN or not _HAS_ALNUM.search(needle):
+        return ""
+    return needle
+
+
+def _escape_like(value: str) -> str:
+    """Escape LIKE metacharacters so user text matches literally."""
+    return (
+        value.replace(_LIKE_ESCAPE, _LIKE_ESCAPE * 2)
+        .replace("%", f"{_LIKE_ESCAPE}%")
+        .replace("_", f"{_LIKE_ESCAPE}_")
+    )
+
+
+def _search_predicate(q: str) -> ColumnElement[bool]:
+    """The ``q`` filter: full text over title/body OR a substring of ``slug``.
+
+    Two arms, because ``q`` gets two kinds of input and the vector serves only
+    one of them. Prose goes to the full-text arm, normalized by
+    :func:`_full_text_query`. A pasted slug or filename is an IDENTIFIER
+    lookup the vector cannot answer — ``slug`` is not indexed text, and a
+    plan's body need not repeat its own filename — so the raw ``q`` is also
+    matched as a case-insensitive substring of ``slug``, with LIKE
+    metacharacters escaped so ``%`` and ``_`` match themselves rather than
+    everything.
+
+    The slug arm is unindexed, and it is gated on :func:`_slug_needle`
+    judging the input identifier-shaped — which is not only about matching
+    too much. A leading-wildcard ``ILIKE`` that no index can serve, OR-ed
+    with the full-text arm, leaves the planner nothing to combine and costs
+    the GIN arm its index too; the gate is what keeps an ordinary prose query
+    on the indexed path.
+
+    A ``q`` that leaves neither arm anything to ask for — whitespace, bare
+    glue, or a needle too short to be an identifier — matches NOTHING, the
+    reading ``plainto_tsquery`` of an empty string always had. Never
+    everything: :func:`_slug_needle` says why that distinction is the
+    load-bearing one.
+    """
+    arms: list[ColumnElement[bool]] = []
+    words = _full_text_query(q)
+    if words:
+        # Spelled to match ix_work_artifacts_search's indexed expression.
+        # A ``TextClause`` is a boolean SQL expression here, which the stubs
+        # cannot know; ``or_`` accepts it at runtime exactly as ``where`` does.
+        # (`typing.cast`, not the bare name — `cast` is SQLAlchemy's in this
+        # module.) The OR list is parenthesised by ``BooleanClauseList`` when
+        # it is AND-ed with the other filters, not by anything asked for here.
+        full_text = text(
+            f"{SEARCH_TSVECTOR_SQL} @@ plainto_tsquery('english', :plan_lib_q)"
+        ).bindparams(plan_lib_q=words)
+        arms.append(typing.cast("ColumnElement[bool]", full_text))
+    needle = _slug_needle(q)
+    if needle:
+        arms.append(
+            WorkArtifact.slug.ilike(f"%{_escape_like(needle)}%", escape=_LIKE_ESCAPE)
+        )
+    if not arms:
+        return false()
+    return or_(*arms)
+
+
 def _apply_filters(
     stmt: Select,
     *,
@@ -262,8 +398,10 @@ def _apply_filters(
     So ``?slug=<stem>`` is the exact by-stem door that finds a plan whoever
     wrote it, and ``?work_unit_slug=<stem>`` finds the rows that DECLARE a
     link to that unit. Both are exact equality; neither is a prefix or a
-    full-text match (``q`` is the only full-text filter, and it does not
-    search identifiers).
+    full-text match. ``q`` is the one free-text filter, and it is two arms
+    OR-ed together — full text over ``title || body`` and a case-insensitive
+    substring match on ``slug`` — so a pasted filename finds its plan; see
+    :func:`_search_predicate`. It never reads ``work_unit_slug``.
     """
     stmt = stmt.where(_org_scope(org_id))
     if kind is not None:
@@ -284,12 +422,7 @@ def _apply_filters(
             )
         )
     if q:
-        # Spelled to match ix_work_artifacts_search's indexed expression.
-        stmt = stmt.where(
-            text(
-                f"{SEARCH_TSVECTOR_SQL} @@ plainto_tsquery('english', :plan_lib_q)"
-            ).bindparams(plan_lib_q=q)
-        )
+        stmt = stmt.where(_search_predicate(q))
     if since is not None:
         stmt = stmt.where(WorkArtifact.updated_at >= since)
     if work_unit_slug is not None:
@@ -361,6 +494,61 @@ async def list_artifacts(
         .all()
     )
     return list(rows), total
+
+
+async def count_artifacts(
+    db: AsyncSession, *, org_id: UUID | None, kind: str | None = None
+) -> int:
+    """How many artifacts this organization holds, optionally of one kind.
+
+    Exists for the callers that need the CORPUS SIZE and no rows —
+    ``/operations/plans``' body-signal join asks "does this org hold any
+    ``plan`` artifact at all?", and answering it through
+    :func:`list_artifacts` would pay for a page of rows it discards. Zero here
+    is a measurement, which is the whole point: it is what distinguishes "this
+    slug has no body" from "this principal's org has no corpus to miss in".
+    """
+    stmt = select(func.count()).select_from(WorkArtifact).where(_org_scope(org_id))
+    if kind is not None:
+        stmt = stmt.where(WorkArtifact.kind == kind)
+    return int((await db.execute(stmt)).scalar_one())
+
+
+async def work_unit_slugs_with_artifacts(
+    db: AsyncSession,
+    *,
+    org_id: UUID | None,
+    slugs: Sequence[str],
+    kind: str,
+) -> set[str]:
+    """Which of ``slugs`` have an artifact of ``kind`` in this org's bucket.
+
+    ONE bounded query over a whole page of work units, never one lookup per
+    row: the ``/plans`` console fetches up to coord's 500-row clamp, and 500
+    round trips per render is not a join, it is a loop.
+
+    ``work_unit_slug`` is populated only for ``kind == "plan"`` (the runner's
+    ``body_push`` writes the stem for that kind and NULL for every other), so
+    the kind filter is what makes the answer mean "has a plan document"
+    rather than "is mentioned by some artifact".
+
+    Returns the slugs that MATCHED. A slug absent from the result is a miss,
+    which is not the same claim as "has no body" — see
+    :mod:`app.services.plan_body_signal` for the three-valued reading the
+    caller must apply on top of it.
+    """
+    if not slugs:
+        return set()
+    stmt = (
+        select(WorkArtifact.work_unit_slug)
+        .where(
+            _org_scope(org_id),
+            WorkArtifact.kind == kind,
+            WorkArtifact.work_unit_slug.in_(list(slugs)),
+        )
+        .distinct()
+    )
+    return {s for s in (await db.execute(stmt)).scalars().all() if s}
 
 
 async def get_artifact(
@@ -591,6 +779,53 @@ async def list_edges(
     return out
 
 
+#: The six columns :func:`difficulty_values` fills.
+DIFFICULTY_COLUMNS: tuple[str, ...] = (
+    "difficulty",
+    "difficulty_conceptual",
+    "difficulty_implementation",
+    "difficulty_source",
+    "difficulty_rubric_version",
+    "difficulty_signals",
+)
+
+
+def difficulty_values(kind: str, body: str | None) -> dict[str, object]:
+    """The ``difficulty*`` column values for an artifact of ``kind``/``body``.
+
+    A ``plan`` is rated by
+    :func:`app.services.plan_difficulty.compute_difficulty`; any other kind
+    gets NULL in every column (unrated) — which is also what a plan whose kind
+    a later correction moves away from ``plan`` needs.
+    """
+    if kind != DIFFICULTY_RATED_KIND:
+        return dict.fromkeys(DIFFICULTY_COLUMNS)
+    rating = compute_difficulty(body or "")
+    return {
+        "difficulty": rating.level,
+        "difficulty_conceptual": rating.conceptual,
+        "difficulty_implementation": rating.implementation,
+        "difficulty_source": rating.source,
+        "difficulty_rubric_version": rating.rubric_version,
+        "difficulty_signals": rating.signals,
+    }
+
+
+def assign_difficulty(row: WorkArtifact) -> bool:
+    """Rate ``row`` from its current ``kind`` and ``body``; ``True`` if moved.
+
+    The ORM-side writer every upsert arm and the kind correction share; the
+    stale-row re-rating writes the same :func:`difficulty_values` through a
+    Core UPDATE instead (see :func:`rerate_stale_plan_difficulty`).
+    """
+    moved = False
+    for field, value in difficulty_values(row.kind, row.body).items():
+        if getattr(row, field) != value:
+            setattr(row, field, value)
+            moved = True
+    return moved
+
+
 @dataclass(frozen=True)
 class _HeadMetadata:
     """The head row's payload-described metadata — everything a POST says
@@ -671,6 +906,9 @@ async def _settle_unchanged_digest(
     lock_asserted = not kind_is_heuristic and not existing.kind_locked
     if lock_asserted:
         existing.kind_locked = True
+    # The rating is NOT refreshed here: an unchanged body cannot move it, and a
+    # stale one (an older rubric) is healed by ``rerate_stale_plan_difficulty``,
+    # which — unlike an ORM write here — leaves ``updated_at`` alone.
     if metadata_moved or lock_asserted:
         await db.commit()
         await db.refresh(existing)
@@ -770,6 +1008,7 @@ async def upsert_artifact(
             captured_by=captured_by,
             current_version=1,
         )
+        assign_difficulty(artifact)
         db.add(artifact)
         try:
             await db.flush()
@@ -862,6 +1101,8 @@ async def upsert_artifact(
     _assign_head_metadata(existing, metadata)
     existing.body = body
     existing.content_sha256 = digest
+    # After the body AND the kind are final: both are the rating's inputs.
+    assign_difficulty(existing)
     # The body moved, so the row was touched whether or not the metadata did.
     existing.updated_at = datetime.now(UTC)
 
@@ -880,6 +1121,172 @@ async def upsert_artifact(
     return existing, False, True
 
 
+@dataclass(frozen=True)
+class RerateOutcome:
+    """What one re-rating pass did. ``pending`` is how many plans in scope are
+    STILL stale afterwards — non-zero while a capped pass works through a
+    backlog (the first reads after a deploy or a rubric bump)."""
+
+    written: int
+    pending: int
+
+
+@dataclass(frozen=True)
+class RatedSnapshot:
+    """A rating computed from a body read at ``content_sha256``/``kind``.
+
+    The write is conditional on both still holding, which is what stops a
+    pass that raced a newer write from stamping the OLD body's rating onto the
+    new body at the current rubric version — a rating nothing would ever
+    re-rate again.
+    """
+
+    id: UUID
+    kind: str
+    content_sha256: str
+    values: dict[str, object]
+
+
+def _stale_rating(org_id: UUID | None) -> tuple[ColumnElement[bool], ...]:
+    return (
+        _org_scope(org_id),
+        WorkArtifact.kind == DIFFICULTY_RATED_KIND,
+        WorkArtifact.difficulty_rubric_version.is_distinct_from(RUBRIC_VERSION),
+    )
+
+
+async def apply_rated_snapshots(
+    db: AsyncSession, snapshots: Sequence[RatedSnapshot]
+) -> int:
+    """Write each snapshot's rating IF its row is unchanged; returns rows written.
+
+    Guarded on the digest and kind the rating was computed from, and on the
+    row still being stale (a concurrent pass that already rated it is not
+    re-written). ``updated_at`` is assigned to itself, which is what
+    suppresses the column's ``onupdate``: a rating derived from an unchanged
+    body is not a touch, and consumers sort on that stamp. Does not commit.
+    """
+    written = 0
+    for snap in snapshots:
+        result = await db.execute(
+            update(WorkArtifact)
+            .where(
+                WorkArtifact.id == snap.id,
+                WorkArtifact.content_sha256 == snap.content_sha256,
+                WorkArtifact.kind == snap.kind,
+                WorkArtifact.difficulty_rubric_version.is_distinct_from(RUBRIC_VERSION),
+            )
+            .values(**snap.values, updated_at=WorkArtifact.updated_at)
+            .execution_options(synchronize_session=False)
+        )
+        written += int(getattr(result, "rowcount", 0) or 0)
+    return written
+
+
+def _rate_rows(rows: Sequence[tuple[UUID, str, str, str]]) -> list[RatedSnapshot]:
+    """CPU-bound half of a batch — run off the event loop."""
+    return [
+        RatedSnapshot(
+            id=row_id,
+            kind=kind,
+            content_sha256=digest,
+            values=difficulty_values(kind, body),
+        )
+        for row_id, kind, body, digest in rows
+    ]
+
+
+async def rerate_stale_plan_difficulty(
+    db: AsyncSession,
+    *,
+    org_id: UUID | None,
+    limit: int = _DIFFICULTY_RERATE_LIMIT,
+) -> RerateOutcome:
+    """Rate up to ``limit`` plans in scope whose rating predates the rubric.
+
+    Bounded so one request never pays for the whole corpus: rating is ~7 ms
+    of CPU per plan, and a deploy leaves every plan unrated. Newest-written
+    plans go first, so the plans being worked on are rated on the first read;
+    the rest are rated by the reads that follow, and ``pending`` says how
+    many remain. Scoring runs in a worker thread (``asyncio.to_thread``) so
+    the event loop keeps serving other requests, and each write is guarded by
+    :func:`apply_rated_snapshots` — two concurrent passes waste CPU but can
+    never write a stale rating.
+    """
+    stale_ids = list(
+        (
+            await db.execute(
+                select(WorkArtifact.id)
+                .where(*_stale_rating(org_id))
+                .order_by(WorkArtifact.updated_at.desc(), WorkArtifact.id)
+                .limit(limit)
+            )
+        ).scalars()
+    )
+    written = 0
+    for start in range(0, len(stale_ids), _DIFFICULTY_RERATE_BATCH):
+        batch = stale_ids[start : start + _DIFFICULTY_RERATE_BATCH]
+        rows = [
+            (row_id, kind, body, digest)
+            for row_id, kind, body, digest in (
+                await db.execute(
+                    select(
+                        WorkArtifact.id,
+                        WorkArtifact.kind,
+                        WorkArtifact.body,
+                        WorkArtifact.content_sha256,
+                    ).where(WorkArtifact.id.in_(batch))
+                )
+            ).all()
+        ]
+        snapshots = await asyncio.to_thread(_rate_rows, rows)
+        written += await apply_rated_snapshots(db, snapshots)
+        await db.commit()
+    pending = int(
+        (
+            await db.execute(
+                select(func.count())
+                .select_from(WorkArtifact)
+                .where(*_stale_rating(org_id))
+            )
+        ).scalar_one()
+    )
+    return RerateOutcome(written=written, pending=pending)
+
+
+async def list_plan_difficulties(
+    db: AsyncSession, *, org_id: UUID | None
+) -> list[WorkArtifact]:
+    """Every plan row in scope, for the difficulty map — no bodies loaded.
+
+    Ordered by ``updated_at DESC`` so that, when two artifacts carry the same
+    ``work_unit_slug`` (a fork across ``source_repo``), a consumer keeping the
+    FIRST row per slug keeps the most recently written copy.
+    """
+    stmt = (
+        select(WorkArtifact)
+        .options(
+            load_only(
+                WorkArtifact.id,
+                WorkArtifact.kind,
+                WorkArtifact.slug,
+                WorkArtifact.work_unit_slug,
+                WorkArtifact.source_repo,
+                WorkArtifact.updated_at,
+                WorkArtifact.difficulty,
+                WorkArtifact.difficulty_conceptual,
+                WorkArtifact.difficulty_implementation,
+                WorkArtifact.difficulty_source,
+                WorkArtifact.difficulty_rubric_version,
+                WorkArtifact.difficulty_signals,
+            )
+        )
+        .where(_org_scope(org_id), WorkArtifact.kind == DIFFICULTY_RATED_KIND)
+        .order_by(WorkArtifact.updated_at.desc(), WorkArtifact.id)
+    )
+    return list((await db.execute(stmt)).scalars())
+
+
 async def set_artifact_kind(
     db: AsyncSession, artifact: WorkArtifact, *, kind: str, org_id: UUID | None
 ) -> WorkArtifact:
@@ -894,6 +1301,12 @@ async def set_artifact_kind(
     (``uq_work_artifacts_identity`` covers ``kind``) and merging the two rows
     is an operator decision, not something this write may guess at.
     """
+    # Lock and re-read first. The caller loaded ``artifact`` earlier, and the
+    # difficulty re-rater may have written its rating since; without the
+    # re-read, ``assign_difficulty`` below compares against the stale
+    # in-memory NULLs, writes nothing, and leaves that rating on a row that
+    # is no longer a plan. The lock also serializes this against an upsert.
+    await db.refresh(artifact, with_for_update=True)
     if artifact.kind != kind:
         clash = await get_by_identity(
             db,
@@ -908,6 +1321,9 @@ async def set_artifact_kind(
             )
         artifact.kind = kind
 
+    # The kind is a rating input: a correction onto ``plan`` rates the row, a
+    # correction away from it clears the rating.
+    assign_difficulty(artifact)
     artifact.kind_locked = True
     artifact.updated_at = datetime.now(UTC)
     try:
@@ -1227,6 +1643,122 @@ async def capture_health(
         )
         for row in (await db.execute(stmt)).all()
     ]
+
+
+@dataclass(frozen=True)
+class CapturedPlanCorpus:
+    """The CORPUS side of the coverage set difference, for one organization.
+
+    Phase 3 of ``2026-09-15-captured-vs-authored-coverage-is-a-set-difference``.
+    Two facts, and the second is what makes a >100% coverage reading
+    unconstructible:
+
+    * ``slugs_by_source_repo`` — the ``kind == 'plan'`` stems the corpus holds
+      under each ``source_repo`` key that was ASKED for. A key with no rows is
+      present with an empty set, so a caller never has to tell "no rows" from
+      "not asked".
+    * ``plan_row_count`` — EVERY ``kind == 'plan'`` row in the organization,
+      whatever its ``source_repo`` (including ``null``). A key's out-of-scope
+      count is this minus that key's own, which names the rows a naive
+      numerator swept in rather than letting them inflate a ratio.
+
+    The stems come back as sets rather than counts because the answer the plan
+    needs is a set DIFFERENCE: how many stems that exist have no row is not
+    derivable from two totals.
+    """
+
+    slugs_by_source_repo: dict[str, frozenset[str]]
+    plan_row_count: int
+
+
+async def captured_plan_corpus(
+    db: AsyncSession, *, org_id: UUID | None, source_repos: Iterable[str]
+) -> CapturedPlanCorpus:
+    """The plan stems this organization's corpus holds, per asked-for key.
+
+    ``source_repos`` is the set of keys a coverage read has a denominator for
+    — the scan sources devices reported. Only those are enumerated: the stem
+    query is the expensive half (the fleet's corpus is ~1800 plan rows), and a
+    key nobody can measure against needs no set.
+
+    ``plan_row_count`` is counted over the WHOLE organization, so it stays
+    correct when ``source_repos`` is empty — which is exactly the case where
+    an out-of-scope count matters most and a caller deriving the total by
+    summing the returned sets would get 0.
+
+    ⚠️ **Both facts come from ONE statement, and that is a correctness
+    requirement rather than a round-trip saving.** The two used to be separate
+    ``execute`` calls on one session, and under the default READ COMMITTED
+    isolation each got its OWN snapshot. The runner's body sync inserts plan
+    rows continuously (a ~68 s cycle, and in bulk on a first-start backfill),
+    so a row landing between the two reads made
+    ``len(slugs_by_source_repo[key])`` exceed ``plan_row_count`` — and the
+    caller's ``plan_row_count - len(captured)`` then served a NEGATIVE
+    ``out_of_scope_artifact_count`` on a ``measured`` coverage entry, with
+    "captured" larger than every plan row the organization has. That is the
+    same class of impossible number (the 101.8%) this whole feature exists to
+    make unconstructible, so it is fixed at the source rather than clamped:
+    ``max(0, ...)`` would turn an impossible number into a plausible wrong one
+    and hide the torn read entirely.
+
+    The single statement is a ``count(*)`` CTE LEFT JOINed to the stem select
+    ``ON true``. The join preserves the aggregate's one row when no stem
+    matches (including when ``source_repos`` is empty), so the total is always
+    present, and both facts are read at one snapshot by construction rather
+    than by isolation level.
+
+    Matching is on ``source_repo`` EXACTLY, including case: it is the
+    scanner's own two-component form (``<repo>/<dir relative to the repo
+    root>``), and a near-miss key is a different row that belongs in the
+    out-of-scope count rather than being folded in.
+    """
+    wanted = sorted(set(source_repos))
+
+    total_cte = (
+        select(func.count().label("plan_row_count"))
+        .select_from(WorkArtifact)
+        .where(_org_scope(org_id), WorkArtifact.kind == "plan")
+        .cte("plan_row_total")
+    )
+    stems = (
+        select(
+            WorkArtifact.source_repo.label("source_repo"),
+            WorkArtifact.slug.label("slug"),
+        )
+        .where(
+            _org_scope(org_id),
+            WorkArtifact.kind == "plan",
+            # An empty ``wanted`` renders as a false constant, so the join
+            # contributes no rows and the aggregate's row survives alone.
+            WorkArtifact.source_repo.in_(wanted),
+        )
+        .subquery("captured_stems")
+    )
+    stmt = select(
+        total_cte.c.plan_row_count,
+        stems.c.source_repo,
+        stems.c.slug,
+    ).select_from(total_cte.outerjoin(stems, true()))
+
+    rows = (await db.execute(stmt)).all()
+    if not rows:  # pragma: no cover — ``count(*)`` always yields exactly one row
+        raise RuntimeError(
+            "captured_plan_corpus read no rows: a count(*) aggregate always "
+            "yields one, and the LEFT JOIN preserves it. Returning 0 here "
+            "would publish an unmeasured total as a measured one."
+        )
+
+    slugs: dict[str, set[str]] = {key: set() for key in wanted}
+    for row in rows:
+        # ``source_repo`` is NULL only on the join's no-match row — ``IN``
+        # never matches a NULL key — so the bucket always exists.
+        if row.source_repo is not None:
+            slugs[row.source_repo].add(row.slug)
+
+    return CapturedPlanCorpus(
+        slugs_by_source_repo={key: frozenset(value) for key, value in slugs.items()},
+        plan_row_count=int(rows[0].plan_row_count),
+    )
 
 
 async def find_divergent(

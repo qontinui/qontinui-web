@@ -77,7 +77,7 @@ export function SpawnPlanRow({
   const status = derivePlanStatus(plan);
   const tag = describePlanStatus(plan.status);
   const time = planRowTime(plan);
-  const href = `/admin/coord/plans/${encodeURIComponent(plan.slug)}`;
+  const href = `/admin/coord/work-units/${encodeURIComponent(plan.slug)}`;
 
   return (
     <div className="flex items-start gap-2">

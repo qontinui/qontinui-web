@@ -1,5 +1,8 @@
 import { describe, it, expect } from "vitest";
 import {
+  ciStatusWsUrl,
+  coordEventsWsUrl,
+  deviceStatusWsUrl,
   extractSymbol,
   formatBytes,
   percentFree,
@@ -310,5 +313,41 @@ describe("readingAgeMs", () => {
     const age = readingAgeMs(past);
     expect(age).not.toBeNull();
     expect(age!).toBeGreaterThanOrEqual(119_000);
+  });
+});
+
+describe("operations WS URL builders", () => {
+  // All three bridges derive from OPERATIONS_API (http[s]:// → ws[s]://) and
+  // carry the session token as `token=`; the coord-events bridge adds the
+  // fixed subscription name that coord's closed set resolves server-side.
+  const wsBase = (url: string) => url.replace(/\?.*$/, "");
+
+  it("coordEventsWsUrl targets the backend bridge with subscribe + token", () => {
+    const url = coordEventsWsUrl("merge", "a b+c");
+    expect(url).toMatch(/^wss?:\/\//);
+    expect(url).toContain("/api/v1/operations/coord-events/ws?");
+    expect(url).toContain("subscribe=merge");
+    // The token is URL-encoded; the subscription name never is (it is a
+    // closed-set literal).
+    expect(url).toContain(`token=${encodeURIComponent("a b+c")}`);
+    // Never coord's own socket, never a caller-chosen glob.
+    expect(url).not.toContain("pattern=");
+    expect(url).not.toContain("9870");
+  });
+
+  it("coordEventsWsUrl carries the merge name (coord maps it to events.merge.*)", () => {
+    expect(coordEventsWsUrl("merge", "t")).toContain("subscribe=merge&token=t");
+  });
+
+  it("shares one scheme translation with the device- and CI-status bridges", () => {
+    const events = wsBase(coordEventsWsUrl("claims", "t"));
+    const device = wsBase(deviceStatusWsUrl("t"));
+    const ci = wsBase(ciStatusWsUrl("t"));
+    const root = (u: string) => u.replace(/\/[a-z-]+\/ws$/, "");
+    expect(root(events)).toBe(root(device));
+    expect(root(events)).toBe(root(ci));
+    expect(events.endsWith("/coord-events/ws")).toBe(true);
+    expect(device.endsWith("/device-status/ws")).toBe(true);
+    expect(ci.endsWith("/ci-status/ws")).toBe(true);
   });
 });

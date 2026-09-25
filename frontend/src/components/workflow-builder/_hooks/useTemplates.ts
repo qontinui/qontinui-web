@@ -1,6 +1,6 @@
 import { useState, useCallback, useMemo } from "react";
 import { toast } from "sonner";
-import { runnerApi, usePromptsDetailed } from "@/lib/runner-api";
+import { useRunnerApi, usePromptsDetailed } from "@/lib/runner-api";
 import type { WorkflowGenerationTemplate } from "@/lib/workflow-generation-templates";
 
 export interface TemplatesState {
@@ -27,6 +27,7 @@ export interface TemplatesState {
 }
 
 export function useTemplates(): TemplatesState {
+  const runnerApi = useRunnerApi();
   const [showTemplates, setShowTemplates] = useState(false);
   const [isSavingTemplate, setIsSavingTemplate] = useState(false);
 
@@ -85,7 +86,7 @@ export function useTemplates(): TemplatesState {
         setIsSavingTemplate(false);
       }
     },
-    [refetchPrompts]
+    [refetchPrompts, runnerApi]
   );
 
   const handleDeleteSavedTemplate = useCallback(
@@ -98,7 +99,7 @@ export function useTemplates(): TemplatesState {
         toast.error("Failed to delete template");
       }
     },
-    [refetchPrompts]
+    [refetchPrompts, runnerApi]
   );
 
   return {

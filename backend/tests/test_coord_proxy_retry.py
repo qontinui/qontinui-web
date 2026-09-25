@@ -142,7 +142,9 @@ class TestErrorEnvelope:
     def _build_app(self) -> FastAPI:
         from app.api.deps import get_async_db, get_current_active_user_async
         from app.api.v1.endpoints.devices import router as devices_router
-        from app.services.strategy import strategy_client  # noqa: F401
+        from app.services.coord_service_account import (
+            coord_service_account,  # noqa: F401
+        )
 
         app = FastAPI()
         mock_user = MagicMock()
@@ -155,12 +157,12 @@ class TestErrorEnvelope:
         return app
 
     def test_pair_cli_coord_down_returns_503_envelope_with_retry_after(self) -> None:
-        from app.services.strategy import strategy_client
+        from app.services.coord_service_account import coord_service_account
 
         client = TestClient(self._build_app())
         patcher, instance = _patch_client(httpx.ConnectError("connection refused"))
         with (
-            patch.object(strategy_client, "_admin_secret", "test-secret"),
+            patch.object(coord_service_account, "_admin_secret", "test-secret"),
             patcher,
             _patch_sleep(),
         ):

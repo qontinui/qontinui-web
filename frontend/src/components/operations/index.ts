@@ -29,7 +29,55 @@ export type { CiCapacityDisclosureProps } from "./CiCapacityDisclosure";
 export { indexMachinesByCoordDevice, resolveCiCapacity } from "./ciCapacity";
 export type { CiCapacityJoin, DevenvMachinesRead } from "./ciCapacity";
 export { useDevenvMachines } from "./useDevenvMachines";
-export { CiStatusPanel } from "./CiStatusPanel";
+export {
+  CI_ROUTING_LABELS,
+  describeMirrorFreshness,
+  hasLabel,
+  indexCiRunners,
+  isRoutingLabel,
+  matchesFleetRouting,
+  mergeCiRunners,
+  mirrorRowAgeSecs,
+  missingRoutingLabels,
+  normalizeCiRunnerStatus,
+  parseCiRunnersPayload,
+} from "./ciRunnerMirror";
+export type {
+  CiRunnerMirrorRead,
+  CoordCiRunnerRow,
+  CoordCiRunnersPayload,
+} from "./ciRunnerMirror";
+export {
+  CI_RUNNER_MIRROR_API,
+  CI_RUNNER_MIRROR_POLL_MS,
+  useCiRunnerMirror,
+} from "./useCiRunnerMirror";
+export { OPERATOR_AUDIT_API, OperatorAuditPanel } from "./OperatorAuditPanel";
+export {
+  AUDIT_FILTERS,
+  DEFAULT_AUDIT_FILTER_ID,
+  NIL_OPERATOR_ID,
+  blastRadiusOf,
+  describeAuditAction,
+  isNilOperator,
+  parseAuditPayload,
+  reasonOf,
+  resolveAuditFilter,
+} from "./operatorAudit";
+export type {
+  AuditActionLabel,
+  AuditFilter,
+  AuditRead,
+  AuditRow,
+  BlastRadius,
+  BlastRadiusItem,
+} from "./operatorAudit";
+// Was `CiStatusPanel`, mounted directly on /admin/coord/pipeline. The
+// 2026-09-19 redesign moved it onto the Train tab's repo axis and made it own
+// its own transport — see `CiRepoStrip`'s module header. It is exported for
+// tests and for a future repo-axis surface; the only render site today is
+// `MergeTrainActivity`.
+export { CiRepoStrip } from "./CiRepoStrip";
 export {
   DevicePicker,
   deviceStateLabel,
@@ -74,15 +122,39 @@ export {
 } from "./FleetHealthSummary";
 export { FLEET_HEALTH_API, useFleetHealth } from "./useFleetHealth";
 export type {
-  FleetHealthAlertCounts,
+  FleetConditionsDomain,
+  FleetHealthConditions,
   FleetHealthDevice,
-  FleetHealthPageout,
   FleetHealthPayload,
+  FleetHealthSettingInEffect,
   UseFleetHealthResult,
 } from "./useFleetHealth";
 export { summarizeFleetLiveness } from "./fleetLiveness";
 export type { FleetLivenessLevel, FleetLivenessSummary } from "./fleetLiveness";
+export { summarizeFleetConditions } from "./fleetConditions";
+export type {
+  FleetConditionsLevel,
+  FleetConditionsState,
+  FleetConditionsSummary,
+} from "./fleetConditions";
+export { FleetConditionsPanel } from "./FleetConditionsPanel";
+export type { FleetConditionsPanelProps } from "./FleetConditionsPanel";
 export { FleetResourcesSection } from "./FleetResourcesSection";
+export {
+  buildWorktreeSlotRows,
+  FleetWorktreeSlotsSection,
+} from "./FleetWorktreeSlotsSection";
+export {
+  FLEET_WORKTREE_SLOTS_API,
+  useFleetWorktreeSlots,
+} from "./useFleetWorktreeSlots";
+export type {
+  UseFleetWorktreeSlotsResult,
+  WorktreeSlotDevice,
+  WorktreeSlotOccupancy,
+  WorktreeSlotOccupantRow,
+  WorktreeSlotsResponse,
+} from "./useFleetWorktreeSlots";
 export { FleetTestTargetsPanel } from "./FleetTestTargetsPanel";
 export { MachineCard } from "./MachineCard";
 export { DeviceStatusTile } from "./DeviceStatusTile";

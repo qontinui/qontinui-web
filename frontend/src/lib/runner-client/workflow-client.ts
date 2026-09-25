@@ -4,6 +4,7 @@
  * Handles runWorkflow and stopWorkflow.
  */
 
+import { runnerRequest } from "@/lib/runner/api-client";
 import { BaseClient } from "./base-client";
 import type { RunWorkflowResponse } from "./types";
 
@@ -22,12 +23,10 @@ export class WorkflowClient {
     workflowName: string,
     options: { monitorIndex?: number; timeoutSeconds?: number } = {}
   ): Promise<RunWorkflowResponse> {
-    const controller = new AbortController();
     const timeoutMs = (options.timeoutSeconds ?? 300) * 1000 + 30000; // Add 30s buffer
-    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
     try {
-      const response = await fetch(`${this.base.baseUrl}/run-workflow`, {
+      const response = await runnerRequest(this.base.target, "/run-workflow", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -38,17 +37,18 @@ export class WorkflowClient {
           monitor_index: options.monitorIndex,
           timeout_seconds: options.timeoutSeconds ?? 300,
         }),
-        signal: controller.signal,
+        timeoutMs,
       });
 
-      clearTimeout(timeoutId);
-
       if (!response.ok) {
-        const errorText = await response.text();
+        const message = await this.base.failureMessage(
+          response,
+          "Failed to run workflow"
+        );
         return {
           success: false,
           workflow_name: workflowName,
-          error: `Failed to run workflow: ${response.status} - ${errorText}`,
+          error: message,
         };
       }
 
@@ -71,7 +71,6 @@ export class WorkflowClient {
         error: data.error,
       };
     } catch (error) {
-      clearTimeout(timeoutId);
       return {
         success: false,
         workflow_name: workflowName,
@@ -86,19 +85,26 @@ export class WorkflowClient {
    */
   async stopWorkflow(): Promise<{ success: boolean; error?: string }> {
     try {
-      const response = await fetch(`${this.base.baseUrl}/stop-execution`, {
-        method: "POST",
-        headers: {
-          Accept: "application/json",
-        },
-        signal: AbortSignal.timeout(10000),
-      });
+      const response = await runnerRequest(
+        this.base.target,
+        "/stop-execution",
+        {
+          method: "POST",
+          headers: {
+            Accept: "application/json",
+          },
+          timeoutMs: 10000,
+        }
+      );
 
       if (!response.ok) {
-        const errorText = await response.text();
+        const message = await this.base.failureMessage(
+          response,
+          "Failed to stop workflow"
+        );
         return {
           success: false,
-          error: `Failed to stop workflow: ${response.status} - ${errorText}`,
+          error: message,
         };
       }
 

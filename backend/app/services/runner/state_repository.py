@@ -119,11 +119,16 @@ class RunnerStateRepository:
         exists = await self._redis.exists(active_key)
         return bool(exists > 0)
 
-    async def get_all_connected_ids(self) -> list[str]:
+    async def get_all_connected_ids(self) -> list[str] | None:
         """
         Get all connected runner connection IDs across all processes.
 
-        Scans Redis for all active connections across the cluster.
+        Scans Redis for all active connections across the cluster. Returns
+        ``None`` when the scan FAILED — distinct from ``[]`` (a successful scan
+        that found no one). The ``connection_cleanup`` sweep closes every
+        connection row whose device is absent from this set, so reading a
+        Redis hiccup as "nobody is connected" closed every live primary row and
+        forced a fleet-wide reconnect.
         """
         try:
             keys = await self._redis.keys("runner:connection:*:active")
@@ -136,7 +141,7 @@ class RunnerStateRepository:
             return runner_ids
         except Exception as e:
             logger.error("redis_scan_failed", error=str(e))
-            return []
+            return None
 
     async def refresh_ttl(self, runner_id: str) -> bool:
         """

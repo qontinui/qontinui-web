@@ -17,6 +17,7 @@ import {
   MARK_ALL,
   detailActor,
   humanKind,
+  linkedRefFindingHref,
   linkedRefNotice,
   matchesNotificationRef,
   isContractError,
@@ -26,8 +27,10 @@ import {
   mergeKindVocabulary,
   notificationHeadline,
   notificationSubject,
+  orderUnreadFirst,
   scrubUuids,
   selectionIds,
+  sensitiveActionFacts,
 } from "./notificationStatus";
 
 const UUID = "c79a07d5-7e40-49b4-87fa-554c749f9644";
@@ -182,18 +185,19 @@ describe("mergeKindVocabulary", () => {
   it("accumulates kinds across pages", () => {
     const a = mergeKindVocabulary([], [{ kind: "policy_change" }]);
     expect(a).toEqual(["policy_change"]);
-    expect(mergeKindVocabulary(a, [{ kind: "pr_landed" }])).toEqual([
-      "policy_change",
-      "pr_landed",
-    ]);
+    expect(
+      mergeKindVocabulary(a, [{ kind: "agent_took_sensitive_action" }])
+    ).toEqual(["agent_took_sensitive_action", "policy_change"]);
   });
 
   it("NEVER shrinks — a filtered page must not erase the vocabulary", () => {
     // The bug this prevents: select kind A, the next page contains only A, and
     // the dropdown collapses to ["A"] so you cannot get to B without detouring
     // via "All kinds".
-    const vocab = ["policy_change", "pr_landed"];
-    expect(mergeKindVocabulary(vocab, [{ kind: "pr_landed" }])).toEqual(vocab);
+    const vocab = ["agent_took_sensitive_action", "policy_change"];
+    expect(
+      mergeKindVocabulary(vocab, [{ kind: "agent_took_sensitive_action" }])
+    ).toEqual(vocab);
   });
 
   it("returns the SAME reference when nothing is new", () => {
@@ -210,10 +214,9 @@ describe("mergeKindVocabulary", () => {
 
 describe("kindOptions", () => {
   it("offers the accumulated vocabulary, alphabetised", () => {
-    expect(kindOptions(["pr_landed", "policy_change"], "any")).toEqual([
-      "policy_change",
-      "pr_landed",
-    ]);
+    expect(
+      kindOptions(["policy_change", "agent_took_sensitive_action"], "any")
+    ).toEqual(["agent_took_sensitive_action", "policy_change"]);
   });
 
   it("keeps the selected kind even when the vocabulary lacks it", () => {
@@ -379,7 +382,9 @@ describe("isContractError", () => {
  * unrelated event and present it as the write's stated reasoning.
  */
 describe("matchesNotificationRef", () => {
-  const row = (over: Partial<CoordNotificationRow> = {}): CoordNotificationRow => ({
+  const row = (
+    over: Partial<CoordNotificationRow> = {}
+  ): CoordNotificationRow => ({
     notification_id: "11111111-1111-4111-8111-111111111111",
     kind: "policy_document_changed",
     ...over,
@@ -394,7 +399,9 @@ describe("matchesNotificationRef", () => {
   it("matches a notification_ref carried in the payload", () => {
     expect(
       matchesNotificationRef(
-        row({ detail: { notification_ref: "fec41291-67ed-4cf8-b331-888ad1126b45" } }),
+        row({
+          detail: { notification_ref: "fec41291-67ed-4cf8-b331-888ad1126b45" },
+        }),
         "fec41291-67ed-4cf8-b331-888ad1126b45"
       )
     ).toBe(true);
@@ -406,9 +413,9 @@ describe("matchesNotificationRef", () => {
     expect(matchesNotificationRef(row(), "")).toBe(false);
     expect(matchesNotificationRef(row(), "   ")).toBe(false);
     // Including against a row whose payload has an empty ref of its own.
-    expect(matchesNotificationRef(row({ detail: { notification_ref: "" } }), "")).toBe(
-      false
-    );
+    expect(
+      matchesNotificationRef(row({ detail: { notification_ref: "" } }), "")
+    ).toBe(false);
   });
 
   it("is exact — a prefix or a different id does not match", () => {
@@ -419,9 +426,9 @@ describe("matchesNotificationRef", () => {
   });
 
   it("ignores a non-string payload value rather than coercing it", () => {
-    expect(matchesNotificationRef(row({ detail: { notification_ref: 42 } }), "42")).toBe(
-      false
-    );
+    expect(
+      matchesNotificationRef(row({ detail: { notification_ref: 42 } }), "42")
+    ).toBe(false);
     expect(matchesNotificationRef(row({ detail: null }), "x")).toBe(false);
   });
 });
@@ -462,6 +469,77 @@ describe("linkedRefNotice", () => {
     expect(
       linkedRefNotice({ found: false, loading: false, error: false })
     ).toMatch(/not on the page that is loaded/i);
+  });
+
+  it("names the findings reader in the fallback arm, and ONLY there", () => {
+    // A ref that matches nothing has one explanation this feed can never
+    // satisfy: a CREATED document sends no notice, so its reasoning lives in
+    // a finding rather than an event. Plan
+    // `2026-09-15-the-console-names-a-finding-it-cannot-open`, Phase 3.
+    const fallback = linkedRefNotice({
+      found: false,
+      loading: false,
+      error: false,
+    });
+    expect(fallback).toMatch(/created/i);
+    expect(fallback).toMatch(/findings reader/i);
+
+    // Not in the arm that FOUND the event — an edit's notice is on screen and
+    // must not be overshadowed by a sentence about creations — nor in any of
+    // the arms that rank above the fallback.
+    for (const line of [
+      linkedRefNotice({ found: true, loading: false, error: false }),
+      linkedRefNotice({ found: false, loading: true, error: false }),
+      linkedRefNotice({ found: false, loading: false, error: true }),
+      linkedRefNotice({
+        found: false,
+        loading: false,
+        error: false,
+        migrationPending: true,
+      }),
+      linkedRefNotice({
+        found: false,
+        loading: false,
+        error: false,
+        pagingFailed: true,
+      }),
+    ]) {
+      expect(line).not.toMatch(/findings reader/i);
+    }
+  });
+
+  it("offers the findings link exactly when the banner says to open it", () => {
+    // `linkedRefFindingHref` mirrors `linkedRefNotice`'s ranking; walk EVERY
+    // combination of its inputs so the link and the sentence cannot drift.
+    const ref = "5a2cfc8e-0000-4000-8000-000000000001";
+    const flags = [
+      "found",
+      "loading",
+      "error",
+      "pagingFailed",
+      "filterActive",
+      "migrationPending",
+    ] as const;
+    for (let mask = 0; mask < 1 << flags.length; mask++) {
+      const state = {
+        found: false,
+        loading: false,
+        error: false,
+      } as Parameters<typeof linkedRefNotice>[0];
+      flags.forEach((f, i) => {
+        (state as Record<string, boolean>)[f] = Boolean(mask & (1 << i));
+      });
+      const says = /findings reader/i.test(linkedRefNotice(state));
+      const href = linkedRefFindingHref(state, ref);
+      expect(href !== null, JSON.stringify(state)).toBe(says);
+      if (href !== null) {
+        expect(href).toBe(`/admin/coord/findings?id=${ref}`);
+      }
+    }
+    // A blank ref has nothing to link to, whatever the arm.
+    expect(
+      linkedRefFindingHref({ found: false, loading: false, error: false }, "  ")
+    ).toBeNull();
   });
 
   it("names the BUTTON, not the feed, when only a page append failed", () => {
@@ -560,5 +638,113 @@ describe("linkedRefNotice", () => {
     expect(
       linkedRefNotice({ found: false, loading: false, error: false })
     ).toMatch(/not on the page that is loaded/i);
+  });
+});
+
+describe("humanKind — the sensitive-action label", () => {
+  it("gives the agent-action kind a hand-written label", () => {
+    expect(humanKind("agent_took_sensitive_action")).toBe(
+      "Sensitive agent action"
+    );
+  });
+
+  it("keeps the mechanical path for every other kind", () => {
+    expect(humanKind("agent_took_sensitive_gate_action")).toBe(
+      "Agent took sensitive gate action"
+    );
+    expect(humanKind("policy_document_changed")).toBe(
+      "Policy document changed"
+    );
+  });
+});
+
+describe("orderUnreadFirst", () => {
+  const unreadA = row({ notification_id: "a", read_at: null });
+  const readB = row({ notification_id: "b", read_at: "2026-09-18T10:00:00Z" });
+  const unreadC = row({ notification_id: "c", read_at: null });
+  const readD = row({ notification_id: "d", read_at: "2026-09-18T09:00:00Z" });
+
+  it("partitions unread before read, keeping each group's order", () => {
+    expect(
+      orderUnreadFirst([readB, unreadA, readD, unreadC]).map(
+        (n) => n.notification_id
+      )
+    ).toEqual(["a", "c", "b", "d"]);
+  });
+
+  it("returns the same array when it is already ordered", () => {
+    const rows = [unreadA, unreadC, readB, readD];
+    expect(orderUnreadFirst(rows)).toBe(rows);
+    const empty: CoordNotificationRow[] = [];
+    expect(orderUnreadFirst(empty)).toBe(empty);
+  });
+});
+
+describe("sensitiveActionFacts", () => {
+  const sensitive = (detail: Record<string, unknown> | null) =>
+    row({ kind: "agent_took_sensitive_action", detail });
+
+  it("reads each reversibility value into its operator label", () => {
+    expect(sensitiveActionFacts(sensitive({ reversible: "no" }))).toEqual({
+      reversible: "no",
+      reversibleLabel: "not reversible",
+      undo: null,
+    });
+    expect(
+      sensitiveActionFacts(sensitive({ reversible: "roll-forward" }))
+        ?.reversibleLabel
+    ).toBe("roll-forward");
+    expect(
+      sensitiveActionFacts(sensitive({ reversible: "restore" }))
+        ?.reversibleLabel
+    ).toBe("restore");
+  });
+
+  it("carries the undo handle verbatim — it is a paste target", () => {
+    expect(
+      sensitiveActionFacts(
+        sensitive({ reversible: "restore", undo: `ledger:${UUID}` })
+      )?.undo
+    ).toBe(`ledger:${UUID}`);
+  });
+
+  it("states nothing when the row states nothing", () => {
+    expect(sensitiveActionFacts(sensitive({}))).toEqual({
+      reversible: null,
+      reversibleLabel: null,
+      undo: null,
+    });
+    expect(sensitiveActionFacts(sensitive(null))?.reversible).toBeNull();
+  });
+
+  it("renders a reversibility value coord adds later as itself, scrubbed", () => {
+    expect(
+      sensitiveActionFacts(sensitive({ reversible: `revert-${UUID}` }))
+        ?.reversibleLabel
+    ).toBe("revert-…");
+  });
+
+  it("accepts the pre-rename wire string until coord's alias retires", () => {
+    expect(
+      sensitiveActionFacts(
+        row({
+          kind: "agent_took_irreversible_action",
+          detail: { reversible: "no", undo: "ledger:1" },
+        })
+      )
+    ).toEqual({
+      reversible: "no",
+      reversibleLabel: "not reversible",
+      undo: "ledger:1",
+    });
+    expect(humanKind("agent_took_irreversible_action")).toBe(
+      "Sensitive agent action"
+    );
+  });
+
+  it("is null for every other kind", () => {
+    expect(
+      sensitiveActionFacts(row({ detail: { reversible: "no", undo: "x" } }))
+    ).toBeNull();
   });
 });

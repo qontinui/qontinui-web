@@ -4,12 +4,27 @@
  * Handles start/stop/status/screenshot for web extraction sessions.
  */
 
+import {
+  isRunnerNeedsLocalError,
+  runnerRequest,
+} from "@/lib/runner/api-client";
 import { BaseClient } from "./base-client";
 import type {
   StartExtractionRequest,
   ExtractionStartResponse,
   ExtractionStatusResponse,
 } from "./types";
+
+/**
+ * The runner path of an extraction screenshot. Fetch it through
+ * `runnerRequest` / `useRunnerObjectUrl`, never as a raw URL.
+ */
+export function extractionScreenshotPath(
+  extractionId: string,
+  screenshotId: string
+): string {
+  return `/extraction/${extractionId}/screenshot/${screenshotId}`;
+}
 
 export class ExtractionClient {
   private base: BaseClient;
@@ -24,33 +39,34 @@ export class ExtractionClient {
   async startExtraction(
     request: StartExtractionRequest
   ): Promise<ExtractionStartResponse> {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 30000); // 30 second timeout
-
     try {
-      const response = await fetch(`${this.base.baseUrl}/extraction/start`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Accept: "application/json",
-        },
-        body: JSON.stringify(request),
-        signal: controller.signal,
-      });
-
-      clearTimeout(timeoutId);
+      const response = await runnerRequest(
+        this.base.target,
+        "/extraction/start",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Accept: "application/json",
+          },
+          body: JSON.stringify(request),
+          timeoutMs: 30000,
+        }
+      );
 
       if (!response.ok) {
-        const errorText = await response.text();
+        const message = await this.base.failureMessage(
+          response,
+          "Failed to start extraction"
+        );
         return {
           success: false,
-          error: `Failed to start extraction: ${response.status} - ${errorText}`,
+          error: message,
         };
       }
 
       return response.json();
     } catch (error) {
-      clearTimeout(timeoutId);
       return {
         success: false,
         error:
@@ -64,18 +80,25 @@ export class ExtractionClient {
    */
   async stopExtraction(): Promise<{ success: boolean; error?: string }> {
     try {
-      const response = await fetch(`${this.base.baseUrl}/extraction/stop`, {
-        method: "POST",
-        headers: {
-          Accept: "application/json",
-        },
-      });
+      const response = await runnerRequest(
+        this.base.target,
+        "/extraction/stop",
+        {
+          method: "POST",
+          headers: {
+            Accept: "application/json",
+          },
+        }
+      );
 
       if (!response.ok) {
-        const errorText = await response.text();
+        const message = await this.base.failureMessage(
+          response,
+          "Failed to stop extraction"
+        );
         return {
           success: false,
-          error: `Failed to stop extraction: ${response.status} - ${errorText}`,
+          error: message,
         };
       }
 
@@ -94,24 +117,34 @@ export class ExtractionClient {
    */
   async getExtractionStatus(): Promise<ExtractionStatusResponse> {
     try {
-      const response = await fetch(`${this.base.baseUrl}/extraction/status`, {
-        method: "GET",
-        headers: {
-          Accept: "application/json",
-        },
-        signal: AbortSignal.timeout(5000),
-      });
+      const response = await runnerRequest(
+        this.base.target,
+        "/extraction/status",
+        {
+          method: "GET",
+          headers: {
+            Accept: "application/json",
+          },
+          timeoutMs: 5000,
+        }
+      );
 
       if (!response.ok) {
-        const errorText = await response.text();
+        const message = await this.base.failureMessage(
+          response,
+          "Failed to get extraction status"
+        );
         return {
           success: false,
-          error: `Failed to get extraction status: ${response.status} - ${errorText}`,
+          error: message,
         };
       }
 
       return response.json();
     } catch (error) {
+      // A relay refusal is final for this route: rethrow it typed so the
+      // poller stops (and can show it) instead of retrying a flattened error.
+      if (isRunnerNeedsLocalError(error)) throw error;
       return {
         success: false,
         error:
@@ -123,16 +156,17 @@ export class ExtractionClient {
   }
 
   /**
-   * Get extraction screenshot URL
+   * Get extraction screenshot path
    *
-   * Returns the URL to fetch a screenshot from the runner.
+   * Returns the runner path of a screenshot (fetch it through
+   * `runnerRequest` / `getExtractionScreenshot`, never as a raw URL).
    * The screenshot is stored locally on the runner machine.
    */
-  getExtractionScreenshotUrl(
+  getExtractionScreenshotPath(
     extractionId: string,
     screenshotId: string
   ): string {
-    return `${this.base.baseUrl}/extraction/${extractionId}/screenshot/${screenshotId}`;
+    return extractionScreenshotPath(extractionId, screenshotId);
   }
 
   /**
@@ -143,19 +177,26 @@ export class ExtractionClient {
     screenshotId: string
   ): Promise<{ success: boolean; blob?: Blob; error?: string }> {
     try {
-      const url = this.getExtractionScreenshotUrl(extractionId, screenshotId);
-      const response = await fetch(url, {
+      const path = this.getExtractionScreenshotPath(extractionId, screenshotId);
+      const response = await runnerRequest(this.base.target, path, {
         method: "GET",
-        signal: AbortSignal.timeout(10000),
+        timeoutMs: 10000,
       });
 
       if (!response.ok) {
         if (response.status === 404) {
           return { success: false, error: "Screenshot not found" };
         }
+        const message = await this.base.failureMessage(
+          response,
+          "Failed to fetch screenshot",
+          {
+            includeBody: false,
+          }
+        );
         return {
           success: false,
-          error: `Failed to fetch screenshot: ${response.status}`,
+          error: message,
         };
       }
 

@@ -54,7 +54,8 @@ export function CaptureSessionPanel({
   onCaptureComplete,
   className,
 }: CaptureSessionPanelProps) {
-  const { state, isRunnerConnected, start, stop } = useClickCapture();
+  const { state, isRunnerConnected, startRefusal, start, stop } =
+    useClickCapture();
   const [applicationName, setApplicationName] = useState("");
   const [isStarting, setIsStarting] = useState(false);
   const [isStopping, setIsStopping] = useState(false);
@@ -214,7 +215,10 @@ export function CaptureSessionPanel({
           {!state.isActive ? (
             <Button
               onClick={handleStart}
-              disabled={!isRunnerConnected || isStarting}
+              disabled={
+                !isRunnerConnected || isStarting || startRefusal !== null
+              }
+              title={startRefusal ?? undefined}
               className="flex-1"
             >
               {isStarting ? (
@@ -250,6 +254,14 @@ export function CaptureSessionPanel({
             </Button>
           )}
         </div>
+        {!state.isActive && startRefusal && (
+          <p
+            className="text-xs text-muted-foreground"
+            data-testid="click-capture-start-refusal"
+          >
+            {startRefusal}
+          </p>
+        )}
 
         {/* Instructions */}
         {!state.isActive && isRunnerConnected && (

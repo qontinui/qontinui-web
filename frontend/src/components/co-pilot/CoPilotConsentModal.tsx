@@ -7,13 +7,16 @@
  * Renders ONLY when the per-user durable preference is ON AND the
  * per-session consent decision is still ``null`` (i.e. this is the first
  * authenticated visit in this browser session since the user opted in).
+ * The provider additionally does not mount it on loopback dev, where
+ * consent is auto-granted (``lib/ui-bridge/co-pilot-gates``).
  *
  * Hard rules (consent SAFETY rails — must not regress):
  *   - A click on the modal's backdrop / overlay = "Not now" (revoke), NOT
  *     "Allow". Defaulting to allow would defeat consent.
  *   - ESC = same as "Not now" (revoke). Closing the modal without an
  *     explicit grant must NEVER enable the relay listener.
- *   - The grant button is the ONLY path to ``state === "granted"``.
+ *   - The grant button is this modal's ONLY path to ``state === "granted"``
+ *     (outside it, only CoPilotHome's ``?bridgeDebug=1`` debug grant sets it).
  *
  * Cross-link: plans/2026-05-28-production-safe-ui-bridge-design.md §4.5.
  */

@@ -18,6 +18,7 @@ import {
   hasLooseningVerdict,
   looseningClassificationPresent,
   notificationHref,
+  reasoningRef,
   sortWritesForFeed,
 } from "./writes";
 
@@ -164,6 +165,59 @@ describe("notificationHref", () => {
     expect(notificationHref("a&b#c")).toBe(
       "/admin/coord/notifications?ref=a%26b%23c"
     );
+  });
+});
+
+describe("reasoningRef", () => {
+  it("is null for an absent or blank ref, whatever the version", () => {
+    expect(reasoningRef({ version_number: 1 })).toBeNull();
+    expect(reasoningRef({ version_number: 6, notification_ref: null })).toBeNull();
+    expect(reasoningRef({ version_number: 6, notification_ref: "  " })).toBeNull();
+  });
+
+  it("links an EDIT to the notice that announced it", () => {
+    expect(
+      reasoningRef({ version_number: 2, notification_ref: "abc-123" })
+    ).toEqual({
+      kind: "notice",
+      href: "/admin/coord/notifications?ref=abc-123",
+      findingId: "abc-123",
+    });
+  });
+
+  it("sends a CREATE to the findings reader, not to the notifications feed", () => {
+    // Creation never emits and the reconciler excludes v1, so a notifications
+    // deep link would land on an event that cannot exist. The reasoning is
+    // still readable — it is the finding its author filed — so the arm
+    // carries a REAL href into `/admin/coord/findings`, which is the whole of
+    // plan `2026-09-15-the-console-names-a-finding-it-cannot-open`.
+    expect(
+      reasoningRef({ version_number: 1, notification_ref: " abc-123 " })
+    ).toEqual({
+      kind: "finding_only",
+      href: "/admin/coord/findings?id=abc-123",
+      findingId: "abc-123",
+    });
+  });
+
+  it("gives BOTH arms an href, and they are different destinations", () => {
+    // The union survives the change because the destination does: a notice
+    // opens the announcement, a finding opens the reasoning itself. What is
+    // gone is the arm that had no href at all and could only print a uuid.
+    const create = reasoningRef({
+      version_number: 1,
+      notification_ref: "abc-123",
+    });
+    const edit = reasoningRef({ version_number: 2, notification_ref: "abc-123" });
+    expect(create?.href).toBeTruthy();
+    expect(edit?.href).toBeTruthy();
+    expect(create?.href).not.toEqual(edit?.href);
+  });
+
+  it("percent-encodes an id that is not uuid-shaped", () => {
+    expect(
+      reasoningRef({ version_number: 1, notification_ref: "a b/c" })?.href
+    ).toBe("/admin/coord/findings?id=a%20b%2Fc");
   });
 });
 

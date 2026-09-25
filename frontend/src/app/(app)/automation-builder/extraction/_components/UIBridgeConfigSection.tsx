@@ -33,6 +33,11 @@ import {
   Circle,
 } from "lucide-react";
 import type { Runner } from "@qontinui/shared-types";
+import {
+  RUNNER_NEEDS_LOCAL,
+  runnerFailureMessage,
+  type RunnerTarget,
+} from "@/lib/runner";
 import type {
   UIBridgeDiscoveryResult,
   SavedConfig,
@@ -82,7 +87,19 @@ export interface UIBridgeConfigSectionProps {
   runnersLoading: boolean;
   selectedRunnerId: string | null;
   onRunnerChange: (runnerId: string | null) => void;
-  getRunnerUrl: (runnerId: string | null) => string | null;
+  /**
+   * The target for the selected runner (addressed by id, resolved per request
+   * to loopback when proven local or the relay otherwise), or null when none
+   * is selected.
+   */
+  getRunnerTarget: (runnerId: string | null) => RunnerTarget | null;
+  /**
+   * The target a NEW exploration / recording starts on — `getRunnerTarget`,
+   * or null while `startRefusal` holds.
+   */
+  getStartTarget: (runnerId: string | null) => RunnerTarget | null;
+  /** Why a new exploration / recording may not start (coord's outcome). */
+  startRefusal: string | null;
   onRefreshBrowserTabs: () => void;
   onSelectBrowserTab: (tabId: number | null) => Promise<void>;
 }
@@ -129,10 +146,22 @@ export function UIBridgeConfigSection({
   runnersLoading,
   selectedRunnerId,
   onRunnerChange,
-  getRunnerUrl,
+  getRunnerTarget,
+  getStartTarget,
+  startRefusal,
   onRefreshBrowserTabs,
   onSelectBrowserTab,
 }: UIBridgeConfigSectionProps) {
+  // The typed "needs the runner on this machine" state: the selected runner
+  // is reached through the relay, which does not carry exploration or the
+  // extension bridge. Shown as its own notice rather than a generic failure.
+  const needsLocalMessage =
+    exploration.progress.errorCode === RUNNER_NEEDS_LOCAL
+      ? (exploration.progress.error ?? null)
+      : recording.session.errorCode === RUNNER_NEEDS_LOCAL
+        ? recording.session.error
+        : null;
+
   return (
     <Card>
       <CardHeader className="pb-3">
@@ -142,6 +171,16 @@ export function UIBridgeConfigSection({
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
+        {needsLocalMessage && (
+          <div
+            role="alert"
+            data-testid="runner-needs-local"
+            className="p-3 rounded-lg border border-amber-500/30 bg-amber-500/10 text-sm text-text-primary"
+          >
+            {needsLocalMessage}
+          </div>
+        )}
+
         {/* Discovery Strategy Selector */}
         <div className="flex items-center gap-4 p-3 bg-surface-raised/50 rounded-lg border border-border-subtle">
           <span className="text-sm font-medium text-text-secondary">
@@ -211,20 +250,39 @@ export function UIBridgeConfigSection({
               browserTabsError={exploration.browserTabsError}
               onRefreshBrowserTabs={onRefreshBrowserTabs}
               onSelectBrowserTab={onSelectBrowserTab}
+              startRefusal={startRefusal}
               onStart={async () => {
-                const runnerUrl = getRunnerUrl(selectedRunnerId);
-                if (!runnerUrl) {
+                if (startRefusal !== null) {
+                  toast.error(startRefusal);
+                  return;
+                }
+                const target = getStartTarget(selectedRunnerId);
+                if (!target) {
                   toast.error("Please select a connected runner");
                   return;
                 }
                 setExplorationRenders(null);
 
                 let results;
-                if (exploration.config.targetType !== "web") {
-                  results =
-                    await exploration.startUIBridgeExploration(runnerUrl);
-                } else {
-                  results = await exploration.startExploration(runnerUrl);
+                try {
+                  if (exploration.config.targetType !== "web") {
+                    results =
+                      await exploration.startUIBridgeExploration(target);
+                  } else {
+                    results = await exploration.startExploration(target);
+                  }
+                } catch (error) {
+                  // The failure is already in exploration.progress (and the
+                  // needs-local notice above); the toast names it once.
+                  toast.error(
+                    runnerFailureMessage(
+                      error,
+                      error instanceof Error
+                        ? error.message
+                        : "Exploration failed"
+                    )
+                  );
+                  return;
                 }
 
                 if (results && results.renderLogs.length > 0) {
@@ -250,8 +308,7 @@ export function UIBridgeConfigSection({
                 }
               }}
               onStop={() => {
-                const runnerUrl = getRunnerUrl(selectedRunnerId);
-                exploration.stopExploration(runnerUrl || undefined);
+                exploration.stopExploration(getRunnerTarget(selectedRunnerId));
               }}
             />
 
@@ -291,21 +348,30 @@ export function UIBridgeConfigSection({
               session={recording.session}
               isStarting={recording.isStarting}
               isStopping={recording.isStopping}
+              startRefusal={startRefusal}
               onStartRecording={async (tabId, options) => {
-                const runnerUrl = getRunnerUrl(selectedRunnerId);
-                if (!runnerUrl) {
+                if (startRefusal !== null) {
+                  toast.error(startRefusal);
+                  return;
+                }
+                const target = getStartTarget(selectedRunnerId);
+                if (!target) {
                   toast.error("Please select a connected runner");
                   return;
                 }
                 setRecordingRenders(null);
-                await recording.startRecording(runnerUrl, tabId, options);
-                recording.startPolling(runnerUrl);
+                const started = await recording.startRecording(
+                  target,
+                  tabId,
+                  options
+                );
+                if (started.success) recording.startPolling(target);
               }}
               onStopRecording={async () => {
-                const runnerUrl = getRunnerUrl(selectedRunnerId);
-                if (!runnerUrl) return;
+                const target = getRunnerTarget(selectedRunnerId);
+                if (!target) return;
                 recording.stopPolling();
-                const result = await recording.stopRecording(runnerUrl);
+                const result = await recording.stopRecording(target);
                 if (result.success && result.snapshots) {
                   const renders = recording.getSnapshotsAsRenderLogs();
                   if (renders.length > 0) {
@@ -325,9 +391,9 @@ export function UIBridgeConfigSection({
                 }
               }}
               onCaptureNow={async () => {
-                const runnerUrl = getRunnerUrl(selectedRunnerId);
-                if (runnerUrl) {
-                  await recording.captureNow(runnerUrl);
+                const target = getRunnerTarget(selectedRunnerId);
+                if (target) {
+                  await recording.captureNow(target);
                 }
               }}
               onResetSession={() => {

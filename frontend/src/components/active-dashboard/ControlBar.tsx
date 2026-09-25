@@ -18,7 +18,7 @@ import {
   Layers,
   CheckCircle2,
 } from "lucide-react";
-import { runnerApi } from "@/lib/runner-api";
+import { useRunnerApi } from "@/lib/runner-api";
 import { useSharedOrchestratorState } from "@/contexts/SharedRunnerDataContext";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
@@ -284,6 +284,7 @@ function AutoContinueToggle({
   enabled: boolean;
   onToggled: () => void;
 }) {
+  const runnerApi = useRunnerApi();
   const [toggling, setToggling] = useState(false);
 
   const handleToggle = async (checked: boolean) => {
@@ -317,6 +318,7 @@ function AutoContinueToggle({
 
 export function ControlBar({ run, onRefresh }: ControlBarProps) {
   const router = useRouter();
+  const runnerApi = useRunnerApi();
   const [pausing, setPausing] = useState(false);
   const { data: orchState } = useSharedOrchestratorState();
   const isPaused = orchState?.is_paused ?? false;

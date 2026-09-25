@@ -12,8 +12,13 @@ middleware, so web must:
   * forward ``Authorization: Bearer <caller Cognito token>`` (NOT the minted
     service token),
   * keep ``X-Qontinui-User-Id`` (coord still requires it for attribution),
-  * DROP ``tenant_id`` from the request body,
+  * never RESOLVE a ``tenant_id`` itself (absent → coord derives it),
   * fail 401 when no caller bearer is present.
+
+Plan ``2026-09-17-device-jwt-refresh-drops-the-requested-tenant-and-coord-mints-the-home-tenant``
+restores forwarding of a REAL caller-supplied ``tenant_id`` (a runner refresh
+must not let coord re-point the device at the home tenant); the nil UUID is a
+sign-in placeholder and stays omitted.
 """
 
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -24,7 +29,7 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from app.services.strategy import strategy_client
+from app.services.coord_service_account import coord_service_account
 
 _USER_ID = uuid4()
 _CALLER_TOKEN = "cognito-operator-token-abc123"
@@ -72,12 +77,13 @@ def _patch_httpx():
 
 
 def _patch_enabled(*, enabled: bool = True):
-    # ``strategy_client.enabled`` is a property backed by ``_admin_secret``;
-    # patch the backing attr so the 503 short-circuit fires (or not). We do NOT
-    # mock ``_headers`` because the endpoint no longer uses the minted service
-    # token — it forwards the caller's Cognito bearer instead.
+    # ``coord_service_account.enabled`` is a property backed by
+    # ``_admin_secret``; patch the backing attr so the 503 short-circuit
+    # fires (or not). We do NOT mock ``_headers`` because the endpoint no
+    # longer uses the minted service token — it forwards the caller's
+    # Cognito bearer instead.
     return patch.object(
-        strategy_client,
+        coord_service_account,
         "_admin_secret",
         "test-secret" if enabled else None,
     )
@@ -169,3 +175,65 @@ class TestPairCliBearerForwarding:
             )
         assert resp.status_code == 503
         instance.post.assert_not_called()
+
+
+class TestPairCliTenantForwarding:
+    def test_real_tenant_id_is_forwarded_verbatim(self, client: TestClient) -> None:
+        tenant_id = "c231d9da-0000-4000-8000-000000000001"
+        with _patch_enabled(), _patch_httpx() as MockClient:
+            instance = AsyncMock()
+            instance.post.return_value = _mock_response(json_data=_COORD_OK)
+            _configure_mock_client(MockClient, instance)
+
+            resp = client.post(
+                f"{API_PREFIX}/pair-cli",
+                json={**_BODY, "tenant_id": tenant_id},
+                headers={"Authorization": f"Bearer {_CALLER_TOKEN}"},
+            )
+
+        assert resp.status_code == 201, resp.text
+        body = instance.post.call_args.kwargs["json"]
+        assert body["tenant_id"] == tenant_id
+        assert body["user_id"] == str(_USER_ID)
+
+    def test_nil_tenant_id_is_omitted(self, client: TestClient) -> None:
+        # Runner UI sign-in sends the nil UUID as a placeholder on first
+        # pairing; forwarding it would 403 at coord and break sign-in.
+        with _patch_enabled(), _patch_httpx() as MockClient:
+            instance = AsyncMock()
+            instance.post.return_value = _mock_response(json_data=_COORD_OK)
+            _configure_mock_client(MockClient, instance)
+
+            resp = client.post(
+                f"{API_PREFIX}/pair-cli",
+                json={**_BODY, "tenant_id": "00000000-0000-0000-0000-000000000000"},
+                headers={"Authorization": f"Bearer {_CALLER_TOKEN}"},
+            )
+
+        assert resp.status_code == 201, resp.text
+        body = instance.post.call_args.kwargs["json"]
+        assert "tenant_id" not in body
+
+    def test_coord_403_for_non_member_tenant_surfaces_as_502(
+        self, client: TestClient
+    ) -> None:
+        coord_text = '{"error":"tenant_not_authorized"}'
+        with _patch_enabled(), _patch_httpx() as MockClient:
+            instance = AsyncMock()
+            instance.post.return_value = _mock_response(
+                status_code=403, text=coord_text
+            )
+            _configure_mock_client(MockClient, instance)
+
+            resp = client.post(
+                f"{API_PREFIX}/pair-cli",
+                json={**_BODY, "tenant_id": str(uuid4())},
+                headers={"Authorization": f"Bearer {_CALLER_TOKEN}"},
+            )
+
+        assert resp.status_code == 502, resp.text
+        assert resp.json()["detail"] == {
+            "coord_status": 403,
+            "coord_body": coord_text,
+        }
+        assert "tenant_id" in instance.post.call_args.kwargs["json"]

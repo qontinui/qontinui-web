@@ -1,10 +1,12 @@
 # Console UI Style Guide
 
-**Version:** 0.2.2 (Phase 1 — §3 filled in from the shipped primitives; §3.3
-records the patterns the first post-guide page had to add)
-**Last Updated:** 2026-08-25
+**Version:** 0.2.3 (Phase 1 — §3 filled in from the shipped primitives; §3.3
+records the patterns the first post-guide page had to add; §3.4 records the
+alerts page's retirement and the Dev Ops Conditions panel)
+**Last Updated:** 2026-09-18
 **Plan:** `2026-08-16-coord-console-ui-unification-pipeline-style.md`; §3.3 from
-`2026-08-20-fleet-served-agent-skills.md` Phase 3
+`2026-08-20-fleet-served-agent-skills.md` Phase 3; §3.4 from
+`2026-09-18-notifications-are-agent-actions-and-alerts-are-agent-work` Phase 8
 
 The style of `/admin/coord/pipeline` — the merge Pipeline tab — written down, so
 the other 29 console routes can be moved onto it and the next operator surface can
@@ -293,22 +295,28 @@ never that the declared attention is right:
 - **Idle uncommitted work** (`treeStatus.ts`, the 24-72h stale-WIP band) was
   `waiting`. Nothing times out and no process commits your WIP for you — only a
   human does. It is **red**, which is also what `alertStatus.ts` had already
-  concluded for the same condition, and where the failure mode is lost work the
-  tie breaks toward the louder signal.
+  concluded for the same condition (that module was deleted with the alerts
+  page — [§3.4](#34-the-alerts-page-retired-and-the-dev-ops-conditions-panel--recorded-under-64)),
+  and where the failure mode is lost work the tie breaks toward the louder
+  signal.
 
 #### The one exception: amber also covers **we do not know**
 
-The clause above has a deliberate exception, and it is shipped in three places,
+The clause above has a deliberate exception, and it is shipped in two places,
 so do not "fix" it:
 
 | site | value |
 |---|---|
 | `console/attention.ts` — `attentionOf(map, kind, floor = "waiting")` | an unrecognised kind floors at **amber**, never calm |
 | `planStatus.ts` — `unknown: "waiting"`, painted `bg-amber-500/10` | a work-unit status this build has no label for |
-| `alertStatus.ts` — `unknown: "waiting"` | an alert kind this build has never seen |
+
+(A third, `alertStatus.ts`'s `unknown: "waiting"` for an alert kind this build
+had never seen, was deleted with the alerts page — §3.4. The Conditions panel
+that replaced it keeps the same discipline without a kind table: every unknown
+state it can reach is amber, never green.)
 
 Nothing clears an unrecognised status except a human extending the vocabulary,
-so read literally the name-the-clearer rule would condemn all three. It does
+so read literally the name-the-clearer rule would condemn both. It does
 not, because **an amber painted on ignorance is a statement about our
 knowledge, not a promise about the row.** It says *we cannot tell you whose
 move this is* — and the alternative, painting it calm, is the
@@ -761,9 +769,11 @@ absence is UNKNOWN, not zero. This is the same discipline as the fleet's
 > failed poll — correct, and half the rule — while rendering it unqualified,
 > so the widest-reach number in the console was the one with no way to say it
 > had stopped moving, and its `title` was `undefined` where the sibling alerts
-> badge has carried one all along. Both nav badges now publish `stale` and the
-> shared renderer marks it — a visible `*`, the qualification appended to
-> `title`, and the same words in `sr-only` text.
+> badge had carried one all along. Both nav badges then published `stale` and
+> the shared renderer marked it — a visible `*`, the qualification appended to
+> `title`, and the same words in `sr-only` text. (The alerts badge has since
+> been deleted with the alerts page, §3.4; the notifications badge keeps all
+> three channels.)
 > **A route boundary is not a consumer boundary** — the poll is.
 >
 > **A FILE boundary is not one either — and that is where the sweep stopped
@@ -831,11 +841,12 @@ absence is UNKNOWN, not zero. This is the same discipline as the fleet's
 > **Two independent reads want two independent verdicts.** Splitting them so one
 >   failure cannot stale the other is only the first half; reporting the
 >   currency of only ONE of them leaves the other making an unqualified claim,
->   which is the same defect one axis over. `useAlertsBadge` reads a count and a
->   severity flag; a severity read that failed — or has never landed — is not
->   evidence that nothing is critical, and rendering it as a calm badge is an
->   established negative built out of an unknown. Each axis carries its own
->   `hasRead` / `stale`.
+>   which is the same defect one axis over. `useAlertsBadge` (deleted with the
+>   alerts page, §3.4) read a count and a severity flag; a severity read that
+>   failed — or has never landed — is not evidence that nothing is critical,
+>   and rendering it as a calm badge is an established negative built out of an
+>   unknown. Each axis carries its own `hasRead` / `stale` —
+>   `useFleetAlarmBadge`'s health and samples axes are the live instance.
 >
 > **And derive staleness from SEQUENCES, not from a boolean set in a `catch`.**
 >   On any poller whose replies can overtake each other, a flag set on failure
@@ -1217,7 +1228,7 @@ What `statusRow.tsx` provides (300 lines):
 
 | Export | What it is |
 |---|---|
-| `RowStatus<K>` (`:67`) | The minimum a row's status must carry: `kind`, `label`, `reason?`, `attention`, `dwellEvidence?`. Both `prPipeline`'s `UnifiedStatus` and `alertStatus`'s `AlertStatus` are structurally assignable to it. |
+| `RowStatus<K>` (`:67`) | The minimum a row's status must carry: `kind`, `label`, `reason?`, `attention`, `dwellEvidence?`. `prPipeline`'s `UnifiedStatus` is structurally assignable to it, as `alertStatus`'s `AlertStatus` was until that module was deleted (§3.4). |
 | `AUTHOR_RED` / `WAITING_AMBER` / `CI_YELLOW` / `INERT` (`:82`, `:84`, `:86`, `:88`) | The three colour families plus inert, **exported** — so a second surface cannot pick its own red. |
 | `STATUS_BADGE_CLASS` (`:96`), `AUTHOR_GLYPH_KINDS` (`:139`) | The merge pipeline's own kind→class table and `✕`-glyph set, beside the families they are built from. |
 | `StatusPalette<K>` (`:170`) | Everything a surface supplies to render its own badges: `badgeClass`, `authorGlyphKinds`, `doneGlyphKinds?`, `unknownNote?`. One object, so each surface's agreement test has a single thing to audit. |
@@ -1280,20 +1291,21 @@ same table. Every module doc cites its rule number and links this file.
 | Component | Rule(s) | Props | Notes |
 |---|---|---|---|
 | `HealthStrip` | R1 | `{ level, headline, detail?, badges?, className?, "data-testid"? }` where `badges: { key, label, tone?, onClick?, title?, "data-testid"? }[]` and `tone: "default" \| "muted" \| "attention"` | Takes the **already-derived** verdict. It cannot fetch, so R1's "never a second fetch" is structural. A badge with an `onClick` becomes a real `<button>` wrapping the badge in `display:contents`. |
-| `StatCluster` | R1 | `{ stats, className?, "data-testid"? }` where `stats: { key, label, value, tone?, title?, onClick?, "data-testid"? }[]` and `tone: "default" \| "success" \| "warning" \| "attention" \| "muted"` | The count-cluster form of the same opening, for a table page with no single traffic-light verdict. `value: null` renders `–`, never `0`. **No consumer yet** — `/gates` adopts it in Wave 4, which is where `SummaryCards`' testids get ported. |
+| `StatCluster` | R1 | `{ stats, className?, "data-testid"? }` where `stats: { key, label, value, tone?, title?, onClick?, "data-testid"? }[]` and `tone: "default" \| "success" \| "warning" \| "attention" \| "muted"` | The count-cluster form of the same opening, for a table page with no single traffic-light verdict. `value: null` renders `–`, never `0`. First adopted by `/gates` (Wave 4, where `SummaryCards`' testids were ported); also the Dev Ops Conditions panel's two breakdown rows (§3.4). Count its consumers with a grep, not from this cell. |
 | `RecordRow` | R2, R4 | `{ identity, label, status?, reason?, time?, accent?, expanded, onToggle, children?, rowKey?, className?, "data-testid"?, reasonTestId? }` | Slot ORDER is fixed by the primitive, not the caller. `status` and `time` are `ReactNode` slots so each surface renders its own `<StatusBadge palette={…}>` without the row knowing a kind union. `accent` is the string from `rowAccentClass(status)`. The whole line is one `<button>` — R5 has to be keyboard-reachable. `children` render below the row, only while expanded. |
 | `RecordDetail` | R5 | `{ why?, problems?, actions?, history?, raw?, className?, "data-testid"? }` | Five slots in that order, each a bare fragment, so the panel's `space-y-3` spaces real content and an absent slot leaves no gap. Shares the row's border (`border-t-0 rounded-b-md`). Not a slide-over (D2). |
 | `RecordList` | R2, R5 | `{ items, itemKey, renderRow, loaded?, skeletonRows?, empty?, className? }` &plus; a `RecordListExpansion` **union**: either neither of `{expandedKey, onExpandedKeyChange}` or **both** | The loading / empty / rows trichotomy is ONE decision, so it is one component. Unloaded renders skeletons, never an empty list. `empty` is the caller's, because an honest empty state names *which* question came back empty. One open at a time. Expansion state is internal unless hoisted, and the hoisting props are a UNION so supplying one without the other is a type error rather than a silently-ignored prop. |
 | `FilterTabs` | R6 | `{ tabs, active, onChange, testIdPrefix?, query?, onQueryChange?, queryPlaceholder?, queryTestId?, className? }` where `tabs: { id, label, count?, attention?, testId? }[]` | **`count == null` → `–`; `count === 0` → `0`.** The rule lives in the primitive precisely because it is the clause a page author will not think to reproduce. A caller expresses "unknown" by passing `null`, which is what an unfetched value already is. |
 | `FilterChips` | R6 | `{ label, options, selected, onToggle, onClear, allLabel?, maxVisible?, testIdPrefix?, title?, className? }` where `options: { value, label, count?, testId?, title? }[]` | The MULTI-select sibling. **`selected: []` is NO filter, not an option** — a synthetic `"any"` member would be a value the server vocabulary does not have, and every caller would have to strip it before the query string. The `all` chip is a clear action, pressed exactly when nothing is selected and **inert while it is** (`aria-disabled` with no handler, never the real `disabled` attribute, which would drop it out of the tab order on the one interaction it exists for and dim the page's default state) — a caller's `onClear` is a `setState([])`, so a no-op click would hand every selection-keyed `useCallback` a fresh array and refetch, discarding whatever the operator had paged into. Counts are a GROUP decision: a strip where no option carries one renders no count slot, and inside a strip where any does, R6's `–`-not-`0` reading is identical to `FilterTabs`'. `maxVisible` caps a SERVER vocabulary behind a `+N more` disclosure, with every selected option exempt: coord's alert corpus was 43 distinct live kinds on 2026-08-24 against the ~10 the alerts page was written for, and forty-three chips is §5's density budget spent on a control. Split from `FilterTabs` rather than widening `active` to `Id \| Id[]`, which would have given one component two different empty states. |
-| `RefreshButton` | §6.4 (no numbered rule) | `{ onRefresh, label, title, className?, "data-testid"? }` where `onRefresh: () => Promise<unknown> \| void` | The icon-only "re-read now" control. **`label` and `title` are required, not defaulted**: `label` is the accessible name (an icon has none), and `title` names what the press does AND its effect — "returns to the first page", "also refreshes itself every 10 s" — without repeating the label, since it is announced as the description right after the name. **Busy belongs to the press**: the button is busy for exactly as long as the promise ITS click returned is out, so a page's poll — which usually calls the same fetch function — has no path to the state and cannot make it pulse every interval. Busy is `aria-busy` + `aria-disabled` with presses ignored, never the real `disabled` attribute (same reasoning as `FilterChips`' `all` chip: it would blur the button out from under the keyboard user who just pressed it). A rejected read ends busy too — the failure is the page's to render (R6). Added by plan `2026-09-09-coord-plans-page-controls-do-not-acknowledge-or-name-themselves` after 18 of 28 `/admin/coord/*` files rendering `RefreshCw` were found carrying no `aria-label`; adopted on `/plans` first, the other 17 are open. |
+| `RefreshButton` | §6.4 (no numbered rule) | `{ onRefresh, label, title, className?, "data-testid"? }` where `onRefresh: () => Promise<unknown> \| void` | The icon-only "re-read now" control. **`label` and `title` are required, not defaulted**: `label` is the accessible name (an icon has none), and `title` names what the press does AND its effect — "returns to the first page", "also refreshes itself every 10 s" — without repeating the label, since it is announced as the description right after the name. **Busy belongs to the press**: the button is busy for exactly as long as the promise ITS click returned is out, so a page's poll — which usually calls the same fetch function — has no path to the state and cannot make it pulse every interval. Busy is `aria-busy` + `aria-disabled` with presses ignored, never the real `disabled` attribute (same reasoning as `FilterChips`' `all` chip: it would blur the button out from under the keyboard user who just pressed it). A rejected read ends busy too — the failure is the page's to render (R6). Added by plan `2026-09-09-coord-plans-page-controls-do-not-acknowledge-or-name-themselves` after 18 of 28 `/admin/coord/*` files rendering `RefreshCw` were found carrying no `aria-label`; adopted on `/plans` first, then `/spawn` (the sibling page sharing `derivePlansHealth` and the same fetch/poll-lock shape), 16 are still open. |
 | `CollapsiblePanel` | R7 | unchanged | **Moved** from `operations/CollapsiblePanel.tsx` (D3). Phase 1's re-export shim at the old path is **deleted**: its seven callers were repointed at this barrel in Phase 1's post-merge follow-up. The re-export in `operations/index.ts` stays — that is the barrel, not the shim. |
 | `statusRow` atoms | R2, R3, R4 | see §3.1 | **Moved**, not re-extracted. |
 | `time.ts` | supports R2 | `relativeTime(iso, { absent?, now? }?)`, `absoluteTime(iso)` | Moved out of `operations/utils.ts` so `console/` carries no runtime edge into the merge-train route catalogue. `operations/utils.ts` re-exports `relativeTime` as a binding, so the options parameter travels to its **23** importers and none of them changed. **`absent`** (default `"never"`) is rendered for a timestamp that is missing *or unparseable* — an unparseable one is not `"just now"`, which is reserved for a genuinely negative delta (clock skew). **`now`** (default `Date.now()`) makes a caller's test deterministic. Both exist because their absence was what kept five private copies alive; see §3.1. |
 | `attention.ts` | R3 | `Attention`, `AttentionMap<K>`, `attentionOf(map, kind, floor?)`, `escalateAttention(a, b)`, `ATTENTION_RANK`, `paletteDisagreements(attentionByKind, palette, {perRowKinds?})` | Import-free by design: `Attention` is **declared here** and re-exported by `prPipeline.ts`, so the severity vocabulary sits in the base layer instead of inside the merge-train module. `attentionOf` floors an unrecognised kind at `"waiting"`, never `"none"` — see §4.2. |
 
 **How the invariant got generalised.** `MergePipeline.test.tsx`'s two palette tests
-and `alertStatus.test.ts`'s three each audit one surface. Neither can bind a surface
+and `alertStatus.test.ts`'s three (deleted with the alerts page, §3.4) each
+audited one surface. Neither can bind a surface
 that does not exist yet, and 29 routes were about to adopt the pattern. So the
 assertion became `paletteDisagreements()` and
 `src/components/console/attention.test.ts` runs it over a **registry** of every
@@ -1318,9 +1330,14 @@ things the generic audit cannot (per-row escalation, UUID hygiene).
 
 The audit carries exactly one declared exemption, `perRowKinds`, for a kind whose
 badge class is resolved per row rather than read off the static table — the alerts
-surface's `unknown`, whose attention is severity-derived. Its static entry is a
-FLOOR, not the thing that renders, so auditing that floor for amber would demand a
-colour the surface deliberately does not paint.
+surface's `unknown`, whose attention was severity-derived. Its static entry was a
+FLOOR, not the thing that rendered, so auditing that floor for amber would have
+demanded a colour the surface deliberately did not paint.
+
+> **No registered surface uses `perRowKinds` today.** The alerts surface was its
+> only user, and it was deleted (§3.4), so its `CONSOLE_PALETTES` row went with
+> it. The exemption stays in `paletteDisagreements` for the next surface whose
+> attention is genuinely per-row; the rules below still bind whoever uses it.
 
 **It exempts the amber clause and nothing else.** The inline carve-out it
 generalises (`alertStatus.test.ts`, `attention === "waiting" && kind !== "unknown"`)
@@ -1335,7 +1352,8 @@ surface's own test still has to cover the per-row resolution.
 1. **`MergePipeline` was refactored onto the primitives in the same PR.** If the
    Pipeline tab did not render identically afterwards, the extraction was wrong.
    `MergePipeline.test.tsx` (930 lines, 36 tests) is the oracle and passed
-   **unmodified**, as did `prPipeline.test.ts` (127) and `alertStatus.test.ts` (45).
+   **unmodified**, as did `prPipeline.test.ts` (127) and `alertStatus.test.ts` (45;
+   since deleted with the alerts page).
 2. **The palette agreement test was ported** into `console/attention.test.ts`, over
    the registry described above.
 3. **Every module doc cites its rule number and links this file.** A primitive whose
@@ -1389,6 +1407,62 @@ Two notes for whoever extracts them:
   but a human clears it. An authoring surface that painted its normal states red
   would re-create the exact bug [§4](#4-the-attention-palette) exists to prevent.
 
+### 3.4 The alerts page retired, and the Dev Ops Conditions panel — recorded under §6.4
+
+Plan `2026-09-18-notifications-are-agent-actions-and-alerts-are-agent-work`
+Phase 8 deleted the console's one raw-condition list surface and replaced its
+operator signal with a rollup. Recorded here because two things this guide used
+as worked examples are gone, and because the replacement adds one composition
+this guide did not show.
+
+**What was deleted, and why it is not a style regression.**
+`/admin/coord/alerts` (its page, `AlertRow.tsx`, `alertStatus.ts` and their
+tests), the header's Alerts link and its `useAlertsBadge` count, the Alerts
+sidebar tab, the `alerts` row of `CONSOLE_PALETTES`, and the stale-claim alerts
+section of `/admin/agent-claims`. The reason is audience, not presentation:
+`coord.alerts` held 27,604 open rows on 2026-09-18, nearly every one a piece of
+operational work an agent can diagnose and fix
+(`decision_record/operational-work-is-autonomous`), and a list sorted by
+severity told the operator nothing about whether anyone was on them. The read
+API (`/api/v1/operations/alerts`) stays — `RedMainBanner` and agent tooling
+read it — and `next.config.mjs` 308s the old path to `/admin/coord/devops`.
+The rules those files demonstrated (R3's ignorance floor, the per-row
+`perRowKinds` exemption, the two-axis badge) are unchanged; their examples are
+annotated where they are cited above.
+
+**What replaced it: a Conditions panel on the Dev Ops Overview**
+(`components/operations/FleetConditionsPanel.tsx`, derived by the pure
+`fleetConditions.ts`). It answers *is anything degraded that no agent is
+handling, and is anything waiting on me?* from coord's `conditions` block on
+the fleet-health read the page already polls (R1: no second fetch). It
+composes primitives only — a `<HealthStrip>` for the verdict and two
+`<StatCluster>` rows (unclaimed conditions by owning agent domain; deliberate
+settings in effect) — so it adds no visual vocabulary.
+
+| Clause | Rule it applies |
+|---|---|
+| "Nothing unhandled" only on a MEASURED zero (`scrape_up` and `unclaimed == 0`) | R1 — the headline is the claim; it is the one sentence the panel must never say falsely |
+| An absent `conditions` block → "Unknown — coord does not report conditions yet"; `scrape_up: false` → "Unknown — health query failed"; a `null` count → `–` | R6 — absence is not zero, at the strip and per count |
+| Unknown states are amber; unclaimed conditions are amber; only "waiting on you N" borrows red | R3 — red means a human must act, and an operator question is the one thing on the panel only he can clear |
+| Settings in effect never move the level | R3 — a drain or a kill switch is a deliberate operator setting reflected back, not a fault |
+| Operator alerts with no open question come from coord's two EXACT counts, never a subtraction: `awaiting_operator_unasked` → "N operator alerts not yet asked" (never green); `awaiting_operator_answered_uncleared` → "N answered, waiting for coord to see them clear" (amber). A coord without them gets neutral wording naming no cause ("open beyond the questions waiting on you") and is never green. While any exists the headline is never "Nothing unhandled" | R3 — something needs the operator that the question queue does not show; and a subtraction cannot say which, because an answered alert that has not yet cleared is never re-asked |
+| A failed LATEST read keeps the retained numbers, labelled, and forces amber | R6 — a retained verdict may not look like a re-confirmed one, in either direction |
+| `scrape_up: false` names coord's `unavailable_reason` | R8's converse — the operator gets the one fact that says where to look |
+| Domain and setting names are operator words; the wire kind is in the `title` | R8 |
+
+**The one new composition: a second health strip on one page.** R1 says a list
+surface opens with ONE strip. The Dev Ops Overview now carries two — the
+page's own machine-liveness strip first, then the Conditions panel's — and that
+is deliberate rather than drift: they answer independent questions over
+independent fields of the same read ("are the machines there, and can they
+reach coord?" versus "is anything wrong that no agent is handling?"), and
+folding the conditions badges into the liveness strip is exactly how the page
+came to render `machines 8` beside thousands of unresolved criticals (plan
+`2026-08-31-devops-surface-renders-no-alert-signal`). The rule this records:
+**a second strip is allowed when it answers a second question that the first
+strip's verdict does not depend on, and it sits directly under the first.**
+It is not licence for a strip per section.
+
 ---
 
 ## 4. The attention palette
@@ -1414,7 +1488,7 @@ Three clauses in that table are load-bearing and each is spelled out in
 [§2 R3](#r3--colour-encodes-who-must-act):
 
 - **amber's "or we do not know"** — the ignorance floor (`attentionOf`'s
-  `"waiting"` default, `planStatus`/`alertStatus`'s `unknown`). Amber on an
+  `"waiting"` default, `planStatus`'s `unknown`). Amber on an
   unknown row is a statement about our knowledge, not a promise about the row.
 - **"right now"** in the calm row — calm does **not** mean nothing is owed. A
   state that wants a real human decision while blocking nobody and decaying

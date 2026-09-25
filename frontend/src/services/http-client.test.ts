@@ -272,7 +272,9 @@ describe("HttpClient method-aware retry", () => {
     expect(counter.calls()).toBe(1);
     expect(methodRuleWarns()).toBe(1);
     expect(console.warn).toHaveBeenCalledWith(
-      expect.stringContaining("[HttpClient] POST https://api.test/things answered 500")
+      expect.stringContaining(
+        "[HttpClient] POST https://api.test/things answered 500"
+      )
     );
   });
 
@@ -757,6 +759,16 @@ describe("HttpClient X-Qontinui-Active-Tenant forwarding", () => {
     "https://api.test/api/v1/operations/fleet",
     "https://api.test/api/v1/admin-dev/overview",
     "https://api.test/api/v1/admin/agent-sessions",
+    // Project Overview. Every `overview.*` row is keyed on the active tenant
+    // and the backend resolves it from this header ALONE, so a missing entry
+    // here silently serves (and writes) the operator's home project under
+    // another project's name.
+    "https://api.test/api/v1/overview/estimates",
+    "https://api.test/api/v1/overview/settings",
+    // Runner targeting: each forwards to coord's device resolver, which
+    // scopes candidates to the active tenant.
+    "https://api.test/api/v1/devices/resolve",
+    "https://api.test/api/v1/dispatch/fresh-host?app_id=web&strategy=best_effort",
   ];
 
   for (const url of SCOPED_URLS) {
@@ -787,6 +799,19 @@ describe("HttpClient X-Qontinui-Active-Tenant forwarding", () => {
       makeTokenManager() as unknown as TokenManager
     );
     await client.fetch("https://api.test/api/v1/projects");
+    expect(captured.current["X-Qontinui-Active-Tenant"]).toBeUndefined();
+  });
+
+  it.each([
+    "https://api.test/api/v1/workflows/0b6c1f1e-1111-4111-8111-111111111111",
+    "https://api.test/api/v1/devices/abc",
+  ])("does NOT attach the header on workflow/device CRUD: %s", async (url) => {
+    localStorage.setItem(ACTIVE_TENANT_STORAGE_KEY, TENANT);
+    const captured = captureFetchHeaders();
+    const client = new HttpClient(
+      makeTokenManager() as unknown as TokenManager
+    );
+    await client.fetch(url);
     expect(captured.current["X-Qontinui-Active-Tenant"]).toBeUndefined();
   });
 
@@ -1263,5 +1288,128 @@ describe("HttpClient reactive refresh on 401", () => {
       expect(r.status).toBe(200);
     }
     expect(onExpired).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * A caller `AbortSignal` (plan `2026-09-14-credential-posture-second-residuals`
+ * Phase 5, W2). `fetch` used to spread `options` and then overwrite `signal`
+ * with its own controller's, so a caller could abandon a stalled body but
+ * never cancel it. The caller's signal is now linked into that controller,
+ * and stays linked after the headers resolve.
+ */
+describe("HttpClient honours a caller AbortSignal", () => {
+  beforeEach(() => {
+    vi.restoreAllMocks();
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+  });
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.useRealTimers();
+  });
+
+  /**
+   * A `fetch` stub that behaves like the platform's on abort: the request
+   * signal erroring the body stream (after headers) or rejecting the fetch
+   * (before them). It records the signal the client actually passed down.
+   */
+  function stallingBodyFetch(): { signal: () => AbortSignal | undefined } {
+    let seen: AbortSignal | undefined;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (_url: string, init: RequestInit) => {
+        const signal = init.signal ?? undefined;
+        seen = signal;
+        if (signal?.aborted) {
+          throw new DOMException("The operation was aborted.", "AbortError");
+        }
+        const body = new ReadableStream<Uint8Array>({
+          start(controller) {
+            // Headers arrive; the body never does — until the signal aborts.
+            signal?.addEventListener("abort", () =>
+              controller.error(
+                new DOMException("The operation was aborted.", "AbortError")
+              )
+            );
+          },
+        });
+        return new Response(body, { status: 200 });
+      })
+    );
+    return { signal: () => seen };
+  }
+
+  it("cancels the in-flight body read when the caller aborts after the headers", async () => {
+    const stub = stallingBodyFetch();
+    const client = new HttpClient(
+      makeTokenManager() as unknown as TokenManager
+    );
+    const caller = new AbortController();
+
+    const response = await client.fetch("https://api.test/api/v1/x", {
+      signal: caller.signal,
+    });
+    expect(response.status).toBe(200);
+    // The client ran the request on its own signal, not the caller's…
+    expect(stub.signal()).toBeDefined();
+    expect(stub.signal()).not.toBe(caller.signal);
+    expect(stub.signal()?.aborted).toBe(false);
+
+    const body = response.text();
+    caller.abort();
+
+    // …but the caller's abort reached it, so the body read is cancelled
+    // rather than left holding its connection.
+    expect(stub.signal()?.aborted).toBe(true);
+    await expect(body).rejects.toThrow(/aborted/i);
+  });
+
+  it("aborts at once, and says so, for a signal that is already aborted", async () => {
+    const stub = stallingBodyFetch();
+    const client = new HttpClient(
+      makeTokenManager() as unknown as TokenManager
+    );
+    const caller = new AbortController();
+    caller.abort();
+
+    const pending = client.fetch("https://api.test/api/v1/x", {
+      signal: caller.signal,
+      maxRetries: 0,
+    });
+    await expect(pending).rejects.toThrow(/aborted/i);
+    // A caller's abort is not reported as the header timeout.
+    await expect(pending).rejects.not.toThrow(/Request timeout/);
+    expect(stub.signal()?.aborted).toBe(true);
+  });
+
+  it("keeps the header timeout for a caller signal that never aborts", async () => {
+    let seen: AbortSignal | undefined;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        (_url: string, init: RequestInit) =>
+          new Promise<Response>((_resolve, reject) => {
+            seen = init.signal ?? undefined;
+            seen?.addEventListener("abort", () =>
+              reject(new DOMException("aborted", "AbortError"))
+            );
+          })
+      )
+    );
+    const client = new HttpClient(
+      makeTokenManager() as unknown as TokenManager
+    );
+    const caller = new AbortController();
+
+    vi.useFakeTimers();
+    const pending = client.fetch("https://api.test/api/v1/x", {
+      signal: caller.signal,
+      timeoutMs: 1_000,
+    });
+    const settled = expect(pending).rejects.toThrow(/Request timeout/);
+    await vi.advanceTimersByTimeAsync(1_000);
+    await settled;
+    expect(seen?.aborted).toBe(true);
+    expect(caller.signal.aborted).toBe(false);
   });
 });

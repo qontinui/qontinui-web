@@ -4,6 +4,7 @@
  * Handles model list/download/delete/status/disk-usage.
  */
 
+import { runnerRequest } from "@/lib/runner/api-client";
 import { BaseClient } from "./base-client";
 import type {
   ModelListResponse,
@@ -24,17 +25,20 @@ export class ModelClient {
    */
   async listModels(): Promise<ModelListResponse> {
     try {
-      const response = await fetch(`${this.base.baseUrl}/models`, {
+      const response = await runnerRequest(this.base.target, "/models", {
         method: "GET",
         headers: { Accept: "application/json" },
       });
 
       if (!response.ok) {
-        const errorText = await response.text();
+        const message = await this.base.failureMessage(
+          response,
+          "Failed to list models"
+        );
         return {
           success: false,
           models: [],
-          error: `Failed to list models: ${response.status} - ${errorText}`,
+          error: message,
         };
       }
 
@@ -64,28 +68,30 @@ export class ModelClient {
     modelId: string,
     force = false
   ): Promise<ModelDownloadResponse> {
-    const controller = new AbortController();
-    // 10 minute timeout for model downloads
-    const timeoutId = setTimeout(() => controller.abort(), 600000);
-
     try {
-      const response = await fetch(`${this.base.baseUrl}/models/download`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Accept: "application/json",
-        },
-        body: JSON.stringify({ model_id: modelId, force }),
-        signal: controller.signal,
-      });
-
-      clearTimeout(timeoutId);
+      const response = await runnerRequest(
+        this.base.target,
+        "/models/download",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Accept: "application/json",
+          },
+          body: JSON.stringify({ model_id: modelId, force }),
+          // 10 minutes over loopback; the relay caps its wait at 120 s.
+          timeoutMs: 600000,
+        }
+      );
 
       if (!response.ok) {
-        const errorText = await response.text();
+        const message = await this.base.failureMessage(
+          response,
+          "Failed to download model"
+        );
         return {
           success: false,
-          error: `Failed to download model: ${response.status} - ${errorText}`,
+          error: message,
         };
       }
 
@@ -95,7 +101,6 @@ export class ModelClient {
       }
       return data;
     } catch (error) {
-      clearTimeout(timeoutId);
       return {
         success: false,
         error:
@@ -111,7 +116,7 @@ export class ModelClient {
     modelId: string
   ): Promise<{ success: boolean; deleted?: boolean; error?: string }> {
     try {
-      const response = await fetch(`${this.base.baseUrl}/models/delete`, {
+      const response = await runnerRequest(this.base.target, "/models/delete", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -121,10 +126,13 @@ export class ModelClient {
       });
 
       if (!response.ok) {
-        const errorText = await response.text();
+        const message = await this.base.failureMessage(
+          response,
+          "Failed to delete model"
+        );
         return {
           success: false,
-          error: `Failed to delete model: ${response.status} - ${errorText}`,
+          error: message,
         };
       }
 
@@ -147,20 +155,27 @@ export class ModelClient {
    */
   async getModelStatus(modelId: string): Promise<ModelStatusResponse> {
     try {
-      const response = await fetch(`${this.base.baseUrl}/models/${modelId}`, {
-        method: "GET",
-        headers: { Accept: "application/json" },
-      });
+      const response = await runnerRequest(
+        this.base.target,
+        `/models/${modelId}`,
+        {
+          method: "GET",
+          headers: { Accept: "application/json" },
+        }
+      );
 
       if (!response.ok) {
-        const errorText = await response.text();
+        const message = await this.base.failureMessage(
+          response,
+          "Failed to get model status"
+        );
         return {
           success: false,
           model_id: modelId,
           available: false,
           path: null,
           info: null,
-          error: `Failed to get model status: ${response.status} - ${errorText}`,
+          error: message,
         };
       }
 
@@ -187,19 +202,26 @@ export class ModelClient {
    */
   async getModelsDiskUsage(): Promise<ModelDiskUsageResponse> {
     try {
-      const response = await fetch(`${this.base.baseUrl}/models/disk-usage`, {
-        method: "GET",
-        headers: { Accept: "application/json" },
-      });
+      const response = await runnerRequest(
+        this.base.target,
+        "/models/disk-usage",
+        {
+          method: "GET",
+          headers: { Accept: "application/json" },
+        }
+      );
 
       if (!response.ok) {
-        const errorText = await response.text();
+        const message = await this.base.failureMessage(
+          response,
+          "Failed to get disk usage"
+        );
         return {
           success: false,
           total_bytes: 0,
           models: {},
           models_dir: "",
-          error: `Failed to get disk usage: ${response.status} - ${errorText}`,
+          error: message,
         };
       }
 

@@ -38,12 +38,6 @@ class NotificationType(StrEnum):
     TEAM_INVITE = "team_invite"
     ACCESS_GRANTED = "access_granted"
     ACCESS_REVOKED = "access_revoked"
-    # Merge-gate escalation: a PR the user is responsible for was escalated
-    # to specialist review by coord's merge gate (gate-action-notifications
-    # T3). Defaults ON for both in-app and email — the author should hear
-    # about their own gated PR by default — while still honouring an
-    # explicit opt-out (see NotificationPreferences mappings below).
-    GATE_ACTION = "gate_action"
 
 
 class Notification(Base):
@@ -144,15 +138,6 @@ class NotificationPreferences(Base):
     email_shares = Column(Boolean, default=True, nullable=False)
     email_replies = Column(Boolean, default=True, nullable=False)
     email_team_invites = Column(Boolean, default=True, nullable=False)
-    # GATE_ACTION per-type opt-out (T3 follow-up). Uses mapped_column so
-    # the Python-side default applies to in-memory instances (not just
-    # INSERT server_default), matching the should_send_* reads below.
-    email_gate_action: Mapped[bool] = mapped_column(
-        Boolean,
-        default=True,
-        nullable=False,
-        server_default=text("true"),
-    )
 
     # In-app notification preferences
     in_app_mentions = Column(Boolean, default=True, nullable=False)
@@ -161,15 +146,6 @@ class NotificationPreferences(Base):
     in_app_replies = Column(Boolean, default=True, nullable=False)
     in_app_team_invites = Column(Boolean, default=True, nullable=False)
     in_app_project_updates = Column(Boolean, default=True, nullable=False)
-    # GATE_ACTION per-type opt-out (T3 follow-up). Uses mapped_column so
-    # the Python-side default applies to in-memory instances (not just
-    # INSERT server_default), matching the should_send_* reads below.
-    in_app_gate_action: Mapped[bool] = mapped_column(
-        Boolean,
-        default=True,
-        nullable=False,
-        server_default=text("true"),
-    )
 
     created_at = Column(
         DateTime(timezone=True), default=lambda: datetime.now(UTC), nullable=False
@@ -197,14 +173,6 @@ class NotificationPreferences(Base):
             NotificationType.SHARE: self.email_shares,
             NotificationType.REPLY: self.email_replies,
             NotificationType.TEAM_INVITE: self.email_team_invites,
-            # GATE_ACTION: per-column opt-out — defaults True (server_default
-            # + Python default=True). None treated as True: a freshly-built
-            # in-memory instance (before DB persist) preserves default-ON.
-            # A user opts out via PUT /notifications/preferences
-            # { "email_gate_action": false }.
-            NotificationType.GATE_ACTION: self.email_gate_action
-            if self.email_gate_action is not None
-            else True,
         }
         # Email defaults OFF for unmapped types (conservative).
         result = mapping.get(notification_type, False)
@@ -219,14 +187,6 @@ class NotificationPreferences(Base):
             NotificationType.REPLY: self.in_app_replies,
             NotificationType.TEAM_INVITE: self.in_app_team_invites,
             NotificationType.PROJECT_UPDATE: self.in_app_project_updates,
-            # GATE_ACTION: per-column opt-out — defaults True (server_default
-            # + Python default=True). None treated as True: a freshly-built
-            # in-memory instance (before DB persist) preserves default-ON.
-            # A user opts out via PUT /notifications/preferences
-            # { "in_app_gate_action": false }.
-            NotificationType.GATE_ACTION: self.in_app_gate_action
-            if self.in_app_gate_action is not None
-            else True,
         }
         # In-app defaults ON for unmapped types.
         result = mapping.get(notification_type, True)

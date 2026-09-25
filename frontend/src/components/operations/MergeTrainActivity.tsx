@@ -56,6 +56,7 @@ import {
 } from "@/components/console";
 import { createLogger } from "@/lib/logger";
 import { httpClient } from "@/services/service-factory";
+import { CiRepoStrip } from "./CiRepoStrip";
 import { OPERATIONS_API, relativeTime } from "./utils";
 import type { MergeEnabledResponse } from "./mergeTypes";
 import {
@@ -817,10 +818,13 @@ function ChurnCell({
   label,
   reading,
   testId,
+  format = formatChurnValue,
 }: {
   label: string;
   reading: ChurnReading;
   testId: string;
+  /** Renders a measured value; `null` must render as `—`. */
+  format?: (value: number | null) => string;
 }) {
   const unknown = reading.value === null;
   return (
@@ -843,7 +847,7 @@ function ChurnCell({
               : undefined
         }
       >
-        {formatChurnValue(reading.value)}
+        {format(reading.value)}
       </span>
     </span>
   );
@@ -948,7 +952,7 @@ function RepoRow({
           {row.activity.kind !== "idle" ? row.activity.detail : row.headline}
         </span>
 
-        {/* Candidate-CI churn for THIS repo, from coord's economics row. Three
+        {/* Candidate-CI churn for THIS repo, from coord's economics row. Four
             mono readings on the line (R2 — still one line; dropped below `lg`
             like the reason slot, the hover note survives on each). `—` is
             UNKNOWN, never 0, and carries coord's basis / coverage note as its
@@ -971,6 +975,12 @@ function RepoRow({
             label="CI min / land"
             reading={row.churn.ciMinutesPerLand}
             testId="churn-ci-minutes-per-land"
+          />
+          <ChurnCell
+            label="proposal→land p90"
+            reading={row.churn.proposalAgeAtLandP90}
+            testId="churn-proposal-age-at-land-p90"
+            format={formatDuration}
           />
         </span>
 
@@ -1031,21 +1041,42 @@ export function MergeTrainActivity({
     ? rows.filter((r) => r.repo.toLowerCase().includes(q))
     : rows;
 
-  if (!loaded) {
-    return (
-      <div className="space-y-2" data-testid="train-loading">
-        <Skeleton className="h-16 w-full" />
-        <Skeleton className="h-10 w-full" />
-        <Skeleton className="h-10 w-full" />
-      </div>
-    );
-  }
-
   return (
-    <div className="space-y-3" data-testid="merge-train-activity">
-      <TrainHeader summary={summary} healthLoaded={healthLoaded} />
+    // ONE return, not an early one, and `<CiRepoStrip />` appears exactly
+    // once. It owns a WebSocket, and React reconciles children by INDEX within
+    // a same-type parent: with the strip at index 0 of a loading branch and
+    // index 1 of a loaded branch, the `loaded` flip put a different component
+    // type at both positions, so the strip UNMOUNTED and remounted — tearing
+    // down the socket and re-running the REST seed, every time an operator
+    // opened this tab before the proposal batch resolved. One instance
+    // spanning both states makes that impossible rather than merely unlikely.
+    <div
+      className="space-y-3"
+      data-testid={loaded ? "merge-train-activity" : undefined}
+    >
+      {loaded ? (
+        <TrainHeader summary={summary} healthLoaded={healthLoaded} />
+      ) : (
+        <Skeleton className="h-16 w-full" />
+      )}
 
-      {visible.length === 0 ? (
+      {/* Per-repo CI, on the repo axis this tab already establishes. It moved
+          here from a standalone panel on the page — see CiRepoStrip's header
+          for the three reasons, of which "it polled while collapsed" was a
+          live bug. Above the train rows rather than below them because "can
+          this repo land anything at all?" precedes "what is it doing".
+
+          Deliberately NOT gated on `loaded`: it has an independent transport,
+          and a repo's main going red is exactly what is worth seeing while the
+          slower proposal/PR batch is still in flight. */}
+      <CiRepoStrip />
+
+      {!loaded ? (
+        <div className="space-y-2" data-testid="train-loading">
+          <Skeleton className="h-10 w-full" />
+          <Skeleton className="h-10 w-full" />
+        </div>
+      ) : visible.length === 0 ? (
         <p
           className="py-4 text-center text-sm italic text-muted-foreground"
           data-testid="train-empty"

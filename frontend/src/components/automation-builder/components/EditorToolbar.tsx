@@ -40,6 +40,8 @@ export interface EditorToolbarProps {
   onDuplicate?: () => void;
   onConvert?: () => void;
   onRun?: () => void;
+  /** Coord's reason no run may start right now (null = allowed). */
+  runRefusal?: string | null;
   onTest?: () => void;
   onUndo?: () => void;
   onRedo?: () => void;
@@ -60,6 +62,7 @@ export function EditorToolbar({
   onDelete,
   onDuplicate,
   onRun,
+  runRefusal = null,
   onExport,
   onImport,
   onExportProject,
@@ -85,6 +88,8 @@ export function EditorToolbar({
         {item && onRun && (
           <Button
             onClick={onRun}
+            disabled={runRefusal !== null}
+            title={runRefusal ?? undefined}
             size="sm"
             data-tutorial-id="run-workflow"
             style={{
@@ -97,6 +102,15 @@ export function EditorToolbar({
             <Play className="w-4 h-4 mr-2" />
             Run
           </Button>
+        )}
+        {item && onRun && runRefusal && (
+          <span
+            className="max-w-[16rem] truncate text-xs text-text-muted"
+            title={runRefusal}
+            data-testid="builder-run-refusal"
+          >
+            {runRefusal}
+          </span>
         )}
 
         {!item && (
@@ -212,6 +226,7 @@ export function CompactToolbar({
   onDelete,
   onDuplicate,
   onRun,
+  runRefusal = null,
   className,
 }: CompactToolbarProps) {
   const isSequential = mode === "sequential";
@@ -230,12 +245,13 @@ export function CompactToolbar({
       {item && onRun && (
         <Button
           onClick={onRun}
+          disabled={runRefusal !== null}
           size="sm"
           variant="ghost"
           data-tutorial-id="run-workflow"
           className="h-8 w-8 p-0"
           style={{ color: accentColor }}
-          title="Run"
+          title={runRefusal ?? "Run"}
         >
           <Play className="w-4 h-4" />
         </Button>

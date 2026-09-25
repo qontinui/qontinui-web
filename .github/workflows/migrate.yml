@@ -74,6 +74,14 @@ env:
 
 jobs:
   migrate:
+    # Job cap (plan 2026-09-07-nothing-escalates-a-pr-wedged-on-one-block-reason Phase 2).
+    # A deliberate number, not the green-run formula: 40 green runs are p50 2.70 /
+    # p90 3.44 / max 4.88 min, but they are mostly no-op runs at head. A run that
+    # applies real DDL spends up to the full ~10-min `aws ecs wait tasks-stopped`
+    # on top of build (~3) + task start (~1) + reporting. A timeout CANCELS the job,
+    # and `failure()` is false for a cancelled job, so a cap below that path would
+    # skip the migration-failure page. 25 covers the worst path with headroom.
+    timeout-minutes: 25
     name: Build, push, run migrator
     runs-on: ubuntu-latest
     environment: production
@@ -115,8 +123,25 @@ jobs:
           # stays null (the prior behavior), never a hard fail.
           git log --diff-filter=A --name-only --format='C|%H|%cI' \
             -- backend/alembic/versions/ > /tmp/addmap.txt 2>/dev/null || : > /tmp/addmap.txt
-          python3 - <<'PY' > /tmp/snap.json
-          import json, os, re
+          # `|| :` because GitHub runs this step under `bash -e {0}` and
+          # `set -uo pipefail` above does NOT clear `-e`: without it a python
+          # that dies (a bad import, an unparseable file) aborts the step at
+          # this line and the best-effort `::warning::` below never prints —
+          # a red X with a traceback instead of the one-line reason. The step
+          # is continue-on-error either way; what is at stake is the diagnostic.
+          python3 - <<'PY' > /tmp/snap.json || :
+          import json, os, re, sys
+
+          # The revision/parent parse is DELEGATED to scripts/ci/_alembic_graph.py,
+          # the module the BLOCKING head gate already uses, so this lane cannot drift
+          # from the one that fails a PR. It had its own line-scoped copy until
+          # 2026-09-16, when a ruff-wrapped `down_revision` parsed as zero parents
+          # here and the snapshot reported a parent as a head — a fork alembic did
+          # not see. That module masks docstrings and reads a wrapped right-hand
+          # side; keeping a second parser in this file is what made the drift
+          # possible.
+          sys.path.insert(0, "scripts/ci")
+          import _alembic_graph as G
 
           D = "backend/alembic/versions"
           GITHUB_SHA = os.environ.get("GITHUB_SHA")
@@ -143,23 +168,16 @@ jobs:
               add_map = {}
 
 
-          def quoted_tokens(rhs):
-              return re.findall(r"[\"']([^\"']+)[\"']", rhs)
-
-
-          def parse_down_revisions(src):
-              # Capture the RHS of the FIRST `down_revision = ...`. Handles
-              # None -> [], a single id, and a tuple ('a','b'). The optional
-              # `: str | ...` annotation is tolerated by anchoring on `=`.
-              m = re.search(r"^down_revision[^=\n]*=\s*(.+)$", src, re.M)
-              if not m:
-                  return []
-              return quoted_tokens(m.group(1))
-
-
-          def parse_revision(src):
-              m = re.search(r"^revision(?::\s*str)?\s*=\s*[\"']([^\"']+)", src, re.M)
-              return m.group(1) if m else None
+          def parse_revision_and_parents(src):
+              # (revision, parents) in ONE pass — `parse_source` tokenizes the
+              # file to mask docstrings, so asking it twice per file doubles the
+              # step's parse time for nothing. Parents: `None` -> [], a single
+              # id -> [id], a tuple -> every id, in any spelling the gate
+              # accepts (including a formatter-wrapped right-hand side).
+              parsed = G.parse_source(src)
+              if not parsed:
+                  return None, []
+              return parsed[0], G.PARENT_REF_RE.findall(parsed[1])
 
 
           def block_after(src, header_regex):
@@ -211,10 +229,9 @@ jobs:
           for f in files:
               try:
                   src = open(os.path.join(D, f), encoding="utf-8").read()
-                  rev = parse_revision(src)
+                  rev, downs = parse_revision_and_parents(src)
                   if not rev:
                       continue
-                  downs = parse_down_revisions(src)
                   authored_in_sha, authored_at = add_map.get(f, (None, None))
                   revisions.append({
                       "revision": rev,
@@ -421,23 +438,31 @@ jobs:
         run: |
           set -uo pipefail
           HEADS_LINE=$(python3 - <<'PY'
-          import os, re
-          revs, parents = set(), set()
-          d = "backend/alembic/versions"
-          for f in os.listdir(d):
-              if not f.endswith(".py"):
-                  continue
-              s = open(os.path.join(d, f), encoding="utf-8").read()
-              m = re.search(r"^revision(?::\s*str)?\s*=\s*[\"']([^\"']+)", s, re.M)
-              if m:
-                  revs.add(m.group(1))
-              for dm in re.finditer(r"^down_revision[^=]*=\s*(.+)", s, re.M):
-                  for tok in re.findall(r"[\"']([^\"']+)[\"']", dm.group(1)):
-                      parents.add(tok)
-          heads = sorted(revs - parents)
+          import sys
+          from pathlib import Path
+
+          # Same delegation as the DAG-snapshot step above, for the same reason:
+          # scripts/ci/_alembic_graph.py is the parser the blocking head gate
+          # uses, and a second copy here drifted from it (2026-09-16 — a
+          # ruff-wrapped `down_revision` made this census read 2 heads where
+          # alembic read 1, and this step skipped its apply report).
+          sys.path.insert(0, "scripts/ci")
+          import _alembic_graph as G
+
+          scan = G.scan_dir(Path("backend/alembic/versions"))
+          heads = list(scan.heads)
+          if scan.duplicates:
+              # Two files declaring one revision id collapse into a single node,
+              # so the head set was computed over a graph that lost one. Report
+              # no head rather than a head derived from it; the caller's
+              # single-head guard then skips this best-effort report.
+              heads = []
           print(f"{','.join(heads)} {len(heads)}")
           PY
-          )
+          ) || HEADS_LINE=""
+          # `|| HEADS_LINE=""` for the same reason as the `|| :` in the DAG
+          # snapshot step: this step runs under `bash -e {0}`, so without it a
+          # python failure aborts before the `::warning::` below.
           HEADS="${HEADS_LINE% *}"
           COUNT="${HEADS_LINE##* }"
           if [ -z "${HEADS:-}" ] || [ "${COUNT:-0}" != "1" ]; then

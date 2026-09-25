@@ -34,6 +34,8 @@ import {
 import { StatusBadge } from "@/components/console";
 import {
   COORD_CREDENTIAL_PALETTE,
+  reportedCoordCredential,
+  reportedCoordCredentialFor,
   resolveCoordCredential,
 } from "./coordCredentialStatus";
 import { CiRunnerBadge } from "./CiRunnerBadge";
@@ -46,6 +48,18 @@ import { DeviceDrainControl } from "./DeviceDrainControl";
 import type { CiCapacityJoin } from "./ciCapacity";
 import type { DeviceDrainState, DrainTarget } from "./fleetDrain";
 import type { MachineGroup, MachineVolumes, VolumeReading } from "./types";
+
+/**
+ * What draining a GitHub Actions runner registration does and does not do.
+ * Exported so the test asserts the rendered sentence rather than a copy.
+ */
+export const CI_RUNNER_DRAIN_SCOPE =
+  "GitHub Actions runner: draining it removes this runner from coord's " +
+  "merge-capacity count, but GitHub still routes jobs to it by label. " +
+  "Removing its `qontinui` label on GitHub is what stops fleet CI jobs " +
+  "arriving. A host registered on N repos has N such rows: draining this one " +
+  "leaves the other registrations counted as capacity, and coord's " +
+  "`POST /coord/fleet/drain-host` drains the whole host.";
 
 interface MachineCardProps {
   machine: MachineGroup;
@@ -87,6 +101,13 @@ interface MachineCardProps {
   drainState?: DeviceDrainState;
   /** Forced re-read of the drain map after a successful drain/undrain. */
   onDrainActed?: () => void;
+  /**
+   * The clock (epoch ms) the credential report's staleness is judged against.
+   * The Dev Ops Overview passes its ticking clock so a report that ages past
+   * its bound flips to `unknown` without waiting for a read; `undefined` falls
+   * back to `Date.now()` at render.
+   */
+  nowMs?: number;
 }
 
 function OsIcon({ os }: { os: string }) {
@@ -366,6 +387,7 @@ export function MachineCard({
   drainTarget,
   drainState,
   onDrainActed,
+  nowMs,
 }: MachineCardProps) {
   const { hostname, displayName, runners, claudeSessions } = machine;
 
@@ -570,16 +592,26 @@ export function MachineCard({
    * health read, an absent verdict is an absence of the READ, and the card says
    * nothing rather than claiming this machine's credential is unknown.
    */
-  const reportedCredential = (
-    machine.currentActivity?.details as Record<string, unknown> | undefined
-  )?.coord_credential;
+  // The same read the health strip's rollup performs. On a row matched to a
+  // coord device, the stream row's report counts only if it is THAT device's
+  // (`device_id` equal): two coord devices sharing a hostname fold onto one
+  // row, and the row must not borrow a report from the one it is not showing.
+  // The lookup hands back the bag WITH the row's `updated_at`, so a report
+  // past its staleness bound reads `unknown` here exactly as on the strip.
+  const reportedCredential = machine.coordHealth?.matched
+    ? reportedCoordCredentialFor(
+        machine.coordHealth.device_id,
+        machine.currentActivity
+      )
+    : reportedCoordCredential(machine.currentActivity);
   const credential =
-    machine.coordHealth || reportedCredential !== undefined
+    machine.coordHealth || reportedCredential.reported !== undefined
       ? resolveCoordCredential({
           credentialDark: machine.coordHealth?.matched
             ? machine.coordHealth.credential_dark
             : undefined,
-          reported: reportedCredential,
+          ...reportedCredential,
+          now: nowMs,
         })
       : null;
   /**
@@ -592,7 +624,7 @@ export function MachineCard({
    * under a red badge is the kind of precision an operator acts on.
    */
   const credentialSince = credential?.since
-    ? relativeTime(credential.since)
+    ? relativeTime(credential.since, { now: nowMs })
     : null;
 
   // Pick OS from first runner
@@ -867,6 +899,22 @@ export function MachineCard({
           />
         )}
 
+        {/* A GitHub Actions runner registration is drainable, and the drain is
+            real: coord's merge scheduler stops counting a drained `ci_runner`
+            device as merge-slot capacity. What it does NOT do is stop GitHub
+            routing jobs to the host — GitHub matches `runs-on` against the
+            runner's labels and never reads coord's drain map. Keyed off coord's
+            own capability read, not the CI-runner mirror, which can be loading
+            or down. */}
+        {machine.coordHealth?.matched && machine.coordHealth.ciRunner && (
+          <p
+            className="text-[11px] leading-snug break-words text-muted-foreground"
+            data-testid="ci-runner-drain-scope"
+          >
+            {CI_RUNNER_DRAIN_SCOPE}
+          </p>
+        )}
+
         {/* CI capacity — how much CI this machine is ALLOWED to take, next to
             the telemetry that says what to set it to. Deliberately adjacent to
             the CI-runner badge above, which says what it is taking right now:
@@ -891,9 +939,17 @@ export function MachineCard({
               </span>
             </>
           )}
-          {machine.ciRunner && machine.ciRunner.status !== "offline" && (
-            <span>CI runner active</span>
-          )}
+          {/* `idle`/`busy` explicitly, never `!== "offline"`. With `unknown` a
+              real status (a mirrored row whose `ci_runner_status` coord did not
+              report), the negative form calls a runner nobody has heard from
+              "active" — a wrong claim in the direction that hides a problem,
+              and the exact form `FleetOverview`'s CI stat was fixed away from.
+              A row's own badge says `status unknown`; this line must agree. */}
+          {machine.ciRunner &&
+            (machine.ciRunner.status === "idle" ||
+              machine.ciRunner.status === "busy") && (
+              <span>CI runner active</span>
+            )}
           {/* The cross-links HealthSummaryCard carried per device. They only
               resolve for a matched coord device — the trees view is keyed on
               `device_id`. */}

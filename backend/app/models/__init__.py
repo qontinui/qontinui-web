@@ -94,6 +94,18 @@ from app.models.organization import (
     TeamMember,
     TeamRole,
 )
+from app.models.overview import (
+    CalendarBreak,
+    CostLine,
+    Estimate,
+    EstimateRole,
+    OverviewSettings,
+    Phase,
+    PhaseAllocation,
+    PhaseTask,
+    PriceTier,
+    TaskEffort,
+)
 from app.models.pair_code import PairCode
 from app.models.path_discovery import PathDiscovery
 from app.models.phase_result import PhaseResult
@@ -171,7 +183,6 @@ from app.models.test_deficiency import (
     DeficiencyType,
     TestDeficiency,
 )
-from app.models.test_notification_preferences import TestNotificationPreferences
 from app.models.test_result import TestResult, TestResultStatus
 from app.models.test_screenshot import TestScreenshot, TestScreenshotType
 from app.models.test_target import TestTarget
@@ -381,7 +392,6 @@ __all__ = [
     "DeficiencyStatus",
     "TestScreenshot",
     "TestScreenshotType",
-    "TestNotificationPreferences",
     "CoverageSnapshot",
     "PathDiscovery",
     "TransitionReliability",
@@ -528,6 +538,18 @@ __all__ = [
     # Claude Code Session Repository (agent.session_artifacts — archived
     # sessions; bodies live in the object store, not in a column)
     "SessionArtifact",
+    # Project Overview — the estimate baseline (overview.*), Phase 2 of
+    # 2026-09-19-project-overview-for-business-leaders
+    "OverviewSettings",
+    "Estimate",
+    "Phase",
+    "PhaseTask",
+    "EstimateRole",
+    "TaskEffort",
+    "PhaseAllocation",
+    "PriceTier",
+    "CostLine",
+    "CalendarBreak",
 ]
 
 # Cloud-control extension hook — no-op when no cloud-control package has

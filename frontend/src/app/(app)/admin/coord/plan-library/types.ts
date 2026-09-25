@@ -357,6 +357,33 @@ export const PLAN_CAPTURE_DOMAIN = "plan_capture";
 export const PLAN_CAPTURE_LEVELS = ["off", "record"] as const;
 export type PlanCaptureLevel = (typeof PLAN_CAPTURE_LEVELS)[number];
 
+/**
+ * The domain gating the AGENT door for the delivery-scope citation backfill
+ * write (`POST /coord/citations/backfill-delivery-scope`). Levels: `off` (the
+ * agent door refuses, 403) | `dry_run` (the agent door only plans — zero
+ * writes) | `live` (the agent door writes). The operator SSO door is not
+ * governed by it. Plan
+ * `2026-09-23-delivery-scope-backfill-write-is-operator-only-so-a-mechanical-reconcile-needs-a-human`.
+ */
+export const CITATION_SCOPE_BACKFILL_WRITE_DOMAIN =
+  "citation_scope_backfill_write";
+
+export const CITATION_SCOPE_BACKFILL_WRITE_LEVELS = [
+  "off",
+  "dry_run",
+  "live",
+] as const;
+export type CitationScopeBackfillWriteLevel =
+  (typeof CITATION_SCOPE_BACKFILL_WRITE_LEVELS)[number];
+
+/**
+ * What coord resolves for a tenant with NO row (`resolved_scope: "none"`). A
+ * no-row answer naming a different level means the answering coord build
+ * predates the dial — the panel says so rather than repeating this constant.
+ */
+export const CITATION_SCOPE_BACKFILL_WRITE_DEFAULT_LEVEL: CitationScopeBackfillWriteLevel =
+  "dry_run";
+
 // `FleetPolicyView` / `FleetPolicyWriteResult` moved to the shared module when
 // the `policy_write` dial became a second consumer — one wire contract, one
 // definition. Re-exported here so this file's public surface is unchanged.
@@ -480,6 +507,103 @@ export interface ScanRootListResponse {
   rows: ScanRootRow[];
   /** One roll-up per distinct `source_repo`; empty exactly when `rows` is. */
   by_source_repo: ScanRootSourceRollup[];
+  /**
+   * What the corpus holds against what exists, per scan source — a SET
+   * DIFFERENCE, never a ratio.
+   *
+   * Populated by `GET /plan-library/scan-roots` ONLY. On
+   * `corpus_health.scan_roots` — the same shape, riding every
+   * `GET /plan-library` page — it is deliberately empty, because an anti-join
+   * over every authored stem must not be charged to a list request. So an
+   * empty array is NOT "full coverage" and NOT "no scan source":
+   * `coverage_detail` says which of the three reasons produced it.
+   */
+  coverage: PlanCoverage[];
+  /** Why `coverage` is empty; `null` exactly when it is not. */
+  coverage_detail: string | null;
+}
+
+/** A coverage entry's verdict. `unknown` = every number is `null`, never `0`. */
+export const PLAN_COVERAGE_STATES = ["measured", "unknown"] as const;
+
+export type PlanCoverageState = (typeof PLAN_COVERAGE_STATES)[number];
+
+/** Which side of the difference a stem listing is. */
+export const PLAN_CENSUS_SOURCES = ["ref", "work_tree"] as const;
+
+export type PlanCensusSource = (typeof PLAN_CENSUS_SOURCES)[number];
+
+/**
+ * One side of the coverage set difference, as the scanning device enumerated
+ * it.
+ *
+ * There are TWO, and they answer different questions: `authored_at_ref` is
+ * what EXISTS at the default branch, `visible_to_scanner` is what the body
+ * sync could possibly have seen in the working tree it scans. A percentage
+ * over one of them read 101.8% in production, which is why the backend emits
+ * no ratio at all — a presentation layer may compute one only beside both.
+ */
+export interface PlanCensusSide {
+  source: PlanCensusSource;
+  /** What `default_ref` pointed at; `null` on the `work_tree` side. */
+  ref_sha: string | null;
+  /** Age of that fetch, from the reading; `null` = unknown, never fresh. */
+  ref_age_secs: number | null;
+  /** Stems ENUMERATED. Exceeds `listed_count` exactly when `truncated`. */
+  count: number;
+  /** Stems SENT — what the difference was actually taken over. */
+  listed_count: number;
+  /** A sorted prefix: membership proves existence, absence proves nothing. */
+  truncated: boolean;
+  digest: string;
+}
+
+/**
+ * What the corpus holds for ONE scan source, against what exists there.
+ *
+ * `unknown` means every number is `null` — not `0`. A key with no usable
+ * census is still emitted, because an omitted key reads as "no such scan
+ * source" and a zeroed one reads as "the corpus holds none of it".
+ *
+ * `authored_not_captured - authored_not_captured_but_invisible` is the number
+ * an operator can act on: a stem missing from the scanned working tree could
+ * not have been captured, so it is checkout freshness rather than a capture
+ * defect.
+ */
+export interface PlanCoverage {
+  source_repo: string | null;
+  state: PlanCoverageState;
+  /** `no_census:`, `census_truncated:` or `source_repo_unnamed:`. */
+  detail: string | null;
+  device_count: number;
+  /** The device whose census these numbers came from — the freshest ref. */
+  census_device_id: string | null;
+  /** Other devices with a usable census; they may disagree. */
+  other_census_device_ids: string[];
+  /** Denominator 1 — what exists. */
+  authored_at_ref: PlanCensusSide | null;
+  /** Denominator 2 — what the body sync could possibly have seen. */
+  visible_to_scanner: PlanCensusSide | null;
+  /** Corpus `kind: 'plan'` rows under exactly this `source_repo`. */
+  captured: number | null;
+  both: number | null;
+  authored_not_captured: number | null;
+  /** NOT a coverage defect, and never subtracted from anything. */
+  captured_not_authored: number | null;
+  /** The attribution field: missing AND not in the tree the sync scans. */
+  authored_not_captured_but_invisible: number | null;
+  /** Plan rows under a DIFFERENT key or none — what a naive ratio swept in. */
+  out_of_scope_artifact_count: number | null;
+  missing_sample: string[];
+  sample_truncated: boolean;
+  /** The ROLL-UP's minimum, copied so no join is needed to read the numbers. */
+  min_behind: number | null;
+  min_behind_is_floor: boolean | null;
+  /** The CENSUS DEVICE's own qualification. */
+  observation_age_secs: number | null;
+  observation_fresh: boolean | null;
+  counts_are_floors: boolean | null;
+  ref_sha: string | null;
 }
 
 /**
@@ -640,6 +764,51 @@ export const SCAN_ROOT_LIST_NULLABLE: WireNullability<ScanRootListResponse> = {
   fresh_count: false,
   rows: false,
   by_source_repo: false,
+  coverage: false,
+  coverage_detail: true,
+};
+
+/** `PlanCensusSide`'s nullability, as a value. See [`WireNullability`]. */
+export const PLAN_CENSUS_SIDE_NULLABLE: WireNullability<PlanCensusSide> = {
+  source: false,
+  ref_sha: true,
+  ref_age_secs: true,
+  count: false,
+  listed_count: false,
+  truncated: false,
+  digest: false,
+};
+
+/**
+ * `PlanCoverage`'s nullability, as a value. See [`WireNullability`].
+ *
+ * Every count here is nullable, and that is the contract, not an oversight:
+ * an entry whose census could not be read establishes NOTHING, and a
+ * non-nullable number is how "we cannot see what exists" becomes a `0`.
+ */
+export const PLAN_COVERAGE_NULLABLE: WireNullability<PlanCoverage> = {
+  source_repo: true,
+  state: false,
+  detail: true,
+  device_count: false,
+  census_device_id: true,
+  other_census_device_ids: false,
+  authored_at_ref: true,
+  visible_to_scanner: true,
+  captured: true,
+  both: true,
+  authored_not_captured: true,
+  captured_not_authored: true,
+  authored_not_captured_but_invisible: true,
+  out_of_scope_artifact_count: true,
+  missing_sample: false,
+  sample_truncated: false,
+  min_behind: true,
+  min_behind_is_floor: true,
+  observation_age_secs: true,
+  observation_fresh: true,
+  counts_are_floors: true,
+  ref_sha: true,
 };
 
 /** `ScanRootSourceRollup`'s nullability, as a value. See [`WireNullability`]. */
@@ -681,4 +850,6 @@ export type ScanRootVocabulariesPinned = [
   Expect<Equal<ScanRootRow["reported_state"], ScanRootState>>,
   Expect<Equal<ScanRootListResponse["state"], ScanRootListState>>,
   Expect<Equal<ScanRootSourceRollup["state"], ScanRootRollupState>>,
+  Expect<Equal<PlanCoverage["state"], PlanCoverageState>>,
+  Expect<Equal<PlanCensusSide["source"], PlanCensusSource>>,
 ];

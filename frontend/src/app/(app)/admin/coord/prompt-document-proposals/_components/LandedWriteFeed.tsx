@@ -39,7 +39,7 @@ import {
   hasLooseningVerdict,
   isDocumentWithdrawn,
   isLoosening,
-  notificationHref,
+  reasoningRef,
   sortWritesForFeed,
   writeKey,
 } from "../_lib/writes";
@@ -64,8 +64,13 @@ import type { PromptDocumentWrite } from "../types";
  * window that has none — with two limits said on screen: nothing is sent, or
  * re-sent, while `coord.notifications` is unprovisioned (the sweep reports
  * UNKNOWN then), and creation deliberately never emits. A created document is
- * announced by the finding its author filed with the write (`notification_ref`,
- * the row's "Why" link) instead.
+ * announced by the finding its author filed with the write (`notification_ref`)
+ * instead — so a v1 row's "Why" link opens `/admin/coord/findings?id=…`, the
+ * console's findings reader, rather than the notifications feed, where for a v1
+ * there is no event to open (`_lib/writes.ts` `reasoningRef`). Until that
+ * reader existed (plan
+ * `2026-09-15-the-console-names-a-finding-it-cannot-open`) the v1 arm could
+ * only PRINT the uuid, which is the defect this paragraph used to describe.
  *
  * This text used to say the list itself "can be incomplete" because of that
  * emit, which pointed the operator at the wrong surface: it told them to
@@ -80,7 +85,7 @@ const COMPLETENESS_CAVEAT =
   "failed to go out and sends it again. While coord's notification store is " +
   "not set up, no notices go out and none are re-sent. A newly created " +
   "document sends no notice — it is announced by the reasoning its author " +
-  "filed with it.";
+  "filed with it, which its Why link opens.";
 
 /** DOM id of one row's diff panel — the target of the row's `aria-controls`. */
 function diffPanelId(
@@ -542,7 +547,7 @@ export function LandedWriteFeed({
             const expanded = expandedKey === key;
             const flagged = isLoosening(write);
             const authorClass = classifyWriteAuthor(write.edited_by);
-            const href = notificationHref(write.notification_ref);
+            const reasoning = reasoningRef(write);
             const withdrawn = isDocumentWithdrawn(write);
             const withdrawable = canWithdraw(write);
             const composing = withdrawable && withdrawingKey === key;
@@ -636,9 +641,17 @@ export function LandedWriteFeed({
                   </button>
 
                   <div className="flex shrink-0 items-center gap-2">
-                    {href && (
-                      // Absent ref ⇒ no link. Points into the EXISTING
-                      // notifications feed; this route builds no second one.
+                    {reasoning && (
+                      // Absent ref ⇒ no link. ONE control for both arms, and
+                      // the arm decides only where it goes: an EDIT opens the
+                      // notification it was announced with, a CREATE opens the
+                      // finding its author filed, since coord emits no notice
+                      // for a v1. Until `/admin/coord/findings` existed the
+                      // second arm rendered an inert <span> and printed the
+                      // uuid twice — once unopenable in the row, once
+                      // `select-all` in the detail. Both are DELETED rather
+                      // than kept beside the link: a reference the operator
+                      // cannot act on, next to one he can, is only confusing.
                       <Button
                         asChild
                         variant="ghost"
@@ -646,9 +659,14 @@ export function LandedWriteFeed({
                         className="gap-1.5"
                       >
                         <Link
-                          href={href}
-                          title="Open the notification this write was announced with, and the reasoning its author recorded."
+                          href={reasoning.href}
+                          title={
+                            reasoning.kind === "notice"
+                              ? `Open the notification this write was announced with, and the reasoning its author recorded (coord finding ${reasoning.findingId}).`
+                              : `This write created the document, so no notice was sent. Open the finding its author recorded the reasoning in (coord finding ${reasoning.findingId}).`
+                          }
                           data-testid={`write-reasoning-${write.kind}-${write.name}-${write.version_number}`}
+                          data-reasoning-arm={reasoning.kind}
                         >
                           <MessageSquareText className="size-4" />
                           Why

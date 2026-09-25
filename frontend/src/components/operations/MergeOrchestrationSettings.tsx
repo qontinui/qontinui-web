@@ -27,7 +27,7 @@
  * surface an operator is actually on during an incident.
  */
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -182,6 +182,57 @@ interface RepoProfileResponse {
   // the repo-LIST row (same value, refreshed after every save), because this
   // read is issued once per mount and would go stale — see RepoOverrideCard.
   merge_enabled_override: boolean | null;
+  /**
+   * The RAW per-repo override columns, beside the resolved `profile`. Each
+   * field is the stored column: a value = overridden here, `null` = column
+   * NULL = inheriting.
+   *
+   * REQUIREMENT on the paired qontinui-coord change (plan
+   * 2026-07-22-merge-settings-repo-override-preload, Phase 1): serve this
+   * field on the profile GET AND on the admin PATCH response. coord's
+   * `patch_repo_profile` already returns the same `RepoProfileResponse`
+   * struct as the GET, so adding the field to that struct covers both. Until
+   * that change is deployed the field is ABSENT — hence OPTIONAL — and the
+   * card falls back to write-only editing with a notice.
+   */
+  raw_override?: RawRepoOverride;
+}
+
+interface RawRepoOverride {
+  framework_signals: string[] | null;
+  confidence_threshold_override: number | null;
+  escalate_paths_extra: string[] | null;
+  auto_merge_label_budget: number | null;
+  auto_fix_red_main: boolean | null;
+  auto_fix_red_main_flaky: boolean | null;
+}
+
+/** Edit-field values seeded from a stored raw override (`null` → blank / inherit). */
+interface RepoOverrideFields {
+  confidence_threshold_override: string;
+  auto_merge_label_budget: string;
+  escalate_paths_extra: string;
+  auto_fix_red_main: "inherit" | "true" | "false";
+}
+
+function overrideFieldsFrom(raw: RawRepoOverride): RepoOverrideFields {
+  return {
+    confidence_threshold_override:
+      raw.confidence_threshold_override === null
+        ? ""
+        : // Round away f64 widening of an f32 column (0.8999999761581726 → "0.9").
+          String(Number(raw.confidence_threshold_override.toPrecision(6))),
+    auto_merge_label_budget:
+      raw.auto_merge_label_budget === null
+        ? ""
+        : String(raw.auto_merge_label_budget),
+    // `null` and `[]` both render blank: both mean "no extra paths" (the list
+    // is UNIONed with the tenant's). The column is NOT NULL, so the paired
+    // coord change reports its stored `'{}'` as `null`; an older shape may
+    // send `[]`. A blank save writes `[]` back — see handleSave.
+    escalate_paths_extra: (raw.escalate_paths_extra ?? []).join("\n"),
+    auto_fix_red_main: pinChoice(raw.auto_fix_red_main),
+  };
 }
 
 interface TenantRepoRow {
@@ -209,7 +260,6 @@ interface SloWindowMetrics {
   auto_merge_success_rate: number | null;
   escalation_rate: number | null;
   post_merge_verification_lag_p95_seconds: number | null;
-  author_feedback_latency_p95_seconds: number | null;
   operator_override_rate: number | null;
   total_decisions: number;
 }
@@ -692,6 +742,11 @@ function RepoOverrideCard({
     null
   );
   const [loadError, setLoadError] = useState<string | null>(null);
+  // Whether the edit fields currently hold coord's stored overrides (seeded
+  // from a `raw_override`), and whether enough is known to say they do not.
+  // Together they drive the "not preloaded" notice.
+  const [preloaded, setPreloaded] = useState(false);
+  const [readSettled, setReadSettled] = useState(false);
 
   // What coord currently STORES for this repo's merge-enablement pin, and what
   // it currently RESOLVES to — both straight off the repo-list row.
@@ -705,19 +760,29 @@ function RepoOverrideCard({
   const storedPin: PinChoice = pinChoice(repoRow.merge_enabled_override);
   const resolvedMergeEnabled = repoRow.merge_enabled;
 
-  // Local edit state. `""` = leave unchanged; a value = override.
-  // Most of this card is still WRITE-ONLY: coord's RepoProfileResponse returns
-  // the RESOLVED profile for the numeric/glob fields, not the raw per-repo
-  // overrides, so there is nothing to preload those from. To avoid clobbering
-  // overrides the operator did NOT touch, we track which fields were edited
-  // (`dirty`) and PATCH only those — an omitted field is left unchanged by
-  // coord's PatchField(absent). Full visibility/preload of the remaining
-  // overrides needs a coord API addition (dev-notes plan
-  // 2026-07-22-merge-settings-repo-override-preload, Option A).
+  // Local edit state, PRELOADED from what coord stores — where coord serves
+  // the raw per-repo override columns (`raw_override`) beside the resolved
+  // profile, which starts with the paired qontinui-coord change (plan
+  // 2026-07-22-merge-settings-repo-override-preload, Phase 1). Each field below is seeded with the stored value — `null` (inheriting)
+  // renders as blank / "inherit" — as soon as the profile read lands, and
+  // re-seeded from the PATCH response after a save so the card shows what is
+  // stored post-save rather than going stale (the profile GET runs once per
+  // mount). Seeding never overwrites a field the operator has already edited.
   //
-  // Merge enablement is the EXCEPTION and no longer write-only: coord serves
-  // `merge_enabled_override` (the raw pin) beside `profile.merge_enabled` (the
-  // resolved value), so that control below renders what is actually stored.
+  // Saves stay dirty-tracked: only edited fields are PATCHed, and an edited
+  // field left blank / "inherit" sends `null`, which coord's PatchField treats
+  // as clear-to-inherit (SET col = NULL) — except escalate paths, whose column
+  // is NOT NULL, so blank sends `[]` (its inherit value). Emptying a preloaded
+  // field IS the reset — there is deliberately no separate "reset" button. An
+  // omitted field is left unchanged (PatchField absent).
+  //
+  // Until that coord change is deployed `raw_override` is absent, and so it is
+  // if the profile read fails: the card then stays write-only (an untouched
+  // field is left unchanged) and says so in a muted notice.
+  //
+  // Merge enablement is separate: coord serves `merge_enabled_override` (the
+  // raw pin) beside `profile.merge_enabled`, and that control reads the pin
+  // off the repo-list row — see above.
   const [confidenceOverride, setConfidenceOverride] = useState<string>("");
   const [escalatePathsExtraText, setEscalatePathsExtraText] =
     useState<string>("");
@@ -735,17 +800,79 @@ function RepoOverrideCard({
   const [autoFixRedMainOverride, setAutoFixRedMainOverride] = useState<
     "inherit" | "true" | "false"
   >("inherit");
-  // Write-only like its siblings above (coord serves the RESOLVED profile, not
-  // the raw per-repo override), so it starts at "inherit" — which is also the
-  // stored default, every column being NULL until someone graduates a repo.
+  // Still write-only: `raw_override` does not carry this column, so it starts
+  // at "inherit" — which is also the stored default, every column being NULL
+  // until someone graduates a repo.
   const [ffLandHeadSyncOverride, setFfLandHeadSyncOverride] = useState<
     "inherit" | "true" | "false"
   >("inherit");
   // Body keys the operator has edited this session; only these are PATCHed.
+  //
+  // Mirrored SYNCHRONOUSLY in `dirtyRef` (every write goes through
+  // `markDirty` / `clearDirty`), so the async seeding paths — the initial
+  // profile GET and the post-PATCH re-seed — always see the latest edits.
   const [dirty, setDirty] = useState<Set<string>>(new Set());
+  const dirtyRef = useRef<Set<string>>(dirty);
+  // True while a save is in flight; edits made meanwhile are recorded in
+  // `editedDuringSaveRef` so the save's re-seed neither overwrites them nor
+  // drops their dirty flags (the save's snapshot did not carry them).
+  const savingRef = useRef(false);
+  const editedDuringSaveRef = useRef<Set<string>>(new Set());
+  // Set once a save has adopted coord's post-PATCH answer. A slow initial GET
+  // resolving after that carries PRE-save values and must be ignored.
+  const adoptedSaveResponseRef = useRef(false);
   const markDirty = useCallback((field: string) => {
-    setDirty((prev) => (prev.has(field) ? prev : new Set(prev).add(field)));
+    if (savingRef.current) editedDuringSaveRef.current.add(field);
+    if (dirtyRef.current.has(field)) return;
+    const next = new Set(dirtyRef.current).add(field);
+    dirtyRef.current = next;
+    setDirty(next);
   }, []);
+  /**
+   * The dirty flags to keep once a save has consumed `sent`: fields the save
+   * did not carry, plus any edited again while it was in flight.
+   */
+  const dirtyAfterSave = useCallback(
+    (sent: ReadonlySet<string>) =>
+      new Set(
+        [...dirtyRef.current].filter(
+          (f) => !sent.has(f) || editedDuringSaveRef.current.has(f)
+        )
+      ),
+    []
+  );
+  const clearDirty = useCallback(
+    (sent: ReadonlySet<string>) => {
+      const next = dirtyAfterSave(sent);
+      dirtyRef.current = next;
+      setDirty(next);
+    },
+    [dirtyAfterSave]
+  );
+
+  /**
+   * Seed the edit fields from a stored raw override. Fields named in `keep`
+   * (the operator's un-saved edits) are left alone.
+   */
+  const seedFromRaw = useCallback(
+    (raw: RawRepoOverride, keep: ReadonlySet<string>) => {
+      const f = overrideFieldsFrom(raw);
+      if (!keep.has("confidence_threshold_override")) {
+        setConfidenceOverride(f.confidence_threshold_override);
+      }
+      if (!keep.has("auto_merge_label_budget")) {
+        setLabelBudget(f.auto_merge_label_budget);
+      }
+      if (!keep.has("escalate_paths_extra")) {
+        setEscalatePathsExtraText(f.escalate_paths_extra);
+      }
+      if (!keep.has("auto_fix_red_main")) {
+        setAutoFixRedMainOverride(f.auto_fix_red_main);
+      }
+      setPreloaded(true);
+    },
+    []
+  );
 
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -765,20 +892,42 @@ function RepoOverrideCard({
       })
       .then((body) => {
         if (cancelled) return;
+        setReadSettled(true);
+        if (adoptedSaveResponseRef.current) {
+          // A save landed first, so this read carries PRE-save values: never
+          // seed from it. It may still fill an empty `repoProfile` (a save
+          // whose response body was unusable), which is what lets the card
+          // state that its fields were not preloaded.
+          setRepoProfile((prev) => prev ?? body);
+          return;
+        }
         setRepoProfile(body);
+        if (body.raw_override) {
+          seedFromRaw(body.raw_override, dirtyRef.current);
+        }
       })
       .catch((err) => {
         if (cancelled) return;
+        setReadSettled(true);
+        // After a save has landed, a failed read is moot — the card already
+        // shows (or knowingly lacks) what the save returned; an error line
+        // here would sit beside correct fields.
+        if (adoptedSaveResponseRef.current) return;
         setLoadError(err instanceof Error ? err.message : String(err));
       });
     return () => {
       cancelled = true;
     };
-  }, [repoRow.repo]);
+  }, [repoRow.repo, seedFromRaw]);
 
   const handleSave = useCallback(async () => {
     setError(null);
     setSaving(true);
+    // The dirty set this save sends. Edits made while it is in flight are
+    // tracked separately and survive the save.
+    const sent: ReadonlySet<string> = new Set(dirty);
+    savingRef.current = true;
+    editedDuringSaveRef.current = new Set();
     try {
       // Send ONLY fields the operator edited. coord's PatchRepoProfile treats
       // an absent field as "leave unchanged", so omitting untouched fields
@@ -799,10 +948,15 @@ function RepoOverrideCard({
               );
       }
       if (dirty.has("escalate_paths_extra")) {
-        body.escalate_paths_extra = escalatePathsExtraText
+        // No non-empty lines sends `[]`, NOT `null`. The column is
+        // `TEXT[] NOT NULL DEFAULT '{}'`, so `'{}'` IS its "no extra paths"
+        // (inherit) value, and a coord build that maps `null` to
+        // `SET col = NULL` 500s the whole PATCH. `[]` works on every build.
+        const paths = escalatePathsExtraText
           .split("\n")
           .map((s) => s.trim())
           .filter((s) => s.length > 0);
+        body.escalate_paths_extra = paths;
       }
       if (dirty.has("auto_merge_label_budget")) {
         body.auto_merge_label_budget =
@@ -838,6 +992,31 @@ function RepoOverrideCard({
         if (!res.ok) {
           throw new Error(`HTTP ${res.status}`);
         }
+        // The write landed, so the initial profile read — if it has not
+        // arrived yet — now carries PRE-save values. Ignore it from here on,
+        // whatever this response's body turns out to be.
+        adoptedSaveResponseRef.current = true;
+        setReadSettled(true);
+        // The PATCH response has the profile read's shape. Adopt it so the
+        // card shows what coord now STORES, and re-seed every field (the
+        // save consumed the operator's edits). A body that does not parse,
+        // or an older coord's body without `raw_override`, leaves the fields
+        // as the operator typed them — which is what was just written.
+        const saved = (await res
+          .json()
+          .catch(() => null)) as RepoProfileResponse | null;
+        if (saved && typeof saved === "object" && saved.profile) {
+          setRepoProfile(saved);
+          setLoadError(null);
+          if (saved.raw_override) {
+            // Keep only fields edited outside this save; everything it sent
+            // is replaced by what coord now stores.
+            seedFromRaw(saved.raw_override, dirtyAfterSave(sent));
+          }
+        }
+        // The PATCH consumed these edits; a later failure (the enablement
+        // POST below) must not leave them flagged for a re-send.
+        clearDirty(sent);
       }
       // Merge enablement is NOT a profile-PATCH field — it POSTs the audited
       // merge-enabled route with a repo scope. Unlike every other field on
@@ -864,12 +1043,14 @@ function RepoOverrideCard({
           );
         }
       }
-      setDirty(new Set());
+      clearDirty(sent);
       onSaved();
     } catch (err) {
       log.warn("save repo profile failed", err);
       setError(err instanceof Error ? err.message : String(err));
     } finally {
+      savingRef.current = false;
+      editedDuringSaveRef.current = new Set();
       setSaving(false);
     }
   }, [
@@ -883,6 +1064,9 @@ function RepoOverrideCard({
     autoFixRedMainOverride,
     ffLandHeadSyncOverride,
     ffLandHeadSyncWritable,
+    seedFromRaw,
+    dirtyAfterSave,
+    clearDirty,
     onSaved,
   ]);
 
@@ -935,12 +1119,34 @@ function RepoOverrideCard({
             {loadError}
           </p>
         )}
+        {readSettled && !preloaded && (
+          // One notice for every way the fields end up NOT holding coord's
+          // stored overrides; only the stated reason differs.
+          <p
+            className="text-xs text-muted-foreground"
+            data-testid={
+              loadError
+                ? `repo-raw-override-load-failed-${repoRow.repo}`
+                : `repo-raw-override-unavailable-${repoRow.repo}`
+            }
+          >
+            {loadError
+              ? "The current per-repo overrides could not be read, so they are not shown here."
+              : repoProfile && !repoProfile.raw_override
+                ? "This coord build does not report the current per-repo overrides, so they are not shown here."
+                : "The current per-repo overrides were not loaded into these fields."}{" "}
+            A field you leave untouched is left unchanged; a field you type into
+            and then clear resets that override to inherit.
+          </p>
+        )}
         {repoProfile && (
-          // Merge posture deliberately NOT repeated here. This read is issued
-          // once per mount (dep array `[repoRow.repo]`), so a posture rendered
-          // from it would freeze at its pre-save value and then contradict the
-          // badge above — two answers on one card, which is the bug this
-          // change exists to kill. The badge is the single place it is stated.
+          // Merge posture deliberately NOT repeated here. `repoProfile` comes
+          // from a read issued once per mount and is refreshed only by a
+          // profile PATCH — never by the merge-enabled POST — so a posture
+          // rendered from it would lag a pin change and contradict the badge
+          // above, which reads the repo-list row the parent re-fetches after
+          // every save. Two answers on one card is the bug this change exists
+          // to kill; the badge is the single place it is stated.
           <p className="text-xs text-muted-foreground">
             Effective: dwell={repoProfile.profile.min_green_dwell}s
           </p>
@@ -1428,12 +1634,6 @@ function SloRepoCard({
             <p className="text-muted-foreground">Verify lag p95</p>
             <p className="text-foreground">
               {fmtSecs(w.post_merge_verification_lag_p95_seconds)}
-            </p>
-          </div>
-          <div>
-            <p className="text-muted-foreground">Author feedback p95</p>
-            <p className="text-foreground">
-              {fmtSecs(w.author_feedback_latency_p95_seconds)}
             </p>
           </div>
         </div>

@@ -4,6 +4,10 @@
  * Handles start/stop/status for click capture sessions.
  */
 
+import {
+  isRunnerNeedsLocalError,
+  runnerRequest,
+} from "@/lib/runner/api-client";
 import { BaseClient } from "./base-client";
 import type {
   ClickCaptureStartResponse,
@@ -22,11 +26,8 @@ export class ClickCaptureClient {
     sessionId: string,
     applicationName?: string
   ): Promise<ClickCaptureStartResponse> {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 30000);
-
     try {
-      const response = await fetch(`${this.base.baseUrl}/command`, {
+      const response = await runnerRequest(this.base.target, "/command", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -39,16 +40,17 @@ export class ClickCaptureClient {
             application_name: applicationName,
           },
         }),
-        signal: controller.signal,
+        timeoutMs: 30000,
       });
 
-      clearTimeout(timeoutId);
-
       if (!response.ok) {
-        const errorText = await response.text();
+        const message = await this.base.failureMessage(
+          response,
+          "Failed to start click capture"
+        );
         return {
           success: false,
-          error: `Failed to start click capture: ${response.status} - ${errorText}`,
+          error: message,
         };
       }
 
@@ -59,7 +61,6 @@ export class ClickCaptureClient {
         error: data.error,
       };
     } catch (error) {
-      clearTimeout(timeoutId);
       return {
         success: false,
         error:
@@ -71,11 +72,8 @@ export class ClickCaptureClient {
   }
 
   async stopClickCapture(): Promise<ClickCaptureStopResponse> {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 120000); // 2 min for processing
-
     try {
-      const response = await fetch(`${this.base.baseUrl}/command`, {
+      const response = await runnerRequest(this.base.target, "/command", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -85,16 +83,18 @@ export class ClickCaptureClient {
           type: "stop_click_capture",
           params: {},
         }),
-        signal: controller.signal,
+        // 2 min for processing
+        timeoutMs: 120000,
       });
 
-      clearTimeout(timeoutId);
-
       if (!response.ok) {
-        const errorText = await response.text();
+        const message = await this.base.failureMessage(
+          response,
+          "Failed to stop click capture"
+        );
         return {
           success: false,
-          error: `Failed to stop click capture: ${response.status} - ${errorText}`,
+          error: message,
         };
       }
 
@@ -106,7 +106,6 @@ export class ClickCaptureClient {
         error: data.error,
       };
     } catch (error) {
-      clearTimeout(timeoutId);
       return {
         success: false,
         error:
@@ -119,7 +118,7 @@ export class ClickCaptureClient {
 
   async getClickCaptureStatus(): Promise<ClickCaptureStatusResponse> {
     try {
-      const response = await fetch(`${this.base.baseUrl}/command`, {
+      const response = await runnerRequest(this.base.target, "/command", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -129,13 +128,20 @@ export class ClickCaptureClient {
           type: "get_click_capture_status",
           params: {},
         }),
-        signal: AbortSignal.timeout(10000),
+        timeoutMs: 10000,
       });
 
       if (!response.ok) {
+        const message = await this.base.failureMessage(
+          response,
+          "Failed to get click capture status",
+          {
+            includeBody: false,
+          }
+        );
         return {
           success: false,
-          error: `Failed to get click capture status: ${response.status}`,
+          error: message,
         };
       }
 
@@ -149,6 +155,9 @@ export class ClickCaptureClient {
         error: data.error,
       };
     } catch (error) {
+      // A relay refusal is final for this route: rethrow it typed so the
+      // poller stops (and can show it) instead of retrying a flattened error.
+      if (isRunnerNeedsLocalError(error)) throw error;
       return {
         success: false,
         error:

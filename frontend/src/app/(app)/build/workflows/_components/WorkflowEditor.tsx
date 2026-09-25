@@ -16,7 +16,9 @@ import { Button } from "@/components/ui/button";
 import { generateStepId, type UnifiedStep, type WorkflowPhase } from "@/types/unified-workflow";
 import { useRunnerHealth } from "@/lib/runner/hooks/misc-hooks";
 import {
-  RUNNER_API_BASE,
+  RunnerApiError,
+  runnerRequest,
+  useRunnerTarget,
   type RunningTaskRunsResponse,
 } from "@/lib/runner-api";
 import { PhaseStepRenderer } from "./PhaseStepRenderer";
@@ -40,16 +42,20 @@ import { useRouter } from "next/navigation";
 
 export function WorkflowEditor({
   onRun,
+  runRefusal = null,
   pendingInsertStep,
   onInsertConsumed,
 }: {
   onRun: () => void;
+  /** Coord's reason no workflow run may start right now (null = allowed). */
+  runRefusal?: string | null;
   pendingInsertStep?: Partial<UnifiedStep> | null;
   onInsertConsumed?: () => void;
 }) {
   const { state, addStep, saveWorkflow, exportWorkflow, importWorkflow, setWorkflow, updateWorkflow, hasUnsavedChanges, getActiveSteps } =
     useWorkflowBuilder();
   const router = useRouter();
+  const runnerTarget = useRunnerTarget();
   // Run is an execution affordance — gate it on runner connectivity. Save /
   // Export / Import / step editors stay enabled regardless of runner state.
   const { data: runnerHealth, isOffline: runnerHealthOffline } =
@@ -164,6 +170,10 @@ export function WorkflowEditor({
             toast.error("Connect a runner to run this workflow");
             return;
           }
+          if (runRefusal !== null) {
+            toast.error(runRefusal);
+            return;
+          }
           if (hasUnsavedChanges) {
             const saved = await saveWorkflow();
             if (!saved) return;
@@ -190,7 +200,7 @@ export function WorkflowEditor({
   const handleStop = useCallback(async () => {
     setIsStopping(true);
     try {
-      const res = await fetch(`${RUNNER_API_BASE}/task-runs/running`);
+      const res = await runnerRequest(runnerTarget, "/task-runs/running");
       if (!res.ok) {
         toast.error("Failed to fetch running tasks");
         return;
@@ -209,8 +219,9 @@ export function WorkflowEditor({
         return;
       }
 
-      const stopRes = await fetch(
-        `${RUNNER_API_BASE}/task-runs/${matchingRun.id}/stop`,
+      const stopRes = await runnerRequest(
+        runnerTarget,
+        `/task-runs/${matchingRun.id}/stop`,
         { method: "POST" },
       );
       if (stopRes.ok) {
@@ -218,12 +229,18 @@ export function WorkflowEditor({
       } else {
         toast.error("Failed to stop workflow execution");
       }
-    } catch {
-      toast.error("Failed to stop workflow execution");
+    } catch (err) {
+      // A typed runner error (e.g. the relay does not carry this route)
+      // names what failed; say it rather than a generic failure.
+      toast.error(
+        err instanceof RunnerApiError
+          ? err.message
+          : "Failed to stop workflow execution",
+      );
     } finally {
       setIsStopping(false);
     }
-  }, [state.workflow.id]);
+  }, [state.workflow.id, runnerTarget]);
 
   return (
     <div className="flex-1 min-w-0 space-y-4">
@@ -236,11 +253,11 @@ export function WorkflowEditor({
             variant="brand-primary"
             size="sm"
             className="h-8"
-            disabled={runnerIsOffline}
+            disabled={runnerIsOffline || runRefusal !== null}
             title={
               runnerIsOffline
                 ? "Connect a runner to run this workflow"
-                : "Run workflow"
+                : (runRefusal ?? "Run workflow")
             }
             onClick={async () => {
               if (hasUnsavedChanges) {
@@ -380,6 +397,14 @@ export function WorkflowEditor({
           </Button>
         </div>
       </div>
+      {runRefusal && !runnerIsOffline && (
+        <p
+          className="text-xs text-text-muted"
+          data-testid="workflow-run-refusal"
+        >
+          {runRefusal}
+        </p>
+      )}
 
       {showSettings && (
         <>

@@ -4,12 +4,23 @@
  * /admin/coord/notifications — the append-only `coord.notifications` feed.
  *
  * Plan `2026-08-05-coord-notifications-type-and-tab.md` Change 4. This is the
- * EVENT surface, the deliberate counterpart to `/admin/coord/alerts` (the
- * CONDITION surface):
+ * EVENT surface, the deliberate counterpart to coord's alerts (the CONDITION
+ * type):
  *
  *   Alerts        — "what is wrong right now?"   fire → persist → resolve
  *   Notifications — "what happened while I was away?"  append-only, per-actor
  *                                                       read state
+ *
+ * Since plan
+ * `2026-09-18-notifications-are-agent-actions-and-alerts-are-agent-work` the
+ * two have different AUDIENCES as well: alerts are agents' work (their
+ * operator page is gone; the Dev Ops page's Conditions panel is the rollup),
+ * and this feed is the operator's record of what agents DID — sensitive
+ * agent actions and agent-authored policy changes. Phase 8 made the page
+ * serve that job: unread rows are listed before read ones (the rows he has
+ * not seen are the ones the feed exists to show him), and an
+ * `agent_took_sensitive_action` row says whether and how it can be undone
+ * (`NotificationRow`).
  *
  * Conventions follow the sibling plan's SHARED UI CONVENTIONS section: one row
  * per event, one plain-language line (coord pre-renders `summary`), detail
@@ -136,6 +147,7 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import {
   Select,
@@ -167,9 +179,11 @@ import {
   isMigrationPending,
   isUnread,
   kindOptions,
+  linkedRefFindingHref,
   linkedRefNotice,
   matchesNotificationRef,
   mergeKindVocabulary,
+  orderUnreadFirst,
   selectionIds,
 } from "@/components/admin/coord/notificationStatus";
 import { httpClient } from "@/services/service-factory";
@@ -179,15 +193,26 @@ const POLL_INTERVAL_MS = 10_000;
 /** Page size asked of coord. Coord owns the clamp; this is a request. */
 const PAGE_SIZE = 50;
 
+/**
+ * `via` of an agent escalate clearance — coord stamps `detail.via` on the
+ * notification its evidence door records, and `?via=` filters on it (plan
+ * `2026-09-13-escalate-path-block-is-agent-clearable-on-evidence` 4.3). This is
+ * the feed `notification-not-permission` depends on: the operator reads what
+ * agents cleared rather than approving it first.
+ */
+const AGENT_CLEARANCE_VIA = "agent_evidence";
+
 function buildQuery(params: {
   kind: string;
   unreadOnly: boolean;
+  agentClearancesOnly?: boolean;
   cursor?: string | null;
 }): string {
   const qs = new URLSearchParams();
   qs.set("limit", String(PAGE_SIZE));
   if (params.kind !== "any") qs.set("kind", params.kind);
   if (params.unreadOnly) qs.set("unread_only", "true");
+  if (params.agentClearancesOnly) qs.set("via", AGENT_CLEARANCE_VIA);
   if (params.cursor) qs.set("cursor", params.cursor);
   return qs.toString();
 }
@@ -195,6 +220,7 @@ function buildQuery(params: {
 export default function CoordNotificationsPage() {
   const [kind, setKind] = useState("any");
   const [unreadOnly, setUnreadOnly] = useState(false);
+  const [agentClearancesOnly, setAgentClearancesOnly] = useState(false);
 
   const [rows, setRows] = useState<CoordNotificationRow[]>([]);
   const [nextCursor, setNextCursor] = useState<string | null>(null);
@@ -400,7 +426,7 @@ export default function CoordNotificationsPage() {
       const scalarSeq = scalarSeqRef.current!.issue();
       try {
         const body = await httpClient.get<NotificationsResponse>(
-          `${API}/notifications?${buildQuery({ kind, unreadOnly })}`,
+          `${API}/notifications?${buildQuery({ kind, unreadOnly, agentClearancesOnly })}`,
           NOTIFICATIONS_REQUEST_OPTIONS
         );
         if (queryGenRef.current !== gen) return;
@@ -452,7 +478,7 @@ export default function CoordNotificationsPage() {
         if (queryGenRef.current === gen) setLoading(false);
       }
     },
-    [kind, unreadOnly, applyEnvelope]
+    [kind, unreadOnly, agentClearancesOnly, applyEnvelope]
   );
 
   // Keyset paging: `next_cursor` is opaque and only meaningful for the query
@@ -465,7 +491,12 @@ export default function CoordNotificationsPage() {
     setLoadingMore(true);
     try {
       const body = await httpClient.get<NotificationsResponse>(
-        `${API}/notifications?${buildQuery({ kind, unreadOnly, cursor })}`,
+        `${API}/notifications?${buildQuery({
+          kind,
+          unreadOnly,
+          agentClearancesOnly,
+          cursor,
+        })}`,
         NOTIFICATIONS_REQUEST_OPTIONS
       );
       if (queryGenRef.current !== gen) return;
@@ -498,7 +529,7 @@ export default function CoordNotificationsPage() {
     } finally {
       if (queryGenRef.current === gen) setLoadingMore(false);
     }
-  }, [kind, unreadOnly, nextCursor, applyEnvelope]);
+  }, [kind, unreadOnly, agentClearancesOnly, nextCursor, applyEnvelope]);
 
   // Filter change resets the page walk — a cursor is only meaningful within
   // the query that produced it — and retires every response still in flight
@@ -596,6 +627,15 @@ export default function CoordNotificationsPage() {
   );
 
   /**
+   * The rows as listed: unread before read, each group in coord's order
+   * (newest first). Display order only — `rows` stays in fetch order, which
+   * is what paging and the merge in `fetchHead` are written against. Marking
+   * a row read moves it into the read group on the next render, which is the
+   * point: the top of the list is always what has not been seen.
+   */
+  const listedRows = useMemo(() => orderUnreadFirst(rows), [rows]);
+
+  /**
    * The linked row, if it is on the page that is loaded.
    *
    * `null` while a `linkedRef` is set is a real, reportable state — the event
@@ -648,7 +688,7 @@ export default function CoordNotificationsPage() {
    * carries the explicit ids of the loaded unread rows, and the label says so
    * BEFORE the click rather than the toast saying so after.
    */
-  const filterActive = kind !== "any" || unreadOnly;
+  const filterActive = kind !== "any" || unreadOnly || agentClearancesOnly;
   /**
    * Through the module's `isUnread`, not a fourth `!n.read_at`.
    *
@@ -785,6 +825,36 @@ export default function CoordNotificationsPage() {
    */
   const feedUnknown = readIsUnknown(queryLoaded, readFailed);
 
+  // One state object for the `?ref=` banner, read by BOTH the sentence and
+  // the findings link beside it, so they are derived from the same inputs.
+  const linkedRefState: Parameters<typeof linkedRefNotice>[0] = {
+    found: Boolean(linkedMatch),
+    // The same predicate `RecordList`'s `loaded` uses below — nothing
+    // has been read yet, so "not on this page" would be a claim
+    // rather than a fact.
+    loading: loading && rows.length === 0,
+    // Not `error`. This arm says "the feed above failed to load", and
+    // `error` is the page's ONE error line — mark-read writes to it
+    // too, so a rejected POST made the banner blame a feed that had
+    // loaded perfectly well.
+    error: readFailed,
+    // The paging arm needs this to keep the filter clause it would
+    // otherwise drop — see `linkedRefNotice`. Deliberately the SAME
+    // `filterActive` that scopes mark-all, so "a filter is on" means
+    // one thing on this page.
+    filterActive,
+    // …and NOT folded into the line above, for the same reason the
+    // strip keeps them apart. `readFailed || pagingFailed` made a
+    // failed "Load more" report "the feed above failed to load" about a
+    // feed the strip was simultaneously painting green — the two states
+    // want different sentences and different remedies.
+    pagingFailed,
+    migrationPending,
+  };
+  const linkedFindingHref = linkedRef
+    ? linkedRefFindingHref(linkedRefState, linkedRef)
+    : null;
+
   return (
     <div
       className="p-3 sm:p-6 space-y-4"
@@ -830,6 +900,21 @@ export default function CoordNotificationsPage() {
             unread only
           </label>
         </div>
+        <div className="ml-2 flex items-center gap-1.5">
+          <Switch
+            id="agent-clearances-only"
+            checked={agentClearancesOnly}
+            onCheckedChange={setAgentClearancesOnly}
+            data-testid="coord-notifications-agent-clearances-only"
+          />
+          <label
+            htmlFor="agent-clearances-only"
+            className="text-xs text-muted-foreground"
+            title="Escalate-path blocks an agent cleared on evidence (via: agent_evidence). Clearances recorded before coord stamped `via` do not match."
+          >
+            agent clearances only
+          </label>
+        </div>
         <Button
           variant="outline"
           size="sm"
@@ -866,30 +951,19 @@ export default function CoordNotificationsPage() {
           className="text-sm text-muted-foreground"
           data-testid="coord-notifications-linked-ref"
         >
-          {linkedRefNotice({
-            found: Boolean(linkedMatch),
-            // The same predicate `RecordList`'s `loaded` uses below — nothing
-            // has been read yet, so "not on this page" would be a claim
-            // rather than a fact.
-            loading: loading && rows.length === 0,
-            // Not `error`. This arm says "the feed above failed to load", and
-            // `error` is the page's ONE error line — mark-read writes to it
-            // too, so a rejected POST made the banner blame a feed that had
-            // loaded perfectly well.
-            error: readFailed,
-            // The paging arm needs this to keep the filter clause it would
-            // otherwise drop — see `linkedRefNotice`. Deliberately the SAME
-            // `filterActive` that scopes mark-all, so "a filter is on" means
-            // one thing on this page.
-            filterActive,
-            // …and NOT folded into the line above, for the same reason the
-            // strip keeps them apart. `readFailed || pagingFailed` made a
-            // failed "Load more" report "the feed above failed to load" about a
-            // feed the strip was simultaneously painting green — the two states
-            // want different sentences and different remedies.
-            pagingFailed,
-            migrationPending,
-          })}
+          {linkedRefNotice(linkedRefState)}
+          {linkedFindingHref && (
+            <>
+              {" "}
+              <Link
+                href={linkedFindingHref}
+                className="underline underline-offset-2"
+                data-testid="coord-notifications-linked-finding"
+              >
+                Open the finding
+              </Link>
+            </>
+          )}
         </p>
       )}
 
@@ -904,7 +978,7 @@ export default function CoordNotificationsPage() {
       ) : (
         <>
           <RecordList
-            items={rows}
+            items={listedRows}
             itemKey={(n) => n.notification_id}
             // R6 applied to a list: an in-flight FIRST read renders skeletons,
             // never an empty list claiming there is nothing. A later poll that

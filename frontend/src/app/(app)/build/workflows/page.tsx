@@ -49,6 +49,7 @@ function BuildWorkflowsPageContent() {
     handleCreateManually,
     handleRunWorkflow,
     handleNavigateToActiveRuns,
+    runRefusal,
   } = useWorkflowPageActions(setSelectedWorkflow);
 
   return (
@@ -72,6 +73,7 @@ function BuildWorkflowsPageContent() {
           onSelectWorkflow={setSelectedWorkflow}
           onDeselectWorkflow={() => setSelectedWorkflow(null)}
           onRunWorkflow={handleRunWorkflow}
+          runRefusal={runRefusal}
           onCreatingChange={setIsSidebarCreating}
         />
 
@@ -94,6 +96,7 @@ function BuildWorkflowsPageContent() {
               >
                 <WorkflowEditor
                   onRun={() => handleRunWorkflow(selectedWorkflow.id)}
+                  runRefusal={runRefusal}
                   pendingInsertStep={pendingInsertStep}
                   onInsertConsumed={consumeInsertStep}
                 />

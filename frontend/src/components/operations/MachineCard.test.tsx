@@ -1,6 +1,10 @@
 import { describe, it, expect } from "vitest";
 import { render } from "@testing-library/react";
-import { MachineCard, runnerHealthState } from "./MachineCard";
+import {
+  CI_RUNNER_DRAIN_SCOPE,
+  MachineCard,
+  runnerHealthState,
+} from "./MachineCard";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import type { MachineGroup, SymbolClaim } from "./types";
 import type { Runner } from "@qontinui/shared-types";
@@ -57,10 +61,10 @@ function baseGroup(overrides: Partial<MachineGroup> = {}): MachineGroup {
   };
 }
 
-function renderCard(group: MachineGroup) {
+function renderCard(group: MachineGroup, nowMs?: number) {
   return render(
     <TooltipProvider>
-      <MachineCard machine={group} />
+      <MachineCard machine={group} nowMs={nowMs} />
     </TooltipProvider>
   );
 }
@@ -497,5 +501,104 @@ describe("MachineCard — CI capacity", () => {
     // Prose and a way out — not a greyed-out control that reads as "CI is off".
     expect(notice?.textContent ?? "").toMatch(/enrol it under/i);
     expect(container.querySelector("[disabled]")).toBeNull();
+  });
+});
+
+/**
+ * Plan `2026-09-14-credential-posture-second-residuals` Phase 4: the runner's
+ * `coord_credential` bag is evidence only while its row is younger than the
+ * report's staleness bound. A runner offline for days still carries its last
+ * `ok: true`, and the card must not read that as `credential live`.
+ */
+describe("MachineCard — a stale coord-credential report", () => {
+  function activity(updatedAt: string) {
+    return {
+      device_id: "00000000-0000-0000-0000-000000000001",
+      hostname: "test-host",
+      current_task: null,
+      current_repo: null,
+      current_branch: null,
+      free_text: null,
+      details: { coord_credential: { ok: true, reason: null } },
+      tenant_id: null,
+      updated_at: updatedAt,
+    };
+  }
+
+  function credentialBadge(container: HTMLElement): HTMLElement | null {
+    return container.querySelector("[data-operations-coord-credential]");
+  }
+
+  it("renders an ok: true report past its bound as credential unknown", () => {
+    const threeDaysAgo = new Date(
+      Date.now() - 3 * 24 * 60 * 60 * 1_000
+    ).toISOString();
+    const { container } = renderCard(
+      baseGroup({ currentActivity: activity(threeDaysAgo) })
+    );
+    const badge = credentialBadge(container);
+    expect(badge).toHaveAttribute(
+      "data-operations-coord-credential",
+      "unknown"
+    );
+    expect(badge).toHaveAttribute(
+      "data-operations-coord-credential-measured",
+      "false"
+    );
+    expect(badge).toHaveTextContent("credential unknown");
+    expect(badge).not.toHaveTextContent("credential live");
+  });
+
+  it("renders the same report inside its bound as credential live", () => {
+    const { container } = renderCard(
+      baseGroup({ currentActivity: activity(new Date().toISOString()) })
+    );
+    expect(credentialBadge(container)).toHaveTextContent("credential live");
+  });
+
+  // The Dev Ops Overview hands every row its ticking clock, so staleness is
+  // judged on the page's clock and not on whatever `Date.now()` reads at
+  // render — the strip uses that same clock, and the two must agree.
+  it("judges staleness on the nowMs it is given, not on Date.now()", () => {
+    const justNow = new Date().toISOString();
+    const { container } = renderCard(
+      baseGroup({ currentActivity: activity(justNow) }),
+      Date.parse(justNow) + 901_000
+    );
+    expect(credentialBadge(container)).toHaveAttribute(
+      "data-operations-coord-credential",
+      "unknown"
+    );
+  });
+});
+
+/**
+ * A GitHub Actions runner registration IS drainable — coord's merge scheduler
+ * stops counting a drained `ci_runner` device as merge-slot capacity — but
+ * GitHub keeps routing jobs to it by label. The card must say both halves, and
+ * decide from coord's own capability read rather than the CI-runner mirror.
+ */
+describe("MachineCard — CI-runner drain scope", () => {
+  it("states what a drain does and does not do on a CI-runner device", () => {
+    const { container } = renderCard(
+      baseGroup({
+        coordHealth: { matched: true, device_id: "d-1", ciRunner: true },
+      })
+    );
+    const note = container.querySelector(
+      "[data-testid='ci-runner-drain-scope']"
+    );
+    expect(note?.textContent).toBe(CI_RUNNER_DRAIN_SCOPE);
+    expect(CI_RUNNER_DRAIN_SCOPE).toMatch(/merge-capacity/);
+    expect(CI_RUNNER_DRAIN_SCOPE).toMatch(/qontinui/);
+  });
+
+  it("says nothing of the kind for a device coord does not call a CI runner", () => {
+    const { container } = renderCard(
+      baseGroup({ coordHealth: { matched: true, device_id: "d-1" } })
+    );
+    expect(
+      container.querySelector("[data-testid='ci-runner-drain-scope']")
+    ).toBeNull();
   });
 });

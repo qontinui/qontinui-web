@@ -5,19 +5,24 @@
  * for RAG embedding generation after configuration export.
  *
  * Unlike other services that go through the backend, this service
- * communicates directly with the runner on port 9876.
+ * talks to the target runner's own API (transport resolved per request:
+ * loopback for a runner proven local, the backend relay otherwise).
  *
  * The runner now accepts QontinuiConfig directly - no transformation needed.
  */
 
+import { useMemo } from "react";
+import { useRunnerTarget } from "@/contexts/active-runner-context";
+import {
+  isRunnerNeedsLocalError,
+  runnerPollDelay,
+  runnerRequest,
+} from "@/lib/runner/api-client";
+import type { RunnerTarget } from "@/lib/runner/target";
 import type { QontinuiConfig } from "@/lib/export-schema";
 import { createLogger } from "@/lib/logger";
 
 const log = createLogger("RagSetupService");
-
-// Default runner URL - can be overridden
-// Use 127.0.0.1 instead of localhost to force IPv4 (runner only listens on IPv4)
-const DEFAULT_RUNNER_URL = "http://127.0.0.1:9876";
 
 /**
  * RAG availability status from the runner
@@ -100,24 +105,11 @@ export interface ListProjectsResponse {
  * - Listing saved projects
  */
 export class RAGSetupService {
-  private runnerUrl: string;
+  /** The runner every call is for; the transport is resolved per request. */
+  private target: RunnerTarget;
 
-  constructor(runnerUrl: string = DEFAULT_RUNNER_URL) {
-    this.runnerUrl = runnerUrl;
-  }
-
-  /**
-   * Set the runner URL (useful when runner URL changes)
-   */
-  setRunnerUrl(url: string): void {
-    this.runnerUrl = url;
-  }
-
-  /**
-   * Get the current runner URL
-   */
-  getRunnerUrl(): string {
-    return this.runnerUrl;
+  constructor(target: RunnerTarget) {
+    this.target = target;
   }
 
   /**
@@ -125,9 +117,9 @@ export class RAGSetupService {
    */
   async isRunnerConnected(): Promise<boolean> {
     try {
-      const response = await fetch(`${this.runnerUrl}/status`, {
+      const response = await runnerRequest(this.target, "/status", {
         method: "GET",
-        signal: AbortSignal.timeout(3000),
+        timeoutMs: 3000,
       });
       return response.ok;
     } catch {
@@ -141,7 +133,7 @@ export class RAGSetupService {
    */
   async checkRAGAvailability(): Promise<RAGAvailability> {
     try {
-      const response = await fetch(`${this.runnerUrl}/rag/availability`, {
+      const response = await runnerRequest(this.target, "/rag/availability", {
         method: "GET",
         headers: {
           "Content-Type": "application/json",
@@ -217,7 +209,7 @@ export class RAGSetupService {
     let response: Response;
     try {
       // Use a 60 second timeout for large configs with embedded images
-      response = await fetch(`${this.runnerUrl}/rag/import`, {
+      response = await runnerRequest(this.target, "/rag/import", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -226,9 +218,11 @@ export class RAGSetupService {
           config,
           project_id: projectId,
         }),
-        signal: AbortSignal.timeout(60000),
+        timeoutMs: 60000,
       });
     } catch (error) {
+      // The runner will not carry this route over the relay: say so.
+      if (isRunnerNeedsLocalError(error)) throw error;
       // Network errors (connection refused, timeout, etc.)
       const errorMessage =
         error instanceof Error ? error.message : "Unknown error";
@@ -241,7 +235,7 @@ export class RAGSetupService {
         );
       }
       throw new Error(
-        `Runner not responding. Please ensure qontinui-runner is running on ${this.runnerUrl}`
+        `Runner not responding. Please ensure the selected qontinui-runner is running.`
       );
     }
 
@@ -272,12 +266,16 @@ export class RAGSetupService {
    * Get RAG setup progress for a project
    */
   async getRAGSetupProgress(projectId: string): Promise<RAGSetupProgress> {
-    const response = await fetch(`${this.runnerUrl}/rag/${projectId}/status`, {
-      method: "GET",
-      headers: {
-        "Content-Type": "application/json",
-      },
-    });
+    const response = await runnerRequest(
+      this.target,
+      `/rag/${projectId}/status`,
+      {
+        method: "GET",
+        headers: {
+          "Content-Type": "application/json",
+        },
+      }
+    );
 
     if (!response.ok) {
       if (response.status === 404) {
@@ -308,7 +306,7 @@ export class RAGSetupService {
    * Get RAG setup result with computed embeddings
    */
   async getRAGSetupResult(projectId: string): Promise<RAGSetupResult | null> {
-    const response = await fetch(`${this.runnerUrl}/rag/${projectId}`, {
+    const response = await runnerRequest(this.target, `/rag/${projectId}`, {
       method: "GET",
       headers: {
         "Content-Type": "application/json",
@@ -340,12 +338,16 @@ export class RAGSetupService {
    * Note: This endpoint may not be implemented yet on the runner
    */
   async cancelRAGSetup(projectId: string): Promise<void> {
-    const response = await fetch(`${this.runnerUrl}/rag/${projectId}/cancel`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-    });
+    const response = await runnerRequest(
+      this.target,
+      `/rag/${projectId}/cancel`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+      }
+    );
 
     if (!response.ok) {
       const errorText = await response.text();
@@ -359,7 +361,7 @@ export class RAGSetupService {
    * List saved RAG projects from ~/.qontinui/rag/
    */
   async listSavedProjects(): Promise<SavedRAGProject[]> {
-    const response = await fetch(`${this.runnerUrl}/rag/list`, {
+    const response = await runnerRequest(this.target, "/rag/list", {
       method: "GET",
       headers: {
         "Content-Type": "application/json",
@@ -417,12 +419,16 @@ export class RAGSetupService {
   async loadSavedProject(
     projectId: string
   ): Promise<{ success: boolean; message: string; config?: QontinuiConfig }> {
-    const response = await fetch(`${this.runnerUrl}/rag/${projectId}/load`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-    });
+    const response = await runnerRequest(
+      this.target,
+      `/rag/${projectId}/load`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+      }
+    );
 
     if (!response.ok) {
       const errorText = await response.text();
@@ -451,7 +457,7 @@ export class RAGSetupService {
   async deleteSavedProject(
     projectId: string
   ): Promise<{ success: boolean; message: string }> {
-    const response = await fetch(`${this.runnerUrl}/rag/${projectId}`, {
+    const response = await runnerRequest(this.target, `/rag/${projectId}`, {
       method: "DELETE",
       headers: {
         "Content-Type": "application/json",
@@ -495,6 +501,8 @@ export class RAGSetupService {
     const startTime = Date.now();
 
     while (true) {
+      // A RUNNER_NEEDS_LOCAL refusal is thrown out of here, ending the wait:
+      // asking again cannot change it.
       const progress = await this.getRAGSetupProgress(projectId);
 
       if (onProgress) {
@@ -517,23 +525,21 @@ export class RAGSetupService {
         throw new Error("RAG setup timed out");
       }
 
-      // Wait before next poll
-      await new Promise((resolve) => setTimeout(resolve, pollInterval));
+      // Wait before next poll — the cadence is re-evaluated every iteration,
+      // so a relayed (or not yet resolved) target never polls faster than
+      // the relay cadence.
+      await runnerPollDelay(this.target, pollInterval);
     }
   }
 }
 
-// Create singleton instance
-let ragSetupServiceInstance: RAGSetupService | null = null;
-
-export function getRAGSetupService(runnerUrl?: string): RAGSetupService {
-  if (!ragSetupServiceInstance) {
-    ragSetupServiceInstance = new RAGSetupService(runnerUrl);
-  } else if (runnerUrl) {
-    ragSetupServiceInstance.setRunnerUrl(runnerUrl);
-  }
-  return ragSetupServiceInstance;
+/** A RAGSetupService bound to one runner target. */
+export function createRAGSetupService(target: RunnerTarget): RAGSetupService {
+  return new RAGSetupService(target);
 }
 
-// Export a default instance
-export const ragSetupService = new RAGSetupService();
+/** A RAGSetupService bound to the active runner; stable while it is. */
+export function useRAGSetupService(): RAGSetupService {
+  const target = useRunnerTarget();
+  return useMemo(() => createRAGSetupService(target), [target]);
+}

@@ -121,8 +121,8 @@ export interface AIPromptActionConfig {
   maxSessions?: number | null;
 
   /**
-   * URL of the qontinui-runner API
-   * Default: "http://localhost:9876"
+   * URL of the qontinui-runner API, as seen by the runner executing this
+   * action. Omitted: the runner's own API on its default port.
    */
   runnerUrl?: string;
 

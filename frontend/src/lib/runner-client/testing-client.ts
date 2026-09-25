@@ -4,6 +4,7 @@
  * Handles test execution, assertions, mocking, and state traversal.
  */
 
+import { runnerRequest } from "@/lib/runner/api-client";
 import { BaseClient } from "./base-client";
 import type {
   StartIntegrationTestRequest,
@@ -31,27 +32,25 @@ export class TestingClient {
   async startIntegrationTest(
     request: StartIntegrationTestRequest
   ): Promise<{ success: boolean; run_id?: string; error?: string }> {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 30000);
-
     try {
-      const response = await fetch(`${this.base.baseUrl}/testing/start`, {
+      const response = await runnerRequest(this.base.target, "/testing/start", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
           Accept: "application/json",
         },
         body: JSON.stringify(request),
-        signal: controller.signal,
+        timeoutMs: 30000,
       });
 
-      clearTimeout(timeoutId);
-
       if (!response.ok) {
-        const errorText = await response.text();
+        const message = await this.base.failureMessage(
+          response,
+          "Failed to start test"
+        );
         return {
           success: false,
-          error: `Failed to start test: ${response.status} - ${errorText}`,
+          error: message,
         };
       }
 
@@ -62,7 +61,6 @@ export class TestingClient {
         error: data.error,
       };
     } catch (error) {
-      clearTimeout(timeoutId);
       return {
         success: false,
         error:
@@ -88,19 +86,27 @@ export class TestingClient {
     error?: string;
   }> {
     try {
-      const response = await fetch(
-        `${this.base.baseUrl}/testing/status/${runId}`,
+      const response = await runnerRequest(
+        this.base.target,
+        `/testing/status/${runId}`,
         {
           method: "GET",
           headers: { Accept: "application/json" },
-          signal: AbortSignal.timeout(10000),
+          timeoutMs: 10000,
         }
       );
 
       if (!response.ok) {
+        const message = await this.base.failureMessage(
+          response,
+          "Failed to get status",
+          {
+            includeBody: false,
+          }
+        );
         return {
           success: false,
-          error: `Failed to get status: ${response.status}`,
+          error: message,
         };
       }
 
@@ -126,19 +132,27 @@ export class TestingClient {
     runId: string
   ): Promise<{ success: boolean; results?: TestResult[]; error?: string }> {
     try {
-      const response = await fetch(
-        `${this.base.baseUrl}/testing/results/${runId}`,
+      const response = await runnerRequest(
+        this.base.target,
+        `/testing/results/${runId}`,
         {
           method: "GET",
           headers: { Accept: "application/json" },
-          signal: AbortSignal.timeout(30000),
+          timeoutMs: 30000,
         }
       );
 
       if (!response.ok) {
+        const message = await this.base.failureMessage(
+          response,
+          "Failed to get results",
+          {
+            includeBody: false,
+          }
+        );
         return {
           success: false,
-          error: `Failed to get results: ${response.status}`,
+          error: message,
         };
       }
 
@@ -163,19 +177,27 @@ export class TestingClient {
     limit = 50
   ): Promise<{ success: boolean; runs?: TestRunSummary[]; error?: string }> {
     try {
-      const response = await fetch(
-        `${this.base.baseUrl}/testing/runs?limit=${limit}`,
+      const response = await runnerRequest(
+        this.base.target,
+        `/testing/runs?limit=${limit}`,
         {
           method: "GET",
           headers: { Accept: "application/json" },
-          signal: AbortSignal.timeout(10000),
+          timeoutMs: 10000,
         }
       );
 
       if (!response.ok) {
+        const message = await this.base.failureMessage(
+          response,
+          "Failed to list runs",
+          {
+            includeBody: false,
+          }
+        );
         return {
           success: false,
-          error: `Failed to list runs: ${response.status}`,
+          error: message,
         };
       }
 
@@ -200,19 +222,27 @@ export class TestingClient {
     runId: string
   ): Promise<{ success: boolean; run?: TestRunResult; error?: string }> {
     try {
-      const response = await fetch(
-        `${this.base.baseUrl}/testing/end/${runId}`,
+      const response = await runnerRequest(
+        this.base.target,
+        `/testing/end/${runId}`,
         {
           method: "POST",
           headers: { Accept: "application/json" },
-          signal: AbortSignal.timeout(30000),
+          timeoutMs: 30000,
         }
       );
 
       if (!response.ok) {
+        const message = await this.base.failureMessage(
+          response,
+          "Failed to end test",
+          {
+            includeBody: false,
+          }
+        );
         return {
           success: false,
-          error: `Failed to end test: ${response.status}`,
+          error: message,
         };
       }
 
@@ -239,16 +269,27 @@ export class TestingClient {
     error?: string;
   }> {
     try {
-      const response = await fetch(`${this.base.baseUrl}/testing/states`, {
-        method: "GET",
-        headers: { Accept: "application/json" },
-        signal: AbortSignal.timeout(10000),
-      });
+      const response = await runnerRequest(
+        this.base.target,
+        "/testing/states",
+        {
+          method: "GET",
+          headers: { Accept: "application/json" },
+          timeoutMs: 10000,
+        }
+      );
 
       if (!response.ok) {
+        const message = await this.base.failureMessage(
+          response,
+          "Failed to get states",
+          {
+            includeBody: false,
+          }
+        );
         return {
           success: false,
-          error: `Failed to get states: ${response.status}`,
+          error: message,
         };
       }
 
@@ -274,16 +315,27 @@ export class TestingClient {
     error?: string;
   }> {
     try {
-      const response = await fetch(`${this.base.baseUrl}/testing/transitions`, {
-        method: "GET",
-        headers: { Accept: "application/json" },
-        signal: AbortSignal.timeout(10000),
-      });
+      const response = await runnerRequest(
+        this.base.target,
+        "/testing/transitions",
+        {
+          method: "GET",
+          headers: { Accept: "application/json" },
+          timeoutMs: 10000,
+        }
+      );
 
       if (!response.ok) {
+        const message = await this.base.failureMessage(
+          response,
+          "Failed to get transitions",
+          {
+            includeBody: false,
+          }
+        );
         return {
           success: false,
-          error: `Failed to get transitions: ${response.status}`,
+          error: message,
         };
       }
 
@@ -309,20 +361,31 @@ export class TestingClient {
     toState: string
   ): Promise<{ success: boolean; path?: unknown; error?: string }> {
     try {
-      const response = await fetch(`${this.base.baseUrl}/testing/find-path`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Accept: "application/json",
-        },
-        body: JSON.stringify({ from_state: fromState, to_state: toState }),
-        signal: AbortSignal.timeout(30000),
-      });
+      const response = await runnerRequest(
+        this.base.target,
+        "/testing/find-path",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Accept: "application/json",
+          },
+          body: JSON.stringify({ from_state: fromState, to_state: toState }),
+          timeoutMs: 30000,
+        }
+      );
 
       if (!response.ok) {
+        const message = await this.base.failureMessage(
+          response,
+          "Failed to find path",
+          {
+            includeBody: false,
+          }
+        );
         return {
           success: false,
-          error: `Failed to find path: ${response.status}`,
+          error: message,
         };
       }
 
@@ -348,20 +411,31 @@ export class TestingClient {
     execute = true
   ): Promise<{ success: boolean; active_states?: string[]; error?: string }> {
     try {
-      const response = await fetch(`${this.base.baseUrl}/testing/traverse`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Accept: "application/json",
-        },
-        body: JSON.stringify({ target_state: targetState, execute }),
-        signal: AbortSignal.timeout(120000),
-      });
+      const response = await runnerRequest(
+        this.base.target,
+        "/testing/traverse",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Accept: "application/json",
+          },
+          body: JSON.stringify({ target_state: targetState, execute }),
+          timeoutMs: 120000,
+        }
+      );
 
       if (!response.ok) {
+        const message = await this.base.failureMessage(
+          response,
+          "Failed to traverse",
+          {
+            includeBody: false,
+          }
+        );
         return {
           success: false,
-          error: `Failed to traverse: ${response.status}`,
+          error: message,
         };
       }
 
@@ -391,19 +465,27 @@ export class TestingClient {
     error?: string;
   }> {
     try {
-      const response = await fetch(
-        `${this.base.baseUrl}/testing/active-states`,
+      const response = await runnerRequest(
+        this.base.target,
+        "/testing/active-states",
         {
           method: "GET",
           headers: { Accept: "application/json" },
-          signal: AbortSignal.timeout(10000),
+          timeoutMs: 10000,
         }
       );
 
       if (!response.ok) {
+        const message = await this.base.failureMessage(
+          response,
+          "Failed to get active states",
+          {
+            includeBody: false,
+          }
+        );
         return {
           success: false,
-          error: `Failed to get active states: ${response.status}`,
+          error: message,
         };
       }
 
@@ -430,20 +512,31 @@ export class TestingClient {
     mode: MockMode
   ): Promise<{ success: boolean; error?: string }> {
     try {
-      const response = await fetch(`${this.base.baseUrl}/testing/mock-mode`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Accept: "application/json",
-        },
-        body: JSON.stringify({ mode }),
-        signal: AbortSignal.timeout(10000),
-      });
+      const response = await runnerRequest(
+        this.base.target,
+        "/testing/mock-mode",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Accept: "application/json",
+          },
+          body: JSON.stringify({ mode }),
+          timeoutMs: 10000,
+        }
+      );
 
       if (!response.ok) {
+        const message = await this.base.failureMessage(
+          response,
+          "Failed to set mock mode",
+          {
+            includeBody: false,
+          }
+        );
         return {
           success: false,
-          error: `Failed to set mock mode: ${response.status}`,
+          error: message,
         };
       }
 
@@ -465,20 +558,31 @@ export class TestingClient {
     params: Record<string, unknown>
   ): Promise<{ success: boolean; action_id?: string; error?: string }> {
     try {
-      const response = await fetch(`${this.base.baseUrl}/testing/mock-action`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Accept: "application/json",
-        },
-        body: JSON.stringify({ action_type: actionType, ...params }),
-        signal: AbortSignal.timeout(10000),
-      });
+      const response = await runnerRequest(
+        this.base.target,
+        "/testing/mock-action",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Accept: "application/json",
+          },
+          body: JSON.stringify({ action_type: actionType, ...params }),
+          timeoutMs: 10000,
+        }
+      );
 
       if (!response.ok) {
+        const message = await this.base.failureMessage(
+          response,
+          "Failed to mock action",
+          {
+            includeBody: false,
+          }
+        );
         return {
           success: false,
-          error: `Failed to mock action: ${response.status}`,
+          error: message,
         };
       }
 
@@ -504,19 +608,27 @@ export class TestingClient {
     error?: string;
   }> {
     try {
-      const response = await fetch(
-        `${this.base.baseUrl}/testing/mocked-actions`,
+      const response = await runnerRequest(
+        this.base.target,
+        "/testing/mocked-actions",
         {
           method: "GET",
           headers: { Accept: "application/json" },
-          signal: AbortSignal.timeout(10000),
+          timeoutMs: 10000,
         }
       );
 
       if (!response.ok) {
+        const message = await this.base.failureMessage(
+          response,
+          "Failed to get mocked actions",
+          {
+            includeBody: false,
+          }
+        );
         return {
           success: false,
-          error: `Failed to get mocked actions: ${response.status}`,
+          error: message,
         };
       }
 
@@ -541,19 +653,27 @@ export class TestingClient {
    */
   async clearMockedActions(): Promise<{ success: boolean; error?: string }> {
     try {
-      const response = await fetch(
-        `${this.base.baseUrl}/testing/clear-mocked-actions`,
+      const response = await runnerRequest(
+        this.base.target,
+        "/testing/clear-mocked-actions",
         {
           method: "POST",
           headers: { Accept: "application/json" },
-          signal: AbortSignal.timeout(10000),
+          timeoutMs: 10000,
         }
       );
 
       if (!response.ok) {
+        const message = await this.base.failureMessage(
+          response,
+          "Failed to clear mocked actions",
+          {
+            includeBody: false,
+          }
+        );
         return {
           success: false,
-          error: `Failed to clear mocked actions: ${response.status}`,
+          error: message,
         };
       }
 
@@ -583,25 +703,36 @@ export class TestingClient {
     error?: string;
   }> {
     try {
-      const response = await fetch(`${this.base.baseUrl}/testing/assertion`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Accept: "application/json",
-        },
-        body: JSON.stringify({
-          assertion_type: assertionType,
-          target,
-          expected,
-          timeout_seconds: timeoutSeconds,
-        }),
-        signal: AbortSignal.timeout(60000),
-      });
+      const response = await runnerRequest(
+        this.base.target,
+        "/testing/assertion",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Accept: "application/json",
+          },
+          body: JSON.stringify({
+            assertion_type: assertionType,
+            target,
+            expected,
+            timeout_seconds: timeoutSeconds,
+          }),
+          timeoutMs: 60000,
+        }
+      );
 
       if (!response.ok) {
+        const message = await this.base.failureMessage(
+          response,
+          "Failed to run assertion",
+          {
+            includeBody: false,
+          }
+        );
         return {
           success: false,
-          error: `Failed to run assertion: ${response.status}`,
+          error: message,
         };
       }
 

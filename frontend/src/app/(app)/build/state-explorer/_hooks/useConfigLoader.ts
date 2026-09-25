@@ -1,18 +1,20 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
+import { runnerRequest, useRunnerTarget } from "@/lib/runner";
 import type { AvailableState, AvailableTransition } from "../types";
 
 export function useConfigLoader() {
+  const runnerTarget = useRunnerTarget();
   const [configPath, setConfigPath] = useState("");
   const [loadingConfig, setLoadingConfig] = useState(false);
   const [availableStates, setAvailableStates] = useState<AvailableState[]>([]);
   const [availableTransitions, setAvailableTransitions] = useState<AvailableTransition[]>([]);
   const [configError, setConfigError] = useState<string | null>(null);
 
-  const loadConfigFile = async (path: string) => {
+  const loadConfigFile = useCallback(async (path: string) => {
     setLoadingConfig(true);
     setConfigError(null);
     try {
-      const res = await fetch("http://localhost:9876/configs/parse", {
+      const res = await runnerRequest(runnerTarget, "/configs/parse", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ path }),
@@ -27,12 +29,12 @@ export function useConfigLoader() {
     } finally {
       setLoadingConfig(false);
     }
-  };
+  }, [runnerTarget]);
 
   useEffect(() => {
     const checkRunnerConfig = async () => {
       try {
-        const res = await fetch("http://localhost:9876/status");
+        const res = await runnerRequest(runnerTarget, "/status");
         if (res.ok) {
           const status = await res.json();
           const path = status.data?.config_path ?? status.config_path;
@@ -42,11 +44,12 @@ export function useConfigLoader() {
           }
         }
       } catch {
-        // Runner not available
+        // Runner not reachable (or /status not carried by the relay): no
+        // config to preload — the user can still enter a path.
       }
     };
     checkRunnerConfig();
-  }, []);
+  }, [runnerTarget, loadConfigFile]);
 
   return {
     configPath,

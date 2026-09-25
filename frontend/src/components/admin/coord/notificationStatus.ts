@@ -25,6 +25,7 @@
  * severity/attention vocabulary here — the only row state is read/unread.
  */
 
+import { findingHref } from "@/app/(app)/admin/coord/findings/_lib/findingStatus";
 import { httpStatusOf } from "@/components/admin/coord/httpStatus";
 
 /** One row of coord's `GET /coord/notifications` response. */
@@ -152,8 +153,7 @@ export const NOTIFICATIONS_MARK_READ_OPTIONS: { noRetryStatuses: number[] } = {
  * nothing needs to ASK whether a string carries a UUID, because everything
  * bound for the default view goes through `scrubUuids` unconditionally — a
  * check is the "remember to do this" step the header says this module refuses
- * to have. `alertStatus.ts` keeps its own `containsUuid`, live and called, for
- * the surface that genuinely branches on the answer. If a caller here ever
+ * to have. If a caller here ever
  * needs the predicate back, note the trap the deleted instance existed to
  * dodge: a `/g` regex carries `lastIndex` across `.test()` calls, so
  * alternating calls on one instance return alternating answers.
@@ -179,15 +179,52 @@ export function scrubUuids(value: string): string {
 }
 
 /**
+ * The mechanical-agent-action kind (plan
+ * `2026-09-18-notifications-are-agent-actions-and-alerts-are-agent-work` D4):
+ * an agent did something significant, permanent or sensitive, and coord tells
+ * the operator after the fact. It was `agent_took_irreversible_action` until
+ * that plan widened it past irreversible actions.
+ *
+ * The OLD wire string can still reach this page: rows stored under it exist
+ * until the web data migration (`coordnotif_03`) rewrites them, and a coord
+ * build older than the rename still WRITES it. Coord's parser keeps the old
+ * string as an alias until that count reads 0, so this page accepts both too
+ * ({@link isSensitiveActionKind}) — the alias goes when coord's does.
+ */
+export const SENSITIVE_ACTION_KIND = "agent_took_sensitive_action";
+/** The pre-rename wire string. Delete with coord's alias. */
+export const LEGACY_SENSITIVE_ACTION_KIND = "agent_took_irreversible_action";
+
+/** True for the sensitive-action kind under either wire string. */
+export function isSensitiveActionKind(kind: string | null | undefined): boolean {
+  const k = (kind ?? "").trim();
+  return k === SENSITIVE_ACTION_KIND || k === LEGACY_SENSITIVE_ACTION_KIND;
+}
+
+/**
+ * Hand-written labels, for the few kinds whose mechanical reading is worse
+ * than a phrase. An OVERRIDE, never the vocabulary: every other kind still
+ * goes through `humanKind`'s mechanical path, so a kind this build has never
+ * heard of still gets a readable label — a hardcoded kind LIST is exactly what
+ * rotted on the old Alerts page, where four hardcoded values matched almost
+ * nothing live.
+ */
+const KIND_LABELS: Readonly<Record<string, string>> = {
+  [SENSITIVE_ACTION_KIND]: "Sensitive agent action",
+  [LEGACY_SENSITIVE_ACTION_KIND]: "Sensitive agent action",
+};
+
+/**
  * Machine kind → scannable label: `pr_merge_landed` → "Pr merge landed".
- * Deliberately mechanical rather than a hand-maintained lookup table: a
- * hardcoded kind list is exactly what rotted on the Alerts page, where four
- * hardcoded values matched almost nothing live.
+ * Mechanical apart from the short {@link KIND_LABELS} override list.
  *
  * Default-view string ⇒ scrubbed.
  */
 export function humanKind(kind: string | null | undefined): string {
-  const raw = scrubUuids((kind ?? "").trim());
+  const trimmed = (kind ?? "").trim();
+  const override = KIND_LABELS[trimmed];
+  if (override) return override;
+  const raw = scrubUuids(trimmed);
   const spaced = raw.replace(/[_-]+/g, " ").trim();
   // Nothing left worth reading — including the case where the kind was
   // ENTIRELY a UUID and scrubbed down to the elision. A badge reading "…"
@@ -336,10 +373,54 @@ export function linkedRefNotice(state: {
       ? `${base} It may also be excluded by the filters above — clear them.`
       : base;
   }
+  // The LAST arm, and the only one that gains the creation sentence.
+  //
+  // A `notification_ref` that reaches this page and matches nothing has one
+  // more explanation than "older" or "filtered", and it is the one this feed
+  // can never satisfy: the write may have CREATED its document, and coord
+  // emits no notice for a v1 (`notify_document_version_change`). The reasoning
+  // exists — as the finding its author filed — and since plan
+  // `2026-09-15-the-console-names-a-finding-it-cannot-open` there is a console
+  // reader for it, so the remedy is a route rather than an apology.
+  //
+  // It is said HERE and nowhere above on purpose. An EDIT's notice is a real
+  // event that is merely off the page, and telling that operator about
+  // creations would overshadow the one arm that is actually about his row.
   return (
     "The linked event is not on the page that is loaded. It may be older than " +
-    "these, or excluded by the filters above — clear them or load more."
+    "these, or excluded by the filters above — clear them or load more. " +
+    "It may also be a document that was CREATED rather than edited: a created " +
+    "document sends no notice, so its reasoning is in the finding its author " +
+    "filed — open it in the findings reader."
   );
+}
+
+/**
+ * The findings-reader link the `?ref=` banner offers — in the FALLBACK arm of
+ * {@link linkedRefNotice} and in no other, or `null`.
+ *
+ * The fallback sentence says "open it in the findings reader"; this is the
+ * link that sentence refers to, built from the ref the operator arrived with so
+ * he never edits a URL by hand. Its arm test mirrors the ranking above and is
+ * pinned against it by `notificationStatus.test.ts` over every input
+ * combination, so the link and the sentence cannot drift apart.
+ */
+export function linkedRefFindingHref(
+  state: Parameters<typeof linkedRefNotice>[0],
+  ref: string
+): string | null {
+  const trimmed = ref.trim();
+  if (!trimmed) return null;
+  if (
+    state.found ||
+    state.migrationPending ||
+    state.loading ||
+    state.error ||
+    state.pagingFailed
+  ) {
+    return null;
+  }
+  return findingHref(trimmed);
 }
 
 /**
@@ -361,6 +442,82 @@ export function notificationHeadline(n: CoordNotificationRow): string {
 /** Unread ⇔ the calling principal has no `read_at` for this row. */
 export function isUnread(n: CoordNotificationRow): boolean {
   return !n.read_at;
+}
+
+/**
+ * Unread rows first, read rows after, each group in the order coord served it
+ * (newest first). A stable partition, not a re-sort: within a group nothing
+ * moves. Returns the SAME array when it is already in that order, so a caller
+ * can memoise on it without re-rendering the list on every poll.
+ *
+ * Plan `2026-09-18-notifications-are-agent-actions-and-alerts-are-agent-work`
+ * Phase 8: the feed is the operator's record of what agents did, and the rows
+ * he has not seen are the ones it exists to put in front of him.
+ */
+export function orderUnreadFirst(
+  rows: CoordNotificationRow[]
+): CoordNotificationRow[] {
+  const unread: CoordNotificationRow[] = [];
+  const read: CoordNotificationRow[] = [];
+  for (const n of rows) (isUnread(n) ? unread : read).push(n);
+  const ordered = [...unread, ...read];
+  return ordered.every((n, i) => n === rows[i]) ? rows : ordered;
+}
+
+/** How an `agent_took_sensitive_action` row can be undone, per coord. */
+export interface SensitiveActionFacts {
+  /**
+   * Coord's `detail.reversible`: `"no"`, `"roll-forward"` or `"restore"`.
+   * `null` when the row states none — never defaulted to either end, because
+   * "we were not told" is neither "it is reversible" nor "it is not".
+   */
+  reversible: string | null;
+  /** The operator-facing reading of `reversible`. */
+  reversibleLabel: string | null;
+  /**
+   * Coord's `detail.undo`: the concrete revert handle — a git-write-ledger
+   * id, a prompt-document version, a route. EXPANDED PANEL ONLY: it may carry
+   * an id, and that id is the paste target, so it is never scrubbed and never
+   * rendered on the scan line.
+   */
+  undo: string | null;
+}
+
+const REVERSIBLE_LABELS: Readonly<Record<string, string>> = {
+  no: "not reversible",
+  "roll-forward": "roll-forward",
+  restore: "restore",
+};
+
+/**
+ * The reversibility and undo handle of a sensitive-action row, or `null` for
+ * every other kind. Pure — the row decides where each half renders.
+ */
+export function sensitiveActionFacts(
+  n: Pick<CoordNotificationRow, "kind" | "detail">
+): SensitiveActionFacts | null {
+  if (!isSensitiveActionKind(n.kind)) return null;
+  const detail = n.detail ?? {};
+  const rawReversible = detail["reversible"];
+  const reversible =
+    typeof rawReversible === "string" && rawReversible.trim() !== ""
+      ? rawReversible.trim()
+      : null;
+  const rawUndo = detail["undo"];
+  const undo =
+    typeof rawUndo === "string" && rawUndo.trim() !== ""
+      ? rawUndo.trim()
+      : null;
+  return {
+    reversible,
+    // A value coord adds later still renders, as itself (scrubbed — this
+    // label is on the scan line), rather than being dropped.
+    reversibleLabel:
+      reversible === null
+        ? null
+        : (REVERSIBLE_LABELS[reversible] ?? scrubUuids(reversible)),
+    undo,
+  };
 }
 
 /**

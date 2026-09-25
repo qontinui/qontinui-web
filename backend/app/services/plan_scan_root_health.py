@@ -77,16 +77,36 @@ first three from the reader's side, numbered there 3, 3a and 3c):
    whose purpose is the corpus, not the drift report, so a scan-root read
    failure there is served as :func:`scan_roots_read_failed` rather than
    failing the page — and never as an empty, agreeable list.
+8. **Coverage is a SET DIFFERENCE and emits no ratio** (Phase 3 of
+   ``2026-09-15-captured-vs-authored-coverage-is-a-set-difference``). A
+   percentage is one number over two denominators that answer different
+   questions — what EXISTS at the ref, and what the body sync could POSSIBLY
+   have seen in the tree it scans — and dividing counts taken off a single ref
+   produced an impossible 101.8% for a real corpus, because rows written under
+   another ``source_repo`` landed in the numerator. So this module emits the
+   stems' differences, names those rows as ``out_of_scope_artifact_count``, and
+   attributes the gap a lagging checkout explains
+   (``authored_not_captured_but_invisible``). No ratio field exists anywhere in
+   the response; a presentation layer may compute one only beside both
+   denominators. A key with no usable census reads ``unknown`` with a detail —
+   never a zero, never an omitted key — and coverage is computed on the
+   dedicated route ONLY, never on the ``corpus_health`` rendering (D2), which
+   states that in ``coverage_detail`` rather than serving a silent empty list.
 """
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from datetime import datetime
+from typing import Any
 from uuid import UUID
 
+from app.crud.work_artifact import CapturedPlanCorpus
 from app.models.plan_scan_root import PlanScanRootObservation
 from app.schemas.plan_library_scan_roots import (
+    COVERAGE_MISSING_SAMPLE_MAX,
+    PlanCensusSide,
+    PlanCoverage,
     ScanRootListResponse,
     ScanRootRow,
     ScanRootSourceRollup,
@@ -159,6 +179,109 @@ def no_comparable_reading_detail(device_count: int) -> str:
     )
 
 
+#: ``coverage_detail`` where the coverage block is not computed at all — the
+#: ``corpus_health.scan_roots`` rendering. Design decision D2 of
+#: ``2026-09-15-captured-vs-authored-coverage-is-a-set-difference``: that block
+#: rides EVERY ``GET /plan-library`` page, so the anti-join is charged to the
+#: one route whose whole answer the readings are. The empty list is a surface
+#: property, not a corpus reading.
+COVERAGE_NOT_COMPUTED_DETAIL = (
+    "not_computed_here: this rendering of the scan-root readings does not "
+    "compute plan coverage — it rides every plan-library list page and "
+    "'/candidates', and an anti-join over every authored stem would be charged "
+    "to each of them. Read GET /plan-library/scan-roots for the coverage set "
+    "difference. The empty list is not 'nothing is missing'."
+)
+
+#: ``coverage_detail`` when the CALLER of ``GET /plan-library/scan-roots``
+#: itself opted out with ``?coverage=false``. Distinct from
+#: :data:`COVERAGE_NOT_COMPUTED_DETAIL`, whose text names this very route as
+#: where to read coverage instead — reusing it here, on this route, under an
+#: explicit opt-out would be self-referential and wrong. The follow-up to
+#: ``2026-09-15-captured-vs-authored-coverage-is-a-set-difference`` that added
+#: the parameter: ``useScanRoots`` does not render a single coverage field, so
+#: mounting the console page paid the census-load and the corpus anti-join
+#: TWICE per mount before this existed.
+COVERAGE_NOT_REQUESTED_DETAIL = (
+    "not_requested: this read passed coverage=false, which skips the stem "
+    "census load and the corpus anti-join for a caller that only needs the "
+    "per-device readings and roll-up. Pass coverage=true (the default) or "
+    "omit the parameter to get the coverage set difference. The empty list "
+    "is not 'nothing is missing'."
+)
+
+#: ``coverage_detail`` when the readings could not be read at all.
+COVERAGE_READ_FAILED_DETAIL = (
+    "read_failed: the readings the coverage set difference is taken from could "
+    "not be read, so how much of what exists the corpus holds is not "
+    "established. The empty list is not 'nothing is missing'."
+)
+
+#: ``coverage_detail`` when no device has reported at all. The authored side
+#: comes from a device's enumeration, so with no device there is no
+#: denominator — which is UNKNOWN, not full coverage and not an empty corpus.
+COVERAGE_NO_OBSERVATION_DETAIL = (
+    "no_observation: no device has reported a plan-scan-source reading for "
+    "this organization, so nothing enumerated the stems that EXIST and the "
+    "corpus's rows have nothing to be differenced against. The empty list is "
+    "not 'nothing is missing'."
+)
+
+#: A coverage entry's ``detail`` for the ``null`` ``source_repo`` group. A
+#: corpus row with no ``source_repo`` is out of scope for every named key by
+#: definition (it is counted in each key's ``out_of_scope_artifact_count``), so
+#: there is nothing a null key's census could be differenced against.
+SOURCE_REPO_UNNAMED_DETAIL = (
+    "source_repo_unnamed: these readings name no scan source, so their stems "
+    "cannot be joined to the corpus rows they would be compared with — a row "
+    "with no 'source_repo' is out of scope for every key. How much of what "
+    "exists the corpus holds is not established for them, which is not 0 and "
+    "not 100%."
+)
+
+
+def no_census_detail(device_count: int) -> str:
+    """A coverage entry's ``detail`` when no device here carried a usable census.
+
+    Deliberately in the shape of :func:`no_comparable_reading_detail`: the same
+    sentence an operator already knows how to read, ending in the same refusal
+    to let an absence render as a zero.
+    """
+    return (
+        f"no_census: none of the {device_count} device(s) reporting this scan "
+        "source has a fresh, applied reading carrying BOTH stem listings with "
+        "their stems (a build predating the census, an idle or failed scan "
+        "cycle, or a withheld set whose digest no longer matches all send "
+        "none), so how much of what exists the corpus holds is not "
+        "established — not 0 and not 100%"
+    )
+
+
+def census_truncated_detail(sources: Sequence[str]) -> str:
+    """A coverage entry's ``detail`` when a chosen census holds only a prefix.
+
+    A truncated census is a floor in the sense ``counts_are_floors`` already
+    means — membership proves existence, absence proves nothing — so no second
+    word is minted for it. What it costs here is the DIFFERENCE, not just the
+    count: stems beyond the prefix would read as captured-but-not-authored,
+    which is precisely the shape that produced the impossible 101.8%.
+
+    Two causes, one verdict, and the sentence names both because the entry
+    cannot tell them apart and neither is establishable: the device said it
+    truncated, or its ``count`` disagrees with the stems the server actually
+    holds for it (:func:`_census_side`) — the withheld-set arm, where the
+    write door validated the digest and not the count.
+    """
+    return (
+        f"census_truncated: the chosen device's {', '.join(sources)} stem "
+        "listing holds only a sorted PREFIX of what it counted — it said so, "
+        "or its count disagrees with the stems this server holds — so absence "
+        "from it proves nothing and a set difference taken over it would count "
+        "stems beyond the prefix as captured-but-not-authored. How much of "
+        "what exists the corpus holds is not established — not 0 and not 100%"
+    )
+
+
 def scan_roots_read_failed(error: BaseException) -> ScanRootListResponse:
     """The block when the readings could not be READ — UNKNOWN, with no rows.
 
@@ -177,6 +300,8 @@ def scan_roots_read_failed(error: BaseException) -> ScanRootListResponse:
         fresh_count=0,
         rows=[],
         by_source_repo=[],
+        coverage=[],
+        coverage_detail=COVERAGE_READ_FAILED_DETAIL,
     )
 
 
@@ -392,15 +517,395 @@ def rollup_by_source_repo(rows: Sequence[ScanRootRow]) -> list[ScanRootSourceRol
     return [rollup_source(key, groups[key]) for key in ordered]
 
 
+# ---------------------------------------------------------------------------
+# Coverage — the set difference (Phase 3 of
+# ``2026-09-15-captured-vs-authored-coverage-is-a-set-difference``)
+# ---------------------------------------------------------------------------
+#
+# The corpus has always been able to count a numerator and never a
+# denominator, so "how much of what exists did we capture?" was answered by
+# dividing one count by another taken off a single git ref — and for one corpus
+# those answers read 76.5% and 101.8%. The second is impossible, and its cause
+# is the whole design here: corpus rows written under a DIFFERENT
+# ``source_repo`` were counted against one key's authored set. So:
+#
+# * the answer is a SET DIFFERENCE over stems, not a quotient of counts;
+# * there are TWO denominators, because "what exists" and "what the body sync
+#   could possibly have seen" are different questions, and a plan missing
+#   because the scanned checkout is behind is checkout freshness rather than a
+#   capture defect (``authored_not_captured_but_invisible`` attributes it);
+# * rows under another key are NAMED (``out_of_scope_artifact_count``) rather
+#   than swept into a numerator, which is what makes a >100% reading
+#   unconstructible from what is served;
+# * and NO RATIO IS EMITTED anywhere. One number over two denominators cannot
+#   be read correctly. A presentation layer may compute one beside both.
+
+
+def _census_with_stems(observation: PlanScanRootObservation, source: str) -> Any:
+    """The stored census for ``source``, only when it carries a WHOLE shape.
+
+    ``None`` for every UNKNOWN, which a caller must not tell apart from each
+    other and must never read as an empty side: the column is SQL NULL (a
+    build predating the census, an idle or failed cycle, or a later report that
+    carried none), or the stored census withheld its stems and the upsert could
+    not carry a set forward because the digest no longer matched. The stems are
+    JSON ``null`` in that last case — a VALUE, not SQL NULL — which is why this
+    tests the list rather than the column.
+
+    ``count``, ``truncated`` and ``digest`` are checked here as well, and for
+    the same reason: :func:`_census_side` reads all four with ``[]`` and would
+    otherwise raise on a stored dict missing one — a ``KeyError`` is a 500 on
+    the route, where every sibling absence in this module degrades to an
+    ``unknown`` entry. A corrupt or partial census establishes nothing, which
+    is precisely what ``unknown`` says.
+    """
+    census = observation.ref_census if source == "ref" else observation.work_tree_census
+    if not isinstance(census, dict):
+        return None
+    slugs = census.get("slugs")
+    if not isinstance(slugs, list):
+        return None
+    # The ELEMENTS too, and for the same reason as the three scalars below.
+    # ``coverage_for_source`` takes ``frozenset(census["slugs"])`` and the
+    # response model declares ``list[str]``, so a non-string stem is a 500 on
+    # the route rather than an ``unknown`` entry: ``[{"a": 1}]`` raises
+    # ``TypeError: unhashable type: 'dict'`` at the frozenset, and ``[1]`` /
+    # ``[None]`` raise a pydantic ``ValidationError`` on ``missing_sample``.
+    # The write door validates ``list[SlugCensusStem]``, which is equally true
+    # of ``count``/``truncated``/``digest`` — so leaving this one unchecked
+    # would make the threat model inconsistent rather than the risk smaller.
+    if not all(isinstance(stem, str) for stem in slugs):
+        return None
+    # ``bool`` is an ``int`` subclass, so ``count`` is tested against it
+    # explicitly: a stored ``true`` is corrupt, not the number 1.
+    count = census.get("count")
+    if not isinstance(count, int) or isinstance(count, bool):
+        return None
+    if not isinstance(census.get("truncated"), bool):
+        return None
+    if not isinstance(census.get("digest"), str):
+        return None
+    return census
+
+
+def _census_side(census: Any, source: str, row: ScanRootRow) -> PlanCensusSide:
+    """One stored census, rendered as the side of the difference it is.
+
+    ``truncated`` is DERIVED rather than copied. The device's own flag is one
+    of the two things the write door does not verify on a census that withheld
+    its stems: :meth:`PlanSlugCensus._census_is_coherent` returns early when
+    ``slugs is None``, so ``count`` and ``truncated`` are unvalidated on that
+    arm, and the upsert then stores them beside the CARRIED-FORWARD stems. A
+    device could therefore re-assert a 2-stem set by digest while claiming
+    ``count: 9999, truncated: false`` and have the set difference taken over
+    the 2 stems under a denominator of 9999 — stems that ARE authored counted
+    as ``captured_not_authored``, which is the exact shape that produced the
+    impossible 101.8%.
+
+    So the floor is taken from the SET, which this server verified, rather
+    than from the flag, which it did not: a side whose ``count`` disagrees with
+    the stems it actually holds is truncated whatever the flag says, and the
+    entry reads ``unknown``. That keeps the documented invariant — ``count``
+    exceeds ``listed_count`` exactly when ``truncated`` — true on the wire
+    instead of merely asserted, and keeps an unverifiable side an UNKNOWN
+    rather than a number.
+    """
+    slugs: list[str] = census["slugs"]
+    listed_count = len(slugs)
+    count = int(census["count"])
+    return PlanCensusSide(
+        source=source,  # type: ignore[arg-type]  # the two stored sources
+        ref_sha=census.get("ref_sha"),
+        # From the READING, not the census: the census object carries the sha
+        # its stems were listed at, and the report carries how old that fetch
+        # was.
+        ref_age_secs=row.ref_age_secs,
+        count=count,
+        listed_count=listed_count,
+        truncated=bool(census["truncated"]) or count != listed_count,
+        digest=census["digest"],
+    )
+
+
+def _census_sort_key(
+    row: ScanRootRow,
+) -> tuple[int, int, int, str]:
+    """Order devices by FRESHEST REF first, deterministically.
+
+    ``ref_age_secs`` is the age of the fetch the census's stems were listed
+    against, so the device with the smallest one enumerated the most recent
+    view of what exists. An unknown age sorts LAST rather than as 0 — the same
+    absence-is-not-zero rule the rest of this module applies. Ties fall to the
+    least-stale reading and then to the device id, so two reads of the same
+    rows pick the same device and serialize identically.
+    """
+    unknown_age = row.ref_age_secs is None
+    return (
+        int(unknown_age),
+        row.ref_age_secs if row.ref_age_secs is not None else 0,
+        row.observation_age_secs,
+        str(row.device_id),
+    )
+
+
+def _unknown_coverage(
+    *,
+    source_repo: str | None,
+    detail: str,
+    rows: Sequence[ScanRootRow],
+    rollup: ScanRootSourceRollup,
+    census_device_id: UUID | None = None,
+    other_census_device_ids: Sequence[UUID] = (),
+    row: ScanRootRow | None = None,
+) -> PlanCoverage:
+    """A coverage entry that establishes nothing — every number ``null``.
+
+    Never a zero and never an omitted key: "we cannot see the authored side"
+    and "the corpus holds none of it" are different answers, and only the
+    second is actionable. The roll-up's ``min_behind`` is carried anyway
+    because it is independent of the census, and so is the chosen device's own
+    qualification when a device WAS chosen and then disqualified (a truncated
+    census), so a reader can see which device the verdict is about.
+    """
+    return PlanCoverage(
+        source_repo=source_repo,
+        state="unknown",
+        detail=detail,
+        device_count=len(rows),
+        census_device_id=census_device_id,
+        other_census_device_ids=list(other_census_device_ids),
+        authored_at_ref=None,
+        visible_to_scanner=None,
+        captured=None,
+        both=None,
+        authored_not_captured=None,
+        captured_not_authored=None,
+        authored_not_captured_but_invisible=None,
+        out_of_scope_artifact_count=None,
+        missing_sample=[],
+        sample_truncated=False,
+        min_behind=rollup.min_behind,
+        min_behind_is_floor=rollup.min_behind_is_floor,
+        observation_age_secs=row.observation_age_secs if row else None,
+        observation_fresh=row.observation_fresh if row else None,
+        counts_are_floors=row.counts_are_floors if row else None,
+        ref_sha=row.ref_sha if row else None,
+    )
+
+
+def coverage_for_source(
+    source_repo: str | None,
+    rows: Sequence[ScanRootRow],
+    *,
+    rollup: ScanRootSourceRollup,
+    observations: Mapping[UUID, PlanScanRootObservation],
+    captured: CapturedPlanCorpus,
+) -> PlanCoverage:
+    """What the corpus holds for ONE scan source, against what exists there.
+
+    ``rows`` are the rendered readings that name ``source_repo``, ``rollup`` is
+    that key's own fold (whose ``min_behind`` is carried onto the entry so a
+    reader never has to join two blocks), ``observations`` maps device id to
+    the stored row the stems live on, and ``captured`` is the corpus side.
+
+    Three things make an entry ``unknown`` rather than a number, in this order:
+
+    1. the key is unnamed — a corpus row with no ``source_repo`` is out of
+       scope for every key, so there is nothing to difference against;
+    2. no device here has a fresh, applied reading carrying BOTH stem listings
+       with their stems. Both sides are required because the second one is what
+       ATTRIBUTES a gap: without it ``authored_not_captured_but_invisible``
+       would have to be null beside a non-null ``authored_not_captured``, and
+       a reader would take checkout freshness for a capture defect;
+    3. a chosen census is truncated, so absence from it proves nothing.
+
+    ⚠️ **This function READS the two deferred census columns.** Its caller must
+    have loaded them (``crud.plan_scan_root.list_observations_with_censuses``);
+    on the default deferred read a stem access raises ``MissingGreenlet`` on
+    the ``AsyncSession``, not an extra SELECT. That is enforced by never
+    calling this from the ``corpus_health`` path — see D2 on
+    :attr:`ScanRootListResponse.coverage`.
+    """
+    if source_repo is None:
+        return _unknown_coverage(
+            source_repo=None,
+            detail=SOURCE_REPO_UNNAMED_DETAIL,
+            rows=rows,
+            rollup=rollup,
+        )
+
+    usable: list[ScanRootRow] = []
+    for row in rows:
+        if not (row.observation_fresh and row.last_report_applied):
+            continue
+        observation = observations.get(row.device_id)
+        if observation is None:  # pragma: no cover — rows are rendered from these
+            continue
+        if _census_with_stems(observation, "ref") is None:
+            continue
+        if _census_with_stems(observation, "work_tree") is None:
+            continue
+        usable.append(row)
+
+    if not usable:
+        return _unknown_coverage(
+            source_repo=source_repo,
+            detail=no_census_detail(len(rows)),
+            rows=rows,
+            rollup=rollup,
+        )
+
+    chosen, *others = sorted(usable, key=_census_sort_key)
+    other_ids = _device_ids(others)
+    observation = observations[chosen.device_id]
+    ref_census = _census_with_stems(observation, "ref")
+    tree_census = _census_with_stems(observation, "work_tree")
+    authored_side = _census_side(ref_census, "ref", chosen)
+    visible_side = _census_side(tree_census, "work_tree", chosen)
+
+    truncated_sources = [
+        side.source for side in (authored_side, visible_side) if side.truncated
+    ]
+    if truncated_sources:
+        return _unknown_coverage(
+            source_repo=source_repo,
+            detail=census_truncated_detail(truncated_sources),
+            rows=rows,
+            rollup=rollup,
+            census_device_id=chosen.device_id,
+            other_census_device_ids=other_ids,
+            row=chosen,
+        )
+
+    authored = frozenset(ref_census["slugs"])
+    visible = frozenset(tree_census["slugs"])
+    # ``.get`` rather than ``[]``: the caller asks for every key it renders, and
+    # an empty set for a key the corpus holds nothing under is the honest
+    # answer — the denominator still exists, so this 0 is measured, not assumed.
+    captured_slugs = captured.slugs_by_source_repo.get(source_repo, frozenset())
+
+    missing = authored - captured_slugs
+    sample = sorted(missing)
+
+    return PlanCoverage(
+        source_repo=source_repo,
+        state="measured",
+        detail=None,
+        device_count=len(rows),
+        census_device_id=chosen.device_id,
+        other_census_device_ids=other_ids,
+        authored_at_ref=authored_side,
+        visible_to_scanner=visible_side,
+        captured=len(captured_slugs),
+        both=len(captured_slugs & authored),
+        authored_not_captured=len(missing),
+        captured_not_authored=len(captured_slugs - authored),
+        # The attribution: missing AND not even in the tree the sync scans.
+        authored_not_captured_but_invisible=len(missing - visible),
+        # Every plan row in the organization that is NOT under this key —
+        # another key's, or none at all. This is the term a naive numerator
+        # swallowed to read 101.8%; naming it is what keeps the served numbers
+        # from being able to express a >100% coverage at all.
+        out_of_scope_artifact_count=captured.plan_row_count - len(captured_slugs),
+        missing_sample=sample[:COVERAGE_MISSING_SAMPLE_MAX],
+        sample_truncated=len(sample) > COVERAGE_MISSING_SAMPLE_MAX,
+        min_behind=rollup.min_behind,
+        min_behind_is_floor=rollup.min_behind_is_floor,
+        observation_age_secs=chosen.observation_age_secs,
+        observation_fresh=chosen.observation_fresh,
+        counts_are_floors=chosen.counts_are_floors,
+        ref_sha=chosen.ref_sha,
+    )
+
+
+def coverage_by_source_repo(
+    rows: Sequence[ScanRootRow],
+    *,
+    rollups: Sequence[ScanRootSourceRollup],
+    observations: Mapping[UUID, PlanScanRootObservation],
+    captured: CapturedPlanCorpus,
+) -> list[PlanCoverage]:
+    """One coverage entry per roll-up, in the roll-up's own order.
+
+    Driven off ``rollups`` rather than re-grouping ``rows`` so the two blocks
+    cannot disagree about which keys exist, and so EVERY key a device reports
+    gets an entry — including the ones that establish nothing. A key omitted
+    here would read as "no such scan source"; a zeroed one would read as "the
+    corpus holds none of it". Neither is what an absent census means.
+    """
+    groups: dict[str | None, list[ScanRootRow]] = {}
+    for row in rows:
+        groups.setdefault(row.source_repo, []).append(row)
+    return [
+        coverage_for_source(
+            rollup.source_repo,
+            groups.get(rollup.source_repo, []),
+            rollup=rollup,
+            observations=observations,
+            captured=captured,
+        )
+        for rollup in rollups
+    ]
+
+
+def coverage_source_repos(
+    observations: Sequence[PlanScanRootObservation],
+) -> list[str]:
+    """The NAMED scan sources a coverage read needs a corpus side for.
+
+    Sorted and deduplicated, so the crud query's ``IN`` list is stable. The
+    ``null`` group is excluded: it can never be joined to a corpus row, and
+    asking for it would widen the stem query for a key that always reads
+    ``unknown``.
+    """
+    return sorted(
+        {obs.source_repo for obs in observations if obs.source_repo is not None}
+    )
+
+
 def scan_roots_health(
-    observations: Sequence[PlanScanRootObservation], *, now: datetime
+    observations: Sequence[PlanScanRootObservation],
+    *,
+    now: datetime,
+    captured: CapturedPlanCorpus | None = None,
+    coverage_requested: bool = True,
 ) -> ScanRootListResponse:
     """Every device's reading, judged, plus the per-source roll-up.
 
     The one rendering behind ``GET /plan-library/scan-roots`` and
     ``corpus_health.scan_roots``. No rows answers ``state: "unknown"`` with
     :data:`NO_OBSERVATION_DETAIL`, never an empty "all current".
+
+    ``captured`` is the corpus side of the coverage set difference, and it is
+    OPTIONAL because only one of the two renderings computes coverage. Omitted
+    — the ``corpus_health`` path, which rides every ``GET /plan-library`` page
+    — ``coverage`` is empty and ``coverage_detail`` SAYS SO
+    (:data:`COVERAGE_NOT_COMPUTED_DETAIL`); an unexplained empty coverage block
+    would be exactly the false zero this plan exists to delete. Design decision
+    D2 on :attr:`ScanRootListResponse.coverage` has the reasoning.
+
+    ``coverage_requested`` distinguishes WHY ``captured`` is ``None``, purely
+    for which ``coverage_detail`` string is chosen: the ``corpus_health`` path
+    never asks (default ``True`` is a misnomer there — it never sees this
+    branch outside the no-rows case, where it still means "not this
+    rendering's job") and reads :data:`COVERAGE_NOT_COMPUTED_DETAIL`; the
+    dedicated ``GET /plan-library/scan-roots`` route passes ``False`` when the
+    CALLER itself opted out with ``?coverage=false``, and reads
+    :data:`COVERAGE_NOT_REQUESTED_DETAIL` instead — reusing the other string
+    there would tell the caller to read the very route it just asked to skip.
+
+    ⚠️ Passing ``captured`` makes this function READ the two deferred census
+    columns, so the observations must come from
+    ``crud.plan_scan_root.list_observations_with_censuses``. On the deferred
+    read a stem access raises ``MissingGreenlet``, which in the
+    ``corpus_health`` path would run AFTER its savepoint has exited and take
+    down every list page rather than degrading.
     """
+    not_computed_detail = (
+        COVERAGE_NOT_COMPUTED_DETAIL
+        if coverage_requested
+        else COVERAGE_NOT_REQUESTED_DETAIL
+    )
     rows = [render_row(obs, now=now) for obs in observations]
     if not rows:
         return ScanRootListResponse(
@@ -411,7 +916,24 @@ def scan_roots_health(
             fresh_count=0,
             rows=[],
             by_source_repo=[],
+            coverage=[],
+            coverage_detail=(
+                COVERAGE_NO_OBSERVATION_DETAIL
+                if captured is not None
+                else not_computed_detail
+            ),
         )
+    rollups = rollup_by_source_repo(rows)
+    coverage = (
+        coverage_by_source_repo(
+            rows,
+            rollups=rollups,
+            observations={obs.device_id: obs for obs in observations},
+            captured=captured,
+        )
+        if captured is not None
+        else []
+    )
     return ScanRootListResponse(
         state="reported",
         detail=None,
@@ -419,5 +941,10 @@ def scan_roots_health(
         count=len(rows),
         fresh_count=sum(1 for r in rows if r.observation_fresh),
         rows=rows,
-        by_source_repo=rollup_by_source_repo(rows),
+        by_source_repo=rollups,
+        coverage=coverage,
+        # With rows, the roll-up is non-empty and so is the coverage list
+        # whenever it was computed at all — so an empty one here means only
+        # that this rendering does not compute it, and says so.
+        coverage_detail=None if coverage else not_computed_detail,
     )

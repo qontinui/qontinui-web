@@ -5,7 +5,7 @@ import { Settings, Tags } from "lucide-react";
 import { EditorHeader, EditorSection, ExecutionPanel, MonacoField, type ExecutionResult } from "@/components/builders/editors";
 import { TagInput } from "@/components/builders/TagInput";
 import { AiGeneratorPanel } from "@/components/builders/AiGeneratorPanel";
-import { runnerApi } from "@/lib/runner/runner-api-object";
+import { useDispatchRunnerApi } from "@/lib/runner/runner-api-object";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -34,6 +34,9 @@ interface ShellCommandEditorProps {
 }
 
 export function ShellCommandEditor({ item, form, setForm, isDirty, isNew, isSaving, onSave, onDelete }: ShellCommandEditorProps) {
+  // Calls that START work go to the new-work target (explicit choice or
+  // coord's resolved pick); a refused call carries coord's outcome.
+  const { api: workApi, refusal: workRefusal } = useDispatchRunnerApi();
   const [aiGenerating, setAiGenerating] = useState(false);
   const [aiError, setAiError] = useState<string | null>(null);
   const [templateApplied, setTemplateApplied] = useState(false);
@@ -57,7 +60,7 @@ export function ShellCommandEditor({ item, form, setForm, isDirty, isNew, isSavi
     setAiGenerating(true);
     setAiError(null);
     try {
-      const result = await runnerApi.aiGenerateShellCommand(prompt);
+      const result = await workApi.aiGenerateShellCommand(prompt);
       if (result && typeof result === "object") {
         const generated = result as Record<string, unknown>;
         setForm((prev) => ({
@@ -207,7 +210,7 @@ export function ShellCommandEditor({ item, form, setForm, isDirty, isNew, isSavi
           <ExecutionPanel
             onRun={async () => {
               try {
-                const res = await runnerApi.runShellCommand(item.id);
+                const res = await workApi.runShellCommand(item.id);
                 return {
                   success: (res.success as boolean) ?? (res.exit_code === 0),
                   stdout: (res.stdout as string) || "",
@@ -224,11 +227,13 @@ export function ShellCommandEditor({ item, form, setForm, isDirty, isNew, isSavi
               }
             }}
             runLabel="Run Command"
+            refusal={workRefusal}
             disabled={isNew}
           />
         )}
 
         <AiGeneratorPanel
+          refusal={workRefusal}
           title="Generate with AI"
           accentColor="amber"
           templates={[

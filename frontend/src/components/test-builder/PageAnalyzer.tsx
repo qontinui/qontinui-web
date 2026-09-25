@@ -61,6 +61,7 @@ export function PageAnalyzer({
     selectedMonitor,
     setSelectedMonitor,
     runVisionAnalysis,
+    visionRefusal,
     savedRequests,
     selectedRequestId,
     setSelectedRequestId,
@@ -143,6 +144,7 @@ export function PageAnalyzer({
             selectedMonitor={selectedMonitor}
             setSelectedMonitor={setSelectedMonitor}
             isAnalyzing={isAnalyzing}
+            refusal={visionRefusal}
             onRun={runVisionAnalysis}
           />
         </TabsContent>

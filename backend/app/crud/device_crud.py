@@ -9,6 +9,7 @@ direct read+write access to the columns it owns (WS lifecycle, derived
 status, heartbeat).
 """
 
+from datetime import datetime
 from uuid import UUID
 
 from fastapi import HTTPException, status
@@ -21,11 +22,15 @@ from app.models.device_connection import DeviceConnection
 
 __all__ = [
     "register_device",
+    "ensure_device_for_secondary",
     "heartbeat_device",
     "list_devices",
     "get_device",
     "delete_device",
     "claim_ws_session",
+    "claim_ws_session_if_unheld",
+    "take_ws_session",
+    "pointer_names",
     "clear_ws_session_if_current",
 ]
 
@@ -121,6 +126,64 @@ async def register_device(
     if device_id is not None:
         record_kwargs["device_id"] = device_id
     record = Device(**record_kwargs)
+    db.add(record)
+    await db.commit()
+    await db.refresh(record)
+    return record
+
+
+async def ensure_device_for_secondary(
+    db: AsyncSession,
+    *,
+    device_id: UUID,
+    user_id: UUID,
+    name: str,
+    hostname: str,
+    capabilities: list[str],
+    os: str | None = None,
+    os_version: str | None = None,
+) -> Device:
+    """Make sure the device row exists for a SECONDARY runner instance's socket.
+
+    Every runner instance on a machine shares the machine's ``device_id``, so
+    the ``coord.devices`` row is the PRIMARY's: its ``port``, ``name``,
+    ``last_heartbeat``, ``derived_status`` and relay pointer describe the
+    primary instance. A secondary must not rewrite any of them — that
+    last-writer-wins takeover is what plan
+    ``2026-09-20-runner-selector-drives-a-transport-not-a-target`` Phase 6
+    removes — so an EXISTING row is returned untouched.
+
+    Only when no row exists yet (a secondary connected before the primary ever
+    did) is one created, because ``coord.device_connections.device_id`` needs
+    a parent. It is created with ``port = NULL`` and ``derived_status =
+    'offline'``: no primary is connected, and the primary's own registration
+    fills both when it arrives.
+    """
+    existing = await get_device(db, device_id)
+    if existing is not None:
+        return existing
+
+    record = Device(
+        device_id=device_id,
+        user_id=user_id,
+        name=name,
+        hostname=hostname,
+        port=None,
+        capabilities=capabilities,
+        restate_enabled=False,
+        restate_healthy=False,
+        # ``state`` is coord's MACHINE liveness (CHECK: healthy | degraded |
+        # partitioned | abandoned) and a verified socket from the machine is
+        # proof of it — the same value ``register_device`` creates with.
+        # ``derived_status`` is the RUNNER status the wire reports, and no
+        # primary runner is connected.
+        state="healthy",
+        derived_status="offline",
+        capability_user_paired=True,
+        capability_web_controlled=True,
+        os=os,
+        os_version=os_version,
+    )
     db.add(record)
     await db.commit()
     await db.refresh(record)
@@ -247,6 +310,112 @@ async def claim_ws_session(
     )
     await db.commit()
     return bool(result.rowcount)  # type: ignore[attr-defined]
+
+
+async def claim_ws_session_if_unheld(
+    db: AsyncSession,
+    *,
+    device_id: UUID,
+    connection_pk: int,
+) -> bool:
+    """Take the device's relay pointer for a SECONDARY socket — only if nobody holds it.
+
+    A lone secondary must not leave the device relay-less, but it must never
+    displace a live holder (normally the primary). So the claim succeeds only
+    when ``ws_session_id`` is NULL or names a connection that is closed or
+    gone; unlike :func:`claim_ws_session` there is no "an older id loses"
+    clause, because a secondary is usually NEWER than the primary it must not
+    displace. It also writes ``port`` — the relay owner's port is the device's
+    reachable port — from the connection row, which recorded the instance's
+    own port, and takes ``ws_connected_at`` from that row as the heal does.
+
+    One transaction: the device row is locked (``SELECT … FOR UPDATE``), the
+    predicate evaluated against the pointed-at connection, and the UPDATE
+    issued under that lock, so a primary's concurrent registration either
+    commits first (and the predicate sees its live pointer) or waits for this
+    commit (and then overwrites the claim, as a primary always may).
+    Returns ``True`` if claimed.
+    """
+    device = (
+        await db.execute(
+            select(Device).where(Device.device_id == device_id).with_for_update()
+        )
+    ).scalar_one_or_none()
+    if device is None or device.ws_session_id == connection_pk:
+        await db.rollback()
+        return False
+    if device.ws_session_id is not None:
+        holder_open = (
+            await db.execute(
+                select(DeviceConnection.id).where(
+                    DeviceConnection.id == device.ws_session_id,
+                    DeviceConnection.disconnected_at.is_(None),
+                )
+            )
+        ).scalar_one_or_none()
+        if holder_open is not None:
+            await db.rollback()
+            return False
+    own = (
+        await db.execute(
+            select(DeviceConnection.connected_at, DeviceConnection.port).where(
+                DeviceConnection.id == connection_pk,
+                DeviceConnection.disconnected_at.is_(None),
+            )
+        )
+    ).one_or_none()
+    if own is None:
+        await db.rollback()
+        return False
+    await db.execute(
+        update(Device)
+        .where(Device.device_id == device_id)
+        .values(ws_session_id=connection_pk, ws_connected_at=own[0], port=own[1])
+        .execution_options(synchronize_session=False)
+    )
+    await db.commit()
+    return True
+
+
+async def take_ws_session(
+    db: AsyncSession,
+    *,
+    device_id: UUID,
+    connection_pk: int,
+    connected_at: datetime,
+    port: int,
+) -> None:
+    """Point the relay at a PRIMARY's connection — pointer and port in one write.
+
+    A primary always takes the pointer. It writes ``port`` in the same
+    statement because the pointer owner's port IS the device's port, and a
+    secondary claim (which writes both) could otherwise commit between a
+    port write and a pointer write and leave them naming different sockets.
+    An explicit UPDATE, not ORM attribute assignment: the ORM would skip an
+    unchanged-looking ``port`` and the pair would no longer be written together.
+    """
+    await db.execute(
+        update(Device)
+        .where(Device.device_id == device_id)
+        .values(ws_session_id=connection_pk, ws_connected_at=connected_at, port=port)
+        .execution_options(synchronize_session=False)
+    )
+    await db.commit()
+
+
+async def pointer_names(
+    db: AsyncSession,
+    *,
+    device_id: UUID,
+    connection_pk: int,
+) -> bool:
+    """True iff the device's ``ws_session_id`` currently names ``connection_pk``."""
+    value = (
+        await db.execute(
+            select(Device.ws_session_id).where(Device.device_id == device_id)
+        )
+    ).scalar_one_or_none()
+    return bool(value == connection_pk)
 
 
 async def clear_ws_session_if_current(

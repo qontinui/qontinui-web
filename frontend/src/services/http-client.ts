@@ -45,6 +45,23 @@ const ACTIVE_TENANT_URL_PREFIXES = [
   // so a multi-tenant operator edits agent prefs in the tenant they've
   // switched to (membership-validated coord-side), matching /operations/*.
   "/api/v1/agent-registry",
+  // Project Overview — the ONE thing that scopes it. Every `overview.*` row
+  // is keyed on the active coord tenant, which the backend resolves from this
+  // header alone (`get_overview_tenant_id` /
+  // `require_coord_tenant_admin_target`). Without the header those
+  // dependencies fall through to the operator's HOME tenant, so a
+  // multi-tenant operator who switched project would READ their home
+  // project's estimate under another project's name and WRITE their edits
+  // into it. Plan `2026-09-19-project-overview-for-business-leaders`,
+  // design decision 2.
+  "/api/v1/overview/",
+  // Runner targeting (plan 2026-09-20-runner-selector-drives-a-transport-not-
+  // a-target, Phase 3). Each forwards to coord's device resolver AS the
+  // caller, and coord scopes the candidate devices to the ACTIVE tenant — so
+  // without the header a multi-tenant operator is resolved against their home
+  // tenant's devices.
+  "/api/v1/devices/resolve",
+  "/api/v1/dispatch/fresh-host",
 ];
 
 function readActiveTenantId(): string | null {
@@ -168,7 +185,9 @@ export function isRetryableStatus(args: {
   if (noRetryStatuses?.includes(status)) return false;
   if (status === 429) return true;
   if (status >= 500) {
-    return idempotent || IDEMPOTENT_METHODS.has((method || "GET").toUpperCase());
+    return (
+      idempotent || IDEMPOTENT_METHODS.has((method || "GET").toUpperCase())
+    );
   }
   return false;
 }
@@ -637,11 +656,36 @@ export class HttpClient {
     // place of the real backend error body).
     const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
+    // Honour a caller `signal`. The request below must run on `controller`'s
+    // signal (the header timeout aborts through it), so the caller's is LINKED
+    // into it rather than passed through — spreading `options` and then
+    // setting `signal` used to drop it silently. Composed by hand, not with
+    // `AbortSignal.any`, which would add an undeclared browser floor (Chrome
+    // 116 / Safari 17.4).
+    //
+    // The listener deliberately stays attached after the headers arrive: this
+    // method returns the `Response` and never learns when its body has been
+    // read, and a caller aborting AFTER the headers is exactly how a stalled
+    // body gets cancelled rather than merely abandoned. `once` detaches it on
+    // the abort; otherwise it lives as long as the caller's signal does — so
+    // pass a per-request signal, not one long-lived signal shared across
+    // many requests.
+    const callerSignal = options.signal ?? undefined;
+    const forwardCallerAbort = () => controller.abort(callerSignal?.reason);
+    if (callerSignal?.aborted) {
+      forwardCallerAbort();
+    } else {
+      callerSignal?.addEventListener("abort", forwardCallerAbort, {
+        once: true,
+      });
+    }
+
     try {
       const response = await fetch(url, {
         ...options,
         headers,
         credentials: "include",
+        // Carries the header timeout AND the caller's abort (linked above).
         signal: controller.signal,
       });
 
@@ -656,6 +700,19 @@ export class HttpClient {
       return response;
     } catch (error: unknown) {
       clearTimeout(timeoutId);
+      // No response, so no body left to cancel.
+      callerSignal?.removeEventListener("abort", forwardCallerAbort);
+
+      // A caller's own abort is not a timeout: hand it back as it came, not
+      // as "backend may be starting up". Compare the reason, not just
+      // `aborted`: if the header timeout fired first and the caller aborted
+      // in the same tick, `controller` carries the timeout's reason.
+      if (
+        callerSignal?.aborted &&
+        controller.signal.reason === callerSignal.reason
+      ) {
+        throw error;
+      }
 
       if ((error as Error).name === "AbortError") {
         throw new Error(

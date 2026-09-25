@@ -6,7 +6,10 @@
  * RunnerClient class are available on this facade.
  */
 
-import { BaseClient, RUNNER_BASE_URL } from "./base-client";
+import { useMemo } from "react";
+import { useRunnerTarget } from "@/contexts/active-runner-context";
+import type { RunnerTarget } from "@/lib/runner/target";
+import { BaseClient } from "./base-client";
 import { ConfigClient } from "./config-client";
 import { ExtractionClient } from "./extraction-client";
 import { PlaywrightClient } from "./playwright-client";
@@ -15,6 +18,8 @@ import { PatternClient } from "./pattern-client";
 import { ModelClient } from "./model-client";
 import { WorkflowClient } from "./workflow-client";
 import { ClickCaptureClient } from "./click-capture-client";
+
+export type { RunnerAvailability } from "./config-client";
 
 // Re-export all types from the centralized types module
 export type {
@@ -81,8 +86,8 @@ class RunnerClient {
   private workflow: WorkflowClient;
   private clickCapture: ClickCaptureClient;
 
-  constructor(baseUrl: string = RUNNER_BASE_URL) {
-    this.base = new BaseClient(baseUrl);
+  constructor(target: RunnerTarget) {
+    this.base = new BaseClient(target);
     this.config = new ConfigClient(this.base);
     this.extraction = new ExtractionClient(this.base);
     this.playwright = new PlaywrightClient(this.base);
@@ -132,6 +137,9 @@ class RunnerClient {
   isAvailable = (...args: Parameters<ConfigClient["isAvailable"]>) =>
     this.config.isAvailable(...args);
 
+  getAvailability = (...args: Parameters<ConfigClient["getAvailability"]>) =>
+    this.config.getAvailability(...args);
+
   getStatus = (...args: Parameters<ConfigClient["getStatus"]>) =>
     this.config.getStatus(...args);
 
@@ -154,9 +162,9 @@ class RunnerClient {
     ...args: Parameters<ExtractionClient["getExtractionStatus"]>
   ) => this.extraction.getExtractionStatus(...args);
 
-  getExtractionScreenshotUrl = (
-    ...args: Parameters<ExtractionClient["getExtractionScreenshotUrl"]>
-  ) => this.extraction.getExtractionScreenshotUrl(...args);
+  getExtractionScreenshotPath = (
+    ...args: Parameters<ExtractionClient["getExtractionScreenshotPath"]>
+  ) => this.extraction.getExtractionScreenshotPath(...args);
 
   getExtractionScreenshot = (
     ...args: Parameters<ExtractionClient["getExtractionScreenshot"]>
@@ -277,4 +285,16 @@ class RunnerClient {
 
 export { RunnerClient };
 
-export const runnerClient = new RunnerClient();
+/**
+ * A RunnerClient bound to one target. Every call resolves its transport per
+ * request (loopback for a runner proven local, the backend relay otherwise).
+ */
+export function createRunnerClient(target: RunnerTarget): RunnerClient {
+  return new RunnerClient(target);
+}
+
+/** A RunnerClient bound to the active runner; stable while the target is. */
+export function useRunnerClient(): RunnerClient {
+  const target = useRunnerTarget();
+  return useMemo(() => createRunnerClient(target), [target]);
+}

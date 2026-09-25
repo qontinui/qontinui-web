@@ -1,8 +1,11 @@
 import { useState } from "react";
-import { runnerApi } from "@/lib/runner/runner-api-object";
+import { useDispatchRunnerApi } from "@/lib/runner/runner-api-object";
 import type { ExplorationForm, ExplorationStrategy } from "../types";
 
 export function useExploration(form: ExplorationForm) {
+  // Calls that START work go to the new-work target (explicit choice or
+  // coord's resolved pick); a refused call carries coord's outcome.
+  const { api: workApi, refusal } = useDispatchRunnerApi();
   const [executing, setExecuting] = useState(false);
   const [execResult, setExecResult] = useState<string | null>(null);
   const [execError, setExecError] = useState<string | null>(null);
@@ -12,7 +15,7 @@ export function useExploration(form: ExplorationForm) {
     setExecResult(null);
     setExecError(null);
     try {
-      const res = await runnerApi.startExploration({
+      const res = await workApi.startExploration({
         config_path: "",
         strategy: form.strategy,
         max_states: form.max_states || undefined,
@@ -34,7 +37,7 @@ export function useExploration(form: ExplorationForm) {
     }
   };
 
-  return { executing, execResult, execError, handleExecute };
+  return { executing, execResult, execError, handleExecute, refusal };
 }
 
 export function useAiAdvisor(
@@ -43,6 +46,8 @@ export function useAiAdvisor(
     value: ExplorationForm[K]
   ) => void
 ) {
+  // AI generation is new work: the new-work target.
+  const { api: workApi, refusal } = useDispatchRunnerApi();
   const [aiGenerating, setAiGenerating] = useState(false);
   const [aiError, setAiError] = useState<string | null>(null);
   const [aiResult, setAiResult] = useState<Record<string, unknown> | null>(null);
@@ -52,7 +57,7 @@ export function useAiAdvisor(
     setAiError(null);
     setAiResult(null);
     try {
-      const res = await runnerApi.aiSuggestExplorationStrategy(prompt);
+      const res = await workApi.aiSuggestExplorationStrategy(prompt);
       setAiResult(res as Record<string, unknown>);
     } catch (e) {
       setAiError(e instanceof Error ? e.message : "Generation failed");
@@ -77,5 +82,12 @@ export function useAiAdvisor(
     setAiResult(null);
   };
 
-  return { aiGenerating, aiError, aiResult, handleAiGenerate, handleAiAccept };
+  return {
+    aiGenerating,
+    aiError,
+    aiResult,
+    handleAiGenerate,
+    handleAiAccept,
+    refusal,
+  };
 }

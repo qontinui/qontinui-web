@@ -57,6 +57,10 @@ interface TestEditorProps {
   aiResult: Record<string, unknown> | null;
   aiError: string | null;
   aiMetadataGenerating: boolean;
+  /** Coord's reason no new AI work may start right now (null = allowed). */
+  workRefusal: string | null;
+  /** Coord's reason no test run may start right now (null = allowed). */
+  executeRefusal: string | null;
   currentAiTemplates: AiTemplate[];
   // Screenshot
   screenshotModalUrl: string | null;
@@ -93,6 +97,8 @@ export function TestEditor({
   aiResult,
   aiError,
   aiMetadataGenerating,
+  workRefusal,
+  executeRefusal,
   currentAiTemplates,
   screenshotModalUrl,
   setScreenshotModalUrl,
@@ -176,8 +182,13 @@ export function TestEditor({
             size="sm"
             className="h-7 gap-1.5 text-xs text-purple-400 border-purple-500/30 hover:bg-purple-500/10"
             onClick={handleFillMetadataWithAi}
-            disabled={aiMetadataGenerating || !form.code.trim()}
-            title="Analyze code and auto-fill name, description, and tags"
+            disabled={
+              aiMetadataGenerating || !form.code.trim() || workRefusal !== null
+            }
+            title={
+              workRefusal ??
+              "Analyze code and auto-fill name, description, and tags"
+            }
           >
             {aiMetadataGenerating ? (
               <Loader2 className="size-3 animate-spin" />
@@ -307,6 +318,7 @@ export function TestEditor({
           onRun={handleExecuteTest}
           isRunnerOffline={isOffline}
           disabled={isNew || isDirty}
+          refusal={executeRefusal}
           runLabel="Run Test"
         />
 
@@ -320,6 +332,7 @@ export function TestEditor({
 
         {/* AI Generator (dynamic templates per test type) */}
         <AiGeneratorPanel
+          refusal={workRefusal}
           title="AI Generate Test"
           accentColor="purple"
           templates={currentAiTemplates}

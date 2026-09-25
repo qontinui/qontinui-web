@@ -13,8 +13,16 @@
  *     to the `Dev Ops ▾` nav trigger, and the polls went with it. A future
  *     "just show the machine count here too" would silently reinstate both;
  *     this test is what stops that.
- *  2. **`CiStatusPanel` is on the page, not behind a disclosure** — CI results
- *     are why PRs are stuck, so the evidence sits with the symptom.
+ *  2. **`CiStatusPanel` is NOT on the page** — reversed from Phase 4 by the
+ *     2026-09-19 redesign, deliberately and with a reason, so the assertion is
+ *     inverted rather than deleted. Phase 4 put it here on the reasoning that
+ *     "CI results are why PRs are stuck". That reasoning is right; the
+ *     placement was wrong three ways (`CiRepoStrip`'s module header has all
+ *     three), and the decisive one is mechanical rather than aesthetic: it
+ *     owned its stream ABOVE its own `<CollapsiblePanel>`, so every visitor to
+ *     this route paid a REST seed, a WebSocket and a polling fallback whether
+ *     or not they opened it. It now lives on the Train tab and owns its
+ *     transport there.
  *
  * The heavy children are stubbed: each has its own tests, and what is under
  * test here is the page's composition and its request footprint.
@@ -38,8 +46,12 @@ vi.mock("@/services/service-factory", () => ({
 // Every operations export the page imports. The panels fetch on mount and
 // have their own tests; the request-footprint assertion below would otherwise
 // be measuring THEIR reads rather than the page's.
+// `CiRepoStrip` is exported from this barrel and stubbed here on purpose even
+// though the page no longer imports it: the mock is what would let a
+// re-import render, so the "it is not on this page" assertions below measure
+// the page rather than the absence of a stub.
 vi.mock("@/components/operations", () => ({
-  CiStatusPanel: () => <div data-testid="stub-ci-status-panel" />,
+  CiRepoStrip: () => <div data-testid="stub-ci-repo-strip" />,
   MergePipeline: () => <div data-testid="stub-merge-pipeline" />,
   StuckPrRecoveryPanel: () => <div data-testid="stub-stuck-pr-recovery" />,
 }));
@@ -63,19 +75,35 @@ describe("/admin/coord/pipeline structure", () => {
     window.localStorage.clear();
   });
 
-  it("renders the recovery panel, the hero, and CI status — in that order", () => {
+  it("is the recovery panel and the hero — and nothing else", () => {
     render(<CoordPipelinePage />);
 
     const page = screen.getByTestId("coord-pipeline-page");
     const order = Array.from(page.querySelectorAll("[data-testid]")).map((el) =>
       el.getAttribute("data-testid")
     );
-    expect(order).toEqual([
-      "stub-stuck-pr-recovery",
-      "stub-merge-pipeline",
-      // Promoted out of the deleted drawer to sit directly under the hero.
-      "stub-ci-status-panel",
-    ]);
+    // Exact, not a subset: the failure mode this page keeps having is a new
+    // section appended because it was locally reasonable, until the page
+    // answers one question five times. A third entry here is a decision that
+    // should have to argue for itself in a diff.
+    expect(order).toEqual(["stub-stuck-pr-recovery", "stub-merge-pipeline"]);
+  });
+
+  it("does not mount per-repo CI status — the Train tab owns it now", () => {
+    render(<CoordPipelinePage />);
+
+    // Runtime: the stub would render if the page still composed it.
+    expect(screen.queryByTestId("stub-ci-repo-strip")).not.toBeInTheDocument();
+    // Source: the stronger of the two, and the one that catches a re-import
+    // that renders nothing under test. Both spellings, because the reason to
+    // keep it off this page survives a rename.
+    expect(PAGE_CODE).not.toMatch(/\bCiStatusPanel\b/);
+    expect(PAGE_CODE).not.toMatch(/\bCiRepoStrip\b/);
+    // And it must not come back by its transport either: the R7 violation
+    // being fixed was the STREAM running for every visitor here, so a page
+    // that reached for the hook directly would reinstate the cost without
+    // reinstating the component.
+    expect(PAGE_SRC).not.toContain("useCiStatusStream");
   });
 
   it("mounts no System details drawer", () => {

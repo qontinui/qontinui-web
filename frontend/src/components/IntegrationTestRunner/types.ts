@@ -35,6 +35,8 @@ export interface IntegrationTestState {
   testConfig: TestConfig;
   newAssertion: NewAssertion;
   isRunnerConnected: boolean;
+  /** Why a NEW test run may not start (coord's outcome), or null. */
+  startRefusal: string | null;
 }
 
 export interface IntegrationTestActions {

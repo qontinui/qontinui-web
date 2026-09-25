@@ -12,12 +12,15 @@
  * It renders at the Home route `/prompt-home` (the web Home nav item IS the
  * co-pilot — there is no separate co-pilot page). `/co-pilot` redirects here.
  *
- * Consent gating (Phase 4 — §4.5 of the production-safe plan):
- *   - preference OFF                 → opt-in CTA card → /settings/co-pilot.
- *   - preference ON, consent !granted → "grant consent" affordance that
- *     re-arms the GLOBAL <CoPilotConsentModal> (mounted in the UI Bridge
- *     provider) by resetting the per-session decision to null.
- *   - preference ON, consent granted → the prompt surface.
+ * Consent gating (Phase 4 — §4.5 of the production-safe plan), read from the
+ * shared `lib/ui-bridge/co-pilot-gates` predicate the relay listener mounts on:
+ *   - preference OFF (off loopback dev) → opt-in CTA card → /settings/co-pilot.
+ *   - consent not satisfied → "grant consent" affordance that clears the
+ *     per-session decision to null — re-arming the GLOBAL
+ *     <CoPilotConsentModal> (mounted in the UI Bridge provider), or on
+ *     loopback dev restoring the auto-grant.
+ *   - consent satisfied (explicit grant, or loopback-dev auto-grant not
+ *     revoked) → the prompt surface.
  *
  * Error affordances: each {@link ExecutionErrorKind} maps to a distinct,
  * actionable card — never a generic toast.
@@ -59,7 +62,12 @@ import { Badge } from "@/components/ui/badge";
 import { useCoPilotPreference } from "@/hooks/useCoPilotPreference";
 import { useCoPilotSessionConsent } from "@/hooks/useCoPilotSessionConsent";
 import { CoPilotReadyStatus } from "@/components/co-pilot/CoPilotReadyStatus";
-import { useActiveRunner } from "@/contexts/active-runner-context";
+import { RunOnPicker } from "@/components/runner/RunOnPicker";
+import {
+  isCoPilotConsentSatisfied,
+  useIsLoopbackDev,
+} from "@/lib/ui-bridge/co-pilot-gates";
+import { useDispatchRunnerTarget } from "@/contexts/active-runner-context";
 import {
   usePromptExecution,
   type ExecutionErrorKind,
@@ -428,9 +436,8 @@ function ConsentCta({ onGrant }: { onGrant: () => void }) {
           <div className="min-w-0 flex-1">
             <CardTitle>Grant consent for this session</CardTitle>
             <CardDescription className="mt-1">
-              The co-pilot is enabled on your account, but it needs a
-              per-session OK before it can drive this tab. This applies to the
-              current browser session only.
+              The co-pilot needs a per-session OK before it can drive this tab.
+              This applies to the current browser session only.
             </CardDescription>
           </div>
         </div>
@@ -452,7 +459,10 @@ function ConsentCta({ onGrant }: { onGrant: () => void }) {
 export function CoPilotHome() {
   const preference = useCoPilotPreference();
   const consent = useCoPilotSessionConsent();
-  const { activeRunner } = useActiveRunner();
+  const loopbackDev = useIsLoopbackDev();
+  // A prompt is NEW work: coord's resolved pick (the user's pick is its
+  // preferred device). Placeable — see the Run-on picker below.
+  const { refusal: newWorkRefusal } = useDispatchRunnerTarget();
   const { state, run, reset } = usePromptExecution();
 
   // DEBUG-ONLY: ?bridgeDebug=1 re-exposes co-pilot controls to the UI Bridge for automated end-to-end testing. Off by default (preserves the §8.2 self-targeting guard). Self-scoped + still requires session consent; remove or env-guard once co-pilot E2E is otherwise automatable.
@@ -500,8 +510,10 @@ export function CoPilotHome() {
     void run(trimmed, { explain });
   }, [prompt, busy, explain, pushHistory, run]);
 
-  // Re-arm the GLOBAL <CoPilotConsentModal> (mounted in the UI Bridge
-  // provider) by clearing the per-session decision back to null.
+  // Clear the per-session decision back to null: off loopback dev this
+  // re-arms the GLOBAL <CoPilotConsentModal> (mounted in the UI Bridge
+  // provider); on loopback dev, where no modal is mounted, it restores the
+  // auto-grant.
   const reConsent = useCallback(() => {
     consent.reset();
   }, [consent]);
@@ -543,7 +555,9 @@ export function CoPilotHome() {
   ) : null;
 
   // ---- Gate 2: preference OFF → opt-in CTA ----
-  if (!preference.enabled) {
+  // Not on loopback dev: there consent is auto-granted without the
+  // preference, so sending the developer to settings would be a detour.
+  if (!preference.enabled && !loopbackDev) {
     return (
       // data-bridge-invisible: the co-pilot only ever drives OTHER pages
       // (after it soft-navigates away), so its OWN surface must never be a
@@ -562,8 +576,14 @@ export function CoPilotHome() {
     );
   }
 
-  // ---- Gate 3: consent not granted → consent affordance ----
-  if (consent.state !== "granted") {
+  // ---- Gate 3: consent not satisfied → consent affordance ----
+  if (
+    !isCoPilotConsentSatisfied({
+      loopbackDev,
+      preferenceEnabled: preference.enabled,
+      consentState: consent.state,
+    })
+  ) {
     return (
       // data-bridge-invisible — see the opt-in branch above. Keeps the
       // co-pilot's own surface off the bridge so the planner can't target it.
@@ -607,7 +627,7 @@ export function CoPilotHome() {
         {header}
 
         {/* No runner affordance (non-error pre-flight hint) */}
-        {!activeRunner && (
+        {newWorkRefusal && (
           <Card
             className="border-warning/40"
             data-testid="co-pilot-no-runner-hint"
@@ -617,10 +637,13 @@ export function CoPilotHome() {
                 <Server className="mt-0.5 size-5 text-warning" aria-hidden />
                 <div className="min-w-0 flex-1">
                   <CardTitle className="text-base">
-                    No runner connected
+                    No runner for new work
                   </CardTitle>
-                  <CardDescription className="mt-1">
-                    Connect a runner so the co-pilot has a place to act.
+                  <CardDescription
+                    className="mt-1"
+                    data-testid="co-pilot-no-runner-reason"
+                  >
+                    {newWorkRefusal.message}
                   </CardDescription>
                 </div>
               </div>
@@ -639,6 +662,10 @@ export function CoPilotHome() {
         {/* Prompt box */}
         <Card>
           <CardContent className="space-y-4 pt-0">
+            {/* Planning is placeable: the runner only PLANS; every step then
+                runs in this browser tab over the UI-Bridge relay, whichever
+                runner planned it. */}
+            <RunOnPicker workClass="placeable" className="pt-4" />
             <Textarea
               value={prompt}
               onChange={(e) => setPrompt(e.target.value)}
@@ -690,7 +717,11 @@ export function CoPilotHome() {
                 )}
                 <Button
                   onClick={handleSubmit}
-                  disabled={busy || prompt.trim().length === 0}
+                  disabled={
+                    busy ||
+                    prompt.trim().length === 0 ||
+                    newWorkRefusal !== null
+                  }
                   data-testid="co-pilot-submit"
                 >
                   {busy ? (

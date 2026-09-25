@@ -2,7 +2,7 @@
 
 import { useState, useCallback } from "react";
 import {
-  runnerApi,
+  useRunnerApi,
   type AwasActionInfo,
   type AwasDiscoverResponse,
   type AwasCheckSupportResponse,
@@ -75,6 +75,7 @@ function extractParamNames(parameters: unknown): string[] {
 // ---------------------------------------------------------------------------
 
 export default function AwasBuilderPage() {
+  const runnerApi = useRunnerApi();
   // -- Discovery state --
   const [url, setUrl] = useState("");
   const [checking, setChecking] = useState(false);
@@ -138,7 +139,7 @@ export default function AwasBuilderPage() {
     } finally {
       setChecking(false);
     }
-  }, [url, resetResults]);
+  }, [url, resetResults, runnerApi]);
 
   const handleDiscover = useCallback(async () => {
     if (!url.trim()) return;
@@ -169,7 +170,7 @@ export default function AwasBuilderPage() {
     } finally {
       setDiscovering(false);
     }
-  }, [url, resetResults]);
+  }, [url, resetResults, runnerApi]);
 
   const handleToggleAction = useCallback(
     (actionId: string) => {
@@ -230,7 +231,7 @@ export default function AwasBuilderPage() {
         setExecuting(null);
       }
     },
-    [url, actionsUrl, actionParams]
+    [url, actionsUrl, actionParams, runnerApi]
   );
 
   // -------------------------------------------------------------------------

@@ -7,7 +7,7 @@
  */
 
 import { useState, useCallback, useEffect, useRef } from "react";
-import { runnerApi } from "@/lib/runner/runner-api-object";
+import { useRunnerApi } from "@/lib/runner/runner-api-object";
 import { discoverCurrentPageLinks } from "@/lib/ui-bridge/page-crawler";
 import type {
   DiscoveredLink,
@@ -82,6 +82,7 @@ interface PersistedTreeState {
 export function useAppBrowser(
   options?: UseAppBrowserOptions
 ): UseAppBrowserReturn {
+  const runnerApi = useRunnerApi();
   const { autoScan = true, autoConnect = true, selfPathname } = options ?? {};
 
   // Scanning state
@@ -126,7 +127,7 @@ export function useAppBrowser(
     } catch {
       // Runner might be offline
     }
-  }, []);
+  }, [runnerApi]);
 
   // -------------------------------------------------------------------------
   // Target / tab management
@@ -204,7 +205,7 @@ export function useAppBrowser(
     } finally {
       setIsLoadingTargets(false);
     }
-  }, [selfPathname]);
+  }, [selfPathname, runnerApi]);
 
   // -------------------------------------------------------------------------
   // Connect / disconnect / switch
@@ -226,7 +227,7 @@ export function useAppBrowser(
         setIsConnecting(false);
       }
     },
-    [refreshConnections, refreshTargets]
+    [refreshConnections, refreshTargets, runnerApi]
   );
 
   const disconnect = useCallback(
@@ -240,7 +241,7 @@ export function useAppBrowser(
         );
       }
     },
-    [refreshConnections]
+    [refreshConnections, runnerApi]
   );
 
   const switchTo = useCallback(
@@ -255,7 +256,7 @@ export function useAppBrowser(
         );
       }
     },
-    [refreshConnections, refreshTargets]
+    [refreshConnections, refreshTargets, runnerApi]
   );
 
   // -------------------------------------------------------------------------
@@ -301,7 +302,7 @@ export function useAppBrowser(
     } finally {
       setIsScanning(false);
     }
-  }, [selfPathname]);
+  }, [selfPathname, runnerApi]);
 
   // -------------------------------------------------------------------------
   // Page discovery
@@ -311,7 +312,10 @@ export function useAppBrowser(
     if (!activeConnection) return;
     setIsDiscoveringPages(true);
     try {
-      const links = await discoverCurrentPageLinks(activeConnection.url);
+      const links = await discoverCurrentPageLinks(
+        runnerApi,
+        activeConnection.url
+      );
       setDiscoveredLinks((prev) => {
         const existingUrls = new Set(prev.map((l) => l.url));
         const newLinks = links.filter((l) => !existingUrls.has(l.url));
@@ -322,7 +326,7 @@ export function useAppBrowser(
     } finally {
       setIsDiscoveringPages(false);
     }
-  }, [activeConnection]);
+  }, [activeConnection, runnerApi]);
 
   const updatePageStatus = useCallback(
     (url: string, status: PageNodeStatus) => {

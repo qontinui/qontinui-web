@@ -29,6 +29,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  act,
   fireEvent,
   render,
   screen,
@@ -46,23 +47,44 @@ vi.mock("@/services/service-factory", () => ({
   },
 }));
 
-// The two live streams `FleetOverview` holds are out of scope here (they have
-// their own tests) and one of them opens a WebSocket. Stubbed to a seeded,
-// empty stream so the machine list under test is built from the fleet payload
-// and coord's device list alone.
+// The two live streams are out of scope here (they have their own tests) and
+// one of them opens a WebSocket. The device-status stream is subscribed by the
+// PAGE and handed to `FleetOverview` and the strip's credential rollup; the
+// symbol-claims stream is held inside `FleetOverview`. Both are stubbed to a
+// seeded, empty stream so the machine list under test is built from the fleet
+// payload and coord's device list alone.
 //
 // The device-status half is seedable rather than permanently empty: its rows
 // carry the runner's own `details` bag, which is where the credential posture
 // of plan `2026-09-12-runner-loads-with-an-expired-coord-credential-and-…`
 // arrives. Tests that do not seed it get exactly the empty stream this stub
 // always was.
+//
+// `deviceStatusStream.byHostname` is swappable: the real hook REPLACES its Map
+// on every update, and a test that needs to prove the page re-derives on a new
+// identity assigns a fresh Map here and re-renders.
+// `error` and `seeded` are settable too, for the tests that prove a failed or
+// pending stream read is named as its own cause rather than as the runners'
+// silence.
 const deviceStatusRows = new Map<string, unknown>();
+const deviceStatusStream: {
+  byHostname: Map<string, unknown>;
+  error: string | null;
+  seeded: boolean;
+  everSeeded: boolean;
+} = {
+  byHostname: deviceStatusRows,
+  error: null,
+  seeded: true,
+  everSeeded: true,
+};
 vi.mock("@/components/operations/useDeviceStatusStream", () => ({
   useDeviceStatusStream: () => ({
-    byHostname: deviceStatusRows,
+    byHostname: deviceStatusStream.byHostname,
     connected: false,
-    error: null,
-    seeded: true,
+    error: deviceStatusStream.error,
+    seeded: deviceStatusStream.seeded,
+    everSeeded: deviceStatusStream.everSeeded,
     refetch: vi.fn(),
   }),
 }));
@@ -221,9 +243,9 @@ interface Fixture {
   /** The devenv machine roster backing the Phase 2 CI-capacity join. */
   machines?: ReturnType<typeof devenvMachine>[];
   /**
-   * The rest of the `/fleet/health` body beside `devices` — coord's alert
-   * severity rollup (`alerts`, `alerts_scrape_up`) and `pageout`. Spread
-   * verbatim, so a fixture can serve a coord that predates any of them.
+   * The rest of the `/fleet/health` body beside `devices` — coord's
+   * `conditions` rollup and `credential_dark_scrape_up`. Spread verbatim, so
+   * a fixture can serve a coord that predates any of them.
    */
   healthExtras?: Record<string, unknown>;
   /**
@@ -232,6 +254,13 @@ interface Fixture {
    * 4a read route, which every row must render as UNKNOWN rather than calm.
    */
   drain?: unknown;
+  /**
+   * What `GET /operations/fleet/worktree-slots` answers with (Phase 3).
+   * `undefined` defaults to a zero-device payload — benign for every test
+   * that predates this section; the Worktree-slots describe block below
+   * overrides it per case.
+   */
+  worktreeSlots?: unknown;
 }
 
 function mockRoutes(fixture: Fixture) {
@@ -239,6 +268,18 @@ function mockRoutes(fixture: Fixture) {
     const u = String(url);
     if (u.includes("resource-samples")) {
       return Promise.resolve({ latest: fixture.samples, history: [] });
+    }
+    if (u.includes("worktree-slots")) {
+      return Promise.resolve(
+        fixture.worktreeSlots ?? {
+          tenant_id: "t-1",
+          device_count: 0,
+          truncated: false,
+          device_cap: 100,
+          census_window_secs: 900,
+          devices: [],
+        }
+      );
     }
     if (u.includes("fleet/health")) {
       return Promise.resolve({
@@ -1091,28 +1132,26 @@ describe("/admin/coord/devops — CI capacity", () => {
   });
 });
 // ---------------------------------------------------------------------------
-// The alert severity rollup — plan
-// `2026-08-31-devops-surface-renders-no-alert-signal` Phase 4.
+// The Conditions panel — plan
+// `2026-09-18-notifications-are-agent-actions-and-alerts-are-agent-work`
+// Phase 8.
 // ---------------------------------------------------------------------------
 
 /**
- * The defect this block guards is not a missing feature; it is a number coord
- * had been publishing on THIS page's own poll for months, discarded by a hook
- * type that declared only `devices`. The steward who read `by_state:
- * {healthy: 8}` — device liveness — concluded the fleet was fine while 170+
- * unresolved criticals stood.
+ * The panel replaced the alert-severity badges, both links into the deleted
+ * `/admin/coord/alerts` page and the pageout-sink note. What it is allowed to
+ * SAY is the whole contract (the derivation's own cases are in
+ * `components/operations/fleetConditions.test.ts`):
  *
- * So the assertions are about what the page is allowed to SAY:
- *
- *  1. A measured rollup renders as numbers.
- *  2. A rollup coord says it could not read renders UNKNOWN — never `0`.
- *  3. No rollup at all renders UNKNOWN — never `0`. (Absence is not zero.)
- *  4. Counts with no `alerts_scrape_up` flag are MEASURED, not unknown: that
- *     is today's coord, and this page ships ahead of coord's half by design.
- *  5. `pageout.sink_configured: false` is a recorded operator decision, so it
- *     gets one muted line — and absence of the field gets nothing at all.
+ *  1. "Nothing unhandled" only on a MEASURED zero (`scrape_up` and
+ *     `unclaimed == 0`).
+ *  2. An absent `conditions` block is "Unknown — coord does not report
+ *     conditions yet", never zero.
+ *  3. `scrape_up: false` is "Unknown — health query failed".
+ *  4. "Waiting on you" leads to the operator question queue.
+ *  5. No alerts-page link, no severity badges, no pageout note, and no read.
  */
-describe("/admin/coord/devops — the alert severity rollup", () => {
+describe("/admin/coord/devops — the Conditions panel", () => {
   beforeEach(() => {
     httpGet.mockReset();
     httpFetch.mockReset();
@@ -1130,200 +1169,380 @@ describe("/admin/coord/devops — the alert severity rollup", () => {
     });
   }
 
-  it("renders the severity counts coord already serves", async () => {
-    healthyFleet({
-      alerts: { critical: 170, warning: 2302, info: 55 },
-      alerts_scrape_up: true,
-    });
+  function conditions(overrides: Record<string, unknown> = {}) {
+    return {
+      open: 0,
+      claimed: 0,
+      unclaimed: 0,
+      unclaimed_oldest_age_secs: null,
+      unclaimed_by_domain: {
+        merge_train: 0,
+        dev_ops: 0,
+        cleanup: 0,
+        return_to_main: 0,
+        pr_fix: 0,
+        red_main_fix: 0,
+        gate_owner: 0,
+        plan_owner: 0,
+      },
+      awaiting_operator: 0,
+      awaiting_operator_question_ids: [],
+      awaiting_operator_alerts: 0,
+      awaiting_operator_unasked: 0,
+      awaiting_operator_answered_uncleared: 0,
+      settings_in_effect: [],
+      settings_in_effect_count: 0,
+      scrape_up: true,
+      ...overrides,
+    };
+  }
 
+  it("says 'Nothing unhandled' only on a measured zero", async () => {
+    healthyFleet({ conditions: conditions({ open: 4, claimed: 4 }) });
     render(<CoordDevOpsPage />);
 
-    const strip = await screen.findByTestId("coord-devops-health-strip");
+    const strip = await screen.findByTestId("coord-devops-conditions-strip");
+    await waitFor(() => expect(strip).toHaveTextContent("Nothing unhandled"));
+    expect(strip).toHaveAttribute("data-health-level", "green");
+    expect(
+      within(strip).getByTestId("coord-devops-conditions-unclaimed-badge")
+    ).toHaveTextContent("unclaimed 0");
+    expect(
+      screen.getByTestId("coord-devops-conditions-no-settings")
+    ).toBeInTheDocument();
+  });
+
+  it("shows the unclaimed count, the oldest age and the per-owner breakdown", async () => {
+    healthyFleet({
+      conditions: conditions({
+        open: 9,
+        claimed: 2,
+        unclaimed: 7,
+        unclaimed_oldest_age_secs: 3 * 3600 + 5 * 60,
+        unclaimed_by_domain: {
+          merge_train: 5,
+          dev_ops: 2,
+          cleanup: 0,
+          return_to_main: 0,
+          pr_fix: 0,
+          red_main_fix: 0,
+          gate_owner: 0,
+          plan_owner: 0,
+        },
+      }),
+    });
+    render(<CoordDevOpsPage />);
+
+    const strip = await screen.findByTestId("coord-devops-conditions-strip");
     await waitFor(() =>
-      expect(
-        within(strip).getByTestId("coord-devops-critical-badge")
-      ).toHaveTextContent("critical 170")
+      expect(strip).toHaveTextContent("7 conditions no agent is handling")
     );
+    expect(strip).not.toHaveTextContent("Nothing unhandled");
     expect(
-      within(strip).getByTestId("coord-devops-warning-badge")
-    ).toHaveTextContent("warning 2302");
+      within(strip).getByTestId("coord-devops-conditions-oldest-badge")
+    ).toHaveTextContent("oldest 3h 5m");
+    const domains = screen.getByTestId("coord-devops-conditions-domains");
     expect(
-      within(strip).getByTestId("coord-devops-info-badge")
-    ).toHaveTextContent("info 55");
-    // The liveness badge is still there and still says liveness: the two
-    // rollups sit side by side precisely because they answer different
-    // questions, and conflating them is the bug.
+      within(domains).getByTestId("coord-devops-conditions-domain-merge_train")
+    ).toHaveTextContent("merge train 5");
     expect(
-      within(strip).getByTestId("coord-devops-machines-badge")
-    ).toHaveTextContent("machines 1");
+      within(domains).getByTestId("coord-devops-conditions-domain-dev_ops")
+    ).toHaveTextContent("dev ops 2");
+    // A zero domain is not listed.
     expect(
-      within(strip).queryByTestId("coord-devops-alerts-unknown-badge")
+      within(domains).queryByTestId("coord-devops-conditions-domain-cleanup")
     ).toBeNull();
   });
 
-  it("renders UNKNOWN, not 0, when coord says the rollup did not run", async () => {
-    // `alerts_scrape_up: false` is coord admitting its query failed. The zeros
-    // beside it are the shape of a failure, not a count of alerts.
-    healthyFleet({
-      alerts: { critical: 0, warning: 0, info: 0 },
-      alerts_scrape_up: false,
-    });
-
-    render(<CoordDevOpsPage />);
-
-    const strip = await screen.findByTestId("coord-devops-health-strip");
-    await waitFor(() =>
-      expect(
-        within(strip).getByTestId("coord-devops-alerts-unknown-badge")
-      ).toHaveTextContent("alerts unknown")
-    );
-    expect(
-      within(strip).queryByTestId("coord-devops-critical-badge")
-    ).toBeNull();
-    expect(
-      within(strip).queryByTestId("coord-devops-warning-badge")
-    ).toBeNull();
-    expect(within(strip).queryByTestId("coord-devops-info-badge")).toBeNull();
-    // The literal failure mode this guards: a `?? 0` puts these on screen.
-    expect(strip).not.toHaveTextContent("critical 0");
-    expect(strip).not.toHaveTextContent("warning 0");
-    expect(strip).not.toHaveTextContent("info 0");
-  });
-
-  it("renders UNKNOWN, not 0, when coord serves no rollup at all", async () => {
-    // No `alerts` key: a coord that does not publish it, or a read that never
-    // landed. Either way the page knows nothing, and must say so.
+  it("renders an absent conditions block as UNKNOWN, never as zero", async () => {
+    // A coord that predates the rollup: no `conditions` key at all.
     healthyFleet();
-
     render(<CoordDevOpsPage />);
 
-    const strip = await screen.findByTestId("coord-devops-health-strip");
+    const strip = await screen.findByTestId("coord-devops-conditions-strip");
     await waitFor(() =>
-      expect(
-        within(strip).getByTestId("coord-devops-alerts-unknown-badge")
-      ).toHaveTextContent("alerts unknown")
+      expect(strip).toHaveTextContent(
+        "Unknown — coord does not report conditions yet"
+      )
     );
-    expect(strip).not.toHaveTextContent("critical 0");
-  });
-
-  it("treats counts with no `alerts_scrape_up` flag as MEASURED, not unknown", async () => {
-    // Today's coord: it serves the rollup and not the flag, because the flag
-    // is the coord half of this plan and lands later. Reading the absent flag
-    // as a failure would dash a real number across the whole pre-deploy
-    // window — the window this page is REQUIRED to render correctly in.
-    healthyFleet({ alerts: { critical: 3364, warning: 13723, info: 283 } });
-
-    render(<CoordDevOpsPage />);
-
-    const strip = await screen.findByTestId("coord-devops-health-strip");
-    await waitFor(() =>
-      expect(
-        within(strip).getByTestId("coord-devops-critical-badge")
-      ).toHaveTextContent("critical 3364")
-    );
+    expect(strip).not.toHaveTextContent("Nothing unhandled");
+    expect(strip).toHaveAttribute("data-health-level", "amber");
+    // No count badge claims a number coord never served.
     expect(
-      within(strip).queryByTestId("coord-devops-alerts-unknown-badge")
+      within(strip).queryByTestId("coord-devops-conditions-unclaimed-badge")
     ).toBeNull();
   });
 
-  it("keeps a MEASURED zero out of the red tone, and still renders it", async () => {
-    // A genuine all-clear is a real measurement and must stay on screen — a
-    // hidden badge is indistinguishable from a page that cannot count. But
-    // red says "somebody must act", and nobody must act on zero.
+  it("renders scrape_up: false as 'health query failed', with no counts", async () => {
     healthyFleet({
-      alerts: { critical: 0, warning: 0, info: 0 },
-      alerts_scrape_up: true,
+      conditions: conditions({
+        open: null,
+        claimed: null,
+        unclaimed: null,
+        awaiting_operator: null,
+        scrape_up: false,
+      }),
     });
-
     render(<CoordDevOpsPage />);
 
-    const strip = await screen.findByTestId("coord-devops-health-strip");
+    const strip = await screen.findByTestId("coord-devops-conditions-strip");
     await waitFor(() =>
-      expect(
-        within(strip).getByTestId("coord-devops-critical-badge")
-      ).toHaveTextContent("critical 0")
+      expect(strip).toHaveTextContent("Unknown — health query failed")
+    );
+    expect(strip).not.toHaveTextContent("Nothing unhandled");
+    expect(
+      within(strip).queryByTestId("coord-devops-conditions-unclaimed-badge")
+    ).toBeNull();
+  });
+
+  it("links 'waiting on you' to the question that is waiting", async () => {
+    healthyFleet({
+      conditions: conditions({
+        awaiting_operator: 1,
+        awaiting_operator_question_ids: [
+          "11111111-2222-3333-4444-555555555555",
+        ],
+      }),
+    });
+    render(<CoordDevOpsPage />);
+
+    const badge = await screen.findByTestId(
+      "coord-devops-conditions-awaiting-badge"
+    );
+    expect(badge).toHaveTextContent("waiting on you 1");
+    expect(screen.getByTestId("coord-devops-conditions-strip")).toHaveAttribute(
+      "data-health-level",
+      "red"
+    );
+    fireEvent.click(badge);
+    expect(routerPush).toHaveBeenCalledWith(
+      "/admin/coord/questions/11111111-2222-3333-4444-555555555555"
+    );
+  });
+
+  it("links several waiting questions to the queue", async () => {
+    healthyFleet({
+      conditions: conditions({
+        awaiting_operator: 2,
+        awaiting_operator_question_ids: ["q-1", "q-2"],
+      }),
+    });
+    render(<CoordDevOpsPage />);
+
+    const badge = await screen.findByTestId(
+      "coord-devops-conditions-awaiting-badge"
+    );
+    fireEvent.click(badge);
+    expect(routerPush).toHaveBeenCalledWith("/admin/coord/questions");
+  });
+
+  it("lists the deliberate settings in effect, by name", async () => {
+    healthyFleet({
+      conditions: conditions({
+        settings_in_effect: [
+          {
+            alert_id: 11,
+            kind: "kill_switch_fired",
+            since: "2026-09-18T09:00:00Z",
+          },
+          {
+            alert_id: 12,
+            kind: "fleet_device_drained",
+            since: "2026-09-18T10:00:00Z",
+          },
+          {
+            alert_id: 13,
+            kind: "fleet_device_drained",
+            since: "2026-09-18T10:30:00Z",
+          },
+        ],
+        settings_in_effect_count: 3,
+      }),
+    });
+    render(<CoordDevOpsPage />);
+
+    const settings = await screen.findByTestId(
+      "coord-devops-conditions-settings"
     );
     expect(
-      within(strip).getByTestId("coord-devops-critical-badge").className
-    ).not.toMatch(/red/);
+      within(settings).getByTestId("coord-devops-conditions-setting-11")
+    ).toHaveTextContent("merge kill switch on");
+    // Two drains are two settings: keyed on the row id, not the kind.
+    expect(
+      within(settings).getByTestId("coord-devops-conditions-setting-12")
+    ).toHaveTextContent("machine drained");
+    expect(
+      within(settings).getByTestId("coord-devops-conditions-setting-13")
+    ).toHaveTextContent("machine drained");
+    // A setting is context, not a fault: the verdict stays calm.
+    expect(screen.getByTestId("coord-devops-conditions-strip")).toHaveAttribute(
+      "data-health-level",
+      "green"
+    );
   });
 
-  it("navigates the badge to the alerts list with NO query string", async () => {
-    // `/admin/coord/alerts` hydrates no filter from the URL, so a
-    // `?severity=critical` badge would land on an unfiltered page under a
-    // control that claimed to filter.
+  it("reads 'not yet asked' from coord's exact count, and does not go green", async () => {
     healthyFleet({
-      alerts: { critical: 12, warning: 3, info: 0 },
-      alerts_scrape_up: true,
+      conditions: conditions({
+        awaiting_operator: 0,
+        awaiting_operator_alerts: 2,
+        awaiting_operator_unasked: 2,
+        awaiting_operator_answered_uncleared: 0,
+      }),
     });
-
     render(<CoordDevOpsPage />);
 
-    const badge = await screen.findByTestId("coord-devops-critical-badge");
-    fireEvent.click(badge);
-    expect(routerPush).toHaveBeenCalledWith("/admin/coord/alerts");
-    expect(String(routerPush.mock.calls[0][0])).not.toContain("?");
+    const badge = await screen.findByTestId(
+      "coord-devops-conditions-unasked-badge"
+    );
+    expect(badge).toHaveTextContent("not yet asked 2");
+    const strip = screen.getByTestId("coord-devops-conditions-strip");
+    expect(strip).toHaveAttribute("data-health-level", "amber");
+    expect(strip).toHaveTextContent("2 operator alerts not yet asked");
+    expect(strip).not.toHaveTextContent("Nothing unhandled");
   });
 
-  it("says nothing about the pageout sink when coord says nothing", async () => {
-    // Absence is UNKNOWN. The page has no posture to report, so it reports no
-    // posture — it neither guesses "configured" nor warns.
+  it("does not call an answered, uncleared alert unasked", async () => {
     healthyFleet({
-      alerts: { critical: 1, warning: 0, info: 0 },
-      alerts_scrape_up: true,
+      conditions: conditions({
+        awaiting_operator: 0,
+        awaiting_operator_alerts: 1,
+        awaiting_operator_unasked: 0,
+        awaiting_operator_answered_uncleared: 1,
+      }),
     });
-
     render(<CoordDevOpsPage />);
 
-    await screen.findByTestId("coord-devops-health-strip");
-    expect(screen.queryByTestId("coord-devops-pageout-note")).toBeNull();
+    const badge = await screen.findByTestId(
+      "coord-devops-conditions-answered-uncleared-badge"
+    );
+    expect(badge).toHaveTextContent("answered, not clear 1");
+    expect(
+      screen.queryByTestId("coord-devops-conditions-unasked-badge")
+    ).toBeNull();
+    const strip = screen.getByTestId("coord-devops-conditions-strip");
+    expect(strip).toHaveTextContent(
+      "1 answered, waiting for coord to see it clear"
+    );
+    expect(strip).not.toHaveTextContent("not yet asked");
   });
 
-  it("states an unconfigured pageout sink as a decision, not an alarm", async () => {
-    // Confirmed with the operator 2026-08-05 across three shipped plans:
-    // in-app is the delivery surface and no Slack/email sink is wanted. One
-    // muted line, no warning colour, no icon — an alarm on an intended state
-    // is how a strip loses its credibility.
+  it("uses neutral wording, and never green, on a coord without the exact counts", async () => {
     healthyFleet({
-      alerts: { critical: 1, warning: 0, info: 0 },
+      conditions: conditions({
+        awaiting_operator: 0,
+        awaiting_operator_alerts: 2,
+        awaiting_operator_unasked: undefined,
+        awaiting_operator_answered_uncleared: undefined,
+      }),
+    });
+    render(<CoordDevOpsPage />);
+
+    const badge = await screen.findByTestId(
+      "coord-devops-conditions-beyond-questions-badge"
+    );
+    expect(badge).toHaveTextContent("open beyond questions 2");
+    const strip = screen.getByTestId("coord-devops-conditions-strip");
+    expect(strip).toHaveAttribute("data-health-level", "amber");
+    expect(strip).toHaveTextContent(
+      "2 operator alerts open beyond the questions waiting on you"
+    );
+    expect(strip).not.toHaveTextContent("not yet asked");
+    expect(strip).not.toHaveTextContent("Nothing unhandled");
+  });
+
+  it("says which read failed when coord reports scrape_up: false", async () => {
+    healthyFleet({
+      conditions: { scrape_up: false, unavailable_reason: "agent_work" },
+    });
+    render(<CoordDevOpsPage />);
+
+    const strip = await screen.findByTestId("coord-devops-conditions-strip");
+    await waitFor(() => expect(strip).toHaveTextContent("agent_work"));
+  });
+
+  it("names the settings coord's capped list left out", async () => {
+    healthyFleet({
+      conditions: conditions({
+        settings_in_effect: [
+          {
+            alert_id: 7,
+            kind: "fleet_device_drained",
+            since: "2026-09-18T10:00:00Z",
+            summary: "Device msi drained by operator",
+          },
+        ],
+        settings_in_effect_count: 4,
+      }),
+    });
+    render(<CoordDevOpsPage />);
+
+    expect(
+      await screen.findByTestId("coord-devops-conditions-settings-more")
+    ).toHaveTextContent("+3 more");
+    expect(
+      screen
+        .getByTestId("coord-devops-conditions-setting-7")
+        .getAttribute("title")
+    ).toContain("Device msi drained by operator");
+  });
+
+  it("says the settings count is unknown rather than hiding a possible cap", async () => {
+    healthyFleet({
+      conditions: conditions({
+        settings_in_effect: [
+          {
+            alert_id: 9,
+            kind: "kill_switch_fired",
+            since: "2026-09-18T10:00:00Z",
+          },
+        ],
+        settings_in_effect_count: null,
+      }),
+    });
+    render(<CoordDevOpsPage />);
+
+    expect(
+      await screen.findByTestId(
+        "coord-devops-conditions-settings-count-unknown"
+      )
+    ).toHaveTextContent("(count unknown)");
+    expect(
+      screen.queryByTestId("coord-devops-conditions-settings-more")
+    ).toBeNull();
+  });
+
+  it("renders no severity badges, no pageout note and no alerts-page link", async () => {
+    healthyFleet({
+      conditions: conditions(),
+      // A coord still serving the old rollup and pageout posture: neither is
+      // rendered any more.
+      alerts: { critical: 170, warning: 2302, info: 55 },
       alerts_scrape_up: true,
       pageout: { sink_configured: false },
     });
+    const { container } = render(<CoordDevOpsPage />);
 
-    render(<CoordDevOpsPage />);
-
-    const note = await screen.findByTestId("coord-devops-pageout-note");
-    expect(note).toHaveTextContent("in-app only");
-    expect(note).toHaveTextContent("by decision");
-    expect(note.className).toContain("text-muted-foreground");
-    expect(note.className).not.toMatch(/red|amber|yellow/);
-    expect(
-      within(note).getByTestId("coord-devops-pageout-alerts-link")
-    ).toHaveAttribute("href", "/admin/coord/alerts");
+    await screen.findByTestId("coord-devops-conditions-panel");
+    for (const id of [
+      "coord-devops-critical-badge",
+      "coord-devops-warning-badge",
+      "coord-devops-info-badge",
+      "coord-devops-alerts-unknown-badge",
+      "coord-devops-pageout-note",
+      "coord-devops-pageout-alerts-link",
+    ]) {
+      expect(screen.queryByTestId(id)).toBeNull();
+    }
+    expect(container.querySelector('a[href="/admin/coord/alerts"]')).toBeNull();
   });
 
-  it("says nothing about the sink when it IS configured", async () => {
-    healthyFleet({
-      alerts: { critical: 1, warning: 0, info: 0 },
-      alerts_scrape_up: true,
-      pageout: { sink_configured: true },
-    });
+  it("adds NO read: the panel rides the fleet-health poll already made", async () => {
+    healthyFleet({ conditions: conditions() });
 
     render(<CoordDevOpsPage />);
 
-    await screen.findByTestId("coord-devops-health-strip");
-    expect(screen.queryByTestId("coord-devops-pageout-note")).toBeNull();
-  });
-
-  it("adds NO read: the rollup rides the fleet-health poll already made", async () => {
-    healthyFleet({
-      alerts: { critical: 1, warning: 0, info: 0 },
-      alerts_scrape_up: true,
-    });
-
-    render(<CoordDevOpsPage />);
-
-    await screen.findByTestId("coord-devops-critical-badge");
+    await screen.findByTestId("coord-devops-conditions-unclaimed-badge");
     expect(
       httpGet.mock.calls.filter((c) => String(c[0]).includes("fleet/health"))
     ).toHaveLength(1);
@@ -1574,7 +1793,83 @@ describe("/admin/coord/devops — the coord-credential axis", () => {
     httpFetch.mockReset();
     routerPush.mockReset();
     deviceStatusRows.clear();
+    deviceStatusStream.byHostname = deviceStatusRows;
+    deviceStatusStream.error = null;
+    deviceStatusStream.seeded = true;
+    deviceStatusStream.everSeeded = true;
     window.localStorage.clear();
+  });
+
+  it.each([
+    ["has failed", "HTTP 500", true, "HTTP 500"],
+    ["has not seeded yet", null, false, "not loaded yet"],
+  ])(
+    "names a device-status stream that %s (no full read ever succeeded) as its own cause, not as the runners' silence",
+    async (_name, error, seeded, cause) => {
+      deviceStatusStream.error = error;
+      deviceStatusStream.seeded = seeded;
+      deviceStatusStream.everSeeded = false;
+      mockRoutes({
+        devices: [
+          coordDevice("d-1", "msi", "healthy", {
+            credential_dark: { dark: false },
+          }),
+        ],
+        runners: [runner("msi")],
+        samples: [],
+        healthExtras: { credential_dark_scrape_up: true },
+      });
+
+      render(<CoordDevOpsPage />);
+
+      const strip = await screen.findByTestId(
+        "coord-devops-credential-unknown-badge"
+      );
+      // The count stands — the machine really is unmeasured on this read…
+      expect(strip).toHaveTextContent("credential unknown 1");
+      // …but the tooltip says the READ failed, not that the runner was silent.
+      const title = strip.getAttribute("title") ?? "";
+      expect(title).toContain(
+        `No full device-status read has succeeded yet (${cause}); runner reports that arrived since may be incomplete`
+      );
+      expect(title).not.toMatch(/Neither coord's dark scan nor/);
+      expect(title).not.toMatch(/may be stale/);
+    }
+  );
+
+  it("says a stream that WAS fed but whose latest read failed may be stale, not unreadable", async () => {
+    // Rows are being served from an earlier read; one re-seed then failed.
+    // `msi` still reports nothing of its own, so it stays counted unknown —
+    // but "no full read has succeeded" would be false, because one did.
+    deviceStatusRows.set(
+      "msi",
+      deviceStatusRow("d-1", "msi", { current_task: "x" })
+    );
+    deviceStatusStream.error = "HTTP 502";
+    deviceStatusStream.seeded = true;
+    deviceStatusStream.everSeeded = true;
+    mockRoutes({
+      devices: [
+        coordDevice("d-1", "msi", "healthy", {
+          credential_dark: { dark: false },
+        }),
+      ],
+      runners: [runner("msi")],
+      samples: [],
+      healthExtras: { credential_dark_scrape_up: true },
+    });
+
+    render(<CoordDevOpsPage />);
+
+    const strip = await screen.findByTestId(
+      "coord-devops-credential-unknown-badge"
+    );
+    expect(strip).toHaveTextContent("credential unknown 1");
+    const title = strip.getAttribute("title") ?? "";
+    expect(title).toContain(
+      "The last device-status read failed (HTTP 502); runner reports may be stale"
+    );
+    expect(title).not.toMatch(/No full device-status read/);
   });
 
   /** The credential badge on one machine's row, or null. */
@@ -1625,6 +1920,79 @@ describe("/admin/coord/devops — the coord-credential axis", () => {
     expect(
       screen.queryByTestId("coord-devops-credential-dark-badge")
     ).not.toBeInTheDocument();
+    // …and the strip AGREES with the row: the rollup resolves `msi` from the
+    // same heartbeat bag, so it is counted measured-and-ok — not `credential
+    // unknown 1`, which is what the strip said while it could see coord's join
+    // alone.
+    expect(
+      screen.queryByTestId("coord-devops-credential-unknown-badge")
+    ).not.toBeInTheDocument();
+  });
+
+  // A report goes stale by TIME alone, and the runner that stopped reporting is
+  // the one that sends no frame. So the strip must re-resolve on the page's own
+  // clock: here the stream stays silent and fleet-health starts failing (which
+  // pins `devices`), and the only thing that moves is time.
+  it("flips a healthy report to UNKNOWN once it ages past its bound, with no new data", async () => {
+    // `setTimeout` stays real so `waitFor`'s timeout still fires. Faking
+    // `setInterval` stops `waitFor`'s own polling, so every `waitFor` below
+    // settles through its MutationObserver: only wait on DOM changes here.
+    vi.useFakeTimers({
+      toFake: ["Date", "setInterval", "clearInterval"],
+    });
+    try {
+      vi.setSystemTime(new Date("2026-09-14T12:00:00Z"));
+      deviceStatusRows.set(
+        "msi",
+        deviceStatusRow("d-1", "msi", { coord_credential: { ok: true } })
+      );
+      mockRoutes({
+        devices: [
+          coordDevice("d-1", "msi", "healthy", {
+            credential_dark: { dark: false },
+          }),
+        ],
+        runners: [runner("msi")],
+        samples: [],
+        healthExtras: { credential_dark_scrape_up: true },
+      });
+
+      render(<CoordDevOpsPage />);
+
+      await waitFor(() =>
+        expect(credentialBadge("msi")).toHaveAttribute(
+          "data-operations-coord-credential",
+          "live"
+        )
+      );
+      expect(
+        screen.queryByTestId("coord-devops-credential-unknown-badge")
+      ).not.toBeInTheDocument();
+
+      // Coord's health read goes down: `devices` keeps its last identity.
+      httpGet.mockImplementation((url: unknown) =>
+        String(url).includes("fleet/health")
+          ? Promise.reject(new Error("HTTP 503"))
+          : Promise.resolve({ latest: [], history: [] })
+      );
+
+      // Past the 900 s fallback bound, by the page's 15 s tick.
+      await act(async () => {
+        vi.advanceTimersByTime(915_000);
+      });
+
+      await waitFor(() =>
+        expect(
+          screen.getByTestId("coord-devops-credential-unknown-badge")
+        ).toHaveTextContent("credential unknown 1")
+      );
+      expect(credentialBadge("msi")).toHaveAttribute(
+        "data-operations-coord-credential",
+        "unknown"
+      );
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   // C5. Coord's `{dark: false}` is a roster stamp, not a measurement:
@@ -1706,12 +2074,13 @@ describe("/admin/coord/devops — the coord-credential axis", () => {
         .querySelector('[data-hostname="msi"]')
         ?.querySelector('[data-coord-state="healthy"]')
     ).not.toBeNull();
-    // And the strip carries the count, in red, linking to the alerts list
-    // where coord's critical `runner_coord_credentials_missing` row lives.
+    // And the strip carries the count, in red, linking to the question queue
+    // where coord asks the operator about each dark credential (the alerts
+    // page it used to open is deleted).
     const strip = screen.getByTestId("coord-devops-credential-dark-badge");
     expect(strip).toHaveTextContent("credential dark 1");
     fireEvent.click(strip);
-    expect(routerPush).toHaveBeenCalledWith("/admin/coord/alerts");
+    expect(routerPush).toHaveBeenCalledWith("/admin/coord/questions");
   });
 
   it("renders a device whose report carries NO credential as UNKNOWN, never as healthy", async () => {
@@ -1772,7 +2141,7 @@ describe("/admin/coord/devops — the coord-credential axis", () => {
     );
     // "Coord could not read it" and "nobody has reported one" are different
     // facts and the badge words them differently — same discipline the
-    // `alerts unknown` badge one field up already follows.
+    // Conditions panel's unknown states follow.
     expect(strip.getAttribute("title")).toMatch(/could not read/);
     expect(strip.getAttribute("title")).not.toMatch(/never reported/);
   });
@@ -1853,14 +2222,450 @@ describe("/admin/coord/devops — the coord-credential axis", () => {
       "data-operations-coord-credential",
       "live"
     );
-    // The strip and the rows disagree here ON PURPOSE, and this is the
-    // assertion that pins it: the rollup sees fleet-health rows only, where
-    // `msi`'s affirmative report does not appear, so it counts BOTH machines
-    // as unmeasured. The strip under-claims; it never over-claims. Wiring the
-    // device-status stream into this page would close the gap — and would
-    // cost a second subscription the page does not otherwise need.
+    // The strip and the rows AGREE. The page owns the one device-status
+    // subscription and hands it to both, so the rollup sees `msi`'s
+    // affirmative report exactly as its row does: `msi` is measured (ok), and
+    // only `ghost` — which nothing measured — is counted unknown. This used to
+    // read `credential unknown 2`, the strip under-claiming a machine its own
+    // row showed live.
     expect(
       screen.getByTestId("coord-devops-credential-unknown-badge")
-    ).toHaveTextContent("credential unknown 2");
+    ).toHaveTextContent("credential unknown 1");
+    expect(
+      screen.queryByTestId("coord-devops-credential-dark-badge")
+    ).not.toBeInTheDocument();
+  });
+
+  it("re-derives the strip when the stream delivers a NEW map after mount", async () => {
+    // The hook replaces its Map on every update. The strip's rollup is a
+    // `useMemo` keyed on that identity, so a report that arrives AFTER the
+    // first render must move the count — the fleet-health read has not
+    // changed, and a memo that ignored `byHostname` would stay stale here.
+    mockRoutes({
+      devices: [
+        coordDevice("d-1", "msi", "healthy", {
+          credential_dark: { dark: false },
+        }),
+      ],
+      runners: [runner("msi")],
+      samples: [],
+      healthExtras: { credential_dark_scrape_up: true },
+    });
+
+    const { rerender } = render(<CoordDevOpsPage />);
+
+    expect(
+      await screen.findByTestId("coord-devops-credential-unknown-badge")
+    ).toHaveTextContent("credential unknown 1");
+
+    deviceStatusStream.byHostname = new Map<string, unknown>([
+      [
+        "msi",
+        deviceStatusRow("d-1", "msi", { coord_credential: { ok: true } }),
+      ],
+    ]);
+    rerender(<CoordDevOpsPage />);
+
+    await waitFor(() =>
+      expect(
+        screen.queryByTestId("coord-devops-credential-unknown-badge")
+      ).not.toBeInTheDocument()
+    );
+    expect(credentialBadge("msi")).toHaveAttribute(
+      "data-operations-coord-credential",
+      "live"
+    );
+    expect(
+      screen.queryByTestId("coord-devops-credential-dark-badge")
+    ).not.toBeInTheDocument();
+  });
+
+  it("does not let a row borrow the report of a different device sharing its hostname", async () => {
+    // A re-paired box: coord holds `d-new` and `d-old`, both `msi`. The stream
+    // row under `msi` is `d-new`'s, and it reports healthy. The machine row's
+    // coord join is last-writer-wins, so with this order it shows `d-old` —
+    // which published nothing, and must not wear `d-new`'s `live`.
+    deviceStatusRows.set(
+      "msi",
+      deviceStatusRow("d-new", "msi", { coord_credential: { ok: true } })
+    );
+    mockRoutes({
+      devices: [
+        coordDevice("d-new", "msi", "healthy", {
+          credential_dark: { dark: false },
+        }),
+        coordDevice("d-old", "msi", "healthy", {
+          credential_dark: { dark: false },
+        }),
+      ],
+      runners: [runner("msi")],
+      samples: [],
+      healthExtras: { credential_dark_scrape_up: true },
+    });
+
+    render(<CoordDevOpsPage />);
+
+    await waitFor(() => expect(credentialBadge("msi")).not.toBeNull());
+    expect(credentialBadge("msi")).toHaveAttribute(
+      "data-operations-coord-credential",
+      "unknown"
+    );
+    // The strip counts both devices: `d-new` measured, `d-old` not.
+    expect(
+      screen.getByTestId("coord-devops-credential-unknown-badge")
+    ).toHaveTextContent("credential unknown 1");
+  });
+});
+
+describe("/admin/coord/devops — a CI-runner registration with the mirror down", () => {
+  it("still names the drain's real scope, from coord's own capability read", async () => {
+    // The CI-runner mirror GET is not mocked here, so it fails: the card must
+    // not depend on it. Coord serves `ci_runner_status` as a string only for
+    // a device carrying the `ci_runner` capability.
+    const host = "gh-runner-msi-wsl@qontinui/qontinui-runner";
+    mockRoutes({
+      devices: [
+        coordDevice("d-gh", host, "healthy", { ci_runner_status: "idle" }),
+        coordDevice("d-ws", "msi", "healthy", { ci_runner_status: null }),
+      ],
+      runners: [runner("msi")],
+      samples: [],
+      drain: { drained: {} },
+    });
+
+    render(<CoordDevOpsPage />);
+
+    await waitFor(() =>
+      expect(document.querySelector(`[data-hostname="${host}"]`)).not.toBeNull()
+    );
+    const gh = document.querySelector(
+      `[data-hostname="${host}"]`
+    ) as HTMLElement;
+    expect(
+      gh.querySelector('[data-testid="ci-runner-drain-scope"]')
+    ).not.toBeNull();
+    const ws = document.querySelector('[data-hostname="msi"]') as HTMLElement;
+    expect(
+      ws.querySelector('[data-testid="ci-runner-drain-scope"]')
+    ).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Worktree slots — plan `2026-09-21-worktree-slots-devops-dashboard-view.md`
+// Phase 3.
+// ---------------------------------------------------------------------------
+
+/**
+ * One device row as `GET /operations/fleet/worktree-slots` serves it
+ * (coord's `GET /coord/fleet/worktree-slots`, passed through untouched).
+ */
+function worktreeSlotDevice(
+  deviceId: string,
+  hostname: string,
+  overrides: Record<string, unknown> = {}
+) {
+  return {
+    device_id: deviceId,
+    hostname,
+    active_worktrees: 0,
+    max_worktrees: 8,
+    census_recent_rows: 12,
+    occupants: { shown: 0, total: 0, truncated: false, rows: [] },
+    ...overrides,
+  };
+}
+
+describe("/admin/coord/devops — Worktree slots (Phase 3)", () => {
+  beforeEach(() => {
+    httpGet.mockReset();
+    httpFetch.mockReset();
+    window.localStorage.clear();
+  });
+
+  it("renders a device with occupants, expandable on demand", async () => {
+    mockRoutes({
+      devices: [coordDevice("d-1", "msi", "healthy")],
+      runners: [runner("msi")],
+      samples: [],
+      worktreeSlots: {
+        tenant_id: "t-1",
+        device_count: 1,
+        truncated: false,
+        device_cap: 100,
+        census_window_secs: 900,
+        devices: [
+          worktreeSlotDevice("d-1", "msi", {
+            active_worktrees: 3,
+            occupants: {
+              shown: 3,
+              total: 3,
+              truncated: false,
+              rows: [
+                {
+                  repo: "qontinui-web",
+                  worktree_path: "agent-worktrees/abc/qontinui-web",
+                  age_secs: 412.5,
+                },
+              ],
+            },
+          }),
+        ],
+      },
+    });
+
+    render(<CoordDevOpsPage />);
+
+    const row = await screen.findByTestId("fleet-worktree-slots-row");
+    expect(row).toHaveAttribute("data-device-id", "d-1");
+    expect(row).toHaveAttribute("data-worktree-slots-state", "known");
+    expect(row).toHaveTextContent("3/8");
+    // Collapsed by default — no occupant row text on screen yet.
+    expect(row).not.toHaveTextContent("qontinui-web");
+
+    const trigger = within(row).getByRole("button", {
+      name: /Occupants \(3\)/i,
+    });
+    fireEvent.click(trigger);
+    await waitFor(() => expect(row).toHaveTextContent("qontinui-web"));
+    expect(row).toHaveTextContent("agent-worktrees/abc/qontinui-web");
+  });
+
+  it("renders a genuinely idle device as 0/8, not unknown", async () => {
+    mockRoutes({
+      devices: [coordDevice("d-1", "msi", "healthy")],
+      runners: [runner("msi")],
+      samples: [],
+      worktreeSlots: {
+        tenant_id: "t-1",
+        device_count: 1,
+        truncated: false,
+        device_cap: 100,
+        census_window_secs: 900,
+        devices: [worktreeSlotDevice("d-1", "msi")],
+      },
+    });
+
+    render(<CoordDevOpsPage />);
+
+    const row = await screen.findByTestId("fleet-worktree-slots-row");
+    expect(row).toHaveAttribute("data-worktree-slots-state", "known");
+    expect(row).toHaveTextContent("0/8");
+    expect(
+      within(row).queryByTestId("fleet-worktree-slots-unknown-cell")
+    ).toBeNull();
+  });
+
+  it("renders census_recent_rows: 0 as unknown, never a healthy 0/8", async () => {
+    mockRoutes({
+      devices: [coordDevice("d-1", "stale-box", "healthy")],
+      runners: [runner("stale-box")],
+      samples: [],
+      worktreeSlots: {
+        tenant_id: "t-1",
+        device_count: 1,
+        truncated: false,
+        device_cap: 100,
+        census_window_secs: 900,
+        devices: [
+          worktreeSlotDevice("d-1", "stale-box", { census_recent_rows: 0 }),
+        ],
+      },
+    });
+
+    render(<CoordDevOpsPage />);
+
+    const row = await screen.findByTestId("fleet-worktree-slots-row");
+    expect(row).toHaveAttribute("data-worktree-slots-state", "unknown");
+    const cell = within(row).getByTestId("fleet-worktree-slots-unknown-cell");
+    expect(cell).toHaveTextContent("unknown");
+    // Never the raw ratio, which would read as a healthy, idle machine.
+    expect(row).not.toHaveTextContent("0/8");
+    expect(
+      screen.getByTestId("fleet-worktree-slots-unknown-badge")
+    ).toHaveTextContent("1 unknown");
+  });
+
+  it("badges a device at cap, with no client-derived colour verdict", async () => {
+    mockRoutes({
+      devices: [coordDevice("d-1", "msi", "healthy")],
+      runners: [runner("msi")],
+      samples: [],
+      worktreeSlots: {
+        tenant_id: "t-1",
+        device_count: 1,
+        truncated: false,
+        device_cap: 100,
+        census_window_secs: 900,
+        devices: [
+          worktreeSlotDevice("d-1", "msi", {
+            active_worktrees: 8,
+            occupants: { shown: 8, total: 8, truncated: false, rows: [] },
+          }),
+        ],
+      },
+    });
+
+    render(<CoordDevOpsPage />);
+
+    const row = await screen.findByTestId("fleet-worktree-slots-row");
+    expect(row).toHaveTextContent("8/8");
+    expect(
+      within(row).getByTestId("fleet-worktree-slots-at-cap")
+    ).toHaveTextContent("at cap");
+    expect(
+      screen.getByTestId("fleet-worktree-slots-at-cap-badge")
+    ).toHaveTextContent("1 at cap");
+  });
+
+  it("renders a truncated occupants list with a +N more note", async () => {
+    mockRoutes({
+      devices: [coordDevice("d-1", "msi", "healthy")],
+      runners: [runner("msi")],
+      samples: [],
+      worktreeSlots: {
+        tenant_id: "t-1",
+        device_count: 1,
+        truncated: false,
+        device_cap: 100,
+        census_window_secs: 900,
+        devices: [
+          worktreeSlotDevice("d-1", "msi", {
+            active_worktrees: 8,
+            occupants: {
+              shown: 5,
+              total: 8,
+              truncated: true,
+              rows: Array.from({ length: 5 }, (_, i) => ({
+                repo: `repo-${i}`,
+                worktree_path: `agent-worktrees/x/repo-${i}`,
+                age_secs: 60,
+              })),
+            },
+          }),
+        ],
+      },
+    });
+
+    render(<CoordDevOpsPage />);
+
+    const row = await screen.findByTestId("fleet-worktree-slots-row");
+    fireEvent.click(
+      within(row).getByRole("button", { name: /Occupants \(8\)/i })
+    );
+    await waitFor(() => expect(row).toHaveTextContent("repo-0"));
+    expect(row).toHaveTextContent("+3 more (showing 5 of 8)");
+  });
+
+  it("keeps a device registered but absent from the payload as its own unknown row", async () => {
+    // `d-2` is in coord's device list (the spine) but the worktree-slots
+    // route names only `d-1` — truncated out by the cap, or simply never
+    // observed. It must still get a row, never silently vanish.
+    mockRoutes({
+      devices: [
+        coordDevice("d-1", "msi", "healthy"),
+        coordDevice("d-2", "ghost", "healthy"),
+      ],
+      runners: [runner("msi"), runner("ghost")],
+      samples: [],
+      worktreeSlots: {
+        tenant_id: "t-1",
+        device_count: 1,
+        truncated: false,
+        device_cap: 100,
+        census_window_secs: 900,
+        devices: [worktreeSlotDevice("d-1", "msi")],
+      },
+    });
+
+    render(<CoordDevOpsPage />);
+
+    await waitFor(() =>
+      expect(screen.getAllByTestId("fleet-worktree-slots-row")).toHaveLength(2)
+    );
+    const ghostRow = document.querySelector(
+      '[data-testid="fleet-worktree-slots-row"][data-device-id="d-2"]'
+    ) as HTMLElement;
+    expect(ghostRow).not.toBeNull();
+    expect(ghostRow).toHaveAttribute("data-worktree-slots-state", "unknown");
+    expect(ghostRow).toHaveTextContent("not reported");
+  });
+
+  it("shows a friendly notice, not coord's raw body, when the coord route isn't deployed yet", async () => {
+    // Phase 1 (coord's `GET /coord/fleet/worktree-slots`) ships in a
+    // separate qontinui-coord PR and had not landed as of this PR — every
+    // real read of this route legitimately 404s until it does. `httpClient`
+    // formats that as `GET <url> failed: 404 - <coord's raw body>`; the
+    // banner must show the friendly reading, never that raw string verbatim.
+    mockRoutes({
+      devices: [coordDevice("d-1", "msi", "healthy")],
+      runners: [runner("msi")],
+      samples: [],
+    });
+    httpGet.mockImplementation((url: unknown) => {
+      const u = String(url);
+      if (u.includes("worktree-slots")) {
+        return Promise.reject(
+          new Error(
+            'GET /api/v1/operations/fleet/worktree-slots failed: 404 - {"error":"NOT_FOUND"}'
+          )
+        );
+      }
+      if (u.includes("resource-samples")) {
+        return Promise.resolve({ latest: [], history: [] });
+      }
+      if (u.includes("fleet/health")) {
+        return Promise.resolve({
+          devices: [coordDevice("d-1", "msi", "healthy")],
+        });
+      }
+      return Promise.reject(new Error(`unexpected GET ${u}`));
+    });
+
+    render(<CoordDevOpsPage />);
+
+    const banner = await screen.findByTestId("fleet-worktree-slots-error");
+    expect(banner).toHaveTextContent(
+      "coord does not serve the fleet worktree-slots route yet"
+    );
+    // Never coord's raw, doubly-JSON-encoded transport string.
+    expect(banner).not.toHaveTextContent("NOT_FOUND");
+    expect(banner).not.toHaveTextContent("failed: 404");
+    // The device list stays the spine even with no data — unknown, not gone.
+    const row = await screen.findByTestId("fleet-worktree-slots-row");
+    expect(row).toHaveAttribute("data-worktree-slots-state", "unknown");
+  });
+
+  it("still shows the transport detail for a genuine failure, not the route-unavailable notice", async () => {
+    mockRoutes({
+      devices: [coordDevice("d-1", "msi", "healthy")],
+      runners: [runner("msi")],
+      samples: [],
+    });
+    httpGet.mockImplementation((url: unknown) => {
+      const u = String(url);
+      if (u.includes("worktree-slots")) {
+        return Promise.reject(
+          new Error(
+            "GET /api/v1/operations/fleet/worktree-slots failed: 502 - coord is not reachable"
+          )
+        );
+      }
+      if (u.includes("resource-samples")) {
+        return Promise.resolve({ latest: [], history: [] });
+      }
+      if (u.includes("fleet/health")) {
+        return Promise.resolve({
+          devices: [coordDevice("d-1", "msi", "healthy")],
+        });
+      }
+      return Promise.reject(new Error(`unexpected GET ${u}`));
+    });
+
+    render(<CoordDevOpsPage />);
+
+    const banner = await screen.findByTestId("fleet-worktree-slots-error");
+    expect(banner).toHaveTextContent("coord is not reachable");
+    expect(banner).not.toHaveTextContent("does not serve");
   });
 });

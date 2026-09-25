@@ -132,8 +132,7 @@ vi.mock("@qontinui/ui-bridge/server", () => {
 // route handler's call into them returns real values.
 const recordAuditMock = vi.fn(async () => undefined);
 vi.mock("./_audit", async (importOriginal) => {
-  const actual =
-    await importOriginal<typeof import("./_audit")>();
+  const actual = await importOriginal<typeof import("./_audit")>();
   return {
     ...actual,
     recordAudit: (...args: Parameters<typeof actual.recordAudit>) =>
@@ -151,7 +150,7 @@ function makeRequest(
   path: string,
   method: "GET" | "POST" | "PUT" | "DELETE",
   body?: unknown,
-  headers: Record<string, string> = {},
+  headers: Record<string, string> = {}
 ): NextRequest {
   const init: RequestInit = {
     method,
@@ -180,6 +179,49 @@ function makeContext(path: string): {
       path: path.replace(/^\//, "").split("/"),
     }),
   };
+}
+
+/**
+ * A fixed instant 30 seconds into a minute window — the furthest point from
+ * either boundary, so a misread of this helper still has the most room.
+ */
+const FROZEN_NOW = new Date("2026-01-01T00:00:30.000Z");
+
+/**
+ * Run `fn` with the clock frozen inside one rate-limit window.
+ *
+ * WHY THE TWO LIMIT TESTS NEED THIS. `_rate-limit.ts` keys its counter on
+ * `Math.floor(Date.now() / 60_000)` (`currentWindowIndex`), and those tests
+ * make 21 and 61 sequential awaited calls expecting only the last to be
+ * refused. Against a real clock the run can straddle a minute boundary: the
+ * window rolls, the counter restarts from 1, and the final call is
+ * legitimately allowed — a 200 where the test demands a 429. That is the
+ * failure, and it is a property of the test, not of the limiter.
+ *
+ * It is vanishingly rare on an idle machine and ordinary on a loaded one,
+ * which is why it surfaced first in the composed cloud build, where a full
+ * `next build` runs alongside the suite. Widening the window would only move
+ * the boundary; freezing the clock removes it.
+ *
+ * Fake timers reach the limiter because `checkRateLimit` takes
+ * `now = Date.now()` as a default parameter, and nothing in this route path
+ * uses `setTimeout`/`setInterval`/`AbortSignal.timeout` — so no awaited
+ * promise depends on a timer that faking would stop. The only other clock
+ * reader on the path is `_auth.ts`'s cache TTL, which a frozen clock can only
+ * keep fresher.
+ */
+async function withFrozenWindow<T>(fn: () => Promise<T>): Promise<T> {
+  vi.useFakeTimers();
+  vi.setSystemTime(FROZEN_NOW);
+  // Asserted, never assumed. Vitest fakes `Date` by default, but a future
+  // `fakeTimers.toFake` that left it out would silently hand these tests back
+  // the real clock — and the flake back with it.
+  expect(Date.now()).toBe(FROZEN_NOW.getTime());
+  try {
+    return await fn();
+  } finally {
+    vi.useRealTimers();
+  }
 }
 
 describe("route.ts §4.8 audit + rate-limit branches", () => {
@@ -212,15 +254,20 @@ describe("route.ts §4.8 audit + rate-limit branches", () => {
     vi.unstubAllEnvs();
     vi.unstubAllGlobals();
     __setRedisClientForTest(undefined);
+    // Belt and braces: `withFrozenWindow` restores in a `finally`, so this
+    // only matters if a future test calls `vi.useFakeTimers()` directly.
+    vi.useRealTimers();
   });
 
   it("auditable POST → exactly one audit row with the safe summary", async () => {
-    const req = makeRequest(
-      "/control/element/btn-42/action",
-      "POST",
-      { elementId: "btn-42", action: "click" },
+    const req = makeRequest("/control/element/btn-42/action", "POST", {
+      elementId: "btn-42",
+      action: "click",
+    });
+    const resp = await route.POST(
+      req,
+      makeContext("/control/element/btn-42/action")
     );
-    const resp = await route.POST(req, makeContext("/control/element/btn-42/action"));
     expect(resp.status).toBe(200);
     expect(recordAuditMock).toHaveBeenCalledTimes(1);
     const call = recordAuditMock.mock.calls[0]?.[0];
@@ -252,11 +299,9 @@ describe("route.ts §4.8 audit + rate-limit branches", () => {
 
   it("audit insert failure → caller's response is still 200 (fire-and-forget)", async () => {
     recordAuditMock.mockRejectedValueOnce(new Error("backend down"));
-    const req = makeRequest(
-      "/control/page/navigate",
-      "POST",
-      { url: "/dashboard" },
-    );
+    const req = makeRequest("/control/page/navigate", "POST", {
+      url: "/dashboard",
+    });
     const resp = await route.POST(req, makeContext("/control/page/navigate"));
     // The handler returned the SDK's 200, NOT the audit-insert failure.
     // (We don't await `recordAudit` in the route handler; the rejection
@@ -266,39 +311,45 @@ describe("route.ts §4.8 audit + rate-limit branches", () => {
   });
 
   it("21st write in a minute → 429 RATE_LIMITED", async () => {
-    // Hit the same write endpoint 20 times — all 200.
-    for (let i = 0; i < 20; i++) {
-      const req = makeRequest("/control/page/navigate", "POST", { url: "/x" });
-      const resp = await route.POST(
-        req,
-        makeContext("/control/page/navigate"),
+    await withFrozenWindow(async () => {
+      // Hit the same write endpoint 20 times — all 200.
+      for (let i = 0; i < 20; i++) {
+        const req = makeRequest("/control/page/navigate", "POST", {
+          url: "/x",
+        });
+        const resp = await route.POST(
+          req,
+          makeContext("/control/page/navigate")
+        );
+        expect(resp.status).toBe(200);
+      }
+      // The 21st must be denied.
+      const denied = await route.POST(
+        makeRequest("/control/page/navigate", "POST", { url: "/x" }),
+        makeContext("/control/page/navigate")
       );
-      expect(resp.status).toBe(200);
-    }
-    // The 21st must be denied.
-    const denied = await route.POST(
-      makeRequest("/control/page/navigate", "POST", { url: "/x" }),
-      makeContext("/control/page/navigate"),
-    );
-    expect(denied.status).toBe(429);
-    const body = await denied.json();
-    expect(body).toMatchObject({ success: false, code: "RATE_LIMITED" });
-    expect(denied.headers.get("Retry-After")).toBeTruthy();
+      expect(denied.status).toBe(429);
+      const body = await denied.json();
+      expect(body).toMatchObject({ success: false, code: "RATE_LIMITED" });
+      expect(denied.headers.get("Retry-After")).toBeTruthy();
+    });
   });
 
   it("61st read in a minute → 429 RATE_LIMITED", async () => {
-    for (let i = 0; i < 60; i++) {
-      const resp = await route.GET(
+    await withFrozenWindow(async () => {
+      for (let i = 0; i < 60; i++) {
+        const resp = await route.GET(
+          makeRequest("/control/snapshot", "GET"),
+          makeContext("/control/snapshot")
+        );
+        expect(resp.status).toBe(200);
+      }
+      const denied = await route.GET(
         makeRequest("/control/snapshot", "GET"),
-        makeContext("/control/snapshot"),
+        makeContext("/control/snapshot")
       );
-      expect(resp.status).toBe(200);
-    }
-    const denied = await route.GET(
-      makeRequest("/control/snapshot", "GET"),
-      makeContext("/control/snapshot"),
-    );
-    expect(denied.status).toBe(429);
+      expect(denied.status).toBe(429);
+    });
   });
 
   it("Redis offline → request passes through without rate-limit (fail open)", async () => {
@@ -307,7 +358,7 @@ describe("route.ts §4.8 audit + rate-limit branches", () => {
     for (let i = 0; i < 30; i++) {
       const resp = await route.POST(
         makeRequest("/control/page/navigate", "POST", { url: "/x" }),
-        makeContext("/control/page/navigate"),
+        makeContext("/control/page/navigate")
       );
       expect(resp.status).toBe(200);
     }

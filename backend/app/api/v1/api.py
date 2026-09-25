@@ -51,6 +51,7 @@ from app.api.v1.endpoints import (
     devenv,
     devenv_agent,
     device_bridge_ws,
+    device_resolve,
     devices,
     devices_ws,
     digital_twin,
@@ -82,6 +83,7 @@ from app.api.v1.endpoints import (
     notifications,
     operations,
     organizations,
+    overview,
     pair_codes,
     phase_results,
     plan_library,
@@ -113,6 +115,7 @@ from app.api.v1.endpoints import (
     screenshots,
     security_endpoints,
     semantic_search,
+    served_routes,
     session_repository,
     settings,
     skills,
@@ -120,7 +123,6 @@ from app.api.v1.endpoints import (
     state_discovery,
     state_discovery_results,
     state_machine_configs,
-    strategy,
     task_runs,
     template_capture,
     training,
@@ -139,6 +141,7 @@ from app.api.v1.endpoints import (
 from app.api.v1.endpoints import auth as auth_pkg
 from app.api.v1.endpoints import testing as testing_pkg
 from app.extensions import register_cloud_extensions
+from app.overview.router import router as overview_authoring_router
 
 api_router = APIRouter()
 
@@ -211,6 +214,9 @@ api_router.include_router(videos.router, prefix="/videos", tags=["videos"])
 # ``/api/v1/runners/*`` (rename, no deprecation alias) in favour of
 # ``/api/v1/devices/*``.
 api_router.include_router(devices.router, prefix="/devices", tags=["devices"])
+# Coord's capability-checked device resolver, forwarded AS the caller (plan
+# 2026-09-20-runner-selector-drives-a-transport-not-a-target, Phase 3).
+api_router.include_router(device_resolve.router, prefix="/devices", tags=["devices"])
 # Single-use pair codes (Phase 2a.1) — mounted under /devices/pair-codes.
 # Sits next to devices.router because the redeem endpoint is the runner's
 # entry point and lives in the same conceptual namespace.
@@ -264,6 +270,18 @@ api_router.include_router(conditions.router, prefix="/conditions", tags=["condit
 # Digital Twin Explorer (Phase 1) — coord-backed completeness matrix.
 api_router.include_router(
     digital_twin.router, prefix="/digital-twin", tags=["digital-twin"]
+)
+# Project Overview — the business-leader surface (overview.*). Phase 2 of
+# ``2026-09-19-project-overview-for-business-leaders``: the estimate baseline.
+# Tenant-scoped on the active coord tenant, so the frontend attaches
+# ``X-Qontinui-Active-Tenant`` to this prefix (``ACTIVE_TENANT_URL_PREFIXES``
+# in ``frontend/src/services/http-client.ts``).
+api_router.include_router(overview.router, prefix="/overview", tags=["overview"])
+# The overview authoring contract (plan 2026-09-20-overview-authoring-layer):
+# the resource catalog, the change log, and the generic CRUD routes the
+# registry builds. Same prefix, disjoint paths.
+api_router.include_router(
+    overview_authoring_router, prefix="/overview", tags=["overview"]
 )
 # Environments digital-twin — user-scoped management API + machine-key agent API.
 api_router.include_router(devenv.router, prefix="/devenv", tags=["environments"])
@@ -341,6 +359,13 @@ api_router.include_router(task_runs.router, prefix="/task-runs", tags=["task-run
 # Render logging for development debugging (disabled in production)
 api_router.include_router(
     render_logs.router, prefix="/render-logs", tags=["render-logs"]
+)
+# The served-routes inventory coord's route-serving observer reads instead of
+# probing each route with its documented verb. Public, and hidden from the
+# schema (it counts itself in its own hidden_count). Plan
+# 2026-09-25-route-serving-observer-probes-mutating-routes-with-their-documented-verb.
+api_router.include_router(
+    served_routes.router, prefix="/meta", tags=["meta"], include_in_schema=False
 )
 # UI Bridge state discovery and management
 api_router.include_router(ui_bridge_states.router, tags=["ui-bridge-states"])
@@ -466,8 +491,6 @@ api_router.include_router(files_sharing.router, prefix="/files", tags=["files-sh
 api_router.include_router(
     device_bridge_ws.router, prefix="/device-bridge", tags=["device-bridge"]
 )
-# Strategy Collaboration (Phase 1, read-only doc proxy → coord)
-api_router.include_router(strategy.router, prefix="/strategy", tags=["strategy"])
 # Agent sessions observability — Side D / Phase 4 of plan
 # coord-agent-session-id-tracking.md. Lists sessions from
 # coord.agent_sessions + per-session lineage timeline.

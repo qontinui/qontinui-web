@@ -317,6 +317,110 @@ describe("LandedWriteFeed — the linked reasoning", () => {
     expect(
       screen.queryByTestId("write-reasoning-policy-operating-rules-6")
     ).toBeNull();
+    expect(
+      screen.queryByTestId("write-reasoning-finding-policy-operating-rules-6")
+    ).toBeNull();
+  });
+
+  it("links a CREATED document's reasoning into the findings reader, not the notifications feed", () => {
+    // Creation never emits a notice and the reconciler skips v1 — the caveat
+    // on this very page says so — so a notifications link would send the
+    // operator to an event that cannot exist. The reasoning is still readable:
+    // it is the finding its author filed, and `/admin/coord/findings` opens
+    // it. Plan `2026-09-15-the-console-names-a-finding-it-cannot-open`.
+    renderFeed({
+      writes: [
+        write({
+          kind: "decision_record",
+          name: "escalate-path-clearance-is-agent-work",
+          version_number: 1,
+          current_version: 1,
+          notification_ref: "fec41291-67ed-4cf8-b331-888ad1126b45",
+        }),
+      ],
+    });
+    const link = screen.getByTestId(
+      "write-reasoning-decision_record-escalate-path-clearance-is-agent-work-1"
+    );
+    expect(link).toHaveAttribute(
+      "href",
+      "/admin/coord/findings?id=fec41291-67ed-4cf8-b331-888ad1126b45"
+    );
+    expect(link).toHaveAttribute("data-reasoning-arm", "finding_only");
+    // Accessible TEXT, not a `title`: what a keyboard or screen-reader
+    // operator gets is the same word the edit rows carry, because the control
+    // now does the same thing — it opens the reasoning.
+    expect(link).toHaveTextContent(/why/i);
+  });
+
+  it("no longer renders the inert reference or its expanded id line", () => {
+    // Delete-over-deprecate. Both existed only because the console had no
+    // findings reader: a <span> the operator could not click, and the uuid
+    // printed a second time in the detail as his only handle. A reference he
+    // cannot act on, beside a link he can, is worse than neither.
+    renderFeed({
+      writes: [
+        write({
+          kind: "decision_record",
+          name: "escalate-path-clearance-is-agent-work",
+          version_number: 1,
+          current_version: 1,
+          notification_ref: "fec41291-67ed-4cf8-b331-888ad1126b45",
+        }),
+      ],
+    });
+    expect(
+      screen.queryByTestId(
+        "write-reasoning-finding-decision_record-escalate-path-clearance-is-agent-work-1"
+      )
+    ).toBeNull();
+    fireEvent.click(
+      screen.getByTestId(
+        "write-toggle-decision_record-escalate-path-clearance-is-agent-work-1"
+      )
+    );
+    expect(
+      screen.queryByTestId(
+        "write-reasoning-finding-id-decision_record-escalate-path-clearance-is-agent-work-1"
+      )
+    ).toBeNull();
+  });
+
+  it("still links a v2 edit of that same document into the notifications feed", () => {
+    renderFeed({
+      writes: [
+        write({
+          kind: "decision_record",
+          name: "escalate-path-clearance-is-agent-work",
+          version_number: 2,
+          current_version: 2,
+          notification_ref: "ref-2",
+        }),
+      ],
+    });
+    const link = screen.getByTestId(
+      "write-reasoning-decision_record-escalate-path-clearance-is-agent-work-2"
+    );
+    expect(link).toHaveAttribute("href", "/admin/coord/notifications?ref=ref-2");
+    expect(link).toHaveAttribute("data-reasoning-arm", "notice");
+    // The tooltip names the finding the notice carries.
+    expect(link).toHaveAttribute("title", expect.stringContaining("ref-2"));
+    // And NOT the deleted finding-only reference, in the row or in the detail.
+    expect(
+      screen.queryByTestId(
+        "write-reasoning-finding-decision_record-escalate-path-clearance-is-agent-work-2"
+      )
+    ).toBeNull();
+    fireEvent.click(
+      screen.getByTestId(
+        "write-toggle-decision_record-escalate-path-clearance-is-agent-work-2"
+      )
+    );
+    expect(
+      screen.queryByTestId(
+        "write-reasoning-finding-id-decision_record-escalate-path-clearance-is-agent-work-2"
+      )
+    ).toBeNull();
   });
 });
 

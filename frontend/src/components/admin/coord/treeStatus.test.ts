@@ -288,11 +288,11 @@ describe("deriveTreeStatus escalation", () => {
     expect(s.attention).toBe("author");
   });
 
-  it("escalates the 24-72h WARNING band to author, matching alertStatus", () => {
+  it("escalates the 24-72h WARNING band to author — idle WIP needs a human", () => {
     // Ruling 1 of the Wave-1 review. This band used to be `waiting`, which
     // promised the row would clear itself; nothing clears untouched WIP but a
-    // human. `alertStatus.ts` rates the same condition `author`, and two
-    // console surfaces must not answer this differently.
+    // human. Idle uncommitted work is `author` wherever the console rates it
+    // (treeStatus.ts's STALE_ATTENTION doc states the invariant).
     const s = deriveTreeStatus({
       repo: "r",
       primary_path: "p",

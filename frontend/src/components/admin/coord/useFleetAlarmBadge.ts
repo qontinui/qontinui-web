@@ -26,7 +26,7 @@
  *
  * ## Cadence, and what a failure means
  *
- * 60 s — the nav cadence (`ALERTS_POLL_MS`), deliberately NOT the 10 s / 30 s
+ * 60 s — the nav cadence (`NOTIFICATIONS_POLL_MS`), deliberately NOT the 10 s / 30 s
  * foreground cadences the Dev Ops Overview uses. This is a background hint on
  * every console page; the page that owns machine liveness still polls at its
  * own rate.
@@ -61,7 +61,8 @@
  * read that fails beside a health read that succeeded leaves four counts
  * uncurrent and one perfectly fresh, and a single flag across them would either
  * under-claim on four or over-claim on one. Each axis answers for itself, the
- * same split `useAlertsBadge` makes between its count and its critical accent.
+ * same split the (since-deleted) alerts badge made between its count and its
+ * critical accent.
  *
  * `hasRead` is the health axis: `devices` is the spine, and with no device list
  * there is no retained fact for any of the five counts to qualify.
@@ -201,7 +202,7 @@ export function useFleetAlarmBadge(): FleetAlarm {
     //
     // ⚠️ Which makes CROSS-WIRING the hazard, not divergence: `settleSamples`
     // is correct only while it is handed `samplesSeq`. Keep each `settle*` on
-    // its own `*Seq`, the same rule `useAlertsBadge` carries.
+    // its own `*Seq`.
     const healthSeq = issueHealth();
     const samplesSeq = issueSamples();
     // Settled, not `all`: the two reads fail independently, and the health

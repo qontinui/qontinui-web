@@ -1,7 +1,8 @@
 /**
  * The R3 invariant, enforced across EVERY console surface at once.
  *
- * `MergePipeline.test.tsx` and `alertStatus.test.ts` each assert their own
+ * `MergePipeline.test.tsx` and (until it was retired with the alerts page)
+ * `alertStatus.test.ts` each assert their own
  * palette agrees with their own `ATTENTION_BY_KIND`. Both of those stay — they
  * are each surface's own oracle. What they cannot do is bind a surface that
  * does not exist yet, and 29 more console routes are about to adopt this

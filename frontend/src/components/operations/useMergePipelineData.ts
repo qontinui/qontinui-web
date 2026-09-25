@@ -8,7 +8,8 @@
 // coord-fleet-page-redesign-2026-07-14.md): the MergePipeline hero fuses the
 // proposal queue and the PR outer state, so a single hook fetches BOTH plus
 // the two actionable side-channels (suggestions, blast-radius gate blocks).
-// Transport: WS push on `events.merge.>` with a debounced co-refetch of
+// Transport: WS push on coord's `events.merge.*` — through the web backend's
+// coord-events bridge (`subscribe=merge`) — with a debounced co-refetch of
 // every surface, plus a slow poll fallback. Having ONE owner (instead of the
 // pre-redesign MergeTrain panel polling the same four endpoints on its own)
 // keeps the dashboard at the same request budget as before the redesign.
@@ -43,7 +44,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createLogger } from "@/lib/logger";
 import { httpClient } from "@/services/service-factory";
-import { OPERATIONS_API } from "./utils";
+import { OPERATIONS_API, coordEventsWsUrl } from "./utils";
 import { isMergedPr } from "./prPipeline";
 import type {
   BlastRadiusBlock,
@@ -60,9 +61,36 @@ import type {
 
 const log = createLogger("useMergePipelineData");
 
-const COORD_WS_URL =
-  process.env.NEXT_PUBLIC_COORD_WS_URL || "ws://localhost:9870/ws";
-const WS_PATTERN = "events.merge.>";
+/**
+ * The bridge subscription this hook opens. The web backend forwards it to
+ * coord's authenticated `/ws?subscribe=merge`, which coord resolves to
+ * `events.merge.*` server-side. The hook used to dial coord directly on
+ * `NEXT_PUBLIC_COORD_WS_URL` with `?pattern=events.merge.>` — a NATS
+ * wildcard, not a Redis glob, so that subscription had never matched a
+ * frame and the "live transport" was the 15s poll all along. Plan
+ * 2026-09-13-coord-publishes-agent-jwts-on-a-redis-channel-fronted-by-an-unauthenticated-ws-firehose
+ * Phase 2 re-homed it and fixed the pattern in the same move.
+ */
+const WS_SUBSCRIPTION = "merge" as const;
+
+/**
+ * True for the coord-events bridge's own `{"type":"keepalive"}` frame — the
+ * one text frame on this socket that carries no coord event (finding
+ * 67329129). Exported so the shape is pinned by a unit test independent of
+ * the WS plumbing: anything that doesn't parse as JSON, or parses but isn't
+ * this exact shape, is treated as a real coord frame and refetches, which is
+ * the safe default for an envelope this hook doesn't otherwise recognize.
+ */
+export function isKeepaliveFrame(data: unknown): boolean {
+  if (typeof data !== "string") return false;
+  try {
+    const parsed = JSON.parse(data) as { type?: unknown };
+    return parsed?.type === "keepalive";
+  } catch {
+    return false;
+  }
+}
+
 // Fallback only — the WS is the live transport, so this just bounds staleness
 // if the socket is down. 2s here meant 5 authenticated requests every 2s per
 // open tab against a 20-connection backend pool.
@@ -86,7 +114,7 @@ const MIN_BATCH_SPACING_MS = 3_000;
 export const MERGED_LOOKBACK_HOURS = 48;
 /**
  * Cadence for the recently-merged rows — deliberately ~30x slower than the hot
- * poll, and only ticking while the Merged tab is open.
+ * poll, and only ticking while the Merged or All PRs tab is open.
  *
  * `?include_merged=` makes coord run `query_recently_merged_prs`, which
  * resolves a deploy surface per repo (a git-ancestry probe per merged PR) on
@@ -98,6 +126,13 @@ export const MERGED_LOOKBACK_HOURS = 48;
  * is cold data; poll it like cold data.
  */
 const MERGED_POLL_INTERVAL_MS = 60_000;
+/**
+ * A merged read is skipped when the last one finished less than this long ago,
+ * whoever asked (the timer, a tab re-shown, `includeMerged` flipping back on).
+ * Half the poll interval: fresh enough that a re-show shows current data, long
+ * enough that a burst of events cannot start a burst of 14-21s reads.
+ */
+const MERGED_MIN_AGE_MS = MERGED_POLL_INTERVAL_MS / 2;
 const REFETCH_DEBOUNCE_MS = 250;
 const MAX_RECONNECT_ATTEMPTS = 5;
 
@@ -105,8 +140,8 @@ const MAX_RECONNECT_ATTEMPTS = 5;
 export interface MergePipelineOptions {
   /**
    * Fetch recently-merged rows. False (default) keeps the hot poll on the
-   * cheap open-PR query; the caller sets it only while the Merged tab is the
-   * visible one.
+   * cheap open-PR query; the caller sets it only while a tab that shows landed
+   * PRs (Merged, All PRs) is the visible one.
    */
   includeMerged?: boolean;
 }
@@ -118,10 +153,24 @@ export interface MergePipelineData {
   /**
    * Recently-merged rows for the Merged tab. `null` until the first merged
    * fetch resolves, and it only ever runs while the caller passes
-   * `includeMerged` — so this stays null for the whole session on the other
-   * tabs, which is exactly the point.
+   * `includeMerged` — so this stays null for the whole session on the tabs
+   * that show no landed PRs, which is exactly the point.
    */
   mergedPrs: PrRow[] | null;
+  /**
+   * Why the LAST merged-rows read failed, or null when it has not failed since
+   * it last succeeded. Non-null means the merged history is not current, and
+   * which way depends on `mergedPrs`:
+   *
+   * - `mergedPrs === null` (never loaded): the history is INCOMPLETE, not
+   *   empty. The only landed rows a consumer holds are the open list's
+   *   `landed-open` ones, which carry no merge time.
+   * - `mergedPrs` non-null: the last GOOD read is kept, so those rows have
+   *   merge times and include PRs that already closed — but they are STALE.
+   *
+   * A consumer must say which, rather than render either as current history.
+   */
+  mergedError: string | null;
   /**
    * How many PRs landed in the {@link MERGED_LOOKBACK_HOURS} window, per
    * coord's cheap count — available WITHOUT the expensive merged-rows read, so
@@ -176,6 +225,7 @@ export function useMergePipelineData(
   const [proposals, setProposals] = useState<ProposalDetail[] | null>(null);
   const [prs, setPrs] = useState<PrRow[] | null>(null);
   const [mergedPrs, setMergedPrs] = useState<PrRow[] | null>(null);
+  const [mergedError, setMergedError] = useState<string | null>(null);
   const [mergedCount, setMergedCount] = useState<number | null>(null);
   const [economicsByRepo, setEconomicsByRepo] = useState<
     Record<string, MergeEconomics>
@@ -190,11 +240,19 @@ export function useMergePipelineData(
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const reconnectAttemptsRef = useRef(0);
+  // Every `connectWs` attempt awaits its session token; one overtaken while
+  // it waited (another connect, cleanup, tab hide) must create no socket.
+  const connectGenRef = useRef(0);
   const refetchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const cleanedUpRef = useRef(false);
   /** A batch is in flight — new triggers coalesce into `rerunRef`. */
   const inFlightRef = useRef(false);
+  // The merged read runs on its own slower chain. Separate from `inFlightRef`:
+  // sharing one flag would let a 20s merged read swallow the hot poll. Owned
+  // here rather than by an effect run — see `readMergedIfStale`.
+  const mergedReadRef = useRef<Promise<void> | null>(null);
+  const mergedDoneAtRef = useRef(0);
   /** A trigger arrived mid-batch; run exactly one more batch after it. */
   const rerunRef = useRef(false);
   /** Latest `fetchAll`, so timers/listeners need not re-bind on each change. */
@@ -280,16 +338,26 @@ export function useMergePipelineData(
   }, []);
 
   // Recently-merged rows. Fetched ONLY while the caller asks for them (the
-  // Merged tab is open) and on a slow cadence — see MERGED_POLL_INTERVAL_MS
+  // Merged or All PRs tab is open) and on a slow cadence — see
+  // MERGED_POLL_INTERVAL_MS
   // for why this must never ride the hot poll.
   const fetchMergedPrs = useCallback(async () => {
     try {
       const res = await httpClient.fetch(
-        `${OPERATIONS_API}/pr-merge/prs?include_merged=${MERGED_LOOKBACK_HOURS}`
+        `${OPERATIONS_API}/pr-merge/prs?include_merged=${MERGED_LOOKBACK_HOURS}`,
+        // No client retry. The client retries every 5xx up to 3 times, and each
+        // attempt is a full coord query that holds a backend DB connection for
+        // its whole (14-21s) life: a coord that is already struggling would be
+        // asked the same expensive question four times per poll. The next poll
+        // IS the retry, on the cold cadence this read is meant to have.
+        { maxRetries: 0 }
       );
       if (!res.ok) {
         if (res.status === 404) {
-          if (!cleanedUpRef.current) setMergedPrs([]);
+          if (!cleanedUpRef.current) {
+            setMergedPrs([]);
+            setMergedError(null);
+          }
           return;
         }
         throw new Error(`HTTP ${res.status}`);
@@ -299,7 +367,9 @@ export function useMergePipelineData(
       // Every row this endpoint adds beyond the open list has LANDED —
       // coord's merged query requires `merge_commit_sha IS NOT NULL`, and the
       // open query never projects that column. So the merged set is exactly
-      // the rows carrying a merge sha, whatever `pr_state` says.
+      // the rows carrying a merge sha, whatever `pr_state` says — plus any
+      // open row coord classifies `landed-open` (landed at its current head,
+      // sha not projected on open rows); see `isMergedPr`.
       //
       // Filtering on `pr_state IN (merged, closed)` instead — what this did —
       // silently dropped coord's ff-lands during their phantom-open window: an
@@ -312,10 +382,19 @@ export function useMergePipelineData(
       // MergePipeline) — dropping rows is not.
       if (!cleanedUpRef.current) {
         setMergedPrs(list.filter(isMergedPr));
+        setMergedError(null);
       }
     } catch (err) {
+      // Keep whatever is held, INCLUDING null. Coercing null to [] here made a
+      // failed first read look like "nothing landed": the Merged label fell
+      // from coord's cheap count to 0. Null keeps that label honest, and it
+      // matters more now the read also runs on the default All PRs tab.
       log.warn("fetchMergedPrs failed — keeping last known merged rows", err);
-      if (!cleanedUpRef.current) setMergedPrs((prev) => prev ?? []);
+      // Kept rows are STALE and a never-loaded set is INCOMPLETE; either way
+      // the consumer needs to be told, not left to infer it from an absence.
+      if (!cleanedUpRef.current) {
+        setMergedError(err instanceof Error ? err.message : String(err));
+      }
     }
   }, []);
 
@@ -483,7 +562,7 @@ export function useMergePipelineData(
     refetchTimerRef.current = setTimeout(() => {
       // Rule 3 applies to the WS path too, not just the poll: a hidden tab
       // with a live socket would otherwise keep running full batches off
-      // `events.merge.>` all night. Suppressing here rather than at schedule
+      // `events.merge.*` all night. Suppressing here rather than at schedule
       // time loses nothing — `onVisibility` re-schedules on reveal.
       if (document.hidden) return;
       void fetchAllRef.current();
@@ -531,7 +610,7 @@ export function useMergePipelineData(
     fetchAllRef.current = fetchAll;
   }, [fetchAll]);
 
-  const connectWs = useCallback(() => {
+  const connectWs = useCallback(async (): Promise<void> => {
     if (cleanedUpRef.current || document.hidden) return;
     // Detach BEFORE closing. A superseded socket's `onclose` fires
     // asynchronously and would otherwise schedule a reconnect that closes the
@@ -542,8 +621,33 @@ export function useMergePipelineData(
       prev.onopen = prev.onmessage = prev.onerror = prev.onclose = null;
       prev.close();
     }
+    wsRef.current = null;
+    const gen = ++connectGenRef.current;
 
-    const url = `${COORD_WS_URL}?pattern=${encodeURIComponent(WS_PATTERN)}`;
+    // The bridge authenticates the operator from the same session token
+    // every other operations WS uses (`useDeviceStatusStream` is the
+    // precedent) — the client-held bearer when present, else the
+    // cookie-reading /api/v1/ws-token route.
+    const token = await httpClient.getWebSocketToken();
+
+    // Overtaken while awaiting the token — by another connect, by cleanup,
+    // or by the tab hiding. Create nothing: a socket made here would be one
+    // no cleanup can reach.
+    if (
+      gen !== connectGenRef.current ||
+      cleanedUpRef.current ||
+      document.hidden
+    ) {
+      return;
+    }
+    if (!token) {
+      // No session → the bridge would refuse. The poll's `reviveWs` retries
+      // every POLL_INTERVAL_MS, which is the right cadence for "signed out".
+      log.debug("No WS token; merge pipeline stays on the poll");
+      return;
+    }
+
+    const url = coordEventsWsUrl(WS_SUBSCRIPTION, token);
     let ws: WebSocket;
     try {
       ws = new WebSocket(url);
@@ -564,9 +668,16 @@ export function useMergePipelineData(
       scheduleRefetch();
     };
 
-    ws.onmessage = () => {
-      // Merge events only signal "something changed" — refetch for the
-      // canonical state.
+    ws.onmessage = (event) => {
+      // The bridge also sends a channel-less `{"type":"keepalive"}` frame
+      // on an idle upstream (finding 67329129) so a proxy on this leg
+      // doesn't time the socket out. It carries no merge event and must
+      // not trigger the hero's five-surface refetch — that would turn a
+      // keepalive into a periodic full reload instead of a no-op.
+      // Anything else is a real coord frame: merge events only signal
+      // "something changed", so any non-keepalive message refetches for
+      // the canonical state rather than trying to apply it incrementally.
+      if (isKeepaliveFrame(event.data)) return;
       scheduleRefetch();
     };
 
@@ -585,7 +696,7 @@ export function useMergePipelineData(
       }
       const delay = Math.min(1_000 * 2 ** reconnectAttemptsRef.current, 30_000);
       reconnectAttemptsRef.current += 1;
-      reconnectRef.current = setTimeout(connectWs, delay);
+      reconnectRef.current = setTimeout(() => void connectWs(), delay);
     };
   }, [scheduleRefetch]);
 
@@ -604,7 +715,7 @@ export function useMergePipelineData(
       reconnectRef.current = null;
     }
     reconnectAttemptsRef.current = 0;
-    connectWs();
+    void connectWs();
   }, [connectWs]);
 
   useEffect(() => {
@@ -657,7 +768,7 @@ export function useMergePipelineData(
     // fetches on first reveal, so nothing is lost.
     if (!document.hidden) void fetchAllRef.current();
     pollTimerRef.current = setTimeout(() => void tick(), POLL_INTERVAL_MS);
-    connectWs();
+    void connectWs();
 
     // Re-reveal: resync at once, and open the socket if we never got one —
     // `connectWs` no-ops while hidden, so a tab that mounted in the
@@ -690,19 +801,103 @@ export function useMergePipelineData(
   // Merged rows ride their OWN slow timer, and only while the caller wants
   // them. Deliberately not folded into `fetchAll`: that is the 2s loop, and
   // the merged query is the expensive one (see MERGED_POLL_INTERVAL_MS).
-  // Leaving the Merged tab clears the timer; the last rows stay in state so
-  // returning to the tab renders instantly while the refetch runs.
+  // Leaving the Merged/All PRs tabs clears the timer; the last rows stay in
+  // state so returning to the tab renders instantly while the refetch runs.
+  //
+  // The same three load rules as the main batch (see the header): single-flight,
+  // a gap measured from COMPLETION, and no polling from a hidden tab. This read
+  // holds a backend DB connection for 14-21s, so it is the one that most needs
+  // them — it used to run on a bare `setInterval`, which stacks requests when
+  // coord slows down, and polled from tabs nobody was looking at.
+  // The in-flight read and the time of the last completed one are owned by the
+  // HOOK, not by any one effect run. Owning them per effect run is what let
+  // single-flight break: the effect re-runs when `includeMerged` flips (a tab
+  // click away from All PRs and back) and under StrictMode, and each run's own
+  // "I am not in flight" state started a second 14-21s read while the first was
+  // still pinning its DB connection. A new run now ADOPTS the read that is
+  // already out.
+  //
+  // The minimum age is the rate floor. Single-flight caps concurrency, not
+  // rate: without it, re-showing the tab or flipping tabs every few seconds
+  // starts one read per event. Completion time is recorded on FAILURE too, so a
+  // struggling coord is not re-asked on every reveal.
+  //
+  // KNOWN LIMIT: this is per hook INSTANCE. Leaving the page mid-read and coming
+  // back inside the read's 14-21s mounts a new instance with fresh refs, which
+  // starts its own read while the first still holds its connection. Sharing the
+  // read across mounts needs a module-level store with subscribers (the adopted
+  // read would otherwise publish into an unmounted instance's state), which is a
+  // larger change than this one.
+  const readMergedIfStale = useCallback((): Promise<void> => {
+    if (mergedReadRef.current) return mergedReadRef.current;
+    // A NEGATIVE age (the wall clock stepped backwards: resume from sleep, NTP)
+    // is stale, not fresh — otherwise reads stay suppressed until the clock
+    // catches up to where it was.
+    const age = Date.now() - mergedDoneAtRef.current;
+    if (age >= 0 && age < MERGED_MIN_AGE_MS) return Promise.resolve();
+    // Only one read is ever out, and only this promise sets the ref, so its
+    // own completion is the only thing that clears it.
+    const read: Promise<void> = fetchMergedPrs().finally(() => {
+      mergedReadRef.current = null;
+      mergedDoneAtRef.current = Date.now();
+    });
+    mergedReadRef.current = read;
+    return read;
+  }, [fetchMergedPrs]);
+
   useEffect(() => {
     if (!includeMerged) return;
-    fetchMergedPrs();
-    const id = setInterval(fetchMergedPrs, MERGED_POLL_INTERVAL_MS);
-    return () => clearInterval(id);
-  }, [includeMerged, fetchMergedPrs]);
+    let stopped = false;
+    // This run's chain is awaiting a read. A second entrance (the reveal
+    // handler) must not start a second chain: two chains reschedule twice.
+    let running = false;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const tick = async () => {
+      running = true;
+      try {
+        if (!stopped && !document.hidden) await readMergedIfStale();
+      } catch (err) {
+        // `fetchMergedPrs` reports its own failures, so reaching here means
+        // something in it threw where it should not have. It must neither end
+        // the chain nor surface as an unhandled rejection (`tick` is called
+        // with `void`, and a test runner treats that as a failed run). Log a
+        // string, not the object: a rejection with no prototype cannot be
+        // stringified, which is exactly how this was found.
+        log.warn(
+          "merged read chain: unexpected failure",
+          err instanceof Error ? err.message : "non-Error rejection"
+        );
+      } finally {
+        running = false;
+        // Re-armed in the `finally`: a throw from the read must not end polling
+        // for the life of the page (the main chain's own comment says the same).
+        if (!stopped) {
+          timer = setTimeout(() => void tick(), MERGED_POLL_INTERVAL_MS);
+        }
+      }
+    };
+    void tick();
+    // A tab that was hidden skipped its ticks; refresh the moment it is seen
+    // (subject to the minimum age), rather than showing rows up to a poll old
+    // for a full extra interval.
+    const onVisibility = () => {
+      if (document.hidden || stopped || running) return;
+      if (timer) clearTimeout(timer);
+      void tick();
+    };
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => {
+      stopped = true;
+      if (timer) clearTimeout(timer);
+      document.removeEventListener("visibilitychange", onVisibility);
+    };
+  }, [includeMerged, readMergedIfStale]);
 
   return {
     proposals,
     prs,
     mergedPrs,
+    mergedError,
     mergedCount,
     economicsByRepo,
     suggestions,

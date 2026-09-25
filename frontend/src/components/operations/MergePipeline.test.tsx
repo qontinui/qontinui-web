@@ -29,6 +29,7 @@ const hookData: { current: MergePipelineData } = {
     proposals: [],
     prs: [],
     mergedPrs: null,
+    mergedError: null,
     mergedCount: null,
     economicsByRepo: {},
     suggestions: [],
@@ -62,6 +63,18 @@ const MERGED_LOOKBACK_HOURS = 48;
 const fetchMock = vi.fn();
 vi.mock("@/services/service-factory", () => ({
   httpClient: { fetch: (...args: unknown[]) => fetchMock(...args) },
+}));
+
+// The per-repo CI strip the Train tab mounts (moved off the PAGE by the
+// 2026-09-19 redesign). It owns a REST seed, a WebSocket and a polling
+// fallback — which is the point of putting it behind a tab — so it is stubbed
+// here for the same reason `useMergePipelineData` is: this file measures the
+// hero's composition, not its children's transports. `CiRepoStrip.test.tsx`
+// covers the component. The stub is also what lets the laziness itself be
+// asserted: "not mounted on the other tabs" is only a meaningful claim if a
+// mounted one would show up.
+vi.mock("./CiRepoStrip", () => ({
+  CiRepoStrip: () => <div data-testid="stub-ci-repo-strip" />,
 }));
 
 // The draft-state toggle surfaces success/error via sonner; stub it so the
@@ -144,6 +157,7 @@ describe("MergePipeline", () => {
       proposals: [],
       prs: [],
       mergedPrs: null,
+      mergedError: null,
       mergedCount: null,
       economicsByRepo: {},
       gateBlocks: [],
@@ -673,8 +687,8 @@ describe("MergePipeline", () => {
 
     render(<MergePipeline />);
 
-    // Merged rows are history — the live list does not carry them.
-    expect(screen.getAllByTestId("pipeline-row")).toHaveLength(1);
+    // All PRs carries the landed rows too (see the ordering test below).
+    expect(screen.getAllByTestId("pipeline-row")).toHaveLength(3);
 
     fireEvent.click(screen.getByTestId("pipeline-filter-merged"));
     const rows = screen.getAllByTestId("pipeline-row");
@@ -796,23 +810,205 @@ describe("MergePipeline", () => {
   // The merged read is expensive — it must stay off the 2s hot poll
   // --------------------------------------------------------------------------
 
-  it("asks for merged rows ONLY while the Merged tab is open", () => {
+  it("asks for merged rows ONLY on the tabs that list landed PRs", () => {
     hookData.current.prs = [pr()];
     hookCalls.length = 0;
 
     render(<MergePipeline />);
-    // Default tab: every render so far must have opted OUT of the expensive
-    // `?include_merged=` read.
+    // Default tab is All PRs, which lists landed rows alongside open ones.
     expect(hookCalls.length).toBeGreaterThan(0);
-    expect(hookCalls.every((c) => c.includeMerged === false)).toBe(true);
+    expect(hookCalls.every((c) => c.includeMerged === true)).toBe(true);
+
+    // A tab that shows no landed PRs must switch the costly read back off —
+    // otherwise it keeps running for the rest of the session.
+    fireEvent.click(screen.getByTestId("pipeline-filter-attention"));
+    expect(hookCalls.at(-1)?.includeMerged).toBe(false);
+    fireEvent.click(screen.getByTestId("pipeline-filter-in-flight"));
+    expect(hookCalls.at(-1)?.includeMerged).toBe(false);
 
     fireEvent.click(screen.getByTestId("pipeline-filter-merged"));
     expect(hookCalls.at(-1)?.includeMerged).toBe(true);
 
-    // Leaving the tab must switch it back off — otherwise the costly read
-    // keeps running for the rest of the session.
     fireEvent.click(screen.getByTestId("pipeline-filter-all"));
-    expect(hookCalls.at(-1)?.includeMerged).toBe(false);
+    expect(hookCalls.at(-1)?.includeMerged).toBe(true);
+  });
+
+  it("says the merge history is incomplete when the merged read failed", () => {
+    // The 2026-09-19 shape: the merged read timed out at the proxy, so the only
+    // landed rows held are the open list's `landed-open` ones — no merged_at.
+    hookData.current.prs = [
+      pr({
+        pr_number: 55,
+        branch: "b-phantom",
+        merge_status: "landed-open",
+      }),
+    ];
+    hookData.current.mergedPrs = null;
+    hookData.current.mergedError = "HTTP 504";
+
+    render(<MergePipeline />);
+
+    // All PRs and Merged both list landed rows, so both must say so.
+    const allNotice = screen.getByTestId("merged-read-failed");
+    expect(allNotice).toHaveTextContent("could not be loaded (HTTP 504)");
+    expect(allNotice).toHaveTextContent(/merge times are unknown/);
+
+    fireEvent.click(screen.getByTestId("pipeline-filter-merged"));
+    expect(screen.getByTestId("merged-read-failed")).toBeInTheDocument();
+    // The dateless row is still shown — it IS landed — just not as the whole.
+    expect(screen.getAllByTestId("pipeline-row")).toHaveLength(1);
+
+    // Tabs that list no landed PRs are not the place to say it.
+    fireEvent.click(screen.getByTestId("pipeline-filter-attention"));
+    expect(screen.queryByTestId("merged-read-failed")).toBeNull();
+    fireEvent.click(screen.getByTestId("pipeline-filter-in-flight"));
+    expect(screen.queryByTestId("merged-read-failed")).toBeNull();
+  });
+
+  it("says the history is stale, not incomplete, when last-good rows are kept", () => {
+    // A later read failed but the last good one is held: those rows HAVE merge
+    // times and include PRs that already closed, so the notice must not claim
+    // the times are unknown. It is stale, and that is all it can truthfully say.
+    hookData.current.prs = [pr()];
+    hookData.current.mergedPrs = [
+      pr({
+        pr_number: 9,
+        branch: "b-9",
+        pr_state: "closed",
+        merge_commit_sha: "abc1234",
+        merged_at: new Date(Date.now() - 600_000).toISOString(),
+      }),
+    ];
+    hookData.current.mergedError = "HTTP 504";
+
+    render(<MergePipeline />);
+
+    const notice = screen.getByTestId("merged-read-failed");
+    expect(notice).toHaveTextContent("could not be refreshed (HTTP 504)");
+    expect(notice).toHaveTextContent(/may be out of date/);
+    expect(notice).not.toHaveTextContent(/unknown/);
+    expect(notice).not.toHaveTextContent(/missing/);
+  });
+
+  it("says the merge history is loading until the first merged read lands", () => {
+    // Until then the only landed rows held are the dateless `landed-open` ones.
+    hookData.current.prs = [pr()];
+    hookData.current.mergedPrs = null;
+    hookData.current.mergedError = null;
+
+    render(<MergePipeline />);
+
+    expect(screen.getByTestId("merged-read-loading")).toHaveTextContent(
+      "Loading merge history"
+    );
+    fireEvent.click(screen.getByTestId("pipeline-filter-merged"));
+    expect(screen.getByTestId("merged-read-loading")).toBeInTheDocument();
+    fireEvent.click(screen.getByTestId("pipeline-filter-attention"));
+    expect(screen.queryByTestId("merged-read-loading")).toBeNull();
+  });
+
+  it("drops the loading line once merged rows exist, or the read failed", () => {
+    hookData.current.prs = [pr()];
+    hookData.current.mergedPrs = [];
+    render(<MergePipeline />);
+    expect(screen.queryByTestId("merged-read-loading")).toBeNull();
+  });
+
+  it("shows no incompleteness notice when the merged read is healthy", () => {
+    hookData.current.prs = [pr()];
+    hookData.current.mergedError = null;
+
+    render(<MergePipeline />);
+
+    expect(screen.queryByTestId("merged-read-failed")).toBeNull();
+    fireEvent.click(screen.getByTestId("pipeline-filter-merged"));
+    expect(screen.queryByTestId("merged-read-failed")).toBeNull();
+  });
+
+  it("renders an unparseable opened_at as unknown, never as 'opened never'", () => {
+    hookData.current.prs = [
+      pr({ pr_number: 5, branch: "b-bad", opened_at: "not-a-date" }),
+    ];
+
+    render(<MergePipeline />);
+
+    const time = screen.getByTestId("row-time");
+    expect(time).toHaveTextContent("opened ?");
+    expect(time).not.toHaveTextContent(/never/);
+  });
+
+  it("orders All PRs by time OPENED across status bands, merged rows included", () => {
+    const at = (minutesAgo: number) =>
+      new Date(Date.now() - minutesAgo * 60_000).toISOString();
+    hookData.current.prs = [
+      // Opened OLDEST but re-hydrated most recently, and the triage sort would
+      // rank it FIRST (conflict band): a list ordered by refresh stamp puts
+      // it on top, one ordered by open time puts it last.
+      pr({
+        pr_number: 1,
+        branch: "b-conflict",
+        opened_at: at(5000),
+        last_refreshed_at: at(1),
+      }),
+      pr({
+        pr_number: 2,
+        branch: "b-ready",
+        opened_at: at(30),
+        last_refreshed_at: at(900),
+      }),
+      // Landed most recently but opened in the middle; triage ranks it LAST.
+      {
+        ...mergedPr(3, 1, "aaaaaaa1111"),
+        opened_at: at(300),
+      },
+      // Opened by coord's projection on no PR at all: unknown, sinks last.
+      pr({ pr_number: 4, branch: "b-unknown", last_refreshed_at: at(0) }),
+    ];
+    hookData.current.proposals = [
+      proposal({
+        proposal_id: "pc",
+        status: "conflict",
+        updated_at: at(300),
+        repos: [
+          {
+            repo: "qontinui/qontinui-web",
+            branch: "b-conflict",
+            head_sha: "abc123",
+            ci_run_url: null,
+          },
+        ],
+      }),
+    ];
+
+    render(<MergePipeline />);
+
+    const rows = screen.getAllByTestId("pipeline-row");
+    expect(rows).toHaveLength(4);
+    expect(rows[0]).toHaveTextContent("qontinui-web#2");
+    expect(rows[1]).toHaveTextContent("qontinui-web#3");
+    expect(rows[2]).toHaveTextContent("qontinui-web#1");
+    expect(rows[3]).toHaveTextContent("qontinui-web#4");
+
+    // The time cell reports the clock the list is ordered by, or the list
+    // would read as unsorted.
+    expect(within(rows[0]).getByTestId("row-time")).toHaveTextContent(
+      "opened 30m ago"
+    );
+    expect(within(rows[3]).getByTestId("row-time")).toHaveTextContent(
+      "opened ?"
+    );
+    expect(
+      within(rows[3]).getByTestId("row-time").getAttribute("title")
+    ).toContain("did not report when this PR was opened");
+
+    // The working tabs keep their triage order (needs-the-author first) and
+    // their activity clock.
+    fireEvent.click(screen.getByTestId("pipeline-filter-attention"));
+    const attention = screen.getAllByTestId("pipeline-row");
+    expect(attention[0]).toHaveTextContent("qontinui-web#1");
+    expect(within(attention[0]).getByTestId("row-time")).not.toHaveTextContent(
+      /opened/
+    );
   });
 
   it("labels the Merged tab from coord's cheap count before the tab is opened", () => {
@@ -878,13 +1074,25 @@ describe("MergePipeline", () => {
         pr_state: "open",
         merge_commit_sha: "ccccccc3333",
         merged_at: new Date(Date.now() - 60_000).toISOString(),
+        opened_at: new Date(Date.now() - 3 * 3_600_000).toISOString(),
       }),
     ];
 
     render(<MergePipeline />);
 
-    // Not in the live list, and counted exactly once in the merged tab.
-    expect(screen.queryAllByTestId("pipeline-row")).toHaveLength(0);
+    // Listed exactly once on All PRs — as the landed row, not also as live
+    // work — and counted exactly once in the merged tab.
+    const allRows = screen.getAllByTestId("pipeline-row");
+    expect(allRows).toHaveLength(1);
+    expect(allRows[0]).toHaveTextContent(/merged/i);
+    // The time cell is the clock the tab is ordered by, and a landed row's is
+    // still its OPEN time, not its merge time.
+    expect(within(allRows[0]).getByTestId("row-time")).toHaveTextContent(
+      "opened 3h ago"
+    );
+    expect(
+      within(allRows[0]).getByTestId("row-time").getAttribute("title")
+    ).toMatch(/^Opened /);
     expect(screen.getByTestId("pipeline-filter-merged")).toHaveTextContent(
       /Merged\s*1/
     );
@@ -893,6 +1101,79 @@ describe("MergePipeline", () => {
     const rows = screen.getAllByTestId("pipeline-row");
     expect(rows).toHaveLength(1);
     expect(rows[0]).toHaveTextContent("qontinui-web#55");
+  });
+
+  it("REGRESSION: renders it once when the MERGED read itself carries both copies", () => {
+    // Operator-reported 2026-09-20: `qontinui-runner#1538` and
+    // `qontinui-coord#2258` each rendered TWICE in the Merged tab — once as
+    // "landed on main by coord — GitHub has not closed the PR yet" and once as
+    // "landed on main as <sha>".
+    //
+    // The test above models the duplicate as one row in `prs` and one in
+    // `mergedPrs`, which the open-vs-merged filter catches. That is NOT the
+    // shape coord actually serves. `?include_merged=` returns the open/draft
+    // list WITH the recently-landed rows appended, and `useMergePipelineData`
+    // keeps everything `isMergedPr` accepts from that ONE response — which is
+    // both copies of an ff-landed PR: the phantom-open row (merge_status
+    // `landed-open`, no sha) and its landed twin (sha + merged_at).
+    //
+    // So both duplicates arrive inside `mergedPrs`, where the filter never
+    // looked: it only ever subtracts `merged` from `open`. Two PrRows sharing
+    // one `singleKey` then become two rows sharing one React key.
+    const phantom = {
+      pr_number: 1538,
+      branch: "agent/eb2155ed4152-01a0a0a33785/stale-mirror-sha",
+      repo: "qontinui/qontinui-runner",
+    };
+    hookData.current.prs = [pr({ ...phantom, pr_state: "open" })];
+    hookData.current.mergedPrs = [
+      // The phantom-open half of coord's response.
+      pr({ ...phantom, pr_state: "open", merge_status: "landed-open" }),
+      // The landed half of the SAME response, for the SAME PR.
+      pr({
+        ...phantom,
+        pr_state: "open",
+        merge_commit_sha: "d73f3c4aaaa",
+        merged_at: new Date(Date.now() - 3_600_000).toISOString(),
+      }),
+    ];
+
+    render(<MergePipeline />);
+    fireEvent.click(screen.getByTestId("pipeline-filter-merged"));
+
+    const rows = screen.getAllByTestId("pipeline-row");
+    expect(rows).toHaveLength(1);
+
+    // And the SURVIVOR must be the truthful one. Keeping the phantom-open copy
+    // would render a row that knows neither the land sha nor the land time —
+    // strictly less than coord reported, on a tab whose whole purpose is the
+    // landing record.
+    expect(rows[0]).toHaveTextContent("d73f3c4");
+    expect(rows[0]).not.toHaveTextContent(/GitHub has not closed/);
+  });
+
+  it("keeps the landed-open row when that is the ONLY copy coord served", () => {
+    // The dedup must PREFER the sha-bearing row, not REQUIRE one. Before
+    // coord's straggler sweep catches up, `landed-open` may be all there is,
+    // and dropping it would hide a real landing from the tab that records
+    // landings.
+    hookData.current.prs = [];
+    hookData.current.mergedPrs = [
+      pr({
+        pr_number: 77,
+        branch: "feat/only-phantom",
+        repo: "qontinui/qontinui-web",
+        pr_state: "open",
+        merge_status: "landed-open",
+      }),
+    ];
+
+    render(<MergePipeline />);
+    fireEvent.click(screen.getByTestId("pipeline-filter-merged"));
+
+    const rows = screen.getAllByTestId("pipeline-row");
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toHaveTextContent(/GitHub has not closed/);
   });
 
   // --------------------------------------------------------------------------
@@ -1058,6 +1339,20 @@ describe("MergePipeline", () => {
  * decision count (measured 2026-08-20: it read 1899 where the true answer was
  * 8). `total_blocks` is now distinct PRs; `total_evals` carries the raw volume
  * and must stay VISIBLE rather than being silently dropped.
+ *
+ * **Where this lives after the 2026-09-19 redesign.** `gate-decisions` is no
+ * longer a page-level section below the live PR list — it is inside the
+ * `Coord internals` disclosure, and holds only the decisions whose PR is NOT
+ * in the list (a decision about a listed PR renders inside that PR's row
+ * instead). The COUNTS did not move with the rows: they are tenant-wide, and
+ * they stay here with the paragraph that qualifies them, because the health
+ * strip's `gate holds N` badge has room for a number and a tooltip but not for
+ * the sentence saying what the number is not.
+ *
+ * Every assertion below is unchanged. What changed is that the panel has to be
+ * opened first — `CollapsiblePanel` unmounts its children, which is the whole
+ * reason a closed disclosure costs nothing — so `beforeEach` sets the panel's
+ * persisted preference to open rather than each test clicking it.
  */
 function gateBlock(
   overrides: Partial<BlastRadiusBlock> = {}
@@ -1079,6 +1374,11 @@ function gateBlock(
 describe("MergePipeline gate-decisions counting", () => {
   beforeEach(() => {
     window.localStorage.clear();
+    // `Coord internals` is collapsed by default and unmounts its children, so
+    // these assertions need it open. Done through the panel's own persisted
+    // preference (`storageKey`) rather than a click, so what is under test
+    // stays the counting contract rather than the disclosure's mechanics.
+    window.localStorage.setItem("fleet:coord-internals", "1");
     fetchMock.mockReset();
     hookData.current = {
       ...hookData.current,
@@ -1336,5 +1636,458 @@ describe("MergePipeline green-CI-discarded badge", () => {
     const dash = within(runnerRow).getByTestId("churn-green-discarded");
     expect(dash).toHaveTextContent(/^green discarded —$/);
     expect(dash).toHaveAttribute("title", "no candidate CI observed in window");
+  });
+});
+
+/**
+ * Open the single rendered row. `RecordRow` puts its testid on the wrapper and
+ * the click target on the `<button>` inside it (R5: the whole line is one
+ * button, so expansion is keyboard-reachable) — clicking the wrapper does
+ * nothing at all, silently.
+ */
+function expandRow() {
+  const row = screen.getByTestId("pipeline-row");
+  fireEvent.click(row.querySelector("button")!);
+}
+
+// ---------------------------------------------------------------------------
+// The 2026-09-19 redesign: one list, one axis.
+//
+// The page had grown four per-PR lists in four vocabularies over overlapping
+// populations. These assertions pin the rule that collapsed them: a fact about
+// a PR is in that PR's row; a fact about all of them is on the health strip;
+// what is left over is audit residue behind ONE disclosure.
+// ---------------------------------------------------------------------------
+
+describe("MergePipeline gate decisions as row evidence", () => {
+  beforeEach(() => {
+    window.localStorage.clear();
+    fetchMock.mockReset();
+    hookData.current = {
+      ...hookData.current,
+      proposals: [],
+      prs: [],
+      mergedPrs: null,
+      mergedCount: null,
+      economicsByRepo: {},
+      gateBlocks: [],
+      gateTotalBlocks: 0,
+      gateTotalEvals: null,
+      error: null,
+    };
+  });
+
+  /** A gate decision on the PR `pr()` builds, so the two actually join. */
+  function blockForDefaultPr(
+    overrides: Partial<BlastRadiusBlock> = {}
+  ): BlastRadiusBlock {
+    return gateBlock({
+      repo: "qontinui/qontinui-web",
+      pr_number: 761,
+      ...overrides,
+    });
+  }
+
+  it("puts the decision inside the held PR's own row, not in a second list", () => {
+    // The join the operator used to do by eye, reading `repo#number` off an
+    // audit section below the live list and matching it against the rows.
+    hookData.current.prs = [pr()];
+    hookData.current.gateBlocks = [blockForDefaultPr()];
+    hookData.current.gateTotalBlocks = 1;
+
+    render(<MergePipeline />);
+    // Collapsed: the evidence costs nothing until the row is opened.
+    expect(screen.queryByTestId("row-gate-decision")).not.toBeInTheDocument();
+
+    expandRow();
+    const detail = screen.getByTestId("row-gate-decision");
+    expect(detail).toHaveTextContent("removes-referenced-export");
+    // The gate's actual evidence, which is what makes the decision actionable.
+    expect(detail).toHaveTextContent("SUBCLASS_ORPHAN");
+    // The caveat that used to be a footnote under a whole section is now
+    // attached to the one decision it is true of.
+    expect(detail).toHaveTextContent(/not proof the PR is still held/i);
+  });
+
+  it("does not re-state the PR's identity inside its own row", () => {
+    // The standalone form must name the PR; the in-row form must not. Saying
+    // `qontinui-web#761` inside the row for qontinui-web#761 is exactly the
+    // duplication this redesign removes.
+    hookData.current.prs = [pr()];
+    hookData.current.gateBlocks = [blockForDefaultPr()];
+
+    render(<MergePipeline />);
+    expandRow();
+    const detail = screen.getByTestId("row-gate-decision");
+    expect(detail).not.toHaveTextContent("#761");
+  });
+
+  it("attaches nothing to a PR the gate has not decided on", () => {
+    hookData.current.prs = [pr()];
+    hookData.current.gateBlocks = [
+      gateBlock({ repo: "qontinui/qontinui-web", pr_number: 999 }),
+    ];
+
+    render(<MergePipeline />);
+    expandRow();
+    expect(screen.queryByTestId("row-gate-decision")).not.toBeInTheDocument();
+  });
+
+  it("keeps a decision whose PR is NOT on the page, as residue", () => {
+    // Coord returns the newest decision per PR within its retention window, so
+    // rows exist for PRs that are closed or outside the window this page
+    // reads. They are not droppable — but they are not live work either, so
+    // they go behind the disclosure rather than under the live list.
+    hookData.current.prs = [pr()];
+    hookData.current.gateBlocks = [
+      blockForDefaultPr(),
+      gateBlock({ repo: "qontinui/qontinui-coord", pr_number: 4242 }),
+    ];
+    window.localStorage.setItem("fleet:coord-internals", "1");
+
+    render(<MergePipeline />);
+    const section = screen.getByTestId("gate-decisions");
+    // The unlisted one is here…
+    expect(section).toHaveTextContent("qontinui-coord#4242");
+    // …and the one with a row of its own is NOT duplicated into it.
+    expect(section).not.toHaveTextContent("#761");
+  });
+
+  it("says so when every decision found a row", () => {
+    hookData.current.prs = [pr()];
+    hookData.current.gateBlocks = [blockForDefaultPr()];
+    window.localStorage.setItem("fleet:coord-internals", "1");
+
+    render(<MergePipeline />);
+    expect(screen.getByTestId("gate-decisions")).toHaveTextContent(
+      /belongs to a PR in the list above/i
+    );
+  });
+});
+
+describe("MergePipeline gate-holds health badge", () => {
+  beforeEach(() => {
+    window.localStorage.clear();
+    fetchMock.mockReset();
+    hookData.current = {
+      ...hookData.current,
+      proposals: [],
+      prs: [],
+      mergedPrs: null,
+      mergedCount: null,
+      economicsByRepo: {},
+      gateBlocks: [],
+      gateTotalBlocks: 3,
+      gateTotalEvals: 1899,
+      error: null,
+    };
+  });
+
+  it("carries the deleted section's signal onto the strip (R7)", () => {
+    render(<MergePipeline />);
+    const badge = screen.getByTestId("pipeline-gate-holds");
+    expect(badge).toHaveTextContent("gate holds 3");
+    expect(badge.getAttribute("title")).toContain("decisions, not audit rows");
+  });
+
+  it("admits unknown provenance rather than asserting 'decisions'", () => {
+    hookData.current.gateTotalEvals = null;
+    render(<MergePipeline />);
+    expect(
+      screen.getByTestId("pipeline-gate-holds").getAttribute("title")
+    ).toContain("has not reported");
+  });
+
+  it("is ABSENT when coord did not answer — never a green '0'", () => {
+    // `null` is "not fetched, or the read failed". A badge reading
+    // `gate holds 0` on that basis is a false all-clear, which is the whole
+    // failure mode the console's absence-is-not-zero rule exists for.
+    hookData.current.gateTotalBlocks = null;
+    render(<MergePipeline />);
+    expect(
+      screen.queryByTestId("pipeline-gate-holds")
+    ).not.toBeInTheDocument();
+  });
+
+  it("renders a MEASURED zero, because that is a fact", () => {
+    hookData.current.gateTotalBlocks = 0;
+    render(<MergePipeline />);
+    expect(screen.getByTestId("pipeline-gate-holds")).toHaveTextContent(
+      "gate holds 0"
+    );
+  });
+});
+
+describe("MergePipeline attempt history replaces the raw stream", () => {
+  beforeEach(() => {
+    window.localStorage.clear();
+    fetchMock.mockReset();
+    hookData.current = {
+      ...hookData.current,
+      proposals: [],
+      prs: [],
+      mergedPrs: null,
+      mergedCount: null,
+      economicsByRepo: {},
+      gateBlocks: [],
+      gateTotalBlocks: 0,
+      gateTotalEvals: null,
+      error: null,
+    };
+  });
+
+  it("gives each attempt its own status, age, requeue count and error", () => {
+    // What the flat "Merge internals" stream uniquely showed, and what the old
+    // history line ("queued, conflict" — no when, no why) did not. A reader
+    // chasing "why did this requeue?" had to leave the row for a cross-PR
+    // list and find this PR's proposals by eye.
+    hookData.current.prs = [pr()];
+    hookData.current.proposals = [
+      proposal({
+        proposal_id: "p-old",
+        status: "conflict",
+        // A credential-SHAPED fixture, in the shape coord actually emits:
+        // `redactSecrets`' own comment names this case — "coord's git-door push
+        // path carries an agent JWT via `git -c http.extraHeader='Authorization:
+        // Bearer …'`, and that whole command lands in the error text verbatim".
+        //
+        // It is redacted by the BARE-GITHUB-TOKEN rule (`\bgh[pousr]_[A-Za-z0-9]{16,}`),
+        // which runs before the header rules and is keyword-independent — not by
+        // the `token=` assignment rule, which an earlier version of this comment
+        // credited.
+        //
+        // NO `token=` PREFIX, and that is load-bearing rather than stylistic.
+        // The first spelling of this fixture was `token=ghp_…`, which tripped
+        // gitleaks' `generic-api-key` rule in CI (run 35472287799, `leaks found:
+        // 1`) — that rule keys on a `token`/`key`/`secret` keyword next to a
+        // high-entropy value, and does NOT fire on a bare `ghp_` literal (the
+        // dedicated `github-pat` rule wants 36 chars after the prefix; this has
+        // 20). Verified against gitleaks 8.30.1 with this repo's own
+        // `.gitleaks.toml`: `token=ghp_…` → 1 finding, this string → 0.
+        //
+        // Deliberately NOT fixed by allowlisting the literal in `.gitleaks.toml`,
+        // which is the repo's convention for planted fixtures. An allowlist entry
+        // permanently exempts a pattern to keep one test's wording; re-wording the
+        // fixture costs nothing and leaves the scanner at full strength.
+        error:
+          "rebase failed: remote rejected, Authorization: Bearer ghp_0123456789abcdefghij",
+        updated_at: new Date(Date.now() - 3_600_000).toISOString(),
+      }),
+      proposal({
+        proposal_id: "p-new",
+        status: "awaiting-ci",
+        requeue_count: 4,
+      }),
+    ];
+
+    render(<MergePipeline />);
+    expandRow();
+
+    const history = screen.getByTestId("attempt-history");
+    expect(history).toHaveTextContent("2 merge attempts");
+    const rows = within(history).getAllByTestId("attempt-row");
+    expect(rows).toHaveLength(2);
+    // BOTH timestamps, per attempt. `created_at` was rendered by the deleted
+    // slot ("Attempt started …") and by nothing else on the page — dropping it
+    // would make a proposal that has sat queued for six hours while coord
+    // re-ticks it indistinguishable from one started a minute ago, because the
+    // row's dwell escalation clocks the PrRow rather than the proposal.
+    expect(within(history).getAllByTestId("attempt-started")).toHaveLength(2);
+    expect(history).toHaveTextContent(/started/);
+    expect(history).toHaveTextContent(/updated/);
+    expect(history).toHaveTextContent("conflict");
+    expect(history).toHaveTextContent("awaiting-ci");
+    expect(history).toHaveTextContent("×4");
+    // Redacted at the boundary, like every other path a coord error takes to
+    // the DOM — an earlier attempt's error is no less of a credential risk,
+    // and the flat stream that used to show it is gone.
+    expect(history).not.toHaveTextContent("ghp_0123456789abcdefghij");
+    expect(history).toHaveTextContent("rebase failed");
+  });
+
+  it("keeps the raw cross-PR stream, one disclosure deeper", () => {
+    // Deleting a maintainer's escape hatch to tidy a page is not a trade the
+    // page gets to make on their behalf. What changed is its RANK: it is no
+    // longer a top-level section competing with the live list.
+    hookData.current.prs = [pr()];
+    hookData.current.proposals = [proposal()];
+    window.localStorage.setItem("fleet:coord-internals", "1");
+    window.localStorage.setItem("fleet:raw-proposals", "1");
+
+    render(<MergePipeline />);
+    const raw = screen.getByTestId("raw-proposals");
+    expect(raw.querySelector("[data-proposal-id='p-1']")).not.toBeNull();
+  });
+
+  it("mounts neither residue list while the disclosure is shut", () => {
+    // R7's actual mechanism, and the reason the consolidation is free: a
+    // closed `CollapsiblePanel` unmounts its children.
+    hookData.current.prs = [pr()];
+    hookData.current.proposals = [proposal()];
+    hookData.current.gateBlocks = [
+      gateBlock({ repo: "qontinui/qontinui-coord", pr_number: 4242 }),
+    ];
+
+    render(<MergePipeline />);
+    expect(screen.queryByTestId("gate-decisions")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("raw-proposals")).not.toBeInTheDocument();
+    // …but the signal survives the collapse, on the panel header.
+    expect(screen.getByTestId("coord-internals-orphan-gates")).toHaveTextContent(
+      "1 unlisted"
+    );
+  });
+});
+
+describe("MergePipeline per-repo CI lives on the Train tab", () => {
+  beforeEach(() => {
+    window.localStorage.clear();
+    fetchMock.mockReset();
+    hookData.current = {
+      ...hookData.current,
+      proposals: [],
+      prs: [pr()],
+      mergedPrs: null,
+      mergedCount: null,
+      economicsByRepo: {},
+      gateBlocks: [],
+      gateTotalBlocks: 0,
+      gateTotalEvals: null,
+      error: null,
+    };
+  });
+
+  it("is not mounted on the PR tabs — which is the whole R7 fix", () => {
+    // As `CiStatusPanel` this sat on the page and owned its stream ABOVE its
+    // own `<CollapsiblePanel>`, so every visitor to /admin/coord/pipeline paid
+    // a REST seed, a WebSocket and a poll whether or not they opened it. The
+    // fix is not a `defaultOpen={false}` — it is that the component is not
+    // constructed at all unless the repo view is the one being read.
+    render(<MergePipeline />);
+    expect(screen.queryByTestId("stub-ci-repo-strip")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByTestId("pipeline-filter-in-flight"));
+    expect(screen.queryByTestId("stub-ci-repo-strip")).not.toBeInTheDocument();
+  });
+
+  it("mounts on the Train tab, above the per-repo rows", () => {
+    // Same axis as the rows it sits with — one row per repo — and above them,
+    // because "can this repo land anything at all?" precedes "what is its
+    // train doing".
+    render(<MergePipeline />);
+    fireEvent.click(screen.getByTestId("pipeline-filter-train"));
+    expect(screen.getByTestId("stub-ci-repo-strip")).toBeInTheDocument();
+  });
+
+  it("unmounts again when the operator leaves the tab", () => {
+    render(<MergePipeline />);
+    fireEvent.click(screen.getByTestId("pipeline-filter-train"));
+    expect(screen.getByTestId("stub-ci-repo-strip")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByTestId("pipeline-filter-all"));
+    expect(screen.queryByTestId("stub-ci-repo-strip")).not.toBeInTheDocument();
+  });
+});
+
+describe("MergePipeline gate join across row shapes", () => {
+  beforeEach(() => {
+    window.localStorage.clear();
+    fetchMock.mockReset();
+    hookData.current = {
+      ...hookData.current,
+      proposals: [],
+      prs: [],
+      mergedPrs: null,
+      mergedCount: null,
+      economicsByRepo: {},
+      gateBlocks: [],
+      gateTotalBlocks: 0,
+      gateTotalEvals: null,
+      error: null,
+    };
+  });
+
+  /**
+   * A multi-repo change: two PRs on the same branch in two repos, plus the
+   * cross-repo proposal that groups them. `buildPipelineRows` emits THREE
+   * rows here — one per PR, plus the group summary — so this also pins the
+   * row model the `members` branch of `presentPrKeys` is insurance against.
+   */
+  function multiRepoFixture() {
+    hookData.current.prs = [
+      pr({ repo: "qontinui/qontinui-web", pr_number: 761, branch: "feat/x" }),
+      pr({ repo: "qontinui/qontinui-coord", pr_number: 762, branch: "feat/x" }),
+    ];
+    hookData.current.proposals = [
+      proposal({
+        proposal_id: "p-group",
+        status: "awaiting-ci",
+        repos: [
+          {
+            repo: "qontinui/qontinui-web",
+            branch: "feat/x",
+            head_sha: "abc123",
+            ci_run_url: null,
+          },
+          {
+            repo: "qontinui/qontinui-coord",
+            branch: "feat/x",
+            head_sha: "def456",
+            ci_run_url: null,
+          },
+        ],
+      }),
+    ];
+  }
+
+  it("attaches a decision on a MEMBER of a multi-repo change, not to residue", () => {
+    // The property, asserted independently of which mechanism delivers it.
+    // Today the member PR has a row of its own, so `presentPrKeys` covers it
+    // via `prNumber` and the `members` loop is a no-op — but a future row
+    // model that folds members INTO the group row would strand their gate
+    // decisions as "unlisted", and this is what would notice.
+    multiRepoFixture();
+    hookData.current.gateBlocks = [
+      gateBlock({ repo: "qontinui/qontinui-coord", pr_number: 762 }),
+    ];
+    hookData.current.gateTotalBlocks = 1;
+    window.localStorage.setItem("fleet:coord-internals", "1");
+
+    render(<MergePipeline />);
+    // Not residue…
+    expect(screen.getByTestId("gate-decisions")).toHaveTextContent(
+      /belongs to a PR in the list above/i
+    );
+    expect(
+      screen.queryByTestId("coord-internals-orphan-gates")
+    ).not.toBeInTheDocument();
+
+    // …and it is on the member's OWN row, not on the web row beside it.
+    const rows = screen.getAllByTestId("pipeline-row");
+    const coordRow = rows.find((r) =>
+      r.textContent?.includes("qontinui-coord#762")
+    );
+    expect(coordRow).toBeDefined();
+    fireEvent.click(coordRow!.querySelector("button")!);
+    expect(screen.getByTestId("row-gate-decision")).toBeInTheDocument();
+  });
+
+  it("attaches nothing to a proposal-only row, which has no PR number", () => {
+    // The gate decides on PRs; a scheduler proposal is not one. A row with a
+    // null `prNumber` must join to nothing rather than to whatever decision
+    // happens to share its repo.
+    hookData.current.prs = [];
+    hookData.current.proposals = [proposal({ status: "awaiting-ci" })];
+    hookData.current.gateBlocks = [
+      gateBlock({ repo: "qontinui/qontinui-web", pr_number: 761 }),
+    ];
+    window.localStorage.setItem("fleet:coord-internals", "1");
+
+    render(<MergePipeline />);
+    fireEvent.click(screen.getByTestId("pipeline-row").querySelector("button")!);
+    expect(screen.queryByTestId("row-gate-decision")).not.toBeInTheDocument();
+    // It is residue instead — visible, not dropped.
+    expect(screen.getByTestId("gate-decisions")).toHaveTextContent(
+      "qontinui-web#761"
+    );
   });
 });

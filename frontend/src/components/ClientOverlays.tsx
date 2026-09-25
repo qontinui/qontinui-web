@@ -42,6 +42,12 @@ const OfflineIndicator = nextDynamic(
   { ssr: false }
 );
 
+// The heap badge is a leak-diagnosis tool for developers. It is fixed to the
+// bottom-left corner, where it covers the sidebar's runner row, and it is the
+// only thing that starts the memory-growth detector — so outside a dev build it
+// is not mounted (and its chunk is never loaded) at all.
+const showMemoryOverlay = process.env.NODE_ENV === "development";
+
 const MemoryGrowthOverlay = nextDynamic(
   () =>
     import("@/components/MemoryGrowthOverlay").then((m) => ({
@@ -55,7 +61,7 @@ export function ClientOverlays() {
     <>
       <DBErrorHandler />
       <OfflineIndicator />
-      <MemoryGrowthOverlay />
+      {showMemoryOverlay && <MemoryGrowthOverlay />}
     </>
   );
 }

@@ -4,7 +4,12 @@ import { useState, useMemo, useCallback } from "react";
 import { usePageSpecs } from "@/hooks/usePageSpecs";
 import { useDiscoveredSpec } from "@/lib/ui-bridge/use-discovered-specs";
 import type { SpecConfig } from "@qontinui/ui-bridge/specs";
-import { runnerApi } from "@/lib/runner-api";
+import {
+  createRunnerApi,
+  runnerRequest,
+  useRunnerTarget,
+} from "@/lib/runner-api";
+import { useDispatchRunnerTarget } from "@/contexts/active-runner-context";
 import { useUnifiedWorkflows } from "@/lib/api/unified-workflows";
 import {
   getPhaseCount,
@@ -13,6 +18,7 @@ import {
   type UnifiedWorkflow,
 } from "@/types/unified-workflow";
 import { RunnerOfflineState } from "@/components/runner/RunnerOfflineState";
+import { RunOnPicker } from "@/components/runner/RunOnPicker";
 import { Play, Plus, GripVertical } from "lucide-react";
 import { toast } from "sonner";
 import { WorkflowLibraryPanel } from "@/components/execute/WorkflowLibraryPanel";
@@ -45,6 +51,18 @@ function QueueTabContent({
   workflows: UnifiedWorkflow[] | null;
   workflowsLoading: boolean;
 }) {
+  // Running the queue is NEW, MACHINE-BOUND work: workflows drive the GUI of
+  // the machine they run on, so a pick coord refuses is never moved to
+  // another runner (plan D2) — the Run-on picker says why and offers the
+  // alternatives. Saving the composed workflow is a LIBRARY write, which
+  // belongs to the runner whose library is on screen — the read target.
+  const dispatch = useDispatchRunnerTarget({ workClass: "machine_bound" });
+  const runApi = useMemo(
+    () => createRunnerApi(dispatch.target),
+    [dispatch.target]
+  );
+  const runRefusal = dispatch.refusal?.message ?? null;
+  const runnerTarget = useRunnerTarget();
   // Local queue state
   const [queueItems, setQueueItems] = useState<QueueItem[]>([]);
   const [stopOnFailure, setStopOnFailure] = useState(true);
@@ -174,11 +192,11 @@ function QueueTabContent({
   }, [dragActiveId, workflowMap, queueItems]);
 
   const handleRun = useCallback(async () => {
-    if (queueItems.length === 0) return;
+    if (queueItems.length === 0 || runRefusal !== null) return;
     setIsRunning(true);
     try {
       const workflowIds = queueItems.map((item) => item.workflowId);
-      const result = await runnerApi.runComposedWorkflow(
+      const result = await runApi.runComposedWorkflow(
         workflowIds,
         stopOnFailure
       );
@@ -190,7 +208,7 @@ function QueueTabContent({
     } finally {
       setIsRunning(false);
     }
-  }, [queueItems, stopOnFailure]);
+  }, [queueItems, stopOnFailure, runApi, runRefusal]);
 
   const handleClear = useCallback(() => {
     setQueueItems([]);
@@ -227,8 +245,9 @@ function QueueTabContent({
         });
 
         // Create the composed workflow via runner API
-        const response = await fetch(
-          "http://localhost:9876/unified-workflows",
+        const response = await runnerRequest(
+          runnerTarget,
+          "/unified-workflows",
           {
             method: "POST",
             headers: { "Content-Type": "application/json" },
@@ -259,7 +278,7 @@ function QueueTabContent({
         );
       }
     },
-    [queueItems, workflowMap, stopOnFailure]
+    [queueItems, workflowMap, stopOnFailure, runnerTarget]
   );
 
   return (
@@ -284,6 +303,7 @@ function QueueTabContent({
           onItemsChange={setQueueItems}
           onStopOnFailureChange={setStopOnFailure}
           onRun={handleRun}
+          runRefusal={runRefusal}
           onClear={handleClear}
           onSaveAsWorkflow={() => setShowSaveDialog(true)}
           showSaveDialog={showSaveDialog}
@@ -335,6 +355,7 @@ export default function ExecutePage() {
           <Play className="size-5 text-primary" />
           <h1 className="text-lg font-semibold text-foreground">Execute</h1>
         </div>
+        <RunOnPicker workClass="machine_bound" className="items-end" />
       </header>
 
       <main className="flex-1 overflow-y-auto p-6 mx-auto flex flex-col lg:flex-row gap-6 max-w-[1400px] w-full">

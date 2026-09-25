@@ -51,7 +51,7 @@ import {
   economicsFor,
   type CandidateChurn,
 } from "./prPipeline";
-import { formatStallAge } from "./utils";
+import { formatStallAge, isAfter } from "./utils";
 
 // ----------------------------------------------------------------------------
 // Proposal status classification
@@ -172,6 +172,26 @@ export type PauseReasonCode =
   | "required-checks-missing"
   | "blast-radius-block"
   | "draft"
+  /** coord LANDED this PR at its current head and GitHub still shows it open —
+   *  the phantom-open ff-land window (coord's `landed-open` merge_status,
+   *  keyed on `land_stamp == current_head`).
+   *
+   *  Neither a block nor a stall: the work is on the base branch already, so
+   *  no author clears it and coord is not failing to land it. What is
+   *  outstanding is GitHub's CLOSE, which coord's own sweep performs —
+   *  `pr_merge_phantom_open_stuck` fires when it cannot.
+   *
+   *  `info` on the severity axis this file grades, because that axis answers
+   *  "why is the train paused" and a landed PR is not an answer to it.
+   *
+   *  It needs a code of its own rather than nothing: without a
+   *  `STATUS_TO_REASON` row the token falls into `unrecognized-status`, which
+   *  is graded `blocking` — so the absence of this mapping would paint a
+   *  landed PR red and tell an operator it is the reason nothing is moving.
+   *  Plan
+   *  `2026-09-14-coord-phantom-open-close-uses-owner-blind-installation-token`
+   *  Phase 5. */
+  | "landed-open"
   | "hydration-stale"
   /** A coord `merge_status` this bundle has no mapping for. Not a state coord
    *  emits — it is the catch-all that keeps such a PR IN the breakdown instead
@@ -225,11 +245,16 @@ const REASON_RANK: Record<PauseReasonCode, number> = {
   "behind-base": 14,
   "ci-pending": 15,
   draft: 16,
+  // Beside `draft`, and for the same reason: neither is a cause of the pause,
+  // so neither may outrank a reason that is. Nothing below it is reachable
+  // alongside it — `no-candidates` is emitted only when `reasons` is otherwise
+  // EMPTY — so this rank is read against the reasons ABOVE it and nothing else.
+  "landed-open": 17,
   // Last before `no-candidates`: a token we cannot name explains less than any
   // reason we CAN name, so it never outranks a real diagnosis — but it still
   // sorts above "nothing to do", which would be a false all-clear.
-  "unrecognized-status": 17,
-  "no-candidates": 18,
+  "unrecognized-status": 18,
+  "no-candidates": 19,
 };
 
 const REASON_META: Record<
@@ -269,6 +294,13 @@ const REASON_META: Record<
   "behind-base": { label: "Behind base", severity: "waiting" },
   "ci-pending": { label: "CI running", severity: "waiting" },
   draft: { label: "Draft", severity: "info" },
+  // `info`, deliberately, and it is the one grade here chosen by what the axis
+  // MEANS rather than by how the state sounds. This severity answers "why is
+  // the train paused"; a PR already on the base branch is not why. Grading it
+  // `blocking` would put a red chip and a red row accent on work that is done
+  // — which is what the `unrecognized-status` fallback did before this row
+  // existed.
+  "landed-open": { label: "Landed, awaiting close", severity: "info" },
   "no-candidates": { label: "No candidates", severity: "info" },
 };
 
@@ -283,6 +315,9 @@ const STATUS_TO_REASON: Partial<Record<string, PauseReasonCode>> = {
   "blast-radius-block": "blast-radius-block",
   draft: "draft",
   "ready-but-unlanded": "orchestrator-stalled",
+  // coord landed it at this head; GitHub has not closed it yet. Mapped rather
+  // than left to the unknown-token fallback, which grades `blocking`.
+  "landed-open": "landed-open",
   // `ready` and `queued` mean the train HAS accepted the PR — they are
   // progress, not a pause, so they intentionally have no reason mapping.
 };
@@ -356,6 +391,9 @@ export interface RepoCandidateChurn {
   baseMoveDiscards: ChurnReading;
   /** `candidate_ci_minutes_per_land` — CI minutes burnt per land. */
   ciMinutesPerLand: ChurnReading;
+  /** `proposal_age_at_land_p90_secs` — p90 SECONDS from a PR's first
+   *  proposal to its land. A duration, rendered as one. */
+  proposalAgeAtLandP90: ChurnReading;
 }
 
 export interface TrainBanner {
@@ -566,20 +604,11 @@ function secsSince(iso: string | null | undefined, now: number): number | null {
   return Math.max(0, Math.floor((now - t) / 1000));
 }
 
-/**
- * Chronological comparison of two RFC3339 stamps.
- *
- * NOT a string compare: coord serialises `DateTime<Utc>` with chrono's default,
- * whose fractional-second width varies (0/3/6/9 digits), so lexicographic order
- * is not chronological — `…59.999500Z` sorts BEFORE `…59.999Z`. That is enough
- * to pick the wrong driver proposal in a tie-break.
- */
-function isAfter(a: string, b: string): boolean {
-  const ta = Date.parse(a);
-  const tb = Date.parse(b);
-  if (Number.isNaN(ta) || Number.isNaN(tb)) return a > b;
-  return ta > tb;
-}
+// `isAfter` moved to `./utils` on 2026-09-19, unchanged. It was private here
+// and `gateDecision.ts` promptly reintroduced the exact string comparison this
+// function's docblock forbids — in the same directory, for the same reason
+// (picking the newest of two coord rows). A helper that is the right answer
+// twice belongs where the second caller can find it.
 
 /**
  * Compact duration: "45s", "12m", "3h", "2d"; "—" when unknown.
@@ -1175,8 +1204,30 @@ export function buildRepoTrainRows(
     const inFlight = inFlightLegs.get(repo) ?? [];
     const parked = parkedLegs.get(repo) ?? [];
     const repoPrs = prsByRepo.get(repo) ?? [];
+    // A PR coord has LANDED at its current head is never "ready but
+    // unlanded", whatever coord's health read still says about it.
+    //
+    // `ready_unmerged` is built from the FROZEN signals — coord's
+    // `looks_ready` reads `merge_state_status` / the CI rollup /
+    // `required_checks_satisfied` and carries no land-stamp term at all — so a
+    // phantom-open whose signals froze CLEAN and green enters that list and
+    // `deriveReasons` then pushes `orchestrator-stalled`: `blocking`, rank 3,
+    // "The train should have taken it." That is the loudest wrong answer this
+    // change exists to remove, and it would have outranked and out-shouted the
+    // new `info` chip rather than being replaced by it.
+    //
+    // The `landed-open` token is the discriminator coord does have, so filter
+    // on it here. Deliberately keyed on the PR's OWN row (not on the health
+    // entry, which carries no verdict): absent a row, or absent the token,
+    // nothing is filtered — the alarm keeps firing, which is the right
+    // direction for an alarm.
+    const landedOpenPrNumbers = new Set(
+      repoPrs
+        .filter((p) => effectiveMergeStatus(p, null) === "landed-open")
+        .map((p) => p.pr_number)
+    );
     const ready = (readyByRepo.get(repo) ?? [])
-      .slice()
+      .filter((r) => !landedOpenPrNumbers.has(r.pr_number))
       .sort((a, b) => (b.age_seconds ?? 0) - (a.age_seconds ?? 0));
 
     const repoSlots = slotsByRepo.get(repo) ?? null;
@@ -1256,7 +1307,7 @@ function note(v: string | null | undefined): string | null {
 }
 
 /**
- * The three per-repo churn readings from one economics row. An absent row
+ * The four per-repo churn readings from one economics row. An absent row
  * (coord served nothing for the repo, or the read failed) is all-unknown with
  * a note saying so — a `—` with no explanation is a dead end on hover.
  */
@@ -1269,9 +1320,13 @@ export function deriveRepoChurn(
       greenDiscarded: { value: null, note: absent },
       baseMoveDiscards: { value: null, note: absent },
       ciMinutesPerLand: { value: null, note: absent },
+      proposalAgeAtLandP90: { value: null, note: absent },
     };
   }
   const coverage = note(econ.coverage_note);
+  const ageBasis = note(econ.proposal_age_at_land_basis);
+  const ageSamples = measured(econ.proposal_age_at_land_sample_size);
+  const ageP90 = measured(econ.proposal_age_at_land_p90_secs);
   return {
     greenDiscarded: {
       value: measured(econ.green_candidates_discarded),
@@ -1285,7 +1340,45 @@ export function deriveRepoChurn(
       value: measured(econ.candidate_ci_minutes_per_land),
       note: coverage,
     },
+    proposalAgeAtLandP90: {
+      // A negative age is coord clock skew, not a fast land: UNKNOWN.
+      value: ageP90 !== null && ageP90 >= 0 ? ageP90 : null,
+      note: proposalAgeNote(econ, ageP90, ageSamples, ageBasis),
+    },
   };
+}
+
+/**
+ * The hover for the proposal→land p90: how many lands back it, then coord's
+ * basis — a p90 over two lands reads very differently from one over forty.
+ * A coord that never SERVED the field says so, rather than borrowing the
+ * candidate-CI coverage note, which is about something else.
+ */
+function proposalAgeNote(
+  econ: MergeEconomics,
+  p90: number | null,
+  samples: number | null,
+  basis: string | null
+): string {
+  if (econ.proposal_age_at_land_p90_secs === undefined && basis === null) {
+    return "coord did not serve proposal→land age for this repo (its build predates the field)";
+  }
+  if (p90 !== null && p90 < 0) {
+    return `coord served a negative age (${p90} s) — clock skew, shown as unknown`;
+  }
+  // Only an explicit null means "nothing landed"; a malformed value that
+  // `measured` rejected is unreadable, not empty.
+  if (
+    econ.proposal_age_at_land_p90_secs === null &&
+    samples === null &&
+    basis === null
+  ) {
+    return "nothing landed in the window";
+  }
+  const lands =
+    samples === null ? null : `${samples} land${samples === 1 ? "" : "s"}`;
+  if (lands && basis) return `${lands} — ${basis}`;
+  return lands ?? basis ?? "coord served no basis for proposal→land age";
 }
 
 /**
@@ -1796,6 +1889,14 @@ function detailFor(code: PauseReasonCode, prs: PrRow[]): string {
       );
     case "draft":
       return `${n} draft PR${plural} — intentionally held, not a stall.`;
+    case "landed-open":
+      return (
+        `${n} PR${plural} coord has already LANDED at ${
+          n === 1 ? "its" : "their"
+        } current head, still shown open by GitHub. Not backlog and not the ` +
+        `author's move: coord's own sweep closes ${n === 1 ? "it" : "them"} — ` +
+        `read the pr_merge_phantom_open_stuck alert when it does not.`
+      );
     // Reached only when coord's health read is unavailable, so there is no
     // readiness-onset clock and no proposal error to quote — but this is the
     // single most important reason, so it still gets real copy.

@@ -22,19 +22,53 @@ export const DEVICE_STATUS_API = `${OPERATIONS_API}/device-status`;
  * can't set custom headers on the upgrade).
  */
 export function deviceStatusWsUrl(token: string): string {
-  // OPERATIONS_API begins with `http://` or `https://`; translate to
-  // `ws://`/`wss://` for the WS upgrade. The browser's URL constructor
-  // can't help here because we're inserting the WS scheme on top of
-  // an HTTP-shaped base URL.
-  let wsBase: string;
+  return `${operationsWsBase()}/device-status/ws?token=${encodeURIComponent(token)}${activeTenantWsParam()}`;
+}
+
+/**
+ * `OPERATIONS_API` with its scheme translated for a WS upgrade. The base
+ * begins with `http://` or `https://`; the browser's URL constructor can't
+ * help because we're inserting the WS scheme on top of an HTTP-shaped URL.
+ */
+function operationsWsBase(): string {
   if (OPERATIONS_API.startsWith("https://")) {
-    wsBase = "wss://" + OPERATIONS_API.slice("https://".length);
-  } else if (OPERATIONS_API.startsWith("http://")) {
-    wsBase = "ws://" + OPERATIONS_API.slice("http://".length);
-  } else {
-    wsBase = "ws://" + OPERATIONS_API;
+    return "wss://" + OPERATIONS_API.slice("https://".length);
   }
-  return `${wsBase}/device-status/ws?token=${encodeURIComponent(token)}${activeTenantWsParam()}`;
+  if (OPERATIONS_API.startsWith("http://")) {
+    return "ws://" + OPERATIONS_API.slice("http://".length);
+  }
+  return "ws://" + OPERATIONS_API;
+}
+
+/**
+ * The named subscriptions the web backend's coord-events bridge forwards
+ * to coord's generic `/ws`. Coord takes a CLOSED set (`?subscribe=<name>`,
+ * each mapped server-side to a fixed pattern — `merge` → `events.merge.*`,
+ * `claims` → `events.claims`, `branches` → `events.branches`); a
+ * caller-supplied glob is refused. Mirrors `COORD_EVENTS_SUBSCRIPTIONS` in
+ * `backend/app/services/coord_device_status.py`, which is the gate: a name
+ * absent there closes 1008 `unknown_subscription` before any auth. The
+ * runner-only `device` / `device_ci` names are deliberately not here.
+ */
+export type CoordEventSubscription = "merge" | "claims" | "branches";
+
+/**
+ * WebSocket URL for the coord-events bridge,
+ * `WS /api/v1/operations/coord-events/ws?subscribe=<name>&token=<jwt>`.
+ * Same shape as `deviceStatusWsUrl`: the backend authenticates the
+ * operator from `token`, mints a tenant-scoped coord service JWT, opens
+ * `wss://<coord>/ws?token=<minted>&subscribe=<name>` and relays every
+ * `{channel, payload}` frame verbatim. Replaces the direct browser→coord
+ * sockets the strategy and merge-pipeline hooks used to open on
+ * `NEXT_PUBLIC_COORD_WS_URL`, which coord's authenticated `/ws` refuses
+ * (plan
+ * 2026-09-13-coord-publishes-agent-jwts-on-a-redis-channel-fronted-by-an-unauthenticated-ws-firehose).
+ */
+export function coordEventsWsUrl(
+  subscribe: CoordEventSubscription,
+  token: string
+): string {
+  return `${operationsWsBase()}/coord-events/ws?subscribe=${subscribe}&token=${encodeURIComponent(token)}${activeTenantWsParam()}`;
 }
 
 /**
@@ -77,15 +111,7 @@ export const CI_STATUS_NOTIFY_API = `${OPERATIONS_API}/ci-status/notify-when-gre
  * `token` query-param (the JS WS API can't set headers on upgrade).
  */
 export function ciStatusWsUrl(token: string): string {
-  let wsBase: string;
-  if (OPERATIONS_API.startsWith("https://")) {
-    wsBase = "wss://" + OPERATIONS_API.slice("https://".length);
-  } else if (OPERATIONS_API.startsWith("http://")) {
-    wsBase = "ws://" + OPERATIONS_API.slice("http://".length);
-  } else {
-    wsBase = "ws://" + OPERATIONS_API;
-  }
-  return `${wsBase}/ci-status/ws?token=${encodeURIComponent(token)}${activeTenantWsParam()}`;
+  return `${operationsWsBase()}/ci-status/ws?token=${encodeURIComponent(token)}${activeTenantWsParam()}`;
 }
 
 /**
@@ -94,20 +120,6 @@ export function ciStatusWsUrl(token: string): string {
  * webhook cadence, so 5s is fresh enough without hot-looping coord.
  */
 export const CI_STATUS_POLL_FALLBACK_MS = 5_000;
-
-/**
- * POST endpoint that spawns a red-main fix session for a repo (red-main
- * auto-remediation Phase 4b). The web backend forwards to coord's
- * `POST /pr-merge/red-main/:repo/spawn-fix`, which opens a visible fix
- * session on the operator's device for the repo's current red episode.
- * Coord 409s when a fix session is already running for that episode or the
- * repo has no live red-main alert. `repo` is `owner/name` and is inlined
- * inside the path (the backend route captures it as `{repo:path}`, the same
- * shape as `/pr-merge/repos/:repo/profile`).
- */
-export function redMainSpawnFixUrl(repo: string): string {
-  return `${OPERATIONS_API}/pr-merge/red-main/${repo}/spawn-fix`;
-}
 
 // ---------------------------------------------------------------------------
 // Tenant self-service merge recovery (plan
@@ -437,6 +449,40 @@ export const DEVICE_STATUS_POLL_FALLBACK_MS = 5_000;
  * a zero-argument call is unchanged.
  */
 export { relativeTime } from "@/components/console/time";
+
+/**
+ * Chronological comparison of two RFC3339 stamps.
+ *
+ * NOT a string compare: coord serialises `DateTime<Utc>` with chrono's default,
+ * whose fractional-second width varies (0/3/6/9 digits), so lexicographic order
+ * is not chronological — `…59.999500Z` sorts BEFORE `…59.999Z`. That is enough
+ * to pick the wrong driver proposal in a tie-break.
+ *
+ * **It lives here rather than in one consumer because it has been the right
+ * answer twice and the wrong one once.** It was private to `trainActivity.ts`
+ * (pinned by that module's "orders proposals chronologically, not
+ * lexicographically" test), and `gateDecision.ts` — a new file in the same
+ * directory, picking the newest of two coord rows for the same reason —
+ * reached for `a.at > b.at` instead, because there was nothing importable to
+ * reach for. Review measured the cost: across the three widths coord can emit,
+ * a `Z`-suffixed pair inverts on 28 of 156 ordered pairs spanning one second.
+ *
+ * The `+00:00` offset form chrono's `to_rfc3339()` produces happens to be
+ * safe under string compare (`+` sorts below every digit, so a short fraction
+ * compares as zero-padded), which is exactly why the bug survives review by
+ * inspection: it is correct against today's producer and wrong against the
+ * serde default, and both reach this frontend.
+ *
+ * One honest limit: `Date.parse` truncates to milliseconds, so `…59.999Z` and
+ * `…59.999500Z` compare EQUAL rather than ordering. That degrades to "keep the
+ * row already held", which is a stable tie-break — not an inversion.
+ */
+export function isAfter(a: string, b: string): boolean {
+  const ta = Date.parse(a);
+  const tb = Date.parse(b);
+  if (Number.isNaN(ta) || Number.isNaN(tb)) return a > b;
+  return ta > tb;
+}
 
 /**
  * Format a stall age (seconds) as a compact human label, e.g. "45s", "12m",

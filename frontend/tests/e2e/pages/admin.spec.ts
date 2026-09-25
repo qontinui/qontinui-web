@@ -268,7 +268,7 @@ test.describe("Admin - Agent Claims", () => {
     expect(hasAgentClaimsHeading || wasRedirected).toBeTruthy();
   });
 
-  test("should render four dashboard sections for superusers", async ({
+  test("should render three dashboard sections for superusers", async ({
     page,
   }) => {
     await page.goto("/admin/agent-claims");
@@ -290,7 +290,7 @@ test.describe("Admin - Agent Claims", () => {
         page.getByTestId("agent-claims-dashboard")
       ).toBeVisible();
 
-      // All four section cards render — they don't depend on coord
+      // All three section cards render — they don't depend on coord
       // data being present (each shows an empty-state message when
       // the proxy returns no data).
       await expect(
@@ -301,9 +301,6 @@ test.describe("Admin - Agent Claims", () => {
       ).toBeVisible();
       await expect(
         page.getByTestId("claims-steals-section")
-      ).toBeVisible();
-      await expect(
-        page.getByTestId("claims-alerts-section")
       ).toBeVisible();
     }
   });
@@ -374,34 +371,45 @@ test.describe("Admin - Coord operator console", () => {
     expect(hasCoordHeading || wasRedirected).toBeTruthy();
 
     if (hasCoordHeading) {
+      // The header row keeps the crumb and the live badges; the console's
+      // page links are the app sidebar's Coord / Sessions / Fleet / Access
+      // sections (`coordNavModel.ts`).
       await expect(page.getByTestId("coord-nav")).toBeVisible();
-      // Nav redesign: four direct tabs + persona dropdown groups. Direct
-      // tabs render always; grouped pages surface once their menu opens.
-      await expect(page.getByTestId("coord-nav-pipeline")).toBeVisible();
-      await expect(page.getByTestId("coord-nav-prs")).toBeVisible();
-      await expect(page.getByTestId("coord-nav-gates")).toBeVisible();
-      await expect(page.getByTestId("coord-nav-alerts")).toBeVisible();
+      await expect(page.getByTestId("coord-nav-pipeline-active")).toBeVisible();
+      await expect(page.getByTestId("coord-nav-notifications")).toBeVisible();
+      // The raw alert list left the operator UI (plan
+      // `2026-09-18-notifications-are-agent-actions-and-alerts-are-agent-work`
+      // Phase 8): no header link to it, and no sidebar item.
+      await expect(page.getByTestId("coord-nav-alerts")).toHaveCount(0);
 
-      // Work group: Plans / Questions / Agents / History / Lands.
-      await page.getByTestId("coord-nav-group-work").click();
-      await expect(page.getByTestId("coord-nav-plans")).toBeVisible();
-      await expect(page.getByTestId("coord-nav-questions")).toBeVisible();
-      await expect(page.getByTestId("coord-nav-agents")).toBeVisible();
-      await expect(page.getByTestId("coord-nav-history")).toBeVisible();
-      await page.keyboard.press("Escape");
+      const sidebar = page.locator('aside[data-sidebar="true"]');
+      const navItem = (id: string) => sidebar.locator(`[data-nav-id="${id}"]`);
+      for (const id of [
+        "coord-pipeline",
+        "coord-prs",
+        "coord-gates",
+        "coord-notifications",
+      ]) {
+        await expect(navItem(id)).toBeVisible();
+      }
+      await expect(navItem("coord-alerts")).toHaveCount(0);
+
+      // Work group: Plans / Questions / Agents / History.
+      await navItem("coord-group-work").click();
+      await expect(navItem("coord-plans")).toBeVisible();
+      await expect(navItem("coord-questions")).toBeVisible();
+      await expect(navItem("coord-agents")).toBeVisible();
+      await expect(navItem("coord-history")).toBeVisible();
 
       // The Dev Ops group's members are operator-only (this test path runs
-      // as superuser when the heading rendered); the group trigger itself is
+      // as superuser when the heading rendered); the group itself is
       // member-visible and carries `Overview`.
-      await page.getByTestId("coord-nav-group-devops").click();
-      await expect(page.getByTestId("coord-nav-trees")).toBeVisible();
-      await page.keyboard.press("Escape");
+      await navItem("coord-group-devops").click();
+      await expect(navItem("coord-trees")).toBeVisible();
 
-      // Cross-links to existing surfaces live in the Access group.
-      await page.getByTestId("coord-nav-group-access").click();
-      await expect(page.getByTestId("coord-nav-claims")).toBeVisible();
-      await expect(page.getByTestId("coord-nav-sessions")).toBeVisible();
-      await page.keyboard.press("Escape");
+      // Claims and Sessions live in the Sessions section.
+      await expect(navItem("agent-claims")).toBeVisible();
+      await expect(navItem("sessions")).toBeVisible();
     }
   });
 
@@ -412,7 +420,6 @@ test.describe("Admin - Coord operator console", () => {
     { path: "/admin/coord/plans", testId: "coord-plans-page" },
     { path: "/admin/coord/questions", testId: "coord-questions-page" },
     { path: "/admin/coord/agents", testId: "coord-agents-page" },
-    { path: "/admin/coord/alerts", testId: "coord-alerts-page" },
     { path: "/admin/coord/history", testId: "coord-history-page" },
   ]) {
     test(`should load ${path} without errors`, async ({ page }) => {
@@ -464,8 +471,9 @@ test.describe("Admin - Coord operator console", () => {
     }
 
     // Plans lives in the Work group — open the menu, then navigate.
-    await page.getByTestId("coord-nav-group-work").click();
-    await page.getByTestId("coord-nav-plans").click();
+    const sidebar = page.locator('aside[data-sidebar="true"]');
+    await sidebar.locator('[data-nav-id="coord-group-work"]').click();
+    await sidebar.locator('[data-nav-id="coord-plans"]').click();
     await page.waitForURL(/\/admin\/coord\/plans/);
     await expect(page.getByTestId("coord-plans-page")).toBeVisible();
   });
