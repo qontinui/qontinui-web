@@ -2449,6 +2449,7 @@
           "fte": {
             "anyOf": [
               {
+                "exclusiveMaximum": 100000.0,
                 "minimum": 0.0,
                 "type": "number"
               },
@@ -2457,7 +2458,11 @@
                 "type": "string"
               }
             ],
-            "title": "Fte"
+            "title": "Fte",
+            "x-numeric": {
+              "precision": 8,
+              "scale": 3
+            }
           },
           "phase_code": {
             "maxLength": 50,
@@ -7066,6 +7071,129 @@
           "created_at"
         ],
         "title": "CategoryRead",
+        "type": "object"
+      },
+      "ChangeLogEntry": {
+        "properties": {
+          "action": {
+            "title": "Action",
+            "type": "string"
+          },
+          "actor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Actor"
+          },
+          "after": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "After"
+          },
+          "before": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Before"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "record_id": {
+            "title": "Record Id",
+            "type": "string"
+          },
+          "resource": {
+            "title": "Resource",
+            "type": "string"
+          },
+          "source": {
+            "title": "Source",
+            "type": "string"
+          },
+          "version_after": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Version After"
+          },
+          "version_before": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Version Before"
+          }
+        },
+        "required": [
+          "id",
+          "resource",
+          "record_id",
+          "action",
+          "source",
+          "actor",
+          "created_at",
+          "version_before",
+          "version_after",
+          "before",
+          "after"
+        ],
+        "title": "ChangeLogEntry",
+        "type": "object"
+      },
+      "ChangeLogPage": {
+        "properties": {
+          "entries": {
+            "items": {
+              "$ref": "#/components/schemas/ChangeLogEntry"
+            },
+            "title": "Entries",
+            "type": "array"
+          },
+          "truncated": {
+            "title": "Truncated",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "entries",
+          "truncated"
+        ],
+        "title": "ChangeLogPage",
         "type": "object"
       },
       "ChatMessageBody": {
@@ -18790,11 +18918,21 @@
           "contingency_pct": {
             "anyOf": [
               {
-                "type": "number"
-              },
-              {
-                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
-                "type": "string"
+                "anyOf": [
+                  {
+                    "exclusiveMaximum": 1000.0,
+                    "minimum": 0.0,
+                    "type": "number"
+                  },
+                  {
+                    "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                    "type": "string"
+                  }
+                ],
+                "x-numeric": {
+                  "precision": 6,
+                  "scale": 3
+                }
               },
               {
                 "type": "null"
@@ -19086,11 +19224,21 @@
           "contingency_pct": {
             "anyOf": [
               {
-                "type": "number"
-              },
-              {
-                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
-                "type": "string"
+                "anyOf": [
+                  {
+                    "exclusiveMaximum": 1000.0,
+                    "minimum": 0.0,
+                    "type": "number"
+                  },
+                  {
+                    "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                    "type": "string"
+                  }
+                ],
+                "x-numeric": {
+                  "precision": 6,
+                  "scale": 3
+                }
               },
               {
                 "type": "null"
@@ -24976,6 +25124,293 @@
           "historical_result_ids"
         ],
         "title": "IntegrationTestPlaybackRequest",
+        "type": "object"
+      },
+      "IntentDocumentCreate": {
+        "properties": {
+          "body": {
+            "maxLength": 200000,
+            "minLength": 1,
+            "title": "Body",
+            "type": "string"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "maxLength": 2000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "kind": {
+            "enum": [
+              "product_intent",
+              "initiative",
+              "success_metric",
+              "domain_spec",
+              "audience_profile",
+              "decision_record"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "name": {
+            "maxLength": 80,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "overview_order": {
+            "anyOf": [
+              {
+                "maximum": 999.0,
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Overview Order"
+          }
+        },
+        "required": [
+          "kind",
+          "name",
+          "body"
+        ],
+        "title": "IntentDocumentCreate",
+        "type": "object"
+      },
+      "IntentDocumentRead": {
+        "properties": {
+          "body": {
+            "title": "Body",
+            "type": "string"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "frontmatter": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Frontmatter"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "product_intent",
+              "initiative",
+              "success_metric",
+              "domain_spec",
+              "audience_profile",
+              "decision_record"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "overview_order": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Overview Order"
+          },
+          "state": {
+            "enum": [
+              "authored",
+              "skeleton",
+              "unknown",
+              "unreadable"
+            ],
+            "title": "State",
+            "type": "string"
+          },
+          "status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Status"
+          },
+          "updated_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated At"
+          },
+          "updated_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated By"
+          },
+          "version": {
+            "title": "Version",
+            "type": "integer"
+          },
+          "withdrawn": {
+            "default": false,
+            "title": "Withdrawn",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "name",
+          "description",
+          "body",
+          "frontmatter",
+          "overview_order",
+          "state",
+          "version",
+          "updated_at",
+          "updated_by"
+        ],
+        "title": "IntentDocumentRead",
+        "type": "object"
+      },
+      "IntentDocumentUpdate": {
+        "description": "Absent fields are left alone. ``overview_order: null`` returns the\ndocument to the page's default order; ``body`` cannot be cleared.",
+        "properties": {
+          "body": {
+            "anyOf": [
+              {
+                "maxLength": 200000,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Body"
+          },
+          "overview_order": {
+            "anyOf": [
+              {
+                "maximum": 999.0,
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Overview Order"
+          }
+        },
+        "title": "IntentDocumentUpdate",
+        "type": "object"
+      },
+      "IntentDocumentsItem": {
+        "properties": {
+          "can_edit": {
+            "title": "Can Edit",
+            "type": "boolean"
+          },
+          "item": {
+            "$ref": "#/components/schemas/IntentDocumentRead"
+          }
+        },
+        "required": [
+          "item",
+          "can_edit"
+        ],
+        "title": "IntentDocumentsItem",
+        "type": "object"
+      },
+      "IntentDocumentsList": {
+        "properties": {
+          "can_edit": {
+            "title": "Can Edit",
+            "type": "boolean"
+          },
+          "degraded": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Degraded"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/IntentDocumentRead"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "can_edit"
+        ],
+        "title": "IntentDocumentsList",
         "type": "object"
       },
       "InvitationAccept": {
@@ -31017,6 +31452,18 @@
             "title": "Base Currency",
             "type": "string"
           },
+          "editing_roles": {
+            "items": {
+              "enum": [
+                "admin",
+                "agent_supervisor",
+                "operator"
+              ],
+              "type": "string"
+            },
+            "title": "Editing Roles",
+            "type": "array"
+          },
           "first_value_date": {
             "anyOf": [
               {
@@ -31105,6 +31552,25 @@
             "title": "Base Currency",
             "type": "string"
           },
+          "editing_roles": {
+            "anyOf": [
+              {
+                "items": {
+                  "enum": [
+                    "admin",
+                    "agent_supervisor",
+                    "operator"
+                  ],
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Editing Roles"
+          },
           "expected_version": {
             "anyOf": [
               {
@@ -31136,6 +31602,9 @@
           "hours_per_day": {
             "anyOf": [
               {
+                "exclusiveMaximum": 1000.0,
+                "exclusiveMinimum": 0.0,
+                "maximum": 24.0,
                 "type": "number"
               },
               {
@@ -31144,7 +31613,11 @@
               }
             ],
             "default": "8",
-            "title": "Hours Per Day"
+            "title": "Hours Per Day",
+            "x-numeric": {
+              "precision": 5,
+              "scale": 2
+            }
           },
           "labour_billing": {
             "default": "unbilled",
@@ -31159,6 +31632,9 @@
           "working_day_factor": {
             "anyOf": [
               {
+                "exclusiveMaximum": 100.0,
+                "exclusiveMinimum": 0.0,
+                "maximum": 1.0,
                 "type": "number"
               },
               {
@@ -31167,7 +31643,11 @@
               }
             ],
             "default": "1.0",
-            "title": "Working Day Factor"
+            "title": "Working Day Factor",
+            "x-numeric": {
+              "precision": 6,
+              "scale": 4
+            }
           }
         },
         "title": "OverviewSettingsWrite",
@@ -33156,12 +33636,21 @@
           "stated_working_weeks": {
             "anyOf": [
               {
-                "minimum": 0.0,
-                "type": "number"
-              },
-              {
-                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
-                "type": "string"
+                "anyOf": [
+                  {
+                    "exclusiveMaximum": 1000000.0,
+                    "minimum": 0.0,
+                    "type": "number"
+                  },
+                  {
+                    "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                    "type": "string"
+                  }
+                ],
+                "x-numeric": {
+                  "precision": 8,
+                  "scale": 2
+                }
               },
               {
                 "type": "null"
@@ -34202,6 +34691,7 @@
           "multiplier": {
             "anyOf": [
               {
+                "exclusiveMaximum": 10000.0,
                 "exclusiveMinimum": 0.0,
                 "type": "number"
               },
@@ -34210,7 +34700,11 @@
                 "type": "string"
               }
             ],
-            "title": "Multiplier"
+            "title": "Multiplier",
+            "x-numeric": {
+              "precision": 8,
+              "scale": 4
+            }
           },
           "name": {
             "maxLength": 100,
@@ -38837,6 +39331,78 @@
           "via"
         ],
         "title": "ResolvedOutcome",
+        "type": "object"
+      },
+      "ResourceCatalog": {
+        "properties": {
+          "resources": {
+            "items": {
+              "$ref": "#/components/schemas/ResourceDescriptor"
+            },
+            "title": "Resources",
+            "type": "array"
+          },
+          "tenant_id": {
+            "format": "uuid",
+            "title": "Tenant Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "tenant_id",
+          "resources"
+        ],
+        "title": "ResourceCatalog",
+        "type": "object"
+      },
+      "ResourceDescriptor": {
+        "properties": {
+          "can_edit": {
+            "title": "Can Edit",
+            "type": "boolean"
+          },
+          "description": {
+            "title": "Description",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "operations": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Operations",
+            "type": "array"
+          },
+          "path": {
+            "title": "Path",
+            "type": "string"
+          },
+          "schemas": {
+            "additionalProperties": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Schemas",
+            "type": "object"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "path",
+          "title",
+          "description",
+          "operations",
+          "can_edit",
+          "schemas"
+        ],
+        "title": "ResourceDescriptor",
         "type": "object"
       },
       "ResponsibleUserOut": {
@@ -47123,6 +47689,7 @@
           "planned_person_days": {
             "anyOf": [
               {
+                "exclusiveMaximum": 100000000.0,
                 "minimum": 0.0,
                 "type": "number"
               },
@@ -47131,7 +47698,11 @@
                 "type": "string"
               }
             ],
-            "title": "Planned Person Days"
+            "title": "Planned Person Days",
+            "x-numeric": {
+              "precision": 10,
+              "scale": 2
+            }
           },
           "role_code": {
             "maxLength": 50,
@@ -95381,6 +95952,84 @@
         ]
       }
     },
+    "/api/v1/overview/change-log": {
+      "get": {
+        "description": "Newest first. Readable by any member, like the records it describes.",
+        "operationId": "api_v1_overview_change_log_get",
+        "parameters": [
+          {
+            "description": "A registry name, e.g. intent_documents",
+            "in": "query",
+            "name": "resource",
+            "required": true,
+            "schema": {
+              "description": "A registry name, e.g. intent_documents",
+              "title": "Resource",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "record_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Record Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChangeLogPage"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Read Change Log",
+        "tags": [
+          "overview"
+        ]
+      }
+    },
     "/api/v1/overview/estimates": {
       "get": {
         "description": "This project's estimates, baseline first then newest.",
@@ -95408,7 +96057,7 @@
         ]
       },
       "post": {
-        "description": "Create an estimate. Tenant admin only.\n\nMarking it the baseline un-marks whichever estimate held that flag \u2014 a\nre-baseline is the normal reason to create one, and the partial unique\nindex would otherwise reject it.",
+        "description": "Create an estimate. The project's ``editing_roles`` only.\n\nMarking it the baseline un-marks whichever estimate held that flag \u2014 a\nre-baseline is the normal reason to create one, and the partial unique\nindex would otherwise reject it.",
         "operationId": "api_v1_overview_estimates_post",
         "requestBody": {
           "content": {
@@ -95455,7 +96104,7 @@
     },
     "/api/v1/overview/estimates/{estimate_id}": {
       "delete": {
-        "description": "Delete an estimate and everything under it. Tenant admin only.",
+        "description": "Delete an estimate and everything under it. The project's\n``editing_roles`` only.\n\nThe change-log row keeps the whole graph as it was, so a deleted estimate\nis still answerable (\"what did it say, and who removed it\").",
         "operationId": "api_v1_overview_estimates_estimate_id_delete",
         "parameters": [
           {
@@ -95542,7 +96191,7 @@
         ]
       },
       "patch": {
-        "description": "Edit the head row. Tenant admin only.\n\nAbsent fields are left alone; an explicit ``null`` clears a nullable one.",
+        "description": "Edit the head row. The project's ``editing_roles`` only.\n\nAbsent fields are left alone; an explicit ``null`` clears a nullable one.",
         "operationId": "api_v1_overview_estimates_estimate_id_patch",
         "parameters": [
           {
@@ -95601,7 +96250,7 @@
     },
     "/api/v1/overview/estimates/{estimate_id}/content": {
       "put": {
-        "description": "Replace the estimate's whole content graph. Tenant admin only.\n\nOne transaction, one payload: the CSV paste, the mermaid-``gantt`` import\nand the inline editor all produce a complete description of the estimate,\nand a half-applied import is worse than a rejected one. Send\n``expected_version`` (from the last read) to be refused with 409 rather\nthan silently overwrite somebody else's save.",
+        "description": "Replace the estimate's whole content graph. The project's\n``editing_roles`` only.\n\nOne transaction, one payload: the CSV paste, the mermaid-``gantt`` import\nand the inline editor all produce a complete description of the estimate,\nand a half-applied import is worse than a rejected one. Send\n``expected_version`` (from the last read) to be refused with 409 rather\nthan silently overwrite somebody else's save.",
         "operationId": "api_v1_overview_estimates_estimate_id_content_put",
         "parameters": [
           {
@@ -95709,6 +96358,243 @@
         ]
       }
     },
+    "/api/v1/overview/intent-documents": {
+      "get": {
+        "operationId": "api_v1_overview_intent_documents_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IntentDocumentsList"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "List Intent Documents",
+        "tags": [
+          "overview",
+          "overview:intent-documents"
+        ]
+      },
+      "post": {
+        "operationId": "api_v1_overview_intent_documents_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/IntentDocumentCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IntentDocumentsItem"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Create Intent Documents",
+        "tags": [
+          "overview",
+          "overview:intent-documents"
+        ]
+      }
+    },
+    "/api/v1/overview/intent-documents/{record_id}": {
+      "get": {
+        "operationId": "api_v1_overview_intent_documents_record_id_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "record_id",
+            "required": true,
+            "schema": {
+              "title": "Record Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IntentDocumentsItem"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Get Intent Documents",
+        "tags": [
+          "overview",
+          "overview:intent-documents"
+        ]
+      },
+      "patch": {
+        "operationId": "api_v1_overview_intent_documents_record_id_patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "record_id",
+            "required": true,
+            "schema": {
+              "title": "Record Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "If-Match",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "If-Match"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/IntentDocumentUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IntentDocumentsItem"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Update Intent Documents",
+        "tags": [
+          "overview",
+          "overview:intent-documents"
+        ]
+      }
+    },
+    "/api/v1/overview/resources": {
+      "get": {
+        "description": "Every overview resource, with what the caller may do in this project.",
+        "operationId": "api_v1_overview_resources_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceCatalog"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Read Catalog",
+        "tags": [
+          "overview"
+        ]
+      }
+    },
     "/api/v1/overview/settings": {
       "get": {
         "description": "The project's settings, or the documented defaults when none are saved.\n\nNever 404 and never ``{}``: a project with no saved settings still HAS\nsettings, and ``is_default`` is what tells the reader nobody has chosen\nthem yet.",
@@ -95736,7 +96622,7 @@
         ]
       },
       "put": {
-        "description": "Save the project's settings. Tenant admin only.",
+        "description": "Save the project's settings. Tenant admin only \u2014 they include\n``editing_roles``, which decides who else may edit.",
         "operationId": "api_v1_overview_settings_put",
         "requestBody": {
           "content": {

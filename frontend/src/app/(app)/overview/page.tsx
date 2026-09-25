@@ -7,17 +7,19 @@
  * Phase 1).
  *
  * The prose comes from the project's intent documents; the progress column
- * from its work units. Both are read from doors that already exist, so this
- * page needs no backend of its own.
+ * from its work units. The prose is editable in place, through the overview's
+ * authoring contract (plan `2026-09-20-overview-authoring-layer`, Phase 1),
+ * by whoever the server says may edit it for THIS project.
  */
 
 import { Skeleton } from "@/components/ui/skeleton";
 import { LoadFailure } from "@/components/overview/LoadFailure";
+import { useCanEdit } from "@/components/overview/editing/permissions";
 import { useAuth } from "@/contexts/auth-context";
 import { useTenant } from "@/contexts/tenant-context";
 import { IntentSection } from "./_components/IntentSection";
 import { ProgressPanel } from "./_components/ProgressPanel";
-import { useSummaryData } from "./_hooks/useSummaryData";
+import { INTENT_RESOURCE, useSummaryData } from "./_hooks/useSummaryData";
 import { SUMMARY_INTENT_KINDS } from "./_lib/intent";
 
 function ProseSkeleton() {
@@ -32,16 +34,27 @@ function ProseSkeleton() {
 }
 
 export default function OverviewSummaryPage() {
-  const { isCoordAdmin } = useAuth();
+  const { user } = useAuth();
+  // The served permission for the project on screen — not `isCoordAdmin`,
+  // which is a union across every project the viewer belongs to.
+  const canEdit = useCanEdit(INTENT_RESOURCE);
   const {
     activeTenantId,
     loading: tenantsLoading,
     error: tenantsError,
   } = useTenant();
-  const { intent, progress } = useSummaryData(
+  const { intent, progress, saveBody, move, createDocument } = useSummaryData(
     activeTenantId,
     tenantsLoading || tenantsError !== null
   );
+  const actions = {
+    canEdit,
+    projectId: activeTenantId,
+    viewerId: user?.id != null ? String(user.id) : null,
+    saveBody,
+    move,
+    createDocument,
+  };
 
   // Without the project list the page cannot say whose figures it would be
   // showing, so it shows none rather than an unnamed project's.
@@ -110,7 +123,7 @@ export default function OverviewSummaryPage() {
                   key={kind}
                   kind={kind}
                   entries={intent.entries.filter((e) => e.kind === kind)}
-                  canEdit={isCoordAdmin}
+                  actions={actions}
                 />
               ))
             )}
