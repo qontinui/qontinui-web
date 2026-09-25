@@ -86,15 +86,21 @@ transaction (one ``context.begin_transaction()``, no
 every later revision.
 
 The reset is spelled ``SET LOCAL lock_timeout = DEFAULT``, NOT ``RESET
-lock_timeout``, for two independent reasons. ``RESET`` is SESSION-scoped, so it
-would also clear a ``lock_timeout`` the deployer had set before invoking
-alembic — a wider effect than this revision is entitled to; ``SET LOCAL … =
-DEFAULT`` undoes only what this revision did, within the run's transaction. And
-coord's migration classifier admits only ``SET LOCAL
-lock_timeout|statement_timeout = <value>`` and rejects ``RESET`` by name
-(``crates/coord/src/pr_merge/migration_classifier.rs`` ``classify_set_statement``,
-pinned as a test case), so the ``RESET`` spelling the precedents use is one
-avoidable Reject. The precedents predate that arm; do not copy them here.
+lock_timeout``. **The decisive reason is coord's migration classifier**, which
+admits only ``SET LOCAL lock_timeout|statement_timeout = <value>`` and rejects
+``RESET`` by name (``crates/coord/src/pr_merge/migration_classifier.rs``
+``classify_set_statement``, pinned as a test case) — so the ``RESET`` spelling
+the precedents use is one avoidable Reject. The precedents predate that arm
+(it landed 2026-09-20, after them); do not copy them here.
+
+The scope difference is real but small, and is stated exactly rather than
+overclaimed: ``= DEFAULT`` restores the CONFIGURED default, not whatever value
+the session held before — so inside the run it masks a deployer-set
+``lock_timeout`` just as ``RESET`` would (coord's classifier says so in the same
+module). What it does NOT do is outlive the transaction: ``RESET`` is
+session-scoped and persists, ``SET LOCAL`` ends at COMMIT. With ``NullPool`` and
+one transaction per run that difference is close to nil, which is why the
+classifier, not the scoping, is the reason to prefer this spelling.
 
 The index is built ``CONCURRENTLY`` (a plain ``CREATE INDEX`` takes a
 write-blocking ``SHARE`` lock for the duration of a scan over the whole table).
@@ -184,9 +190,9 @@ def upgrade() -> None:
     # SET LOCAL is transaction-scoped and env.py wraps the WHOLE run in one
     # transaction, so without this reset the 3s timeout leaks into every
     # revision that lands after this one. `SET LOCAL ... = DEFAULT` rather than
-    # `RESET`: RESET is session-scoped (it would also clear a lock_timeout the
-    # deployer set outside alembic), and coord's migration classifier rejects
-    # `RESET` by name. See the module docstring.
+    # `RESET` because coord's migration classifier rejects `RESET` by name, and
+    # because SET LOCAL ends at COMMIT while RESET persists in the session.
+    # See the module docstring for what `= DEFAULT` does and does not restore.
     op.execute("SET LOCAL lock_timeout = DEFAULT")
 
     with op.get_context().autocommit_block():
