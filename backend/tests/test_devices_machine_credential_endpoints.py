@@ -447,7 +447,9 @@ class TestSelfMintEndpoint:
             AsyncMock(return_value=(claims, _mock_user())),
         )
 
-    def _coord(self, *, status_code=200, json_data=None, get_side_effect=None):
+    def _coord(
+        self, *, status_code=200, json_data=None, get_side_effect=None, non_json=False
+    ):
         """Mock coord's ``GET /coord/devices/:id/state`` at the HTTP layer
         (``httpx.AsyncClient`` inside ``app.services.coord_device``)."""
         patcher = patch("app.services.coord_device.httpx.AsyncClient")
@@ -470,9 +472,10 @@ class TestSelfMintEndpoint:
                             "tenant_id": str(_TENANT_ID),
                         }
                     )
-                    instance.get.return_value = _mock_httpx_response(
-                        status_code=status_code, json_data=body
-                    )
+                    resp = _mock_httpx_response(status_code=status_code, json_data=body)
+                    if non_json:
+                        resp.json.side_effect = ValueError("not json")
+                    instance.get.return_value = resp
                 ctx_self.get = instance.get
                 return ctx_self
 
@@ -629,8 +632,13 @@ class TestSelfMintEndpoint:
 
     @pytest.mark.parametrize(
         "exc",
-        [httpx.TimeoutException("slow"), httpx.ConnectError("down")],
-        ids=["timeout", "unreachable"],
+        [
+            httpx.TimeoutException("slow"),
+            httpx.ConnectError("down"),
+            httpx.ReadError("reset"),
+            httpx.RemoteProtocolError("garbled"),
+        ],
+        ids=["timeout", "unreachable", "read_error", "protocol_error"],
     )
     def test_coord_transport_failure_is_503_and_mints_nothing(self, exc) -> None:
         client = TestClient(self._app())
@@ -653,19 +661,81 @@ class TestSelfMintEndpoint:
         ):
             resp = client.post(self._URL, headers=self._AUTH)
         assert resp.status_code == 503, resp.text
+        assert resp.json()["detail"]["code"] == "coord_device_lookup_unavailable"
         mock_mint.assert_not_called()
 
-    def test_coord_refusing_the_token_is_403(self) -> None:
+    @pytest.mark.parametrize("coord_status", [401, 403])
+    def test_coord_refusing_the_token_is_403(self, coord_status) -> None:
         client = TestClient(self._app())
         with (
             self._verify(_device_claims()),
-            self._coord(status_code=403, json_data={"error": "auth required"}),
+            self._coord(status_code=coord_status, json_data={"error": "auth"}),
             self._mint() as mock_mint,
         ):
             resp = client.post(self._URL, headers=self._AUTH)
         assert resp.status_code == 403, resp.text
         assert resp.json()["detail"]["code"] == "coord_refused_device_token"
         mock_mint.assert_not_called()
+
+    @pytest.mark.parametrize(
+        "json_data",
+        [
+            {"device_id": str(_DEVICE_ID)},
+            {"device_id": str(_DEVICE_ID), "tenant_id": None},
+            {"device_id": str(_DEVICE_ID), "tenant_id": "not-a-uuid"},
+        ],
+        ids=["missing", "null", "unparseable"],
+    )
+    def test_bad_tenant_id_is_502_malformed(self, json_data) -> None:
+        client = TestClient(self._app())
+        with (
+            self._verify(_device_claims()),
+            self._coord(json_data=json_data),
+            self._mint() as mock_mint,
+        ):
+            resp = client.post(self._URL, headers=self._AUTH)
+        assert resp.status_code == 502, resp.text
+        assert resp.json()["detail"]["code"] == "coord_device_state_malformed"
+        mock_mint.assert_not_called()
+
+    def test_non_json_200_is_502_malformed(self) -> None:
+        client = TestClient(self._app())
+        with (
+            self._verify(_device_claims()),
+            self._coord(non_json=True),
+            self._mint() as mock_mint,
+        ):
+            resp = client.post(self._URL, headers=self._AUTH)
+        assert resp.status_code == 502, resp.text
+        assert resp.json()["detail"]["code"] == "coord_device_state_malformed"
+        mock_mint.assert_not_called()
+
+    def test_non_object_200_is_502_malformed(self) -> None:
+        client = TestClient(self._app())
+        with (
+            self._verify(_device_claims()),
+            self._coord(json_data=["not", "an", "object"]),
+            self._mint() as mock_mint,
+        ):
+            resp = client.post(self._URL, headers=self._AUTH)
+        assert resp.status_code == 502, resp.text
+        assert resp.json()["detail"]["code"] == "coord_device_state_malformed"
+        mock_mint.assert_not_called()
+
+    def test_only_the_header_token_is_forwarded_not_a_cookie(self) -> None:
+        client = TestClient(self._app())
+        client.cookies.set("access_token", "cognito-cookie-token")
+        with (
+            self._verify(_device_claims()) as verify,
+            self._coord() as coord,
+            self._mint(),
+        ):
+            resp = client.post(self._URL, headers=self._AUTH)
+        assert resp.status_code == 201, resp.text
+        # The verified token is the header one, and it is the one forwarded.
+        assert verify.call_args.args[0] == "device-jwt"
+        headers = coord.get.call_args.kwargs["headers"]
+        assert headers["Authorization"] == "Bearer device-jwt"
 
     def test_revoked_key_is_not_reminted(self) -> None:
         client = TestClient(self._app())

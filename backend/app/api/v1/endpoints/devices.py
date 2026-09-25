@@ -1199,9 +1199,12 @@ async def self_mint_device_machine_credential(
       forwarding the caller's verified device JWT (5 s budget). A 404 → 403
       ``device_not_owned``; a row naming a different ``device_id`` → 403
       ``device_mismatch``; coord refusing the forwarded token (401/403) → 403
-      ``coord_refused_device_token``; coord unreachable, timed out, or 5xx →
-      **503**, and nothing is minted — an unanswered lookup is UNKNOWN, never
-      a licence to mint.
+      ``coord_refused_device_token``; coord unreachable, timed out, any other
+      transport failure, or 5xx → **503** ``coord_device_lookup_unavailable``;
+      a 200 that is not a JSON object, or whose ``tenant_id`` is missing,
+      null or unparseable → **502** ``coord_device_state_malformed``. In every
+      one of these nothing is minted — an unanswered or unreadable lookup is
+      UNKNOWN, never a licence to mint.
     * an existing key that an operator REVOKED is not re-minted → 403
       ``device_machine_key_revoked``. ``dmk_crud.mint`` clears ``revoked_at``
       on rotation, so without this a device could undo its own revocation;
@@ -1215,19 +1218,35 @@ async def self_mint_device_machine_credential(
     undone and two concurrent self-mints cannot both rotate (the second sees
     the first's fresh key and gets the 409).
 
-    **Owner**: the verified device JWT's ``user_id`` claim. Coord writes that
-    claim from ``coord.devices.user_id`` on every mint path — pairing
-    (``pair-complete`` / ``pair-cli`` mint for the user they bind to the
-    device), ``service-mint`` (reads the row), and refresh (carries the
-    claim forward). The read boundary forbids web reading ``coord.devices``
-    directly, and no coord read route that accepts a device JWT returns the
-    owner, so the claim is the owner source. Its one gap: a device RE-PAIRED
-    to another user leaves the old user's still-unexpired tokens live, and
-    such a token can enrol a key recorded under the old user until it
-    expires. That key is still bound to this device and nothing more, and
-    ``/exchange`` → coord ``service-mint`` re-resolves the owner and tenant
-    from ``coord.devices`` itself, so the JWT it yields is the CURRENT
-    owner's — the stale owner field grants nothing.
+    **Owner**: the verified device JWT's ``user_id`` claim. The read
+    boundary forbids web reading ``coord.devices`` directly, and no coord
+    read route that accepts a device JWT returns the owner. How coord sets
+    that claim (qontinui-coord ``origin/main`` ``9774f4e43``):
+
+    * pairing — ``post_pair_complete`` and ``post_pair_cli``
+      (``routes_phase3.rs:2431``/``:2461`` and ``:2585``/``:2615``) write the
+      paired user to ``coord.devices.user_id`` via ``record_pairing``
+      (``:2254``, UPSERT ``user_id = $4``) and mint the JWT for that SAME
+      user in the same request;
+    * ``service-mint`` reads ``user_id`` from the ``coord.devices`` row
+      (``tokens.rs:623``, minted at ``:670``);
+    * refresh does NOT re-read it: ``authorize_device_refresh`` copies the
+      presented claim (``tokens.rs:222-224``, minted at ``:455-458``) and
+      checks only ``capability_user_paired`` (``:383``) and the tenant
+      binding.
+
+    So the claim equals ``coord.devices.user_id`` at pairing, but after the
+    device is RE-PAIRED to another user, the previous user's token keeps its
+    ``user_id`` for as long as it keeps being refreshed — not merely until it
+    expires. Such a token can enrol (within the 7-day rule below) a key whose
+    ``owner_user_id`` names the previous user. That field is a label: the key
+    is still bound to this device only, and web's ``/exchange`` sends coord
+    ``service-mint`` only the path ``device_id`` (the ``X-Qontinui-User-Id``
+    header it also sends is never read: ``post_service_mint_device`` takes no
+    headers, ``tokens.rs:586-589``), and service-mint
+    resolves both owner and tenant from ``coord.devices`` (``tokens.rs:623``
+    → ``:670``). The JWT a key yields is therefore always the CURRENT
+    owner's; the stale label grants nothing.
 
     **Tenant**: the ``tenant_id`` of coord's ``/state`` row — the same
     ``coord.devices.tenant_id`` column the user-bearer route reads through
@@ -1324,22 +1343,11 @@ async def _self_mint_device_tenant(
             device_bearer=device_ctx.token,
             user_id=str(device_ctx.user_id),
         )
-    except HTTPException as exc:
-        if exc.status_code in (
-            status.HTTP_401_UNAUTHORIZED,
-            status.HTTP_403_FORBIDDEN,
-        ):
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail={
-                    "code": "coord_refused_device_token",
-                    "message": "Coord refused this device token.",
-                },
-            ) from exc
+    except coord_device.CoordDeviceStateUnavailableError as exc:
         logger.warning(
             "device_machine_credential_self_mint_coord_unavailable",
             device_id=str(device_id),
-            status=exc.status_code,
+            error=str(exc),
         )
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -1351,6 +1359,16 @@ async def _self_mint_device_tenant(
                 ),
             },
         ) from exc
+    except coord_device.CoordDeviceStateRefusedError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={
+                "code": "coord_refused_device_token",
+                "message": f"Coord refused this device token ({exc.status_code}).",
+            },
+        ) from exc
+    except coord_device.CoordDeviceStateMalformedError as exc:
+        raise _coord_state_malformed(str(exc)) from exc
 
     if row is None:
         raise HTTPException(
@@ -1368,13 +1386,22 @@ async def _self_mint_device_tenant(
                 "message": "Coord answered for a different device.",
             },
         )
+    raw_tenant = row.get("tenant_id")
+    if raw_tenant is None:
+        raise _coord_state_malformed("coord device state carried no tenant_id")
     try:
-        return UUID(str(row.get("tenant_id")))
+        return UUID(str(raw_tenant))
     except (TypeError, ValueError) as exc:
-        raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY,
-            detail="Coord device state carried no usable tenant_id.",
+        raise _coord_state_malformed(
+            "coord device state carried an unparseable tenant_id"
         ) from exc
+
+
+def _coord_state_malformed(message: str) -> HTTPException:
+    return HTTPException(
+        status_code=status.HTTP_502_BAD_GATEWAY,
+        detail={"code": "coord_device_state_malformed", "message": message},
+    )
 
 
 async def _mint_machine_credential(
