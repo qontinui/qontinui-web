@@ -73,6 +73,34 @@ def _expiry(
     return base + timedelta(days=ttl_days)
 
 
+class DeviceMachineKeyRevokedError(Exception):
+    """:func:`mint` refused to re-mint over an operator-revoked key."""
+
+    def __init__(self, device_id: UUID) -> None:
+        super().__init__(f"device machine key for {device_id} is revoked")
+        self.device_id = device_id
+
+
+class DeviceMachineKeyStillUsableError(Exception):
+    """:func:`mint` refused to rotate a key that is still usable for longer
+    than the caller's ``refuse_if_usable_beyond`` window."""
+
+    def __init__(self, device_id: UUID) -> None:
+        super().__init__(f"device machine key for {device_id} is still usable")
+        self.device_id = device_id
+
+
+def _usable_beyond(cred: DeviceMachineCredential, horizon: datetime) -> bool:
+    """True when ``cred`` does not expire before ``horizon`` (no expiry
+    counts as never expiring). Revocation is the caller's check."""
+    if cred.expires_at is None:
+        return True
+    expires = cred.expires_at
+    if expires.tzinfo is None:
+        expires = expires.replace(tzinfo=UTC)
+    return expires > horizon
+
+
 async def mint(
     db: AsyncSession,
     *,
@@ -80,6 +108,8 @@ async def mint(
     owner_user_id: UUID | None,
     tenant_id: UUID | None = None,
     ttl_days: int = DEVICE_MACHINE_KEY_TTL_DAYS,
+    refuse_if_revoked: bool = False,
+    refuse_if_usable_beyond: timedelta | None = None,
 ) -> tuple[str, DeviceMachineCredential]:
     """Mint (or rotate) the device machine key for ``device_id``.
 
@@ -87,6 +117,19 @@ async def mint(
     ``now + ttl_days`` expiry. UPSERT semantics on ``device_id`` (one active
     key per device): a re-mint replaces the prior credential in place,
     rotating the secret and clearing any previous revocation/usage stamps.
+
+    The two ``refuse_*`` guards (both off by default, so the owner's
+    user-bearer mint and pair-cli keep the unconditional rotate) are
+    evaluated AFTER the ``SELECT ... FOR UPDATE`` of the existing row, on
+    freshly loaded state (``populate_existing``), so a concurrent revoke or
+    mint cannot slip between the check and the write:
+
+    * ``refuse_if_revoked`` — an existing row with ``revoked_at`` set raises
+      :class:`DeviceMachineKeyRevokedError` instead of being un-revoked.
+    * ``refuse_if_usable_beyond`` — an existing unrevoked row that stays
+      usable for longer than this window (``expires_at`` further than
+      ``now + window``, or no expiry at all) raises
+      :class:`DeviceMachineKeyStillUsableError` instead of being rotated.
 
     Returns ``(plaintext_key, credential)`` — the plaintext is delivered to
     the runner exactly once. The caller commits.
@@ -99,8 +142,19 @@ async def mint(
         select(DeviceMachineCredential)
         .where(DeviceMachineCredential.device_id == device_id)
         .with_for_update()
+        .execution_options(populate_existing=True)
     )
     cred = (await db.execute(stmt)).scalar_one_or_none()
+
+    if cred is not None:
+        if refuse_if_revoked and cred.revoked_at is not None:
+            raise DeviceMachineKeyRevokedError(device_id)
+        if (
+            refuse_if_usable_beyond is not None
+            and cred.revoked_at is None
+            and _usable_beyond(cred, now + refuse_if_usable_beyond)
+        ):
+            raise DeviceMachineKeyStillUsableError(device_id)
 
     if cred is None:
         cred = DeviceMachineCredential(
@@ -145,20 +199,6 @@ async def get_by_hash(
     """
     stmt = select(DeviceMachineCredential).where(
         DeviceMachineCredential.dmk_hash == dmk_hash
-    )
-    return (await db.execute(stmt)).scalar_one_or_none()
-
-
-async def get_by_device(
-    db: AsyncSession, device_id: UUID
-) -> DeviceMachineCredential | None:
-    """Resolve the device's credential row (one per device), in any state.
-
-    Revoked and expired rows are returned too, so a caller can refuse to
-    re-mint over an operator revocation.
-    """
-    stmt = select(DeviceMachineCredential).where(
-        DeviceMachineCredential.device_id == device_id
     )
     return (await db.execute(stmt)).scalar_one_or_none()
 
