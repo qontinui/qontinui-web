@@ -37,8 +37,10 @@
  * deploy window so a reader is not left hunting a fault that is not there.
  */
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useState } from "react";
 import { httpClient } from "@/services/service-factory";
+import { COORD_DASHBOARD_POLL_OPTIONS } from "./coordPollError";
+import { useSingleFlightPoll } from "./useSingleFlightPoll";
 import { OPERATIONS_API } from "./utils";
 import { parseFleetDrain, type FleetDrainRead } from "./fleetDrain";
 
@@ -61,19 +63,18 @@ export interface UseFleetDrainResult {
 
 export function useFleetDrain(): UseFleetDrainResult {
   const [read, setRead] = useState<FleetDrainRead>(LOADING);
-  // Guards a `setState` after unmount without making `refresh` unstable.
-  const live = useRef(true);
-  useEffect(() => {
-    live.current = true;
-    return () => {
-      live.current = false;
-    };
-  }, []);
 
-  const refresh = useCallback(async () => {
+  // Single-flight, no retries (plan
+  // `2026-09-25-fleet-worktree-slots-hang-mechanism-and-safe-reland` D5). The
+  // control's post-write `refresh()` is never dropped: one issued while a
+  // poll is in flight runs once, right after it, so the write is visible.
+  const poll = useCallback(async (isCurrent: () => boolean) => {
     let next: FleetDrainRead;
     try {
-      const res = await httpClient.fetch(FLEET_DRAIN_API);
+      const res = await httpClient.fetch(
+        FLEET_DRAIN_API,
+        COORD_DASHBOARD_POLL_OPTIONS
+      );
       if (res.status === 404) {
         next = {
           state: "unknown",
@@ -114,14 +115,10 @@ export function useFleetDrain(): UseFleetDrainResult {
         }`,
       };
     }
-    if (live.current) setRead(next);
+    if (isCurrent()) setRead(next);
   }, []);
 
-  useEffect(() => {
-    void refresh();
-    const id = setInterval(() => void refresh(), FLEET_DRAIN_POLL_MS);
-    return () => clearInterval(id);
-  }, [refresh]);
+  const { refresh } = useSingleFlightPoll(poll, FLEET_DRAIN_POLL_MS);
 
   return { read, refresh };
 }
