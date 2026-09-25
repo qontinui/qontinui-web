@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback, useMemo } from "react";
+import { useState, useCallback, useMemo } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -23,7 +23,6 @@ import { useSymbolClaimsStream } from "./useSymbolClaimsStream";
 import { coordDeviceHostKey } from "./coordCredentialStatus";
 import { httpClient } from "@/services/service-factory";
 import {
-  FLEET_VOLUMES_API,
   formatBytes,
   OPERATIONS_API,
   POLL_INTERVAL_MS,
@@ -32,14 +31,13 @@ import {
 } from "./utils";
 import { CollapsiblePanel } from "@/components/console";
 import {
-  indexDeviceVolumes,
-  parseFleetVolumes,
   resolveMachineVolumes,
   tightestVolume,
   volumesReliabilityWarning,
-  VOLUMES_NOT_YET_READ,
   type VolumesFetch,
 } from "./fleetVolumes";
+import { useFleetVolumes } from "./useFleetVolumes";
+import { useSingleFlightPoll } from "./useSingleFlightPoll";
 import { isCiRunnerDevice } from "./useFleetHealth";
 import type { FleetHealthDevice, UseFleetHealthResult } from "./useFleetHealth";
 import { resolveCiCapacity, type DevenvMachinesRead } from "./ciCapacity";
@@ -448,14 +446,19 @@ export function FleetOverview({
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
-  const [volumes, setVolumes] = useState<VolumesFetch>(VOLUMES_NOT_YET_READ);
+  // Disk telemetry is its own 30 s, single-flight, no-retry poll now — see
+  // `useFleetVolumes` for why it left this component's 5 s loop.
+  const volumes = useFleetVolumes();
 
+  // `/fleet` and `/fleet/tasks` are web-local reads (the runner registry and
+  // the in-process beacon), not coord proxies, so they keep `httpClient`'s
+  // default retries. The loop is still single-flight: a tick that finds the
+  // previous refresh outstanding is skipped rather than stacked on top of it.
   const fetchData = useCallback(async () => {
     try {
-      const [fleetRes, tasksRes, volumesRes] = await Promise.allSettled([
+      const [fleetRes, tasksRes] = await Promise.allSettled([
         httpClient.fetch(`${OPERATIONS_API}/fleet`),
         httpClient.fetch(`${OPERATIONS_API}/fleet/tasks`),
-        httpClient.fetch(FLEET_VOLUMES_API),
       ]);
 
       if (fleetRes.status === "fulfilled" && fleetRes.value.ok) {
@@ -478,82 +481,21 @@ export function FleetOverview({
         setTasks({ task_runs: [], total: 0 });
       }
 
-      // Disk telemetry. Every failure path lands on `unavailable` WITH the
-      // reason — a failed read must never degrade into "this device has never
-      // reported", which is a claim about the device rather than about the
-      // read (plan D10 / `silent-empty-is-unknown`).
-      if (volumesRes.status === "rejected") {
-        setVolumes({
-          state: "unavailable",
-          reason: `Request to ${FLEET_VOLUMES_API} failed: ${
-            (volumesRes.reason as Error)?.message ?? "unknown error"
-          }`,
-        });
-      } else if (!volumesRes.value.ok) {
-        setVolumes({
-          state: "unavailable",
-          reason:
-            `The fleet-volumes read returned HTTP ${volumesRes.value.status}. ` +
-            `Coord may be unreachable (502/504) or the volumes route may not ` +
-            `be deployed yet.`,
-        });
-      } else {
-        let payload: unknown;
-        try {
-          payload = await volumesRes.value.json();
-        } catch (err) {
-          payload = undefined;
-          setVolumes({
-            state: "unavailable",
-            reason: `The fleet-volumes response was not valid JSON: ${
-              err instanceof Error ? err.message : "parse error"
-            }`,
-          });
-        }
-        if (payload !== undefined) {
-          const parsed = parseFleetVolumes(payload);
-          if (parsed.state === "unparseable") {
-            setVolumes({
-              state: "unavailable",
-              reason:
-                "The fleet-volumes response could not be parsed: it either " +
-                "matched no known shape (expected `{devices: [...]}` or " +
-                "`{volumes: [...]}`) or carried rows that named no device, so " +
-                "no device could be matched to a reading. This says nothing " +
-                "about any machine's disk -- an EMPTY response parses fine " +
-                "and reports itself as such.",
-            });
-          } else {
-            // A PARTLY readable response keeps its readable half (the parse's
-            // `skippedRows` rides along), and the render withdraws the
-            // never-reported claims instead of throwing the data away.
-            setVolumes(indexDeviceVolumes(parsed.devices, parsed.skippedRows));
-          }
-        }
-      }
-
       setLastUpdated(new Date());
     } catch (err) {
       const message =
         err instanceof Error ? err.message : "Failed to reach operations API";
       setError(message);
-      // The disk section must not keep presenting the previous readings as if
-      // this refresh had confirmed them.
-      setVolumes({
-        state: "unavailable",
-        reason: `The fleet refresh failed before disk telemetry could be read: ${message}`,
-      });
     } finally {
       setLoading(false);
     }
   }, []);
 
   // Initial fetch + polling
-  useEffect(() => {
-    fetchData();
-    const interval = setInterval(fetchData, POLL_INTERVAL_MS);
-    return () => clearInterval(interval);
-  }, [fetchData]);
+  const { refresh: refreshFleet } = useSingleFlightPoll(
+    fetchData,
+    POLL_INTERVAL_MS
+  );
 
   const symbolClaims = useSymbolClaimsStream();
 
@@ -808,7 +750,7 @@ export function FleetOverview({
                     key={group.hostname}
                     machine={group}
                     nowMs={nowMs}
-                    onRenamed={fetchData}
+                    onRenamed={refreshFleet}
                     // The drain join, resolved here from the page's ONE read.
                     // Two values rather than one because they answer different
                     // questions and fail independently: `drainTarget` is

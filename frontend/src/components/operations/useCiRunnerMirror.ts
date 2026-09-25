@@ -24,8 +24,10 @@
  * one output this surface must not produce.
  */
 
-import { useEffect, useState } from "react";
+import { useCallback, useState } from "react";
 import { httpClient } from "@/services/service-factory";
+import { COORD_DASHBOARD_POLL_OPTIONS } from "./coordPollError";
+import { useSingleFlightPoll } from "./useSingleFlightPoll";
 import {
   parseCiRunnersPayload,
   type CiRunnerMirrorRead,
@@ -46,31 +48,29 @@ const LOADING: CiRunnerMirrorRead = { state: "loading" };
 export function useCiRunnerMirror(): CiRunnerMirrorRead {
   const [read, setRead] = useState<CiRunnerMirrorRead>(LOADING);
 
-  useEffect(() => {
-    let live = true;
-    const load = async () => {
-      try {
-        const body = await httpClient.get<unknown>(CI_RUNNER_MIRROR_API);
-        if (!live) return;
-        setRead(parseCiRunnersPayload(body));
-      } catch (err) {
-        if (!live) return;
-        setRead({
-          state: "unavailable",
-          reason:
-            err instanceof Error
-              ? `the CI-runner mirror could not be read: ${err.message}`
-              : "the CI-runner mirror could not be read.",
-        });
-      }
-    };
-    void load();
-    const id = setInterval(() => void load(), CI_RUNNER_MIRROR_POLL_MS);
-    return () => {
-      live = false;
-      clearInterval(id);
-    };
+  // Single-flight, no retries (plan
+  // `2026-09-25-fleet-worktree-slots-hang-mechanism-and-safe-reland` D5).
+  const poll = useCallback(async (isCurrent: () => boolean) => {
+    try {
+      const body = await httpClient.get<unknown>(
+        CI_RUNNER_MIRROR_API,
+        COORD_DASHBOARD_POLL_OPTIONS
+      );
+      if (!isCurrent()) return;
+      setRead(parseCiRunnersPayload(body));
+    } catch (err) {
+      if (!isCurrent()) return;
+      setRead({
+        state: "unavailable",
+        reason:
+          err instanceof Error
+            ? `the CI-runner mirror could not be read: ${err.message}`
+            : "the CI-runner mirror could not be read.",
+      });
+    }
   }, []);
+
+  useSingleFlightPoll(poll, CI_RUNNER_MIRROR_POLL_MS);
 
   return read;
 }

@@ -54,3 +54,20 @@ export function httpStatusOf(err: unknown): number | null {
   const m = /^[A-Z]+ \S+ failed: (\d{3})\b/.exec(text);
   return m ? Number(m[1]) : null;
 }
+
+/**
+ * Recover the response BODY text from an `httpClient` rejection — the part
+ * after `<status> - ` in `GET <url> failed: <status> - <body>`.
+ *
+ * Anchored the same way as {@link httpStatusOf} (verb, URL without spaces,
+ * three-digit status), so it only ever returns text from a real status
+ * rejection. Returns `null` for anything else. The text is upstream-controlled:
+ * a caller must parse it as data (e.g. `JSON.parse` and check a field) and
+ * must pair it with the status from `httpStatusOf`, never infer a status from
+ * it.
+ */
+export function httpBodyOf(err: unknown): string | null {
+  const text = err instanceof Error ? err.message : String(err);
+  const m = /^[A-Z]+ \S+ failed: \d{3} - ([\s\S]*)$/.exec(text);
+  return m ? (m[1] ?? "") : null;
+}

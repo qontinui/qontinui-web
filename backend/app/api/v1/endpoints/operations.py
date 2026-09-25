@@ -5431,8 +5431,19 @@ async def get_fleet_volumes(
 
     Devices absent from the payload have NEVER reported volume telemetry.
     That is UNKNOWN, not zero — see the section note above.
+
+    Coord's error answers pass through with their status AND JSON body
+    verbatim (:func:`_proxy_coord_passthrough`), not re-wrapped as an
+    ``HTTPException`` detail string. The dashboard branches on two of them
+    (plan ``2026-09-25-fleet-worktree-slots-hang-mechanism-and-safe-reland``
+    D2/D4): ``503 {"error":"deadline","budget_ms":N}`` renders UNKNOWN naming
+    the budget, and ``404 {"error":"route_disabled"}`` renders "disabled by
+    operator". Wrapped, the browser saw this module's generic error envelope
+    with coord's body flattened into a ``message`` string.
     """
-    return await _proxy_coord_get("/coord/fleet/volumes", tenant_id=tenant_id)
+    return await _proxy_coord_passthrough(
+        "GET", "/coord/fleet/volumes", tenant_id=tenant_id
+    )
 
 
 # ---- Worktree allocation slots (Dev Ops dashboard) ------------------------
@@ -5484,8 +5495,14 @@ async def get_fleet_worktree_slots(
     corroborated as live and the caller MUST render that row UNKNOWN — never
     an idle/empty machine and never a healthy ``0/8`` — see the frontend
     hook and `FleetResourceStrip`'s existing honesty rules.
+
+    Error answers pass through verbatim, status and JSON body, for the same
+    reason as :func:`get_fleet_volumes`: the section renders coord's
+    ``503 deadline`` and ``404 route_disabled`` bodies specifically.
     """
-    return await _proxy_coord_get("/coord/fleet/worktree-slots", tenant_id=tenant_id)
+    return await _proxy_coord_passthrough(
+        "GET", "/coord/fleet/worktree-slots", tenant_id=tenant_id
+    )
 
 
 # ---- Wave-3 prep (decision queue + agent-logs + memory) ------------------
