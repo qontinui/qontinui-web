@@ -25,6 +25,7 @@ from uuid import UUID
 
 import structlog
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.devenv import DeviceMachineCredential
@@ -90,6 +91,11 @@ class DeviceMachineKeyStillUsableError(Exception):
         self.device_id = device_id
 
 
+#: One key per device (``devenv.device_machine_credentials``); see
+#: ``app.models.devenv.DeviceMachineCredential``.
+_DEVICE_UNIQUE_CONSTRAINT: Final[str] = "uq_devenv_dmk_device_id"
+
+
 def _usable_beyond(cred: DeviceMachineCredential, horizon: datetime) -> bool:
     """True when ``cred`` does not expire before ``horizon`` (no expiry
     counts as never expiring). Revocation is the caller's check."""
@@ -130,14 +136,12 @@ async def mint(
       usable for longer than this window (``expires_at`` further than
       ``now + window``, or no expiry at all) raises
       :class:`DeviceMachineKeyStillUsableError` instead of being rotated.
+      The same error is raised when no row existed but a concurrent mint
+      inserted one first (the unique constraint on ``device_id``).
 
     Returns ``(plaintext_key, credential)`` — the plaintext is delivered to
     the runner exactly once. The caller commits.
     """
-    plaintext, dmk_hash, dmk_prefix = generate_device_machine_key()
-    now = datetime.now(UTC)
-    expires_at = _expiry(now, ttl_days)
-
     stmt = (
         select(DeviceMachineCredential)
         .where(DeviceMachineCredential.device_id == device_id)
@@ -145,6 +149,12 @@ async def mint(
         .execution_options(populate_existing=True)
     )
     cred = (await db.execute(stmt)).scalar_one_or_none()
+
+    # Read the clock AFTER the lock is held, so a wait on a concurrent
+    # writer's lock cannot age the window check or the new expiry.
+    plaintext, dmk_hash, dmk_prefix = generate_device_machine_key()
+    now = datetime.now(UTC)
+    expires_at = _expiry(now, ttl_days)
 
     if cred is not None:
         if refuse_if_revoked and cred.revoked_at is not None:
@@ -167,7 +177,24 @@ async def mint(
             last_used_at=None,
             revoked_at=None,
         )
-        db.add(cred)
+        if refuse_if_usable_beyond is None:
+            db.add(cred)
+        else:
+            # First-insert race: FOR UPDATE locks nothing when no row exists,
+            # so a concurrent mint can insert first. That winner just minted
+            # a fresh full-TTL key, so answer as if we had seen it —
+            # still usable — instead of surfacing the unique violation. The
+            # savepoint keeps the session usable after the failed INSERT.
+            # Only the guarded (self-mint) path does this; the owner's mint
+            # and pair-cli keep propagating the IntegrityError.
+            try:
+                async with db.begin_nested():
+                    db.add(cred)
+                    await db.flush()
+            except IntegrityError as exc:
+                if _DEVICE_UNIQUE_CONSTRAINT not in str(exc.orig):
+                    raise
+                raise DeviceMachineKeyStillUsableError(device_id) from exc
     else:
         # Rotate the existing row in place — replace the secret and reset
         # the lifecycle stamps so the re-minted key is fresh.

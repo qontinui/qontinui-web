@@ -383,3 +383,98 @@ class TestDeviceOwnerAndTenant:
         assert (
             await device_crud.get_device_owner_and_tenant(async_db_session, uuid4())
         ) is None
+
+
+@pytest.mark.asyncio
+class TestMintSelfGuardsRaceAndBoundary:
+    async def test_first_insert_race_maps_to_still_usable(
+        self, async_db_session: AsyncSession, monkeypatch
+    ) -> None:
+        """Simulate the race: a concurrent mint's row exists, but this call's
+        locked SELECT saw nothing (it ran before that INSERT committed). The
+        unique violation must surface as the 409-mapped error, and the
+        winner's key must survive."""
+        from unittest.mock import MagicMock
+
+        device_id = uuid4()
+        _, winner = await dmk_crud.mint(
+            async_db_session, device_id=device_id, owner_user_id=None
+        )
+        winner_hash = winner.dmk_hash
+        async_db_session.expunge(winner)
+
+        real_execute = async_db_session.execute
+        calls = {"n": 0}
+
+        async def execute(stmt, *args, **kwargs):
+            calls["n"] += 1
+            if calls["n"] == 1:  # the locked SELECT inside mint()
+                empty = MagicMock()
+                empty.scalar_one_or_none.return_value = None
+                return empty
+            return await real_execute(stmt, *args, **kwargs)
+
+        monkeypatch.setattr(async_db_session, "execute", execute)
+        with pytest.raises(dmk_crud.DeviceMachineKeyStillUsableError):
+            await _self_mint(async_db_session, device_id)
+        monkeypatch.undo()
+
+        # Session still usable (savepoint), and the winner's key is intact.
+        assert (await dmk_crud.get_by_hash(async_db_session, winner_hash)) is not None
+
+    async def test_owner_mint_race_still_raises_integrity_error(
+        self, async_db_session: AsyncSession, monkeypatch
+    ) -> None:
+        """The unguarded owner path keeps today's behaviour."""
+        from unittest.mock import MagicMock
+
+        from sqlalchemy.exc import IntegrityError
+
+        device_id = uuid4()
+        _, winner = await dmk_crud.mint(
+            async_db_session, device_id=device_id, owner_user_id=None
+        )
+        async_db_session.expunge(winner)
+        real_execute = async_db_session.execute
+        calls = {"n": 0}
+
+        async def execute(stmt, *args, **kwargs):
+            calls["n"] += 1
+            if calls["n"] == 1:
+                empty = MagicMock()
+                empty.scalar_one_or_none.return_value = None
+                return empty
+            return await real_execute(stmt, *args, **kwargs)
+
+        monkeypatch.setattr(async_db_session, "execute", execute)
+        with pytest.raises(IntegrityError):
+            await dmk_crud.mint(
+                async_db_session, device_id=device_id, owner_user_id=None
+            )
+
+    async def test_expiry_exactly_at_window_is_rotated(
+        self, async_db_session: AsyncSession
+    ) -> None:
+        device_id = uuid4()
+        _, first = await dmk_crud.mint(
+            async_db_session, device_id=device_id, owner_user_id=None
+        )
+        first_hash = first.dmk_hash
+        await _set_row(
+            async_db_session, device_id, expires_at=datetime.now(UTC) + _WINDOW
+        )
+        _, second = await _self_mint(async_db_session, device_id)
+        assert second.dmk_hash != first_hash
+
+    async def test_expiry_one_second_past_window_is_refused(
+        self, async_db_session: AsyncSession
+    ) -> None:
+        device_id = uuid4()
+        await dmk_crud.mint(async_db_session, device_id=device_id, owner_user_id=None)
+        await _set_row(
+            async_db_session,
+            device_id,
+            expires_at=datetime.now(UTC) + _WINDOW + timedelta(seconds=1),
+        )
+        with pytest.raises(dmk_crud.DeviceMachineKeyStillUsableError):
+            await _self_mint(async_db_session, device_id)
