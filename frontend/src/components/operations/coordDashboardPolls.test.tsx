@@ -1,8 +1,14 @@
 /**
  * T6 of plan `2026-09-25-fleet-worktree-slots-hang-mechanism-and-safe-reland`:
- * a coord-proxied Dev Ops poll that gets a 504 (or a 503 deadline) sends ONE
- * request per coord route for that tick — no `RetryStrategy` chain — and a
- * tick that finds the previous request outstanding sends nothing.
+ * each surface in `POLLS` below, on getting a 504 (or a 503 deadline), sends
+ * ONE request per coord route for that tick — no `RetryStrategy` chain — and
+ * a tick that finds the previous request outstanding sends nothing.
+ *
+ * `POLLS` is exactly what D5 covers: the Dev Ops dashboard's coord polls, the
+ * pipeline page's stuck-PR panel, and the two pollers the coord layout mounts
+ * on every `/admin/coord/*` page (the nav's fleet alarm badge and the red-main
+ * banner). It is NOT every coord poll in the console; the other
+ * `/admin/coord` pages are out of this plan's scope.
  *
  * These run against the REAL `HttpClient` (only `fetch` is stubbed, and
  * `WebSocket` is stubbed to fail so every push-first stream sits on its
@@ -50,6 +56,9 @@ import {
 } from "./useRunnerWindDown";
 import { FleetTestTargetsPanel } from "./FleetTestTargetsPanel";
 import { FleetOverview } from "./FleetOverview";
+import { StuckPrRecoveryPanel } from "./StuckPrRecoveryPanel";
+import { useFleetAlarmBadge } from "@/components/admin/coord/useFleetAlarmBadge";
+import { RedMainBanner } from "@/components/admin/coord/RedMainBanner";
 import {
   CI_STATUS_POLL_FALLBACK_MS,
   DEVICE_STATUS_POLL_FALLBACK_MS,
@@ -192,11 +201,13 @@ interface PollCase {
   windowMs?: number;
   /** Web-local routes on this surface that keep the default retries. */
   retryExempt?: RegExp;
+  /** When set, only these routes are held to the one-request rule. */
+  coordOnly?: RegExp;
 }
 
 const hook = (use: () => unknown) => () => renderHook(use);
 
-/** Every coord-proxied poll on the Dev Ops dashboard. */
+/** The surfaces D5 covers — see the header. Nothing else is claimed. */
 const POLLS: PollCase[] = [
   {
     name: "useFleetWorktreeSlots",
@@ -284,12 +295,34 @@ const POLLS: PollCase[] = [
     intervalMs: 5_000,
     retryExempt: /\/api\/v1\/operations\/fleet(\/tasks)?$/,
   },
+  {
+    // The panel's own reads; the tenant-default-repo lookup is a one-shot.
+    name: "StuckPrRecoveryPanel",
+    mount: () => render(<StuckPrRecoveryPanel repo="qontinui/qontinui-web" />),
+    intervalMs: 30_000,
+    coordOnly: /stuck-nudges|\/pr-merge\//,
+  },
+  {
+    name: "useFleetAlarmBadge",
+    mount: hook(() => useFleetAlarmBadge()),
+    intervalMs: 60_000,
+  },
+  {
+    name: "RedMainBanner",
+    mount: () => render(<RedMainBanner />),
+    intervalMs: 10_000,
+  },
 ];
 
-function coordCounts(wire: Wire, exempt?: RegExp): Map<string, number> {
+function coordCounts(
+  wire: Wire,
+  exempt?: RegExp,
+  only?: RegExp
+): Map<string, number> {
   const out = new Map<string, number>();
   for (const [url, n] of wire.counts()) {
     if (exempt && exempt.test(url.split("?")[0])) continue;
+    if (only && !only.test(url)) continue;
     out.set(url, n);
   }
   return out;
@@ -319,7 +352,7 @@ describe.each(POLLS)("$name (T6)", (c) => {
     await act(async () => {
       await vi.advanceTimersByTimeAsync(windowMs);
     });
-    const counts = coordCounts(wire, c.retryExempt);
+    const counts = coordCounts(wire, c.retryExempt, c.coordOnly);
     expect(counts.size).toBeGreaterThan(0);
     for (const [url, n] of counts) expect(n, url).toBe(1);
   });
@@ -330,7 +363,7 @@ describe.each(POLLS)("$name (T6)", (c) => {
     await act(async () => {
       await vi.advanceTimersByTimeAsync(windowMs);
     });
-    const counts = coordCounts(wire, c.retryExempt);
+    const counts = coordCounts(wire, c.retryExempt, c.coordOnly);
     expect(counts.size).toBeGreaterThan(0);
     for (const [url, n] of counts) expect(n, url).toBe(1);
   });
