@@ -11,12 +11,9 @@ Additive, nullable, no backfill.
 What this adds
 ==========================================================================
 
-One nullable column and one index on ``coord.pr_files``::
+One nullable column on ``coord.pr_files``, and nothing else::
 
     ALTER TABLE coord.pr_files ADD COLUMN IF NOT EXISTS head_sha TEXT
-
-    CREATE INDEX CONCURRENTLY idx_pr_files_repo_pr_head
-    ON coord.pr_files (repo, pr_number, head_sha)
 
 Why: the table's primary key is ``(repo, pr_number, path)``, so a row says
 *which files this PR touches* and never *at which head*. coord's absent-proposal
@@ -55,22 +52,42 @@ path. coord already ships the mechanism for surviving the gap
 (``crates/coord/src/schema_readiness.rs``); the coord PRs declare the column
 there rather than assuming this revision is live.
 
-The index, and why its key is (repo, pr_number, head_sha)
+NO INDEX — and the next reader should not add one back
 ==========================================================================
 
 Phase 3's read is ``WHERE repo = $1 AND pr_number = $2 AND head_sha = $3``, and
-this index is that access path stated rather than inferred.
+the obvious reflex is a ``(repo, pr_number, head_sha)`` index to serve it. This
+revision deliberately does NOT create one. **Do not add it without a measurement
+that says it is needed.**
 
-It is deliberately a superset of the existing ``idx_pr_files_repo_pr (repo,
-pr_number)``, which stays: the DEPLOYED coord build still reads by ``(repo,
-pr_number)`` alone, so dropping the shorter index in the same revision that adds
-the longer one would remove the index the running code uses. Rows per PR are
-capped at coord's hydration page size (``HYDRATION_FILES_PAGE_CAP`` = 100), so
-the measurable speedup is small; the value is that the head-pinned read no longer
-rides an index that does not mention the column it filters on. Whether to retire
-``idx_pr_files_repo_pr`` is a separate revision, after Phase 3 has deployed.
+The existing ``idx_pr_files_repo_pr (repo, pr_number)`` already narrows that read
+to at most ``HYDRATION_FILES_PAGE_CAP`` = 100 rows — coord never stores more file
+rows per PR than its hydration page fetches — and ``head_sha`` is then filtered in
+the heap over those hundred rows. A third key column would save a fraction of a
+hundred heap checks on a query that runs once per absent-proposal sweep. That is
+not a speedup anyone can measure.
 
-Locking: ADD COLUMN in the transaction, the index outside it
+What it would cost is concrete. ``CREATE INDEX`` without ``CONCURRENTLY`` takes a
+write-blocking ``SHARE`` lock for a full table scan, which is not acceptable on a
+table every hydration tick rewrites. ``CONCURRENTLY`` cannot run inside a
+transaction, so it needs ``op.get_context().autocommit_block()``; a killed
+concurrent build then leaves an **INVALID** index that ``IF NOT EXISTS`` would
+silently keep, so a correct revision must also look the index up in ``pg_index``
+and ``DROP INDEX CONCURRENTLY`` it before rebuilding. That ``DROP`` on the upgrade
+path is what coord's migration classifier rejects unconditionally
+(``crates/coord/src/pr_merge/migration_classifier.rs``, which rejects any
+statement beginning ``DROP``; ``downgrade()`` is excluded from classification,
+``upgrade()`` is not) — and the ``migrations`` escalate block that produces is
+``clearable_by: classifier``, so no agent evidence can clear it and an operator
+has to. An unmeasurable speedup is not worth an operator in the loop, nor the
+autocommit block's implicit COMMIT, nor the INVALID-index repair path.
+
+If measurement ever justifies the index, add it in its own revision. A revision
+that only creates an index classifies on its own merits, and gets to make the
+concurrency and repair trade-offs where they are the whole subject rather than a
+rider on a column.
+
+Locking
 ==========================================================================
 
 ``ADD COLUMN ... NULL`` with no default is a catalog-only change in Postgres —
@@ -88,10 +105,9 @@ every later revision.
 The reset is spelled ``SET LOCAL lock_timeout = DEFAULT``, NOT ``RESET
 lock_timeout``. **The decisive reason is coord's migration classifier**, which
 admits only ``SET LOCAL lock_timeout|statement_timeout = <value>`` and rejects
-``RESET`` by name (``crates/coord/src/pr_merge/migration_classifier.rs``
-``classify_set_statement``, pinned as a test case) — so the ``RESET`` spelling
-the precedents use is one avoidable Reject. The precedents predate that arm
-(it landed 2026-09-20, after them); do not copy them here.
+``RESET`` by name (``classify_set_statement``, pinned as a test case) — so the
+``RESET`` spelling the precedents use is one avoidable Reject. The precedents
+predate that arm (it landed 2026-09-20, after them); do not copy them here.
 
 The scope difference is real but small, and is stated exactly rather than
 overclaimed: ``= DEFAULT`` restores the CONFIGURED default, not whatever value
@@ -102,50 +118,23 @@ session-scoped and persists, ``SET LOCAL`` ends at COMMIT. With ``NullPool`` and
 one transaction per run that difference is close to nil, which is why the
 classifier, not the scoping, is the reason to prefer this spelling.
 
-The index is built ``CONCURRENTLY`` (a plain ``CREATE INDEX`` takes a
-write-blocking ``SHARE`` lock for the duration of a scan over the whole table).
-``CONCURRENTLY`` cannot run inside a transaction, hence
-``op.get_context().autocommit_block()`` — the ``coord_alerts_claim_01``
-precedent. The ALTER runs first so the autocommit block's implicit COMMIT
-publishes the column before the index build needs it.
+Expected classification: AutoSafe
+==========================================================================
 
-**Consequence of that implicit COMMIT, stated rather than left to be
-discovered:** the ``ADD COLUMN`` is committed before ``alembic_version`` is
-stamped, so a failed index build leaves the column PRESENT and this revision
-UNSTAMPED. That is safe here only because both halves are idempotent — re-running
-the revision is the correct repair, not a manual fixup. A revision whose upgrade
-were not idempotent must not use an autocommit block this way.
+``upgrade()`` contains no ``DROP``, no ``CREATE INDEX``, no autocommit block and
+no non-additive statement — only a guarded ``ADD COLUMN`` of a nullable column
+with no default, bracketed by the two ``SET LOCAL lock_timeout`` forms the
+classifier admits. It is therefore expected to classify **AutoSafe** and to need
+no escalate clearance at all. That is the whole reason there is no index here.
 
-A killed or failed CONCURRENTLY build leaves an **INVALID** index of the same
-name, which the planner never uses and which ``IF NOT EXISTS`` alone would keep
-— a migration reporting success while the index never serves a query. So before
-the CREATE, the upgrade looks the index up in ``pg_index`` and, if it exists with
-``indisvalid = false``, drops it (CONCURRENTLY) so the CREATE rebuilds it. A
-re-run therefore ends with a valid index or a loud failure **for the INVALID
-case**. It does not cover a VALID index of this name with a DIFFERENT definition
-(a hand-built one, or a renamed leftover): ``IF NOT EXISTS`` matches on NAME
-alone, so such an index is kept silently and the declared access path would not
-exist. That is an accepted limit — nothing in this tree creates an index under
-this name — not a case the code handles.
-
-Note what the INVALID-index repair costs: it puts a ``DROP INDEX CONCURRENTLY``
-on the UPGRADE path, and coord's migration classifier rejects any statement
-beginning ``DROP`` unconditionally (``downgrade()`` is excluded from
-classification; ``upgrade()`` is not). So this revision is expected to classify
-as Reject and to need its ``migrations`` escalate block cleared, additive and
-reversible though it is — the plan anticipates exactly that, and the repair is
-worth more than the classification: without it a killed build leaves an index
-that silently serves nothing.
-
-Downgrade drops the index (CONCURRENTLY) and then the column. The head pinning is
-lost, which is the correct reversal of an additive revision — every row reverts
-to the UNKNOWN it holds today, and coord's hold stays fail-closed. The file rows
-themselves survive.
+Downgrade drops the column. The head pinning is lost, which is the correct
+reversal of an additive revision — every row reverts to the UNKNOWN it holds
+today, and coord's hold stays fail-closed. The file rows themselves survive, and
+so does ``idx_pr_files_repo_pr``, which this revision never touches in either
+direction.
 """
 
 from collections.abc import Sequence
-
-from sqlalchemy import text
 
 from alembic import op
 
@@ -156,28 +145,8 @@ branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
 
-def _index_is_invalid(index_name: str) -> bool:
-    """True when ``coord.<index_name>`` exists and is INVALID (a failed build)."""
-    return bool(
-        op.get_bind()
-        .execute(
-            text(
-                """
-                SELECT NOT i.indisvalid
-                  FROM pg_index i
-                  JOIN pg_class c ON c.oid = i.indexrelid
-                  JOIN pg_namespace n ON n.oid = c.relnamespace
-                 WHERE n.nspname = 'coord' AND c.relname = :idx
-                """
-            ),
-            {"idx": index_name},
-        )
-        .scalar()
-    )
-
-
 def upgrade() -> None:
-    """Add the nullable head_sha column, then the CONCURRENT index. Idempotent."""
+    """Add the nullable head_sha column. Idempotent, additive, no index."""
     # Bound the ALTER's ACCESS EXCLUSIVE wait: coord.pr_files is rewritten by
     # every hydration tick, and a queued exclusive lock blocks everyone behind it.
     op.execute("SET LOCAL lock_timeout = '3s'")
@@ -195,31 +164,9 @@ def upgrade() -> None:
     # See the module docstring for what `= DEFAULT` does and does not restore.
     op.execute("SET LOCAL lock_timeout = DEFAULT")
 
-    with op.get_context().autocommit_block():
-        # A failed earlier CONCURRENTLY build leaves an INVALID index that
-        # IF NOT EXISTS would keep. Drop it so the CREATE below rebuilds it.
-        if _index_is_invalid("idx_pr_files_repo_pr_head"):
-            op.execute(
-                "DROP INDEX CONCURRENTLY IF EXISTS coord.idx_pr_files_repo_pr_head"
-            )
-        # Plain literal, never an f-string: the `alembic-schema-arg-gate`
-        # pre-commit hook parses the raw SQL inside `op.execute(...)` to prove
-        # every CREATE/DROP names its schema, and an interpolated string is not
-        # statically analysable.
-        op.execute(
-            """
-            CREATE INDEX CONCURRENTLY IF NOT EXISTS
-                idx_pr_files_repo_pr_head
-            ON coord.pr_files (repo, pr_number, head_sha)
-            """
-        )
-
 
 def downgrade() -> None:
-    """Drop the index, then the head_sha column. The file rows survive."""
-    with op.get_context().autocommit_block():
-        op.execute("DROP INDEX CONCURRENTLY IF EXISTS coord.idx_pr_files_repo_pr_head")
-
+    """Drop the head_sha column. The file rows survive."""
     op.execute("SET LOCAL lock_timeout = '3s'")
     op.execute(
         """
