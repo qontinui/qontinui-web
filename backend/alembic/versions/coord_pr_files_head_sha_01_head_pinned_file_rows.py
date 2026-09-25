@@ -61,11 +61,23 @@ revision deliberately does NOT create one. **Do not add it without a measurement
 that says it is needed.**
 
 The existing ``idx_pr_files_repo_pr (repo, pr_number)`` already narrows that read
-to at most ``HYDRATION_FILES_PAGE_CAP`` = 100 rows — coord never stores more file
-rows per PR than its hydration page fetches — and ``head_sha`` is then filtered in
-the heap over those hundred rows. A third key column would save a fraction of a
-hundred heap checks on a query that runs once per absent-proposal sweep. That is
-not a speedup anyone can measure.
+to at most ``HYDRATION_FILES_PAGE_CAP`` = 100 rows, and ``head_sha`` is then
+filtered in the heap over those hundred rows. A third key column would save a
+fraction of a hundred heap checks on a query that runs once per absent-proposal
+sweep. That is not a speedup anyone can measure.
+
+**That 100-row cap is a consequence of coord's current WRITE behaviour, not a
+property of this table — so it is the thing to re-check before trusting this
+paragraph.** ``persist_hydrated`` reconciles rather than accumulates: having
+upserted the ``files(first: 100)`` page it runs ``DELETE FROM coord.pr_files
+WHERE repo = $1 AND pr_number = $2 AND NOT (path = ANY($3))``
+(``qontinui-coord crates/coord/src/pr_merge/mod.rs``), so a PR holds one head's
+worth of rows and no more. Phase 2 of this plan is precisely the change that
+starts writing ``head_sha``, and a head-pinned table invites RETAINING prior
+heads' rows. If Phase 2 — or anything after it — stops pruning, rows per PR
+become unbounded and the argument above lapses silently, because the reasoning
+lives in this file while the change happens in another repo. Whoever makes that
+change owns re-deciding the index.
 
 What it would cost is concrete. ``CREATE INDEX`` without ``CONCURRENTLY`` takes a
 write-blocking ``SHARE`` lock for a full table scan, which is not acceptable on a
