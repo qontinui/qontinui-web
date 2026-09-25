@@ -23,14 +23,28 @@ Access model (coord finding 966c92eb; the router used to be fully anonymous):
   stored ``file_path`` says.
 """
 
+import asyncio
+from collections.abc import Callable, Coroutine
 from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
 import structlog
-from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
+from fastapi import (
+    APIRouter,
+    Depends,
+    File,
+    HTTPException,
+    Query,
+    Request,
+    UploadFile,
+    status,
+)
+from fastapi.responses import JSONResponse
+from fastapi.routing import APIRoute
 from sqlalchemy import Select, case, delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from starlette.responses import Response
 
 from app.api.deps import (
     get_async_db,
@@ -40,7 +54,7 @@ from app.api.deps import (
 from app.jobs.render_log_retention import (
     delete_render_logs_older_than_retention,
     get_image_storage_path,
-    unlink_stored_images,
+    unlink_stored_images_async,
 )
 from app.models.render_log import RenderImage, RenderLog
 from app.models.user import User
@@ -77,6 +91,64 @@ _IMAGE_MIME_BY_EXT: dict[str, str] = {
 # Upload cap. The app has no shared upload-size constant (each upload module
 # defines its own); 10 MB matches ``images.py`` and ``project_image_service``.
 MAX_RENDER_IMAGE_BYTES = 10 * 1024 * 1024
+
+# Room for the multipart framing around the one file part: boundaries, part
+# headers and the filename. Generous, because a false 413 on a legal upload is
+# worse than admitting a few extra KiB to the spool.
+MULTIPART_OVERHEAD_BYTES = 64 * 1024
+
+
+class _ContentLengthCappedRoute(APIRoute):
+    """Refuse an upload by its ``Content-Length`` before the form is parsed.
+
+    FastAPI reads the whole body (``await request.form()``) BEFORE it resolves
+    any dependency, and Starlette spools each file part to a temp file as it
+    parses. So neither a dependency nor the handler's bounded ``file.read`` can
+    stop an oversized body from reaching the spool. This check runs first, in
+    the route handler itself:
+
+    - a ``Content-Length`` above ``MAX_RENDER_IMAGE_BYTES`` plus
+      ``MULTIPART_OVERHEAD_BYTES`` is refused with 413, unread;
+    - a request without a valid ``Content-Length`` (chunked transfer) is refused
+      with 411, because its size cannot be bounded in advance.
+
+    The server enforces the declared length (h11 does not deliver bytes past
+    it as part of this request), so a small declared length cannot smuggle a
+    large body.
+    """
+
+    def get_route_handler(self) -> Callable[[Request], Coroutine[Any, Any, Response]]:
+        handler = super().get_route_handler()
+
+        async def capped_handler(request: Request) -> Response:
+            raw = request.headers.get("content-length")
+            try:
+                declared = int(raw) if raw is not None else None
+            except ValueError:
+                declared = None
+            if declared is None or declared < 0:
+                return JSONResponse(
+                    status_code=status.HTTP_411_LENGTH_REQUIRED,
+                    content={"detail": "Content-Length is required"},
+                )
+            if declared > MAX_RENDER_IMAGE_BYTES + MULTIPART_OVERHEAD_BYTES:
+                return JSONResponse(
+                    status_code=status.HTTP_413_CONTENT_TOO_LARGE,
+                    content={
+                        "detail": (
+                            "Request body too large; the image maximum is "
+                            f"{MAX_RENDER_IMAGE_BYTES} bytes"
+                        )
+                    },
+                )
+            return await handler(request)
+
+        return capped_handler
+
+
+# The upload route lives on its own router so it alone gets the pre-parse
+# Content-Length check; ``include_router`` below keeps its route class.
+_upload_router = APIRouter(route_class=_ContentLengthCappedRoute)
 
 
 def _scope_to_caller[S: Select[Any]](query: S, user: User) -> S:
@@ -323,7 +395,7 @@ async def create_render_log(
     return RenderLogResponse.model_validate(render_log)
 
 
-@router.post(
+@_upload_router.post(
     "/{render_log_id}/images",
     response_model=RenderImageResponse,
     status_code=status.HTTP_201_CREATED,
@@ -362,8 +434,10 @@ async def upload_render_image(
             ),
         )
 
-    # Read one byte past the cap, so an oversized upload is detected without
-    # buffering all of it.
+    # The route class already refused a body whose Content-Length exceeds the
+    # cap plus multipart framing. This read bounds HANDLER MEMORY: it reads at
+    # most one byte past the cap from the spooled part, so the part alone is
+    # held to the cap even when the framing allowance let it be slightly over.
     content = await file.read(MAX_RENDER_IMAGE_BYTES + 1)
     if len(content) > MAX_RENDER_IMAGE_BYTES:
         raise HTTPException(
@@ -375,7 +449,8 @@ async def upload_render_image(
     # the client-supplied ``session_id``, which let a caller write outside the
     # storage directory with a ``../`` session id.
     filename = f"{render_log_id}_{uuid4().hex}{ext}"
-    (get_image_storage_path() / filename).write_bytes(content)
+    storage_path = await get_image_storage_path()
+    await asyncio.to_thread((storage_path / filename).write_bytes, content)
 
     # Create database record
     render_image = RenderImage(
@@ -435,8 +510,8 @@ async def clear_render_logs(
     image_result = await db.execute(image_query)
     images_to_delete = image_result.all()
 
-    deleted_files = unlink_stored_images(
-        get_image_storage_path(), (file_path for _, file_path in images_to_delete)
+    deleted_files = await unlink_stored_images_async(
+        file_path for _, file_path in images_to_delete
     )
 
     # Build delete query for logs
@@ -482,10 +557,13 @@ async def cleanup_old_render_logs(
     The scheduled job ``render_log_retention`` runs the same core hourly; this
     route is the on-demand trigger.
     """
+    # The core commits per chunk.
     outcome = await delete_render_logs_older_than_retention(db)
-    await db.commit()
     return ClearRenderLogsResponse(
         deleted_snapshots=outcome.deleted_snapshots,
         deleted_images=outcome.deleted_images,
         deleted_files=outcome.deleted_files,
     )
+
+
+router.include_router(_upload_router)

@@ -20,7 +20,7 @@ the route actually deleted.
 from collections.abc import AsyncIterator
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 from uuid import uuid4
 
 import httpx
@@ -375,7 +375,9 @@ async def test_image_upload_mime_type_is_derived_from_the_extension(
 
 
 @pytest.mark.asyncio
-async def test_image_upload_over_the_size_cap_is_413(env):
+async def test_image_upload_over_the_size_cap_is_413_in_the_handler(env):
+    """The handler's bounded read: the body passes the Content-Length check
+    (framing allowance) but the file part itself is over the cap."""
     alice = await _make_user(env.db)
     mine = await _make_log(env.db, alice, session_id="alice-s")
 
@@ -385,6 +387,7 @@ async def test_image_upload_over_the_size_cap_is_413(env):
 
     assert at_cap.status_code == 201, at_cap.text
     assert over.status_code == 413, over.text
+    assert over.json()["detail"].startswith("Image too large"), over.text
     rows = await env.db.execute(
         select(RenderImage.id).where(RenderImage.render_log_id == mine.id)
     )
@@ -651,3 +654,220 @@ async def test_scheduled_retention_job_deletes_expired_rows_and_files_only(env):
     assert not old_file.exists()
     assert fresh_file.is_file()
     assert victim.is_file(), "a ../ file_path unlinked a file outside storage"
+
+
+# ---------------------------------------------------------------------------
+# Pre-parse Content-Length check on the upload route
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_upload_over_content_length_is_refused_before_the_form_is_parsed(env):
+    alice = await _make_user(env.db)
+    mine = await _make_log(env.db, alice, session_id="alice-s")
+    # If the form were parsed, this raises and the response is a 500, not 413.
+    form_spy = MagicMock(side_effect=AssertionError("form was parsed"))
+
+    with (
+        patch("app.api.v1.endpoints.render_logs.MAX_RENDER_IMAGE_BYTES", 4),
+        patch("app.api.v1.endpoints.render_logs.MULTIPART_OVERHEAD_BYTES", 0),
+        patch("starlette.requests.Request.form", form_spy),
+    ):
+        response = await _upload(env, alice, mine, "x.png", content=b"12345")
+
+    assert response.status_code == 413, response.text
+    assert response.json()["detail"].startswith("Request body too large")
+    form_spy.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_upload_without_content_length_is_411(env):
+    alice = await _make_user(env.db)
+    mine = await _make_log(env.db, alice, session_id="alice-s")
+
+    async def _chunked():
+        yield b"--b\r\n"
+        yield b"--b--\r\n"
+
+    response = await env.client.post(
+        f"{PREFIX}/{mine.id}/images",
+        params={"image_type": "screenshot"},
+        content=_chunked(),
+        headers={"content-type": "multipart/form-data; boundary=b", **env.auth(alice)},
+    )
+
+    assert response.status_code == 411, response.text
+
+
+@pytest.mark.asyncio
+async def test_upload_with_a_traversal_filename_stays_in_storage(env):
+    alice = await _make_user(env.db)
+    mine = await _make_log(env.db, alice, session_id="alice-s")
+
+    response = await _upload(env, alice, mine, "../../evil.png")
+
+    assert response.status_code == 201, response.text
+    stored = response.json()["file_path"]
+    assert ".." not in stored and "evil" not in stored
+    assert (env.image_dir / stored).is_file()
+    assert not (env.image_dir.parent / "evil.png").exists()
+    assert not (env.image_dir.parent.parent / "evil.png").exists()
+
+
+# ---------------------------------------------------------------------------
+# unlink_stored_images: containment and per-file failure tolerance
+# ---------------------------------------------------------------------------
+
+
+def test_unlink_skips_an_absolute_path_outside_storage(tmp_path):
+    from app.jobs.render_log_retention import unlink_stored_images
+
+    storage = tmp_path / "images"
+    storage.mkdir()
+    victim = tmp_path / "victim.png"
+    victim.write_bytes(b"do not delete")
+    inside = storage / "inside.png"
+    inside.write_bytes(b"png")
+
+    deleted = unlink_stored_images(storage, [str(victim.resolve()), "inside.png"])
+
+    assert deleted == 1
+    assert victim.is_file()
+    assert not inside.exists()
+
+
+def test_unlink_skips_a_path_whose_resolution_fails(tmp_path):
+    """A symlink loop makes resolve() raise; that entry is skipped, not fatal."""
+    from app.jobs.render_log_retention import unlink_stored_images
+
+    storage = tmp_path / "images"
+    storage.mkdir()
+    ok = storage / "ok.png"
+    ok.write_bytes(b"png")
+    real_resolve = Path.resolve
+
+    def _resolve(self, strict=False):
+        if self.name == "loop.png":
+            raise RuntimeError(f"Symlink loop from {self!r}")
+        return real_resolve(self, strict=strict)
+
+    with patch.object(Path, "resolve", _resolve):
+        deleted = unlink_stored_images(storage, ["loop.png", "ok.png"])
+
+    assert deleted == 1
+    assert not ok.exists()
+
+
+def test_unlink_tolerates_a_missing_file(tmp_path):
+    from app.jobs.render_log_retention import unlink_stored_images
+
+    storage = tmp_path / "images"
+    storage.mkdir()
+
+    assert unlink_stored_images(storage, ["never-existed.png"]) == 0
+
+
+def _unlink_denied_for(name: str):
+    real_unlink = Path.unlink
+
+    def _unlink(self, missing_ok=False):
+        if self.name == name:
+            raise PermissionError(13, "Permission denied", str(self))
+        return real_unlink(self, missing_ok=missing_ok)
+
+    return patch.object(Path, "unlink", _unlink)
+
+
+@pytest.mark.asyncio
+async def test_retention_survives_an_unlink_permission_error(env):
+    """One undeletable file must not abort the row DELETE or the other files."""
+    from app.jobs.render_log_retention import delete_render_logs_older_than_retention
+
+    alice = await _make_user(env.db)
+    old = await _make_log(env.db, alice, session_id="alice-s", age=timedelta(days=30))
+    env.image_dir.mkdir(parents=True, exist_ok=True)
+    locked = env.image_dir / "locked.png"
+    locked.write_bytes(b"png")
+    other = env.image_dir / "other.png"
+    other.write_bytes(b"png")
+    await _make_image(env.db, old, file_path="locked.png")
+    await _make_image(env.db, old, file_path="other.png")
+
+    with _unlink_denied_for("locked.png"):
+        outcome = await delete_render_logs_older_than_retention(env.db)
+
+    assert outcome.deleted_files == 1
+    assert locked.is_file()
+    assert not other.exists()
+    gone = await env.db.execute(select(RenderLog.id).where(RenderLog.id == old.id))
+    assert gone.scalar_one_or_none() is None
+
+
+@pytest.mark.asyncio
+async def test_superuser_delete_survives_an_unlink_permission_error(env):
+    admin = await _make_user(env.db, superuser=True)
+    alice = await _make_user(env.db)
+    session_id = f"s-{uuid4().hex[:8]}"
+    log = await _make_log(env.db, alice, session_id=session_id)
+    env.image_dir.mkdir(parents=True, exist_ok=True)
+    (env.image_dir / "locked.png").write_bytes(b"png")
+    await _make_image(env.db, log, file_path="locked.png")
+
+    with _unlink_denied_for("locked.png"):
+        response = await env.client.request(
+            "DELETE",
+            PREFIX,
+            json={"confirm": True, "session_id": session_id},
+            headers=env.auth(admin),
+        )
+
+    assert response.status_code == 200, response.text
+    assert response.json()["deleted_snapshots"] == 1
+    assert response.json()["deleted_files"] == 0
+
+
+@pytest.mark.asyncio
+async def test_retention_deletes_in_committed_id_ordered_chunks(env):
+    from app.jobs import render_log_retention as retention
+
+    alice = await _make_user(env.db)
+    olds = [
+        await _make_log(env.db, alice, session_id="alice-s", age=timedelta(days=30))
+        for _ in range(3)
+    ]
+
+    with (
+        patch.object(retention, "RETENTION_CHUNK_ROWS", 1),
+        patch.object(env.db, "commit", wraps=env.db.commit) as commit_spy,
+    ):
+        outcome = await retention.delete_render_logs_older_than_retention(env.db)
+
+    assert outcome.deleted_snapshots >= 3
+    # One commit per one-row chunk, at least for the three rows made here.
+    assert commit_spy.await_count >= 3
+    assert commit_spy.await_count == outcome.deleted_snapshots
+    left = await env.db.execute(
+        select(RenderLog.id).where(RenderLog.id.in_([o.id for o in olds]))
+    )
+    assert left.all() == []
+
+
+# ---------------------------------------------------------------------------
+# RENDER_LOG_RETENTION_DAYS validation
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("days", [0, -1])
+def test_retention_days_below_one_is_rejected(days):
+    from pydantic import ValidationError
+
+    from app.core.config import Settings
+
+    with pytest.raises(ValidationError, match="RENDER_LOG_RETENTION_DAYS"):
+        Settings(RENDER_LOG_RETENTION_DAYS=days)
+
+
+def test_retention_days_of_one_is_accepted():
+    from app.core.config import Settings
+
+    assert Settings(RENDER_LOG_RETENTION_DAYS=1).RENDER_LOG_RETENTION_DAYS == 1
