@@ -11,13 +11,14 @@
  * - a historical row carries a "renamed → <current_slug>" hint, in both the
  *   mappings table and the Cognito group's mapping chips;
  * - a non-historical row, and a row from an older coord that omits both
- *   fields, carry no hint;
+ *   fields, carry no hint — and each gate is pinned on its own: `historical_slug`
+ *   must be exactly `true`, and a usable `current_slug` must be present;
  * - deleting the historical row still sends the STORED `tenant_slug` — the
  *   DELETE key is what coord stored, not what the tenant is called today.
  */
 
 import { describe, expect, it, vi, beforeEach } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
 const fetchMock = vi.fn();
@@ -91,6 +92,38 @@ const LEGACY = {
   role: "operator",
 };
 
+/** Flagged historical, but no `current_slug` to name: no hint. */
+const HISTORICAL_NO_CURRENT = {
+  ...BASE,
+  group_id: "g-missing",
+  tenant_slug: "old-missing",
+  role: "operator",
+  historical_slug: true,
+};
+
+/** Flagged historical, `current_slug` empty: no hint. */
+const HISTORICAL_EMPTY_CURRENT = {
+  ...BASE,
+  group_id: "g-empty",
+  tenant_slug: "old-empty",
+  role: "operator",
+  current_slug: "",
+  historical_slug: true,
+};
+
+/**
+ * `historical_slug: false` with a DIFFERING `current_slug`: coord's flag is the
+ * authority, so the page must not infer "historical" from the slug mismatch.
+ */
+const NOT_FLAGGED_DIFFERING = {
+  ...BASE,
+  group_id: "g-false",
+  tenant_slug: "stored-slug",
+  role: "operator",
+  current_slug: "other-slug",
+  historical_slug: false,
+};
+
 const deleteBodies: Array<Record<string, unknown>> = [];
 
 beforeEach(() => {
@@ -106,7 +139,14 @@ beforeEach(() => {
         return jsonResponse(200, {});
       }
       return jsonResponse(200, {
-        group_tenant_roles: [HISTORICAL, CURRENT, LEGACY],
+        group_tenant_roles: [
+          HISTORICAL,
+          CURRENT,
+          LEGACY,
+          HISTORICAL_NO_CURRENT,
+          HISTORICAL_EMPTY_CURRENT,
+          NOT_FLAGGED_DIFFERING,
+        ],
       });
     }
     if (path.endsWith("/coord/cognito/groups")) {
@@ -151,8 +191,8 @@ async function openMappingsTable() {
       name: /group → tenant → role mappings/i,
     })
   );
-  await screen.findByTestId("coord-group-roles-table");
-  return user_;
+  const table = await screen.findByTestId("coord-group-roles-table");
+  return { user_, table };
 }
 
 describe("historical-slug group mappings", () => {
@@ -171,7 +211,7 @@ describe("historical-slug group mappings", () => {
   });
 
   it("shows no hint on a current row or a row with the fields absent", async () => {
-    await openMappingsTable();
+    const { table } = await openMappingsTable();
     await screen.findByTestId(
       "group-tenant-role-historical-acme-devs-acme-operator"
     );
@@ -183,12 +223,39 @@ describe("historical-slug group mappings", () => {
     expect(
       screen.queryByTestId("group-tenant-role-historical-ops-opsco-operator")
     ).toBeNull();
-    // Exactly one hint in the table: the historical row's.
-    expect(screen.getAllByText(/renamed →/)).toHaveLength(1);
+    // Exactly one hint in the TABLE (scoped, so a Cognito chip rendering
+    // elsewhere cannot change the count): the historical row's.
+    expect(within(table).getAllByText(/renamed →/)).toHaveLength(1);
+  });
+
+  it("gates the hint on historical_slug === true AND a usable current_slug", async () => {
+    const { table } = await openMappingsTable();
+    await within(table).findByTestId(
+      "group-tenant-role-historical-acme-devs-acme-operator"
+    );
+    // The rows themselves rendered — otherwise the absences below are vacuous.
+    for (const key of [
+      "g-missing:old-missing:operator",
+      "g-empty:old-empty:operator",
+      "g-false:stored-slug:operator",
+    ]) {
+      expect(within(table).getByTestId(`delete-mapping-${key}`)).toBeTruthy();
+    }
+    for (const id of [
+      // historical_slug true, current_slug missing
+      "group-tenant-role-historical-g-missing-old-missing-operator",
+      // historical_slug true, current_slug ""
+      "group-tenant-role-historical-g-empty-old-empty-operator",
+      // historical_slug false, current_slug differs from tenant_slug
+      "group-tenant-role-historical-g-false-stored-slug-operator",
+    ]) {
+      expect(within(table).queryByTestId(id)).toBeNull();
+    }
+    expect(within(table).queryByText(/renamed → other-slug/)).toBeNull();
   });
 
   it("deletes the historical row by its STORED tenant_slug", async () => {
-    const user_ = await openMappingsTable();
+    const { user_ } = await openMappingsTable();
     await user_.click(
       await screen.findByTestId("delete-mapping-acme-devs:acme:operator")
     );
@@ -211,9 +278,13 @@ describe("historical-slug group mappings", () => {
       "cognito-group-mapping-acme-devs-acme-operator"
     );
     expect(historical).toHaveTextContent("renamed → acme-renamed");
-    expect(historical.getAttribute("title")).toContain(
-      "Re-create it under acme-renamed"
+    // The chip has no per-mapping delete — the destructive action beside it
+    // is the POOL-WIDE group delete — so it must not say "delete this row".
+    const chipTitle = historical.getAttribute("title") ?? "";
+    expect(chipTitle).toContain(
+      "Re-create it under acme-renamed, then delete the old mapping in the group → tenant mappings table."
     );
+    expect(chipTitle).not.toContain("this row");
     const current = screen.getByTestId(
       "cognito-group-mapping-acme-devs-acme-renamed-admin"
     );

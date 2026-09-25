@@ -248,12 +248,22 @@ function historicalRenameTarget(row: GroupTenantRoleRow): string | null {
     : null;
 }
 
-function historicalSlugTooltip(currentSlug: string): string {
-  return (
+/**
+ * Tooltip for a historical-slug mapping. `where` names the surface: the
+ * mappings table row IS the thing to delete, but a Cognito group chip has no
+ * per-mapping delete (the destructive action beside it is the POOL-WIDE group
+ * delete), so the chip points at the mappings table instead.
+ */
+function historicalSlugTooltip(
+  currentSlug: string,
+  where: "table-row" | "group-chip"
+): string {
+  const prefix =
     "This mapping names a slug this tenant was renamed away from. It still " +
-    `grants at every login. Re-create it under ${currentSlug}, then delete ` +
-    "this row."
-  );
+    `grants at every login. Re-create it under ${currentSlug}, then delete `;
+  return where === "table-row"
+    ? `${prefix}this row.`
+    : `${prefix}the old mapping in the group → tenant mappings table.`;
 }
 
 interface GroupTenantRolesResponse {
@@ -1737,7 +1747,7 @@ function GroupTenantRolesSection({
                         <Badge
                           variant="outline"
                           className="ml-2 text-[0.7rem] font-normal text-amber-600 dark:text-amber-400"
-                          title={historicalSlugTooltip(renamedTo)}
+                          title={historicalSlugTooltip(renamedTo, "table-row")}
                           data-testid={`group-tenant-role-historical-${row.group_id}-${row.tenant_slug}-${row.role}`}
                         >
                           renamed → {renamedTo}
@@ -2593,14 +2603,14 @@ function CognitoGroupItem({
                     }`}
                     title={
                       renamedTo !== null
-                        ? historicalSlugTooltip(renamedTo)
+                        ? historicalSlugTooltip(renamedTo, "group-chip")
                         : undefined
                     }
                     data-testid={`cognito-group-mapping-${group.group_name}-${m.tenant_slug}-${m.role}`}
                   >
                     <Building2 className="h-3 w-3" />
                     {m.tenant_slug} · {tierLabel(m.role)}
-                    {renamedTo !== null ? ` (renamed → ${renamedTo})` : null}
+                    {renamedTo !== null ? ` · renamed → ${renamedTo}` : null}
                   </Badge>
                 );
               })
