@@ -32,6 +32,8 @@ expected_status = 401
 # 2026-09-25-route-serving-observer-probes-mutating-routes-with-their-documented-verb).
 # Public by design; a 404 means the observer falls back to options mode, and a
 # 401 would mean an auth dependency reached a route that must stay anonymous.
+# Skipped in rollback mode, because a rollback target may predate the route.
 [[deploy.health_probes]]
 endpoint = "/api/v1/meta/served-routes"
 expected_status = 200
+skip_on_rollback = true
