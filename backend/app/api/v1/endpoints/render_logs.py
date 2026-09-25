@@ -3,18 +3,39 @@ API endpoints for render logging.
 
 This module provides REST API endpoints for storing and retrieving DOM snapshots
 captured by the frontend for UI Bridge state discovery.
+
+Access model (coord finding 966c92eb; the router used to be fully anonymous):
+
+- Every route requires an authenticated, active user. No caller sends a render
+  log anonymously: the only producer is the frontend capture engine, which posts
+  through ``httpClient`` and therefore carries the user's bearer.
+- ``RenderLog`` carries a ``user_id`` and nothing coarser (no organization or
+  project column), so ownership is per user. A normal user reads only rows whose
+  ``user_id`` is their own; a superuser reads every row. Rows with a NULL
+  ``user_id`` (written anonymously before this change, or orphaned by a user
+  deletion) are therefore visible to superusers only.
+- Images attach only to a render log the caller owns.
+- The destructive routes (``DELETE ""`` and ``POST /cleanup``) are
+  superuser-only. Nothing schedules the retention cleanup server-side, so it
+  stays an HTTP route, behind superuser auth.
 """
 
+import re
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from typing import Any
 from uuid import uuid4
 
 import structlog
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
-from sqlalchemy import delete, func, select
+from sqlalchemy import Select, case, delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import current_active_user_optional, get_async_db
+from app.api.deps import (
+    get_async_db,
+    get_current_active_user_async,
+    get_current_superuser_async,
+)
 from app.core.config import settings
 from app.models.render_log import RenderImage, RenderLog
 from app.models.user import User
@@ -35,6 +56,32 @@ logger = structlog.get_logger(__name__)
 router = APIRouter()
 
 
+# A stored image's extension comes from the client-supplied filename, so it is
+# accepted only when it is a short run of alphanumerics; anything else is
+# stored as ``.png``.
+_SAFE_IMAGE_EXT = re.compile(r"\.[A-Za-z0-9]{1,8}")
+
+
+def _scope_to_caller[S: Select[Any]](query: S, user: User) -> S:
+    """Restrict a query over ``RenderLog`` to the rows ``user`` may read.
+
+    Superusers read every row. Everyone else reads only rows they own, which
+    excludes rows with a NULL ``user_id``.
+    """
+    if user.is_superuser:
+        return query
+    return query.where(RenderLog.user_id == user.id)
+
+
+def _not_found() -> HTTPException:
+    # A row the caller may not read answers exactly like a missing row, so the
+    # response does not reveal which ids exist.
+    return HTTPException(
+        status_code=status.HTTP_404_NOT_FOUND,
+        detail="Render log not found",
+    )
+
+
 def get_image_storage_path() -> Path:
     """Get the image storage directory path."""
     base_path = Path(settings.RENDER_LOG_IMAGE_DIR)
@@ -50,27 +97,32 @@ def get_image_storage_path() -> Path:
 )
 async def get_render_log_stats(
     db: AsyncSession = Depends(get_async_db),
+    current_user: User = Depends(get_current_active_user_async),
 ) -> RenderLogStats:
-    """Get render logging statistics."""
-    # Get total snapshots
-    total_result = await db.execute(select(func.count(RenderLog.id)))
-    total_snapshots = total_result.scalar() or 0
-
-    # Get unique sessions
-    sessions_result = await db.execute(
-        select(func.count(func.distinct(RenderLog.session_id)))
+    """Get render logging statistics over the rows the caller may read."""
+    log_stats = await db.execute(
+        _scope_to_caller(
+            select(
+                func.count(RenderLog.id),
+                func.count(func.distinct(RenderLog.session_id)),
+                func.min(RenderLog.timestamp),
+                func.max(RenderLog.timestamp),
+            ),
+            current_user,
+        )
     )
-    total_sessions = sessions_result.scalar() or 0
+    total_snapshots, total_sessions, oldest_snapshot, newest_snapshot = log_stats.one()
+    total_snapshots = total_snapshots or 0
+    total_sessions = total_sessions or 0
 
-    # Get oldest and newest
-    oldest_result = await db.execute(select(func.min(RenderLog.timestamp)))
-    oldest_snapshot = oldest_result.scalar()
-
-    newest_result = await db.execute(select(func.max(RenderLog.timestamp)))
-    newest_snapshot = newest_result.scalar()
-
-    # Get image count
-    image_count_result = await db.execute(select(func.count(RenderImage.id)))
+    image_count_result = await db.execute(
+        _scope_to_caller(
+            select(func.count(RenderImage.id)).join(
+                RenderLog, RenderImage.render_log_id == RenderLog.id
+            ),
+            current_user,
+        )
+    )
     image_count = image_count_result.scalar() or 0
 
     # Estimate storage (rough estimate based on average JSONB size)
@@ -96,12 +148,9 @@ async def get_render_log_stats(
 async def list_sessions(
     limit: int = Query(50, ge=1, le=200, description="Maximum sessions to return"),
     db: AsyncSession = Depends(get_async_db),
+    current_user: User = Depends(get_current_active_user_async),
 ) -> list[RenderLogSessionSummary]:
-    """List render log sessions with summaries."""
-    # Query for session summaries
-    # Count mutations using case expression
-    from sqlalchemy import case
-
+    """List the caller's render log sessions with summaries."""
     query = (
         select(
             RenderLog.session_id,
@@ -117,6 +166,7 @@ async def list_sessions(
         .order_by(func.max(RenderLog.timestamp).desc())
         .limit(limit)
     )
+    query = _scope_to_caller(query, current_user)
 
     result = await db.execute(query)
     rows = result.all()
@@ -149,10 +199,10 @@ async def list_render_logs(
     page: int = Query(1, ge=1, description="Page number"),
     page_size: int = Query(50, ge=1, le=200, description="Page size"),
     db: AsyncSession = Depends(get_async_db),
+    current_user: User = Depends(get_current_active_user_async),
 ) -> RenderLogList:
-    """List render logs with pagination."""
-    # Build query
-    query = select(RenderLog)
+    """List the render logs the caller may read, with pagination."""
+    query = _scope_to_caller(select(RenderLog), current_user)
 
     if session_id:
         query = query.filter(RenderLog.session_id == session_id)
@@ -191,16 +241,18 @@ async def list_render_logs(
 async def get_render_log(
     render_log_id: int,
     db: AsyncSession = Depends(get_async_db),
+    current_user: User = Depends(get_current_active_user_async),
 ) -> RenderLogWithImages:
-    """Get a render log by ID with full data."""
-    result = await db.execute(select(RenderLog).filter(RenderLog.id == render_log_id))
+    """Get a render log the caller may read, by ID, with full data."""
+    result = await db.execute(
+        _scope_to_caller(
+            select(RenderLog).where(RenderLog.id == render_log_id), current_user
+        )
+    )
     log = result.scalar_one_or_none()
 
     if not log:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Render log not found",
-        )
+        raise _not_found()
 
     # Get associated images
     images_result = await db.execute(
@@ -224,7 +276,7 @@ async def get_render_log(
 async def create_render_log(
     log_data: RenderLogCreate,
     db: AsyncSession = Depends(get_async_db),
-    current_user: User | None = Depends(current_active_user_optional),
+    current_user: User = Depends(get_current_active_user_async),
 ) -> RenderLogResponse:
     """Create a new render log entry."""
     # Create the render log
@@ -242,7 +294,7 @@ async def create_render_log(
         scroll_y=log_data.scroll_y,
         capture_duration_ms=log_data.capture_duration_ms,
         element_count=log_data.element_count,
-        user_id=current_user.id if current_user else None,
+        user_id=current_user.id,
     )
 
     db.add(render_log)
@@ -274,21 +326,27 @@ async def upload_render_image(
     element_selector: str | None = Query(None, description="Element CSS selector"),
     file: UploadFile = File(...),
     db: AsyncSession = Depends(get_async_db),
+    current_user: User = Depends(get_current_active_user_async),
 ) -> RenderImageResponse:
-    """Upload an image for a render log."""
-    # Verify render log exists
-    result = await db.execute(select(RenderLog).filter(RenderLog.id == render_log_id))
+    """Upload an image for a render log the caller owns."""
+    # Ownership, not visibility: a superuser may READ every log, but an image
+    # is attached only to the caller's own log.
+    result = await db.execute(
+        select(RenderLog).where(
+            RenderLog.id == render_log_id, RenderLog.user_id == current_user.id
+        )
+    )
     log = result.scalar_one_or_none()
 
     if not log:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Render log not found",
-        )
+        raise _not_found()
 
-    # Generate unique filename
-    ext = Path(file.filename or "image.png").suffix or ".png"
-    filename = f"{log.session_id}_{render_log_id}_{uuid4().hex[:8]}{ext}"
+    # The filename is built only from server-controlled parts. It used to embed
+    # the client-supplied ``session_id``, which let a caller write outside the
+    # storage directory with a ``../`` session id.
+    suffix = Path(file.filename or "").suffix
+    ext = suffix if _SAFE_IMAGE_EXT.fullmatch(suffix) else ".png"
+    filename = f"{render_log_id}_{uuid4().hex}{ext}"
     storage_path = get_image_storage_path()
     file_path = storage_path / filename
 
@@ -330,8 +388,9 @@ async def upload_render_image(
 async def clear_render_logs(
     request: ClearRenderLogsRequest,
     db: AsyncSession = Depends(get_async_db),
+    _superuser: User = Depends(get_current_superuser_async),
 ) -> ClearRenderLogsResponse:
-    """Clear render logs."""
+    """Clear render logs across every user. Superuser only."""
     if not request.confirm:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -339,15 +398,15 @@ async def clear_render_logs(
         )
 
     # Build delete query for images first
-    image_query = select(RenderImage.id, RenderImage.file_path)
+    # Join once: joining per filter emitted a duplicate JOIN (and an SQL error)
+    # when both ``session_id`` and ``before`` were given.
+    image_query = select(RenderImage.id, RenderImage.file_path).join(
+        RenderLog, RenderImage.render_log_id == RenderLog.id
+    )
     if request.session_id:
-        image_query = image_query.join(RenderLog).filter(
-            RenderLog.session_id == request.session_id
-        )
+        image_query = image_query.where(RenderLog.session_id == request.session_id)
     if request.before:
-        image_query = image_query.join(RenderLog).filter(
-            RenderLog.timestamp < request.before
-        )
+        image_query = image_query.where(RenderLog.timestamp < request.before)
 
     # Get images to delete
     image_result = await db.execute(image_query)
@@ -398,8 +457,13 @@ async def clear_render_logs(
 )
 async def cleanup_old_render_logs(
     db: AsyncSession = Depends(get_async_db),
+    _superuser: User = Depends(get_current_superuser_async),
 ) -> ClearRenderLogsResponse:
-    """Cleanup old render logs based on retention settings."""
+    """Cleanup old render logs based on retention settings. Superuser only.
+
+    Nothing runs this retention on a schedule server-side, so it stays an HTTP
+    route; it deletes across every user, hence the superuser requirement.
+    """
     cutoff = datetime.now(UTC) - timedelta(days=settings.RENDER_LOG_RETENTION_DAYS)
 
     # Get images to delete
