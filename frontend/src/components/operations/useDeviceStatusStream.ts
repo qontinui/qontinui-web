@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createLogger } from "@/lib/logger";
 import { httpClient } from "@/services/service-factory";
+import { COORD_DASHBOARD_POLL_OPTIONS } from "./coordPollError";
 import {
   DEVICE_STATUS_API,
   DEVICE_STATUS_POLL_FALLBACK_MS,
@@ -247,7 +248,12 @@ export function useDeviceStatusStream(): UseDeviceStatusStreamResult {
       return true;
     };
     try {
+      // No client retries (plan
+      // `2026-09-25-fleet-worktree-slots-hang-mechanism-and-safe-reland` D5):
+      // a failed read is re-read by the next poll or the seed retry, never
+      // by `httpClient`'s 5xx backoff chain.
       const resp = await httpClient.fetch(DEVICE_STATUS_API, {
+        ...COORD_DASHBOARD_POLL_OPTIONS,
         signal: request.controller.signal,
       });
       if (!resp.ok) {

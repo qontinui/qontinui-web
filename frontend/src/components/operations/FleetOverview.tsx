@@ -454,7 +454,7 @@ export function FleetOverview({
   // the in-process beacon), not coord proxies, so they keep `httpClient`'s
   // default retries. The loop is still single-flight: a tick that finds the
   // previous refresh outstanding is skipped rather than stacked on top of it.
-  const fetchData = useCallback(async () => {
+  const fetchData = useCallback(async (isCurrent: () => boolean) => {
     try {
       const [fleetRes, tasksRes] = await Promise.allSettled([
         httpClient.fetch(`${OPERATIONS_API}/fleet`),
@@ -463,9 +463,11 @@ export function FleetOverview({
 
       if (fleetRes.status === "fulfilled" && fleetRes.value.ok) {
         const data: FleetStatus = await fleetRes.value.json();
+        if (!isCurrent()) return;
         setFleet(data);
         setError(null);
       } else {
+        if (!isCurrent()) return;
         const reason =
           fleetRes.status === "rejected"
             ? (fleetRes.reason as Error).message
@@ -475,19 +477,22 @@ export function FleetOverview({
 
       if (tasksRes.status === "fulfilled" && tasksRes.value.ok) {
         const data: AggregatedTaskRuns = await tasksRes.value.json();
+        if (!isCurrent()) return;
         setTasks(data);
       } else {
+        if (!isCurrent()) return;
         // Tasks endpoint failing is non-critical
         setTasks({ task_runs: [], total: 0 });
       }
 
       setLastUpdated(new Date());
     } catch (err) {
+      if (!isCurrent()) return;
       const message =
         err instanceof Error ? err.message : "Failed to reach operations API";
       setError(message);
     } finally {
-      setLoading(false);
+      if (isCurrent()) setLoading(false);
     }
   }, []);
 

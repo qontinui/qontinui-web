@@ -70,8 +70,11 @@ describe("useDeviceReadiness", () => {
 
     const { result } = renderHook(() => useDeviceReadiness(DEVICE));
     let refreshing!: Promise<void>;
-    act(() => {
+    await act(async () => {
       refreshing = result.current.refresh();
+      // The poll is invoked from a microtask; let it reach the wire.
+      await Promise.resolve();
+      await Promise.resolve();
     });
     // The mount's request is outstanding, so the refresh sent nothing yet.
     expect(httpFetch).toHaveBeenCalledTimes(1);
@@ -80,7 +83,7 @@ describe("useDeviceReadiness", () => {
       first.resolve(sampleResponse("older verdict"));
       await first.promise;
     });
-    expect(httpFetch).toHaveBeenCalledTimes(2);
+    await waitFor(() => expect(httpFetch).toHaveBeenCalledTimes(2));
 
     await act(async () => {
       second.resolve(sampleResponse("newer verdict"));

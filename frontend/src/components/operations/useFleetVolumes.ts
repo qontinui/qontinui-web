@@ -9,9 +9,10 @@
  * Until plan `2026-09-25-fleet-worktree-slots-hang-mechanism-and-safe-reland`
  * Phase 4 this read rode inside `FleetOverview`'s `fetchData`, on the 5 s
  * `POLL_INTERVAL_MS` loop, with `httpClient`'s default 5xx retries and no
- * guard against overlap. Coord's read had a median of 4.3 s, so one viewer
- * kept about 12 census reads a minute going, each 504 overlapping the next
- * poll. That load is what hung coord on 2026-09-22. Disk free space does not
+ * guard against overlap. Coord's successful reads had a median of 4.3 s, and
+ * one viewer was measured at 784 requests in the 12:00Z hour of 2026-09-22
+ * (about 13 a minute), each ≥5 s 504 overlapping the next poll. Disk free
+ * space does not
  * change on a 5 s scale, so this poll runs at `RESOURCE_POLL_INTERVAL_MS`
  * (30 s), single-flight, with no retries: a 6x cut in per-viewer census reads
  * and nothing lost.

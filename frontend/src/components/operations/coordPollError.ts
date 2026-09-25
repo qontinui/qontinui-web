@@ -9,7 +9,10 @@
  * 1 s + 2 s + 4 s of backoff. For a poll that is pure multiplication: the next
  * tick asks the same question anyway, and when coord is slow each retry is one
  * more census read it has to abandon. On 2026-09-22 a failing worktree-slots
- * poll cost exactly 5 requests per tick. So every coord-proxied dashboard poll
+ * poll was measured at 5 requests per MINUTE (1 per minute when healthy). One
+ * poll per minute times up to 5 requests per failing GET fits that, but why
+ * the 30 s timer ran once a minute is UNKNOWN, so the per-tick cost was not
+ * measured directly. So every coord-proxied dashboard poll
  * passes {@link COORD_DASHBOARD_POLL_OPTIONS}: one request, and the next poll
  * is the retry.
  *
