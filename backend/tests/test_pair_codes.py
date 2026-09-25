@@ -338,9 +338,11 @@ class TestRedeemEndpoint:
         fake_httpx.ConnectTimeout = httpx.ConnectTimeout
         fake_httpx.TimeoutException = httpx.TimeoutException
 
-        with patch("app.api.v1.endpoints.pair_codes.strategy_client") as mock_strategy:
-            mock_strategy.enabled = True
-            mock_strategy._headers = AsyncMock(return_value={"X-Test": "1"})
+        with patch(
+            "app.api.v1.endpoints.pair_codes.coord_service_account"
+        ) as mock_bridge:
+            mock_bridge.enabled = True
+            mock_bridge._headers = AsyncMock(return_value={"X-Test": "1"})
             original_httpx = proxy_mod.httpx
             proxy_mod.httpx = fake_httpx
             try:
@@ -427,9 +429,11 @@ class TestRedeemEndpoint:
             "Authorization": "Bearer coord-service-jwt-for-qontinui-web-strategy",
             "X-Qontinui-User-Id": str(test_user.id),
         }
-        with patch("app.api.v1.endpoints.pair_codes.strategy_client") as mock_strategy:
-            mock_strategy.enabled = True
-            mock_strategy._headers = AsyncMock(return_value=service_headers)
+        with patch(
+            "app.api.v1.endpoints.pair_codes.coord_service_account"
+        ) as mock_bridge:
+            mock_bridge.enabled = True
+            mock_bridge._headers = AsyncMock(return_value=service_headers)
             original_httpx = proxy_mod.httpx
             proxy_mod.httpx = fake_httpx
             try:
@@ -448,7 +452,7 @@ class TestRedeemEndpoint:
 
         assert resp.status_code == 200, resp.text
         # The service headers are minted FOR the issuer, and forwarded verbatim.
-        mock_strategy._headers.assert_awaited_once_with(str(test_user.id))
+        mock_bridge._headers.assert_awaited_once_with(str(test_user.id))
         assert captured["url"].endswith("/coord/devices/pair-cli")
         assert captured["headers"]["Authorization"] == service_headers["Authorization"]
         assert captured["headers"]["X-Qontinui-User-Id"] == str(test_user.id)

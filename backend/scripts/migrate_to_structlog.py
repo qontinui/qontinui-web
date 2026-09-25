@@ -57,7 +57,9 @@ def migrate_file(file_path: Path) -> bool:
     # Pattern 1: Simple f-strings with one variable
     content = re.sub(
         r'logger\.(info|error|warning|debug)\(f"([^"]*)\{([^}]+)\}([^"]*)"\)',
-        lambda m: f'logger.{m.group(1)}("{m.group(2).strip()}_{m.group(4).strip()}".strip("_").replace(" ", "_").lower(), value={m.group(3)})',
+        lambda m: (
+            f'logger.{m.group(1)}("{m.group(2).strip()}_{m.group(4).strip()}".strip("_").replace(" ", "_").lower(), value={m.group(3)})'
+        ),
         content,
     )
 

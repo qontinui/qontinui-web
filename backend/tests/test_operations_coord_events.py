@@ -103,12 +103,13 @@ def _build_test_app() -> FastAPI:
 
 
 class TestCoordEventsServiceHelpers:
-    def test_allowlist_is_the_four_operator_names_and_never_device(self) -> None:
+    def test_allowlist_is_the_three_operator_names_and_never_device(self) -> None:
         from app.services.coord_device_status import COORD_EVENTS_SUBSCRIPTIONS
 
-        assert COORD_EVENTS_SUBSCRIPTIONS == frozenset(
-            {"strategy", "merge", "claims", "branches"}
-        )
+        assert COORD_EVENTS_SUBSCRIPTIONS == frozenset({"merge", "claims", "branches"})
+        # `strategy` was retired with the strategy collaboration feature:
+        # nothing publishes `events.strategy.*` and coord refuses the name.
+        assert "strategy" not in COORD_EVENTS_SUBSCRIPTIONS
         # `device` / `device_ci` resolve to the token's own device_id claim
         # on coord's side and carry the spawn channel this plan takes off the
         # bus. A service token has no device; the bridge must never offer
@@ -121,8 +122,8 @@ class TestCoordEventsServiceHelpers:
 
         with patch("app.services.coord_device_status.settings") as mock_settings:
             mock_settings.COORD_URL = "http://localhost:9870"
-            assert build_coord_events_ws_url("abc", "strategy") == (
-                "ws://localhost:9870/ws?token=abc&subscribe=strategy"
+            assert build_coord_events_ws_url("abc", "claims") == (
+                "ws://localhost:9870/ws?token=abc&subscribe=claims"
             )
 
     def test_ws_url_translates_https_to_wss(self) -> None:
@@ -142,7 +143,7 @@ class TestCoordEventsServiceHelpers:
 
         with patch("app.services.coord_device_status.settings") as mock_settings:
             mock_settings.COORD_URL = "http://localhost:9870"
-            for bad in ("device", "device_ci", "events.*", "", "strategy "):
+            for bad in ("device", "device_ci", "events.*", "", "merge ", "strategy"):
                 with pytest.raises(ValueError):
                     build_coord_events_ws_url("abc", bad)
 
@@ -156,17 +157,15 @@ class TestCoordEventsServiceHelpers:
         # The allowlist IS the family map's key set — one source.
         assert COORD_EVENTS_SUBSCRIPTIONS == frozenset(COORD_EVENTS_FAMILIES)
         assert COORD_EVENTS_FAMILIES == {
-            "strategy": "events.strategy.",
             "merge": "events.merge.",
             "claims": "events.claims",
             "branches": "events.branches",
         }
         # Prefix families admit the whole glob and nothing beside it.
-        assert channel_in_family("strategy", "events.strategy.mention.created.u1")
         assert channel_in_family("merge", "events.merge.proposal.updated.7")
         assert not channel_in_family("merge", "events.merge")
         assert not channel_in_family("merge", "events.merges.x")
-        assert not channel_in_family("strategy", "events.merge.proposal.updated.7")
+        assert not channel_in_family("claims", "events.merge.proposal.updated.7")
         # Exact families admit only the identical channel.
         assert channel_in_family("claims", "events.claims")
         assert not channel_in_family("claims", "events.claims.x")
@@ -304,8 +303,8 @@ class TestCoordEventsWsBridge:
         # object. The bridge must not re-encode it.
         coord_frame = json.dumps(
             {
-                "channel": "events.strategy.presence.aggregate.doc-1",
-                "payload": json.dumps({"doc_id": "doc-1", "count": 2}),
+                "channel": "events.merge.proposal.updated.7",
+                "payload": json.dumps({"proposal_id": 7, "state": "queued"}),
             }
         )
         upstream_mock = MockUpstream([coord_frame])
@@ -325,7 +324,7 @@ class TestCoordEventsWsBridge:
         ):
             mock_settings.COORD_URL = "https://coord.qontinui.io"
             with ws_client.websocket_connect(
-                f"{API_PREFIX}/coord-events/ws?subscribe=strategy&token=session-jwt"
+                f"{API_PREFIX}/coord-events/ws?subscribe=merge&token=session-jwt"
             ) as ws:
                 received = ws.receive_text()
                 assert received == coord_frame
@@ -333,7 +332,7 @@ class TestCoordEventsWsBridge:
         # The minted token AND the subscription ride the upstream query
         # string — coord's generic `/ws` takes both at the upgrade.
         assert seen_urls == [
-            "wss://coord.qontinui.io/ws?token=fake.jwt.token&subscribe=strategy"
+            "wss://coord.qontinui.io/ws?token=fake.jwt.token&subscribe=merge"
         ]
         # NO in-band subscribe message: `/ws` is not `/ws/device-status`.
         assert upstream_mock.sent == []
@@ -381,6 +380,7 @@ class TestCoordEventsWsBridge:
             "events.*",  # the old free glob
             "events.merge.>",  # the old dead NATS wildcard
             "",  # absent
+            "strategy",  # retired with the strategy collaboration feature
         ],
     )
     def test_unknown_subscription_is_refused_before_auth(self, subscribe: str) -> None:
@@ -410,7 +410,7 @@ class TestCoordEventsWsBridge:
                 assert error["type"] == "error"
                 assert error["error"] == "unknown_subscription"
                 assert error["subscribe"] == subscribe
-                assert error["allowed"] == ["branches", "claims", "merge", "strategy"]
+                assert error["allowed"] == ["branches", "claims", "merge"]
                 closed = ws.receive()
                 assert closed["type"] == "websocket.close"
                 assert closed["code"] == 1008
@@ -430,7 +430,7 @@ class TestCoordEventsWsBridge:
         p1, p2, p3, p4 = self._patches(connect=counting_connect)
         with p1, p2, p3, p4:
             with ws_client.websocket_connect(
-                f"{API_PREFIX}/coord-events/ws?subscribe=strategy"
+                f"{API_PREFIX}/coord-events/ws?subscribe=merge"
             ) as ws:
                 error = json.loads(ws.receive_text())
                 assert error == {
@@ -517,7 +517,7 @@ class TestCoordEventsWsBridge:
         ):
             mock_settings.COORD_URL = "http://localhost:9870"
             with ws_client.websocket_connect(
-                f"{API_PREFIX}/coord-events/ws?subscribe=strategy&token=session-jwt"
+                f"{API_PREFIX}/coord-events/ws?subscribe=merge&token=session-jwt"
             ):
                 # Immediate exit — TestClient closes the browser side.
                 pass
@@ -538,17 +538,15 @@ class TestCoordEventsWsBridge:
                 "payload": json.dumps({"agent_id": "a-1", "jwt": "SECRET.jwt"}),
             }
         )
-        merge_frame = json.dumps(
-            {"channel": "events.merge.proposal.updated.7", "payload": "{}"}
-        )
+        claims_frame = json.dumps({"channel": "events.claims", "payload": "{}"})
         malformed = "not an envelope"
         wanted = json.dumps(
             {
-                "channel": "events.strategy.mention.created.u1",
-                "payload": json.dumps({"mention_id": "m-1"}),
+                "channel": "events.merge.proposal.updated.7",
+                "payload": json.dumps({"proposal_id": 7}),
             }
         )
-        upstream_mock = MockUpstream([spawn_frame, merge_frame, malformed, wanted])
+        upstream_mock = MockUpstream([spawn_frame, claims_frame, malformed, wanted])
 
         async def fake_connect(url: str, **kwargs: Any) -> MockUpstream:
             return upstream_mock
@@ -564,9 +562,9 @@ class TestCoordEventsWsBridge:
         ):
             mock_settings.COORD_URL = "http://localhost:9870"
             with ws_client.websocket_connect(
-                f"{API_PREFIX}/coord-events/ws?subscribe=strategy&token=session-jwt"
+                f"{API_PREFIX}/coord-events/ws?subscribe=merge&token=session-jwt"
             ) as ws:
-                # The FIRST thing the browser sees is the strategy frame —
+                # The FIRST thing the browser sees is the merge frame —
                 # the three before it never crossed.
                 assert ws.receive_text() == wanted
 
@@ -705,7 +703,7 @@ class TestCoordEventsWsBridge:
         ):
             mock_settings.COORD_URL = "http://localhost:9870"
             with ws_client.websocket_connect(
-                f"{API_PREFIX}/coord-events/ws?subscribe=strategy&token=session-jwt"
+                f"{API_PREFIX}/coord-events/ws?subscribe=merge&token=session-jwt"
             ) as ws:
                 first = ws.receive_text()
                 assert json.loads(first) == {"type": "keepalive"}
@@ -726,7 +724,7 @@ class TestCoordEventsWsBridge:
         # keepalive ticks notwithstanding.
         ws_client = TestClient(_build_test_app())
         real_frame = json.dumps(
-            {"channel": "events.strategy.thread.created.t1", "payload": "{}"}
+            {"channel": "events.merge.proposal.updated.7", "payload": "{}"}
         )
         upstream_mock = MockUpstream([real_frame])
 
@@ -747,7 +745,7 @@ class TestCoordEventsWsBridge:
         ):
             mock_settings.COORD_URL = "http://localhost:9870"
             with ws_client.websocket_connect(
-                f"{API_PREFIX}/coord-events/ws?subscribe=strategy&token=session-jwt"
+                f"{API_PREFIX}/coord-events/ws?subscribe=merge&token=session-jwt"
             ) as ws:
                 seen = {ws.receive_text() for _ in range(3)}
                 assert real_frame in seen

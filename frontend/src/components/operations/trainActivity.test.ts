@@ -1932,6 +1932,9 @@ describe("candidate-CI churn — per-repo rows", () => {
     green_candidates_discarded: 15,
     base_mismatch_discards: 13,
     candidate_ci_minutes_per_land: 47.4,
+    proposal_age_at_land_p90_secs: 29_880,
+    proposal_age_at_land_sample_size: 6,
+    proposal_age_at_land_basis: "first proposal on the branch to land",
     green_candidates_discarded_basis: "green candidates discarded in 24h",
     base_mismatch_discards_basis: "base moved under the candidate",
     coverage_note: "24h window",
@@ -1940,10 +1943,11 @@ describe("candidate-CI churn — per-repo rows", () => {
     green_candidates_discarded: null,
     base_mismatch_discards: null,
     candidate_ci_minutes_per_land: null,
+    proposal_age_at_land_p90_secs: null,
     coverage_note: "no candidate CI observed in window",
   };
 
-  it("measured: carries the three values and coord's basis per value", () => {
+  it("measured: carries the four values and coord's basis per value", () => {
     const [row] = buildRepoTrainRows([], [pr({ repo: WEB })], null, NOW, {
       [WEB]: measured,
     });
@@ -1960,6 +1964,65 @@ describe("candidate-CI churn — per-repo rows", () => {
       value: 47.4,
       note: "24h window",
     });
+    // The age's hover is coord's basis, prefixed with the lands behind it.
+    expect(row.churn.proposalAgeAtLandP90).toEqual({
+      value: 29_880,
+      note: "6 lands — first proposal on the branch to land",
+    });
+  });
+
+  it("proposal→land p90: null (nothing landed) stays null with coord's basis, never 0", () => {
+    const churn = deriveRepoChurn({
+      proposal_age_at_land_p90_secs: null,
+      proposal_age_at_land_sample_size: 0,
+      proposal_age_at_land_basis: "per proposal that LANDED",
+      coverage_note: "24h window",
+    });
+    expect(churn.proposalAgeAtLandP90.value).toBeNull();
+    expect(churn.proposalAgeAtLandP90.note).toBe(
+      "0 lands — per proposal that LANDED"
+    );
+    // A coord predating the field says so — not the CI coverage note.
+    const old = deriveRepoChurn({ coverage_note: "24h window" });
+    expect(old.proposalAgeAtLandP90).toEqual({
+      value: null,
+      note: "coord did not serve proposal→land age for this repo (its build predates the field)",
+    });
+    // A sample count without a basis still reaches the hover.
+    expect(
+      deriveRepoChurn({
+        proposal_age_at_land_p90_secs: 60,
+        proposal_age_at_land_sample_size: 3,
+      }).proposalAgeAtLandP90.note
+    ).toBe("3 lands");
+    // A measured 0 is 0; a negative (clock skew) is unknown.
+    expect(
+      deriveRepoChurn({ proposal_age_at_land_p90_secs: 0 }).proposalAgeAtLandP90
+        .value
+    ).toBe(0);
+    const skew = deriveRepoChurn({
+      proposal_age_at_land_p90_secs: -5,
+      proposal_age_at_land_sample_size: 3,
+      proposal_age_at_land_basis: "b",
+    }).proposalAgeAtLandP90;
+    expect(skew.value).toBeNull();
+    // The dash explains itself — it is not a reading over three lands.
+    expect(skew.note).toBe(
+      "coord served a negative age (-5 s) — clock skew, shown as unknown"
+    );
+    // An explicit null with no metadata: coord's contract is "nothing landed".
+    expect(
+      deriveRepoChurn({ proposal_age_at_land_p90_secs: null })
+        .proposalAgeAtLandP90.note
+    ).toBe("nothing landed in the window");
+    // One land reads singular.
+    expect(
+      deriveRepoChurn({
+        proposal_age_at_land_p90_secs: 60,
+        proposal_age_at_land_sample_size: 1,
+        proposal_age_at_land_basis: "b",
+      }).proposalAgeAtLandP90.note
+    ).toBe("1 land — b");
   });
 
   it("resolves a short-name row against coord's owner/name key", () => {
@@ -1988,6 +2051,7 @@ describe("candidate-CI churn — per-repo rows", () => {
     expect(core.churn.greenDiscarded.value).not.toBe(0);
     expect(core.churn.baseMoveDiscards.value).toBeNull();
     expect(core.churn.ciMinutesPerLand.value).toBeNull();
+    expect(core.churn.proposalAgeAtLandP90.value).toBeNull();
     expect(web.churn.greenDiscarded.value).toBe(15);
   });
 
@@ -2004,6 +2068,7 @@ describe("candidate-CI churn — per-repo rows", () => {
         row.churn.greenDiscarded,
         row.churn.baseMoveDiscards,
         row.churn.ciMinutesPerLand,
+        row.churn.proposalAgeAtLandP90,
       ]) {
         expect(reading.value).toBeNull();
         expect(reading.note).toBe(

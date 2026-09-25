@@ -25,6 +25,10 @@ export type EstimatePurposeOption = EstimatePurpose;
 
 export const OVERVIEW_API = "/api/v1/overview";
 
+/** Names this page as the source of a write in `overview.change_log`
+ *  (`X-Overview-Source`); a write without it is recorded as `api`. */
+const FROM_THE_OVERVIEW = { headers: { "X-Overview-Source": "ui" } };
+
 export type EstimateStatus =
   | "draft"
   | "for_decision"
@@ -377,7 +381,11 @@ export function createEstimate(body: {
   contingency_pct?: string | null;
   accuracy_note?: string | null;
 }): Promise<EstimateSummary> {
-  return httpClient.post<EstimateSummary>(`${OVERVIEW_API}/estimates`, body);
+  return httpClient.post<EstimateSummary>(
+    `${OVERVIEW_API}/estimates`,
+    body,
+    FROM_THE_OVERVIEW
+  );
 }
 
 export function patchEstimate(
@@ -386,7 +394,8 @@ export function patchEstimate(
 ): Promise<EstimateSummary> {
   return httpClient.patch<EstimateSummary>(
     `${OVERVIEW_API}/estimates/${encodeURIComponent(id)}`,
-    body
+    body,
+    FROM_THE_OVERVIEW
   );
 }
 
@@ -396,7 +405,8 @@ export function saveEstimateContent(
 ): Promise<EstimateDetail> {
   return httpClient.put<EstimateDetail>(
     `${OVERVIEW_API}/estimates/${encodeURIComponent(id)}/content`,
-    body
+    body,
+    FROM_THE_OVERVIEW
   );
 }
 

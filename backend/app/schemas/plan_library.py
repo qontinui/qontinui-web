@@ -627,6 +627,13 @@ class WorkArtifactListResponse(BaseModel):
     offset: int
     limit: int
     corpus_health: CorpusHealth
+    #: The level → model maps, served on every page so a consumer routing on
+    #: an item's ``difficulty`` reads the map in the same call. Corpus
+    #: constants, so envelope-level rather than per item; byte-identical to
+    #: ``/candidates`` and ``/difficulty``. See :class:`PlanDifficultyResponse`.
+    model_tiers: dict[str, str]
+    model_selectors: dict[str, str]
+    model_selector_vocabulary: str
 
 
 # ─────────────────── candidate selection (Phase 6) ───────────────────
@@ -767,7 +774,13 @@ class PlanDifficultyResponse(BaseModel):
     row that is still unrated is left OUT of ``items`` — absent here means
     "no rating", which the console renders as unrated, never as "low".
     ``model_tiers`` maps each level to the model tier it routes to, served so
-    every consumer names the same models.
+    every consumer names the same models. It is DISPLAY COPY — never parse it.
+    ``model_selectors`` is the machine-readable twin: each level's harness
+    selector, in the vocabulary ``model_selector_vocabulary`` names (the Claude
+    Code Agent tool's ``model`` values). A consumer whose harness does not
+    match that vocabulary treats the selector map as absent. All three are
+    served, byte-identical, on ``GET /plan-library`` and
+    ``/plan-library/candidates`` too.
     """
 
     items: list[PlanDifficultyItem]
@@ -785,6 +798,8 @@ class PlanDifficultyResponse(BaseModel):
     rerate_failed_reason: str | None = None
     rubric_version: int
     model_tiers: dict[str, str]
+    model_selectors: dict[str, str]
+    model_selector_vocabulary: str
 
 
 # ─────────────── open follow-ups (Phase 7) ───────────────
@@ -879,6 +894,14 @@ class PlanCandidateResponse(BaseModel):
     #: Why ``corpus_health`` is null (a ``read_failed:`` line naming only the
     #: error class); null whenever the block was read.
     corpus_health_unavailable_reason: str | None
+    #: **Additive.** The level → model maps, so a sweep routing on each
+    #: item's ``difficulty`` reads the map on the read it already makes rather
+    #: than pinning one in its own skill file. Envelope-level (corpus
+    #: constants); byte-identical to ``GET /plan-library`` and ``/difficulty``.
+    #: See :class:`PlanDifficultyResponse` for the display-vs-selector split.
+    model_tiers: dict[str, str]
+    model_selectors: dict[str, str]
+    model_selector_vocabulary: str
 
 
 # ───────── three-way status reconciliation (Phase 4) ─────────

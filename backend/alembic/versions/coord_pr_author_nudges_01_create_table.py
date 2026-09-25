@@ -23,7 +23,9 @@ for an hour gets ONE nudge, not one per tick:
 * ``last_nudged_at  TIMESTAMPTZ NOT NULL DEFAULT now()`` — drives the cooldown window
   (``COORD_PR_STUCK_NUDGE_COOLDOWN_SECS``).
 * ``nudge_count     INTEGER NOT NULL DEFAULT 1`` — drives the cap (``COORD_PR_STUCK_NUDGE_MAX``).
-* ``last_outcome    TEXT`` — delivered | spawned | notify_only | operator_alert.
+* ``last_outcome    TEXT`` — the attempt's outcome label; the vocabulary is owned by coord
+  ``pr_merge/stuck_author_nudge.rs`` (``CiRedArm::ledger_outcome`` and the sweep's metric
+  HELP), not restated here.
 
 Primary key ``(repo, pr_number, reason)`` — the natural dedup grain; coord's
 ``INSERT ... ON CONFLICT (repo, pr_number, reason) DO UPDATE`` is idempotent

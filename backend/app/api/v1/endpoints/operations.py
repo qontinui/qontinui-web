@@ -113,6 +113,11 @@ from app.services.coord_identity import (
     get_coord_identity_for_token,
 )
 from app.services.dev_dashboard_service import get_fleet_registry
+from app.services.email import (
+    EmailTemplateService,
+    EmailTransportService,
+    MemberAddedNoticeComposer,
+)
 from app.services.plan_body_signal import (
     PLAN_CAPTURE_DOMAIN,
     CaptureDial,
@@ -6640,7 +6645,7 @@ async def websocket_coord_events(
        `WS /api/v1/operations/coord-events/ws?subscribe=<name>&token=<jwt>`
        (`active_tenant` optional, as on the device-status bridge).
     2. `subscribe` is checked against `COORD_EVENTS_SUBSCRIPTIONS`
-       (`strategy` | `merge` | `claims` | `branches`); anything else closes
+       (`merge` | `claims` | `branches`); anything else closes
        1008 `unknown_subscription` before the token is even read.
     3. Auth + effective-tenant resolution, exactly as
        :func:`websocket_device_status`.
@@ -6648,11 +6653,11 @@ async def websocket_coord_events(
        device-status bridge — `mint_device_status_token`).
     5. Open `wss://<coord>/ws?token=<minted>&subscribe=<name>`; coord
        verifies the token and resolves the name to its fixed pattern
-       server-side (`strategy` → `events.strategy.*`, `merge` →
-       `events.merge.*`, …).
+       server-side (`merge` → `events.merge.*`, `claims` →
+       `events.claims`, …).
     6. Every `{"channel": "...", "payload": "<json string>"}` frame whose
        `channel` is in the subscription's FAMILY (`channel_in_family`:
-       `strategy` → `events.strategy.*`, `merge` → `events.merge.*`,
+       `merge` → `events.merge.*`,
        `claims` → exactly `events.claims`, `branches` → exactly
        `events.branches`) is forwarded verbatim; the browser parses it
        (`payload` is a JSON STRING, per coord's `ws.rs`). Anything else is
@@ -6667,9 +6672,7 @@ async def websocket_coord_events(
        backend<->coord leg already survives an idle upstream via
        `websockets`' 20s ping, but nothing kept the browser<->backend leg
        alive, so an idle-timing proxy on THAT leg reconnects the browser on
-       its own clock instead of disappearing. `useStrategyWebSocket` drops it
-       for free (`envelope.channel` is not a string on this frame, and the
-       handler already returns on that check); `useMergePipelineData`
+       its own clock instead of disappearing. `useMergePipelineData`
        recognizes it explicitly (`isKeepaliveFrame`) because it otherwise
        treats every message as "something changed, refetch".
 
@@ -11228,6 +11231,158 @@ async def list_prompt_document_writes(
     return response
 
 
+# ---------------------------------------------------------------------------
+# Findings — `GET /operations/coord/findings` → coord `GET /coord/findings`
+#
+# Backs `/admin/coord/findings`, the reader the landed-write feed's
+# `finding_only` reasoning reference links into. A document CREATE (v1) never
+# emits a notification — coord's `notify_document_version_change` says why — so
+# its `notification_ref` is a coord finding id with no notice to open, and
+# before this route the console could only print the uuid.
+#
+# Plan `2026-09-15-the-console-names-a-finding-it-cannot-open`, Phase 2.
+#
+# **Verbatim forward, and the refusal is coord's.** Every one of coord's six
+# accepted keys — `finding_id`, `resource_keys`, `topic`, `kind`, `limit`,
+# `triaged` — is declared here and forwarded ONLY when the caller set it, the
+# shape `get_coord_notifications` established. The id and the string filters
+# are NOT re-validated at this hop: coord answers an unknown key with a typed
+# `400 {"error": "unknown_query_parameter", "unknown": [...], "accepted": [...]}`
+# and a malformed id with `invalid_query_parameter`, and a second validator here
+# would either shadow that message with a duller one or drift from it. The two
+# TYPED params are the exception, exactly as on the notifications sibling:
+# FastAPI parses `limit` as an int and `triaged` as a bool, so `limit=abc` is a
+# 422 here, and coord's third triage spelling `any` is expressed by OMITTING the
+# key (coord's own default) rather than by sending it. FastAPI
+# ignores query keys it does not declare, so an unknown key never reaches coord
+# through this route — which is why the page sends none.
+#
+# `resource_keys` is a LIST so a repeated key stays repeated on the wire
+# (`httpx.QueryParams` encodes a sequence as `?resource_keys=a&resource_keys=b`,
+# the same property the alerts proxy relies on). A single comma-joined value
+# arrives as one element and is forwarded byte-identically, so both spellings
+# reach coord exactly as the caller sent them.
+# ---------------------------------------------------------------------------
+
+
+@router.get("/coord/findings")
+async def get_coord_findings(
+    finding_id: str | None = Query(
+        default=None,
+        description=(
+            "Read ONE finding by id. Coord serves the row even when it is past "
+            "``expires_at`` — expiry is a fact about the row, not a reason to "
+            "hide it — and answers another tenant's id, or no such id, with an "
+            "EMPTY PAGE rather than a 404."
+        ),
+    ),
+    resource_keys: list[str] | None = Query(
+        default=None,
+        description="Repeatable. Restrict to findings tagged with these resource keys.",
+    ),
+    topic: str | None = Query(default=None, description="Filter by finding topic."),
+    kind: str | None = Query(default=None, description="Filter by finding kind."),
+    limit: int | None = Query(
+        default=None,
+        description=(
+            "Page size. Forwarded verbatim — coord owns the default and the clamp."
+        ),
+    ),
+    triaged: bool | None = Query(
+        default=None,
+        description=(
+            "Restrict to findings that have (``true``) or have not (``false``) "
+            "been triaged. ``false`` deliberately excludes durable dossier heads "
+            "and fleet-infrastructure rows, so a count under it is NARROWER than "
+            "the unfiltered total by design."
+        ),
+    ),
+    tenant_id: UUID = Depends(get_tenant_id),
+) -> Any:
+    """Return ``coord.findings`` rows for the calling operator's tenant.
+
+    Response envelope mirrors coord's:
+    ``{"available", "count", "findings": [...], "finding_id_applied",
+    "kind_applied", "limit", "resource_keys_applied" (a COUNT),
+    "resource_keys_truncated", "triaged_applied" ("any" | "false" | "true")}``,
+    plus ``kind_excluded`` / ``scope_restricted`` on a ``triaged=false`` read.
+    The ``*_applied`` echoes are what let the page say which filter coord
+    actually honoured rather than which one it was asked for — a filter coord
+    dropped is otherwise invisible.
+
+    **There is no ``expired`` boolean.** Expiry is derived client-side from
+    ``expires_at``, and it has to be: a ``kind=dossier`` row is a durable
+    dossier head carrying a 100-year TTL, so a server-side "expiring" flag
+    would be true of every row that never expires in practice.
+
+    Degrade rather than 502. coord's ``/coord/findings`` route is on coord's
+    ``main`` (since 2026-09-20), so a 404 here means the DEPLOYED coord predates
+    it or a routing fault, and must read as "not answering", never as an empty
+    findings store. Same ``unavailable`` / ``unavailable_kind`` pair the
+    landed-write feed uses.
+
+    coord ALSO answers ``200 {"available": false}`` when ``coord.findings`` is
+    not provisioned, and says that must read as UNKNOWN. The page branches on
+    ``unavailable`` alone, so that answer is given the same degrade pair here
+    (``unavailable_kind: "unprovisioned"``) — otherwise a store coord just said
+    it cannot read would render as "0 findings".
+    """
+    params: dict[str, Any] = {}
+    if finding_id is not None:
+        params["finding_id"] = finding_id
+    if resource_keys:
+        params["resource_keys"] = resource_keys
+    if topic is not None:
+        params["topic"] = topic
+    if kind is not None:
+        params["kind"] = kind
+    if limit is not None:
+        params["limit"] = limit
+    if triaged is not None:
+        params["triaged"] = triaged
+    try:
+        body = await _proxy_coord_get(
+            "/coord/findings", params=params or None, tenant_id=tenant_id
+        )
+    except HTTPException as exc:
+        if exc.status_code in _COORD_ABSENT_STATUSES:
+            return {
+                "available": False,
+                "count": 0,
+                "findings": [],
+                "unavailable": (
+                    "coord's findings reader is not answering — its "
+                    "`/coord/findings` route returned 404, so the deployed "
+                    "coord predates it or the route is misrouted. Findings "
+                    "cannot be listed, which is not the same as there being none."
+                    if exc.status_code == 404
+                    else (
+                        "coord did not answer the findings store "
+                        f"(HTTP {exc.status_code})."
+                    )
+                ),
+                "unavailable_kind": (
+                    "not_deployed" if exc.status_code == 404 else "unreachable"
+                ),
+            }
+        raise
+    if (
+        isinstance(body, dict)
+        and body.get("available") is False
+        and not body.get("unavailable")
+    ):
+        return {
+            **body,
+            "unavailable": (
+                "coord reports its findings store is not provisioned "
+                "(`available: false`). Findings cannot be listed, which is not "
+                "the same as there being none."
+            ),
+            "unavailable_kind": "unprovisioned",
+        }
+    return body
+
+
 @router.put("/coord/policies/system/{system_rule_id}/override")
 async def put_coord_policy_override(
     system_rule_id: str,
@@ -11563,8 +11718,22 @@ async def post_coord_tenant_member(
 
     Answers:
 
-    * ``{"status": "added", "operator_id", "role"}`` — they had an account
-      and now hold ``role`` in this tenant.
+    * ``{"status": "added", "operator_id", "role", "notice"}`` — they had an
+      account and now hold ``role`` in this tenant. ``notice`` reports the
+      "you have been given access" email, which is attempted on THIS arm
+      only, and takes one of three values:
+
+      - ``sent`` — the email reached a transport.
+      - ``not_sent`` — nothing was sent and the admin should pass the news
+        on themselves. Covers both a failed send and an unreadable
+        prior-access check.
+      - ``not_needed`` — they ALREADY had access to this tenant, so this
+        grant told them nothing new and no email was sent.
+
+      See :func:`_member_had_prior_access` for why the third value exists
+      (it is what stops this route being an email-sending primitive) and
+      :func:`_send_member_added_notice` for why a failed send does not fail
+      the grant.
     * ``{"status": "invited", "operator_id", "role"}`` — SUPERUSER ONLY. They
       had no account (or an unaccepted invitation): the account is created
       with nothing sent, the grant is made, and only then is the invitation
@@ -11572,7 +11741,10 @@ async def post_coord_tenant_member(
       recovers a lost or expired one.
     * ``{"status": "invitation_pending", "operator_id", "role"}`` — a tenant
       admin added somebody holding an invitation they have not accepted. The
-      grant is made; nothing is sent, since sending is a superuser act.
+      grant is made; nothing is sent, since sending is a superuser act. No
+      ``notice`` either: a person who cannot sign in yet is owed the
+      invitation, not a note about a team they cannot reach, and sending one
+      would route around the superuser rule above.
     * ``{"status": "invite_required"}`` — a tenant admin named an email with
       no account. NOTHING is written or sent.
     * ``409`` — more than one account matches the email, so picking one
@@ -11616,8 +11788,29 @@ async def post_coord_tenant_member(
     # targets CONFIRMED accounts — and a retry converges on it. Deleting it
     # instead could remove an account a concurrent request had just invited,
     # or orphan a grant coord committed before its response was lost.
-    operator_id = await _grant_tenant_member(
-        email=email, sub=identity.sub, role=body.role, tenant_id=tenant_id
+    operator_id = await _upsert_tenant_operator(
+        email=email, sub=identity.sub, tenant_id=tenant_id
+    )
+    # BEFORE the grant, while the question is still answerable: coord's own
+    # write is what makes "did they already have access?" unanswerable
+    # afterwards. Read it here and carry the answer past the grant.
+    #
+    # Skipped ONLY on the one arm that can never reach `added`: a pending
+    # account the caller may not invite ends `invitation_pending`, always.
+    # (A pending account the caller MAY invite can still end `added` —
+    # `_send_member_invitation` returns it when the invitee accepts between
+    # the lookup and the send — so that arm keeps the read.) Reading it on the
+    # dead arm made a failed read log `tenant_member_prior_access_unreadable`
+    # at ERROR for a request that went fine.
+    had_access = (
+        None
+        if pending and not may_invite
+        else await _member_had_prior_access(
+            tenant_id=tenant_id, sso_subject=identity.sub
+        )
+    )
+    await _grant_tenant_member_role(
+        operator_id=operator_id, role=body.role, tenant_id=tenant_id
     )
 
     status = "added"
@@ -11631,6 +11824,18 @@ async def post_coord_tenant_member(
             operator_id=operator_id,
         )
 
+    result: dict[str, Any] = {
+        "status": status,
+        "operator_id": operator_id,
+        "role": body.role,
+    }
+
+    # The grant is already true here, and nothing below can change that — so
+    # this line is logged BEFORE the notice rather than after it. Putting it
+    # after made a record of a completed grant reachable only once an email
+    # round-trip had returned, so a slow or wedged transport delayed (and a
+    # crash inside the notice erased) the log line for work that had in fact
+    # succeeded.
     logger.info(
         "tenant_member_add_ok",
         tenant_id=str(tenant_id),
@@ -11638,7 +11843,45 @@ async def post_coord_tenant_member(
         role=body.role,
         outcome=status,
     )
-    return {"status": status, "operator_id": operator_id, "role": body.role}
+
+    # ONLY the `added` arm, and only when this grant actually gave them
+    # something they did not already have. `invited` already emails (Cognito
+    # sends the invitation with the temporary password); `invitation_pending`
+    # is deliberately silent; and a re-add of somebody who already had access
+    # must not claim to have given it to them again — see
+    # `_member_had_prior_access` for why that is a safety property and not
+    # only a copy one.
+    if status == "added":
+        if had_access is False:
+            result["notice"] = await _send_member_added_notice(
+                request=request,
+                email=email,
+                role=body.role,
+                tenant_id=tenant_id,
+                operator_id=operator_id,
+                actor_id=getattr(current_user, "id", None),
+            )
+        elif had_access is True:
+            result["notice"] = "not_needed"
+        else:
+            # UNKNOWN. Nothing was sent, and the honest thing to tell the
+            # admin is the same as a failed send: pass the news on yourself.
+            # WARNING, not ERROR: the unreadable read already logged its own
+            # ERROR (`tenant_member_prior_access_unreadable`); this line is the
+            # consequence of that one event, not a second fault.
+            logger.warning(
+                "tenant_member_added_notice_skipped_unknown_prior_access",
+                tenant_id=str(tenant_id),
+                operator_id=operator_id,
+            )
+            result["notice"] = "not_sent"
+        logger.info(
+            "tenant_member_add_notice",
+            tenant_id=str(tenant_id),
+            operator_id=operator_id,
+            notice=result["notice"],
+        )
+    return result
 
 
 async def _resolve_member_identity(email: str) -> cognito_admin.CognitoIdentity | None:
@@ -11703,10 +11946,14 @@ async def _create_invited_identity(email: str) -> cognito_admin.CognitoIdentity:
         ) from exc
 
 
-async def _grant_tenant_member(
-    *, email: str, sub: str, role: str, tenant_id: UUID
-) -> str:
-    """Coord's operator upsert and role grant; returns the ``operator_id``."""
+async def _upsert_tenant_operator(*, email: str, sub: str, tenant_id: UUID) -> str:
+    """Coord's operator upsert; returns the ``operator_id``. Grants nothing.
+
+    Split out of the old ``_grant_tenant_member`` so the caller has the
+    ``operator_id`` — which only this call mints — BEFORE the role grant
+    happens. :func:`_member_had_prior_access` needs both, and needs to run
+    while "did they already have access?" is still answerable.
+    """
     created = await _proxy_coord_post_readable(
         "/admin/coord/operators",
         {"email": email, "sso_subject": sub, "sso_provider": "cognito"},
@@ -11719,12 +11966,123 @@ async def _grant_tenant_member(
             status_code=502,
             detail="coord accepted the operator upsert but returned no operator_id",
         )
+    return operator_id
+
+
+async def _grant_tenant_member_role(
+    *, operator_id: str, role: str, tenant_id: UUID
+) -> None:
+    """Coord's role grant, with the explicit target tenant it re-checks."""
     await _proxy_coord_post_readable(
         f"/admin/coord/operators/{quote(operator_id, safe='')}/roles",
         {"role": role, "target_tenant_id": str(tenant_id)},
         tenant_id=tenant_id,
     )
-    return operator_id
+
+
+async def _member_had_prior_access(*, tenant_id: UUID, sso_subject: str) -> bool | None:
+    """Did this person already have access to this tenant BEFORE this call?
+
+    ``True`` they did, ``False`` this grant is their first, ``None`` we could
+    not establish it. The caller sends the notice ONLY on ``False``.
+
+    **Why it exists.** Coord's role grant answers a bare ``{"ok": true}``:
+    ``insert_operator_role`` upserts and ``post_operator_grant_role`` reports
+    nothing about whether a row appeared, so the response cannot distinguish
+    a grant that changed state from one that was already true. Without this
+    the notice fires on EVERY submit and tells somebody who has had access
+    since June that they have just been given it.
+
+    **Why it is an HTTP read and not a SQL one.** An earlier version of this
+    helper answered the same question with two ``EXISTS`` against
+    ``coord.operator_roles`` and ``coord.operator_audit`` over this request's
+    own database session. That is a breach of an architectural invariant this
+    repo enforces in CI: web makes ZERO direct reads of coord's Postgres
+    schema, everything it reads from coord comes over coord's HTTP API, and
+    ``tests/test_coord_schema_boundary_guard.py`` keeps
+    ``READ_BOUNDARY_CLOSED`` EMPTY precisely so that emptiness is the
+    invariant. The fix is this function, not an allowlist entry — widening a
+    closed boundary to make its guard pass is the exact failure the guard is
+    built to prevent.
+
+    **The read.** ``GET /admin/coord/operators?sso_subject=…`` through the
+    same proxy helper every other coord interaction in this module uses.
+    Narrowing by the subject Cognito already resolved keeps it to one row
+    rather than the whole tenant, and the subject is the right key: it is
+    IdP-issued and unique on ``(sso_provider, sso_subject)``, whereas
+    ``coord.operators.email`` is neither unique nor immutable.
+
+    **How it degrades, and in which direction.** Coord's route was once
+    scoped ``WHERE o.tenant_id = $1`` — the operator's HOME tenant — so a
+    colleague homed in a DIFFERENT tenant was not listed even while holding a
+    role here, and this check under-reported for exactly that population. That
+    widening has LANDED and is deployed: coord ``main`` carries it as
+    ``653cb37``, and the members route was verified against production on
+    2026-09-24 returning a cross-home role-holder. This text used to name
+    coord PR 2224 as the pending fix; that PR was CLOSED rather than merged
+    and the work reached main through the route-around in coord PR 2409, so
+    do not go looking for 2224 in the merge history.
+
+    The one-sided property is kept deliberately, because it holds for ANY
+    reason a row is missing rather than only for the one that is now fixed: a
+    row absent from the answer can cost a duplicate notice to somebody who
+    already had access, and can never wrongly SUPPRESS one, because only a
+    listed row carrying a role is read as positive evidence.
+
+    **What this is worth, stated honestly.** "They do not currently hold a
+    role in this tenant." That collapses the repeated-add case, which is the
+    product requirement. It does NOT survive a revoke: revoke then re-add
+    sends again, where the earlier audit-table version would have stayed
+    silent. It is also read-then-act with no atomicity, so concurrent
+    submits can all read ``False`` and all send — which the SQL version did
+    not fix either. Treat it as "collapses the repeated add", not as an
+    exactly-once guarantee.
+
+    ``None`` on any failure, and the caller treats it as "do not send". That
+    is the safe direction: a missed courtesy email costs one sentence telling
+    the admin to pass the news on themselves, while sending on an
+    unestablished check restores the unbounded behaviour.
+    """
+    try:
+        payload = await _proxy_coord_get(
+            "/admin/coord/operators",
+            params={"sso_subject": sso_subject},
+            tenant_id=tenant_id,
+        )
+    except Exception as exc:  # noqa: BLE001 - an unreadable check is UNKNOWN
+        logger.error(
+            "tenant_member_prior_access_unreadable",
+            tenant_id=str(tenant_id),
+            error=str(exc),
+            error_type=type(exc).__name__,
+        )
+        return None
+
+    operators = payload.get("operators") if isinstance(payload, dict) else None
+    if not isinstance(operators, list):
+        # A 200 whose body is not the documented shape is UNKNOWN, never an
+        # empty membership: reading a missing list as "they are new here"
+        # would send on every call the moment coord's response shape drifted.
+        logger.error(
+            "tenant_member_prior_access_unreadable",
+            tenant_id=str(tenant_id),
+            error="coord returned no operators list",
+        )
+        return None
+
+    for operator in operators:
+        if not isinstance(operator, dict):
+            continue
+        if operator.get("sso_subject") != sso_subject:
+            # Coord filters server-side; this only guards against a build
+            # that ignores the parameter and answers with the whole tenant.
+            continue
+        roles = operator.get("roles")
+        # ANY role means they already had access to this team. A colleague
+        # being promoted from Developer to Administrator has already been
+        # told about it, so this must not narrow by the role being granted.
+        return bool(isinstance(roles, list) and roles)
+    return False
 
 
 async def _send_member_invitation(
@@ -11764,6 +12122,157 @@ async def _send_member_invitation(
     return "invited"
 
 
+async def _member_tenant_display_name(request: Request, tenant_id: UUID) -> str | None:
+    """The tenant's human-readable name, or ``None`` if there isn't one.
+
+    Cheap by construction: ``get_coord_identity`` memoizes the parsed
+    ``/admin/coord/me`` payload on ``request.state``, and
+    :func:`require_coord_tenant_admin_target` has already paid for it on this
+    request — so this adds no coord round-trip.
+
+    ``None`` on every failure, including a name that is really an identifier.
+    The composer renders that as "a team", which is the point: a UUID in front
+    of a person is not a name, and an email that shows one reads like a
+    phishing attempt rather than like a colleague adding them to a project.
+    """
+    try:
+        identity = await get_coord_identity(request)
+    except Exception as exc:  # noqa: BLE001 - a name is a nicety, never a failure
+        logger.info("tenant_member_notice_name_unresolved", error=str(exc))
+        return None
+    for tenant in identity.tenants:
+        if tenant.tenant_id != tenant_id:
+            continue
+        # `display_name` is the tenant's human-chosen name and is `None` on a
+        # coord that predates the field or a tenant that never got one, so the
+        # slug is the documented fallback (see `CoordTenant`).
+        name = (tenant.display_name or tenant.slug or "").strip()
+        if not name:
+            return None
+        try:
+            UUID(name)
+        except (ValueError, AttributeError, TypeError):
+            return name
+        return None
+    return None
+
+
+_member_added_composer_cache: MemberAddedNoticeComposer | None = None
+
+
+def _member_added_notice_composer() -> MemberAddedNoticeComposer:
+    """The one composer for this process — and the one seam tests patch.
+
+    Cached because ``EmailTransportService()`` builds a boto3 SES client, and
+    building one per request is both wasteful and a per-request chance to pay
+    credential-resolution latency on a path that is already waiting on a
+    network send.
+
+    Only a HEALTHY composer is cached. ``EmailTransportService.__init__``
+    swallows a failed SES client build and leaves ``ses_client = None``, so an
+    unconditional cache (the ``lru_cache`` this replaced) pinned one transient
+    failure for the life of the process: every later notice fell to SMTP or
+    ``not_sent`` until a restart. A composer whose SES client did not build is
+    returned for this request and rebuilt on the next one.
+
+    It is a FACTORY rather than a construction at the call site for a reason
+    that only shows up in tests: Python evaluates arguments before it calls
+    anything, so patching ``MemberAddedNoticeComposer`` does NOT stop
+    ``MemberAddedNoticeComposer(EmailTemplateService(), EmailTransportService())``
+    from constructing a real transport — and therefore a real boto3 client —
+    on every test that drives the ``added`` arm. Patching this function stops
+    all of it, because the construction lives inside the thing being
+    replaced.
+
+    ``get_feedback_composer`` in ``app/api/v1/endpoints/feedback.py`` shares
+    the "a factory owns the construction" half and NOT the caching: it is a
+    plain FastAPI dependency and builds a fresh composer, transport and
+    boto3 client on every request.
+    """
+    global _member_added_composer_cache
+    if _member_added_composer_cache is not None:
+        return _member_added_composer_cache
+    transport = EmailTransportService()
+    composer = MemberAddedNoticeComposer(EmailTemplateService(), transport)
+    if not settings.USE_SES_API or transport.ses_client is not None:
+        _member_added_composer_cache = composer
+    return composer
+
+
+async def _send_member_added_notice(
+    *,
+    request: Request,
+    email: str,
+    role: str,
+    tenant_id: UUID,
+    operator_id: str,
+    actor_id: Any,
+) -> str:
+    """Tell an EXISTING account holder they were granted access. Never raises.
+
+    Returns ``"sent"`` or ``"not_sent"``, which the route puts on the response
+    as ``notice``.
+
+    **Why this cannot fail the grant, when
+    :func:`_send_member_invitation` correctly does.** There, a grant without
+    its email leaves somebody who literally cannot sign in, so the 502 is the
+    honest answer and the retry re-sends. Here the person already has a
+    working account and the grant is already true coord-side: undoing it, or
+    reporting it as a failure, would destroy a correct outcome over a courtesy
+    message. So the send is reported, not enforced.
+
+    **And it must not read as success either.** A silent failure here is
+    exactly the defect this notice exists to fix — an administrator saw
+    "added", the colleague was told nothing, and nobody knew. So a failure is
+    logged at ERROR with the tenant and the acting operator, and is reported
+    to the caller in the response so the dashboard can say "tell them
+    yourself".
+
+    ``EmailTransportService.send_email`` reports a failure by RETURNING
+    ``False``, not by raising — an unconfigured transport, a refused SES call
+    and an unverified sender identity all land there — so ``not sent`` is a
+    value to be read, never an exception to be caught. Both shapes are
+    handled here anyway: a composer that raises is the same outcome to the
+    person who was not told.
+
+    The send goes through that shared transport rather than a second boto3
+    client, and that is a constraint as well as a style: the web task role
+    holds ``ses:SendEmail`` (the API ``_send_via_ses_api`` calls) and NOT
+    ``ses:SendRawEmail``, so a hand-rolled raw-MIME path would be refused at
+    IAM.
+    """
+    try:
+        tenant_name = await _member_tenant_display_name(request, tenant_id)
+        sent = await _member_added_notice_composer().send(
+            email=email, role=role, tenant_name=tenant_name
+        )
+    except Exception as exc:  # noqa: BLE001 - a notice never fails a grant
+        logger.error(
+            "tenant_member_added_notice_failed",
+            tenant_id=str(tenant_id),
+            operator_id=operator_id,
+            actor_id=str(actor_id) if actor_id is not None else None,
+            error=str(exc),
+            error_type=type(exc).__name__,
+        )
+        return "not_sent"
+    if not sent:
+        logger.error(
+            "tenant_member_added_notice_not_sent",
+            tenant_id=str(tenant_id),
+            operator_id=operator_id,
+            actor_id=str(actor_id) if actor_id is not None else None,
+            reason="transport reported the email was not sent",
+        )
+        return "not_sent"
+    logger.info(
+        "tenant_member_added_notice_sent",
+        tenant_id=str(tenant_id),
+        operator_id=operator_id,
+    )
+    return "sent"
+
+
 @router.get("/coord/group-tenant-roles")
 async def get_coord_group_tenant_roles(
     tenant_id: UUID = Depends(require_coord_tenant_admin),
@@ -11772,7 +12281,10 @@ async def get_coord_group_tenant_roles(
 
     Proxies coord ``GET /admin/coord/group-tenant-roles`` →
     ``{group_tenant_roles: [{group_id, tenant_slug, role, auto_create_tenant,
-    created_at, tenant_id}]}``."""
+    created_at, tenant_id, current_slug, historical_slug}]}``.
+    ``historical_slug`` is true when the stored ``tenant_slug`` is one the
+    tenant was renamed away from, and ``current_slug`` is its slug today
+    (qontinui-coord#2473; older coord builds omit both)."""
     return await _proxy_coord_get(
         "/admin/coord/group-tenant-roles", tenant_id=tenant_id
     )
